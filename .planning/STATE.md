@@ -8,12 +8,12 @@
 ## Current Position
 
 - **Phase:** 1 — Bot Substrate
-- **Plan:** (none yet — run `/gsd-plan-phase 1`)
-- **Status:** Roadmap approved, awaiting Phase 1 planning
-- **Progress:** Phases 0/4 complete
+- **Plan:** 01-01 complete; 01-02, 01-03 remaining
+- **Status:** Executing Phase 1
+- **Progress:** Phases 0/4 complete (Phase 1 in progress, 1/3 plans done)
 
 ```
-[____] Phase 1  Bot Substrate         ← current
+[PLAN] Phase 1  Bot Substrate         ← current
 [____] Phase 2  Two-Layer LLM Loop
 [____] Phase 3  Memory & Persistence
 [____] Phase 4  Electron GUI & Packaging
@@ -23,7 +23,7 @@
 
 - Requirements coverage: 36/36 (100%)
 - Phases defined: 4
-- Plans executed: 0
+- Plans executed: 1
 - Phases complete: 0
 
 ## Accumulated Context
@@ -39,7 +39,8 @@
 
 ### Todos
 
-- Run `/gsd-plan-phase 1` to decompose Phase 1 into executable plans
+- Run 01-02-PLAN.md (pathfinder wrapper, action registry, reflex behaviors)
+- Run 01-03-PLAN.md (FSM with priority queue, AbortController, behavior wiring)
 - Parallel spike: Qwen tool-calling reliability (de-risk Phase 2)
 - Parallel spike: native-module packaging (de-risk Phase 4)
 - Parallel task: start Apple Developer / Windows EV cert applications (lead time)
@@ -50,8 +51,8 @@
 
 ## Session Continuity
 
-- **Last action:** Roadmap created and committed (4 phases, coarse granularity)
-- **Next action:** `/gsd-plan-phase 1` to begin Phase 1 planning
+- **Last action:** Phase 1 plan 01 executed — project scaffold, config schema, bot connection with reconnect loop (2 tasks, 6 files)
+- **Next action:** Execute 01-02-PLAN.md (pathfinder wrapper, action registry, reflex behaviors)
 
 ---
-*Last updated: 2026-04-24 after roadmap creation*
+*Last updated: 2026-04-24 after Phase 1 plan 01 execution*

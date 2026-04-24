@@ -26,7 +26,7 @@
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Project scaffold, config schema, bot connection + reconnect loop
+- [x] 01-01-PLAN.md — Project scaffold, config schema, bot connection + reconnect loop
 - [ ] 01-02-PLAN.md — Pathfinder wrapper, action registry, reflex behaviors (follow/chat/eat/combat)
 - [ ] 01-03-PLAN.md — Event-sourced FSM with priority queue, AbortController, behavior wiring
 
@@ -71,7 +71,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Bot Substrate | 0/3 | Not started | - |
+| 1. Bot Substrate | 1/3 | In progress | - |
 | 2. Two-Layer LLM Loop | 0/0 | Not started | - |
 | 3. Memory & Persistence | 0/0 | Not started | - |
 | 4. Electron GUI & Packaging | 0/0 | Not started | - |
@@ -83,4 +83,4 @@ Plans:
 - Orphans: 0
 
 ---
-*Last updated: 2026-04-24 after Phase 1 planning*
+*Last updated: 2026-04-24 after Phase 1 plan 01 execution*
