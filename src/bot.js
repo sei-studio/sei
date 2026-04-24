@@ -1,4 +1,11 @@
 import { createBot } from 'mineflayer'
+import { pathfinder } from 'mineflayer-pathfinder'
+import { startFollow, stopFollow } from './behaviors/follow.js'
+import { startChat } from './behaviors/chat.js'
+import { startAutoEat } from './behaviors/autoEat.js'
+import { startCombat } from './behaviors/combat.js'
+import { createDefaultRegistry } from './registry.js'
+import { createFSM } from './fsm.js'
 
 let _bot = null
 let _reconnectTimer = null
@@ -36,6 +43,19 @@ function createBotInstance(config) {
 
   bot.on('spawn', () => {
     logStatus(`Connected to ${config.host}:${config.port} as ${config.username}`)
+
+    // Load pathfinder plugin (required by follow behavior)
+    bot.loadPlugin(pathfinder)
+
+    // Start all reflex behaviors
+    startAutoEat(bot)
+    startCombat(bot)
+    startChat(bot, config)
+    startFollow(bot, config)
+
+    // Wire FSM
+    const registry = createDefaultRegistry()
+    createFSM(bot, config, registry)
   })
 
   bot.on('error', (err) => {
@@ -47,6 +67,7 @@ function createBotInstance(config) {
   })
 
   bot.on('end', (reason) => {
+    stopFollow()
     logStatus(`Disconnected: ${humanizeReason(reason)}`)
     _bot = null
     if (!_stopped) {
