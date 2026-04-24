@@ -18,10 +18,11 @@ export function startCombat(bot, config) {
       stopFollow()
     }
 
-    // Immediate single retaliation hit — pvp plugin movement conflicts with follow in Phase 1
-    bot.lookAt(attacker.position.offset(0, attacker.height, 0))
-      .then(() => bot.attack(attacker))
-      .catch(() => {})
+    // Immediate retaliation hit — skip lookAt (async delay causes misses), attack packet works without facing
+    const dist = bot.entity.position.distanceTo(attacker.position)
+    if (dist <= 4) {
+      try { bot.attack(attacker) } catch (_) {}
+    }
 
     // Resume follow 3s after last hit
     clearTimeout(_combatTimer)
