@@ -41,25 +41,22 @@ function createBotInstance(config) {
 
   const bot = createBot(botOpts)
 
-  // once: register event-based behaviors and FSM only on first spawn
-  bot.once('spawn', () => {
-    logStatus(`Connected to ${config.host}:${config.port} as ${config.username}`)
-
-    bot.loadPlugin(pathfinder)
-
-    startAutoEat(bot)
-    startCombat(bot, config)
-    startChat(bot, config)
-    startFollow(bot, config)
-
-    const registry = createDefaultRegistry()
-    createFSM(bot, config, registry)
-  })
-
-  // on every subsequent spawn (respawn after death): restart follow
+  let _spawned = false
   bot.on('spawn', () => {
     logStatus(`Connected to ${config.host}:${config.port} as ${config.username}`)
-    startFollow(bot, config)
+    if (!_spawned) {
+      _spawned = true
+      bot.loadPlugin(pathfinder)
+      startAutoEat(bot)
+      startCombat(bot, config)
+      startChat(bot, config)
+      startFollow(bot, config)
+      const registry = createDefaultRegistry()
+      createFSM(bot, config, registry)
+    } else {
+      // respawn after death — restart follow only
+      startFollow(bot, config)
+    }
   })
 
   bot.on('death', () => {

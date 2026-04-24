@@ -5,7 +5,7 @@ const { pathfinder } = pkg
 let _followInterval = null
 
 export function startFollow(bot, config) {
-  bot.loadPlugin(pathfinder)
+  if (!bot.hasPlugin(pathfinder)) bot.loadPlugin(pathfinder)
 
   _followInterval = setInterval(async () => {
     const owner = bot.players[config.owner_username]
