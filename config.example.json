@@ -4,7 +4,7 @@
   "auth": "offline",
   "username": "Sei",
   "owner_username": "YourMinecraftName",
-  "minecraft_version": "auto",
+  "minecraft_version": "1.21.1",
   "reconnect_delay_ms": 5000,
   "pathfinder_timeout_ms": 12000,
   "follow_range": 3
