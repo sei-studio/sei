@@ -8,13 +8,13 @@
 ## Current Position
 
 - **Phase:** 1 — Bot Substrate
-- **Plan:** 01-01, 01-02 complete; 01-03 remaining
-- **Status:** Executing Phase 1
-- **Progress:** Phases 0/4 complete (Phase 1 in progress, 2/3 plans done)
+- **Plan:** 01-01, 01-02, 01-03 complete
+- **Status:** Phase 1 complete; ready for Phase 2
+- **Progress:** Phases 1/4 complete
 
 ```
-[PLAN] Phase 1  Bot Substrate         ← current
-[____] Phase 2  Two-Layer LLM Loop
+[DONE] Phase 1  Bot Substrate
+[____] Phase 2  Two-Layer LLM Loop    ← next
 [____] Phase 3  Memory & Persistence
 [____] Phase 4  Electron GUI & Packaging
 ```
@@ -23,8 +23,8 @@
 
 - Requirements coverage: 36/36 (100%)
 - Phases defined: 4
-- Plans executed: 2
-- Phases complete: 0
+- Plans executed: 3
+- Phases complete: 1
 
 ## Accumulated Context
 
@@ -42,7 +42,7 @@
 
 ### Todos
 
-- Run 01-03-PLAN.md (FSM with priority queue, AbortController, behavior wiring)
+- Plan and execute Phase 2 (Two-Layer LLM Loop)
 - Parallel spike: Qwen tool-calling reliability (de-risk Phase 2)
 - Parallel spike: native-module packaging (de-risk Phase 4)
 - Parallel task: start Apple Developer / Windows EV cert applications (lead time)
@@ -53,8 +53,8 @@
 
 ## Session Continuity
 
-- **Last action:** Phase 1 plan 02 executed — pathfinder wrapper, closed action registry, reflex behaviors (2 tasks, 6 files)
-- **Next action:** Execute 01-03-PLAN.md (FSM with priority queue, AbortController, behavior wiring)
+- **Last action:** Phase 1 plan 03 executed — event-sourced FSM, priority queue, AbortController, behavior wiring (2 tasks, 2 files)
+- **Next action:** Plan and execute Phase 2 (Two-Layer LLM Loop)
 
 ---
-*Last updated: 2026-04-24 after Phase 1 plan 02 execution*
+*Last updated: 2026-04-24 after Phase 1 plan 03 execution — Phase 1 complete*

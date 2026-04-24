@@ -6,7 +6,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Bot Substrate** - Mineflayer connection, action registry, FSM, and scripted reflex behavior (no LLMs yet)
+- [x] **Phase 1: Bot Substrate** - Mineflayer connection, action registry, FSM, and scripted reflex behavior (no LLMs yet)
 - [ ] **Phase 2: Two-Layer LLM Loop** - Personality LLM (Haiku 3) + movement LLM (Ollama Qwen) wired into the FSM with guardrails
 - [ ] **Phase 3: Memory & Persistence** - SQLite-backed identity, owner relationship, world progression, and LLM-directed compaction
 - [ ] **Phase 4: Electron GUI & Packaging** - Setup form, Start/Stop, live log viewer, and bundled .dmg/.exe distribution
@@ -27,8 +27,8 @@
 
 Plans:
 - [x] 01-01-PLAN.md — Project scaffold, config schema, bot connection + reconnect loop
-- [ ] 01-02-PLAN.md — Pathfinder wrapper, action registry, reflex behaviors (follow/chat/eat/combat)
-- [ ] 01-03-PLAN.md — Event-sourced FSM with priority queue, AbortController, behavior wiring
+- [x] 01-02-PLAN.md — Pathfinder wrapper, action registry, reflex behaviors (follow/chat/eat/combat)
+- [x] 01-03-PLAN.md — Event-sourced FSM with priority queue, AbortController, behavior wiring
 
 ### Phase 2: Two-Layer LLM Loop
 **Goal**: The personality LLM drives the bot via natural-language hand-off to a local movement LLM that calls actions from the registry, with hard guardrails preventing runaway loops or cost.
@@ -71,7 +71,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Bot Substrate | 1/3 | In progress | - |
+| 1. Bot Substrate | 3/3 | Complete | 2026-04-24 |
 | 2. Two-Layer LLM Loop | 0/0 | Not started | - |
 | 3. Memory & Persistence | 0/0 | Not started | - |
 | 4. Electron GUI & Packaging | 0/0 | Not started | - |
