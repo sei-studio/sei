@@ -68,5 +68,20 @@ export function createDefaultRegistry() {
     }
   )
 
+  registry.register(
+    'setGoals',
+    z.object({
+      list: z.enum(['owner', 'self']),
+      op:   z.enum(['add', 'remove']),
+      goal: z.string().min(1),
+    }),
+    async (args, bot, config) => {
+      const store = config?._goalStore
+      if (!store) throw new Error('setGoals invoked without _goalStore in config')
+      if (args.op === 'add')    return { ok: store.add(args.list, args.goal),    snapshot: store.snapshot() }
+      if (args.op === 'remove') return { ok: store.remove(args.list, args.goal), snapshot: store.snapshot() }
+    }
+  )
+
   return registry
 }
