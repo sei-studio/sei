@@ -40,7 +40,12 @@ Plans:
   3. A recursion cap (5 hops), event debounce (500ms), rate limit (30/min), and AbortController-based action cancellation demonstrably prevent runaway loops under stress.
   4. The bot speaks in a configurable name/backstory/tone that is stable across sessions and forms the cached Anthropic prompt prefix.
   5. When idle near its owner, the bot makes rate-limited proactive observations that feel in-character, not scripted.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Config schema, persona renderer, Zod->JSON Schema bridge, Anthropic + Ollama clients
+- [ ] 02-02-PLAN.md — Goal store, rate limiter, debouncer, circuit breaker, setGoals action, orchestrator
+- [ ] 02-03-PLAN.md — Wire orchestrator into FSM + ingestion debounce + verification harness
 
 ### Phase 3: Memory & Persistence
 **Goal**: The bot remembers its identity, owner, and world progression across restarts via better-sqlite3, with compaction timing decided by the personality LLM at semantic boundaries.
