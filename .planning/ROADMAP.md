@@ -8,6 +8,7 @@
 
 - [x] **Phase 1: Bot Substrate** - Mineflayer connection, action registry, FSM, and scripted reflex behavior (no LLMs yet)
 - [x] **Phase 2: Two-Layer LLM Loop** - Personality LLM (Haiku 3) + movement LLM (Ollama Qwen) wired into the FSM with guardrails
+- [ ] **Phase 2.1: Expand Actions & Game State (INSERTED)** - Broaden Zod action registry beyond goTo/setGoals and surface inventory/surroundings/position to the personality LLM as text so Sei can actually play
 - [ ] **Phase 3: Memory & Persistence** - SQLite-backed identity, owner relationship, world progression, and LLM-directed compaction
 - [ ] **Phase 4: Electron GUI & Packaging** - Setup form, Start/Stop, live log viewer, and bundled .dmg/.exe distribution
 
@@ -46,6 +47,24 @@ Plans:
 - [x] 02-01-PLAN.md — Config schema, persona renderer, Zod->JSON Schema bridge, Anthropic + Ollama clients
 - [x] 02-02-PLAN.md — Goal store, rate limiter, debouncer, circuit breaker, setGoals action, orchestrator
 - [x] 02-03-PLAN.md — Wire orchestrator into FSM + ingestion debounce + verification harness
+
+### Phase 2.1: Expand Actions & Game State (INSERTED)
+**Goal**: The personality LLM has a text-rendered view of the bot's local world (position, surroundings, inventory) and a high-level summary of what the movement LLM can actually do, while the movement LLM gains a broader Zod-typed action registry so Sei can carry out planned goals beyond `goTo` and `setGoals`.
+**Depends on**: Phase 2
+**Status**: Urgent insertion — discovered after Phase 2 that current action surface is too narrow for Sei to "play" the game.
+**Scope notes**:
+  - Add game state observers (inventory, nearby blocks/entities, biome, time of day, position) and render compact text snapshots into the personality LLM context.
+  - Expand the closed Zod action registry with the next tier of mineflayer primitives (e.g. dig/place/equip/attack/look/jump/eat — final list TBD in plan phase). All new actions must keep the registry closed and timeout-wrapped per project rules.
+  - Provide the personality LLM a short capability overview (not function schemas) so it stops requesting impossible behavior ("do a backflip"). Lean on Haiku's existing Minecraft knowledge.
+  - Keep the two-layer hand-off contract intact: personality emits natural-language intent, movement LLM picks actions.
+**Success Criteria** (what must be TRUE):
+  1. Personality LLM responses reference current inventory, position, and immediate surroundings when relevant, sourced from text observations injected into context.
+  2. Movement LLM can execute basic gameplay tasks (gather, place, eat, equip, attack) via the action registry, not just navigation.
+  3. Personality LLM avoids requesting capabilities outside the registry's intent — verified with a small adversarial prompt set.
+  4. All new actions are timeout-wrapped, AbortController-cancellable, and respect the existing FSM priority queue.
+  5. No regression in Phase 2 guardrails (recursion cap, debounce, rate limit, circuit breaker).
+**Plans**: TBD
+**Conflict review**: Checked against Phase 3 (Memory) and Phase 4 (GUI). No conflict — Phase 3 still owns SQLite persistence and LLM-directed compaction; this phase only adds in-context observations. Phase 4 unaffected.
 
 ### Phase 3: Memory & Persistence
 **Goal**: The bot remembers its identity, owner, and world progression across restarts via better-sqlite3, with compaction timing decided by the personality LLM at semantic boundaries.
