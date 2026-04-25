@@ -17,7 +17,7 @@ progress:
 ## Project Reference
 
 - **Core Value:** A Minecraft companion that feels like a real character — it remembers you, reacts to the world, and acts with personality, not like a scripted bot.
-- **Current Focus:** Phase 3 — Memory & Persistence (or queue Phase 2.5 first)
+- **Current Focus:** Phase 2.1 — Expand Actions & Game State (INSERTED, urgent) before Phase 3
 
 ## Current Position
 
@@ -73,14 +73,18 @@ Next: Phase 3 — Memory & Persistence (or insert Phase 2.5 for action-registry 
 - Parallel spike: native-module packaging (de-risk Phase 4)
 - Parallel task: start Apple Developer / Windows EV cert applications (lead time)
 
+### Roadmap Evolution
+
+- Phase 2.1 inserted after Phase 2: Expand action registry beyond goTo/setGoals and surface inventory/surroundings/position to personality LLM as text (URGENT). Conflict-checked against Phase 3 (Memory) and Phase 4 (GUI) — no overlap; Phase 3 still owns SQLite persistence and compaction.
+
 ### Blockers
 
 - None
 
 ## Session Continuity
 
-- **Last action:** Completed Phase 2 — wired orchestrator into FSM, shipped verify-phase2 harness, fixed three Phase 1 substrate bugs surfaced by live testing (lowercase persona tone for PERS-01/02 stability, combat NaN skip-instead-of-rewrite, kick-reason humanization for chat-component objects)
-- **Next action:** `/gsd-insert-phase 2.5` to plan action-registry expansion (mining, inventory, follow-gating, additional registry actions) before Phase 3, OR `/gsd-discuss-phase 3` to begin Memory & Persistence directly. Rolling chat context is already part of Phase 3 scope (MEM-01/02).
+- **Last action:** Gathered context for Phase 2.1 (Expand Actions & Game State). 16 decisions locked (D-22..D-37) covering action set, targeting model, observation snapshot, capability overview, movement-LLM contract, failure feedback, and the "still learning, asks the human" persona trait. CONTEXT.md + DISCUSSION-LOG.md written and committed.
+- **Next action:** `/gsd-plan-phase 2.1` to research and plan the phase.
 
 ---
-*Last updated: 2026-04-25 — Phase 2 complete (3/3 plans). Plan 02-03 closed out with three substrate fixes.*
+*Last updated: 2026-04-25 — Phase 2.1 context gathered.*
