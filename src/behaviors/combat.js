@@ -34,16 +34,15 @@ export function startCombat(bot, config) {
       const live = bot.entities[_target.id]
       if (!live) return
 
-      // Knockback packets occasionally corrupt velocity → NaN position; heal in place.
+      // Knockback packets occasionally produce transient non-finite velocity/position.
+      // Do NOT rewrite bot.entity.* — that's anti-cheat-detectable client-side teleport
+      // and was causing repeated server kicks. Skip this tick; mineflayer's normal
+      // physics will restore valid state on the next packet.
       const vel = bot.entity?.velocity
-      if (vel && (!Number.isFinite(vel.x) || !Number.isFinite(vel.y) || !Number.isFinite(vel.z))) {
-        vel.x = 0; vel.y = 0; vel.z = 0
-      }
       const pos = bot.entity?.position
-      if (pos && (!Number.isFinite(pos.x) || !Number.isFinite(pos.z)) && live.position) {
-        pos.x = live.position.x
-        pos.z = live.position.z
-      }
+      if (!vel || !pos) return
+      if (!Number.isFinite(vel.x) || !Number.isFinite(vel.y) || !Number.isFinite(vel.z)) return
+      if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return
 
       try {
         // Zombies face their target — inverting their yaw is cheaper and more reliable
