@@ -41,19 +41,30 @@ export function createAnthropicClient(config) {
   }
 
   /**
-   * Helper: build the cached system prefix array (system instructions, persona, tool descriptions).
-   * cache_control marker placed on the LAST block per D-18.
+   * Helper: build the cached system prefix array. cache_control marker stays on
+   * the LAST (tool) block per D-18. Block order (D-30/D-31/D-32):
+   *   1. system instructions
+   *   2. personaText + '\n' + learningLine   (D-32 line glued to persona)
+   *   3. capabilityParagraph                 (D-30)
+   *   4. primer                              (D-31)
+   *   5. tool list                           ← cache_control here
+   *
    * @param {string} systemInstructions
    * @param {string} personaText
+   * @param {string} capabilityParagraph
+   * @param {string} primer
+   * @param {string} learningLine
    * @param {{name:string,description:string,input_schema:object}[]} tools
    */
-  function buildCachedSystem(systemInstructions, personaText, tools) {
+  function buildCachedSystem(systemInstructions, personaText, capabilityParagraph, primer, learningLine, tools) {
     const toolBlock = tools.length
       ? `Available actions:\n` + tools.map(t => `- ${t.name}: ${t.description}`).join('\n')
       : 'No actions available.'
     return [
       { type: 'text', text: systemInstructions },
-      { type: 'text', text: personaText },
+      { type: 'text', text: `${personaText}\n${learningLine}` },
+      { type: 'text', text: capabilityParagraph },
+      { type: 'text', text: primer },
       { type: 'text', text: toolBlock, cache_control: { type: 'ephemeral' } },
     ]
   }
