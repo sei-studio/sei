@@ -5,8 +5,10 @@ import { createTokenBucket } from './rateLimiter.js'
 import { createDebouncer } from './debounce.js'
 import { createOllamaCircuit } from './circuit.js'
 import { createChainTracker } from './chains.js'
-import { renderPersona, capHitLine } from './persona.js'
+import { renderPersona, capHitLine, capabilityParagraph, minecraftPrimer, stillLearningLine } from './persona.js'
 import { buildAnthropicTools, buildOllamaTools } from './schemaBridge.js'
+import { composeSnapshot } from '../observers/snapshot.js'
+import { closeContainerSession } from '../behaviors/container.js'
 
 const SYSTEM_INSTRUCTIONS = [
   'You are the personality layer of a Minecraft companion bot.',
@@ -30,6 +32,7 @@ const ACTION_DESCRIPTIONS = {
   setGoals: 'Add or remove a goal from owner_goals or self_goals.',
   say: 'Speak the given text in in-game chat.',
   handOffToMovement: 'Hand off a natural-language movement/interaction intent to the movement layer.',
+  look: 'Refresh your world snapshot — call this when you suspect the world has changed since you last looked. Returns a fresh snapshot on the next turn.',
 }
 
 /**
@@ -76,6 +79,11 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
         required: ['list', 'op', 'goal'],
       },
     },
+    {
+      name: 'look',
+      description: ACTION_DESCRIPTIONS.look,
+      input_schema: { type: 'object', properties: {}, required: [] },
+    },
   ]
 
   // Movement registry tools (exclude setGoals — that's personality-only)
@@ -94,10 +102,17 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
     cachedSystemBlocks = anthropic.buildCachedSystem(
       SYSTEM_INSTRUCTIONS,
       renderPersona(config.persona),
+      capabilityParagraph(),
+      minecraftPrimer(),
+      stillLearningLine(),
       personalityTools
     )
   }
   rebuildPersonalitySystem()
+
+  // Last result string from any registry.execute() this orchestrator has performed.
+  // Fed back into the next personality turn via renderUserContext (D-35).
+  let lastActionResult = null
 
   // ─── Startup probe (D-13) — 3 retries × 2s ───
   async function probeOllamaWithRetry() {
@@ -167,7 +182,13 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
    * If absent, this is a fresh chain.
    */
   async function handleDispatch(event, data, signal) {
-    let chainId = data?._chainId && chains.continue(data._chainId) ? data._chainId : chains.begin(event)
+    const isContinuation = !!(data?._chainId && chains.continue(data._chainId))
+    let chainId = isContinuation ? data._chainId : chains.begin(event)
+    // Pitfall 6: at the start of every fresh chain, ensure no container session
+    // leaked from a prior chain. Idempotent + try/catch so cleanup never throws.
+    if (!isContinuation) {
+      try { await closeContainerSession() } catch {}
+    }
     let nextUser = renderUserContext(event, data, goals.snapshot())
 
     function bump() {
@@ -176,7 +197,7 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
     }
 
     try {
-      if (signal.aborted) return
+      if (signal.aborted) { try { await closeContainerSession() } catch {}; return }
       bump()  // personality hop
 
       const personalityResp = await callPersonality(nextUser, signal)
@@ -185,30 +206,53 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
       const sayCalls    = personalityResp.toolUses.filter(u => u.name === 'say')
       const goalCalls   = personalityResp.toolUses.filter(u => u.name === 'setGoals')
       const handoffCall = personalityResp.toolUses.find(u => u.name === 'handOffToMovement')
+      const lookCalls   = personalityResp.toolUses.filter(u => u.name === 'look')
 
       for (const c of sayCalls)  bot.chat(String(c.input?.text ?? '').slice(0, 256))
-      for (const c of goalCalls) await registry.execute('setGoals', c.input, bot, { ...config, _goalStore: goals })
+      for (const c of goalCalls) {
+        try {
+          const result = await registry.execute('setGoals', c.input, bot, { ...config, _goalStore: goals })
+          if (typeof result === 'string') lastActionResult = result
+          else if (result && typeof result.ok !== 'undefined') lastActionResult = `setGoals:${result.ok ? 'ok' : 'fail'}`
+        } catch (err) {
+          lastActionResult = 'setGoals error'
+          logger.warn(`[sei/orch] setGoals failed: ${err.message}`)
+        }
+      }
+
+      // look() is a no-op: snapshot is already recomposed on every personality
+      // call (renderUserContext), so receiving look() just signals "the LLM
+      // wants another think with fresh eyes". The chain tracker has already
+      // counted this personality hop. If look() is the ONLY tool emitted (no
+      // handoff), end the chain — the next event-driven dispatch will produce
+      // a fresh snapshot. Do not loop internally.
+      if (lookCalls.length > 0 && !handoffCall) {
+        lastActionResult = 'looked'
+      }
 
       if (!handoffCall) { chains.end(chainId); return }
 
-      if (signal.aborted) return
+      if (signal.aborted) { try { await closeContainerSession() } catch {}; chains.end(chainId); return }
       bump()  // movement hop
 
       const movement = await callMovement(String(handoffCall.input?.intent ?? ''), signal)
-      if (signal.aborted) return
+      if (signal.aborted) { try { await closeContainerSession() } catch {}; chains.end(chainId); return }
 
       // Dispatch movement tool_calls via Phase 1 registry. Tag completion events
       // with chainId so FSM-driven re-dispatches keep counting against THIS chain.
       for (const call of movement.toolCalls) {
-        if (signal.aborted) return
+        if (signal.aborted) { try { await closeContainerSession() } catch {}; chains.end(chainId); return }
         try {
-          await registry.execute(call.name, call.args, bot, {
+          const result = await registry.execute(call.name, call.args, bot, {
             ...config,
             _goalStore: goals,
             _chainId: chainId,
             signal,
           })
+          if (typeof result === 'string') lastActionResult = result
+          else if (result && typeof result.ok !== 'undefined') lastActionResult = `${call.name}:${result.ok ? 'ok' : 'fail'}`
         } catch (err) {
+          lastActionResult = `${call.name} error`
           logger.warn(`[sei/orch] action ${call.name} failed: ${err.message}`)
         }
       }
@@ -219,23 +263,39 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
       if (err instanceof HopCapHit) {
         logger.warn(`[sei/orch] hop cap hit (chain=${err.chainId}, hops=${err.hops}) on event ${event}`)
         try { bot.chat(capHitLine(config.persona)) } catch {}
+        try { await closeContainerSession() } catch {}
         chains.end(chainId)
         return
       }
-      if (err.name === 'AbortError' || signal.aborted) { chains.end(chainId); return }
+      if (err.name === 'AbortError' || signal.aborted) {
+        try { await closeContainerSession() } catch {}
+        chains.end(chainId)
+        return
+      }
       logger.error(`[sei/orch] dispatch error on ${event}: ${err.message}`)
+      try { await closeContainerSession() } catch {}
       chains.end(chainId)
     }
   }
 
+  // D-27: snapshot is injected into the USER message (after the cached system
+  // prefix breakpoint), so re-rendering it every personality turn does NOT
+  // invalidate the cached prefix. Snapshot is personality-only (D-28).
   function renderUserContext(event, data, goalsSnapshot) {
-    const lines = [
+    let snapshot = ''
+    try {
+      snapshot = composeSnapshot(bot, { goals: goalsSnapshot, lastActionResult })
+    } catch (err) {
+      logger.warn(`[sei/orch] composeSnapshot failed: ${err.message}`)
+      snapshot = '(snapshot unavailable)'
+    }
+    return [
+      'World snapshot:',
+      snapshot,
+      '',
       `Event: ${event}`,
       `Data: ${JSON.stringify(data ?? {})}`,
-      `owner_goals: ${JSON.stringify(goalsSnapshot.owner_goals)}`,
-      `self_goals:  ${JSON.stringify(goalsSnapshot.self_goals)}`,
-    ]
-    return lines.join('\n')
+    ].join('\n')
   }
 
   return {
