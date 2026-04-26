@@ -8,7 +8,7 @@
 
 - [x] **Phase 1: Bot Substrate** - Mineflayer connection, action registry, FSM, and scripted reflex behavior (no LLMs yet)
 - [x] **Phase 2: Two-Layer LLM Loop** - Personality LLM (Haiku 3) + movement LLM (Ollama Qwen) wired into the FSM with guardrails
-- [ ] **Phase 2.1: Expand Actions & Game State (INSERTED)** - Broaden Zod action registry beyond goTo/setGoals and surface inventory/surroundings/position to the personality LLM as text so Sei can actually play
+- [x] **Phase 2.1: Expand Actions & Game State (INSERTED)** - Broaden Zod action registry beyond goTo/setGoals and surface inventory/surroundings/position to the personality LLM as text so Sei can actually play
 - [ ] **Phase 3: Memory & Persistence** - SQLite-backed identity, owner relationship, world progression, and LLM-directed compaction
 - [ ] **Phase 4: Electron GUI & Packaging** - Setup form, Start/Stop, live log viewer, and bundled .dmg/.exe distribution
 
@@ -66,9 +66,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 2.1-01-PLAN.md — Observers, snapshot composer, targeting resolver, cached-prefix extension (capability/primer/learning)
-- [ ] 2.1-02-PLAN.md — 12 tier-1 action handlers (dig/place/equip/attack/consume/lookAt/drop/activate/sleep + container trio) registered in createDefaultRegistry
-- [ ] 2.1-03-PLAN.md — Wire snapshot+cached-prefix+look()+container cleanup into orchestrator; adversarial verification harness
+- [x] 2.1-01-PLAN.md — Observers, snapshot composer, targeting resolver, cached-prefix extension (capability/primer/learning)
+- [x] 2.1-02-PLAN.md — 12 tier-1 action handlers (dig/place/equip/attack/consume/lookAt/drop/activate/sleep + container trio) registered in createDefaultRegistry
+- [x] 2.1-03-PLAN.md — Wire snapshot+cached-prefix+look()+container cleanup into orchestrator; adversarial verification harness
 **Conflict review**: Checked against Phase 3 (Memory) and Phase 4 (GUI). No conflict — Phase 3 still owns SQLite persistence and LLM-directed compaction; this phase only adds in-context observations. Phase 4 unaffected.
 
 ### Phase 3: Memory & Persistence
@@ -102,6 +102,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Bot Substrate | 3/3 | Complete | 2026-04-24 |
 | 2. Two-Layer LLM Loop | 3/3 | Complete | 2026-04-25 |
+| 2.1. Expand Actions & Game State | 3/3 | Complete | 2026-04-25 |
 | 3. Memory & Persistence | 0/0 | Not started | - |
 | 4. Electron GUI & Packaging | 0/0 | Not started | - |
 
@@ -112,4 +113,4 @@ Plans:
 - Orphans: 0
 
 ---
-*Last updated: 2026-04-25 — Phase 2 complete (all 3 plans).*
+*Last updated: 2026-04-25 — Phase 2.1 complete (all 3 plans, verifier 31/31, no Phase 2 regression).*

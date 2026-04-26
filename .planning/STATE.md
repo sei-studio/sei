@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-04-25T23:30:00.000Z"
+last_updated: "2026-04-25T23:59:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
   percent: 100
 ---
 
@@ -17,32 +17,33 @@ progress:
 ## Project Reference
 
 - **Core Value:** A Minecraft companion that feels like a real character — it remembers you, reacts to the world, and acts with personality, not like a scripted bot.
-- **Current Focus:** Phase 2.1 — Expand Actions & Game State (INSERTED, urgent) before Phase 3
+- **Current Focus:** Phase 3 — Memory & Persistence (next)
 
 ## Current Position
 
-Phase: 02 (two-layer-llm-loop) — COMPLETE (3/3 plans)
-Next: Phase 3 — Memory & Persistence (or insert Phase 2.5 for action-registry expansion first)
+Phase: 2.1 (expand-actions-and-game-state) — COMPLETE (3/3 plans, verifier 31/31, no Phase 2 regression)
+Next: Phase 3 — Memory & Persistence
 
-- **Phase:** 3 — Memory & Persistence (next), or Phase 2.5 (action-registry expansion) if inserted
-- **Plan:** Phase 2 complete (02-01, 02-02, 02-03 all done)
-- **Status:** Phase 2 complete; awaiting Phase 2.5 insertion or Phase 3 kickoff
-- **Progress:** Phases 2/4 complete
-- **Next action:** `/gsd-insert-phase 2.5` to plan action-registry expansion (mining, inventory, follow-gating), OR `/gsd-discuss-phase 3` to begin memory work directly.
+- **Phase:** 3 — Memory & Persistence
+- **Plan:** Phase 2.1 complete (2.1-01, 2.1-02, 2.1-03 all done)
+- **Status:** Phase 2.1 complete; ready for Phase 3 kickoff
+- **Progress:** Phases 3/4 complete (incl. 2.1)
+- **Next action:** `/gsd-verify-work 2.1` to formally verify, then `/gsd-discuss-phase 3` to begin memory work.
 
 ```
-[DONE] Phase 1  Bot Substrate
-[DONE] Phase 2  Two-Layer LLM Loop
-[____] Phase 3  Memory & Persistence    ← next (or insert 2.5 first)
-[____] Phase 4  Electron GUI & Packaging
+[DONE] Phase 1    Bot Substrate
+[DONE] Phase 2    Two-Layer LLM Loop
+[DONE] Phase 2.1  Expand Actions & Game State
+[____] Phase 3    Memory & Persistence    ← next
+[____] Phase 4    Electron GUI & Packaging
 ```
 
 ## Performance Metrics
 
 - Requirements coverage: 36/36 (100%)
 - Phases defined: 4
-- Plans executed: 6
-- Phases complete: 2
+- Plans executed: 9
+- Phases complete: 3 (incl. 2.1)
 
 ## Accumulated Context
 
