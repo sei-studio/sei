@@ -82,10 +82,16 @@ Next: Phase 3 — Memory & Persistence
 
 - None
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260429-nyx | API-only fallback → single combined Haiku call + leading-edge attack throttle | 2026-04-30 | 6468a3e | [260429-nyx-update-api-only-fallback-to-single-combi](./quick/260429-nyx-update-api-only-fallback-to-single-combi/) |
+
 ## Session Continuity
 
-- **Last action:** Gathered context for Phase 2.1 (Expand Actions & Game State). 16 decisions locked (D-22..D-37) covering action set, targeting model, observation snapshot, capability overview, movement-LLM contract, failure feedback, and the "still learning, asks the human" persona trait. CONTEXT.md + DISCUSSION-LOG.md written and committed.
+- **Last action:** Quick task 260429-nyx — collapsed API-only fallback into one Haiku call (combined personality+movement tools) and replaced trailing-edge attack debounce with leading-edge throttle so the first hit reacts immediately while rapid follow-ups within 500ms are coalesced.
 - **Next action:** `/gsd-plan-phase 2.1` to research and plan the phase.
 
 ---
-*Last updated: 2026-04-25 — Phase 2.1 context gathered.*
+*Last updated: 2026-04-30 — quick task 260429-nyx completed.*
