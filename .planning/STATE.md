@@ -87,11 +87,12 @@ Next: Phase 3 — Memory & Persistence
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260429-nyx | API-only fallback → single combined Haiku call + leading-edge attack throttle | 2026-04-30 | 6468a3e | [260429-nyx-update-api-only-fallback-to-single-combi](./quick/260429-nyx-update-api-only-fallback-to-single-combi/) |
+| 260429-ons | in_flight snapshot field + follow gates on action lifecycle + owner-chat preempts in-flight work + tighter action error strings + one-movement-type-per-turn rule | 2026-04-30 | 697f9a9 | [260429-ons-in-flight-snapshot-field-action-lifecycl](./quick/260429-ons-in-flight-snapshot-field-action-lifecycl/) |
 
 ## Session Continuity
 
-- **Last action:** Quick task 260429-nyx — collapsed API-only fallback into one Haiku call (combined personality+movement tools) and replaced trailing-edge attack debounce with leading-edge throttle so the first hit reacts immediately while rapid follow-ups within 500ms are coalesced.
+- **Last action:** Quick task 260429-ons — added inflight tracker so the snapshot shows `in_flight: <action>` while async work runs, rewired follow to yield for the action lifecycle (not the dispatch lifecycle), promoted owner chat to P0 to preempt in-flight movement, and replaced catch-all action error strings with self-diagnostic ones (e.g. `out of range (5.7m, need ≤4.5)` instead of bare `cannot dig`).
 - **Next action:** `/gsd-plan-phase 2.1` to research and plan the phase.
 
 ---
-*Last updated: 2026-04-30 — quick task 260429-nyx completed.*
+*Last updated: 2026-04-30 — quick task 260429-ons completed.*
