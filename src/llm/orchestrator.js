@@ -2,13 +2,15 @@ import { createAnthropicClient } from './anthropicClient.js'
 import { createOllamaClient } from './ollamaClient.js'
 import { createGoalStore } from './goals.js'
 import { createTokenBucket } from './rateLimiter.js'
-import { createDebouncer } from './debounce.js'
+import { createDebouncer, createThrottle } from './debounce.js'
 import { createOllamaCircuit } from './circuit.js'
 import { createChainTracker } from './chains.js'
 import { renderPersona, capHitLine, capabilityParagraph, minecraftPrimer, stillLearningLine } from './persona.js'
 import { buildAnthropicTools, buildOllamaTools } from './schemaBridge.js'
 import { composeSnapshot } from '../observers/snapshot.js'
 import { closeContainerSession } from '../behaviors/container.js'
+import { pauseFollow } from '../behaviors/follow.js'
+import { logChatOut, logActionResult } from '../log.js'
 
 const SYSTEM_INSTRUCTIONS = [
   'You are the personality layer of a Minecraft companion bot.',
@@ -25,6 +27,19 @@ const MOVEMENT_SYSTEM = [
   'You translate natural-language intent into one or more registered action calls.',
   'You ONLY emit tool_calls — no prose. Pick the action(s) that best fulfill the intent.',
   'If the intent is unclear or no action fits, emit no tool_calls.',
+].join('\n')
+
+// Single-call fallback (executor=api or Ollama tripped). Combines personality
+// reasoning and movement dispatch into one Haiku turn so we pay one API
+// round-trip instead of two. handOffToMovement is omitted — there is no
+// second layer to hand off to.
+const COMBINED_SYSTEM = [
+  'You are a Minecraft companion bot. You react to chat, world events, and idle ticks.',
+  'You decide WHAT to do at a high level AND directly invoke the body actions to do it — there is no separate movement layer in this mode.',
+  'In a single response you may: speak in chat (`say`), set goals (`setGoals`), refresh your snapshot (`look`), and/or invoke any movement action (e.g. `goTo`, `dig`, `attack`, `follow`, `equip`, `place`, `consume`, `sleep`, etc.).',
+  'Pick the smallest set of tool calls that fulfils the situation. Never describe coordinates or action names in prose; just call the tools.',
+  'If you have owner_goals, prioritize progressing them. Otherwise pick a self_goal or freely play.',
+  'Keep any internal reasoning under 3 sentences.',
 ].join('\n')
 
 const ACTION_DESCRIPTIONS = {
@@ -52,6 +67,9 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
     refillPerMin: config.llm.rate_limit_per_min,
   })
   const ingressDebouncer = createDebouncer(config.llm.debounce_ms)
+  // Leading-edge throttle for interruptive events (e.g. attack bursts) — first
+  // hit fires immediately; rapid follow-ups within debounce_ms are suppressed.
+  const ingressThrottle = createThrottle(config.llm.debounce_ms)
   const chains = createChainTracker({ maxHops: config.llm.max_hops })
 
   // Personality-only tools: setGoals, say, handOffToMovement
@@ -97,7 +115,22 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
       : buildOllamaTools(subRegistry, ACTION_DESCRIPTIONS)
   }
 
+  // Combined tools = personality tools (minus handOffToMovement, useless in
+  // single-call mode) + movement registry tools (minus setGoals, which is
+  // already on the personality side).
+  function combinedToolsFor() {
+    const movementTools = movementToolsFor('anthropic')
+    const personalityForCombined = personalityTools.filter(t => t.name !== 'handOffToMovement')
+    const seen = new Set(personalityForCombined.map(t => t.name))
+    const merged = [...personalityForCombined]
+    for (const t of movementTools) {
+      if (!seen.has(t.name)) { merged.push(t); seen.add(t.name) }
+    }
+    return merged
+  }
+
   let cachedSystemBlocks = null
+  let cachedCombinedSystemBlocks = null
   function rebuildPersonalitySystem() {
     cachedSystemBlocks = anthropic.buildCachedSystem(
       SYSTEM_INSTRUCTIONS,
@@ -106,6 +139,14 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
       minecraftPrimer(),
       stillLearningLine(),
       personalityTools
+    )
+    cachedCombinedSystemBlocks = anthropic.buildCachedSystem(
+      COMBINED_SYSTEM,
+      renderPersona(config.persona),
+      capabilityParagraph(),
+      minecraftPrimer(),
+      stillLearningLine(),
+      combinedToolsFor()
     )
   }
   rebuildPersonalitySystem()
@@ -124,6 +165,11 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
   }
 
   async function start() {
+    if (config.llm.executor === 'api') {
+      circuit.trip('forced api-only via config.llm.executor')
+      logger.info('[sei/orch] Forced API-only mode — Haiku-as-executor for both layers; skipping Ollama probe.')
+      return
+    }
     const ok = await probeOllamaWithRetry()
     if (!ok) {
       circuit.trip('startup probe failed')
@@ -174,6 +220,23 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
     })
   }
 
+  // ─── Combined personality+movement call (single-Haiku fallback) ───
+  // Used when the Ollama circuit is open (executor=api or tripped). Issues
+  // ONE Anthropic call; the model can emit say/setGoals/look AND movement
+  // actions (goTo/dig/attack/...) in the same response. Halves API latency.
+  async function callCombined(userBlock, signal) {
+    if (!personalityBucket.tryAcquire()) {
+      logger.warn('[sei/orch] Rate limit hit — dropping combined call')
+      return null
+    }
+    return await anthropic.call({
+      systemBlocks: cachedCombinedSystemBlocks,
+      tools: combinedToolsFor(),
+      messages: [{ role: 'user', content: userBlock }],
+      signal,
+    })
+  }
+
   // ─── Main dispatch loop (LLM-04 hop cap, LLM-07 abort propagation) ───
   /**
    * Single entry point. Wave 3 wires this to the FSM `sei:dispatch` event.
@@ -189,6 +252,9 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
     if (!isContinuation) {
       try { await closeContainerSession() } catch {}
     }
+    // Pause follow while a chain is in flight so its 1s tick doesn't clobber
+    // pathfinding goals set by movement actions (dig pickup walk, attack chase, etc.).
+    pauseFollow(true)
     let nextUser = renderUserContext(event, data, goals.snapshot())
 
     function bump() {
@@ -200,6 +266,64 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
       if (signal.aborted) { try { await closeContainerSession() } catch {}; return }
       bump()  // personality hop
 
+      // ── Single-call combined fallback path ──
+      // When Ollama is unavailable (executor=api or circuit tripped), one
+      // Haiku call emits personality AND movement tool_calls together.
+      if (circuit.isOpen()) {
+        const resp = await callCombined(nextUser, signal)
+        if (!resp) { chains.end(chainId); return }
+
+        const sayCalls    = resp.toolUses.filter(u => u.name === 'say')
+        const goalCalls   = resp.toolUses.filter(u => u.name === 'setGoals')
+        const lookCalls   = resp.toolUses.filter(u => u.name === 'look')
+        // Movement actions = anything not personality and not the no-op handoff.
+        const reservedNames = new Set(['say', 'setGoals', 'look', 'handOffToMovement'])
+        const movementCalls = resp.toolUses.filter(u => !reservedNames.has(u.name))
+
+        for (const c of sayCalls) {
+          const line = String(c.input?.text ?? '').slice(0, 256)
+          logChatOut(line)
+          bot.chat(line)
+        }
+        for (const c of goalCalls) {
+          try {
+            const result = await registry.execute('setGoals', c.input, bot, { ...config, _goalStore: goals })
+            if (typeof result === 'string') lastActionResult = result
+            else if (result && typeof result.ok !== 'undefined') lastActionResult = `setGoals:${result.ok ? 'ok' : 'fail'}`
+          } catch (err) {
+            lastActionResult = 'setGoals error'
+            logger.warn(`[sei/orch] setGoals failed: ${err.message}`)
+          }
+        }
+        if (lookCalls.length > 0 && movementCalls.length === 0) {
+          lastActionResult = 'looked'
+        }
+
+        if (movementCalls.length === 0) { chains.end(chainId); return }
+
+        for (const call of movementCalls) {
+          if (signal.aborted) { try { await closeContainerSession() } catch {}; chains.end(chainId); return }
+          try {
+            const result = await registry.execute(call.name, call.input, bot, {
+              ...config,
+              _goalStore: goals,
+              _chainId: chainId,
+              signal,
+            })
+            if (typeof result === 'string') lastActionResult = result
+            else if (result && typeof result.ok !== 'undefined') lastActionResult = `${call.name}:${result.ok ? 'ok' : 'fail'}`
+            logActionResult(call.name, result)
+          } catch (err) {
+            lastActionResult = `${call.name} error`
+            logActionResult(call.name, `error: ${err.message}`)
+            logger.warn(`[sei/orch] action ${call.name} failed: ${err.message}`)
+          }
+        }
+        // Do NOT end(chainId) here: completion events may continue this chain.
+        return
+      }
+
+      // ── Two-call path (Ollama healthy): personality then movement ──
       const personalityResp = await callPersonality(nextUser, signal)
       if (!personalityResp) { chains.end(chainId); return }
 
@@ -208,7 +332,11 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
       const handoffCall = personalityResp.toolUses.find(u => u.name === 'handOffToMovement')
       const lookCalls   = personalityResp.toolUses.filter(u => u.name === 'look')
 
-      for (const c of sayCalls)  bot.chat(String(c.input?.text ?? '').slice(0, 256))
+      for (const c of sayCalls) {
+        const line = String(c.input?.text ?? '').slice(0, 256)
+        logChatOut(line)
+        bot.chat(line)
+      }
       for (const c of goalCalls) {
         try {
           const result = await registry.execute('setGoals', c.input, bot, { ...config, _goalStore: goals })
@@ -251,8 +379,10 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
           })
           if (typeof result === 'string') lastActionResult = result
           else if (result && typeof result.ok !== 'undefined') lastActionResult = `${call.name}:${result.ok ? 'ok' : 'fail'}`
+          logActionResult(call.name, result)
         } catch (err) {
           lastActionResult = `${call.name} error`
+          logActionResult(call.name, `error: ${err.message}`)
           logger.warn(`[sei/orch] action ${call.name} failed: ${err.message}`)
         }
       }
@@ -275,6 +405,8 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
       logger.error(`[sei/orch] dispatch error on ${event}: ${err.message}`)
       try { await closeContainerSession() } catch {}
       chains.end(chainId)
+    } finally {
+      pauseFollow(false)
     }
   }
 
@@ -304,7 +436,8 @@ export function createOrchestrator({ bot, config, registry, logger = console }) 
     get executorStatus() { return circuit.state },
     goals,
     debouncer: ingressDebouncer,
-    _internal: { circuit, personalityBucket, callPersonality, callMovement, chains },
+    throttle: ingressThrottle,
+    _internal: { circuit, personalityBucket, callPersonality, callMovement, callCombined, chains },
   }
 }
 
