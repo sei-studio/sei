@@ -70,8 +70,12 @@ export function startCombat(bot, config) {
     if (!target) return
 
     const attackedPayload = { attacker: target }
-    if (bot._seiDebouncer) {
-      bot._seiDebouncer.debounce(`attacked:${target?.username ?? 'unknown'}`, attackedPayload, (p) => bot.emit('sei:attacked', p))
+    // Leading-edge throttle: react to the FIRST hit immediately; suppress
+    // rapid follow-ups within the throttle window so a burst of entityHurt
+    // events triggers exactly one LLM dispatch (and that dispatch happens
+    // on the first hit, not after a 500ms quiet period).
+    if (bot._seiAttackThrottle) {
+      bot._seiAttackThrottle.throttle(`attacked:${target?.username ?? 'unknown'}`, attackedPayload, (p) => bot.emit('sei:attacked', p))
     } else {
       bot.emit('sei:attacked', attackedPayload)
     }

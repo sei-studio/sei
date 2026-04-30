@@ -1,6 +1,7 @@
 import { createBot } from 'mineflayer'
 import { pathfinder } from 'mineflayer-pathfinder'
 import { startFollow, stopFollow } from './behaviors/follow.js'
+import { startPosHealer, stopPosHealer } from './observers/posHealer.js'
 import { startChat } from './behaviors/chat.js'
 import { startAutoEat } from './behaviors/autoEat.js'
 import { startCombat } from './behaviors/combat.js'
@@ -69,6 +70,7 @@ function createBotInstance(config) {
     if (!_spawned) {
       _spawned = true
       bot.loadPlugin(pathfinder)
+      startPosHealer(bot)
       startAutoEat(bot)
       startCombat(bot, config)
       startChat(bot, config)
@@ -78,6 +80,7 @@ function createBotInstance(config) {
       const orchestrator = createOrchestrator({ bot, config, registry, logger: { info: (m) => logStatus(m), warn: (m) => logStatus(m), error: (m) => logStatus(m) } })
       bot.on('sei:dispatch', ({ event, data, signal }) => { orchestrator.handleDispatch(event, data, signal) })
       bot._seiDebouncer = orchestrator.debouncer
+      bot._seiAttackThrottle = orchestrator.throttle
       orchestrator.start().catch(err => logStatus(`Orchestrator start failed: ${err.message}`))
       logStatus(`Sei online. Executor: ${orchestrator.executorStatus}`)
     } else {
@@ -101,6 +104,7 @@ function createBotInstance(config) {
 
   bot.on('end', (reason) => {
     stopFollow()
+    stopPosHealer()
     logStatus(`Disconnected: ${humanizeReason(reason)}`)
     _bot = null
     if (!_stopped) {
