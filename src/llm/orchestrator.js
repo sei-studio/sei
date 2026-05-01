@@ -433,12 +433,17 @@ function maybeWarnByteCap(loop, warned) {
       if (sessionState) {
         try {
           const messagesByteSize = JSON.stringify(loop._internal.messages).length
-          await sessionState.onLoopTerminal({ messagesByteSize })
+          // Plan 3-03: pass the canonical Loop.messages array so sessionState
+          // can accumulate the loop-batch and hand it to compactor.summarizeLoopBatch
+          // when the D-51 cadence is satisfied.
+          await sessionState.onLoopTerminal({
+            messagesByteSize,
+            loopMessages: loop._internal.messages,
+          })
         } catch (err) {
           logger.warn?.(`[sei/orch] sessionState.onLoopTerminal failed: ${err.message}`)
         }
       }
-      // PHASE 3-03: compaction call lands here, after sessionState.onLoopTerminal.
     } catch (err) {
       logger.error?.(`[sei/orch] loop error (id=${loop.id}): ${err && err.message}`)
     } finally {
@@ -746,6 +751,11 @@ function maybeWarnByteCap(loop, warned) {
       // verifier can prove OWNER/DIARY content does not leak into them.
       getCachedSystemBlocks: () => cachedSystemBlocks,
       getCachedCombinedSystemBlocks: () => cachedCombinedSystemBlocks,
+      // Plan 3-03: bot.js reads these to construct the compactor with the
+      // SAME anthropic client + cachedSystemBlocks reference (Pitfall 4
+      // cache hit guarantee — cache_control marker stays valid).
+      get anthropic() { return anthropic },
+      get cachedSystemBlocks() { return cachedSystemBlocks },
     },
   }
 }

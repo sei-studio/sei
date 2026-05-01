@@ -34,11 +34,14 @@ import { loadOwner, saveOwner } from '../memory/owner.js'
  * @param {Object} opts
  * @param {string} opts.ownerMdPath
  * @param {Object} opts.diary  — Diary instance from createDiary()
+ * @param {Object} [opts.compactor] — Plan 3-03 compactor
+ *   ({ summarizeLoopBatch, consolidateOlderHalf }). Optional — when omitted,
+ *   onLoopTerminal / onPlayerLeft only update counters (Plan 3-02 behavior).
  * @param {Object} opts.config
  * @param {Object} opts.bot    — mineflayer bot (or stub with players, on/once)
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [opts.logger]
  */
-export async function createSessionState({ ownerMdPath, diary, config, bot, logger = console } = {}) {
+export async function createSessionState({ ownerMdPath, diary, compactor: initialCompactor = null, config, bot, logger = console } = {}) {
   if (!ownerMdPath) throw new Error('createSessionState: ownerMdPath required')
   if (!diary) throw new Error('createSessionState: diary required')
   if (!config) throw new Error('createSessionState: config required')
@@ -50,6 +53,17 @@ export async function createSessionState({ ownerMdPath, diary, config, bot, logg
   let cumulativeLoopBytes = 0
   let sessionsSinceConsolidation = 0
   let onSpawnLatePlayerListener = null
+  // Plan 3-03: compactor binding. May be set at construction (tests) or
+  // injected later via setCompactor(...) — bot.js needs the orchestrator's
+  // cachedSystemBlocks before it can construct the compactor, so the bot.js
+  // wiring path uses the setter.
+  let compactor = initialCompactor
+  // Plan 3-03: accumulate Loop.messages arrays since the last DIARY write.
+  // Flushed (and reset) on a successful summarizeLoopBatch.
+  let loopBatchMessages = []
+  // Pitfall 6 / Pitfall 7: single-flight gate for async consolidation —
+  // prevents two consolidation passes from racing on DIARY.md.
+  let consolidationLock = false
 
   const ownerUsername = config.owner_username
   const settleDelayMs = config.memory?.spawn_settle_delay_ms ?? 500
@@ -116,6 +130,45 @@ export async function createSessionState({ ownerMdPath, diary, config, bot, logg
   async function onPlayerLeft(player) {
     if (!player || !player.uuid) return
     if (player.uuid !== activeOwnerUuid) return
+
+    // D-56 session-end flush: if there are any pending uncompacted loops in
+    // the current session, fire one summarizeLoopBatch for the residual
+    // batch BEFORE we tear down the session. Awaited (not fire-and-forget)
+    // so the summary lands before counters reset.
+    if (compactor && (loopCount > 0 || cumulativeLoopBytes > 0)) {
+      try {
+        const result = await compactor.summarizeLoopBatch({
+          loopMessagesBatch: loopBatchMessages.flat(),
+          when: new Date(),
+        })
+        if (result) {
+          loopCount = 0
+          cumulativeLoopBytes = 0
+          loopBatchMessages = []
+        } else {
+          logger.warn?.('[sei/session] session-end flush: summary failed; leaving batch for next session')
+        }
+      } catch (err) {
+        logger.warn?.(`[sei/session] session-end flush failed: ${err.message}`)
+      }
+    }
+
+    // D-53 session-count consolidation trigger. Async fire-and-forget — we
+    // intentionally do NOT await so onPlayerLeft remains non-blocking even
+    // when the Anthropic call takes seconds.
+    if (
+      compactor &&
+      sessionsSinceConsolidation >= (config.memory?.sessions_per_consolidation ?? Infinity) &&
+      !consolidationLock
+    ) {
+      consolidationLock = true
+      compactor.consolidateOlderHalf({})
+        .then(success => { if (success) sessionsSinceConsolidation = 0 })
+        .catch(err => logger.warn?.(`[sei/session] consolidation rejected: ${err.message}`))
+        .finally(() => { consolidationLock = false })
+      // intentionally NOT awaited — fire-and-forget per D-53
+    }
+
     const now = new Date().toISOString()
     ownerData = { ...ownerData, last_seen: now }
     try { await saveOwner(ownerMdPath, ownerData) }
@@ -124,7 +177,7 @@ export async function createSessionState({ ownerMdPath, diary, config, bot, logg
     activeOwnerUuid = null
     loopCount = 0
     cumulativeLoopBytes = 0
-    // Plan 3-03 will hook here for the final flush of any uncompacted entries.
+    loopBatchMessages = []
   }
 
   function findOwnerInPlayers() {
@@ -163,12 +216,53 @@ export async function createSessionState({ ownerMdPath, diary, config, bot, logg
     })
   }
 
-  async function onLoopTerminal({ messagesByteSize } = {}) {
+  async function onLoopTerminal({ messagesByteSize, loopMessages } = {}) {
     loopCount += 1
     if (Number.isFinite(messagesByteSize)) cumulativeLoopBytes += messagesByteSize
+    if (Array.isArray(loopMessages)) loopBatchMessages.push(loopMessages)
     logger.info?.(`[sei/session] loop terminal loop_count=${loopCount} cumulative_bytes=${cumulativeLoopBytes}`)
-    // Plan 3-03 will subscribe here for the per-loop-batch summary trigger.
-    // Plan 3-02 maintains counters only — no disk writes from this hook.
+
+    if (compactor) {
+      // D-51: per-loop-batch summary trigger. Fires when EITHER the loop
+      // count cap is hit OR the accumulated bytes cap is hit.
+      const loopCap  = config.memory?.loop_batch_loop_count_cap  ?? Infinity
+      const bytesCap = config.memory?.loop_batch_context_cap_bytes ?? Infinity
+      if (loopCount >= loopCap || cumulativeLoopBytes >= bytesCap) {
+        try {
+          const result = await compactor.summarizeLoopBatch({
+            loopMessagesBatch: loopBatchMessages.flat(),
+            when: new Date(),
+          })
+          if (result) {
+            // Successful DIARY write — reset counters.
+            loopCount = 0
+            cumulativeLoopBytes = 0
+            loopBatchMessages = []
+          } else {
+            // Pitfall: leave the batch intact for retry on next loop-terminal
+            // (T-03-17 documented decision — failed summary doesn't lose data).
+            logger.warn?.('[sei/session] loop-batch summary failed; leaving batch for retry')
+          }
+        } catch (err) {
+          logger.warn?.(`[sei/session] loop-batch summary threw: ${err.message}`)
+        }
+      }
+
+      // D-53 size-pressure consolidation trigger (independent of session
+      // count). Async fire-and-forget — single-flight via consolidationLock.
+      if (!consolidationLock) {
+        let diarySize = 0
+        try { diarySize = await diary.getFileSizeBytes() } catch {}
+        const sizeCap = config.memory?.diary_size_cap_bytes ?? Infinity
+        if (diarySize > sizeCap) {
+          consolidationLock = true
+          compactor.consolidateOlderHalf({})
+            .catch(err => logger.warn?.(`[sei/session] consolidation rejected: ${err.message}`))
+            .finally(() => { consolidationLock = false })
+          // intentionally NOT awaited — fire-and-forget per D-53
+        }
+      }
+    }
   }
 
   function ownerPresent() { return activeOwnerUuid != null }
@@ -195,6 +289,8 @@ export async function createSessionState({ ownerMdPath, diary, config, bot, logg
     cumulativeLoopBytes = 0
   }
 
+  function setCompactor(c) { compactor = c }
+
   return {
     onPlayerJoined,
     onPlayerLeft,
@@ -204,6 +300,7 @@ export async function createSessionState({ ownerMdPath, diary, config, bot, logg
     currentSessionLoopBatch,
     ownerData: ownerDataSnapshot,
     resetLoopBatchCounters,
+    setCompactor,
     _internal: {
       get ownerData() { return ownerData },
       get activeOwnerUuid() { return activeOwnerUuid },

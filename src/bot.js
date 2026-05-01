@@ -9,6 +9,7 @@ import { createDefaultRegistry } from './registry.js'
 import { createFSM } from './fsm.js'
 import { createOrchestrator } from './llm/orchestrator.js'
 import { createSessionState } from './llm/sessionState.js'
+import { createCompactor } from './llm/compaction.js'
 import { createDiary } from './memory/diary.js'
 import { loadOwner, saveOwner, formatOwnerSeedBlock } from './memory/owner.js'
 
@@ -113,6 +114,17 @@ function createBotInstance(config) {
             bot, config, registry, logger,
             sessionState, ownerStore, diary,
           })
+          // Plan 3-03: compactor reuses the SAME cachedSystemBlocks reference
+          // the orchestrator uses for personality calls (Pitfall 4 — cache
+          // hit guarantee, ~zero marginal prefix cost on compaction calls).
+          const compactor = createCompactor({
+            anthropic: orchestrator._internal.anthropic,
+            cachedSystemBlocks: orchestrator._internal.cachedSystemBlocks,
+            diary,
+            config,
+            logger,
+          })
+          sessionState.setCompactor(compactor)
           bot.on('sei:dispatch', ({ event, data, signal }) => { orchestrator.handleDispatch(event, data, signal) })
           bot._seiDebouncer = orchestrator.debouncer
           bot._seiAttackThrottle = orchestrator.throttle
