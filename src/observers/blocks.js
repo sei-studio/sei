@@ -1,5 +1,6 @@
 // src/observers/blocks.js — pure function of bot state
 import mcDataLib from 'minecraft-data'
+import { getHealedPos } from './posHealer.js'
 
 const COLORS = ['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black']
 const WOODS = ['oak', 'birch', 'spruce', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry']
@@ -47,13 +48,16 @@ export function nearbyBlocks(bot, opts = {}) {
     matching = (b) => isInteresting(b.name)
   }
 
-  // Render slice
-  const found = bot.findBlocks({ matching, maxDistance: radius, count })
-  // Higher-cap probe to compute "+K more"
-  const probe = bot.findBlocks({ matching, maxDistance: radius, count: count + 32 })
-  const more = Math.max(0, probe.length - found.length)
+  // Use healed position as scan origin so a transient NaN in bot.entity.position
+  // (knockback poisoning, see posHealer.js) doesn't blank out the snapshot.
+  const origin = getHealedPos(bot) ?? bot.entity?.position
+  const point = origin && Number.isFinite(origin.x) ? origin : undefined
 
-  const origin = bot.entity?.position
+  // Render slice
+  const found = bot.findBlocks({ matching, maxDistance: radius, count, point })
+  // Higher-cap probe to compute "+K more"
+  const probe = bot.findBlocks({ matching, maxDistance: radius, count: count + 32, point })
+  const more = Math.max(0, probe.length - found.length)
   const positions = found.map(p => {
     const blk = bot.blockAt(p)
     return {

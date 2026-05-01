@@ -31,6 +31,9 @@ export const ConfigSchema = z.object({
     debounce_ms: z.number().int().min(0).default(500),
     max_hops: z.number().int().min(1).default(5),
     idle_fallback_ms: z.number().int().min(1000).default(10_000),
+    // 'auto' = probe Ollama and use it; fall back to Haiku on failure (D-13/D-14).
+    // 'api'  = force Haiku-as-executor for both layers; skip the Ollama probe entirely.
+    executor: z.enum(['auto', 'api']).default('auto'),
   }).default({}),
 })
 

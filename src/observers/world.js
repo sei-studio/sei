@@ -1,14 +1,16 @@
 // src/observers/world.js — pure function of bot state
+import { getHealedPos } from './posHealer.js'
+
 /**
  * @param {import('mineflayer').Bot} bot
  * @returns {{ pos:{x:number,y:number,z:number}, biome:string, time:{isDay:boolean,timeOfDay:number} }}
  */
 export function world(bot) {
-  const p = bot.entity?.position ?? { x: 0, y: 0, z: 0 }
+  const p = getHealedPos(bot) ?? bot.entity?.position ?? { x: 0, y: 0, z: 0 }
   const pos = {
-    x: Math.round(p.x),
-    y: Math.round(p.y),
-    z: Math.round(p.z),
+    x: Number.isFinite(p.x) ? Math.round(p.x) : 0,
+    y: Number.isFinite(p.y) ? Math.round(p.y) : 0,
+    z: Number.isFinite(p.z) ? Math.round(p.z) : 0,
   }
   let biome = 'unknown'
   try {

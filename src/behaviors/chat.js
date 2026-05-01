@@ -3,10 +3,13 @@
  * In Phase 1, response is a scripted acknowledgement.
  * Phase 2 will replace the response body with LLM-generated text.
  */
+import { logChatIn } from '../log.js'
+
 export function startChat(bot, config) {
   bot.on('chat', (username, message) => {
     // Ignore own messages
     if (username === bot.username) return
+    logChatIn(username, message)
 
     const ownerSpoke = username === config.owner_username
     const addressed = message.toLowerCase().includes(bot.username.toLowerCase())

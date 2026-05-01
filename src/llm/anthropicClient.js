@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { logHaikuQuery, logHaikuResponse } from '../log.js'
 
 /**
  * @param {{anthropic:{api_key:string,model:string,timeout_ms:number}}} config
@@ -20,6 +21,7 @@ export function createAnthropicClient(config) {
    * @returns {Promise<{toolUses:Array<{id:string,name:string,input:any}>, text:string, usage:object, stopReason:string}>}
    */
   async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024 }) {
+    logHaikuQuery({ messages, tools })
     const resp = await sdk.messages.create(
       {
         model,
@@ -37,6 +39,7 @@ export function createAnthropicClient(config) {
       .filter(b => b.type === 'text')
       .map(b => b.text)
       .join('')
+    logHaikuResponse({ text, toolUses, usage: resp.usage, stopReason: resp.stop_reason })
     return { toolUses, text, usage: resp.usage, stopReason: resp.stop_reason }
   }
 

@@ -1,4 +1,5 @@
 import { Ollama } from 'ollama'
+import { logOllamaQuery, logOllamaResponse } from '../log.js'
 
 /**
  * @param {{ollama:{host:string,model:string,timeout_ms:number}}} config
@@ -46,6 +47,7 @@ export function createOllamaClient(config) {
     ctrl.signal.addEventListener('abort', onCtrlAbort, { once: true })
 
     try {
+      logOllamaQuery({ messages, tools })
       const resp = await client.chat({
         model,
         messages,
@@ -57,7 +59,9 @@ export function createOllamaClient(config) {
         name: c.function.name,
         args: c.function.arguments,
       }))
-      return { toolCalls, text: resp.message?.content ?? '' }
+      const text = resp.message?.content ?? ''
+      logOllamaResponse({ text, toolCalls })
+      return { toolCalls, text }
     } finally {
       clearTimeout(timeoutId)
       signal?.removeEventListener('abort', onAbort)
