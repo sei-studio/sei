@@ -8,6 +8,9 @@ import { startCombat } from './behaviors/combat.js'
 import { createDefaultRegistry } from './registry.js'
 import { createFSM } from './fsm.js'
 import { createOrchestrator } from './llm/orchestrator.js'
+import { createSessionState } from './llm/sessionState.js'
+import { createDiary } from './memory/diary.js'
+import { loadOwner, saveOwner, formatOwnerSeedBlock } from './memory/owner.js'
 
 let _bot = null
 let _reconnectTimer = null
@@ -77,12 +80,48 @@ function createBotInstance(config) {
       startFollow(bot, config)
       const registry = createDefaultRegistry()
       createFSM(bot, config, registry)
-      const orchestrator = createOrchestrator({ bot, config, registry, logger: { info: (m) => logStatus(m), warn: (m) => logStatus(m), error: (m) => logStatus(m) } })
-      bot.on('sei:dispatch', ({ event, data, signal }) => { orchestrator.handleDispatch(event, data, signal) })
-      bot._seiDebouncer = orchestrator.debouncer
-      bot._seiAttackThrottle = orchestrator.throttle
-      orchestrator.start().catch(err => logStatus(`Orchestrator start failed: ${err.message}`))
-      logStatus(`Sei online. Executor: ${orchestrator.executorStatus}`)
+      const logger = { info: (m) => logStatus(m), warn: (m) => logStatus(m), error: (m) => logStatus(m) }
+
+      // Phase 3 Plan 3-02: memory layer wiring.
+      const ownerStore = { loadOwner, saveOwner, formatOwnerSeedBlock }
+      const diary = createDiary({
+        path: config.memory.diary_md_path,
+        seedDiaryBudgetBytes: config.memory.seed_diary_budget_bytes,
+        logger,
+      })
+      // sessionState construction is async (loads OWNER.md). We kick it off
+      // and pass a Promise into the orchestrator factory; the orchestrator
+      // resolves it before composing the first Loop's seed turn.
+      ;(async () => {
+        try {
+          const sessionState = await createSessionState({
+            ownerMdPath: config.memory.owner_md_path,
+            diary,
+            config,
+            bot,
+            logger,
+          })
+          // D-56: owner playerJoined / playerLeft drive session boundaries.
+          bot.on('playerJoined', (p) => sessionState.onPlayerJoined(p))
+          bot.on('playerLeft',   (p) => sessionState.onPlayerLeft(p))
+          // D-57: settle-delay check after the spawn handler completes.
+          // setTimeout(0) defers to next tick so other spawn listeners flush
+          // first; sessionState.onSpawn itself owns the configured delay.
+          setTimeout(() => { sessionState.onSpawn() }, 0)
+
+          const orchestrator = createOrchestrator({
+            bot, config, registry, logger,
+            sessionState, ownerStore, diary,
+          })
+          bot.on('sei:dispatch', ({ event, data, signal }) => { orchestrator.handleDispatch(event, data, signal) })
+          bot._seiDebouncer = orchestrator.debouncer
+          bot._seiAttackThrottle = orchestrator.throttle
+          orchestrator.start().catch(err => logStatus(`Orchestrator start failed: ${err.message}`))
+          logStatus(`Sei online. Executor: ${orchestrator.executorStatus}`)
+        } catch (err) {
+          logStatus(`Spawn-wire failed: ${err.message}`)
+        }
+      })()
     } else {
       // respawn after death — restart follow only
       startFollow(bot, config)
