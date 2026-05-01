@@ -72,16 +72,21 @@ Plans:
 **Conflict review**: Checked against Phase 3 (Memory) and Phase 4 (GUI). No conflict — Phase 3 still owns SQLite persistence and LLM-directed compaction; this phase only adds in-context observations. Phase 4 unaffected.
 
 ### Phase 3: Memory & Persistence
-**Goal**: The bot remembers its identity, owner, and world progression across restarts via better-sqlite3, with compaction timing decided by the personality LLM at semantic boundaries.
+**Goal**: The bot remembers its identity, owner, and world progression across restarts via OWNER.md + DIARY.md (markdown files; SQLite deferred to V2), with compaction timing decided by the personality LLM at Loop-terminal / session-terminal semantic boundaries.
 **Depends on**: Phase 2
 **Requirements**: MEM-01, MEM-02, MEM-03, MEM-04, MEM-05
 **Success Criteria** (what must be TRUE):
-  1. Recent events and chat accumulate in a rolling in-session context window feeding the personality LLM.
-  2. After a restart, the bot recognizes its owner by player UUID and references prior shared history in conversation.
-  3. The personality LLM itself decides when to compact session context to long-term memory (at task-sequence boundaries), not a mechanical timer.
-  4. Long-term memory records world progression (builds, exploration, accomplishments) and surfaces it when contextually relevant.
-  5. The SQLite store uses atomic writes and enforces a hard size cap with compaction — the DB does not grow unbounded under long play sessions.
-**Plans**: TBD
+  1. Recent events and chat accumulate in a Loop-owned messages array across iterations until the Loop reaches its terminal response.
+  2. After a restart, the bot recognizes its owner by player UUID and references prior shared history (OWNER.md + DIARY.md) in conversation.
+  3. Per-loop-batch summaries fire on Loop-terminal under a 10-loops-or-32-KB gate; consolidation fires on session-end (or size-pressure async) under a 4-sessions-or-200-KB gate. The 10s idle probe never compacts.
+  4. Long-term memory (DIARY.md) records world progression (builds, exploration, accomplishments) and is loaded into every Loops seed user turn (recency-truncated).
+  5. Markdown files (OWNER.md + DIARY.md) use atomic tmp+rename writes and a 200 KB soft size cap with consolidation — files do not grow unbounded under long play sessions.
+**Plans**: 3 plans
+
+Plans:
+- [ ] 3-01-active-loop-architecture-PLAN.md — Loop class, idle/active gating, interrupt-on-chat with messages preservation, 20-iteration cap, chains.js no-op shim, SPEC vocabulary update
+- [ ] 3-02-markdown-memory-layer-PLAN.md — atomicWrite, OWNER.md, DIARY.md, sessionState, owner UUID detection (D-48), seed-message loader (D-45)
+- [ ] 3-03-compaction-calls-PLAN.md — per-loop-batch summary (D-51), async consolidation (D-53), prompts (D-52, D-54), phase-level verification harness
 
 ### Phase 4: Electron GUI & Packaging
 **Goal**: A non-technical user can double-click an installer, fill in a setup form, and press Start to run Sei — with all errors explained in plain English and native modules working in the packaged build.
