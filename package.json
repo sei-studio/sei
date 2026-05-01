@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "verify:phase2": "node scripts/verify-phase2.js"
+    "verify:phase2": "node scripts/verify-phase2.js",
+    "verify:phase3": "node scripts/verify-phase3.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
