@@ -71,6 +71,9 @@ const MEMORY_CASES = [
   'd53-async-non-blocking',
   'a7-no-idle-write',
   'session-end-flush',
+  // 260502-h6i — prompt cache fix
+  'cache-system-blocks-byte-stable',
+  'cache-marker-on-last-tool',
 ]
 
 const HARNESSES = [

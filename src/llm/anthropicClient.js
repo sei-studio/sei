@@ -2,6 +2,19 @@ import Anthropic from '@anthropic-ai/sdk'
 import { logHaikuQuery, logHaikuResponse } from '../log.js'
 
 /**
+ * 260502-h6i: Stamp `cache_control: {type:'ephemeral'}` on the LAST tool entry
+ * so Anthropic's prompt-cache boundary lands at the end of the tools array.
+ * Marking only the last system block leaves `tools` outside the cached prefix
+ * (cache_read stays at 0). Exported for the verify harness.
+ */
+export function stampLastToolCacheControl(tools) {
+  if (!tools?.length) return undefined
+  return tools.map((t, i) => i === tools.length - 1
+    ? { ...t, cache_control: { type: 'ephemeral' } }
+    : t)
+}
+
+/**
  * @param {{anthropic:{api_key:string,model:string,timeout_ms:number}}} config
  */
 export function createAnthropicClient(config) {
@@ -22,12 +35,16 @@ export function createAnthropicClient(config) {
    */
   async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024 }) {
     logHaikuQuery({ messages, tools })
+    // 260502-h6i: stamp cache_control on the LAST tool entry so the cache
+    // boundary lands at the end of the tools array (system → tools is now
+    // cached; cache_read can rise above 0).
+    const _tools = stampLastToolCacheControl(tools)
     const resp = await sdk.messages.create(
       {
         model,
         max_tokens: maxTokens,
         system: systemBlocks,
-        tools: tools?.length ? tools : undefined,
+        tools: _tools,
         messages,
       },
       { signal, timeout: timeoutMs ?? defaultTimeoutMs }

@@ -1199,6 +1199,92 @@ CASES['session-end-flush'] = async () => {
   } finally { cleanup(dir) }
 }
 
+// ─── 260502-h6i: prompt-cache fix verification ─────────────────────────
+
+CASES['cache-system-blocks-byte-stable'] = async () => {
+  const dir = freshTmpDir()
+  try {
+    const ownerMdPath = join(dir, 'OWNER.md')
+    const diaryPath = join(dir, 'DIARY.md')
+    await saveOwner(ownerMdPath, {
+      exists: true, owner_uuid: 'u-shawn', owner_username: 'shawn',
+      first_seen: '2026-01-01T00:00:00.000Z', last_seen: '2026-01-01T00:00:00.000Z',
+      total_sessions: 1, preferred_name: null, pronouns: null, notes: '',
+    })
+    const baseConfig = () => ({
+      ...memoryConfig({ owner_md_path: ownerMdPath, diary_md_path: diaryPath }),
+      host: 'localhost', port: 25565, auth: 'offline',
+      username: 'sei', minecraft_version: 'auto',
+      reconnect_delay_ms: 0, pathfinder_timeout_ms: 1000, follow_range: 3,
+      persona: { name: 'Sei', backstory: 'curious explorer', tone: 'curious' },
+      anthropic: { api_key: 'k', model: 'claude-haiku-4-5-20251001', timeout_ms: 1000 },
+      ollama: { host: 'http://x', model: 'q', timeout_ms: 1000 },
+      llm: { rate_limit_per_min: 30, debounce_ms: 500, max_hops: 5, idle_fallback_ms: 10000, executor: 'api' },
+      owner_username: 'shawn',
+    })
+    const fakeRegistry = { list: () => [], schema: () => null, execute: async () => 'ok' }
+    const { createOrchestrator } = await import('../src/llm/orchestrator.js')
+
+    function buildOnce() {
+      const config = baseConfig()
+      const bot = makeStubBot(); bot.chat = () => {}
+      const diary = createDiary({ path: diaryPath, seedDiaryBudgetBytes: 3072, logger: silentLogger() })
+      const ownerStore = { loadOwner, saveOwner, formatOwnerSeedBlock }
+      // Reuse same shared sessionState — irrelevant for system block content.
+      return createOrchestrator({ bot, config, registry: fakeRegistry, logger: silentLogger(), sessionState: null, ownerStore, diary })
+    }
+
+    const a = buildOnce()
+    const b = buildOnce()
+    const ja = JSON.stringify(a._internal.getCachedSystemBlocks())
+    const jb = JSON.stringify(b._internal.getCachedSystemBlocks())
+    assertEqual(ja, jb, 'cachedSystemBlocks byte-stable across constructions')
+
+    const blocks = a._internal.getCachedSystemBlocks()
+    assert(Array.isArray(blocks) && blocks.length >= 2, 'system blocks present')
+    const last = blocks[blocks.length - 1]
+    assertEqual(last.cache_control?.type, 'ephemeral', 'last block carries ephemeral cache_control')
+    for (let i = 0; i < blocks.length - 1; i++) {
+      assert(!blocks[i].cache_control, `non-last block ${i} has no cache_control`)
+    }
+    for (const blk of blocks) {
+      const t = (blk && blk.text) ?? ''
+      assert(!t.includes('# Owner'), 'no `# Owner` header in system blocks')
+      assert(!t.includes('# Diary'), 'no `# Diary` header in system blocks')
+    }
+    console.log('OK cache-system-blocks-byte-stable')
+  } finally { cleanup(dir) }
+}
+
+CASES['cache-marker-on-last-tool'] = async () => {
+  const { stampLastToolCacheControl } = await import('../src/llm/anthropicClient.js')
+  // Empty/missing → undefined (no tools, no marker)
+  assertEqual(stampLastToolCacheControl(undefined), undefined, 'undefined tools → undefined')
+  assertEqual(stampLastToolCacheControl([]), undefined, 'empty tools → undefined')
+
+  // Single tool → carries cache_control
+  const single = stampLastToolCacheControl([
+    { name: 'a', description: 'd', input_schema: { type: 'object' } },
+  ])
+  assertEqual(single.length, 1, 'single tool length 1')
+  assertEqual(single[0].cache_control?.type, 'ephemeral', 'single tool stamped')
+
+  // Multiple tools → ONLY last carries cache_control
+  const tools = [
+    { name: 'a', description: 'da', input_schema: { type: 'object' } },
+    { name: 'b', description: 'db', input_schema: { type: 'object' } },
+    { name: 'c', description: 'dc', input_schema: { type: 'object' } },
+  ]
+  const out = stampLastToolCacheControl(tools)
+  assertEqual(out.length, 3, 'output length matches')
+  assert(!out[0].cache_control, 'tool 0 has no cache_control')
+  assert(!out[1].cache_control, 'tool 1 has no cache_control')
+  assertEqual(out[2].cache_control?.type, 'ephemeral', 'last tool stamped')
+  // Original tools untouched (immutability)
+  assert(!tools[2].cache_control, 'input array not mutated')
+  console.log('OK cache-marker-on-last-tool')
+}
+
 // ─── Driver ────────────────────────────────────────────────────────────
 
 async function main() {
