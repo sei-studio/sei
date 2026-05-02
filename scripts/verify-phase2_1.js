@@ -55,9 +55,9 @@ for (const tok of FORBIDDEN_TOKENS) {
   assert(!hit, `no registered action contains forbidden token "${tok}" (found: ${hit ?? 'none'})`)
 }
 
-// ─── (4) Personality tools include look ───────────────────────────────────
+// ─── (4) Personality tools no longer include look (260502-h6i) ────────────
 const orchSrc = fs.readFileSync(new URL('../src/llm/orchestrator.js', import.meta.url), 'utf8')
-assert(/name:\s*['"]look['"]/.test(orchSrc), "orchestrator.js declares personality tool name: 'look'")
+assert(!/name:\s*['"]look['"]/.test(orchSrc), "orchestrator.js no longer declares personality tool name: 'look' (removed 260502-h6i)")
 assert(orchSrc.includes('composeSnapshot('), 'orchestrator.js calls composeSnapshot(')
 assert((orchSrc.match(/closeContainerSession/g) ?? []).length >= 2, 'orchestrator.js references closeContainerSession ≥2 times')
 // Check buildCachedSystem call has 6 args (count commas at top level of the call)
@@ -140,7 +140,6 @@ if (live) {
       { name: 'say',               description: 'Speak the given text in in-game chat.', input_schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
       { name: 'handOffToMovement', description: 'Hand off a natural-language movement/interaction intent to the movement layer.', input_schema: { type: 'object', properties: { intent: { type: 'string' } }, required: ['intent'] } },
       { name: 'setGoals',          description: 'Add or remove a goal.', input_schema: { type: 'object', properties: { list: { type: 'string' }, op: { type: 'string' }, goal: { type: 'string' } }, required: ['list','op','goal'] } },
-      { name: 'look',              description: 'Refresh your world snapshot.', input_schema: { type: 'object', properties: {}, required: [] } },
     ]
     const SYSTEM_INSTRUCTIONS = [
       'You are the personality layer of a Minecraft companion bot.',

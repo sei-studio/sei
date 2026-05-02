@@ -41,7 +41,7 @@ const MOVEMENT_SYSTEM = [
 const COMBINED_SYSTEM = [
   'You are a Minecraft companion bot. You react to chat, world events, and idle ticks.',
   'You decide WHAT to do at a high level AND directly invoke the body actions to do it — there is no separate movement layer in this mode.',
-  'In a single response you may: speak in chat (`say`), set goals (`setGoals`), refresh your snapshot (`look`), and/or invoke movement actions (e.g. `goTo`, `dig`, `attack`, `equip`, `place`, `consume`, `sleep`, etc.).',
+  'In a single response you may: speak in chat (`say`), set goals (`setGoals`), and/or invoke movement actions (e.g. `goTo`, `dig`, `attack`, `equip`, `place`, `consume`, `sleep`, etc.).',
   'Movement rule: in one response you may emit AT MOST ONE TYPE of movement action. Multiple calls of the SAME movement action are fine and recommended (e.g. ten `dig` calls to chop a whole tree). Mixing different movement types (e.g. `dig` and `goTo` together) is not — pick one type per turn. Multiple same-type calls run sequentially: each waits for the prior to finish.',
   'In-flight rule: if the snapshot shows an `in_flight:` line, the bot is already doing that thing. Do NOT call any movement action this turn. You may `say` to the player (e.g. "still chopping the tree, give me a sec") or emit no tool calls.',
   'Interrupt rule: when the player gives a new instruction mid-task, the runtime aborts whatever was in flight automatically. Treat it as a fresh start — do not try to resume the old work, just respond to the new ask.',
@@ -57,10 +57,11 @@ const ACTION_DESCRIPTIONS = {
   setGoals: 'Add or remove a goal from owner_goals or self_goals.',
   say: 'Speak the given text in in-game chat.',
   handOffToMovement: 'Hand off a natural-language movement/interaction intent to the movement layer.',
-  look: 'Refresh your world snapshot — call this when you suspect the world has changed since you last looked. Returns a fresh snapshot on the next turn.',
 }
 
-const PERSONALITY_NAMES = new Set(['say', 'setGoals', 'look', 'handOffToMovement'])
+// 260502-h6i: 'look' removed — snapshot already rides every user turn, so the
+// extra round-trip yielded no new information.
+const PERSONALITY_NAMES = new Set(['say', 'setGoals', 'handOffToMovement'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 /**
@@ -118,7 +119,7 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
   // dispatch lifecycle). See ./inflight.js.
   const inflight = createInflightTracker()
   // Wire follow's lifecycle gate — follow yields while a *movement* action
-  // is in flight. Personality-only entries (setGoals/say/look) don't pause
+  // is in flight. Personality-only entries (setGoals/say) don't pause
   // follow; see currentBlocking() in inflight.js.
   setInflightProvider(() => inflight.currentBlocking() != null)
   // Phase 3 D-59: chains is a no-op shim (kept to preserve any stragglers
@@ -160,11 +161,6 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
         },
         required: ['list', 'op', 'goal'],
       },
-    },
-    {
-      name: 'look',
-      description: ACTION_DESCRIPTIONS.look,
-      input_schema: { type: 'object', properties: {}, required: [] },
     },
   ]
 
@@ -538,9 +534,6 @@ function maybeWarnByteCap(loop, warned) {
               logger.warn(`[sei/orch] setGoals failed: ${err.message}`)
               results[i] = { type: 'tool_result', tool_use_id: u.id, content: `error: ${err.message}`, is_error: true }
             }
-          } else if (u.name === 'look') {
-            lastActionResult = 'looked'
-            results[i] = { type: 'tool_result', tool_use_id: u.id, content: 'snapshot refreshed', is_error: false }
           } else if (u.name === 'handOffToMovement') {
             const intent = String(u.input?.intent ?? '')
             let summary

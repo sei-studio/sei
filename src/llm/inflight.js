@@ -14,7 +14,8 @@
 
 // Personality actions don't physically pause follow; the LLM still wants
 // follow to keep working while it manipulates goals.
-const PERSONALITY_ACTIONS = new Set(['setGoals', 'say', 'look'])
+// 260502-h6i: 'look' removed from the toolset — drop it here too.
+const PERSONALITY_ACTIONS = new Set(['setGoals', 'say'])
 
 let _nextId = 1
 
