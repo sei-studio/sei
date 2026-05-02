@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-last_updated: "2026-04-30T23:26:49.709Z"
+status: executing
+last_updated: "2026-05-01T00:07:55.788Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 9
+  total_plans: 12
   completed_plans: 9
-  percent: 100
+  percent: 75
 ---
 
 # State: Sei
@@ -17,16 +17,17 @@ progress:
 ## Project Reference
 
 - **Core Value:** A Minecraft companion that feels like a real character — it remembers you, reacts to the world, and acts with personality, not like a scripted bot.
-- **Current Focus:** Phase 3 — Memory & Persistence (next)
+- **Current Focus:** Phase 03 — memory-persistence
 
 ## Current Position
 
-Phase: 2.1 (expand-actions-and-game-state) — COMPLETE (3/3 plans, verifier 31/31, no Phase 2 regression)
+Phase: 03 (memory-persistence) — EXECUTING
+Plan: 1 of 3
 Next: Phase 3 — Memory & Persistence
 
 - **Phase:** 3 — Memory & Persistence
 - **Plan:** Phase 2.1 complete (2.1-01, 2.1-02, 2.1-03 all done)
-- **Status:** Phase 2.1 complete; ready for Phase 3 kickoff
+- **Status:** Executing Phase 03
 - **Progress:** Phases 3/4 complete (incl. 2.1)
 - **Next action:** `/gsd-verify-work 2.1` to formally verify, then `/gsd-discuss-phase 3` to begin memory work.
 
@@ -88,6 +89,7 @@ Next: Phase 3 — Memory & Persistence
 |---|-------------|------|--------|-----------|
 | 260429-nyx | API-only fallback → single combined Haiku call + leading-edge attack throttle | 2026-04-30 | 6468a3e | [260429-nyx-update-api-only-fallback-to-single-combi](./quick/260429-nyx-update-api-only-fallback-to-single-combi/) |
 | 260429-ons | in_flight snapshot field + follow gates on action lifecycle + owner-chat preempts in-flight work + tighter action error strings + one-movement-type-per-turn rule | 2026-04-30 | 697f9a9 | [260429-ons-in-flight-snapshot-field-action-lifecycl](./quick/260429-ons-in-flight-snapshot-field-action-lifecycl/) |
+| 260502-h6i | Sei latency + diary hallucination fixes: cache_control on last tool, no-op compaction skip, remove look tool, owner-chat preempt (sei:chat_received), stop-verb pre-LLM hard cancel | 2026-05-02 | ce7d90e | [260502-h6i-fix-sei-latency-owner-chat-preempt-stop-](./quick/260502-h6i-fix-sei-latency-owner-chat-preempt-stop-/) |
 
 ## Session Continuity
 
