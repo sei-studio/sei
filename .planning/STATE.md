@@ -90,11 +90,13 @@ Next: Phase 3 — Memory & Persistence
 | 260429-nyx | API-only fallback → single combined Haiku call + leading-edge attack throttle | 2026-04-30 | 6468a3e | [260429-nyx-update-api-only-fallback-to-single-combi](./quick/260429-nyx-update-api-only-fallback-to-single-combi/) |
 | 260429-ons | in_flight snapshot field + follow gates on action lifecycle + owner-chat preempts in-flight work + tighter action error strings + one-movement-type-per-turn rule | 2026-04-30 | 697f9a9 | [260429-ons-in-flight-snapshot-field-action-lifecycl](./quick/260429-ons-in-flight-snapshot-field-action-lifecycl/) |
 | 260502-h6i | Sei latency + diary hallucination fixes: cache_control on last tool, no-op compaction skip, remove look tool, owner-chat preempt (sei:chat_received), stop-verb pre-LLM hard cancel | 2026-05-02 | ce7d90e | [260502-h6i-fix-sei-latency-owner-chat-preempt-stop-](./quick/260502-h6i-fix-sei-latency-owner-chat-preempt-stop-/) |
+| 260503-1bu | Snapshot `recent_events:` deltas (kills, inventory gains, hp loss) + `prior_task:` interrupt-resume hint so bot resumes prior task after chat interrupt without reminder | 2026-05-03 | 1bbb67d | [260503-1bu-add-snapshot-delta-indicators-kills-inve](./quick/260503-1bu-add-snapshot-delta-indicators-kills-inve/) |
 
 ## Session Continuity
 
-- **Last action:** Quick task 260429-ons — added inflight tracker so the snapshot shows `in_flight: <action>` while async work runs, rewired follow to yield for the action lifecycle (not the dispatch lifecycle), promoted owner chat to P0 to preempt in-flight movement, and replaced catch-all action error strings with self-diagnostic ones (e.g. `out of range (5.7m, need ≤4.5)` instead of bare `cannot dig`).
+- **Last action:** Quick task 260503-1bu — added stateful snapshot composer that injects a `recent_events:` line (kills, inventory gains, hp loss) only when deltas exist, and a `prior_task:` hint into PLAYER INTERRUPT turns so the LLM has an explicit cue to decide whether to resume the aborted task instead of asking "what next?". Live in-game verification deferred to user.
 - **Next action:** `/gsd-plan-phase 2.1` to research and plan the phase.
 
 ---
-*Last updated: 2026-04-30 — quick task 260429-ons completed.*
+*Last updated: 2026-05-03 — quick task 260503-1bu completed.*
+| 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
