@@ -80,11 +80,13 @@ export function composeSnapshot(bot, opts = {}) {
   // (D-1sk-03)
   const feet = aroundFeet(bot)
   if (feet.total === 0) {
-    lines.push('around feet: (clear)')
+    lines.push('terrain at feet: (clear)')
   } else {
-    const parts = feet.groups.map(g => `${g.name}×${g.count}`)
+    // count-first, comma-separated — distinct from inventory's `name×N` format
+    // so the LLM can't confuse environmental blocks with carried items.
+    const parts = feet.groups.map(g => `${g.count} ${g.name}`)
     const tail = feet.more > 0 ? ` (+${feet.more} more types)` : ''
-    lines.push(`around feet: ${parts.join(' ')}${tail}`)
+    lines.push(`terrain at feet: ${parts.join(', ')}${tail}`)
   }
 
   // Build #N handles in a single monotonic numbering across blocks then entities.
