@@ -52,11 +52,13 @@ export const ConfigSchema = z.object({
   }).default({}),
 })
 
-export function loadConfig(path = './config.json') {
+export function loadConfig(path = './config.json', overrides = {}) {
   const raw = JSON.parse(readFileSync(path, 'utf-8'))
   // Allow ANTHROPIC_API_KEY env var to satisfy the required anthropic.api_key field.
   if (!raw.anthropic?.api_key) {
     raw.anthropic = { ...(raw.anthropic ?? {}), api_key: process.env.ANTHROPIC_API_KEY ?? '' }
   }
+  if (overrides.port != null) raw.port = overrides.port
+  if (overrides.host != null) raw.host = overrides.host
   return ConfigSchema.parse(raw)
 }
