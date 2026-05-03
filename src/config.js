@@ -30,10 +30,21 @@ export const ConfigSchema = z.object({
     rate_limit_per_min: z.number().int().min(1).default(30),
     debounce_ms: z.number().int().min(0).default(500),
     max_hops: z.number().int().min(1).default(5),
-    idle_fallback_ms: z.number().int().min(1000).default(10_000),
+    idle_fallback_ms: z.number().int().min(1000).default(60_000),
     // 'auto' = probe Ollama and use it; fall back to Haiku on failure (D-13/D-14).
     // 'api'  = force Haiku-as-executor for both layers; skip the Ollama probe entirely.
     executor: z.enum(['auto', 'api']).default('auto'),
+  }).default({}),
+  // 'prod' = only `say` tool calls reach in-game chat; internal model reasoning
+  //          stays in console logs. System prompt nudges the model to keep
+  //          `say` lines short (≤15 words) and call `say` frequently throughout
+  //          a loop, not just at start/end.
+  // 'dev'  = every natural-language string the model emits reaches in-game
+  //          chat — including mid-task narration text alongside tool_uses and
+  //          terminal text-only responses. Useful for debugging when the
+  //          model's reasoning would otherwise be opaque.
+  chat: z.object({
+    mode: z.enum(['prod', 'dev']).default('prod'),
   }).default({}),
   // Phase 3 D-59: full memory: block. Paths default to project root; budgets
   // are byte-budgets (not token-budgets, per D-50). spawn_settle_delay_ms

@@ -2,7 +2,9 @@
 
 ## What This Is
 
-Sei is a Minecraft AI companion system that joins your server as a bot with a configurable personality, proactive behavior, and autonomous decision-making. Non-technical players set it up through an Electron GUI — enter an API key, describe the bot's personality, and Sei joins the game as a living character. It uses a two-layer LLM architecture: a cloud personality model (Haiku 3) for decisions and conversation, and a local function-calling model (Ollama Qwen 9B) for executing movement and actions via mineflayer.
+Sei is a **framework** for running custom personas in Minecraft. The user names the character (default examples use "Sui") and configures personality; Sei runs the bot loop. The framework joins your server as a configurable persona with proactive behavior and autonomous decision-making. Non-technical users set it up through a CLI today and an Electron GUI in v1.0 — enter an API key, describe the bot's personality, and the persona joins the game as a living character. Sei uses a two-layer LLM architecture: a cloud personality model (Haiku) for decisions and conversation, and a local function-calling model (Ollama Qwen) for executing movement and actions via mineflayer.
+
+Naming: **"Sei"** is the framework name. The character's name is set by the user — the default `persona.name` in `config.example.json` is `"Sui"`.
 
 ## Core Value
 

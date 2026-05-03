@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.js",
+  "bin": {
+    "sei": "src/cli/index.js"
+  },
   "scripts": {
     "start": "node src/index.js",
+    "sei": "node src/cli/index.js",
     "verify:phase2": "node scripts/verify-phase2.js",
     "verify:phase3": "node scripts/verify-phase3.js"
   },

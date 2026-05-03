@@ -15,6 +15,20 @@ import { createInflightTracker } from './inflight.js'
 import { createChatRingBuffer } from './chatRingBuffer.js'
 import { logChatOut, logActionResult } from '../log.js'
 
+// Appended to system prompts when config.chat.mode === 'prod'. Pulled into a
+// module constant so both SYSTEM_INSTRUCTIONS and COMBINED_SYSTEM share one
+// source of truth and the cached system prefix stays byte-stable across
+// instances using the same mode.
+const PROD_CHAT_GUIDANCE = [
+  'CHAT MODE: prod. The ONLY way to speak to the player is `say`. Your text/reasoning never reaches the player — it is just for your own thinking.',
+  'Keep `say` lines short — one line, max 15 words, like player chat (no paragraphs, no narration).',
+  'Use `say` frequently, not just at the start and end of work. Good moments: when you start a task, when you spot something relevant, when you hit a problem, before/after a noticeable action, when you finish. Skip it for purely internal thinking.',
+].join('\n')
+
+const DEV_CHAT_GUIDANCE = [
+  'CHAT MODE: dev. Every natural-language string you emit reaches the player\'s chat — your `say` calls AND any text/reasoning alongside or instead of tool calls. Treat your text as part of the conversation.',
+].join('\n')
+
 const SYSTEM_INSTRUCTIONS = [
   'You are the personality layer of a Minecraft companion bot.',
   'You react to chat, world events, and idle ticks.',
@@ -83,6 +97,33 @@ const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
  *   - any chat event with `data.ownerSpoke === true`
  *   - the legacy `owner_chat` event name (no flag required)
  */
+// Render dispatch event data as a short readable string. Default JSON.stringify
+// of mineflayer Entity objects produced enormous, often-circular blobs that the
+// LLM ignored — and for `sei:attacked` it left the model guessing the attacker
+// from the snapshot, which mis-blamed a far-off creeper when a player landed
+// the hit.
+export function formatEventData(event, data) {
+  if (!data || typeof data !== 'object') return String(data ?? '')
+  if (event === 'sei:attacked') {
+    const label = data.attackerLabel ?? data.attacker?.username ?? data.attacker?.name ?? 'unknown'
+    const kind = data.attackerKind ?? (data.attacker?.username ? 'player' : 'mob')
+    return `attacker: ${label} (${kind})`
+  }
+  if (typeof data.text === 'string') return `text: ${data.text}`
+  if (typeof data.message === 'string') return `text: ${data.message}`
+  try {
+    return JSON.stringify(data, (_k, v) => {
+      // Strip mineflayer Entity objects — keep only the cheap label fields.
+      if (v && typeof v === 'object' && (v.username || (v.type && v.position))) {
+        return { name: v.name, username: v.username, type: v.type, id: v.id }
+      }
+      return v
+    })
+  } catch {
+    return '(unserializable)'
+  }
+}
+
 export function classifyChatEvent(event, data) {
   const isChatEvent = event === 'chat' || event === 'sei:chat'
                    || event === 'owner_chat' || event === 'sei:chat_received'
@@ -231,11 +272,16 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
     return merged
   }
 
+  // Chat-mode guidance: prepended to the cached system prefix so the model
+  // sees the active mode upfront. Bytes-stable per mode so prompt cache hits
+  // hold across loops within a session.
+  const chatModeGuidance = config.chat?.mode === 'dev' ? DEV_CHAT_GUIDANCE : PROD_CHAT_GUIDANCE
+
   let cachedSystemBlocks = null
   let cachedCombinedSystemBlocks = null
   function rebuildPersonalitySystem() {
     cachedSystemBlocks = anthropic.buildCachedSystem(
-      SYSTEM_INSTRUCTIONS,
+      `${SYSTEM_INSTRUCTIONS}\n\n${chatModeGuidance}`,
       renderPersona(config.persona),
       capabilityParagraph(),
       minecraftPrimer(),
@@ -243,7 +289,7 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
       personalityTools
     )
     cachedCombinedSystemBlocks = anthropic.buildCachedSystem(
-      COMBINED_SYSTEM,
+      `${COMBINED_SYSTEM}\n\n${chatModeGuidance}`,
       renderPersona(config.persona),
       capabilityParagraph(),
       minecraftPrimer(),
@@ -466,7 +512,7 @@ function maybeWarnByteCap(loop, warned) {
     // is wired (sessionState + ownerStore + diary), inject seed_owner +
     // seed_diary blocks and mark the turn `seed: true` so Loop preserves
     // them across iterations. Otherwise fall back to event/snapshot only.
-    const eventText = `Event: ${event}\nData: ${JSON.stringify(data ?? {})}`
+    const eventText = `Event: ${event}\nData: ${formatEventData(event, data)}`
     if (sessionState && ownerStore && diary) {
       let seedBlocks
       try {
@@ -584,25 +630,32 @@ function maybeWarnByteCap(loop, warned) {
 
       const toolUses = resp.toolUses ?? []
       if (toolUses.length === 0) {
-        // Terminal: text-only response. Emit any text content as chat.
+        // Terminal: text-only response. In dev mode, emit any text content as
+        // chat so the model's reasoning is visible in-game. In prod mode the
+        // text is internal-only — log it but do not relay to the player.
         const text = (resp.text ?? '').trim()
         if (text) {
           logChatOut(text)
-          try { bot.chat(text) } catch {}
-          chatBuffer.push(config.persona?.name ?? 'sei', text)
+          if (chatModeGuidance === DEV_CHAT_GUIDANCE) {
+            try { bot.chat(text) } catch {}
+            chatBuffer.push(config.persona?.name ?? 'sei', text)
+          }
         }
         return
       }
 
       // Mid-task narration: when the model emits text alongside tool_uses
-      // (and didn't call `say` itself), relay the text to chat. Without this
-      // the player only sees actions happen with no acknowledgment.
+      // (and didn't call `say` itself). In dev mode this gets relayed to chat
+      // so the player sees the model's reasoning. In prod mode it's internal
+      // only — the model is expected to call `say` for player-facing speech.
       const midText = (resp.text ?? '').trim()
       const calledSay = toolUses.some(u => u.name === 'say')
       if (midText && !calledSay) {
         logChatOut(midText)
-        try { bot.chat(midText) } catch {}
-        chatBuffer.push(config.persona?.name ?? 'sei', midText)
+        if (chatModeGuidance === DEV_CHAT_GUIDANCE) {
+          try { bot.chat(midText) } catch {}
+          chatBuffer.push(config.persona?.name ?? 'sei', midText)
+        }
       }
 
       // Process tool_uses. Two-call vs combined handles dispatch differently:

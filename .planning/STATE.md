@@ -92,12 +92,13 @@ Next: Phase 3 — Memory & Persistence
 | 260502-h6i | Sei latency + diary hallucination fixes: cache_control on last tool, no-op compaction skip, remove look tool, owner-chat preempt (sei:chat_received), stop-verb pre-LLM hard cancel | 2026-05-02 | ce7d90e | [260502-h6i-fix-sei-latency-owner-chat-preempt-stop-](./quick/260502-h6i-fix-sei-latency-owner-chat-preempt-stop-/) |
 | 260503-1bu | Snapshot `recent_events:` deltas (kills, inventory gains, hp loss) + `prior_task:` interrupt-resume hint so bot resumes prior task after chat interrupt without reminder | 2026-05-03 | 1bbb67d | [260503-1bu-add-snapshot-delta-indicators-kills-inve](./quick/260503-1bu-add-snapshot-delta-indicators-kills-inve/) |
 | 260503-1sk | Exposure-filter `nearby blocks:` (no more xray), add `around feet:` 5×4×5 grouped line, expand interesting set to terrain blocks (sand, sandstone, gravel, dirt, grass_block, …), and double radius when local view is sparse — fixes "get me 10 sand" failure on beach | 2026-05-03 | 5abc8a8 | [260503-1sk-snapshot-blocks-only-show-exposed-non-xr](./quick/260503-1sk-snapshot-blocks-only-show-exposed-non-xr/) |
+| 260503-cli | Prod/dev chat mode split (only `say` reaches chat in prod, ≤15 words) + Sei=framework / character=Sui rebrand + light-blue `sei` CLI for onboarding/start/config + README rewrite | 2026-05-03 | (pending) | [260503-cli-prod-chat-mode-rebrand](./quick/260503-cli-prod-chat-mode-rebrand/) |
 
 ## Session Continuity
 
-- **Last action:** Quick task 260503-1sk — `nearbyBlocks` now filters by exposure (at least one air/water/lava/empty-bbox neighbor) so the snapshot stops showing buried ores through walls; new `around feet:` line lists every block name in a 5×4×5 cube around the bot grouped by count (e.g. `sand×12, grass_block×3`); INTERESTING_BLOCK_NAMES expanded with sand/sandstone/gravel/clay/dirt/grass_block/stone/glass/ice/snow_block/obsidian/terracotta; sparse-expand doubles the radius once when the initial result set is empty.
-- **Next action:** `/gsd-plan-phase 2.1` to research and plan the phase.
+- **Last action:** Quick task 260503-cli — added `chat.mode` (prod/dev) gating narration→chat in orchestrator, defaults flipped to "Sui" for character name, new `sei` CLI (zero new deps) handles onboarding/start/config, README rewritten to frame Sei as a framework with Phase 4 GUI roadmap and credits.
+- **Next action:** `/gsd-plan-phase 3` to begin memory & persistence work, OR re-run `sei config` to pick up new prod chat mode locally.
 
 ---
-*Last updated: 2026-05-03 — quick task 260503-1sk completed.*
+*Last updated: 2026-05-03 — quick task 260503-cli completed.*
 | 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
