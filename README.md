@@ -17,13 +17,13 @@ npm install
 npx sei
 ```
 
-`npx sei` runs onboarding: MC username, character name and tone, Anthropic API key (or set `ANTHROPIC_API_KEY` in your environment). Re-run with `npx sei config` any time.
-
 In Minecraft, open a world and click "Open to LAN".
 
 ```bash
 npx sei start
 ```
+
+Re-run onboarding with `npx sei config` any time.
 
 ## Progress
 
