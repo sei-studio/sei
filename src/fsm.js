@@ -42,9 +42,10 @@ export function createFSM(bot, config, registry) {
 
   function resetIdleTimer() {
     clearTimeout(idleTimer)
+    const idleMs = config?.llm?.idle_fallback_ms ?? 60_000
     idleTimer = setTimeout(() => {
       enqueue(Priority.P3_IDLE, 'sei:idle', {})
-    }, 10_000)  // 10s idle fallback per LLM-01 (Phase 2 will act on this)
+    }, idleMs)
   }
 
   // ─── Event ingestion ─────────────────────────────────────────────────────
@@ -158,6 +159,11 @@ export function createFSM(bot, config, registry) {
 
   bot.on('sei:attacked', (data) => enqueue(Priority.P0_SAFETY, 'sei:attacked', data))
   bot.on('sei:chat_received', (data) => enqueue(Priority.P1_CHAT, 'sei:chat_received', data))
+  // Initial-greeting on join. Same priority as chat so the orchestrator opens
+  // a fresh Loop and the bot speaks BEFORE the idle timer fires. The idle
+  // timer is reset by processNext so the next sei:idle is idle_fallback_ms
+  // *after* the join greeting completes.
+  bot.on('sei:joined', (data) => enqueue(Priority.P1_CHAT, 'sei:joined', data))
 
   // Start idle timer
   resetIdleTimer()

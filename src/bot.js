@@ -133,6 +133,22 @@ function createBotInstance(config) {
           bot._seiAttackThrottle = orchestrator.throttle
           orchestrator.start().catch(err => logStatus(`Orchestrator start failed: ${err.message}`))
           logStatus(`Sei online. Executor: ${orchestrator.executorStatus}`)
+
+          // Initial greeting: fire a non-idle `sei:joined` event so the bot
+          // speaks immediately on connect rather than waiting for the idle
+          // timer. The FSM resets the idle timer when this dispatch runs, so
+          // the next sei:idle is idle_fallback_ms after the greeting clears.
+          // Wait briefly so spawn settles and player list is populated.
+          setTimeout(() => {
+            try {
+              bot.emit('sei:joined', {
+                reason: 'just_connected',
+                hint: 'You just connected to the server. Greet your owner if they are nearby; otherwise look around and say something brief about where you are. This is NOT an idle tick — react to the join itself.',
+              })
+            } catch (err) {
+              logStatus(`join greeting dispatch failed: ${err.message}`)
+            }
+          }, config.memory?.spawn_settle_delay_ms ?? 500)
         } catch (err) {
           logStatus(`Spawn-wire failed: ${err.message}`)
         }

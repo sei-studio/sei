@@ -2,7 +2,7 @@
 // src/cli/index.js — sei CLI: onboarding, start, config.
 // Zero new deps; uses node:readline/promises and node:fs.
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stdin as input, stdout as output } from 'node:process'
@@ -36,7 +36,8 @@ const __dirname = dirname(__filename)
 const PROJECT_ROOT = resolve(__dirname, '..', '..')
 const CONFIG_PATH = resolve(PROJECT_ROOT, 'config.json')
 const EXAMPLE_PATH = resolve(PROJECT_ROOT, 'config.example.json')
-const OWNER_MD_PATH = resolve(PROJECT_ROOT, 'OWNER.md')
+const MEMORY_DIR = resolve(PROJECT_ROOT, 'memory')
+const OWNER_MD_PATH = resolve(MEMORY_DIR, 'OWNER.md')
 const INDEX_PATH = resolve(PROJECT_ROOT, 'src', 'index.js')
 
 // ─── Banner ──────────────────────────────────────────────────────────────
@@ -96,6 +97,7 @@ function writeConfig(cfg) {
 function seedOwnerMd(preferredName, ownerUsername) {
   if (existsSync(OWNER_MD_PATH)) return
   if (!preferredName && !ownerUsername) return
+  mkdirSync(MEMORY_DIR, { recursive: true })
   const front = [
     '---',
     'owner_uuid:',

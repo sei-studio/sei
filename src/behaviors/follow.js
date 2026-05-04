@@ -4,11 +4,11 @@ const { pathfinder } = pkg
 
 let _followInterval = null
 let _paused = false
-/** Optional provider — returns truthy when a *blocking* action is in flight.
- *  When set, the follow tick yields whenever the provider says so. This is
- *  the primary lifecycle gate (replaces the per-dispatch pauseFollow bracket
- *  the orchestrator used to set in its `finally`). */
 let _inflightProvider = null
+
+// Active follow target. Either { kind: 'player', username } or
+// { kind: 'entity', entityId, label }. null = not following.
+let _target = null
 
 /** Pause/resume follow ticks. Hard override — used by combat.js when an
  *  attack starts. The inflight provider is the soft default. */
@@ -20,32 +20,61 @@ export function setInflightProvider(fn) {
   _inflightProvider = (typeof fn === 'function') ? fn : null
 }
 
+/**
+ * Set the follow target. Accepts:
+ *   - { kind: 'player', username }
+ *   - { kind: 'entity', entityId, label? }
+ *   - null to clear
+ */
+export function setFollowTarget(t) {
+  if (t == null) { _target = null; return }
+  if (t.kind === 'player' && typeof t.username === 'string') {
+    _target = { kind: 'player', username: t.username }
+  } else if (t.kind === 'entity' && Number.isFinite(t.entityId)) {
+    _target = { kind: 'entity', entityId: t.entityId, label: t.label || `entity-${t.entityId}` }
+  }
+}
+
+/** Get a short human label for the current follow target (or null). */
+export function getFollowTargetLabel() {
+  if (!_target) return null
+  return _target.kind === 'player' ? _target.username : _target.label
+}
+
+/** Returns the underlying mineflayer entity for the active target, or null. */
+function resolveTargetEntity(bot) {
+  if (!_target) return null
+  if (_target.kind === 'player') {
+    const p = bot.players?.[_target.username]
+    return p?.entity ?? null
+  }
+  return bot.entities?.[_target.entityId] ?? null
+}
+
 export function startFollow(bot, config) {
   if (!bot.hasPlugin(pathfinder)) bot.loadPlugin(pathfinder)
 
+  // Default target: the configured owner (player). LLM can change this via
+  // the follow action; the snapshot exposes follow_target so the model is
+  // aware of who/what it's following rather than relying on hardcoded behavior.
+  if (!_target) setFollowTarget({ kind: 'player', username: config.owner_username })
+
   _followInterval = setInterval(async () => {
     if (_paused) return
-    // Yield while a movement action is in flight (dig, place, attack, …).
-    // This replaces the orchestrator's pauseFollow bracket — pause now lasts
-    // for the *action* lifecycle, not the dispatch lifecycle, so dig's
-    // approach + swing + pickup walk all complete without follow stealing
-    // the pathfinder mid-action.
     if (_inflightProvider && _inflightProvider()) return
-    // Yield to any in-progress pathfind (e.g. dig walk-to-drop, attack chase).
-    // Without this, follow clobbers other goals every 1s.
     if (bot.pathfinder?.isMoving?.()) return
 
-    const owner = bot.players[config.owner_username]
-    if (!owner?.entity) return  // owner not in render distance
+    const ent = resolveTargetEntity(bot)
+    if (!ent) return  // target not in render distance / despawned
 
-    const ownerPos = owner.entity.position
+    const ownerPos = ent.position
     const botPos = bot.entity.position
     const dist = botPos.distanceTo(ownerPos)
 
     if (dist > config.follow_range) {
       await goTo(bot, ownerPos.x, ownerPos.y, ownerPos.z, config.follow_range, config.pathfinder_timeout_ms)
     }
-  }, 1000)  // re-evaluate every 1s
+  }, 1000)
 }
 
 export function stopFollow() {

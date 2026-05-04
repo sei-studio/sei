@@ -1,4 +1,8 @@
 config.json
 node_modules/
 mineflayer/
+.claude/
 
+# user-specific memory — generated during onboarding / at runtime
+memory/OWNER.md
+memory/DIARY.md

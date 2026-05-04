@@ -50,8 +50,8 @@ export const ConfigSchema = z.object({
   // are byte-budgets (not token-budgets, per D-50). spawn_settle_delay_ms
   // covers Pitfall 2 (bot.players populates a few ticks after spawn).
   memory: z.object({
-    owner_md_path: z.string().default('./OWNER.md'),
-    diary_md_path: z.string().default('./DIARY.md'),
+    owner_md_path: z.string().default('./memory/OWNER.md'),
+    diary_md_path: z.string().default('./memory/DIARY.md'),
     iteration_cap: z.number().int().min(1).default(20),
     loop_batch_loop_count_cap: z.number().int().min(1).default(10),
     loop_batch_context_cap_bytes: z.number().int().min(1024).default(32768),

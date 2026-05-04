@@ -9,12 +9,24 @@ const HOSTILE_MOBS = new Set([
 ])
 
 function resolveAttacker(bot, source) {
+  // Trust an identified source first — including players. The previous
+  // fallback scanned for "any nearby hostile mob" when the source wasn't
+  // hostile, which made a player punch get blamed on a creeper 24 blocks
+  // away. If the source is identifiable, return it as-is and let downstream
+  // decide what to do with a non-mob attacker.
   const live = source?.id != null ? bot.entities[source.id] : null
-  if (live && HOSTILE_MOBS.has(live.name)) return live
-  if (source?.name && HOSTILE_MOBS.has(source.name)) return source
+  if (live) return live
+  if (source?.name || source?.username) return source
+  // Truly unknown source (no id, no name): scan for a *close* hostile only.
+  // Far-off creepers are not the attacker in any realistic scenario.
+  const me = bot.entity
   for (const e of Object.values(bot.entities)) {
-    if (e === bot.entity) continue
-    if (HOSTILE_MOBS.has(e.name)) return e
+    if (e === me) continue
+    if (!HOSTILE_MOBS.has(e?.name)) continue
+    if (!me?.position || !e?.position) continue
+    try {
+      if (e.position.distanceTo(me.position) <= 6) return e
+    } catch {}
   }
   return null
 }
@@ -69,7 +81,12 @@ export function startCombat(bot, config) {
     const target = resolveAttacker(bot, source)
     if (!target) return
 
-    const attackedPayload = { attacker: target }
+    const isPlayer = Boolean(target.username) || target.type === 'player'
+    const attackedPayload = {
+      attacker: target,
+      attackerLabel: target.username ?? target.name ?? 'unknown',
+      attackerKind: isPlayer ? 'player' : (HOSTILE_MOBS.has(target.name) ? 'hostile_mob' : 'other'),
+    }
     // Leading-edge throttle: react to the FIRST hit immediately; suppress
     // rapid follow-ups within the throttle window so a burst of entityHurt
     // events triggers exactly one LLM dispatch (and that dispatch happens
@@ -80,13 +97,16 @@ export function startCombat(bot, config) {
       bot.emit('sei:attacked', attackedPayload)
     }
 
-    if (_target?.id !== target.id) {
-      stopFollow()
-      startAttacking(target)
+    // Never auto-retaliate against players (REQUIREMENTS Out-of-Scope: Auto-PvP).
+    // The sei:attacked event still fires so the LLM can react verbally.
+    if (!isPlayer) {
+      if (_target?.id !== target.id) {
+        stopFollow()
+        startAttacking(target)
+      }
+      clearTimeout(_exitTimer)
+      _exitTimer = setTimeout(stopAttacking, 1000)
     }
-
-    clearTimeout(_exitTimer)
-    _exitTimer = setTimeout(stopAttacking, 1000)
   })
 
   bot.on('entityGone', (entity) => {

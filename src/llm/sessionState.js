@@ -275,7 +275,7 @@ export async function createSessionState({ ownerMdPath, diary, compactor: initia
     })
   }
 
-  async function onLoopTerminal({ messagesByteSize, loopMessages } = {}) {
+  async function onLoopTerminal({ messagesByteSize, loopMessages, event } = {}) {
     loopCount += 1
     if (Number.isFinite(messagesByteSize)) cumulativeLoopBytes += messagesByteSize
     if (Array.isArray(loopMessages)) loopBatchMessages.push(loopMessages)
@@ -285,7 +285,15 @@ export async function createSessionState({ ownerMdPath, diary, compactor: initia
     if (loopHasMutation(loopMessages)) batchHasMutation = true
     logger.info?.(`[sei/session] loop terminal loop_count=${loopCount} cumulative_bytes=${cumulativeLoopBytes}`)
 
-    if (compactor) {
+    // Diary compaction is gated to idle-driven loops only. Compacting in the
+    // middle of a chat exchange (or right after a join greeting) leaks the
+    // freshly-summarized memory back into the next reply and biases the LLM
+    // away from what the player just said. Counters and batched messages
+    // still accumulate above; we just defer the actual write until the bot
+    // returns to idle.
+    const isIdleEvent = event === 'sei:idle' || event === 'idle'
+
+    if (compactor && isIdleEvent) {
       // D-51: per-loop-batch summary trigger. Fires when EITHER the loop
       // count cap is hit OR the accumulated bytes cap is hit.
       const loopCap  = config.memory?.loop_batch_loop_count_cap  ?? Infinity
