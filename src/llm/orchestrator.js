@@ -10,7 +10,7 @@ import { composeSnapshot, createSnapshotComposer } from '../observers/snapshot.j
 import { closeContainerSession } from '../behaviors/container.js'
 import { pauseFollow, setInflightProvider } from '../behaviors/follow.js'
 import { createInflightTracker } from './inflight.js'
-import { createChatRingBuffer } from './chatRingBuffer.js'
+import { createConvoMemory } from './convoMemory.js'
 import { logChatOut, logActionResult } from '../log.js'
 
 // Single combined system prompt — one Haiku call per iteration handles both
@@ -110,7 +110,12 @@ export function classifyChatEvent(event, data) {
  * @param {string} args.snapshotText
  * @returns {Promise<Array<{type:'text', name:string, text:string}>>}
  */
-export async function composeSeedBlocks({ sessionState, ownerStore, diary, config, eventText, snapshotText, recentChatText = null }) {
+export async function composeSeedBlocks({
+  sessionState, ownerStore, diary, config, eventText, snapshotText,
+  recentLoopHistoryText = null,
+  recentOwnerChatText = null,
+  yourRecentMessagesText = null,
+}) {
   const owner = sessionState.ownerData()
   const seedOwnerText = ownerStore.formatOwnerSeedBlock(owner, config.memory.seed_owner_budget_bytes)
   const seedDiaryText = await diary.seedSlice()
@@ -118,12 +123,18 @@ export async function composeSeedBlocks({ sessionState, ownerStore, diary, confi
     { type: 'text', name: 'seed_owner', text: seedOwnerText },
     // Cache breakpoint: owner+diary are static within a session. Marking the
     // last static block extends the cached prefix (system + tools + seed_owner
-    // + seed_diary) across every loop in the session. Dynamic blocks (event,
-    // snapshot, recent_chat) stay uncached and re-bill per loop.
+    // + seed_diary) across every loop in the session. Dynamic blocks
+    // (recent_*, event, snapshot) stay uncached and re-bill per loop.
     { type: 'text', name: 'seed_diary', text: seedDiaryText, cache_control: { type: 'ephemeral' } },
   ]
-  if (recentChatText) {
-    blocks.push({ type: 'text', name: 'recent_chat', text: `Recent chat (last few lines, oldest first):\n${recentChatText}` })
+  if (recentLoopHistoryText) {
+    blocks.push({ type: 'text', name: 'recent_loop_history', text: recentLoopHistoryText })
+  }
+  if (recentOwnerChatText) {
+    blocks.push({ type: 'text', name: 'recent_owner_chat', text: recentOwnerChatText })
+  }
+  if (yourRecentMessagesText) {
+    blocks.push({ type: 'text', name: 'your_recent_messages', text: yourRecentMessagesText })
   }
   blocks.push({ type: 'text', name: 'event',    text: eventText })
   blocks.push({ type: 'text', name: 'snapshot', text: snapshotText })
@@ -159,10 +170,12 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
   // `recent_events:` line with inventory/kill/hp deltas since the prior
   // snapshot for this orchestrator instance. See observers/snapshot.js.
   const snapshotComposer = createSnapshotComposer({ bot })
-  // Recent chat ring buffer — injected into seed user turn so the LLM has
-  // context for short replies like "yes" / "do it" that would otherwise be
-  // ambiguous given Loop history is reset per dispatch (D-39).
-  const chatBuffer = createChatRingBuffer({ capacity: 10 })
+  // Conversation memory (260505-iqo): split owner/self recentChat sub-buffers
+  // and a loopHistory ring of completed-loop summaries. Injected into the seed
+  // user turn so the LLM has cross-loop continuity (short replies like "yes" /
+  // "do it" need owner context; loopHistory keeps the bot from re-asking
+  // questions or rediscovering tasks across cold-composed loops).
+  const convoMemory = createConvoMemory()
   // Wire follow's lifecycle gate — follow yields while a *movement* action
   // is in flight. Personality-only entries (setGoals/say) don't pause
   // follow; see currentBlocking() in inflight.js.
@@ -387,7 +400,9 @@ function maybeWarnByteCap(loop, warned) {
         seedBlocks = await composeSeedBlocks({
           sessionState, ownerStore, diary, config,
           eventText, snapshotText: snapshotText(),
-          recentChatText: chatBuffer.size ? chatBuffer.format() : null,
+          recentLoopHistoryText: convoMemory.loopHistory.formatBlock(),
+          recentOwnerChatText: convoMemory.recentChat.formatOwnerBlock(),
+          yourRecentMessagesText: convoMemory.recentChat.formatSelfBlock(),
         })
       } catch (err) {
         logger.warn(`[sei/orch] seed-block compose failed: ${err.message}; falling back to non-seed turn`)
@@ -443,6 +458,19 @@ function maybeWarnByteCap(loop, warned) {
       logger.error?.(`[sei/orch] loop error (id=${loop.id}): ${err && err.message}`)
     } finally {
       if (signal) try { signal.removeEventListener?.('abort', onExternalAbort) } catch {}
+      // Push completed-loop summary BEFORE clearing currentLoop so that any
+      // observers (none today, but defensive) see consistent state.
+      try {
+        convoMemory.loopHistory.push({
+          loopId: loop.id,
+          startedAt: loop.startedAt,
+          endedAt: Date.now(),
+          event,
+          loopMessages: loop._internal.messages,
+        })
+      } catch (err) {
+        logger.warn?.(`[sei/orch] convoMemory.loopHistory.push failed: ${err.message}`)
+      }
       currentLoop = null
       pendingInterrupt = null
       try { await closeContainerSession() } catch {}
@@ -526,7 +554,7 @@ function maybeWarnByteCap(loop, warned) {
             const line = String(u.input?.text ?? '').slice(0, 256)
             logChatOut(line)
             try { bot.chat(line) } catch {}
-            chatBuffer.push(config.persona?.name ?? 'sei', line)
+            convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', line)
             results[i] = { type: 'tool_result', tool_use_id: u.id, content: 'said', is_error: false }
           } else if (u.name === 'setGoals') {
             try {
@@ -685,12 +713,19 @@ function maybeWarnByteCap(loop, warned) {
         timeoutMs: config.anthropic.timeout_ms,
       })
       loop.appendAssistant(buildAssistantContent(resp))
+      // Cap-close is a one-shot terminal wrap-up: the prior iteration forced
+      // tools=[], so the model has no `say` tool available. Treat the returned
+      // text (or capHitLine fallback) as the equivalent of a `say` and surface
+      // it on chat + convoMemory so the timeline stays coherent.
       const text = (resp.text ?? '').trim() || capHitLine(config.persona)
       logChatOut(text)
       try { bot.chat(text) } catch {}
+      convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', text)
     } catch (err) {
       logger.warn(`[sei/orch] graceful cap close call failed: ${err.message}; falling back to capHitLine`)
-      try { bot.chat(capHitLine(config.persona)) } catch {}
+      const fallback = capHitLine(config.persona)
+      try { bot.chat(fallback) } catch {}
+      convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', fallback)
     }
   }
 
@@ -717,13 +752,14 @@ function maybeWarnByteCap(loop, warned) {
     debouncer: ingressDebouncer,
     throttle: ingressThrottle,
     inflight,
-    /** Record an incoming chat line in the ring buffer (chat.js calls this). */
-    recordIncomingChat: (who, text) => chatBuffer.push(who, text),
+    /** Record an incoming chat line in convoMemory (chat.js calls this). */
+    recordIncomingChat: (who, text) => convoMemory.recentChat.pushOwner(who, text),
     _internal: {
       personalityBucket,
       callPersonality,
       chains, inflight,
       get currentLoop() { return currentLoop },
+      get convoMemory() { return convoMemory },
       // Plan 3-02 harness seam: expose the cached system blocks so the
       // verifier can prove OWNER/DIARY content does not leak into them.
       getCachedSystemBlocks: () => cachedSystemBlocks,

@@ -27,17 +27,6 @@ export const ConfigSchema = z.object({
     max_hops: z.number().int().min(1).default(5),
     idle_fallback_ms: z.number().int().min(1000).default(60_000),
   }).default({}),
-  // 'prod' = only `say` tool calls reach in-game chat; internal model reasoning
-  //          stays in console logs. System prompt nudges the model to keep
-  //          `say` lines short (≤15 words) and call `say` frequently throughout
-  //          a loop, not just at start/end.
-  // 'dev'  = every natural-language string the model emits reaches in-game
-  //          chat — including mid-task narration text alongside tool_uses and
-  //          terminal text-only responses. Useful for debugging when the
-  //          model's reasoning would otherwise be opaque.
-  chat: z.object({
-    mode: z.enum(['prod', 'dev']).default('prod'),
-  }).default({}),
   // Phase 3 D-59: full memory: block. Paths default to project root; budgets
   // are byte-budgets (not token-budgets, per D-50). spawn_settle_delay_ms
   // covers Pitfall 2 (bot.players populates a few ticks after spawn).

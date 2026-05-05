@@ -56,7 +56,6 @@ const DEFAULT_CONFIG = {
   },
   anthropic: { api_key: '' },
   llm: { rate_limit_per_min: 30, debounce_ms: 500, max_hops: 5, idle_fallback_ms: 10000 },
-  chat: { mode: 'prod' },
 }
 
 // ─── Banner ──────────────────────────────────────────────────────────────
@@ -167,18 +166,6 @@ async function onboard({ rl, existing, mode = 'first-run' }) {
     def: existing.anthropic?.api_key ?? '',
   })
 
-  output.write('\n')
-  const chatMode = await pick(
-    rl,
-    'chat mode:',
-    [
-      'messages-only — only short say() lines reach the player (recommended)',
-      'full messages+thoughts — every model utterance reaches chat (debugging)',
-    ],
-    existing.chat?.mode === 'dev' ? 1 : 0,
-  )
-  const chatModeValue = chatMode.startsWith('messages-only') ? 'prod' : 'dev'
-
   // Compose merged config — preserve any keys we didn't ask about.
   const cfg = {
     ...DEFAULT_CONFIG,
@@ -197,12 +184,9 @@ async function onboard({ rl, existing, mode = 'first-run' }) {
       ...(existing.anthropic ?? {}),
       api_key: apiKey,
     },
-    chat: {
-      ...DEFAULT_CONFIG.chat,
-      ...(existing.chat ?? {}),
-      mode: chatModeValue,
-    },
   }
+  // Strip the legacy chat-mode field if a previous onboarding wrote it.
+  delete cfg.chat
   if (playerName) cfg.owner_preferred_name = playerName
 
   writeConfig(cfg)
