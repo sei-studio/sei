@@ -14,16 +14,20 @@ The goal is a general-purpose AI brain that can play video games. A custom perso
 git clone https://github.com/oue2x2/sei.git
 cd sei
 npm install
-npx sei
+npm link        # makes `sei` available as a global command
+sei
 ```
 
 In Minecraft, open a world and click "Open to LAN".
 
 ```bash
-npx sei start
+sei start
 ```
 
-Re-run onboarding with `npx sei config` any time.
+Re-run onboarding with `sei config` any time.
+
+> Prefer not to install globally? `npx sei`, `npx sei start`, and `npx sei config`
+> work the same way from inside the project directory.
 
 ## Progress
 

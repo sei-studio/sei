@@ -2,7 +2,7 @@
 // src/cli/index.js — sei CLI: onboarding, start, config.
 // Zero new deps; uses node:readline/promises and node:fs.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stdin as input, stdout as output } from 'node:process'
@@ -220,8 +220,19 @@ async function onboard({ rl, existing, mode = 'first-run' }) {
   output.write('\n')
 }
 
+// `start` and `config` both require that onboarding has run at least once
+// (config.json exists). Guard them so the user gets a clear error instead of
+// a confusing readline prompt or a bot that boots with placeholder defaults.
+function requireOnboarded(cmdName) {
+  if (existsSync(CONFIG_PATH)) return
+  output.write(`${red('!')} no ${gray('config.json')} found — run ${bold(blue('sei'))} first to set up your persona.\n`)
+  output.write(dim(`   (sei ${cmdName} requires onboarding to have been completed)\n`))
+  process.exit(1)
+}
+
 // ─── Subcommands ─────────────────────────────────────────────────────────
 async function cmdStart() {
+  requireOnboarded('start')
   // Spawn `node src/index.js --lan`. We do NOT import the bot here because
   // mineflayer pulls native modules; keeping start as a child process means
   // the CLI itself stays light.
@@ -240,6 +251,7 @@ async function cmdStart() {
 }
 
 async function cmdConfig() {
+  requireOnboarded('config')
   banner()
   const rl = readline.createInterface({ input, output })
   try {
@@ -301,7 +313,23 @@ async function main() {
 }
 
 // Only run when invoked directly (so unit tests can import without booting).
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Resolve symlinks on argv[1] — npm/npx dispatch the `bin` entry through a
+// symlink (e.g. node_modules/.bin/sei → src/cli/index.js), and without
+// realpath the URLs never match, leaving `main()` uncalled and the process
+// exiting silently.
+function isDirectInvocation() {
+  const argv1 = process.argv[1]
+  if (!argv1) return false
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(argv1)).href
+  } catch {
+    // argv[1] missing or unreadable — assume direct invocation since the
+    // script clearly ran. Better to boot than to exit silently.
+    return true
+  }
+}
+
+if (isDirectInvocation()) {
   main().catch((err) => {
     output.write(`${red('!')} ${err?.stack ?? err?.message ?? err}\n`)
     process.exit(1)
