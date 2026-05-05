@@ -11,11 +11,11 @@ The goal is a general-purpose AI brain that can play video games. A custom perso
 ## Quickstart
 
 ```bash
-git clone https://github.com/oue2x2/sei.git   # download the source
-cd sei                                        # enter the project directory
-npm i                                         # install dependencies (mineflayer, anthropic SDK, etc.)
-npm link                                      # register `sei` as a global command on your PATH
-sei                                           # run onboarding (writes config.json + memory/OWNER.md)
+git clone https://github.com/oue2x2/sei.git
+cd sei
+npm i
+npm link
+sei
 ```
 
 Then open a Minecraft world, click "Open to LAN", and run `sei start`. Re-run onboarding any time with `sei config`.
