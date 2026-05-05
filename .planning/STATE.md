@@ -94,12 +94,13 @@ Next: Phase 3 — Memory & Persistence
 | 260503-1sk | Exposure-filter `nearby blocks:` (no more xray), add `around feet:` 5×4×5 grouped line, expand interesting set to terrain blocks (sand, sandstone, gravel, dirt, grass_block, …), and double radius when local view is sparse — fixes "get me 10 sand" failure on beach | 2026-05-03 | 5abc8a8 | [260503-1sk-snapshot-blocks-only-show-exposed-non-xr](./quick/260503-1sk-snapshot-blocks-only-show-exposed-non-xr/) |
 | 260503-cli | Prod/dev chat mode split (only `say` reaches chat in prod, ≤15 words) + Sei=framework / character=Sui rebrand + light-blue `sei` CLI for onboarding/start/config + README rewrite | 2026-05-03 | cfe75b0 | [260503-cli-prod-chat-mode-rebrand](./quick/260503-cli-prod-chat-mode-rebrand/) |
 | 260504-oh9 | Fix sei CLI silent exit under npx/global-install (entrypoint guard now realpath-resolves argv[1]) + first-run gate so `sei start`/`sei config` refuse without `config.json` + README switched to `npm link` + `sei` | 2026-05-04 | fdbc8ca | [260504-oh9-fix-sei-cli-entrypoint-guard-silent-exit](./quick/260504-oh9-fix-sei-cli-entrypoint-guard-silent-exit/) |
+| 260505-iqo | Memory & loop architecture refactor: API-only collapse (drop ollama/circuit/handOffToMovement), convoMemory module with split owner/self ring buffers + loopHistory, idle-timing split into `sei:loop_end` + 60s fallback with per-event seed prompts, strict say/think separation | 2026-05-05 | 0a35318 | [260505-iqo-memory-and-loop-architecture-refactor-bu](./quick/260505-iqo-memory-and-loop-architecture-refactor-bu/) |
 
 ## Session Continuity
 
-- **Last action:** Quick task 260504-oh9 — fixed `npx sei` (and global-install / `npm link`) silent-exit bug by realpath-resolving `process.argv[1]` in the entrypoint guard; added a `requireOnboarded()` gate so `sei start` and `sei config` refuse to run before onboarding has produced `config.json`; README quickstart now installs globally with `npm link` and runs as bare `sei`.
+- **Last action:** Quick task 260505-iqo — collapsed two-layer LLM to single Anthropic call, replaced `chatRingBuffer` with `convoMemory` (split owner/self lines + persistent `loopHistory` of one-title-per-loop summaries), split idle into `sei:loop_end` initiative tick + 60s fallback with peer-framing system prompts, enforced say/think separation (only `say()` reaches chat).
 - **Next action:** `/gsd-plan-phase 3` to begin memory & persistence work.
 
 ---
-*Last updated: 2026-05-04 — quick task 260504-oh9 completed.*
+*Last updated: 2026-05-05 — quick task 260505-iqo completed.*
 | 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
