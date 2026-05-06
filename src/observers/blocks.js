@@ -9,7 +9,11 @@ const ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'copper_ore', '
 
 // Terrain block names added per D-1sk-05 — surfaces "what am I standing on"
 // info to the personality/movement LLMs (sand, dirt, grass_block, …).
-const TERRAIN = [
+// Exported for snapshot tier-aware ranking (260505-twx) — non-terrain
+// "interesting" blocks (logs, ores, chests, …) sort BEFORE terrain
+// regardless of distance so 8 nearby grass_blocks don't crowd out a
+// single oak_log 14m away.
+export const TERRAIN = [
   'sand', 'red_sand', 'sandstone', 'red_sandstone',
   'gravel', 'clay', 'dirt', 'coarse_dirt',
   'grass_block', 'podzol', 'mycelium',
@@ -138,6 +142,19 @@ export function nearbyBlocks(bot, opts = {}) {
   })
   // bot.findBlocks already returns closest-first, but be defensive.
   positions.sort((a, b) => a._d - b._d)
+  // Tier-aware secondary sort (260505-twx): non-terrain "interesting"
+  // blocks (logs, ores, chests, crafting_table, beds, …) come BEFORE
+  // terrain (grass_block, dirt, sand, stone, …) regardless of distance.
+  // Within each tier, the prior distance-sort order is preserved
+  // (Array.prototype.sort is stable in V8). Without this, 8 nearby
+  // grass_blocks crowd out the oak_log 14 blocks away.
+  const TERRAIN_SET = new Set(TERRAIN)
+  positions.sort((a, b) => {
+    const aTer = TERRAIN_SET.has(a.name) ? 1 : 0
+    const bTer = TERRAIN_SET.has(b.name) ? 1 : 0
+    if (aTer !== bTer) return aTer - bTer  // 0 (non-terrain) before 1 (terrain)
+    return 0
+  })
   for (const p of positions) delete p._d
   return { positions, more }
 }

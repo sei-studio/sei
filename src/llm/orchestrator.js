@@ -43,6 +43,7 @@ const ACTION_DESCRIPTIONS = {
   follow: 'Continuously trail an entity at follow_range. Pass `player` (username), or `entity` / `entity_id` / `target` for a mob. Does NOT attack — pair with attackEntity if you want hits. The body trails the target on a 1s tick; an attackEntity call can land a swing as soon as the target is within reach. Default-on at spawn for the owner; the snapshot shows `follow_target` so you know who you are trailing.',
   unfollow: 'Stop trailing the current follow target. The body holds position until you issue another movement.',
   attackEntity: 'Swing at an entity. `times` (1–10, default 1) hits the target up to N times in one call with ~600ms between swings; stops early if the target dies, moves out of reach, or you are interrupted. Use a higher `times` when hunting to amortize LLM round-trips — e.g. `times: 5` for sheep/pig, `times: 8` for tougher mobs.',
+  dig: 'Break a block. Prefer `{ block: "<name>" }` to dig the NEAREST EXPOSED block of that name within maxDistance (default 32, max 64) — you do NOT need to read coordinates from the snapshot first. Use `{ target: "#N" }` for a specific snapshot handle. Use `{ x, y, z }` only when you must dig a precise coordinate. The bot pathfinds into reach automatically; if "out of range" comes back, it walked as close as it could — call `dig` again or move with `goTo` first.',
 }
 
 // Tool names that are personality-only (do not require a follow-up

@@ -8,7 +8,7 @@ import { nearbyEntities } from './entities.js'
 import { setHandles, HANDLE_TTL_MS } from './targeting.js'
 import { getFollowTargetLabel } from '../behaviors/follow.js'
 
-const MAX_BLOCKS = 8
+const MAX_BLOCKS = 16
 const MAX_ENTITIES = 6
 
 // Compact inline rendering of inflight args (avoid pulling describeArgs from
