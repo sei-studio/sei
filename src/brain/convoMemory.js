@@ -5,7 +5,7 @@
  *   recentChat   — split owner/self sub-buffers, capacity 10 each, 240-char per-line
  *                  truncation. Renders into TWO seed blocks so the model sees
  *                  what the owner said separately from what it itself said.
- *   loopHistory  — ring of completed-loop summaries (capacity 20). Each entry
+ *   loopHistory  — ring of completed-loop summaries (capacity 10). Each entry
  *                  carries a 1-line title synthesized from the loop's first
  *                  say() output + most-frequent tool name (no extra API call,
  *                  no doubling of end-of-loop cost). Used for cross-loop
@@ -24,7 +24,10 @@
 
 const RECENT_CHAT_CAPACITY = 10
 const RECENT_CHAT_LINE_TRUNC = 240
-const LOOP_HISTORY_CAPACITY = 20
+// Plan 03.1-03 (RESEARCH Trim 4): cap reduced 20 → 10. The snapshot already
+// shows recent_events deltas; per D-M-6 the loopHistory crowded out diary
+// content. Saves ~75 tokens per Loop without losing cross-loop continuity.
+const LOOP_HISTORY_CAPACITY = 10
 const LOOP_TITLE_BASE_TRUNC = 80
 
 function pushRing(arr, item, cap) {

@@ -6,6 +6,13 @@ const TONE_LINES = {
   curious:   'speak with genuine curiosity, asking small questions when natural. write in all lowercase, never capitalize the first word of a sentence (proper nouns like player names are ok). keep it brief.',
 }
 
+// Plan 03.1-03 (D-2): peer-to-peer "we" framing line, applies to ALL tones.
+// Defects: D-E-3 (you/me dominant), D-H-3 (only 1 "we" line in entire session).
+// Appended verbatim to renderPersona() output so byte impact is identical
+// across tones — drives the cached prefix bust intentionally for this plan.
+export const FRAMING_LINE =
+  'You and the player are partners — frame things as "we" / "us" / "let\'s" rather than "you" or "me". You are not handed tasks; you are along for the ride.'
+
 /**
  * Render the persona block as a single text string for the cached system prefix.
  * Stable per-session: any byte change invalidates the Anthropic prompt cache.
@@ -17,6 +24,7 @@ export function renderPersona(persona) {
     `You are ${persona.name}, a Minecraft companion.`,
     `Backstory: ${persona.backstory}`,
     `Tone: ${TONE_LINES[persona.tone]}`,
+    FRAMING_LINE,
   ].join('\n')
 }
 
