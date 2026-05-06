@@ -1,18 +1,13 @@
-// ─── TODO_ADAPTER (Plan 03.1-02) ────────────────────────────────────────────
-// The brain layer must NOT import directly from the game adapter. The three
-// imports below cross the brain ↔ adapter seam and will be replaced by calls
-// through the Adapter interface (see src/brain/types.js, ADAPTER_INTERFACE_VERSION):
-//   - createSnapshotComposer  → adapter.createSnapshotComposer()
-//   - closeContainerSession   → adapter.closeAnySessions()
-//   - setInflightProvider     → adapter.setInflightProvider(fn)
-// (`pauseFollow` is imported but currently unused; drop in Plan 02.)
-// `composeSnapshot` named import is also unused at the call sites (only
-// createSnapshotComposer is used) — Plan 02 will prune.
-//
-// These imports remain in place during Plan 01 (mechanical relocation only)
-// and intentionally break the build at the consumer layer until Plan 02 wires
-// the Adapter interface. DO NOT auto-rewrite in this plan.
-// ────────────────────────────────────────────────────────────────────────────
+// Brain ↔ adapter seam (D-5/D-6, Plan 03.1-02). The orchestrator receives
+// an `adapter` at construction (see createOrchestrator below) and consumes
+// every game-shaped capability through it:
+//   - adapter.createSnapshotComposer()  (was: ../observers/snapshot)
+//   - adapter.closeAnySessions()        (was: ../behaviors/container)
+//   - adapter.setInflightProvider(fn)   (was: ../behaviors/follow)
+//   - adapter.worldPrimer()             (was: ./persona.js minecraftPrimer)
+//   - adapter.executeAction(...)        (registry calls, including chat tx)
+// The orchestrator never imports from src/adapter/ — verify with
+// `grep -r "from '../adapter" src/brain/`.
 
 import { createAnthropicClient } from './anthropicClient.js'
 import { createGoalStore } from './goals.js'
@@ -20,11 +15,8 @@ import { createTokenBucket } from './rateLimiter.js'
 import { createDebouncer, createThrottle } from './debounce.js'
 import { createChainTracker } from './chains.js'
 import { createLoop } from './loop.js'
-import { renderPersona, capHitLine, capabilityParagraph, minecraftPrimer, stillLearningLine } from './persona.js'
+import { renderPersona, capHitLine, capabilityParagraph, stillLearningLine } from './persona.js'
 import { buildAnthropicTools } from './schemaBridge.js'
-import { composeSnapshot, createSnapshotComposer } from '../observers/snapshot.js'
-import { closeContainerSession } from '../behaviors/container.js'
-import { pauseFollow, setInflightProvider } from '../behaviors/follow.js'
 import { createInflightTracker } from './inflight.js'
 import { createConvoMemory } from './convoMemory.js'
 import { logChatOut, logActionResult } from './log.js'
