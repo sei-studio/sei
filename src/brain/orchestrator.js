@@ -1072,7 +1072,22 @@ function maybeWarnByteCap(loop, warned) {
       // Determine whether to continue or terminate. If only personality-only
       // tools fired (no movement) the LLM is done — terminal.
       const continueLoop = movementCalls.length > 0
-      loop.appendToolResults(results, { snapshot: snapshotText() })
+
+      // Plan 03.1-05 Task 4 (D-E-9, D-H-11): silent-iteration cadence. If the
+      // model has gone N iterations without say(), inject a one-shot soft
+      // nudge into the next user turn asking it to narrate progress briefly.
+      // Reset on every say(). Bracketed format mirrors how PLAYER INTERRUPT
+      // and other system-tagged prepends are styled in convo history.
+      const hadSayThisTurn = toolUses.some(u => u.name === 'say')
+      const shouldNudge = _advanceIterationCadence({ loop, hadSay: hadSayThisTurn })
+      const nudgeText = shouldNudge
+        ? '[silence past 4 iterations — narrate progress briefly using say(), still optional if nothing changed. avoid restating numbers (we already saw the inventory). a single short observation is enough.]'
+        : null
+
+      loop.appendToolResults(results, {
+        snapshot: snapshotText(),
+        ...(nudgeText ? { eventText: nudgeText } : {}),
+      })
       maybeWarnByteCap(loop, byteWarn)
 
       if (!continueLoop) return
