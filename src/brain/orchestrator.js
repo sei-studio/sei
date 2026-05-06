@@ -1,3 +1,19 @@
+// ─── TODO_ADAPTER (Plan 03.1-02) ────────────────────────────────────────────
+// The brain layer must NOT import directly from the game adapter. The three
+// imports below cross the brain ↔ adapter seam and will be replaced by calls
+// through the Adapter interface (see src/brain/types.js, ADAPTER_INTERFACE_VERSION):
+//   - createSnapshotComposer  → adapter.createSnapshotComposer()
+//   - closeContainerSession   → adapter.closeAnySessions()
+//   - setInflightProvider     → adapter.setInflightProvider(fn)
+// (`pauseFollow` is imported but currently unused; drop in Plan 02.)
+// `composeSnapshot` named import is also unused at the call sites (only
+// createSnapshotComposer is used) — Plan 02 will prune.
+//
+// These imports remain in place during Plan 01 (mechanical relocation only)
+// and intentionally break the build at the consumer layer until Plan 02 wires
+// the Adapter interface. DO NOT auto-rewrite in this plan.
+// ────────────────────────────────────────────────────────────────────────────
+
 import { createAnthropicClient } from './anthropicClient.js'
 import { createGoalStore } from './goals.js'
 import { createTokenBucket } from './rateLimiter.js'
@@ -11,7 +27,7 @@ import { closeContainerSession } from '../behaviors/container.js'
 import { pauseFollow, setInflightProvider } from '../behaviors/follow.js'
 import { createInflightTracker } from './inflight.js'
 import { createConvoMemory } from './convoMemory.js'
-import { logChatOut, logActionResult } from '../log.js'
+import { logChatOut, logActionResult } from './log.js'
 
 // Single combined system prompt — one Haiku call per iteration handles both
 // reasoning and dispatch. Prod chat rules are folded in: `say` is the only
@@ -64,10 +80,10 @@ const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
  *   - the legacy `owner_chat` event name (no flag required)
  */
 // Render dispatch event data as a short readable string. Default JSON.stringify
-// of mineflayer Entity objects produced enormous, often-circular blobs that the
-// LLM ignored — and for `sei:attacked` it left the model guessing the attacker
-// from the snapshot, which mis-blamed a far-off creeper when a player landed
-// the hit.
+// of adapter-supplied Entity objects produced enormous, often-circular blobs
+// that the LLM ignored — and for `sei:attacked` it left the model guessing
+// the attacker from the snapshot, which mis-blamed a far-off creeper when a
+// player landed the hit.
 export function formatEventData(event, data) {
   if (!data || typeof data !== 'object') return String(data ?? '')
   if (event === 'sei:attacked') {
@@ -79,7 +95,7 @@ export function formatEventData(event, data) {
   if (typeof data.message === 'string') return `text: ${data.message}`
   try {
     return JSON.stringify(data, (_k, v) => {
-      // Strip mineflayer Entity objects — keep only the cheap label fields.
+      // Strip adapter-supplied Entity objects — keep only the cheap label fields.
       if (v && typeof v === 'object' && (v.username || (v.type && v.position))) {
         return { name: v.name, username: v.username, type: v.type, id: v.id }
       }

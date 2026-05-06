@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { logHaikuQuery, logHaikuResponse } from '../log.js'
+import { logHaikuQuery, logHaikuResponse } from './log.js'
 
 /**
  * 260502-h6i: Stamp `cache_control: {type:'ephemeral'}` on the LAST tool entry

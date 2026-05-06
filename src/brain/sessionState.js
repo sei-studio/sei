@@ -28,7 +28,7 @@
  * counts as a session boundary in v1 (deferred to V2 — see CONTEXT line 196).
  */
 
-import { loadOwner, saveOwner } from '../memory/owner.js'
+import { loadOwner, saveOwner } from './memory/owner.js'
 
 // 260502-h6i: diary writes must be gated on observable world-state mutation.
 // A loop is "mutating" when its assistant turns invoke any of these actions
@@ -82,7 +82,7 @@ function loopHasMutation(loopMessages) {
  *   ({ summarizeLoopBatch, consolidateOlderHalf }). Optional — when omitted,
  *   onLoopTerminal / onPlayerLeft only update counters (Plan 3-02 behavior).
  * @param {Object} opts.config
- * @param {Object} opts.bot    — mineflayer bot (or stub with players, on/once)
+ * @param {Object} opts.bot    — adapter-supplied bot handle (or stub with players, on/once)
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [opts.logger]
  */
 export async function createSessionState({ ownerMdPath, diary, compactor: initialCompactor = null, config, bot, logger = console } = {}) {
