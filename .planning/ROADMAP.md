@@ -93,13 +93,13 @@ Plans:
 **Goal:** Achieve more natural in-game behavior via small modifications and codebase refactoring: (1) fix ~37 cataloged defects from 4 in-game logs (logs/explore.txt, hunt+sand.txt, memory.txt, wood.txt); (2) establish a brain/ (game-agnostic) vs adapter/minecraft/ (game-specific) seam so the bot brain could later drive a different game library; (3) reduce Haiku token usage where free wins exist (cache-respecting); (4) make memory recall feel like a long-time friend (fix the structural diary write-side bug where pure-chat sessions never produce diary entries).
 **Requirements**: None — this phase is quality/polish work, not new requirements coverage. Bounded by D-1 through D-8 in 03.1-CONTEXT.md plus the 37 defects in log-analysis/.
 **Depends on:** Phase 3
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 Plans:
 - [x] 03.1-01-PLAN.md — brain/ vs adapter/minecraft/ file moves + Adapter JSDoc contract (Wave 1)
 - [x] 03.1-02-PLAN.md — bot.js / fsm.js / config.js border splits, primer move, orchestrator adapter-ization (Wave 1)
 - [x] 03.1-03-PLAN.md — persona we-framing + SYSTEM_INSTRUCTIONS dedup + first-turn-say strengthening + punctuation post-processor + loopHistory cap (Wave 2)
-- [ ] 03.1-04-PLAN.md — noteToSelf tool + AFFECT.md + OWNER.md write helpers + diary OR-gate + compaction prompt rewrite (Wave 2)
+- [x] 03.1-04-PLAN.md — noteToSelf tool + AFFECT.md + OWNER.md write helpers + diary OR-gate + compaction prompt rewrite (Wave 2)
 - [ ] 03.1-05-PLAN.md — first-turn-say hard enforcement + parallel-dig cap=1 + follow/attackEntity no-op + pathfind hints + idle/loop_end split + dropItem-paired-say + interrupt dedup (Wave 3)
 - [ ] 03.1-06-PLAN.md — VALIDATION.md (37 defects + refactor invariants) + STATE.md/ROADMAP.md status updates (Wave 4, has checkpoint for live replay)
 
