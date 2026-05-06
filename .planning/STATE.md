@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-05T00:37:31.487Z"
+last_updated: "2026-05-06T04:35:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
@@ -95,14 +95,15 @@ Next: Phase 3 — Memory & Persistence
 | 260503-cli | Prod/dev chat mode split (only `say` reaches chat in prod, ≤15 words) + Sei=framework / character=Sui rebrand + light-blue `sei` CLI for onboarding/start/config + README rewrite | 2026-05-03 | cfe75b0 | [260503-cli-prod-chat-mode-rebrand](./quick/260503-cli-prod-chat-mode-rebrand/) |
 | 260504-oh9 | Fix sei CLI silent exit under npx/global-install (entrypoint guard now realpath-resolves argv[1]) + first-run gate so `sei start`/`sei config` refuse without `config.json` + README switched to `npm link` + `sei` | 2026-05-04 | fdbc8ca | [260504-oh9-fix-sei-cli-entrypoint-guard-silent-exit](./quick/260504-oh9-fix-sei-cli-entrypoint-guard-silent-exit/) |
 | 260505-iqo | Memory & loop architecture refactor: API-only collapse (drop ollama/circuit/handOffToMovement), convoMemory module with split owner/self ring buffers + loopHistory, idle-timing split into `sei:loop_end` + 60s fallback with per-event seed prompts, strict say/think separation | 2026-05-05 | 0a35318 | [260505-iqo-memory-and-loop-architecture-refactor-bu](./quick/260505-iqo-memory-and-loop-architecture-refactor-bu/) |
+| 260505-twx | Sei behavior fixes: chat/full mode toggle (relay [think] in chat when full), snapshot tier-aware ranking (interesting-before-terrain) + 16-entry cap, dig-by-name tool description, P0 attack reaction (abort+restart with verbal-first seed), clearer dig error strings (no held-item suffix), iteration_cap 20→30, say() cadence rule (mandatory first/last turn, optional middle) | 2026-05-05 | ea9b342 | [260505-twx-sei-behavior-fixes-chat-full-mode-toggle](./quick/260505-twx-sei-behavior-fixes-chat-full-mode-toggle/) |
 
 ## Session Continuity
 
-- **Last action:** Quick task 260505-iqo — collapsed two-layer LLM to single Anthropic call, replaced `chatRingBuffer` with `convoMemory` (split owner/self lines + persistent `loopHistory` of one-title-per-loop summaries), split idle into `sei:loop_end` initiative tick + 60s fallback with peer-framing system prompts, enforced say/think separation (only `say()` reaches chat).
-- **Next action:** `/gsd-plan-phase 3` to begin memory & persistence work.
+- **Last action:** Quick task 260505-twx — five-fix consolidation from observed live session: chat_mode toggle re-added, snapshot now ranks logs/ores ahead of grass/dirt with 16-block window, dig action documented as supporting `{block:"name"}`, sei:attacked aborts the active loop with a verbal-first seed prompt, dig errors no longer mention the held item when the real cause is empty space, loop iteration cap raised, and say() cadence rule added so Haiku stops re-narrating inventory each turn.
+- **Next action:** Relink `sei` CLI to slop/sei (or `cd /Users/ouen/Downloads/sei && git pull`) so the global binary picks up these fixes, then end-to-end test against a LAN world.
 
 ---
-*Last updated: 2026-05-05 — quick task 260505-iqo completed.*
+*Last updated: 2026-05-05 — quick task 260505-twx completed.*
 | 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
 | 2026-05-05 | fast | docs cleanup: remove two-layer/ollama from README+ARCHITECTURE | done |
 | 2026-05-05 | fast | drop port from persisted config; LAN discovery is the only path | done |
