@@ -1,18 +1,13 @@
-// ─── TODO_ADAPTER (Plan 03.1-02) ────────────────────────────────────────────
-// The brain layer must NOT import directly from the game adapter. The three
-// imports below cross the brain ↔ adapter seam and will be replaced by calls
-// through the Adapter interface (see src/brain/types.js, ADAPTER_INTERFACE_VERSION):
-//   - createSnapshotComposer  → adapter.createSnapshotComposer()
-//   - closeContainerSession   → adapter.closeAnySessions()
-//   - setInflightProvider     → adapter.setInflightProvider(fn)
-// (`pauseFollow` is imported but currently unused; drop in Plan 02.)
-// `composeSnapshot` named import is also unused at the call sites (only
-// createSnapshotComposer is used) — Plan 02 will prune.
-//
-// These imports remain in place during Plan 01 (mechanical relocation only)
-// and intentionally break the build at the consumer layer until Plan 02 wires
-// the Adapter interface. DO NOT auto-rewrite in this plan.
-// ────────────────────────────────────────────────────────────────────────────
+// Brain ↔ adapter seam (D-5/D-6, Plan 03.1-02). The orchestrator receives
+// an `adapter` at construction (see createOrchestrator below) and consumes
+// every game-shaped capability through it:
+//   - adapter.createSnapshotComposer()  (was: ../observers/snapshot)
+//   - adapter.closeAnySessions()        (was: ../behaviors/container)
+//   - adapter.setInflightProvider(fn)   (was: ../behaviors/follow)
+//   - adapter.worldPrimer()             (was: ./persona.js minecraftPrimer)
+//   - adapter.executeAction(...)        (registry calls, including chat tx)
+// The orchestrator never imports from src/adapter/ — verify with
+// `grep -r "from '../adapter" src/brain/`.
 
 import { createAnthropicClient } from './anthropicClient.js'
 import { createGoalStore } from './goals.js'
@@ -20,11 +15,8 @@ import { createTokenBucket } from './rateLimiter.js'
 import { createDebouncer, createThrottle } from './debounce.js'
 import { createChainTracker } from './chains.js'
 import { createLoop } from './loop.js'
-import { renderPersona, capHitLine, capabilityParagraph, minecraftPrimer, stillLearningLine } from './persona.js'
+import { renderPersona, capHitLine, capabilityParagraph, stillLearningLine } from './persona.js'
 import { buildAnthropicTools } from './schemaBridge.js'
-import { composeSnapshot, createSnapshotComposer } from '../observers/snapshot.js'
-import { closeContainerSession } from '../behaviors/container.js'
-import { pauseFollow, setInflightProvider } from '../behaviors/follow.js'
 import { createInflightTracker } from './inflight.js'
 import { createConvoMemory } from './convoMemory.js'
 import { logChatOut, logActionResult } from './log.js'
@@ -161,15 +153,31 @@ export async function composeSeedBlocks({
 
 /**
  * @param {object} deps
- * @param {object} deps.bot
+ * @param {object} deps.adapter        Adapter implementing src/brain/types.js
+ *                                     contract. Replaces the old `bot` and
+ *                                     `registry` parameters — every game-shaped
+ *                                     capability flows through this object.
  * @param {object} deps.config
- * @param {object} deps.registry  // result of createDefaultRegistry() — already includes setGoals
  * @param {{warn:Function,info:Function,error:Function,debug?:Function}} [deps.logger]
  * @param {object} [deps.sessionState] — Phase 3 Plan 3-02 (optional during transition)
  * @param {object} [deps.ownerStore]   — { loadOwner, saveOwner, formatOwnerSeedBlock }
  * @param {object} [deps.diary]        — createDiary instance
+ * @param {(event:string, data:any, priority?:number) => void} [deps.reenqueue]
+ *   Brain-side dispatcher. Used by the orchestrator to re-fire events
+ *   (sei:loop_terminal at P2.5, sei:attacked at P0) back through the
+ *   priority queue. Required when the brain runs in production; defaults
+ *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ bot, config, registry, logger = console, sessionState = null, ownerStore = null, diary = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, ownerStore = null, diary = null, reenqueue = () => {} }) {
+  if (!adapter) throw new Error('createOrchestrator: adapter required')
+  // Locally re-bind into the same names the body uses; the registry surface
+  // is exposed through the adapter rather than a separate parameter.
+  const registry = {
+    list: () => adapter.listActions(),
+    schema: (name) => adapter.getActionSchema(name),
+    description: (name) => adapter.getActionDescription(name),
+    execute: (name, args, _bot, execOpts) => adapter.executeAction(name, args, execOpts),
+  }
   const goals = createGoalStore()
   const anthropic = createAnthropicClient(config)
   const personalityBucket = createTokenBucket({
@@ -184,10 +192,10 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
   // and follow.js can pause for the entire action lifecycle (not just the
   // dispatch lifecycle). See ./inflight.js.
   const inflight = createInflightTracker()
-  // Stateful snapshot composer — wraps composeSnapshot and injects a
-  // `recent_events:` line with inventory/kill/hp deltas since the prior
-  // snapshot for this orchestrator instance. See observers/snapshot.js.
-  const snapshotComposer = createSnapshotComposer({ bot })
+  // Stateful snapshot composer — wraps the adapter's per-instance composer
+  // and injects a `recent_events:` line with inventory/kill/hp deltas since
+  // the prior snapshot for this orchestrator instance.
+  const snapshotComposer = adapter.createSnapshotComposer()
   // Conversation memory (260505-iqo): split owner/self recentChat sub-buffers
   // and a loopHistory ring of completed-loop summaries. Injected into the seed
   // user turn so the LLM has cross-loop continuity (short replies like "yes" /
@@ -197,7 +205,7 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
   // Wire follow's lifecycle gate — follow yields while a *movement* action
   // is in flight. Personality-only entries (setGoals/say) don't pause
   // follow; see currentBlocking() in inflight.js.
-  setInflightProvider(() => inflight.currentBlocking() != null)
+  adapter.setInflightProvider(() => inflight.currentBlocking() != null)
   // Phase 3 D-59: chains is a no-op shim (kept to preserve any stragglers
   // referencing it from prior phases).
   const chains = createChainTracker({ maxHops: config.llm.max_hops })
@@ -214,9 +222,10 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
   let pendingInterrupt = null
   // 260505-twx: Pending attack to re-fire after the current loop's finally
   // clears currentLoop. Set when sei:attacked arrives mid-loop; consumed
-  // by handleDispatch's finally block via bot.emit so the FSM re-enqueues
-  // the dispatch at P0, which then arrives with currentLoop === null and
-  // opens a fresh loop with the attack seed addendum.
+  // by handleDispatch's finally block via reenqueue() so the brain's
+  // priority queue re-enqueues the dispatch at P0, which then arrives with
+  // currentLoop === null and opens a fresh loop with the attack seed
+  // addendum.
   let pendingAttack = null
 
   // Personality-only tools: setGoals, say
@@ -263,7 +272,7 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
       SYSTEM_INSTRUCTIONS,
       renderPersona(config.persona),
       capabilityParagraph(),
-      minecraftPrimer(),
+      adapter.worldPrimer(),
       stillLearningLine(),
       combinedToolsFor()
     )
@@ -278,8 +287,8 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
   // Fed back into the next personality turn via composeSnapshot's lastActionResult.
   let lastActionResult = null
 
-  // `start()` is a no-op kept for API compatibility with bot.js, which calls
-  // `orchestrator.start().catch(...)` at spawn-wire time.
+  // `start()` is a no-op kept for API compatibility — brain.start() calls
+  // `orchestrator.start().catch(...)` after wiring the adapter.
   async function start() {}
 
   // ─── Snapshot helper ────────────────────────────────────────────────
@@ -330,7 +339,7 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
   async function runWithInflight(name, args, execOpts) {
     const handle = inflight.start({ name, args })
     try {
-      return await registry.execute(name, args, bot, execOpts)
+      return await registry.execute(name, args, null /* adapter owns bot */, execOpts)
     } finally {
       inflight.end(handle)
     }
@@ -415,7 +424,7 @@ function maybeWarnByteCap(loop, warned) {
 
     // ── Fresh Loop ──
     // Pitfall 6: clean up any leaked container session from a prior dispatch.
-    try { await closeContainerSession() } catch {}
+    try { await adapter.closeAnySessions() } catch {}
 
     const loop = createLoop({ iterationCap: config.memory.iteration_cap, logger })
     currentLoop = loop
@@ -524,35 +533,36 @@ function maybeWarnByteCap(loop, warned) {
       } catch (err) {
         logger.warn?.(`[sei/orch] convoMemory.loopHistory.push failed: ${err.message}`)
       }
-      // 260505-iqo: emit sei:loop_terminal so the FSM can reset its idle
-      // timer and (unless we were already in a sei:loop_end loop) enqueue a
-      // sei:loop_end tick. The FSM listener fires synchronously; the
-      // resulting enqueue runs through the normal queue → processNext →
-      // sei:dispatch path AFTER currentLoop = null below, so the
-      // single-flight gate accepts it cleanly.
+      // 260505-iqo: re-enqueue sei:loop_terminal so the brain's priority
+      // queue can reset its idle timer and (unless we were already in a
+      // sei:loop_end loop) enqueue a sei:loop_end tick at P2.5. The
+      // re-enqueue runs through the normal queue → processNext → handler
+      // path AFTER currentLoop = null below, so the single-flight gate
+      // accepts it cleanly. brain.start() handles the loop_terminal →
+      // loop_end translation outside the orchestrator.
       try {
-        bot.emit('sei:loop_terminal', { loopId: loop.id, originatingEvent: event })
+        reenqueue('sei:loop_terminal', { loopId: loop.id, originatingEvent: event })
       } catch (err) {
-        logger.warn?.(`[sei/orch] sei:loop_terminal emit failed: ${err.message}`)
+        logger.warn?.(`[sei/orch] sei:loop_terminal re-enqueue failed: ${err.message}`)
       }
       currentLoop = null
       pendingInterrupt = null
       // 260505-twx: if a sei:attacked arrived mid-loop and aborted us,
-      // re-emit it now (after currentLoop = null) so the FSM re-enqueues
-      // at P0 → processNext → fresh dispatch arrives at handleDispatch
-      // with currentLoop === null and opens a new loop with the attack
-      // seed addendum. Order matters: sei:loop_terminal already fired
-      // above; that enqueues sei:loop_end at P2.5 which is below the P0
-      // sei:attacked we are about to fire, so the attack wins the queue
-      // race.
+      // re-fire it now (after currentLoop = null) so the brain's priority
+      // queue re-enqueues at P0 → processNext → fresh handleDispatch
+      // arrives with currentLoop === null and opens a new loop with the
+      // attack seed addendum. Order matters: sei:loop_terminal already
+      // fired above; that enqueues sei:loop_end at P2.5 which is below the
+      // P0 sei:attacked we are about to fire, so the attack wins the
+      // queue race.
       if (pendingAttack) {
         const pa = pendingAttack
         pendingAttack = null
-        try { bot.emit('sei:attacked', pa.data) } catch (err) {
-          logger.warn?.(`[sei/orch] sei:attacked re-emit failed: ${err.message}`)
+        try { reenqueue('sei:attacked', pa.data, 0 /* Priority.P0_SAFETY */) } catch (err) {
+          logger.warn?.(`[sei/orch] sei:attacked re-enqueue failed: ${err.message}`)
         }
       }
-      try { await closeContainerSession() } catch {}
+      try { await adapter.closeAnySessions() } catch {}
     }
   }
 
@@ -617,7 +627,7 @@ function maybeWarnByteCap(loop, warned) {
           if (config.chat_mode === 'full') {
             const line = ('[think] ' + text).slice(0, 256)
             logChatOut(line)
-            try { bot.chat(line) } catch {}
+            try { adapter.chat(line) } catch {}
             convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', line)
           } else {
             logger.debug?.(`[sei/orch] terminal text (private, not relayed): ${text}`)
@@ -637,7 +647,7 @@ function maybeWarnByteCap(loop, warned) {
           if (config.chat_mode === 'full') {
             const line = ('[think] ' + midText).slice(0, 256)
             logChatOut(line)
-            try { bot.chat(line) } catch {}
+            try { adapter.chat(line) } catch {}
             convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', line)
           } else {
             logger.debug?.(`[sei/orch] mid-loop text (private, not relayed): ${midText}`)
@@ -659,7 +669,7 @@ function maybeWarnByteCap(loop, warned) {
           if (u.name === 'say') {
             const line = String(u.input?.text ?? '').slice(0, 256)
             logChatOut(line)
-            try { bot.chat(line) } catch {}
+            try { adapter.chat(line) } catch {}
             convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', line)
             results[i] = { type: 'tool_result', tool_use_id: u.id, content: 'said', is_error: false }
           } else if (u.name === 'setGoals') {
@@ -842,12 +852,12 @@ function maybeWarnByteCap(loop, warned) {
       // it on chat + convoMemory so the timeline stays coherent.
       const text = (resp.text ?? '').trim() || capHitLine(config.persona)
       logChatOut(text)
-      try { bot.chat(text) } catch {}
+      try { adapter.chat(text) } catch {}
       convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', text)
     } catch (err) {
       logger.warn(`[sei/orch] graceful cap close call failed: ${err.message}; falling back to capHitLine`)
       const fallback = capHitLine(config.persona)
-      try { bot.chat(fallback) } catch {}
+      try { adapter.chat(fallback) } catch {}
       convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', fallback)
     }
   }
@@ -886,9 +896,9 @@ function maybeWarnByteCap(loop, warned) {
       // Plan 3-02 harness seam: expose the cached system blocks so the
       // verifier can prove OWNER/DIARY content does not leak into them.
       getCachedSystemBlocks: () => cachedSystemBlocks,
-      // Plan 3-03: bot.js reads these to construct the compactor with the
-      // SAME anthropic client + cachedSystemBlocks reference (Pitfall 4
-      // cache hit guarantee — cache_control marker stays valid).
+      // Plan 3-03: brain.start() reads these to construct the compactor
+      // with the SAME anthropic client + cachedSystemBlocks reference
+      // (Pitfall 4 cache hit guarantee — cache_control marker stays valid).
       get anthropic() { return anthropic },
       get cachedSystemBlocks() { return cachedSystemBlocks },
     },

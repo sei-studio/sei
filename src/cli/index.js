@@ -40,14 +40,22 @@ const OWNER_MD_PATH = resolve(MEMORY_DIR, 'OWNER.md')
 const INDEX_PATH = resolve(PROJECT_ROOT, 'src', 'index.js')
 
 const DEFAULT_CONFIG = {
-  host: '127.0.0.1',
-  auth: 'offline',
-  username: 'Sui',
   owner_username: 'YourMinecraftName',
-  minecraft_version: '1.21.1',
-  reconnect_delay_ms: 5000,
-  pathfinder_timeout_ms: 12000,
-  follow_range: 3,
+  // Adapter-specific fields nest under adapter.<kind>.* (Plan 03.1-02).
+  // The loader's migrateLegacyAdapterFields hoists older flat configs
+  // automatically, so this CLI writes the new shape directly.
+  adapter: {
+    kind: 'minecraft',
+    minecraft: {
+      host: '127.0.0.1',
+      auth: 'offline',
+      username: 'Sui',
+      version: '1.21.1',
+      reconnect_delay_ms: 5000,
+      pathfinder_timeout_ms: 12000,
+      follow_range: 3,
+    },
+  },
   persona: {
     name: 'Sui',
     backstory: 'A curious companion who enjoys exploring blocky worlds alongside their friend.',
@@ -175,12 +183,31 @@ async function onboard({ rl, existing, mode = 'first-run' }) {
   })
 
   // Compose merged config — preserve any keys we didn't ask about.
+  // Plan 03.1-02: `username` (the character / mineflayer login name) lives
+  // under adapter.minecraft.username; older configs may still have it at
+  // the top level — rewrite to the new shape.
+  const existingMc = existing.adapter?.minecraft ?? {}
   const cfg = {
     ...DEFAULT_CONFIG,
     ...existing,
-    username: characterName,
     chat_mode: chatMode,
     owner_username: ownerUsername,
+    adapter: {
+      kind: 'minecraft',
+      minecraft: {
+        ...DEFAULT_CONFIG.adapter.minecraft,
+        ...existingMc,
+        // Migrate legacy top-level fields if present in existing config.
+        host: existingMc.host ?? existing.host ?? DEFAULT_CONFIG.adapter.minecraft.host,
+        port: existingMc.port ?? existing.port,
+        auth: existingMc.auth ?? existing.auth ?? DEFAULT_CONFIG.adapter.minecraft.auth,
+        version: existingMc.version ?? existing.minecraft_version ?? DEFAULT_CONFIG.adapter.minecraft.version,
+        reconnect_delay_ms: existingMc.reconnect_delay_ms ?? existing.reconnect_delay_ms ?? DEFAULT_CONFIG.adapter.minecraft.reconnect_delay_ms,
+        pathfinder_timeout_ms: existingMc.pathfinder_timeout_ms ?? existing.pathfinder_timeout_ms ?? DEFAULT_CONFIG.adapter.minecraft.pathfinder_timeout_ms,
+        follow_range: existingMc.follow_range ?? existing.follow_range ?? DEFAULT_CONFIG.adapter.minecraft.follow_range,
+        username: characterName,
+      },
+    },
     persona: {
       ...DEFAULT_CONFIG.persona,
       ...(existing.persona ?? {}),
@@ -193,6 +220,11 @@ async function onboard({ rl, existing, mode = 'first-run' }) {
       ...(existing.anthropic ?? {}),
       api_key: apiKey,
     },
+  }
+  // Strip migrated legacy top-level minecraft keys so the file is canonical.
+  for (const k of ['host', 'port', 'auth', 'username', 'minecraft_version',
+                   'reconnect_delay_ms', 'pathfinder_timeout_ms', 'follow_range']) {
+    delete cfg[k]
   }
   // Strip the legacy chat-mode field if a previous onboarding wrote it.
   // (the new field is `chat_mode`, distinct name, no collision)
