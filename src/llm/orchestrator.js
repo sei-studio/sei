@@ -21,6 +21,7 @@ const SYSTEM_INSTRUCTIONS = [
   'Communicate to the owner ONLY via the `say` tool. Your assistant `text` field is private scratch reasoning — it never reaches the player. If you have nothing to say to the owner this turn, do not produce text.',
   'Keep `say` lines short — one line, max 15 words, like player chat (no paragraphs, no narration).',
   'Use `say` frequently, not just at the start and end of work. Good moments: when you start a task, when you spot something relevant, when you hit a problem, before/after a noticeable action, when you finish. Skip it for purely internal thinking.',
+  'say() cadence: REQUIRED on the FIRST turn of a loop (so the owner knows you noticed the trigger) and on the LAST turn (so they know you finished or what you concluded). OPTIONAL in middle turns — speak only if you have something genuinely new. Do NOT restate inventory counts, position, or status the snapshot already shows. Mention numbers only when they just changed (e.g. "got the last 2 logs", not "I have 8 logs").',
   'You decide WHAT to do at a high level AND directly invoke the body actions to do it.',
   'In a single response you may: speak in chat (`say`), set goals (`setGoals`), and/or invoke movement actions (e.g. `goTo`, `dig`, `attack`, `equip`, `place`, `consume`, `sleep`, etc.).',
   'Movement rule: in one response you may emit AT MOST ONE TYPE of movement action. Multiple calls of the SAME movement action are fine and recommended (e.g. ten `dig` calls to chop a whole tree). Mixing different movement types (e.g. `dig` and `goTo` together) is not — pick one type per turn. Multiple same-type calls run sequentially: each waits for the prior to finish.',
@@ -195,6 +196,12 @@ export function createOrchestrator({ bot, config, registry, logger = console, se
   // Pending interrupt blocks supplied via abort signal — picked up by the
   // catch arm to render the PLAYER INTERRUPT user turn.
   let pendingInterrupt = null
+  // 260505-twx: Pending attack to re-fire after the current loop's finally
+  // clears currentLoop. Set when sei:attacked arrives mid-loop; consumed
+  // by handleDispatch's finally block via bot.emit so the FSM re-enqueues
+  // the dispatch at P0, which then arrives with currentLoop === null and
+  // opens a fresh loop with the attack seed addendum.
+  let pendingAttack = null
 
   // Personality-only tools: setGoals, say
   const personalityTools = [
@@ -367,17 +374,26 @@ function maybeWarnByteCap(loop, warned) {
       return
     }
 
-    // Single-flight branch: while a Loop is active, only owner-chat is
-    // allowed in (interrupt). Anything else is dropped.
+    // Single-flight branch: while a Loop is active, owner-chat preempts
+    // (interrupt path) and sei:attacked aborts (re-fired by finally as a
+    // fresh dispatch — 260505-twx). Anything else is dropped.
     if (currentLoop !== null) {
-      if (!isOwnerChat) {
-        logger.warn(`[sei/orch] dispatch ${event} arrived while loop active — dropping`)
+      if (isOwnerChat) {
+        const chatText = (data && (data.text ?? data.message)) ?? JSON.stringify(data ?? {})
+        pendingInterrupt = { chatText: String(chatText) }
+        try { currentLoop.abortController.abort() } catch {}
         return
       }
-      // Owner chat mid-loop: signal interrupt.
-      const chatText = (data && (data.text ?? data.message)) ?? JSON.stringify(data ?? {})
-      pendingInterrupt = { chatText: String(chatText) }
-      try { currentLoop.abortController.abort() } catch {}
+      if (event === 'sei:attacked') {
+        // P0 safety: drop the in-flight loop and re-fire the attack as a
+        // fresh dispatch once the current loop's finally has cleared
+        // currentLoop. We stash the dispatch here, abort the loop, and the
+        // finally block emits it back into the FSM pipeline.
+        pendingAttack = { event, data }
+        try { currentLoop.abortController.abort() } catch {}
+        return
+      }
+      logger.warn(`[sei/orch] dispatch ${event} arrived while loop active — dropping`)
       return
     }
 
@@ -403,6 +419,16 @@ function maybeWarnByteCap(loop, warned) {
       eventAddendum = '\n\nYou just finished a task. Decide: continue toward a related sub-goal, propose a follow-up, or settle. Do not re-ask anything you already asked recently. Do not ask the owner what to do — pick something yourself; you can always change course later.'
     } else if (event === 'sei:idle' || event === 'idle') {
       eventAddendum = '\n\n60 seconds have passed with no activity. You are a peer, not a subordinate — pick something to do. Asking the owner what to do is a last resort. Never repeat a question you already asked.'
+    } else if (event === 'sei:attacked') {
+      // 260505-twx: P0 reaction. Name the attacker, demand a verbal-first
+      // reaction, and set the player-vs-mob policy so the model doesn't try
+      // attackEntity on a peer (auto-PvP is off — that call would be refused).
+      const label = data?.attackerLabel ?? data?.attacker?.username ?? data?.attacker?.name ?? 'unknown'
+      const kind = data?.attackerKind ?? (data?.attacker?.username ? 'player' : 'mob')
+      const reactClause = (kind === 'player' || kind === 'players')
+        ? 'this is a peer; could be a nudge, a joke, or a real threat. Use judgment — call them out, dodge with goTo, or shrug it off. Auto-PvP is off so attackEntity on players is refused; do not try.'
+        : 'mobs get hit back. Call attackEntity (use `times: 5+` to amortize swings) once you have spoken. follow first if it is moving.'
+      eventAddendum = `\n\n${label} (${kind}) just hit you. React out loud first — short, in-character. Then decide: ${reactClause} Resume any prior task only if it still makes sense.`
     }
     const eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
     if (sessionState && ownerStore && diary) {
@@ -495,6 +521,21 @@ function maybeWarnByteCap(loop, warned) {
       }
       currentLoop = null
       pendingInterrupt = null
+      // 260505-twx: if a sei:attacked arrived mid-loop and aborted us,
+      // re-emit it now (after currentLoop = null) so the FSM re-enqueues
+      // at P0 → processNext → fresh dispatch arrives at handleDispatch
+      // with currentLoop === null and opens a new loop with the attack
+      // seed addendum. Order matters: sei:loop_terminal already fired
+      // above; that enqueues sei:loop_end at P2.5 which is below the P0
+      // sei:attacked we are about to fire, so the attack wins the queue
+      // race.
+      if (pendingAttack) {
+        const pa = pendingAttack
+        pendingAttack = null
+        try { bot.emit('sei:attacked', pa.data) } catch (err) {
+          logger.warn?.(`[sei/orch] sei:attacked re-emit failed: ${err.message}`)
+        }
+      }
       try { await closeContainerSession() } catch {}
     }
   }
@@ -528,6 +569,12 @@ function maybeWarnByteCap(loop, warned) {
         resp = await callPersonality(loop, signal)
       } catch (err) {
         if (err && (err.name === 'AbortError' || signal.aborted)) {
+          // 260505-twx: if the abort was caused by an incoming attack,
+          // drop the entire loop. The handleDispatch finally block will
+          // re-fire the attack as a fresh dispatch, which opens a new
+          // loop with the attack seed addendum. Don't append a PLAYER
+          // INTERRUPT turn — there isn't one.
+          if (pendingAttack) return
           await repairAfterAbort(loop)
           replaceAbortController(loop)
           continue
@@ -632,6 +679,23 @@ function maybeWarnByteCap(loop, warned) {
         }
       } catch (err) {
         if (err && (err.name === 'AbortError' || signal.aborted)) {
+          // 260505-twx: incoming attack — synthesize aborted results just
+          // to keep any in-flight Anthropic streaming state coherent (we
+          // never send this turn), then bail. The handleDispatch finally
+          // block re-fires the attack as a fresh dispatch.
+          if (pendingAttack) {
+            for (let i = 0; i < toolUses.length; i++) {
+              if (!results[i]) {
+                results[i] = {
+                  type: 'tool_result',
+                  tool_use_id: toolUses[i].id,
+                  content: 'aborted: incoming attack',
+                  is_error: false,
+                }
+              }
+            }
+            return
+          }
           // Abort fired mid-tool-dispatch. Synthesize results for any
           // un-filled slots so pairing holds, then run the standard repair.
           for (let i = 0; i < toolUses.length; i++) {

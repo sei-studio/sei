@@ -40,9 +40,16 @@ export async function digAction(args, bot, config) {
     return `out of range (${dist.toFixed(1)}m, need ≤${DIG_REACH}) for ${blockName} @${bx},${by},${bz}`
   }
 
+  // Distinguish "no block at coord" (snapshot stale, model picked empty
+  // space) from "block exists but cannot be broken" (bedrock, water, ...).
+  // The held-item suffix is gone — Haiku was reading "with stick" as
+  // causal ("stick is wrong tool for log") when the real issue was empty
+  // space. (260505-twx)
+  if (blockName === 'air' || blockName === 'cave_air' || blockName === 'void_air') {
+    return `no block at ${bx},${by},${bz} (target was ${blockName})`
+  }
   if (typeof bot.canDigBlock === 'function' && !bot.canDigBlock(block)) {
-    const holding = bot.heldItem?.name ?? 'bare hands'
-    return `cannot break ${blockName} with ${holding}`
+    return `cannot break ${blockName} at ${bx},${by},${bz} (unbreakable or wrong tool)`
   }
 
   const timeoutMs = args.timeout_ms ?? config?.dig_timeout_ms ?? DEFAULT_TIMEOUT_MS

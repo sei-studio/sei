@@ -38,7 +38,7 @@ export const ConfigSchema = z.object({
   memory: z.object({
     owner_md_path: z.string().default('./memory/OWNER.md'),
     diary_md_path: z.string().default('./memory/DIARY.md'),
-    iteration_cap: z.number().int().min(1).default(20),
+    iteration_cap: z.number().int().min(1).default(30),
     loop_batch_loop_count_cap: z.number().int().min(1).default(10),
     loop_batch_context_cap_bytes: z.number().int().min(1024).default(32768),
     sessions_per_consolidation: z.number().int().min(1).default(4),
