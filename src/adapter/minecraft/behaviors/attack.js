@@ -1,7 +1,7 @@
 // src/behaviors/attack.js — multi-swing attack on an entity (D-22, Pitfall 5)
 import { resolveEntity, isStaleHandle } from '../observers/targeting.js'
 import { goTo } from './pathfind.js'
-import { reason } from '../llm/errStrings.js'
+import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 12000
 const REACH = 3.5

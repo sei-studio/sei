@@ -5,7 +5,7 @@
 // on chain end / abort to enforce the "never overlap" invariant globally.
 import mcDataLib from 'minecraft-data'
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
-import { reason } from '../llm/errStrings.js'
+import { reason } from '../../../brain/errStrings.js'
 
 export const OPEN_TIMEOUT_MS = 6000
 export const TRANSFER_TIMEOUT_MS = 4000

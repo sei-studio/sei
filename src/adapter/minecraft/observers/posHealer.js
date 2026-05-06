@@ -12,7 +12,7 @@
 // perspective this is a 0-block, 0-packet "teleport" — no anti-cheat trigger.
 
 import { Vec3 } from 'vec3'
-import { logHeal } from '../log.js'
+import { logHeal } from '../../../brain/log.js'
 
 let _lastGood = null
 let _lastGoodYaw = 0

@@ -1,4 +1,4 @@
-// Small helpers for action error strings — keep mineflayer reasons compact
+// Small helpers for action error strings — keep adapter-side reasons compact
 // and free of stack traces so the LLM gets useful signal without context blow.
 
 export function firstLine(s) {
@@ -12,7 +12,7 @@ export function truncate(s, max = 80) {
 }
 
 /**
- * Format an underlying mineflayer error into a single short line.
+ * Format an underlying adapter/runtime error into a single short line.
  *
  * NOTE: Do NOT post-decorate the result with held-item / inventory
  * context inside action wrappers. Haiku reads decoration as causal

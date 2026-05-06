@@ -1,5 +1,5 @@
 // src/behaviors/consume.js — eat the held food (D-22, Pitfall 3)
-import { reason } from '../llm/errStrings.js'
+import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 4000
 

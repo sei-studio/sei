@@ -1,6 +1,6 @@
 // src/behaviors/sleep.js — sleep in a bed (D-22, Pitfall 4)
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
-import { reason } from '../llm/errStrings.js'
+import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 12000
 

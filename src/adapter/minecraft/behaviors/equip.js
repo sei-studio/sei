@@ -1,5 +1,5 @@
 // src/behaviors/equip.js — equip an item to a slot (D-22)
-import { reason } from '../llm/errStrings.js'
+import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 2000
 

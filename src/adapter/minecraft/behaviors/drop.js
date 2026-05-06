@@ -1,5 +1,5 @@
 // src/behaviors/drop.js — toss N of an item from inventory (D-22)
-import { reason } from '../llm/errStrings.js'
+import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 2000
 

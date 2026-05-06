@@ -9,7 +9,7 @@
  * conversation. The fast path: abort the active Loop, clear owner_goals,
  * say "stopping.", and skip dispatch.
  */
-import { logChatIn } from '../log.js'
+import { logChatIn } from '../../../brain/log.js'
 
 const STOP_VERBS = new Set(['stop', 'halt', 'cancel', 'nevermind', 'never mind'])
 

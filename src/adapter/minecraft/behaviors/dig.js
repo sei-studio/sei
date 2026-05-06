@@ -1,7 +1,7 @@
 // src/behaviors/dig.js — single-flight dig with timeout + abort (D-22, Pitfall 2)
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { goTo } from './pathfind.js'
-import { firstLine, truncate } from '../llm/errStrings.js'
+import { firstLine, truncate } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 8000
 const PICKUP_TIMEOUT_MS = 3000

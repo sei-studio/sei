@@ -1,7 +1,7 @@
 // src/behaviors/place.js — place a block against a reference face (D-22)
 import { Vec3 } from 'vec3'
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
-import { reason } from '../llm/errStrings.js'
+import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 4000
 
