@@ -1226,8 +1226,13 @@ function maybeWarnByteCap(loop, warned) {
 
   async function gracefulCapClose(loop) {
     logger.warn(`[sei/orch] iteration cap hit — forcing graceful close (loop=${loop.id}, iterations=${loop.iterationCount})`)
+    // Plan 03.1-07 Task 3 (D-W-8 / D-NEW-TONE-2): the user explicitly called
+    // out the static "okay, brain melting — taking five." line surfacing in
+    // wood-postfix. capHitLine remains as a last-resort fallback ONLY for
+    // genuine API failures (network/timeout/empty response). The seed prompt
+    // is strengthened so the model authors a one-line wrap-up in its own voice.
     loop.appendUserTurn([
-      { type: 'text', name: 'event',    text: 'You have hit the iteration cap. Wrap up with one short say.' },
+      { type: 'text', name: 'event',    text: 'You hit the iteration cap and have to stop. Write ONE short line — no more than 12 words, lowercase, no periods — that wraps up gracefully in your own voice. Acknowledge the limit briefly without being whiny. Examples in tone: "alright, calling it for now", "head\'s spinning, taking a beat", "stopping here, will pick this up". Output ONLY the line, no quotes, no explanation.' },
       { type: 'text', name: 'snapshot', text: snapshotText() },
     ])
     try {
@@ -1236,17 +1241,34 @@ function maybeWarnByteCap(loop, warned) {
         tools: [],
         messages: loop.buildAnthropicPayload(),
         signal: loop.abortController.signal,
-        timeoutMs: config.anthropic.timeout_ms,
+        // Plan 03.1-07 Task 3: cap-close is a single blocking call with no
+        // retry. Bump to at least 8s so a slightly slow API response does
+        // not surface capHitLine. Normal calls keep their configured timeout.
+        timeoutMs: Math.max(config.anthropic.timeout_ms, 8000),
       })
       loop.appendAssistant(buildAssistantContent(resp))
       // Cap-close is a one-shot terminal wrap-up: the prior iteration forced
       // tools=[], so the model has no `say` tool available. Treat the returned
       // text (or capHitLine fallback) as the equivalent of a `say` and surface
       // it on chat + convoMemory so the timeline stays coherent.
-      const text = (resp.text ?? '').trim() || capHitLine(config.persona)
-      logChatOut(text)
-      try { adapter.chat(text) } catch {}
-      convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', text)
+      const modelText = (resp.text ?? '').trim()
+      if (modelText) {
+        logger.info?.(`[sei/orch] cap-close: model-authored wrap-up (loop=${loop.id})`)
+        // Run the model's wrap-up through postProcessSay so it follows the
+        // same punctuation rules as a normal say() — model emits raw text in
+        // its content block (not via the say tool), so postProcessSay was
+        // being skipped. This closes that consistency gap.
+        const text = postProcessSay(modelText)
+        logChatOut(text)
+        try { adapter.chat(text) } catch {}
+        convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', text)
+      } else {
+        const fallback = capHitLine(config.persona)
+        logger.warn?.(`[sei/orch] cap-close: model returned empty text — falling back to capHitLine: ${fallback}`)
+        logChatOut(fallback)
+        try { adapter.chat(fallback) } catch {}
+        convoMemory.recentChat.pushSelf(config.persona?.name ?? 'sei', fallback)
+      }
     } catch (err) {
       logger.warn(`[sei/orch] graceful cap close call failed: ${err.message}; falling back to capHitLine`)
       const fallback = capHitLine(config.persona)
