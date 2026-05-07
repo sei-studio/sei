@@ -23,21 +23,29 @@ import { logChatOut, logActionResult } from './log.js'
 import { createAffectLog, readAffectFull } from './memory/affectLog.js'
 import { setPreferredName, appendNote } from './memory/owner.js'
 
-// Post-process say() text per D-7 (Plan 03.1-03):
-//   lowercase, strip [.,!?;:—–"`], KEEP apostrophes (contractions),
-//   collapse whitespace, cap at 256 chars.
+// Post-process say() text per D-7 (Plan 03.1-03), refined per D-NEW-TONE-1
+// (Plan 03.1-07) to match the user's verbatim spec from memory-postfix.txt
+// header item 5: "add back punctuations, just avoid \"–\", only use \",\"
+// \"!\" \"?\" and dont end sentences in \".\""
+//
+// SURVIVES (kept): commas (,), exclamation marks (!), question marks (?),
+//   apostrophes ('), semicolons (;), colons (:) — all "punctuations" the
+//   user is "adding back".
+// STRIPPED (replaced with space): periods (.), em-dash (—, U+2014),
+//   en-dash (–, U+2013), double quote ("), backtick (`).
+//
+// lowercase, collapse whitespace, cap at 256 chars.
 // Internal `text` (think) is exempt — it never passes through this; full-mode
 // `[think] ` debug relay also bypasses this on purpose so reasoning text stays
 // readable in chat for the operator.
 // Implementation note: stripped chars are replaced with a SPACE (not empty)
 // so word-joining cases like "move—shelter" become "move shelter", not
 // "moveshelter". The trailing whitespace collapse + trim folds the extra
-// spaces back down to a single one (or zero at edges). This matches Plan
-// 03.1-03's documented expected outputs verbatim.
+// spaces back down to a single one (or zero at edges).
 export function postProcessSay(s) {
   return String(s ?? '')
     .toLowerCase()
-    .replace(/[.,!?;:—–"`]/g, ' ')
+    .replace(/[.—–"`]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 256)
