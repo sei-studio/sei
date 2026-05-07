@@ -80,4 +80,11 @@ export function startFollow(bot, config) {
 export function stopFollow() {
   clearInterval(_followInterval)
   _followInterval = null
+  // Plan 03.1-09 (D-H-16): defense-in-depth — also clear the active target so
+  // the snapshot's follow_target field reads `(none)` if anyone calls
+  // stopFollow directly (e.g. on disconnect/reconnect, or a future explicit-
+  // clear pathway). The unfollow registry action already calls
+  // setFollowTarget(null); this guarantees the field is always cleared when
+  // the follow loop is torn down.
+  _target = null
 }

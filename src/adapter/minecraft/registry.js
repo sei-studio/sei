@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { createRegistry } from '../../registry.js'
 import { goTo } from './behaviors/pathfind.js'
-import { setFollowTarget } from './behaviors/follow.js'
+import { setFollowTarget, getFollowTargetLabel } from './behaviors/follow.js'
 import { resolveEntity } from './observers/targeting.js'
 import { digAction } from './behaviors/dig.js'
 import { placeBlockAction } from './behaviors/place.js'
@@ -178,7 +178,12 @@ export function createDefaultRegistry() {
     z.object({}),
     async () => {
       setFollowTarget(null)
-      return 'unfollowed'
+      // Plan 03.1-09 (D-H-16): assert post-condition — the snapshot's
+      // follow_target line reads `(none)` immediately after this returns.
+      // Returning the readback in the result string surfaces the clear to
+      // the LLM (replaces the old generic 'unfollowed' string).
+      const label = getFollowTargetLabel()
+      return label == null ? 'unfollowed (no longer following anyone)' : `unfollow failed (still following ${label})`
     }
   )
 
