@@ -93,7 +93,7 @@ Plans:
 **Goal:** Achieve more natural in-game behavior via small modifications and codebase refactoring: (1) fix ~37 cataloged defects from 4 in-game logs (logs/explore.txt, hunt+sand.txt, memory.txt, wood.txt); (2) establish a brain/ (game-agnostic) vs adapter/minecraft/ (game-specific) seam so the bot brain could later drive a different game library; (3) reduce Haiku token usage where free wins exist (cache-respecting); (4) make memory recall feel like a long-time friend (fix the structural diary write-side bug where pure-chat sessions never produce diary entries).
 **Requirements**: None — this phase is quality/polish work, not new requirements coverage. Bounded by D-1 through D-8 in 03.1-CONTEXT.md plus the 37 defects in log-analysis/.
 **Depends on:** Phase 3
-**Plans:** 8/10 plans executed
+**Plans:** 10/10 plans complete
 
 Plans:
 - [x] 03.1-01-PLAN.md — brain/ vs adapter/minecraft/ file moves + Adapter JSDoc contract (Wave 1)
@@ -105,7 +105,7 @@ Plans:
 - [x] 03.1-07-PLAN.md — Tone & say polish gap-closure: postProcessSay regex refined (D-NEW-TONE-1), shouldSuppressLoopEndSay predicate + dedupe wiring (D-NEW-DM-1/2/3), model-authored cap-close (D-W-8 / D-NEW-TONE-2)
 - [x] 03.1-08-PLAN.md — Bucket A continuation (gap-closure)
 - [x] 03.1-09-PLAN.md — Bucket A continuation (gap-closure: NEW-W-A, D-H-15, D-H-16, D-W-7, WR-07)
-- [ ] 03.1-10-PLAN.md — Bucket A continuation (gap-closure)
+- [x] 03.1-10-PLAN.md — Bucket A continuation (gap-closure: WR-01 FSM re-queue stall, WR-02 abortController re-bridge, WR-04 attack/interrupt preservation, WR-08 narrowed affect-log catch)
 
 ### Phase 4: Electron GUI & Packaging
 **Goal**: A non-technical user can double-click an installer, fill in a setup form, and press Start to run Sei — with all errors explained in plain English and native modules working in the packaged build.
@@ -135,7 +135,7 @@ Each is unsequenced — promote to active milestone via `/gsd-review-backlog` wh
 **Plans:** 0 plans
 
 Plans:
-- [ ] TBD (recommended: `/gsd-new-milestone` after Phase 03.1 ships, then `/gsd-discuss-phase` to scope each subsystem)
+- [x] TBD (recommended: `/gsd-new-milestone` after Phase 03.1 ships, then `/gsd-discuss-phase` to scope each subsystem) (completed 2026-05-07)
 
 ### Phase 999.2: Debug log human readability (BACKLOG)
 

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-07T06:36:30.000Z"
+last_updated: "2026-05-07T06:48:00.000Z"
 progress:
-  total_phases: 12
-  completed_phases: 4
+  total_phases: 5
+  completed_phases: 5
   total_plans: 22
-  completed_plans: 21
-  percent: 95
+  completed_plans: 22
+  percent: 100
 ---
 
 # State: Sei
@@ -21,30 +21,36 @@ progress:
 
 ## Current Position
 
-Phase: 03.1 (behavior-polish-and-ai-game-decoupling-refactor-analysis-dri) — EXECUTING
-Plan: 9 of 10 complete
-Next: Plan 03.1-10 (final Bucket A gap-closure plan) → then Phase 4 — Electron GUI & Packaging
+Phase: 03.1 (behavior-polish-and-ai-game-decoupling-refactor-analysis-dri) — COMPLETE
+Plan: 10 of 10 complete (final Bucket A gap-closure plan landed)
+Next: /gsd-verify-work 03.1 → then Phase 4 — Electron GUI & Packaging
 
-- **Phase:** 3 — Memory & Persistence
-- **Plan:** Phase 2.1 complete (2.1-01, 2.1-02, 2.1-03 all done)
-- **Status:** Executing Phase 03.1
-- **Progress:** [█████████░] 91%
-- **Next action:** /gsd-plan-phase 3.1 — analysis-driven behavior polish + AI/game decoupling
+- **Phase:** 03.1 — Behavior Polish & AI/Game Decoupling Refactor
+- **Plan:** All 10 plans complete (Bucket A gap-closure: 17/17 items closed across 07–10)
+- **Status:** Phase 03.1 complete; ready for verification → Phase 4
+- **Progress:** [██████████] 100%
+- **Next action:** /gsd-verify-work 03.1 — verify analysis-driven behavior polish + AI/game decoupling
 
 ```
 [DONE] Phase 1    Bot Substrate
 [DONE] Phase 2    Two-Layer LLM Loop
 [DONE] Phase 2.1  Expand Actions & Game State
-[____] Phase 3    Memory & Persistence    ← next
-[____] Phase 4    Electron GUI & Packaging
+[DONE] Phase 3    Memory & Persistence
+[DONE] Phase 03.1 Behavior Polish & AI/Game Decoupling
+[____] Phase 4    Electron GUI & Packaging    ← next
 ```
 
 ## Performance Metrics
 
 - Requirements coverage: 36/36 (100%)
-- Phases defined: 4
-- Plans executed: 9
-- Phases complete: 3 (incl. 2.1)
+- Phases defined: 5 (1, 2, 2.1, 3, 03.1)
+- Plans executed: 22
+- Phases complete: 5 (Phase 1, 2, 2.1, 3, 03.1)
+- Phase 03.1 Bucket A gap-closure: 17/17 items closed (plans 07–10)
+  - Plan 07: D-NEW-TONE-1, D-NEW-DM-1/2/3, D-W-8/D-NEW-TONE-2 (3 items)
+  - Plan 08: D-NEW-MEM-2, D-NEW-MEM-3, D-W-9, WR-05, WR-06 (5 items)
+  - Plan 09: NEW-W-A, D-H-15, D-H-16, D-W-7, WR-07 (5 items)
+  - Plan 10: WR-01, WR-02, WR-04, WR-08 (4 items)
 
 ## Accumulated Context
 
@@ -67,6 +73,11 @@ Next: Plan 03.1-10 (final Bucket A gap-closure plan) → then Phase 4 — Electr
 - Hop counter is chain-scoped (keyed by _chainId) not per-dispatch — closes LLM-04 leak across FSM completion re-entries
 - Personality LLM tools restricted to say/handOffToMovement/setGoals; mineflayer registry actions reserved for movement layer (D-04)
 - setGoals lives in the registry but movement subRegistry filters it out
+- FSM re-queue branch (lower-priority during higher-priority hold) keeps `processing = true`; the in-flight action's trailing `setImmediate(processNext)` drain handles re-queued items naturally (WR-01, plan 03.1-10)
+- Loop's abortController is swappable via `_setAbortController(c)` setter on a mutable closure-local; replaces `Object.defineProperty(loop, 'abortController')` (WR-02, plan 03.1-10)
+- External FSM signal is captured on `loop._externalSignal` and re-bridged on every `replaceAbortController` via `bridgeExternalAbort(loop)`; second-turn external aborts route to the swapped controller (WR-02, plan 03.1-10)
+- `sei:attacked` arriving mid-loop preserves any pending owner-chat into `pendingAttack.preservedInterrupt`; finally re-enqueues the chat at P1 after the P0 attack — priority queue handles ordering (WR-04, plan 03.1-10)
+- `composeSeedBlocks` plumbs an optional `logger = console` so the AFFECT.md catch can narrow to `ENOENT`/`EACCES` and warn on coding-bug errors (WR-08, plan 03.1-10)
 
 ### Todos
 
@@ -100,11 +111,11 @@ Next: Plan 03.1-10 (final Bucket A gap-closure plan) → then Phase 4 — Electr
 
 ## Session Continuity
 
-- **Last action:** Plan 03.1-09 complete (Bucket A gap-closure, Wave 4). Three tasks landed: (1) `dropItemAction` aggregates `totalAvailable` across all matching inventory slots and issues sequential `bot.toss` calls so split stacks (1+9 oak_log) drop the full requested count, with "only N available" surface on undercount (NEW-W-A); `attackEntityAction` adds three pre-swing refusal branches for item-class entities (`type==='object' || name==='item'`), xp orbs, and global entities so the LLM gets a clear refusal instead of burning iterations chasing dropped items (D-H-15). (2) `stopFollow` clears `_target` as defense-in-depth so the snapshot's `follow_target` line reads `(none)` after teardown; the unfollow registry handler returns `unfollowed (no longer following anyone)` built from a `getFollowTargetLabel()` post-condition assertion (D-H-16). (3) Per-loop `cant_reach` dedup in `orchestrator.js` (`loop._cantReachMap` + `_cantReachNudgedKeys`, keyed by `${x}|${y}|${z}|${range}`) injects a one-shot Pathfinder-rule nudge into the next user turn on the second identical cant_reach (`cantReachNudge ?? silenceNudgeText` so it wins over the silence cadence), addressing D-W-7; adapter exposes idempotent `detach()` invoked from `src/index.js`'s `onEnd` and `stop()` to dispose `wireBotEvents` listeners before the bot reference is discarded, closing the WR-07 listener-leak window. Commits: af37e5c, 8bc9d57, 1a33875, 2ecde37, fce3eec.
-- **Next action:** Continue Phase 03.1 gap-closure — plan 03.1-10 remains in Bucket A.
+- **Last action:** Plan 03.1-10 complete (Bucket A gap-closure, Wave 5 — final plan in Phase 03.1). Three tasks landed across four warning items: (1) WR-01 — fsm.js `processNext` re-queue branch no longer sets `processing = false`; the in-flight action's trailing `setImmediate(processNext)` drain naturally picks up re-queued items after the holder's finally clears currentAction. (2) WR-02 — loop.js exposes `_setAbortController(c)` setter (mutable closure-local) replacing `Object.defineProperty(loop, 'abortController')`; orchestrator captures the FSM-supplied signal on `loop._externalSignal`, routes it through a `bridgeExternalAbort(loop)` helper called both at loop creation and on every `replaceAbortController`, so second-turn external aborts route to the new internal controller. (3) WR-04 — `sei:attacked` branch captures `pendingInterrupt.chatText` into `pendingAttack.preservedInterrupt`, clears pendingInterrupt explicitly, and the orchestrator's finally block re-enqueues the chat at P1 after the P0 attack re-fire so the priority queue handles ordering. (4) WR-08 — composeSeedBlocks signature gains `logger = console`; AFFECT.md catch narrows to `ENOENT`/`EACCES` and warns at orchestrator level on TypeError / syntax error / atomicWrite failures. Commits: ec3380c, 385806d, 076a97f, fe3e02f, 45bd752.
+- **Next action:** /gsd-verify-work 03.1 — verify Phase 03.1 deliverables → then plan Phase 4 (Electron GUI & Packaging).
 
 ---
-*Last updated: 2026-05-07 — plan 03.1-09 completed (gap-closure: NEW-W-A, D-H-15, D-H-16, D-W-7, WR-07).*
+*Last updated: 2026-05-07 — plan 03.1-10 completed (gap-closure: WR-01, WR-02, WR-04, WR-08). Phase 03.1 complete; Bucket A gap-closure 17/17 items closed.*
 | 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
 | 2026-05-05 | fast | docs cleanup: remove two-layer/ollama from README+ARCHITECTURE | done |
 | 2026-05-05 | fast | drop port from persisted config; LAN discovery is the only path | done |
