@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-06T21:46:29.781Z"
+last_updated: "2026-05-07T06:19:29.309Z"
 progress:
-  total_phases: 6
+  total_phases: 12
   completed_phases: 4
-  total_plans: 18
-  completed_plans: 12
-  percent: 67
+  total_plans: 22
+  completed_plans: 19
+  percent: 86
 ---
 
 # State: Sei
@@ -22,7 +22,7 @@ progress:
 ## Current Position
 
 Phase: 03.1 (behavior-polish-and-ai-game-decoupling-refactor-analysis-dri) — EXECUTING
-Plan: 1 of 6
+Plan: 1 of 10
 Next: Phase 3 — Memory & Persistence
 
 - **Phase:** 3 — Memory & Persistence
@@ -100,11 +100,11 @@ Next: Phase 3 — Memory & Persistence
 
 ## Session Continuity
 
-- **Last action:** Quick task 260505-twx — five-fix consolidation from observed live session: chat_mode toggle re-added, snapshot now ranks logs/ores ahead of grass/dirt with 16-block window, dig action documented as supporting `{block:"name"}`, sei:attacked aborts the active loop with a verbal-first seed prompt, dig errors no longer mention the held item when the real cause is empty space, loop iteration cap raised, and say() cadence rule added so Haiku stops re-narrating inventory each turn.
-- **Next action:** Relink `sei` CLI to slop/sei (or `cd /Users/ouen/Downloads/sei && git pull`) so the global binary picks up these fixes, then end-to-end test against a LAN world.
+- **Last action:** Plan 03.1-07 complete (Bucket A gap-closure, Wave 2). Three tasks landed: (1) `postProcessSay` regex narrowed to keep `,` `!` `?` `'` `;` `:` and strip only `.` `—` `–` `"` `` ` `` per D-NEW-TONE-1; (2) new `shouldSuppressLoopEndSay` predicate + `convoMemory.recentChat.lastSelf()` accessor wired into the say() handler with 2s window for byte-equal-after-normalize duplicates on `sei:loop_end` loops (D-NEW-DM-1/2/3); (3) `gracefulCapClose` now strengthens the seed prompt, runs the model output through `postProcessSay`, bumps timeout to ≥8000ms, and logs distinct info/warn lines so post-replay tells us which path fired (D-W-8 / D-NEW-TONE-2). Commits: 607607f, 35cfb48, f1386e2, 7cfd7f3.
+- **Next action:** Continue Phase 03.1 gap-closure — plans 03.1-08 / 03.1-09 / 03.1-10 remain in Bucket A.
 
 ---
-*Last updated: 2026-05-05 — quick task 260505-twx completed.*
+*Last updated: 2026-05-07 — plan 03.1-07 completed (gap-closure: D-NEW-TONE-1, D-NEW-DM-1/2/3, D-W-8/D-NEW-TONE-2).*
 | 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
 | 2026-05-05 | fast | docs cleanup: remove two-layer/ollama from README+ARCHITECTURE | done |
 | 2026-05-05 | fast | drop port from persisted config; LAN discovery is the only path | done |
