@@ -264,6 +264,11 @@ export async function composeSeedBlocks({
   recentLoopHistoryText = null,
   recentOwnerChatText = null,
   yourRecentMessagesText = null,
+  // Plan 03.1-10 (WR-08): plumb logger through so the narrowed affect-log
+  // catch can warn on non-fs errors (TypeError from a broken import,
+  // syntax error in affectLog.js, atomicWrite failure during cold-create)
+  // rather than swallow them silently.
+  logger = console,
 }) {
   const owner = sessionState.ownerData()
   const seedOwnerText = ownerStore.formatOwnerSeedBlock(owner, config.memory.seed_owner_budget_bytes)
@@ -286,8 +291,16 @@ export async function composeSeedBlocks({
       if (affectLogText && affectLogText.length > 0) {
         blocks.push({ type: 'text', name: 'affect_log', text: affectLogText })
       }
-    } catch {
-      // intentional: missing/unreadable affect log is non-fatal
+    } catch (err) {
+      // Plan 03.1-10 (WR-08): narrow the swallow. ENOENT (cold create)
+      // and EACCES (permission gap) are expected and non-fatal — the
+      // seed turn just runs without an affect_log block. Anything else
+      // (TypeError from a broken import, syntax error, atomicWrite write
+      // failure during cold-create) is a coding bug that should surface
+      // in logs rather than silently degrade the seed turn.
+      if (err && err.code !== 'ENOENT' && err.code !== 'EACCES') {
+        logger.warn?.(`[sei/orch] affect_log read failed (non-fs): ${err && err.message}`)
+      }
     }
   }
   if (recentLoopHistoryText) {
@@ -712,6 +725,7 @@ function maybeWarnByteCap(loop, warned) {
           recentLoopHistoryText: convoMemory.loopHistory.formatBlock(),
           recentOwnerChatText: convoMemory.recentChat.formatOwnerBlock(),
           yourRecentMessagesText: convoMemory.recentChat.formatSelfBlock(),
+          logger,  // Plan 03.1-10 (WR-08): plumb through for affect-log warn
         })
       } catch (err) {
         logger.warn(`[sei/orch] seed-block compose failed: ${err.message}; falling back to non-seed turn`)
