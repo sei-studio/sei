@@ -31,6 +31,7 @@ export async function start() {
 
   let _brain = null
   let _bot = null
+  let _adapter = null
   let _stopped = false
   let _reconnectTimer = null
 
@@ -47,6 +48,12 @@ export async function start() {
       onEnd: (humanizedReason) => {
         if (_stopped) return
         logger.info(`Reconnecting in ${mc.reconnect_delay_ms}ms (${humanizedReason})...`)
+        // Plan 03.1-09 (WR-07): tear down adapter listeners before discarding
+        // the bot reference. Otherwise the OLD bot's listeners only become
+        // GC-eligible when the closure releases, leaving a window where the
+        // adapter still has dangling listeners on a dead mineflayer instance.
+        try { _adapter?.detach?.() } catch {}
+        _adapter = null
         _bot = null
         clearTimeout(_reconnectTimer)
         _reconnectTimer = setTimeout(() => {
@@ -58,8 +65,8 @@ export async function start() {
       onError: (err) => logger.warn(`Connection error: ${err && err.message}`),
     })
 
-    const adapter = createMinecraftAdapter({ bot: _bot, config })
-    _brain = await startBrain({ config, adapter, logger })
+    _adapter = createMinecraftAdapter({ bot: _bot, config })
+    _brain = await startBrain({ config, adapter: _adapter, logger })
 
     // Wire the legacy chat behavior (bot.on('chat') with owner/addressed/
     // nearby filtering and sei:chat_received emission) without an
@@ -84,6 +91,10 @@ export async function start() {
       if (_brain) {
         try { await _brain.stop() } catch {}
       }
+      // Plan 03.1-09 (WR-07): same teardown as onEnd to guarantee clean
+      // listener disposal on graceful shutdown, not just on reconnect.
+      try { _adapter?.detach?.() } catch {}
+      _adapter = null
       if (_bot) {
         try { _bot.quit('Sei stopping') } catch {}
         _bot = null

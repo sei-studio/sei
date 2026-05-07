@@ -635,6 +635,13 @@ function maybeWarnByteCap(loop, warned) {
     loop._ownerSpoke = !!data?.ownerSpoke || event === 'owner_chat'
     loop._firstTurnReprompted = false
     loop._dropItemReprompted = false
+    // Plan 03.1-09 (D-W-7): track goTo cant_reach destinations seen this loop.
+    // Key: `${x}|${y}|${z}|${range}`. Value: count. On count >= 2 we inject a
+    // one-shot nudge referencing the SYSTEM_INSTRUCTIONS Pathfinder rule
+    // rather than letting the LLM keep retrying. Per-loop scope so a fresh
+    // dispatch starts clean.
+    loop._cantReachMap = new Map()
+    loop._cantReachNudgedKeys = new Set()
     // Plan 03.1-05 Task 4: silent-iteration cadence counter for the
     // progress-narration soft nudge.
     loop.iterationsSinceLastSay = 0
@@ -1138,6 +1145,31 @@ function maybeWarnByteCap(loop, warned) {
       // tools fired (no movement) the LLM is done — terminal.
       const continueLoop = movementCalls.length > 0
 
+      // Plan 03.1-09 (D-W-7): per-loop cant_reach dedup. If the same goTo
+      // destination returned cant_reach twice in this loop and we have NOT
+      // already nudged for that key, append a one-shot reminder to the next
+      // user turn so the LLM follows the SYSTEM_INSTRUCTIONS Pathfinder rule
+      // (ask for help via say()) instead of silently retrying.
+      let cantReachNudge = null
+      for (let i = 0; i < toolUses.length; i++) {
+        const u = toolUses[i]
+        if (u.name !== 'goTo') continue
+        const r = results[i]
+        const content = typeof r?.content === 'string' ? r.content : ''
+        if (!content.startsWith('cant_reach')) continue
+        const x = u.input?.x, y = u.input?.y, z = u.input?.z, range = u.input?.range ?? 1
+        if (![x, y, z].every(n => Number.isFinite(n))) continue
+        const key = `${x}|${y}|${z}|${range}`
+        const prev = loop._cantReachMap.get(key) ?? 0
+        const next = prev + 1
+        loop._cantReachMap.set(key, next)
+        if (next >= 2 && !loop._cantReachNudgedKeys.has(key)) {
+          loop._cantReachNudgedKeys.add(key)
+          cantReachNudge = `[cant_reach 2× to (${x},${y},${z}) range=${range} — per the Pathfinder rule, do NOT retry the same goTo. Either ask the owner for help in say() (e.g. "stuck on the path, can you come closer or break the way through?") or pick a different approach (different y, dig through, give up and say so).]`
+          break
+        }
+      }
+
       // Plan 03.1-05 Task 4 (D-E-9, D-H-11): silent-iteration cadence. If the
       // model has gone N iterations without say(), inject a one-shot soft
       // nudge into the next user turn asking it to narrate progress briefly.
@@ -1145,13 +1177,17 @@ function maybeWarnByteCap(loop, warned) {
       // and other system-tagged prepends are styled in convo history.
       const hadSayThisTurn = toolUses.some(u => u.name === 'say')
       const shouldNudge = _advanceIterationCadence({ loop, hadSay: hadSayThisTurn })
-      const nudgeText = shouldNudge
+      const silenceNudgeText = shouldNudge
         ? '[silence past 4 iterations — narrate progress briefly using say(), still optional if nothing changed. avoid restating numbers (we already saw the inventory). a single short observation is enough.]'
         : null
+      // Plan 03.1-09 (D-W-7): cant_reach nudge wins over silence nudge — both
+      // happen at "things are not progressing" but cant_reach is the proximate
+      // cause and the LLM needs the specific instruction.
+      const finalNudgeText = cantReachNudge ?? silenceNudgeText
 
       loop.appendToolResults(results, {
         snapshot: snapshotText(),
-        ...(nudgeText ? { eventText: nudgeText } : {}),
+        ...(finalNudgeText ? { eventText: finalNudgeText } : {}),
       })
       maybeWarnByteCap(loop, byteWarn)
 

@@ -62,6 +62,10 @@
  *
  * Session lifecycle:
  * @property {(handlers: AdapterHandlers) => void}                         attach
+ * @property {() => void}                                                  [detach]
+ *   Plan 03.1-09 / WR-07: tear down listeners on reconnect; idempotent.
+ *   Optional — not in REQUIRED_ADAPTER_MEMBERS so adapters that don't need
+ *   teardown don't fail boot. Boot composer guards with `_adapter?.detach?.()`.
  *
  * Effects the brain commands but cannot synthesize:
  * @property {(text: string) => void}                                      chat
