@@ -112,9 +112,17 @@ export function createPriorityQueue({ onDispatch, idleFallbackMs = 60_000, logge
 
     // Skip lower-priority events while a higher-priority action runs
     if (currentAction && item.priority > currentAction.priority) {
-      // Re-queue for after current action completes
+      // Plan 03.1-10 (WR-01): re-queue and KEEP processing=true so the
+      // in-flight action's trailing drain (`if (queue.length > 0)
+      // setImmediate(processNext)` below) re-schedules processNext after
+      // the holder completes. Previously this set `processing = false`
+      // and the queue stalled until the next external enqueue arrived,
+      // because enqueue() / scheduleProcess() rely on `processing` to
+      // gate work. The re-queue branch is reachable under any future
+      // scheduling change that lets processNext run concurrently with
+      // an in-flight action (e.g. a re-entrant dispatch path); leaving
+      // it correct now closes the latent stall.
       queue.unshift(item)
-      processing = false
       return
     }
 
