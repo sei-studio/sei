@@ -116,6 +116,79 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
+## Backlog
+
+Items deferred from Phase 03.1 live replay (Bucket B per `.planning/phases/03.1-.../03.1-VERIFICATION.md`).
+Each is unsequenced — promote to active milestone via `/gsd-review-backlog` when ready.
+
+### Phase 999.1: Scavenging redesign — veined tallying + smart_find + find() (BACKLOG, MILESTONE-SCOPE)
+
+**Goal:** Replace the snapshot composer's "16 nearest blocks by distance" world-state with a veined representation: per visible block-type, show the nearest representative + connected vein count + total visible types. Add a `smart_find` cross-chunk navigation primitive for when nothing is visible locally, and a `find()` action that maps natural-language item names ("wood", "iron") to concrete game IDs ("oak_log", "iron_ore") so the model can plan multi-step gathering.
+**Source defects:** D-NEW-SCAV-1, D-NEW-SCAV-2, D-NEW-SCAV-3 (`.planning/phases/03.1-.../VALIDATION.md` L138-139, L191-193)
+**User quote (verbatim):** *"combine veined tallying for within chunk and smart_find for navigating to other chunks, i think we finally can make scavenging resources work."*
+**Why milestone-scope:** Snapshot composer rewrite + new tool registration + closed-world NL→item resolver — three coupled systems, not a single phase.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (recommended: `/gsd-new-milestone` after Phase 03.1 ships, then `/gsd-discuss-phase` to scope each subsystem)
+
+### Phase 999.2: Debug log human readability (BACKLOG)
+
+**Goal:** Switch debug logger from line-tee (single physical lines wrapping 8000-11000 chars) to event-per-line emission with explicit `\n` between `[haiku?]` / `[haiku!]` / `[chat->]` sections. Elide repeated cache-prefix JSON in `[haiku?]` events via hash reference (e.g., `<diary @sha=...>`) after first appearance per session.
+**Source defects:** D-NEW-LOG-1, D-NEW-LOG-2 (`.planning/phases/03.1-.../VALIDATION.md` L184-185)
+**Why deferred:** Touches the logger format used everywhere — needs an upfront design decision on canonical event-record shape before refactoring.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (recommended: `/gsd-discuss-phase 999.2` to lock event-record schema first)
+
+### Phase 999.3: Pillar-up / scaffolding behavior (BACKLOG)
+
+**Goal:** Implement bot self-place / pillar-up so it can reach elevated targets (trees, ores up a slope, escape pits). User reports the bot "tried to place dirt block under it" but logs show zero `placeBlock(` and zero `equip(` calls — the action surface doesn't exist yet.
+**Source defects:** NEW-W-C (`.planning/phases/03.1-.../VALIDATION.md` L214)
+**Touch points:** DIG_DESCRIPTION (so model knows the affordance exists), `placeBlock` action, `equip` action, possibly an action like `pillarUp(target_y)` that orchestrates both. Mineflayer has primitives — wiring is what's missing.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (recommended: standalone phase after Phase 03.1 gap-closure ships)
+
+### Phase 999.4: noteToSelf activation strategy — push vs pull (BACKLOG)
+
+**Goal:** Strengthen noteToSelf so the model fires it consistently in non-explicit-memory scenarios (currently only fires when user explicitly says "remember this"). Decide between push (LLM-decides via stronger prompt cue + few-shot examples) or pull (rule-based extractor that scans tool_use turns for memory-worthy facts and prompts noteToSelf as a follow-up).
+**Source defects:** D-NEW-MEM-1 (`.planning/phases/03.1-.../03.1-VERIFICATION.md` L103)
+**Why deferred:** Plumbing already works (Plan 03.1-04 shipped it) — this is a behavior-tuning design decision, not a bug fix.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (recommended: `/gsd-discuss-phase 999.4` to pick push vs pull before planning)
+
+### Phase 999.5: Disconnect-on-attacked regression (BACKLOG, HIGH)
+
+**Goal:** Investigate and fix the regression where Sei disconnects from the server when attacked. User explicitly flagged this as a previously-fixed bug that has reappeared.
+**Source defects:** D-H-12 (`.planning/phases/03.1-.../03.1-VERIFICATION.md` L105; reproduction at `logs/hunt+sand-postfix.txt` lines 104, 179)
+**User quote:** *"keeps disconnecting when attacked, this is an old issue we've fixed"*
+**First step:** `git bisect` against last-known-good commit before scoping the fix — root cause unknown. Could be a regression in mineflayer-pvp wiring, abort-controller leakage into bot connection, or auto-eat / pathfinder interference under attack signal.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (recommended: bisect first, then `/gsd-plan-phase 999.5` once root cause is known)
+
+### Phase 999.6: First-turn-say architecture (BACKLOG)
+
+**Goal:** Replace the current post-hoc abort+retry first-turn-say enforcement with a structural fix. Two candidates: (a) prefill the assistant turn so the model is forced to begin with a `say` tool_use, or (b) keep the abort+retry but harden it so memory-only turns and other legit non-say turns aren't penalized.
+**Source defects:** D-H-14 (`.planning/phases/03.1-.../03.1-VERIFICATION.md` L107)
+**Why deferred:** Either approach is structural — needs a discuss-phase to weigh prefill cache implications vs. abort+retry iteration cost.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (recommended: `/gsd-discuss-phase 999.6` to pick prefill vs hardened-retry)
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
