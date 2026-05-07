@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-07T06:30:30.968Z"
+last_updated: "2026-05-07T06:36:30.000Z"
 progress:
   total_phases: 12
   completed_phases: 4
   total_plans: 22
-  completed_plans: 20
-  percent: 91
+  completed_plans: 21
+  percent: 95
 ---
 
 # State: Sei
@@ -22,8 +22,8 @@ progress:
 ## Current Position
 
 Phase: 03.1 (behavior-polish-and-ai-game-decoupling-refactor-analysis-dri) — EXECUTING
-Plan: 1 of 10
-Next: Phase 3 — Memory & Persistence
+Plan: 9 of 10 complete
+Next: Plan 03.1-10 (final Bucket A gap-closure plan) → then Phase 4 — Electron GUI & Packaging
 
 - **Phase:** 3 — Memory & Persistence
 - **Plan:** Phase 2.1 complete (2.1-01, 2.1-02, 2.1-03 all done)
@@ -100,11 +100,11 @@ Next: Phase 3 — Memory & Persistence
 
 ## Session Continuity
 
-- **Last action:** Plan 03.1-08 complete (Bucket A gap-closure, Wave 3). Three tasks landed: (1) new `src/brain/storage/fileLock.js` exporting `withFileLock(filePath, fn)` per-file in-process mutex + wrap of `appendAffect` / `saveOwner` / `setPreferredName` / `appendNote` so concurrent OWNER.md / AFFECT.md writes serialize losslessly (WR-06); (2) `shouldRepromptForFirstTurnSay` carves out noteToSelf-only first turns (D-NEW-MEM-2), `onLoopTerminal` byte-cap flush fires on ANY terminal not only idle (D-NEW-MEM-3), and both consolidationLock kick sites wrap `consolidateOlderHalf` in try/catch so a sync throw releases the lock (WR-05); (3) `diary.countOversizeEntries(80)` + boot-time recompact hook in `brain/index.js` that fire-and-forgets `consolidateOlderHalf` when there are >5 entries AND ≥1 oversize legacy entry (D-W-9). Commits: 97219df, 9d9a8c5, b5e6b96, 9fce3ce.
-- **Next action:** Continue Phase 03.1 gap-closure — plans 03.1-09 / 03.1-10 remain in Bucket A.
+- **Last action:** Plan 03.1-09 complete (Bucket A gap-closure, Wave 4). Three tasks landed: (1) `dropItemAction` aggregates `totalAvailable` across all matching inventory slots and issues sequential `bot.toss` calls so split stacks (1+9 oak_log) drop the full requested count, with "only N available" surface on undercount (NEW-W-A); `attackEntityAction` adds three pre-swing refusal branches for item-class entities (`type==='object' || name==='item'`), xp orbs, and global entities so the LLM gets a clear refusal instead of burning iterations chasing dropped items (D-H-15). (2) `stopFollow` clears `_target` as defense-in-depth so the snapshot's `follow_target` line reads `(none)` after teardown; the unfollow registry handler returns `unfollowed (no longer following anyone)` built from a `getFollowTargetLabel()` post-condition assertion (D-H-16). (3) Per-loop `cant_reach` dedup in `orchestrator.js` (`loop._cantReachMap` + `_cantReachNudgedKeys`, keyed by `${x}|${y}|${z}|${range}`) injects a one-shot Pathfinder-rule nudge into the next user turn on the second identical cant_reach (`cantReachNudge ?? silenceNudgeText` so it wins over the silence cadence), addressing D-W-7; adapter exposes idempotent `detach()` invoked from `src/index.js`'s `onEnd` and `stop()` to dispose `wireBotEvents` listeners before the bot reference is discarded, closing the WR-07 listener-leak window. Commits: af37e5c, 8bc9d57, 1a33875, 2ecde37, fce3eec.
+- **Next action:** Continue Phase 03.1 gap-closure — plan 03.1-10 remains in Bucket A.
 
 ---
-*Last updated: 2026-05-07 — plan 03.1-08 completed (gap-closure: D-NEW-MEM-2, D-NEW-MEM-3, D-W-9, WR-05, WR-06).*
+*Last updated: 2026-05-07 — plan 03.1-09 completed (gap-closure: NEW-W-A, D-H-15, D-H-16, D-W-7, WR-07).*
 | 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
 | 2026-05-05 | fast | docs cleanup: remove two-layer/ollama from README+ARCHITECTURE | done |
 | 2026-05-05 | fast | drop port from persisted config; LAN discovery is the only path | done |

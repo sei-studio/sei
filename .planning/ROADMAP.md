@@ -104,7 +104,7 @@ Plans:
 - [x] 03.1-06-PLAN.md — VALIDATION.md (37 defects + refactor invariants) + STATE.md/ROADMAP.md status updates (Wave 4, has checkpoint for live replay)
 - [x] 03.1-07-PLAN.md — Tone & say polish gap-closure: postProcessSay regex refined (D-NEW-TONE-1), shouldSuppressLoopEndSay predicate + dedupe wiring (D-NEW-DM-1/2/3), model-authored cap-close (D-W-8 / D-NEW-TONE-2)
 - [x] 03.1-08-PLAN.md — Bucket A continuation (gap-closure)
-- [ ] 03.1-09-PLAN.md — Bucket A continuation (gap-closure)
+- [x] 03.1-09-PLAN.md — Bucket A continuation (gap-closure: NEW-W-A, D-H-15, D-H-16, D-W-7, WR-07)
 - [ ] 03.1-10-PLAN.md — Bucket A continuation (gap-closure)
 
 ### Phase 4: Electron GUI & Packaging
