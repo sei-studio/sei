@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-05-07T06:48:00.000Z"
+status: "Three backlog items just promoted: 5 (debug log), 6 (scavenging redesign), 7 (pillar-up scaffolding)"
+last_updated: "2026-05-08T06:59:31.557Z"
 progress:
-  total_phases: 5
+  total_phases: 15
   completed_phases: 5
   total_plans: 22
   completed_plans: 22
@@ -17,19 +17,19 @@ progress:
 ## Project Reference
 
 - **Core Value:** A Minecraft companion that feels like a real character — it remembers you, reacts to the world, and acts with personality, not like a scripted bot.
-- **Current Focus:** Phase 03.1 — behavior-polish-and-ai-game-decoupling-refactor-analysis-dri
+- **Current Focus:** Phase 5 — Debug log human readability (promoted from backlog 999.2)
 
 ## Current Position
 
-Phase: 03.1 (behavior-polish-and-ai-game-decoupling-refactor-analysis-dri) — COMPLETE
-Plan: 10 of 10 complete (final Bucket A gap-closure plan landed)
-Next: /gsd-verify-work 03.1 → then Phase 4 — Electron GUI & Packaging
+Phase: 03.1 — COMPLETE (verification deferred until Phases 5/6/7 land; user notes tests won't pass until backlog changes are in)
+Plan: 10 of 10 complete on 03.1
+Next: `/gsd-discuss-phase 5` (or `/gsd-plan-phase 5` if scope is clear) — Debug log readability
 
-- **Phase:** 03.1 — Behavior Polish & AI/Game Decoupling Refactor
-- **Plan:** All 10 plans complete (Bucket A gap-closure: 17/17 items closed across 07–10)
-- **Status:** Phase 03.1 complete; ready for verification → Phase 4
-- **Progress:** [██████████] 100%
-- **Next action:** /gsd-verify-work 03.1 — verify analysis-driven behavior polish + AI/game decoupling
+- **Phase:** 5 — Debug log human readability (event-per-line)
+- **Plan:** Not started — directory scaffolded at `.planning/phases/05-debug-log-human-readability-event-per-line-emission-with-exp/`
+- **Status:** Three backlog items just promoted: 5 (debug log), 6 (scavenging redesign), 7 (pillar-up scaffolding)
+- **Progress:** [████████__] 62% (5/8 phases complete)
+- **Next action:** `/gsd-discuss-phase 5` — lock canonical event-record schema before refactoring the logger
 
 ```
 [DONE] Phase 1    Bot Substrate
@@ -37,8 +37,13 @@ Next: /gsd-verify-work 03.1 → then Phase 4 — Electron GUI & Packaging
 [DONE] Phase 2.1  Expand Actions & Game State
 [DONE] Phase 3    Memory & Persistence
 [DONE] Phase 03.1 Behavior Polish & AI/Game Decoupling
-[____] Phase 4    Electron GUI & Packaging    ← next
+[____] Phase 4    Electron GUI & Packaging
+[____] Phase 5    Debug log readability (← next, from 999.2)
+[____] Phase 6    Scavenging redesign (from 999.1)
+[____] Phase 7    Pillar-up / scaffolding (from 999.3)
 ```
+
+> Sequencing note (2026-05-07): user elected to land Phases 5/6/7 BEFORE Phase 4 (Electron GUI). Phase 4 stays in roadmap order but is queued behind the promoted backlog work — Phase 5 is the next plan-phase target.
 
 ## Performance Metrics
 
@@ -90,6 +95,9 @@ Next: /gsd-verify-work 03.1 → then Phase 4 — Electron GUI & Packaging
 
 - Phase 2.1 inserted after Phase 2: Expand action registry beyond goTo/setGoals and surface inventory/surroundings/position to personality LLM as text (URGENT). Conflict-checked against Phase 3 (Memory) and Phase 4 (GUI) — no overlap; Phase 3 still owns SQLite persistence and compaction.
 - Phase 3.1 inserted after Phase 3: Behavior polish and AI/game decoupling refactor (analysis-driven from logs/) (URGENT)
+- Phase 5 promoted from backlog 999.2 (2026-05-07): Debug log human readability — event-per-line emission. Reason: needed for debugging Phases 6/7 (scavenging, scaffolding) work.
+- Phase 6 promoted from backlog 999.1 (2026-05-07): Scavenging redesign — veined tallying + smart_find + find(). Reason: user explicitly asked to land before Phase 4. Recommend `/gsd-discuss-phase 6` first (three coupled subsystems).
+- Phase 7 promoted from backlog 999.3 (2026-05-07): Pillar-up / scaffolding behavior. Reason: bot can't reach elevated targets — placeBlock/equip wiring missing. Depends on Phase 6 for block-id resolution.
 
 ### Blockers
 

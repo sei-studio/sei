@@ -11,6 +11,9 @@
 - [x] **Phase 2.1: Expand Actions & Game State (INSERTED)** - Broaden Zod action registry beyond goTo/setGoals and surface inventory/surroundings/position to the personality LLM as text so Sei can actually play
 - [x] **Phase 3: Memory & Persistence** - Active-loop architecture (Loop owns canonical messages, single-flight gating, abort-and-resume, 20-iter cap), markdown OWNER.md + DIARY.md memory layer with seed-loader, and LLM-directed compaction (per-Loop summary + async session-end consolidation, both reusing cached system blocks). MEM-05 SQLite deferred to V2.
 - [ ] **Phase 4: Electron GUI & Packaging** - Setup form, Start/Stop, live log viewer, and bundled .dmg/.exe distribution
+- [ ] **Phase 5: Debug log readability (PROMOTED from 999.2)** - Event-per-line emission with explicit \n between [haiku?] / [haiku!] / [chat->] sections; cache-prefix elision via hash reference
+- [ ] **Phase 6: Scavenging redesign (PROMOTED from 999.1)** - Veined tallying within chunk, smart_find for cross-chunk navigation, find() for NL-to-item resolution
+- [ ] **Phase 7: Pillar-up / scaffolding behavior (PROMOTED from 999.3)** - placeBlock/equip wiring + pillarUp orchestrator so bot can reach elevated targets
 
 ## Phase Details
 
@@ -120,12 +123,49 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
+### Phase 5: Debug log human readability (event-per-line) (PROMOTED from 999.2)
+
+**Goal:** Switch debug logger from line-tee (single physical lines wrapping 8000–11000 chars) to event-per-line emission with explicit `\n` between `[haiku?]` / `[haiku!]` / `[chat->]` sections. Elide repeated cache-prefix JSON in `[haiku?]` events via hash reference (e.g., `<diary @sha=...>`) after first appearance per session.
+**Source defects:** D-NEW-LOG-1, D-NEW-LOG-2 (`.planning/phases/03.1-.../VALIDATION.md` L184-185)
+**Why first:** Required so Phases 6/7 (scavenging, scaffolding) work can be debugged from logs at all — the lightest of the three promoted backlog items.
+**Depends on:** Phase 03.1
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run `/gsd-plan-phase 5` to break down — recommend `/gsd-discuss-phase 5` first to lock event-record schema)
+
+### Phase 6: Scavenging redesign — veined tallying + smart_find + find() (PROMOTED from 999.1, MILESTONE-SCOPE)
+
+**Goal:** Replace the snapshot composer's "16 nearest blocks by distance" world-state with a veined representation: per visible block-type, show the nearest representative + connected vein count + total visible types. Add a `smart_find` cross-chunk navigation primitive for when nothing is visible locally, and a `find()` action that maps natural-language item names ("wood", "iron") to concrete game IDs ("oak_log", "iron_ore") so the model can plan multi-step gathering.
+**Source defects:** D-NEW-SCAV-1, D-NEW-SCAV-2, D-NEW-SCAV-3 (`.planning/phases/03.1-.../VALIDATION.md` L138-139, L191-193)
+**User quote (verbatim):** *"combine veined tallying for within chunk and smart_find for navigating to other chunks, i think we finally can make scavenging resources work."*
+**Scope warning:** Snapshot composer rewrite + new tool registration + closed-world NL→item resolver — three coupled subsystems. Recommend `/gsd-discuss-phase 6` first to scope each before planning.
+**Depends on:** Phase 5 (readable logs needed for verification)
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run `/gsd-discuss-phase 6` first, then `/gsd-plan-phase 6`)
+
+### Phase 7: Pillar-up / scaffolding behavior (PROMOTED from 999.3)
+
+**Goal:** Implement bot self-place / pillar-up so it can reach elevated targets (trees, ores up a slope, escape pits). User reports the bot "tried to place dirt block under it" but logs show zero `placeBlock(` and zero `equip(` calls — the action surface doesn't exist yet.
+**Source defects:** NEW-W-C (`.planning/phases/03.1-.../VALIDATION.md` L214)
+**Touch points:** `DIG_DESCRIPTION` (so model knows the affordance exists), `placeBlock` action, `equip` action, possibly a `pillarUp(target_y)` action that orchestrates both. Mineflayer has primitives — wiring is what's missing.
+**Depends on:** Phase 6 (find() / smart_find provide block-id resolution this phase needs for "what to place")
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run `/gsd-plan-phase 7` to break down)
+
 ## Backlog
 
 Items deferred from Phase 03.1 live replay (Bucket B per `.planning/phases/03.1-.../03.1-VERIFICATION.md`).
 Each is unsequenced — promote to active milestone via `/gsd-review-backlog` when ready.
 
-### Phase 999.1: Scavenging redesign — veined tallying + smart_find + find() (BACKLOG, MILESTONE-SCOPE)
+### Phase 999.1: Scavenging redesign — veined tallying + smart_find + find() (PROMOTED → Phase 6)
 
 **Goal:** Replace the snapshot composer's "16 nearest blocks by distance" world-state with a veined representation: per visible block-type, show the nearest representative + connected vein count + total visible types. Add a `smart_find` cross-chunk navigation primitive for when nothing is visible locally, and a `find()` action that maps natural-language item names ("wood", "iron") to concrete game IDs ("oak_log", "iron_ore") so the model can plan multi-step gathering.
 **Source defects:** D-NEW-SCAV-1, D-NEW-SCAV-2, D-NEW-SCAV-3 (`.planning/phases/03.1-.../VALIDATION.md` L138-139, L191-193)
@@ -137,7 +177,7 @@ Each is unsequenced — promote to active milestone via `/gsd-review-backlog` wh
 Plans:
 - [x] TBD (recommended: `/gsd-new-milestone` after Phase 03.1 ships, then `/gsd-discuss-phase` to scope each subsystem) (completed 2026-05-07)
 
-### Phase 999.2: Debug log human readability (BACKLOG)
+### Phase 999.2: Debug log human readability (PROMOTED → Phase 5)
 
 **Goal:** Switch debug logger from line-tee (single physical lines wrapping 8000-11000 chars) to event-per-line emission with explicit `\n` between `[haiku?]` / `[haiku!]` / `[chat->]` sections. Elide repeated cache-prefix JSON in `[haiku?]` events via hash reference (e.g., `<diary @sha=...>`) after first appearance per session.
 **Source defects:** D-NEW-LOG-1, D-NEW-LOG-2 (`.planning/phases/03.1-.../VALIDATION.md` L184-185)
@@ -148,7 +188,7 @@ Plans:
 Plans:
 - [ ] TBD (recommended: `/gsd-discuss-phase 999.2` to lock event-record schema first)
 
-### Phase 999.3: Pillar-up / scaffolding behavior (BACKLOG)
+### Phase 999.3: Pillar-up / scaffolding behavior (PROMOTED → Phase 7)
 
 **Goal:** Implement bot self-place / pillar-up so it can reach elevated targets (trees, ores up a slope, escape pits). User reports the bot "tried to place dirt block under it" but logs show zero `placeBlock(` and zero `equip(` calls — the action surface doesn't exist yet.
 **Source defects:** NEW-W-C (`.planning/phases/03.1-.../VALIDATION.md` L214)
@@ -202,6 +242,9 @@ Plans:
 | 2.1. Expand Actions & Game State | 3/3 | Complete | 2026-04-25 |
 | 3. Memory & Persistence | 0/0 | Not started | - |
 | 4. Electron GUI & Packaging | 0/0 | Not started | - |
+| 5. Debug log readability (from 999.2) | 0/0 | Not started | - |
+| 6. Scavenging redesign (from 999.1) | 0/0 | Not started | - |
+| 7. Pillar-up scaffolding (from 999.3) | 0/0 | Not started | - |
 
 ## Coverage
 
@@ -210,4 +253,4 @@ Plans:
 - Orphans: 0
 
 ---
-*Last updated: 2026-04-25 — Phase 2.1 complete (all 3 plans, verifier 31/31, no Phase 2 regression).*
+*Last updated: 2026-05-07 — Phases 5/6/7 promoted from backlog 999.2 / 999.1 / 999.3 (debug log readability + scavenging redesign + pillar-up scaffolding).*
