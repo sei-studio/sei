@@ -1,0 +1,48 @@
+.card {
+  background: transparent;
+  border: 2px dashed var(--border-strong);
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.iconTile {
+  width: 56px;
+  height: 56px;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.card:hover .iconTile {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.label {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.subhint {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}

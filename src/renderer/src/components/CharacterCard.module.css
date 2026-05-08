@@ -1,0 +1,114 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: transform 200ms var(--ease-pop), box-shadow 200ms var(--ease-pop);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-pop);
+}
+
+.portraitWrap {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+}
+
+.gradient {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 50%;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55));
+  pointer-events: none;
+}
+
+.chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.chipDot {
+  width: 6px;
+  height: 6px;
+}
+
+.chipDefault .chipDot {
+  background: var(--green);
+}
+
+.chipCustom .chipDot {
+  background: var(--muted);
+}
+
+.nameOverlay {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-family: var(--pixel);
+  font-size: 14px;
+  color: white;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.hoverOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.20);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.card:hover .hoverOverlay,
+.card:focus-within .hoverOverlay {
+  opacity: 1;
+}
+
+.infoRow {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  gap: 12px;
+}
+
+.infoText {
+  flex: 1;
+  min-width: 0;
+}
+
+.infoName {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.infoMeta {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}

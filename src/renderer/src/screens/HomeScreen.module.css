@@ -1,0 +1,52 @@
+.root {
+  padding: 32px 40px 56px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.title {
+  font-family: var(--sans);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  color: var(--text);
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.lanPill {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.lanDot {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+}
