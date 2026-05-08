@@ -175,22 +175,30 @@ export function App(): React.ReactElement {
           ) : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {view.kind !== 'onboarding' ? <IconRail /> : null}
-            <main style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-              {view.kind === 'onboarding' && <OnboardingScreen isReonboard={view.isReonboard} />}
-              {view.kind === 'home' && <HomeScreen />}
-              {view.kind === 'add-character' && <AddCharacterScreen />}
-              {view.kind === 'character' && <CharacterPage id={view.id} />}
-              {view.kind === 'settings' && <SettingsScreen />}
-              {view.kind === 'coming-soon' && <ComingSoonScreen />}
-            </main>
+            {/*
+              Right-side column stacks the active screen and the LogsBar.
+              Wrapping the LogsBar inside this column (rather than as a
+              sibling of the IconRail+main row) keeps the IconRail at full
+              window height when the LogsBar expands — the expansion takes
+              from the main content area, not from the rail.
+            */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
+              <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}>
+                {view.kind === 'onboarding' && <OnboardingScreen isReonboard={view.isReonboard} />}
+                {view.kind === 'home' && <HomeScreen />}
+                {view.kind === 'add-character' && <AddCharacterScreen />}
+                {view.kind === 'character' && <CharacterPage id={view.id} />}
+                {view.kind === 'settings' && <SettingsScreen />}
+                {view.kind === 'coming-soon' && <ComingSoonScreen />}
+              </main>
+              {/*
+                LogsBar — quick task 260508-mun item 5. Hidden during
+                onboarding (the loading floor short-circuits the entire
+                render above, so we only need to gate on onboarding here).
+              */}
+              {view.kind !== 'onboarding' ? <LogsBar /> : null}
+            </div>
           </div>
-          {/*
-            Bottom collapsible LogsBar — quick task 260508-mun item 5. Hidden
-            during onboarding (so the wizard owns the full window) and during
-            the loading floor (LoadingScreen short-circuits the entire render
-            anyway, but defensive).
-          */}
-          {view.kind !== 'onboarding' && view.kind !== 'loading' ? <LogsBar /> : null}
         </div>
       </MacosWindow>
       {modal?.kind === 'lan' ? <LanModal mode={modal.mode} /> : null}

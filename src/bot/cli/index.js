@@ -2,9 +2,10 @@
 // src/cli/index.js — sei CLI: onboarding, start, config.
 // Zero new deps; uses node:readline/promises and node:fs.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { homedir } from 'node:os'
 import { stdin as input, stdout as output } from 'node:process'
 import * as readline from 'node:readline/promises'
 
@@ -286,6 +287,85 @@ async function cmdConfig() {
   }
 }
 
+// ─── Reset ────────────────────────────────────────────────────────────────
+// The Electron GUI stores its config at <userData>/config.json (separate from
+// the CLI's ./config.json). To force a fresh onboarding pass on next launch
+// we delete the GUI's config + api_key.bin (and the CLI's local config).
+// Characters are left in place so users keep their personas.
+//
+// userData path mirrors Electron's `app.getPath('userData')` for productName
+// "Sei" (electron-builder.yml). Computed without importing electron so the
+// CLI stays light.
+function electronUserDataDir() {
+  const APP = 'Sei'
+  if (process.platform === 'darwin') {
+    return resolve(homedir(), 'Library', 'Application Support', APP)
+  }
+  if (process.platform === 'win32') {
+    const appdata = process.env.APPDATA || resolve(homedir(), 'AppData', 'Roaming')
+    return resolve(appdata, APP)
+  }
+  // linux / other unix
+  const xdg = process.env.XDG_CONFIG_HOME || resolve(homedir(), '.config')
+  return resolve(xdg, APP)
+}
+
+async function cmdReset() {
+  banner()
+  const userData = electronUserDataDir()
+  const guiConfig = resolve(userData, 'config.json')
+  const guiApiKey = resolve(userData, 'api_key.bin')
+  const cliConfig = CONFIG_PATH
+
+  const targets = [
+    { label: 'GUI config',    path: guiConfig, why: 'forces re-run of onboarding' },
+    { label: 'GUI API key',   path: guiApiKey, why: "(otherwise app skips onboarding because hasApiKey()=true)" },
+    { label: 'CLI config',    path: cliConfig, why: 'legacy ./config.json (only if you used `sei` from terminal)' },
+  ]
+
+  const present = targets.filter((t) => existsSync(t.path))
+  if (present.length === 0) {
+    output.write(`${green('✓')} nothing to reset — no config files found.\n`)
+    output.write(dim(`   checked:\n`))
+    for (const t of targets) output.write(dim(`     - ${t.path}\n`))
+    output.write('\n')
+    return
+  }
+
+  output.write(`${blue('→')} the following will be deleted (so onboarding re-runs):\n\n`)
+  for (const t of present) {
+    output.write(`   ${red('✗')} ${t.label}: ${gray(t.path)}\n`)
+    output.write(`     ${dim(t.why)}\n`)
+  }
+  output.write('\n')
+  output.write(dim(`   characters and memory are NOT touched.\n\n`))
+
+  const rl = readline.createInterface({ input, output })
+  try {
+    const ans = (await rl.question(`${cyan('?')} proceed? ${gray('[y/N]')} `)).trim().toLowerCase()
+    if (ans !== 'y' && ans !== 'yes') {
+      output.write(`${gray('aborted.')}\n\n`)
+      return
+    }
+  } finally {
+    rl.close()
+  }
+
+  let deleted = 0
+  for (const t of present) {
+    try {
+      rmSync(t.path, { force: true })
+      output.write(`${green('✓')} deleted ${gray(t.path)}\n`)
+      deleted += 1
+    } catch (err) {
+      output.write(`${red('!')} could not delete ${gray(t.path)}: ${err?.message ?? err}\n`)
+    }
+  }
+  output.write('\n')
+  output.write(`${green('✓')} reset complete (${deleted}/${present.length}).\n`)
+  output.write(dim(`   next launch of the Sei app will start onboarding from scratch.\n\n`))
+}
+
 async function cmdMenu() {
   banner()
   const cfg = readJSON(CONFIG_PATH)
@@ -318,10 +398,12 @@ ${bold(blue('sei'))} ${gray('— framework for custom Minecraft personas')}
 ${bold('usage')}
   sei              show menu (or run onboarding on first run)
   sei start        connect to an open LAN world and run the persona
-  sei config       re-run onboarding
+  sei config       re-run onboarding (interactive, terminal flow)
+  sei reset        delete saved config so the GUI re-runs onboarding next launch
   sei help         show this help
 
-${gray(`config lives in ${CONFIG_PATH}`)}
+${gray(`CLI config lives in ${CONFIG_PATH}`)}
+${gray(`GUI config lives in ${electronUserDataDir()}/config.json`)}
 `)
 }
 
@@ -330,6 +412,7 @@ async function main() {
   const arg = process.argv[2]
   if (arg === 'start')                         return cmdStart()
   if (arg === 'config')                        return cmdConfig()
+  if (arg === 'reset' || arg === 'reset-config') return cmdReset()
   if (arg === 'help' || arg === '--help' || arg === '-h') return cmdHelp()
   if (!arg)                                    return cmdMenu()
   output.write(`${red('!')} unknown command: ${arg}\n`)

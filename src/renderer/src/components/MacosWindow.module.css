@@ -9,13 +9,30 @@
   height: 100%;
   min-width: 1180px;
   min-height: 760px;
-  background: var(--window);
+  background-color: var(--window);
+  /*
+   * Wave wallpaper (quick task 260508-mun item 10, fix follow-up):
+   * two filled sine-bands of a slightly darker shade of --window, tiled
+   * 480×160. Lives on the window itself rather than body::before because
+   * the window fills the viewport opaquely, hiding any body-level paint.
+   * Light theme uses black at 0.06/0.04 alpha; dark theme overrides below.
+   */
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='480' height='160' viewBox='0 0 480 160'><path d='M0 70 Q60 40 120 70 T240 70 T360 70 T480 70 L480 90 Q420 60 360 90 T240 90 T120 90 T0 90 Z' fill='%23000000' fill-opacity='0.045'/><path d='M0 130 Q60 100 120 130 T240 130 T360 130 T480 130 L480 145 Q420 115 360 145 T240 145 T120 145 T0 145 Z' fill='%23000000' fill-opacity='0.035'/></svg>");
+  background-repeat: repeat;
+  background-size: 480px 160px;
   border-radius: 0; /* D-28 */
   overflow: hidden;
   box-shadow: var(--shadow-window);
   display: flex;
   flex-direction: column;
   position: relative;
+}
+
+/* Dark-theme wave: lighter stroke shade since base is dark. */
+:global(:root[data-theme="dark"]) .window {
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='480' height='160' viewBox='0 0 480 160'><path d='M0 70 Q60 40 120 70 T240 70 T360 70 T480 70 L480 90 Q420 60 360 90 T240 90 T120 90 T0 90 Z' fill='%23ffffff' fill-opacity='0.040'/><path d='M0 130 Q60 100 120 130 T240 130 T360 130 T480 130 L480 145 Q420 115 360 145 T240 145 T120 145 T0 145 Z' fill='%23ffffff' fill-opacity='0.030'/></svg>");
 }
 
 .titleBar {
