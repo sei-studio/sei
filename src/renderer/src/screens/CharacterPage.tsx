@@ -1,14 +1,13 @@
 /**
- * CharacterPage — two-column character detail screen with tabs and Summon CTA.
+ * CharacterPage — two-column character detail screen with Description card,
+ * Edit affordance (modal), Summon CTA, stats grid, and model row.
  *
  * Layout: 320px portrait column + 1fr details column, 36px gap. Padding 24×40×40.
- * Source: 04-UI-SPEC.md §CharacterPage; D-49..D-53.
+ * Source: 04-UI-SPEC.md §CharacterPage; D-49..D-53; quick task 260508-mun.
  *
- * Tabs:
- *  - Description     — surface card, "DESCRIPTION" eyebrow + "For you" tag.
- *  - Persona prompt  — collapsed by default (D-50). Expanded body fades in.
- *  - Logs            — `<LogsPanel />` when this character is the active summon;
- *                      "Logs · Available while summoned" stub otherwise (D-53).
+ * Tabs (Persona prompt / Logs) were removed in 260508-mun. The standalone
+ * Persona prompt tab is replaced by the Edit modal (name + description +
+ * persona_prompt). The Logs tab is replaced by the global bottom LogsBar.
  *
  * Stats grid: Last launched / Total playtime / Created. '—' for never-summoned (D-51).
  *
@@ -17,12 +16,9 @@
  *  - online          → green dot + "Online · {uptime}" + mono model id.
  *  - error           → red dot + plain-English message + "TRY AGAIN" link.
  *
- * Delete button is hidden when `id === 'sui'` (D-49). When pressed for any
- * other character, opens DeleteConfirmModal; on confirm calls
- * `sei.deleteCharacter` and `useDataStore.removeCharacter`, then navigates Home.
- *
- * "Edit persona" is intentionally a no-op v1 placeholder per CONTEXT scope —
- * full edit flow is deferred (the Add flow already covers GUI-04 for v1).
+ * Sui (id === 'sui') gates:
+ *  - No Edit button rendered (260508-mun item 2).
+ *  - No Delete button rendered (D-49; existing).
  *
  * T-04-37 mitigation: on mount, if the character isn't in store, fetch via
  * `sei.getCharacter` (and let main return null on missing → "Character not
@@ -35,8 +31,8 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { Button } from '../components/Button';
 import { PixelPortrait } from '../components/PixelPortrait';
-import { LogsPanel } from '../components/LogsPanel';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { EditCharacterModal } from '../components/EditCharacterModal';
 import { BackIcon, SparkleIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
 import { ERROR_COPY } from '../lib/errors';
@@ -44,8 +40,6 @@ import type { Character } from '@shared/characterSchema';
 import styles from './CharacterPage.module.css';
 
 const MODEL_ID = 'claude-haiku-4-5-20251001';
-
-type Tab = 'description' | 'persona' | 'logs';
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '—';
@@ -97,9 +91,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const removeCharacter = useDataStore((s) => s.removeCharacter);
 
   const character: Character | undefined = characters.find((c) => c.id === id);
-  const [tab, setTab] = useState<Tab>('description');
-  const [expandedPersona, setExpandedPersona] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState<boolean>(false);
+  const [editing, setEditing] = useState<boolean>(false);
 
   // T-04-37: rehydrate the character from disk on mount if not in the store.
   useEffect(() => {
@@ -125,13 +118,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const isActive = summon.kind === 'online' && summon.characterId === id;
   const isErrored = summon.kind === 'error' && summon.characterId === id;
   const isConnecting = summon.kind === 'connecting';
-  const logsTabEnabled = isActive;
-
-  // If the user navigates away and back, reset to Description if Logs tab
-  // becomes disabled mid-view.
-  useEffect(() => {
-    if (tab === 'logs' && !logsTabEnabled) setTab('description');
-  }, [tab, logsTabEnabled]);
 
   const handleSummonClick = (): void => {
     if (isActive) {
@@ -159,9 +145,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   };
 
   // GUI-05: error label uses centralized ERROR_COPY[ErrorClass] copy, NOT
-  // the raw `summon.message` (which can be a stack trace fragment). Falls
-  // back to the generic BOT_CRASH copy if the ErrorClass somehow isn't in
-  // the map (defensive — every ErrorClass variant is keyed).
+  // the raw `summon.message` (which can be a stack trace fragment).
   const modelLabel = isActive
     ? `Online · ${fmtUptime(summon.uptimeMs)}`
     : summon.kind === 'error' && summon.characterId === id
@@ -206,9 +190,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               {isActive ? 'Stop' : 'Summon into Minecraft'}
             </Button>
             <div className={styles.secondaryRow}>
-              <Button kind="ghost" size="md" disabled title="Edit coming soon">
-                Edit persona
-              </Button>
+              {!isDefault ? (
+                <Button kind="ghost" size="md" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+              ) : null}
               {!isDefault ? (
                 <Button
                   kind="ghost"
@@ -227,84 +213,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           <div className={styles.eyebrow}>{isDefault ? 'DEFAULT' : 'CUSTOM'}</div>
           <h1 className={styles.title}>{character.name}</h1>
 
-          <div className={styles.tabs} role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'description'}
-              className={tab === 'description' ? styles.tabActive : styles.tab}
-              onClick={() => setTab('description')}
-            >
-              Description
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'persona'}
-              className={tab === 'persona' ? styles.tabActive : styles.tab}
-              onClick={() => setTab('persona')}
-            >
-              Persona prompt
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'logs'}
-              aria-disabled={!logsTabEnabled}
-              tabIndex={logsTabEnabled ? 0 : -1}
-              className={
-                (tab === 'logs' ? styles.tabActive : styles.tab) +
-                (logsTabEnabled ? '' : ' ' + styles.tabDisabled)
-              }
-              onClick={() => {
-                if (logsTabEnabled) setTab('logs');
-              }}
-            >
-              {logsTabEnabled ? 'Logs' : 'Logs · Available while summoned'}
-            </button>
+          <div className={styles.card}>
+            <div className={styles.cardEyebrow}>
+              DESCRIPTION <span className={styles.tag}>For you</span>
+            </div>
+            <div className={styles.cardBody}>{character.description || '—'}</div>
           </div>
-
-          {tab === 'description' ? (
-            <div className={styles.card}>
-              <div className={styles.cardEyebrow}>
-                DESCRIPTION <span className={styles.tag}>For you</span>
-              </div>
-              <div className={styles.cardBody}>{character.description || '—'}</div>
-            </div>
-          ) : null}
-
-          {tab === 'persona' ? (
-            <div className={`${styles.card} ${expandedPersona ? styles.cardExpanded : ''}`}>
-              <div className={styles.cardEyebrow}>
-                PERSONA PROMPT{' '}
-                <span className={styles.tag}>
-                  {expandedPersona ? `Sent to ${MODEL_ID}` : 'Hidden'}
-                </span>
-                <button
-                  type="button"
-                  className={styles.toggle}
-                  onClick={() => setExpandedPersona((s) => !s)}
-                >
-                  {expandedPersona ? 'HIDE' : 'SHOW'}
-                </button>
-              </div>
-              {expandedPersona ? (
-                <pre className={styles.personaBody}>{character.persona_prompt}</pre>
-              ) : null}
-            </div>
-          ) : null}
-
-          {tab === 'logs' ? (
-            logsTabEnabled ? (
-              <div className={styles.logsWrap}>
-                <LogsPanel />
-              </div>
-            ) : (
-              <div className={styles.card}>
-                <div className={styles.cardBody}>Logs available while summoned</div>
-              </div>
-            )
-          ) : null}
 
           <div className={styles.stats}>
             <div className={styles.stat}>
@@ -344,6 +258,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             void handleConfirmDelete();
           }}
         />
+      ) : null}
+
+      {editing ? (
+        <EditCharacterModal character={character} onClose={() => setEditing(false)} />
       ) : null}
     </div>
   );

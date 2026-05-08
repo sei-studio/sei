@@ -79,7 +79,12 @@ export function CharacterCard({
       </div>
       <div className={styles.infoRow}>
         <div className={styles.infoText}>
-          <div className={styles.infoName}>{c.name}</div>
+          {/*
+            Name was previously rendered here in sans-serif as well as on the
+            portrait overlay (.nameOverlay, pixel font). Per quick task
+            260508-mun item 6 we keep only the pixel-font overlay; this row
+            now shows the meta text only.
+          */}
           <div className={styles.infoMeta}>{formatLast(c.last_launched)}</div>
         </div>
         <ArrowIcon size={14} />

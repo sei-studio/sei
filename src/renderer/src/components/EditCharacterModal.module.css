@@ -1,0 +1,60 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fade 220ms ease both;
+}
+
+.modal {
+  width: 600px;
+  max-width: calc(100vw - 64px);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: var(--window);
+  padding: 32px;
+  box-shadow: var(--shadow-pop);
+  animation: fade-up 280ms var(--ease-pop) both;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 8px;
+  letter-spacing: -0.2px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+}
+
+.error {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--red);
+  padding: 4px 0;
+}
+
+.footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
