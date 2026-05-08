@@ -1,0 +1,63 @@
+/* MacosWindow.module.css — 1180x760 chrome wrapper.
+ *
+ * Source: 04-UI-SPEC.md §Component Inventory → MacosWindow/AppWindow + D-32.
+ * NO fake traffic lights — real macOS chrome (titleBarStyle: 'hiddenInset').
+ */
+
+.window {
+  width: 100%;
+  height: 100%;
+  min-width: 1180px;
+  min-height: 760px;
+  background: var(--window);
+  border-radius: 0; /* D-28 */
+  overflow: hidden;
+  box-shadow: var(--shadow-window);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.titleBar {
+  height: 38px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  /* macOS reserves ~80px on the left for OS-drawn traffic lights (UI-SPEC §MacosWindow) */
+  padding: 0 14px 0 80px;
+  border-bottom: 1px solid var(--border);
+  background: var(--rail);
+  position: relative;
+  /* Dragging the window via the title bar */
+  -webkit-app-region: drag;
+}
+
+.titleCenter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+  letter-spacing: 0.1px;
+  pointer-events: none;
+}
+
+.dot {
+  color: var(--muted);
+}
+
+.subtitle {
+  color: var(--muted);
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}

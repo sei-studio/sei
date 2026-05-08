@@ -1,0 +1,86 @@
+/* global.css — base resets, body wallpaper, scrollbars, sharp-edges policy.
+ * Source: 04-UI-SPEC.md §Wallpaper texture + §Defaults (CSS Modules) + D-28 (sharp).
+ * Renderer-wide styles only. Per-component visuals live in *.module.css next to .tsx.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--sans);
+  background: var(--desktop);
+  color: var(--text);
+  transition: background 240ms ease, color 240ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Wallpaper texture — UI-SPEC §Color verbatim (light) */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 700px at 20% 10%, rgba(244, 194, 170, 0.18), transparent 60%),
+    radial-gradient(1000px 800px at 90% 90%, rgba(122, 169, 237, 0.08), transparent 60%);
+}
+
+/* Wallpaper texture — UI-SPEC §Color verbatim (dark) */
+:root[data-theme="dark"] body::before {
+  background:
+    radial-gradient(1200px 700px at 20% 10%, rgba(122, 169, 237, 0.10), transparent 60%),
+    radial-gradient(1000px 800px at 90% 90%, rgba(244, 194, 170, 0.05), transparent 60%);
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+}
+
+/* All edges sharp (D-28) — applies to native input/button defaults that round corners */
+button,
+input,
+textarea,
+select {
+  border-radius: 0;
+}
+
+/* Custom scrollbars — subtle, sharp */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea {
+  font-family: inherit;
+}

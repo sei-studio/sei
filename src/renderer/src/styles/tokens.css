@@ -1,0 +1,75 @@
+/* tokens.css — design tokens (CSS custom properties).
+ * Source: 04-UI-SPEC.md §Color (verbatim) + §Spacing Scale + §Typography (font-family stacks).
+ * Do NOT add per-component values here — only tokens that may be referenced by ≥1 component.
+ */
+
+:root {
+  /* ── Spacing (8-point scale + 4-pt half-step) ─────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-md-plus: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 40px;
+  --space-3xl: 56px;
+
+  /* ── Light theme (default) — UI-SPEC §Color verbatim ──────── */
+  --window: #FDFEFF;
+  --accent: #F4C2AA;
+  --accent-strong: #E5A382;
+  --accent-soft: rgba(244, 194, 170, 0.30);
+  --accent-text: #2A1B12;
+  --desktop: #F2F1EE;
+  --surface: #F6F5F2;
+  --surface-2: #FFFFFF;
+  --rail: #F6F5F2;
+  --rail-active: #ECEAE3;
+  --text: #1A1D24;
+  --text-2: #4A4D55;
+  --muted: #8A8D95;
+  --green: #5E8E47;
+  --red: #C4523A;
+  --warn: #C2A13A;
+  --border: rgba(26, 29, 36, 0.08);
+  --border-strong: rgba(26, 29, 36, 0.16);
+
+  /* ── Shadow tokens (light) ───────────────────────────────── */
+  --shadow-window: 0 0 0 1px rgba(0, 0, 0, .10), 0 24px 60px rgba(0, 0, 0, .16), 0 4px 16px rgba(0, 0, 0, .06);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 12px rgba(0, 0, 0, .05);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, .10);
+
+  /* ── Easing ───────────────────────────────────────────────── */
+  --ease-pop: cubic-bezier(.2, .7, .2, 1);
+
+  /* ── Typography stacks (font families) ────────────────────── */
+  --sans: 'Noto Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --pixel: 'Press Start 2P', monospace;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ── Dark theme — UI-SPEC §Color verbatim ─────────────────── */
+:root[data-theme="dark"] {
+  --window: #191C21;
+  --accent: #7AA9ED;
+  --accent-strong: #94BBF2;
+  --accent-soft: rgba(122, 169, 237, 0.16);
+  --accent-text: #0F1218;
+  --desktop: #14161B;
+  --surface: #1F232A;
+  --surface-2: #252932;
+  --rail: #15181D;
+  --rail-active: #252932;
+  --text: #E8EBF0;
+  --text-2: #B4B9C2;
+  --muted: #6E7480;
+  --green: #7DB868;
+  --red: #E07259;
+  --warn: #E0BE5C;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  --shadow-window: 0 0 0 1px rgba(0, 0, 0, .5), 0 24px 60px rgba(0, 0, 0, .55), 0 4px 16px rgba(0, 0, 0, .35);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .25), 0 4px 12px rgba(0, 0, 0, .30);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, .45);
+}

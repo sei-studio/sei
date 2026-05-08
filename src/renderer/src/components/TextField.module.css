@@ -1,0 +1,48 @@
+/* TextField.module.css — borderless underline input.
+ * Source: 04-UI-SPEC.md §Component Inventory → TextField + D-31.
+ */
+
+.field {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--border-strong);
+  border-radius: 0; /* D-28 */
+  color: var(--text);
+  font-size: 16px;
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color 140ms ease;
+}
+
+.single {
+  height: 48px;
+  padding: 0;
+}
+
+.multi {
+  padding: 12px 0;
+  resize: vertical;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.field:focus {
+  border-bottom-color: var(--accent);
+}
+
+.field[aria-invalid='true'] {
+  border-bottom-color: var(--red);
+}
+
+.field:disabled {
+  opacity: 0.5;
+  border-bottom-color: var(--border);
+  cursor: not-allowed;
+}
+
+.field::placeholder {
+  color: var(--muted);
+}

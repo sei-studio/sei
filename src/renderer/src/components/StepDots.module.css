@@ -1,0 +1,30 @@
+/* StepDots.module.css — onboarding/add-character progress indicator.
+ * Source: 04-UI-SPEC.md §Component Inventory → StepDots + D-36.
+ */
+
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.dot {
+  height: 6px;
+  border-radius: 0;
+  transition: width 240ms ease, background 240ms ease;
+}
+
+.active {
+  width: 22px;
+  background: var(--accent);
+}
+
+.past {
+  width: 6px;
+  background: var(--text-2);
+}
+
+.future {
+  width: 6px;
+  background: var(--border-strong);
+}
