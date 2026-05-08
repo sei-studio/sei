@@ -65,6 +65,17 @@ export function createPriorityQueue({ onDispatch, idleFallbackMs = 60_000, logge
 
   function enqueue(priority, event, data) {
     if (disposed) return
+    // Dedupe idempotent ticks. sei:loop_end and sei:idle are "settle" prompts
+    // — only the next one matters. Without this guard, multiple back-to-back
+    // higher-priority loops (joined → chat → ...) each leave a loop_end in
+    // the queue and the bot drains them sequentially, emitting a redundant
+    // "settle" say() per drain. The cross-loop suppression at index.js:114
+    // only blocks ADDING loop_ends from a loop_end-triggered loop's terminal,
+    // not accumulation in the queue itself.
+    if ((event === 'sei:loop_end' || event === 'sei:idle') &&
+        queue.some(q => q.event === event)) {
+      return
+    }
     // Owner chat preempts in-flight non-P0 work. Without this, a chat-driven
     // dispatch (already P1) cannot be aborted by a fresh owner chat (also P1)
     // — they queue equally and the in-flight movement keeps running until it

@@ -4,6 +4,7 @@ node_modules/
 mineflayer/
 .claude/
 test/
+logs/
 
 # user-specific memory — generated during onboarding / at runtime
 memory/OWNER.md
