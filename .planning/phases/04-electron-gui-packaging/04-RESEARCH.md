@@ -953,6 +953,19 @@ These directives override all research recommendations and must be honored in pl
 - A8 (bundle ID) — surface in discuss-phase or plan-phase and lock before any signed build.
 - A9 (Windows cert path) — depends on which cert the user actually obtains; the plan should have a packaging task with two variants (EV-cert-on-token vs Azure-Trusted-Signing) and pick at execution time.
 
+## Resolved During Plan-Phase (2026-05-08)
+
+- **Q1 (bundle ID): DEFERRED → [BLOCKING] task before first signed build.**
+  Planner MUST insert a `[BLOCKING]` "lock identifiers" task that runs after packaging config is written but before `npm run dist:mac` ever executes. User picks the reverse-DNS form (`gg.sei.app` / `studio.sei.app` / `bot.sei.app`) when domain is registered. Use a placeholder like `app.sei.placeholder` in `electron-builder.yml` `appId` until then; mark with a `# TODO(lock-before-signing)` comment.
+- **Q2 (Windows signing): SHIP UNSIGNED v1.**
+  No `signtoolOptions` / `azureSignOptions` in `electron-builder.yml`. Windows users see SmartScreen "unknown publisher" warning on first install — accepted UX for v1. Plan must document this in release notes and flag a future phase for signing once company is formed. NSIS `.exe` output remains required.
+- **Q3 (CI build pipeline): LOCAL-ONLY for v1.** `npm run dist:mac` / `dist:win` / `dist:linux` documented as the release procedure.
+- **Q4 (CLI user data migration): TREAT AS FRESH.** Per Runtime State Inventory; document in release notes.
+- **Q5 (Logs panel persistence): STORE-LEVEL SUBSCRIPTION.** Logs ring buffer always-mounted at the data-store level; panel is a view onto it. Navigation does not drop lines.
+- **Q6 (postinstall hook): `electron-builder install-app-deps`.** Same end behavior as `@electron/rebuild` but graceful when `dependencies` has zero native modules (current state of repo).
+
+---
+
 ## Open Questions
 
 1. **What is the canonical macOS bundle ID / Windows AppUserModelID?**
