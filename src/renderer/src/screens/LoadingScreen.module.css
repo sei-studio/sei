@@ -1,0 +1,45 @@
+/* LoadingScreen.module.css — boot loading screen.
+ * Source: 04-UI-SPEC.md §Screen Inventory → LoadingScreen + D-35.
+ * Recolored mark via mask-image on /img/sei-logo-small.svg + 3 staggered dots.
+ */
+
+.root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background: var(--window);
+  z-index: 80;
+}
+
+.mark {
+  width: 220px;
+  height: 36px;
+  background-color: var(--accent);
+  -webkit-mask-image: url('/img/sei-logo-small.svg');
+  mask-image: url('/img/sei-logo-small.svg');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+  animation: seiPulse 1600ms ease-in-out infinite;
+}
+
+.dots {
+  display: flex;
+  gap: 6px;
+}
+
+.dots span {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  display: block;
+  opacity: 0.4;
+  animation: seiDot 1100ms ease-in-out infinite;
+}

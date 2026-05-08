@@ -1,0 +1,101 @@
+/* Button.module.css — UI-SPEC §Component Inventory → Button verbatim. */
+
+.button {
+  border-radius: 0; /* D-28 sharp */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  letter-spacing: -0.1px;
+  font-family: var(--sans);
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 140ms ease, box-shadow 160ms ease, transform 80ms ease, color 140ms ease;
+  outline: none;
+  white-space: nowrap;
+}
+
+.button:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button:hover:not(:disabled) {
+  transform: translateY(-0.5px);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Sizes (UI-SPEC §Button matrix) ─────────────────────────────────────── */
+.sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  gap: 6px;
+}
+.md {
+  height: 38px;
+  padding: 0 16px;
+  font-size: 14px;
+  gap: 8px;
+}
+.lg {
+  height: 46px;
+  padding: 0 22px;
+  font-size: 15px;
+  gap: 10px;
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+/* ── Kind: primary — text bg, window text ───────────────────────────────── */
+.primary {
+  background: var(--text);
+  color: var(--window);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.primary:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Kind: accent — accent bg, accent-text label ────────────────────────── */
+.accent {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+}
+.accent:hover:not(:disabled) {
+  background: var(--accent-strong);
+  box-shadow: 0 6px 20px var(--accent-soft);
+}
+
+/* ── Kind: ghost — transparent, text color, --border outline ────────────── */
+.ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: none;
+}
+.ghost:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+/* ── Kind: quiet — transparent, --text-2 ────────────────────────────────── */
+.quiet {
+  background: transparent;
+  color: var(--text-2);
+  border-color: transparent;
+  box-shadow: none;
+}
+.quiet:hover:not(:disabled) {
+  background: var(--surface);
+}
