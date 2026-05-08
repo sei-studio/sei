@@ -39,6 +39,8 @@ import { CharacterPage } from './screens/CharacterPage';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { LanModal } from './components/LanModal';
 import { SummonToast } from './components/SummonToast';
+import { Banner } from './components/Banner';
+import { ERROR_COPY } from './lib/errors';
 
 const LOADING_FLOOR_MS = 1600;
 
@@ -53,6 +55,13 @@ export function App(): React.ReactElement {
   const [bootStartedAt] = useState(() => Date.now());
   const [toast, setToast] = useState<{ id: string; name: string } | null>(null);
   const [lastToastedSummonId, setLastToastedSummonId] = useState<string | null>(null);
+  // RESEARCH §Pitfall 3 — Linux-only basic_text safeStorage warning. Main
+  // computes this from `apiKeyStore.backendKind()` and exposes it via the
+  // app:warnings IPC. Dismissed for the rest of the session on first click.
+  const [warnings, setWarnings] = useState<{
+    keychainFallbackPlaintext: boolean;
+    dismissed: boolean;
+  }>({ keychainFallbackPlaintext: false, dismissed: false });
 
   // ── Theme apply + system listener ─────────────────────────────────────
   useEffect(() => {
@@ -87,6 +96,15 @@ export function App(): React.ReactElement {
         await useDataStore.getState().loadCharacters();
       } catch {
         // Stores stay empty; screens render the empty-state.
+      }
+
+      // Startup warnings (Linux basic_text safeStorage fallback). Best-effort.
+      try {
+        const w = await sei.getStartupWarnings();
+        if (cancelled) return;
+        setWarnings({ keychainFallbackPlaintext: w.keychainFallbackPlaintext, dismissed: false });
+      } catch {
+        // No warnings surfaced; default state already false.
       }
 
       // Decide first view
@@ -140,15 +158,32 @@ export function App(): React.ReactElement {
   return (
     <>
       <MacosWindow subtitle={subtitleForView(view)}>
-        <IconRail />
-        <main style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-          {view.kind === 'onboarding' && <OnboardingScreen isReonboard={view.isReonboard} />}
-          {view.kind === 'home' && <HomeScreen />}
-          {view.kind === 'add-character' && <AddCharacterScreen />}
-          {view.kind === 'character' && <CharacterPage id={view.id} />}
-          {view.kind === 'settings' && <SettingsScreen />}
-          {view.kind === 'coming-soon' && <ComingSoonScreen />}
-        </main>
+        {/*
+          MacosWindow's `.body` is a flex row (IconRail | main). To place
+          a top-of-window Banner above that row, we render a flex-column
+          wrapper as the sole child so the Banner stacks vertically while
+          the IconRail+main row keeps its original layout.
+        */}
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
+          {warnings.keychainFallbackPlaintext && !warnings.dismissed ? (
+            <Banner
+              kind="warn"
+              message={ERROR_COPY.KEYCHAIN_FALLBACK_PLAINTEXT}
+              onDismiss={() => setWarnings((w) => ({ ...w, dismissed: true }))}
+            />
+          ) : null}
+          <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+            <IconRail />
+            <main style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+              {view.kind === 'onboarding' && <OnboardingScreen isReonboard={view.isReonboard} />}
+              {view.kind === 'home' && <HomeScreen />}
+              {view.kind === 'add-character' && <AddCharacterScreen />}
+              {view.kind === 'character' && <CharacterPage id={view.id} />}
+              {view.kind === 'settings' && <SettingsScreen />}
+              {view.kind === 'coming-soon' && <ComingSoonScreen />}
+            </main>
+          </div>
+        </div>
       </MacosWindow>
       {modal?.kind === 'lan' ? <LanModal mode={modal.mode} /> : null}
       {toast ? (

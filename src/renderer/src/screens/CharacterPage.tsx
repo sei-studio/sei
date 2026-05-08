@@ -39,6 +39,7 @@ import { LogsPanel } from '../components/LogsPanel';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { BackIcon, SparkleIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
+import { ERROR_COPY } from '../lib/errors';
 import type { Character } from '@shared/characterSchema';
 import styles from './CharacterPage.module.css';
 
@@ -157,10 +158,14 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     }
   };
 
+  // GUI-05: error label uses centralized ERROR_COPY[ErrorClass] copy, NOT
+  // the raw `summon.message` (which can be a stack trace fragment). Falls
+  // back to the generic BOT_CRASH copy if the ErrorClass somehow isn't in
+  // the map (defensive — every ErrorClass variant is keyed).
   const modelLabel = isActive
     ? `Online · ${fmtUptime(summon.uptimeMs)}`
-    : isErrored
-      ? summon.message
+    : summon.kind === 'error' && summon.characterId === id
+      ? (ERROR_COPY[summon.error] ?? ERROR_COPY.BOT_CRASH)
       : isConnecting
         ? 'Connecting…'
         : 'Ready';

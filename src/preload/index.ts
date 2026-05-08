@@ -25,6 +25,8 @@ const api: RendererApi = {
   saveApiKey: (plaintext) => ipcRenderer.invoke(IpcChannel.config.saveApiKey, plaintext),
   hasApiKey: () => ipcRenderer.invoke(IpcChannel.config.hasApiKey),
 
+  getStartupWarnings: () => ipcRenderer.invoke(IpcChannel.app.warnings),
+
   onStatus(cb: (status: BotStatus) => void) {
     const handler = (_e: Electron.IpcRendererEvent, status: BotStatus) => cb(status);
     ipcRenderer.on(IpcChannel.bot.status, handler);

@@ -37,6 +37,16 @@ export type LanState =
   | { kind: 'not_connected' }
   | { kind: 'unavailable' };
 
+/**
+ * Startup warnings reported by main on first boot (one-shot query).
+ * `keychainFallbackPlaintext` is true when running on Linux with the
+ * `basic_text` safeStorage backend (no kwallet/libsecret available) —
+ * surfaces as a top-of-window Banner per RESEARCH §Pitfall 3.
+ */
+export interface StartupWarnings {
+  keychainFallbackPlaintext: boolean;
+}
+
 /** Single log line forwarded from utilityProcess stdout/stderr → main → renderer. */
 export interface LogEntry {
   timestamp: string;             // ISO; main attaches this when it tees the line
@@ -91,6 +101,9 @@ export interface RendererApi {
   saveApiKey(plaintext: string): Promise<void>;
   hasApiKey(): Promise<boolean>;
 
+  // App-level one-shot queries
+  getStartupWarnings(): Promise<StartupWarnings>;
+
   // Push subscriptions — return Unsubscribe (renderer cleans up on unmount)
   onStatus(cb: (status: BotStatus) => void): Unsubscribe;
   onLog(cb: (batch: LogBatch) => void): Unsubscribe;
@@ -125,6 +138,7 @@ export const IpcChannel = {
   },
   app: {
     ready: 'app:ready',
+    warnings: 'app:warnings',
   },
 } as const;
 
