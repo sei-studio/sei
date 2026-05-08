@@ -333,11 +333,13 @@ Source: `ui.jsx` AppWindow + `macos-window.jsx`.
 
 - 1180 × 760px, sharp corners, `--shadow-window`.
 - Top bar 38px tall, `--rail` background, 1px `--border` bottom.
-- **Traffic lights top-LEFT** (D-32). Decorative only — they do NOT close/min/max the Electron BrowserWindow.
+- **Traffic lights are NATIVE — do not render the JSX `TrafficLights` component from `ui.jsx`** (D-32). The mockup's `<TrafficLights />` exists only so the design tool can preview the chrome; in the real app the OS draws them.
 - Title bar shows centered "Sei · {subtitle}" (subtitle slot used for "Onboarding" / "Settings" / character name during view).
 - Body row: Sidebar (72px) + scrollable content area.
 
-In Electron: hide native frame (`frame: false`), use `titleBarStyle: 'hiddenInset'` on macOS so the OS still honours window dragging via `-webkit-app-region: drag` on the 38px top-bar element. Traffic lights here are visual only — wire `app-region: no-drag` over them so they don't intercept drag.
+**Electron chrome configuration:**
+- **macOS:** `titleBarStyle: 'hiddenInset'`. macOS draws the real traffic-light buttons in the standard inset position (top-left); they close/minimize/maximize the BrowserWindow as usual. Title bar is draggable via `-webkit-app-region: drag` on the 38px top-bar element. Add ~80px of left-padding to the title bar so the centered title doesn't collide with the OS-drawn buttons.
+- **Windows / Linux:** `frame: false` + `titleBarOverlay`. Render the centered title and Sei subtitle as on macOS, but no decorative traffic lights — Windows shows real min/max/close on the right via `titleBarOverlay`; on Linux the window manager draws its own chrome. Do not invent fake buttons on the left.
 
 ### PixelPortrait
 
@@ -347,7 +349,7 @@ Props: `{ seed: string, palette: string[], size?: number, style?: CSSProperties 
 
 Algorithm (D-14, port verbatim — covered by determinism contract under "Interaction Contracts"):
 1. `hashSeed(seed)` — FNV-1a 32-bit from string char codes.
-2. xorshift PRNG: `s = (Math.imul(s ^ (s>>>15), 2246822507) ^ Math.imul(s ^ (s>>>13), 3266489909)) >>> 0`; output `s/4294967296`.
+2. PRNG mixer (mulberry32-style): `s = (Math.imul(s ^ (s>>>15), 2246822507) ^ Math.imul(s ^ (s>>>13), 3266489909)) >>> 0`; output `s/4294967296`. Port verbatim — constants matter for reproducibility.
 3. 12 × 12 grid; left half (cols 0..5) generated, right half mirrored.
 4. Top 2 rows = sky (background `palette[0]` → `palette[1]` linear gradient).
 5. Col 0 and last row force background.
@@ -774,7 +776,7 @@ These are non-binding hints for the planner / executor — they're already impli
 - **Logos** — `sei_logo.svg/png` and `sei_logo_small.svg/png` move from repo root → `src/renderer/public/img/` and the repo-root copies are removed (D-08).
 - **No Minecraft branding** — the MCBlock icon is generic green-top / brown-side pixel art. Never use the Minecraft wordmark/logo (D-34).
 - **No "Sei" wordmark in the rail** (D-34, removed iteration 5). Sei wordmark only appears in LoadingScreen and onboarding step 0.
-- **Traffic lights top-LEFT** (D-32). On Windows builds: still render them top-left as decorative chrome AND show real Windows min/max/close on the right via `titleBarStyle: 'hidden'` + `titleBarOverlay`. Optional: hide decorative traffic lights on Windows to avoid double-chrome confusion. **Decision deferred to executor**, with note: "if double-chrome looks bad on Windows, hide the decorative traffic lights only on Windows; do NOT change positioning on macOS."
+- **Traffic lights are native macOS chrome** (D-32). Use `titleBarStyle: 'hiddenInset'` so macOS draws the real buttons; do NOT render the mockup's JSX `TrafficLights` component (it would overlap the OS-drawn buttons). On Windows/Linux, no decorative traffic lights — Windows uses `titleBarOverlay` for real min/max/close on the right, Linux uses the window manager's chrome. See MacosWindow / AppWindow contract for details.
 - **Sans weight 500 is NOT loaded.** Where the prior draft used weight 500, those usages are folded into 400 (with -0.1 letter-spacing if visual emphasis was needed) or promoted to 600. Only weights 400 and 600 of Noto Sans ship with the app.
 
 ---
