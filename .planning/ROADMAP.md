@@ -123,7 +123,7 @@ Plans:
 **Plans**: 11 plans
 
 Plans:
-- [ ] 04-01-build-scaffold-PLAN.md — electron-vite + electron-builder + relocate src/{brain,adapter,cli,registry,config,index} → src/bot/, logo assets relocate, stub electron-builder.yml
+- [x] 04-01-build-scaffold-PLAN.md — electron-vite + electron-builder + relocate src/{brain,adapter,cli,registry,config,index} → src/bot/, logo assets relocate, stub electron-builder.yml
 - [ ] 04-02-shared-types-PLAN.md — src/shared/{ipc.ts, characterSchema.ts, errorClasses.ts} (RendererApi + Zod schemas + ErrorClass union)
 - [ ] 04-03-stores-and-secrets-PLAN.md — main/{paths, configStore, characterStore, apiKeyStore (safeStorage), migration} with atomicWrite reuse
 - [ ] 04-04-bot-supervisor-PLAN.md — main/{lanWatcher, botSupervisor, logRouter} + augment src/bot/index.js for parentPort handshake
