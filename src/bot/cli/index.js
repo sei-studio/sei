@@ -33,11 +33,11 @@ const green = (s) => `${C.green}${s}${C.reset}`
 // npx, or invoked directly from the repo.
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const PROJECT_ROOT = resolve(__dirname, '..', '..')
+const PROJECT_ROOT = resolve(__dirname, '..', '..', '..')
 const CONFIG_PATH = resolve(PROJECT_ROOT, 'config.json')
 const MEMORY_DIR = resolve(PROJECT_ROOT, 'memory')
 const OWNER_MD_PATH = resolve(MEMORY_DIR, 'OWNER.md')
-const INDEX_PATH = resolve(PROJECT_ROOT, 'src', 'index.js')
+const INDEX_PATH = resolve(PROJECT_ROOT, 'src', 'bot', 'index.js')
 
 const DEFAULT_CONFIG = {
   owner_username: 'YourMinecraftName',
