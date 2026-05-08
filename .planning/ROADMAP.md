@@ -127,7 +127,7 @@ Plans:
 - [x] 04-02-shared-types-PLAN.md — src/shared/{ipc.ts, characterSchema.ts, errorClasses.ts} (RendererApi + Zod schemas + ErrorClass union)
 - [x] 04-03-stores-and-secrets-PLAN.md — main/{paths, configStore, characterStore, apiKeyStore (safeStorage), migration} with atomicWrite reuse
 - [x] 04-04-bot-supervisor-PLAN.md — main/{lanWatcher, botSupervisor, logRouter} + augment src/bot/index.js for parentPort handshake
-- [ ] 04-05-main-entry-and-ipc-PLAN.md — main/{windowChrome, ipc, index} composer + preload contextBridge
+- [x] 04-05-main-entry-and-ipc-PLAN.md — main/{windowChrome, ipc, index} composer + preload contextBridge
 - [ ] 04-06-renderer-shell-PLAN.md — Vite/React entry, tokens/global/animations/fonts CSS, Zustand stores, primitive components, LoadingScreen
 - [ ] 04-07-onboarding-and-home-PLAN.md — OnboardingScreen + HomeScreen + AddCharacterScreen + ComingSoonScreen + grid components
 - [ ] 04-08-character-page-and-modals-PLAN.md — CharacterPage + SettingsScreen + LanModal + SummonToast + DeleteConfirmModal + LogsPanel
