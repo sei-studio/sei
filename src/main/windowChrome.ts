@@ -40,7 +40,12 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
     ...platformChrome,
   });
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    if (!process.env.ELECTRON_PROD && !process.env.NODE_ENV?.startsWith('prod')) {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
 
   if (
     opts.indexHtmlUrlOrPath.startsWith('http://') ||

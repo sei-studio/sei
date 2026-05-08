@@ -38,8 +38,10 @@ let lanWatcherHandle: { stop: () => void } | null = null;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 
 function preloadPath(): string {
-  // electron-vite outputs preload to dist/preload/index.js relative to dist/main/index.js
-  return path.join(__dirname, '../preload/index.js');
+  // electron-vite outputs preload to dist/preload/index.cjs relative to dist/main/index.js.
+  // .cjs extension is required because package.json sets "type": "module", which would
+  // otherwise force Node to load the preload as ESM and crash on its require() calls.
+  return path.join(__dirname, '../preload/index.cjs');
 }
 
 function rendererTarget(): string {

@@ -20,8 +20,8 @@ export default defineConfig({
         input: { index: path.resolve('src/preload/index.ts') },
         output: {
           format: 'cjs',
-          entryFileNames: '[name].js',
-          chunkFileNames: '[name]-[hash].js',
+          entryFileNames: '[name].cjs',
+          chunkFileNames: '[name]-[hash].cjs',
         },
       },
     },
