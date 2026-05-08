@@ -145,3 +145,37 @@ Once resolved, plan 11 (clean-VM smoke) takes the resulting `.dmg` / `.exe` / `A
 - `appId: app.sei.placeholder`: PRESENT (verified with grep)
 - `# TODO(lock-before-signing)`: PRESENT (verified with grep)
 - No `signtoolOptions:` / `azureSignOptions:` / top-level `publish:`: VERIFIED ABSENT
+
+## Checkpoint Resolution (2026-05-08)
+
+The Task 2 `checkpoint:human-action` was raised to the user and **resolved as DEFERRED**.
+
+### Decision
+
+- `appId` lock is **DEFERRED**. `electron-builder.yml` retains `appId: app.sei.placeholder` plus the `# TODO(lock-before-signing)` marker exactly as committed in `afb7086`. No source-code changes accompany this resolution.
+- `mac.identity`, Apple Developer credentials, and notarization env vars are likewise deferred — they cannot be set without a final `appId` and are not needed for any plan-04 deliverable.
+- Linux and Windows code-signing follow-ups (Azure Trusted Signing, `.deb` / `.rpm` beyond the `AppImage` already configured) are **also deferred — explicitly out of scope for v1** per CONTEXT D-43 (Windows ships unsigned, Linux best-effort `AppImage`-only).
+
+### Reason
+
+The reverse-DNS `appId` cannot be locked because the user has not yet picked the final domain TLD. Per RESEARCH §"Resolved During Plan-Phase (2026-05-08)" Q1, the candidates are:
+
+- `gg.sei.app`
+- `studio.sei.app`
+- `bot.sei.app`
+
+Locking the `appId` prematurely would bind the choice to all macOS `safeStorage` Keychain entries on the first signed build; any subsequent rename would strand existing user secrets (Pitfall: T-04-41, "one-time appId lock"). Deferring is the correct conservative posture while the domain decision is still open.
+
+### Follow-up
+
+A separate post-phase task is owed **before the first signed `dist:mac` build is shipped**:
+
+1. User registers their chosen `sei.app` subdomain (`gg` / `studio` / `bot`).
+2. User edits `electron-builder.yml`: replace `appId: app.sei.placeholder` with the locked reverse-DNS value, remove the `# TODO(lock-before-signing)` line, populate `mac.identity` with `Developer ID Application: <Name> (<TEAM_ID>)`.
+3. User sets notarization env vars (`APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`, or the `APPLE_API_KEY*` triplet).
+4. User runs `npm run dist:mac`, mounts the `.dmg`, confirms Gatekeeper passes without right-click → Open.
+5. Commit the locked config.
+
+**Owner:** the user (post-phase, gated on domain registration).
+
+Until then, plan 10 is **functionally complete with the user-acknowledged deferral on record**. Plan 11 (clean-VM smoke) can proceed against unsigned local builds; the signed-build smoke is the only step that must wait on this follow-up.
