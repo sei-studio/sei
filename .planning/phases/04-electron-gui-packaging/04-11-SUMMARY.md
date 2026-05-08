@@ -320,3 +320,66 @@ When the orchestrator does close out phase 4:
   2. Plan 11's clean-VM smoke (PKG-03).
 
 Both are user-side / project-owner work.
+
+## Checkpoint Resolution (2026-05-08)
+
+**Decision:** Task 1 (clean-VM smoke validation) is **DEFERRED** to a
+post-phase follow-up chain. The user has explicitly opted to defer rather
+than provision the prerequisites now. `RELEASE-NOTES.md` retains its
+placeholder strings (`<the-locked-appId>`, `<your identity>`, and the
+`_PENDING — fill in on actual tag day_` release date) plus the top-of-file
+**Pre-ship checklist** that gates v1.0 tagging — those placeholders are the
+intentional safety interlock keeping an unconfigured release from shipping.
+
+**Reason — Task 1 cannot run yet because it depends on three
+independently-deferred prerequisites:**
+
+1. **Plan 10's `appId` lock is itself deferred** until the user picks a
+   final `sei.app` reverse-DNS subdomain (one of `gg.sei.app`,
+   `studio.sei.app`, `bot.sei.app`). Until that resolves, signing or
+   notarizing a real installer is impossible without binding the placeholder
+   `app.sei.placeholder` bundle ID to a Keychain entry — Pitfall T-04-41,
+   which would strand every signed-build user the moment the appId actually
+   changes.
+2. **Apple Developer signing identity + notarization secrets** are not yet
+   provisioned. Required env vars (`APPLE_ID` +
+   `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`, or the
+   `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` triple) and a
+   `Developer ID Application: …` cert in the Keychain are project-owner
+   work that has to happen alongside the appId lock.
+3. **Clean macOS / Windows / Linux validation hosts that satisfy WARNING-9
+   are not available.** Per `04-RESEARCH.md` §Resolved Q1 + WARNING-9, the
+   live-summon truth requires either bare-metal hosts on the same physical
+   LAN as the Minecraft host, OR a VM on a *bridged* network adapter with
+   multicast known to forward (NOT default NAT), OR a temporary
+   force-LAN-port code path rolled back before v1.0. Default-NAT'd VMs
+   (VirtualBox NAT, Parallels Shared, UTM Shared) silently fall back to the
+   LAN-modal Searching state — that fallback does NOT exercise the live
+   summon and does NOT satisfy PKG-03's truth.
+
+**Follow-up chain (post-phase, project-owner driven, in order):**
+
+(a) **User picks the final domain** (one of `gg.sei.app`,
+    `studio.sei.app`, or `bot.sei.app`) →
+(b) **Plan 10 follow-up locks `appId` and `mac.identity`** in
+    `electron-builder.yml`, removes the `# TODO(lock-before-signing)`
+    marker, and verifies the cert via
+    `security find-identity -v -p codesigning | grep "Developer ID Application"` →
+(c) **Plan 11 follow-up runs** `npm run dist:mac` /
+    `npm run dist:win` / `npm run dist:linux` and validates each artifact
+    on a clean VM (or bare-metal host) per the WARNING-9 multicast
+    constraint above →
+(d) **Tag v1.0** with the `RELEASE-NOTES.md` placeholders replaced
+    (`<the-locked-appId>`, `<your identity>`, real release date) and the
+    pre-ship checklist at the top of the file checked off.
+
+**Phase 4 status:** PKG-03 carries this deferred follow-up explicitly on
+the record. Every other phase 4 success criterion is satisfied. Phase 4
+can be marked **COMPLETE — with PKG-03 deferred** for the orchestrator
+closeout; the deferred work is logged here, in `04-10-SUMMARY.md`'s own
+checkpoint deferral, and in the pre-ship checklist embedded at the top of
+`RELEASE-NOTES.md` itself, so the gate is enforced at three independent
+read-points.
+
+**No source code, `STATE.md`, `ROADMAP.md`, or `RELEASE-NOTES.md` was
+modified to record this resolution** — only this SUMMARY's append.
