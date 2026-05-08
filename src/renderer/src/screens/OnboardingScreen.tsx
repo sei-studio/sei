@@ -25,6 +25,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { classifyRendererError } from '../lib/errors';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
@@ -99,9 +100,11 @@ export function OnboardingScreen({ isReonboard }: OnboardingScreenProps): React.
       await sei.saveApiKey(apiKey.trim());
       navigate({ kind: 'home' });
     } catch (err) {
-      // Plan 09 will replace `(err as Error).message` with ERROR_COPY[errorClass]
-      // once src/renderer/src/lib/errors.ts ships.
-      setError((err as Error).message);
+      // GUI-05: surface plain-English copy from ERROR_COPY (via classifier),
+      // not the raw error message. classifyRendererError uses keyword
+      // heuristics on `err.message` to pick an ErrorClass, then returns
+      // the matching ERROR_COPY string (or a generic fallback).
+      setError(classifyRendererError(err).copy);
     } finally {
       setSubmitting(false);
     }

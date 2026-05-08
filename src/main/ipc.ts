@@ -13,7 +13,7 @@ import { IpcChannel } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
 import { listCharacters, getCharacter, saveCharacter, deleteCharacter } from './characterStore';
-import { saveApiKey, hasApiKey } from './apiKeyStore';
+import { saveApiKey, hasApiKey, backendKind } from './apiKeyStore';
 import type { BotSupervisor } from './botSupervisor';
 
 export interface IpcHandlerDeps {
@@ -70,5 +70,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.config.hasApiKey, async (): Promise<boolean> => {
     return await hasApiKey();
+  });
+
+  // App-level one-shot queries
+  ipcMain.handle(IpcChannel.app.warnings, async () => {
+    return {
+      keychainFallbackPlaintext:
+        process.platform === 'linux' && backendKind() === 'basic_text',
+    };
   });
 }
