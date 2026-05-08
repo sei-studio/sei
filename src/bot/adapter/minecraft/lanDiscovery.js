@@ -1,8 +1,24 @@
-import dgram from 'dgram'
+// src/bot/adapter/minecraft/lanDiscovery.js
+//
+// One-shot LAN discovery used by the CLI (src/bot/cli/index.js cmdStart) and
+// the CLI bot bootstrap path in src/bot/index.js (when process.parentPort is
+// undefined). The Electron main process uses src/main/lanWatcher.ts (a
+// long-lived watcher); the bot child does NOT call discoverLanPort during
+// summon — main hands the cached port over MessagePort (CONTEXT D-25,
+// Pitfall 6). Keeping a small dedicated implementation here avoids the bot
+// adapter importing from the main-process module tree.
+//
+// Source: refactored from prior phase per CONTEXT D-20.
+
+import dgram from 'node:dgram'
 
 const MC_LAN_GROUP = '224.0.2.60'
 const MC_LAN_PORT = 4445
 
+/**
+ * One-shot: resolve on the first multicast packet within timeoutMs, or reject.
+ * Used by the CLI only — Electron uses watchLan() in src/main/lanWatcher.ts.
+ */
 export function discoverLanPort({ timeoutMs = 5000 } = {}) {
   return new Promise((resolve, reject) => {
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true })
