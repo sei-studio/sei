@@ -28,6 +28,10 @@ import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
 import { LoadingScreen } from './screens/LoadingScreen';
+import { OnboardingScreen } from './screens/OnboardingScreen';
+import { HomeScreen } from './screens/HomeScreen';
+import { AddCharacterScreen } from './screens/AddCharacterScreen';
+import { ComingSoonScreen } from './screens/ComingSoonScreen';
 
 const LOADING_FLOOR_MS = 1600;
 
@@ -100,12 +104,12 @@ export function App(): React.ReactElement {
     <MacosWindow subtitle={subtitleForView(view)}>
       <IconRail />
       <main style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-        {view.kind === 'onboarding' && <OnboardingPlaceholder />}
-        {view.kind === 'home' && <HomePlaceholder />}
-        {view.kind === 'add-character' && <AddCharacterPlaceholder />}
+        {view.kind === 'onboarding' && <OnboardingScreen isReonboard={view.isReonboard} />}
+        {view.kind === 'home' && <HomeScreen />}
+        {view.kind === 'add-character' && <AddCharacterScreen />}
         {view.kind === 'character' && <CharacterPagePlaceholder id={view.id} />}
         {view.kind === 'settings' && <SettingsPlaceholder />}
-        {view.kind === 'coming-soon' && <ComingSoonPlaceholder />}
+        {view.kind === 'coming-soon' && <ComingSoonScreen />}
       </main>
     </MacosWindow>
   );
@@ -130,16 +134,13 @@ function subtitleForView(view: View): string {
   }
 }
 
-// ── Plan 06 placeholders. Plans 07/08 replace these with real screens. ────
+// ── Remaining plan-08 placeholders (CharacterPage + Settings). ────────────
+// Plan 07 replaced Onboarding / Home / AddCharacter / ComingSoon above.
 
 const Placeholder: React.FC<{ label: string }> = ({ label }) => (
-  <div style={{ padding: 40 }}>{label} — implemented in plan 07–08</div>
+  <div style={{ padding: 40 }}>{label} — implemented in plan 08</div>
 );
-const OnboardingPlaceholder: React.FC = () => <Placeholder label="Onboarding" />;
-const HomePlaceholder: React.FC = () => <Placeholder label="Home" />;
-const AddCharacterPlaceholder: React.FC = () => <Placeholder label="AddCharacter" />;
 const CharacterPagePlaceholder: React.FC<{ id: string }> = ({ id }) => (
   <Placeholder label={`Character ${id}`} />
 );
 const SettingsPlaceholder: React.FC = () => <Placeholder label="Settings" />;
-const ComingSoonPlaceholder: React.FC = () => <Placeholder label="ComingSoon" />;
