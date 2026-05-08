@@ -6,6 +6,10 @@
   gap: 16px;
 }
 
+.backRow {
+  align-self: flex-start;
+}
+
 .title {
   font-family: var(--sans);
   font-size: 30px;
@@ -45,6 +49,7 @@
   font-weight: 600;
   letter-spacing: -0.1px;
   color: var(--text);
+  flex-shrink: 0;
 }
 
 .rowValue {
@@ -57,4 +62,26 @@
   font-family: var(--mono);
   font-size: 13px;
   color: var(--text-2);
+}
+
+.rowEditor {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.rowEditor > :first-child {
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.errorRow {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--red);
+  padding: 4px 0;
 }

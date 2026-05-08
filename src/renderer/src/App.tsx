@@ -173,7 +173,7 @@ export function App(): React.ReactElement {
             />
           ) : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <IconRail />
+            {view.kind !== 'onboarding' ? <IconRail /> : null}
             <main style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
               {view.kind === 'onboarding' && <OnboardingScreen isReonboard={view.isReonboard} />}
               {view.kind === 'home' && <HomeScreen />}
