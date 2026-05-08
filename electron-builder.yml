@@ -1,18 +1,27 @@
-# electron-builder.yml — Phase 4 STUB. Plan 10 fleshes signing + notarize.
-# Source: .planning/phases/04-electron-gui-packaging/04-RESEARCH.md §"Code Examples §3"
+# electron-builder.yml — Phase 4 final.
+# Source: .planning/phases/04-electron-gui-packaging/04-RESEARCH.md §"Code Examples §3 + §4"
+#         + §"Resolved During Plan-Phase" Q1, Q2, Q3.
+#
+# BLOCKING: appId below is a PLACEHOLDER. Plan 04-10 task 2 is a [BLOCKING]
+# checkpoint that requires the user to lock the final reverse-DNS form
+# (e.g., gg.sei.app / studio.sei.app / bot.sei.app). Once shipped, changing
+# this strands all existing safeStorage Keychain entries.
 
-# TODO(lock-before-signing) — chosen by user before first signed dist:mac
-# Plan 10 contains a [BLOCKING] task to lock this. Once shipped, changing this
-# strands all existing safeStorage Keychain entries.
+# TODO(lock-before-signing) — chosen by user in plan 04-10 task 2 BLOCKING checkpoint
 appId: app.sei.placeholder
 productName: Sei
+copyright: Copyright (c) 2026 Sei
+
 directories:
   output: release
   buildResources: build
+
 files:
   - dist/**/*
   - package.json
-  - "!**/node_modules/*/{test,tests,__tests__,*.md}"
+  - "!**/node_modules/*/{test,tests,__tests__,*.md,*.markdown,LICENSE*,license*}"
+  - "!**/*.map"
+
 asar: true
 asarUnpack:
   - "src/bot/**/*"
@@ -22,24 +31,41 @@ mac:
   target:
     - target: dmg
       arch: [universal]
-  # hardenedRuntime, identity, notarize, entitlements added in plan 10
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # TODO(lock-before-signing) — set to user's actual Apple Developer identity:
+  # identity: "Developer ID Application: <Name> (TEAM_ID)"
+  notarize: true            # electron-builder ≥26 uses notarytool natively when APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD env vars are set
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
 
 dmg:
-  sign: false
+  sign: false               # default since electron-builder 20.43.0
+  contents:
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+    - x: 130
+      y: 220
+      type: file
 
 win:
   target:
     - target: nsis
       arch: [x64]
-  # NO signtoolOptions / azureSignOptions — Windows ships UNSIGNED v1 per RESEARCH Q2.
-  # SmartScreen "unknown publisher" warning is accepted UX for v1; documented in release notes.
+  # NO signtoolOptions / NO azureSignOptions per RESEARCH §Resolved Q2 (ship unsigned v1).
+  # SmartScreen "unknown publisher" warning is accepted UX for v1; documented in plan 11 release notes.
 
 nsis:
-  oneClick: false
-  perMachine: false
+  oneClick: false                          # show Welcome / Choose Path
+  perMachine: false                        # per-user install — no admin prompt
   allowToChangeInstallationDirectory: true
 
 linux:
   target:
     - AppImage
   category: Game
+  # AppImage is best-effort unsigned per D-60.
+
+# DO NOT add publish: auto-update is OUT of scope per D-63.
