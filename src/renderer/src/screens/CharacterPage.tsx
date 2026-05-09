@@ -157,6 +157,22 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
 
   return (
     <div className={styles.root}>
+      {/* 260508-nkk: full-bleed pixel-art wallpaper. The same procedural
+          sprite is rendered behind the page content (huge size → CSS
+          image-rendering:pixelated produces the hero wallpaper effect)
+          AND inside the .portraitCard 320×320 box below, so the boxed
+          portrait composition is preserved. PixelPortrait is deterministic
+          on (seed, palette) so both renders are pixel-identical at the
+          12×12 grid level — only the upscale ratio differs. */}
+      <div className={styles.bgArt} aria-hidden="true">
+        <PixelPortrait
+          seed={character.id + character.name}
+          palette={palette}
+          size={1600}
+          portraitImage={character.portrait_image}
+        />
+      </div>
+
       <div className={styles.crumb}>
         <Button
           kind="quiet"
