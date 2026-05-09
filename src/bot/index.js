@@ -329,18 +329,30 @@ if (process.parentPort) {
       if (!ports.length) return
       initPort = ports[0]
       initPort.start()
+      // Future commands from main (e.g. {type:'stop'} during graceful
+      // shutdown — supervisor sends this via port1.postMessage) arrive here.
       initPort.on('message', (e) => {
         try {
           const data = (e && e.data !== undefined) ? e.data : e
-          if (data && data.type === 'init') {
-            bootstrapWithInit(data).catch((err) => surfaceCrash('bootstrapWithInit', err))
-          } else if (data && data.type === 'stop') {
+          if (data && data.type === 'stop') {
             gracefulShutdown()
           }
         } catch (err) {
           surfaceCrash('initPort.message', err)
         }
       })
+      // 260508-nkk root cause: the init payload was delivered alongside the
+      // port transfer in THIS parentPort message (supervisor calls
+      // `child.postMessage({type:'init', ...}, [port2])` — Electron carries
+      // both `data` and the transferList in the same MessageEvent). The bot
+      // previously ignored msg.data and waited for an 'init' message on
+      // initPort that main never sent, so bootstrapWithInit never ran. The
+      // bot loaded its modules, sat idle, and the supervisor's 30s outer
+      // timer fired. Read the init data directly.
+      const data = msg.data
+      if (data && data.type === 'init') {
+        bootstrapWithInit(data).catch((err) => surfaceCrash('bootstrapWithInit', err))
+      }
     } catch (err) {
       surfaceCrash('parentPort.message', err)
     }

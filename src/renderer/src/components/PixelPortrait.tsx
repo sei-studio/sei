@@ -57,13 +57,16 @@ function _unused_lighten(_hex: string, _a: number): string {
  * Pure deterministic generator. Returns a 12×12 array of `#RRGGBB` strings.
  *
  * Layout contract (must satisfy the WARNING-5 acceptance pixels):
- *   - rows 0..1: palette[0] (top sky band)
- *   - background cells (col 0, row 11, rng-zeroed in head/body): palette[1] (sky lower)
- *   - rows 2..6 (head): 82% non-background, palette index 1 + floor(rng × (palLen-2))
+ *   - rows 0..6 (head): 82% non-background, palette index 1 + floor(rng × (palLen-2))
  *   - rows 7..10 (body): 75% non-background, palette index 2 + floor(rng × (palLen-3))
  *   - row 11 (last row): palette[1] (forced bg)
+ *   - background cells (col 0, row 11, rng-zeroed in head/body): palette[1] (sky lower)
  *   - left half cols 0..5 generated; right half cols 6..11 mirrored as grid[y][11-x]
  *   - eyes at (row=3, col=4) and (row=3, col=7=12-1-4) forced to EYE_COLOR
+ *
+ * Quick task 260508-nkk follow-up: rows 0..1 used to be a forced uniform
+ * palette[0] "sky band" but it read on the cards as a flat-color stripe
+ * masking the top of the sprite. Removed — head logic now runs from row 0.
  *
  * Acceptance pixel checks for seed='sui Sui', theme='light', palette =
  * pickPalette('sui Sui', 'light'):
@@ -78,7 +81,9 @@ export function generatePixelGrid(
   const W = GRID_SIZE;
   const H = GRID_SIZE;
   const half = Math.ceil(W / 2);
-  const skyTop = 2;
+  // skyTop was 2 (rows 0..1 forced palette[0]) — disabled for quick task
+  // 260508-nkk so the sprite's head content fills the whole top of the card.
+  const skyTop = 0;
   const bodyStart = 7;
   const palLen = palette.length;
 
