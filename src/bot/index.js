@@ -59,6 +59,11 @@ export async function start(config, hooks = {}) {
   // summon-ready (the supervisor already gates on summonResolved, but
   // belt-and-suspenders).
   let _readyFired = false
+  // 260508-nkk follow-up: cap reconnects so a stale/wrong LAN port stops
+  // hammering the server (and racking up Anthropic calls from each new
+  // brain spawned by bringUp). Reset on first successful spawn.
+  const MAX_RECONNECT_ATTEMPTS = 3
+  let _reconnectAttempts = 0
 
   const bringUp = async () => {
     _bot = createBotInstance({
@@ -77,13 +82,16 @@ export async function start(config, hooks = {}) {
         // the right moment.
         if (_readyFired) return
         _readyFired = true
+        // 260508-nkk follow-up: a successful spawn means the server is
+        // reachable; reset the reconnect counter so future drops don't
+        // count against the original cap.
+        _reconnectAttempts = 0
         try { onReady() } catch (err) {
           logger.warn(`onReady hook threw: ${err && err.message}`)
         }
       },
       onEnd: (humanizedReason) => {
         if (_stopped) return
-        logger.info(`Reconnecting in ${mc.reconnect_delay_ms}ms (${humanizedReason})...`)
         // Plan 03.1-09 (WR-07): tear down adapter listeners before discarding
         // the bot reference. Otherwise the OLD bot's listeners only become
         // GC-eligible when the closure releases, leaving a window where the
@@ -92,6 +100,39 @@ export async function start(config, hooks = {}) {
         _adapter = null
         _bot = null
         clearTimeout(_reconnectTimer)
+        // 260508-nkk follow-up: bail out after MAX_RECONNECT_ATTEMPTS so a
+        // stale LAN port (or LAN closed mid-session) doesn't infinite-loop
+        // the brain through reconnects. Each bringUp() creates a fresh
+        // brain that fires its own initial-greeting nudge on spawn — without
+        // a cap this becomes an Anthropic-API-burn loop. Surface a
+        // structured error so the renderer's Banner shows a remediation
+        // message and the user knows to re-open LAN / reload Sei.
+        if (_readyFired) {
+          // We've spawned at least once before — give the standard retry
+          // budget for a transient drop.
+          _reconnectAttempts = 0
+        }
+        _reconnectAttempts += 1
+        if (_reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+          logger.error(
+            `[sei] Giving up after ${MAX_RECONNECT_ATTEMPTS} failed connect attempts ` +
+            `(${humanizedReason}). Re-open LAN in Minecraft and click Summon again.`,
+          )
+          try {
+            onConnectError(new Error(
+              `LAN_NOT_OPEN: Could not reach the LAN world after ${MAX_RECONNECT_ATTEMPTS} attempts ` +
+              `(${humanizedReason}). Re-open the world to LAN in Minecraft and click Summon again.`,
+            ))
+          } catch (cbErr) {
+            logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
+          }
+          _stopped = true
+          return
+        }
+        logger.info(
+          `Reconnecting in ${mc.reconnect_delay_ms}ms ` +
+          `(attempt ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}, ${humanizedReason})...`,
+        )
         _reconnectTimer = setTimeout(() => {
           if (_stopped) return
           logger.info('Attempting reconnect...')
@@ -225,7 +266,12 @@ async function bootstrapWithInit(initData) {
     adapter: {
       kind: 'minecraft',
       minecraft: {
-        host: 'localhost',                            // LAN host always loopback from same machine
+        // 260508-nkk follow-up: was 'localhost' — on macOS, getaddrinfo
+        // resolves localhost to '::1' (IPv6 loopback) before '127.0.0.1',
+        // and Minecraft Java's "Open to LAN" historically binds IPv4-only.
+        // Using the IPv4 literal sidesteps any DNS / IPv6-first ordering
+        // surprises and matches what the Multiplayer dialog itself shows.
+        host: '127.0.0.1',
         port: lanPort,
         // 260508-nkk follow-up: was 'microsoft' — that triggers mineflayer's
         // MSA device-flow handshake which prints a sign-in URL + code to the

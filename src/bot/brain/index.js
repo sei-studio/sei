@@ -77,6 +77,9 @@ export async function start({ config, adapter, logger = console }) {
     },
   }
   const _onceJoinedListeners = []
+  // 260508-nkk follow-up: gates the initial-greeting nudge so it fires once
+  // per session (first real spawn), not on every reconnect-respawn cycle.
+  let greetingFired = false
 
   const sessionState = await createSessionState({
     ownerMdPath: config.memory.owner_md_path,
@@ -211,22 +214,28 @@ export async function start({ config, adapter, logger = console }) {
       // D-57: deferred owner-presence check after spawn settles.
       sessionState.onSpawn().catch(err =>
         logger.warn?.(`[sei/brain] sessionState.onSpawn failed: ${err.message}`))
+      // Initial-greeting nudge moved here from a top-level setTimeout
+      // (260508-nkk follow-up). Was previously fired unconditionally on
+      // brain start, even when mineflayer never spawned — so a connect
+      // failure + reconnect loop produced one Haiku call per retry, with
+      // every loop running on `(snapshot unavailable)` because bot.entity
+      // was undefined. Gating on the actual spawn event stops the API burn
+      // and ensures the greeting only fires when there's a real world.
+      // greetingFired guards against re-firing on respawn-after-death.
+      if (greetingFired) return
+      greetingFired = true
+      setTimeout(() => {
+        try {
+          queue.enqueue(Priority.P1_CHAT, 'sei:joined', {
+            reason: 'just_connected',
+            hint: 'You just connected to the server. Greet your owner if they are nearby; otherwise look around and say something brief about where you are. This is NOT an idle tick — react to the join itself.',
+          })
+        } catch (err) {
+          logger.warn?.(`[sei/brain] join greeting enqueue failed: ${err.message}`)
+        }
+      }, config.memory?.spawn_settle_delay_ms ?? 500)
     },
   })
-
-  // Initial-greeting nudge: same priority as chat so the orchestrator opens
-  // a fresh Loop and the bot speaks BEFORE the idle timer fires. We fire
-  // this once, after a brief settle, so adapter behaviors finish loading.
-  setTimeout(() => {
-    try {
-      queue.enqueue(Priority.P1_CHAT, 'sei:joined', {
-        reason: 'just_connected',
-        hint: 'You just connected to the server. Greet your owner if they are nearby; otherwise look around and say something brief about where you are. This is NOT an idle tick — react to the join itself.',
-      })
-    } catch (err) {
-      logger.warn?.(`[sei/brain] join greeting enqueue failed: ${err.message}`)
-    }
-  }, config.memory?.spawn_settle_delay_ms ?? 500)
 
   orchestrator.start().catch(err => logger.warn?.(`[sei/brain] orchestrator.start failed: ${err.message}`))
   logger.info?.('[sei] Sei online.')
