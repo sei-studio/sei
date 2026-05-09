@@ -227,7 +227,16 @@ async function bootstrapWithInit(initData) {
       minecraft: {
         host: 'localhost',                            // LAN host always loopback from same machine
         port: lanPort,
-        auth: 'microsoft',                            // v1: Microsoft auth only (CONN-02)
+        // 260508-nkk follow-up: was 'microsoft' — that triggers mineflayer's
+        // MSA device-flow handshake which prints a sign-in URL + code to the
+        // bot's stdout and waits indefinitely for the user to authenticate
+        // in a browser. In the headless utilityProcess that prompt is
+        // invisible to the GUI user, so summon hangs until our 20s connect
+        // timeout fires. LAN-opened worlds accept offline auth — switch to
+        // 'offline' so cracked-style local LAN play works out of the box.
+        // A proper Microsoft auth flow (with the code surfaced to the
+        // renderer) is deferred to a later phase.
+        auth: 'offline',
         username: mc_username,                        // from onboarding UserConfig
         // `version` deliberately omitted — Zod fills 'auto' default per
         // src/bot/config.js MinecraftAdapterSchema.
