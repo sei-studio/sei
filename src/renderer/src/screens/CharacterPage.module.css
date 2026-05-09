@@ -1,15 +1,48 @@
 .root {
+  position: relative;
   padding: 24px 40px 40px;
   min-height: 100%;
   display: flex;
   flex-direction: column;
+  /* Make the page background transparent so the .bgArt layer shows through
+     and isn't masked by the App-shell's --bg fill. */
+  background: transparent;
+}
+
+/* Full-bleed pixel-art wallpaper (260508-nkk). Sits behind all other content
+   in the CharacterPage. The PixelPortrait canvas inside is sized large
+   enough that, after CSS upscaling with image-rendering:pixelated, the 12×12
+   procedural sprite reads as a hero pixel-art panel filling the entire view.
+   pointer-events:none so clicks fall through to underlying interactives
+   (defense-in-depth — the layered z-index already guarantees this). */
+.bgArt {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bgArt > * {
+  /* Stretch the inner PixelPortrait wrapper to the bgArt bounds. PixelPortrait
+     accepts a `size` prop that sets explicit width/height inline; we override
+     to 100%/100% here so the canvas (which is width:100%/height:100% inside
+     PixelPortrait.module.css) fills the wallpaper area regardless of viewport.
+     The canvas's image-rendering:pixelated keeps the 12×12 grid crisp at any
+     scale. */
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .crumb {
+  position: relative;
+  z-index: 1;
   margin-bottom: 12px;
 }
 
 .cols {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 36px;

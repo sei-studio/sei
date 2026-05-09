@@ -325,6 +325,20 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         clearTimeout(summonTimer);
         summonResolve();
       }
+      // 260508-nkk: lifecycle 'error' is terminal for the summon promise.
+      // Previously only summon-ready cleared summonResolved, so a structured
+      // error from the bot (e.g. BOT_START_TIMEOUT from connect.js's wall-
+      // clock guard, or BOT_CRASH from a config validation throw) would
+      // arrive at the renderer correctly via lifecycleToStatus, but the
+      // outer 30s summonTimer would still tick and eventually OVERWRITE the
+      // specific error with a generic BOT_START_TIMEOUT message. Resolve
+      // the promise immediately so bot:summon's IPC caller unblocks at the
+      // moment we have actionable information, not 30s later.
+      if (data.type === 'error' && !summonResolved) {
+        summonResolved = true;
+        clearTimeout(summonTimer);
+        summonReject(new Error(`${data.error}: ${data.message}`));
+      }
       const status = lifecycleToStatus(data, characterId, startedAtMs);
       if (status) opts.sendStatus(status);
     });

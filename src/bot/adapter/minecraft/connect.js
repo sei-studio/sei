@@ -50,6 +50,17 @@ export function humanizeReason(reason) {
 }
 
 /**
+ * 260508-nkk: wall-clock budget for the bot's mineflayer spawn handshake.
+ * Mandated by CLAUDE.md "every external call has a timeout". 20s is below
+ * the supervisor's 30s outer SUMMON_TIMEOUT_MS so the bot's structured
+ * BOT_START_TIMEOUT lifecycle reaches main with ~10s margin before the
+ * supervisor would otherwise fire its own generic timeout. mineflayer has
+ * no internal connect deadline — without this, a wrong-host / unreachable
+ * LAN / stalled auth hangs silently inside its TCP retry loop.
+ */
+const CONNECT_TIMEOUT_MS = 20_000
+
+/**
  * Construct a mineflayer Bot, wire up the always-on adapter behaviors
  * (pathfinder plugin, posHealer, autoEat, combat, follow, chat) on first
  * spawn, and hand it back. The reconnect loop is owned here too — on `end`,
@@ -61,12 +72,17 @@ export function humanizeReason(reason) {
  * @param {number} [opts.port]
  * @param {'offline'|'microsoft'} opts.auth
  * @param {string} opts.username
- * @param {string} [opts.version]      — pass undefined to let mineflayer auto-detect
- * @param {object} opts.config         — full validated config (passed through to behaviors)
+ * @param {string} [opts.version]                  — pass undefined to let mineflayer auto-detect
+ * @param {object} opts.config                     — full validated config (passed through to behaviors)
  * @param {{info?:Function,warn?:Function,error?:Function}} [opts.logger]
- * @param {() => void} [opts.onSpawn]            Called once on first spawn (after plugins load).
- * @param {(reason:string) => void} [opts.onEnd] Called when the connection drops; humanized reason.
- * @param {(err:Error) => void} [opts.onError]   Called on connection-level errors.
+ * @param {() => void} [opts.onSpawn]              Called once on first spawn (after plugins load).
+ * @param {(reason:string) => void} [opts.onEnd]   Called when the connection drops; humanized reason.
+ * @param {(err:Error) => void} [opts.onError]     Called on connection-level errors.
+ * @param {(err:Error) => void} [opts.onConnectTimeout]
+ *   260508-nkk: invoked when CONNECT_TIMEOUT_MS elapses without the bot
+ *   firing its first 'spawn' event — i.e. mineflayer is silently stalled
+ *   in handshake / TCP retry / Microsoft auth. The bot is also force-quit
+ *   so it doesn't keep retrying in the background.
  * @returns {object} mineflayer Bot instance (always-on behaviors already started on spawn).
  */
 export function createBotInstance({
@@ -76,6 +92,7 @@ export function createBotInstance({
   onSpawn,
   onEnd,
   onError,
+  onConnectTimeout,
 }) {
   const botOpts = { host, port, username, auth }
   // mineflayer auto-detects when version is omitted/undefined.
@@ -84,10 +101,40 @@ export function createBotInstance({
   const bot = createBot(botOpts)
 
   let _spawned = false
+  // 260508-nkk: wall-clock guard. Cleared on first 'spawn' or on 'end' /
+  // 'error' / 'kicked' (those routes already surface a humanized reason
+  // to the boot composer's onEnd/onError, so the timeout would be
+  // redundant noise). If it fires, force-quit the bot and notify the
+  // boot composer through onConnectTimeout so the lifecycle layer can
+  // emit BOT_START_TIMEOUT.
+  let _connectTimer = setTimeout(() => {
+    if (_spawned) return
+    _connectTimer = null
+    const err = new Error(
+      `BOT_START_TIMEOUT: mineflayer.spawn did not fire within ${CONNECT_TIMEOUT_MS / 1000}s — ` +
+      `LAN host/port mismatch, server unreachable at ${host}:${port}, or auth stalled.`,
+    )
+    logger.error?.(`[sei] ${err.message}`)
+    // Stop mineflayer from retrying so the utilityProcess can shut down
+    // cleanly after the supervisor receives the lifecycle error.
+    try { bot.quit?.('connect timeout') } catch {}
+    try { bot.end?.() } catch {}
+    try { onConnectTimeout?.(err) } catch (cbErr) {
+      logger.warn?.(`[sei/connect] onConnectTimeout hook threw: ${cbErr && cbErr.message}`)
+    }
+  }, CONNECT_TIMEOUT_MS)
+  const _clearConnectTimer = () => {
+    if (_connectTimer != null) {
+      clearTimeout(_connectTimer)
+      _connectTimer = null
+    }
+  }
+
   bot.on('spawn', () => {
     logger.info?.(`[sei] Connected to ${host}:${port} as ${username}`)
     if (!_spawned) {
       _spawned = true
+      _clearConnectTimer()
       bot.loadPlugin(pathfinder)
       startPosHealer(bot)
       startAutoEat(bot)
@@ -108,16 +155,22 @@ export function createBotInstance({
   bot.on('error', (err) => {
     const reason = humanizeReason(err && (err.message || err))
     logger.warn?.(`[sei] Connection error: ${reason}`)
+    // 260508-nkk: surfaced 'error' before spawn means the connection died
+    // for a reason mineflayer recognizes (ECONNREFUSED, kicked, etc.) —
+    // clear the timer so onConnectTimeout doesn't ALSO fire later.
+    if (!_spawned) _clearConnectTimer()
     try { onError?.(err) } catch {}
   })
 
   bot.on('kicked', (reason) => {
     logger.warn?.(`[sei] Kicked: ${humanizeReason(reason)}`)
+    if (!_spawned) _clearConnectTimer()
   })
 
   bot.on('end', (reason) => {
     stopFollow()
     stopPosHealer()
+    if (!_spawned) _clearConnectTimer()
     const humanized = humanizeReason(reason)
     logger.info?.(`[sei] Disconnected: ${humanized}`)
     try { onEnd?.(humanized) } catch {}
