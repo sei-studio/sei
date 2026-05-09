@@ -20,7 +20,7 @@
 //     legacy CLI bootstrap is gated behind `!process.parentPort` so the
 //     Electron path never reaches the discovery call.
 
-import { loadConfig } from './config.js'
+import { loadConfig, ConfigSchema } from './config.js'
 import { discoverLanPort } from './adapter/minecraft/lanDiscovery.js'
 import { createBotInstance } from './adapter/minecraft/connect.js'
 import { createMinecraftAdapter } from './adapter/minecraft/index.js'
@@ -37,7 +37,16 @@ const logger = {
 // one entrypoint: the CLI builds `config` via loadConfig+discoverLanPort, the
 // Electron path receives `config` over MessagePort. Behavior is identical
 // from this function down — connect, attach adapter, start brain.
-export async function start(config) {
+//
+// 260508-nkk: an optional `hooks` arg lets callers receive (a) `onReady()`
+// when mineflayer's actual `'spawn'` event fires (NOT just when bringUp
+// returns — bringUp resolves before mineflayer connects), and (b)
+// `onConnectError(err)` when the connect-level wall-clock timeout in
+// connect.js trips because spawn never fired. The Electron path uses these
+// to emit `summon-ready` / `error` lifecycle messages that reflect the bot's
+// actual world state rather than just "brain initialized."
+export async function start(config, hooks = {}) {
+  const { onReady = () => {}, onConnectError = () => {} } = hooks
   const mc = config.adapter.minecraft
 
   let _brain = null
@@ -45,6 +54,11 @@ export async function start(config) {
   let _adapter = null
   let _stopped = false
   let _reconnectTimer = null
+  // 260508-nkk: only forward the FIRST spawn → onReady; subsequent
+  // reconnect-spawns are normal recovery and must not duplicate
+  // summon-ready (the supervisor already gates on summonResolved, but
+  // belt-and-suspenders).
+  let _readyFired = false
 
   const bringUp = async () => {
     _bot = createBotInstance({
@@ -55,7 +69,18 @@ export async function start(config) {
       version: mc.version,
       config,
       logger,
-      onSpawn: () => { /* brain wires session start via adapter.attach onSpawn */ },
+      onSpawn: () => {
+        // brain wires session start via adapter.attach onSpawn; this hook is
+        // for the surrounding lifecycle (summon-ready emit). 260508-nkk: was
+        // a no-op; now fires onReady the first time mineflayer's spawn event
+        // lands so the supervisor's "Connecting…" → "Online" flip happens at
+        // the right moment.
+        if (_readyFired) return
+        _readyFired = true
+        try { onReady() } catch (err) {
+          logger.warn(`onReady hook threw: ${err && err.message}`)
+        }
+      },
       onEnd: (humanizedReason) => {
         if (_stopped) return
         logger.info(`Reconnecting in ${mc.reconnect_delay_ms}ms (${humanizedReason})...`)
@@ -74,6 +99,17 @@ export async function start(config) {
         }, mc.reconnect_delay_ms)
       },
       onError: (err) => logger.warn(`Connection error: ${err && err.message}`),
+      // 260508-nkk: connect.js's wall-clock connect timeout fires this when
+      // mineflayer's 'spawn' never lands within CONNECT_TIMEOUT_MS. Surface
+      // up so the supervisor sees a structured BOT_START_TIMEOUT lifecycle
+      // error instead of waiting the full 30s outer summon timer with no
+      // diagnostic signal. Per CLAUDE.md "every external call has a timeout".
+      onConnectTimeout: (err) => {
+        if (_readyFired || _stopped) return
+        try { onConnectError(err) } catch (cbErr) {
+          logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
+        }
+      },
     })
 
     _adapter = createMinecraftAdapter({ bot: _bot, config })
@@ -161,7 +197,21 @@ async function bootstrapWithInit(initData) {
   // the read-only packaged Sei.app bundle. Plan 03's saveCharacter
   // pre-creates the parent dir so atomic-write helpers find it.
   const memDir = `${userDataDir}/memory/${character.id}`
-  const config = {
+  // 260508-nkk root cause #1: the Electron path was constructing this object
+  // and passing it directly to start(config). The CLI path runs config
+  // through ConfigSchema.parse(...) which fills Zod defaults
+  // (memory.seed_diary_budget_bytes=3072, memory.iteration_cap=30,
+  // memory.spawn_settle_delay_ms=500, llm.rate_limit_per_min=30,
+  // anthropic.timeout_ms=20000, etc). Without those, createDiary({...,
+  // seedDiaryBudgetBytes: undefined}) throws synchronously inside
+  // startBrain because its guard requires seedDiaryBudgetBytes >= 1.
+  // The throw propagates up through `await start(config)` and the
+  // outer catch below emits a BOT_CRASH lifecycle, but until 260508-nkk
+  // the supervisor's summonResolved gate only triggered on summon-ready,
+  // so the renderer could end up in an indefinite Connecting state
+  // pending the full 30s outer timer. Run through ConfigSchema.parse so
+  // every required default is populated from one source of truth.
+  const rawConfig = {
     chat_mode: 'chat',  // default for v1; renderer can flip in a later phase
     owner_username: typeof preferred_name === 'string' && preferred_name.trim()
       ? preferred_name.trim()
@@ -188,14 +238,44 @@ async function bootstrapWithInit(initData) {
       diary_md_path:  `${memDir}/DIARY.md`,
       affect_md_path: `${memDir}/AFFECT.md`,
     },
-    llm: {},  // existing defaults
+    // llm: omitted — Zod default fills the entire {} sub-tree.
+  }
+  let config
+  try {
+    config = ConfigSchema.parse(rawConfig)
+  } catch (err) {
+    emitLifecycle({
+      type: 'error',
+      error: 'BOT_CRASH',
+      message: `Config validation failed: ${String((err && err.message) || err)}`,
+    })
+    return
   }
 
   emitLifecycle({ type: 'init-ack' })
 
+  // 260508-nkk root cause #2: previously `summon-ready` fired immediately
+  // after `await start(config)` resolved, but start() resolves once
+  // bringUp+startBrain have wired up — BEFORE mineflayer's TCP handshake
+  // and 'spawn' event. The status flip "Connecting → Online" therefore
+  // had no relationship to the bot actually being in the world. Move the
+  // emit into the onReady hook so it fires off mineflayer's first spawn.
+  // start() rejecting still surfaces as a BOT_CRASH lifecycle below.
+  let _running_local = null
   try {
-    _running = await start(config)  // shared core start() — config-in
-    emitLifecycle({ type: 'summon-ready' })
+    _running_local = await start(config, {
+      onReady: () => {
+        emitLifecycle({ type: 'summon-ready' })
+      },
+      onConnectError: (err) => {
+        emitLifecycle({
+          type: 'error',
+          error: 'BOT_START_TIMEOUT',
+          message: String((err && err.message) || err),
+        })
+      },
+    })
+    _running = _running_local
   } catch (err) {
     emitLifecycle({
       type: 'error',
