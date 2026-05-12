@@ -135,6 +135,37 @@ const PERSONALITY_NAMES = new Set(['say', 'setGoals', 'noteToSelf'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 /**
+ * Phase 7 D-08: seed_cuboid_grammar — static cached system-prompt block
+ * teaching the LLM the two-corner mental model for `build` and the
+ * cuboid-mode of `dig`. Joins the cached prefix between seed_owner and
+ * seed_diary; cache_control stays on seed_diary so this block does not
+ * introduce a new cache boundary.
+ *
+ * Cache invariant: no `# Owner` / `# Diary` markdown headers.
+ */
+const SEED_CUBOID_GRAMMAR = [
+  '# Cuboid grammar (for build and dig)',
+  '',
+  'build and dig take TWO ABSOLUTE CORNERS {from:{x,y,z}, to:{x,y,z}}. Every shape is a special case of the two-corner box:',
+  '',
+  '- pillar (vertical column): keep two dims constant, vary Y.',
+  '  e.g. build({from:{x:5,y:64,z:5}, to:{x:5,y:68,z:5}, block:"dirt"}) -> 5-block pillar at (5,*,5)',
+  '',
+  '- wall (vertical plane): keep one dim constant, vary the other two.',
+  '  e.g. build({from:{x:0,y:64,z:5}, to:{x:3,y:67,z:5}, block:"oak_planks"}) -> 4x4 wall along z=5',
+  '',
+  '- platform / floor: keep Y constant, vary X and Z.',
+  '  e.g. build({from:{x:0,y:64,z:0}, to:{x:3,y:64,z:3}, block:"dirt"}) -> 4x4 floor at y=64',
+  '',
+  '- tunnel: dig with two dims constant.',
+  '  e.g. dig({x:0,y:64,z:0, to:{x:0,y:65,z:4}}) -> 1x2x5 tunnel along the z axis (1 wide, 2 tall, 5 long)',
+  '',
+  '- hollow room shell: hollow:true gives the 4 vertical wall faces only; add floor + ceiling with two flat single-Y cuboids.',
+  '',
+  'Volume cap: 256 cells per call. Build SKIPS occupied cells (it will not break-and-replace). Dig silently skips air cells. If a cell you want to build is above bot reach, build internally jumps and places under itself (scaffolding) — no separate pillarUp call needed.',
+].join('\n')
+
+/**
  * 260502-h6i: chat-event classification used by the dispatch single-flight
  * branch. Owner chat preempts an active Loop; non-owner chat (or non-chat
  * events) drops while a Loop is active. Exposed as a pure helper so the
@@ -284,6 +315,8 @@ export async function composeSeedBlocks({
   const seedDiaryText = await diary.seedSlice()
   const blocks = [
     { type: 'text', name: 'seed_owner', text: seedOwnerText },
+    // Phase 7 D-08: static cuboid grammar joins the cached prefix.
+    { type: 'text', name: 'seed_cuboid_grammar', text: SEED_CUBOID_GRAMMAR },
     // Cache breakpoint: owner+diary are static within a session. Marking the
     // last static block extends the cached prefix (system + tools + seed_owner
     // + seed_diary) across every loop in the session. Dynamic blocks
