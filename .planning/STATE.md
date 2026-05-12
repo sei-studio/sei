@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-last_updated: "2026-05-08T09:34:27.860Z"
+status: planning
+last_updated: "2026-05-12T00:48:13.147Z"
 progress:
   total_phases: 15
   completed_phases: 6
   total_plans: 33
-  completed_plans: 22
-  percent: 40
+  completed_plans: 33
+  percent: 100
 ---
 
 # State: Sei
@@ -121,11 +121,11 @@ Next: `/gsd-discuss-phase 5` (or `/gsd-plan-phase 5` if scope is clear) — Debu
 
 ## Session Continuity
 
-- **Last action:** Quick task 260508-nkk complete — two follow-up GUI regressions resolved. (A) CharacterPage pixel-art is now a full-bleed wallpaper that spans the entire window with the Custom/Default tab control floating over it (commit 1b40f24). (B) Summon hang root-caused via static analysis: `bootstrapWithInit` was bypassing `ConfigSchema.parse(...)` so Zod defaults like `memory.seed_diary_budget_bytes` arrived undefined — `createDiary` threw synchronously inside `await startBrain(...)`. Compounding: `summon-ready` was being emitted right after `start()` resolved instead of after mineflayer's `'spawn'` event. Patches: route config through ConfigSchema.parse, relocate summon-ready emit into the spawn callback, add 20s wall-clock connect timeout in connect.js (per CLAUDE.md "every external call has a timeout"), and have botSupervisor treat lifecycle `error` as terminal for the summon promise so specific errors don't get masked by the 30s outer timer (commit 3fdf460). Live verification deferred — executor had no display server / Minecraft instance.
-- **Next action:** User verifies quick-task 260508-nkk live: `npm run dev`, open a character page (confirm full-bleed pixel-art wallpaper), then open LAN in Minecraft and click Summon (confirm bot joins within ~20s, no indefinite "Connecting" state). If summon still hangs, the connect-timeout will now surface a concrete error in the Banner instead of silent hang — report what it says. Then continue with Phase 5 (Debug log human readability) — `/gsd-discuss-phase 5`.
+- **Last action:** Phase 5 context gathered (`/gsd-discuss-phase 5`) — `.planning/phases/05-.../05-CONTEXT.md` + `05-DISCUSSION-LOG.md` committed (1995c51). Locked: (1) plain-text multi-line event blocks with `[ts] [tag] begin` / `end` sentinels + 2-space continuation indent; logRouter moves to a multi-line state machine. (2) Per-cached-block elision (persona / capability / diary, 3 hashes mapped 1:1 to Anthropic cache_control breakpoints), session-scoped in-memory dictionary, no persistence across bot restarts. (3) `MAX_INLINE=2000` truncation dropped entirely — elision is the only size control; logRouter `HARD_BUFFER_CAP=1000` stays as event-count protection. Renderer-side LogsPanel changes deferred (Claude's discretion, output-only by default).
+- **Next action:** `/clear` then `/gsd-plan-phase 5` — break Phase 5 into plans. Resume file: `.planning/phases/05-debug-log-human-readability-event-per-line-emission-with-exp/05-CONTEXT.md`.
 
 ---
-*Last updated: 2026-05-07 — plan 03.1-10 completed (gap-closure: WR-01, WR-02, WR-04, WR-08). Phase 03.1 complete; Bucket A gap-closure 17/17 items closed.*
+*Last updated: 2026-05-11 — Phase 5 context gathered.*
 | 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
 | 2026-05-05 | fast | docs cleanup: remove two-layer/ollama from README+ARCHITECTURE | done |
 | 2026-05-05 | fast | drop port from persisted config; LAN discovery is the only path | done |
