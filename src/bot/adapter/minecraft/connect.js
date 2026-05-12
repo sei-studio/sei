@@ -163,6 +163,13 @@ export function createBotInstance({
   })
 
   bot.on('kicked', (reason) => {
+    // Log RAW reason text BEFORE humanization. The 'connect' substring match
+    // in humanizeReason has previously masked protocol-handshake kicks (e.g.
+    // "Outdated client/server", "Failed to verify username") as the generic
+    // "Could not reach server" — burning multiple debug iterations chasing
+    // a TCP issue that wasn't there. Always emit the raw text so future-us
+    // can tell a real ECONNREFUSED apart from a server-sent kick packet.
+    logger.warn?.(`[sei] Kicked (raw): ${extractReasonText(reason)}`)
     logger.warn?.(`[sei] Kicked: ${humanizeReason(reason)}`)
     if (!_spawned) _clearConnectTimer()
   })
@@ -172,6 +179,7 @@ export function createBotInstance({
     stopPosHealer()
     if (!_spawned) _clearConnectTimer()
     const humanized = humanizeReason(reason)
+    logger.info?.(`[sei] Disconnected (raw): ${extractReasonText(reason)}`)
     logger.info?.(`[sei] Disconnected: ${humanized}`)
     try { onEnd?.(humanized) } catch {}
   })

@@ -21,8 +21,20 @@
 //     Electron path never reaches the discovery call.
 
 import { loadConfig, ConfigSchema } from './config.js'
-import { discoverLanPort } from './adapter/minecraft/lanDiscovery.js'
+import { discoverLanPort } from './adapter/minecraft/lanDiscovery.js'  // CLI path only
 import { createBotInstance } from './adapter/minecraft/connect.js'
+
+// Default Minecraft Java protocol version for the Electron path. mineflayer's
+// auto-detection (the value it would otherwise use when `version` is omitted)
+// has been observed to produce protocol-handshake kicks against modern LAN
+// worlds — symptom: bot.on('kicked') fires before spawn with a reason whose
+// raw text was masked by humanizeReason as "Could not reach server". Pinning
+// to a known-supported version matches the working CLI path's config.json
+// (`minecraft_version: "1.21.1"`) and side-steps the auto-detect failure.
+// When the user upgrades their Minecraft client past mineflayer's supported
+// range this becomes a real onboarding setting; until then, '1.21.1' is the
+// stable default that matches the predominant LAN client today.
+const DEFAULT_MC_VERSION = '1.21.1'
 import { createMinecraftAdapter } from './adapter/minecraft/index.js'
 import { start as startBrain } from './brain/index.js'
 
@@ -252,11 +264,28 @@ async function bootstrapWithInit(initData) {
   // so the renderer could end up in an indefinite Connecting state
   // pending the full 30s outer timer. Run through ConfigSchema.parse so
   // every required default is populated from one source of truth.
+  // The bot's MC login name must NOT collide with the LAN host's own player
+  // (else the server kicks with multiplayer.disconnect.name_taken). Derive it
+  // from the character's persona, sanitized to MC's username constraints:
+  // [A-Za-z0-9_], ≤16 chars, non-empty. Falls back to 'Sei' if the persona
+  // name reduces to empty after sanitization.
+  const sanitizeMcName = (s) => {
+    const cleaned = String(s || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16)
+    return cleaned || 'Sei'
+  }
+  const bot_mc_username = sanitizeMcName(character.name)
+
+  // owner_username = how the bot recognizes the user in in-game chat. That
+  // matching happens against MC display names (mc_username), NOT the friendly
+  // preferred_name. Fall back to preferred_name then 'Player' if the user
+  // skipped the MC name during onboarding.
+  const ownerName = (typeof mc_username === 'string' && mc_username.trim())
+    || (typeof preferred_name === 'string' && preferred_name.trim())
+    || 'Player'
+
   const rawConfig = {
     chat_mode: 'chat',  // default for v1; renderer can flip in a later phase
-    owner_username: typeof preferred_name === 'string' && preferred_name.trim()
-      ? preferred_name.trim()
-      : 'Player',                                     // fallback for safety
+    owner_username: ownerName,
     persona: {
       name: character.name,
       backstory: character.persona_prompt,
@@ -266,26 +295,11 @@ async function bootstrapWithInit(initData) {
     adapter: {
       kind: 'minecraft',
       minecraft: {
-        // 260508-nkk follow-up: was 'localhost' — on macOS, getaddrinfo
-        // resolves localhost to '::1' (IPv6 loopback) before '127.0.0.1',
-        // and Minecraft Java's "Open to LAN" historically binds IPv4-only.
-        // Using the IPv4 literal sidesteps any DNS / IPv6-first ordering
-        // surprises and matches what the Multiplayer dialog itself shows.
         host: '127.0.0.1',
         port: lanPort,
-        // 260508-nkk follow-up: was 'microsoft' — that triggers mineflayer's
-        // MSA device-flow handshake which prints a sign-in URL + code to the
-        // bot's stdout and waits indefinitely for the user to authenticate
-        // in a browser. In the headless utilityProcess that prompt is
-        // invisible to the GUI user, so summon hangs until our 20s connect
-        // timeout fires. LAN-opened worlds accept offline auth — switch to
-        // 'offline' so cracked-style local LAN play works out of the box.
-        // A proper Microsoft auth flow (with the code surfaced to the
-        // renderer) is deferred to a later phase.
         auth: 'offline',
-        username: mc_username,                        // from onboarding UserConfig
-        // `version` deliberately omitted — Zod fills 'auto' default per
-        // src/bot/config.js MinecraftAdapterSchema.
+        username: bot_mc_username,
+        version: DEFAULT_MC_VERSION,
       },
     },
     memory: {
@@ -309,59 +323,26 @@ async function bootstrapWithInit(initData) {
 
   emitLifecycle({ type: 'init-ack' })
 
-  // 260508-nkk follow-up: log the LAN port main handed over for debug
-  // visibility. User couldn't tell whether the cached port was correct.
-  logger.info(`LAN port handed over by main: ${lanPort} for character "${character.name}"`)
-
-  // 260508-nkk follow-up (per user directive): re-discover LAN port from
-  // the utilityProcess instead of trusting main's cached value. The CLI
-  // path (`sei start`) does this and connects reliably; main's cached
-  // value sometimes leads to ECONNREFUSED ("socketClosed" / "Could not
-  // reach server") even when main's UI shows LAN as connected. Treat
-  // main's lanPort as a fallback only — the multicast is broadcast every
-  // ~1.5s by Minecraft so a 6s window is plenty.
-  //
-  // This intentionally overrides Pitfall 6 from Phase 4's CONTEXT D-25
-  // ("bot must NOT call discoverLanPort during summon"). The original
-  // rationale was to centralize LAN state in main; in practice the
-  // hand-over has been unreliable. Main's watcher is now just for the
-  // GUI's connectivity indicator; the bot owns its own port discovery.
-  let effectivePort = lanPort
-  let effectiveMotd = ''
-  try {
-    const discovered = await discoverLanPort({ timeoutMs: 6000 })
-    effectivePort = discovered.port
-    effectiveMotd = discovered.motd
-    logger.info(`LAN re-discovered by bot: port=${discovered.port} motd="${discovered.motd}"`)
-    if (lanPort && lanPort !== discovered.port) {
-      logger.warn(
-        `Main's cached LAN port (${lanPort}) disagrees with bot's freshly discovered port ` +
-        `(${discovered.port}); using the freshly discovered port. ` +
-        `(This usually means the LAN was reopened since main last saw a broadcast.)`,
-      )
-    }
-  } catch (err) {
-    if (lanPort != null) {
-      logger.warn(
-        `[sei] Bot's LAN re-discovery timed out (${(err && err.message) || err}); ` +
-        `falling back to main's cached port ${lanPort}.`,
-      )
-    } else {
-      emitLifecycle({
-        type: 'error',
-        error: 'LAN_NOT_OPEN',
-        message:
-          'No LAN broadcast detected. Make sure your Minecraft world is open to LAN ' +
-          '(ESC → Open to LAN → Start LAN World) and click Summon again.',
-      })
-      return
-    }
+  // Trust main's handover — it owns the LAN watcher and revalidates port
+  // freshness via its 3-second stale window. Bot-side re-discovery was
+  // briefly added as a workaround when summon was failing for unrelated
+  // protocol-handshake reasons; logs proved both ports always agreed
+  // (handover working as designed). Removed per Pitfall 6 (CONTEXT D-25):
+  // discoverLanPort lives only on the CLI path below the !parentPort guard.
+  if (lanPort == null) {
+    emitLifecycle({
+      type: 'error',
+      error: 'LAN_NOT_OPEN',
+      message:
+        'No LAN broadcast detected. Make sure your Minecraft world is open to LAN ' +
+        '(ESC → Open to LAN → Start LAN World) and click Summon again.',
+    })
+    return
   }
-  config.adapter.minecraft.port = effectivePort
   logger.info(
-    `LAN connected at port ${effectivePort}` +
-    (effectiveMotd ? ` (${effectiveMotd})` : '') +
-    `, starting "${character.name}"`,
+    `LAN connected at port ${lanPort}, starting "${character.name}" ` +
+    `(mc_username=${config.adapter.minecraft.username}, ` +
+    `owner=${config.owner_username}, version=${config.adapter.minecraft.version})`,
   )
 
   // 260508-nkk root cause #2: previously `summon-ready` fired immediately
