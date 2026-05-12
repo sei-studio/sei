@@ -31,10 +31,10 @@ requirements-completed: []
 metrics:
   duration: "~6 min (automated portion only)"
   completed_automated: 2026-05-11
-  completed_manual: PENDING
-tasks_completed: 1
+  completed_manual: 2026-05-11
+tasks_completed: 2
 tasks_total: 2
-status: AUTO_PORTION_COMPLETE_MANUAL_CHECKPOINT_PENDING
+status: COMPLETE
 ---
 
 # Phase 5 Plan 4: End-to-end verification harness Summary
@@ -53,7 +53,7 @@ One-liner: `scripts/verify-phase5.mjs` runs 47 assertions covering log.js multi-
 
 | # | Name                                              | Status                    | Notes                                                |
 | - | ------------------------------------------------- | ------------------------- | ---------------------------------------------------- |
-| 2 | Developer-driven live-bot log inspection          | AWAITING DEVELOPER ACTION | Manual checkpoint — see "Pending Manual Checkpoint"   |
+| 2 | Developer-driven live-bot log inspection          | APPROVED 2026-05-11       | Developer ran the live bot and confirmed sub-checks (a)–(e). |
 
 ## Automated Harness Output
 
