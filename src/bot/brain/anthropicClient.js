@@ -31,10 +31,11 @@ export function createAnthropicClient(config) {
    * @param {AbortSignal} [req.signal]
    * @param {number} [req.timeoutMs]
    * @param {number} [req.maxTokens]
+   * @param {Array<{role:string, content:Array<{type:string, name?:string, text?:string}>}>} [req.namedUserBlocks] Canonical pre-strip messages array carrying `name` fields on text blocks; used by log.js for cache-prefix hash elision. Logger-only; not sent to API.
    * @returns {Promise<{toolUses:Array<{id:string,name:string,input:any}>, text:string, usage:object, stopReason:string}>}
    */
-  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024 }) {
-    logHaikuQuery({ messages, tools })
+  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks }) {
+    logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks })
     // 260502-h6i: stamp cache_control on the LAST tool entry so the cache
     // boundary lands at the end of the tools array (system → tools is now
     // cached; cache_read can rise above 0).
