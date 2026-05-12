@@ -45,6 +45,32 @@ const TargetShape = z.object({
 
 const Vec3Shape = z.object({ x: z.number(), y: z.number(), z: z.number() })
 
+// Phase 7 (D-01, D-11): cuboid dig schema. Extends TargetShape with optional
+// `to` for cuboid mode + matching 256-cell cap. Single-cell dispatch unchanged.
+const DigSchema = z.object({
+  block: z.string().optional(),
+  target: z.string().optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  z: z.number().optional(),
+  to: Vec3Shape.optional(),
+  hollow: z.boolean().optional(),
+  maxDistance: z.number().min(1).max(64).default(32),
+}).refine(
+  (a) => a.block || a.target || (a.x != null && a.y != null && a.z != null),
+  { message: 'must specify block, #N target, or x/y/z' }
+).refine(
+  (a) => {
+    if (a.to == null) return true
+    if (a.x == null || a.y == null || a.z == null) return false
+    const dx = Math.abs(a.to.x - a.x) + 1
+    const dy = Math.abs(a.to.y - a.y) + 1
+    const dz = Math.abs(a.to.z - a.z) + 1
+    return dx * dy * dz <= 256
+  },
+  { message: 'cuboid dig too large (>256 cells) or missing explicit from coords (need x,y,z when using to)' }
+)
+
 // Phase 7 (D-01, D-02, D-11): cuboid build schema. Schema-layer cell cap
 // prevents any expensive side effect from running with an out-of-bounds cuboid.
 const BuildSchema = z.object({
@@ -125,7 +151,7 @@ export function createDefaultRegistry() {
     }
   )
 
-  registry.register('dig', TargetShape, digAction)
+  registry.register('dig', DigSchema, digAction)
 
   // Phase 6 (D-NEW-SCAV-2): `find` resolves a loose term or exact MC ID to the
   // nearest loaded-chunk hit. Does NOT move the bot — returns
