@@ -4,6 +4,22 @@ const { Movements, goals } = pkg
 /** @typedef {'reached' | 'cant_reach' | 'timeout' | 'no_bot'} PathfindResult */
 
 /**
+ * D-09: append `unreachable — try build to Y=N` when pathfinder failure
+ * (cant_reach or timeout) is plausibly caused by elevation. Heuristic:
+ * target.y > bot.y + 2 (vanilla jump tops at ~1.25 blocks, so >2 above bot
+ * is definitively unreachable without scaffolding).
+ */
+export function composeVerticalHint(bot, x, y, z, result) {
+  if (result === 'reached' || result === 'no_bot') return result
+  const bp = bot?.entity?.position
+  if (!bp || typeof bp.y !== 'number') return result
+  if (y > bp.y + 2) {
+    return `${result} — unreachable — try build to Y=${y}`
+  }
+  return result
+}
+
+/**
  * Navigate bot to (x, y, z) within `range` blocks.
  * Returns a PathfindResult — never throws or hangs.
  * @param {object} bot - mineflayer bot instance
@@ -55,7 +71,8 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000) {
     }, timeoutMs)
   })
 
-  return Promise.race([navigationPromise, timeoutPromise])
+  const result = await Promise.race([navigationPromise, timeoutPromise])
+  return composeVerticalHint(bot, x, y, z, result)
 }
 
 export const PathfindResult = /** @type {const} */ ({
