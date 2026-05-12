@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-12T06:57:20.649Z"
+last_updated: "2026-05-12T07:01:57Z"
 progress:
   total_phases: 15
   completed_phases: 7
   total_plans: 41
-  completed_plans: 38
-  percent: 93
+  completed_plans: 41
+  percent: 98
 ---
 
 # State: Sei
@@ -22,8 +22,8 @@ progress:
 ## Current Position
 
 Phase: 06 (scavenging-redesign) — EXECUTING
-Plan: 1 of 4
-Next: `/gsd-discuss-phase 6` (Scavenging redesign, promoted from 999.1)
+Plan: 3 of 4 complete (06-01 veins observer, 06-02 loose-terms, 06-03 mine_vein behavior) — next: 06-04 (registry wiring + primer mirror)
+Next: continue Phase 06 — execute 06-04-PLAN.md
 
 - **Phase:** 05
 - **Plan:** 4/4 complete
