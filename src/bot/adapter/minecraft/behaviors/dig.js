@@ -1,11 +1,12 @@
 // src/behaviors/dig.js — single-flight dig with timeout + abort (D-22, Pitfall 2)
+import { Vec3 } from 'vec3'
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { goTo } from './pathfind.js'
 import { firstLine, truncate } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 8000
 const PICKUP_TIMEOUT_MS = 3000
-const DIG_REACH = 4.5  // mineflayer's effective reach for breaking blocks
+export const DIG_REACH = 4.5  // mineflayer's effective reach for breaking blocks
 
 /**
  * Plan 03.1-05 Task 2 (D-W-3, D-W-6): tool description shown to the LLM.
@@ -17,7 +18,65 @@ const DIG_REACH = 4.5  // mineflayer's effective reach for breaking blocks
  * Lives in dig.js so the description sits next to the implementation it
  * describes (orchestrator imports it via ACTION_DESCRIPTIONS).
  */
-export const DIG_DESCRIPTION = "Break a block. Prefer `{ block: \"<name>\" }` to dig the NEAREST EXPOSED block of that name within maxDistance (default 32, max 64) — `maxDistance` is a SEARCH RADIUS for finding the named block, not a reach radius. Actual swing reach is fixed at 4.5m and the bot pathfinds into reach automatically. For repeated digs of the same block type, prefer `{block:\"<name>\"}` which auto-finds nearest each call. `#N` references (e.g. {target:\"#3\"}) rotate every snapshot — only valid in the SAME turn the snapshot listed them; switch to `{block:\"<name>\"}` if you see \"stale target\". Use `{ x, y, z }` only when you must dig a precise coordinate."
+export const DIG_DESCRIPTION = "Break a block. Prefer `{ block: \"<name>\" }` to dig the NEAREST EXPOSED block of that name within maxDistance (default 32, max 64) — `maxDistance` is a SEARCH RADIUS for finding the named block, not a reach radius. Actual swing reach is fixed at 4.5m and the bot pathfinds into reach automatically. For repeated digs of the same block type, prefer `{block:\"<name>\"}` which auto-finds nearest each call. `#N` references (e.g. {target:\"#3\"}) rotate every snapshot — only valid in the SAME turn the snapshot listed them; switch to `{block:\"<name>\"}` if you see \"stale target\". Use `{ x, y, z }` only when you must dig a precise coordinate. CUBOID MODE: pass `{x,y,z, to:{x,y,z}, hollow?}` to dig every block in the axis-aligned region between two corners (≤256 cells; iteration top-down). See seed_cuboid_grammar for tunnel/room recipes. Air cells are silently skipped."
+
+export const CUBOID_ITERATION_ORDER = 'Y-desc → X-asc → Z-asc' // D-07
+
+export function enumerateDigCells(from, to, hollow) {
+  const minX = Math.min(from.x, to.x), maxX = Math.max(from.x, to.x)
+  const minY = Math.min(from.y, to.y), maxY = Math.max(from.y, to.y)
+  const minZ = Math.min(from.z, to.z), maxZ = Math.max(from.z, to.z)
+  const cells = []
+  for (let y = maxY; y >= minY; y--) {            // Y descending
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        if (hollow) {
+          const isWall = (x === minX || x === maxX || z === minZ || z === maxZ)
+          if (!isWall) continue
+        }
+        cells.push({ x, y, z })
+      }
+    }
+  }
+  return cells
+}
+
+/**
+ * Cuboid dig. Mirrors mineVeinAction loop discipline: per-cell signal
+ * check, pre-pathfind to dig reach (range:3) ONLY when out of reach,
+ * skip air cells silently (D-06), accumulate K/N + skipped count.
+ */
+export async function digCuboid(args, bot, config) {
+  const signal = config?.signal
+  if (signal?.aborted) return 'aborted'
+  const timeoutMs = config?.pathfinder_timeout_ms ?? 12000
+  const from = { x: args.x, y: args.y, z: args.z }
+  const cells = enumerateDigCells(from, args.to, args.hollow === true)
+  const total = cells.length
+  let dug = 0, skippedAir = 0
+
+  for (const c of cells) {
+    if (signal?.aborted) return `aborted after ${dug}/${total}`
+    const blk = bot.blockAt(new Vec3(c.x, c.y, c.z))
+    if (!blk || blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air') {
+      skippedAir++
+      config?.onProgress?.({ dug, skippedAir, total, currentY: c.y })
+      continue
+    }
+    const p = bot.entity?.position
+    const dist = p ? Math.sqrt((p.x - c.x) ** 2 + (p.y - c.y) ** 2 + (p.z - c.z) ** 2) : Infinity
+    if (dist > DIG_REACH) {
+      await goTo(bot, c.x, c.y, c.z, 3, timeoutMs)
+      if (signal?.aborted) return `aborted after ${dug}/${total}`
+    }
+    const r = await digAction({ x: c.x, y: c.y, z: c.z }, bot, config)
+    if (r === 'aborted') return `aborted after ${dug}/${total}`
+    if (typeof r === 'string' && r.startsWith('dug ')) dug++
+    config?.onProgress?.({ dug, skippedAir, total, currentY: c.y })
+  }
+  const skipNote = skippedAir > 0 ? ` (${skippedAir} skipped air)` : ''
+  return `dug ${dug}/${total}${skipNote}`
+}
 
 /**
  * Dig a block. Single-flight; refuses if another dig is in flight.
@@ -28,6 +87,11 @@ export const DIG_DESCRIPTION = "Break a block. Prefer `{ block: \"<name>\" }` to
 export async function digAction(args, bot, config) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
+
+  // D-01: cuboid mode when `to` is present + explicit from coords.
+  if (args.to && typeof args.x === 'number' && typeof args.y === 'number' && typeof args.z === 'number') {
+    return digCuboid(args, bot, config)
+  }
 
   const block = await resolveBlock(args, bot)
   if (!block) return isStaleHandle(args) ? 'stale target' : 'no target'
@@ -49,7 +113,12 @@ export async function digAction(args, bot, config) {
   // walk closer before issuing another dig at this block.
   const dist = bot.entity?.position?.distanceTo?.(block.position)
   if (typeof dist === 'number' && dist > DIG_REACH) {
-    return `out of range (${dist.toFixed(1)}m, need ≤${DIG_REACH}) for ${blockName} @${bx},${by},${bz}`
+    const baseMsg = `out of range (${dist.toFixed(1)}m, need ≤${DIG_REACH}) for ${blockName} @${bx},${by},${bz}`
+    const bp = bot.entity?.position
+    if (bp && by > bp.y + 2) {
+      return `${baseMsg} — unreachable — try build to Y=${by}`
+    }
+    return baseMsg
   }
 
   // Distinguish "no block at coord" (snapshot stale, model picked empty
