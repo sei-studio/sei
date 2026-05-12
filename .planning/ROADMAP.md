@@ -142,10 +142,13 @@ Plans:
 **Why first:** Required so Phases 6/7 (scavenging, scaffolding) work can be debugged from logs at all — the lightest of the three promoted backlog items.
 **Depends on:** Phase 03.1
 **Requirements:** TBD
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run `/gsd-plan-phase 5` to break down — recommend `/gsd-discuss-phase 5` first to lock event-record schema)
+- [ ] 05-01-PLAN.md — log.js multi-line emit + per-event section renderers + session hash dictionary (persona/capability/diary elision) + anthropicClient namedUserBlocks param
+- [ ] 05-02-PLAN.md — orchestrator passes loop._internal.messages as namedUserBlocks to both anthropic.call sites (API payload unchanged)
+- [ ] 05-03-PLAN.md — logRouter.ts multi-line state machine (SENTINEL_RE + open-event buffer + [truncated] recovery on dropped end)
+- [ ] 05-04-PLAN.md — scripts/verify-phase5.mjs end-to-end harness + developer-driven live-bot log inspection checkpoint
 
 ### Phase 6: Scavenging redesign — veined tallying + smart_find + find() (PROMOTED from 999.1, MILESTONE-SCOPE)
 
