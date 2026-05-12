@@ -15,6 +15,7 @@ import { getHealedPos } from './observers/posHealer.js'
 import { setFollowTarget, getFollowTargetLabel } from './behaviors/follow.js'
 import { resolveEntity } from './observers/targeting.js'
 import { digAction } from './behaviors/dig.js'
+import { buildAction } from './behaviors/build.js'
 import { placeBlockAction } from './behaviors/place.js'
 import { equipAction } from './behaviors/equip.js'
 import { attackEntityAction } from './behaviors/attack.js'
@@ -43,6 +44,23 @@ const TargetShape = z.object({
 )
 
 const Vec3Shape = z.object({ x: z.number(), y: z.number(), z: z.number() })
+
+// Phase 7 (D-01, D-02, D-11): cuboid build schema. Schema-layer cell cap
+// prevents any expensive side effect from running with an out-of-bounds cuboid.
+const BuildSchema = z.object({
+  from: Vec3Shape,
+  to: Vec3Shape,
+  block: z.string().min(1),
+  hollow: z.boolean().optional().default(false),
+}).refine(
+  ({ from, to }) => {
+    const dx = Math.abs(to.x - from.x) + 1
+    const dy = Math.abs(to.y - from.y) + 1
+    const dz = Math.abs(to.z - from.z) + 1
+    return dx * dy * dz <= 256
+  },
+  { message: 'cuboid too large (>256 cells) — split into smaller calls (e.g. build one floor at a time)' }
+)
 
 /**
  * Plan 03.1-05 Task 3 (D-H-9): coords-at-known-player detector. When goTo is
@@ -179,6 +197,8 @@ export function createDefaultRegistry() {
     }),
     placeBlockAction
   )
+
+  registry.register('build', BuildSchema, buildAction)
 
   registry.register(
     'equip',
