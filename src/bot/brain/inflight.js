@@ -20,11 +20,11 @@ const PERSONALITY_ACTIONS = new Set(['setGoals', 'say'])
 let _nextId = 1
 
 export function createInflightTracker() {
-  /** @type {{ id:number, name:string, args:any, startedAt:number } | null} */
+  /** @type {{ id:number, name:string, args:any, startedAt:number, progress:any } | null} */
   let entry = null
 
   function start({ name, args }) {
-    const handle = { id: _nextId++, name, args, startedAt: Date.now() }
+    const handle = { id: _nextId++, name, args, startedAt: Date.now(), progress: null }
     entry = handle
     return handle
   }
@@ -45,7 +45,17 @@ export function createInflightTracker() {
     return entry
   }
 
-  return { start, end, current, currentBlocking }
+  // Phase 7 D-10 (Option A): cuboid actions push progress ticks via this
+  // setter so the next snapshot's `in_flight:` line includes a `placed/total`
+  // (or `dug/total`) suffix. Stale handles (different id) are ignored to
+  // avoid late ticks from a previous action overwriting fresh state.
+  function updateProgress(handle, progress) {
+    if (entry && handle && entry.id === handle.id) {
+      entry.progress = progress
+    }
+  }
+
+  return { start, end, current, currentBlocking, updateProgress }
 }
 
 /**
