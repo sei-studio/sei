@@ -54,6 +54,8 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000) {
     }
   }
 
+  let timeoutHandle = null
+
   const navigationPromise = new Promise((resolve) => {
     bot.pathfinder.goto(goal)
       .then(() => resolve('reached'))
@@ -65,13 +67,17 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000) {
   })
 
   const timeoutPromise = new Promise((resolve) => {
-    setTimeout(() => {
+    timeoutHandle = setTimeout(() => {
       bot.pathfinder.stop()
       resolve('timeout')
     }, timeoutMs)
   })
 
+  // Clear the timer when navigation resolves first; otherwise the orphan
+  // setTimeout fires `pathfinder.stop()` later and yanks whatever goto the
+  // follow tick (or any other consumer) started in the meantime.
   const result = await Promise.race([navigationPromise, timeoutPromise])
+  if (timeoutHandle != null) clearTimeout(timeoutHandle)
   return composeVerticalHint(bot, x, y, z, result)
 }
 
