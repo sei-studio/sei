@@ -4,7 +4,7 @@ import { vitals } from './vitals.js'
 import { world } from './world.js'
 import { inventory, heldItem } from './inventory.js'
 import { aroundFeet } from './blocks.js'
-import { nearbyVeins } from './veins.js'
+import { surveyBlocks } from './veins.js'
 import { nearbyEntities } from './entities.js'
 import { setHandles, HANDLE_TTL_MS } from './targeting.js'
 import { getFollowTargetLabel } from '../behaviors/follow.js'
@@ -40,7 +40,7 @@ export function composeSnapshot(bot, opts = {}) {
   const w = world(bot)
   const held = heldItem(bot)
   const inv = inventory(bot)
-  const veins = nearbyVeins(bot, { radius: 16, maxVeins: 8, veinCap: 64 })
+  const survey = surveyBlocks(bot, { radius: 16, maxNames: 24 })
   const ents = nearbyEntities(bot, { radius: 24, count: MAX_ENTITIES })
 
   const lines = []
@@ -107,20 +107,19 @@ export function composeSnapshot(bot, opts = {}) {
   const expiresAt = Date.now() + HANDLE_TTL_MS
   let n = 1
 
-  // Nearby veins (Phase 6 — D-NEW-SCAV-1). One line per vein with #N handle
-  // anchored at the closest member; counts collapsed; `x64+` flags vein-cap.
-  lines.push('nearby veins:')
-  if (veins.veins.length === 0) {
+  // Nearby blocks: one line per unique block name within radius. The #N
+  // handle is anchored at the NEAREST member of that name — pass it to
+  // dig/gather/goTo when the LLM wants to act on this resource.
+  lines.push('nearby blocks:')
+  if (survey.groups.length === 0) {
     lines.push('  (none)')
   } else {
-    for (const v of veins.veins) {
+    for (const g of survey.groups) {
       const tag = `#${n++}`
-      const countStr = v.count >= 64 ? 'x64+' : `x${v.count}`
-      const dist = v.distance.toFixed(1)
-      lines.push(`  ${tag} ${v.name} ${countStr} @${v.anchor.x},${v.anchor.y},${v.anchor.z} d=${dist}`)
-      handles.push([tag, { kind: 'block', pos: { x: v.anchor.x, y: v.anchor.y, z: v.anchor.z }, expiresAt }])
+      lines.push(`  ${tag} ${g.name} x${g.total} @${g.nearest.x},${g.nearest.y},${g.nearest.z}`)
+      handles.push([tag, { kind: 'block', pos: { x: g.nearest.x, y: g.nearest.y, z: g.nearest.z }, expiresAt }])
     }
-    if (veins.more > 0) lines.push(`  +${veins.more} more`)
+    if (survey.more > 0) lines.push(`  +${survey.more} more`)
   }
 
   // Nearby entities

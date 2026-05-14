@@ -42,7 +42,7 @@ export function enumerateDigCells(from, to, hollow) {
 }
 
 /**
- * Cuboid dig. Mirrors mineVeinAction loop discipline: per-cell signal
+ * Cuboid dig. Mirrors gatherAction loop discipline: per-cell signal
  * check, pre-pathfind to dig reach (range:3) ONLY when out of reach,
  * skip air cells silently (D-06), accumulate K/N + skipped count.
  */

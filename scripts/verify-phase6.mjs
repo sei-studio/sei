@@ -2,15 +2,15 @@
 // Phase 6 end-to-end verification harness.
 //
 // Exercises:
-//   V1) snapshot composer renders `nearby veins:` for a stubbed 3-tree scene
-//   V2) registry exposes `find` + `mine_vein` with Zod schemas validating
+//   V1) snapshot composer renders `nearby blocks:` (per-unique-name aggregation)
+//   V2) registry exposes `find` + `gather` with Zod schemas validating
 //       known-good and known-bad inputs
 //   V3) find({name:'wood'}) against a single oak_log returns {found:true,...}
 //   V4) find({name:'wood'}) against an empty world returns {found:false,...}
-//   V5) mine_vein({name:'wood'}) against a 4-log oak tree -> 'mined 4/4 oak_log'
-//   V6) mine_vein AbortController fires mid-sequence -> 'aborted after K/N ...'
-//   V7) ACTION_DESCRIPTIONS.mine_vein === MINE_VEIN_DESCRIPTION (byte-identical)
-//   V8) orchestrator's tool surface includes 'find' and 'mine_vein' descriptions
+//   V5) gather({name:'wood'}) against a 4-log oak tree -> 'gathered 4/4 oak_log'
+//   V6) gather AbortController fires mid-sequence -> 'aborted after K/N ...'
+//   V7) ACTION_DESCRIPTIONS.gather === GATHER_DESCRIPTION (byte-identical)
+//   V8) orchestrator's tool surface includes 'find' and 'gather' descriptions
 //
 // Pure-stub harness: no fs writes, no mineflayer boot, no Anthropic call.
 // Re-runs are idempotent.
@@ -78,40 +78,39 @@ function makeBot({ blocks, originPos = { x: 0, y: 64, z: 0 }, version = 'not-a-r
   }
 }
 
-// ─── V1: snapshot renders `nearby veins:` ────────────────────────────────
+// ─── V1: snapshot renders `nearby blocks:` (per-unique-name aggregation) ─
 try {
   const { composeSnapshot } = await import('../src/bot/adapter/minecraft/observers/snapshot.js')
-  // Three small oak_log "trees", separated >1 block so 6-neighbor flood-fill
-  // keeps them as three distinct veins.
+  // Mixed scene: 9 oak_logs (across three "trees") + a single cactus. The new
+  // observer aggregates per unique block NAME — so we expect ONE oak_log line
+  // (total=9, nearest=closest member) and ONE cactus line, not separate veins.
   const blocks = new Map()
-  // Tree A: 4 logs vertical at (3, 64..67, 0)
-  for (let y = 64; y <= 67; y++) blocks.set(`3,${y},0`, 'oak_log')
-  // Tree B: 3 logs vertical at (7, 64..66, 2)
-  for (let y = 64; y <= 66; y++) blocks.set(`7,${y},2`, 'oak_log')
-  // Tree C: 2 logs vertical at (-5, 64..65, 4)
-  for (let y = 64; y <= 65; y++) blocks.set(`-5,${y},4`, 'oak_log')
+  for (let y = 64; y <= 67; y++) blocks.set(`3,${y},0`, 'oak_log')   // 4 logs
+  for (let y = 64; y <= 66; y++) blocks.set(`7,${y},2`, 'oak_log')   // 3 logs
+  for (let y = 64; y <= 65; y++) blocks.set(`-5,${y},4`, 'oak_log')  // 2 logs
+  blocks.set('6,64,0', 'cactus')
   const bot = makeBot({ blocks, originPos: { x: 0, y: 64, z: 0 } })
   const out = composeSnapshot(bot, {})
-  assert.match(out, /^nearby veins:$/m, 'snapshot lacks `nearby veins:` header')
-  // Each tree should surface; count line uses `x<N>` (not capped).
-  assert.match(out, /#\d+ oak_log x4 @3,64,0 d=/, 'tree A 4-log line missing')
-  assert.match(out, /#\d+ oak_log x3 @7,64,2 d=/, 'tree B 3-log line missing')
-  assert.match(out, /#\d+ oak_log x2 @-5,64,4 d=/, 'tree C 2-log line missing')
-  assert.ok(!out.includes('nearby blocks:'), 'old `nearby blocks:` header still present')
+  assert.match(out, /^nearby blocks:$/m, 'snapshot lacks `nearby blocks:` header')
+  // One oak_log line aggregating all 9; nearest is (3,64,0).
+  assert.match(out, /#\d+ oak_log x9 @3,64,0/, 'aggregated oak_log line missing')
+  // Cactus surfaces despite never being on a hardcoded interesting list.
+  assert.match(out, /#\d+ cactus x1 @6,64,0/, 'cactus line missing (interesting-list filter still active?)')
+  assert.ok(!out.includes('nearby veins:'), 'old `nearby veins:` header still present')
   // Handles should number monotonically starting at #1.
-  const handles = [...out.matchAll(/#(\d+) oak_log/g)].map(m => Number(m[1]))
-  assert.deepEqual([...handles].sort((a,b)=>a-b), [1, 2, 3], `handle numbering off: ${handles}`)
-  ok('V1 - snapshot renders nearby veins lines + monotonic #N handles')
+  const handles = [...out.matchAll(/#(\d+) (?:oak_log|cactus)/g)].map(m => Number(m[1]))
+  assert.deepEqual([...handles].sort((a,b)=>a-b), [1, 2], `handle numbering off: ${handles}`)
+  ok('V1 - snapshot renders nearby blocks (per-unique-name) + monotonic #N handles')
 } catch (e) { bad('V1', e) }
 
-// ─── V2: registry exposes find + mine_vein, Zod schemas validate ─────────
+// ─── V2: registry exposes find + gather, Zod schemas validate ─────────
 let regModule
 try {
   regModule = await import('../src/bot/adapter/minecraft/registry.js')
   const r = regModule.createDefaultRegistry()
   const names = r.list()
   assert.ok(names.includes('find'), `registry missing 'find'; have: ${names.join(',')}`)
-  assert.ok(names.includes('mine_vein'), `registry missing 'mine_vein'`)
+  assert.ok(names.includes('gather'), `registry missing 'gather'`)
   const findSchema = r.schema('find')
   assert.ok(findSchema, 'find schema is null')
   // Known-good
@@ -120,13 +119,13 @@ try {
   // Known-bad
   assert.throws(() => findSchema.parse({}), /name/i)
   assert.throws(() => findSchema.parse({ name: '' }), /String must contain at least 1|too_small|name/i)
-  const mvSchema = r.schema('mine_vein')
-  assert.ok(mvSchema, 'mine_vein schema is null')
+  const mvSchema = r.schema('gather')
+  assert.ok(mvSchema, 'gather schema is null')
   mvSchema.parse({ name: 'wood' })
   mvSchema.parse({ x: 1, y: 64, z: 2 })
   assert.throws(() => mvSchema.parse({}), /name or x,y,z/i)
   assert.throws(() => mvSchema.parse({ x: 1, y: 64 }), /name or x,y,z/i)
-  ok('V2 - registry exposes find + mine_vein with validating schemas')
+  ok('V2 - registry exposes find + gather with validating schemas')
 } catch (e) { bad('V2', e) }
 
 // ─── V3: find({name:'wood'}) -> {found:true, id:'oak_log', ...} ──────────
@@ -154,27 +153,27 @@ try {
   ok('V4 - find({name:wood}) on empty world returns {found:false, reason: /wood/}')
 } catch (e) { bad('V4', e) }
 
-// ─── V5: mine_vein({name:'wood'}) on 4-log tree -> 'mined 4/4 oak_log' ───
+// ─── V5: gather({name:'wood'}) on 4-log tree -> 'gathered 4/4 oak_log' ───
 try {
   const blocks = new Map()
   for (let y = 64; y <= 67; y++) blocks.set(`5,${y},0`, 'oak_log')
   const bot = makeBot({ blocks })
-  const { mineVeinAction } = await import('../src/bot/adapter/minecraft/behaviors/mineVein.js')
+  const { gatherAction } = await import('../src/bot/adapter/minecraft/behaviors/mineVein.js')
   const deps = {
     goTo: async () => 'reached',
     digAction: async (a) => `dug oak_log @${a.x},${a.y},${a.z}`,
   }
-  const r = await mineVeinAction({ name: 'wood' }, bot, {}, deps)
-  assert.equal(r, 'mined 4/4 oak_log', `got: ${r}`)
-  ok('V5 - mine_vein({name:wood}) chains find+flood+dig -> mined 4/4 oak_log')
+  const r = await gatherAction({ name: 'wood' }, bot, {}, deps)
+  assert.equal(r, 'gathered 4/4 oak_log', `got: ${r}`)
+  ok('V5 - gather({name:wood}) chains find+flood+dig -> gathered 4/4 oak_log')
 } catch (e) { bad('V5', e) }
 
-// ─── V6: mine_vein AbortController mid-sequence ──────────────────────────
+// ─── V6: gather AbortController mid-sequence ──────────────────────────
 try {
   const blocks = new Map()
   for (let y = 64; y <= 67; y++) blocks.set(`5,${y},0`, 'oak_log')
   const bot = makeBot({ blocks })
-  const { mineVeinAction } = await import('../src/bot/adapter/minecraft/behaviors/mineVein.js')
+  const { gatherAction } = await import('../src/bot/adapter/minecraft/behaviors/mineVein.js')
   const controller = new AbortController()
   let digCount = 0
   const deps = {
@@ -186,30 +185,30 @@ try {
       return `dug oak_log @${a.x},${a.y},${a.z}`
     },
   }
-  const r = await mineVeinAction({ name: 'wood' }, bot, { signal: controller.signal }, deps)
+  const r = await gatherAction({ name: 'wood' }, bot, { signal: controller.signal }, deps)
   assert.match(r, /aborted after \d+\/4 oak_log/, `got: ${r}`)
-  ok('V6 - mine_vein abort mid-sequence -> aborted after K/4 oak_log')
+  ok('V6 - gather abort mid-sequence -> aborted after K/4 oak_log')
 } catch (e) { bad('V6', e) }
 
-// ─── V7: ACTION_DESCRIPTIONS.mine_vein === MINE_VEIN_DESCRIPTION ─────────
+// ─── V7: ACTION_DESCRIPTIONS.gather === GATHER_DESCRIPTION ─────────
 try {
   // ACTION_DESCRIPTIONS is module-internal — we cannot import it directly.
-  // Read the orchestrator source and confirm `mine_vein: MINE_VEIN_DESCRIPTION`
+  // Read the orchestrator source and confirm `gather: GATHER_DESCRIPTION`
   // is the mapping (import-by-reference makes byte-identity mechanical).
   const orchPath = resolve(REPO_ROOT, 'src/bot/brain/orchestrator.js')
   const src = await readFile(orchPath, 'utf8')
   const stripped = src.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
-  assert.match(stripped, /mine_vein:\s*MINE_VEIN_DESCRIPTION/, 'mine_vein not bound to MINE_VEIN_DESCRIPTION by reference')
+  assert.match(stripped, /gather:\s*GATHER_DESCRIPTION/, 'gather not bound to GATHER_DESCRIPTION by reference')
   // And the named import exists.
-  assert.match(stripped, /import \{ MINE_VEIN_DESCRIPTION \} from ['"][^'"]+mineVein\.js['"]/, 'missing MINE_VEIN_DESCRIPTION import')
+  assert.match(stripped, /import \{ GATHER_DESCRIPTION \} from ['"][^'"]+mineVein\.js['"]/, 'missing GATHER_DESCRIPTION import')
   // Sanity: import resolves to a non-empty string.
-  const { MINE_VEIN_DESCRIPTION } = await import('../src/bot/adapter/minecraft/behaviors/mineVein.js')
-  assert.equal(typeof MINE_VEIN_DESCRIPTION, 'string')
-  assert.ok(MINE_VEIN_DESCRIPTION.length > 100, 'MINE_VEIN_DESCRIPTION suspiciously short')
-  ok('V7 - ACTION_DESCRIPTIONS.mine_vein references MINE_VEIN_DESCRIPTION (byte-identity by import)')
+  const { GATHER_DESCRIPTION } = await import('../src/bot/adapter/minecraft/behaviors/mineVein.js')
+  assert.equal(typeof GATHER_DESCRIPTION, 'string')
+  assert.ok(GATHER_DESCRIPTION.length > 100, 'GATHER_DESCRIPTION suspiciously short')
+  ok('V7 - ACTION_DESCRIPTIONS.gather references GATHER_DESCRIPTION (byte-identity by import)')
 } catch (e) { bad('V7', e) }
 
-// ─── V8: orchestrator surfaces find + mine_vein in ACTION_DESCRIPTIONS ───
+// ─── V8: orchestrator surfaces find + gather in ACTION_DESCRIPTIONS ───
 try {
   const orchPath = resolve(REPO_ROOT, 'src/bot/brain/orchestrator.js')
   const src = await readFile(orchPath, 'utf8')
@@ -219,11 +218,11 @@ try {
   assert.ok(i >= 0, 'ACTION_DESCRIPTIONS not found')
   const region = stripped.slice(i, i + 4000)
   assert.match(region, /^\s*find:\s*/m, 'find: key not in ACTION_DESCRIPTIONS region')
-  assert.match(region, /^\s*mine_vein:\s*/m, 'mine_vein: key not in ACTION_DESCRIPTIONS region')
+  assert.match(region, /^\s*gather:\s*/m, 'gather: key not in ACTION_DESCRIPTIONS region')
   // Verify subRegistry filter at the buildAnthropicTools call site does NOT
-  // exclude find / mine_vein — only setGoals should be filtered.
-  assert.match(stripped, /filter\(n => n !== 'setGoals'\)/, 'subRegistry filter signature changed; verify it still passes find + mine_vein')
-  ok('V8 - orchestrator tool surface includes find + mine_vein (no movement-tier filter blocks them)')
+  // exclude find / gather — only setGoals should be filtered.
+  assert.match(stripped, /filter\(n => n !== 'setGoals'\)/, 'subRegistry filter signature changed; verify it still passes find + gather')
+  ok('V8 - orchestrator tool surface includes find + gather (no movement-tier filter blocks them)')
 } catch (e) { bad('V8', e) }
 
 console.log(`[verify-phase6] OK (${assertions} assertions)`)

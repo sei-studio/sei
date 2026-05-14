@@ -10,7 +10,7 @@ import mcDataLib from 'minecraft-data'
 import { createRegistry } from '../../registry.js'
 import { goTo } from './behaviors/pathfind.js'
 import { resolveTerm } from './loose-terms.js'
-import { mineVeinAction } from './behaviors/mineVein.js'
+import { gatherAction } from './behaviors/mineVein.js'
 import { getHealedPos } from './observers/posHealer.js'
 import { setFollowTarget, getFollowTargetLabel } from './behaviors/follow.js'
 import { resolveEntity } from './observers/targeting.js'
@@ -197,9 +197,10 @@ export function createDefaultRegistry() {
     }
   )
 
-  // Phase 6 (D-NEW-SCAV-3): mine an entire connected vein in one call.
-  // Schema accepts either `name` (loose term / exact ID) OR `(x,y,z)` anchor.
-  registry.register('mine_vein',
+  // `gather`: dig N of a block type in one call when the specific instances
+  // don't matter. Schema accepts either `name` (loose term / exact ID) OR
+  // `(x,y,z)` anchor.
+  registry.register('gather',
     z.object({
       name: z.string().optional(),
       x: z.number().optional(),
@@ -211,7 +212,7 @@ export function createDefaultRegistry() {
           || (typeof a.x === 'number' && typeof a.y === 'number' && typeof a.z === 'number'),
       { message: 'must specify name or x,y,z' }
     ),
-    mineVeinAction
+    gatherAction
   )
 
   registry.register(

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// scripts/test-mineVein.mjs — D-NEW-SCAV-3 unit test for mineVeinAction.
+// scripts/test-mineVein.mjs — D-NEW-SCAV-3 unit test for gatherAction.
 //
-// Tests use the `_deps` dependency-injection hook on mineVeinAction to stub
+// Tests use the `_deps` dependency-injection hook on gatherAction to stub
 // goTo + digAction, plus a thin Bot shim providing entity.position, blockAt,
 // and findBlocks. mcDataLib is forced into the function-form fallback path
 // by passing an obviously-invalid bot.version.
@@ -17,7 +17,8 @@
 
 import assert from 'node:assert/strict'
 import { Vec3 } from 'vec3'
-import { mineVeinAction } from '../src/bot/adapter/minecraft/behaviors/mineVein.js'
+import { gatherAction } from '../src/bot/adapter/minecraft/behaviors/mineVein.js'
+// (file kept at mineVein.js to minimize import-path churn; export is gatherAction)
 
 function makeBot({ blocks, originPos = { x: 0, y: 64, z: 0 }, version = 'not-a-real-version' }) {
   function blockAt(p) {
@@ -77,8 +78,8 @@ try {
   const blocks = new Map([[`5,64,0`, 'oak_log']])
   const bot = makeBot({ blocks })
   const deps = makeDeps()
-  const r = await mineVeinAction({ name: 'wood' }, bot, {}, deps)
-  assert.equal(r, 'mined 1/1 oak_log', `got: ${r}`)
+  const r = await gatherAction({ name: 'wood' }, bot, {}, deps)
+  assert.equal(r, 'gathered 1/1 oak_log', `got: ${r}`)
   assert.equal(deps.goToCalls.length, 1, `goTo calls=${deps.goToCalls.length}`)
   assert.equal(deps.digCalls.length, 1, `dig calls=${deps.digCalls.length}`)
   assert.deepEqual(deps.digCalls[0], { x: 5, y: 64, z: 0 })
@@ -91,8 +92,8 @@ try {
   for (let x = 5; x <= 9; x++) blocks.set(`${x},64,0`, 'oak_log')
   const bot = makeBot({ blocks })
   const deps = makeDeps()
-  const r = await mineVeinAction({ x: 5, y: 64, z: 0 }, bot, {}, deps)
-  assert.equal(r, 'mined 5/5 oak_log', `got: ${r}`)
+  const r = await gatherAction({ x: 5, y: 64, z: 0 }, bot, {}, deps)
+  assert.equal(r, 'gathered 5/5 oak_log', `got: ${r}`)
   assert.equal(deps.digCalls.length, 5)
   assert.equal(deps.goToCalls.length, 5)
   // First dig should be the leftmost (closest to origin 0,64,0): x=5.
@@ -110,7 +111,7 @@ try {
   const blocks = new Map([[`5,64,0`, 'oak_log']])
   const bot = makeBot({ blocks })
   const deps = makeDeps()
-  const r = await mineVeinAction({ name: 'wood' }, bot, { signal: controller.signal }, deps)
+  const r = await gatherAction({ name: 'wood' }, bot, { signal: controller.signal }, deps)
   assert.equal(r, 'aborted', `got: ${r}`)
   assert.equal(deps.goToCalls.length, 0)
   assert.equal(deps.digCalls.length, 0)
@@ -124,7 +125,7 @@ try {
   for (let x = 5; x <= 9; x++) blocks.set(`${x},64,0`, 'oak_log')
   const bot = makeBot({ blocks })
   const deps = makeDeps({ controller, abortAfter: 2 })
-  const r = await mineVeinAction({ x: 5, y: 64, z: 0 }, bot, { signal: controller.signal }, deps)
+  const r = await gatherAction({ x: 5, y: 64, z: 0 }, bot, { signal: controller.signal }, deps)
   assert.equal(r, 'aborted after 2/5 oak_log', `got: ${r}`)
   pass('D (abort mid-vein, partial progress)')
 } catch (e) { fail('D', e) }
@@ -134,7 +135,7 @@ try {
   const blocks = new Map() // empty world
   const bot = makeBot({ blocks })
   const deps = makeDeps()
-  const r = await mineVeinAction({ name: 'wood' }, bot, {}, deps)
+  const r = await gatherAction({ name: 'wood' }, bot, {}, deps)
   assert.equal(r, 'no wood in loaded chunks', `got: ${r}`)
   assert.equal(deps.digCalls.length, 0)
   pass('E (no matches, name-only)')
@@ -145,7 +146,7 @@ try {
   const blocks = new Map() // (0,64,0) is air per default
   const bot = makeBot({ blocks })
   const deps = makeDeps()
-  const r = await mineVeinAction({ x: 0, y: 64, z: 0 }, bot, {}, deps)
+  const r = await gatherAction({ x: 0, y: 64, z: 0 }, bot, {}, deps)
   assert.equal(r, 'no block at anchor', `got: ${r}`)
   assert.equal(deps.digCalls.length, 0)
   pass('F (anchor at air)')
@@ -165,15 +166,15 @@ try {
   const deps = makeDeps({
     digResponses: (args) => `dug stone @${args.x},${args.y},${args.z}`,
   })
-  const r = await mineVeinAction({ x: 5, y: 64, z: 5 }, bot, {}, deps)
-  // Expect: mined 64/64 stone (vein-cap reached)
-  const m = /^mined (\d+)\/(\d+) stone \(vein-cap reached\)$/.exec(r)
-  assert.ok(m, `expected vein-cap result, got: ${r}`)
+  const r = await gatherAction({ x: 5, y: 64, z: 5 }, bot, {}, deps)
+  // Expect: gathered 64/64 stone (cap reached)
+  const m = /^gathered (\d+)\/(\d+) stone \(cap reached\)$/.exec(r)
+  assert.ok(m, `expected cap result, got: ${r}`)
   const k = Number(m[1]), n = Number(m[2])
-  assert.equal(n, 64, `total should equal VEIN_CAP=64, got ${n}`)
+  assert.equal(n, 64, `total should equal BATCH_CAP=64, got ${n}`)
   assert.ok(k <= 64, `K=${k} must be <= 64`)
   assert.equal(k, 64, `K should equal N=64 when all stubbed digs succeed, got ${k}`)
-  pass('G (vein-cap on 125-block stone cube)')
+  pass('G (batch-cap on 125-block stone cube)')
 } catch (e) { fail('G', e) }
 
 if (fails > 0) {

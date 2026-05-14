@@ -22,7 +22,7 @@ import { createConvoMemory } from './convoMemory.js'
 import { logChatOut, logActionResult } from './log.js'
 import { createAffectLog, readAffectFull } from './memory/affectLog.js'
 import { setPreferredName, appendNote } from './memory/owner.js'
-import { MINE_VEIN_DESCRIPTION } from '../adapter/minecraft/behaviors/mineVein.js'
+import { GATHER_DESCRIPTION } from '../adapter/minecraft/behaviors/mineVein.js'
 import { DIG_DESCRIPTION } from '../adapter/minecraft/behaviors/dig.js'
 import { BUILD_DESCRIPTION } from '../adapter/minecraft/behaviors/build.js'
 
@@ -116,11 +116,11 @@ const ACTION_DESCRIPTIONS = {
   attackEntity: 'Swing at an entity. `times` (1–10, default 1) hits the target up to N times in one call with ~600ms between swings; stops early if the target dies, moves out of reach, or you are interrupted. Use a higher `times` when hunting to amortize LLM round-trips — e.g. `times: 5` for sheep/pig, `times: 8` for tougher mobs.',
   // Plan 07-04 Task 2: canonical text lives next to dig.js as DIG_DESCRIPTION.
   dig: DIG_DESCRIPTION,
-  // Phase 6 (D-NEW-SCAV-3): canonical text lives next to mineVein.js as
-  // MINE_VEIN_DESCRIPTION; imported here so byte-equality is mechanical.
-  mine_vein: MINE_VEIN_DESCRIPTION,
+  // Canonical text lives next to mineVein.js as GATHER_DESCRIPTION;
+  // imported here so byte-equality is mechanical.
+  gather: GATHER_DESCRIPTION,
   // Phase 6 (D-NEW-SCAV-2): pure locator — does NOT move the bot.
-  find: 'Locate the nearest loaded-chunk block matching a name. Pass `{name:"<term>"}` where the term is either a loose category (`wood`, `ore`, `stone`, `dirt`, `sand`, `log`, `planks`, `leaves` — expands server-side to all variant MC block IDs) or an exact MC block ID (`oak_log`, `diamond_ore`). Returns `{found:true, id, pos:{x,y,z}, distance}` on a hit (distance in blocks, 1dp) or `{found:false, reason}` when nothing is in loaded chunks. Does NOT move the bot — use the returned pos with goTo / mine_vein / dig. For a strict literal match pass the exact ID; loose terms always expand to multiple variants and may return a different variant than you expected.',
+  find: 'Locate the nearest loaded-chunk block matching a name. Pass `{name:"<term>"}` where the term is either a loose category (`wood`, `ore`, `stone`, `dirt`, `sand`, `log`, `planks`, `leaves` — expands server-side to all variant MC block IDs) or an exact MC block ID (`oak_log`, `diamond_ore`). Returns `{found:true, id, pos:{x,y,z}, distance}` on a hit (distance in blocks, 1dp) or `{found:false, reason}` when nothing is in loaded chunks. Does NOT move the bot — use the returned pos with goTo / gather / dig. For a strict literal match pass the exact ID; loose terms always expand to multiple variants and may return a different variant than you expected.',
   placeBlock: 'Place ONE block against a reference face. Args: `{block:"<name>", against:{x,y,z}|{block:"<name>"}, faceVector?:{x,y,z}}`. Prefer `build` for multi-cell shapes — placeBlock is the primitive `build` composes on top of. Returns `placed <block> on <ref>` or `no <block> in inventory` / `no reference block` / `cannot place ...`.',
   equip: 'Equip an item from inventory to a slot. Args: `{item:"<name>", destination:"hand"|"off-hand"|"head"|"torso"|"legs"|"feet"}`. Returns `equipped <item> to <slot>` or `no <item> in inventory`. Many actions (placeBlock, build, dig) auto-equip; call equip directly when you want a specific tool ready (e.g. axe before chopping, sword before fighting).',
   build: BUILD_DESCRIPTION,
@@ -607,6 +607,25 @@ function shouldPreserveInterrupt(loop, sig) {
   if (loop._lastPreservedSig === sig) return false
   loop._lastPreservedSig = sig
   return true
+}
+
+// Serialize a registry action's return value into the short string fed back to
+// the model (as tool_result content AND as the next snapshot's
+// last_action_result line). Strings pass through; `{ok}` results use the
+// long-standing `name:ok|fail` shorthand; richer structured payloads (e.g.
+// `find` returning {found,id,pos,distance}) are JSON-stringified so the model
+// can actually act on the data. Capped to keep snapshots bounded.
+function formatToolResult(name, r) {
+  if (typeof r === 'string') return r
+  if (r == null) return 'done'
+  if (typeof r !== 'object') return String(r)
+  if (typeof r.ok !== 'undefined' && Object.keys(r).length <= 2) {
+    return `${name}:${r.ok ? 'ok' : 'fail'}`
+  }
+  let json
+  try { json = JSON.stringify(r) } catch { return 'done' }
+  if (json.length > 240) json = json.slice(0, 237) + '...'
+  return json
 }
 
 function maybeWarnByteCap(loop, warned) {
@@ -1202,7 +1221,7 @@ function maybeWarnByteCap(loop, warned) {
                 _goalStore: goals,
                 signal,
               })
-              const s = typeof r === 'string' ? r : (r && typeof r.ok !== 'undefined' ? `${u.name}:${r.ok ? 'ok' : 'fail'}` : 'done')
+              const s = formatToolResult(u.name, r)
               lastActionResult = s
               logActionResult(u.name, r)
               results[i] = { type: 'tool_result', tool_use_id: u.id, content: s, is_error: false }

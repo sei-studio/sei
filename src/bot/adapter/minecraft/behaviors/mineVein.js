@@ -1,24 +1,25 @@
-// src/bot/adapter/minecraft/behaviors/mineVein.js — D-NEW-SCAV-3.
+// src/bot/adapter/minecraft/behaviors/mineVein.js — `gather` action.
 //
-// `mine_vein` is the primary mining verb for vein-shaped resources (trees, ore
-// deposits, stone walls). It resolves a name (loose term OR exact MC ID) or a
-// raw coordinate to an anchor block, flood-fills the connected vein (6-neighbor,
-// same exact ID only, cap 64), pre-pathfinds to each member (Pitfall 2 — dig.js
-// does NOT pathfind into reach), and delegates the swing to digAction. The
-// whole vein consumes ONE LLM iteration (big saving under the 20-iteration cap).
+// `gather` is a dig-wrapper for "harvest N of a block" tasks where the exact
+// location of each mined block doesn't matter. It resolves a name (loose term
+// OR exact MC ID) or a raw coordinate to an anchor block, flood-fills a
+// connected component (6-neighbor, same exact ID only, cap 64) for tree/ore
+// shapes, pre-pathfinds to each member (Pitfall 2 — dig.js does NOT pathfind
+// into reach), and delegates the swing to digAction. The whole batch consumes
+// ONE LLM iteration (big saving under the 20-iteration cap).
 //
-// Result-string contract (Phase 2.1 closed-registry rule + dig.js drift discipline):
+// Result-string contract:
 //   - 'aborted'                                     — signal already aborted at entry
-//   - `aborted after K/N <name>`                    — owner-chat preempt mid-vein
-//   - `mined K/N <name>`                            — completed (K may be < N if some
+//   - `aborted after K/N <name>`                    — owner-chat preempt mid-batch
+//   - `gathered K/N <name>`                         — completed (K may be < N if some
 //                                                     individual digs failed)
-//   - `mined K/N <name> (vein-cap reached)`         — flood-fill saturated at VEIN_CAP
+//   - `gathered K/N <name> (cap reached)`           — flood-fill saturated at BATCH_CAP
 //   - `no <term> in loaded chunks`                  — name resolved to nothing
 //   - `no block at anchor`                          — anchor coord is air/null
 //   - 'must specify name or x,y,z'                  — defensive (registry refine should catch)
 //
-// MINE_VEIN_DESCRIPTION is colocated here and mirrored into orchestrator.js
-// ACTION_DESCRIPTIONS by Plan 06-04 (drift-discipline pattern from dig.js L10-20).
+// GATHER_DESCRIPTION is colocated here and mirrored into orchestrator.js
+// ACTION_DESCRIPTIONS (drift-discipline pattern from dig.js L10-20).
 
 import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
@@ -31,17 +32,17 @@ const NEIGHBOR_OFFSETS = [
   [0, 1, 0], [0, -1, 0],
   [0, 0, 1], [0, 0, -1],
 ]
-const VEIN_CAP = 64
+const BATCH_CAP = 64
 
 /**
  * LLM-facing description (mirrored verbatim into orchestrator.js
- * ACTION_DESCRIPTIONS.mine_vein by Plan 06-04). Keep this string in sync with
- * the orchestrator mirror — dig.js / DIG_DESCRIPTION sets the precedent.
+ * ACTION_DESCRIPTIONS.gather). Keep this string in sync with the orchestrator
+ * mirror — dig.js / DIG_DESCRIPTION sets the precedent.
  */
-export const MINE_VEIN_DESCRIPTION = "Mine a whole connected vein in one call. Prefer this over `dig` for vein-shaped resources (trees, ore deposits, stone walls). Pass `{name:\"<term>\"}` — loose terms (`wood`, `ore`, `stone`, `dirt`, `sand`, `log`, `planks`, `leaves`) expand server-side to the right MC block IDs; you can also pass an exact ID like `oak_log`. Or pass `{x,y,z}` of a known anchor block (from a snapshot `#N` handle or a prior `find()` result — never invent coords). Returns `mined K/N <name>` on success, `mined K/N <name> (vein-cap reached)` when the vein exceeds 64 blocks, `aborted after K/N <name>` on owner-chat preempt, `no <name> in loaded chunks` when nothing matches, or `no block at anchor` when the coord is empty/air."
+export const GATHER_DESCRIPTION = "Gather a batch of one block type in a single call — use when you want N of some block and don't care which specific instances. Pass `{name:\"<term>\"}` — loose terms (`wood`, `ore`, `stone`, `dirt`, `sand`, `log`, `planks`, `leaves`) expand server-side to the right MC block IDs; you can also pass an exact ID like `oak_log` or `cactus`. Or pass `{x,y,z}` of a known anchor block (from a `nearby blocks` `#N` handle or a prior `find()` result — never invent coords). The bot finds the nearest matching block, then sweeps any same-name neighbors face-adjacent to it (so trees and ore deposits chop together) up to a 64-block batch cap. Returns `gathered K/N <name>` on success, `gathered K/N <name> (cap reached)` when the connected batch exceeds 64 blocks, `aborted after K/N <name>` on owner-chat preempt, `no <name> in loaded chunks` when nothing matches, or `no block at anchor` when the coord is empty/air."
 
 /**
- * Mine a whole connected vein from a name or coordinate anchor.
+ * Gather a batch of one block type from a name or coordinate anchor.
  *
  * Single registered-action token (FSM rule): returns ONE terminal Promise; the
  * outer loop watches `config.signal` between iterations while inner per-block
@@ -57,7 +58,7 @@ export const MINE_VEIN_DESCRIPTION = "Mine a whole connected vein in one call. P
  *        so the registry call site `(args, bot, config)` is unaffected.
  * @returns {Promise<string>}
  */
-export async function mineVeinAction(args, bot, config, _deps) {
+export async function gatherAction(args, bot, config, _deps) {
   const goTo = _deps?.goTo ?? realGoTo
   const digAction = _deps?.digAction ?? realDigAction
 
@@ -99,25 +100,25 @@ export async function mineVeinAction(args, bot, config, _deps) {
     return 'must specify name or x,y,z'
   }
 
-  // 2. Verify anchor + flood-fill (same exact ID only, cap VEIN_CAP).
+  // 2. Verify anchor + sweep same-name face-adjacent neighbors (cap BATCH_CAP).
   const seedBlk = bot.blockAt(anchor)
   if (!seedBlk || seedBlk.name === 'air' || seedBlk.name === 'cave_air' || seedBlk.name === 'void_air') {
     return 'no block at anchor'
   }
-  const veinName = seedBlk.name
+  const blockName = seedBlk.name
 
   const visited = new Set()
   const key = (x, y, z) => `${x},${y},${z}`
   const stack = [anchor]
   /** @type {Array<{p: Vec3, done: boolean}>} */
   const positions = []
-  while (stack.length && positions.length < VEIN_CAP) {
+  while (stack.length && positions.length < BATCH_CAP) {
     const p = stack.pop()
     const pk = key(p.x, p.y, p.z)
     if (visited.has(pk)) continue
     visited.add(pk)
     const blk = bot.blockAt(p)
-    if (!blk || blk.name !== veinName) continue
+    if (!blk || blk.name !== blockName) continue
     positions.push({ p, done: false })
     for (const [dx, dy, dz] of NEIGHBOR_OFFSETS) {
       const nx = p.x + dx, ny = p.y + dy, nz = p.z + dz
@@ -131,7 +132,7 @@ export async function mineVeinAction(args, bot, config, _deps) {
   let dug = 0
   const total = positions.length
   while (true) {
-    if (signal?.aborted) return `aborted after ${dug}/${total} ${veinName}`
+    if (signal?.aborted) return `aborted after ${dug}/${total} ${blockName}`
 
     const bp = bot.entity?.position
     let nextEntry = null
@@ -151,11 +152,11 @@ export async function mineVeinAction(args, bot, config, _deps) {
     // beyond 4.5m; range:3 keeps us well inside).
     await goTo(bot, np.x, np.y, np.z, 3, timeoutMs)
 
-    if (signal?.aborted) return `aborted after ${dug}/${total} ${veinName}`
+    if (signal?.aborted) return `aborted after ${dug}/${total} ${blockName}`
 
     const r = await digAction({ x: np.x, y: np.y, z: np.z }, bot, config)
     if (r === 'aborted') {
-      return `aborted after ${dug}/${total} ${veinName}`
+      return `aborted after ${dug}/${total} ${blockName}`
     }
     if (typeof r === 'string' && r.startsWith('dug ')) {
       dug++
@@ -165,6 +166,6 @@ export async function mineVeinAction(args, bot, config, _deps) {
     nextEntry.done = true
   }
 
-  const capNote = total >= VEIN_CAP ? ' (vein-cap reached)' : ''
-  return `mined ${dug}/${total} ${veinName}${capNote}`
+  const capNote = total >= BATCH_CAP ? ' (cap reached)' : ''
+  return `gathered ${dug}/${total} ${blockName}${capNote}`
 }
