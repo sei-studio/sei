@@ -89,6 +89,18 @@ export async function saveCharacter(character: Character): Promise<void> {
   }
 }
 
+/**
+ * Reset a character's memory directory: wipe its contents and recreate it
+ * empty. The character JSON, portrait, and index entry are untouched — only
+ * OWNER.md / DIARY.md / AFFECT.md (and any other files under the memory dir)
+ * are erased. Caller (main/ipc.ts) gates against resetting an actively
+ * summoned bot.
+ */
+export async function resetMemoryForCharacter(id: string): Promise<void> {
+  await rm(paths.memoryDir(id), { recursive: true, force: true });
+  await mkdir(paths.memoryDir(id), { recursive: true });
+}
+
 export async function deleteCharacter(id: string): Promise<void> {
   // Remove JSON
   try { await unlink(paths.characterPath(id)); }

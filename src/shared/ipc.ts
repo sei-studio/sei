@@ -94,6 +94,7 @@ export interface RendererApi {
   getCharacter(id: string): Promise<Character | null>;
   saveCharacter(character: Character): Promise<void>;
   deleteCharacter(id: string): Promise<void>;
+  resetMemory(id: string): Promise<void>;
 
   // User config + secret
   getConfig(): Promise<UserConfig>;
@@ -129,6 +130,7 @@ export const IpcChannel = {
     get: 'chars:get',
     save: 'chars:save',
     delete: 'chars:delete',
+    resetMemory: 'chars:reset-memory',
   },
   config: {
     get: 'config:get',

@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { IpcChannel } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
-import { listCharacters, getCharacter, saveCharacter, deleteCharacter } from './characterStore';
+import { listCharacters, getCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter } from './characterStore';
 import { saveApiKey, hasApiKey, backendKind } from './apiKeyStore';
 import type { BotSupervisor } from './botSupervisor';
 
@@ -54,6 +54,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       throw new Error('Cannot delete the currently summoned character. Stop first.');
     }
     await deleteCharacter(id);
+  });
+  ipcMain.handle(IpcChannel.chars.resetMemory, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    // Refuse while bot is reading/writing memory at runtime.
+    if (deps.supervisor.getActiveId() === id) {
+      throw new Error('Cannot reset memory of the currently summoned character. Stop first.');
+    }
+    await resetMemoryForCharacter(id);
   });
 
   // User config

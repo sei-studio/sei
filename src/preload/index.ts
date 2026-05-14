@@ -19,6 +19,7 @@ const api: RendererApi = {
   getCharacter: (id) => ipcRenderer.invoke(IpcChannel.chars.get, id),
   saveCharacter: (c) => ipcRenderer.invoke(IpcChannel.chars.save, c),
   deleteCharacter: (id) => ipcRenderer.invoke(IpcChannel.chars.delete, id),
+  resetMemory: (id) => ipcRenderer.invoke(IpcChannel.chars.resetMemory, id),
 
   getConfig: () => ipcRenderer.invoke(IpcChannel.config.get),
   saveConfig: (c) => ipcRenderer.invoke(IpcChannel.config.save, c),

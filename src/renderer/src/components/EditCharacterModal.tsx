@@ -1,9 +1,10 @@
 /**
  * EditCharacterModal — inline edit for a character's name, description, and
- * persona prompt.
+ * persona prompt. Also houses destructive actions (Delete, Reset memory) in
+ * a footer Danger section: Delete is gated through DeleteConfirmModal;
+ * Reset memory uses an inline two-click confirm.
  *
- * Pattern lifted from LanModal/DeleteConfirmModal for backdrop + ESC handling
- * (no portal — same approach as the existing modals).
+ * Pattern lifted from LanModal/DeleteConfirmModal for backdrop + ESC handling.
  *
  * Validation:
  *  - name must be non-empty trimmed
@@ -12,15 +13,15 @@
  *
  * On Save: sei.saveCharacter({...character, name, description, persona_prompt})
  *  → useDataStore.refreshCharacter(id) → onClose().
- *
- * Source: quick task 260508-mun (CharacterPage restructure + Edit modal).
  */
 
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from './Button';
 import { TextField } from './TextField';
+import { DeleteConfirmModal } from './DeleteConfirmModal';
 import type { Character } from '@shared/characterSchema';
 import styles from './EditCharacterModal.module.css';
 
@@ -40,6 +41,15 @@ export function EditCharacterModal({
   const [personaPrompt, setPersonaPrompt] = useState<string>(character.persona_prompt ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
+  const [confirmingDelete, setConfirmingDelete] = useState<boolean>(false);
+  const [confirmingReset, setConfirmingReset] = useState<boolean>(false);
+  const [resetting, setResetting] = useState<boolean>(false);
+  const [resetDone, setResetDone] = useState<boolean>(false);
+
+  const removeCharacter = useDataStore((s) => s.removeCharacter);
+  const navigate = useUiStore((s) => s.navigate);
+
+  const isDefault = character.id === 'sui';
 
   // ESC closes (matches LanModal/DeleteConfirmModal behavior).
   useEffect(() => {
@@ -82,70 +92,144 @@ export function EditCharacterModal({
     }
   };
 
+  const onConfirmDelete = async (): Promise<void> => {
+    setConfirmingDelete(false);
+    try {
+      await sei.deleteCharacter(character.id);
+      removeCharacter(character.id);
+      navigate({ kind: 'home' });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[EditCharacterModal] deleteCharacter failed', err);
+      setError('Failed to delete. Try again.');
+    }
+  };
+
+  const onResetMemoryClick = async (): Promise<void> => {
+    if (!confirmingReset) {
+      setConfirmingReset(true);
+      return;
+    }
+    setResetting(true);
+    setError(null);
+    try {
+      await sei.resetMemory(character.id);
+      setConfirmingReset(false);
+      setResetDone(true);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[EditCharacterModal] resetMemory failed', err);
+      setError(err instanceof Error ? err.message : 'Failed to reset memory.');
+      setConfirmingReset(false);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
-    <div
-      className={styles.scrim}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="edit-character-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className={styles.modal}>
-        <h2 id="edit-character-title" className={styles.title}>
-          Edit character
-        </h2>
+    <>
+      <div
+        className={styles.scrim}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-character-title"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <div className={styles.modal}>
+          <h2 id="edit-character-title" className={styles.title}>
+            Edit character
+          </h2>
 
-        <div className={styles.field}>
-          <label className={styles.label}>NAME</label>
-          <TextField
-            value={name}
-            onChange={setName}
-            autoFocus
-            aria-label="Character name"
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label}>NAME</label>
+            <TextField
+              value={name}
+              onChange={setName}
+              autoFocus
+              aria-label="Character name"
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>DESCRIPTION</label>
-          <TextField
-            value={description}
-            onChange={setDescription}
-            multiline
-            rows={3}
-            aria-label="Character description"
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label}>DESCRIPTION</label>
+            <TextField
+              value={description}
+              onChange={setDescription}
+              multiline
+              rows={3}
+              aria-label="Character description"
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>PERSONA PROMPT</label>
-          <TextField
-            value={personaPrompt}
-            onChange={setPersonaPrompt}
-            multiline
-            rows={12}
-            monospace
-            aria-label="Persona prompt"
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label}>PERSONA PROMPT</label>
+            <TextField
+              value={personaPrompt}
+              onChange={setPersonaPrompt}
+              multiline
+              rows={12}
+              monospace
+              aria-label="Persona prompt"
+            />
+          </div>
 
-        {error ? <div className={styles.error}>{error}</div> : null}
+          {!isDefault ? (
+            <div className={styles.danger}>
+              <div className={styles.label}>DANGER</div>
+              <div className={styles.dangerRow}>
+                <button
+                  type="button"
+                  className={styles.resetBtn}
+                  onClick={() => void onResetMemoryClick()}
+                  disabled={resetting || saving}
+                >
+                  {resetDone
+                    ? 'Memory reset'
+                    : resetting
+                      ? 'Resetting…'
+                      : confirmingReset
+                        ? 'Click again to confirm reset'
+                        : 'Reset memory'}
+                </button>
+                <button
+                  type="button"
+                  className={styles.deleteBtn}
+                  onClick={() => setConfirmingDelete(true)}
+                  disabled={saving}
+                >
+                  Delete character
+                </button>
+              </div>
+            </div>
+          ) : null}
 
-        <div className={styles.footer}>
-          <Button kind="quiet" size="md" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button
-            kind="primary"
-            size="md"
-            onClick={() => void onSave()}
-            disabled={saving}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
+          {error ? <div className={styles.error}>{error}</div> : null}
+
+          <div className={styles.footer}>
+            <Button kind="quiet" size="md" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              kind="primary"
+              size="md"
+              onClick={() => void onSave()}
+              disabled={saving}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {confirmingDelete ? (
+        <DeleteConfirmModal
+          characterName={character.name}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => void onConfirmDelete()}
+        />
+      ) : null}
+    </>
   );
 }

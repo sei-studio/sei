@@ -16,9 +16,12 @@
  *  - online          → green dot + "Online · {uptime}" + mono model id.
  *  - error           → red dot + plain-English message + "TRY AGAIN" link.
  *
+ * Destructive actions (Delete, Reset memory) live inside the Edit modal
+ * under a "Danger" section — they were moved out of the page-level
+ * secondary row so the page only carries Summon + Edit.
+ *
  * Sui (id === 'sui') gates:
  *  - No Edit button rendered (260508-mun item 2).
- *  - No Delete button rendered (D-49; existing).
  *
  * T-04-37 mitigation: on mount, if the character isn't in store, fetch via
  * `sei.getCharacter` (and let main return null on missing → "Character not
@@ -31,7 +34,6 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { Button } from '../components/Button';
 import { PixelPortrait } from '../components/PixelPortrait';
-import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { EditCharacterModal } from '../components/EditCharacterModal';
 import { BackIcon, SparkleIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -88,10 +90,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const summon = useDataStore((s) => s.summon);
   const lan = useDataStore((s) => s.lan);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
-  const removeCharacter = useDataStore((s) => s.removeCharacter);
 
   const character: Character | undefined = characters.find((c) => c.id === id);
-  const [confirmingDelete, setConfirmingDelete] = useState<boolean>(false);
   const [editing, setEditing] = useState<boolean>(false);
 
   // T-04-37: rehydrate the character from disk on mount if not in the store.
@@ -130,18 +130,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     }
     setPendingSummon(id);
     openModal({ kind: 'lan', mode: 'searching' });
-  };
-
-  const handleConfirmDelete = async (): Promise<void> => {
-    try {
-      await sei.deleteCharacter(id);
-      removeCharacter(id);
-      navigate({ kind: 'home' });
-    } catch (err) {
-      // Plan 09 will surface this through ERROR_COPY[errorClass]; for v1 we log.
-      // eslint-disable-next-line no-console
-      console.error('[CharacterPage] delete failed', err);
-    }
   };
 
   // GUI-05: error label uses centralized ERROR_COPY[ErrorClass] copy, NOT
@@ -195,16 +183,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                   Edit
                 </Button>
               ) : null}
-              {!isDefault ? (
-                <Button
-                  kind="ghost"
-                  size="md"
-                  onClick={() => setConfirmingDelete(true)}
-                  className={styles.deleteBtn}
-                >
-                  Delete
-                </Button>
-              ) : null}
             </div>
           </div>
         </aside>
@@ -248,17 +226,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           </div>
         </main>
       </div>
-
-      {confirmingDelete ? (
-        <DeleteConfirmModal
-          characterName={character.name}
-          onCancel={() => setConfirmingDelete(false)}
-          onConfirm={() => {
-            setConfirmingDelete(false);
-            void handleConfirmDelete();
-          }}
-        />
-      ) : null}
 
       {editing ? (
         <EditCharacterModal character={character} onClose={() => setEditing(false)} />
