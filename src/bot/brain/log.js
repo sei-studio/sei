@@ -114,8 +114,17 @@ export function logChatOut(text) {
  *   (hashed as `diary`) and emits every other named text block inline by its
  *   `name` field as the section label (D-4, D-8).
  */
+// Named user-content blocks whose content is static (or near-static) within a
+// session — elided to a `@sha` ref after first appearance. seed_cuboid_grammar
+// is fully static; seed_owner / affect_log shift only when the owner profile
+// or the affect log is rewritten. Hashing collapses repetition; if the body
+// changes the hash changes and the new body is emitted in full.
+const STATIC_NAMED_BLOCKS = new Set(['seed_owner', 'seed_cuboid_grammar', 'affect_log'])
+
 export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }) {
   const toolNames = (tools ?? []).map(t => t.name).join(', ')
+  // The tool list rarely changes within a session — hash it after first sight.
+  const toolsBody = toolNames.length > 0 ? elideOrFull('tools', toolNames) : ''
 
   // Find last user-role entry in namedUserBlocks.
   let lastUser = null
@@ -162,7 +171,11 @@ export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }
       if (typeof b.name !== 'string' || b.name.length === 0) continue
       if (reserved.has(b.name)) continue
       const txt = typeof b.text === 'string' ? b.text : safeStringify(b.text)
-      userBodyLines.push(`${b.name}: ${txt}`)
+      if (STATIC_NAMED_BLOCKS.has(b.name)) {
+        userBodyLines.push(elideOrFull(b.name, txt))
+      } else {
+        userBodyLines.push(`${b.name}: ${txt}`)
+      }
     }
   }
 
@@ -172,7 +185,7 @@ export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }
   }
 
   emitBlock('[haiku?]', [
-    { label: 'tools', body: toolNames },
+    { label: 'tools', body: toolsBody },
     { label: 'user', body: userBodyLines.join('\n') },
   ])
 }
