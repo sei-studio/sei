@@ -494,7 +494,16 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // ─── Snapshot helper ────────────────────────────────────────────────
   function snapshotText() {
     try {
-      return snapshotComposer.next({ goals: goals.snapshot(), lastActionResult, inFlight: inflight.current() })
+      return snapshotComposer.next({
+        goals: goals.snapshot(),
+        lastActionResult,
+        inFlight: inflight.current(),
+        // Owner-priority pin: keep the owner in `nearby entities` even when
+        // six other entities are closer. Without this, busy-area entity
+        // congestion (sheep / foxes / traders / llamas) can evict the owner
+        // from the snapshot and the model loses owner coords for goTo/follow.
+        pinUsername: config.owner_username ?? null,
+      })
     } catch (err) {
       logger.warn(`[sei/orch] composeSnapshot failed: ${err.message}`)
       return '(snapshot unavailable)'

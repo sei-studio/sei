@@ -14,23 +14,31 @@ import { getFollowTargetLabel } from '../behaviors/follow.js'
 import { getInFlightLineForSnapshot } from '../../../brain/inflight.js'
 
 const MAX_ENTITIES = 6
+// Entity visibility radius (blocks). 64 = 4 chunks, the rough distance at
+// which a real Minecraft player can see and identify another player. Bumped
+// from 24 so the owner stays visible (with coords) as they walk a few chunks
+// ahead, instead of dropping out of the snapshot and forcing the model to
+// hallucinate a `goTo` target. The kill heuristic in createSnapshotComposer
+// intentionally stays at its tighter radius — wider tracking there produces
+// false-positive "killed mob" events when entities just wander out of range.
+const ENTITY_RADIUS = 64
 
 /**
  * Compose a compact snapshot of the bot's current world state.
  * Side effect: replaces the targeting handle table with the #N entries from this snapshot.
  *
  * @param {import('mineflayer').Bot} bot
- * @param {{ goals?:{owner_goals?:string[], self_goals?:string[]}, lastActionResult?:string, inFlight?:{name:string,args:any,startedAt:number}|null }} [opts]
+ * @param {{ goals?:{owner_goals?:string[], self_goals?:string[]}, lastActionResult?:string, inFlight?:{name:string,args:any,startedAt:number}|null, pinUsername?:string|null }} [opts]
  * @returns {string}
  */
 export function composeSnapshot(bot, opts = {}) {
-  const { goals, lastActionResult, inFlight } = opts
+  const { goals, lastActionResult, inFlight, pinUsername } = opts
   const v = vitals(bot)
   const w = world(bot)
   const held = heldItem(bot)
   const inv = inventory(bot)
   const survey = surveyBlocks(bot, { radius: 16, maxNames: 24 })
-  const ents = nearbyEntities(bot, { radius: 24, count: MAX_ENTITIES })
+  const ents = nearbyEntities(bot, { radius: ENTITY_RADIUS, count: MAX_ENTITIES, pin: pinUsername ?? null })
 
   const lines = []
   // Position / biome / time
