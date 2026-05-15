@@ -38,20 +38,19 @@ export function startChat(bot, config, orchestrator = null) {
 
     const ownerSpoke = username === config.owner_username
 
-    // Generalized owner-interrupt: any owner message pauses the body and
-    // aborts the active Loop. The LLM then decides — based on the message
-    // content — whether to resume the prior task, switch to a new one, or
-    // just answer. The PLAYER INTERRUPT user turn (orchestrator repair path)
-    // already preserves the prior tool-use history so resume is a real
-    // option, not a guess.
+    // 260514-ngj: pre-LLM body cancel now fires ONLY on STOP_VERBS. The
+    // generalized "any owner chat aborts the body" path was over-aggressive
+    // and broke the R1 case (text-only mid-loop should keep the in-flight
+    // running). Non-stop owner messages fall through to the normal dispatch
+    // below; the orchestrator decides whether to abort the body based on
+    // what the LLM responds with (R1 keeps it, R2/R3/R4 abort it).
     if (ownerSpoke && orchestrator) {
-      forceCancelBody(bot)
-      try { orchestrator.currentLoop?.abortController?.abort() } catch {}
-
       const trimmed = String(message).trim().toLowerCase()
       if (STOP_VERBS.has(trimmed)) {
-        // Stop-verb fast path stays — clear owner_goals and confirm with a
-        // single chat line, NO LLM round-trip. Body already cancelled above.
+        // Stop-verb fast path — hard-cancel the body, clear owner_goals,
+        // confirm with a single chat line. NO LLM round-trip.
+        forceCancelBody(bot)
+        try { orchestrator.currentLoop?.abortController?.abort() } catch {}
         try {
           const owner = orchestrator.goals?.snapshot?.()?.owner_goals ?? []
           for (const g of owner) {
@@ -62,8 +61,8 @@ export function startChat(bot, config, orchestrator = null) {
         return
       }
       // Non-stop owner messages fall through to the normal dispatch below;
-      // the orchestrator's interrupt path picks up pendingInterrupt and
-      // appends a PLAYER INTERRUPT user turn so the LLM sees the message.
+      // the orchestrator's interrupt path folds in a PLAYER INTERRUPT user
+      // turn so the LLM sees the message without pre-aborting the body.
     }
 
     const addressed = message.toLowerCase().includes(bot.username.toLowerCase())

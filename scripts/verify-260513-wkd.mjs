@@ -490,18 +490,21 @@ try {
   await sleep(20)
 } catch (e) { bad('B8', e) }
 
-// ─── B9 — stop terminal with no in_flight ────────────────────────────────
+// ─── B9 — end_loop terminal with no in_flight ────────────────────────────
+// 260514-ngj: stop retired, end_loop replaces it as the inline-metadata
+// terminate signal. This assertion now exercises the same flow with the
+// renamed tool — no in_flight starts, the loop tears down cleanly.
 try {
   const { orch, anthropic, adapter } = makeOrch()
-  // Fresh owner_chat where the model returns stop directly (no in_flight).
-  anthropic.queue.push({ text: 'okay', toolUses: [{ name: 'stop', input: {} }] })
+  // Fresh owner_chat where the model returns end_loop directly (no in_flight).
+  anthropic.queue.push({ text: 'okay', toolUses: [{ name: 'end_loop', input: {} }] })
   await orch.handleDispatch('sei:chat_received', { username: 'shawn', text: 'just hold', ownerSpoke: true })
   await sleep(20)
   // No in_flight should ever have started.
   assert.equal(adapter.lastFakeLong, null, 'B9: expected no in_flight; lastFakeLong should be null')
   // Loop torn down.
-  assert.equal(orch.currentLoop, null, 'B9: expected currentLoop=null after stop with no in_flight')
-  ok('B9', 'stop terminal with no in_flight — no abort needed, loop terminates cleanly')
+  assert.equal(orch.currentLoop, null, 'B9: expected currentLoop=null after end_loop with no in_flight')
+  ok('B9', 'end_loop terminal with no in_flight — no abort needed, loop terminates cleanly')
 } catch (e) { bad('B9', e) }
 
 // PASS count breakdown:

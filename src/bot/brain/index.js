@@ -102,7 +102,10 @@ export async function start({ config, adapter, logger = console }) {
       switch (event) {
         case 'sei:attacked':       p = Priority.P0_SAFETY; break
         case 'sei:chat_received':  p = Priority.P1_CHAT; break
-        case 'sei:joined':         p = Priority.P1_CHAT; break
+        // 260514-ngj: sei:joined retired — spawn first-fire enqueues
+        // sei:idle (P3) instead. Routing left absent on purpose so a
+        // stray sei:joined would land at default (P2_MOVEMENT) and surface
+        // as the bug it is.
         case 'sei:loop_terminal':  p = Priority.P2_5_LOOP_END; break
         // 260513-wkd: action_complete fires when an in_flight long-running
         // action settles (resolve OR abort). Routed at P2.1 so a same-batch
@@ -231,12 +234,17 @@ export async function start({ config, adapter, logger = console }) {
       greetingFired = true
       setTimeout(() => {
         try {
-          queue.enqueue(Priority.P1_CHAT, 'sei:joined', {
-            reason: 'just_connected',
-            hint: 'You just connected to the server. Greet your owner if they are nearby; otherwise look around and say something brief about where you are. This is NOT an idle tick — react to the join itself.',
-          })
+          // 260514-ngj: spawn first-fire now enqueues sei:idle at P3 rather
+          // than sei:joined at P1. The greeting flows through the normal
+          // idle-tick path; the R1-R4 interrupt-response model only applies
+          // to P0/P1-triggered iterations, and a join is not an interrupt of
+          // an existing loop — it's the very first tick. P3 also means the
+          // greeting cannot starve a P0 attack or P1 chat that lands a beat
+          // later. The 'hint' field is dropped — idle is observational by
+          // construction, the seed prompt handles framing.
+          queue.enqueue(Priority.P3_IDLE, 'sei:idle', { reason: 'just_connected_first_spawn' })
         } catch (err) {
-          logger.warn?.(`[sei/brain] join greeting enqueue failed: ${err.message}`)
+          logger.warn?.(`[sei/brain] spawn-idle enqueue failed: ${err.message}`)
         }
       }, config.memory?.spawn_settle_delay_ms ?? 500)
     },

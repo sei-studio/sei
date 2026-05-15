@@ -404,17 +404,22 @@ try {
   ok('G3b', 'natural settle then chat during action_complete window: exactly one continuation iteration, no duplicate folds')
 } catch (e) { bad('G3b', e) }
 
-// ─── G4 — case-2 stop fired while sync inflight is running ──────────────
+// ─── G4 — case-2 end_loop fired while sync inflight is running ──────────
 // Setup: model emits [placeBlock]. While placeBlock pends, owner sends
-// "stop now". The P1 chat path aborts the placeBlock; the abort cascades
-// to action_complete (aborted=true) which folds PLAYER INTERRUPT; the
-// NEXT iteration model emits [stop]. Verify the stop tool tears down the
-// loop cleanly even though loop.inFlight is now null (the placeBlock
-// already aborted).
+// "stop now". The P1 chat path (chat.js) no longer pre-aborts the body in
+// 260514-ngj, so the in_flight abort fires only when the orchestrator's
+// P1 dispatch branch sets pendingInterrupt + aborts the in_flight (B7a
+// path). The abort cascades to action_complete (aborted=true) which folds
+// PLAYER INTERRUPT; the NEXT iteration model emits [end_loop]. Verify
+// end_loop tears down the loop cleanly even though loop.inFlight is null
+// (placeBlock already aborted).
+//
+// 260514-ngj: assertion renamed from `stop` to `end_loop` after stop
+// retirement.
 try {
   const { orch, anthropic, adapter, reenqueue } = makeOrch()
   anthropic.queue.push({ text: 'placing', toolUses: [{ name: 'placeBlock', input: { x: 0, y: 0, z: 0, block: 'cactus' } }] })
-  anthropic.queue.push({ text: 'stopping', toolUses: [{ name: 'stop', input: {} }] })
+  anthropic.queue.push({ text: 'stopping', toolUses: [{ name: 'end_loop', input: {} }] })
   const dispatchP = orch.handleDispatch('sei:chat_received', { username: 'shawn', text: 'place a cactus', ownerSpoke: true })
   await sleep(10)
   const inflight = orch.currentLoop.inFlight
@@ -429,9 +434,9 @@ try {
   await drainActionComplete(orch, reenqueue)
   await sleep(20)
   await dispatchP
-  // After the [stop] response: loop torn down.
-  assert.equal(orch.currentLoop, null, 'G4: expected loop terminated after stop')
-  ok('G4', 'case-2 stop after sync inflight aborts in_flight via P1 chat AND stop tears down loop')
+  // After the [end_loop] response: loop torn down.
+  assert.equal(orch.currentLoop, null, 'G4: expected loop terminated after end_loop')
+  ok('G4', 'case-2 end_loop after sync inflight aborts in_flight via P1 chat AND end_loop tears down loop')
 } catch (e) { bad('G4', e) }
 
 // ─── G5 — case-3 reseed: new long-runner while sync inflight is running ─
@@ -520,6 +525,8 @@ try {
 } catch (e) { bad('G7', e) }
 
 // ─── G8 — INLINE_METADATA tools never set inFlight nor fire action_complete
+// 260514-ngj: stop retired, end_loop replaces it as the third INLINE_METADATA
+// member alongside setGoals + noteToSelf.
 try {
   const { orch, anthropic, adapter, reenqueue } = makeOrch()
   // Pure-metadata batch — should fire ZERO action_completes, never set inFlight.
@@ -528,7 +535,7 @@ try {
     toolUses: [
       { name: 'noteToSelf', input: { kind: 'preference', summary: 'enjoys building' } },
       { name: 'setGoals', input: { current: 'build a base' } },
-      { name: 'stop', input: {} },
+      { name: 'end_loop', input: {} },
     ],
   })
   // Track inFlight observations during the dispatch.
@@ -550,9 +557,9 @@ try {
   // route through executeAction (except setGoals which IS a registry
   // action). Allow setGoals here — the assertion that matters is no
   // action_complete reenqueue, which proves no startLongRunner dispatch.
-  // Loop terminated via stop.
-  assert.equal(orch.currentLoop, null, 'G8: expected loop terminated via stop')
-  ok('G8', 'INLINE_METADATA tools (setGoals/noteToSelf/stop) never set inFlight, never fire sei:action_complete')
+  // Loop terminated via end_loop.
+  assert.equal(orch.currentLoop, null, 'G8: expected loop terminated via end_loop')
+  ok('G8', 'INLINE_METADATA tools (setGoals/noteToSelf/end_loop) never set inFlight, never fire sei:action_complete')
 } catch (e) { bad('G8', e) }
 
 // ─── Summary ─────────────────────────────────────────────────────────────

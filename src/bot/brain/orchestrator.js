@@ -99,14 +99,11 @@ const SYSTEM_INSTRUCTIONS = [
   'Hunting rule: to kill a moving mob, call follow on the target then attackEntity with `times` set high (e.g. 5 for sheep, 8 for tougher mobs). One attackEntity swings up to N times, stopping early if the mob dies or moves out of reach. If "moved out of reach" comes back, just call attackEntity again. Don\'t chase with goTo. Call unfollow when dead.',
   'dig accepts {block:\'oak_log\'} to dig the nearest matching block — prefer this over coords for parallel batches.',
   'Pathfinder rule: if goTo returns cant_reach twice for the same destination, ask the owner for help instead of trying again.',
-  // 260513-wkd: replaces the old "Owner messages preempt the body and abort
-  // the in-flight action..." line. The orchestrator now decouples mid-loop
-  // long-runners from the FSM signal: while one runs, owner chat (P1) or
-  // attack (P0) can wake the model WITHOUT auto-aborting the body. The model
-  // chooses cancel-semantics explicitly: text-only continues (default), `stop`
-  // tool aborts and holds, a new long-running tool switches tasks.
-  'When you receive an owner message or take damage mid-action, the snapshot will show `in_flight:` — the body is already doing something. You ALWAYS say something on receipt of owner chat or an attack. Then decide: respond and keep going (text only, the default), or call `stop` to halt the in-flight action and hold, or call a different long-running tool to switch tasks. Don\'t restate the in-flight action — it\'s already underway.',
-  'The loop has a 30-iteration cap; if you hit it, the orchestrator aborts. Decide task completion yourself — don\'t pad. End the loop by emitting no tool calls (text alone, or nothing).',
+  // 260514-ngj: R1-R4 interrupt-response semantics. On iterations triggered
+  // by owner chat or being attacked (P0/P1), the model has four explicit
+  // response shapes; the loop stays alive until end_loop fires.
+  'When you receive an owner message or take damage mid-action, the snapshot will show `in_flight:` — the body is already doing something. You ALWAYS say something on receipt of owner chat or an attack. Then decide: respond and keep going (text only — the body keeps doing what it was doing), call a different action tool to switch tasks (the old in-flight aborts), call `end_loop` to halt the in-flight action AND end the loop, or call `end_loop` plus a new action to end this loop and open a fresh one seeded with the new action. Don\'t restate the in-flight action — it\'s already underway.',
+  'The loop has a 30-iteration cap; if you hit it, the orchestrator aborts. Decide task completion yourself — don\'t pad. On loop_end / idle / action_complete iterations, end the loop by emitting no tool calls (text alone, or nothing). On owner-chat / attack iterations, end the loop by calling `end_loop` (text alone keeps the loop alive waiting for the next event).',
   'If you have owner_goals, prioritize progressing them. Otherwise pick a self_goal or freely play.',
 ].join('\n')
 
@@ -138,13 +135,15 @@ const ACTION_DESCRIPTIONS = {
 // the iteration loop alive and the LLM hot-spams follow() each turn, starving
 // the tick. Classify them as personality so a follow-only turn is terminal.
 //
-// 260513-wkd: `stop` is the explicit "task done, abandon in_flight, hold
-// position" tool. It is terminal (no follow-up iteration) AND, in Task 2,
-// causes the orchestrator to abort the in_flight AbortController so the
-// long-runner halts within one signal tick. In Task 1 (this commit), stop is
-// registered + classified terminal; the body still blocks on dispatch so the
-// abort path is no-op in practice (no in_flight is live mid-iteration).
-const PERSONALITY_NAMES = new Set(['setGoals', 'noteToSelf', 'follow', 'unfollow', 'stop'])
+// 260514-ngj: `stop` retired — see `end_loop` notes above.
+// 260514-ngj: `stop` tool retired, replaced by `end_loop` (clearer semantics
+// — the model uses end_loop ONLY when it has decided the current loop is done
+// or wants to abandon the current task). On P0/P1-triggered iterations, the
+// model now has four response options (R1-R4): text-only continues, text +
+// new action switches in-place, text + end_loop terminates, text + end_loop
+// + new action terminates AND reseeds. On P2/P3-triggered iterations, text-
+// only still terminates the loop (unchanged).
+const PERSONALITY_NAMES = new Set(['setGoals', 'noteToSelf', 'follow', 'unfollow', 'end_loop'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 /**
@@ -437,15 +436,16 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         required: ['kind', 'summary'],
       },
     },
-    // 260513-wkd: `stop` is the explicit cancel-semantics signal. The model
-    // emits it when an owner says "we have enough" / "stop" mid-action, or
-    // when the model itself decides an in-flight long-runner should end.
-    // No args, returns 'stopped'. Terminal (in PERSONALITY_NAMES). Task 2
-    // wires the orchestrator to abort the in_flight AbortController on this
-    // call so the long-running behavior halts within one signal tick.
+    // 260514-ngj: `end_loop` replaces `stop`. The model emits it when the
+    // owner's request is fully handled and there's nothing more to wait for,
+    // or when it wants to abandon the current task. Required to end the loop
+    // on iterations triggered by owner chat or being attacked (P0/P1) —
+    // otherwise text alone keeps the loop alive waiting for the next event.
+    // On P2/P3-triggered iterations, text alone still ends the loop (the
+    // body has nothing to react to). Aborts any in-flight long-runner.
     {
-      name: 'stop',
-      description: "Signal that the current task is done and you intend to hold position. Use ONLY when an in-flight long-running action (gather, dig, build, attack, goTo) should be aborted because the owner just told you to stop or you've decided the task is complete. Pair with a spoken acknowledgement in your text. No args. Returns 'stopped'.",
+      name: 'end_loop',
+      description: "End the current loop. Use when the owner's request is fully handled and there's nothing more to wait for, or when you want to abandon the current task. Pair with text. Required to end the loop on iterations triggered by owner chat or being attacked; otherwise text alone is enough.",
       input_schema: { type: 'object', properties: {}, additionalProperties: false },
     },
   ]
@@ -546,22 +546,23 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // 260514-gam D1 (B/A/A locked): every world-touching tool dispatches
   // non-blocking via startLongRunner so the loop suspends and is preemptible
   // by P1 owner-chat / P0 attack within one signal tick. Only pure-metadata
-  // tools (setGoals / noteToSelf / stop) stay inline — they complete in
+  // tools (setGoals / noteToSelf / end_loop) stay inline — they complete in
   // microseconds and gain nothing from suspend/resume, and routing them
   // through action_complete would inflate iteration count and add a haiku
   // continuation per call for no benefit.
   //
-  // Dispatch model after 260514-gam:
+  // Dispatch model after 260514-gam (refined by 260514-ngj):
   //   - INLINE_METADATA tool → fill result inline via inflight.start/end,
   //     keep processing the same batch.
   //   - Anything else → startLongRunner, stash remaining tool_uses on
   //     loop._pendingToolUses, suspend. handleActionComplete drains the
   //     queue one tool at a time. ONE haiku call fires per logical turn,
   //     not per tool.
-  //   - case-2 (stop) and case-3 (reseed) abort loop.inFlight.abortController;
-  //     since every non-inline tool now goes through startLongRunner, those
-  //     branches transparently apply to sync tools too.
-  const INLINE_METADATA = new Set(['setGoals', 'noteToSelf', 'stop'])
+  //   - R3 (end_loop) and R4 (end_loop + new action) abort
+  //     loop.inFlight.abortController; since every non-inline tool now goes
+  //     through startLongRunner, those branches transparently apply to sync
+  //     tools too.
+  const INLINE_METADATA = new Set(['setGoals', 'noteToSelf', 'end_loop'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -589,7 +590,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
    * world-touching tool — sync (placeBlock, equip, find, lookAt, dropItem,
    * activateItem, sleep, openContainer, depositItem, withdrawItem,
    * consumeItem, follow, unfollow) and async (goTo, gather, dig, build,
-   * attackEntity) alike. Only INLINE_METADATA (setGoals/noteToSelf/stop)
+   * attackEntity) alike. Only INLINE_METADATA (setGoals/noteToSelf/end_loop)
    * skip this path.
    *
    * The returned `abortController` is INDEPENDENT of the loop's outer
@@ -804,7 +805,19 @@ function maybeWarnByteCap(loop, warned) {
     // text emissions). classifyChatEvent handles owner_chat / sei:chat_received
     // aliases.
     loop._triggerEvent = event
+    // 260514-ngj: capture the trigger event's data so R4 (end_loop + new
+    // action) can reseed a fresh loop with the ORIGINAL trigger payload
+    // (preserves owner chat text, attacker label, etc.). Pre-260514-ngj this
+    // was implicitly null, which made the case-3 reseed path lose the
+    // owner-chat context entirely.
+    loop._triggerData = data ?? null
     loop._ownerSpoke = !!data?.ownerSpoke || event === 'owner_chat'
+    // 260514-ngj: per-iteration trigger flag. At loop creation it equals
+    // _triggerEvent; handleActionComplete updates it to reflect the SOURCE
+    // of each subsequent iteration (PLAYER INTERRUPT mid-loop preempt resets
+    // it back to 'sei:chat_received'; a natural action_complete sets it to
+    // 'sei:action_complete'). Used by runIterations to decide R1-R4 gating.
+    loop._currentIterationTrigger = event
     // Plan 03.1-09 (D-W-7): track goTo cant_reach destinations seen this loop.
     // Key: `${x}|${y}|${z}|${range}`. Value: count. On count >= 2 we inject a
     // one-shot nudge referencing the SYSTEM_INSTRUCTIONS Pathfinder rule
@@ -1052,9 +1065,13 @@ function maybeWarnByteCap(loop, warned) {
         return { result: { type: 'tool_result', tool_use_id: use.id, content: `error: ${err.message}`, is_error: true }, terminate: false }
       }
     }
-    if (use.name === 'stop') {
-      lastActionResult = 'stopped'
-      return { result: { type: 'tool_result', tool_use_id: use.id, content: 'stopped', is_error: false }, terminate: true }
+    if (use.name === 'end_loop') {
+      // 260514-ngj: end_loop replaces stop. Same inline-metadata shape —
+      // fill the result slot synchronously and flag terminate=true so the
+      // caller flips loop.isTerminal. The actual R3/R4 dispatch logic
+      // (in_flight abort + optional reseed) lives in runIterations.
+      lastActionResult = 'loop ended'
+      return { result: { type: 'tool_result', tool_use_id: use.id, content: 'loop ended', is_error: false }, terminate: true }
     }
     if (use.name === 'noteToSelf') {
       try {
@@ -1458,7 +1475,11 @@ function maybeWarnByteCap(loop, warned) {
       //                                       in_flight (if any) aborts, the
       //                                       new long-runner becomes the
       //                                       in_flight of the same loop.
-      const hasStop = toolUses.some(u => u.name === 'stop')
+      // 260514-ngj: `stop` retired, `end_loop` replaces it. Variable renamed
+      // to `hasEndLoop` for clarity. The dispatcher semantics in this Task 1
+      // commit still follow the old case-2 (terminate) / case-3 (reseed)
+      // intent — Task 2 replaces this whole block with the R1-R4 model.
+      const hasEndLoop = toolUses.some(u => u.name === 'end_loop')
       // 260514-gam: every non-inline-metadata tool now suspends the loop, so
       // the case-3 "new long-running tool present" predicate naturally extends
       // to every world-touching tool. Variable name retained as
@@ -1470,20 +1491,25 @@ function maybeWarnByteCap(loop, warned) {
       // otherwise the very first iteration of a P1-triggered fresh loop
       // would falsely reseed itself.
       const isContinuation = !!loop._isContinuation
+      // 260514-ngj: dropped sei:joined from the P0/P1 trigger set — spawn
+      // first-fire now enqueues sei:idle (P3) instead, so sei:joined is no
+      // longer a routable orchestrator event.
       const triggerIsP0P1 = (() => {
         const e = loop._triggerEvent
-        return e === 'owner_chat' || e === 'sei:chat_received' || e === 'sei:attacked' || e === 'sei:joined'
+        return e === 'owner_chat' || e === 'sei:chat_received' || e === 'sei:attacked'
       })()
 
-      if (hasStop) {
-        // Case 2 — abort the in_flight (if any) so the long-running behavior
-        // halts within one signal tick. handleActionComplete will see the
-        // aborted result; loop.isTerminal prevents another iteration there.
+      if (hasEndLoop) {
+        // Case 2 (interim, retained from 260513-wkd dispatcher; Task 2
+        // replaces with R3/R4 split) — abort the in_flight (if any) so the
+        // long-running behavior halts within one signal tick.
+        // handleActionComplete will see the aborted result; loop.isTerminal
+        // prevents another iteration there.
         if (loop.inFlight) {
-          logger.debug?.(`[sei/orch] cancel-case=2 stop tool — aborting in_flight ${loop.inFlight.name}`)
+          logger.debug?.(`[sei/orch] cancel-case=2 end_loop tool — aborting in_flight ${loop.inFlight.name}`)
           try { loop.inFlight.abortController.abort() } catch {}
         } else {
-          logger.debug?.(`[sei/orch] cancel-case=2 stop tool — no in_flight to abort`)
+          logger.debug?.(`[sei/orch] cancel-case=2 end_loop tool — no in_flight to abort`)
         }
         loop.isTerminal = true
       } else if (isContinuation && newSuspendingTools.length > 0) {
