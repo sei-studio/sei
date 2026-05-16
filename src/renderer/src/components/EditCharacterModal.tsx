@@ -1,18 +1,26 @@
 /**
- * EditCharacterModal — inline edit for a character's name, description, and
- * persona prompt. Also houses destructive actions (Delete, Reset memory) in
- * a footer Danger section: Delete is gated through DeleteConfirmModal;
+ * EditCharacterModal — inline edit for a character's name and persona
+ * source. Also houses destructive actions (Delete, Reset memory) in a
+ * footer Danger section: Delete is gated through DeleteConfirmModal;
  * Reset memory uses an inline two-click confirm.
  *
- * Pattern lifted from LanModal/DeleteConfirmModal for backdrop + ESC handling.
+ * 260516-0yw:
+ *  - The description field is dropped entirely; persona prompt is renamed
+ *    to PERSONA SOURCE (the short user blurb).
+ *  - A collapsible "EXPANDED PROMPT (read-only)" section shows the
+ *    LLM-generated long-form prompt. Default collapsed; Copy button
+ *    writes to clipboard. When persona.expanded is empty, a hint is
+ *    shown instead of the preview.
+ *  - Save runs the main-process LLM expansion call (typical 3–8s);
+ *    button text becomes "Generating persona…" while in flight.
+ *  - sei.saveCharacter now returns the persisted Character; we
+ *    refreshCharacter from the store to pick up persona.expanded.
  *
  * Validation:
  *  - name must be non-empty trimmed
- *  - persona_prompt must be non-empty trimmed
- *  - description may be empty
+ *  - persona.source must be non-empty trimmed
  *
- * On Save: sei.saveCharacter({...character, name, description, persona_prompt})
- *  → useDataStore.refreshCharacter(id) → onClose().
+ * Pattern lifted from LanModal/DeleteConfirmModal for backdrop + ESC handling.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -37,14 +45,15 @@ export function EditCharacterModal({
   onSaved,
 }: EditCharacterModalProps): React.ReactElement {
   const [name, setName] = useState<string>(character.name);
-  const [description, setDescription] = useState<string>(character.description ?? '');
-  const [personaPrompt, setPersonaPrompt] = useState<string>(character.persona_prompt ?? '');
+  const [personaSource, setPersonaSource] = useState<string>(character.persona.source ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState<boolean>(false);
   const [confirmingReset, setConfirmingReset] = useState<boolean>(false);
   const [resetting, setResetting] = useState<boolean>(false);
   const [resetDone, setResetDone] = useState<boolean>(false);
+  const [expandedOpen, setExpandedOpen] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
 
   const removeCharacter = useDataStore((s) => s.removeCharacter);
   const navigate = useUiStore((s) => s.navigate);
@@ -62,32 +71,42 @@ export function EditCharacterModal({
 
   const onSave = async (): Promise<void> => {
     const trimmedName = name.trim();
-    const trimmedPersona = personaPrompt.trim();
+    const trimmedSource = personaSource.trim();
     if (!trimmedName) {
       setError('Name cannot be empty.');
       return;
     }
-    if (!trimmedPersona) {
-      setError('Persona prompt cannot be empty.');
+    if (!trimmedSource) {
+      setError('Persona source cannot be empty.');
       return;
     }
     setSaving(true);
     setError(null);
-    const updated: Character = {
+    // Send the SOURCE (not expanded) — main will regenerate `expanded`
+    // from the new source using the prior expansion as voice-continuity
+    // reference, then return the persisted Character.
+    const draft: Character = {
       ...character,
       name: trimmedName,
-      description: description, // preserve user whitespace
-      persona_prompt: personaPrompt,
+      persona: {
+        source: trimmedSource,
+        expanded: character.persona.expanded, // ignored by main; expandAndSaveCharacter rewrites it
+      },
     };
     try {
-      await sei.saveCharacter(updated);
+      const persisted = await sei.saveCharacter(draft);
+      // refreshCharacter re-fetches from main into the store. The returned
+      // `persisted` already has the new expanded prompt, but going through
+      // the store's refresh path keeps the same single source-of-truth
+      // shape with the rest of the UI.
       await useDataStore.getState().refreshCharacter(character.id);
-      onSaved?.(updated);
+      onSaved?.(persisted);
       onClose();
     } catch (err) {
+      const msg = (err as Error)?.message ?? 'Failed to save.';
       // eslint-disable-next-line no-console
       console.error('[EditCharacterModal] saveCharacter failed', err);
-      setError('Failed to save. Try again.');
+      setError(msg);
       setSaving(false);
     }
   };
@@ -126,6 +145,18 @@ export function EditCharacterModal({
     }
   };
 
+  const onCopyExpanded = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(character.persona.expanded ?? '');
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // No-op — clipboard may be unavailable in some contexts.
+    }
+  };
+
+  const hasExpanded = (character.persona.expanded ?? '').trim().length > 0;
+
   return (
     <>
       <div
@@ -153,26 +184,47 @@ export function EditCharacterModal({
           </div>
 
           <div className={styles.field}>
-            <label className={styles.label}>DESCRIPTION</label>
+            <label className={styles.label}>PERSONA SOURCE</label>
             <TextField
-              value={description}
-              onChange={setDescription}
+              value={personaSource}
+              onChange={setPersonaSource}
               multiline
-              rows={3}
-              aria-label="Character description"
+              rows={4}
+              aria-label="Persona source"
             />
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.label}>PERSONA PROMPT</label>
-            <TextField
-              value={personaPrompt}
-              onChange={setPersonaPrompt}
-              multiline
-              rows={12}
-              monospace
-              aria-label="Persona prompt"
-            />
+          {/* 260516-0yw: collapsible read-only expanded-prompt preview */}
+          <div className={styles.expandedSection}>
+            <button
+              type="button"
+              className={styles.expandedToggle}
+              onClick={() => setExpandedOpen((v) => !v)}
+              aria-expanded={expandedOpen}
+            >
+              <span className={styles.expandedCaret} aria-hidden="true">
+                {expandedOpen ? '▾' : '▸'}
+              </span>
+              <span>EXPANDED PROMPT (read-only)</span>
+            </button>
+            {expandedOpen ? (
+              hasExpanded ? (
+                <div className={styles.expandedBody}>
+                  <button
+                    type="button"
+                    className={styles.expandedCopy}
+                    onClick={() => void onCopyExpanded()}
+                  >
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                  <pre className={styles.expandedPre}>{character.persona.expanded}</pre>
+                </div>
+              ) : (
+                <div className={styles.expandedHint}>
+                  Save the character to generate the expanded prompt.
+                </div>
+              )
+            ) : null}
           </div>
 
           {!isDefault ? (
@@ -217,7 +269,7 @@ export function EditCharacterModal({
               onClick={() => void onSave()}
               disabled={saving}
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Generating persona…' : 'Save'}
             </Button>
           </div>
         </div>

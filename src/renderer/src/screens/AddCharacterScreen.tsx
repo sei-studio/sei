@@ -1,20 +1,21 @@
 /**
- * AddCharacterScreen — 3-step new character flow.
+ * AddCharacterScreen — 2-step new character flow (260516-0yw).
  *
- * Steps (per UI-SPEC §AddCharacterScreen + D-46..D-48):
+ * Steps:
  *  0. Name (sans).
- *  1. Description — eyebrow "Shown to you", multiline 5 rows (D-47).
- *  2. Persona prompt — eyebrow "Sent to the model", multiline 7 rows mono (D-48).
+ *  1. Persona source — eyebrow "Shown to the model after expansion",
+ *     short blurb (4 rows). Save triggers the main-process LLM expansion
+ *     (typical 3–8s); the renderer shows a "Generating persona…" status
+ *     and only navigates after the call resolves.
  *
  * On Create:
  *  - Compute id via slugify(name, existingIds) — collision-safe -2/-3 suffix.
- *  - Build Character JSON (D-11): `is_default: false`, `created` ISO now,
- *    `last_launched: null`, `playtime_ms: 0`, `portrait_image: null` (D-14
- *    image override is V2 — keep null).
- *  - sei.saveCharacter (Zod-validated server-side; T-04-31 mitigation).
- *  - addCharacter to local store + navigate to CharacterPage.
+ *  - Build Character JSON with persona { source, expanded:'' }. Main
+ *    runs the expansion in expandAndSaveCharacter and returns the
+ *    persisted Character (with persona.expanded populated).
+ *  - addCharacter(persisted) to local store; navigate to CharacterPage.
  *
- * Source: 04-07 Task 3.
+ * Source: 04-07 Task 3; 260516-0yw plan §Task 3.
  */
 
 import React, { useState } from 'react';
@@ -26,7 +27,7 @@ import { TextField } from '../components/TextField';
 import { slugify } from '../lib/slug';
 import type { Character } from '@shared/characterSchema';
 
-const STEPS = 3;
+const STEPS = 2;
 
 export function AddCharacterScreen(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
@@ -34,8 +35,7 @@ export function AddCharacterScreen(): React.ReactElement {
   const addCharacter = useDataStore((s) => s.addCharacter);
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [personaPrompt, setPersonaPrompt] = useState('');
+  const [personaSource, setPersonaSource] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -49,8 +49,7 @@ export function AddCharacterScreen(): React.ReactElement {
 
   const validate = (): boolean => {
     if (step === 0) return name.trim() !== '';
-    if (step === 1) return true; // description optional
-    if (step === 2) return personaPrompt.trim() !== '' && !submitting;
+    if (step === 1) return personaSource.trim() !== '' && !submitting;
     return false;
   };
 
@@ -64,22 +63,27 @@ export function AddCharacterScreen(): React.ReactElement {
     try {
       const existingIds = characters.map((c) => c.id);
       const id = slugify(name.trim(), existingIds);
-      const character: Character = {
+      const draft: Character = {
         id,
         name: name.trim(),
-        description: description.trim(),
-        persona_prompt: personaPrompt.trim(),
+        persona: {
+          source: personaSource.trim(),
+          expanded: '',
+        },
         is_default: false,
         created: new Date().toISOString(),
         last_launched: null,
         playtime_ms: 0,
         portrait_image: null,
       };
-      await sei.saveCharacter(character);
-      addCharacter(character);
-      navigate({ kind: 'character', id });
+      // 260516-0yw: sei.saveCharacter now returns the persisted Character
+      // (with persona.expanded populated by the main-process LLM call).
+      // Insert the returned object — not the draft — so the local store
+      // mirrors what's actually on disk.
+      const persisted = await sei.saveCharacter(draft);
+      addCharacter(persisted);
+      navigate({ kind: 'character', id: persisted.id });
     } catch (err) {
-      // Plan 09 will replace with ERROR_COPY[errorClass] once lib/errors.ts ships.
       setError((err as Error).message);
     } finally {
       setSubmitting(false);
@@ -108,50 +112,26 @@ export function AddCharacterScreen(): React.ReactElement {
     );
   }
 
-  // ── Step 1 — Description ────────────────────────────────────────────────
-  if (step === 1) {
-    return (
-      <QuestionShell
-        eyebrow="Shown to you"
-        title="Describe them."
-        hint="A short bio that appears on this character's page. Just for you — purely flavour."
-        stepCount={STEPS}
-        currentStep={step}
-        onBack={back}
-        onNext={next}
-      >
-        <TextField
-          value={description}
-          onChange={setDescription}
-          multiline
-          rows={5}
-          aria-label="Description"
-        />
-      </QuestionShell>
-    );
-  }
-
-  // ── Step 2 — Persona prompt ─────────────────────────────────────────────
+  // ── Step 1 — Persona source ─────────────────────────────────────────────
   return (
     <QuestionShell
-      eyebrow="Sent to the model"
-      title="Write the persona prompt."
-      hint="The system instruction the language model receives. Speak to the model directly."
+      eyebrow="Shown to the model after expansion"
+      title="Write a short persona blurb."
+      hint="A short description of who this character is. The model expands this into the full prompt when you save."
       stepCount={STEPS}
       currentStep={step}
       onBack={back}
       onNext={next}
-      nextLabel="Create"
+      nextLabel={submitting ? 'Generating…' : 'Create'}
       nextKind="accent"
       nextDisabled={!validate()}
     >
       <TextField
-        value={personaPrompt}
-        onChange={setPersonaPrompt}
+        value={personaSource}
+        onChange={setPersonaSource}
         multiline
-        rows={7}
-        monospace
-        aria-label="Persona prompt"
+        rows={4}
+        aria-label="Persona source"
       />
       {error ? (
         <div

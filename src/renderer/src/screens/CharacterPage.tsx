@@ -6,8 +6,9 @@
  * Source: 04-UI-SPEC.md §CharacterPage; D-49..D-53; quick task 260508-mun.
  *
  * Tabs (Persona prompt / Logs) were removed in 260508-mun. The standalone
- * Persona prompt tab is replaced by the Edit modal (name + description +
- * persona_prompt). The Logs tab is replaced by the global bottom LogsBar.
+ * Persona prompt tab is replaced by the Edit modal (name + persona source +
+ * collapsible expanded-prompt preview, per 260516-0yw). The Logs tab is
+ * replaced by the global bottom LogsBar.
  *
  * Stats grid: Last launched / Total playtime / Created. '—' for never-summoned (D-51).
  *
@@ -191,11 +192,14 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           <div className={styles.eyebrow}>{isDefault ? 'DEFAULT' : 'CUSTOM'}</div>
           <h1 className={styles.title}>{character.name}</h1>
 
+          {/* 260516-0yw: description retired; show the persona source blurb instead.
+              The full LLM-expanded prompt lives behind the collapsible preview in
+              EditCharacterModal. */}
           <div className={styles.card}>
             <div className={styles.cardEyebrow}>
-              DESCRIPTION <span className={styles.tag}>For you</span>
+              PERSONA SOURCE <span className={styles.tag}>For you</span>
             </div>
-            <div className={styles.cardBody}>{character.description || '—'}</div>
+            <div className={styles.cardBody}>{character.persona.source || '—'}</div>
           </div>
 
           <div className={styles.stats}>
