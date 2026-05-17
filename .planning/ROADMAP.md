@@ -12,8 +12,10 @@
 - [x] **Phase 3: Memory & Persistence** - Active-loop architecture (Loop owns canonical messages, single-flight gating, abort-and-resume, 20-iter cap), markdown OWNER.md + DIARY.md memory layer with seed-loader, and LLM-directed compaction (per-Loop summary + async session-end consolidation, both reusing cached system blocks). MEM-05 SQLite deferred to V2.
 - [x] **Phase 4: Electron GUI & Packaging** - Setup form, Start/Stop, live log viewer, and bundled .dmg/.exe distribution
 - [x] **Phase 5: Debug log readability (PROMOTED from 999.2)** - Event-per-line emission with explicit \n between [haiku?] / [haiku!] / [chat->] sections; cache-prefix elision via hash reference
-- [ ] **Phase 6: Scavenging redesign (PROMOTED from 999.1)** - Veined tallying within chunk, smart_find for cross-chunk navigation, find() for NL-to-item resolution
-- [ ] **Phase 7: Pillar-up / scaffolding behavior (PROMOTED from 999.3)** - placeBlock/equip wiring + pillarUp orchestrator so bot can reach elevated targets
+- [x] **Phase 6: Scavenging redesign (PROMOTED from 999.1)** - Veined tallying within chunk, smart_find for cross-chunk navigation, find() for NL-to-item resolution
+- [x] **Phase 7: Pillar-up / scaffolding behavior (PROMOTED from 999.3)** - placeBlock/equip wiring + pillarUp orchestrator so bot can reach elevated targets
+- [ ] **Phase 8: Windows cross-platform compatibility** - Verify and fix Sei to run on Windows (precondition for Phase 9 wizard)
+- [ ] **Phase 9: Custom bot skins via CustomSkinLoader** - Setup wizard auto-installs Fabric Loader + CustomSkinLoader; user uploads/searches skin with 3D preview; bot joins LAN world wearing chosen skin under chosen username
 
 ## Phase Details
 
