@@ -280,7 +280,7 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 08-01-static-audit-and-appid-lock-PLAN.md — Static audit of every cross-platform-sensitive file (08-HOTSPOTS.md) + lock electron-builder.yml appId to com.sei.app (closes Phase 4 04-10 BLOCKING)
+- [x] 08-01-static-audit-and-appid-lock-PLAN.md — Static audit of every cross-platform-sensitive file (08-HOTSPOTS.md, 24 rows) + lock electron-builder.yml appId to com.sei.app (closes Phase 4 04-10 BLOCKING)
 - [ ] 08-02-windows-dev-smoke-PLAN.md — USER runs npm install + npm run dev on Windows 10/11 x64; produces 08-DEV-SMOKE.md + seeds 08-WINDOWS-DEFECTS.md
 - [ ] 08-03-windows-packaged-smoke-and-defect-fix-PLAN.md — USER runs npm run dist:win + installs NSIS .exe on clean Windows profile; executor ships atomic fix(08-win): commits for OPEN defects until all 6 Bars PASS
 - [ ] 08-04-documentation-PLAN.md — README Windows section + RELEASE-NOTES Windows entry + 08-WINDOWS-GUIDE.md canonical reference (autonomous, no live Windows needed)

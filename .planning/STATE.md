@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-17T23:44:57.441Z"
+last_updated: "2026-05-17T23:49:58Z"
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 52
-  completed_plans: 48
-  percent: 92
+  completed_plans: 49
+  percent: 94
 ---
 
 # State: Sei
@@ -17,19 +17,19 @@ progress:
 ## Project Reference
 
 - **Core Value:** A Minecraft companion that feels like a real character — it remembers you, reacts to the world, and acts with personality, not like a scripted bot.
-- **Current Focus:** Phase 08 — Windows cross-platform compatibility (CONTEXT captured 2026-05-17)
+- **Current Focus:** Phase 8 — Windows cross-platform compatibility
 
 ## Current Position
 
-Phase: 08 (Windows cross-platform compatibility) — CONTEXT CAPTURED
-CONTEXT.md committed (auto-mode discuss). Wave plan: static audit → smoke test on Windows VM (dev + packaged) → fix defects atomically → document.
-Next: `/clear` then `/gsd-plan-phase 8` to break down into wave-based plans.
+Phase: 8 (Windows cross-platform compatibility) — EXECUTING
+Plan: 2 of 4 (Plan 01 complete — static audit + appId locked to com.sei.app)
+Wave 1 done (audit + lock). Next: Wave 2 (Plan 08-02) — USER runs `npm install` + `npm run dev` on Windows 10/11 x64; produces 08-DEV-SMOKE.md.
 
 - **Phase:** 08
-- **Plan:** 0/0 — pending plan-phase
-- **Status:** Ready to execute
-- **Progress:** [█████████░] 90%
-- **Next action:** `/clear` then `/gsd-plan-phase 8` — Windows cross-platform compatibility
+- **Plan:** 1/4 — Plan 01 complete; Plan 02 (Windows dev smoke) next
+- **Status:** Executing Phase 8 (Wave 2 awaiting Windows VM)
+- **Progress:** [█████████▌] 94%
+- **Next action:** `/gsd-execute-phase 8` Plan 02 — Windows dev smoke (requires Windows VM)
 
 ```
 [DONE] Phase 1    Bot Substrate
@@ -85,6 +85,10 @@ Next: `/clear` then `/gsd-plan-phase 8` to break down into wave-based plans.
 - External FSM signal is captured on `loop._externalSignal` and re-bridged on every `replaceAbortController` via `bridgeExternalAbort(loop)`; second-turn external aborts route to the swapped controller (WR-02, plan 03.1-10)
 - `sei:attacked` arriving mid-loop preserves any pending owner-chat into `pendingAttack.preservedInterrupt`; finally re-enqueues the chat at P1 after the P0 attack — priority queue handles ordering (WR-04, plan 03.1-10)
 - `composeSeedBlocks` plumbs an optional `logger = console` so the AFFECT.md catch can narrow to `ENOENT`/`EACCES` and warn on coding-bug errors (WR-08, plan 03.1-10)
+- electron-builder.yml `appId: com.sei.app` LOCKED (2026-05-17, Phase 8 Plan 01 Task 2) — conventional reverse-DNS, no domain-ownership coupling. Irrevocable per threat T-08-01 (post-release change strands every Keychain/DPAPI entry).
+- electron-builder.yml `productName: Sei` preserved — drives `%APPDATA%\Sei\` (Windows) / `~/Library/Application Support/Sei/` (mac) / `~/.config/Sei/` (linux) userData resolution. Matches `src/bot/cli/index.js:electronUserDataDir` hardcoded `APP = 'Sei'`.
+- mac.identity TODO in electron-builder.yml (Apple Developer cert) explicitly NOT closed by Phase 8 — separate concern, remains user-side blocker for future signing phase.
+- Phase 8 audit pattern established: 08-HOTSPOTS.md as 24-row table with SAFE/SUSPECT/FIX-INLINE/DEFER-TO-LIVE status; every DEFER-TO-LIVE row maps directly to a Wave 2 or Wave 3 verification checklist item.
 
 ### Todos
 
@@ -132,11 +136,11 @@ Next: `/clear` then `/gsd-plan-phase 8` to break down into wave-based plans.
 
 ## Session Continuity
 
-- **Last action:** Phase 8 (Windows cross-platform compatibility) CONTEXT captured via `/gsd-autonomous` (auto-mode). Strategy locked: light static audit → smoke test on Windows VM (dev + packaged) → atomic fix commits → docs. Existing paths.ts / CLI / electron-builder.yml already appear cross-platform safe; phase verifies on real Windows. Also: roadmap housekeeping (marked Phases 6/7 [x] in summary; added Phases 8/9 to summary list).
-- **Next action:** `/clear` then `/gsd-plan-phase 8` to break Phase 8 into wave-based plans. Phase 9 (`/gsd-plan-phase 9`) follows after Phase 8 lands.
+- **Last action:** Phase 8 Plan 01 executed (Wave 1: static audit + appId lock). Produced 08-HOTSPOTS.md (24 rows: 19 SAFE / 1 SUSPECT / 1 FIX-INLINE / 4 DEFER-TO-LIVE). Locked electron-builder.yml `appId: com.sei.app` (was `app.sei.placeholder`), closing Phase 4 04-10 BLOCKING. mac.identity TODO preserved as separate Apple Developer cert concern. Commits: `0707b44` (Task 1 docs), `02c8d4a` (Task 2 fix).
+- **Next action:** Plan 08-02 (Windows dev smoke) — requires a Windows 10/11 x64 VM. USER runs `npm install` + `npm run dev`; produces 08-DEV-SMOKE.md and seeds 08-WINDOWS-DEFECTS.md.
 
 ---
-*Last updated: 2026-05-17 — Phase 8 context captured (Windows cross-platform compat). Ready for plan-phase. Roadmap housekeeping: marked Phases 6/7 [x] in summary; added Phases 8/9 to summary list.*
+*Last updated: 2026-05-17 — Phase 8 Plan 01 (static audit + appId lock) complete. electron-builder.yml `appId: com.sei.app` LOCKED; 08-HOTSPOTS.md seeds Wave 2/3 verification checklist. Next: Plan 02 (Windows dev smoke) requires a Windows VM.*
 | 2026-05-03 | fast | attack pursues + zod entity schema cleanup | done |
 | 2026-05-05 | fast | docs cleanup: remove two-layer/ollama from README+ARCHITECTURE | done |
 | 2026-05-05 | fast | drop port from persisted config; LAN discovery is the only path | done |
