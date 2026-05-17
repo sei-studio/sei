@@ -49,7 +49,7 @@ export const EXPANSION_SYSTEM = [
   '3. `# DEFAULT DYNAMIC WITH THE PLAYER` — their default relationship stance toward the human player (servant, rival, friend, lover, stranger, etc.) and how it shapes the way they talk to the player.',
   '4. `# PROACTIVENESS` — when this character initiates conversation versus when they stay silent. Be specific: idle ticks, post-action moments, the player joining, etc.',
   '5. `# REACTIONS` — bullet list keyed by: commanded, insulted, praised, ignored, attacked. One short line per key describing how this character reacts.',
-  '6. `# MEMORY — write in YOUR voice` — 2 good vs 2 bad example MEMORY.md entries for THIS character. Good entries are in their voice and capture what they would actually remember about a moment with the player. Bad entries are flat / generic / out-of-character. Show, do not tell.',
+  '6. `# MEMORY` — how this character writes MEMORY.md entries (always in their own voice, first-person, subjective). Show 2 good vs 2 bad example entries for THIS character. Good entries are in their voice and capture what they would actually remember about a moment with the player. Bad entries are flat / generic / out-of-character. Show, do not tell.',
   '',
   'Style rules:',
   '- Address the prompt to "you" — the character\'s identity, second person.',
@@ -78,13 +78,23 @@ export interface ExpandPersonaResult {
   expanded: string;
 }
 
-const REQUIRED_SECTION_HEADERS = [
-  '# IDENTITY',
-  '# VOICE',
-  '# DEFAULT DYNAMIC WITH THE PLAYER',
-  '# PROACTIVENESS',
-  '# REACTIONS',
-  '# MEMORY — write in YOUR voice',
+/**
+ * Tolerant section-header detectors. Haiku 4.5 doesn't always render the
+ * exact byte sequence we asked for: em-dashes become hyphens, casing can
+ * drift, leading `#` may be `##`, and trailing punctuation comes and goes.
+ * Each entry is a regex that asserts the section is present *somewhere*
+ * in the output. We anchor to a leading `#` so we don't false-positive on
+ * the header words appearing inside a body sentence.
+ */
+const REQUIRED_SECTION_HEADERS: { name: string; re: RegExp }[] = [
+  { name: 'IDENTITY',       re: /^\s*#+\s*IDENTITY\b/im },
+  { name: 'VOICE',          re: /^\s*#+\s*VOICE\b/im },
+  { name: 'DEFAULT DYNAMIC', re: /^\s*#+\s*DEFAULT\s+DYNAMIC\b/im },
+  { name: 'PROACTIVENESS',  re: /^\s*#+\s*PROACTIVENESS\b/im },
+  { name: 'REACTIONS',      re: /^\s*#+\s*REACTIONS\b/im },
+  // MEMORY header may use em-dash, en-dash, or hyphen between MEMORY and
+  // the qualifier — accept any. Also accept MEMORY alone (no qualifier).
+  { name: 'MEMORY',         re: /^\s*#+\s*MEMORY\b/im },
 ];
 
 /**
@@ -174,13 +184,15 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   );
   const text = (firstText?.text ?? '').trim();
   if (!text) {
-    throw new Error('persona expansion failed: incomplete response');
+    console.error('[personaExpansion] empty text in response:', JSON.stringify(resp).slice(0, 500));
+    throw new Error('persona expansion failed: empty response from model');
   }
-  // Validate the six required section headers are present (substring check).
-  for (const header of REQUIRED_SECTION_HEADERS) {
-    if (!text.includes(header)) {
-      throw new Error('persona expansion failed: incomplete response');
-    }
+  // Validate the six required sections are present via tolerant regex.
+  const missing = REQUIRED_SECTION_HEADERS.filter(h => !h.re.test(text)).map(h => h.name);
+  if (missing.length > 0) {
+    console.error('[personaExpansion] missing sections:', missing.join(', '));
+    console.error('[personaExpansion] model returned:\n' + text);
+    throw new Error(`persona expansion failed: missing sections (${missing.join(', ')})`);
   }
   return { expanded: text };
 }

@@ -146,23 +146,23 @@ function makeCapturingClient(textResponse) {
   assert.ok(built.includes(priorText), '(2) buildExpansionUserMessage includes priorExpanded')
 }
 
-// ── 3. Incomplete response → throw with stable error message ──────────────
+// ── 3. Missing section header → throw naming the missing section ─────────
 {
   const { factory } = makeCapturingClient(CANNED_MISSING_SECTION)
   await assert.rejects(
     () => expandPersona({ source: 'X', apiKey: 'sk-fake', _clientFactory: factory }),
-    { message: /persona expansion failed: incomplete response/ },
-    '(3) missing section header must throw incomplete-response',
+    { message: /persona expansion failed: missing sections \(/ },
+    '(3) missing section header must throw missing-sections',
   )
 }
 
-// ── 4. Empty text → throw with stable error message ───────────────────────
+// ── 4. Empty text → throw with empty-response error ──────────────────────
 {
   const { factory } = makeCapturingClient(CANNED_EMPTY)
   await assert.rejects(
     () => expandPersona({ source: 'X', apiKey: 'sk-fake', _clientFactory: factory }),
-    { message: /persona expansion failed: incomplete response/ },
-    '(4) empty text must throw incomplete-response',
+    { message: /persona expansion failed: empty response from model/ },
+    '(4) empty text must throw empty-response',
   )
 }
 

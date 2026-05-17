@@ -2,8 +2,9 @@
  * CharacterCard — hover-overlay grid card with PixelPortrait + Summon button.
  *
  * Visual contract per UI-SPEC §HomeScreen §CharacterCard + D-49 (Summon icon
- * is sparkle, NOT play). Default badge for `id === 'sui'` (post-migration);
- * everything else is "CUSTOM".
+ * is sparkle, NOT play). Default badge for characters with `is_default: true`
+ * on the schema (shipped defaults: sui, mochineko, clawd); everything else is
+ * "CUSTOM".
  *
  * Click on the card body → onOpen (navigate to character page).
  * Click on the centered Summon overlay → onSummon (event stopPropagation
@@ -44,7 +45,7 @@ export function CharacterCard({
   onSummon,
 }: CharacterCardProps): React.ReactElement {
   const palette = pickPalette(c.id + c.name, theme);
-  const isDefault = c.id === 'sui';
+  const isDefault = c.is_default === true;
   return (
     <div className={styles.card} onClick={onOpen} role="button" tabIndex={0}>
       <div className={styles.portraitWrap}>

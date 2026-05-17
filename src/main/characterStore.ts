@@ -63,12 +63,35 @@ async function writeIndex(idx: CharacterIndex): Promise<void> {
 export async function listCharacters(): Promise<Character[]> {
   const idx = await loadIndex();
   const out: Character[] = [];
+  const legacyToPurge: string[] = [];
   for (const id of idx.order) {
     try {
       const c = await getCharacter(id);
       if (c) out.push(c);
     } catch (err) {
-      logger.warn(`characters/${id}.json failed to load: ${(err as Error).message}`);
+      const msg = (err as Error).message ?? '';
+      if (msg.includes('legacy shape')) {
+        // 260516-x62: self-heal. Old persona_prompt/description files are
+        // unparseable under the 260516-0yw schema. Rather than nagging the
+        // user forever, delete the JSON and drop it from the index. The
+        // memory dir is left alone (user may want it back if they re-create
+        // a character with the same id). Defaults seeded on next boot.
+        legacyToPurge.push(id);
+        logger.warn(`characters/${id}.json: legacy shape detected, purging (next boot will reseed defaults if applicable)`);
+      } else {
+        logger.warn(`characters/${id}.json failed to load: ${msg}`);
+      }
+    }
+  }
+  if (legacyToPurge.length > 0) {
+    for (const id of legacyToPurge) {
+      try { await unlink(paths.characterPath(id)); } catch { /* ignore */ }
+    }
+    const fresh = await loadIndex();
+    const next = fresh.order.filter(x => !legacyToPurge.includes(x));
+    if (next.length !== fresh.order.length) {
+      fresh.order = next;
+      await writeIndex(fresh);
     }
   }
   return out;

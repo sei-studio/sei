@@ -23,6 +23,7 @@ import { registerIpcHandlers } from './ipc';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
 import { runFirstLaunchMigration } from './migration';
+import { seedDefaultCharacters } from './defaultCharacters';
 import { backendKind } from './apiKeyStore';
 import { IpcChannel, type LanState, type BotStatus, type LogBatch } from '../shared/ipc';
 
@@ -79,6 +80,13 @@ async function bootstrap(): Promise<void> {
   // 1. Migration before any character is summoned (D-10)
   try { await runFirstLaunchMigration(); }
   catch (err) { logger.warn(`migration failed: ${(err as Error).message}`); }
+
+  // 1b. Seed shipped default characters (sui/mochineko/clawd). Idempotent
+  // via defaults-seeded.json so user deletions persist. Runs after the
+  // migration so a CLI-cloned `sui` wins over the shipped default if
+  // both paths fire.
+  try { await seedDefaultCharacters(); }
+  catch (err) { logger.warn(`seedDefaultCharacters failed: ${(err as Error).message}`); }
 
   // 2. Create main window
   mainWindow = createMainWindow({
