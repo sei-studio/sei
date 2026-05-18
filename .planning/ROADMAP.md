@@ -14,7 +14,7 @@
 - [x] **Phase 5: Debug log readability (PROMOTED from 999.2)** - Event-per-line emission with explicit \n between [haiku?] / [haiku!] / [chat->] sections; cache-prefix elision via hash reference
 - [x] **Phase 6: Scavenging redesign (PROMOTED from 999.1)** - Veined tallying within chunk, smart_find for cross-chunk navigation, find() for NL-to-item resolution
 - [x] **Phase 7: Pillar-up / scaffolding behavior (PROMOTED from 999.3)** - placeBlock/equip wiring + pillarUp orchestrator so bot can reach elevated targets
-- [ ] **Phase 8: Windows cross-platform compatibility** - Verify and fix Sei to run on Windows (precondition for Phase 9 wizard)
+- [x] **Phase 8: Windows cross-platform compatibility** - Verify and fix Sei to run on Windows (precondition for Phase 9 wizard) (completed 2026-05-18)
 - [ ] **Phase 9: Custom bot skins via CustomSkinLoader** - Setup wizard auto-installs Fabric Loader + CustomSkinLoader; user uploads/searches skin with 3D preview; bot joins LAN world wearing chosen skin under chosen username
 
 ## Phase Details
@@ -192,7 +192,7 @@ Each is unsequenced — promote to active milestone via `/gsd-review-backlog` wh
 **User quote (verbatim):** *"combine veined tallying for within chunk and smart_find for navigating to other chunks, i think we finally can make scavenging resources work."*
 **Why milestone-scope:** Snapshot composer rewrite + new tool registration + closed-world NL→item resolver — three coupled systems, not a single phase.
 **Requirements:** TBD
-**Plans:** 4/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 - [x] TBD (recommended: `/gsd-new-milestone` after Phase 03.1 ships, then `/gsd-discuss-phase` to scope each subsystem) (completed 2026-05-07)
@@ -300,7 +300,7 @@ Plans:
 - [x] 09-05-PLAN.md — Wizard orchestrator + IPC handlers (install + cancel via sessionId Map per BLOCKER 2) + main bootstrap port-drift detection (WARNING 7) + 2 verification scripts (split from prior Plan 04 per WARNING 4)
 - [x] 09-06-PLAN.md — Skin editor UI on CharacterPage: SkinEditor + SkinPreview3d (lazy skinview3d) + SkinUploadZone + UsernameSearchField + StatusPill; single applySkin call writes skin+username atomically (WARNING 5); preview useEffect deps include character.username (INFO 10)
 - [x] 09-07-PLAN.md — Setup wizard UI: SetupWizardModal (5 steps + 2 branches) + WizardStepShell + McInstallList/Row + InstallProgressList + Settings row + first-launch trigger; cancel button fires sei.wizardCancel(sessionId) — no renderer-local AbortController (BLOCKER 2 verified: `grep -c "new AbortController" useWizardStore.ts === 0`)
-- [ ] 09-08-PLAN.md — Master verify:phase9 harness + README/RELEASE-NOTES docs (incl. bundled-Java + CustomSkinAPI mentions) + 09-VERIFICATION.md goal-backward audit covering all BLOCKER/WARNING/INFO issues
+- [x] 09-08-PLAN.md — Master verify:phase9 harness + README/RELEASE-NOTES docs (incl. bundled-Java + CustomSkinAPI mentions) + 09-VERIFICATION.md goal-backward audit covering all BLOCKER/WARNING/INFO issues
 
 **References:**
 - `.planning/phases/09-.../260517-frz-CONTEXT.md` — locked decisions from discussion phase
