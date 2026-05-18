@@ -28,6 +28,38 @@ Then open a Minecraft world, click "Open to LAN", and run `sei start`. Re-run on
 - [ ] Real in-game vision.
 - [ ] GUI — Electron app with onboarding UI and signed installers, so the wider non-technical Minecraft community can use it.
 
+## Custom skins
+
+Sei can give each character a custom Minecraft skin and a custom in-game
+username, visible inside your own Minecraft world. The flow is:
+
+1. Open the Sei app. On first launch the setup wizard runs automatically.
+   (You can also re-run it later from Settings → "Re-run setup".)
+2. The wizard scans your Minecraft installs (vanilla launcher + CurseForge
+   instances) and installs [CustomSkinLoader](https://github.com/xfl03/MCCustomSkinLoader)
+   into each one you select. For vanilla installs the wizard also installs
+   [Fabric Loader](https://fabricmc.net/) for you using Minecraft's own
+   bundled Java runtime (no need to install Java yourself).
+3. On the character page, pick a skin: drop a 64×64 PNG, or search a real
+   Minecraft username. Sei previews the skin in 3D before you apply it.
+4. The next time you launch Minecraft, pick the new "fabric-loader" profile
+   from the launcher dropdown (or just launch your CurseForge instance
+   normally). When you summon a Sei character into your LAN world, the
+   bot will appear with the chosen skin and username.
+
+**About visibility on plain vanilla LAN:** custom skins are rendered
+client-side by CustomSkinLoader, so the host (you) sees them correctly.
+Friends connecting to your LAN world will see the bot wearing the default Minecraft skin unless they also install CustomSkinLoader themselves.
+This is a vanilla Minecraft constraint that no purely-server-side
+approach can work around — see
+`.planning/phases/09-implement-custom-bot-skins-via-customskinloader-mod-first-la/RESEARCH.md`
+for the full analysis.
+
+The skin file itself never leaves your computer: Sei runs a tiny loopback
+HTTP server on `127.0.0.1` that CustomSkinLoader queries for skins. No
+third-party servers, no signed-texture pipeline, no Mojang dependency
+once a skin is applied.
+
 ## Credits
 
 - [mineflayer](https://github.com/PrismarineJS/mineflayer) — Minecraft bot library.
