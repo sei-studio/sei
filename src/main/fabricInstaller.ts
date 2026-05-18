@@ -22,10 +22,10 @@
  *   - AbortSignal threads from opts.signal through every fetch + execFile
  *     so Plan 05's IPC cancel (BLOCKER 2) aborts in-flight work.
  *   - `execFile` not `exec` — arguments are an array, no shell
- *     interpolation possible (T-09-E2 mitigation).
- *   - The `-noprofile` installer flag keeps `launcher_profiles.json`
- *     untouched; the user picks the Fabric profile manually on next
- *     launch (UI-SPEC §"4 — Done" copy).
+ *     interpolation possible.
+ *   - The installer writes the Fabric entry to `launcher_profiles.json`
+ *     so the user can pick it from the Minecraft launcher's profile
+ *     dropdown on next launch.
  *
  * Sources:
  *   - 09-04-PLAN Task 2B
@@ -322,7 +322,8 @@ export async function installFabricLoader(
   //   -dir       game directory (vanilla .minecraft) to install into
   //   -mcversion target MC version
   //   -loader    pinned loader build
-  //   -noprofile skip writing launcher_profiles.json (user picks profile)
+  // The installer writes a profile entry into launcher_profiles.json so
+  // the Fabric build shows up in the Minecraft launcher's dropdown.
   try {
     const { stdout, stderr } = await execFile(
       javaPath,
@@ -336,7 +337,6 @@ export async function installFabricLoader(
         mcVersion,
         '-loader',
         loaderVersion,
-        '-noprofile',
       ],
       {
         timeout: INSTALLER_EXEC_TIMEOUT_MS,

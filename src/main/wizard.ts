@@ -361,9 +361,11 @@ async function processOneInstall(
   // ── Emit queued ────────────────────────────────────────────────────────
   onProgress({ installId, stage: 'queued' });
 
-  // ── Fabric step (vanilla without an existing loader only) ─────────────
+  // ── Fabric step (always on vanilla — installer is idempotent and
+  // re-running ensures the launcher profile entry exists). CurseForge
+  // instances already ship their own loader, so skip the step there.
   let installedFabricVersion: string | undefined;
-  const needsFabricInstall = install.kind === 'vanilla' && install.loader !== 'fabric';
+  const needsFabricInstall = install.kind === 'vanilla';
   if (needsFabricInstall) {
     onProgress({ installId, stage: 'fabric-downloading', pct: 0 });
     try {

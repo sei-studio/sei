@@ -2,7 +2,7 @@
  * WizardStepShell — reusable wizard step body.
  *
  * Renders:
- *   - Step indicator "STEP n / 5" in pixel font (only when stepNumber !== null;
+ *   - Step indicator "STEP n / 4" in pixel font (only when stepNumber !== null;
  *     branch states 1b/3b omit the indicator per UI-SPEC §"Setup wizard modal").
  *   - <h2> heading in --sans 22px 600.
  *   - Body content (children) — flex: 1 so footers stick to the bottom of the modal.
@@ -19,7 +19,7 @@ import React from 'react';
 import styles from './WizardStepShell.module.css';
 
 export interface WizardStepShellProps {
-  /** 1..5; null for branch states (none-found / one-failed) that don't advance the counter. */
+  /** 1..4; null for branch states (none-found / one-failed) that don't advance the counter. */
   stepNumber: number | null;
   heading: string;
   children: React.ReactNode;
@@ -35,7 +35,7 @@ export function WizardStepShell({
   return (
     <div className={styles.shell}>
       {stepNumber !== null ? (
-        <div className={styles.stepIndicator}>STEP {stepNumber} / 5</div>
+        <div className={styles.stepIndicator}>STEP {stepNumber} / 4</div>
       ) : null}
       <h2 className={styles.heading}>{heading}</h2>
       <div className={styles.body}>{children}</div>
