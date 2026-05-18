@@ -1,0 +1,58 @@
+/* SetupWizardModal.module.css — UI-SPEC §"Setup wizard modal".
+ *
+ * Sharp corners (D-28). All tokens; zero hex.
+ * Scrim alpha (0.45) matches LanModal — both wizards share dismissal semantics.
+ */
+
+.modalWrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 1001;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+}
+
+.modal {
+  position: relative;
+  z-index: 1002;
+  background: var(--window);
+  width: 680px;
+  max-width: 90vw;
+  min-height: 520px;
+  padding: 24px 40px 40px;
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  /* Sharp corners (D-28) — explicit zero so nothing inherits a radius. */
+  border-radius: 0;
+}
+
+.stepContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  animation: crossfade 200ms ease;
+}
+
+@keyframes crossfade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stepContent {
+    animation: none;
+  }
+}
