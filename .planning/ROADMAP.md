@@ -14,7 +14,7 @@
 - [x] **Phase 5: Debug log readability (PROMOTED from 999.2)** - Event-per-line emission with explicit \n between [haiku?] / [haiku!] / [chat->] sections; cache-prefix elision via hash reference
 - [x] **Phase 6: Scavenging redesign (PROMOTED from 999.1)** - Veined tallying within chunk, smart_find for cross-chunk navigation, find() for NL-to-item resolution
 - [x] **Phase 7: Pillar-up / scaffolding behavior (PROMOTED from 999.3)** - placeBlock/equip wiring + pillarUp orchestrator so bot can reach elevated targets
-- [x] **Phase 8: Windows cross-platform compatibility** - Verify and fix Sei to run on Windows (precondition for Phase 9 wizard) (completed 2026-05-18)
+- [ ] **Phase 8: Windows cross-platform compatibility** - Verify and fix Sei to run on Windows (precondition for Phase 9 wizard)
 - [ ] **Phase 9: Custom bot skins via CustomSkinLoader** - Setup wizard auto-installs Fabric Loader + CustomSkinLoader; user uploads/searches skin with 3D preview; bot joins LAN world wearing chosen skin under chosen username
 
 ## Phase Details
@@ -192,7 +192,7 @@ Each is unsequenced — promote to active milestone via `/gsd-review-backlog` wh
 **User quote (verbatim):** *"combine veined tallying for within chunk and smart_find for navigating to other chunks, i think we finally can make scavenging resources work."*
 **Why milestone-scope:** Snapshot composer rewrite + new tool registration + closed-world NL→item resolver — three coupled systems, not a single phase.
 **Requirements:** TBD
-**Plans:** 8/8 plans complete
+**Plans:** 4/8 plans executed
 
 Plans:
 - [x] TBD (recommended: `/gsd-new-milestone` after Phase 03.1 ships, then `/gsd-discuss-phase` to scope each subsystem) (completed 2026-05-07)

@@ -6,7 +6,7 @@ status: verifying
 last_updated: "2026-05-18T05:31:38.507Z"
 progress:
   total_phases: 17
-  completed_phases: 10
+  completed_phases: 9
   total_plans: 60
   completed_plans: 58
   percent: 97
