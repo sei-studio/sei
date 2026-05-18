@@ -1,0 +1,58 @@
+/* UsernameSearchField.module.css — UI-SPEC §"Skin editor" + §"Interaction States".
+ *
+ * Sharp corners (D-28). All colors are token references — no hardcoded hex.
+ * Inline result text uses --green / --red / --warn to mirror the StatusPill
+ * tone vocabulary without re-using the pill primitive (this is text, not a pill).
+ */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.fieldEyebrow {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-bottom: var(--space-xs);
+}
+
+.row {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: stretch;
+}
+
+.inputCol {
+  flex: 1;
+  min-width: 0;
+  /* Keep the underline-style TextField aligned with the Button's md height. */
+  display: flex;
+  align-items: flex-end;
+}
+
+.result {
+  margin-top: var(--space-xs);
+  margin-bottom: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.result.error {
+  color: var(--red);
+}
+
+.result.success {
+  color: var(--green);
+}
+
+.result.warn {
+  color: var(--warn);
+}
