@@ -20,7 +20,9 @@
     "verify:phase2": "node scripts/verify-phase2.js",
     "verify:phase3": "node scripts/verify-phase3.js",
     "verify:phase9-skin-server": "node scripts/verify-skinServer.mjs",
-    "verify:phase9-mojang": "tsx scripts/verify-mojangSkinLookup.mjs"
+    "verify:phase9-mojang": "tsx scripts/verify-mojangSkinLookup.mjs",
+    "verify:phase9-installs": "node --import ./scripts/lib/electron-stub-loader.mjs scripts/verify-phase9-installs.mjs",
+    "verify:phase9-csl-config": "node --import ./scripts/lib/electron-stub-loader.mjs scripts/verify-phase9-csl-config.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
