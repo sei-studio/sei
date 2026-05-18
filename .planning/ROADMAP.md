@@ -290,7 +290,7 @@ Plans:
 **Goal:** Bot's custom skin and username are visible to the host in their own LAN world, with zero manual config beyond clicking through Sei's first-launch wizard. User workflow: download Sei → setup wizard auto-installs Fabric Loader + CustomSkinLoader into their MC profile (mac & windows) → upload or search a skin in Sei's character page → preview in 3D → on next MC launch select the new "Sei (Fabric Loader)" profile → bot joins their world wearing the chosen skin under any chosen username. Works on vanilla MC and CurseForge instances (Pixelmon etc.).
 **Requirements**: TBD
 **Depends on:** Phase 8
-**Plans:** 6/8 plans executed
+**Plans:** 7/8 plans executed
 
 Plans:
 - [x] 09-01-PLAN.md — Shared contracts: CharacterSchema skin+username, IpcChannel.skin/wizard (incl. wizard:cancel + applySkin.username), 7 new ErrorClass entries, 3 bundled default skin PNGs
@@ -299,7 +299,7 @@ Plans:
 - [x] 09-04-PLAN.md — Wizard backend modules: cross-platform MC install scanner + bundled-Java probe (BLOCKER 3) + Fabric installer + CustomSkinLoader downloader + config writer with verified `Legacy` loader type (WARNING 6, Rule 1 corrected from CustomSkinAPI per upstream Java source) + idempotent state store
 - [x] 09-05-PLAN.md — Wizard orchestrator + IPC handlers (install + cancel via sessionId Map per BLOCKER 2) + main bootstrap port-drift detection (WARNING 7) + 2 verification scripts (split from prior Plan 04 per WARNING 4)
 - [x] 09-06-PLAN.md — Skin editor UI on CharacterPage: SkinEditor + SkinPreview3d (lazy skinview3d) + SkinUploadZone + UsernameSearchField + StatusPill; single applySkin call writes skin+username atomically (WARNING 5); preview useEffect deps include character.username (INFO 10)
-- [ ] 09-07-PLAN.md — Setup wizard UI: SetupWizardModal (5 steps + 2 branches) + WizardStepShell + McInstallList/Row + InstallProgressList + Settings row + first-launch trigger; cancel button fires sei.wizardCancel(sessionId) — no renderer-local AbortController (BLOCKER 2)
+- [x] 09-07-PLAN.md — Setup wizard UI: SetupWizardModal (5 steps + 2 branches) + WizardStepShell + McInstallList/Row + InstallProgressList + Settings row + first-launch trigger; cancel button fires sei.wizardCancel(sessionId) — no renderer-local AbortController (BLOCKER 2 verified: `grep -c "new AbortController" useWizardStore.ts === 0`)
 - [ ] 09-08-PLAN.md — Master verify:phase9 harness + README/RELEASE-NOTES docs (incl. bundled-Java + CustomSkinAPI mentions) + 09-VERIFICATION.md goal-backward audit covering all BLOCKER/WARNING/INFO issues
 
 **References:**
