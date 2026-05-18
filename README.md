@@ -1,4 +1,4 @@
-# Sei
+<img src="docs/sei-logo-blue.svg" alt="Sei" width="480" />
 
 Summon any character into your game. An omni-game AI player mod.
 
