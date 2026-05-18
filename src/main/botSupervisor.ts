@@ -94,6 +94,15 @@ export interface BotSupervisorOptions {
   sendStatus: (status: BotStatus) => void;
   /** Forward to renderer via webContents.send('bot:log:batch', batch). Batched. */
   sendLog: (batch: LogBatch) => void;
+  /**
+   * Phase 9 (09-02): returns the loopback skin server's baseUrl (e.g.
+   * 'http://127.0.0.1:54321') or null if the server failed to bind on boot.
+   * Closure-via-getter so a later restart of the skin server (Plan 05 port-
+   * drift recovery) is observable by subsequent summons. The bot supervisor
+   * ships this into the bot init payload; the bot logs it for verification
+   * (CustomSkinLoader on the host's MC client is the real consumer).
+   */
+  getSkinServerBaseUrl: () => string | null;
 }
 
 export interface BotSupervisor {
@@ -348,6 +357,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // BLOCKER-4 fix: ship mc_username + preferred_name from UserConfig so
       // the bot can satisfy ConfigSchema (adapter.minecraft.username) and
       // seed owner_username for owner-recognition without disk reads.
+      //
+      // Phase 9 (09-02): also ship skinServerBaseUrl so the bot can log it for
+      // verification (the actual CustomSkinLoader consumer is the host's MC
+      // client; the bot itself never hits the skin server). The bot also
+      // prefers character.username over the legacy sanitizeMcName(character.name)
+      // fallback so each persona connects under its own MC in-game name.
       child.postMessage(
         {
           type: 'init',
@@ -357,6 +372,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           userDataDir: paths.userData(),
           mc_username,
           preferred_name,
+          skinServerBaseUrl: opts.getSkinServerBaseUrl(),
         },
         [port2],
       );

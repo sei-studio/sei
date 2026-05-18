@@ -18,6 +18,13 @@ import type { BotSupervisor } from './botSupervisor';
 
 export interface IpcHandlerDeps {
   supervisor: BotSupervisor;
+  /**
+   * Phase 9 (09-02): returns the loopback skin server's baseUrl, or null if
+   * the server failed to bind on boot. Used by the skin:get-server-url IPC
+   * handler (Task 3) to surface the URL to the renderer + wizard. Closure-via-
+   * getter so a future restart of the skin server is observable.
+   */
+  getSkinServerBaseUrl: () => string | null;
 }
 
 const IdSchema = z.string().min(1);

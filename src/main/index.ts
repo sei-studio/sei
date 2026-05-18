@@ -22,6 +22,7 @@ import { createMainWindow } from './windowChrome';
 import { registerIpcHandlers } from './ipc';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
+import { createSkinServer } from './skinServer';
 import { runFirstLaunchMigration } from './migration';
 import { seedDefaultCharacters } from './defaultCharacters';
 import { backendKind } from './apiKeyStore';
@@ -37,6 +38,11 @@ let mainWindow: BrowserWindow | null = null;
 let latestLanState: LanState = { kind: 'not_connected' };
 let lanWatcherHandle: { stop: () => void } | null = null;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
+// Phase 9 (09-02): loopback HTTP server serving persona skin PNGs to
+// CustomSkinLoader on the host's MC client. Bound on boot (port 0 → OS-chosen
+// ephemeral) so the supervisor + IPC layer can hand the baseUrl out via the
+// injected closures below.
+let skinServer: { baseUrl: string; port: number; stop: () => Promise<void> } | null = null;
 
 function preloadPath(): string {
   // electron-vite outputs preload to dist/preload/index.cjs relative to dist/main/index.js.
@@ -88,6 +94,20 @@ async function bootstrap(): Promise<void> {
   try { await seedDefaultCharacters(); }
   catch (err) { logger.warn(`seedDefaultCharacters failed: ${(err as Error).message}`); }
 
+  // 1c. Phase 9 (09-02): start the loopback skin HTTP server BEFORE any bot is
+  // summoned — the bot supervisor passes the baseUrl into the bot init payload
+  // (where the bot logs it for verification; CustomSkinLoader on the host's MC
+  // client is the real consumer). Bind failure is non-fatal: the bot still
+  // launches without custom skins, and the renderer's getSkinServerUrl IPC
+  // throws SKIN_SERVER_PORT_TAKEN so the UI shows the relevant ERROR_COPY string.
+  try {
+    skinServer = await createSkinServer({});
+    logger.info(`skin server listening on ${skinServer.baseUrl}`);
+  } catch (err) {
+    logger.warn(`skin server failed to start: ${(err as Error).message}`);
+    skinServer = null;
+  }
+
   // 2. Create main window
   mainWindow = createMainWindow({
     preloadPath: preloadPath(),
@@ -114,10 +134,17 @@ async function bootstrap(): Promise<void> {
     getLanPort,
     sendStatus: broadcastStatus,
     sendLog: broadcastLog,
+    // Phase 9 (09-02): hand the skin server's baseUrl into each bot init
+    // payload. Closure-via-getter so a later restart of the skin server (Plan 05
+    // port-drift recovery) is observable by subsequent summons.
+    getSkinServerBaseUrl: () => skinServer?.baseUrl ?? null,
   });
 
   // 5. IPC handlers
-  registerIpcHandlers({ supervisor });
+  registerIpcHandlers({
+    supervisor,
+    getSkinServerBaseUrl: () => skinServer?.baseUrl ?? null,
+  });
 
   // 6. Linux fallback warning (RESEARCH Pitfall 3)
   if (process.platform === 'linux' && backendKind() === 'basic_text') {
@@ -160,12 +187,16 @@ if (!gotLock) {
   });
 
   app.on('before-quit', async (e) => {
-    if (!supervisor && !lanWatcherHandle) return; // already shut down
+    if (!supervisor && !lanWatcherHandle && !skinServer) return; // already shut down
     e.preventDefault();
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }
     try { if (lanWatcherHandle) lanWatcherHandle.stop(); } catch { /* best-effort */ }
+    // Phase 9 (09-02): close the skin server's TCP listener so the port is
+    // freed promptly. server.close drains in-flight requests before resolving.
+    try { if (skinServer) await skinServer.stop(); } catch { /* best-effort */ }
     supervisor = null;
     lanWatcherHandle = null;
+    skinServer = null;
     app.exit(0);
   });
 }
