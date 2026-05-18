@@ -24,6 +24,10 @@ files:
 asar: true
 asarUnpack:
   - "src/bot/**/*"
+  # Phase 9 (09-01): bundled default skin PNGs must survive packaging so the
+  # local skin HTTP server (Plan 03) can resolve `source: 'bundled'` personas
+  # via fs.readFile under process.resourcesPath in the packaged build.
+  - "resources/skins/**/*"
 
 mac:
   category: public.app-category.games

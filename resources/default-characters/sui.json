@@ -9,5 +9,12 @@
   "created": "2026-05-17T00:00:00.000Z",
   "last_launched": null,
   "playtime_ms": 0,
-  "portrait_image": null
+  "portrait_image": null,
+  "skin": {
+    "source": "bundled",
+    "mojang_username": null,
+    "png_sha256": null,
+    "applied_at": null
+  },
+  "username": "Sui"
 }
