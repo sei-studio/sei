@@ -161,6 +161,32 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return { baseUrl };
   });
 
+  // Phase 9 (09-03): native file picker for user-supplied skins + Mojang
+  // username search. Both lazy-import the underlying module so a future
+  // cyclic-import path can't deadlock at module-init time, and so test
+  // harnesses that pull in IPC types don't drag electron.dialog / node:crypto
+  // into module-eval (same rationale as the skinStore lazy import above).
+  ipcMain.handle(IpcChannel.skin.uploadPng, async () => {
+    const { openSkinPicker } = await import('./skinUpload');
+    return await openSkinPicker(); // null when user cancels
+  });
+
+  ipcMain.handle(IpcChannel.skin.searchMojang, async (_event, usernameArg: unknown) => {
+    // Zod gate at the IPC boundary — defense-in-depth even though
+    // lookupMojangSkin re-validates with its own regex. Length 1..32 mirrors
+    // Mojang's allowed username range (modern names cap at 16; pre-2014
+    // legacy accounts can be longer — accept up to 32 here, let Mojang's
+    // 204 path handle the "no such user" tail).
+    const username = z.string().min(1).max(32).parse(usernameArg);
+    const { lookupMojangSkin } = await import('./mojangSkinLookup');
+    const res = await lookupMojangSkin(username);
+    return {
+      pngBase64: res.pngBase64,
+      sha256: res.sha256,
+      resolvedUsername: res.resolvedUsername,
+    };
+  });
+
   // User config
   ipcMain.handle(IpcChannel.config.get, async (): Promise<UserConfig> => {
     return await loadConfig();
