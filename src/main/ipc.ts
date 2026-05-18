@@ -9,7 +9,7 @@
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
-import { IpcChannel } from '../shared/ipc';
+import { IpcChannel, type WizardProgressEvent } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
 import { listCharacters, getCharacter, expandAndSaveCharacter, deleteCharacter, resetMemoryForCharacter } from './characterStore';
@@ -25,6 +25,13 @@ export interface IpcHandlerDeps {
    * getter so a future restart of the skin server is observable.
    */
   getSkinServerBaseUrl: () => string | null;
+  /**
+   * Phase 9 (09-05): per-step progress sink for the wizard install flow.
+   * The orchestrator's `onProgress` callback funnels through here so the IPC
+   * handler can push the event onto the `wizard:progress` channel via
+   * `webContents.send`. Injected from main/index.ts where `mainWindow` lives.
+   */
+  sendWizardProgress: (ev: WizardProgressEvent) => void;
 }
 
 /**
@@ -185,6 +192,58 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       sha256: res.sha256,
       resolvedUsername: res.resolvedUsername,
     };
+  });
+
+  // Phase 9 (09-05): wizard install pipeline. Same lazy-import discipline as
+  // the skin handlers — keeps the orchestrator + Plan 04 modules out of
+  // module-init time so a cyclic import (wizard → ... → ipc) can't deadlock.
+  //
+  // wizard:detect-installs is read-only (scan) so no zod gate needed.
+  // wizard:install / wizard:cancel are zod-gated; wizard:cancel's sessionId
+  // is the BLOCKER 2 IPC-crossing routing key that maps to the main-side
+  // AbortController in src/main/wizard.ts.
+  ipcMain.handle(IpcChannel.wizard.detectInstalls, async () => {
+    const { scanMcInstalls } = await import('./mcInstallScan');
+    const installs = await scanMcInstalls();
+    return { installs };
+  });
+
+  ipcMain.handle(IpcChannel.wizard.install, async (_event, argsRaw: unknown) => {
+    // sessionId is REQUIRED (BLOCKER 2) — without it, wizard:cancel has no
+    // routing key. installIds must be non-empty; the renderer should also
+    // gate this but defense-in-depth at the IPC boundary. skinServerBaseUrl
+    // is the loopback URL captured from skin:get-server-url — must be a
+    // valid URL because the orchestrator parses .port off it for the
+    // port-drift state update.
+    const args = z.object({
+      sessionId: z.string().min(1),
+      installIds: z.array(z.string().min(1)).min(1),
+      skinServerBaseUrl: z.string().url(),
+    }).parse(argsRaw);
+    const { runWizardInstall } = await import('./wizard');
+    return await runWizardInstall({
+      ...args,
+      onProgress: (ev) => deps.sendWizardProgress(ev),
+    });
+  });
+
+  ipcMain.handle(IpcChannel.wizard.cancel, async (_event, sessionIdArg: unknown) => {
+    // BLOCKER 2 — the IPC-crossing abort. Resolves immediately after firing
+    // .abort() on the matching controller; the in-flight runWizardInstall
+    // promise then rejects (or emits a `cancelled` stage event) through
+    // Plan 04's signal-aware modules. Fire-and-forget — we don't surface the
+    // boolean return of abortWizardSession to the renderer because the user
+    // doesn't care whether the cancel raced against a completed install;
+    // either way the UI flips to "cancelled" via the progress channel.
+    const sessionId = z.string().min(1).parse(sessionIdArg);
+    const { abortWizardSession } = await import('./wizard');
+    abortWizardSession(sessionId);
+    return;
+  });
+
+  ipcMain.handle(IpcChannel.wizard.getState, async () => {
+    const { loadWizardState } = await import('./wizardStateStore');
+    return await loadWizardState();
   });
 
   // User config

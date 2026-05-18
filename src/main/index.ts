@@ -26,7 +26,8 @@ import { createSkinServer } from './skinServer';
 import { runFirstLaunchMigration } from './migration';
 import { seedDefaultCharacters } from './defaultCharacters';
 import { backendKind } from './apiKeyStore';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch } from '../shared/ipc';
+import { loadWizardState, saveWizardState } from './wizardStateStore';
+import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent } from '../shared/ipc';
 
 const logger = {
   info: (m: string) => console.log(`[sei] ${m}`),
@@ -78,6 +79,15 @@ function broadcastLog(batch: LogBatch): void {
   }
 }
 
+// Phase 9 (09-05): wizard install progress push channel. The IPC handler
+// for `wizard:install` forwards each `WizardProgressEvent` through here so
+// the renderer's `window.sei.onWizardProgress(...)` subscription fires.
+function broadcastWizardProgress(ev: WizardProgressEvent): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.wizard.progress, ev);
+  }
+}
+
 function getLanPort(): number | null {
   return latestLanState.kind === 'connected' ? latestLanState.port : null;
 }
@@ -106,6 +116,70 @@ async function bootstrap(): Promise<void> {
   } catch (err) {
     logger.warn(`skin server failed to start: ${(err as Error).message}`);
     skinServer = null;
+  }
+
+  // 1d. Phase 9 (09-05) WARNING 7: port-drift detection.
+  // The skin server binds port 0 (OS-chosen ephemeral) so its port can
+  // differ between launches. If the wizard has been run before AND the
+  // current port differs from the one persisted in wizardState, the CSL
+  // configs on disk for previously-enabled installs point at a stale loopback
+  // URL and skins won't load. Rewrite them in place. Bounded by
+  // enabledInstallIds (≤ ~10 in practice); each rewrite is a small atomic
+  // JSON write, so the bootstrap latency impact is negligible (≤ 1s typical).
+  if (skinServer) {
+    try {
+      const wizardState = await loadWizardState();
+      if (
+        wizardState.hasRunOnce &&
+        wizardState.lastSkinServerPort !== null &&
+        wizardState.lastSkinServerPort !== skinServer.port
+      ) {
+        logger.info(
+          `skin server port drift detected, rewriting ${wizardState.enabledInstallIds.length} CSL configs`,
+        );
+        // Lazy import — only loaded when drift is detected. Keeps the
+        // bootstrap fast path (no drift on most launches) module-init free
+        // of customSkinLoader's network-tracing dependencies.
+        const { writeCustomSkinLoaderConfig } = await import('./customSkinLoader');
+        const { scanMcInstalls } = await import('./mcInstallScan');
+        const installs = await scanMcInstalls();
+        const byId = new Map(installs.map((i) => [i.id, i]));
+        for (const installId of wizardState.enabledInstallIds) {
+          const inst = byId.get(installId);
+          if (!inst) {
+            // User moved / deleted the MC dir between wizard runs. Skip
+            // gracefully — the row will just disappear from the wizard UI
+            // next time the user opens it.
+            logger.warn(`port drift rewrite: install ${installId} no longer detected; skipping`);
+            continue;
+          }
+          // Same loader-kind decision as wizard.ts: vanilla → fabric;
+          // CurseForge → detected loader (fabric or forge), default forge.
+          const loaderKind: 'fabric' | 'forge' =
+            inst.kind === 'vanilla' ? 'fabric' : (inst.loader === 'fabric' ? 'fabric' : 'forge');
+          try {
+            await writeCustomSkinLoaderConfig({
+              mcInstallDir: inst.path,
+              loaderKind,
+              skinServerBaseUrl: skinServer.baseUrl,
+            });
+            logger.info(`port drift rewrite: ${installId} → ${skinServer.baseUrl}`);
+          } catch (err) {
+            // Best-effort — config dir might be read-only or the install
+            // might be on an unmounted drive. The user can rerun the wizard
+            // from settings to fix this manually.
+            logger.warn(`port drift rewrite: ${installId} failed: ${(err as Error).message}`);
+          }
+        }
+        // Persist the new port so the next launch (if no further drift) is
+        // a no-op rather than re-rewriting the same configs.
+        await saveWizardState({ ...wizardState, lastSkinServerPort: skinServer.port });
+      }
+    } catch (err) {
+      // Non-fatal — bot still launches, just the configs may be stale. User
+      // can re-run the wizard from Settings to fix it manually.
+      logger.warn(`port drift detection failed: ${(err as Error).message}`);
+    }
   }
 
   // 2. Create main window
@@ -144,6 +218,10 @@ async function bootstrap(): Promise<void> {
   registerIpcHandlers({
     supervisor,
     getSkinServerBaseUrl: () => skinServer?.baseUrl ?? null,
+    // Phase 9 (09-05): wizard:install handler forwards per-step progress
+    // events here; this closure pipes them to the renderer via the
+    // wizard:progress push channel.
+    sendWizardProgress: broadcastWizardProgress,
   });
 
   // 6. Linux fallback warning (RESEARCH Pitfall 3)
