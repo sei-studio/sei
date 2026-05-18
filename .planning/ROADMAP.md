@@ -290,10 +290,16 @@ Plans:
 **Goal:** Bot's custom skin and username are visible to the host in their own LAN world, with zero manual config beyond clicking through Sei's first-launch wizard. User workflow: download Sei → setup wizard auto-installs Fabric Loader + CustomSkinLoader into their MC profile (mac & windows) → upload or search a skin in Sei's character page → preview in 3D → on next MC launch select the new "Sei (Fabric Loader)" profile → bot joins their world wearing the chosen skin under any chosen username. Works on vanilla MC and CurseForge instances (Pixelmon etc.).
 **Requirements**: TBD
 **Depends on:** Phase 8
-**Plans:** 0 plans
+**Plans:** 7 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 9 to break down)
+- [ ] 09-01-PLAN.md — Shared contracts: CharacterSchema skin+username, IpcChannel.skin/wizard, 7 new ErrorClass entries, 3 bundled default skin PNGs
+- [ ] 09-02-PLAN.md — Local 127.0.0.1 skin HTTP server + per-persona PNG storage + bot init wiring (skinServerBaseUrl + character.username)
+- [ ] 09-03-PLAN.md — Mojang username search pipeline (15s timeout) + native PNG file dialog + 2 new skin IPC handlers
+- [ ] 09-04-PLAN.md — Wizard backend: cross-platform MC install scanner + Fabric installer + CustomSkinLoader downloader + config writer + idempotent state
+- [ ] 09-05-PLAN.md — Skin editor UI on CharacterPage: SkinEditor + SkinPreview3d (lazy skinview3d) + SkinUploadZone + UsernameSearchField + StatusPill
+- [ ] 09-06-PLAN.md — Setup wizard UI: SetupWizardModal (5 steps + 2 branches) + WizardStepShell + McInstallList/Row + InstallProgressList + Settings row + first-launch trigger
+- [ ] 09-07-PLAN.md — Master verify:phase9 harness + README/RELEASE-NOTES docs + 09-VERIFICATION.md goal-backward audit
 
 **References:**
 - `.planning/phases/09-.../260517-frz-CONTEXT.md` — locked decisions from discussion phase
