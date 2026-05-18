@@ -293,7 +293,7 @@ Plans:
 **Plans:** 8 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Shared contracts: CharacterSchema skin+username, IpcChannel.skin/wizard (incl. wizard:cancel + applySkin.username), 7 new ErrorClass entries, 3 bundled default skin PNGs
+- [x] 09-01-PLAN.md — Shared contracts: CharacterSchema skin+username, IpcChannel.skin/wizard (incl. wizard:cancel + applySkin.username), 7 new ErrorClass entries, 3 bundled default skin PNGs
 - [ ] 09-02-PLAN.md — Local 127.0.0.1 skin HTTP server + per-persona PNG storage + bot init wiring; characterId validated via strict IdSchema (BLOCKER 1); atomic skin+username write in single saveCharacter call (WARNING 5)
 - [ ] 09-03-PLAN.md — Mojang username search pipeline (15s timeout) + legacy 64×32 → 64×64 normalization (WARNING 8) + native PNG file dialog + 2 new skin IPC handlers + tsx as devDep (INFO 9)
 - [ ] 09-04-PLAN.md — Wizard backend modules: cross-platform MC install scanner + bundled-Java probe (BLOCKER 3) + Fabric installer + CustomSkinLoader downloader + config writer with verified CustomSkinAPI loader type (WARNING 6) + idempotent state store
