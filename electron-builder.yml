@@ -51,7 +51,7 @@ files:
   - "!**/*.map"
   - "!**/node_modules/*/{test,tests,__tests__,*.md,*.markdown,LICENSE*,license*}"
 
-# Stable filenames so https://github.com/oue2x2/sei/releases/latest/download/<name>
+# Stable filenames so https://github.com/sei-studio/sei/releases/latest/download/<name>
 # resolves correctly from sei.gg regardless of version bump.
 artifactName: Sei-${os}-${arch}.${ext}
 
@@ -81,12 +81,8 @@ mac:
       arch: [arm64, x64]
   hardenedRuntime: true
   gatekeeperAssess: false
-  # v0.1 ships unsigned. Flip identity + notarize on once the Developer ID
-  # Application cert exists and APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD env vars
-  # are wired into CI. See docs/APPLE-SIGNING.md.
-  # identity: "Developer ID Application: <Name> (TEAM_ID)"
-  identity: null
-  notarize: false
+  identity: "Shang Wang (7485LZ74DA)"   # electron-builder prepends "Developer ID Application:" itself
+  notarize: true   # team id comes from APPLE_TEAM_ID env var (.env.local locally; GH Actions secret in CI)
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
 

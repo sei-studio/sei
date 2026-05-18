@@ -1,5 +1,9 @@
 config.json
 config.example.json
+
+# local env vars (Apple signing credentials etc.)
+.env
+.env.*
 node_modules/
 mineflayer/
 .claude/

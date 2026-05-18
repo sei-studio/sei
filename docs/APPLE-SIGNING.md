@@ -36,7 +36,7 @@ Team ID (e.g. `ABCDE12345`).
 
 ## 3. Wire secrets into GitHub Actions
 
-In <https://github.com/oue2x2/sei/settings/secrets/actions>, add:
+In <https://github.com/sei-studio/sei/settings/secrets/actions>, add:
 
 | Name | Value |
 | --- | --- |
