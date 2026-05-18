@@ -29,4 +29,11 @@ export const paths = {
   apiKeyPath: () => path.join(userDataRoot(), 'api_key.bin'),
   logsDir: () => path.join(userDataRoot(), 'logs'),
   memoryDir: (characterId: string) => path.join(userDataRoot(), 'memory', characterId),
+  // Phase 9 (09-02): per-persona skin PNG storage. Files live under
+  // <userData>/skins/<personaId>.png. The persona id has already been
+  // validated by main/ipc.ts's IdSchema (kebab-case slug regex, no '.', '/',
+  // or '\\') before any of these path-builders is invoked, so path.join's
+  // normalization never has to deal with an escape-attempting component.
+  skinsDir: () => path.join(userDataRoot(), 'skins'),
+  skinPngPath: (personaId: string) => path.join(userDataRoot(), 'skins', `${personaId}.png`),
 };
