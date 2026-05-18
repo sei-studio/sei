@@ -151,7 +151,13 @@ export interface RendererApi {
   // 260516-0yw: saveCharacter now returns the persisted Character so the
   // renderer can pick up the LLM-generated persona.expanded after main
   // ran the expansion call.
-  saveCharacter(character: Character): Promise<Character>;
+  // 260517-frz: optional { skipExpansion } lets the renderer hand main a
+  // manually-edited persona.expanded and skip the LLM regeneration. When
+  // omitted/false, main regenerates expanded from persona.source as before.
+  saveCharacter(
+    character: Character,
+    options?: { skipExpansion?: boolean },
+  ): Promise<Character>;
   deleteCharacter(id: string): Promise<void>;
   resetMemory(id: string): Promise<void>;
 

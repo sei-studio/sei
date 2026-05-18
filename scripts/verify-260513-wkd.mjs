@@ -83,7 +83,7 @@ function makeMockAnthropic() {
  * promise resolves only when its config.signal aborts OR when `tick()` is
  * called externally to deliver a natural completion.
  *
- * Synchronous personality tools (setGoals/noteToSelf/stop) are handled by
+ * Synchronous personality tools (remember/forget/end_loop) are handled by
  * the orchestrator's tool_use dispatch switch, not the adapter — listActions
  * needs to expose `fakeLong` as a long-running action.
  */
@@ -190,6 +190,9 @@ function makeMockReenqueue() {
 
 function makeConfig() {
   // Use a tmp affect_md_path so createAffectLog doesn't throw.
+  // 260516-0yw: memory_md_path also required by the prior-session
+  // memoryLog refactor — supply a tmp path so createMemoryLog doesn't
+  // throw on harness construction.
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-wkd-'))
   return {
     anthropic: { api_key: 'mock', model: 'mock', timeout_ms: 5000, thinking_budget_tokens: 0 },
@@ -197,6 +200,8 @@ function makeConfig() {
     memory: {
       iteration_cap: 30,
       affect_md_path: path.join(tmpDir, 'AFFECT.md'),
+      memory_md_path: path.join(tmpDir, 'MEMORY.md'),
+      compaction_trigger_bytes: 4096,
     },
     persona: { name: 'sei' },
   }

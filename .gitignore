@@ -17,3 +17,6 @@ release/
 out/
 *.log
 .DS_Store
+
+# Prompt-verification harness — not for source control
+scripts/verify-prompts.mjs

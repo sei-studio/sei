@@ -10,7 +10,7 @@
 //
 // Result-string contract:
 //   - 'aborted'                                     — signal already aborted at entry
-//   - `aborted after K/N <name>`                    — owner-chat preempt mid-batch
+//   - `aborted after K/N <name>`                    — player-chat preempt mid-batch
 //   - `gathered K/N <name>`                         — completed (K may be < N if some
 //                                                     individual digs failed)
 //   - `gathered K/N <name> (cap reached)`           — flood-fill saturated at BATCH_CAP
@@ -18,8 +18,7 @@
 //   - `no block at anchor`                          — anchor coord is air/null
 //   - 'must specify name or x,y,z'                  — defensive (registry refine should catch)
 //
-// GATHER_DESCRIPTION is colocated here and mirrored into orchestrator.js
-// ACTION_DESCRIPTIONS (drift-discipline pattern from dig.js L10-20).
+// LLM-facing tool description moved to ../prompts.js → ACTION_DESCRIPTIONS.gather.
 
 import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
@@ -33,13 +32,6 @@ const NEIGHBOR_OFFSETS = [
   [0, 0, 1], [0, 0, -1],
 ]
 const BATCH_CAP = 64
-
-/**
- * LLM-facing description (mirrored verbatim into orchestrator.js
- * ACTION_DESCRIPTIONS.gather). Keep this string in sync with the orchestrator
- * mirror — dig.js / DIG_DESCRIPTION sets the precedent.
- */
-export const GATHER_DESCRIPTION = "Gather a batch of one block type in a single call — use when you want N of some block and don't care which specific instances. Pass `{name:\"<term>\"}` — loose terms (`wood`, `ore`, `stone`, `dirt`, `sand`, `log`, `planks`, `leaves`) expand server-side to the right MC block IDs; you can also pass an exact ID like `oak_log` or `cactus`. Or pass `{x,y,z}` of a known anchor block (from a `nearby blocks` `#N` handle or a prior `find()` result — never invent coords). The bot finds the nearest matching block, then sweeps any same-name neighbors face-adjacent to it (so trees and ore deposits chop together) up to a 64-block batch cap. Returns `gathered K/N <name>` on success, `gathered K/N <name> (cap reached)` when the connected batch exceeds 64 blocks, `aborted after K/N <name>` on owner-chat preempt, `no <name> in loaded chunks` when nothing matches, or `no block at anchor` when the coord is empty/air."
 
 /**
  * Gather a batch of one block type from a name or coordinate anchor.

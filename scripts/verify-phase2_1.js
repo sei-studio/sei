@@ -98,13 +98,12 @@ const stubBot = {
 }
 let snapshotText
 try {
-  snapshotText = composeSnapshot(stubBot, { goals: { owner_goals: ['kill cows'], self_goals: [] }, lastActionResult: 'dug oak_log' })
+  snapshotText = composeSnapshot(stubBot, { lastActionResult: 'dug oak_log' })
 } catch (err) {
   assert(false, `composeSnapshot threw: ${err.message}`)
 }
 assert(typeof snapshotText === 'string' && snapshotText.length > 0, 'composeSnapshot returns non-empty string')
 assert(snapshotText.includes('pos:'), 'snapshot contains pos:')
-assert(snapshotText.includes('owner_goals: kill cows'), 'snapshot reflects owner_goals')
 assert(snapshotText.includes('last_action_result: dug oak_log'), 'snapshot reflects lastActionResult')
 // setHandles was called (handle table exists; with no blocks/entities it should be empty Map)
 const handles = getHandles?.()
@@ -135,21 +134,17 @@ if (live) {
     assert(false, 'LIVE mode requires ANTHROPIC_API_KEY')
   } else {
     const client = createAnthropicClient(config)
-    // Mirror orchestrator personality tools
-    // 260505-iqo: single-layer combined tools — say + setGoals + a sample
-    // movement action (`goTo`) so the model can be observed deferring or
-    // declining via combined-mode tool calls instead of a movement-layer
-    // handoff that no longer exists.
+    // Mirror orchestrator personality tools — say + a sample movement action
+    // (`goTo`) so the model can be observed deferring or declining via
+    // combined-mode tool calls.
     const personalityTools = [
       { name: 'say',      description: 'Speak the given text in in-game chat.', input_schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
-      { name: 'setGoals', description: 'Add or remove a goal.', input_schema: { type: 'object', properties: { list: { type: 'string' }, op: { type: 'string' }, goal: { type: 'string' } }, required: ['list','op','goal'] } },
       { name: 'goTo',     description: 'Move the bot to (x,y,z) within range blocks.', input_schema: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' }, range: { type: 'number' } }, required: ['x','y','z'] } },
     ]
     const SYSTEM_INSTRUCTIONS = [
       'You are a Minecraft companion bot. You react to chat, world events, and idle ticks.',
       'You decide WHAT to do at a high level AND directly invoke the body actions to do it — there is no separate movement layer.',
       'When you want to speak in chat, call say with the exact line.',
-      'When the owner sets a goal or you decide on a self-goal, call setGoals.',
       'For things you cannot do (crafting, enchanting, brewing, redstone, riding), decline politely with `say` instead of inventing a movement action.',
       'Keep responses brief.',
     ].join('\n')
@@ -171,7 +166,7 @@ if (live) {
         })
         const sayUse  = resp.toolUses.find(u => u.name === 'say')
         // Any movement-registry call (e.g. goTo) is the "tried to do it" signal.
-        const movementCall = resp.toolUses.find(u => u.name !== 'say' && u.name !== 'setGoals')
+        const movementCall = resp.toolUses.find(u => u.name !== 'say')
         const sayText = String(sayUse?.input?.text ?? '').toLowerCase()
         const movementText = JSON.stringify(movementCall?.input ?? {}).toLowerCase()
 

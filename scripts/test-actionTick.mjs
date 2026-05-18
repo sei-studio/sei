@@ -159,4 +159,47 @@ assert.ok(Priority.P2_ACTION_TICK < Priority.P2_5_LOOP_END, 'tick < loop_end')
 assert.ok(BASELINE_INSTRUCTIONS.includes('you do NOT have to speak'),
   'BASELINE_INSTRUCTIONS must contain verbatim substring "you do NOT have to speak"')
 
-console.log('PASS: test-actionTick.mjs (7/7)')
+// ── 8. API pairing: handleActionTick closes open tool_use ─────────────────
+// REGRESSION: prior to 260517-fix, handleActionTick called loop.appendUserTurn
+// while the in-flight's tool_use was still open in the last assistant turn.
+// Anthropic rejects with 400: "tool_use ids were found without tool_result
+// blocks immediately after." Source-text assertion: the handler must close
+// open tool_uses via appendToolResults (Mode 1) before the next user turn.
+{
+  const fs = await import('node:fs')
+  const orchSrc = fs.readFileSync('src/bot/brain/orchestrator.js', 'utf8')
+
+  // Extract the body of `async function handleActionTick(loop, data)` so we
+  // assert only on its source (avoids matching unrelated tick comments).
+  const fnIdx = orchSrc.indexOf('async function handleActionTick(')
+  assert.ok(fnIdx >= 0, 'handleActionTick must exist in orchestrator.js')
+  // Read up to the next top-level `async function` or `function ` declaration
+  // — handleActionTick is 100-ish lines, well within 6000 chars.
+  const fnSlice = orchSrc.slice(fnIdx, fnIdx + 6000)
+
+  assert.ok(/appendToolResults\(/.test(fnSlice),
+    'handleActionTick must close open tool_use via appendToolResults — appending a user turn while a tool_use is open causes Anthropic API 400')
+  assert.ok(/_tickClaimed\s*=\s*true/.test(fnSlice),
+    'handleActionTick must mark inFlight._tickClaimed = true so the real settle routes through the tick-claimed branch')
+  assert.ok(/in progress \(\$\{elapsedSec\}s elapsed\)/.test(fnSlice),
+    'handleActionTick must synthesize an interim "in progress" tool_result content for the open tool_use')
+
+  // The dispatcher must route tickClaimed sei:action_complete through a
+  // dedicated handler rather than dropping it via the tool_use_id mismatch
+  // branch — otherwise a tick-claimed in-flight that settles naturally leaves
+  // the loop suspended forever.
+  assert.ok(/data\?\.tickClaimed[\s\S]{0,200}handleActionCompleteTickClaimed/.test(orchSrc),
+    'dispatcher must route tickClaimed=true through handleActionCompleteTickClaimed')
+  assert.ok(/async function handleActionCompleteTickClaimed\(/.test(orchSrc),
+    'orchestrator.js must define handleActionCompleteTickClaimed')
+
+  // The settle handler must capture inflightEntry._tickClaimed and propagate
+  // it on the reenqueued sei:action_complete data — otherwise the dispatcher
+  // can't tell tick-claimed settles from normal ones.
+  assert.ok(/tickClaimed:\s*tickClaimed/.test(orchSrc) ||
+            /tickClaimed,\s*$/m.test(orchSrc) ||
+            /tickClaimed[,\s]/.test(orchSrc),
+    'settle handler must propagate tickClaimed on the reenqueued sei:action_complete')
+}
+
+console.log('PASS: test-actionTick.mjs (8/8)')

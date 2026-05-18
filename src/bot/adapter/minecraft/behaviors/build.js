@@ -25,7 +25,7 @@ const FACE_PRIORITY = [
   { off: [0, 1, 0], face: [0, -1, 0] }, // ref above, place on its bottom
 ]
 
-export const BUILD_DESCRIPTION = "Place blocks in a cuboid region. Args: `{from:{x,y,z}, to:{x,y,z}, block:\"<name>\", hollow?:boolean}` — both corners are absolute; corners may be passed in any order. See seed_cuboid_grammar for shape recipes (pillar, wall, platform, tunnel, hollow shell). Volume cap is 256 cells per call. Build SKIPS occupied cells (will not break-and-replace — dig first if you need a fresh canvas) and silently scaffolds up by jumping and placing under itself when the next cell is above its reach. `hollow:true` places only the 4 vertical wall faces (no floor, no ceiling — compose those via flat single-Y cuboids). IMPORTANT: any \"fence\", \"cage\", \"enclosure\", \"pen\", \"ring\", or \"frame\" request means `hollow:true` — a solid NxNxN cube is almost never what an owner wants when they say fence. COORD PICKING: build sits ON TOP of the terrain you're standing on — set `from.y = bot.y + 1` (one block above your feet, not at your feet) so the structure rises out of the ground rather than being embedded in it. Building at your own y when standing on sand/dirt/stone produces an invisible structure inside the terrain and a confusing all-skipped result; pick `from` one block above the surface and step back so you're not inside the build footprint. Returns `built K placed, S skipped, of N cells` or `aborted after K placed of N cells`. The `block` arg is REQUIRED — there is no inventory fallback."
+// LLM-facing tool description moved to ../prompts.js → ACTION_DESCRIPTIONS.build.
 
 export function enumerateBuildCells(from, to, hollow) {
   const minX = Math.min(from.x, to.x), maxX = Math.max(from.x, to.x)

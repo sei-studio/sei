@@ -8,17 +8,7 @@ export const DEFAULT_TIMEOUT_MS = 8000
 const PICKUP_TIMEOUT_MS = 3000
 export const DIG_REACH = 4.5  // mineflayer's effective reach for breaking blocks
 
-/**
- * Plan 03.1-05 Task 2 (D-W-3, D-W-6): tool description shown to the LLM.
- * Earlier versions buried the `maxDistance:32` semantic and the LLM was
- * reading it as a SWING REACH (so it would walk away thinking "32 blocks is
- * too far") rather than a SEARCH RADIUS for finding the named block.
- * Adding the #N rotation caveat stops the snapshot-handle-stale-target loop
- * (D-W-6 — five identical {target:'#3'} digs after the snapshot rotated).
- * Lives in dig.js so the description sits next to the implementation it
- * describes (orchestrator imports it via ACTION_DESCRIPTIONS).
- */
-export const DIG_DESCRIPTION = "Break a block. Prefer `{ block: \"<name>\" }` to dig the NEAREST EXPOSED block of that name within maxDistance (default 32, max 64) — `maxDistance` is a SEARCH RADIUS for finding the named block, not a reach radius. Actual swing reach is fixed at 4.5m and the bot pathfinds into reach automatically. For repeated digs of the same block type, prefer `{block:\"<name>\"}` which auto-finds nearest each call. `#N` references (e.g. {target:\"#3\"}) rotate every snapshot — only valid in the SAME turn the snapshot listed them; switch to `{block:\"<name>\"}` if you see \"stale target\". Use `{ x, y, z }` only when you must dig a precise coordinate. For whole TREES, ORE DEPOSITS, or any \"harvest N of a block\" task, use `gather` instead — single-shot `dig` calls strand the top logs you can't reach and will leave a `<name> x1` line behind in the snapshot. ALWAYS recheck `nearby blocks` after digging the same block type: a remaining `oak_log x1` (or x2…) means the tree isn't fully chopped yet, even if your last dig succeeded. CUBOID MODE: pass `{x,y,z, to:{x,y,z}, hollow?}` to dig every block in the axis-aligned region between two corners (≤256 cells; iteration top-down). See seed_cuboid_grammar for tunnel/room recipes. Air cells are silently skipped."
+// LLM-facing tool description moved to ../prompts.js → ACTION_DESCRIPTIONS.dig.
 
 export const CUBOID_ITERATION_ORDER = 'Y-desc → X-asc → Z-asc' // D-07
 

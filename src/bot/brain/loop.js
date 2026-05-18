@@ -17,7 +17,7 @@
  *       - drop the `name` field (Anthropic SDK schema has no `name` on text
  *         blocks — Pitfall 1)
  *       - if `name === 'snapshot'` AND this turn is NOT the last user turn, skip it
- *       - seed turns keep `seed_owner` / `seed_diary` text blocks across the
+ *       - seed turns keep `seed_player` text blocks across the
  *         entire loop (D-45); the seed turn's snapshot block is still subject
  *         to the "strip if not last" rule.
  *   • Tool_result blocks pass through unchanged.

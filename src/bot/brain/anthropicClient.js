@@ -70,30 +70,30 @@ export function createAnthropicClient(config) {
   }
 
   /**
-   * Helper: build the cached system prefix array. cache_control marker stays on
-   * the LAST (tool) block per D-18. Block order (D-30/D-31/D-32):
-   *   1. system instructions
-   *   2. personaText + '\n' + learningLine   (D-32 line glued to persona)
-   *   3. capabilityParagraph                 (D-30)
-   *   4. primer                              (D-31)
-   *   5. tool list                           ← cache_control here
+   * Helper: build the cached system prefix array. cache_control marker stays
+   * on the LAST (tool) block per D-18. The caller provides the ordered list
+   * of static text blocks; the tool block is appended automatically.
    *
-   * @param {string} systemInstructions
-   * @param {string} personaText
-   * @param {string} capabilityParagraph
-   * @param {string} primer
-   * @param {string} learningLine
+   * Block order (current orchestrator wiring — see rebuildPersonalitySystem):
+   *   0. baseline instructions (brain/prompts.js → BASELINE_INSTRUCTIONS)
+   *   1. persona + still-learning line (brain/prompts.js → renderPersona)
+   *   2. capability paragraph (adapter/<game>/prompts.js → CAPABILITY_PARAGRAPH)
+   *   3. world primer (adapter/<game>/prompts.js → WORLD_PRIMER)
+   *   4. game-specific action rules (adapter/<game>/prompts.js → ACTION_RULES)
+   *   5. tool list ← cache_control here
+   *
+   * log.js indexes [1] for persona and [2] for capability — keep those slots
+   * stable if you reorder.
+   *
+   * @param {string[]} staticBlocks
    * @param {{name:string,description:string,input_schema:object}[]} tools
    */
-  function buildCachedSystem(systemInstructions, personaText, capabilityParagraph, primer, learningLine, tools) {
+  function buildCachedSystem(staticBlocks, tools) {
     const toolBlock = tools.length
       ? `Available actions:\n` + tools.map(t => `- ${t.name}: ${t.description}`).join('\n')
       : 'No actions available.'
     return [
-      { type: 'text', text: systemInstructions },
-      { type: 'text', text: `${personaText}\n${learningLine}` },
-      { type: 'text', text: capabilityParagraph },
-      { type: 'text', text: primer },
+      ...staticBlocks.map(text => ({ type: 'text', text })),
       { type: 'text', text: toolBlock, cache_control: { type: 'ephemeral' } },
     ]
   }

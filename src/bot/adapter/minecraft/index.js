@@ -10,29 +10,18 @@
 import { ADAPTER_INTERFACE_VERSION } from '../../brain/types.js'
 import { createDefaultRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
-import { worldPrimer, MINECRAFT_PRIMER } from './primer.js'
 import { closeContainerSession } from './behaviors/container.js'
 import { wireBotEvents } from './fsmWires.js'
-import { DIG_DESCRIPTION } from './behaviors/dig.js'
-import { BUILD_DESCRIPTION } from './behaviors/build.js'
-
-// Free-text tool descriptions surfaced through getActionDescription. These
-// were inlined in the orchestrator before; they are inherently
-// minecraft-shaped (talk about digging, attacking mobs, etc.) so the adapter
-// owns them now.
-const ACTION_DESCRIPTIONS = {
-  goTo: 'Move the bot to the given (x, y, z) coordinates within `range` blocks.',
-  setGoals: 'Add or remove a goal from owner_goals or self_goals.',
-  say: 'Speak the given text in in-game chat.',
-  follow: 'Continuously trail an entity at follow_range. Pass `player` (username), or `entity` / `entity_id` / `target` for a mob. Does NOT attack — pair with attackEntity if you want hits. The body trails the target on a 1s tick; an attackEntity call can land a swing as soon as the target is within reach. The snapshot shows `follow_target` so you know who you are trailing. Call `unfollow` before any task that requires moving away from the trail target (gathering, digging far blocks, exploring) — the trail tick will fight your path otherwise. You can re-`follow` afterward if it makes sense.',
-  unfollow: 'Stop trailing the current follow target. The body holds position until you issue another movement.',
-  attackEntity: 'Swing at an entity. `times` (1–10, default 1) hits the target up to N times in one call with ~600ms between swings; stops early if the target dies, moves out of reach, or you are interrupted. Use a higher `times` when hunting to amortize LLM round-trips — e.g. `times: 5` for sheep/pig, `times: 8` for tougher mobs.',
-  // Plan 07-04 Task 1: canonical descriptions live with their behavior modules.
-  dig: DIG_DESCRIPTION,
-  placeBlock: 'Place ONE block against a reference face. Args: `{block:"<name>", against:{x,y,z}|{block:"<name>"}, faceVector?:{x,y,z}}`. Prefer `build` for multi-cell shapes — placeBlock is the primitive `build` composes on top of. Returns `placed <block> on <ref>` or `no <block> in inventory` / `no reference block` / `cannot place ...`.',
-  equip: 'Equip an item from inventory to a slot. Args: `{item:"<name>", destination:"hand"|"off-hand"|"head"|"torso"|"legs"|"feet"}`. Returns `equipped <item> to <slot>` or `no <item> in inventory`. Many actions (placeBlock, build, dig) auto-equip; call equip directly when you want a specific tool ready (e.g. axe before chopping, sword before fighting).',
-  build: BUILD_DESCRIPTION,
-}
+import {
+  WORLD_PRIMER as MINECRAFT_PRIMER,
+  ACTION_DESCRIPTIONS,
+  worldPrimer,
+  capabilityParagraph,
+  actionRules,
+  cuboidGrammar,
+  eventAddendum,
+  cantReachNudge,
+} from './prompts.js'
 
 /**
  * Construct a minecraft Adapter wrapped around a live mineflayer Bot.
@@ -58,9 +47,9 @@ export function createMinecraftAdapter({ bot, config }) {
     getActionSchema: (name) => registry.schema(name),
     getActionDescription: (name) => ACTION_DESCRIPTIONS[name] ?? registry.description?.(name) ?? '',
     executeAction: (name, args, ctx = {}) => {
-      // Action handlers receive (args, bot, config). Brain context (signal,
-      // _goalStore) is folded into the config-shaped 4th argument so existing
-      // handlers don't need to change.
+      // Action handlers receive (args, bot, config). Brain context (signal)
+      // is folded into the config-shaped 4th argument so existing handlers
+      // don't need to change.
       const execConfig = { ...config, ...ctx }
       // The path-finder behavior reads pathfinder_timeout_ms from config; we
       // unify the shape so adapter-side fields (under config.adapter.minecraft)
@@ -73,9 +62,14 @@ export function createMinecraftAdapter({ bot, config }) {
       return registry.execute(name, args, bot, execConfig)
     },
 
-    // ─── World perception ─────────────────────────────────────────────
+    // ─── World perception + prompt blocks ──────────────────────────────
     createSnapshotComposer: () => createSnapshotComposer({ bot }),
     worldPrimer,
+    capabilityParagraph,
+    actionRules,
+    cuboidGrammar,
+    eventAddendum,
+    cantReachNudge,
 
     // ─── Session lifecycle ───────────────────────────────────────────
     attach(handlers) {

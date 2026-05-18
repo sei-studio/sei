@@ -132,7 +132,7 @@ export function resolveEntity(args, bot) {
 // can't latch onto a zombie 40 blocks away after the original target dies —
 // observed bug where killing the immediate threat made the next swing call
 // chase the next-nearest hostile across the map. Players are excluded from
-// the bound (owner follow shouldn't break if they walk away).
+// the bound (player follow shouldn't break if they walk away).
 const NAMED_ENTITY_MAX_DIST = 16
 
 function resolveEntityByName(name, bot) {

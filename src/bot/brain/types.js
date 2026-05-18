@@ -22,7 +22,7 @@
 
 /**
  * @typedef {Object} SnapshotComposer
- * @property {(opts: { goals: any, lastActionResult: string|null, inFlight: any }) => string} next
+ * @property {(opts: { lastActionResult: string|null, inFlight: any }) => string} next
  *   Returns the world-summary string for the next seed turn.
  * @property {() => void} reset
  */
@@ -31,7 +31,7 @@
  * @typedef {Object} AdapterHandlers
  * @property {(player: Player) => void}                                              onPlayerJoined
  * @property {(player: Player) => void}                                              onPlayerLeft
- * @property {(evt: { username: string, text: string, ownerSpoke: boolean,
+ * @property {(evt: { username: string, text: string, playerSpoke: boolean,
  *                    addressed: boolean, nearby: boolean }) => void}                onChat
  * @property {(evt: { attacker: Player|null, attackerLabel: string,
  *                    attackerKind: 'player'|'mob'|'unknown' }) => void}             onAttacked
@@ -41,7 +41,6 @@
 /**
  * @typedef {Object} ExecuteActionContext
  * @property {AbortSignal} signal
- * @property {any}         goalStore
  */
 
 /**
@@ -56,9 +55,24 @@
  *
  * World perception — brain consumes plain text only:
  * @property {() => SnapshotComposer}                                      createSnapshotComposer
+ *
+ * Prompt blocks — natural-language instructions the brain joins into the
+ * cached system prefix and seed user turn. All game-specific NL text comes
+ * through these methods so the brain stays game-agnostic. Edit the strings
+ * in src/bot/adapter/<game>/prompts.js.
  * @property {() => string}                                                worldPrimer
- *   Returns the per-adapter primer string. For minecraft, this is the MINECRAFT_PRIMER block
- *   currently in src/brain/persona.js — Plan 02 moves it to the adapter side.
+ *   World facts / biome / mob / tool primer.
+ * @property {() => string}                                                capabilityParagraph
+ *   "You can move / mine / place / ..." capability summary.
+ * @property {() => string}                                                actionRules
+ *   Movement / hunting / pathfinder / dig syntax rules.
+ * @property {() => string}                                                cuboidGrammar
+ *   Seed-block text teaching the two-corner build/dig grammar.
+ * @property {(event: string, data: any) => string}                        eventAddendum
+ *   Per-event seed addendum (loop_end, idle, attacked, etc.). Returns '' for
+ *   unknown events.
+ * @property {(args: {x:number,y:number,z:number,range:number}) => string} cantReachNudge
+ *   Mid-loop nudge when pathfinder cant_reach trips twice on the same dest.
  *
  * Session lifecycle:
  * @property {(handlers: AdapterHandlers) => void}                         attach

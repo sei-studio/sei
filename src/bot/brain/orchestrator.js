@@ -606,6 +606,14 @@ function maybeWarnByteCap(loop, warned) {
         logger.debug?.(`[sei/orch] sei:action_complete arrived with terminal loop — drop (loop=${currentLoop.id})`)
         return
       }
+      // 260517-fix: tick-claimed path. The action's tool_use was already
+      // paired with a synthesized "in progress" tool_result by handleActionTick.
+      // The real settle is informational — route it through the dedicated
+      // handler instead of trying to fill a slot that no longer exists.
+      if (data?.tickClaimed) {
+        await handleActionCompleteTickClaimed(currentLoop, data)
+        return
+      }
       if (currentLoop._pendingActionUse && currentLoop._pendingActionUse.id === data?.tool_use_id) {
         await handleActionComplete(currentLoop, data)
       } else {
@@ -1007,6 +1015,9 @@ function maybeWarnByteCap(loop, warned) {
         const aborted = runner.abortController.signal.aborted
         const result = formatToolResult(use.name, r)
         try { logActionResult(use.name, r) } catch {}
+        // 260517-fix: capture _tickClaimed BEFORE clearing/nulling, so the
+        // dispatcher knows the tool_use was already paired via tick.
+        const tickClaimed = !!inflightEntry._tickClaimed
         // 260516-0yw: clear the 10s action-tick BEFORE detaching the
         // in-flight reference. `loop` is in scope here (closure over the
         // dispatch call), so clearActionTick(loop.inFlight) is the right form.
@@ -1019,6 +1030,7 @@ function maybeWarnByteCap(loop, warned) {
             result,
             aborted,
             tool_use_id: use.id,
+            tickClaimed,
           })
         } catch (err) {
           logger.warn?.(`[sei/orch] sei:action_complete re-enqueue failed: ${err.message}`)
@@ -1029,6 +1041,7 @@ function maybeWarnByteCap(loop, warned) {
                         (err && (err.name === 'AbortError'))
         const result = aborted ? `aborted: ${use.name}` : `error: ${err?.message ?? 'unknown'}`
         try { logActionResult(use.name, `error: ${err?.message ?? 'unknown'}`) } catch {}
+        const tickClaimed = !!inflightEntry._tickClaimed
         // 260516-0yw: clear the 10s action-tick BEFORE detaching the in-flight.
         clearActionTick(loop.inFlight)
         if (loop.inFlight === inflightEntry) loop.inFlight = null
@@ -1039,6 +1052,7 @@ function maybeWarnByteCap(loop, warned) {
             result,
             aborted,
             tool_use_id: use.id,
+            tickClaimed,
           })
         } catch (err) {
           logger.warn?.(`[sei/orch] sei:action_complete re-enqueue failed: ${err.message}`)
@@ -1319,16 +1333,80 @@ function maybeWarnByteCap(loop, warned) {
   }
 
   /**
+   * 260517-fix: action_complete for a tick-claimed in-flight. The tool_use
+   * was already paired with a synthesized "in progress" tool_result by
+   * handleActionTick; the real settle is informational only.
+   *
+   *   - If R2 replaced the in-flight with a NEW long-runner during the tick
+   *     iteration, `loop.inFlight` is now the new entry — silently drop this
+   *     stale settle so we don't disturb the new action.
+   *   - Otherwise the loop is sitting suspended after a tick (R1 keep-alive)
+   *     with no in-flight: append the result as a user-turn event annotation
+   *     so the model sees the action completed, then drive ONE iteration to
+   *     let it decide what's next (text-only → terminate via the standard
+   *     trigger=sei:action_complete branch; new tool_use → R2; end_loop → R3).
+   */
+  async function handleActionCompleteTickClaimed(loop, data) {
+    if (data?.aborted) {
+      logger.debug?.(`[sei/orch] action_complete tick-claimed + aborted: drop (loop=${loop.id}, name=${data?.name})`)
+      return
+    }
+    if (loop.inFlight) {
+      logger.debug?.(`[sei/orch] action_complete tick-claimed but new in_flight present — drop stale settle (loop=${loop.id}, stale=${data?.name}, current=${loop.inFlight.name})`)
+      return
+    }
+
+    lastActionResult = data.result ?? null
+    const annotationText = `previous action completed: ${data?.name ?? 'action'} -> ${String(data?.result ?? 'done')}`
+    loop._currentIterationTrigger = 'sei:action_complete'
+    try {
+      loop.appendUserTurn([
+        { type: 'text', name: 'event',    text: annotationText },
+        { type: 'text', name: 'snapshot', text: snapshotText() },
+      ])
+    } catch (err) {
+      logger.warn?.(`[sei/orch] action_complete (tick-claimed) appendUserTurn failed: ${err.message}`)
+      return
+    }
+
+    if (loop.abortController.signal.aborted) {
+      replaceAbortController(loop)
+    }
+
+    const byteWarn = loop._byteWarn ?? { flag: false }
+    try {
+      await runIterations(loop, byteWarn)
+      if (loop._terminated) {
+        // R3/R4 — teardown below.
+      } else if (loop.inFlight) {
+        // R2 dispatched a new long-runner; loop healthy.
+        return
+      } else {
+        terminateLoop(loop, 'natural-after-tick-claimed-complete')
+      }
+    } catch (err) {
+      logger.error?.(`[sei/orch] action_complete (tick-claimed) continuation failed: ${err && err.message}`)
+      terminateLoop(loop, `error: ${err && err.message}`)
+    }
+    if (loop._terminated) {
+      await teardownLoop(loop)
+    }
+  }
+
+  /**
    * 260516-0yw: sei:action_tick handler. Fires every 10s while a long-runner
    * is in_flight, driving ONE silent-default LLM iteration so the bot can
    * comment or abort. Most ticks should produce empty text and no tool call
    * (silence is the default).
    *
    * Semantics:
-   *  - The tick does NOT consume `_pendingResults` / `_pendingActionUse` —
-   *    those belong to the original action_complete continuation. The tick
-   *    appends a fresh user-turn (event-tagged) and calls Haiku ONE more
-   *    time on the same loop history.
+   *  - 260517-fix: the tick DOES consume `_pendingResults` / `_pendingActionUse`
+   *    by synthesizing an interim "in progress" tool_result. Anthropic's API
+   *    requires every tool_use to be immediately followed by a tool_result;
+   *    leaving the in-flight's tool_use open while appending a user turn for
+   *    the tick produces a 400 and tears the loop down mid-action. The actual
+   *    long-runner keeps executing; when it settles, the dispatcher routes
+   *    via `tickClaimed=true` to handleActionCompleteTickClaimed.
    *  - `loop._currentIterationTrigger = 'sei:action_tick'` so the extended
    *    classifier (iterationKeepsLoopAlive) keeps the loop alive when the
    *    model returns text-only.
@@ -1345,17 +1423,90 @@ function maybeWarnByteCap(loop, warned) {
     // keeps the loop alive on a text-only response.
     loop._currentIterationTrigger = 'sei:action_tick'
 
-    // Append a fresh user turn (snapshot + tick-framed event). Mirrors the
-    // PLAYER INTERRUPT mid-loop continuation shape but with a different
-    // event tag — and crucially does NOT touch _pendingResults.
-    try {
-      loop.appendUserTurn([
-        { type: 'text', name: 'snapshot', text: snapshotText() },
-        { type: 'text', name: 'event',    text: tickEventText },
-      ])
-    } catch (err) {
-      logger.warn?.(`[sei/orch] action_tick appendUserTurn failed: ${err.message}`)
+    // 260517-fix: two modes.
+    //
+    //   Mode 1 — FIRST tick after a fresh dispatch: the in-flight's tool_use
+    //   is open in the last assistant turn. Synthesize an "in progress"
+    //   tool_result for it (and deferred placeholders for any queued
+    //   non-inline tool_uses) so the API pairing invariant holds, then
+    //   appendToolResults. Mark `inFlight._tickClaimed = true` so the
+    //   eventual real settle routes through handleActionCompleteTickClaimed.
+    //
+    //   Mode 2 — SUBSEQUENT tick (the tool_use was already closed by a
+    //   previous tick, model responded text-only via R1 keep-alive). The
+    //   last assistant turn has no open tool_use, so appendUserTurn is
+    //   safe and sufficient.
+    //
+    // Without Mode 1 the prior assistant's tool_use sits unclosed → 400 from
+    // Anthropic and the loop dies mid-action. Without Mode 2 only the first
+    // tick fires effectively; subsequent ticks during a long-runner are
+    // dropped because _pendingActionUse is null.
+    const inFlight = loop.inFlight
+    if (!inFlight) {
+      // Dispatcher gate filters this, but defensive.
+      logger.warn?.(`[sei/orch] action_tick: no in_flight on loop ${loop.id} — drop tick`)
       return
+    }
+    const byteWarn = loop._pendingByteWarn ?? loop._byteWarn ?? { flag: false }
+
+    if (loop._pendingActionUse) {
+      // Mode 1: close open tool_use(s).
+      const pendingResults = loop._pendingResults
+      const pendingUse = loop._pendingActionUse
+      const pendingQueue = loop._pendingToolUses
+      if (!pendingResults) {
+        logger.warn?.(`[sei/orch] action_tick: _pendingActionUse set but no _pendingResults on loop ${loop.id} — drop tick`)
+        return
+      }
+      const slotIdx = pendingResults.findIndex(r => !r)
+      if (slotIdx < 0) {
+        logger.warn?.(`[sei/orch] action_tick: no unfilled slot in _pendingResults on loop ${loop.id} — drop tick`)
+        return
+      }
+      pendingResults[slotIdx] = {
+        type: 'tool_result',
+        tool_use_id: pendingUse.id,
+        content: `still in progress (${elapsedSec}s elapsed)`,
+        is_error: false,
+      }
+      if (pendingQueue && pendingQueue.length > 0) {
+        for (const entry of pendingQueue) {
+          if (!pendingResults[entry.index]) {
+            pendingResults[entry.index] = {
+              type: 'tool_result',
+              tool_use_id: entry.use.id,
+              content: `deferred: not started (action_tick reclaimed the turn)`,
+              is_error: false,
+            }
+          }
+        }
+      }
+      inFlight._tickClaimed = true
+      loop._pendingResults = null
+      loop._pendingActionUse = null
+      loop._pendingToolUses = null
+      loop._pendingByteWarn = null
+      try {
+        loop.appendToolResults(pendingResults, {
+          snapshot: snapshotText(),
+          eventText: tickEventText,
+        })
+      } catch (err) {
+        logger.warn?.(`[sei/orch] action_tick appendToolResults failed: ${err.message}`)
+        return
+      }
+    } else {
+      // Mode 2: tool_use already closed by prior tick. Safe to just append
+      // a user turn with the tick event + fresh snapshot.
+      try {
+        loop.appendUserTurn([
+          { type: 'text', name: 'event',    text: tickEventText },
+          { type: 'text', name: 'snapshot', text: snapshotText() },
+        ])
+      } catch (err) {
+        logger.warn?.(`[sei/orch] action_tick appendUserTurn (mode 2) failed: ${err.message}`)
+        return
+      }
     }
 
     // Reset the outer abortController if a prior abort left it tripped
@@ -1364,8 +1515,6 @@ function maybeWarnByteCap(loop, warned) {
     if (loop.abortController.signal.aborted) {
       replaceAbortController(loop)
     }
-
-    const byteWarn = loop._pendingByteWarn ?? loop._byteWarn ?? { flag: false }
 
     // Drive ONE iteration. The R1-R4 dispatcher in runIterations decides
     // whether to keep the loop alive (text-only → keep, via extended

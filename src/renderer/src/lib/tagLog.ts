@@ -18,9 +18,9 @@ export interface TaggedLine {
 const TS = String.raw`\[\d{2}:\d{2}:\d{2}\.\d{3}\]`;
 
 const RULES: Array<{ re: RegExp; color: string }> = [
-  // Owner → bot: chat outbound (only place log lines may use accent)
+  // Bot → player: chat outbound (only place log lines may use accent)
   { re: new RegExp(`^${TS}\\s+\\[chat->\\]`), color: 'var(--accent)' },
-  // Bot → owner: chat inbound
+  // Player → bot: chat inbound
   { re: new RegExp(`^${TS}\\s+\\[chat<-\\]`), color: 'var(--accent)' },
   // Haiku response (text emit)
   { re: new RegExp(`^${TS}\\s+\\[haiku!\\]`), color: 'var(--text)' },

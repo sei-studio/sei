@@ -7,10 +7,10 @@
  * system temp dir) — otherwise `rename` may fail with EXDEV across
  * filesystems.
  *
- * No fsync for v1: SPEC/CONTEXT do not require crash-durability for OWNER.md /
- * DIARY.md (single-user local bot, plain markdown that's regenerable).
+ * No fsync for v1: SPEC/CONTEXT do not require crash-durability for PLAYER.md /
+ * MEMORY.md (single-user local bot, plain markdown that's regenerable).
  *
- * Used by: src/memory/owner.js, src/memory/diary.js (and Plan 3-03 consolidation).
+ * Used by: src/bot/brain/memory/player.js, src/bot/brain/memory/memoryLog.js.
  */
 
 import { writeFile, rename, unlink } from 'node:fs/promises'

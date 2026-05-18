@@ -5,7 +5,7 @@ import { world } from './world.js'
 import { inventory, heldItem } from './inventory.js'
 import { aroundFeet } from './blocks.js'
 import { surveyBlocks } from './veins.js'
-import { nearbyEntities } from './entities.js'
+import { nearbyEntities, droppedItemName } from './entities.js'
 import { setHandles, HANDLE_TTL_MS } from './targeting.js'
 import { getFollowTargetLabel } from '../behaviors/follow.js'
 // 260513-wkd: centralised in_flight line rendering. Helper preserves the
@@ -16,7 +16,7 @@ import { getInFlightLineForSnapshot } from '../../../brain/inflight.js'
 const MAX_ENTITIES = 6
 // Entity visibility radius (blocks). 64 = 4 chunks, the rough distance at
 // which a real Minecraft player can see and identify another player. Bumped
-// from 24 so the owner stays visible (with coords) as they walk a few chunks
+// from 24 so the player stays visible (with coords) as they walk a few chunks
 // ahead, instead of dropping out of the snapshot and forcing the model to
 // hallucinate a `goTo` target. The kill heuristic in createSnapshotComposer
 // intentionally stays at its tighter radius — wider tracking there produces
@@ -28,11 +28,11 @@ const ENTITY_RADIUS = 64
  * Side effect: replaces the targeting handle table with the #N entries from this snapshot.
  *
  * @param {import('mineflayer').Bot} bot
- * @param {{ goals?:{owner_goals?:string[], self_goals?:string[]}, lastActionResult?:string, inFlight?:{name:string,args:any,startedAt:number}|null, pinUsername?:string|null }} [opts]
+ * @param {{ lastActionResult?:string, inFlight?:{name:string,args:any,startedAt:number}|null, pinUsername?:string|null }} [opts]
  * @returns {string}
  */
 export function composeSnapshot(bot, opts = {}) {
-  const { goals, lastActionResult, inFlight, pinUsername } = opts
+  const { lastActionResult, inFlight, pinUsername } = opts
   const v = vitals(bot)
   const w = world(bot)
   const held = heldItem(bot)
@@ -65,12 +65,17 @@ export function composeSnapshot(bot, opts = {}) {
   const inFlightLine = getInFlightLineForSnapshot(inFlight)
   if (inFlightLine) lines.push(inFlightLine)
 
-  // Inventory
+  // Inventory — append `(K/36 slots)` so the LLM can't confabulate "inventory
+  // full" when downstream actions return "no X in inventory" (the real cause
+  // is usually a dig-drop that hasn't been auto-collected yet, not capacity).
+  // bot.inventory.items() returns the 36 main-inventory slots only (excludes
+  // armor / offhand / crafting), so .length is the used-slot count.
   const invEntries = Object.entries(inv)
   const invStr = invEntries.length
     ? invEntries.map(([k, n]) => `${k}×${n}`).join(' ')
     : 'empty'
-  lines.push(`inventory: ${invStr}`)
+  const slotsUsed = (typeof bot.inventory?.items === 'function') ? bot.inventory.items().length : 0
+  lines.push(`inventory (${slotsUsed}/36 slots): ${invStr}`)
 
   // Around feet — grouped non-air blocks in 5x4x5 cube. Implicit coords (bot
   // is standing in them); no #N handles minted (would flood the table).
@@ -113,7 +118,13 @@ export function composeSnapshot(bot, opts = {}) {
   } else {
     for (const { entity: e } of ents.entries) {
       const tag = `#${n++}`
-      const label = e.username ?? e.name ?? `entity-${e.id}`
+      let label = e.username ?? e.name ?? `entity-${e.id}`
+      // Decode dropped-item entities to `item(<name>)` so the LLM can see what
+      // it's looking at (e.g. an unpicked-up dirt drop from a recent dig).
+      if (label === 'item' || label === 'item_stack') {
+        const itemName = droppedItemName(e)
+        if (itemName) label = `item(${itemName})`
+      }
       const x = Math.round(e.position.x)
       const y = Math.round(e.position.y)
       const z = Math.round(e.position.z)
@@ -122,12 +133,6 @@ export function composeSnapshot(bot, opts = {}) {
     }
     if (ents.more > 0) lines.push(`  +${ents.more} more`)
   }
-
-  // Goals
-  const owner = goals?.owner_goals ?? []
-  const self = goals?.self_goals ?? []
-  lines.push(`owner_goals: ${owner.length ? owner.join(' | ') : '(none)'}`)
-  lines.push(`self_goals: ${self.length ? self.join(' | ') : '(none)'}`)
 
   // Follow status — bot's awareness of its own auto-follow behavior
   const followLabel = getFollowTargetLabel()

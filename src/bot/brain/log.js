@@ -116,10 +116,10 @@ export function logChatOut(text) {
  */
 // Named user-content blocks whose content is static (or near-static) within a
 // session — elided to a `@sha` ref after first appearance. seed_cuboid_grammar
-// is fully static; seed_owner / affect_log shift only when the owner profile
-// or the affect log is rewritten. Hashing collapses repetition; if the body
-// changes the hash changes and the new body is emitted in full.
-const STATIC_NAMED_BLOCKS = new Set(['seed_owner', 'seed_cuboid_grammar', 'affect_log'])
+// is fully static; seed_player shifts only when the player profile changes;
+// memory shifts every remember()/forget(). Hashing collapses repetition;
+// when the body changes the hash changes and the new body is emitted in full.
+const STATIC_NAMED_BLOCKS = new Set(['seed_player', 'seed_cuboid_grammar', 'memory'])
 
 export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }) {
   const toolNames = (tools ?? []).map(t => t.name).join(', ')
@@ -148,23 +148,12 @@ export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }
     userBodyLines.push(elideOrFull('capability', capabilityText))
   }
 
-  // 5c. diary — `name === 'seed_diary'` in last user turn content.
-  if (lastUser && Array.isArray(lastUser.content)) {
-    for (const b of lastUser.content) {
-      if (b?.type === 'text' && b?.name === 'seed_diary' && typeof b.text === 'string' && b.text.length > 0) {
-        userBodyLines.push(elideOrFull('diary', b.text))
-        break
-      }
-    }
-  }
-
-  // 5d. Every other named text block — inline in full, preserving order.
-  //   Observed names from orchestrator.js + compaction.js: seed_owner,
-  //   seed_diary, affect_log, recent_loop_history, recent_owner_chat,
-  //   your_recent_messages, event, snapshot. Of these, only seed_diary is
-  //   hashed (above); the rest are printed inline (D-8: per-call dynamic
-  //   sections never hashed). seed_owner is rendered inline by its `name`.
-  const reserved = new Set(['persona', 'capability', 'diary', 'seed_diary'])
+  // 5c. Every named text block — inline in full, preserving order.
+  //   Observed names from orchestrator.js: seed_player, seed_cuboid_grammar,
+  //   memory, recent_player_chat, your_recent_messages, event, snapshot.
+  //   STATIC_NAMED_BLOCKS entries are hashed after first sight; the rest
+  //   are printed inline (per-call dynamic sections never hashed).
+  const reserved = new Set(['persona', 'capability'])
   if (lastUser && Array.isArray(lastUser.content)) {
     for (const b of lastUser.content) {
       if (b?.type !== 'text') continue

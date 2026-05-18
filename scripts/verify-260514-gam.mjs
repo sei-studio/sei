@@ -24,7 +24,7 @@
 //       flight) terminates loop and re-enqueues original trigger
 //   G6  grep-gate: LONG_RUNNERS, isLongRunner, runWithInflightAwait,
 //       runWithInflight all absent from orchestrator.js
-//   G7  mixed batch [noteToSelf, placeBlock, setGoals] — inline-first,
+//   G7  mixed batch [remember, placeBlock, forget] — inline-first,
 //       suspend-middle, drain-inline-tail ordering
 //   G8  regression: INLINE_METADATA tools never set loop.inFlight and
 //       never fire sei:action_complete
@@ -502,54 +502,53 @@ try {
   ok('G6', 'LONG_RUNNERS / isLongRunner / runWithInflightAwait / runWithInflight all absent from orchestrator.js')
 } catch (e) { bad('G6', e) }
 
-// ─── G7 — mixed batch [noteToSelf, placeBlock, setGoals] ────────────────
-// Verifies the in-order processing: noteToSelf fills slot 0 inline (no
-// inflight), placeBlock dispatches and suspends with setGoals queued, then
-// on action_complete setGoals drains inline before the next haiku call.
+// ─── G7 — mixed batch [remember, placeBlock, forget] ────────────────────
+// Verifies the in-order processing: remember fills slot 0 inline (no
+// inflight), placeBlock dispatches and suspends with forget queued, then
+// on action_complete forget drains inline before the next haiku call.
 try {
   const { orch, anthropic, adapter, reenqueue } = makeOrch()
   anthropic.queue.push({
     text: 'mixed',
     toolUses: [
-      { name: 'noteToSelf', input: { kind: 'preference', summary: 'likes cacti' } },
+      { name: 'remember', input: { text: 'shawn likes cacti' } },
       { name: 'placeBlock', input: { x: 1, y: 1, z: 1, block: 'cactus' } },
-      { name: 'setGoals', input: { current: 'plant a garden' } },
+      { name: 'forget', input: { text: 'old preference' } },
     ],
   })
   anthropic.queue.push({ text: 'planted', toolUses: [] })
   const dispatchP = orch.handleDispatch('sei:chat_received', { username: 'shawn', text: 'plant a garden', ownerSpoke: true })
   await sleep(10)
-  // After dispatch: noteToSelf processed inline, placeBlock suspending,
-  // setGoals queued.
+  // After dispatch: remember processed inline, placeBlock suspending,
+  // forget queued.
   assert.ok(orch.currentLoop?.inFlight, 'G7: expected inFlight after placeBlock')
   assert.equal(orch.currentLoop.inFlight.name, 'placeBlock', 'G7: inFlight should be placeBlock')
-  assert.equal(orch.currentLoop._pendingToolUses?.length, 1, `G7: expected 1 queued (setGoals), got ${orch.currentLoop._pendingToolUses?.length}`)
-  assert.equal(orch.currentLoop._pendingToolUses[0].use.name, 'setGoals', 'G7: queued entry should be setGoals')
+  assert.equal(orch.currentLoop._pendingToolUses?.length, 1, `G7: expected 1 queued (forget), got ${orch.currentLoop._pendingToolUses?.length}`)
+  assert.equal(orch.currentLoop._pendingToolUses[0].use.name, 'forget', 'G7: queued entry should be forget')
   // Resolve placeBlock.
   adapter.resolveHead('placed')
   await sleep(10)
   await drainActionComplete(orch, reenqueue)
   await sleep(20)
   await dispatchP
-  // After drain: setGoals processed inline, appendToolResults + 1 haiku
+  // After drain: forget processed inline, appendToolResults + 1 haiku
   // call, then text-only response.
   assert.equal(orch.currentLoop, null, 'G7: expected loop terminated')
   // Exactly 2 anthropic calls — 1 initial + 1 post-drain.
   assert.equal(anthropic.calls.length, 2, `G7: expected 2 haiku calls, got ${anthropic.calls.length}`)
-  ok('G7', 'mixed batch [noteToSelf, placeBlock, setGoals]: inline-first, suspend-middle, drain-inline-tail, ONE post-batch haiku')
+  ok('G7', 'mixed batch [remember, placeBlock, forget]: inline-first, suspend-middle, drain-inline-tail, ONE post-batch haiku')
 } catch (e) { bad('G7', e) }
 
 // ─── G8 — INLINE_METADATA tools never set inFlight nor fire action_complete
-// 260514-ngj: stop retired, end_loop replaces it as the third INLINE_METADATA
-// member alongside setGoals + noteToSelf.
+// INLINE_METADATA = {remember, forget, end_loop}.
 try {
   const { orch, anthropic, adapter, reenqueue } = makeOrch()
   // Pure-metadata batch — should fire ZERO action_completes, never set inFlight.
   anthropic.queue.push({
     text: 'noting',
     toolUses: [
-      { name: 'noteToSelf', input: { kind: 'preference', summary: 'enjoys building' } },
-      { name: 'setGoals', input: { current: 'build a base' } },
+      { name: 'remember', input: { text: 'enjoys building' } },
+      { name: 'forget', input: { text: 'stale note' } },
       { name: 'end_loop', input: {} },
     ],
   })
@@ -568,13 +567,11 @@ try {
   // No sei:action_complete reenqueues.
   const acCalls = reenqueue.log.filter(c => c.event === 'sei:action_complete')
   assert.equal(acCalls.length, 0, `G8: expected 0 sei:action_complete events for INLINE_METADATA batch, got ${acCalls.length}`)
-  // Adapter pending list should be empty — INLINE_METADATA tools don't
-  // route through executeAction (except setGoals which IS a registry
-  // action). Allow setGoals here — the assertion that matters is no
-  // action_complete reenqueue, which proves no startLongRunner dispatch.
-  // Loop terminated via end_loop.
+  // INLINE_METADATA tools don't route through executeAction. The
+  // assertion that matters is no action_complete reenqueue, which proves
+  // no startLongRunner dispatch. Loop terminated via end_loop.
   assert.equal(orch.currentLoop, null, 'G8: expected loop terminated via end_loop')
-  ok('G8', 'INLINE_METADATA tools (setGoals/noteToSelf/end_loop) never set inFlight, never fire sei:action_complete')
+  ok('G8', 'INLINE_METADATA tools (remember/forget/end_loop) never set inFlight, never fire sei:action_complete')
 } catch (e) { bad('G8', e) }
 
 // ═══════════════════════════════════════════════════════════════════════════

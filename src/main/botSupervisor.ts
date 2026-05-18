@@ -219,10 +219,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       throw err;
     }
 
-    // BLOCKER-4 fix: load UserConfig so the bot's adapter.minecraft.username
-    // (Microsoft account) and owner_username (preferred_name) are populated
-    // from onboarding. ConfigSchema.parse in the bot will throw if username
-    // is missing, so we refuse to fork early with a clear error.
+    // Load UserConfig so the bot's adapter.minecraft.username (Microsoft
+    // account) and player_username (preferred_name) are populated from
+    // onboarding. ConfigSchema.parse in the bot will throw if username is
+    // missing, so we refuse to fork early with a clear error.
     const userCfg = await loadUserConfig();
     const mc_username = (userCfg.mc_username ?? '').trim();
     const preferred_name = (userCfg.preferred_name ?? '').trim();
@@ -354,15 +354,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     port1.start();
 
     child.once('spawn', () => {
-      // BLOCKER-4 fix: ship mc_username + preferred_name from UserConfig so
-      // the bot can satisfy ConfigSchema (adapter.minecraft.username) and
-      // seed owner_username for owner-recognition without disk reads.
-      //
-      // Phase 9 (09-02): also ship skinServerBaseUrl so the bot can log it for
-      // verification (the actual CustomSkinLoader consumer is the host's MC
-      // client; the bot itself never hits the skin server). The bot also
-      // prefers character.username over the legacy sanitizeMcName(character.name)
-      // fallback so each persona connects under its own MC in-game name.
+      // Ship mc_username, preferred_name, and skinServerBaseUrl so the bot
+      // can satisfy ConfigSchema, seed player_username for player-recognition
+      // without disk reads, and log the skin server URL for verification.
+      // The bot itself never hits the skin server — the consumer is the host
+      // MC client via CustomSkinLoader. character.username is preferred over
+      // sanitizeMcName(character.name) so each persona connects under its
+      // own in-game name.
       child.postMessage(
         {
           type: 'init',

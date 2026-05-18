@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { IpcChannel, type WizardProgressEvent } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
-import { listCharacters, getCharacter, expandAndSaveCharacter, deleteCharacter, resetMemoryForCharacter } from './characterStore';
+import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter } from './characterStore';
 import { saveApiKey, hasApiKey, backendKind } from './apiKeyStore';
 import type { BotSupervisor } from './botSupervisor';
 
@@ -94,13 +94,23 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     return await getCharacter(id);
   });
-  // 260516-0yw: chars.save now runs the LLM expansion call (main owns the
+  // 260516-0yw: chars.save runs the LLM expansion call (main owns the
   // Anthropic API key) and returns the persisted Character so the renderer
-  // can update its store with the new persona.expanded. Throws surface
-  // through the IPC layer as a rejected Promise; the renderer's
-  // EditCharacterModal / AddCharacterScreen catches and displays.
-  ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown): Promise<Character> => {
+  // can update its store with the new persona.expanded.
+  // 260517-frz: when the renderer passes `{ skipExpansion: true }`, main
+  // writes `character.persona.expanded` verbatim and skips the LLM call.
+  // This is how the Edit modal supports manual editing of the long-form
+  // prompt — the user's edits win, no regeneration is triggered.
+  ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown, optsArg: unknown): Promise<Character> => {
     const character = CharacterSchema.parse(charArg);
+    const skipExpansion =
+      optsArg != null &&
+      typeof optsArg === 'object' &&
+      (optsArg as { skipExpansion?: unknown }).skipExpansion === true;
+    if (skipExpansion) {
+      await saveCharacter(character);
+      return character;
+    }
     return await expandAndSaveCharacter({ character });
   });
   ipcMain.handle(IpcChannel.chars.delete, async (_event, idArg: unknown): Promise<void> => {

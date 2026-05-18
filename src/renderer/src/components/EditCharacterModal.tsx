@@ -1,20 +1,31 @@
 /**
- * EditCharacterModal — inline edit for a character's name and persona
- * source. Also houses destructive actions (Delete, Reset memory) in a
- * footer Danger section: Delete is gated through DeleteConfirmModal;
- * Reset memory uses an inline two-click confirm.
+ * EditCharacterModal — inline edit for a character's name, persona
+ * source, AND the expanded long-form prompt. Also houses destructive
+ * actions (Delete, Reset memory) in a footer Danger section: Delete is
+ * gated through DeleteConfirmModal; Reset memory uses an inline two-
+ * click confirm.
  *
  * 260516-0yw:
  *  - The description field is dropped entirely; persona prompt is renamed
  *    to PERSONA SOURCE (the short user blurb).
- *  - A collapsible "EXPANDED PROMPT (read-only)" section shows the
- *    LLM-generated long-form prompt. Default collapsed; Copy button
- *    writes to clipboard. When persona.expanded is empty, a hint is
- *    shown instead of the preview.
+ *  - A collapsible EXPANDED PROMPT section shows the LLM-generated long
+ *    form prompt. Default collapsed; Copy button writes to clipboard.
  *  - Save runs the main-process LLM expansion call (typical 3–8s);
  *    button text becomes "Generating persona…" while in flight.
  *  - sei.saveCharacter now returns the persisted Character; we
  *    refreshCharacter from the store to pick up persona.expanded.
+ *
+ * 260517-frz: the expanded prompt is now MANUALLY EDITABLE.
+ *  - The collapsible section renders a textarea (not a <pre>) so the
+ *    user can override the LLM expansion directly.
+ *  - Save decides per change whether to regenerate from source or write
+ *    the user's expanded text verbatim:
+ *      • expanded edited                 → write verbatim (skipExpansion=true)
+ *      • only source edited              → regenerate (skipExpansion=false)
+ *      • both edited                     → expanded wins (skipExpansion=true)
+ *      • neither edited (name-only save) → write verbatim (skipExpansion=true)
+ *  - A "Regenerate from source" button explicitly forces a fresh LLM
+ *    expansion using the current source, throwing away manual edits.
  *
  * Validation:
  *  - name must be non-empty trimmed
@@ -46,14 +57,21 @@ export function EditCharacterModal({
 }: EditCharacterModalProps): React.ReactElement {
   const [name, setName] = useState<string>(character.name);
   const [personaSource, setPersonaSource] = useState<string>(character.persona.source ?? '');
+  const [personaExpanded, setPersonaExpanded] = useState<string>(character.persona.expanded ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
+  const [regenerating, setRegenerating] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState<boolean>(false);
   const [confirmingReset, setConfirmingReset] = useState<boolean>(false);
   const [resetting, setResetting] = useState<boolean>(false);
   const [resetDone, setResetDone] = useState<boolean>(false);
   const [expandedOpen, setExpandedOpen] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+
+  const originalSource = character.persona.source ?? '';
+  const originalExpanded = character.persona.expanded ?? '';
+  const sourceDirty = personaSource !== originalSource;
+  const expandedDirty = personaExpanded !== originalExpanded;
 
   const removeCharacter = useDataStore((s) => s.removeCharacter);
   const navigate = useUiStore((s) => s.navigate);
@@ -82,23 +100,24 @@ export function EditCharacterModal({
     }
     setSaving(true);
     setError(null);
-    // Send the SOURCE (not expanded) — main will regenerate `expanded`
-    // from the new source using the prior expansion as voice-continuity
-    // reference, then return the persisted Character.
+    // 260517-frz: decide regenerate vs. verbatim-write based on which
+    // fields the user touched. If they touched `expanded` at all, their
+    // edits win (skipExpansion=true). If they only touched `source`, we
+    // regenerate. If they touched neither (name-only save), we still
+    // skip — no reason to burn an API call.
+    const skipExpansion = expandedDirty || !sourceDirty;
     const draft: Character = {
       ...character,
       name: trimmedName,
       persona: {
         source: trimmedSource,
-        expanded: character.persona.expanded, // ignored by main; expandAndSaveCharacter rewrites it
+        // When regenerating, main overwrites this. When skipping, this is
+        // exactly what gets persisted.
+        expanded: personaExpanded,
       },
     };
     try {
-      const persisted = await sei.saveCharacter(draft);
-      // refreshCharacter re-fetches from main into the store. The returned
-      // `persisted` already has the new expanded prompt, but going through
-      // the store's refresh path keeps the same single source-of-truth
-      // shape with the rest of the UI.
+      const persisted = await sei.saveCharacter(draft, { skipExpansion });
       await useDataStore.getState().refreshCharacter(character.id);
       onSaved?.(persisted);
       onClose();
@@ -108,6 +127,39 @@ export function EditCharacterModal({
       console.error('[EditCharacterModal] saveCharacter failed', err);
       setError(msg);
       setSaving(false);
+    }
+  };
+
+  /**
+   * 260517-frz: explicit regenerate — force the main-process LLM expansion
+   * using the CURRENT source field (not the saved one). Updates the
+   * expanded textarea with the fresh result so the user can review and
+   * adjust before pressing Save. Does NOT persist on its own.
+   */
+  const onRegenerate = async (): Promise<void> => {
+    const trimmedSource = personaSource.trim();
+    if (!trimmedSource) {
+      setError('Persona source cannot be empty.');
+      return;
+    }
+    setRegenerating(true);
+    setError(null);
+    const draft: Character = {
+      ...character,
+      name: name.trim() || character.name,
+      persona: { source: trimmedSource, expanded: '' },
+    };
+    try {
+      const persisted = await sei.saveCharacter(draft, { skipExpansion: false });
+      await useDataStore.getState().refreshCharacter(character.id);
+      setPersonaExpanded(persisted.persona.expanded ?? '');
+    } catch (err) {
+      const msg = (err as Error)?.message ?? 'Failed to regenerate.';
+      // eslint-disable-next-line no-console
+      console.error('[EditCharacterModal] regenerate failed', err);
+      setError(msg);
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -147,7 +199,7 @@ export function EditCharacterModal({
 
   const onCopyExpanded = async (): Promise<void> => {
     try {
-      await navigator.clipboard.writeText(character.persona.expanded ?? '');
+      await navigator.clipboard.writeText(personaExpanded);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -155,7 +207,8 @@ export function EditCharacterModal({
     }
   };
 
-  const hasExpanded = (character.persona.expanded ?? '').trim().length > 0;
+  const hasExpanded = personaExpanded.trim().length > 0;
+  const busy = saving || regenerating;
 
   return (
     <>
@@ -194,7 +247,7 @@ export function EditCharacterModal({
             />
           </div>
 
-          {/* 260516-0yw: collapsible read-only expanded-prompt preview */}
+          {/* 260516-0yw / 260517-frz: collapsible editable expanded-prompt */}
           <div className={styles.expandedSection}>
             <button
               type="button"
@@ -205,23 +258,45 @@ export function EditCharacterModal({
               <span className={styles.expandedCaret} aria-hidden="true">
                 {expandedOpen ? '▾' : '▸'}
               </span>
-              <span>EXPANDED PROMPT (read-only)</span>
+              <span>EXPANDED PROMPT{expandedDirty ? ' • edited' : ''}</span>
             </button>
             {expandedOpen ? (
               hasExpanded ? (
-                <div className={styles.expandedBody}>
-                  <button
-                    type="button"
-                    className={styles.expandedCopy}
-                    onClick={() => void onCopyExpanded()}
-                  >
-                    {copied ? 'Copied' : 'Copy'}
-                  </button>
-                  <pre className={styles.expandedPre}>{character.persona.expanded}</pre>
-                </div>
+                <>
+                  <div className={styles.expandedBody}>
+                    <button
+                      type="button"
+                      className={styles.expandedCopy}
+                      onClick={() => void onCopyExpanded()}
+                    >
+                      {copied ? 'Copied' : 'Copy'}
+                    </button>
+                    <textarea
+                      className={styles.expandedTextarea}
+                      value={personaExpanded}
+                      onChange={(e) => setPersonaExpanded(e.target.value)}
+                      spellCheck={false}
+                      disabled={busy}
+                      aria-label="Expanded persona prompt"
+                    />
+                  </div>
+                  <div className={styles.expandedActions}>
+                    <span className={styles.expandedHelp}>
+                      Edit directly to override the auto-expansion, or regenerate from source.
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.regenerateBtn}
+                      onClick={() => void onRegenerate()}
+                      disabled={busy || personaSource.trim() === ''}
+                    >
+                      {regenerating ? 'Regenerating…' : 'Regenerate from source'}
+                    </button>
+                  </div>
+                </>
               ) : (
                 <div className={styles.expandedHint}>
-                  Save the character to generate the expanded prompt.
+                  Save the character to generate the expanded prompt, then edit here.
                 </div>
               )
             ) : null}
@@ -235,7 +310,7 @@ export function EditCharacterModal({
                   type="button"
                   className={styles.resetBtn}
                   onClick={() => void onResetMemoryClick()}
-                  disabled={resetting || saving}
+                  disabled={resetting || busy}
                 >
                   {resetDone
                     ? 'Memory reset'
@@ -249,7 +324,7 @@ export function EditCharacterModal({
                   type="button"
                   className={styles.deleteBtn}
                   onClick={() => setConfirmingDelete(true)}
-                  disabled={saving}
+                  disabled={busy}
                 >
                   Delete character
                 </button>
@@ -260,16 +335,18 @@ export function EditCharacterModal({
           {error ? <div className={styles.error}>{error}</div> : null}
 
           <div className={styles.footer}>
-            <Button kind="quiet" size="md" onClick={onClose} disabled={saving}>
+            <Button kind="quiet" size="md" onClick={onClose} disabled={busy}>
               Cancel
             </Button>
             <Button
               kind="primary"
               size="md"
               onClick={() => void onSave()}
-              disabled={saving}
+              disabled={busy}
             >
-              {saving ? 'Generating persona…' : 'Save'}
+              {saving
+                ? (expandedDirty || !sourceDirty ? 'Saving…' : 'Generating persona…')
+                : 'Save'}
             </Button>
           </div>
         </div>

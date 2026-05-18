@@ -187,7 +187,7 @@ export function createBotInstance({
   // Expose the chat starter so the brain (which knows the orchestrator) can
   // pass it in after construction. startChat sets up the bot.on('chat')
   // listener and the stop-verb fast path; it requires the orchestrator
-  // reference for the abort-on-owner-chat behavior.
+  // reference for the abort-on-player-chat behavior.
   bot._sei_startChat = (orchestrator) => startChat(bot, config, orchestrator)
 
   return bot

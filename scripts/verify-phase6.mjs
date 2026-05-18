@@ -219,9 +219,10 @@ try {
   const region = stripped.slice(i, i + 4000)
   assert.match(region, /^\s*find:\s*/m, 'find: key not in ACTION_DESCRIPTIONS region')
   assert.match(region, /^\s*gather:\s*/m, 'gather: key not in ACTION_DESCRIPTIONS region')
-  // Verify subRegistry filter at the buildAnthropicTools call site does NOT
-  // exclude find / gather — only setGoals should be filtered.
-  assert.match(stripped, /filter\(n => n !== 'setGoals'\)/, 'subRegistry filter signature changed; verify it still passes find + gather')
+  // Verify the orchestrator's combinedToolsFor passes the registry list
+  // straight through (no movement-tier filter). find + gather make it to
+  // the LLM tool surface unfiltered.
+  assert.match(stripped, /list:\s*\(\)\s*=>\s*registry\.list\(\)/, 'subRegistry list signature changed; verify find + gather still pass through')
   ok('V8 - orchestrator tool surface includes find + gather (no movement-tier filter blocks them)')
 } catch (e) { bad('V8', e) }
 

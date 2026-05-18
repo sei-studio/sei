@@ -1215,13 +1215,13 @@ CASES['no-op-loop-skips-diary'] = async () => {
     const compactor = makeStubCompactor()
     const ss = await createSessionState({ ownerMdPath, diary, compactor, config, bot, logger: silentLogger() })
 
-    // Pure say + setGoals loop — no mutating action. Cap = 1 so this would
+    // Pure say + remember loop — no mutating action. Cap = 1 so this would
     // ordinarily trigger the diary write; the mutation gate must skip it.
     const noopLoop = [{
       role: 'assistant',
       content: [
         { type: 'tool_use', id: 'a1', name: 'say', input: { text: 'hi' } },
-        { type: 'tool_use', id: 'a2', name: 'setGoals', input: { list: 'self', op: 'add', goal: 'be happy' } },
+        { type: 'tool_use', id: 'a2', name: 'remember', input: { text: 'just chatting' } },
       ],
     }]
     await ss.onLoopTerminal({ messagesByteSize: 800, loopMessages: noopLoop })
@@ -1292,39 +1292,23 @@ CASES['stop-verb-hard-cancel'] = async () => {
     return { bot, chats, emitted, fire: (u, m) => chatListener?.(u, m) }
   }
 
-  function makeOrch(initialOwnerGoals = []) {
-    const removed = []
+  function makeOrch() {
     const ac = new AbortController()
     return {
-      removed,
       abortController: ac,
       currentLoop: { abortController: ac },
-      goals: {
-        _owner: [...initialOwnerGoals],
-        snapshot() { return { owner_goals: [...this._owner], self_goals: [] } },
-        remove(list, goal) {
-          if (list !== 'owner') return false
-          const i = this._owner.indexOf(goal)
-          if (i < 0) return false
-          this._owner.splice(i, 1)
-          removed.push([list, goal])
-          return true
-        },
-      },
     }
   }
 
   const config = { owner_username: 'shawn' }
 
-  // (1) owner says 'stop' → abort, clear goals, chat 'stopping.', no dispatch.
+  // (1) owner says 'stop' → abort, chat 'stopping.', no dispatch.
   {
     const { bot, chats, emitted, fire } = makeChatBot()
-    const orch = makeOrch(['build a house', 'mine diamonds'])
+    const orch = makeOrch()
     startChat(bot, config, orch)
     fire('shawn', 'stop')
     assertEqual(orch.abortController.signal.aborted, true, 'abort fired on `stop`')
-    assertEqual(orch.removed.length, 2, 'both owner goals removed')
-    assertEqual(orch.goals._owner.length, 0, 'owner_goals empty')
     assertEqual(chats[0], 'stopping.', 'bot.chat("stopping.")')
     const dispatched = emitted.filter(e => e.ev === 'sei:chat_received')
     assertEqual(dispatched.length, 0, 'no sei:chat_received emitted')
@@ -1333,7 +1317,7 @@ CASES['stop-verb-hard-cancel'] = async () => {
   // (2) owner says 'STOP' (case-insensitive) — same path.
   {
     const { bot, chats, emitted, fire } = makeChatBot()
-    const orch = makeOrch(['x'])
+    const orch = makeOrch()
     startChat(bot, config, orch)
     fire('shawn', 'STOP')
     assertEqual(orch.abortController.signal.aborted, true, 'abort fired on `STOP`')
@@ -1356,30 +1340,28 @@ CASES['stop-verb-hard-cancel'] = async () => {
   // (4) non-owner says 'stop' — must NOT trigger.
   {
     const { bot, chats, fire } = makeChatBot()
-    const orch = makeOrch(['x'])
+    const orch = makeOrch()
     bot.players.alice = { entity: { position: { x: 100, y: 64, z: 100, distanceTo: () => 100 } } }
     startChat(bot, config, orch)
     fire('alice', 'stop')
     assertEqual(orch.abortController.signal.aborted, false, 'no abort from non-owner stop')
     assertEqual(chats.length, 0, 'no stopping. chat from non-owner')
-    assertEqual(orch.goals._owner.length, 1, 'goals preserved')
   }
 
   // (5) owner says 'stop please' — NOT a stop verb (full-message match only).
   {
     const { bot, chats, fire } = makeChatBot()
-    const orch = makeOrch(['x'])
+    const orch = makeOrch()
     startChat(bot, config, orch)
     fire('shawn', 'stop please')
     assertEqual(orch.abortController.signal.aborted, false, 'no abort on "stop please"')
     assertEqual(chats.length, 0, 'no stopping. chat')
-    assertEqual(orch.goals._owner.length, 1, 'goals preserved')
   }
 
   // (6) trimmed: "  stop  " (whitespace-only) → still triggers.
   {
     const { bot, chats, fire } = makeChatBot()
-    const orch = makeOrch(['x'])
+    const orch = makeOrch()
     startChat(bot, config, orch)
     fire('shawn', '  stop  ')
     assertEqual(orch.abortController.signal.aborted, true, 'whitespace trimmed before match')
@@ -1389,7 +1371,7 @@ CASES['stop-verb-hard-cancel'] = async () => {
   // (7) other verbs: nevermind / cancel / halt / never mind.
   for (const verb of ['nevermind', 'cancel', 'halt', 'never mind']) {
     const { bot, chats, fire } = makeChatBot()
-    const orch = makeOrch(['x'])
+    const orch = makeOrch()
     startChat(bot, config, orch)
     fire('shawn', verb)
     assertEqual(orch.abortController.signal.aborted, true, `verb \`${verb}\` triggers abort`)

@@ -2,16 +2,16 @@
  * Per-file in-process async mutex (Plan 03.1-08, WR-06).
  *
  * Serializes read-modify-write sequences across ANY caller in the same Node
- * process so concurrent appendNote / setPreferredName / saveOwner /
- * appendAffect on the SAME file path do not lose updates.
+ * process so concurrent appendNote / setPreferredName / savePlayer /
+ * appendMemory on the SAME file path do not lose updates.
  *
  * Cross-process correctness is NOT a goal — Sei runs as a single process
  * (utilityProcess in Electron). If a future feature spawns a sibling process
- * that also writes OWNER.md/AFFECT.md, replace this with a proper-lockfile
+ * that also writes PLAYER.md/MEMORY.md, replace this with a proper-lockfile
  * dependency; until then the in-memory map is sufficient.
  *
  * Bounded memory: callers in this codebase target a handful of distinct
- * file paths (OWNER.md, AFFECT.md). The internal Map only grows by distinct
+ * file paths (PLAYER.md, MEMORY.md). The internal Map only grows by distinct
  * filePath, so we do not aggressively GC tail entries — leaks are bounded
  * by the number of distinct paths the process ever locks.
  */

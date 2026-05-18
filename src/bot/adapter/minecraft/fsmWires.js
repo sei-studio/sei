@@ -24,7 +24,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   if (!handlers) throw new Error('wireBotEvents: handlers required')
 
   // ── Chat ────────────────────────────────────────────────────────────
-  // chat.js (behaviors/chat.js) does the owner/addressed/nearby filtering
+  // chat.js (behaviors/chat.js) does the player/addressed/nearby filtering
   // and emits sei:chat_received. We translate that synthesized event to
   // handlers.onChat with brain-shaped keys.
   const onSeiChat = (payload) => {
@@ -33,9 +33,9 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
       handlers.onChat?.({
         username: payload.username,
         text: payload.message ?? payload.text ?? '',
-        ownerSpoke: !!payload.ownerSpoke,
+        playerSpoke: !!payload.playerSpoke,
         addressed: !!payload.addressed,
-        nearby: payload.nearby !== false,  // chat.js only emits when at least one of owner/addressed/nearby holds
+        nearby: payload.nearby !== false,  // chat.js only emits when at least one of player/addressed/nearby holds
       })
     } catch (err) {
       // Swallow listener errors so a brain-side throw doesn't crash mineflayer.

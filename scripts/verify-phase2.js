@@ -28,7 +28,6 @@ assert(typeof config.anthropic?.model === 'string', 'anthropic.model set')
 assert(config.llm?.max_hops === 5, 'llm.max_hops defaults to 5')
 
 const registry = createDefaultRegistry()
-assert(registry.list().includes('setGoals'), 'registry has setGoals')
 assert(registry.list().includes('goTo'),     'registry has goTo')
 
 let chatCalls = 0
@@ -53,9 +52,6 @@ const orch = createOrchestrator({ bot: stubBot, config, registry, logger: consol
 
 assert(typeof orch.handleDispatch === 'function', 'handleDispatch exposed')
 assert(orch._internal?.chains && typeof orch._internal.chains.size === 'function', 'chain tracker exposed on _internal')
-
-await registry.execute('setGoals', { list: 'owner', op: 'add', goal: 'kill cows' }, stubBot, { ...config, _goalStore: orch.goals })
-assert(orch.goals.snapshot().owner_goals[0] === 'kill cows', 'setGoals via registry mutates goal store')
 
 if (live) {
   console.log('\n--- LIVE MODE: calling Anthropic ---')
