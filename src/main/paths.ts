@@ -36,4 +36,9 @@ export const paths = {
   // normalization never has to deal with an escape-attempting component.
   skinsDir: () => path.join(userDataRoot(), 'skins'),
   skinPngPath: (personaId: string) => path.join(userDataRoot(), 'skins', `${personaId}.png`),
+  // Phase 9 (09-04): wizard state JSON. Persists which MC installs the user
+  // ticked, `hasRunOnce` (gates the first-launch modal vs the settings-reopen
+  // flow), and the last skin-server port (helps Plan 05 detect port drift —
+  // see WARNING 7).
+  wizardStatePath: () => path.join(userDataRoot(), 'skin-setup-state.json'),
 };
