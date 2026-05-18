@@ -75,6 +75,11 @@ export function AddCharacterScreen(): React.ReactElement {
         last_launched: null,
         playtime_ms: 0,
         portrait_image: null,
+        // Phase 9 (09-01): user-created personas start with no skin and no
+        // override username (bot.username falls back to sanitized persona name
+        // via src/bot/index.js:270-280 until Plan 02 wires the override).
+        skin: { source: 'none', mojang_username: null, png_sha256: null, applied_at: null },
+        username: null,
       };
       // 260516-0yw: sei.saveCharacter now returns the persisted Character
       // (with persona.expanded populated by the main-process LLM call).

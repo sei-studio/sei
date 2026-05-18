@@ -100,6 +100,11 @@ export async function runFirstLaunchMigration(
     last_launched: null,
     playtime_ms: 0,
     portrait_image: null,
+    // Phase 9 (09-01): new schema fields. Migrated legacy sui has no skin yet —
+    // first-launch seedDefaultCharacters won't run for an already-existing id,
+    // so the migrated sui stays on the 'none' skin until the user picks one.
+    skin: { source: 'none', mojang_username: null, png_sha256: null, applied_at: null },
+    username: null,
   };
 
   try {
