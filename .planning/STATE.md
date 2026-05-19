@@ -1,9 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: null
-milestone_name: null
-status: idle
-last_updated: "2026-05-18T00:00:00.000Z"
+milestone: v1.0
+milestone_name: Commercializable MVP
+status: planning
+last_updated: "2026-05-19T07:41:41.349Z"
+last_activity: 2026-05-19
 progress:
   total_phases: 0
   completed_phases: 0
@@ -21,10 +22,7 @@ progress:
 
 ## Current Position
 
-No active milestone. The v0.1.1 release is the working baseline. See `MILESTONES.md` for the archive.
-
-To start the next milestone:
-
-```
-/gsd-new-milestone
-```
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-19 — Milestone v1.0 started

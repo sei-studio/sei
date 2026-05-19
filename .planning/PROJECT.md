@@ -10,25 +10,45 @@ Naming: **"Sei"** is the framework name. The character's name is set by the user
 
 A Minecraft companion that feels like a real character — it remembers you, reacts to the world, and acts with personality, not like a scripted bot.
 
+## Current Milestone: v1.0 Commercializable MVP
+
+**Goal:** Promote Sei from a working local prototype to a commercializable MVP — accounts, shared character library, hosted AI billing, broader model support, vision, and universal Minecraft compatibility.
+
+**Target features:**
+- Cloud character library (image/skin/desc/prompt in shared free-tier DB) — replaces per-user memory files for character definition
+- Email/password + Google auth — required for cloud/sharing, optional for local-only API use
+- Character sharing — Home (recent + mine) vs Browse (all, search, add to mine), c.ai-style discovery
+- Cloud AI proxy — $5 one-time or $20/month proxied Claude credits via in-app checkout; friendly % usage UX (no token counts); paid to personal account
+- Multi-provider model support — OpenAI/Anthropic/Gemini/Grok/OpenRouter/local OpenAI-compatible with caching; onboarding model picker → list
+- In-game vision via player-POV screenshots — gated by 16-block radius + line-of-sight; idle auto-screenshot when VLM; explicit `visualize` skill
+- Universal MC mod/version compatibility — LLM-driven adapter ingestion that diffs modded items/keybinds vs baseline and emits new Zod actions + summary/knowledge
+
 ## Requirements
 
 ### Validated
 
-(None yet — ship to validate)
+- [x] Single-layer Haiku reasoning + Zod action dispatch (v0.1.1 — superseded the two-layer plan)
+- [x] Mineflayer integration: world state, in-game chat, inventory, movement control (v0.1.1)
+- [x] Event-sourced FSM with priority queue + iteration_cap (v0.1.1)
+- [x] LLM-directed memory compaction at semantic boundaries (v0.1.1)
+- [x] Multi-player aware: primary owner concept (v0.1.1)
+- [x] Idle behavior: stays near player, comments on surroundings (v0.1.1)
+- [x] Electron GUI onboarding: API key input, personality config (v0.1.1)
+- [x] Bundled executable distribution: signed/notarized macOS .dmg + Windows .exe (v0.1.1)
+- [x] Custom bot skins via CustomSkinLoader + Fabric auto-install wizard (v0.1.1)
 
 ### Active
 
-- [ ] Two-layer LLM system: personality LLM (Haiku 3 API) + movement LLM (Ollama local)
-- [ ] Personality LLM loops on events: chat message, small model completion, significant world events (attacked, hungry, mob nearby, inventory change), with 10s idle fallback
-- [ ] Movement LLM receives natural language instructions from personality LLM and calls mineflayer functions
-- [ ] Mineflayer integration: world state, in-game chat, inventory, movement control
-- [ ] OS screenshot capture fed to personality LLM as visual context
-- [ ] Long-term memory: bot identity/personality, player relationships, world progression
-- [ ] Multi-player aware: interacts with any player, has primary owner concept
-- [ ] Idle behavior: stays near player, comments on surroundings
-- [ ] Electron GUI: API key input, personality config (name, backstory, tone/traits)
-- [ ] Model source configurable in GUI: local Ollama or API-only fallback
-- [ ] Bundled executable distribution (.exe / .app)
+- [ ] Cloud character library backed by free-tier shared DB (image, skin, desc/prompt)
+- [ ] User accounts: email/pw + Google; cloud/sharing gated, local-only optional
+- [ ] Character browse/share flow split into Home vs Browse with search and "add to mine"
+- [ ] In-app paid AI proxy ($5 one-time / $20/month) routing through personal Anthropic key
+- [ ] Friendly usage indicator (% bar, no token counts) anchored above settings icon
+- [ ] Multi-provider model adapter (OpenAI, Anthropic, Gemini, Grok, OpenRouter, local) with prompt caching working per-provider
+- [ ] Onboarding model picker changed from grid → list
+- [ ] In-game vision: player-POV screenshot capture with 16-block + line-of-sight gating
+- [ ] Idle auto-screenshot when active model is a VLM, plus a `visualize` action skill
+- [ ] Mod/version adapter ingestion pipeline: diff modded items/keybinds vs baseline → emit summary + Zod actions
 
 ### Out of Scope
 
@@ -80,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-24 after initialization*
+*Last updated: 2026-05-19 — milestone v1.0 (Commercializable MVP) started*
