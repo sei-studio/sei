@@ -354,6 +354,7 @@ function OneFailedStep(): React.ReactElement {
 function DoneStep(): React.ReactElement {
   const installs = useWizardStore((s) => s.installs);
   const selectedIds = useWizardStore((s) => s.selectedIds);
+  const results = useWizardStore((s) => s.results);
   const closeWizard = useWizardStore((s) => s.closeWizard);
 
   // Derive a representative profile name for the body copy. For vanilla installs
@@ -370,6 +371,18 @@ function DoneStep(): React.ReactElement {
     }
     return first.label;
   })();
+
+  // 260518-o1k T7: per-install mod-link summaries on the done step. Only
+  // vanilla installs carry modLinkSummary (CurseForge instances are already
+  // isolated; Lunar never reaches the link stage). Render one block per
+  // install that has a summary attached.
+  const summaries = results
+    .filter((r) => r.ok && r.modLinkSummary)
+    .map((r) => ({
+      result: r,
+      install: installs.find((i) => i.id === r.installId),
+    }))
+    .filter((x): x is { result: typeof x.result; install: NonNullable<typeof x.install> } => x.install != null);
 
   return (
     <WizardStepShell
@@ -392,6 +405,46 @@ function DoneStep(): React.ReactElement {
         and start your world. Characters will appear with their chosen skin and
         username.
       </p>
+
+      {summaries.length > 0 ? (
+        <div className={styles.modLinkSummary}>
+          {summaries.map(({ result, install }) => {
+            const summary = result.modLinkSummary!;
+            return (
+              <div key={install.id} style={{ marginBottom: 'var(--space-md)' }}>
+                <h4>{install.label}</h4>
+                <p>
+                  Linked {summary.linked} mod{summary.linked === 1 ? '' : 's'}
+                  {summary.excluded > 0
+                    ? `, excluded ${summary.excluded} (wrong MC version or unreadable metadata).`
+                    : '.'}
+                </p>
+                {summary.excludedJars.length > 0 ? (
+                  <details>
+                    <summary>Show excluded mods</summary>
+                    <ul className={styles.modLinkExclusionList}>
+                      {summary.excludedJars.map((j) => (
+                        <li key={j.name}>
+                          {j.name} &mdash;{' '}
+                          {j.reason === 'mc-version-mismatch' && j.declaredMc
+                            ? `targets MC ${j.declaredMc}`
+                            : j.reason === 'mc-version-mismatch'
+                              ? 'wrong MC version'
+                              : j.reason === 'unparseable'
+                                ? 'metadata unreadable'
+                                : j.reason === 'no-metadata'
+                                  ? 'no mod metadata'
+                                  : 'read error'}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </WizardStepShell>
   );
 }

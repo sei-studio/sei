@@ -54,6 +54,20 @@ function describeStage(ev: WizardProgressEvent | undefined): StageRender {
       };
     case 'fabric-installing':
       return { label: 'Installing Fabric Loader…', pct: null, terminal: null };
+    case 'mods-linking': {
+      // 260518-o1k T7: scan/link counters. Before totalEstimate is known
+      // (the first event the orchestrator fires) we show "Scanning your
+      // mods…" with no numerics. After readdir lands we show
+      // "Scanning your mods (linked X of Y so far, Z excluded)."
+      if (ev.totalEstimate == null) {
+        return { label: 'Scanning your mods…', pct: null, terminal: null };
+      }
+      return {
+        label: `Scanning your mods (linked ${ev.linked} of ${ev.totalEstimate} so far, ${ev.excluded} excluded).`,
+        pct: null,
+        terminal: null,
+      };
+    }
     case 'mod-downloading':
       return {
         label: `Downloading CustomSkinLoader… ${ev.pct}%`,

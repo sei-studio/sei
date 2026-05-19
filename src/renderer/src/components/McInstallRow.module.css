@@ -77,3 +77,27 @@
   flex-shrink: 0;
   margin-left: auto;
 }
+
+/* 260518-o1k T7: Lunar Client rows are read-only — no hover affordance,
+ * no pointer cursor, no focus outline. The row is in the list purely for
+ * UX transparency. */
+.readOnly {
+  cursor: default;
+}
+.readOnly:hover {
+  background: var(--surface);
+}
+.readOnly:focus-visible {
+  outline: none;
+}
+
+/* 260518-o1k T7: small muted caption under Lunar rows explaining why
+ * Sei can't fully integrate (no custom-skin-mod support). */
+.lunarCaption {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin-top: var(--space-xs);
+  font-style: italic;
+}

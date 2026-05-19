@@ -36,6 +36,16 @@ interface PillSpec {
  * The pill carries the meaningful status; never rely on color alone (a11y).
  */
 function pillFor(install: McInstall): PillSpec {
+  // Lunar Client — read-only "Limited" badge (260518-o1k T7).
+  // Branched FIRST so it overrides any other state combo.
+  if (install.kind === 'lunar') {
+    return {
+      tone: 'warn',
+      label: 'Limited',
+      secondary: install.path,
+    };
+  }
+
   // Sei-enabled paths first (more specific).
   if (install.sei_enabled) {
     if (install.csl_installed && install.loader && install.loader_version && install.csl_version) {
@@ -80,29 +90,44 @@ function pillFor(install: McInstall): PillSpec {
 export function McInstallRow({ install, selected, onToggle }: McInstallRowProps): React.ReactElement {
   const pill = pillFor(install);
   const checkboxId = `mc-install-${install.id}`;
+  // 260518-o1k T7: Lunar rows are read-only — surfaced for transparency
+  // only, with the checkbox disabled and the row's onClick a no-op.
+  const isReadOnly = install.kind === 'lunar';
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (isReadOnly) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onToggle();
     }
   };
 
+  const handleClick = (): void => {
+    if (isReadOnly) return;
+    onToggle();
+  };
+
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-pressed={selected}
-      onClick={onToggle}
+      role={isReadOnly ? undefined : 'button'}
+      tabIndex={isReadOnly ? -1 : 0}
+      aria-pressed={isReadOnly ? undefined : selected}
+      aria-disabled={isReadOnly || undefined}
+      onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className={[styles.row, selected ? styles.selected : ''].filter(Boolean).join(' ')}
+      className={[
+        styles.row,
+        selected && !isReadOnly ? styles.selected : '',
+        isReadOnly ? styles.readOnly : '',
+      ].filter(Boolean).join(' ')}
     >
       <input
         id={checkboxId}
         type="checkbox"
         className={styles.checkbox}
-        checked={selected}
+        checked={selected && !isReadOnly}
         onChange={onToggle}
+        disabled={isReadOnly}
         // Stop propagation so the row's onClick doesn't double-toggle when the
         // user clicks the checkbox itself.
         onClick={(e) => e.stopPropagation()}
@@ -112,6 +137,13 @@ export function McInstallRow({ install, selected, onToggle }: McInstallRowProps)
       <div className={styles.text}>
         <div className={styles.label}>{install.label}</div>
         <div className={styles.path}>{install.path}</div>
+        {install.kind === 'lunar' ? (
+          <div className={styles.lunarCaption}>
+            Sei can connect to the same server you play on, but Lunar doesn&rsquo;t
+            support custom skin mods &mdash; the bot will appear with a default
+            Mojang skin.
+          </div>
+        ) : null}
       </div>
       <div className={styles.pillSlot}>
         <StatusPill tone={pill.tone} label={pill.label} secondary={pill.secondary} />
