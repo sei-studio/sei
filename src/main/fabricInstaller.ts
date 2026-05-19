@@ -257,7 +257,7 @@ export interface InstallFabricLoaderOpts {
  */
 export async function installFabricLoader(
   opts: InstallFabricLoaderOpts,
-): Promise<{ loaderVersion: string }> {
+): Promise<{ loaderVersion: string; seiGameDir: string }> {
   const { mcInstall, mcVersion, onProgress, signal } = opts;
 
   // Pre-flight: cancel check before any network IO.
@@ -385,21 +385,67 @@ export async function installFabricLoader(
   // Cleanup installer JAR (best-effort — leaving it is harmless but noisy).
   await fs.unlink(installerJarPath).catch(() => {});
 
+  // ── Set up the Sei gameDir (260518-o1k T4) ────────────────────────────
+  //
+  // Vanilla launcher profiles by default have NO `gameDir`, which means
+  // Fabric Loader loads every JAR in <.minecraft>/mods/ against the
+  // profile's MC version. If the user has mismatched-version mods sitting
+  // in that shared mods/ dir (the SkyHanni-1.8.9-with-Sei-1.21.4 repro
+  // case), the launch crashes. We give the Sei profile its own isolated
+  // gameDir at <.minecraft>/sei/ so it loads from there instead.
+  //
+  // Pre-create both the gameDir and its mods/ subdir before touching
+  // launcher_profiles.json. The Mojang launcher tolerates a missing
+  // gameDir (auto-creates) but explicit creation here is clearer + lets
+  // T5 drop the CSL JAR into a pre-existing path without race.
+  const seiGameDir = path.join(mcInstall.path, 'sei');
+  await fs.mkdir(seiGameDir, { recursive: true });
+  await fs.mkdir(path.join(seiGameDir, 'mods'), { recursive: true });
+
   // Rename the profile entry the Fabric installer added to launcher_profiles.json
   // ("fabric-loader-1.21.1" → "Sei") so it's obvious in the launcher dropdown
-  // which profile is the Sei one. Best-effort: any failure here doesn't fail
-  // the install (the user can rename it themselves from the launcher).
+  // which profile is the Sei one. ALSO set gameDir to the isolated sei dir
+  // so Fabric Loader doesn't load the shared mods/ folder.
+  //
+  // Best-effort: any failure here doesn't fail the install (the user can
+  // rename/set-gameDir themselves from the launcher).
+  //
+  // Profile-key tightening (T4): we now look for an EXACT match on
+  //   fabric-loader-<loaderVersion>-<mcVersion>
+  // which is the key the Fabric installer just wrote. Falls back to the
+  // previous prefix-match heuristic only if no exact match found, and
+  // logs a warn in that case so we can diagnose Fabric installer version
+  // drift.
   try {
     const profilesPath = path.join(mcInstall.path, 'launcher_profiles.json');
     const raw = await fs.readFile(profilesPath, 'utf-8');
-    const parsed = JSON.parse(raw) as { profiles?: Record<string, { name?: string }> };
+    const parsed = JSON.parse(raw) as { profiles?: Record<string, { name?: string; gameDir?: string }> };
     if (parsed.profiles) {
-      for (const [key, prof] of Object.entries(parsed.profiles)) {
-        if (
-          (key.startsWith('fabric-loader-') ||
-            (typeof prof.name === 'string' && prof.name.startsWith('fabric-loader-')))
-        ) {
-          prof.name = 'Sei';
+      const expectedKey = `fabric-loader-${loaderVersion}-${mcVersion}`;
+      const exactProf = parsed.profiles[expectedKey];
+      if (exactProf) {
+        exactProf.name = 'Sei';
+        // Mojang launcher accepts both relative and absolute gameDir
+        // strings. We write the absolute path because it's unambiguous
+        // across launcher working-dir quirks (the launcher resolves
+        // relative paths against its own CWD which varies per OS).
+        exactProf.gameDir = seiGameDir;
+      } else {
+        // Fall back to the prefix-match heuristic and log so a future
+        // installer-version bump that changes the key shape is visible.
+        const presentKeys = Object.keys(parsed.profiles).slice(0, 6);
+        logger.warn(
+          `fabricInstaller: expected profile key '${expectedKey}' not found; ` +
+          `falling back to prefix match. Present keys (first 6): ${JSON.stringify(presentKeys)}`,
+        );
+        for (const [key, prof] of Object.entries(parsed.profiles)) {
+          if (
+            (key.startsWith('fabric-loader-') ||
+              (typeof prof.name === 'string' && prof.name.startsWith('fabric-loader-')))
+          ) {
+            prof.name = 'Sei';
+            prof.gameDir = seiGameDir;
+          }
         }
       }
       await fs.writeFile(profilesPath, JSON.stringify(parsed, null, 2));
@@ -409,5 +455,5 @@ export async function installFabricLoader(
   }
 
   onProgress?.(100);
-  return { loaderVersion };
+  return { loaderVersion, seiGameDir };
 }

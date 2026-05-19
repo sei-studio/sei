@@ -383,6 +383,11 @@ async function processOneInstall(
   // re-running ensures the launcher profile entry exists). CurseForge
   // instances already ship their own loader, so skip the step there.
   let installedFabricVersion: string | undefined;
+  // 260518-o1k T4: installFabricLoader now returns the absolute path to
+  // the isolated Sei gameDir (`<.minecraft>/sei/`). Captured here so T5
+  // can hand it to the CSL helpers as targetDir and T6 can hand it to
+  // the mod-link scanner.
+  let seiGameDir: string | undefined;
   const needsFabricInstall = install.kind === 'vanilla';
   if (needsFabricInstall) {
     onProgress({ installId, stage: 'fabric-downloading', pct: 0 });
@@ -394,6 +399,7 @@ async function processOneInstall(
         onProgress: (pct) => onProgress({ installId, stage: 'fabric-downloading', pct }),
       });
       installedFabricVersion = fabricRes.loaderVersion;
+      seiGameDir = fabricRes.seiGameDir;
       onProgress({ installId, stage: 'fabric-installing' });
     } catch (err) {
       if (isCancellationError(err, signal)) {
