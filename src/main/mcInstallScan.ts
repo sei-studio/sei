@@ -96,6 +96,35 @@ function vanillaPaths(opts?: ScanOpts): string[] {
 }
 
 /**
+ * Candidate Lunar Client install directories (260518-o1k D3).
+ *   - darwin / linux: `~/.lunarclient`
+ *   - win32:          BOTH `%USERPROFILE%\.lunarclient` AND
+ *                     `%LOCALAPPDATA%\Programs\lunarclient` (the installer
+ *                     uses the LOCALAPPDATA path; the `.lunarclient`
+ *                     userprofile path is the runtime data dir created on
+ *                     first launch — either being present is sufficient
+ *                     to say "Lunar is installed here").
+ *
+ * Returns absolute candidate paths; caller stats each and skips ENOENT.
+ * Every path constructed via `path.join` per cross-platform invariant.
+ */
+function lunarPaths(opts?: ScanOpts): string[] {
+  const p = platform(opts);
+  if (p === 'darwin' || p === 'linux') {
+    return [path.join(homeDir(opts), '.lunarclient')];
+  }
+  if (p === 'win32') {
+    const localAppData =
+      process.env.LOCALAPPDATA ?? path.join(homeDir(opts), 'AppData', 'Local');
+    return [
+      path.join(homeDir(opts), '.lunarclient'),
+      path.join(localAppData, 'Programs', 'lunarclient'),
+    ];
+  }
+  return [];
+}
+
+/**
  * Candidate CurseForge `Instances` roots. CurseForge ships two install
  * variants on Windows — Documents-rooted and home-rooted — so we probe
  * both. macOS has only one canonical path. Linux: CurseForge isn't
@@ -128,7 +157,7 @@ function curseforgePaths(opts?: ScanOpts): string[] {
  * 12 hex chars = 48 bits = collisions are infeasible for the handful of
  * installs a single user has.
  */
-function idFor(kind: 'vanilla' | 'curseforge', absPath: string): string {
+function idFor(kind: 'vanilla' | 'curseforge' | 'lunar', absPath: string): string {
   return crypto.createHash('sha1').update(`${kind}:${absPath}`).digest('hex').slice(0, 12);
 }
 
@@ -419,6 +448,45 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
       } catch (err) {
         logger.warn(`mcInstallScan: cf scan at ${instanceDir} failed: ${(err as Error).message}`);
       }
+    }
+  }
+
+  // ── Lunar Client candidates (260518-o1k T3) ────────────────────────────
+  // Read-only detection — we never write into Lunar's data directories. The
+  // row is surfaced for UX transparency (D3 caption explains we can't drop
+  // CSL into Lunar since it doesn't support custom skin mods). The wizard
+  // orchestrator (T3 defensive early-return in processOneInstall + T7 UI
+  // disabled checkbox) ensures we never attempt to install here.
+  for (const vp of lunarPaths(opts)) {
+    try {
+      const st = await fs.stat(vp);
+      if (!st.isDirectory()) continue;
+    } catch (err) {
+      if (!err || (err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn(`mcInstallScan: stat ${vp} failed: ${(err as Error).message}`);
+      }
+      continue;
+    }
+    try {
+      const id = idFor('lunar', vp);
+      results.push({
+        id,
+        kind: 'lunar',
+        label: 'Lunar Client',
+        path: vp,
+        // We don't probe Lunar's mc_version — Lunar manages its own profiles
+        // out-of-band and we wouldn't act on the value even if we read it.
+        mc_version: null,
+        loader: null,
+        loader_version: null,
+        // We never install CSL into Lunar; the badge stays false.
+        csl_installed: false,
+        csl_version: null,
+        sei_enabled: false,
+        compatibility: 'limited',
+      });
+    } catch (err) {
+      logger.warn(`mcInstallScan: lunar scan at ${vp} failed: ${(err as Error).message}`);
     }
   }
 

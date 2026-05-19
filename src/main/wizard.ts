@@ -337,6 +337,24 @@ async function processOneInstall(
 ): Promise<void> {
   const installId = install.id;
 
+  // ── Lunar early return (260518-o1k T3) ────────────────────────────────
+  // Lunar Client doesn't support custom skin mods and has no
+  // user-accessible mods/ directory. We never install here. The wizard UI
+  // disables the row's checkbox (T7), so this branch is purely defensive
+  // — a UI bug that lets a Lunar id through the selection set won't
+  // wedge the orchestrator.
+  if (install.kind === 'lunar') {
+    onProgress({ installId, stage: 'queued' });
+    onProgress({ installId, stage: 'done' });
+    results.push({
+      installId,
+      ok: true,
+      // Empty version fields: we didn't install anything, so there's
+      // nothing to report. The renderer treats undefined as "n/a".
+    });
+    return;
+  }
+
   // ── Determine MC version (with fallback) ──────────────────────────────
   const mcVersion = install.mc_version ?? DEFAULT_MC_VERSION;
   if (!mcVersion) {
