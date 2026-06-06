@@ -106,7 +106,44 @@ function nextBackoffIso(attempts: number): string {
   return new Date(Date.now() + delay).toISOString();
 }
 
+/**
+ * Ownership guard. The cloud `characters` table is protected by a Supabase RLS
+ * policy that only permits rows where `owner = auth.uid()`. A character the
+ * signed-in user does NOT own (e.g. a World-tab character added to the library,
+ * whose `owner` is another account) can therefore NEVER be upserted under this
+ * account — every attempt 403s with "violates row-level security policy",
+ * leaving the op stuck in the queue and the card pinned to "SYNCING" forever.
+ *
+ * Returns true when `uuid` must not be cloud-mirrored under the current account.
+ * Own chars (owner === current uid) and legacy null-owner chars (the cloud
+ * stamps owner on first upsert) are allowed.
+ */
+async function isForeignOwned(uuid: string): Promise<boolean> {
+  const { getCharacter } = await import('../characterStore');
+  const char = await getCharacter(uuid).catch(() => null);
+  // No owner stamp (own char being created, or a legacy null-owner local char)
+  // → the cloud stamps owner on first upsert, so it's mirrorable. Bail before
+  // touching authState.
+  if (!char || char.owner == null) return false;
+  const { getCurrentAuthState } = await import('../auth/authState');
+  const st = getCurrentAuthState();
+  const uid = st.kind === 'signed_in' ? st.user.id : null;
+  return char.owner !== uid;
+}
+
 export async function enqueueUpsert(uuid: string): Promise<void> {
+  if (await isForeignOwned(uuid)) {
+    // Never queue a doomed upsert. Also purge any previously-queued (stuck)
+    // upsert for this uuid so an op enqueued before this guard existed
+    // self-clears and the "SYNCING" pill disappears.
+    const existing = await readQueue();
+    const purged = existing.filter(op => !(op.kind === 'upsert' && op.uuid === uuid));
+    if (purged.length !== existing.length) {
+      await writeQueue(purged);
+      notifyStatusChange();
+    }
+    return;
+  }
   const q = await readQueue();
   // Collapse — replace existing upsert for the same uuid, leave deletes alone.
   // Two fast successive edits to the same character collapse to ONE upload;
@@ -201,6 +238,13 @@ export async function processNext(): Promise<void> {
         // Local char vanished (deleted between enqueue and drain). Drop the
         // queue entry — the delete op will land separately if the user
         // actually wanted a cloud-delete.
+        q.splice(idx, 1);
+      } else if (char.owner != null && char.owner !== ownerUuid) {
+        // Foreign-owned (added from the World tab; owner is another account).
+        // The cloud RLS policy (owner = auth.uid()) would 403 this upsert on
+        // every attempt, so it must never be retried — drop it so the card
+        // stops showing "SYNCING". Self-heals ops queued before enqueueUpsert
+        // grew its ownership guard.
         q.splice(idx, 1);
       } else {
         // Upsert row first (cheap, single roundtrip).

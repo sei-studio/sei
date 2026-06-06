@@ -23,8 +23,13 @@ vi.mock('electron', () => ({
 // ---- Mocks for dynamic imports inside processNext --------------------------
 
 const isCloudWriteAllowedMock = vi.fn(async () => true);
+const getCurrentAuthStateMock = vi.fn(() => ({
+  kind: 'signed_in',
+  user: { id: 'owner-uuid-1' },
+}) as unknown);
 vi.mock('../auth/authState', () => ({
   isCloudWriteAllowed: isCloudWriteAllowedMock,
+  getCurrentAuthState: getCurrentAuthStateMock,
 }));
 
 const upsertCharacterMock = vi.fn(async (_c: unknown, _o: string) => undefined);
@@ -123,6 +128,11 @@ beforeEach(async () => {
   } as unknown);
   resolveSkinPngMock.mockReset();
   resolveSkinPngMock.mockResolvedValue(null);
+  getCurrentAuthStateMock.mockReset();
+  getCurrentAuthStateMock.mockReturnValue({
+    kind: 'signed_in',
+    user: { id: 'owner-uuid-1' },
+  } as unknown);
 });
 
 afterEach(async () => {
@@ -148,6 +158,63 @@ describe('syncQueue', () => {
     const q = await readQueueFile();
     expect(q).toHaveLength(1);
     expect(q[0].uuid).toBe('abc');
+  });
+
+  it('enqueueUpsert skips a foreign-owned character (owner !== current uid)', async () => {
+    getCharacterMock.mockResolvedValue({
+      id: 'abc',
+      name: 'Beep',
+      owner: 'some-other-account',
+      persona: { source: 'hi', expanded: 'world' },
+      skin: { source: 'none', mojang_username: null, png_sha256: null, applied_at: '2026-05-21T00:00:00Z' },
+      username: null,
+    } as unknown);
+    await enqueueUpsert('abc');
+    expect(await readQueueFile()).toHaveLength(0);
+  });
+
+  it('enqueueUpsert purges a previously-queued upsert for a now-foreign-owned char', async () => {
+    // First enqueue while owned → lands in the queue.
+    await enqueueUpsert('abc');
+    expect(await readQueueFile()).toHaveLength(1);
+    // Now the same uuid resolves as foreign-owned → re-enqueue purges it.
+    getCharacterMock.mockResolvedValue({
+      id: 'abc',
+      name: 'Beep',
+      owner: 'some-other-account',
+      persona: { source: 'hi', expanded: 'world' },
+      skin: { source: 'none', mojang_username: null, png_sha256: null, applied_at: '2026-05-21T00:00:00Z' },
+      username: null,
+    } as unknown);
+    await enqueueUpsert('abc');
+    expect(await readQueueFile()).toHaveLength(0);
+  });
+
+  it('processNext drops a foreign-owned upsert instead of retrying it', async () => {
+    // Seed a stuck op directly (simulating one queued before the guard existed).
+    await writeFile(
+      paths.syncQueuePath(),
+      JSON.stringify([
+        {
+          kind: 'upsert',
+          uuid: 'abc',
+          queuedAt: new Date().toISOString(),
+          attempts: 1,
+          nextAttemptAt: new Date(Date.now() - 1000).toISOString(),
+        },
+      ]),
+    );
+    getCharacterMock.mockResolvedValue({
+      id: 'abc',
+      name: 'Beep',
+      owner: 'some-other-account',
+      persona: { source: 'hi', expanded: 'world' },
+      skin: { source: 'none', mojang_username: null, png_sha256: null, applied_at: '2026-05-21T00:00:00Z' },
+      username: null,
+    } as unknown);
+    await processNext();
+    expect(await readQueueFile()).toHaveLength(0);
+    expect(upsertCharacterMock).not.toHaveBeenCalled();
   });
 
   it('enqueueDelete stores full storagePaths array', async () => {
