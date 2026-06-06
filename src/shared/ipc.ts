@@ -854,6 +854,9 @@ export interface RendererApi {
   onStatus(cb: (status: BotStatus) => void): Unsubscribe;
   onLog(cb: (batch: LogBatch) => void): Unsubscribe;
   onLan(cb: (state: LanState) => void): Unsubscribe;
+  /** Pull the current LAN state (snapshot). Used to seed a freshly-loaded
+   * renderer, since the onLan push only fires on change. */
+  getLanState(): Promise<LanState>;
   /** Subscribe to per-install progress events during runWizardInstall. */
   onWizardProgress(cb: (ev: WizardProgressEvent) => void): Unsubscribe;
   /** Subscribe to streaming progress for an in-flight persona expansion
@@ -985,6 +988,10 @@ export const IpcChannel = {
   },
   lan: {
     state: 'lan:state',
+    // Pull the current LAN state on demand. The `state` push only fires on
+    // CHANGE, so a freshly-(re)loaded renderer must request the snapshot —
+    // relying on a replay-push races the renderer attaching its listener.
+    get: 'lan:get',
   },
   chars: {
     list: 'chars:list',

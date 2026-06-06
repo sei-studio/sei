@@ -344,6 +344,7 @@ async function bootstrap(): Promise<void> {
     // chars:save forwards streaming persona-expansion progress here; piped to
     // the renderer via the chars:expansion-progress push channel.
     sendExpansionProgress: broadcastExpansionProgress,
+    getLanState: () => latestLanState,
   });
 
   // 5b. Auth state broadcast (initial replay + Supabase auth-event

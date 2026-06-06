@@ -20,6 +20,7 @@ import {
   type CreditsStatus,
   type SubscriptionStatusInfo,
   type CreditsHardStopEvent,
+  type LanState,
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
@@ -52,6 +53,14 @@ export interface IpcHandlerDeps {
    * `chars:expansion-progress` channel. Injected from main/index.ts.
    */
   sendExpansionProgress: (ev: ExpansionProgressEvent) => void;
+  /**
+   * Returns the current LAN state snapshot. The `lan:state` channel only
+   * PUSHES on change, so a freshly-(re)loaded renderer pulls this on mount to
+   * seed its store — otherwise a reload while a world is open shows
+   * "not connected" until the LAN state next happens to change. Closure-via-
+   * getter so it always reflects main's latest `latestLanState`.
+   */
+  getLanState: () => LanState;
 }
 
 /**
@@ -387,6 +396,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.bot.stop, async () => {
     await deps.supervisor.stop();
+  });
+
+  // LAN state snapshot (pull). Seeds a freshly-(re)loaded renderer; the
+  // lan:state channel only pushes on change.
+  ipcMain.handle(IpcChannel.lan.get, async (): Promise<LanState> => {
+    return deps.getLanState();
   });
 
   // Character CRUD

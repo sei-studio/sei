@@ -114,6 +114,17 @@ export const useDataStore = create<DataState>((set) => ({
  */
 export function subscribeIpc(): () => void {
   const offLan = sei.onLan((state) => useDataStore.getState().setLan(state));
+  // Seed the LAN state once the listener is attached. The onLan push only
+  // fires on CHANGE, so on a (re)load while a world is already open the store
+  // would otherwise sit at its initial 'not_connected' until the next change.
+  // Pulling the snapshot here (not relying on a replay-push that races this
+  // subscription) fixes "open world → connected → reload → not connected".
+  void sei
+    .getLanState()
+    .then((state) => useDataStore.getState().setLan(state))
+    .catch(() => {
+      /* leave initial state; a subsequent push will correct it */
+    });
   // Clear the console when a fresh session starts (idle/error/online → connecting).
   // Stale lines from a prior summon should not leak into the new one.
   let prevStatusKind: BotStatus['kind'] | null = null;

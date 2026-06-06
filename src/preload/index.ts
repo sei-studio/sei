@@ -166,6 +166,7 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.lan.state, handler);
     return () => ipcRenderer.off(IpcChannel.lan.state, handler);
   },
+  getLanState: () => ipcRenderer.invoke(IpcChannel.lan.get),
   onWizardProgress(cb: (ev: WizardProgressEvent) => void) {
     const handler = (_e: Electron.IpcRendererEvent, ev: WizardProgressEvent) => cb(ev);
     ipcRenderer.on(IpcChannel.wizard.progress, handler);
