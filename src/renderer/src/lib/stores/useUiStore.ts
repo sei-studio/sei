@@ -64,6 +64,16 @@ interface UiState {
    * LogsBar.
    */
   devConsoleVisible: boolean;
+  /**
+   * Session-only flag: flips true the first time the user leaves the Home
+   * screen — either by navigating to another view (character/settings/etc.)
+   * or by switching CharactersScreen to the World tab. The Home header
+   * greeting ("Welcome to Sei" / "Welcome back") shows only while this is
+   * false; once the user has left Home once, it reads "Summons" for the rest
+   * of the session. In-memory only (not persisted), so each app launch shows
+   * one greeting until the user navigates away.
+   */
+  homeGreetingDismissed: boolean;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -81,12 +91,17 @@ export const useUiStore = create<UiState>((set) => ({
   pendingSummonId: null,
   homeTab: 'home',
   devConsoleVisible: false,
+  homeGreetingDismissed: false,
 
-  navigate: (view) => set({ view, modal: null }),
+  // Leaving Home (any non-'home' view) dismisses the greeting for the session.
+  navigate: (view) =>
+    set(view.kind === 'home' ? { view, modal: null } : { view, modal: null, homeGreetingDismissed: true }),
   openModal: (modal) => set({ modal }),
   closeModal: () => set({ modal: null }),
   setThemeMode: (mode) => set({ themeMode: mode }),
   setPendingSummon: (id) => set({ pendingSummonId: id }),
-  setHomeTab: (tab) => set({ homeTab: tab }),
+  // Switching to the World tab also counts as leaving Home.
+  setHomeTab: (tab) =>
+    set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),
   setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
 }));

@@ -38,13 +38,14 @@ export interface WatchLanOptions {
 }
 
 export function watchLan({ onUpdate, staleMs = 3000 }: WatchLanOptions): { stop: () => void } {
-  const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  let socket: dgram.Socket | null = null;
   let lastSeenAt = 0;
   let lastPort: number | null = null;
   let lastMotd = '';
   let unavailable = false;
   let staleTimer: NodeJS.Timeout | null = null;
   let lastEmitted: LanState | null = null;
+  let stopped = false;
   // ITEM 6: rescan timer — only runs while we're disconnected.
   let rescanTimer: NodeJS.Timeout | null = null;
 
@@ -60,24 +61,19 @@ export function watchLan({ onUpdate, staleMs = 3000 }: WatchLanOptions): { stop:
   // ITEM 6: start / stop the re-scan loop based on state.
   //   - Disconnected (kind === 'not_connected' | 'unavailable') → ensure timer.
   //   - Connected → ensure timer is stopped.
-  // The timer attempts addMembership; on success we tentatively clear the
-  // `unavailable` flag and re-emit (a real packet within ~1.5s will then
-  // flip the state to 'connected'). On failure we stay polling.
+  //
+  // The timer RECREATES the receive socket (fresh bind + addMembership). This
+  // is deliberately heavier than a bare addMembership retry: a summon/unsummon
+  // cycle can leave the long-lived socket no longer receiving the host's LAN
+  // beacon (observed bug: the pill flips connected → not_connected and stays
+  // stuck there). On the existing socket, re-issuing addMembership throws
+  // "already a member" and never re-establishes multicast delivery — so the
+  // only reliable recovery is a brand-new socket. A real packet within ~1.5s
+  // of the fresh bind then promotes the state back to 'connected'.
   const startRescan = (): void => {
-    if (rescanTimer) return;
+    if (rescanTimer || stopped) return;
     rescanTimer = setInterval(() => {
-      try {
-        socket.addMembership(MC_LAN_GROUP);
-        if (unavailable) {
-          // Tentatively recover from 'unavailable'; a real packet will
-          // promote to 'connected'. If nothing arrives, scheduleStale's
-          // expiry returns the state to 'not_connected'.
-          unavailable = false;
-          emit();
-        }
-      } catch {
-        // still unavailable — keep polling
-      }
+      createSocket();
     }, LAN_RESCAN_INTERVAL_MS);
   };
 
@@ -111,12 +107,7 @@ export function watchLan({ onUpdate, staleMs = 3000 }: WatchLanOptions): { stop:
     staleTimer = setTimeout(emit, staleMs + 100);
   };
 
-  socket.on('error', () => {
-    unavailable = true;
-    emit();
-  });
-
-  socket.on('message', (msg: Buffer) => {
+  const onMessage = (msg: Buffer): void => {
     const text = msg.toString('utf-8');
     const portMatch = text.match(/\[AD\](\d{1,5})\[\/AD\]/);
     if (!portMatch) return;
@@ -127,31 +118,71 @@ export function watchLan({ onUpdate, staleMs = 3000 }: WatchLanOptions): { stop:
     lastSeenAt = Date.now();
     emit();
     scheduleStale();
-  });
+  };
 
-  socket.bind(MC_LAN_PORT, () => {
-    try {
-      socket.addMembership(MC_LAN_GROUP);
-    } catch {
+  // (Re)create the receive socket. Called once at startup and again by the
+  // rescan loop to recover from a dropped multicast subscription. The old
+  // socket (if any) is closed first so we never leak fds across recreations.
+  const createSocket = (): void => {
+    if (stopped) return;
+    const prev = socket;
+    if (prev) {
+      prev.removeAllListeners();
+      try {
+        prev.close();
+      } catch {
+        // ignore — may already be closed
+      }
+    }
+    const next = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+    socket = next;
+    next.on('error', () => {
+      // Only act on the live socket; a stale handler from a closed socket
+      // must not clobber state.
+      if (socket !== next) return;
       unavailable = true;
       emit();
-    }
-    // ITEM 6: kick off the rescan loop now that bind has resolved (either
-    // direction — success or failure path needs the retry).
-    startRescan();
-  });
+    });
+    next.on('message', (msg: Buffer) => {
+      if (socket !== next) return;
+      onMessage(msg);
+    });
+    next.bind(MC_LAN_PORT, () => {
+      if (socket !== next) return;
+      try {
+        next.addMembership(MC_LAN_GROUP);
+        // A fresh join clears any prior 'unavailable'; a real packet will
+        // promote to 'connected'. If nothing arrives, scheduleStale's expiry
+        // (or the next rescan) keeps the state correct.
+        unavailable = false;
+        emit();
+      } catch {
+        unavailable = true;
+        emit();
+      }
+      // ITEM 6: ensure the rescan loop is running whenever we're not connected.
+      startRescan();
+    });
+  };
+
+  createSocket();
 
   // Fire initial state synchronously after bind kicks off
   setImmediate(emit);
 
   return {
     stop: () => {
+      stopped = true;
       if (staleTimer) clearTimeout(staleTimer);
       stopRescan();
-      try {
-        socket.close();
-      } catch {
-        // ignore — socket may already be closed
+      if (socket) {
+        socket.removeAllListeners();
+        try {
+          socket.close();
+        } catch {
+          // ignore — socket may already be closed
+        }
+        socket = null;
       }
     },
   };

@@ -114,6 +114,7 @@ function HomeGrid(): React.ReactElement {
   const lan = useDataStore((s) => s.lan);
   const navigate = useUiStore((s) => s.navigate);
   const openModal = useUiStore((s) => s.openModal);
+  const greetingDismissed = useUiStore((s) => s.homeGreetingDismissed);
   const authState = useAuthStore((s) => s.state);
   const authKind = authState.kind;
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
@@ -261,8 +262,14 @@ function HomeGrid(): React.ReactElement {
     <div className={homeStyles.root}>
       <header className={homeStyles.header}>
         <h2 className={homeStyles.greeting}>
-          {greetingLead}
-          <span className={homeStyles.greetingName}>{displayName}</span>!
+          {greetingDismissed ? (
+            'Summons'
+          ) : (
+            <>
+              {greetingLead}
+              <span className={homeStyles.greetingName}>{displayName}</span>!
+            </>
+          )}
         </h2>
         <div className={homeStyles.actions}>
           <button
