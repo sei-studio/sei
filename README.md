@@ -10,7 +10,7 @@ Your favorite character joins your Minecraft world and plays alongside you: buil
 &nbsp;
 [![Download for Windows](https://img.shields.io/badge/Download-Windows-7FB0FF?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sei-studio/sei/releases/latest/download/Sei-win-x64.exe)
 &nbsp;
-[![Download for Linux](https://img.shields.io/badge/Download-Linux-7FB0FF?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/sei-studio/sei/releases/latest/download/Sei-linux-x64.AppImage)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux-7FB0FF?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/sei-studio/sei/releases/latest/download/Sei-linux-x86_64.AppImage)
 
 <sub>The macOS button is for **Apple Silicon**. On an Intel Mac? Grab the `x64` build from [sei.gg](https://sei.gg) or the [Releases page](https://github.com/sei-studio/sei/releases/latest).</sub>
 
