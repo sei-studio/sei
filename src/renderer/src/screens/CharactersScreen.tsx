@@ -120,7 +120,7 @@ function HomeGrid(): React.ReactElement {
   const [cloudOnly, setCloudOnly] = useState<Array<{ id: string; name: string }>>([]);
   const [openPrepareError, setOpenPrepareError] = useState<string | null>(null);
   const [preferredName, setPreferredName] = useState<string>('');
-  const [isFirstVisit, setIsFirstVisit] = useState<boolean>(true);
+  const [isFirstLogin, setIsFirstLogin] = useState<boolean>(false);
   // Daily character-creation cap (persona_daily). Pre-flight gate before the
   // new-character flow so a maxed-out user gets a "come back tomorrow" modal
   // instead of failing mid-expansion. null = hidden.
@@ -145,16 +145,22 @@ function HomeGrid(): React.ReactElement {
         const cfg = await sei.getConfig();
         if (cancelled) return;
         setPreferredName(cfg.preferred_name ?? '');
+        // "Welcome to Sei" shows ONLY on the user's very first login; every
+        // later app open shows "Welcome back". has_been_welcomed is the
+        // persisted one-shot marker — flip it true the first time we render
+        // the first-login greeting so subsequent opens read false→back.
+        const firstLogin = cfg.has_been_welcomed !== true;
+        setIsFirstLogin(firstLogin);
+        if (firstLogin) {
+          try {
+            await sei.saveConfig({ ...cfg, has_been_welcomed: true });
+          } catch {
+            /* non-fatal: worst case the next open repeats "Welcome to Sei" */
+          }
+        }
       } catch {
-        /* fall through with empty name */
+        /* fall through: empty name, treat as returning user */
       }
-      // "First visit" = no character ever launched. First visit shows the
-      // "Welcome to Sei, <name>!" greeting; any prior launch flips it to the
-      // plain "Summons" header. Cheap heuristic, no separate persisted flag.
-      const everLaunched = useDataStore.getState().characters.some(
-        (c) => c.last_launched != null,
-      );
-      if (!cancelled) setIsFirstVisit(!everLaunched);
     })();
     return () => {
       cancelled = true;
@@ -249,12 +255,15 @@ function HomeGrid(): React.ReactElement {
   });
 
   const displayName = preferredName.trim() || 'friend';
-  const greeting = isFirstVisit ? `Welcome to Sei, ${displayName}!` : 'Summons';
+  const greetingLead = isFirstLogin ? 'Welcome to Sei, ' : 'Welcome back, ';
 
   return (
     <div className={homeStyles.root}>
       <header className={homeStyles.header}>
-        <h2 className={homeStyles.greeting}>{greeting}</h2>
+        <h2 className={homeStyles.greeting}>
+          {greetingLead}
+          <span className={homeStyles.greetingName}>{displayName}</span>!
+        </h2>
         <div className={homeStyles.actions}>
           <button
             type="button"

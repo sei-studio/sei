@@ -234,6 +234,16 @@ export const UserConfigSchema = z.object({
    * a different path (removed_default_ids above).
    */
   added_world_ids: z.array(z.string().uuid()).optional().default([]),
+  /**
+   * One-shot first-login marker. False until the Home screen renders the
+   * "Welcome to Sei, <name>!" greeting for the very first time, then flipped
+   * true so every subsequent app open shows "Welcome back, <name>!" instead.
+   * Profile-scoped (config.json is per-account), so it tracks first login
+   * per user. `.optional().default(false)` keeps existing config.json files
+   * backward-compatible — pre-existing users get one "Welcome to Sei" on the
+   * first open after upgrade, which is harmless.
+   */
+  has_been_welcomed: z.boolean().optional().default(false),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

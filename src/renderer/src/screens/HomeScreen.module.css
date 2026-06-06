@@ -30,6 +30,11 @@
   max-width: 60%;
 }
 
+/* The user's name within the greeting renders in the periwinkle accent. */
+.greetingName {
+  color: var(--accent);
+}
+
 .actions {
   display: flex;
   gap: 14px;

@@ -119,6 +119,10 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         dev_console_visible: false,
         removed_default_ids: [],
         added_world_ids: [],
+        // First-login marker stays false here so the Home screen shows the
+        // one-time "Welcome to Sei" greeting after onboarding completes; it
+        // flips true there on first render.
+        has_been_welcomed: false,
       });
       // D-03 / T-10-04-02 mitigation: signed-in users never reach the API-key
       // step, so saveApiKey MUST be gated behind !signedIn. Otherwise a future
