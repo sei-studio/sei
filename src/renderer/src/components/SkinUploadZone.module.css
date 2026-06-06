@@ -1,0 +1,70 @@
+/* SkinUploadZone.module.css — UI-SPEC §"Interaction States" SkinUploadZone row.
+ *
+ * Sharp corners (D-28). Dashed --border-strong outline, --surface background.
+ * Drag-over and hover share the same visual treatment per UI-SPEC §Interaction States.
+ * All colors are token references — no hardcoded hex.
+ */
+
+.zone {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: var(--space-lg) var(--space-md-plus);
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+  /* Sharp corners explicit so a future global border-radius doesn't sneak in. */
+  border-radius: 0;
+}
+
+.zone:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-strong);
+}
+
+.zone.dragOver {
+  background: var(--accent-soft);
+  border-color: var(--accent-strong);
+}
+
+.zone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.zone.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.zone.disabled:hover {
+  /* Disabled state keeps the resting background — no hover hint. */
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+.heading {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+  margin: 0 0 var(--space-xs) 0;
+  font-weight: 500;
+}
+
+.secondary {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.hiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

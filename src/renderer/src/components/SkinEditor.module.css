@@ -1,0 +1,232 @@
+/* SkinEditor.module.css — UI-SPEC §"Layout Contracts → Skin editor on CharacterPage"
+ *                       + §"Skin editor (persona page section) — copy"
+ *                       + §"Interaction States".
+ *
+ * Sharp corners (D-28). Zero hardcoded hex — every color is a token reference.
+ * The remove-button hover background uses color-mix(in srgb, var(--red) 6%, transparent)
+ * so we keep the spec-pinned 6% tint without baking a rgba literal.
+ */
+
+.section {
+  padding: var(--space-lg);
+  margin-top: var(--space-xl);
+  border: 1px solid var(--border);
+  background: var(--window);
+  border-radius: 0;
+}
+
+/*
+ * Compact variant — used when the editor is hosted inside another panel (the
+ * CharacterPage Skin tab). Drops the standalone-section chrome so the content
+ * fits the panel without forcing a scroll.
+ */
+.sectionCompact {
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.sectionCompact .header {
+  margin-bottom: var(--space-md);
+}
+
+.sectionCompact .cols {
+  gap: var(--space-md);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md-plus);
+}
+
+.eyebrow {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.defaultBadge {
+  margin-left: var(--space-sm);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--rail-active);
+  color: var(--muted);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: 0;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--space-lg);
+}
+
+.left {
+  min-width: 0;
+  /* Positioning context for the skin-setup overlay (.setupOverlay). */
+  position: relative;
+}
+
+/*
+ * Skin-setup nudge — covers the 3D preview when CustomSkinLoader has never
+ * been installed (WizardState.hasRunOnce === false). The preview still renders
+ * beneath the scrim so the silhouette reads, but the message + CTA make clear
+ * the skin won't reach Minecraft until setup is done.
+ */
+.setupOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  text-align: center;
+  background: color-mix(in srgb, var(--window) 82%, transparent);
+  backdrop-filter: blur(2px);
+  border: 1px solid var(--border);
+}
+
+.setupOverlayTitle {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.setupOverlayBody {
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.right {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.fieldEyebrow {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-top: var(--space-md-plus);
+  margin-bottom: var(--space-xs);
+}
+
+.right > .fieldEyebrow:first-child {
+  /* First eyebrow inside the right column shouldn't push extra top margin. */
+  margin-top: 0;
+}
+
+.hint {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
+  margin: var(--space-xs) 0 0 0;
+  line-height: 1.4;
+}
+
+.sourceTabs {
+  display: flex;
+  gap: var(--space-md-plus);
+  margin-bottom: var(--space-md);
+}
+
+.sourceTabLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sourceTabLabel input[type='radio'] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ctaRow {
+  display: flex;
+  gap: var(--space-md);
+  align-items: center;
+  margin-top: var(--space-md);
+}
+
+.removeBtn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--red);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  cursor: pointer;
+  /* Sharp corners (D-28). */
+  border-radius: 0;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.removeBtn:hover:not(:disabled) {
+  border-color: var(--red);
+  /* color-mix preserves the spec's 6% tint without a hardcoded rgba literal. */
+  background: color-mix(in srgb, var(--red) 6%, transparent);
+}
+
+.removeBtn:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.removeBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.errorCopy {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--red);
+  margin: var(--space-xs) 0 0 0;
+  line-height: 1.4;
+}
+
+.warnCopy {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--warn);
+  margin: var(--space-xs) 0 0 0;
+  line-height: 1.4;
+}
+
+.successCopy {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--green);
+  margin: var(--space-xs) 0 0 0;
+  line-height: 1.4;
+}

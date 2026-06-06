@@ -1,0 +1,77 @@
+/* HomeScreen.module.css — the Summons grid (Home tab).
+ * Source: .planning/UI-DESIGN-SYSTEM.md §Screens → Summons; mockup ui.jsx Home.
+ */
+
+.root {
+  padding: 34px var(--space-2xl) var(--space-2xl);
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 26px;
+}
+
+.title,
+.greeting {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 44px;
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  margin: 0;
+}
+
+/* Greeting can run long ("Welcome back, …") — let it wrap gracefully. */
+.greeting {
+  max-width: 60%;
+}
+
+.actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* LAN status pill (mockup .link-pill). */
+.lanPill {
+  height: 38px;
+  background: rgba(127, 127, 127, 0.03);
+  border: 1px solid var(--border-strong);
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.lanPill:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.lanDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px;
+  align-items: start;
+}

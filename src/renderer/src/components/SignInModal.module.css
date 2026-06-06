@@ -1,0 +1,198 @@
+/* SignInModal — unified sign-in / sign-up modal (D-01).
+ *
+ * Scrim + 460px modal cloned from DeleteConfirmModal pattern. Padding
+ * 24px 40px 40px per UI-SPEC §Spacing tokens (var(--space-2xl) for the
+ * SetupWizardModal-style modal padding). Sharp corners (D-28).
+ *
+ * Source: 10-UI-SPEC §SignInModal + Copywriting Contract.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fade 220ms ease both;
+}
+
+.modal {
+  width: 460px;
+  background: var(--window);
+  padding: 24px 40px 40px;
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--sans);
+  animation: fadeUp 280ms var(--ease-pop) both;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+}
+
+.framing {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.2px;
+  color: var(--text);
+  margin: 0;
+}
+
+.toggleRow {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.toggleLink {
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.toggleLink:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.fieldLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.errorText {
+  font-size: 14px;
+  color: var(--red);
+  margin: 0;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  font-size: 14px;
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+.divider::before, .divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--space-md);
+  margin-top: var(--space-md-plus);
+}
+
+.forgotLink {
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0;
+  align-self: flex-start;
+  text-decoration: underline;
+}
+
+.forgotLink:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Plan 11-12 (D-26 / LIB-06) — at-sign-up ToS capture row.
+ * Matches the existing fieldLabel typography (14px, --text-2) so the
+ * required-checkbox doesn't read as a separate visual layer. Aligned
+ * to flex-start so a wrapped two-line label stays anchored under the
+ * checkbox glyph rather than centered against it.
+ */
+.tosCheckbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tosCheckbox input[type='checkbox'] {
+  flex: none;
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.tosCheckbox a {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.tosCheckbox a:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* F-10 (quick/260525-usc) — COPPA DOB age gate three-dropdown row.
+ * Three equal-width <select>s laid out as a flex row with the same gap
+ * as the form's fieldGroup vertical rhythm. Matches the TextField look
+ * by reusing the global form-control colours and 14px label spec.
+ */
+.dobRow {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.dobSelect {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  background: var(--input-bg, var(--window));
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.dobSelect:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim, .modal { animation: none; }
+}

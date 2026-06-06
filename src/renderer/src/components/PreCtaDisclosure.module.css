@@ -1,0 +1,30 @@
+/* PreCtaDisclosure — quick/260525-sbo Task 4.
+ *
+ * "Clear and conspicuous" styling per CA ARL §17602(a)(1):
+ *   - Visual weight EQUAL to surrounding body copy (not muted/footnote).
+ *   - color uses --text (the primary ink) — NEVER --text-2 / --muted.
+ *   - Border-radius matches .tile (8px) so the disclosure block reads as a
+ *     sibling visual chunk to the tile body, not a footnote tucked below.
+ *   - Background uses --window-soft (or a subtle highlight) to separate it
+ *     from the tile body while keeping it inside the same purchase frame.
+ */
+
+.block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--window);
+  margin: 0 0 12px;
+}
+
+.line {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  font-weight: 400;
+  margin: 0;
+}

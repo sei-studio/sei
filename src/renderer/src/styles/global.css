@@ -1,0 +1,173 @@
+/* global.css — base resets, terminal wallpaper, HUD overlays, sharp-edges policy,
+ * and the small set of utility classes shared across components.
+ *
+ * Source: .planning/UI-DESIGN-SYSTEM.md (the "Summoning Terminal" aesthetic,
+ * ported from the sei-gui-improved mockup: hud.jsx global CSS + ui.jsx).
+ * Renderer-wide styles only. Per-component visuals live in *.module.css.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--sans);
+  background: var(--desktop);
+  color: var(--text);
+  transition: background 240ms ease, color 240ms ease;
+  position: relative;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+}
+
+/* All edges sharp (D-28) — defeat native rounded corners. */
+button,
+input,
+textarea,
+select {
+  border-radius: 0;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea {
+  font-family: inherit;
+}
+
+/* ── Selection + scrollbars (mockup: thin, sharp, accent selection) ──── */
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Utility classes — the mockup's shared "HUD primitive" vocabulary. Use
+ * these for tracked labels / mono numerics / condensed display headers so
+ * new UI stays visually consistent without re-deriving the type ramp.
+ * (See .planning/UI-DESIGN-SYSTEM.md §Typography + §Utility classes.)
+ * ───────────────────────────────────────────────────────────────────── */
+
+/* Tracked uppercase micro-label — the workhorse caption of the terminal. */
+.u-lbl {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Mono utility — tabular numerics, ids, clocks. */
+.u-mono {
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+}
+
+/* Condensed display — headers, names, big numbers. */
+.u-display {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Corner brackets — the four L-shaped marks that frame cards/panels on
+ * hover. Place a positioned ancestor, then drop four <span> brackets.
+ * ───────────────────────────────────────────────────────────────────── */
+.u-brk {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--accent);
+  pointer-events: none;
+  transition: all 0.35s var(--ease);
+}
+.u-brk.tl { top: 0; left: 0; border-top: 1.5px solid; border-left: 1.5px solid; }
+.u-brk.tr { top: 0; right: 0; border-top: 1.5px solid; border-right: 1.5px solid; }
+.u-brk.bl { bottom: 0; left: 0; border-bottom: 1.5px solid; border-left: 1.5px solid; }
+.u-brk.br { bottom: 0; right: 0; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+
+/* ─────────────────────────────────────────────────────────────────────
+ * HUD overlay layers — mounted once by MacosWindow above all content.
+ * pointer-events:none throughout so they never intercept input.
+ *
+ * The mockup ships only TWO atmosphere layers: a faint film grain and a soft
+ * vignette. Its scanline layer is disabled (--scan:0) and its accent "sweep"
+ * band is `display:none` — both are intentionally absent here too (they read
+ * as a distracting moving scan over the UI).
+ * ───────────────────────────────────────────────────────────────────── */
+.hud-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  overflow: hidden;
+}
+
+.hud-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="dark"] .hud-grain {
+  opacity: 0.04;
+}
+
+.hud-vignette {
+  position: absolute;
+  /* Confine the vignette to the content panel so it never darkens the chrome
+     (top bar + IconRail). The chrome stays a flat, uniform --rail fill so the
+     two strips read as one continuous background, while the vignette belongs to
+     the overlaid content. Top inset = drag-strip height (34px); left inset =
+     rail width. (When the rail is hidden — onboarding/auth — the 74px left
+     inset is visually negligible: the vignette only darkens past 55% radius.) */
+  top: 34px;
+  left: var(--rail-w);
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 40%, transparent 55%, rgba(0, 0, 0, 0.10) 100%);
+}
+
+:root[data-theme="dark"] .hud-vignette {
+  background: radial-gradient(120% 100% at 50% 40%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+}

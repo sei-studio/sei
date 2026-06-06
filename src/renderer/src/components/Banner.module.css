@@ -1,0 +1,39 @@
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  font-family: var(--sans);
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.warn {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.error {
+  background: var(--red);
+  color: var(--window);
+}
+
+.info {
+  background: var(--surface);
+  color: var(--text-2);
+}
+
+.message {
+  flex: 1;
+}
+
+.dismiss {
+  background: transparent;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  padding: 0 4px;
+}

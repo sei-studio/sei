@@ -1,0 +1,21 @@
+/* McInstallList.module.css — container for McInstallRow children.
+ *
+ * Scrollable so many CF instances don't blow out the 520px modal min-height.
+ * Last-child border-bottom strip avoids a doubled rule at the container edge.
+ *
+ * Sharp corners (D-28); all tokens; zero hex.
+ */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  margin-top: var(--space-md);
+}
+
+/* Strip the last row's border to avoid doubling against the container's border. */
+.list > :last-child {
+  border-bottom: none !important;
+}

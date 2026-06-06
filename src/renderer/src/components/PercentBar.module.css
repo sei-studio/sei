@@ -1,0 +1,63 @@
+/**
+ * PercentBar — accessible progress bar primitive (13-18).
+ *
+ * Three sizes (sm / md / lg). The fill width animates between values via a
+ * 300ms ease transition so consumers don't need to coordinate animation.
+ * The numeric label is only rendered for md/lg; sm hides it (the rail-button
+ * micro-bar reads its value through the surrounding tooltip).
+ *
+ * Theme-aware: `var(--surface-2)` track + `var(--accent)` fill, both already
+ * defined by the global theme palette. The track also carries a 1px inset
+ * border outline (260602-uv9) so the UNUSED portion stays visibly distinct
+ * from the page background in both themes.
+ *
+ * 260602-uv9 fix: the track previously used `var(--bg-2)`, which is NOT a
+ * defined token — it resolved to transparent, so the unused portion blended
+ * into whatever sat behind it. Switched to the real `--surface-2` elevated
+ * panel token (distinct from --window/--surface page backgrounds) and added an
+ * inset --border outline so the track edge is always legible.
+ */
+
+.root {
+  position: relative;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+  /* 260602-uv9: distinct, theme-aware track — a 1px inset outline keeps the
+     unused portion readable against the page background in both themes. */
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.lg {
+  height: 28px;
+}
+
+.md {
+  height: 18px;
+}
+
+.sm {
+  height: 10px;
+}
+
+.fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 300ms ease;
+}
+
+.label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.sm .label {
+  display: none;
+}

@@ -1,0 +1,136 @@
+/**
+ * Tests for CharactersScreen — B4 (Home / World tabs, capability gate removal).
+ *
+ * Project convention (no @testing-library/react installed): exercise the
+ * source contract via grep-style file presence checks plus module-import
+ * smoke. Mirrors src/renderer/src/screens/ReceiptScreen.test.tsx.
+ *
+ * Invariants under test:
+ *   1. Module exports a CharactersScreen function symbol.
+ *   2. The capability gate (`getCapabilities`, `browseEnabled` state, capability
+ *      IPC) is gone from the source.
+ *   3. Tab labels are "Home" and "World" (not "Browse").
+ *   4. Default tab is driven by useUiStore.homeTab.
+ *   5. HomeGrid filters out foreign-owned characters (only defaults, owned,
+ *      or legacy null-owner chars survive).
+ *   6. WorldGrid drops the H1 heading and keeps only the search field at top.
+ *   7. CharacterCard chip text is now MINE / WORLD (not PUBLIC / CUSTOM).
+ *   8. main/capabilities.ts and main/capabilities.test.ts files are deleted.
+ *   9. UserConfigSchema no longer carries `browse_enabled`.
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+// @ts-expect-error node module under renderer tsconfig
+import { readFileSync, existsSync } from 'node:fs';
+// @ts-expect-error node module under renderer tsconfig
+import { fileURLToPath } from 'node:url';
+// @ts-expect-error node module under renderer tsconfig
+import { dirname, resolve } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const TSX_PATH = resolve(__dirname, 'CharactersScreen.tsx');
+const CSS_PATH = resolve(__dirname, 'CharactersScreen.module.css');
+const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
+const SCHEMA_PATH = resolve(REPO_ROOT, 'src', 'shared', 'characterSchema.ts');
+const CARD_PATH = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'CharacterCard.tsx');
+const CAPS_TS = resolve(REPO_ROOT, 'src', 'main', 'capabilities.ts');
+const CAPS_TEST = resolve(REPO_ROOT, 'src', 'main', 'capabilities.test.ts');
+const PRELOAD = resolve(REPO_ROOT, 'src', 'preload', 'index.ts');
+const SHARED_IPC = resolve(REPO_ROOT, 'src', 'shared', 'ipc.ts');
+const MAIN_IPC = resolve(REPO_ROOT, 'src', 'main', 'ipc.ts');
+
+beforeEach(() => {
+  (globalThis as unknown as { window: unknown }).window = {
+    sei: {},
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
+});
+
+describe('CharactersScreen (B4 Home / World refactor)', () => {
+  it('Test 1: source exports CharactersScreen function symbol', () => {
+    // CharactersScreen transitively imports `@shared/ipc` via ReportModal,
+    // which the vitest harness can't resolve without alias config. The
+    // export-symbol check is satisfied by literal source grep instead.
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(/export\s+function\s+CharactersScreen\s*\(/.test(source)).toBe(true);
+  });
+
+  it('Test 2: capability gate is removed from CharactersScreen source', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes('getCapabilities')).toBe(false);
+    expect(source.includes('browseEnabled')).toBe(false);
+    expect(source.includes('capabilities')).toBe(false);
+  });
+
+  it('Test 3: tab labels removed — navigation lives in IconRail now', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    // No "Browse" anywhere as a label.
+    expect(/>\s*Browse\s*</.test(source)).toBe(false);
+    // The Home/World tab BUTTONS are gone (rail handles navigation). A welcome
+    // header replaces them; no role="tab" / tablist in the screen any more.
+    expect(source.includes('role="tab"')).toBe(false);
+    expect(source.includes('role="tablist"')).toBe(false);
+  });
+
+  it('Test 4: default tab is driven by useUiStore.homeTab', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes('homeTab')).toBe(true);
+    expect(source.includes('useUiStore')).toBe(true);
+  });
+
+  it('Test 5: HomeGrid filters out defaults + foreign-owned characters', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes('homeCharacters')).toBe(true);
+    expect(source.includes('is_default === true')).toBe(true);
+    // Strict mismatch against currentUserId hides foreign-owned chars.
+    expect(source.includes('c.owner !== currentUserId')).toBe(true);
+  });
+
+  it('Test 6: WorldGrid drops the H1 heading and keeps the search field', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    // No more <h1>Browse</h1>.
+    expect(source.includes('>Browse</h1>')).toBe(false);
+    // Search field must remain.
+    expect(source.includes('searchField')).toBe(true);
+    expect(source.includes('Search characters')).toBe(true);
+  });
+
+  it('Test 7: CharacterCard renders no chip text (MINE / WORLD / LOCAL ONLY / CLOUD all removed)', () => {
+    const source = readFileSync(CARD_PATH, 'utf-8');
+    expect(source.includes("'MINE'")).toBe(false);
+    expect(source.includes("'WORLD'")).toBe(false);
+    // The legacy PUBLIC / CUSTOM vocabulary also must not return.
+    expect(source.includes("isDefault ? 'PUBLIC' : 'CUSTOM'")).toBe(false);
+    // LOCAL ONLY chip removed.
+    expect(source.includes('LOCAL ONLY')).toBe(false);
+    // chipLocalOnly CSS class no longer referenced from JSX.
+    expect(source.includes('chipLocalOnly')).toBe(false);
+  });
+
+  it('Test 8: capabilities.ts and capabilities.test.ts are deleted', () => {
+    expect(existsSync(CAPS_TS)).toBe(false);
+    expect(existsSync(CAPS_TEST)).toBe(false);
+  });
+
+  it('Test 9: UserConfigSchema no longer carries browse_enabled', () => {
+    const source = readFileSync(SCHEMA_PATH, 'utf-8');
+    // browse_enabled may appear in a removal-comment but must not be a schema field.
+    expect(/browse_enabled\s*:\s*z\./.test(source)).toBe(false);
+  });
+
+  it('Test 10: capabilities IPC channel + getCapabilities IPC binding are removed', () => {
+    const sharedIpc = readFileSync(SHARED_IPC, 'utf-8');
+    const preload = readFileSync(PRELOAD, 'utf-8');
+    const mainIpc = readFileSync(MAIN_IPC, 'utf-8');
+    expect(sharedIpc.includes("'capabilities:get'")).toBe(false);
+    expect(preload.includes('getCapabilities')).toBe(false);
+    expect(mainIpc.includes('IpcChannel.capabilities')).toBe(false);
+  });
+
+  it('Test 11: CSS module still exposes tabBar + tabActive', () => {
+    const css = readFileSync(CSS_PATH, 'utf-8');
+    expect(css.includes('.tabBar')).toBe(true);
+    expect(css.includes('.tabActive')).toBe(true);
+  });
+});

@@ -1,0 +1,84 @@
+/* GoogleSignInButton — official Google "Sign in with Google" button, dark variant.
+ *
+ * All values here are Google brand-asset specs (dark theme), NOT design-system
+ * tokens — see GoogleSignInButton.tsx for why this component is exempt from the
+ * Summoning-Terminal palette. Dark spec: bg #131314, 1px #8E918F stroke, text
+ * #E3E3E3, Roboto Medium 14px, 40px tall, ~12px corner... using Google's 4px.
+ */
+
+.button {
+  /* Roboto Medium is the mandated face; degrade to the host UI stack if the
+   * web font isn't present rather than dropping to a serif. */
+  font-family: 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: 0.25px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px; /* logo → label gutter */
+
+  height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  max-width: 400px; /* Google caps the button width */
+
+  color: #e3e3e3;
+  background-color: #131314;
+  border: 1px solid #8e918f;
+  border-radius: 4px;
+  cursor: pointer;
+
+  /* State-layer overlay (Google spec) is faked via a quick background tween. */
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+/* Dark-theme state layers: white overlay at 8% hover / 12% pressed, approximated
+ * by lightening the near-black fill so the 4-color logo stays untouched. */
+.button:hover:not(:disabled) {
+  background-color: #1d1d1f;
+  border-color: #9a9d9b;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.button:active:not(:disabled) {
+  background-color: #242426;
+}
+
+.button:focus-visible {
+  outline: none;
+  border-color: #e3e3e3;
+  /* Subtle focus ring; Google uses a state layer, this keeps it keyboard-legible. */
+  box-shadow: 0 0 0 1px #131314, 0 0 0 3px rgba(227, 227, 227, 0.5);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.38; /* Google's disabled-button opacity */
+}
+
+.glyphWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.glyph {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.label {
+  /* Keep the text from being clipped/ellipsized in the full-width layout. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

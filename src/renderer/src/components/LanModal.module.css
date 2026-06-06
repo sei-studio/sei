@@ -1,0 +1,102 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fade 220ms ease both;
+}
+
+.modal {
+  width: 520px;
+  background: var(--window);
+  padding: 32px;
+  box-shadow: var(--shadow-pop);
+  animation: fade-up 280ms var(--ease-pop) both;
+}
+
+.headerEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 1.2px;
+  color: var(--text-2);
+  margin-bottom: 12px;
+}
+
+.headerDot {
+  width: 8px;
+  height: 8px;
+}
+
+.title {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 24px;
+  letter-spacing: -0.2px;
+}
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.step {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.stepNumber {
+  font-family: var(--pixel);
+  font-size: 11px;
+  color: var(--accent);
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.stepBody {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.searching {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+
+.searchDots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.searchDots span {
+  width: 6px;
+  height: 6px;
+  background: var(--muted);
+  display: block;
+  animation: seiDot 1100ms ease-in-out infinite;
+}
+
+.footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}

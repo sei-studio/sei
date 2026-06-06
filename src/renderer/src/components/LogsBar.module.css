@@ -1,0 +1,83 @@
+.root,
+.rootOpen {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.header {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 14px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  width: 100%;
+  text-align: left;
+  color: var(--text-2);
+  border-radius: 0;
+}
+
+.header:hover {
+  background: var(--surface-2, var(--surface));
+  color: var(--text);
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.preview {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.previewSpacer {
+  flex: 1;
+}
+
+.chevron {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.panelWrap {
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.resizeHandle {
+  height: 6px;
+  margin-top: -3px;
+  cursor: ns-resize;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.resizeHandle:hover,
+.resizeHandle:active {
+  background: var(--accent, var(--border));
+  opacity: 0.5;
+}

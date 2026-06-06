@@ -1,0 +1,107 @@
+/* ApiKeySetupModal — BYOK provider + key prompt.
+   Visual idiom mirrors HardStopModal / AcceptToSModal: same 460px frame, 32px
+   padding, 0.45 scrim alpha, no new design tokens. Scrim z-index 1100 so it
+   stacks cleanly above the HardStopModal scrim (1000) that opened it. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  animation: fade 220ms ease both;
+}
+
+.modal {
+  width: 460px;
+  background: var(--window);
+  padding: 32px;
+  box-shadow: var(--shadow-pop);
+  font-family: var(--sans);
+  animation: fadeUp 280ms var(--ease-pop) both;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.2px;
+  color: var(--text);
+  margin: 0;
+}
+
+.body {
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+}
+
+/* Key field: a mono uppercase label sitting directly above the underline input.
+   Negative bottom margin pulls the input toward its label (the parent's 16px
+   gap would otherwise read as the label floating mid-air). */
+.keyField {
+  display: flex;
+  flex-direction: column;
+}
+
+.fieldLabel {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: 0 0 8px;
+}
+
+.error {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--red);
+  margin: 0;
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Tertiary CTA visual demotion — Cancel reads as the lowest-priority action
+   below the accent Save (mirrors HardStopModal's .muted). */
+.muted {
+  color: var(--text-2);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .modal {
+    animation: none;
+  }
+}

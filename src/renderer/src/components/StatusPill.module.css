@@ -1,0 +1,123 @@
+/* StatusPill.module.css — UI-SPEC §"Status dot system (D-22 family, extended)".
+ *
+ * Sharp corners (D-28 — no border-radius on the 8px square dot).
+ * All colors reference --green / --red / --warn / --muted / --text-2 tokens;
+ * zero hardcoded hex per UI-SPEC §Color.
+ */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/*
+ * ITEM 15 (quick/260523-t8d): 'tag' size variant — matches the CharacterCard
+ * PUBLIC/CUSTOM chip styling so SYNCING reads at byte-identical height.
+ * Increased specificity (.pill.size_tag) + repeated .label override so the
+ * font-family declaration on .label (var(--sans)) does not win.
+ */
+.pill.size_tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  gap: 6px;
+  /*
+   * B5 chrome polish: pin the tag-variant pill height to match
+   * CharacterCard's `.chip` height so MINE/WORLD + SYNCING render at
+   * byte-identical heights regardless of label length.
+   */
+  height: 18px;
+}
+
+.pill.size_tag .label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  font-weight: 600;
+}
+
+/*
+ * Chip dot is 6px square — match the CharacterCard chipDot exactly so the
+ * dot/label baseline lands at the same spot in all three chips.
+ */
+.pill.size_tag .dot {
+  width: 6px;
+  height: 6px;
+}
+
+.labels {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.label {
+  font-family: var(--sans);
+  color: var(--text);
+}
+
+.secondary {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+
+/* ── 8px square dot, sharp corners (D-28) ─────────────────────────── */
+.dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  background: var(--muted);
+  border-radius: 0;
+}
+
+/* ── Tone variants — token references only, no hex ────────────────── */
+.dot_green {
+  background: var(--green);
+}
+
+.dot_red {
+  background: var(--red);
+}
+
+.dot_warn {
+  background: var(--warn);
+}
+
+.dot_muted {
+  background: var(--muted);
+}
+
+/* In-flight: --text-2 dot with a 1.4s opacity pulse. */
+.dot_pulse {
+  background: var(--text-2);
+  animation: statuspill-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes statuspill-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* a11y — defeat the pulse animation when the user opts out of motion. */
+@media (prefers-reduced-motion: reduce) {
+  .dot_pulse {
+    animation: none;
+  }
+}

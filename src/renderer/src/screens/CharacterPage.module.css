@@ -1,0 +1,737 @@
+/* CharacterPage.module.css — full-bleed character detail (mockup ui.jsx .detail).
+ * Portrait bleeds off the right behind a left→right scrim; a left content
+ * panel carries the crumb, name, status, tabs, persona/stats, and deploy bar.
+ * Source: .planning/UI-DESIGN-SYSTEM.md §Screens → Character detail.
+ */
+
+.root {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: var(--window);
+}
+
+/* ── Portrait layer (right, behind the scrim) ────────────────────────── */
+.portraitLayer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(660px, 56%);
+  z-index: 0;
+  overflow: hidden;
+}
+
+.portraitTint {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.dPic {
+  position: absolute !important;
+  inset: 0;
+  z-index: 1;
+  filter: drop-shadow(-30px 0 60px rgba(0, 0, 0, 0.5));
+  /* Portrait rises + fades in on open (mockup ui.jsx @keyframes picRise). */
+  animation: picRise 0.7s var(--ease) both;
+}
+
+@keyframes picRise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      var(--window) 4%,
+      color-mix(in srgb, var(--window) 86%, transparent) 30%,
+      color-mix(in srgb, var(--window) 36%, transparent) 56%,
+      transparent 80%
+    ),
+    linear-gradient(0deg, color-mix(in srgb, var(--window) 72%, transparent), transparent 32%);
+}
+
+/* ── Left content panel ──────────────────────────────────────────────── */
+.content {
+  position: relative;
+  z-index: 3;
+  height: 100%;
+  width: min(640px, 60%);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 40px 28px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Content panel slides in from the right when the page opens (mockup
+     ui.jsx .detail-slide → @keyframes detailIn). Clipped by .root's
+     overflow:hidden so it never triggers a horizontal scrollbar. */
+  animation: detailIn 0.5s var(--ease) both;
+}
+
+@keyframes detailIn {
+  from {
+    transform: translateX(46px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.crumb {
+  margin-bottom: 6px;
+  /* Pull left by the quiet/sm button's 13px horizontal padding so the back
+     button's icon lines up with the title + content left edge (same convention
+     as SettingsScreen .backRow). */
+  margin-left: -13px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin: 12px 0 4px;
+}
+
+.title {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(40px, 8vh, 72px);
+  line-height: 0.84;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  margin: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.titleInput {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(36px, 7vh, 60px);
+  line-height: 0.9;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  padding: 2px 10px;
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 480px;
+}
+
+.titleInput:focus {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.titlePencil {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 140ms ease;
+  margin-right: auto;
+}
+
+.titlePencil:hover {
+  color: var(--accent);
+}
+
+.titlePencil:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.reportLink {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.reportLink:hover,
+.reportLink:focus-visible {
+  color: var(--red);
+  outline: none;
+}
+
+/* ── Status line (mockup d-status) — inline dot + tracked label ──────── */
+.modelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  /* Generous top margin: the .title above uses line-height 0.84 on a clamp(…,
+     72px) display font, so its glyphs overflow well below the line box. 6px
+     left the "Online · Xs" status line colliding with the name's descenders;
+     14px clears the overflow at the largest title size. */
+  margin: 14px 0 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.modelDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.modelLabel {
+  font-weight: 500;
+}
+
+.tryAgain {
+  margin-left: 8px;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.tryAgain:hover {
+  text-decoration: underline;
+}
+
+/* ── Public/private toggle ───────────────────────────────────────────── */
+.sharedToggleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin: 10px 0 2px;
+}
+
+.sharedToggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: rgba(127, 127, 127, 0.03);
+  border: 1px solid var(--border-strong);
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+
+.sharedToggle:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.sharedToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sharedToggleOn {
+  border-color: var(--green);
+  color: var(--text);
+}
+
+.sharedToggleOff {
+  /* neutral */
+}
+
+.sharedDot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.sharedDotOn {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
+.sharedDotOff {
+  background: var(--muted);
+}
+
+.sharedLabel {
+  font-family: var(--mono);
+}
+
+.sharedError {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--red);
+}
+
+/* ── Tabs (mockup d-tab — underline on active) ───────────────────────── */
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-top: 18px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.tab,
+.tabActive {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  position: relative;
+  padding: 11px 18px;
+  margin-bottom: -1px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tabActive {
+  color: var(--text);
+}
+
+.tabActive::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tabDisabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* ── Persona / description card + stats ──────────────────────────────── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+  margin-top: 18px;
+}
+
+.card {
+  position: relative;
+  background: rgba(127, 127, 127, 0.03);
+  border: 1px solid var(--border);
+  padding: 18px 20px;
+}
+
+.cardExpanded {
+  border-left: 2px solid var(--accent);
+  animation: fade 220ms ease both;
+}
+
+.cardEyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--space-md);
+}
+
+.cardBody {
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.cardEyebrowRotate,
+.cardFooterPencil {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  padding: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.cardEyebrowRotate {
+  margin-left: auto;
+}
+
+.cardEyebrowRotate:hover,
+.cardFooterPencil:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.cardEyebrowRotate:focus-visible,
+.cardFooterPencil:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-sm);
+}
+
+.cardWarn {
+  margin-bottom: var(--space-sm);
+  padding: 8px 12px;
+  border-left: 2px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.descTextarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  padding: 10px 12px;
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  resize: vertical;
+  min-height: 96px;
+}
+
+.descTextarea:focus {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.descActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.personaBody {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  animation: fade 220ms ease both;
+}
+
+.logsWrap {
+  height: 360px;
+  display: flex;
+  flex-direction: column;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.stat {
+  background: rgba(127, 127, 127, 0.03);
+  border: 1px solid var(--border);
+  padding: 11px 12px;
+}
+
+.statEyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+
+.statValue {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── Deploy bar (mockup .d-foot) — pinned to the bottom of the panel ─── */
+.foot {
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+  margin-top: auto;
+  padding-top: 22px;
+}
+
+.deployBtn {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.22em;
+  height: 54px;
+}
+
+/* Travelling glint across the accent CTA (mockup .deploy::after). */
+.deployBtn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: deploy-glint calc(3.4s / var(--flux)) ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes deploy-glint {
+  0%, 60% { left: -60%; }
+  85%, 100% { left: 130%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deployBtn::after {
+    display: none;
+  }
+}
+
+.gearWrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.gearBtn {
+  appearance: none;
+  height: 54px;
+  width: 54px;
+  border-radius: 0;
+  border: 1px solid var(--border-strong);
+  background: rgba(127, 127, 127, 0.03);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.gearBtn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.gearBtn:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.gearMenu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+
+.gearMenuItem {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 11px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.gearMenuItem:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.gearMenuItem:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Share-toggle confirmation modal ─────────────────────────────────── */
+.confirmScrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirmModal {
+  width: 420px;
+  background: var(--surface);
+  padding: var(--space-lg) 28px;
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--sans);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.confirmTitle {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin: 0;
+}
+
+.confirmBody {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+/* Outcome-state accents for the share modal title. */
+.confirmTitleOk {
+  color: var(--green);
+}
+
+.confirmTitleError {
+  color: var(--red-strong);
+}
+
+.confirmErrorBody {
+  color: var(--red-strong);
+  white-space: pre-wrap;
+}
+
+/* Indeterminate progress bar shown while chars:set-shared is in flight.
+   The work is a single round-trip (upload + moderation + publish) with no
+   sub-step telemetry, so the bar is honestly indeterminate, not a percentage. */
+.progressTrack {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  margin-top: var(--space-xs);
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.progressIndeterminate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  background: var(--accent);
+  animation: shareIndeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes shareIndeterminate {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressIndeterminate {
+    left: 0;
+    width: 100%;
+    animation: sharePulse 1.4s ease-in-out infinite;
+  }
+  @keyframes sharePulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.8;
+    }
+  }
+}
+
+/* ── Not-found / loading stub ────────────────────────────────────────── */
+.notFound {
+  padding: 80px var(--space-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+  align-items: flex-start;
+  font-family: var(--sans);
+  font-size: 17px;
+  color: var(--text);
+}

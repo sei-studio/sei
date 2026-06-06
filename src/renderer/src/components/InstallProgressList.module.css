@@ -1,0 +1,111 @@
+/* InstallProgressList.module.css — per-install progress rows.
+ *
+ * Sharp corners (D-28). All colors/spacing reference tokens; zero hex.
+ * 4px progress bar — --rail base + --accent fill, matches UI-SPEC §Animation.
+ */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-md);
+  border: 1px solid var(--border);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md-plus);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.list > .row:last-child {
+  border-bottom: none;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.label {
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.stage {
+  flex-shrink: 0;
+  margin-left: auto;
+  min-width: 220px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.inFlight {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-xs);
+  min-width: 200px;
+}
+
+.stageLabel {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+/* 4px progress bar — --rail background, --accent fill. */
+.bar {
+  height: 4px;
+  width: 100%;
+  background: var(--rail);
+  border-radius: 0;
+}
+
+.barFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms ease;
+}
+
+/* Check-mark / terminal pill scale-in on success (UI-SPEC §"Animation & Motion"). */
+.checkMark {
+  animation: scaleIn 240ms var(--ease-pop);
+  display: inline-block;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkMark {
+    animation: none;
+  }
+  .barFill {
+    transition: none;
+  }
+}

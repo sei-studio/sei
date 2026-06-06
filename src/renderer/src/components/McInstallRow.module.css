@@ -1,0 +1,113 @@
+/* McInstallRow.module.css — UI-SPEC §"Interaction States" McInstallRow.
+ *
+ * Sharp corners (D-28). All colors/spacing reference tokens; zero hex.
+ * Hover/focus uses --accent-soft background; selected row gets a 2px --accent
+ * left-edge bar per UI-SPEC §"Accent reserved-for list" item 5.
+ *
+ * No transform-based hovers per UI-SPEC §"Interaction States" (sharp/calm feel).
+ */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md-plus);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 120ms ease;
+  outline: none;
+  /* Reserve room for the 2px left-edge bar so width doesn't shift on selection. */
+  border-left: 2px solid transparent;
+}
+
+.row:hover {
+  background: var(--accent-soft);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.selected {
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+}
+
+.selected:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.label {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.pillSlot {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* 260518-o1k T7: Lunar Client rows are read-only — no hover affordance,
+ * no pointer cursor, no focus outline. The row is in the list purely for
+ * UX transparency. */
+.readOnly {
+  cursor: default;
+}
+.readOnly:hover {
+  background: var(--surface);
+}
+.readOnly:focus-visible {
+  outline: none;
+}
+
+/* 260518-o1k T7: small muted caption under Lunar rows explaining why
+ * Sei can't fully integrate (no custom-skin-mod support). */
+.lunarCaption {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin-top: var(--space-xs);
+  font-style: italic;
+}
+
+/* 260518-o1k T8: pre-1.14 inline MC warning. Informational only — does
+ * not disable the Continue button; user deselects the row to proceed. */
+.warning {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--warn, var(--text-2));
+  line-height: 1.45;
+  margin-top: var(--space-xs);
+}

@@ -1,0 +1,66 @@
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--border);
+}
+
+.header {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.line {
+  white-space: pre;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.dropNote {
+  padding: 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.newLinesPill {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 0;
+  padding: 6px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  box-shadow: var(--shadow-pop);
+}
+
+.newLinesPill:hover {
+  filter: brightness(1.05);
+}
+
+.newLinesPill:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}

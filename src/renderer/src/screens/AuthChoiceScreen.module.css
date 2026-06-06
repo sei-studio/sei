@@ -1,0 +1,237 @@
+/* AuthChoiceScreen — embedded sign-in surface (B2 refactor).
+ *
+ * Replaces the previous two-tile layout with a centered embedded form. The
+ * form lives inside `.formPanel` (max-width 420px, surface card) so it reads
+ * as the focal point of the screen; the bottom "Continue locally" link is a
+ * small text affordance, not a tile.
+ *
+ * Source: 10-UI-SPEC §AuthChoiceScreen + §SignInModal styling tokens. Both
+ * light + dark themes pull from --window / --surface / --border / --text so
+ * the form looks intentional on either palette.
+ */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: var(--space-2xl) var(--space-xl);
+  gap: var(--space-xl);
+  background: var(--window);
+}
+
+.brandRow {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  align-items: center;
+}
+
+.formPanel {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: var(--space-xl) var(--space-xl) var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+  box-shadow: var(--shadow-card);
+}
+
+.title {
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin: 0;
+  text-align: left;
+}
+
+.framing {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.bodyText {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  /*
+   * D10: standardize field-to-field gap on --space-md (12px). The form
+   * previously used --space-md-plus (16px) which felt slightly looser
+   * than the rest of the app's input clusters (TextField row groups
+   * use --space-md elsewhere). Brings the auth form in line.
+   */
+  gap: var(--space-md);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.fieldLabel {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.errorText {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--red);
+  margin: 0;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  margin: 2px 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+.toggleRow {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-xs);
+}
+
+.toggleLink {
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.toggleLink:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.forgotRow {
+  display: flex;
+  justify-content: center;
+}
+
+.forgotLink {
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.forgotLink:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.forgotLink:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.localLink {
+  background: none;
+  border: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  text-decoration: none;
+}
+
+.localLink:hover {
+  color: var(--text-2);
+  text-decoration: underline;
+}
+
+.localLink:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Plan 11-12 (D-26 / LIB-06) — ToS capture row (mirrored from SignInModal). */
+.tosCheckbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tosCheckbox input[type='checkbox'] {
+  flex: none;
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.tosCheckbox a {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.tosCheckbox a:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* F-10 — COPPA DOB age gate three-dropdown row (mirrored from SignInModal). */
+.dobRow {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.dobSelect {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  background: var(--input-bg, var(--window));
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.dobSelect:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}

@@ -1,0 +1,92 @@
+/**
+ * UI store — current view, modal stack, theme override, pending summon id.
+ *
+ * Pure state machine for what's on screen. Subscriptions and side-effects live
+ * in App.tsx (theme apply, IPC subscribe) — this store is only concerned with
+ * what the user is currently looking at.
+ *
+ * Source: 04-CONTEXT.md (Onboarding/Home/AddCharacter/CharacterPage/Settings/ComingSoon
+ * view list) + 04-UI-SPEC.md §Interaction Contracts (modal lifecycle).
+ */
+
+import { create } from 'zustand';
+import type { ThemeMode } from '../theme';
+
+export type View =
+  | { kind: 'loading' }
+  | { kind: 'auth-choice' }
+  | { kind: 'onboarding'; isReonboard: boolean }
+  | { kind: 'home' }
+  | { kind: 'add-character' }
+  | { kind: 'character'; id: string }
+  | { kind: 'settings' }
+  | { kind: 'credits' }
+  | { kind: 'coming-soon' }
+  // quick/260525-sbo Task 6 — FTC 16 CFR §425.5 in-app receipt after a
+  // first-time subscription activation. Auto-navigated by useCreditsStore
+  // when the plan transitions from non-'unlimited' → 'unlimited' (once per
+  // transition; guarded by a module-level prevPlan ref).
+  | { kind: 'receipt' };
+
+export type Modal =
+  | null
+  | { kind: 'lan'; mode: 'info' | 'searching' }
+  | { kind: 'delete-confirm'; characterId: string }
+  // One-time "run skin setup" nudge shown on the first summon attempt by a
+  // user who has never completed skin setup. Carries the character id so a
+  // "skip for now" choice can resume the deferred summon.
+  | { kind: 'skin-setup-prompt'; characterId: string };
+
+/**
+ * B4 — which tab CharactersScreen should open on. The compass icon in the
+ * IconRail (B3) sets this to 'world' before navigating to home, so
+ * CharactersScreen reads it on mount and applies the World tab as default.
+ * Default 'home'.
+ */
+export type HomeTab = 'home' | 'world';
+
+interface UiState {
+  view: View;
+  modal: Modal;
+  themeMode: ThemeMode;
+  /**
+   * If a summon was attempted while LAN was not connected, the pending
+   * character id is held here until LAN flips to connected (D-24/D-56).
+   */
+  pendingSummonId: string | null;
+  /** B3/B4 — IconRail compass + CharactersScreen tab persistence. */
+  homeTab: HomeTab;
+  /**
+   * ui-A7 — Show the developer console (LogsBar) at the bottom of the
+   * window. Default OFF; persisted via UserConfig.dev_console_visible so
+   * a relaunch preserves the choice. App.tsx's bootstrap hydrates this
+   * from getConfig() before the first render of a view that would mount
+   * LogsBar.
+   */
+  devConsoleVisible: boolean;
+
+  navigate: (view: View) => void;
+  openModal: (modal: Modal) => void;
+  closeModal: () => void;
+  setThemeMode: (mode: ThemeMode) => void;
+  setPendingSummon: (id: string | null) => void;
+  setHomeTab: (tab: HomeTab) => void;
+  setDevConsoleVisible: (v: boolean) => void;
+}
+
+export const useUiStore = create<UiState>((set) => ({
+  view: { kind: 'loading' },
+  modal: null,
+  themeMode: 'system',
+  pendingSummonId: null,
+  homeTab: 'home',
+  devConsoleVisible: false,
+
+  navigate: (view) => set({ view, modal: null }),
+  openModal: (modal) => set({ modal }),
+  closeModal: () => set({ modal: null }),
+  setThemeMode: (mode) => set({ themeMode: mode }),
+  setPendingSummon: (id) => set({ pendingSummonId: id }),
+  setHomeTab: (tab) => set({ homeTab: tab }),
+  setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
+}));

@@ -1,0 +1,59 @@
+/* ReceiptScreen — quick/260525-sbo Task 6.
+ *
+ * Mirrors CreditsScreen.module.css (.root, .title, .backRow, .section,
+ * .tile) so the FTC 16 CFR §425.5 receipt surface reads visually as a
+ * sibling to the surrounding Settings/Credits screens.
+ */
+
+.root {
+  padding: 32px 40px 40px;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.backRow {
+  align-self: flex-start;
+}
+
+.title {
+  font-family: var(--sans);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  color: var(--text);
+  margin: 0 0 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 0 16px;
+  border-top: 1px solid var(--border);
+}
+
+.tile {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--window);
+}
+
+.line {
+  font-family: var(--sans);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}

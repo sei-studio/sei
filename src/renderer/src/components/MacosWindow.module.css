@@ -1,0 +1,102 @@
+/* MacosWindow.module.css — terminal window chrome.
+ *
+ * Source: .planning/UI-DESIGN-SYSTEM.md §Window shell + D-32 (real macOS
+ * traffic lights — no fake ones). Full-bleed dark; the vignette/grain live
+ * in the .hud-overlays layer (global.css), mounted by MacosWindow.tsx.
+ */
+
+.window {
+  width: 100%;
+  height: 100%;
+  min-width: 1180px;
+  min-height: 760px;
+  /* Flat near-black field — no accent bloom (the previous radial used
+     --accent-soft at 16%, ~3× the mockup's faint 5% glow, and read as a
+     blue gradient washed over the whole window). */
+  background-color: var(--window);
+  border-radius: 0; /* D-28 */
+  overflow: hidden;
+  box-shadow: var(--shadow-window);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── Drag strip — thin, transparent, no visible title bar ─────────────────
+ * Reserves clearance for the OS window controls (macOS traffic lights /
+ * Windows overlay) and keeps the frameless window movable. Transparent over
+ * the flat --window field, so there is no visible "bar". */
+.dragStrip {
+  position: relative;
+  /* No z-index lift needed: the HUD vignette is inset to the content panel
+     (global.css .hud-vignette) so it never reaches the chrome. The top bar and
+     the IconRail both render their flat, uniform --rail fill and read as one
+     continuous background strip. */
+  /* Sized so the macOS traffic lights get even clearance above and below.
+     NOTE: kept in sync with the .hud-vignette top inset in global.css. */
+  height: 34px;
+  flex-shrink: 0;
+  /* Top bar shares the IconRail's exact fill — flat --rail, no gradient — so the
+     two read as one continuous chrome strip. (A top-lightening gradient used to
+     live on both, but its lightening faded over each strip's own height: the
+     38px bar reached pure --rail by the seam while the ~700px rail was still
+     lightened there, so the bar read darker right at the boundary.) */
+  background-color: var(--rail);
+  display: flex;
+  align-items: center;
+  /* Label sits left, aligned with the main content's left edge (past the rail
+     so it clears the OS window controls). */
+  padding-left: calc(var(--rail-w) + var(--space-2xl));
+  -webkit-app-region: drag;
+}
+
+/* Hairline base — only across the content area (right of the rail), so there
+   is no visible seam where the bar meets the IconRail. */
+.dragStrip::after {
+  content: '';
+  position: absolute;
+  left: var(--rail-w);
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border);
+}
+
+/* "Sei Launcher" mark — small Rajdhani (--sans) label. */
+.titleLabel {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Version tag — same label, one tone darker than --muted (--muted-2). */
+.versionTag {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted-2);
+  margin-left: var(--space-xs);
+  user-select: none;
+  pointer-events: none;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* Legacy hooks kept so older references don't break. */
+.titleCenter,
+.dot,
+.subtitle {
+  display: none;
+}

@@ -1,0 +1,143 @@
+# electron-builder.yml — Phase 4 final.
+# Source: .planning/phases/04-electron-gui-packaging/04-RESEARCH.md §"Code Examples §3 + §4"
+#         + §"Resolved During Plan-Phase" Q1, Q2, Q3.
+#
+# appId is LOCKED for v1. Any future change strands every existing user's
+# safeStorage Keychain entry on macOS and Windows DPAPI scope on Windows —
+# treat as irrevocable. See Phase 8 Plan 01 HOTSPOTS row 12 + threat T-08-01.
+
+# Locked 2026-05-17 (Phase 8 Plan 01 Task 2 — resolves Phase 4 04-10 BLOCKING).
+appId: com.sei.app
+productName: Sei Launcher
+copyright: Copyright (c) 2026 Sei
+
+# In-app auto-update (quick/260604-uoy — reverses D-63, see note at EOF).
+# electron-updater pulls the latest release + the generated metadata files
+# (latest-mac.yml / latest.yml / latest-linux.yml) from the GitHub Releases of
+# this owner/repo. Adding `publish` is also what makes electron-builder emit the
+# `app-update.yml` baked into the packaged app — without it `autoUpdater` has no
+# feed to check. owner/repo MUST match the real GitHub repository that hosts the
+# releases (USER-ACTION: verify the generated app-update.yml owner before the
+# first release; a mismatch silently checks the wrong repo).
+publish:
+  provider: github
+  owner: sei-studio
+  repo: sei
+
+directories:
+  output: release
+  buildResources: build
+
+# Inclusive: pack the whole repo, then carve out planning docs, dev-only
+# tooling, build outputs, personal/user state, and gitignored items.
+files:
+  - "**/*"
+  # build outputs that get regenerated
+  - "!release/**"
+  - "!out/**"
+  # planning + docs (project history, not shipped)
+  - "!.planning/**"
+  - "!docs/**"
+  - "!ARCHITECTURE.md"
+  - "!RELEASE-NOTES.md"
+  - "!README.md"
+  - "!CLAUDE.md"
+  # tooling / CI / git
+  - "!.github/**"
+  - "!.git/**"
+  - "!.gitignore"
+  - "!.claude/**"
+  - "!test/**"
+  - "!scripts/**"
+  - "!tsconfig*.json"
+  - "!electron.vite.config.ts"
+  - "!electron-builder.yml"
+  # local logs / personal state
+  - "!logs/**"
+  - "!memory/**"
+  - "!config.json"
+  - "!config.example.json"
+  - "!.env*"
+  # sibling working copies / forks
+  - "!mineflayer/**"
+  # source maps + node_modules trim
+  - "!**/*.map"
+  - "!**/node_modules/*/{test,tests,__tests__,*.md,*.markdown,LICENSE*,license*}"
+
+# Stable filenames so https://github.com/sei-studio/sei/releases/latest/download/<name>
+# resolves correctly from sei.gg regardless of version bump.
+artifactName: Sei-${os}-${arch}.${ext}
+
+asar: true
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+
+asarUnpack:
+  - "src/bot/**/*"
+  # node_modules must be unpacked so the bot (running from app.asar.unpacked
+  # via utilityProcess.fork) can resolve its deps (zod, mineflayer, etc.) —
+  # Node ESM resolution from an unpacked file cannot cross back into the asar.
+  - "node_modules/**/*"
+  # Phase 9 (09-01): bundled default skin PNGs must survive packaging so the
+  # local skin HTTP server (Plan 03) can resolve `source: 'bundled'` personas
+  # via fs.readFile under process.resourcesPath in the packaged build.
+  - "resources/skins/**/*"
+
+mac:
+  category: public.app-category.games
+  # Separate arm64 + x64 dmgs (not universal): the universal merge step in
+  # @electron/asar bails with "pattern is too long" when asarUnpack covers
+  # node_modules/**/*. Two dmgs ship cleanly with no per-arch reconciliation.
+  #
+  # The `zip` target rides alongside each `dmg` because electron-updater installs
+  # macOS updates from the zip artifact — the dmg is mount-and-drag-only and is
+  # NOT a valid auto-update payload. Both arches now produce a dmg (manual
+  # download from sei.gg) AND a zip (auto-update); the generated latest-mac.yml +
+  # app-update.yml reference the zips.
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  identity: "Shang Wang (7485LZ74DA)"   # electron-builder prepends "Developer ID Application:" itself
+  notarize: true   # team id comes from APPLE_TEAM_ID env var (.env.local locally; GH Actions secret in CI)
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+dmg:
+  sign: false               # default since electron-builder 20.43.0
+  contents:
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+    - x: 130
+      y: 220
+      type: file
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # NO signtoolOptions / NO azureSignOptions per RESEARCH §Resolved Q2 (ship unsigned v1).
+  # SmartScreen "unknown publisher" warning is accepted UX for v1; documented in plan 11 release notes.
+
+nsis:
+  oneClick: false                          # show Welcome / Choose Path
+  perMachine: false                        # per-user install — no admin prompt
+  allowToChangeInstallationDirectory: true
+
+linux:
+  target:
+    - AppImage
+  category: Game
+  # AppImage is best-effort unsigned per D-60.
+
+# D-63 REVERSED (quick/260604-uoy, 2026-06-04): auto-update is now IN scope.
+# The notify-and-redirect-to-website updater (updateChecker.ts + UpdateToast.tsx)
+# was replaced by a real in-app electron-updater that downloads + installs in
+# place over the GitHub Releases channel (see `publish:` above). userData is
+# never touched by an update. See .planning/quick/260604-uoy-* for the design.

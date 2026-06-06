@@ -1,0 +1,82 @@
+/* animations.css — keyframes referenced by ≥1 component.
+ * Source: 04-UI-SPEC.md §Animation Tokens (verbatim) + ui.jsx LoadingScreen.
+ * Per-component transitions stay inline in component CSS modules.
+ */
+
+/* LoadingScreen mark pulse — 1600ms ease-in-out infinite */
+@keyframes seiPulse {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+/* LoadingScreen 3 dots — 1100ms ease-in-out infinite, staggered 160ms via inline animationDelay */
+@keyframes seiDot {
+  0%, 100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* Generic fade — used by persona-prompt expand, hover summon, toast, screen replace (220ms ease) */
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Screen mount, modal — 280ms --ease-pop (the easing ref must be applied at site, not in @keyframes) */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * D6: CharacterCard portrait shimmer — runs once on mount, sweeps a
+ * diagonal white gradient across the portrait. background-position is
+ * the load-bearing axis (background-size: 200% 100% gives twice the
+ * portrait width so the gradient enters off-screen left and exits
+ * off-screen right). Pairs with `.shimmer` in CharacterCard.module.css
+ * which sets `animation: cardShimmer 1200ms var(--ease-pop) 0ms 1 forwards`.
+ */
+@keyframes cardShimmer {
+  from {
+    background-position: 200% 0;
+    opacity: 1;
+  }
+  to {
+    background-position: -100% 0;
+    opacity: 0;
+  }
+}
+
+/* prefers-reduced-motion — UI-SPEC §Accessibility.
+ * Neutralizes every animation/transition without breaking layout (clamps duration to ~0).
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

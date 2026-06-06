@@ -1,0 +1,252 @@
+/**
+ * CreditsScreen — Mana / Pacts plan-picker (terminal restyle).
+ *
+ * USAGE hero (UsageBar) + a PLANS row of three pact cards (Trial / Quest /
+ * Party). Shares .title / .section / .sectionTitle idioms with SettingsScreen
+ * for rhythm across the rail screens. Sharp edges, Oswald display, mono
+ * eyebrows, accent CTAs.
+ *
+ * Source: .planning/UI-DESIGN-SYSTEM.md §Screens → Mana; mockup ui.jsx Mana.
+ * 260602-uv9 PROXY-05 override: plan cards intentionally render monetary
+ * amounts. All colors via theme tokens (no hex).
+ */
+
+.root {
+  padding: 34px 40px 40px;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.backRow {
+  align-self: flex-start;
+  /* Pull left by the quiet/sm button's 13px horizontal padding so the back
+     button's icon lines up with the title + content left margin. */
+  margin-left: -13px;
+}
+
+.title {
+  font-family: var(--display);
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 0 16px;
+  border-top: 1px solid var(--border);
+}
+
+.sectionTitle {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 14px 0 12px;
+}
+
+.muted {
+  font-family: var(--sans);
+  color: var(--text-2);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+/* PLANS — three side-by-side pact cards. */
+.plansRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: stretch;
+}
+
+.planCard {
+  flex: 1 1 200px;
+  min-width: 200px;
+  border: 1px solid var(--border);
+  background: rgba(127, 127, 127, 0.03);
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  position: relative;
+}
+
+/* Active subscription — accent outline + soft ring (mockup .plan.on). */
+.planCardActive {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-soft), 0 0 30px -16px var(--accent);
+}
+
+.claimError {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+/* "Your Party plan renews on …" / "… will not renew" note under the plan cards. */
+.planRenewalNote {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: center;
+  margin: var(--space-sm) 0 0;
+}
+
+.planName {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.planPrice {
+  font-family: var(--display);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.planPriceQualifier {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.planPlaytime {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.planCardActions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: auto;
+  padding-top: var(--space-md);
+}
+
+/* Bottom Manage-billing + disclaimer. */
+.manageBilling {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-sm);
+}
+
+/* Inline error when the Manage-billing portal can't be opened. */
+.manageError {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--warn);
+  text-align: center;
+  margin: var(--space-xs) 0 0;
+}
+
+.estimateDisclaimer {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted-2);
+  text-align: center;
+  margin: var(--space-xs) 0 0;
+}
+
+/* "Opening checkout…" overlay. */
+.checkoutScrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.checkoutCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  background: var(--surface);
+  padding: 24px 28px;
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  max-width: 340px;
+  text-align: center;
+}
+
+.checkoutSpinner {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: checkoutSpin 700ms linear infinite;
+}
+
+.checkoutCheck {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.checkoutTitle {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin: 0;
+}
+
+.checkoutMsg {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.checkoutActions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+@keyframes checkoutSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkoutSpinner {
+    animation: none;
+  }
+}

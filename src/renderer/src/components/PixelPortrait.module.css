@@ -1,0 +1,31 @@
+/* PixelPortrait.module.css — 12x12 procedural sprite.
+ * Source: 04-UI-SPEC.md §Component Inventory → PixelPortrait.
+ */
+
+.root {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: 0; /* D-28 */
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Cover (not stretch) so the 12×12 sprite keeps its 1:1 aspect inside
+     non-square card frames (tall portrait cards) without distorting. */
+  object-fit: cover;
+  /* Crisp pixel scaling — D-14 + UI-SPEC §PixelPortrait determinism */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.imgOverride {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}

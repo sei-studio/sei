@@ -1,0 +1,23 @@
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  max-width: 360px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--text);
+  color: var(--window);
+  box-shadow: var(--shadow-pop);
+  z-index: 90;
+  animation: fade-up 280ms var(--ease-pop) both;
+  cursor: pointer;
+}
+
+.text {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}

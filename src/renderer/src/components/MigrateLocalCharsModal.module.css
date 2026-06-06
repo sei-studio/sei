@@ -1,0 +1,157 @@
+/* Phase 11 plan 18 — MigrateLocalCharsModal (D-20). Mirrors AcceptToSModal /
+   DeleteAccountModal visual idiom: same scrim alpha, same 460px frame, same
+   32px padding, same color tokens. No new design tokens introduced. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fade 220ms ease both;
+}
+
+.modal {
+  width: 460px;
+  max-height: 80vh;
+  background: var(--window);
+  padding: 32px;
+  box-shadow: var(--shadow-pop);
+  font-family: var(--sans);
+  animation: fadeUp 280ms var(--ease-pop) both;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.2px;
+  color: var(--text);
+  margin: 0;
+}
+
+.body {
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.list li label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.list li label input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.list li label input[type='checkbox']:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.empty {
+  font-style: italic;
+  color: var(--text-2);
+}
+
+/* MR-02: warn banner shown when migration:listLocal could not fetch the
+   user's cloud library and the LOCAL ONLY filter therefore degrades to
+   "every local char". The user can still proceed (upsert is idempotent) but
+   the banner explains why already-uploaded chars might appear in the list. */
+.warnBanner {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  padding: 10px 12px;
+  background: rgba(255, 196, 0, 0.12);
+  border-left: 3px solid var(--yellow, #d4a017);
+  margin: 0;
+}
+
+.status {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.resultOk {
+  color: var(--text);
+}
+
+.resultFail {
+  color: var(--red);
+}
+
+.resultMessage {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .modal {
+    animation: none;
+  }
+}

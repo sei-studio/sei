@@ -1,0 +1,58 @@
+/* SkinPreview3d.module.css — UI-SPEC §"3D preview canvas".
+ *
+ * 240×320 frame, card-on-card visual (`--surface-2` over the section's `--window`),
+ * sharp corners (D-28). No hardcoded hex anywhere — all colors are token references.
+ *
+ * Phase-local custom properties (not promoted to tokens.css per UI-SPEC §Spacing
+ * Scale "3D preview canvas" — single call-site).
+ */
+
+.frame {
+  --skin-preview-w: 240px;
+  --skin-preview-h: 320px;
+
+  width: var(--skin-preview-w);
+  height: var(--skin-preview-h);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  display: grid;
+  place-items: center;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
+  /* image-rendering keeps the 64×64 → 240×320 upscale crisp instead of bilinearly
+     blurred — matches Minecraft's own pixel-art aesthetic and UI-SPEC §3D preview. */
+  image-rendering: pixelated;
+  display: block;
+  transition: opacity 200ms ease;
+}
+
+.fallbackImg {
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  display: block;
+}
+
+.fallbackHint {
+  position: absolute;
+  bottom: var(--space-md);
+  left: var(--space-md);
+  right: var(--space-md);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.loadingHint {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text-2);
+  text-align: center;
+}

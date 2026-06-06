@@ -1,0 +1,1680 @@
+/**
+ * IPC handler registrations. Wires every IpcChannel.<request-response> to
+ * its main-process module. Push channels (status / log / lan) are emitted
+ * directly by main/index.ts via webContents.send.
+ *
+ * Sources:
+ *   - shared/ipc.ts (IpcChannel, RendererApi)
+ *   - PATTERNS §"Zod validation at every external boundary"
+ */
+import { ipcMain, BrowserWindow, app } from 'electron';
+import { z } from 'zod';
+import {
+  IpcChannel,
+  ProxyConfigureArgsSchema,
+  CreditsCheckoutArgsSchema,
+  RecordConsentArgsSchema,
+  type WizardProgressEvent,
+  type ExpansionProgressEvent,
+  type BrowseEntry,
+  type CreditsStatus,
+  type SubscriptionStatusInfo,
+  type CreditsHardStopEvent,
+} from '../shared/ipc';
+import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
+import { loadConfig, saveConfig } from './configStore';
+import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota } from './characterStore';
+import { paths } from './paths';
+import { saveApiKey, hasApiKey, safeStorageBackendKind } from './apiKeyStore';
+import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
+import type { BotSupervisor } from './botSupervisor';
+
+export interface IpcHandlerDeps {
+  supervisor: BotSupervisor;
+  /**
+   * Returns the loopback skin server's baseUrl, or null if
+   * the server failed to bind on boot. Used by the skin:get-server-url IPC
+   * handler to surface the URL to the renderer + wizard. Closure-via-
+   * getter so a future restart of the skin server is observable.
+   */
+  getSkinServerBaseUrl: () => string | null;
+  /**
+   * Per-step progress sink for the wizard install flow.
+   * The orchestrator's `onProgress` callback funnels through here so the IPC
+   * handler can push the event onto the `wizard:progress` channel via
+   * `webContents.send`. Injected from main/index.ts where `mainWindow` lives.
+   */
+  sendWizardProgress: (ev: WizardProgressEvent) => void;
+  /**
+   * Streaming progress sink for the persona-expansion LLM call inside
+   * chars:save. The expandAndSaveCharacter `onProgress` callback funnels
+   * through here so the IPC handler can push each tick onto the
+   * `chars:expansion-progress` channel. Injected from main/index.ts.
+   */
+  sendExpansionProgress: (ev: ExpansionProgressEvent) => void;
+}
+
+/**
+ * Canonical persona-id validator. Used by every IPC handler that accepts a
+ * characterId — chars.* AND skin.*.
+ *
+ * Phase 11 D-23 — UUID v4 is canonical id. The previous kebab-case slug
+ * regex was retired after runUuidRenameMigration rewrote any pre-existing
+ * slug-keyed files (characters/<slug>.json, skins/<slug>.png, memory/<slug>/)
+ * to UUID-keyed paths. The IdSchema is the defense-in-depth gate at the IPC
+ * boundary: skinStore.applyPng / portraitStore.applyPortrait / paths.* build
+ * filesystem path components from this id, so anything that isn't a UUID
+ * (hyphens at wrong positions, slashes, dots, null bytes) is rejected here
+ * BEFORE main builds the path.
+ */
+const IdSchema = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  { message: 'characterId must be a UUID' },
+);
+const PlaintextSchema = z.string().min(1);
+
+/**
+ * Auth channel Zod gates (Phase 10). signin allows any non-empty password
+ * (the user might be retrying a typo against an existing account whose
+ * stored password predates a future min-length policy bump); signup enforces
+ * >= 8 chars to match the Supabase project setting in plan 04.
+ */
+const SignInPasswordSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+const SendPasswordResetSchema = z.object({
+  email: z.string().email(),
+});
+// Mirrors the signup password floor (8 chars) so a reset can't set a password
+// weaker than signup would allow. Supabase enforces its own minimum too.
+const UpdatePasswordSchema = z.object({
+  password: z.string().min(8),
+});
+/**
+ * Signup schema includes the COPPA DOB triple (F-10, quick/260525-usc).
+ *
+ * Year range: 1900 .. (new Date().getFullYear()) — anything outside this
+ * window is rejected as a malformed dropdown selection. Month 1..12, day
+ * 1..31. We deliberately do NOT validate "day is valid for month/year"
+ * here (Feb 30, Apr 31, etc.) — age comparison via the wall-clock
+ * derivation in signUpWithPassword is the load-bearing check; an
+ * impossible date that happens to clear the 13-year threshold just lets
+ * the user proceed, and an impossible date that fails it correctly
+ * rejects them.
+ *
+ * Privacy minimization: the DOB itself is never persisted; main computes
+ * the age and stores only the derived boolean fact `age >= 13` (via the
+ * existence of a successful auth.signUp call).
+ */
+const SignUpPasswordSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  dobYear: z.number().int().min(1900).max(new Date().getFullYear()),
+  dobMonth: z.number().int().min(1).max(12),
+  dobDay: z.number().int().min(1).max(31),
+});
+
+/**
+ * skin:apply request shape.
+ *
+ * `characterId` MUST go through IdSchema — the persona id becomes a
+ * filesystem path component inside skinStore.applyPng. The renderer's
+ * preload bindings never validate; main is the trust boundary.
+ *
+ * `username` is the per-persona MC in-game name (atomic skin+username
+ * write). Validation is delegated to CharacterSchema.parse()
+ * inside saveCharacter — that's where the `^[A-Za-z0-9_]+$` length 1-16
+ * regex lives. Empty string after trim = clear (null). Undefined/null = no change.
+ */
+const ApplySkinArgsSchema = z.object({
+  characterId: IdSchema,
+  pngBase64: z.string().min(1),
+  source: z.enum(['upload', 'username']),
+  mojangUsername: z.string().nullable().optional(),
+  username: z.string().nullable().optional(),
+});
+
+export function registerIpcHandlers(deps: IpcHandlerDeps): void {
+  /**
+   * Ensure the cloud row + portrait Storage object exist for `characterId`
+   * BEFORE the moderation gate runs. Without this, the moderation Edge
+   * Function's ownership-check SELECT (moderate-character-images line 124)
+   * returns 404 (`character_not_found`) and our callEdgeFunction wrapper
+   * throws, which publishWithModeration catches and surfaces as the generic
+   * "Moderation service is temporarily unavailable" copy — confusing because
+   * the provider was never actually called.
+   *
+   * Race in plain terms: saveCharacter enqueues a cloud-mirror upsert
+   * fire-and-forget (characterStore.ts ~130); chars:save's willShare branch
+   * and chars:set-shared(true) then immediately invoke runModerationGate,
+   * which hits the Edge Function before the queue drained. Solution: do the
+   * upsert synchronously here (shared = whatever the local row says — likely
+   * false; the gate's own upsertCharacter call later flips to shared=true on
+   * a clean verdict).
+   *
+   * Portrait: if portrait_image is set, also upload the bytes synchronously
+   * so SightEngine's URL fetch succeeds. portrait_image=null short-circuits
+   * to a 'no-portrait' clean verdict inside the Edge Function (lines 156-158
+   * + 205-207), so we can skip the upload in that case.
+   *
+   * Skin is best-effort — the gate doesn't read skin bytes, so async sync
+   * via the regular queue is fine.
+   */
+  async function ensureCloudRowForModeration(
+    characterId: string,
+    ownerUuid: string,
+    accessToken: string,
+  ): Promise<void> {
+    const { getCharacter: getLocal } = await import('./characterStore');
+    const char = await getLocal(characterId);
+    if (!char) throw new Error(`character ${characterId} not found locally`);
+
+    console.log(
+      `[sei] ensureCloudRowForModeration: upserting ${characterId} (owner=${ownerUuid}, local.owner=${char.owner ?? 'null'}, shared=${char.shared}, portrait=${char.portrait_image ?? 'null'})`,
+    );
+
+    // Use an explicitly JWT-authed client for EVERY call below — upsert, verify
+    // SELECT, and the portrait Storage upload. The singleton getClient()'s
+    // ambient session is not reliably applied to outgoing requests in the main
+    // process (see supabaseClient.ts getAuthedClient): when auth.getSession()
+    // doesn't resolve, supabase-js's fetchWithAuth falls back to the anon key,
+    // so RLS sees auth.uid()=null. PostgREST tolerates this intermittently, but
+    // the Storage INSERT then trips "portraits new row violates row-level
+    // security policy" → the moderation Edge Function 502s → the user sees the
+    // misleading "Moderation service is temporarily unavailable." Passing the
+    // JWT in global.headers.Authorization makes auth.uid() deterministic.
+    const { getAuthedClient } = await import('./auth/supabaseClient');
+    const authed = getAuthedClient(accessToken);
+
+    const { upsertCharacter, uploadPortrait } = await import('./cloud/cloudCharacterClient');
+    await upsertCharacter({ ...char, owner: ownerUuid }, ownerUuid, authed);
+
+    // Verify the row landed before handing off to the moderation gate. The
+    // Edge Function uses adminClient (service_role, RLS-bypassing) for its
+    // SELECT, so if a row visible to service_role doesn't exist, the upsert
+    // silently no-op'd — usually because the JWT didn't carry auth.uid()
+    // through to the INSERT's WITH CHECK clause. Surfacing this explicitly
+    // beats the misleading "Moderation service is temporarily unavailable"
+    // copy downstream.
+    const { data: verifyRow, error: verifyErr } = await authed
+      .from('characters')
+      .select('id, owner, portrait_image, shared')
+      .eq('id', characterId)
+      .maybeSingle();
+    if (verifyErr) {
+      console.warn(
+        `[sei] ensureCloudRowForModeration: verify SELECT failed for ${characterId}: ${verifyErr.message}`,
+      );
+    } else if (!verifyRow) {
+      console.warn(
+        `[sei] ensureCloudRowForModeration: row ${characterId} NOT visible after upsert — RLS likely rejected INSERT (auth.uid() vs ${ownerUuid})`,
+      );
+    } else {
+      console.log(
+        `[sei] ensureCloudRowForModeration: verified row ${characterId} (owner=${verifyRow.owner}, portrait_image=${verifyRow.portrait_image ?? 'null'}, shared=${verifyRow.shared})`,
+      );
+    }
+
+    if (char.portrait_image) {
+      try {
+        const { readFile } = await import('node:fs/promises');
+        const bytes = await readFile(paths.portraitPath(characterId));
+        // Server-side signed-URL upload (asymmetric-JWT bridge): storage-api
+        // can't verify our ES256 token, so uploadPortrait routes through the
+        // sign-character-asset-upload Edge Function. Pass the access token, not
+        // the authed client — the client no longer touches storage directly.
+        await uploadPortrait(characterId, bytes, 'png', accessToken);
+        console.log(
+          `[sei] ensureCloudRowForModeration: uploaded portrait for ${characterId} (${bytes.byteLength} bytes)`,
+        );
+      } catch (err) {
+        // Non-fatal: if the portrait file is missing on disk (legacy install,
+        // partial write), the Edge Function will still find row.portrait_image
+        // set and SightEngine will 404 → 502. The user retries; meanwhile the
+        // upsert above succeeded so the moderation gate doesn't hit the row-
+        // missing 404 path. Logging only.
+        console.warn(
+          `[sei] ensureCloudRowForModeration: portrait upload for ${characterId} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  // 260525-qy0 Task 4 — moderation gate runner shared by:
+  //   - the new chars.save shared=true branch
+  //   - the new chars.setShared(true) branch
+  //
+  // Returns the PublishResult tagged union from moderationGate. Caller decides
+  // how to surface ok:false to the renderer (chars.save throws with friendlyMessage;
+  // chars.setShared throws with friendlyMessage — same shape as the existing
+  // CharacterPage.tsx catch).
+  //
+  // All adapter logic lifted verbatim from the previous browse.publishWithModeration
+  // IPC handler so behavior is identical to what the dead-code path would have done.
+  async function runModerationGate(
+    characterId: string,
+  ): Promise<import('./cloud/moderationGate').PublishResult> {
+    const { isCloudWriteAllowed } = await import('./auth/authState');
+    if (!(await isCloudWriteAllowed())) {
+      return {
+        ok: false,
+        code: 'CLOUD_MODERATION_PROVIDER_UNAVAILABLE',
+        friendlyMessage: 'Please sign in and accept the Terms of Service before publishing.',
+      } as const;
+    }
+    const { getClient } = await import('./auth/supabaseClient');
+    const { data: { session } } = await getClient().auth.getSession();
+    if (!session?.access_token) {
+      return {
+        ok: false,
+        code: 'CLOUD_MODERATION_PROVIDER_UNAVAILABLE',
+        friendlyMessage: 'Please sign in before publishing.',
+      } as const;
+    }
+    const accessToken = session.access_token;
+
+    const [
+      { publishWithModeration },
+      { callEdgeFunction },
+      { upsertCharacter, downloadCharacter },
+      { getSupabaseUrl },
+    ] = await Promise.all([
+      import('./cloud/moderationGate'),
+      import('./auth/edgeFunctionClient'),
+      import('./cloud/cloudCharacterClient'),
+      import('./env'),
+    ]);
+
+    // Adapter bag is identical to the one in the old browse.publishWithModeration
+    // handler (pre-260525-qy0). Copy is verbatim.
+    return await publishWithModeration(characterId, {
+      callEdgeFunction: async <T,>(name: string, opts: { jwt: string; body: unknown; timeoutMs?: number }) => {
+        const res = await callEdgeFunction(name, {
+          jwt: opts.jwt,
+          body: opts.body,
+          timeoutMs: opts.timeoutMs,
+        });
+        if (!res.ok) {
+          throw new Error(`edge-${name}-failed: status=${res.status} ${res.message}`);
+        }
+        return res.json as T;
+      },
+      upsertCharacter: async (char, ownerUuid) => {
+        const characterShape = {
+          id: char.id,
+          name: char.name,
+          slug: (char.slug as string | null) ?? null,
+          persona: {
+            source: char.persona_source,
+            expanded: char.persona_expanded,
+          },
+          is_default: false,
+          shared: (char.shared as boolean) ?? true,
+          created: (char.created as string | null) ?? new Date().toISOString(),
+          last_launched: (char.last_launched as string | null) ?? null,
+          playtime_ms: Number(char.playtime_ms ?? 0),
+          portrait_image: (char.portrait_image as string | null) ?? null,
+          skin: {
+            source: (char.skin_source as 'bundled' | 'upload' | 'username' | 'none') ?? 'none',
+            mojang_username: (char.mojang_username as string | null) ?? null,
+            png_sha256: (char.skin_png_sha256 as string | null) ?? null,
+            applied_at: (char.skin_applied_at as string | null) ?? null,
+          },
+          username: (char.username as string | null) ?? null,
+          metadata: (char.metadata as Record<string, unknown>) ?? {},
+        };
+        await upsertCharacter(characterShape, ownerUuid);
+      },
+      reExpandPersona: async (id) => {
+        const cloudChar = await downloadCharacter(id);
+        return cloudChar?.persona.expanded ?? '';
+      },
+      getCharacter: async (id) => {
+        // Read from the LOCAL store, not cloud. The chars.save (and
+        // chars.setShared) flow writes the row locally BEFORE invoking the
+        // moderation gate, and the cloud mirror is fire-and-forget — so the
+        // cloud row may not yet exist when this runs. Previously this called
+        // downloadCharacter(id) and threw "character X not found in cloud",
+        // surfacing as the chars:save error users saw on new-character save.
+        // Local data is the source of truth at gate time; the gate only needs
+        // name + persona text + owner to call the moderation Edge Functions,
+        // all of which are populated locally.
+        const { getCharacter: getLocal } = await import('./characterStore');
+        const c = await getLocal(id);
+        if (!c) throw new Error(`character ${id} not found`);
+        return {
+          id: c.id,
+          owner: c.owner ?? session.user.id,
+          name: c.name,
+          persona_source: c.persona.source,
+          persona_expanded: c.persona.expanded,
+          slug: c.slug,
+          shared: c.shared,
+          created: c.created,
+          last_launched: c.last_launched,
+          playtime_ms: c.playtime_ms,
+          portrait_image: c.portrait_image,
+          skin_source: c.skin.source,
+          mojang_username: c.skin.mojang_username,
+          skin_png_sha256: c.skin.png_sha256,
+          skin_applied_at: c.skin.applied_at,
+          username: c.username,
+          // Fold the human-facing description into metadata.description. The
+          // local Character keeps it as a TOP-LEVEL field, but the cloud row
+          // (and every cloud upsert path — see cloudCharacterClient.upsertCharacter
+          // / rowToCharacter) carries it inside metadata.description. Without
+          // this fold, publishWithModeration spreads this row straight into its
+          // final upsertCharacter call with metadata:{}, CLOBBERING the
+          // description that the earlier ensureCloudRowForModeration / sync-queue
+          // upserts wrote — so every character published through the gate lost
+          // its description in cloud and other users saw "No description provided".
+          metadata:
+            c.description != null
+              ? { ...c.metadata, description: c.description }
+              : c.metadata,
+        };
+      },
+      getJwt: async () => accessToken,
+      supabaseUrl: getSupabaseUrl(),
+    });
+  }
+
+  // Bot supervision
+  ipcMain.handle(IpcChannel.bot.summon, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    await deps.supervisor.summon(id);
+  });
+  ipcMain.handle(IpcChannel.bot.stop, async () => {
+    await deps.supervisor.stop();
+  });
+
+  // Character CRUD
+  ipcMain.handle(IpcChannel.chars.list, async (): Promise<Character[]> => {
+    return await listCharacters();
+  });
+  ipcMain.handle(IpcChannel.chars.get, async (_event, idArg: unknown): Promise<Character | null> => {
+    const id = IdSchema.parse(idArg);
+    return await getCharacter(id);
+  });
+  // Pre-flight daily-creation quota check (persona_daily). Best-effort UX gate;
+  // the proxy 429 remains the hard limit. See characterStore.checkCreateQuota.
+  ipcMain.handle(
+    IpcChannel.chars.checkCreateQuota,
+    async (): Promise<{ blocked: boolean; resetsAt: string | null }> => {
+      return await checkCreateQuota();
+    },
+  );
+  // 260516-0yw: chars.save runs the LLM expansion call (main owns the
+  // Anthropic API key) and returns the persisted Character so the renderer
+  // can update its store with the new persona.expanded.
+  // 260517-frz: when the renderer passes `{ skipExpansion: true }`, main
+  // writes `character.persona.expanded` verbatim and skips the LLM call.
+  // This is how the Edit modal supports manual editing of the long-form
+  // prompt — the user's edits win, no regeneration is triggered.
+  ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown, optsArg: unknown): Promise<Character> => {
+    const parsedCharacter = CharacterSchema.parse(charArg);
+    const skipExpansion =
+      optsArg != null &&
+      typeof optsArg === 'object' &&
+      (optsArg as { skipExpansion?: unknown }).skipExpansion === true;
+
+    // Streaming-progress routing key. When present, build an onProgress bridge
+    // that stamps each expansion tick with this id and pushes it onto the
+    // chars:expansion-progress channel; the renderer filters by the same id.
+    // Absent → expansion still streams internally, it just emits no ticks.
+    const expansionRequestId =
+      optsArg != null &&
+      typeof optsArg === 'object' &&
+      typeof (optsArg as { expansionRequestId?: unknown }).expansionRequestId === 'string'
+        ? (optsArg as { expansionRequestId: string }).expansionRequestId
+        : undefined;
+    const onProgress = expansionRequestId
+      ? (p: { fraction: number; section: string }): void =>
+          deps.sendExpansionProgress({ requestId: expansionRequestId, ...p })
+      : undefined;
+
+    // Stamp owner on local-only characters at save time so the renderer can
+    // filter by current account on sign-in. Without this, characters created
+    // while signed in as A had a null owner and would later leak into B's
+    // Home grid (the legacy `c.owner == null → show` fallback). Defaults are
+    // never owned (D-22). For everything else, copy from the live session.
+    let character = parsedCharacter;
+    if (!parsedCharacter.is_default) {
+      try {
+        const { getClient } = await import('./auth/supabaseClient');
+        const session = (await getClient().auth.getSession()).data.session;
+        if (session?.user.id) {
+          character = { ...parsedCharacter, owner: session.user.id };
+        }
+      } catch {
+        // No session / supabase init failure: leave owner unset, character is
+        // local-only and visible only when signed-out per HomeGrid filter.
+      }
+    }
+
+    // 260525-qy0 Task 4 — gate every shared=true transition through the
+    // moderation pipeline BEFORE the cloud upsert. Defaults (D-22) can never
+    // be shared, so willShare implicitly excludes them.
+    const willShare = character.shared === true && !character.is_default;
+
+    if (!willShare) {
+      // Fast path — private save (or default-with-shared=false). Existing
+      // behavior preserved exactly.
+      if (skipExpansion) {
+        await saveCharacter(character);
+        return character;
+      }
+      return await expandAndSaveCharacter({ character, onProgress });
+    }
+
+    // Phase 1 — local persist as PRIVATE first. This defuses the sync-queue
+    // race where saveCharacter's fire-and-forget mirror could enqueue
+    // shared=true to cloud BEFORE moderation runs. The cloud row lands as
+    // private; moderation's own upsertCharacter adapter does the shared=true
+    // flip on clean.
+    const draftPrivate: Character = { ...character, shared: false };
+    let persistedPrivate: Character;
+    if (skipExpansion) {
+      await saveCharacter(draftPrivate);
+      persistedPrivate = draftPrivate;
+    } else {
+      persistedPrivate = await expandAndSaveCharacter({ character: draftPrivate, onProgress });
+    }
+
+    // Phase 2 — run moderation gate. On clean, the gate's upsertCharacter
+    // adapter has already written shared=true to cloud; re-sync the local
+    // row via saveCharacterRaw (no mirror) so we don't double-queue.
+    //
+    // Sync-upsert the cloud row + portrait FIRST. saveCharacter above only
+    // enqueued a fire-and-forget mirror; if the queue hasn't drained, the
+    // moderation Edge Function's row lookup 404s and the friendly "moderation
+    // service unavailable" copy fires even though the provider was never
+    // actually called.
+    try {
+      const { getClient } = await import('./auth/supabaseClient');
+      const session = (await getClient().auth.getSession()).data.session;
+      if (session?.user?.id && session.access_token) {
+        await ensureCloudRowForModeration(persistedPrivate.id, session.user.id, session.access_token);
+      }
+    } catch (err) {
+      console.warn(`[sei] pre-moderation sync upsert for ${persistedPrivate.id}: ${(err as Error).message}`);
+    }
+    const result = await runModerationGate(persistedPrivate.id);
+    if (!result.ok) {
+      // Local row stays at shared=false. Renderer surfaces friendlyMessage.
+      throw new Error(result.friendlyMessage);
+    }
+    const { saveCharacterRaw } = await import('./characterStore');
+    const persistedShared: Character = { ...persistedPrivate, shared: true };
+    await saveCharacterRaw(persistedShared);
+    return persistedShared;
+  });
+  ipcMain.handle(IpcChannel.chars.delete, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    const char = await getCharacter(id);
+    if (!char) throw new Error('Character not found.');
+    // Refuse to delete the active character — UI should never request this.
+    if (deps.supervisor.getActiveId() === id) {
+      throw new Error('Cannot delete the currently summoned character. Stop first.');
+    }
+    if (char.is_default) {
+      // Defaults are bundled (D-22) and never actually leave the disk —
+      // "remove from library" is a per-user visibility flag tracked in
+      // UserConfig.removed_default_ids. Re-adding via charsRestoreDefault
+      // simply clears the entry.
+      const { loadConfig, saveConfig } = await import('./configStore');
+      const cfg = await loadConfig();
+      const removed = new Set(cfg.removed_default_ids ?? []);
+      if (!removed.has(id)) {
+        removed.add(id);
+        await saveConfig({ ...cfg, removed_default_ids: Array.from(removed) });
+      }
+      return;
+    }
+    await deleteCharacter(id);
+  });
+  ipcMain.handle(IpcChannel.chars.restoreDefault, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    const char = await getCharacter(id);
+    if (!char) throw new Error('Character not found.');
+    if (!char.is_default) {
+      throw new Error('Only default characters can be restored.');
+    }
+    const { loadConfig, saveConfig } = await import('./configStore');
+    const cfg = await loadConfig();
+    const removed = (cfg.removed_default_ids ?? []).filter((x) => x !== id);
+    await saveConfig({ ...cfg, removed_default_ids: removed });
+  });
+
+  // Add a non-default foreign-owned (World) character to the user's library.
+  // Step 1: cache-on-demand pulls the cloud row + skin + portrait onto local
+  //          disk so the bot can run it offline.
+  // Step 2: write the id into UserConfig.added_world_ids so HomeGrid and
+  //          IconRail surface the character on Home despite its owner being
+  //          someone else. Defaults follow the restoreDefault path above.
+  ipcMain.handle(IpcChannel.chars.addToLibrary, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    const { ensureLocallyCached } = await import('./cloud/cacheOnDemand');
+    await ensureLocallyCached(id);
+    const { loadConfig, saveConfig } = await import('./configStore');
+    const cfg = await loadConfig();
+    const added = new Set(cfg.added_world_ids ?? []);
+    if (!added.has(id)) {
+      added.add(id);
+      await saveConfig({ ...cfg, added_world_ids: Array.from(added) });
+    }
+  });
+
+  // Remove a foreign-owned World character from the user's library. Two
+  // steps: strip the id from UserConfig.added_world_ids so HomeGrid +
+  // IconRail re-filter, then wipe the local cache files (JSON + portrait +
+  // skin + memory). DOES NOT enqueue any cloud delete — the user doesn't own
+  // the row, RLS would reject it, and we'd burn a sync-queue retry slot.
+  // Refuses to act while the character is summoned.
+  ipcMain.handle(IpcChannel.chars.removeFromLibrary, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    if (deps.supervisor.getActiveId() === id) {
+      throw new Error('Cannot remove the currently summoned character. Stop first.');
+    }
+    const { loadConfig, saveConfig } = await import('./configStore');
+    const cfg = await loadConfig();
+    const added = (cfg.added_world_ids ?? []).filter((x) => x !== id);
+    if (added.length !== (cfg.added_world_ids ?? []).length) {
+      await saveConfig({ ...cfg, added_world_ids: added });
+    }
+    // Wipe local cache files via the same hand-rolled deletion the reconcile
+    // sweep uses (skips the cloud-mirror enqueue inside characterStore.
+    // deleteCharacter that would 403 against RLS for a foreign-owned row).
+    const { unlink, rm } = await import('node:fs/promises');
+    const targets = [
+      paths.characterPath(id),
+      paths.characterPortraitPath(id),
+      paths.skinPngPath(id),
+    ];
+    for (const target of targets) {
+      try {
+        await unlink(target);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn(`[sei] removeFromLibrary unlink ${target}: ${(err as Error).message}`);
+        }
+      }
+    }
+    try {
+      await rm(paths.memoryDir(id), { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[sei] removeFromLibrary memory dir ${id}: ${(err as Error).message}`);
+    }
+    // Drop from the character index so chars.list doesn't re-surface it.
+    try {
+      const { readFile, writeFile, mkdir } = await import('node:fs/promises');
+      const idxPath = paths.indexPath();
+      const raw = await readFile(idxPath, 'utf8').catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') return null;
+        throw err;
+      });
+      if (raw == null) return;
+      const parsed = JSON.parse(raw) as { version?: number; order?: unknown };
+      if (!Array.isArray(parsed.order)) return;
+      const next = parsed.order.filter((x) => x !== id);
+      if (next.length === parsed.order.length) return;
+      await mkdir(paths.charactersDir(), { recursive: true });
+      await writeFile(idxPath, JSON.stringify({ version: 1, order: next }, null, 2) + '\n');
+    } catch (err) {
+      console.warn(`[sei] removeFromLibrary index for ${id}: ${(err as Error).message}`);
+    }
+  });
+  ipcMain.handle(IpcChannel.chars.resetMemory, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    // Refuse while bot is reading/writing memory at runtime.
+    if (deps.supervisor.getActiveId() === id) {
+      throw new Error('Cannot reset memory of the currently summoned character. Stop first.');
+    }
+    await resetMemoryForCharacter(id);
+  });
+
+  // Phase 11 D-28 — portrait pipeline. Renderer canvas-resizes + re-encodes
+  // bytes (≤1024², ≤500KB) and hands them here as base64. We re-validate
+  // (magic + size + PNG dim) in portraitStore.applyPortrait before writing.
+  //
+  // characterId is gated through z.string().uuid() — the post-11-03 schema
+  // requires UUID v4 for `Character.id`, and `paths.portraitPath(uuid)` builds
+  // a filesystem path component, so UUID format is the path-traversal defense.
+  // The kebab-case IdSchema above is for legacy slug callers; portrait IPC
+  // is UUID-only from day one (T-11-06-03).
+  ipcMain.handle(IpcChannel.chars.applyPortrait, async (_event, argsRaw: unknown): Promise<string> => {
+    const args = z.object({
+      characterId: z.string().uuid(),
+      bytesBase64: z.string().min(1),
+      format: z.enum(['png', 'jpeg', 'webp']),
+    }).parse(argsRaw);
+    const bytes = Buffer.from(args.bytesBase64, 'base64');
+    const { applyPortrait } = await import('./portraitStore');
+    return await applyPortrait({ characterId: args.characterId, bytes });
+  });
+
+  ipcMain.handle(IpcChannel.chars.removePortrait, async (_event, idArg: unknown): Promise<void> => {
+    const id = z.string().uuid().parse(idArg);
+    const { removePortrait } = await import('./portraitStore');
+    await removePortrait(id);
+  });
+
+  // Phase 11 D-16 — toggle public/private visibility on a character. Defaults
+  // are bundle-supplied (D-22) and never appear in the cloud library, so we
+  // refuse to flip `shared` on them at the IPC boundary. saveCharacter will
+  // run the standard cloud-mirror upsert if the user is signed-in.
+  ipcMain.handle(IpcChannel.chars.setShared, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ id: IdSchema, shared: z.boolean() }).parse(argsRaw);
+    const char = await getCharacter(args.id);
+    if (!char) throw new Error('Character not found.');
+    if (char.is_default) throw new Error('Cannot share a default character.');
+
+    // Foreign-owned guard: a leaked local copy of someone else's cloud char
+    // would otherwise fall through to runModerationGate, where the gate's
+    // adapter overrides owner to session.user.id and the cloud upsert is
+    // denied by RLS — surfaced to the user as the misleading "Moderation
+    // service is temporarily unavailable." copy. Stop early with a clear
+    // message instead.
+    try {
+      const { getClient } = await import('./auth/supabaseClient');
+      const session = (await getClient().auth.getSession()).data.session;
+      const sessionUserId = session?.user?.id ?? null;
+      if (
+        sessionUserId &&
+        char.owner != null &&
+        char.owner !== sessionUserId
+      ) {
+        throw new Error('You can only share characters you own.');
+      }
+    } catch (err) {
+      // Re-throw our own error; swallow Supabase init failures (no session
+      // → setShared(true) falls through to the moderation gate which will
+      // reject with "please sign in").
+      if ((err as Error).message === 'You can only share characters you own.') {
+        throw err;
+      }
+    }
+
+    // 260525-qy0 Task 4 — un-sharing is always allowed; only the share=true
+    // transition is gated by the moderation pipeline.
+    if (args.shared === false) {
+      await saveCharacter({ ...char, shared: false });
+      return;
+    }
+
+    // shared=true path — moderation gate, then local mirror via saveCharacterRaw
+    // (the gate's upsertCharacter adapter already wrote shared=true to cloud).
+    //
+    // Sync-upsert the cloud row + portrait FIRST. setShared can be called on
+    // a character whose cloud mirror hasn't drained yet (legacy local-only
+    // chars on first share; freshly-created chars where saveCharacter just
+    // enqueued the upsert). Without this, the Edge Function 404s and the
+    // generic "moderation service unavailable" copy is misleading.
+    try {
+      const { getClient: getClient2 } = await import('./auth/supabaseClient');
+      const session2 = (await getClient2().auth.getSession()).data.session;
+      if (session2?.user?.id && session2.access_token) {
+        await ensureCloudRowForModeration(char.id, session2.user.id, session2.access_token);
+      }
+    } catch (err) {
+      console.warn(`[sei] pre-moderation sync upsert for ${char.id}: ${(err as Error).message}`);
+    }
+    const result = await runModerationGate(char.id);
+    if (!result.ok) {
+      throw new Error(result.friendlyMessage);
+    }
+    const { saveCharacterRaw } = await import('./characterStore');
+    await saveCharacterRaw({ ...char, shared: true });
+  });
+
+  // Phase 11 plan 17 — list the UUIDs of the signed-in user's cloud characters.
+  // Drives the renderer's "LOCAL ONLY" chip: a character is "local only" when
+  // signed_in AND !is_default AND its id is NOT in this set.
+  //
+  // Return shape (HR-01 fix): `ok` distinguishes "we asked Supabase and the
+  // user has no cloud chars" (ok:true, ids:[]) from "Supabase listing failed"
+  // (ok:false). The renderer uses `ok:false` to preserve its prior cloudIds
+  // snapshot rather than flashing every user-created character as LOCAL ONLY
+  // during a transient outage. Signed-out users return ok:true with ids:[]
+  // because there is no cloud state to be uncertain about.
+  ipcMain.handle(IpcChannel.chars.listCloud, async (): Promise<{ ids: string[]; ok: boolean }> => {
+    const { getClient } = await import('./auth/supabaseClient');
+    const { data: { session } } = await getClient().auth.getSession();
+    if (!session?.user?.id) return { ids: [], ok: true };
+    try {
+      const { listMyCharacters } = await import('./cloud/cloudCharacterClient');
+      const chars = await listMyCharacters(session.user.id);
+      return { ids: chars.map((c) => c.id), ok: true };
+    } catch (err) {
+      console.warn(`[sei] chars.listCloud failed: ${(err as Error).message}`);
+      return { ids: [], ok: false };
+    }
+  });
+
+  // Phase 11 plan 19 (D-19, LIB-04) — cache-on-demand sync surface.
+  //
+  // chars:open-prepare ensures the requested character is hydrated to local
+  // disk BEFORE the renderer navigates into it. For a cloud-only char on a
+  // fresh machine, this downloads the row + skin + portrait once; for an
+  // already-cached char, it's a no-op (existsSync short-circuit). Throws
+  // CLOUD_CHARACTER_NOT_FOUND if the row is missing in cloud and
+  // CLOUD_DOWNLOAD_FAILED when the user isn't signed in. Renderer surfaces
+  // a generic "couldn't open offline" inline message on either throw.
+  //
+  // chars:list-merged returns the local + cloud row union, deduped by id,
+  // with a per-row source annotation ('local' | 'cloud' | 'both'). HomeScreen
+  // calls this in place of chars:list when the user is signed in so that
+  // cloud-only characters created on other machines appear in the grid (with
+  // the CLOUD chip indicating they require download on open).
+  ipcMain.handle(IpcChannel.chars.openPrepare, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    const { ensureLocallyCached } = await import('./cloud/cacheOnDemand');
+    await ensureLocallyCached(id);
+  });
+
+  ipcMain.handle(IpcChannel.chars.listMerged, async () => {
+    const { listMerged } = await import('./cloud/cacheOnDemand');
+    return await listMerged();
+  });
+
+  // Phase 11 — sync queue status + retry. The renderer drives the per-card
+  // pill (syncing / failed) from these; updates flow as one-way pushes over
+  // IpcChannel.sync.statusUpdate (wired in the subscribe block below).
+  ipcMain.handle(IpcChannel.sync.status, async () => {
+    const { getStatus } = await import('./cloud/syncQueue');
+    return await getStatus();
+  });
+
+  ipcMain.handle(IpcChannel.sync.retry, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    const { retry } = await import('./cloud/syncQueue');
+    await retry(id);
+  });
+
+  // Phase 11 (Plan 11-14) — TOS cache invalidation hook.
+  //
+  // Plan 11-12 lands the `tos:accept` IPC handler in this file (parallel wave 5).
+  // Inside that handler, after `recordAcceptance(userId)` succeeds, the handler
+  // MUST call `invalidateTosCache()` from `./auth/authState` so the next
+  // `isCloudWriteAllowed` call re-queries instead of returning a stale 60s-cached
+  // `false`. The exact wiring (lazy import in the handler body):
+  //
+  //   const { invalidateTosCache } = await import('./auth/authState');
+  //   invalidateTosCache();
+  //
+  // This comment is the coordination contract between 11-14 (cache owner) and
+  // 11-12 (cache invalidator). The literal `invalidateTosCache` reference here
+  // satisfies plan 11-14's acceptance criterion #6.
+  // See: src/main/auth/authState.ts:invalidateTosCache + .planning/phases/11-cloud-character-library/11-14-PLAN.md.
+
+  // Skin pipeline. Lazy-import the skinStore module inside the handler
+  // bodies so a future cyclic import (skinStore → characterStore → ipc →
+  // skinStore) cannot deadlock at module-init time.
+  ipcMain.handle(IpcChannel.skin.apply, async (_event, argsRaw: unknown) => {
+    const args = ApplySkinArgsSchema.parse(argsRaw);
+    const pngBytes = Buffer.from(args.pngBase64, 'base64');
+    // Refuse while bot is connected — bot would keep serving the OLD skin
+    // until disconnect, and the user's intuition is "skin shows up on next
+    // summon". UI also gates this; defense-in-depth.
+    if (deps.supervisor.getActiveId() === args.characterId) {
+      throw new Error('Stop the bot before changing skin. Skin applies on next summon.');
+    }
+    const { applyPng } = await import('./skinStore');
+    return await applyPng({
+      personaId: args.characterId,
+      pngBytes,
+      source: args.source,
+      mojangUsername: args.mojangUsername ?? null,
+      // undefined = leave existing username untouched (renderer didn't ship a value);
+      // empty string = explicit clear; any other string = explicit set.
+      username: args.username ?? undefined,
+    }); // { skin, username }
+  });
+
+  ipcMain.handle(IpcChannel.skin.remove, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg); // Same strict slug validator as skin:apply
+    if (deps.supervisor.getActiveId() === id) {
+      throw new Error('Stop the bot before changing skin. Skin applies on next summon.');
+    }
+    const { removePng } = await import('./skinStore');
+    const skin = await removePng(id);
+    return { skin };
+  });
+
+  ipcMain.handle(IpcChannel.skin.getServerUrl, async () => {
+    const baseUrl = deps.getSkinServerBaseUrl();
+    if (!baseUrl) {
+      // Skin server failed to bind on boot (SKIN_SERVER_PORT_TAKEN). Surface
+      // as a rejected promise — the renderer's SkinEditor maps the throw to
+      // ERROR_COPY[SKIN_SERVER_PORT_TAKEN] so the UI shows the relevant copy.
+      throw new Error("Sei couldn't reserve a local port for serving skins. Restart Sei and try again.");
+    }
+    return { baseUrl };
+  });
+
+  // Native file picker for user-supplied skins + Mojang username search.
+  // Both lazy-import the underlying module so a future
+  // cyclic-import path can't deadlock at module-init time, and so test
+  // harnesses that pull in IPC types don't drag electron.dialog / node:crypto
+  // into module-eval (same rationale as the skinStore lazy import above).
+  ipcMain.handle(IpcChannel.skin.uploadPng, async () => {
+    const { openSkinPicker } = await import('./skinUpload');
+    return await openSkinPicker(); // null when user cancels
+  });
+
+  ipcMain.handle(IpcChannel.skin.searchMojang, async (_event, usernameArg: unknown) => {
+    // Zod gate at the IPC boundary — defense-in-depth even though
+    // lookupMojangSkin re-validates with its own regex. Length 1..32 mirrors
+    // Mojang's allowed username range (modern names cap at 16; pre-2014
+    // legacy accounts can be longer — accept up to 32 here, let Mojang's
+    // 204 path handle the "no such user" tail).
+    const username = z.string().min(1).max(32).parse(usernameArg);
+    const { lookupMojangSkin } = await import('./mojangSkinLookup');
+    const res = await lookupMojangSkin(username);
+    return {
+      pngBase64: res.pngBase64,
+      sha256: res.sha256,
+      resolvedUsername: res.resolvedUsername,
+    };
+  });
+
+  // Wizard install pipeline. Same lazy-import discipline as the skin
+  // handlers — keeps the orchestrator + install modules out of module-init
+  // time so a cyclic import (wizard → ... → ipc) can't deadlock.
+  //
+  // wizard:detect-installs is read-only (scan) so no zod gate needed.
+  // wizard:install / wizard:cancel are zod-gated; wizard:cancel's sessionId
+  // is the IPC-crossing routing key that maps to the main-side
+  // AbortController in src/main/wizard.ts.
+  ipcMain.handle(IpcChannel.wizard.detectInstalls, async () => {
+    const { scanMcInstalls } = await import('./mcInstallScan');
+    const installs = await scanMcInstalls();
+    return { installs };
+  });
+
+  ipcMain.handle(IpcChannel.wizard.install, async (_event, argsRaw: unknown) => {
+    // sessionId is REQUIRED — without it, wizard:cancel has no
+    // routing key. installIds must be non-empty; the renderer should also
+    // gate this but defense-in-depth at the IPC boundary. skinServerBaseUrl
+    // is the loopback URL captured from skin:get-server-url — must be a
+    // valid URL because the orchestrator parses .port off it for the
+    // port-drift state update.
+    const args = z.object({
+      sessionId: z.string().min(1),
+      installIds: z.array(z.string().min(1)).min(1),
+      skinServerBaseUrl: z.string().url(),
+    }).parse(argsRaw);
+    const { runWizardInstall } = await import('./wizard');
+    return await runWizardInstall({
+      ...args,
+      onProgress: (ev) => deps.sendWizardProgress(ev),
+    });
+  });
+
+  ipcMain.handle(IpcChannel.wizard.cancel, async (_event, sessionIdArg: unknown) => {
+    // The IPC-crossing abort. Resolves immediately after firing
+    // .abort() on the matching controller; the in-flight runWizardInstall
+    // promise then rejects (or emits a `cancelled` stage event) through
+    // signal-aware install modules. Fire-and-forget — we don't surface the
+    // boolean return of abortWizardSession to the renderer because the user
+    // doesn't care whether the cancel raced against a completed install;
+    // either way the UI flips to "cancelled" via the progress channel.
+    const sessionId = z.string().min(1).parse(sessionIdArg);
+    const { abortWizardSession } = await import('./wizard');
+    abortWizardSession(sessionId);
+    return;
+  });
+
+  ipcMain.handle(IpcChannel.wizard.getState, async () => {
+    const { loadWizardState } = await import('./wizardStateStore');
+    return await loadWizardState();
+  });
+
+  // User config
+  ipcMain.handle(IpcChannel.config.get, async (): Promise<UserConfig> => {
+    return await loadConfig();
+  });
+  ipcMain.handle(IpcChannel.config.save, async (_event, cfgArg: unknown): Promise<void> => {
+    const cfg = UserConfigSchema.parse(cfgArg);
+    await saveConfig(cfg);
+    // Item 7: mirror the user's preferred name into the public profiles table
+    // so Browse shows "by <name>" on their published characters. Fire-and-forget
+    // (don't add a network round-trip to every config save, e.g. theme toggles)
+    // and signed-in-only (upsertMyProfile no-ops when signed out / name blank).
+    if (cfg.preferred_name && cfg.preferred_name.trim()) {
+      void (async () => {
+        try {
+          const { upsertMyProfile } = await import('./cloud/cloudCharacterClient');
+          await upsertMyProfile(cfg.preferred_name);
+        } catch (err) {
+          console.warn(`[sei] config.save: profile name sync failed: ${(err as Error).message}`);
+        }
+      })();
+    }
+  });
+  ipcMain.handle(IpcChannel.config.saveApiKey, async (_event, plaintextArg: unknown): Promise<void> => {
+    const plaintext = PlaintextSchema.parse(plaintextArg);
+    await saveApiKey(plaintext);
+  });
+  ipcMain.handle(IpcChannel.config.hasApiKey, async (): Promise<boolean> => {
+    return await hasApiKey();
+  });
+
+  // App-level one-shot queries
+  ipcMain.handle(IpcChannel.app.warnings, async () => {
+    const { sessionBackendKind } = await import('./auth/sessionStore');
+    const onLinux = process.platform === 'linux';
+    return {
+      keychainFallbackPlaintext: onLinux && safeStorageBackendKind() === 'basic_text',
+      sessionFallbackPlaintext: onLinux && sessionBackendKind() === 'basic_text',
+    };
+  });
+
+  // === Auth (Phase 10) ===
+  // Lazy-import authHandlers inside each handler body so a future cyclic
+  // import (authHandlers → ... → ipc → authHandlers) cannot deadlock at
+  // module-init time. Plans 04/05/06/08/09 will fill the handler bodies.
+  //
+  // Plan 10-06: wire the supervisor handle into authHandlers so signOut can
+  // call supervisor.stop() BEFORE auth.signOut() (D-09 + T-10-06-09). Must be
+  // SYNCHRONOUS — a fire-and-forget dynamic import leaves a window during
+  // which auth IPC handlers are registered but supervisorRef is still null,
+  // and a fast post-boot signOut would skip the bot-stop step that D-09 +
+  // T-10-06-09 promise (BL-01). authHandlers is now imported statically at
+  // the top of this file; the per-handler dynamic imports below remain so a
+  // future cyclic import can't deadlock at module-init time, but the auth
+  // module is already in the import graph by the time we reach this line.
+  setAuthSupervisor(deps.supervisor);
+  ipcMain.handle(IpcChannel.auth.signinPassword, async (_e, argsRaw: unknown) => {
+    const args = SignInPasswordSchema.parse(argsRaw);
+    const { signInWithPassword } = await import('./auth/authHandlers');
+    return await signInWithPassword(args);
+  });
+  ipcMain.handle(IpcChannel.auth.signupPassword, async (_e, argsRaw: unknown) => {
+    const args = SignUpPasswordSchema.parse(argsRaw);
+    const { signUpWithPassword } = await import('./auth/authHandlers');
+    return await signUpWithPassword(args);
+  });
+  ipcMain.handle(IpcChannel.auth.signinGoogle, async () => {
+    const { signInWithGoogle } = await import('./auth/authHandlers');
+    return await signInWithGoogle();
+  });
+  ipcMain.handle(IpcChannel.auth.cancelGoogle, async () => {
+    const { cancelGoogle } = await import('./auth/authHandlers');
+    return await cancelGoogle();
+  });
+  ipcMain.handle(IpcChannel.auth.signout, async () => {
+    const { signOut } = await import('./auth/authHandlers');
+    return await signOut();
+  });
+  ipcMain.handle(IpcChannel.auth.deleteAccount, async () => {
+    const { deleteAccount } = await import('./auth/authHandlers');
+    return await deleteAccount();
+  });
+  ipcMain.handle(IpcChannel.auth.exportData, async () => {
+    const { exportData } = await import('./auth/authHandlers');
+    return await exportData();
+  });
+  ipcMain.handle(IpcChannel.auth.resendVerification, async () => {
+    const { resendVerification } = await import('./auth/authHandlers');
+    return await resendVerification();
+  });
+  ipcMain.handle(IpcChannel.auth.sendPasswordReset, async (_e, argsRaw: unknown) => {
+    const args = SendPasswordResetSchema.parse(argsRaw);
+    const { sendPasswordReset } = await import('./auth/authHandlers');
+    return await sendPasswordReset(args);
+  });
+  ipcMain.handle(IpcChannel.auth.updatePassword, async (_e, argsRaw: unknown) => {
+    const args = UpdatePasswordSchema.parse(argsRaw);
+    const { updatePassword } = await import('./auth/authHandlers');
+    return await updatePassword(args);
+  });
+  // 260603 anti-abuse — store a renderer-solved Turnstile/hCaptcha token for the
+  // next signup. Inert until bot-protection is enabled (see auth/captcha.ts).
+  ipcMain.handle(IpcChannel.auth.setCaptchaToken, async (_e, tokenRaw: unknown) => {
+    const token = typeof tokenRaw === 'string' ? tokenRaw : null;
+    const { setCaptchaToken } = await import('./auth/captcha');
+    setCaptchaToken(token);
+  });
+
+  // === ToS / Privacy gate (Phase 11 plan 12) ===
+  // Lazy-import tosGate inside each handler body so a future cyclic import
+  // can't deadlock at module-init time, mirroring the auth handler convention.
+  ipcMain.handle(IpcChannel.tos.status, async () => {
+    const [{ TOS_VERSION, PRIVACY_VERSION }, { getClient }] = await Promise.all([
+      import('../shared/legalVersions'),
+      import('./auth/supabaseClient'),
+    ]);
+    const { data: { session } } = await getClient().auth.getSession();
+    if (!session?.user?.id) {
+      return { accepted: false, tosVersion: TOS_VERSION, privacyVersion: PRIVACY_VERSION };
+    }
+    const { isTosAccepted } = await import('./auth/tosGate');
+    return {
+      accepted: await isTosAccepted(session.user.id),
+      tosVersion: TOS_VERSION,
+      privacyVersion: PRIVACY_VERSION,
+    };
+  });
+
+  ipcMain.handle(IpcChannel.tos.accept, async () => {
+    const { getClient } = await import('./auth/supabaseClient');
+    const { data: { session } } = await getClient().auth.getSession();
+    if (!session?.user?.id) return { ok: false, message: 'Not signed in.' };
+    try {
+      const { recordAcceptance } = await import('./auth/tosGate');
+      await recordAcceptance(session.user.id);
+      // Verifier nit (11-VERIFICATION.md Anti-Patterns) — invalidate the
+      // isCloudWriteAllowed 60s TTL cache so the next cloud-write attempt
+      // re-queries instead of returning a stale `false` for up to a minute.
+      // The coordination comment above this handler documented the
+      // requirement; the merge between 11-12 / 11-14 dropped the call. The
+      // system functioned without it (fail-closed direction) but users hit
+      // a confusing "syncing pending" delay after acceptance.
+      const { invalidateTosCache } = await import('./auth/authState');
+      invalidateTosCache();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
+    }
+  });
+
+  // === Migration prompt (Phase 11 plan 18, D-20) ===
+  // One-shot local→cloud upload prompt for users with pre-sign-up local-mode
+  // characters. listLocal computes the LOCAL ONLY set in main (chars present
+  // on disk but absent from the user's cloud row set, defaults excluded);
+  // upload sequentially mirrors them via cloudCharacterClient and returns a
+  // per-uuid result so the modal can show partial failures; shown reads/sets
+  // the <userData>/migration-modal-shown.json flag that suppresses auto-mount
+  // on subsequent sign-ins.
+  ipcMain.handle(IpcChannel.migration.listLocal, async (): Promise<{ characters: Array<{ id: string; name: string; slug: string | null; created: string }>; cloudListOk: boolean }> => {
+    const { getClient } = await import('./auth/supabaseClient');
+    const { data: { session } } = await getClient().auth.getSession();
+    if (!session?.user?.id) return { characters: [], cloudListOk: true };
+    const all = await listCharacters();
+    let cloudIds: Set<string>;
+    let cloudListOk = true;
+    try {
+      const { listMyCharacters } = await import('./cloud/cloudCharacterClient');
+      const cloud = await listMyCharacters(session.user.id);
+      cloudIds = new Set(cloud.map((c) => c.id));
+    } catch (err) {
+      console.warn(`[sei] migration.listLocal cloud list failed: ${(err as Error).message}`);
+      // MR-02: surface the listing failure to the modal so the user sees a
+      // "Couldn't verify which of these are already in cloud" banner instead
+      // of silently uploading already-mirrored chars as "Done". Fallback to
+      // every non-default local char so the migration path stays reachable
+      // when the user wants to proceed anyway (.upsert is idempotent).
+      cloudIds = new Set();
+      cloudListOk = false;
+    }
+    // Characters added from the World tab are foreign-owned imports, NOT the
+    // user's own local creations — they must never appear in the upload-to-cloud
+    // prompt (the bug where adding a public char like "Beep" then re-launching
+    // asked "Upload local characters? Beep"). Exclude both the explicit
+    // added_world_ids set AND any character whose owner is someone else; the
+    // migration offer is strictly for chars the user authored locally
+    // (owner === self, or legacy null-owner pre-sign-up locals) that aren't
+    // yet mirrored to their cloud library.
+    const myId = session.user.id;
+    let addedWorldIds = new Set<string>();
+    try {
+      const cfgForMigration = await loadConfig();
+      addedWorldIds = new Set(cfgForMigration.added_world_ids ?? []);
+    } catch {
+      /* empty set — worst case we offer a world-added char, no data loss. */
+    }
+    const localOnly = all
+      .filter(
+        (c) =>
+          !c.is_default &&
+          !cloudIds.has(c.id) &&
+          !addedWorldIds.has(c.id) &&
+          (c.owner == null || c.owner === myId),
+      )
+      .map((c) => ({ id: c.id, name: c.name, slug: c.slug, created: c.created }));
+    return { characters: localOnly, cloudListOk };
+  });
+
+  ipcMain.handle(IpcChannel.migration.upload, async (_event, uuidsArg: unknown): Promise<{ results: Array<{ id: string; ok: boolean; message?: string }> }> => {
+    const uuids = z.array(IdSchema).parse(uuidsArg);
+
+    // ToS / verified-email / signed-in gate (Plan 11-14). Fails closed: if
+    // the user lands here without an accepted ToS row, refuse every uuid
+    // with a uniform message. The modal also blocks ahead of ToS via
+    // AcceptToSModal (Plan 11-13), so this is defense-in-depth.
+    const { isCloudWriteAllowed } = await import('./auth/authState');
+    if (!(await isCloudWriteAllowed())) {
+      return { results: uuids.map((id) => ({ id, ok: false, message: 'Cloud writes not allowed yet (verify email and accept Terms first).' })) };
+    }
+    const { getClient } = await import('./auth/supabaseClient');
+    const { data: { session } } = await getClient().auth.getSession();
+    if (!session?.user?.id || !session.access_token) {
+      return { results: uuids.map((id) => ({ id, ok: false, message: 'Not signed in.' })) };
+    }
+    const owner = session.user.id;
+    // Skin/portrait bytes upload through the sign-character-asset-upload Edge
+    // Function (asymmetric-JWT bridge — see cloudCharacterClient.uploadCharacterAsset);
+    // the row upsert below still goes direct over PostgREST, which verifies ES256.
+    const jwt = session.access_token;
+
+    const { resolveSkinPng } = await import('./skinStore');
+    const { upsertCharacter, uploadSkin, uploadPortrait } = await import('./cloud/cloudCharacterClient');
+    const { readFile } = await import('node:fs/promises');
+
+    const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+    for (const id of uuids) {
+      try {
+        const char = await getCharacter(id);
+        if (!char) {
+          results.push({ id, ok: false, message: 'Character not found.' });
+          continue;
+        }
+        if (char.is_default) {
+          // Defense-in-depth — the LOCAL ONLY chip + listLocal filter both
+          // exclude defaults, but if a uuid somehow snuck through (manual
+          // IPC call, race), upsertCharacter would throw CLOUD_SYNC_REFUSED_DEFAULT
+          // anyway. Surface a clean message here.
+          results.push({ id, ok: false, message: 'Defaults cannot be uploaded.' });
+          continue;
+        }
+        // 1. character row first. If this fails the skin/portrait uploads
+        // are pointless — bail before touching Storage.
+        await upsertCharacter(char, owner);
+
+        // 2. skin bytes — resolveSkinPng takes the full Character and honors
+        // its skin.source descriptor. Missing local PNG → null → skip.
+        try {
+          const skinBytes = await resolveSkinPng(char);
+          if (skinBytes) await uploadSkin(id, skinBytes, jwt);
+        } catch (err) {
+          console.warn(`[sei] migration: skin upload for ${id} failed: ${(err as Error).message}`);
+          // Skin failure does NOT fail the whole upload — the row landed and
+          // the chip will drop. The user can re-upload skin via the editor.
+        }
+
+        // 3. portrait bytes — file may not exist at all; ENOENT is fine.
+        try {
+          const portraitBytes = await readFile(paths.portraitPath(id));
+          if (portraitBytes.length > 0) await uploadPortrait(id, portraitBytes, 'png', jwt);
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+            console.warn(`[sei] migration: portrait upload for ${id} failed: ${(err as Error).message}`);
+          }
+        }
+
+        results.push({ id, ok: true });
+      } catch (err) {
+        const raw = (err as Error).message;
+        // MR-03: translate sentinel error strings to user-facing copy so the
+        // per-row modal message doesn't surface raw CLOUD_SYNC_* prefixes.
+        // The most common pre-Phase-11 case is a legacy character whose
+        // portrait still rides as an inline data URL — upsertCharacter
+        // refuses these with CLOUD_SYNC_REFUSED_DATA_URL, and the user can
+        // fix it by re-saving the portrait through the editor (which now
+        // routes through the portrait file pipeline).
+        let message = raw;
+        if (raw.startsWith('CLOUD_SYNC_REFUSED_DATA_URL')) {
+          message = "This character's portrait needs to be re-saved before it can sync — open the character to update it.";
+        } else if (raw.startsWith('CLOUD_SYNC_REFUSED_DEFAULT')) {
+          message = 'Default characters cannot be uploaded.';
+        }
+        results.push({ id, ok: false, message });
+      }
+    }
+    return { results };
+  });
+
+  ipcMain.handle(IpcChannel.migration.shown, async (_event, actionArg: unknown): Promise<{ shown: boolean }> => {
+    const action = z.enum(['get', 'set']).parse(actionArg);
+    // NR-02 — use async fs/promises to match the file's established pattern.
+    // The sync variants here were a minor inconsistency; the I/O is small so
+    // it never blocked perceptibly, but async keeps the handler body uniform
+    // with surrounding code (which all uses atomicWrite / async mkdir).
+    const { writeFile, mkdir, access } = await import('node:fs/promises');
+    const nodePath = await import('node:path');
+    const target = paths.migrationModalShownPath();
+    if (action === 'set') {
+      try {
+        await mkdir(nodePath.dirname(target), { recursive: true });
+        await writeFile(target, JSON.stringify({ shown: true, shownAt: new Date().toISOString() }, null, 2) + '\n');
+      } catch (err) {
+        console.warn(`[sei] migration.shown set failed: ${(err as Error).message}`);
+      }
+      return { shown: true };
+    }
+    try {
+      await access(target);
+      return { shown: true };
+    } catch {
+      return { shown: false };
+    }
+  });
+
+  // wizard:prompt-shown — one-time "run skin setup" nudge flag, shown when a
+  // user first tries to summon a character. Same get/set + file-existence
+  // pattern as migration.shown above; profile-scoped via
+  // paths.skinSetupPromptShownPath so each account is nudged at most once.
+  ipcMain.handle(IpcChannel.wizard.promptShown, async (_event, actionArg: unknown): Promise<{ shown: boolean }> => {
+    const action = z.enum(['get', 'set']).parse(actionArg);
+    const { writeFile, mkdir, access } = await import('node:fs/promises');
+    const nodePath = await import('node:path');
+    const target = paths.skinSetupPromptShownPath();
+    if (action === 'set') {
+      try {
+        await mkdir(nodePath.dirname(target), { recursive: true });
+        await writeFile(target, JSON.stringify({ shown: true, shownAt: new Date().toISOString() }, null, 2) + '\n');
+      } catch (err) {
+        console.warn(`[sei] wizard.promptShown set failed: ${(err as Error).message}`);
+      }
+      return { shown: true };
+    }
+    try {
+      await access(target);
+      return { shown: true };
+    } catch {
+      return { shown: false };
+    }
+  });
+
+  // 260603 per-profile partitioning — anonymous(local)→account on-device import.
+  ipcMain.handle(IpcChannel.profile.peekLocal, async () => {
+    const { peekLocalProfile } = await import('./profile/localImport');
+    return peekLocalProfile();
+  });
+
+  ipcMain.handle(IpcChannel.profile.importFromLocal, async (_event, idsArg: unknown) => {
+    const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
+    const scope = getActiveScope();
+    // Only meaningful while signed in (active scope = the account). Signed-out
+    // (scope === 'local') has no account to import into — no-op.
+    if (scope === SCOPE_LOCAL) {
+      return { imported: [], failed: [], copiedOnboarding: false };
+    }
+    const characterIds = z.array(z.string()).optional().parse(idsArg);
+    const { importLocalProfileInto } = await import('./profile/localImport');
+    return importLocalProfileInto(scope, characterIds ? { characterIds } : undefined);
+  });
+
+  // === Phase 12 — Browse + moderation + reports + capabilities ===
+  //
+  // Three-layer contract: channel strings in src/shared/ipc.ts (already
+  // declared), handlers here, preload bindings in src/preload/index.ts.
+  // Lazy-import discipline + Zod validation at boundary mirror the migration
+  // and tos handlers above.
+
+  // --- Phase 12 — Browse listing (signed-in OR signed-out — LIB-04) ---
+  //
+  // NOT gated on isCloudWriteAllowed — Browse is read-public. Calls the
+  // search_public_characters RPC (12-01) which has security invoker so the
+  // characters_select_own_or_shared RLS policy filters to shared=true rows
+  // for anon callers. Main pre-joins each row with the public Storage URL
+  // and computes inMyLibrary against the local characters/index.json so the
+  // renderer never crosses two stores per row.
+  const BrowseListSchema = z.object({
+    query: z.string().max(200),
+    limit: z.number().int().min(1).max(50),
+    offset: z.number().int().min(0),
+  });
+  ipcMain.handle(IpcChannel.browse.list, async (_event, argsRaw: unknown): Promise<{ entries: BrowseEntry[]; hasMore: boolean }> => {
+    const parsed = BrowseListSchema.parse(argsRaw);
+    const { getClient } = await import('./auth/supabaseClient');
+    const { getStoragePublicUrl } = await import('./cloud/cloudCharacterClient');
+    const { data: rows, error } = await getClient().rpc('search_public_characters', {
+      search_query: parsed.query,
+      page_limit: parsed.limit,
+      page_offset: parsed.offset,
+    });
+    if (error) {
+      console.warn(`[sei] browse:list rpc failed: ${error.message}`);
+      return { entries: [], hasMore: false };
+    }
+
+    // Precompute the in-library set so each BrowseEntry.inMyLibrary is O(1).
+    // Strict definition (the World pill must match what HomeGrid actually
+    // surfaces, otherwise a card promises "Already in My Library" for a
+    // character that doesn't appear on Home):
+    //
+    //   signed_in:
+    //     - self-owned (c.owner === sessionUserId), OR
+    //     - explicit World add (id in UserConfig.added_world_ids).
+    //   signed_out:
+    //     - any legacy null-owner local copy (those are the only chars a
+    //       signed-out user can "own").
+    //
+    // Earlier versions included "owner == null" as "in library" regardless of
+    // sign-in state. That was the Eris false-positive: when downloadCharacter
+    // returned a row with a stripped/missing owner column, cacheOnDemand
+    // wrote a null-owner local copy, and the next browse:list flagged it as
+    // in-library even though the user never added it.
+    const local = await listCharacters();
+    const { getClient: getClientForBrowse } = await import('./auth/supabaseClient');
+    const sessionForBrowse = (await getClientForBrowse().auth.getSession()).data.session;
+    const sessionUserId = sessionForBrowse?.user?.id ?? null;
+    const cfgForBrowse = await loadConfig();
+    const addedWorldIds = new Set(cfgForBrowse.added_world_ids ?? []);
+    const localIds = new Set<string>();
+    if (sessionUserId) {
+      for (const c of local) {
+        if (c.owner === sessionUserId) localIds.add(c.id);
+      }
+    } else {
+      for (const c of local) {
+        if (c.owner == null && !c.is_default) localIds.add(c.id);
+      }
+    }
+    // Explicit World adds always count as in-library — even if the cached
+    // file is briefly absent (mid-add) the World tab must not re-prompt.
+    for (const id of addedWorldIds) localIds.add(id);
+
+    // Item 7: resolve author display names (preferred_name) for every owner in
+    // this page so the card reads "by <name>" instead of "by user-1a2b". One
+    // batched profiles read; falls back to the anonymized handle for owners
+    // with no profile row yet.
+    const rowsArr = (rows ?? []) as Array<Record<string, unknown>>;
+    const ownerIdsForNames = rowsArr
+      .map((r) => (typeof r.owner === 'string' ? r.owner : ''))
+      .filter((x) => !!x);
+    const { getProfileNames } = await import('./cloud/cloudCharacterClient');
+    const nameByOwner = await getProfileNames(ownerIdsForNames);
+
+    const entries: BrowseEntry[] = rowsArr.map((row: Record<string, unknown>) => {
+      const personaSource = typeof row.persona_source === 'string' ? row.persona_source : '';
+      const personaSnippet = personaSource.length > 120
+        ? personaSource.slice(0, 120).trimEnd() + '…'
+        : personaSource;
+      const ownerStr = typeof row.owner === 'string' ? row.owner : '';
+      const id = String(row.id);
+      // Use the same Storage layout as cloudCharacterClient.uploadPortrait /
+      // uploadSkin (`<owner>/<id>.png`). getStoragePublicUrl is a sync,
+      // network-free helper from supabase-js so we can call it inline.
+      const portraitUrl = row.portrait_image && ownerStr
+        ? getStoragePublicUrl('portraits', ownerStr, id)
+        : null;
+      const skinUrl = row.skin_png_sha256 && ownerStr
+        ? getStoragePublicUrl('skins', ownerStr, id)
+        : null;
+      return {
+        id,
+        name: typeof row.name === 'string' ? row.name : '',
+        personaSnippet,
+        creatorLabel: (() => {
+          const authorName = ownerStr ? nameByOwner.get(ownerStr) : undefined;
+          if (authorName) return `by ${authorName}`;
+          return ownerStr ? `by user-${ownerStr.slice(0, 4)}` : 'by anonymous';
+        })(),
+        portraitUrl,
+        skinUrl,
+        updatedAt: typeof row.updated_at === 'string'
+          ? row.updated_at
+          : (typeof row.created_at === 'string' ? row.created_at : ''),
+        inMyLibrary: localIds.has(id),
+      };
+    });
+    return { entries, hasMore: entries.length === parsed.limit };
+  });
+
+  // --- Phase 12 — Publish-with-moderation: TOMBSTONE (260525-qy0 Task 4) ---
+  //
+  // Was the dead-code orchestrator handler bound to the now-removed
+  // IpcChannel.browse.publishWithModeration channel. The renderer never
+  // called it (grep on src/renderer returns zero hits); chars.save +
+  // chars.setShared bypassed it entirely.
+  //
+  // Cluster C (260525-qy0) moved the moderation gate call site inline into
+  // chars.save and chars.setShared — see the runModerationGate helper at the
+  // top of registerIpcHandlers. The IPC channel + RendererApi method +
+  // preload binding for the old publish-with-moderation surface have been
+  // deleted.
+
+  // app:open-external — T-11-12-01 / T-12-17-01 / T-13-21-01. The renderer
+  // can't call shell.openExternal directly (contextIsolation); we don't want
+  // to blindly forward an arbitrary URL either, because a compromised renderer
+  // or an XSS hole in our own strings could pass `javascript:` / `file:///`
+  // URIs that the OS would happily resolve. The handler URL-parses + validates
+  // against an https-only host allowlist (legal pages + DMCA Designated Agent
+  // Directory + Polar checkout/customer-portal) plus a narrow mailto:
+  // allowlist (DMCA contact). Anything else throws — the renderer treats
+  // throws as silent no-ops.
+  //
+  // External URL allowlist — every host that shell.openExternal will route to.
+  // Adding a host = trusting it not to host malicious downloads or phishing.
+  //  - Phase 11 added 'sei.gg' / 'www.sei.gg' (marketing + legal pages).
+  //  - Phase 12-17 added 'dmca.copyright.gov' (DMCA Designated Agent Directory)
+  //    and the 'mailto:dmca@sei.app' scheme/path pair (DMCA contact).
+  //  - Polar migration (2026-06) trusts the 'polar.sh' registrable domain (exact
+  //    'polar.sh' + the '.polar.sh' suffix covering buy./sandbox./<org>. etc.).
+  //    Polar is the Merchant of Record; its billing UX is the cancellation
+  //    surface (Phase 13 open-question resolution #5).
+  //
+  // Host comparison uses exact-equality (Array.prototype.includes on a string
+  // array) for fixed hosts and a DOT-ANCHORED suffix match for '.polar.sh', so
+  // `evil.polar.sh.attacker.tld` is rejected even though it contains an
+  // allowlisted label as a substring (T-13-21-01). The protocol gate is
+  // enforced separately (https / mailto only) so `javascript:` / `data:` /
+  // `file:` URLs that happen to parse with a matching `hostname` field are
+  // still rejected (T-13-21-03).
+  ipcMain.handle(IpcChannel.app.openExternal, async (_event, urlArg: unknown): Promise<void> => {
+    const url = z.string().url().parse(urlArg);
+    // 260525-s09 H5: validation extracted into src/main/lib/externalUrlValidator
+    // so cancelSubscription and any future shell.openExternal call site stays in
+    // lockstep with this allowlist. The validator owns the allowlist + protocol
+    // gate + substring-host-bypass guard; see that module for provenance + rationale.
+    const { assertSafeExternalUrl } = await import('./lib/externalUrlValidator');
+    assertSafeExternalUrl(url);
+    const { shell } = await import('electron');
+    await shell.openExternal(url);
+  });
+
+  // === In-app updater (quick/260604-uoy) ===
+  //
+  // Renderer → main invoke surface for the electron-updater flows. The actual
+  // autoUpdater wiring + push-channel emissions live in ./updater (lazy import
+  // keeps electron-updater out of the pre-handler startup graph and lets the
+  // module guard itself on app.isPackaged). getVersion needs no updater module.
+
+  ipcMain.handle(IpcChannel.app.updateCheck, async (): Promise<void> => {
+    const { checkForUpdatesManual } = await import('./updater');
+    await checkForUpdatesManual();
+  });
+
+  ipcMain.handle(IpcChannel.app.updateDownload, async (): Promise<void> => {
+    const { downloadAcceptedUpdate } = await import('./updater');
+    await downloadAcceptedUpdate();
+  });
+
+  ipcMain.handle(IpcChannel.app.updateInstall, async (): Promise<void> => {
+    const { installDownloadedUpdate } = await import('./updater');
+    installDownloadedUpdate();
+  });
+
+  ipcMain.handle(IpcChannel.app.version, async (): Promise<string> => {
+    return app.getVersion();
+  });
+
+  // === Phase 13 — Proxy + billing + credits (PROXY-11 + D-57) ===
+  //
+  // STUB SURFACE — every handler validates args with Zod and returns a
+  // placeholder shape that matches the renderer-facing TypeScript types.
+  // Wave 2/3 plans swap each lazy import (apiKeyStore today; proxyClient /
+  // edgeFunctionClient / shell.openExternal in Wave 3) without changing the
+  // channel name, argument shape, or return contract. Lazy imports keep the
+  // pre-Phase-13 startup graph unchanged.
+  //
+  // T-13-02-01..T-13-02-03 mitigations: the Zod schemas are the trust
+  // boundary — any deviation (bad mc_username, non-enum kind) 400s at .parse
+  // before the lazy import even resolves.
+
+  // proxy:configure — flip aiBackendKind via apiKeyStore.setAiBackendKind.
+  // Already wired (vs. the trial/credits stubs) because this is what unlocks
+  // the credits UI surface; Wave 3 only adds the signed-in guard.
+  ipcMain.handle(IpcChannel.proxy.configure, async (_e, argsRaw: unknown) => {
+    const parsed = ProxyConfigureArgsSchema.parse(argsRaw);
+    const { setAiBackendKind } = await import('./apiKeyStore');
+    await setAiBackendKind(parsed.kind);
+    // WR-05 follow-up: apply the new routing to the RUNNING bot immediately so
+    // the swap doesn't wait for a manual stop+re-summon. No-op when idle (the
+    // next summon reads ai_backend_kind fresh). switchBackend surfaces its own
+    // error status and never throws, but we guard anyway so a future change
+    // can't turn the config write into a rejected IPC call.
+    try {
+      await deps.supervisor.switchBackend(parsed.kind);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[sei] proxy.configure: live switchBackend failed: ${(err as Error).message}`);
+    }
+    return { ok: true as const };
+  });
+
+  // trial:claim — Plan 13-13 wired path. Calls the `trial-claim` Edge Function
+  // via proxyClient (lazy-imported). Takes no arguments — the trial is bound to
+  // the account UUID (derived server-side from the session JWT), not the
+  // Minecraft username. Translates the PROXY_* sentinel codes back into the
+  // lowercase RendererApi contract codes ('already_claimed' | 'device_claimed' |
+  // 'no_session' | 'network') so the renderer ERROR_COPY map only deals with one
+  // vocabulary. 'device_claimed' is the per-device anti-abuse gate (this machine
+  // already used its one trial, possibly under another account).
+  ipcMain.handle(IpcChannel.trial.claim, async () => {
+    const { trialClaim } = await import('./cloud/proxyClient');
+    const res = await trialClaim();
+    if (res.ok) return res;
+    const mapped: 'already_claimed' | 'device_claimed' | 'no_session' | 'network' =
+      res.code === 'PROXY_ALREADY_CLAIMED'
+        ? 'already_claimed'
+        : res.code === 'PROXY_DEVICE_CLAIMED'
+          ? 'device_claimed'
+          : res.code === 'PROXY_NO_SESSION'
+            ? 'no_session'
+            : 'network';
+    return { ok: false as const, code: mapped };
+  });
+
+  // credits:get — Plan 13-13 wired path. proxyClient.creditsGet reads
+  // ledger_balance + subscription_status + ledger_grants + apiKeyStore in
+  // parallel and computes remaining_pct via BigInt math (D-41 5% step).
+  ipcMain.handle(IpcChannel.credits.get, async (): Promise<CreditsStatus> => {
+    const { creditsGet } = await import('./cloud/proxyClient');
+    return creditsGet();
+  });
+
+  // credits:openCheckout — asks the proxy to mint a Polar checkout session
+  // (user_id stamped into metadata server-side), then opens the allowlist-
+  // validated URL in the user's SYSTEM BROWSER via shell.openExternal.
+  //
+  // 260603: reverted the 260602-uv9 in-app popup BrowserWindow back to the
+  // system browser (user request). The system browser is the safer host for a
+  // third-party payment page — it has the user's saved payment methods, its own
+  // phishing/cert UI, and zero Node/IPC surface by construction. The URL is
+  // allowlist-validated in proxyClient AND re-asserted here before the handoff.
+  // Balance refresh still flows through the webhook → onCreditsStatusUpdate
+  // push (no success-detection wiring needed).
+  ipcMain.handle(IpcChannel.credits.openCheckout, async (_e, argsRaw: unknown) => {
+    const parsed = CreditsCheckoutArgsSchema.parse(argsRaw);
+    const { openCheckout } = await import('./cloud/proxyClient');
+    const res = await openCheckout(parsed.kind);
+    if (!res.ok) return res;
+
+    // Defense in depth: the URL was already allowlist-validated in proxyClient
+    // before being returned, but we re-assert here before the OS handoff.
+    const { assertSafeExternalUrl } = await import('./lib/externalUrlValidator');
+    try {
+      assertSafeExternalUrl(res.url);
+    } catch {
+      return { ok: false as const, code: 'PROXY_NETWORK' as const };
+    }
+
+    const { shell } = await import('electron');
+    await shell.openExternal(res.url);
+    // Return the {ok}/{ok:false,code} contract the renderer expects (the
+    // renderer's useCreditsStore.openCheckout is Promise<void> and ignores the
+    // body, so dropping the URL here is fine — it stays in the main process).
+    return { ok: true as const };
+  });
+
+  // subscription:status — Plan 13-13 wired path. Reads subscription_status
+  // via supabase-js (RLS scopes to current user).
+  ipcMain.handle(IpcChannel.subscription.status, async (): Promise<SubscriptionStatusInfo> => {
+    const { subscriptionStatus } = await import('./cloud/proxyClient');
+    return subscriptionStatus();
+  });
+
+  // subscription:cancel — Plan 13-13 wired path. Opens the LS customer portal
+  // externally (open-question resolution #5; Sei does not implement a cancel
+  // endpoint).
+  ipcMain.handle(IpcChannel.subscription.cancel, async () => {
+    const { cancelSubscription } = await import('./cloud/proxyClient');
+    return cancelSubscription();
+  });
+
+  // subscription:record-consent — quick/260525-sbo Task 3 — record an
+  // immutable affirmative auto-renewal consent before the renderer opens
+  // the LS subscription checkout. Required by CA Bus & Prof Code §17602(b).
+  // Zod-validates consent_version is a non-empty string ≤64 chars at the IPC
+  // trust boundary (defense in depth alongside the Edge Function's own
+  // shape gate).
+  ipcMain.handle(IpcChannel.subscription.recordConsent, async (_e, argsRaw: unknown) => {
+    const parsed = RecordConsentArgsSchema.parse(argsRaw);
+    const { recordSubscriptionConsent } = await import('./cloud/proxyClient');
+    return recordSubscriptionConsent({ consent_version: parsed.consent_version });
+  });
+
+  // Phase 11 — push sync-queue status updates to all renderer windows whenever
+  // the queue mutates (enqueue / processNext / retry). notifyStatusChange in
+  // syncQueue.ts fans out to subscribers; we wire one here that broadcasts
+  // the slim push payload over IpcChannel.sync.statusUpdate.
+  void (async () => {
+    try {
+      const { subscribeStatusChange, getStatus } = await import('./cloud/syncQueue');
+      subscribeStatusChange(async () => {
+        try {
+          const { BrowserWindow } = await import('electron');
+          const status = await getStatus();
+          const payload = {
+            pending: status.pending,
+            pendingByUuid: status.pendingByUuid,
+          };
+          for (const w of BrowserWindow.getAllWindows()) {
+            if (!w.isDestroyed()) w.webContents.send(IpcChannel.sync.statusUpdate, payload);
+          }
+        } catch (err) {
+          console.warn(`[sei] sync status broadcast failed: ${(err as Error).message}`);
+        }
+      });
+    } catch (err) {
+      console.warn(`[sei] sync status subscriber wiring failed: ${(err as Error).message}`);
+    }
+  })();
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Phase 13 push emitters (credits:status:update, credits:hard-stop)         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Fan-out a CreditsStatus snapshot to every live renderer window. Wave 2
+ * (proxy response interceptor in src/bot/llm/anthropicClient.js) calls this
+ * after parsing the `X-Sei-Remaining-Pct` response header so the renderer
+ * % bar updates without polling.
+ *
+ * Mirrors the sync.statusUpdate broadcaster above: uses
+ * BrowserWindow.getAllWindows() so a future multi-window UI inherits the
+ * fan-out for free, and silently skips destroyed windows so a race against
+ * window close doesn't throw.
+ */
+export function emitCreditsStatusUpdate(status: CreditsStatus): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send(IpcChannel.credits.statusUpdate, status);
+  }
+}
+
+/**
+ * Fan-out a CreditsHardStopEvent. Wave 2 calls this from the anthropicClient
+ * 402 branch (ledger empty / remaining_pct hit 0) and from the rate-bucket
+ * 503 branch (D-51). The renderer surfaces the HardStopModal in response.
+ */
+export function emitCreditsHardStop(info: CreditsHardStopEvent): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send(IpcChannel.credits.hardStop, info);
+  }
+}

@@ -1,0 +1,273 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fade 220ms ease both;
+}
+
+.modal {
+  width: 600px;
+  max-width: calc(100vw - 64px);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: var(--window);
+  padding: 32px;
+  box-shadow: var(--shadow-pop);
+  animation: fade-up 280ms var(--ease-pop) both;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 8px;
+  letter-spacing: -0.2px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+}
+
+.error {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--red);
+  padding: 4px 0;
+}
+
+.footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.danger {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.dangerRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.deleteBtn,
+.resetBtn {
+  border: 0;
+  padding: 0 16px;
+  height: 36px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: -0.05px;
+}
+
+.deleteBtn {
+  background: var(--red);
+  color: var(--window);
+}
+
+.deleteBtn:hover {
+  filter: brightness(1.05);
+}
+
+.deleteBtn:disabled,
+.resetBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.resetBtn {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red);
+}
+
+.resetBtn:hover:not(:disabled) {
+  background: var(--red);
+  color: var(--window);
+}
+
+.deleteBtn:focus-visible,
+.resetBtn:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 260516-0yw: expanded-prompt collapsible preview */
+.expandedSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.expandedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  text-align: left;
+}
+
+.expandedToggle:hover {
+  color: var(--text);
+}
+
+.expandedToggle:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.expandedCaret {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.expandedBody {
+  position: relative;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  padding: 12px;
+  background: var(--window);
+}
+
+.expandedPre {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* 260517-frz: editable expanded prompt — styled to match the prior <pre>
+   look (monospace, scrollable, same border box) so the visual change
+   from read-only → editable is "you can click into it" rather than a
+   different control type. */
+.expandedTextarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: vertical;
+  min-height: 280px;
+  max-height: 560px;
+  padding: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* Reserve space on the right so the Copy button doesn't overlap text. */
+  padding-right: 64px;
+}
+
+.expandedTextarea:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.expandedActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.expandedHelp {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.regenerateBtn {
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  background: var(--window);
+  color: var(--text);
+  padding: 6px 12px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  letter-spacing: -0.05px;
+}
+
+.regenerateBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.regenerateBtn:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.regenerateBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.expandedCopy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  background: var(--window);
+  color: var(--muted);
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.expandedCopy:hover {
+  color: var(--text);
+}
+
+.expandedHint {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 4px 0;
+}

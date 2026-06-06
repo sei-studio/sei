@@ -1,0 +1,325 @@
+/* CharacterCard.module.css — tall portrait grid tile (mockup ui.jsx .card).
+ *
+ * 210/312 portrait card: accent-tinted bg, full-bleed portrait, bottom scrim,
+ * Oswald name + status line, an accent bar that fills on hover, corner
+ * brackets, and a -7px hover lift. BrowseCard composes .card / .portraitWrap /
+ * .gradient / .nameOverlay / .hoverOverlay, so those stay defined here.
+ *
+ * Source: .planning/UI-DESIGN-SYSTEM.md §Cards.
+ */
+
+.card {
+  position: relative;
+  aspect-ratio: 210 / 312;
+  /* overflow:visible (was hidden) so the hover hit-area bridge below isn't
+     clipped. The portrait's scale(1.05) is already clipped by .portraitWrap's
+     own overflow:hidden, so the card box itself never needs to clip. */
+  overflow: visible;
+  cursor: pointer;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease), border-color 0.3s ease;
+  /* Subtle fade-in on mount (mockup ui.jsx .card → @keyframes cardIn). */
+  animation: cardIn 0.45s var(--ease) both;
+}
+
+/*
+ * Hover hit-area bridge (jitter fix). On hover the card lifts translateY(-7px),
+ * which opens a 7px gap directly under the cursor when the pointer sits near
+ * the card's bottom edge — the cursor falls into that gap, fires mouseleave,
+ * the card drops back, fires mouseenter, and oscillates. This transparent 7px
+ * strip sits in the gap (only while hovered/focused) so the pointer stays
+ * within the hover target throughout the lift. Pure hit-area; no visual.
+ */
+.card:hover::after,
+.card:focus-visible::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -7px;
+  height: 7px;
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.card:hover,
+.card:focus-visible {
+  transform: translateY(-7px);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card), 0 0 0 1px var(--accent-soft);
+  outline: none;
+}
+
+/* Per-character accent tint, painted via inline style in the TSX. */
+.bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.portraitWrap {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.portraitWrap > div {
+  transition: transform 0.45s var(--ease), filter 0.45s ease;
+}
+
+.card:hover .portraitWrap > div {
+  transform: scale(1.05);
+  filter: saturate(1.12) brightness(1.04);
+}
+
+/* Bottom scrim so the name/meta stay legible over any portrait. */
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 8, 10, 0.35) 0%,
+    transparent 26%,
+    transparent 50%,
+    rgba(6, 6, 8, 0.85) 92%
+  );
+}
+
+/* Legacy gradient (BrowseCard / older composes) — kept as a softer scrim. */
+.gradient {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 55%;
+  z-index: 2;
+  background: linear-gradient(180deg, transparent, rgba(6, 6, 8, 0.85));
+  pointer-events: none;
+}
+
+/* ── Name + status meta (bottom-left, over the scrim) ────────────────── */
+.meta {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: 13px 13px 14px;
+}
+
+.name {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 25px;
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.card.live .name {
+  color: #fff;
+}
+
+:root[data-theme="light"] .name {
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+
+.metaLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-2);
+  flex-shrink: 0;
+}
+
+.dotReady {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
+/* Legacy name overlay — BrowseCard still renders it (pixel font, bottom-left). */
+.nameOverlay {
+  position: absolute;
+  left: 13px;
+  bottom: 12px;
+  z-index: 3;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 25px;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+/* ── Accent bar — fills across the bottom on hover ───────────────────── */
+.bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background: var(--accent);
+  z-index: 4;
+  transition: width 0.35s var(--ease);
+}
+
+.card:hover .bar {
+  width: 100%;
+}
+
+/* Corner brackets (global .u-brk) — hidden until hover. */
+.card :global(.u-brk) {
+  opacity: 0;
+  z-index: 4;
+}
+
+.card:hover :global(.u-brk) {
+  opacity: 1;
+}
+
+/* ── Quick-Summon hover overlay (our feature) ────────────────────────── */
+.hoverOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(6, 7, 10, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.card:hover .hoverOverlay,
+.card:focus-within .hoverOverlay {
+  opacity: 1;
+}
+
+/* ── Top-right chip rail (CUSTOM/DEFAULT + sync pills) ───────────────── */
+.chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 4;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--space-sm);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.chipDot {
+  width: 6px;
+  height: 6px;
+}
+
+.chipDefault .chipDot {
+  background: var(--green);
+}
+
+.chipCustom .chipDot {
+  background: var(--muted);
+}
+
+.chipLocalOnly {
+  position: absolute;
+  top: 10px;
+  left: 80px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-xs) var(--space-sm);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.syncPillOverlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  height: 18px;
+  padding: 0 var(--space-sm);
+  display: inline-flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  --text: #fff;
+  --text-2: rgba(255, 255, 255, 0.85);
+}
+
+.syncPillOverlayPassive {
+  pointer-events: none;
+}
+
+.syncPillOverlayButton {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+/* ── Legacy info row (kept for any older composes) ───────────────────── */
+.infoRow {
+  display: flex;
+  align-items: center;
+  padding: var(--space-md) 14px;
+  gap: var(--space-md);
+}
+
+.infoText {
+  flex: 1;
+  min-width: 0;
+}
+
+.infoName {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.infoMeta {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 2px;
+}

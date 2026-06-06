@@ -1,0 +1,74 @@
+/*
+ * BrowseCard.module.css — Phase 12 Plan 11.
+ *
+ * Adds the Browse-specific bits ONLY. The base card chrome (.card,
+ * .portraitWrap, .gradient, .nameOverlay, .hoverOverlay) is composed from
+ * CharacterCard.module.css so Home + Browse grids read as visually
+ * coherent surfaces.
+ *
+ * Color tokens follow the project's existing vocabulary: --text, --text-2,
+ * --bg-2, --border, --muted, --red, --green. See HomeScreen.module.css and
+ * CharactersScreen.module.css for the canonical token names.
+ */
+
+.cardExtras {
+  position: relative;
+}
+
+/*
+ * Hover overlay primary action — "+ Add to Mine". Mirrors CharacterCard's
+ * Summon button position (centered) but uses neutral surface tokens so the
+ * Browse grid doesn't pulse with the same accent color as the Home grid's
+ * Summon button.
+ */
+.addBtn {
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms var(--ease-pop);
+}
+
+.addBtn:hover {
+  background: var(--text);
+  color: var(--bg-2);
+}
+
+.addBtn:active {
+  transform: translateY(1px);
+}
+
+/*
+ * "Already in My Library" pill — replaces the Add button when
+ * entry.inMyLibrary === true (predicate computed by main per Researcher
+ * correction #4: useDataStore.characters local-file presence, NOT
+ * useCloudCharactersStore.cloudIds).
+ */
+.alreadyPill {
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+/*
+ * Creator attribution row — sits between the portrait and the persona
+ * snippet. v1.0 renders the short "by user-a1b2" / "by anonymous" label
+ * computed by main. Creator profile pages defer to v1.x (SHARE-10).
+ */
+.metaRow {
+  padding: 10px 14px 12px;
+}
+
+.creatorMeta {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--muted);
+}

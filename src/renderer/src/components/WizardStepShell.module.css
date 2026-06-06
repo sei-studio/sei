@@ -1,0 +1,49 @@
+/* WizardStepShell.module.css — UI-SPEC §"Component Inventory" + §Typography.
+ *
+ * Sharp corners (D-28). All colors/spacing reference tokens; zero hex.
+ */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 480px;
+}
+
+.stepIndicator {
+  font-family: var(--pixel);
+  font-size: 16px;
+  color: var(--text-2);
+  margin-bottom: var(--space-md);
+  letter-spacing: normal;
+}
+
+.heading {
+  font-family: var(--sans);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text);
+  margin: 0 0 var(--space-lg) 0;
+  letter-spacing: -0.2px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.body p {
+  margin: 0 0 var(--space-lg) 0;
+}
+
+.footer {
+  margin-top: var(--space-lg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+}

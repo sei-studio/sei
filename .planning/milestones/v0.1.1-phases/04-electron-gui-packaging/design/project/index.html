@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Sei — Launcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700&family=Press+Start+2P&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --pixel: 'Press Start 2P', ui-monospace, monospace;
+    --sans: 'Noto Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  /* Light theme — clean off-white with warm beige accent */
+  html[data-theme="light"] {
+    --bg: #FDFEFF;
+    --desktop: #F2F1EE;
+    --window: #FDFEFF;
+    --surface: #F6F5F2;
+    --surface-2: #FFFFFF;
+    --rail: #F6F5F2;
+    --rail-active: #ECEAE3;
+    --text: #1A1D24;
+    --text-2: #4A4D55;
+    --muted: #8A8D95;
+    --border: rgba(26,29,36,0.08);
+    --border-strong: rgba(26,29,36,0.16);
+    --accent: #F4C2AA;
+    --accent-strong: #E5A382;
+    --accent-soft: rgba(244,194,170,0.30);
+    --accent-text: #2A1B12;
+    --shadow-window: 0 0 0 1px rgba(0,0,0,0.10), 0 24px 60px rgba(0,0,0,0.16), 0 4px 16px rgba(0,0,0,0.06);
+    --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
+    --shadow-pop: 0 12px 32px rgba(0,0,0,0.10);
+    --grass-top: #6FA858;
+    --grass-side: #8B6A3D;
+    --green: #5E8E47;
+    --red: #C4523A;
+  }
+
+  /* Dark theme — deep blue-grey with light blue accent */
+  html[data-theme="dark"] {
+    --bg: #14161B;
+    --desktop: #14161B;
+    --window: #191C21;
+    --surface: #1F232A;
+    --surface-2: #252932;
+    --rail: #15181D;
+    --rail-active: #252932;
+    --text: #E8EBF0;
+    --text-2: #B4B9C2;
+    --muted: #6E7480;
+    --border: rgba(255,255,255,0.07);
+    --border-strong: rgba(255,255,255,0.14);
+    --accent: #7AA9ED;
+    --accent-strong: #94BBF2;
+    --accent-soft: rgba(122,169,237,0.16);
+    --accent-text: #0F1218;
+    --shadow-window: 0 0 0 1px rgba(0,0,0,0.5), 0 24px 60px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.35);
+    --shadow-card: 0 1px 2px rgba(0,0,0,0.25), 0 4px 12px rgba(0,0,0,0.30);
+    --shadow-pop: 0 12px 32px rgba(0,0,0,0.45);
+    --grass-top: #6FA858;
+    --grass-side: #8B6A3D;
+    --green: #7DB868;
+    --red: #E07259;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: background 240ms ease, color 240ms ease;
+  }
+
+  /* Subtle desktop wallpaper texture */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(1200px 700px at 20% 10%, rgba(244,194,170,0.18), transparent 60%),
+      radial-gradient(1000px 800px at 90% 90%, rgba(122,169,237,0.08), transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  html[data-theme="dark"] body::before {
+    background:
+      radial-gradient(1200px 700px at 20% 10%, rgba(122,169,237,0.10), transparent 60%),
+      radial-gradient(1000px 800px at 90% 90%, rgba(244,194,170,0.05), transparent 60%);
+  }
+
+  #stage {
+    position: relative;
+    z-index: 1;
+    transform-origin: center center;
+  }
+
+  /* hide scrollbars but keep scroll */
+  .scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll::-webkit-scrollbar-track { background: transparent; }
+  .scroll::-webkit-scrollbar-thumb {
+    background: var(--border-strong); border-radius: 4px;
+  }
+
+  button { font-family: inherit; }
+  input, textarea { font-family: inherit; }
+
+  /* Pixel rendering for sprite-style placeholders */
+  .pixelate { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+  /* fade-in for screen transitions */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-up { animation: fadeUp 280ms cubic-bezier(.2,.7,.2,1) both; }
+
+  @keyframes fade {
+    from { opacity: 0; } to { opacity: 1; }
+  }
+  .fade { animation: fade 220ms ease both; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="ui.jsx"></script>
+<script type="text/babel" src="screens.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</body>
+</html>
