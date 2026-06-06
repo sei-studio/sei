@@ -58,6 +58,34 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run ${{ matrix.build_cmd }}
 
+      - name: Verify cloud config baked into bundle
+        # v0.2.0 shipped with empty SUPABASE_URL/ANON because the build-time
+        # define injection silently produced "" — getClient() then throws
+        # SUPABASE_ENV_MISSING and ALL cloud paths (Google OAuth, email sign-in,
+        # World/browse) die. This gate makes that impossible to ship again:
+        # we require the real Supabase host to actually appear in dist/main.
+        # Test stubs use stub/test/example.supabase.co, so matching the real
+        # project host cannot be satisfied by accident.
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_ANON_KEY repo secret is empty — cloud sign-in would ship broken. Set them in repo Settings → Secrets."
+            exit 1
+          fi
+          host="${SUPABASE_URL#https://}"; host="${host%%/*}"
+          if ! grep -rqF "$host" dist/main; then
+            echo "::error::SUPABASE_URL was set but '$host' is NOT in dist/main — build-time define injection failed (check electron.vite.config.ts)."
+            exit 1
+          fi
+          if ! grep -rqF "$SUPABASE_ANON_KEY" dist/main; then
+            echo "::error::SUPABASE_ANON_KEY was set but not baked into dist/main — define injection failed."
+            exit 1
+          fi
+          echo "✓ cloud config baked in ($host + anon key present in dist/main)"
+
       - name: Collect release assets (installers + auto-update feed)
         # CRITICAL: electron-updater needs the *.yml feed files, the macOS *.zip
         # (the mac auto-update payload — the dmg is download-only), and *.blockmap
