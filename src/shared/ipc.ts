@@ -955,6 +955,15 @@ export interface UpdateDownloadedEvent {
    * "restarting…" then invokes `app:update-install`.
    */
   forced: boolean;
+  /**
+   * True for a mandatory `apply: 'on-restart'` (patch-only) update. The renderer
+   * shows a DISMISSABLE "Update ready — restart to apply" popup (with a
+   * "Restart now" button) instead of leaving the download bar stuck at 100%.
+   * The update still installs on the next quit via `autoInstallOnAppQuit`; the
+   * button just lets the user restart immediately. Mutually exclusive with
+   * `forced`; absent/false on the optional consented flow.
+   */
+  onRestart?: boolean;
 }
 
 /** Post-update "what's new" changelog shown on the next launch (Flow D). */

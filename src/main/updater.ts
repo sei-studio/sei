@@ -315,8 +315,13 @@ async function handleUpdateDownloaded(): Promise<void> {
     }, FORCED_RESTART_DELAY_MS);
     return;
   }
-  // apply === 'on-restart' → nothing visible; applied on next quit.
-  logger.info('updater: mandatory update downloaded; will apply on next quit');
+  // apply === 'on-restart' → surface a DISMISSABLE "ready, restart to apply"
+  // popup so the foreground download bar doesn't hang at 100% (it previously
+  // sent nothing here, leaving the renderer stuck in the 'downloading' state).
+  // The update still installs on the next quit via autoInstallOnAppQuit; the
+  // popup just adds a "Restart now" affordance.
+  send(IpcChannel.app.updateDownloaded, { forced: false, onRestart: true });
+  logger.info('updater: mandatory update downloaded; applies on next quit (popup offers restart now)');
 }
 
 /* -------------------------------------------------------------------------- */

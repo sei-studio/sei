@@ -16,7 +16,8 @@
  * Source: .planning/UI-DESIGN-SYSTEM.md §Window shell; mockup ui.jsx titlebar.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { sei } from '../lib/ipcClient';
 import styles from './MacosWindow.module.css';
 
 interface MacosWindowProps {
@@ -27,6 +28,15 @@ interface MacosWindowProps {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function MacosWindow({ subtitle: _subtitle, children }: MacosWindowProps): React.ReactElement {
+  // Track the real packaged version (app.getVersion via IPC) instead of a
+  // hardcoded literal — Settings reads the same source, so the two never drift.
+  const [version, setVersion] = useState<string>('');
+  useEffect(() => {
+    void sei
+      .getVersion()
+      .then(setVersion)
+      .catch(() => setVersion(''));
+  }, []);
   return (
     <div className={styles.window}>
       {/*
@@ -37,7 +47,7 @@ export function MacosWindow({ subtitle: _subtitle, children }: MacosWindowProps)
       */}
       <div className={styles.dragStrip}>
         <span className={styles.titleLabel}>Sei Launcher</span>
-        <span className={styles.versionTag}>v0.2.0</span>
+        <span className={styles.versionTag}>{version ? `v${version}` : ''}</span>
       </div>
       <div className={styles.body}>{children}</div>
 

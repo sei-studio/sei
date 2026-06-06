@@ -8,6 +8,9 @@
  *     front with [Update now] / [Later]. "Update now" → sei.downloadUpdate().
  *   - downloading → PercentBar progress while the accepted update downloads.
  *   - downloaded → brief "restarting…" then the parent invokes installUpdate().
+ *   - downloaded-on-restart → mandatory patch finished downloading; dismissable
+ *     "Update ready — restart to apply" with [Later] / [Restart now] so the
+ *     download bar can't hang at 100% (applies on next quit regardless).
  *   - forced → non-dismissable "Critical update — restarting…" (apply:'now'
  *     mandatory path; main restarts automatically after a short delay).
  *   - whats-new → post-update changelog with [Got it].
@@ -33,6 +36,7 @@ export type UpdatePopupState =
   | { kind: 'available-optional'; currentVersion: string; latestVersion: string; changelog?: string }
   | { kind: 'downloading'; percent: number }
   | { kind: 'downloaded' }
+  | { kind: 'downloaded-on-restart' }
   | { kind: 'forced' }
   | { kind: 'whats-new'; version: string; changelog: string };
 
@@ -95,7 +99,10 @@ function renderChangelog(text: string): React.ReactNode {
 
 export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps): React.ReactElement {
   const titleId = useId();
-  const dismissable = state.kind === 'available-optional' || state.kind === 'whats-new';
+  const dismissable =
+    state.kind === 'available-optional' ||
+    state.kind === 'whats-new' ||
+    state.kind === 'downloaded-on-restart';
 
   // ESC dismisses only the dismissable states; forced/downloading/downloaded
   // never close on ESC (the restart is in flight / about to be).
@@ -150,6 +157,25 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps)
     case 'downloaded':
       title = 'Update ready';
       body = <p className={styles.body}>Update downloaded. Restarting…</p>;
+      break;
+
+    case 'downloaded-on-restart':
+      title = 'Update ready';
+      body = (
+        <p className={styles.body}>
+          Update downloaded. It’ll apply the next time you restart Sei.
+        </p>
+      );
+      footer = (
+        <>
+          <Button kind="quiet" size="md" onClick={() => onDismiss?.()}>
+            Later
+          </Button>
+          <Button kind="primary" size="md" onClick={() => onUpdateNow?.()}>
+            Restart now
+          </Button>
+        </>
+      );
       break;
 
     case 'forced':

@@ -148,9 +148,9 @@ function HomeGrid(): React.ReactElement {
       } catch {
         /* fall through with empty name */
       }
-      // "First visit" = no character ever launched. Any prior launch flips the
-      // greeting from "Welcome to Sei" to "Welcome back". Cheap heuristic that
-      // doesn't need a separate persisted flag.
+      // "First visit" = no character ever launched. First visit shows the
+      // "Welcome to Sei, <name>!" greeting; any prior launch flips it to the
+      // plain "Summons" header. Cheap heuristic, no separate persisted flag.
       const everLaunched = useDataStore.getState().characters.some(
         (c) => c.last_launched != null,
       );

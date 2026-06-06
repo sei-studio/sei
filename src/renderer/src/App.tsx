@@ -274,6 +274,11 @@ export function App(): React.ReactElement {
           // apply:'now' mandatory — main restarts automatically after a brief
           // delay; show the non-dismissable critical overlay until it does.
           setUpdatePopup({ kind: 'forced' });
+        } else if (ev.onRestart) {
+          // Mandatory on-restart — transition the (foreground) download bar to a
+          // dismissable "ready, restart to apply" popup so it can't hang at 100%.
+          // Applies on next quit regardless; "Restart now" just does it sooner.
+          setUpdatePopup({ kind: 'downloaded-on-restart' });
         } else {
           // Optional/consented flow — show "restarting…" then ask main to
           // quit-and-install.
@@ -681,6 +686,12 @@ export function App(): React.ReactElement {
         <UpdatePopup
           state={updatePopup}
           onUpdateNow={() => {
+            // 'downloaded-on-restart' reuses the primary action as "Restart
+            // now" → quit-and-install the already-downloaded update.
+            if (updatePopup.kind === 'downloaded-on-restart') {
+              void sei.installUpdate();
+              return;
+            }
             // Consent to download the optional update; switch the popup to the
             // downloading state immediately so the user sees the bar before the
             // first progress tick arrives.
