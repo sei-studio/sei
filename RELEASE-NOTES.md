@@ -1,5 +1,18 @@
 # Sei — Release Notes
 
+## v0.2.3 — Summon stability + greeting fixes
+
+- **Fixed: bot failed to summon.** A missing internal module crashed the bot
+  process before it could join your world ("Bot exited before summon-ready").
+  The long-term memory modules are restored, so summoning works again.
+- **Fixed: LAN status stuck on "Not connected".** After summoning and
+  un-summoning, the connection pill could get stuck reporting your world as
+  disconnected even while it was still open. The watcher now re-establishes
+  itself and recovers automatically.
+- **Home greeting.** "Welcome to Sei" now shows only on your very first login;
+  every later launch greets you with "Welcome back". The header switches to
+  "Summons" once you leave Home, and your name is shown in the accent color.
+
 ## v0.2.0 — Custom bot skins + setup wizard
 
 **New: per-persona custom skins and usernames.** Each character can now wear
