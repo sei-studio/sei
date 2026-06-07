@@ -1,5 +1,18 @@
 # Sei — Release Notes
 
+## v0.2.4 — Sync + LAN + card fixes
+
+- **Fixed: "SYNCING" stuck forever on World characters.** A character added
+  from the World tab is owned by another account and can't be mirrored to your
+  cloud, but the app kept retrying and the card showed "SYNCING" indefinitely.
+  Those characters are no longer queued for cloud sync.
+- **Fixed: LAN status wrong after reloading the app.** Refreshing the window
+  while a world was open showed "Not connected" until the world's state next
+  changed. The launcher now re-reads the live LAN status on load.
+- **Character cards show "Summoned".** When a character is the active session,
+  its card hover button reads a disabled "Summoned" so you can't accidentally
+  restart the running bot.
+
 ## v0.2.3 — Summon stability + greeting fixes
 
 - **Fixed: bot failed to summon.** A missing internal module crashed the bot
