@@ -1,41 +1,78 @@
-<img src="docs/sei-logo-blue.svg" alt="Sei" width="240" />
+<div align="center">
 
-**Summon any character into your game.** Not a chatbot — a player.
+[<img src="docs/sei-logo-blue.svg" alt="Sei" width="240" />](https://sei.gg)
 
-Your favorite character joins your Minecraft world and plays alongside you: building, fighting, exploring, and remembering. They have a personality, they hold a grudge, they keep their promises. The story between you only happens once.
+Summon any character into your game.
+An omni-game AI player mod.
 
-### 🌐 [**sei.gg**](https://sei.gg)
+<img src="docs/app-home.png" alt="Sei launcher" width="720" />
 
-[![Download for macOS](https://img.shields.io/badge/Download-macOS-7FB0FF?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.dmg)
+<br />
+
+[<img src="docs/btn-macos.svg" alt="Download for macOS" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.dmg)
 &nbsp;
-[![Download for Windows](https://img.shields.io/badge/Download-Windows-7FB0FF?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sei-studio/sei/releases/latest/download/Sei-win-x64.exe)
+[<img src="docs/btn-windows.svg" alt="Download for Windows" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-win-x64.exe)
 &nbsp;
-[![Download for Linux](https://img.shields.io/badge/Download-Linux-7FB0FF?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/sei-studio/sei/releases/latest/download/Sei-linux-x86_64.AppImage)
+[<img src="docs/btn-linux.svg" alt="Download for Linux" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-linux-x86_64.AppImage)
 
-<sub>The macOS button is for **Apple Silicon**. On an Intel Mac? Grab the `x64` build from [sei.gg](https://sei.gg) or the [Releases page](https://github.com/sei-studio/sei/releases/latest).</sub>
+</div>
 
 ---
 
-## What's in v0.2
+Sei is a launcher that summons AI characters into video games as players. Pick a character, launch a supported game, and they join your world to play alongside you. Companions remember everything you've done together across sessions and across games. Use Sei to have personalized experiences with new friends and rivals. Sei is currently compatible with Minecraft, and aim to be compatible with most multiplayer games.
 
-- **🎮 A real player, not a prompt.** Summon a character into your LAN world — they chat, build, gather, fight, follow you, and act on their own with personality and persistent memory across sessions.
-- **✍️ Persona authoring in plain English.** Describe a character in a sentence; the launcher expands them into a full persona. Three personas (Sui, Mochineko, Clawd) ship built-in.
-- **🧠 Per-character memory.** Each character remembers what happened between you — and only between you.
-- **🎨 Custom skins & one-click setup.** Give each character a custom Minecraft skin (PNG upload or any Mojang username), with a 3D preview. The first-launch wizard auto-detects your Minecraft installs (vanilla + CurseForge) and sets up Fabric + CustomSkinLoader for you — no manual modding, no separate Java install.
-- **🔌 Two ways to run the AI.** Bring your own API key (runs locally — Anthropic, OpenAI-compatible providers, Gemini, or Ollama), **or** sign in for cloud-hosted AI with credits — no API key required.
-- **☁️ Cloud character library.** Your characters sync across your devices when you're signed in.
-- **⬆️ In-app auto-update.** New versions install themselves — no reinstalling.
+<div align="center">
 
-> Cross-platform desktop launcher for **macOS** (Apple Silicon + Intel) and **Windows**.
+<img src="docs/marv.png" alt="A Sei character playing in Minecraft" width="720" />
 
-## Coming in v0.3
+</div>
 
-- **👁️ Real in-game vision.** Characters that actually *see* what's happening in Minecraft — reacting to the world around them, not just the chat log.
-- **🧩 Modded Minecraft compatibility.** Adapters so Sei works across modpacks and Minecraft versions.
-- **🎙️ Voice AI.** Talk to your character out loud — and hear them back.
+## Current Capabilities
 
----
+- Summon AI characters into a Minecraft LAN world as a real second player without additional account
+- Characters chat, build, gather, fight, follow, and act on their own
+- Per-character persistent memory across sessions
+- Custom Minecraft skins via Fabric + CustomSkinLoader
+- Bring your own API key or sign in for cloud-hosted AI
+- Public cloud character library 
+- Cross-platform: macOS, Windows, Linux
 
-<sub>Sei's desktop client is **source-available** here on GitHub. The cloud backend (the hosted-AI proxy and account service) is a separate private service. Local mode runs entirely on your machine with your own API key.</sub>
+## Upcoming
 
-<sub>© 2026 Sei. All rights reserved. No open-source license is granted at this time.</sub>
+**v0.3**
+
+- Real in-game vision: enable VLMs to see Minecraft gameplay through Prismarine
+- Modded Minecraft compatibility: support for modpacks like Pixelmon
+- Voice AI: converse with character verbally
+
+**v1.0**
+
+- Omni-game adapter: summon characters into any multiplayer game
+
+## Development
+
+Contributions are welcome. Particularly with persona expansion, the mineflayer adapter, adapters for other games, and the loop architecture. Your own LLM API key is required for local development.
+
+```bash
+git clone https://github.com/sei-studio/sei.git
+cd sei
+npm install
+npm run dev
+```
+
+Note that the cloud features are inactive in a source build for local development.
+
+**Add your API key** (one of):
+
+- Open Sei Launcher -> Settings -> select provider -> paste your key
+- Edit `config.json` in user-data folder directly
+
+I'm currently working on this project by myself. For general discussions and closer contributions, reach out at [ouen@sei.gg](mailto:ouen@sei.gg). 
+
+## Acknowledgements
+
+- [mineflayer](https://github.com/PrismarineJS/mineflayer): the Minecraft bot framework Sei's game adapter is built on
+- [Project AIRI](https://github.com/moeru-ai/airi): inspiration for AI characters that live in software
+- [Character.AI](https://character.ai): inspiration for personalized AI characters
+- [PrismarineJS](https://github.com/PrismarineJS): the broader Minecraft protocol tooling that makes this possible
+- Hoshimachi Suisei: the GOAT
