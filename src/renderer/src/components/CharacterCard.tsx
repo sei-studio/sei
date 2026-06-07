@@ -22,6 +22,7 @@ import { SparkleIcon } from './icons';
 import { pickPalette } from '../lib/portraitPalettes';
 import { useSyncStore } from '../lib/stores/useSyncStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
+import { useDataStore } from '../lib/stores/useDataStore';
 import styles from './CharacterCard.module.css';
 
 export interface CharacterCardProps {
@@ -72,6 +73,13 @@ export function CharacterCard({
   const signedIn = useAuthStore((s) => s.state.kind === 'signed_in');
   const syncStatus = signedIn ? syncStatusRaw : undefined;
   const retry = useSyncStore((s) => s.retry);
+  // Is THIS character the live bot session? One bot at a time (botSupervisor),
+  // so re-summoning the active character would stop+restart it — surface the
+  // hover CTA as a disabled "Summoned" instead of an actionable "Summon".
+  // Mirrors CharacterPage's `isActive` (status.kind==='online' && id match).
+  const isSummoned = useDataStore(
+    (s) => s.summon.kind === 'online' && s.summon.characterId === c.id,
+  );
 
   return (
     <div
@@ -141,13 +149,15 @@ export function CharacterCard({
           kind="accent"
           size="md"
           icon={<SparkleIcon size={12} />}
+          disabled={isSummoned}
           onClick={(e) => {
             e.stopPropagation();
+            if (isSummoned) return;
             onSummon();
           }}
-          aria-label={`Summon ${c.name}`}
+          aria-label={isSummoned ? `${c.name} is summoned` : `Summon ${c.name}`}
         >
-          Summon
+          {isSummoned ? 'Summoned' : 'Summon'}
         </Button>
       </div>
 
