@@ -31,6 +31,7 @@ import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
+import { VisionAutoRenderConfirmModal } from '../components/VisionAutoRenderConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderTiles, type Provider } from '../components/ProviderTiles';
 import { BackIcon, SunIcon, MoonIcon } from '../components/icons';
@@ -48,6 +49,12 @@ export function SettingsScreen(): React.ReactElement {
   // a relaunch preserves the choice.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
   const setDevConsoleVisible = useUiStore((s) => s.setDevConsoleVisible);
+  // Phase 15 (D-10/VIS-03) — vision capability of the active bot's provider,
+  // fed by the `vision:capability` push (15-03). The auto-look toggle below is
+  // gated `disabled={!visionCapable}` — a REAL provider signal, never an
+  // ai_backend_kind inference. Default false (fail-closed) keeps the toggle
+  // inert until a VLM-backed bot reports capabilities.vision === true.
+  const visionCapable = useUiStore((s) => s.visionCapable);
   const authState = useAuthStore((s) => s.state);
   const summon = useDataStore((s) => s.summon);
   const botRunning = summon.kind === 'connecting' || summon.kind === 'online';
@@ -83,6 +90,10 @@ export function SettingsScreen(): React.ReactElement {
   // confirmation modal instead of toggling directly. Non-null = modal is open
   // for that target backend.
   const [pendingSwitch, setPendingSwitch] = useState<null | 'cloud-proxy' | 'local'>(null);
+  // Phase 15 (D-05) — turning auto-look ON is gated behind VisionAutoRenderConfirmModal
+  // (it uses more playtime), so the toggle's onClick sets this pending flag rather
+  // than flipping immediately. Turning OFF needs no confirm and writes through directly.
+  const [pendingVisionEnable, setPendingVisionEnable] = useState<boolean>(false);
   useEffect(() => {
     if (!botRunning) setSwitchNotice(null);
   }, [botRunning]);
@@ -339,6 +350,56 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
+  // Phase 15 (D-05) — write through vision_auto_render to UserConfig (the config
+  // is the source of truth; botSupervisor bridges it into config.vision.auto_render
+  // at fork). Mirrors onToggleDevConsole's optimistic-then-rollback discipline.
+  //
+  // Turning ON is gated by VisionAutoRenderConfirmModal (the cost heads-up), so the
+  // enable path runs only via confirmEnableAutoRender after the user confirms.
+  // Turning OFF is direct — disabling a cost feature needs no confirm.
+  const confirmEnableAutoRender = async (): Promise<void> => {
+    if (!cfg) {
+      setPendingVisionEnable(false);
+      return;
+    }
+    const updated: UserConfig = { ...cfg, vision_auto_render: true };
+    // Optimistic: reflect the new value immediately, roll back if the write fails.
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+      setSaveError(null);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (vision_auto_render=true) failed', err);
+      setCfg(cfg);
+      setSaveError('Failed to save. Try again.');
+    } finally {
+      setPendingVisionEnable(false);
+    }
+  };
+
+  const onDisableAutoRender = async (): Promise<void> => {
+    if (!cfg) return;
+    const updated: UserConfig = { ...cfg, vision_auto_render: false };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+      setSaveError(null);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (vision_auto_render=false) failed', err);
+      setCfg(cfg);
+      setSaveError('Failed to save. Try again.');
+    }
+  };
+
+  // The auto-look toggle Button click: turning ON opens the confirm modal (D-05),
+  // turning OFF flips directly. Reads the current value from cfg (source of truth).
+  const onToggleAutoRender = (): void => {
+    if (cfg?.vision_auto_render) void onDisableAutoRender();
+    else setPendingVisionEnable(true);
+  };
+
   // ui-A9: "Reset all character memories" — iterate the current data-store
   // characters and call chars:reset-memory for each. Includes defaults
   // (the IPC handler itself refuses only when the bot is currently summoned
@@ -512,6 +573,32 @@ export function SettingsScreen(): React.ReactElement {
           </Button>
         </div>
         <p className={styles.rowHelper}>Useful for debugging skin and bot issues.</p>
+        {/*
+          Phase 15 (D-05/D-10) — Auto-look (vision) toggle. ONE line. Turning ON
+          opens VisionAutoRenderConfirmModal (the "uses more playtime" heads-up,
+          D-06) before writing vision_auto_render: true; turning OFF flips
+          directly. The Button is disabled when the active provider is non-VLM,
+          gated on useUiStore.visionCapable (D-10/VIS-03) — a real capability
+          signal, NOT an ai_backend_kind inference. The cost itself surfaces as
+          the shrunk "~Xh left" playtime figure (D-07), never a number here.
+        */}
+        <div className={styles.row}>
+          <span className={styles.rowLabel}>Auto-look (vision)</span>
+          <Button
+            kind="ghost"
+            size="sm"
+            aria-pressed={cfg?.vision_auto_render ?? false}
+            disabled={!visionCapable}
+            onClick={onToggleAutoRender}
+          >
+            {cfg?.vision_auto_render ? 'On' : 'Off'}
+          </Button>
+        </div>
+        <p className={styles.rowHelper}>
+          {visionCapable
+            ? 'Lets your bot glance around and see its surroundings on its own. Uses more playtime.'
+            : 'Requires a vision-capable model. Summon a bot with one to enable this.'}
+        </p>
       </section>
 
       {/*
@@ -842,6 +929,12 @@ export function SettingsScreen(): React.ReactElement {
           direction={pendingSwitch}
           onCancel={() => setPendingSwitch(null)}
           onConfirm={confirmSwitch}
+        />
+      ) : null}
+      {pendingVisionEnable ? (
+        <VisionAutoRenderConfirmModal
+          onCancel={() => setPendingVisionEnable(false)}
+          onConfirm={confirmEnableAutoRender}
         />
       ) : null}
       {dmcaModalOpen ? (
