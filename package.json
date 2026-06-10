@@ -7,7 +7,8 @@
     "sei": "src/bot/cli/index.js"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev-viewer.mjs",
+    "dev:bare": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",

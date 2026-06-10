@@ -28,6 +28,8 @@
 //   the GL-context / listener leak (15-RESEARCH.md Pitfall 5).
 
 import { createRequire } from 'module'
+import { writeFile, rename } from 'node:fs/promises'
+import { join } from 'node:path'
 
 const require = createRequire(import.meta.url)
 
@@ -44,6 +46,22 @@ const { Viewer, WorldView } = require('prismarine-viewer/viewer')
 
 /** Degrade sentinel — returned instead of throwing/hanging (VIS-08). */
 const CANT_SEE = Object.freeze({ ok: false, reason: 'cant_see' })
+
+/**
+ * Dev-only tap for scripts/dev-viewer.mjs (`npm run dev` browser viewer):
+ * mirror each successful frame to $SEI_DEV_VIEWER_DIR/latest-render.jpg via
+ * tmp+rename so the viewer's HTTP reads never see a half-written file.
+ * Fire-and-forget and inert in production — only the dev-viewer wrapper sets
+ * the env var, and a write failure can never affect the render result.
+ */
+function devViewerTap (buffer) {
+  const dir = process.env.SEI_DEV_VIEWER_DIR
+  if (!dir) return
+  const tmp = join(dir, `.latest-render.${process.pid}.tmp`)
+  writeFile(tmp, buffer)
+    .then(() => rename(tmp, join(dir, 'latest-render.jpg')))
+    .catch(() => { /* viewer misses a frame; bot unaffected */ })
+}
 
 // A single long-lived WebGLRenderer is reused across renders to avoid headless-gl's live
 // GL-context limit (15-RESEARCH.md Pitfall 5 — "too many active WebGL contexts"). The Viewer
@@ -183,6 +201,8 @@ export async function renderPov (bot, {
     // (D-03 / VIS-06 — well under the 512px ceiling).
     const buffer = canvas.toBuffer('image/jpeg', { quality })
     if (!buffer || buffer.length === 0) return CANT_SEE
+
+    devViewerTap(buffer)
 
     return { ok: true, buffer, mediaType: 'image/jpeg' }
   } catch {
