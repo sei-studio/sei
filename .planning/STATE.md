@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Commercializable MVP
 status: executing
-last_updated: "2026-06-06"
-last_activity: 2026-06-06 — Phase 15 (In-Game Vision via prismarine-viewer) is planned and ready to execute (7 plans in 4 waves). Phases 10–14 are complete (Phase 12 is code-complete and awaiting an operator rollout step). Next action — /gsd-execute-phase 15.
+last_updated: "2026-06-10T09:24:56.663Z"
+last_activity: 2026-06-10 -- Phase 15 execution started
 progress:
   total_phases: 7
   completed_phases: 5
@@ -18,16 +18,16 @@ progress:
 ## Project Reference
 
 - **Core Value:** A Minecraft companion that feels like a real character — it remembers you, reacts to the world, and acts with personality, not like a scripted bot.
-- **Current Focus:** Phase 15 — In-Game Vision via prismarine-viewer
+- **Current Focus:** Phase 15 — in-game-vision-via-prismarine-viewer
 
 > This is the **client** state. The hosted cloud backend (proxy server, auth/billing/moderation) lives in a separate private repo and is referenced here only at a high level.
 
 ## Current Position
 
-Phase: 15 (In-Game Vision via prismarine-viewer) — planned, ready to execute
-Plan: 0 of 7
-Status: Next phase
-Last activity: 2026-06-06 — Phase 15 planned (7 plans, 4 waves). Wave 1 = native-ABI render spike (`prismarine-viewer` + headless render, with install + packaged-build verification first) + proxy per-hour vision cap (server-side) + vision config block + custom line-of-sight helper. Wave 2 = `visualize` Zod action gated on `capabilities.vision` + Settings auto-render toggle/confirm/playtime estimate. Wave 3 = image content-block wiring (per-provider mappers; image rides a fresh user turn; cloud-only routing of the post-`visualize` turn through the vision endpoint). Wave 4 = idle auto-render (16-block + LOS gate, defaults OFF). Next: /gsd-execute-phase 15.
+Phase: 15 (in-game-vision-via-prismarine-viewer) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 15
+Last activity: 2026-06-10 -- Phase 15 execution started
 
 ## Phase Progress
 

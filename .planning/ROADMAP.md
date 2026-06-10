@@ -167,7 +167,7 @@ Promote Sei from a working local prototype (v0.1.1) to a commercializable MVP �
   4. Vision calls per hour are capped by the proxy for cloud-AI users; exceeding the cap returns a clear error, not a silent failure
   5. When the bot's chunks aren't loaded enough to render meaningfully, it says "I can't see clearly right now" rather than crashing or rendering a black frame
 
-**Plans:** 7 plans in 4 waves — W1: 15-01, 15-02, 15-03 · W2: 15-04, 15-05 · W3: 15-06 · W4: 15-07. Cross-cutting: every render call is wall-clock-timed; render runs in the bot utilityProcess only; the native-ABI de-risk spike (15-01) gates all feature waves.
+**Plans:** 2/7 plans executed
 
 ---
 
