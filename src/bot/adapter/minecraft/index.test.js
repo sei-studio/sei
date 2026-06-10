@@ -10,6 +10,22 @@
 // visible chat noise.
 
 import { describe, it, expect, vi } from 'vitest'
+
+// 15-04: registry.js now statically imports ./behaviors/visualize.js, which in
+// turn imports ../render/povRenderer.js -> native gl/canvas (built for the
+// Electron 42 ABI, NOT loadable under system-Node vitest). createMinecraftAdapter
+// -> createDefaultRegistry pulls that chain, so mock the visualize behavior here
+// to keep the native modules off this suite's import graph (same strategy as
+// registry.vision.test.js).
+vi.mock('./behaviors/visualize.js', () => ({
+  visualizeAction: vi.fn(async () => ({
+    text: 'x',
+    image: { mediaType: 'image/jpeg', dataBase64: 'AAAA' },
+  })),
+  __resetVisualizeDedupeCache: vi.fn(),
+  CANT_SEE_COPY: "I can't see clearly right now",
+}))
+
 import { createMinecraftAdapter } from './index.js'
 
 function makeAdapter() {
