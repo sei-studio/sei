@@ -2,6 +2,17 @@ import Anthropic from '@anthropic-ai/sdk'
 import { logHaikuQuery, logHaikuResponse, logHaikuError } from './log.js'
 
 /**
+ * Per-call URL path for the proxy's per-hour vision-cap route (15-02, VIS-07/D-09).
+ * Passed as `call({ ..., path: VISION_MESSAGES_PATH })` for EXACTLY the one LLM
+ * turn that follows an explicit `visualize`, and ONLY in cloud-proxy mode — the
+ * SDK joins this onto the proxy baseURL (api.sei.gg, no path component) so that
+ * single request hits the `vision_hourly` gate. Single-sourced here so the
+ * orchestrator imports the literal from ONE place (no string drift). BYOK/local
+ * providers never set it (D-11: uncapped).
+ */
+export const VISION_MESSAGES_PATH = '/vision/v1/messages'
+
+/**
  * 260502-h6i: Stamp `cache_control: {type:'ephemeral'}` on the LAST tool entry
  * so Anthropic's prompt-cache boundary lands at the end of the tools array.
  * Marking only the last system block leaves `tools` outside the cached prefix
@@ -122,9 +133,10 @@ export function createAnthropicClient(config) {
    * @param {number} [req.timeoutMs]
    * @param {number} [req.maxTokens]
    * @param {Array<{role:string, content:Array<{type:string, name?:string, text?:string}>}>} [req.namedUserBlocks] Canonical pre-strip messages array carrying `name` fields on text blocks; used by log.js for cache-prefix hash elision. Logger-only; not sent to API.
+   * @param {string} [req.path] Per-call SDK request path override. Used ONLY by the post-explicit-`visualize` turn to hit the proxy `/vision/v1/messages` vision-cap gate (15-02, VIS-07/D-09), and ONLY in cloud-proxy mode (BYOK/local providers never set it — D-11). When undefined the SDK uses its built-in `/v1/messages`.
    * @returns {Promise<{toolUses:Array<{id:string,name:string,input:any}>, text:string, usage:object, stopReason:string}>}
    */
-  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking }) {
+  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking, path }) {
     logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks })
     // 260502-h6i: stamp cache_control on the LAST tool entry so the cache
     // boundary lands at the end of the tools array (system → tools is now
@@ -178,7 +190,12 @@ export function createAnthropicClient(config) {
           // Per-attempt timeout sits just above the REMAINING budget so the
           // deadline controller is always the authoritative cap.
           const remainingMs = budgetMs - (Date.now() - startedAt)
-          const resp = await sdk.messages.create(req, { signal: ctrl.signal, timeout: Math.max(1_000, remainingMs + 2_000) })
+          // VIS-07/D-09: a per-call `path` (set only on the post-visualize turn
+          // in cloud mode) routes this single request to the proxy's vision-cap
+          // gate; undefined keeps the SDK default `/v1/messages`. The retry
+          // policy is untouched — a 429 from the vision gate re-hits the SAME
+          // path once via the rescue retry (accepted; the gate counts server-side).
+          const resp = await sdk.messages.create(req, { signal: ctrl.signal, timeout: Math.max(1_000, remainingMs + 2_000), ...(path ? { path } : {}) })
           const elapsedMs = Date.now() - startedAt
           const content = resp.content ?? []
           const toolUses = content
