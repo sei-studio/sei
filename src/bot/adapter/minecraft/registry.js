@@ -21,6 +21,7 @@ import { equipAction } from './behaviors/equip.js'
 import { attackEntityAction } from './behaviors/attack.js'
 import { consumeItemAction } from './behaviors/consume.js'
 import { lookAtAction } from './behaviors/lookAt.js'
+import { visualizeAction } from './behaviors/visualize.js'
 import { dropItemAction } from './behaviors/drop.js'
 import { activateItemAction } from './behaviors/activate.js'
 import { sleepAction } from './behaviors/sleep.js'
@@ -111,8 +112,16 @@ function isCoordsAtKnownPlayer(bot, x, y, z) {
   return false
 }
 
-/** Pre-built registry with all minecraft adapter actions registered. */
-export function createDefaultRegistry() {
+/**
+ * Pre-built registry with all minecraft adapter actions registered.
+ *
+ * @param {Object} [opts]
+ * @param {boolean} [opts.visionEnabled=false] — D-10 gate. The `visualize`
+ *   action is registered ONLY when the active provider supports vision
+ *   (capabilities.vision). A non-VLM provider never gets the tool in the
+ *   registry (belt-and-suspenders with the orchestrator tool-list filter).
+ */
+export function createDefaultRegistry({ visionEnabled = false } = {}) {
   const registry = createRegistry()
 
   registry.register(
@@ -350,6 +359,16 @@ export function createDefaultRegistry() {
     }),
     lookAtAction
   )
+
+  // VIS-02 / D-10 — the LLM-callable explicit render. Registered ONLY when the
+  // active provider is VLM-capable (visionEnabled). Empty-schema action (clones
+  // the activateItem form) — the model just asks to look; no args. The
+  // orchestrator ALSO filters `visualize` out of the tool list when the
+  // provider lacks vision, so even a registration leak never reaches a non-VLM
+  // model (belt-and-suspenders, VIS-03).
+  if (visionEnabled) {
+    registry.register('visualize', z.object({}), visualizeAction)
+  }
 
   registry.register(
     'dropItem',

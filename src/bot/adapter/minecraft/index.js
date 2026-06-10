@@ -27,15 +27,20 @@ import {
  * Construct a minecraft Adapter wrapped around a live mineflayer Bot.
  *
  * @param {Object} args
- * @param {object} args.bot         Mineflayer Bot instance (from createBotInstance).
- * @param {object} args.config      Validated config; passed through to action handlers.
+ * @param {object} args.bot           Mineflayer Bot instance (from createBotInstance).
+ * @param {object} args.config        Validated config; passed through to action handlers.
+ * @param {boolean} [args.visionEnabled=false]  D-10 gate — register the `visualize`
+ *   action only when the active provider is VLM-capable (capabilities.vision).
+ *   The construction site (src/bot/index.js) does not hold the provider handle,
+ *   so it defaults false here; the orchestrator's tool-list filter (combinedToolsFor)
+ *   is the authoritative belt-and-suspenders gate (VIS-03).
  * @returns {import('../../brain/types.js').Adapter}
  */
-export function createMinecraftAdapter({ bot, config }) {
+export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
   if (!bot) throw new Error('createMinecraftAdapter: bot required')
   if (!config) throw new Error('createMinecraftAdapter: config required')
 
-  const registry = createDefaultRegistry()
+  const registry = createDefaultRegistry({ visionEnabled })
   let _attachDispose = null
 
   return {

@@ -78,6 +78,10 @@ export const ACTION_DESCRIPTIONS = {
 
   build:
     'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Scaffolds up automatically when out of reach. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING: build sits on top of terrain — set `from.y = bot.y + 1` so the structure rises out of the ground. Building at your own y inside terrain produces an invisible all-skipped result.',
+
+  // Only present when the active provider supports vision (D-10). Keep it short.
+  visualize:
+    'Render and look at your current surroundings — returns an image of what you see right now. Call it when you need to actually SEE the scene to answer or decide (terrain, a structure, what you built). Degrades gracefully if the area isn\'t loaded.',
 }
 
 // 260608-tik: collapsed to one line (Change 2). This is now used as the FULL
