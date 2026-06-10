@@ -167,7 +167,7 @@ Promote Sei from a working local prototype (v0.1.1) to a commercializable MVP â€
   4. Vision calls per hour are capped by the proxy for cloud-AI users; exceeding the cap returns a clear error, not a silent failure
   5. When the bot's chunks aren't loaded enough to render meaningfully, it says "I can't see clearly right now" rather than crashing or rendering a black frame
 
-**Plans:** 4/7 plans executed
+**Plans:** 5/7 plans executed
 
 ---
 
