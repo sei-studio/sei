@@ -9,6 +9,7 @@
 // `grep -r "from '../adapter" src/brain/`.
 
 import { createLlmProvider } from './llm/index.js'
+import { VISION_MESSAGES_PATH } from './anthropicClient.js'
 import { createTokenBucket } from './rateLimiter.js'
 import { createDebouncer, createThrottle } from './debounce.js'
 import { createChainTracker } from './chains.js'
@@ -411,6 +412,74 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // Fed back into the next personality turn via composeSnapshot's lastActionResult.
   let lastActionResult = null
 
+  // VIS-07/D-09 one-shot: set true ONLY on the explicit-`visualize` completion
+  // branch (never idle, never any other action), read+cleared by callPersonality
+  // so EXACTLY the one post-visualize personality turn routes through the proxy
+  // `/vision/v1/messages` per-hour cap — and only in cloud-proxy mode (D-11).
+  let _pendingVisionTurn = false
+
+  /**
+   * VIS-02 + VIS-07/D-09: normalize a `visualize` action-completion result and,
+   * for a successful EXPLICIT render, attach the frame as a FRESH user image
+   * turn + arm the one-shot vision-path flag. Called by BOTH action-completion
+   * paths (handleActionComplete and handleActionCompleteTickClaimed) BEFORE the
+   * generic slot-fill / lastActionResult assignment so the structured
+   * { text, image:{ mediaType, dataBase64 } } object NEVER leaks into the
+   * tool_result content, into lastActionResult (a string-consumer — the
+   * snapshot `last_action_result` line), or into conversation history as raw
+   * base64 (hazard #2).
+   *
+   * The visualize result contract (15-04):
+   *   SUCCESS  : { text:string, image:{ mediaType:string, dataBase64:string } }
+   *   DEGRADE  : "I can't see clearly right now" (string)  -> VIS-08
+   *   IDLE-SKIP: { skip:true }
+   *   ABORTED  : 'aborted' (string)
+   *
+   * @param {object} loop
+   * @param {*} result  data.result from the completion event
+   * @param {{ idle?: boolean }} [opts]  idle render (15-07) sets idle:true — it
+   *   attaches an image but NEVER arms the vision-path flag (D-09: idle stays on
+   *   /v1/messages).
+   * @returns {{ resultText: string }} the SHORT string to put in the tool_result
+   *   content and lastActionResult (caller does the actual slot-fill).
+   */
+  function handleVisualizeResult(loop, result, { idle = false } = {}) {
+    // Structured success — the ONLY shape that carries an image.
+    if (result && typeof result === 'object' && result.image &&
+        typeof result.text === 'string' &&
+        typeof result.image.dataBase64 === 'string') {
+      const { mediaType, dataBase64 } = result.image
+      try {
+        // Image rides a FRESH user turn (Pitfall 4 — never inside the
+        // tool_result). Provider-neutral block (== Anthropic wire shape);
+        // messageMappers translates it per provider. NO `name` on the image
+        // block (the SDK has no name field there); the event text keeps `name`
+        // so the snapshot-strip rules treat it like any other event line.
+        loop.appendUserTurn([
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: dataBase64 } },
+          { type: 'text', name: 'event', text: result.text },
+        ])
+      } catch (err) {
+        logger.warn?.(`[sei/orch] visualize image append failed: ${err.message}`)
+      }
+      // VIS-07/D-09: arm the one-shot vision-path flag for EXPLICIT renders
+      // only. Idle (15-07) passes idle:true and stays on /v1/messages.
+      if (!idle) _pendingVisionTurn = true
+      // The tool_result / lastActionResult get the SHORT text, not the object.
+      return { resultText: result.text }
+    }
+    // Degrade string (VIS-08), 'aborted', or any other string: pass through as
+    // the tool_result text; no image, no vision flag.
+    if (typeof result === 'string') return { resultText: result }
+    // { skip:true } idle near-duplicate, or any other shape: brief text, no image.
+    if (result && typeof result === 'object' && result.skip === true) {
+      return { resultText: 'no fresh view' }
+    }
+    // Fallback (shouldn't happen for visualize): stringify defensively so a raw
+    // object never reaches a string-consumer.
+    return { resultText: typeof result === 'string' ? result : 'done' }
+  }
+
   // `start()` is a no-op kept for API compatibility — brain.start() calls
   // `orchestrator.start().catch(...)` after wiring the adapter.
   async function start() {}
@@ -576,6 +645,19 @@ function formatToolResult(name, r) {
   if (typeof r === 'string') return r
   if (r == null) return 'done'
   if (typeof r !== 'object') return String(r)
+  // VIS-02 (hazard #2): the structured `visualize` success result
+  // ({ text, image:{ mediaType, dataBase64 } }) and the idle `{ skip:true }`
+  // sentinel must reach handleActionComplete as OBJECTS, not JSON. If we
+  // stringified here, the base64 would be baked into data.result before the
+  // image-attach interception runs — leaking it into the tool_result and
+  // last_action_result. Pass the structured visualize shape through untouched;
+  // handleVisualizeResult downstream extracts the SHORT text for the tool_result
+  // and rides the image on a fresh user turn.
+  if (name === 'visualize' && (
+    (r.image && typeof r.text === 'string') || r.skip === true
+  )) {
+    return r
+  }
   if (typeof r.ok !== 'undefined' && Object.keys(r).length <= 2) {
     return `${name}:${r.ok ? 'ok' : 'fail'}`
   }
@@ -1213,13 +1295,25 @@ function maybeWarnByteCap(loop, warned) {
       logger.warn?.(`[sei/orch] action_complete: no unfilled slot in pendingResults`)
       return
     }
+    // VIS-02/VIS-07: intercept the `visualize` result BEFORE the generic fill
+    // so the structured { text, image } object never lands in the tool_result
+    // content, in lastActionResult (a string-consumer), or in history as raw
+    // base64. The helper appends the image on a FRESH user turn and arms the
+    // one-shot vision-path flag for an explicit render (idle path is 15-07).
+    let resultContent = data.result ?? 'done'
+    let resultForLast = data.result ?? null
+    if (pendingUse.name === 'visualize') {
+      const { resultText } = handleVisualizeResult(loop, data.result, { idle: !!data.idle })
+      resultContent = resultText
+      resultForLast = resultText
+    }
     pendingResults[slotIdx] = {
       type: 'tool_result',
       tool_use_id: pendingUse.id,
-      content: data.result ?? 'done',
+      content: resultContent,
       is_error: false,
     }
-    lastActionResult = data.result ?? null
+    lastActionResult = resultForLast
     loop._pendingResults = null
     loop._pendingActionUse = null
 
@@ -1418,7 +1512,19 @@ function maybeWarnByteCap(loop, warned) {
       return
     }
 
-    lastActionResult = data.result ?? null
+    // VIS-02/VIS-07: a `visualize` that somehow settled via the tick-claimed
+    // path (would require the render to outlive a 10s tick — its 8s handler
+    // timeout makes this practically unreachable, but cover it for safety).
+    // The tool_use is already closed here, so the image rides a fresh user turn
+    // and lastActionResult/eventText get the SHORT text, never the raw object.
+    let resultForLast = data.result ?? null
+    let visualizeText = null
+    if (data?.name === 'visualize') {
+      const { resultText } = handleVisualizeResult(loop, data.result, { idle: !!data.idle })
+      resultForLast = resultText
+      visualizeText = resultText
+    }
+    lastActionResult = resultForLast
     let eventText
     if (interrupting) {
       // Mirror handleActionComplete's P1 fold: render the PLAYER INTERRUPT turn
@@ -1432,7 +1538,10 @@ function maybeWarnByteCap(loop, warned) {
       loop._currentIterationTrigger = 'sei:chat_received'
       logger.info?.(`[sei/orch] action_complete (tick-claimed) + PLAYER INTERRUPT folded into loop=${loop.id}`)
     } else {
-      eventText = `previous action completed: ${data?.name ?? 'action'} -> ${String(data?.result ?? 'done')}`
+      // Use the short visualize text (never the raw { text, image } object) in
+      // the event annotation when this was a visualize settle.
+      const resultStr = visualizeText ?? String(data?.result ?? 'done')
+      eventText = `previous action completed: ${data?.name ?? 'action'} -> ${resultStr}`
       loop._currentIterationTrigger = 'sei:action_complete'
     }
     try {
@@ -2273,6 +2382,15 @@ function maybeWarnByteCap(loop, warned) {
     // queue. Cleared in finally so a suspended-on-long-runner loop (no call in
     // flight) is correctly seen as NOT needing a preempt-abort.
     loop._llmCallInFlight = true
+    // VIS-07/D-09: route EXACTLY the one post-explicit-`visualize` turn through
+    // the proxy's per-hour vision-cap path, and ONLY in cloud-proxy mode
+    // (config.anthropic.cloudMode is set only there — BYOK/local stay uncapped,
+    // D-11). Consume the one-shot flag here so every subsequent turn reverts to
+    // the default /v1/messages. Reading+clearing unconditionally (not gated on
+    // cloudMode) guarantees the flag can never "stick" across a backend switch.
+    const visionTurn = _pendingVisionTurn
+    _pendingVisionTurn = false
+    const visionPath = (visionTurn && config.anthropic.cloudMode) ? VISION_MESSAGES_PATH : undefined
     try {
       return await anthropic.call({
       systemBlocks: cachedSystemBlocks,
@@ -2287,6 +2405,9 @@ function maybeWarnByteCap(loop, warned) {
       // max_tokens must exceed budget_tokens; bump headroom accordingly.
       ...(budget > 0 ? { thinking: { type: 'enabled', budget_tokens: budget } } : {}),
       maxTokens: 1024 + (budget > 0 ? budget : 0),
+      // /vision/v1/messages for the one post-visualize cloud turn; undefined
+      // (the default) keeps the SDK on /v1/messages for every other turn.
+      ...(visionPath ? { path: visionPath } : {}),
       })
     } finally {
       loop._llmCallInFlight = false
