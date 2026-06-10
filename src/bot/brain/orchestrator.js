@@ -944,6 +944,35 @@ function maybeWarnByteCap(loop, warned) {
       ])
     }
 
+    // ── VIS-04 (15-07): idle auto-render hook ────────────────────────────
+    // On the existing P3 `sei:idle` tick (NO new timer — 15-PATTERNS.md "Idle
+    // (P3) tick reuse"), BEFORE the normal idle LLM turn, run the composite
+    // fail-closed gate (auto_render ON + provider VLM + owner ≤16 blocks + LOS
+    // clear). When it passes, render the bot's POV (idle:true → D-02 pose-dedupe)
+    // and attach the frame to THIS idle turn's user content via the SAME 15-06
+    // mechanism (handleVisualizeResult). Gated-out, deduped ({skip:true}), and
+    // degrade-string results attach nothing and the loop proceeds with the normal
+    // idle turn. CRITICAL (D-09): idle uses the STANDARD LLM path — handleVisualizeResult
+    // is called with idle:true so it does NOT arm the one-shot _pendingVisionTurn
+    // flag; the idle turn is never routed through /vision/v1/messages (only the
+    // EXPLICIT visualize path hits the per-hour cap). Reuses the adapter so the
+    // bot reference stays adapter-side (brain↔adapter seam).
+    if (isIdle && typeof adapter.shouldAutoRenderIdle === 'function') {
+      try {
+        if (adapter.shouldAutoRenderIdle(anthropic) && typeof adapter.renderIdleFrame === 'function') {
+          const idleResult = await adapter.renderIdleFrame()
+          // Attaches the frame on a fresh image user-turn for the structured
+          // success shape; no-op (text only, no image) for {skip:true} / degrade.
+          // idle:true ⇒ never arms _pendingVisionTurn (D-09 — standard path).
+          handleVisualizeResult(loop, idleResult, { idle: true })
+        }
+      } catch (err) {
+        // Auto-render is best-effort: any failure leaves the normal idle turn
+        // intact. Never let a render hiccup wedge or abort the idle loop.
+        logger.warn?.(`[sei/orch] idle auto-render skipped: ${err && err.message}`)
+      }
+    }
+
     // Bridge: external signal (FSM) -> loop.abortController so handlers
     // respect both. The fresh Loop's controller is what actions hook into.
     //

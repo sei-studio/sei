@@ -12,6 +12,8 @@ import { createDefaultRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { closeContainerSession } from './behaviors/container.js'
 import { wireBotEvents } from './fsmWires.js'
+import { shouldAutoRender } from './observers/idleVisionGate.js'
+import { visualizeAction } from './behaviors/visualize.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
   ACTION_DESCRIPTIONS,
@@ -122,6 +124,17 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
     closeAnySessions: async () => {
       try { await closeContainerSession() } catch {}
     },
+
+    // ─── Idle auto-render (VIS-04 — 15-07) ────────────────────────────
+    // The orchestrator drives the periodic "look around" through the adapter so
+    // the bot reference stays adapter-side (the brain↔adapter seam: the
+    // orchestrator never imports mineflayer or src/adapter/). shouldAutoRenderIdle
+    // runs the composite fail-closed gate (toggle + capability + owner + LOS);
+    // renderIdleFrame produces the deduped idle frame via the SAME visualizeAction
+    // the explicit path uses, with idle:true so D-02 pose-dedupe applies. Idle
+    // renders use the STANDARD LLM path — there is NO /vision routing here (D-09).
+    shouldAutoRenderIdle: (provider) => shouldAutoRender(bot, config, provider),
+    renderIdleFrame: () => visualizeAction({ idle: true }, bot, config),
 
     // ─── Capabilities (read from registry / plugin presence) ─────────
     get supportsAutoEat() { return Boolean(bot.autoEat) },
