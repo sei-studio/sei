@@ -30,16 +30,20 @@ function resolveTargetEntity() {
 }
 
 /**
- * Abort contract (260516-0yw): follow is now an OPEN-ENDED long-runner. The
- * registry handler in src/bot/adapter/minecraft/registry.js installs the
- * follow target and BLOCKS on the AbortSignal until the orchestrator aborts
- * (P0/P1 preempt, R2/R3/R4 dispatch, or the model calls unfollow). When the
- * signal fires, the handler clears the target via `setFollowTarget(null)` and
- * resolves with `aborted: follow <label>`. The 1s background pathfinder tick
- * in this file remains a no-op when `_target` is null, so clearing the target
- * is enough to stop the bot's body movement; the AbortSignal is the channel
- * that drives that target-clear. follow.js itself does not consume the
- * signal — the registry handler owns the long-running lifecycle.
+ * Abort contract (260516-0yw; revised 260607): follow is an OPEN-ENDED
+ * long-runner. The registry handler installs the follow target and BLOCKS on
+ * the AbortSignal until the orchestrator aborts (player-chat preempt, R2/R3/R4
+ * dispatch, or the model calls unfollow).
+ *
+ * 260607 — follow is now PERSISTENT state. The abort does NOT clear `_target`
+ * anymore: an abort is almost always a player chat waking the suspended loop,
+ * and clearing on it made every message cancel the follow (churn). The 1s
+ * background tick below keeps trailing as long as `_target` is set, so the bot
+ * stays on the owner while the model answers a chat. `_target` is cleared ONLY
+ * by `unfollow` or by an explicit relocate (`goTo`, which calls
+ * setFollowTarget(null)); incidental actions (dig/gather/build) leave it set so
+ * the bot resumes trailing once they finish. follow.js itself does not consume
+ * the signal — the registry handler owns the long-running lifecycle.
  */
 export function startFollow(bot, config) {
   _bot = bot

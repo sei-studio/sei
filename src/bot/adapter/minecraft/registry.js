@@ -124,6 +124,12 @@ export function createDefaultRegistry() {
       range: z.number().min(0).default(1),
     }),
     async (args, bot, config) => {
+      // 260607: an explicit goTo is a "relocate and stay" command — it ends
+      // follow mode. Without this, the 1s follow tick (follow.js) would
+      // re-install GoalFollow the instant goTo reaches its destination and yank
+      // the bot back to the owner. Incidental actions (dig/gather/build) leave
+      // follow intact so the bot resumes trailing after them.
+      setFollowTarget(null)
       const timeoutMs = config?.pathfinder_timeout_ms ?? 12000
       // Default range:2 when target matches a known player's position.
       // Only kicks in when the LLM omitted range
@@ -295,13 +301,21 @@ export function createDefaultRegistry() {
         // existing unit tests don't hang.
         return `following ${label}`
       }
-      if (signal.aborted) { setFollowTarget(null); return `aborted: follow ${label}` }
+      // 260607: do NOT clear the follow target on abort. An abort here is
+      // almost always a PLAYER CHAT waking the suspended loop (handleDispatch
+      // aborts the in-flight long-runner to deliver the message). Clearing the
+      // target made EVERY message cancel the follow, so the model had to
+      // re-issue `follow` each turn — the churn seen in the field logs. Follow
+      // is now PERSISTENT state: the body keeps trailing via the 1s pathfinder
+      // tick, and only `unfollow` or an explicit relocate (goTo) clears it. A
+      // chat-wake therefore leaves the bot following while the model answers; a
+      // real task-switch (goTo / unfollow) ends it cleanly.
+      if (signal.aborted) return `follow ${label} interrupted (still trailing them)`
       await new Promise(resolve => {
         const onAbort = () => { signal.removeEventListener('abort', onAbort); resolve() }
         signal.addEventListener('abort', onAbort)
       })
-      setFollowTarget(null)
-      return `aborted: follow ${label}`
+      return `follow ${label} interrupted (still trailing them)`
     }
   )
 

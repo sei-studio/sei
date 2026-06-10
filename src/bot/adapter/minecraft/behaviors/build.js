@@ -185,5 +185,13 @@ export async function buildAction(args, bot, config) {
     config?.onProgress?.({ placed, skipped, total, currentY: c.y })
   }
 
+  // 260607: a 0-placed result is NOT a soft success — every cell was already
+  // solid (building into terrain or at the bot's own feet level). The model
+  // previously read "built 0 placed, N skipped" as progress and kept
+  // "extending" a bridge that never grew. Make the no-op explicit so it
+  // changes coordinates instead of repeating the same call.
+  if (placed === 0 && total > 0) {
+    return `built NOTHING: all ${total} cells were already occupied — you are placing into solid blocks (or at your own feet level). Pick a clear span and set from.y = your y + 1.`
+  }
   return `built ${placed} placed, ${skipped} skipped, of ${total} cells`
 }

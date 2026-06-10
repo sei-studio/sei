@@ -138,6 +138,27 @@ export function composeSnapshot(bot, opts = {}) {
   const followLabel = getFollowTargetLabel()
   lines.push(`follow_target: ${followLabel ?? '(none)'}`)
 
+  // Owner whereabouts (260607). The pinned owner can be BEYOND the entity
+  // render radius — then they're absent from `nearby entities` and the model
+  // has no coords for "come to me", so it hallucinates (in the field logs it
+  // walked to its OWN position and claimed it arrived). Resolve the owner from
+  // the players tab list and state their position explicitly, or say plainly
+  // that it's unknown so the model asks/follows instead of guessing.
+  if (pinUsername) {
+    const me = bot.entity
+    const ownerEnt = bot.players?.[pinUsername]?.entity
+    if (ownerEnt?.position && me?.position) {
+      const ox = Math.round(ownerEnt.position.x)
+      const oy = Math.round(ownerEnt.position.y)
+      const oz = Math.round(ownerEnt.position.z)
+      let dist = null
+      try { dist = Math.round(ownerEnt.position.distanceTo(me.position)) } catch { /* leave null */ }
+      lines.push(`owner ${pinUsername}: @${ox},${oy},${oz}${dist != null ? ` (${dist} blocks away)` : ''}`)
+    } else {
+      lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)`)
+    }
+  }
+
   // Last action result
   if (lastActionResult) lines.push(`last_action_result: ${lastActionResult}`)
 
@@ -147,16 +168,18 @@ export function composeSnapshot(bot, opts = {}) {
   return lines.join('\n')
 }
 
-// v1 deltas are heuristic and observational. "killed X" infers from
-// disappearance from a 24-block radius — a mob that walked away will also
-// register. This is acceptable: the recent_events line is a hint, not an
-// authoritative event log. A future refinement would subscribe to
-// bot.on('entityDead') to confirm kills, but that wiring is out of scope
-// for this quick task.
+// recent_events deltas are observational hints, not an authoritative log.
+// Kills are sourced from REAL bot.on('entityDead') events (260607). The prior
+// implementation inferred "killed X" from any entity leaving a 24-block radius,
+// which fired on mobs that merely walked away, on every teleport (the whole
+// nearby set despawns at once → "killed wolf; killed arrow"), and on picked-up
+// or despawned dropped items ("killed item"). That fed the model fabricated
+// history. Inventory + hp deltas remain diff-based.
 /**
  * Create a stateful snapshot composer that tracks per-instance previous
- * inventory / hp / mob-id state and injects a `recent_events:` line into
- * each composed snapshot describing diffs since the prior call.
+ * inventory / hp state and injects a `recent_events:` line into each composed
+ * snapshot describing diffs since the prior call. Genuine entity deaths near
+ * the bot are captured live via an entityDead subscription.
  *
  * The bare {@link composeSnapshot} export remains stateless for any callers
  * that don't want delta tracking.
@@ -166,27 +189,38 @@ export function composeSnapshot(bot, opts = {}) {
 export function createSnapshotComposer({ bot }) {
   let prevInventory = null
   let prevHp = null
-  let prevEntityIds = null
-  let prevEntityMeta = new Map()
 
-  function sampleMobs() {
-    const me = bot.entity
-    if (!me) return { ids: new Set(), meta: new Map() }
-    const ids = new Set()
-    const meta = new Map()
-    for (const e of Object.values(bot.entities ?? {})) {
-      if (!e || e === me || !e.position) continue
-      if (e.username) continue   // players excluded from kill tracking
-      let dist
-      try { dist = e.position.distanceTo(me.position) } catch { continue }
-      if (dist > 24) continue
-      ids.add(e.id)
-      meta.set(e.id, { name: e.name ?? `entity-${e.id}` })
-    }
-    return { ids, meta }
+  // Real deaths since the last snapshot, grouped by entity name. Populated by
+  // the entityDead subscription below; drained each next() call.
+  let deaths = new Map()
+
+  // Entities that "die"/despawn in the protocol but are NOT creature kills.
+  // Excluding them is what stops the old "killed arrow" / "killed item" noise.
+  const NON_CREATURE = new Set([
+    'arrow', 'spectral_arrow', 'item', 'item_stack', 'experience_orb',
+    'snowball', 'egg', 'potion', 'splash_potion', 'fishing_bobber',
+    'eye_of_ender', 'firework_rocket', 'llama_spit', 'trident',
+  ])
+
+  function onEntityDead(entity) {
+    try {
+      if (!entity || entity.username) return            // players are not kills
+      const name = entity.name ?? ''
+      if (NON_CREATURE.has(name)) return                // projectiles / drops / xp
+      // Only deaths within view — far-world deaths are not the bot's business.
+      const me = bot.entity
+      if (me?.position && entity.position) {
+        let d
+        try { d = entity.position.distanceTo(me.position) } catch { d = Infinity }
+        if (d > 32) return
+      }
+      const key = name || `entity-${entity.id}`
+      deaths.set(key, (deaths.get(key) ?? 0) + 1)
+    } catch { /* never let an observer throw into the event loop */ }
   }
+  bot.on('entityDead', onEntityDead)
 
-  function computeEvents(currInv, currHp, currMobs) {
+  function computeEvents(currInv, currHp) {
     const events = []
 
     // 1. Inventory deltas — gains then losses, capped to 6 entries total.
@@ -211,20 +245,11 @@ export function createSnapshotComposer({ bot }) {
       }
     }
 
-    // 2. Kill heuristic — group disappearances by name.
-    if (prevEntityIds) {
-      const killCounts = new Map()
-      for (const id of prevEntityIds) {
-        if (currMobs.ids.has(id)) continue
-        const live = bot.entities?.[id]
-        if (live && live.isValid !== false) continue
-        const meta = prevEntityMeta.get(id)
-        const name = meta?.name ?? `entity-${id}`
-        killCounts.set(name, (killCounts.get(name) ?? 0) + 1)
-      }
-      for (const [name, count] of killCounts) {
-        events.push(count > 1 ? `killed ${name} ×${count}` : `killed ${name}`)
-      }
+    // 2. Real creature deaths near the bot (from entityDead — see above). No
+    //    attacker attribution from the protocol, so phrase as "X died" rather
+    //    than claiming a kill the bot may not have made.
+    for (const [name, count] of deaths) {
+      events.push(count > 1 ? `${name} died ×${count}` : `${name} died`)
     }
 
     // 3. HP loss only — regen is noisy.
@@ -240,14 +265,12 @@ export function createSnapshotComposer({ bot }) {
       const base = composeSnapshot(bot, opts)
       const currInv = inventory(bot)
       const currHp = Math.round(bot.health ?? 0)
-      const currMobs = sampleMobs()
-      const events = computeEvents(currInv, currHp, currMobs)
+      const events = computeEvents(currInv, currHp)
 
       // Update state AFTER computing — first call has no deltas.
       prevInventory = currInv
       prevHp = currHp
-      prevEntityIds = currMobs.ids
-      prevEntityMeta = currMobs.meta
+      deaths = new Map()   // drain the death buffer for the next window
 
       if (events.length === 0) return base
       const line = `recent_events: ${events.join('; ')}`
@@ -260,8 +283,10 @@ export function createSnapshotComposer({ bot }) {
     reset() {
       prevInventory = null
       prevHp = null
-      prevEntityIds = null
-      prevEntityMeta = new Map()
+      deaths = new Map()
+    },
+    dispose() {
+      try { bot.removeListener('entityDead', onEntityDead) } catch { /* ignore */ }
     },
   }
 }
