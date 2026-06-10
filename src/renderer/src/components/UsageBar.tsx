@@ -15,9 +15,14 @@
  * flat DEFAULT_TOKENS_PER_MIN multiplier, never a raw token/dollar figure.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
-import { tokensRemainingToPlaytime } from '../lib/playtimeEstimate';
+import { sei } from '../lib/ipcClient';
+import {
+  tokensRemainingToPlaytime,
+  DEFAULT_TOKENS_PER_MIN,
+  VISION_MULTIPLIER,
+} from '../lib/playtimeEstimate';
 import { PercentBar } from './PercentBar';
 import { Button } from './Button';
 import { RefreshIcon } from './icons';
@@ -36,7 +41,27 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
   const refresh = useCreditsStore((s) => s.refresh);
   const loading = useCreditsStore((s) => s.loading);
-  const { display } = tokensRemainingToPlaytime(remainingTokens);
+  // Phase 15 (D-07): when idle auto-look is ON the bot renders its surroundings
+  // periodically, which uses more playtime — so the "~Xh left" figure shrinks via
+  // VISION_MULTIPLIER on the burn rate. Read the toggle from UserConfig (the
+  // source of truth the Settings toggle writes). This is a cloud-proxy-only
+  // surface (UsageBar lives only in CreditsScreen), so D-11 holds: BYO/local
+  // users never see this shrink. Re-fetched on mount so returning from Settings
+  // with the toggle flipped reflects the new estimate.
+  const [autoRenderOn, setAutoRenderOn] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void sei.getConfig().then((c) => {
+      if (!cancelled) setAutoRenderOn(c.vision_auto_render === true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const rate = autoRenderOn
+    ? DEFAULT_TOKENS_PER_MIN * VISION_MULTIPLIER
+    : DEFAULT_TOKENS_PER_MIN;
+  const { display } = tokensRemainingToPlaytime(remainingTokens, rate);
 
   return (
     <div className={styles.root}>

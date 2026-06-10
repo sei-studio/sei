@@ -52,10 +52,16 @@ describe('UsageBar (260602-hbr usage-percent bar)', () => {
     expect(source.includes('value={usagePct}')).toBe(true);
   });
 
-  it('Test 3: derives the estimate from remaining_tokens via the flat multiplier', () => {
+  it('Test 3: derives the estimate from remaining_tokens via the flat rate (+ D-07 vision shrink)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     expect(source.includes('s.remaining_tokens')).toBe(true);
-    expect(source.includes('tokensRemainingToPlaytime(remainingTokens)')).toBe(true);
+    // The estimate is derived from remaining_tokens via tokensRemainingToPlaytime.
+    // Phase 15 (D-07): the second arg is now a `rate` that shrinks via
+    // VISION_MULTIPLIER when idle auto-look is on (read from vision_auto_render),
+    // and equals the flat DEFAULT_TOKENS_PER_MIN when it's off — no regression.
+    expect(source.includes('tokensRemainingToPlaytime(remainingTokens, rate)')).toBe(true);
+    expect(source.includes('VISION_MULTIPLIER')).toBe(true);
+    expect(source.includes('vision_auto_render')).toBe(true);
     // No per-user tokens_per_min plumbing reaches the component.
     expect(source.includes('tokens_per_min')).toBe(false);
   });
