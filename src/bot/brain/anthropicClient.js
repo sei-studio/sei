@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { logHaikuQuery, logHaikuResponse } from './log.js'
+import { logHaikuQuery, logHaikuResponse, logHaikuError } from './log.js'
 
 /**
  * 260502-h6i: Stamp `cache_control: {type:'ephemeral'}` on the LAST tool entry
@@ -37,14 +37,67 @@ export function stampLastToolCacheControl(tools) {
  *     `this.apiKey == null` (line 124), so NO X-Api-Key header is emitted.
  */
 function buildSdkOptions(config) {
+  // 260610: SDK auto-retries are OFF — `call()` owns retrying. The SDK's
+  // retry loop honors a server `Retry-After` header by `await sleep(...)`
+  // with NO abort-signal wiring and NO cap in v0.91.1 ("If the API asks us
+  // to wait a certain amount of time, just do what it says"). The Sei proxy's
+  // rate-limit gate sends `Retry-After: <seconds-to-window-reset>` (up to
+  // 60); one such 429 parked a messages.create() in a 30s un-abortable sleep
+  // that ignored BOTH the 20s deadline controller and the player-chat
+  // preempt abort — the bot read as frozen for 30s (260609 incident).
+  // call() re-implements the single rescue retry with a short, ABORTABLE
+  // sleep under the same deadline controller.
+  const maxRetries = 0
   if (config.anthropic.cloudMode) {
     return {
       baseURL: config.anthropic.cloudMode.baseURL,
       authToken: config.anthropic.cloudMode.authToken,
       apiKey: null,
+      maxRetries,
     }
   }
-  return { apiKey: config.anthropic.api_key }
+  return { apiKey: config.anthropic.api_key, maxRetries }
+}
+
+// ── Retry policy for call()'s own (SDK-independent) retry ─────────────────
+// One rescue retry, only when the failure is transient and there is enough
+// budget left for the second attempt to plausibly finish.
+const RETRY_MIN_REMAINING_MS = 2_500
+// Sleep before the rescue attempt: server Retry-After when present, but never
+// more than this — a denied early retry is a cheap rejection, a long sleep is
+// a frozen bot.
+const RETRY_SLEEP_CAP_MS = 2_000
+
+function isRetryableError(err) {
+  const s = err?.status
+  if (s === 429 || s === 408 || (typeof s === 'number' && s >= 500)) return true
+  // Connection-level failure (no HTTP status): APIConnectionError family.
+  if (s === undefined && (err?.name === 'APIConnectionError' || err?.name === 'APIConnectionTimeoutError')) return true
+  return false
+}
+
+/** Server-suggested retry delay in ms from an SDK APIError, or null. */
+function retryAfterMsFrom(err) {
+  try {
+    const v = err?.headers?.get?.('retry-after')
+    if (!v) return null
+    const n = Number(v)
+    return Number.isFinite(n) && n >= 0 ? n * 1000 : null
+  } catch { return null }
+}
+
+/** setTimeout that resolves early (without throwing) when `signal` aborts. */
+function abortableSleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve()
+    const t = setTimeout(done, ms)
+    function done() {
+      clearTimeout(t)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    signal?.addEventListener('abort', done, { once: true })
+  })
 }
 
 /**
@@ -93,17 +146,109 @@ export function createAnthropicClient(config) {
       messages,
     }
     if (thinking) req.thinking = thinking
-    const resp = await sdk.messages.create(req, { signal, timeout: timeoutMs ?? defaultTimeoutMs })
-    const content = resp.content ?? []
-    const toolUses = content
-      .filter(b => b.type === 'tool_use')
-      .map(b => ({ id: b.id, name: b.name, input: b.input }))
-    const text = content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('')
-    logHaikuResponse({ text, toolUses, usage: resp.usage, stopReason: resp.stop_reason })
-    return { toolUses, text, content, usage: resp.usage, stopReason: resp.stop_reason }
+
+    // 260607: bound the TOTAL wall-clock of this call across the SDK's internal
+    // retries. The SDK `timeout` is PER-ATTEMPT, so maxRetries×timeout (+backoff)
+    // is the true ceiling — that is the mechanism behind the 30-60s freezes.
+    // A single controller aborts the request on EITHER the caller's signal (FSM
+    // preempt) OR a wall-clock budget, whichever fires first, so the in-flight
+    // request is actually cancelled (not left running to burn a proxy
+    // reservation) and the player-visible stall is hard-capped at `budgetMs`.
+    const budgetMs = timeoutMs ?? defaultTimeoutMs
+    const ctrl = new AbortController()
+    let timedOut = false
+    const onExternalAbort = () => { try { ctrl.abort(signal.reason) } catch { ctrl.abort() } }
+    if (signal) {
+      if (signal.aborted) onExternalAbort()
+      else signal.addEventListener('abort', onExternalAbort, { once: true })
+    }
+    const deadline = setTimeout(() => { timedOut = true; ctrl.abort() }, budgetMs)
+
+    const startedAt = Date.now()
+    try {
+      // Attempt loop: at most 2 attempts, both under the SAME deadline
+      // controller. SDK auto-retry is disabled (buildSdkOptions) because its
+      // Retry-After sleep is un-abortable and uncapped — the mechanism behind
+      // the 30s frozen-bot incident (260609). Our rescue sleep is short,
+      // capped, and aborts with the controller.
+      let attempt = 0
+      while (true) {
+        attempt++
+        try {
+          // Per-attempt timeout sits just above the REMAINING budget so the
+          // deadline controller is always the authoritative cap.
+          const remainingMs = budgetMs - (Date.now() - startedAt)
+          const resp = await sdk.messages.create(req, { signal: ctrl.signal, timeout: Math.max(1_000, remainingMs + 2_000) })
+          const elapsedMs = Date.now() - startedAt
+          const content = resp.content ?? []
+          const toolUses = content
+            .filter(b => b.type === 'tool_use')
+            .map(b => ({ id: b.id, name: b.name, input: b.input }))
+          const text = content
+            .filter(b => b.type === 'text')
+            .map(b => b.text)
+            .join('')
+          logHaikuResponse({ text, toolUses, usage: resp.usage, stopReason: resp.stop_reason, elapsedMs })
+          return { toolUses, text, content, usage: resp.usage, stopReason: resp.stop_reason }
+        } catch (err) {
+          const elapsedMs = Date.now() - startedAt
+          // Budget exhaustion: normalize to an AbortError so runIterations
+          // treats it as a clean dropped-turn (loop + any in-flight
+          // long-runner stay intact), not a hard error — and surface it
+          // (previously a slow call was invisible: a [haiku?] with no
+          // [haiku!]).
+          if (timedOut) {
+            logHaikuError({ elapsedMs, name: 'TimeoutError', message: `exceeded ${budgetMs}ms call budget` })
+            const e = new Error(`anthropic call exceeded ${budgetMs}ms budget`)
+            e.name = 'AbortError'
+            e.isTimeout = true
+            throw e
+          }
+          // External preempt (player chat / attack) is expected, not a
+          // failure — bail out immediately, never retry across it.
+          if (signal?.aborted || ctrl.signal.aborted) {
+            logHaikuError({ elapsedMs, name: 'AbortError', message: 'aborted (preempt)', status: err?.status })
+            throw err
+          }
+          // One rescue retry for transient failures (429 / 5xx / connection
+          // blip), only with enough budget left to plausibly finish. Sleep
+          // honors the server's Retry-After but hard-caps it: a denied early
+          // retry is a cheap rejection; a long obedient sleep is a dead bot.
+          const remainingMs = budgetMs - (Date.now() - startedAt)
+          if (attempt === 1 && isRetryableError(err) && remainingMs > RETRY_MIN_REMAINING_MS) {
+            const sleepMs = Math.max(100, Math.min(
+              retryAfterMsFrom(err) ?? 500,
+              RETRY_SLEEP_CAP_MS,
+              remainingMs - RETRY_MIN_REMAINING_MS + 1_000,
+            ))
+            logHaikuError({
+              elapsedMs,
+              name: err?.name ?? 'Error',
+              message: `${err?.message ?? String(err)} — retrying once in ${sleepMs}ms`,
+              status: err?.status,
+            })
+            await abortableSleep(sleepMs, ctrl.signal)
+            if (!ctrl.signal.aborted) continue
+            // Aborted mid-sleep: loop once more; the create() call rejects
+            // instantly on the aborted signal and routes through the
+            // timedOut / preempt branches above with correct attribution.
+            continue
+          }
+          // Terminal: 402 (depleted ledger), 4xx, exhausted retry — caller
+          // handles by status.
+          logHaikuError({
+            elapsedMs,
+            name: err?.name ?? 'Error',
+            message: err?.message ?? String(err),
+            status: err?.status,
+          })
+          throw err
+        }
+      }
+    } finally {
+      clearTimeout(deadline)
+      if (signal) signal.removeEventListener('abort', onExternalAbort)
+    }
   }
 
   /**

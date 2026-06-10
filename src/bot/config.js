@@ -59,7 +59,11 @@ export const ConfigSchema = z.object({
     // need a non-empty key. The cross-field invariant is enforced via .refine.
     api_key: z.string().default(''),                                        // required by .refine when cloudMode absent
     model: z.string().default('claude-haiku-4-5'),                          // family alias → latest Haiku 4.5 snapshot (no dated pin to drift; see personaExpansion.ts EXPANSION_MODEL)
-    timeout_ms: z.number().int().min(1000).default(20_000),
+    // 260610: 20s → 12s. This budget is the player-visible worst-case
+    // silence when the backend misbehaves (healthy calls run 1-3s; a slow
+    // first call with a full cache write plus anthropicClient's one capped
+    // rescue retry still fits comfortably).
+    timeout_ms: z.number().int().min(1000).default(12_000),
     // Extended thinking budget. 0 disables. 1024 is the API minimum; thinking
     // adds latency to every call without changing what the model says aloud,
     // since assistant text blocks ARE the chat channel now (see orchestrator).
