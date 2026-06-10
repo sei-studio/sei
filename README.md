@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/sei-logo-blue.png" alt="Sei" width="240" />
+[<img src="docs/sei-logo-blue.png" alt="Sei" width="240" />](https://sei.gg)
 
 Summon any character into your game.
 An omni-game AI player mod.
