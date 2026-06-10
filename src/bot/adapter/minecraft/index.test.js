@@ -87,3 +87,26 @@ describe('adapter.chat — H4 leading-slash guard (260525-s09)', () => {
     }
   })
 })
+
+// VIS-02 regression (15-VERIFICATION gap): the production summon path
+// (src/bot/index.js) constructs the adapter with visionEnabled: true — the
+// orchestrator's tool-list filter is the authoritative D-10 gate, so the
+// action must EXIST in the registry for the filter to ever offer it. The
+// earlier integration tests used a mock adapter with a hand-rolled
+// listActions, which hid the missing registration entirely.
+describe('visualize registration through the production construction shape', () => {
+  it('visionEnabled: true registers visualize in the real registry', () => {
+    const bot = { chat: vi.fn(), username: 'sei', players: {} }
+    const config = { adapter: { minecraft: {} } }
+    const adapter = createMinecraftAdapter({ bot, config, visionEnabled: true })
+    expect(adapter.listActions()).toContain('visualize')
+  })
+
+  it('the production summon site passes visionEnabled: true (source assertion)', async () => {
+    // src/bot/index.js transitively pulls mineflayer + native deps, so assert
+    // at the source level (same pattern as 15-01's povRenderer export check).
+    const { readFile } = await import('node:fs/promises')
+    const src = await readFile(new URL('../../index.js', import.meta.url), 'utf8')
+    expect(src).toMatch(/createMinecraftAdapter\(\{\s*bot:\s*_bot,\s*config,\s*visionEnabled:\s*true\s*\}\)/)
+  })
+})

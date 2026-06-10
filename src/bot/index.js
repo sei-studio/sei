@@ -217,7 +217,14 @@ export async function start(config, hooks = {}) {
       },
     })
 
-    _adapter = createMinecraftAdapter({ bot: _bot, config })
+    // visionEnabled: true — registration is unconditional here because the
+    // provider (and its capabilities.vision) does not exist yet at adapter
+    // construction; the AUTHORITATIVE D-10 gate is the orchestrator's
+    // tool-list filter (combinedToolsFor), which never offers `visualize` to
+    // a non-VLM provider. Without this flag the action was never registered
+    // at all — the filter can only remove tools, not add them (15-VERIFICATION
+    // gap, VIS-02).
+    _adapter = createMinecraftAdapter({ bot: _bot, config, visionEnabled: true })
     // Keep the brain local until we've confirmed the connection survived the
     // startBrain await. onEnd (a fast-failing reconnect, or the user closing
     // the world) can fire DURING this await — it nulls _bot and _adapter. If
