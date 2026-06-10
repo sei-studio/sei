@@ -27,7 +27,7 @@ Promote Sei from a working local prototype (v0.1.1) to a commercializable MVP �
 - [x] **Phase 12: Character Sharing UI + Moderation** — Home/Browse tabs, search, "Add to Mine", Report flow; all moderation gates ship together *(code complete; awaiting operator rollout)*
 - [x] **Phase 13: AI Proxy + Billing + Usage UI** — In-app credit purchase, cloud-AI routing through the proxy, friendly % usage bar; ships first as a `baseURL` override
 - [x] **Phase 14: Multi-Provider Model Abstraction** — `LlmProvider` interface + adapters (Anthropic, OpenAI, Gemini, Grok, OpenRouter, OpenAI-compatible local). Reduced scope; deferred items tracked in phase backlog.
-- [ ] **Phase 15: In-Game Vision via prismarine-viewer** — Bot-POV headless render; `visualize` Zod action; capability-gated; 16-block + custom LOS gate; per-hour vision cap *(active)*
+- [x] **Phase 15: In-Game Vision via prismarine-viewer** — Bot-POV headless render; `visualize` Zod action; capability-gated; 16-block + custom LOS gate; per-hour vision cap *(active)* (completed 2026-06-10)
 - [ ] **Phase 16: Mod & Version Adapter Pipeline** — Keybind/item scan, LLM filter + recipe writer (declarative-only), human review UI, modded texture extraction into the viewer atlas *(not started)*
 
 ## Phase Details
@@ -167,7 +167,7 @@ Promote Sei from a working local prototype (v0.1.1) to a commercializable MVP �
   4. Vision calls per hour are capped by the proxy for cloud-AI users; exceeding the cap returns a clear error, not a silent failure
   5. When the bot's chunks aren't loaded enough to render meaningfully, it says "I can't see clearly right now" rather than crashing or rendering a black frame
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans complete
 
 ---
 
