@@ -309,6 +309,11 @@ async function bootstrapWithInit(initData) {
     // user's Supabase access_token; jwt rotation arrives via parentPort
     // {type:'jwt'} messages below.
     cloudMode,           // {baseURL, authToken} | undefined
+    // Phase 15 (D-05): the user-facing auto-render toggle, bridged by the
+    // supervisor from UserConfig.vision_auto_render. Maps into
+    // config.vision.auto_render below; the remaining vision knobs come from the
+    // bot ConfigSchema defaults. undefined/absent → false (auto-render OFF).
+    visionAutoRender,    // boolean | undefined
   } = initData
 
   // Build a config shape that satisfies ConfigSchema.parse (see
@@ -412,6 +417,13 @@ async function bootstrapWithInit(initData) {
       player_md_path: `${memDir}/PLAYER.md`,
       memory_md_path: `${memDir}/MEMORY.md`,
     },
+    // Phase 15 (D-05): bridge the auto-render toggle into config.vision. Only
+    // auto_render is user-toggled in v1.0; every other vision field
+    // (render_interval_ms, image_quality, resolution_px ≤512 cap,
+    // explicit_cap_per_hour) is filled by the ConfigSchema vision defaults. The
+    // `.default({})` on the vision block means omitting it entirely is also valid;
+    // we set only auto_render so a missing/false toggle parses to the safe OFF state.
+    vision: { auto_render: visionAutoRender === true },
     // llm: omitted — Zod default fills the entire {} sub-tree.
   }
   let config

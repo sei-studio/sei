@@ -325,6 +325,14 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     const userCfg = await loadUserConfig();
     const mc_username = (userCfg.mc_username ?? '').trim();
     const preferred_name = (userCfg.preferred_name ?? '').trim();
+    // Phase 15 (D-05): bridge the user-facing auto-render toggle from UserConfig
+    // into the bot's config.vision.auto_render at fork time. The renderer never
+    // talks to the bot ConfigSchema directly — main is the translator. Only
+    // auto_render is user-toggled in v1.0; the other vision knobs
+    // (render_interval_ms, image_quality, resolution_px cap, explicit_cap_per_hour)
+    // come from the bot config.json defaults. Defaults to false when the field
+    // is absent (pre-Phase-15 config.json), matching the schema default.
+    const visionAutoRender = userCfg.vision_auto_render === true;
     if (!preferred_name) {
       const status: BotStatus = {
         kind: 'error',
@@ -525,6 +533,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           userDataDir: paths.profileRoot(),
           mc_username,
           preferred_name,
+          // Phase 15 (D-05): the bridged auto-render toggle. The bot's
+          // bootstrapWithInit reads this into config.vision.auto_render before
+          // ConfigSchema.parse. undefined/absent → false (auto-render OFF).
+          visionAutoRender,
           skinServerBaseUrl: opts.getSkinServerBaseUrl(),
           // Plan 10-06: ship the latest known JWT so a bot summoned while
           // signed_in has a token in hand before TOKEN_REFRESHED fires. Phase

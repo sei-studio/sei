@@ -244,6 +244,17 @@ export const UserConfigSchema = z.object({
    * first open after upgrade, which is harmless.
    */
   has_been_welcomed: z.boolean().optional().default(false),
+  /**
+   * Phase 15 (D-04/D-05) — the user-facing in-game-vision auto-render toggle.
+   * The Settings screen (15-05) writes this through the existing saveConfig IPC,
+   * gated behind a confirm popup (D-06). It is the SINGLE renderer-side persistence
+   * surface for the cost feature; main bridges it into the forked bot's
+   * `config.vision.auto_render` at summon time (botSupervisor → bot init payload →
+   * src/bot/index.js ConfigSchema build). Default false (auto-render OFF, VIS-04).
+   * `.optional().default(false)` keeps existing config.json files backward-
+   * compatible — same pattern dev_console_visible used when it was introduced.
+   */
+  vision_auto_render: z.boolean().optional().default(false),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

@@ -129,6 +129,24 @@ export const ConfigSchema = z.object({
     // compaction runs before the seed-read truncation kicks in.
     compaction_trigger_bytes: z.number().int().min(512).default(4096),
   }).default({}),
+  // Phase 15 (D-04): in-game vision knobs. Every field is `.default(...)` and
+  // the block itself `.default({})`, so existing config.json files that lack a
+  // `vision` key parse UNCHANGED (no shim, matching the project's no-backwards-
+  // compat-hack stance). auto_render defaults OFF (D-04 / VIS-04 launch req).
+  //
+  // resolution_px is the SINGLE enforcement point of VIS-06's 512×512 ceiling:
+  // `.max(512)` here means ConfigSchema.parse REJECTS any larger value, and the
+  // downscale/JPEG-encode path (15-01/15-04) reads this cap, so no render can
+  // ever exceed it. Default 256 (D-03: aggressive downscale — the model only
+  // needs general shapes, not detail). explicit_cap_per_hour is a bot-side hint
+  // only; the proxy `vision_hourly` bucket (15-02) is the authoritative cap.
+  vision: z.object({
+    auto_render: z.boolean().default(false),                          // D-04 default OFF / VIS-04
+    render_interval_ms: z.number().int().min(1000).default(60_000),   // "render frequency"
+    image_quality: z.number().min(0.1).max(1).default(0.4),          // "image quality" (D-03)
+    resolution_px: z.number().int().min(64).max(512).default(256),   // D-03 ~256; VIS-06 ≤512 HARD CEILING
+    explicit_cap_per_hour: z.number().int().min(1).default(10),       // D-09 (proxy authoritative)
+  }).default({}),
   adapter: AdapterSchema,
 })
 
