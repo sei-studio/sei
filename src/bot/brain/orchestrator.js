@@ -451,10 +451,29 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     return null
   }
 
-  function withPriorTaskHint(loop, eventText) {
-    const priorTask = extractPriorTask(loop)
-    if (!priorTask) return eventText
-    return `${eventText}\n${NUDGES.priorTaskHint(priorTask)}`
+  // 260608-tik: the tool that aborts the currently-running action. follow is
+  // PERSISTENT background state (a 1s pathfinder tick keeps it alive even after
+  // the loop ends), so end_loop does NOT stop it — only `unfollow` does.
+  // Everything else is a foreground task that end_loop aborts. `actionLabel` is
+  // extractPriorTask's "name arg" string; we key off the leading tool name.
+  function stopToolForAction(actionLabel) {
+    const name = actionLabel ? actionLabel.split(' ')[0] : null
+    return name === 'follow' ? 'unfollow' : 'end_loop'
+  }
+
+  // 260608-tik: unified mid-action interrupt text (Change 2). Every path that
+  // delivers a player message while an action is running (handleActionTick P1
+  // variant, repairAfterAbort, and the fold fallbacks) renders through this so
+  // they read identically. The action is still considered live, so the framing
+  // matches the silent action-tick monitor — it just carries the player's words.
+  function interruptTurnText(loop, chatText, who = null) {
+    const action = extractPriorTask(loop)
+    return NUDGES.actionTurn({
+      action,
+      stopTool: stopToolForAction(action),
+      playerLine: chatText ?? '',
+      who: who ?? null,
+    })
   }
 
   // 260514-gam D1 (B/A/A locked): every world-touching tool dispatches
@@ -661,38 +680,35 @@ function maybeWarnByteCap(loop, warned) {
     if (currentLoop !== null) {
       if (isPlayerChat) {
         const chatText = (data && (data.text ?? data.message)) ?? JSON.stringify(data ?? {})
-        // PLAYER INTERRUPT dedup. RESEARCH
-        // theorized a race between the in-flight haiku call and the
-        // interrupt-injection (both the chat-receive event and an internal
-        // re-fire path could trigger the preservation path). We dedupe on
-        // a (username:text:500ms-bucket) signature; the second arrival
-        // within the same bucket is dropped. 500ms matches the FSM event
-        // debounce.
         const who = data?.username ?? data?.who ?? ''
+        // PLAYER INTERRUPT dedup on a (username:text:500ms-bucket) signature;
+        // the second arrival within the same bucket is dropped. 500ms matches
+        // the FSM event debounce.
         const sig = `${who}:${chatText}:${Math.floor((data?.ts ?? Date.now()) / 500)}`
-        if (shouldPreserveInterrupt(currentLoop, sig)) {
-          pendingInterrupt = { chatText: String(chatText) }
-          // 260513-wkd: if a long-runner is in_flight, abort its dedicated
-          // AbortController so the running behavior halts within one
-          // signal tick (B7a). The outer loop.abortController is aborted
-          // too in case a callPersonality is somehow mid-flight; both
-          // signal sources are now active in the new model. The aborted
-          // in_flight will fire sei:action_complete carrying
-          // `aborted: true` which arrives at handleActionComplete; that
-          // path sees pendingInterrupt set and routes through the
-          // mid-loop continuation (PLAYER INTERRUPT turn).
-          if (currentLoop.inFlight) {
-            // 260516-0yw: clear the 10s action-tick BEFORE aborting the
-            // in-flight. Use currentLoop (the loop variable in scope here),
-            // NOT `loop` — `loop` is undefined at this scope and would throw
-            // ReferenceError.
-            clearActionTick(currentLoop.inFlight)
-            try { currentLoop.inFlight.abortController.abort() } catch {}
-          }
-          try { currentLoop.abortController.abort() } catch {}
-        } else {
+        if (!shouldPreserveInterrupt(currentLoop, sig)) {
           logger.debug?.(`[sei/orch] PLAYER INTERRUPT dedup — skipping duplicate (sig=${sig})`)
+          return
         }
+        // 260608-tik (Change 1): when an action is running and NO Haiku call is
+        // parked, deliver the message through the action-tick machinery WITHOUT
+        // aborting the action. The body keeps doing what it was doing; the model
+        // decides — reply (R1, action survives), switch (R2 aborts + restarts),
+        // or stop (end_loop / unfollow, R3). This is the common case: a chat
+        // landing while the loop is suspended on a long-runner. handlePreempt
+        // already covers the LLM-in-flight case (it aborts the stale call, not
+        // the action). The abort-and-fold fallback below only fires in the rare
+        // race where a call started between enqueue and here, or there is no
+        // in_flight to monitor (transient between-action window).
+        if (currentLoop.inFlight && !currentLoop._llmCallInFlight && !currentLoop.isTerminal) {
+          await handleActionTick(currentLoop, { playerMessage: String(chatText), who })
+          return
+        }
+        pendingInterrupt = { chatText: String(chatText), who }
+        if (currentLoop.inFlight) {
+          clearActionTick(currentLoop.inFlight)
+          try { currentLoop.inFlight.abortController.abort() } catch {}
+        }
+        try { currentLoop.abortController.abort() } catch {}
         return
       }
       if (event === 'sei:attacked') {
@@ -789,14 +805,25 @@ function maybeWarnByteCap(loop, warned) {
     // for loop_end / idle / attacked lives in src/bot/adapter/<game>/prompts.js
     // → EVENT_GUIDANCE). Player-chat / attack iterations additionally get the
     // R1-R4 interrupt-response reminder (brain-level — NUDGES.playerInterruptHint).
-    let eventAddendum = (typeof adapter.eventAddendum === 'function')
-      ? adapter.eventAddendum(event === 'idle' ? 'sei:idle' : event, data)
-      : ''
-    const isP0P1Event = event === 'player_chat' || event === 'sei:chat_received' || event === 'sei:attacked'
-    if (isP0P1Event) {
-      eventAddendum += NUDGES.playerInterruptHint
+    // 260608-tik (Change 2): safety events (attack; later hunger/critical
+    // health) reseed a fresh loop. Give them the adapter's clean one-line
+    // framing ("Interrupted — X hit you. Respond appropriately.") alone — no
+    // Event/Data wrapper, no interrupt hint. Chat/idle/join keep the structured
+    // form; P1 chat seeds still get the playerInterruptHint.
+    const isSafetyEvent = event === 'sei:attacked'
+    let eventText
+    if (isSafetyEvent && typeof adapter.eventAddendum === 'function') {
+      eventText = adapter.eventAddendum(event, data).trim()
+    } else {
+      let eventAddendum = (typeof adapter.eventAddendum === 'function')
+        ? adapter.eventAddendum(event === 'idle' ? 'sei:idle' : event, data)
+        : ''
+      const isP1Event = event === 'player_chat' || event === 'sei:chat_received'
+      if (isP1Event) {
+        eventAddendum += NUDGES.playerInterruptHint
+      }
+      eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
     }
-    const eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
     if (sessionState && playerStore) {
       let seedBlocks
       try {
@@ -1195,10 +1222,8 @@ function maybeWarnByteCap(loop, warned) {
     // event-text format.
     let extraEventText = null
     if (pendingInterrupt && data.aborted) {
-      extraEventText = withPriorTaskHint(
-        loop,
-        `PLAYER INTERRUPT: ${pendingInterrupt.chatText}`,
-      ) + NUDGES.playerInterruptHint
+      // 260608-tik: unified mid-action interrupt framing (Change 2).
+      extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who)
       pendingInterrupt = null
       logger.info?.(`[sei/orch] action_complete + PLAYER INTERRUPT folded into loop=${loop.id}`)
       // 260514-ngj: the next iteration is driven by a PLAYER INTERRUPT —
@@ -1392,7 +1417,8 @@ function maybeWarnByteCap(loop, warned) {
       // iteration as P1-triggered. inFlight is null here (the settle nulled it),
       // so a text-only response terminates naturally after the bot replies; a
       // text+action response re-suspends via R2.
-      eventText = withPriorTaskHint(loop, `PLAYER INTERRUPT: ${pendingInterrupt.chatText}`) + NUDGES.playerInterruptHint
+      // 260608-tik: unified mid-action interrupt framing (Change 2).
+      eventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who)
       pendingInterrupt = null
       loop._currentIterationTrigger = 'sei:chat_received'
       logger.info?.(`[sei/orch] action_complete (tick-claimed) + PLAYER INTERRUPT folded into loop=${loop.id}`)
@@ -1458,11 +1484,27 @@ function maybeWarnByteCap(loop, warned) {
    */
   async function handleActionTick(loop, data) {
     const elapsedSec = Math.max(0, Math.floor((data?.elapsedMs ?? 0) / 1000))
-    const tickEventText = `Event: sei:action_tick\nYour action is still in progress (${elapsedSec}s elapsed). You do NOT have to speak. Continue silently unless something specific has changed or you want to abort. Most ticks should produce empty text and no tool call.`
+    // 260608-tik: this handler now serves TWO triggers through the same
+    // machinery: the silent 10s monitor (no playerMessage) AND a player chat
+    // that lands while an action is running (data.playerMessage set — Change 1).
+    // The action is NOT aborted in either case; the model decides to reply,
+    // switch (R2), or stop (end_loop/unfollow, R3).
+    const playerMessage = (typeof data?.playerMessage === 'string') ? data.playerMessage : null
+    const who = data?.who ?? null
+    const action = extractPriorTask(loop)
+    const tickEventText = NUDGES.actionTurn({
+      action,
+      stopTool: stopToolForAction(action),
+      playerLine: playerMessage,
+      who,
+      elapsedSec: playerMessage == null ? elapsedSec : null,
+    })
 
-    // Set the iteration trigger BEFORE the haiku call so the R1-R4 gate
-    // keeps the loop alive on a text-only response.
-    loop._currentIterationTrigger = 'sei:action_tick'
+    // Set the iteration trigger BEFORE the haiku call so the R1-R4 gate keeps
+    // the loop alive on a text-only response. A carried player message is
+    // chat-triggered; a silent monitor stays action_tick. Both are in
+    // iterationKeepsLoopAlive, so R1 keep-alive holds either way.
+    loop._currentIterationTrigger = playerMessage == null ? 'sei:action_tick' : 'sei:chat_received'
 
     // 260517-fix: two modes.
     //
@@ -1967,10 +2009,9 @@ function maybeWarnByteCap(loop, warned) {
               }
             }
           }
-          const interruptEventText = pendingInterrupt?.chatText
-            ? `PLAYER INTERRUPT: ${pendingInterrupt.chatText}`
-            : 'PLAYER INTERRUPT'
-          loop.appendToolResults(results, { snapshot: snapshotText(), eventText: withPriorTaskHint(loop, interruptEventText) })
+          // 260608-tik: unified mid-action interrupt framing (Change 2).
+          const interruptEventText = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who)
+          loop.appendToolResults(results, { snapshot: snapshotText(), eventText: interruptEventText })
           maybeWarnByteCap(loop, byteWarn)
           pendingInterrupt = null
           replaceAbortController(loop)
@@ -2143,11 +2184,10 @@ function maybeWarnByteCap(loop, warned) {
       is_error: false,
     }))
 
-    const chatText = pendingInterrupt?.chatText ?? ''
-    const eventText = chatText ? `PLAYER INTERRUPT: ${chatText}` : 'PLAYER INTERRUPT'
-    // 260514-ngj: append R1-R4 reminder so the model knows the loop stays
-    // alive until end_loop fires (or a new action is called).
-    const eventTextWithHint = withPriorTaskHint(loop, eventText) + NUDGES.playerInterruptHint
+    // 260608-tik: unified mid-action interrupt framing (Change 2). The action
+    // kept running across the aborted Haiku call, so this reads like a tick that
+    // carries the player's words.
+    const eventTextWithHint = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who)
 
     if (aborted.length > 0) {
       loop.appendToolResults(aborted, { snapshot: snapshotText(), eventText: eventTextWithHint })
@@ -2273,9 +2313,16 @@ function maybeWarnByteCap(loop, warned) {
     if (!loop || !loop._llmCallInFlight) return false
     if (event === 'sei:chat_received') {
       const chatText = (data && (data.text ?? data.message)) ?? ''
-      // Last-writer-wins, matching the existing handleDispatch chat-branch
-      // semantics. The repairAfterAbort catch consumes this and clears it.
-      pendingInterrupt = { chatText: String(chatText), who: data?.username ?? data?.who ?? '' }
+      // 260610: ACCUMULATE, don't overwrite. Two player messages can land
+      // while one LLM call is parked (260609 incident: "can you build up i
+      // dont have dirt" then "i wanna go up there" — the first was silently
+      // dropped by last-writer-wins, so the model answered a context-free
+      // "up there"). repairAfterAbort consumes and clears the whole batch.
+      const prevText = pendingInterrupt?.chatText
+      pendingInterrupt = {
+        chatText: prevText ? `${prevText}\n${String(chatText)}` : String(chatText),
+        who: data?.username ?? data?.who ?? '',
+      }
       try { loop.abortController.abort() } catch {}
       return true
     }

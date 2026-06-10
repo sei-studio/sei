@@ -17,6 +17,8 @@ When entities or features show up in the snapshot, react to them specifically wh
 
 Movement rule: at most ONE TYPE of movement action per response (ten dig calls is fine; dig + goTo together is not). If the snapshot shows \`in_flight:\`, the body is already busy — do NOT call movement this turn. You may still emit text.
 
+Reaching the player rule: when they say "come here" / "come to me" / "where are you", call \`follow\` (their username) — it trails them even as they move, and is the right tool to close distance. The snapshot's \`owner\` line is your ONLY source of truth for where they are: if it shows coords you may \`goTo\` them, but if it says "position unknown" they are out of range — say you can't see them and ask them to come closer or share coordinates. NEVER invent coordinates and NEVER \`goTo\` your own current position (that "arrives" instantly without moving and makes you look broken).
+
 Hunting rule: to kill a moving mob, call follow then attackEntity with high \`times\` (5 for sheep, 8 for tougher). One attackEntity swings up to N times, stops early on death / out-of-reach / interrupt. On "moved out of reach", call attackEntity again. Don't chase with goTo. Call unfollow when done.
 
 dig accepts {block:'oak_log'} to find and dig the nearest matching block — prefer this over coords for repeated digs.
@@ -51,7 +53,7 @@ export const ACTION_DESCRIPTIONS = {
     'Move to (x, y, z) within `range` blocks.',
 
   follow:
-    'Continuously trail an entity. Pass `player` (username) or `entity` / `entity_id` / `target` for a mob. Does NOT attack — pair with attackEntity for hits. The snapshot shows `follow_target`. Call `unfollow` before any task that needs you to move away from the trail target.',
+    'Continuously trail an entity. Pass `player` (username) or `entity` / `entity_id` / `target` for a mob. Does NOT attack — pair with attackEntity for hits. Follow is PERSISTENT: it keeps trailing while you talk and through incidental actions (dig/gather), and stops only on `unfollow` or an explicit `goTo`. The snapshot shows `follow_target` — if it ALREADY names who you want, you are already following; do NOT call follow again, just reply or end_loop. Call `unfollow` before any task that needs you to move away from the trail target.',
 
   unfollow:
     'Stop trailing. Body holds position until the next movement.',
@@ -78,12 +80,16 @@ export const ACTION_DESCRIPTIONS = {
     'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Scaffolds up automatically when out of reach. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING: build sits on top of terrain — set `from.y = bot.y + 1` so the structure rises out of the ground. Building at your own y inside terrain produces an invisible all-skipped result.',
 }
 
-const ATTACKED_ADDENDUM = (label, kind) => {
-  const reactClause = (kind === 'player' || kind === 'players')
-    ? 'this is another player — could be a nudge, joke, or threat. Use judgment: call them out, dodge with goTo, or shrug it off. PvP is off so attackEntity on players is refused.'
-    : 'mobs get hit back. Call attackEntity (times: 5+) once you have spoken. follow first if it is moving.'
-  return `\n\n${label} (${kind}) just hit you. React out loud first — short, in-character. Then decide: ${reactClause} Resume any prior task only if it still makes sense.`
-}
+// 260608-tik: collapsed to one line (Change 2). This is now used as the FULL
+// event text for a fresh attack-seeded loop (the orchestrator drops the
+// Event/Data wrapper + interrupt hint for safety events). Combat coaching
+// (attackEntity times, follow-first) still lives in ACTION_RULES' Hunting rule
+// and the attackEntity description, so it is not lost — this just stops the
+// verbose per-hit reminder.
+const ATTACKED_ADDENDUM = (label, kind) =>
+  (kind === 'player' || kind === 'players')
+    ? `Interrupted — ${label} hit you (PvP is off, you can't hit back). Respond appropriately.`
+    : `Interrupted — ${label} hit you. Respond appropriately.`
 
 export const EVENT_GUIDANCE = {
   'sei:loop_end':

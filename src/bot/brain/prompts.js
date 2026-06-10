@@ -79,8 +79,25 @@ export const NUDGES = {
   capClose:
     'You hit the iteration cap and have to stop. Write ONE short line that wraps up gracefully in your own voice. Keep it under 12 words. Output ONLY the line.',
 
-  priorTaskHint: (priorTask) =>
-    `prior_task: ${priorTask}\n(If this is a sub-task or quick favor, resume prior_task after. If it replaces the goal, drop prior_task.)`,
+  // 260608-tik: one template for "you are mid-action." Used by the silent 10s
+  // monitor (playerLine omitted) AND by a player message that lands while an
+  // action runs (playerLine set). Replaces the old playerInterruptHint +
+  // priorTaskHint combo on every interrupt path so they all read the same.
+  //   action   — current task label, e.g. "follow Steve" (null → generic)
+  //   stopTool  — the tool that aborts it: "unfollow" for follow, else "end_loop"
+  //   playerLine — the player's words (interrupt) or null (silent monitor)
+  //   who       — speaker username, for the interrupt variant
+  //   elapsedSec — seconds the action has run, shown only on the silent monitor
+  actionTurn: ({ action, stopTool, playerLine = null, who = null, elapsedSec = null }) => {
+    const label = action || 'your action'
+    const elapsed = (playerLine == null && Number.isFinite(elapsedSec)) ? ` (${elapsedSec}s in)` : ''
+    const head = `You're currently: ${label}${elapsed}.`
+    const body = (playerLine != null)
+      ? ` ${who ? `${who} ` : ''}said: "${playerLine}". Reply in one short line, or stay silent.`
+      : ` Nothing needs you — stay silent unless something changed.`
+    const tail = ` To stop, call ${stopTool}. To do something else, just call that action.`
+    return `${head}${body}${tail}`
+  },
 }
 
 // 260516-0yw: renderPersona now consumes the LLM-generated `expanded`
