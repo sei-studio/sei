@@ -6,6 +6,10 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/out/**',
+      // electron-builder output: app.asar.unpacked contains a full copy of
+      // src/bot/** (asarUnpack), so vitest would re-run every bot test from
+      // the stale packaged snapshot.
+      '**/release/**',
       '**/.claude/worktrees/**',
       'test/**/*.test.mjs',
       // Supabase Edge Functions are Deno tests (jsr:/std specifiers, Deno
