@@ -2345,6 +2345,13 @@ function maybeWarnByteCap(loop, warned) {
     /** Record an incoming chat line in convoMemory (chat.js calls this). */
     recordIncomingChat: (who, text) => convoMemory.recentChat.pushPlayer(who, text),
     /**
+     * Phase 15 (D-10/VIS-03): the active provider's vision capability. Read by
+     * the brain → src/bot/index.js so it can push `vision-capability` up the
+     * port on summon-ready and re-emit it on a backend switch. Fail-closed:
+     * returns false if the provider/capability is unreadable.
+     */
+    visionCapable: () => { try { return anthropic.capabilities?.vision === true } catch { return false } },
+    /**
      * Phase 13-15 (PROXY-07): push a refreshed JWT into the live Anthropic
      * SDK for cloud-proxy mode. No-op when cloudMode is not active. Called
      * by brain.setAuthToken → src/bot/index.js's parentPort message handler.

@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import type { Character } from '@shared/characterSchema';
 import type { BotStatus, LanState, LogEntry, LogBatch } from '@shared/ipc';
 import { sei } from '../ipcClient';
+import { useUiStore } from './useUiStore';
 
 const MAX_LOG_LINES = 5000;
 
@@ -150,9 +151,19 @@ export function subscribeIpc(): () => void {
     useDataStore.getState().setStatus(status);
   });
   const offLog = sei.onLog((batch) => useDataStore.getState().appendLogBatch(batch));
+  // Phase 15 (D-10/VIS-03): mirror the active provider's vision capability into
+  // useUiStore so the Settings auto-render toggle (15-05) gates its disabled
+  // state on a real signal. The bot emits this on summon-ready and on each
+  // backend switch; subscribed here alongside the other store-level bot pushes
+  // (one subscription for the lifetime of the renderer — App.tsx calls
+  // subscribeIpc once). Fail-closed default (false) lives in useUiStore.
+  const offVisionCapability = sei.onVisionCapability((cap) => {
+    useUiStore.getState().setVisionCapable(cap.visionCapable === true);
+  });
   return () => {
     offLan();
     offStatus();
     offLog();
+    offVisionCapability();
   };
 }

@@ -123,6 +123,10 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // one-time "Welcome to Sei" greeting after onboarding completes; it
         // flips true there on first render.
         has_been_welcomed: false,
+        // Phase 15 (D-04/D-05): in-game vision auto-render starts OFF. The user
+        // opts in later via the Settings toggle (behind a confirm popup); a
+        // fresh onboarding never enables a cost feature implicitly.
+        vision_auto_render: false,
       });
       // D-03 / T-10-04-02 mitigation: signed-in users never reach the API-key
       // step, so saveApiKey MUST be gated behind !signedIn. Otherwise a future

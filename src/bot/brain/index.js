@@ -240,5 +240,12 @@ export async function start({ config, adapter, logger = console, onTerminalError
      * or provider doesn't implement it.
      */
     setBackend: (backend) => { try { orchestrator.setBackend?.(backend) } catch {} },
+    /**
+     * Phase 15 (D-10/VIS-03): the active provider's vision capability boolean.
+     * src/bot/index.js reads this after summon-ready (and after a backend
+     * switch) to push `vision-capability` up the port → main → renderer.
+     * Fail-closed: false if the orchestrator/provider can't report it.
+     */
+    visionCapable: () => { try { return orchestrator.visionCapable?.() === true } catch { return false } },
   }
 }

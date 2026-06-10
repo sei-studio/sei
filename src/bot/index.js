@@ -266,6 +266,16 @@ export async function start(config, hooks = {}) {
     setBackend(backend) {
       try { _brain?.setBackend?.(backend) } catch {}
     },
+    /**
+     * Phase 15 (D-10/VIS-03): the active provider's vision capability boolean,
+     * surfaced from the brain. The Electron path reads this to push a
+     * `vision-capability` lifecycle message up the port so the renderer can
+     * gate the Settings auto-render toggle (15-05). Fail-closed: false until a
+     * VLM-backed brain reports true (or when the brain hasn't started).
+     */
+    visionCapable() {
+      try { return _brain?.visionCapable?.() === true } catch { return false }
+    },
   }
 }
 
@@ -519,6 +529,13 @@ async function bootstrapWithInit(initData) {
       },
     })
     _running = _running_local
+    // Phase 15 (D-10/VIS-03): once start() resolves the brain is fully wired
+    // (bringUp → startBrain assigned _brain), so the active provider's vision
+    // capability is now readable. Push it up the port → main → renderer so the
+    // Settings auto-render toggle (15-05) gates its disabled state on a REAL
+    // signal instead of inferring from ai_backend_kind. A later backend switch
+    // re-emits via the parentPort 'backend-switch' handler below.
+    emitVisionCapability()
   } catch (err) {
     emitLifecycle({
       type: 'error',
@@ -526,6 +543,23 @@ async function bootstrapWithInit(initData) {
       message: String((err && err.message) || err),
     })
   }
+}
+
+/**
+ * Phase 15 (D-10/VIS-03): read the active provider's vision capability off the
+ * running brain and push a `{type:'vision-capability', visionCapable}` message
+ * up the port. The supervisor routes it to main → renderer (useUiStore). Fails
+ * closed (visionCapable:false) when the brain hasn't started or can't report.
+ * Idempotent — safe to call on summon-ready and again on a backend switch.
+ */
+function emitVisionCapability() {
+  let visionCapable = false
+  try { visionCapable = _running?.visionCapable?.() === true } catch { visionCapable = false }
+  if (initPort) {
+    try { initPort.postMessage({ type: 'vision-capability', visionCapable }) } catch {}
+  }
+  // Mirror to stdout for log-file visibility (parity with emitLifecycle).
+  console.log(`[lifecycle] ${JSON.stringify({ type: 'vision-capability', visionCapable })}`)
 }
 
 async function gracefulShutdown() {
@@ -615,6 +649,10 @@ if (process.parentPort) {
                   ? { cloudMode: { baseURL: data.cloudMode.baseURL, authToken: data.cloudMode.authToken } }
                   : { api_key: typeof data.apiKey === 'string' ? data.apiKey : '' },
               )
+              // Phase 15 (D-10/VIS-03): a cloud↔local switch can change the
+              // active provider's vision capability — re-emit so the renderer's
+              // Settings auto-render toggle (15-05) updates its disabled state.
+              emitVisionCapability()
             } catch {}
           }
         } catch (err) {

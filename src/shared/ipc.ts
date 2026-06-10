@@ -37,6 +37,25 @@ export type BotStatus =
   | { kind: 'online'; uptimeMs: number; startedAtMs: number; characterId: string }
   | { kind: 'error'; error: ErrorClass; message: string; characterId: string };
 
+/**
+ * Phase 15 (D-10 / VIS-03) — the active LLM provider's vision capability,
+ * pushed bot→main→renderer over the dedicated `vision:capability` channel.
+ *
+ * The bot reads `provider.capabilities.vision` (Phase 14 descriptor) on
+ * summon-ready and re-emits it on a live backend switch. The renderer holds
+ * `visionCapable` in useUiStore so the Settings auto-render toggle (15-05) can
+ * disable itself for a non-VLM provider with a REAL signal — not an
+ * ai_backend_kind inference and not a deferral. Fail-closed: the store defaults
+ * to false until a VLM-backed bot reports true.
+ *
+ * Deliberately a SEPARATE channel, NOT a new BotStatus variant: the
+ * CharacterPage model row consumes BotStatus, so a parallel channel is cleaner
+ * and lower-risk than overloading that discriminated union.
+ */
+export interface VisionCapability {
+  visionCapable: boolean;
+}
+
 /** Renderer-facing LAN watcher status (used by HomeScreen pill + LAN modal). */
 export type LanState =
   | { kind: 'connected'; port: number; motd: string; lastSeenAt: number }
@@ -852,6 +871,13 @@ export interface RendererApi {
 
   // Push subscriptions — return Unsubscribe (renderer cleans up on unmount)
   onStatus(cb: (status: BotStatus) => void): Unsubscribe;
+  /**
+   * Phase 15 (D-10/VIS-03): subscribe to `vision:capability` pushes. Fires on
+   * summon-ready and on every live backend switch with the active provider's
+   * `capabilities.vision`. The renderer feeds it into useUiStore.visionCapable
+   * so the 15-05 Settings auto-render toggle can gate its disabled state.
+   */
+  onVisionCapability(cb: (cap: VisionCapability) => void): Unsubscribe;
   onLog(cb: (batch: LogBatch) => void): Unsubscribe;
   onLan(cb: (state: LanState) => void): Unsubscribe;
   /** Pull the current LAN state (snapshot). Used to seed a freshly-loaded
@@ -985,6 +1011,15 @@ export const IpcChannel = {
     stop: 'bot:stop',
     status: 'bot:status',
     logBatch: 'bot:log:batch',
+  },
+  /**
+   * Phase 15 (D-10/VIS-03): dedicated bot→main→renderer push for the active
+   * provider's vision capability. A separate top-level namespace (NOT folded
+   * into bot.status) so the BotStatus discriminated union the CharacterPage row
+   * consumes stays unchanged. Payload: VisionCapability { visionCapable }.
+   */
+  vision: {
+    capability: 'vision:capability',
   },
   lan: {
     state: 'lan:state',

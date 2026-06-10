@@ -12,6 +12,7 @@ import {
   IpcChannel,
   type RendererApi,
   type BotStatus,
+  type VisionCapability,
   type LanState,
   type LogBatch,
   type WizardProgressEvent,
@@ -155,6 +156,11 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, status: BotStatus) => cb(status);
     ipcRenderer.on(IpcChannel.bot.status, handler);
     return () => ipcRenderer.off(IpcChannel.bot.status, handler);
+  },
+  onVisionCapability(cb: (cap: VisionCapability) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, cap: VisionCapability) => cb(cap);
+    ipcRenderer.on(IpcChannel.vision.capability, handler);
+    return () => ipcRenderer.off(IpcChannel.vision.capability, handler);
   },
   onLog(cb: (batch: LogBatch) => void) {
     const handler = (_e: Electron.IpcRendererEvent, batch: LogBatch) => cb(batch);

@@ -24,6 +24,7 @@ import type {
   BotLifecycle,
   ErrorClass,
   CreditsHardStopEvent,
+  VisionCapability,
 } from '../shared/ipc';
 import type { Character } from '../shared/characterSchema';
 import { getCharacter, saveCharacter } from './characterStore';
@@ -102,6 +103,14 @@ export interface BotSupervisorOptions {
   getLanPort: () => number | null;
   /** Forward to renderer via webContents.send('bot:status', status). */
   sendStatus: (status: BotStatus) => void;
+  /**
+   * Phase 15 (D-10/VIS-03): forward the bot's `vision-capability` port message
+   * to the renderer via webContents.send('vision:capability', cap). The bot
+   * emits it on summon-ready and on each backend switch; the renderer holds it
+   * in useUiStore.visionCapable so the Settings auto-render toggle (15-05) can
+   * disable itself for a non-VLM provider. Optional — undefined no-ops.
+   */
+  sendVisionCapability?: (cap: VisionCapability) => void;
   /** Forward to renderer via webContents.send('bot:log:batch', batch). Batched. */
   sendLog: (batch: LogBatch) => void;
   /**
@@ -448,8 +457,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       summonReject(new Error(err));
     }, SUMMON_TIMEOUT_MS);
 
-    port1.on('message', (e: { data: BotLifecycle }) => {
+    port1.on('message', (e: { data: BotLifecycle | { type: 'vision-capability'; visionCapable: boolean } }) => {
       const data = e.data;
+      // Phase 15 (D-10/VIS-03): the bot pushes its active-provider vision
+      // capability on summon-ready and on each backend switch. Route it to the
+      // dedicated renderer channel (NOT BotStatus) and return early — it is not
+      // a BotLifecycle event, so the lifecycleToStatus path below must not run.
+      if (data.type === 'vision-capability') {
+        opts.sendVisionCapability?.({ visionCapable: data.visionCapable === true });
+        return;
+      }
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);

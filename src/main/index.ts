@@ -29,7 +29,7 @@ import { seedDefaultCharacters } from './defaultCharacters';
 import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent } from '../shared/ipc';
+import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability } from '../shared/ipc';
 
 // Lock the productName early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
@@ -90,6 +90,18 @@ function broadcastLan(state: LanState): void {
 function broadcastStatus(status: BotStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.bot.status, status);
+  }
+}
+
+/**
+ * Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
+ * renderer over the dedicated `vision:capability` channel (parallel to
+ * broadcastStatus). The renderer holds it in useUiStore.visionCapable so the
+ * Settings auto-render toggle (15-05) can disable itself for a non-VLM provider.
+ */
+function broadcastVisionCapability(cap: VisionCapability): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.vision.capability, cap);
   }
 }
 
@@ -305,6 +317,9 @@ async function bootstrap(): Promise<void> {
   supervisor = createBotSupervisor({
     getLanPort,
     sendStatus: broadcastStatus,
+    // Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
+    // renderer over the dedicated vision:capability channel.
+    sendVisionCapability: broadcastVisionCapability,
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift

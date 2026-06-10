@@ -65,6 +65,16 @@ interface UiState {
    */
   devConsoleVisible: boolean;
   /**
+   * Phase 15 (D-10/VIS-03) — whether the active bot's LLM provider is
+   * vision-capable. Fed by the `vision:capability` push (bot→main→renderer,
+   * subscribed in useDataStore.subscribeIpc). The 15-05 Settings auto-render
+   * toggle reads `useUiStore(s => s.visionCapable)` to gate its `disabled`
+   * state — a REAL provider signal, not an ai_backend_kind inference and not a
+   * deferral. Default FALSE (fail-closed): the toggle stays disabled until a
+   * VLM-backed bot reports true, so a non-VLM provider can never enable it.
+   */
+  visionCapable: boolean;
+  /**
    * Session-only flag: flips true the first time the user leaves the Home
    * screen — either by navigating to another view (character/settings/etc.)
    * or by switching CharactersScreen to the World tab. The Home header
@@ -82,6 +92,8 @@ interface UiState {
   setPendingSummon: (id: string | null) => void;
   setHomeTab: (tab: HomeTab) => void;
   setDevConsoleVisible: (v: boolean) => void;
+  /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
+  setVisionCapable: (v: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -91,6 +103,9 @@ export const useUiStore = create<UiState>((set) => ({
   pendingSummonId: null,
   homeTab: 'home',
   devConsoleVisible: false,
+  // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
+  // capabilities.vision === true over the vision:capability push.
+  visionCapable: false,
   homeGreetingDismissed: false,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
@@ -104,4 +119,5 @@ export const useUiStore = create<UiState>((set) => ({
   setHomeTab: (tab) =>
     set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),
   setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
+  setVisionCapable: (v) => set({ visionCapable: v }),
 }));
