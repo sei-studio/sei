@@ -371,7 +371,16 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const descMap = Object.fromEntries(
       subRegistry.list().map(n => [n, adapter.getActionDescription(n)])
     )
+    // VIS-03 / D-10 belt-and-suspenders gate: even if `visualize` leaked into
+    // the registry on a non-VLM provider, never offer it in the tool list. The
+    // provider handle the orchestrator already holds exposes capabilities.vision
+    // (anthropicProvider.js CAPABILITIES; other providers expose the same shape,
+    // fail-closed false). This is the AUTHORITATIVE gate — the adapter-side
+    // conditional registration (createDefaultRegistry visionEnabled) is the
+    // second belt; either alone keeps a non-VLM model from ever seeing the tool.
+    const visionOk = !!anthropic.capabilities?.vision
     const movementTools = buildAnthropicTools(subRegistry, descMap)
+      .filter(t => visionOk || t.name !== 'visualize')
     const seen = new Set(personalityTools.map(t => t.name))
     const merged = [...personalityTools]
     for (const t of movementTools) {
