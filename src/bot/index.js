@@ -101,6 +101,28 @@ export async function start(config, hooks = {}) {
         try { onReady() } catch (err) {
           logger.warn(`onReady hook threw: ${err && err.message}`)
         }
+        // TEMPORARY — Phase 15-01 de-risk spike (REMOVE after the packaged-build
+        // checkpoint approves). Behind SEI_VISION_SPIKE=1 so it ships nothing
+        // permanent. Proves the native gl/canvas render path loads + renders inside
+        // the bot utilityProcess under the Electron 42 ABI (dev AND packaged dist).
+        // Dynamic import keeps povRenderer (→ native gl/canvas dlopen) off the normal
+        // startup path; only loaded when the flag is set.
+        if (process.env.SEI_VISION_SPIKE === '1') {
+          // Give chunks ~3s to stream in after spawn before the one-shot render.
+          setTimeout(async () => {
+            try {
+              const { renderPov } = await import('./adapter/minecraft/render/povRenderer.js')
+              const result = await renderPov(_bot)
+              if (result?.ok) {
+                logger.info(`vision spike: rendered ${result.buffer.length} bytes JPEG`)
+              } else {
+                logger.warn(`vision spike: degraded (${result?.reason ?? 'unknown'}) — render returned no frame`)
+              }
+            } catch (err) {
+              logger.error(`vision spike: render threw — ${(err && err.stack) || err}`)
+            }
+          }, 3000)
+        }
       },
       onEnd: (humanizedReason) => {
         if (_stopped) return
