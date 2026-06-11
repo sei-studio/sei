@@ -19,7 +19,7 @@ An omni-game AI player mod.
 
 ---
 
-Sei is a launcher that summons AI characters into video games as players. Pick a character, launch a supported game, and they join your world to play alongside you. Companions remember everything you've done together across sessions and across games. Use Sei to have personalized experiences with new friends and rivals. Sei is currently compatible with Minecraft, and aim to be compatible with most multiplayer games.
+Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI characters into video games as real players, not chatbots. Pick a character, launch a supported game, and they join your world to play alongside you. Companions remember everything you've done together across sessions and across games. Use Sei to have personalized experiences with new friends and rivals. Sei is currently compatible with Minecraft, and aims to support most multiplayer games.
 
 <div align="center">
 
@@ -29,7 +29,7 @@ Sei is a launcher that summons AI characters into video games as players. Pick a
 
 ## Current Capabilities
 
-- Summon AI characters into a Minecraft LAN world as a real second player without additional account
+- Summon a Minecraft AI companion into a LAN world as a real second player, no additional account needed
 - Characters chat, build, gather, fight, follow, and act on their own
 - Per-character persistent memory across sessions
 - Custom Minecraft skins via Fabric + CustomSkinLoader
