@@ -220,6 +220,42 @@ describe('15-06 explicit visualize — frame delivery + vision-path routing', ()
     expect(provider.calls[1].path).toBeUndefined()
   })
 
+  it('260610 delivery guard: a dead post-visualize continuation re-arms the cadence and keeps the snapshot honest', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const B64IDLE = 'UEFTU0lWRQ==' // distinct token for passive frames
+    const { adapter } = makeAdapter(SUCCESS)
+    // Passive path available: the cadence seeds "due", so the first turn of
+    // EVERY loop attaches a fresh frame when the counter is at its seed.
+    adapter.renderIdleFrame = async () => ({
+      text: 'rendered view attached',
+      image: { mediaType: 'image/jpeg', dataBase64: B64IDLE },
+    })
+    const provider = makeProvider([
+      // Loop A call 1: the model invokes `visualize` (render succeeds, frame attaches).
+      { text: '', toolUses: [{ id: 'vu1', name: 'visualize', input: {} }] },
+      // Loop A call 2 (post-visualize continuation): transport dies — the
+      // 404→502 chain shape. The frame was attached but NEVER delivered.
+      () => { const e = new Error('502 origin_bad_gateway'); e.status = 502; throw e },
+      // Loop B call 3: plain reply.
+      { text: 'noted', toolUses: [] },
+    ])
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true }), provider })
+
+    await runTurn('sei:chat_received', chat('look around')) // loop A: attach → continuation dies
+    await runTurn('sei:chat_received', chat('thoughts?'))   // loop B: fresh loop
+
+    expect(provider.calls.length).toBe(3)
+    const flat = JSON.stringify(provider.calls[2].messages)
+    // Honest snapshot: the model is told the view never arrived — NOT
+    // "rendered view attached" (which made it confabulate scenery on 260610).
+    expect(flat).toContain('last_action_result=\\"view not delivered (connection trouble) — a fresh look is queued\\"')
+    expect(flat).not.toContain('last_action_result=\\"rendered view attached\\"')
+    // Cadence re-armed: loop B's FIRST turn carries a FRESH passive frame
+    // (an un-re-armed counter sits at 0 after the visualize attach and would
+    // skip rendering for interval_turns).
+    expect(flat).toContain(B64IDLE)
+  })
+
   it('vision flag is one-shot: a SECOND non-visualize turn reverts to default path', async () => {
     _setTickIntervalForTests(10_000_000)
     const { adapter } = makeAdapter(SUCCESS)

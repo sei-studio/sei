@@ -28,7 +28,8 @@ import { Vec3 } from 'vec3'
  */
 export const FLUID_NAMES = new Set(['water', 'lava', 'flowing_water', 'flowing_lava'])
 
-/** Hard range gate for the idle auto-render LOS check (VIS-04). */
+/** Default range gate (VIS-04 idle auto-render). Callers may widen it via
+ *  `opts.maxRange` — the snapshot entity filter uses the full entity radius. */
 const MAX_RANGE_BLOCKS = 16
 
 /**
@@ -124,10 +125,10 @@ export function segmentIntersectsEntityAABB(from, to, e) {
  *
  * @param {import('mineflayer').Bot} bot
  * @param {import('prismarine-entity').Entity} targetEntity
- * @param {{ stepsPerBlock?: number }} [opts]
+ * @param {{ stepsPerBlock?: number, maxRange?: number }} [opts]
  * @returns {boolean}
  */
-export function hasClearLineOfSight(bot, targetEntity, { stepsPerBlock = 4 } = {}) {
+export function hasClearLineOfSight(bot, targetEntity, { stepsPerBlock = 4, maxRange = MAX_RANGE_BLOCKS } = {}) {
   const me = bot?.entity
   if (!me?.position || !targetEntity?.position) return false
 
@@ -140,7 +141,7 @@ export function hasClearLineOfSight(bot, targetEntity, { stepsPerBlock = 4 } = {
 
   const dir = to.minus(from)
   const dist = dir.norm()
-  if (dist > MAX_RANGE_BLOCKS) return false // VIS-04 16-block gate
+  if (dist > maxRange) return false // range gate (default 16; snapshot widens it)
   if (dist === 0) return true
 
   const unit = dir.scaled(1 / dist)

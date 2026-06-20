@@ -25,10 +25,20 @@ export type { ErrorClass } from './errorClasses';
 
 export type Unsubscribe = () => void;
 
-/** Renderer-facing bot status surface (used by CharacterPage model row). */
+/**
+ * Renderer-facing bot status surface (used by CharacterPage model row).
+ *
+ * EVERY variant carries `characterId`. Multiple bots can now be summoned into
+ * the same world concurrently, and they all share the single `bot:status` push
+ * channel — so a status update must say WHICH character it is about, otherwise
+ * the renderer can't route an `idle`/`connecting` transition to the right entry
+ * in its per-character `summons` map. (Before multi-summon, `idle`/`connecting`
+ * omitted the id because there was only ever one session; that ambiguity is no
+ * longer safe.) The renderer keys `useDataStore.summons` by this id.
+ */
 export type BotStatus =
-  | { kind: 'idle' }
-  | { kind: 'connecting' }
+  | { kind: 'idle'; characterId: string }
+  | { kind: 'connecting'; characterId: string }
   // `startedAtMs` is the epoch ms when this session's clock started (main and
   // renderer share the system clock). The renderer derives a LIVE uptime from
   // it (Date.now() - startedAtMs) so the status line counts up even though main
@@ -96,7 +106,7 @@ export type BotLifecycle =
   | { type: 'init-ack' }
   | { type: 'connected' }
   | { type: 'disconnected'; reason?: string }
-  | { type: 'error'; error: ErrorClass; message: string }
+  | { type: 'error'; error: ErrorClass; message: string; retryAfterSeconds?: number }
   | { type: 'chat'; from: string; text: string }
   | { type: 'summon-ready' }
   | { type: 'summon-stopped' }
@@ -318,14 +328,20 @@ export type UpdatePasswordResult =
 /**
  * Phase 11 plan 12 — ToS status returned by IpcChannel.tos.status.
  *
- * `accepted` reflects the result of tosGate.isTosAccepted for the current
- * user (false when not signed in OR when no row matches the active
- * TOS_VERSION + PRIVACY_VERSION). `tosVersion` / `privacyVersion` are the
- * ACTIVE constants (not whatever the user accepted) — the blocking modal
- * shows these in its footer.
+ * `accepted` is tri-state (260610 offline-misfire fix):
+ *   - true  → a row matches the active TOS_VERSION + PRIVACY_VERSION
+ *   - false → DEFINITIVELY no matching row (query succeeded; user must
+ *             accept — App.tsx mounts the blocking AcceptToSModal), or the
+ *             user is not signed in
+ *   - null  → the check could not reach the database (offline / DNS / timeout);
+ *             App.tsx shows the dismissible offline-retry notice instead of
+ *             the legal modal
+ *
+ * `tosVersion` / `privacyVersion` are the ACTIVE constants (not whatever the
+ * user accepted) — the blocking modal shows these in its footer.
  */
 export interface TosStatus {
-  accepted: boolean;
+  accepted: boolean | null;
   tosVersion: string;
   privacyVersion: string;
 }
@@ -465,6 +481,17 @@ export interface CreditsStatus {
   // `DEFAULT_TOKENS_PER_MIN` multiplier to this value. Optional during rollout.
   remaining_tokens?: number;        // server-computed: ledger_balance_micro / MICRO_PER_TOKEN_BLENDED
   /**
+   * Lifetime spend in USD and total granted credits in USD (`used / available`,
+   * the dollar form of `usage_pct`). main computes these in creditsGet from the
+   * same ledger micros it already reads (µ$ ÷ 1e6), so they are real numbers in
+   * cloud mode. NOTE: this deliberately extends past the PROXY-05 "percent only"
+   * line at the owner's request — the UsageBar tooltip shows "$used/$total".
+   * Optional: undefined for local/BYOK, no session, or a cold-load before the
+   * first creditsGet.
+   */
+  used_usd?: number;
+  total_usd?: number;
+  /**
    * quick/260525-sbo Task 8 — raw subscription status mirrored
    * from `subscription_status.status` via the my_subscription view. Drives
    * contextual banners in SettingsScreen (past-due, paused) and lets future
@@ -550,9 +577,11 @@ export const RecordConsentArgsSchema = z.object({
  * with `api: RendererApi`. Main registers ipcMain.handle for every request/response method.
  */
 export interface RendererApi {
-  // Bot supervision (request/response with timeouts — main enforces)
+  // Bot supervision (request/response with timeouts — main enforces).
+  // `stop(id)` stops one summoned character; `stop()` (no id) stops every
+  // active session (used by sign-out / account-swap teardown).
   summon(characterId: string): Promise<void>;
-  stop(): Promise<void>;
+  stop(characterId?: string): Promise<void>;
 
   // Character CRUD
   listCharacters(): Promise<Character[]>;
@@ -916,6 +945,26 @@ export interface RendererApi {
   /** Current app version string (Settings → current version display). */
   getVersion(): Promise<string>;
   /**
+   * Host OS platform (`process.platform`), read once in preload and exposed as
+   * a plain value so the renderer can branch its window chrome WITHOUT an async
+   * round-trip. Used by MacosWindow to render custom min/max/close controls on
+   * Windows/Linux (frameless) and keep the native traffic-light layout on macOS.
+   * Typed `string` (not `NodeJS.Platform`) because this contract is also compiled
+   * in the web/renderer tsconfig where the NodeJS namespace isn't available; the
+   * renderer only ever compares it against `'darwin'`.
+   */
+  platform: string;
+  /** Frameless window controls (Windows/Linux custom titlebar). */
+  windowMinimize(): Promise<void>;
+  /** Toggle maximize/restore for the focused window. */
+  windowMaximizeToggle(): Promise<void>;
+  /** Close the window (quits the app on the last window). */
+  windowClose(): Promise<void>;
+  /** Current maximized state — seeds the restore/maximize icon on mount. */
+  windowIsMaximized(): Promise<boolean>;
+  /** Fires on every maximize/unmaximize so the icon can swap live. */
+  onWindowMaximizedChanged(cb: (isMaximized: boolean) => void): Unsubscribe;
+  /**
    * Fires when the active account profile scope changes at runtime (sign-in,
    * sign-out, or account swap) once main has torn down the old bot, switched
    * the data scope, and initialized the new profile. The renderer re-bootstraps
@@ -1116,6 +1165,16 @@ export const IpcChannel = {
     // let it pass arbitrary URLs through — the handler URL-allowlists to
     // sei.gg before dispatching to shell.openExternal (T-11-12-01).
     openExternal: 'app:open-external',
+  },
+  // Frameless window controls (custom titlebar on Windows/Linux). macOS keeps
+  // its native traffic lights and never calls these, but the channels are
+  // platform-agnostic so the renderer can wire them unconditionally.
+  window: {
+    minimize: 'window:minimize',
+    maximizeToggle: 'window:maximize-toggle',
+    close: 'window:close',
+    isMaximized: 'window:is-maximized',
+    maximizedChanged: 'window:maximized-changed', // push: main → renderer
   },
   // Skin pipeline.
   skin: {

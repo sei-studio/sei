@@ -87,34 +87,44 @@ describe('CharacterSchema — portrait_image is a permissive path-or-null (D-28)
 });
 
 /**
- * Phase 15 — Plan 15-03 Task 1 (Warning 8): runtime parse-gate for the
- * user-facing vision auto-render toggle. tsc proves the FIELD exists; only a
- * .parse() exercise proves the RUNTIME default + coercion behavior the Settings
- * write-through (15-05) and the botSupervisor bridge depend on. See 15-03-PLAN.md
- * Task 1 (c).
+ * Runtime parse-gate for the user-facing vision tier + cadence fields
+ * (vision_mode / vision_interval_turns, superseding the Phase-15 boolean
+ * toggle). tsc proves the FIELDS exist; only a .parse() exercise proves the
+ * RUNTIME default + rejection behavior the Settings write-through and the
+ * botSupervisor bridge depend on.
  */
-describe('UserConfigSchema — vision_auto_render (D-05)', () => {
-  it('defaults vision_auto_render to false when omitted', () => {
+describe('UserConfigSchema — vision_mode / vision_interval_turns', () => {
+  it('defaults to active mode, 5-turn cadence when omitted', () => {
     // A minimal valid UserConfig — every other field has its own .default(),
-    // so an empty object round-trips. vision_auto_render must default to false
-    // (auto-render OFF / VIS-04), matching the bot config.vision.auto_render default.
+    // so an empty object round-trips. The tier defaults match the bot
+    // config.vision defaults (mode 'active', interval_turns 5).
     const parsed = UserConfigSchema.parse({});
-    expect(parsed.vision_auto_render).toBe(false);
+    expect(parsed.vision_mode).toBe('active');
+    expect(parsed.vision_interval_turns).toBe(5);
   });
 
-  it('round-trips an explicit vision_auto_render: true', () => {
-    const parsed = UserConfigSchema.parse({ vision_auto_render: true });
-    expect(parsed.vision_auto_render).toBe(true);
+  it('round-trips every explicit tier', () => {
+    for (const mode of ['off', 'passive', 'active'] as const) {
+      const parsed = UserConfigSchema.parse({ vision_mode: mode });
+      expect(parsed.vision_mode).toBe(mode);
+    }
   });
 
-  it('rejects a non-boolean vision_auto_render', () => {
-    const result = UserConfigSchema.safeParse({ vision_auto_render: 'yes' });
-    expect(result.success).toBe(false);
+  it('round-trips an explicit cadence', () => {
+    const parsed = UserConfigSchema.parse({ vision_interval_turns: 1 });
+    expect(parsed.vision_interval_turns).toBe(1);
   });
 
-  it('preserves a pre-existing config.json that omits vision_auto_render (backward compat)', () => {
-    // A config object shaped like a pre-Phase-15 install (no vision field at all)
-    // must still parse cleanly and pick up the false default.
+  it('rejects an unknown tier and out-of-range / non-integer cadences', () => {
+    expect(UserConfigSchema.safeParse({ vision_mode: 'sometimes' }).success).toBe(false);
+    expect(UserConfigSchema.safeParse({ vision_interval_turns: 0 }).success).toBe(false);
+    expect(UserConfigSchema.safeParse({ vision_interval_turns: 51 }).success).toBe(false);
+    expect(UserConfigSchema.safeParse({ vision_interval_turns: 2.5 }).success).toBe(false);
+  });
+
+  it('preserves a pre-existing config.json that omits the vision fields (backward compat)', () => {
+    // A config object shaped like an older install (no vision fields at all)
+    // must still parse cleanly and pick up the defaults.
     const parsed = UserConfigSchema.parse({
       mc_username: 'Steve',
       preferred_name: 'Shawn',
@@ -122,6 +132,7 @@ describe('UserConfigSchema — vision_auto_render (D-05)', () => {
       ai_backend_kind: 'local',
       dev_console_visible: false,
     });
-    expect(parsed.vision_auto_render).toBe(false);
+    expect(parsed.vision_mode).toBe('active');
+    expect(parsed.vision_interval_turns).toBe(5);
   });
 });

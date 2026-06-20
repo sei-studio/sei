@@ -138,6 +138,22 @@ export const CharacterSchema = z.object({
 export type Character = z.infer<typeof CharacterSchema>;
 
 /**
+ * The in-game Minecraft username a summoned bot connects under: the per-persona
+ * `username` when set, else the persona `name` sanitized to MC's constraints
+ * ([A-Za-z0-9_], ≤16 chars, non-empty → 'Sei'). Mirrors the bot's own
+ * derivation in src/bot/index.js (`sanitizeMcName`) so callers in main and
+ * renderer compute the SAME name the bot will actually use — used by the
+ * multi-summon duplicate-name guard (two bots can't share a username; the
+ * server kicks the second with `multiplayer.disconnect.name_taken`).
+ */
+export function effectiveMcUsername(c: Pick<Character, 'username' | 'name'>): string {
+  const u = (c.username ?? '').trim();
+  if (u) return u;
+  const cleaned = String(c.name || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
+  return cleaned || 'Sei';
+}
+
+/**
  * Index manifest at `<userData>/characters/index.json`.
  * Maintains ordering across the character grid (D-09).
  */
@@ -156,6 +172,15 @@ export type CharacterIndex = z.infer<typeof CharacterIndexSchema>;
 export const UserConfigSchema = z.object({
   mc_username: z.string().default(''),                            // Minecraft account display name
   preferred_name: z.string().default(''),                          // what bot calls the user
+  /**
+   * 260617: ISO timestamp until which cloud (trial) play is daily-rate-limited
+   * (the proxy's $5/day spend cap). Set when a live session hits the cap; the
+   * summon gate refuses to fork until it elapses, then clears it. Cleared early
+   * by the renderer when a subscription goes active so a paid upgrade unblocks
+   * immediately. Absent / null = not limited. Optional (not defaulted) so the
+   * many manual UserConfig literals don't all need to spell it out.
+   */
+  daily_limited_until: z.string().nullable().optional(),
   // ui-A1: Phase 14 widened the LLM provider matrix to 13 backends — the
   // factory in src/bot/brain/llm/index.js (`SUPPORTED_PROVIDERS`) is the
   // canonical list. Anthropic remains the default for backward-compat with
@@ -219,6 +244,16 @@ export const UserConfigSchema = z.object({
    */
   dev_console_visible: z.boolean().optional().default(false),
   /**
+   * Onboarding skin-setup gate. Set true when the user finishes the name/API
+   * onboarding step, cleared when they finish OR skip the dedicated skin-setup
+   * page. While true, the app routes to `{ kind: 'skin-setup' }` instead of home
+   * on launch — this is what makes the skin-setup step resumable if the user
+   * quits mid-setup. `.optional().default(false)` keeps existing config.json
+   * files (and the first-summon nudge path for users who predate this step)
+   * backward-compatible — they're treated as not-pending and never forced in.
+   */
+  skin_setup_pending: z.boolean().optional().default(false),
+  /**
    * Bundled defaults (sui / lyra / clawd) the user has "removed from library".
    * The on-disk JSON for these chars stays so the World tab can still surface
    * them as system-authored entries, but they're hidden from Home + IconRail
@@ -245,16 +280,42 @@ export const UserConfigSchema = z.object({
    */
   has_been_welcomed: z.boolean().optional().default(false),
   /**
-   * Phase 15 (D-04/D-05) — the user-facing in-game-vision auto-render toggle.
-   * The Settings screen (15-05) writes this through the existing saveConfig IPC,
-   * gated behind a confirm popup (D-06). It is the SINGLE renderer-side persistence
-   * surface for the cost feature; main bridges it into the forked bot's
-   * `config.vision.auto_render` at summon time (botSupervisor → bot init payload →
-   * src/bot/index.js ConfigSchema build). Default false (auto-render OFF, VIS-04).
-   * `.optional().default(false)` keeps existing config.json files backward-
-   * compatible — same pattern dev_console_visible used when it was introduced.
+   * Vision tier (supersedes the Phase-15 boolean `vision_auto_render`):
+   *   'off'     — no renders at all; the look tool is not offered.
+   *   'passive' — a frame rides an EXISTING LLM turn every
+   *               vision_interval_turns turns; no look tool.
+   *   'active'  — passive cadence PLUS the model can call look itself.
+   * Settings writes this through the existing saveConfig IPC (leaving 'off' is
+   * gated behind the cost confirm popup, D-06); main bridges it into the forked
+   * bot's `config.vision.mode` at summon time (botSupervisor → bot init payload
+   * → src/bot/index.js ConfigSchema build). The setting is persistent and always
+   * editable — it does NOT depend on a live bot session; a non-VLM provider
+   * simply skips frames at runtime.
    */
-  vision_auto_render: z.boolean().optional().default(false),
+  vision_mode: z.enum(['off', 'passive', 'active']).optional().default('active'),
+  /**
+   * Passive-look cadence in TURNS (LLM calls), not seconds — frames only ever
+   * ride turns that are already happening, so turn count is the honest unit.
+   * 1 = a frame on every turn. Applies to both 'passive' and 'active' (active
+   * includes the passive cadence).
+   */
+  vision_interval_turns: z.number().int().min(1).max(50).optional().default(5),
+  /**
+   * Cumulative bot playtime for THIS profile, in ms, summed across every
+   * character's session. Accumulated at session-end in botSupervisor (alongside
+   * the per-character `playtime_ms`) so the total survives a character being
+   * deleted — a deleted character's time is already folded in here. Drives the
+   * "played Xh Ym" figure in the UsageBar tooltip. Profile-scoped because
+   * config.json lives under the active profile root (paths.configPath()).
+   */
+  total_playtime_ms: z.number().int().min(0).optional().default(0),
+  /**
+   * One-time guard: true once `total_playtime_ms` has been seeded from the sum
+   * of existing characters' `playtime_ms` (so historical time counts even
+   * though it predates the cumulative total). Set by backfillTotalPlaytimeOnce
+   * at startup; fresh installs set it true in onboarding (nothing to backfill).
+   */
+  total_playtime_backfilled: z.boolean().optional().default(false),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

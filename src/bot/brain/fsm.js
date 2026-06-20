@@ -85,17 +85,27 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   let processing = false
   let idleTimer = null
   let disposed = false
+  // 260617: wall-clock of the last NON-idle activity (real chat / attack /
+  // action progress / loop end). Used to stamp idle ticks with the TRUE quiet
+  // duration so the prompt can stop claiming "about a minute has passed" (it now
+  // varies with the per-tier cadence) and so consecutive silent ticks accumulate
+  // real elapsed time. An idle tick does NOT count as activity — that's what
+  // lets the quiet window grow across back-to-back idles.
+  let lastActivityAt = Date.now()
 
   function resetIdleTimer() {
     clearTimeout(idleTimer)
     if (disposed) return
     idleTimer = setTimeout(() => {
-      enqueue(Priority.P3_IDLE, 'sei:idle', {})
+      enqueue(Priority.P3_IDLE, 'sei:idle', { quietMs: Date.now() - lastActivityAt })
     }, idleFallbackMs)
   }
 
   function enqueue(priority, event, data) {
     if (disposed) return
+    // Any genuine event (everything except a self-fired idle tick) marks "the
+    // world did something just now" and resets the quiet clock above.
+    if (event !== 'sei:idle') lastActivityAt = Date.now()
     // Dedupe idempotent ticks. sei:loop_end and sei:idle are "settle" prompts
     // — only the next one matters. Without this guard, multiple back-to-back
     // higher-priority loops (joined → chat → ...) each leave a loop_end in

@@ -84,6 +84,15 @@ interface AuthStore {
    */
   tosAccepted: boolean | null;
   /**
+   * 260610 — true when the last refreshTosStatus() while signed in came back
+   * inconclusive (main couldn't reach the database: offline, DNS failure,
+   * timeout) or the IPC call itself threw. Drives the dismissible
+   * OfflineRetryModal in App.tsx — we tell the user they're offline instead
+   * of mis-showing the blocking legal modal. Cleared by any conclusive
+   * refresh and on transition to local.
+   */
+  tosCheckFailed: boolean;
+  /**
    * Plan 11-15 D-17 — pending share intent captured when a signed-out user
    * attempts to flip the public/private toggle to public. Consumed after the
    * subsequent sign-in (and ToS acceptance) transition; see `consumeShareIntent`.
@@ -110,13 +119,17 @@ export const useAuthStore = create<AuthStore>((set) => ({
   state: { kind: 'local' },
   upgradeFraming: null,
   tosAccepted: null,
+  tosCheckFailed: false,
   pendingShareIntent: null,
   passwordRecovery: false,
   setUpgradeFraming: (v) => set({ upgradeFraming: v }),
   refreshTosStatus: async (): Promise<void> => {
     try {
       const s = await sei.tosStatus();
-      set({ tosAccepted: s.accepted });
+      // 260610 — s.accepted is tri-state: null means main couldn't reach the
+      // database (offline / DNS / timeout). Keep tosAccepted null (no legal
+      // modal) and raise the offline notice instead.
+      set({ tosAccepted: s.accepted, tosCheckFailed: s.accepted === null });
       // Plan 11-15: a successful ToS acceptance unblocks any parked share
       // intent. Try to consume it now so the upgrade-to-share UX completes
       // without the user needing to re-toggle.
@@ -128,7 +141,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       // mounts the modal when tosAccepted === false, so a null keeps existing
       // routes rendering; a transient network failure won't trap the user on
       // an empty screen. The next sign-in / explicit refresh tries again.
-      set({ tosAccepted: null });
+      set({ tosAccepted: null, tosCheckFailed: true });
     }
   },
   setPendingShareIntent: (intent) => set({ pendingShareIntent: intent }),
@@ -199,6 +212,7 @@ export function subscribeAuthState(): () => void {
       // local character id). Also drop any stale recovery-prompt flag.
       useAuthStore.setState({
         tosAccepted: null,
+        tosCheckFailed: false,
         pendingShareIntent: null,
         passwordRecovery: false,
       });

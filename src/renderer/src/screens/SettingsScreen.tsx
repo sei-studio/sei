@@ -49,15 +49,12 @@ export function SettingsScreen(): React.ReactElement {
   // a relaunch preserves the choice.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
   const setDevConsoleVisible = useUiStore((s) => s.setDevConsoleVisible);
-  // Phase 15 (D-10/VIS-03) — vision capability of the active bot's provider,
-  // fed by the `vision:capability` push (15-03). The auto-look toggle below is
-  // gated `disabled={!visionCapable}` — a REAL provider signal, never an
-  // ai_backend_kind inference. Default false (fail-closed) keeps the toggle
-  // inert until a VLM-backed bot reports capabilities.vision === true.
-  const visionCapable = useUiStore((s) => s.visionCapable);
   const authState = useAuthStore((s) => s.state);
-  const summon = useDataStore((s) => s.summon);
-  const botRunning = summon.kind === 'connecting' || summon.kind === 'online';
+  // "Is ANY bot running" — gates the live backend switch. Multi-summon: true
+  // when one or more characters are connecting/online.
+  const botRunning = useDataStore((s) =>
+    Object.values(s.summons).some((st) => st.kind === 'connecting' || st.kind === 'online'),
+  );
   // ui-A9: "Reset all character memories" iterates over the renderer's
   // character list. refreshCharacter pulls the post-reset row back into the
   // store so EditCharacterModal / CharacterPage observe last_launched=null
@@ -90,10 +87,14 @@ export function SettingsScreen(): React.ReactElement {
   // confirmation modal instead of toggling directly. Non-null = modal is open
   // for that target backend.
   const [pendingSwitch, setPendingSwitch] = useState<null | 'cloud-proxy' | 'local'>(null);
-  // Phase 15 (D-05) — turning auto-look ON is gated behind VisionAutoRenderConfirmModal
-  // (it uses more playtime), so the toggle's onClick sets this pending flag rather
-  // than flipping immediately. Turning OFF needs no confirm and writes through directly.
-  const [pendingVisionEnable, setPendingVisionEnable] = useState<boolean>(false);
+  // Leaving vision 'off' is gated behind VisionAutoRenderConfirmModal (frames
+  // use more playtime), so selecting passive/active from off stashes the
+  // target tier here rather than writing immediately. Off→off-adjacent moves
+  // (passive⇄active) and turning off write through directly.
+  const [pendingVisionMode, setPendingVisionMode] = useState<null | 'passive' | 'active'>(null);
+  // Live slider position while dragging; committed to config on release so a
+  // drag doesn't fire a disk write per pixel. null = not dragging, show cfg.
+  const [intervalDraft, setIntervalDraft] = useState<number | null>(null);
   useEffect(() => {
     if (!botRunning) setSwitchNotice(null);
   }, [botRunning]);
@@ -350,54 +351,50 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  // Phase 15 (D-05) — write through vision_auto_render to UserConfig (the config
-  // is the source of truth; botSupervisor bridges it into config.vision.auto_render
-  // at fork). Mirrors onToggleDevConsole's optimistic-then-rollback discipline.
-  //
-  // Turning ON is gated by VisionAutoRenderConfirmModal (the cost heads-up), so the
-  // enable path runs only via confirmEnableAutoRender after the user confirms.
-  // Turning OFF is direct — disabling a cost feature needs no confirm.
-  const confirmEnableAutoRender = async (): Promise<void> => {
-    if (!cfg) {
-      setPendingVisionEnable(false);
-      return;
-    }
-    const updated: UserConfig = { ...cfg, vision_auto_render: true };
-    // Optimistic: reflect the new value immediately, roll back if the write fails.
-    setCfg(updated);
-    try {
-      await sei.saveConfig(updated);
-      setSaveError(null);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (vision_auto_render=true) failed', err);
-      setCfg(cfg);
-      setSaveError('Failed to save. Try again.');
-    } finally {
-      setPendingVisionEnable(false);
-    }
-  };
-
-  const onDisableAutoRender = async (): Promise<void> => {
+  // Write through vision_mode / vision_interval_turns to UserConfig (the
+  // config is the source of truth; botSupervisor bridges both into
+  // config.vision at fork). Mirrors onToggleDevConsole's optimistic-then-
+  // rollback discipline. The setting is persistent and ALWAYS editable — it is
+  // deliberately NOT gated on a live bot session or its provider capability
+  // (changes apply at the next summon; a non-VLM provider skips frames).
+  const writeVisionConfig = async (patch: Partial<UserConfig>): Promise<void> => {
     if (!cfg) return;
-    const updated: UserConfig = { ...cfg, vision_auto_render: false };
+    const updated: UserConfig = { ...cfg, ...patch };
     setCfg(updated);
     try {
       await sei.saveConfig(updated);
       setSaveError(null);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (vision_auto_render=false) failed', err);
+      console.error('[SettingsScreen] saveConfig (vision) failed', err);
       setCfg(cfg);
       setSaveError('Failed to save. Try again.');
     }
   };
 
-  // The auto-look toggle Button click: turning ON opens the confirm modal (D-05),
-  // turning OFF flips directly. Reads the current value from cfg (source of truth).
-  const onToggleAutoRender = (): void => {
-    if (cfg?.vision_auto_render) void onDisableAutoRender();
-    else setPendingVisionEnable(true);
+  // Tier select: moving OFF→(passive|active) opens the cost confirm modal
+  // (D-06); every other move (passive⇄active, anything→off) writes directly —
+  // the heads-up matters only when renders start happening at all.
+  const onSelectVisionMode = (mode: 'off' | 'passive' | 'active'): void => {
+    const current = cfg?.vision_mode ?? 'active';
+    if (mode === current) return;
+    if (current === 'off' && mode !== 'off') setPendingVisionMode(mode);
+    else void writeVisionConfig({ vision_mode: mode });
+  };
+
+  const confirmVisionMode = async (): Promise<void> => {
+    if (pendingVisionMode) await writeVisionConfig({ vision_mode: pendingVisionMode });
+    setPendingVisionMode(null);
+  };
+
+  // Slider commit — fired on pointer/key release, not per onChange tick.
+  const commitVisionInterval = (): void => {
+    if (intervalDraft == null) return;
+    const turns = intervalDraft;
+    setIntervalDraft(null);
+    if (turns !== (cfg?.vision_interval_turns ?? 5)) {
+      void writeVisionConfig({ vision_interval_turns: turns });
+    }
   };
 
   // ui-A9: "Reset all character memories" — iterate the current data-store
@@ -574,31 +571,67 @@ export function SettingsScreen(): React.ReactElement {
         </div>
         <p className={styles.rowHelper}>Useful for debugging skin and bot issues.</p>
         {/*
-          Phase 15 (D-05/D-10) — Auto-look (vision) toggle. ONE line. Turning ON
-          opens VisionAutoRenderConfirmModal (the "uses more playtime" heads-up,
-          D-06) before writing vision_auto_render: true; turning OFF flips
-          directly. The Button is disabled when the active provider is non-VLM,
-          gated on useUiStore.visionCapable (D-10/VIS-03) — a real capability
-          signal, NOT an ai_backend_kind inference. The cost itself surfaces as
-          the shrunk "~Xh left" playtime figure (D-07), never a number here.
+          Vision tier — Off / Passive / Active. Leaving 'off' opens
+          VisionAutoRenderConfirmModal (the "uses more playtime" heads-up,
+          D-06); other moves write directly. The control is ALWAYS enabled —
+          it is a persistent setting, not a per-session one (the old
+          visionCapable gate kept it locked until a vision-capable bot had
+          been summoned in the same app run). The cost itself surfaces as the
+          shrunk "~Xh left" playtime figure (D-07), never a number here.
         */}
         <div className={styles.row}>
-          <span className={styles.rowLabel}>Auto-look (vision)</span>
-          <Button
-            kind="ghost"
-            size="sm"
-            aria-pressed={cfg?.vision_auto_render ?? false}
-            disabled={!visionCapable}
-            onClick={onToggleAutoRender}
-          >
-            {cfg?.vision_auto_render ? 'On' : 'Off'}
-          </Button>
+          <span className={styles.rowLabel}>Looking (vision)</span>
+          <div className={styles.segmented} role="group" aria-label="Looking mode">
+            {(['off', 'passive', 'active'] as const).map((mode) => (
+              <Button
+                key={mode}
+                kind="ghost"
+                size="sm"
+                aria-pressed={(cfg?.vision_mode ?? 'active') === mode}
+                onClick={() => onSelectVisionMode(mode)}
+              >
+                {mode === 'off' ? 'Off' : mode === 'passive' ? 'Passive' : 'Active'}
+              </Button>
+            ))}
+          </div>
         </div>
         <p className={styles.rowHelper}>
-          {visionCapable
-            ? 'Lets your bot glance around and see its surroundings on its own. Uses more playtime.'
-            : 'Requires a vision-capable model. Summon a bot with one to enable this.'}
+          {(cfg?.vision_mode ?? 'active') === 'off'
+            ? 'Your bot is blind: it never renders its surroundings.'
+            : (cfg?.vision_mode ?? 'active') === 'passive'
+              ? 'Your bot sees a fresh view on a fixed cadence, but can’t choose to look.'
+              : 'Cadence looks plus the bot can decide to look around on its own. Uses more playtime.'}
         </p>
+        {(cfg?.vision_mode ?? 'active') !== 'off' ? (
+          <>
+            <div className={styles.row}>
+              <span className={styles.rowLabel}>Look every</span>
+              <span className={styles.sliderGroup}>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  step={1}
+                  className={styles.slider}
+                  value={intervalDraft ?? cfg?.vision_interval_turns ?? 5}
+                  aria-label="Look cadence in turns"
+                  onChange={(e) => setIntervalDraft(Number(e.target.value))}
+                  onPointerUp={commitVisionInterval}
+                  onKeyUp={commitVisionInterval}
+                  onBlur={commitVisionInterval}
+                />
+                <span className={styles.rowMonoValue}>
+                  {(intervalDraft ?? cfg?.vision_interval_turns ?? 5) === 1
+                    ? 'every turn'
+                    : `${intervalDraft ?? cfg?.vision_interval_turns ?? 5} turns`}
+                </span>
+              </span>
+            </div>
+            <p className={styles.rowHelper}>
+              How often a view is attached to what your bot is already doing. Lower = sees more, uses more playtime.
+            </p>
+          </>
+        ) : null}
       </section>
 
       {/*
@@ -931,10 +964,10 @@ export function SettingsScreen(): React.ReactElement {
           onConfirm={confirmSwitch}
         />
       ) : null}
-      {pendingVisionEnable ? (
+      {pendingVisionMode ? (
         <VisionAutoRenderConfirmModal
-          onCancel={() => setPendingVisionEnable(false)}
-          onConfirm={confirmEnableAutoRender}
+          onCancel={() => setPendingVisionMode(null)}
+          onConfirm={confirmVisionMode}
         />
       ) : null}
       {dmcaModalOpen ? (

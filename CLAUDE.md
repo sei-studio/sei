@@ -53,9 +53,17 @@ boundaries are load-bearing — respect them.
 - **Plaintext secrets cross to the bot only over `MessagePortMain`**, never
   through the renderer. `src/main/apiKeyStore.ts` decrypts the API key in main
   and hands it to the forked bot in the init message.
-- **One bot at a time.** `botSupervisor.ts` owns exactly one session: a new
-  summon stops the active one first. Summon has a hard **30s timeout**
-  (`SUMMON_TIMEOUT_MS`); stop has a 10s timeout then escalates to kill.
+- **Multiple bots, one per character.** `botSupervisor.ts` owns a
+  `Map<characterId, ActiveSession>` — `summon(id)` forks an *additional* bot
+  without disturbing the others; `stop(id)` drains one, `stop()`/`shutdown()`
+  drain all. Each character is its own `utilityProcess` + brain + memory dir, so
+  sessions are fully independent. **Two bots may never share an in-game
+  username** (the world kicks the second with `name_taken`), so `summon` refuses
+  a colliding effective username before forking (the renderer pre-checks and
+  shows a popup; the supervisor is the authoritative backstop). Summon has a
+  hard **30s timeout** (`SUMMON_TIMEOUT_MS`); stop has a 10s timeout then
+  escalates to kill. The in-game username is `effectiveMcUsername(character)` in
+  `src/shared/characterSchema.ts` (`character.username` ?? sanitized name).
 - IPC contracts and shared Zod schemas live in `src/shared` and are the single
   source of truth for both sides of the bridge.
 
@@ -132,12 +140,23 @@ coordinates — it calls registered tools only.
 - Plus **3 brain tools** wired by the orchestrator: `remember`, `forget`,
   `end_loop`.
 
-**Speech.** The bot's voice is the LLM's **text block**, not a tool call (the
-agent-loop model: a turn emits any mix of `text` + `tool_use`; text goes to
-in-game chat, tools execute). Text is post-processed before it reaches chat —
-see `postProcessSay()` in `src/bot/brain/orchestrator.js`. `chat_mode: 'full'`
-additionally surfaces the model's private scratch text to chat with a `[think]`
-prefix.
+**Speech (say() tool).** The LLM's **text output is a private scratchpad** — it
+is NOT sent to chat. The bot speaks only by calling the **`say` tool** (a
+brain-level inline tool, registered in `personalityTools`); `emitSayCalls()` in
+`src/bot/brain/orchestrator.js` emits each call up front (before any action
+dispatches, so a boast lands before the swing) and `postProcessSay()` normalizes
+it before it reaches in-game chat. No `say()` call → silence. **A say()-only
+turn is "silence" for loop purposes** — `say` is in `PERSONALITY_NAMES`, so it is
+excluded from `movementCalls`; the turn speaks and the loop ends unless a
+world-acting tool was also called (it never keeps the bot busy on its own).
+260617: `say` was promoted from a parsed text convention (the old `extractSay`)
+to a real tool because Haiku honored the text-only contract 0× across two live
+runs while calling real tools reliably. This still gives Haiku a place to reason
+before speaking (extended thinking makes it go mute), keeping chain-of-thought
+out of chat. `chat_mode: 'full'` additionally surfaces the whole scratchpad to
+chat with a `[think]` prefix for live debugging; default `'chat'` keeps it
+hidden. The prompt contract lives in `BASELINE_INSTRUCTIONS` and the tool
+description in `PERSONALITY_TOOL_DESCRIPTIONS.say` (`src/bot/brain/prompts.js`).
 
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
@@ -159,6 +178,15 @@ Player chat (P1) preempts any non-P0 work mid-action. Adapter wiring lives in
 - **Compaction is a byte-threshold trigger:** after each successful
   `remember()`, if `MEMORY.md` exceeds `memory.compaction_trigger_bytes`
   (**default 4096**), an async single-flight Haiku compaction fires.
+- **Memory is segmented by world.** A character accumulates memories across many
+  LAN worlds; to keep them from bleeding together, `src/bot/brain/memory/worlds.js`
+  assigns each world a **stable number** (fingerprinted by world spawn point +
+  dimension, persisted in `worlds.json`) on the bot's first spawn. It drops a
+  `## World N — <label>` header into `MEMORY.md` when the world changes, and the
+  per-turn snapshot leads with `world: #N <label>` so the bot knows which world
+  it's in. These headers are deliberately NOT entry lines (`- [`), and both the
+  seed-truncation (`readMemoryForSeed`) and the **segment-aware compactor** are
+  written to preserve them — touch those two if you change the header format.
 > The old CLAUDE.md framed this as "the LLM decides when to compact at semantic
 > boundaries" — misleading. The *write* is LLM-driven; the *compaction* is
 > mechanical (byte threshold).
@@ -176,7 +204,7 @@ src/
   main/                 Electron host (main process)
     index.ts            entry
     ipc.ts              IPC handler registration
-    botSupervisor.ts    utilityProcess.fork + MessageChannelMain, one-bot lifecycle
+    botSupervisor.ts    utilityProcess.fork + MessageChannelMain, multi-bot lifecycle (Map<characterId, session>)
     apiKeyStore.ts      safeStorage key + getAiBackendKind()
     configStore.ts      <userData>/config.json (Zod-validated, atomic)
     characterStore.ts   local character library
@@ -264,6 +292,15 @@ updates install from the zip artifact.
 - **Single-layer iteration runaway** → bounded by `iteration_cap` (default 30).
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
+- **Bot ESM module type in packaged builds** → `src/bot/package.json` exists
+  ONLY to declare `{"type":"module"}`. The bot ships as raw ESM source (not
+  bundled) and is asar-**unpacked** to `app.asar.unpacked/src/bot/`. The root
+  `package.json` (with its own `"type":"module"`) is sealed inside `app.asar`,
+  so when Node resolves the unpacked bot it walks the real filesystem, finds no
+  `"type"`, defaults `.js` to CommonJS, and fails to parse the `import`
+  statements — the bot crashes before connecting (symptom: "module type … is
+  not specified and it doesn't parse as CommonJS", then summon fails on packaged
+  installs only — `npm run dev` is unaffected). Do not delete `src/bot/package.json`.
 - **Stale `.js` shadows `.tsx` in Vite** → `tsc --build` emits sibling `.js`
   files next to `.tsx`; Vite then serves the stale `.js` and silently ignores
   your renderer edits. These artifacts are gitignored (`src/**/*.js`, except

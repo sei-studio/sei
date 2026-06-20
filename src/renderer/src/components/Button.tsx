@@ -22,6 +22,8 @@ interface ButtonProps {
   type?: 'button' | 'submit';
   'aria-label'?: string;
   'aria-disabled'?: boolean;
+  /** Toggle/segmented selection state — also drives the pressed visual. */
+  'aria-pressed'?: boolean;
   style?: React.CSSProperties;
   className?: string;
   title?: string;
@@ -61,6 +63,7 @@ export function Button({
       title={title}
       aria-label={rest['aria-label']}
       aria-disabled={rest['aria-disabled']}
+      aria-pressed={rest['aria-pressed']}
     >
       {icon}
       {children}

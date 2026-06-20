@@ -8,9 +8,15 @@
  * acceptance regex-anchored grep so a future edit can't accidentally widen
  * the bind.
  *
- * Port: 0 (OS-chosen ephemeral). The bound port is exposed via `.port` /
- * `.baseUrl` so the wizard's CustomSkinLoader-config writer can stamp it
- * into `customskinloader.json` at install time.
+ * Port: a FIXED loopback port (SKIN_SERVER_PREFERRED_PORT) so the
+ * CustomSkinLoader config URL stays stable across restarts. The host MC
+ * client reads that config ONCE at its own launch; a stable port means it
+ * never goes stale regardless of launch order (this is the whole fix for the
+ * "skin shows as Steve after a Sei restart" class of bug). If the fixed port
+ * is already taken we fall back to an OS-chosen ephemeral port (0) and rely
+ * on the boot-time CSL config rewrite (index.ts port-drift block) to re-stamp
+ * it. The bound port is exposed via `.port` / `.baseUrl` so the config writer
+ * can stamp it into `customskinloader.json`.
  *
  * URL contract: GET `/skins/<username>.png` ONLY. The regex
  *   `^/skins/([A-Za-z0-9_]{1,16})\.png(\?.*)?$`
@@ -31,6 +37,16 @@
 import http from 'node:http';
 import { readSkinPng } from './skinStore';
 import { listCharacters } from './characterStore';
+
+/**
+ * Preferred FIXED loopback port for the skin server. Mirrors the auth
+ * loopback's fixed-port approach (54321) so the CustomSkinLoader config URL
+ * is stable across restarts and the host MC client never reads a stale port.
+ * 54322 sits adjacent to the auth port and clear of common dev-server ports
+ * (3000/5173/8080). If it's already taken, createSkinServer falls back to an
+ * OS-chosen ephemeral port (0).
+ */
+export const SKIN_SERVER_PREFERRED_PORT = 54322;
 
 export interface SkinServer {
   /** Loopback base URL, e.g. 'http://127.0.0.1:54321'. Hand this to CustomSkinLoader's config. */
@@ -56,10 +72,42 @@ const NOT_FOUND_PNG_TRANSPARENT = Buffer.from(
 );
 
 /**
+ * Bind `server` to `port` on 127.0.0.1. Resolves once listening; rejects with
+ * the raw bind error (e.g. EADDRINUSE) so the caller can decide whether to
+ * retry on a different port. After an 'error' the server stays closed and can
+ * be re-`listen`ed, which is what the fixed→ephemeral fallback relies on.
+ */
+function listenOn(server: http.Server, port: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onError = (err: NodeJS.ErrnoException): void => {
+      server.off('listening', onListening);
+      reject(err);
+    };
+    const onListening = (): void => {
+      server.off('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    // 127.0.0.1 ONLY. Never widen to 0.0.0.0 — that would expose persona
+    // skins to the LAN AND trigger firewall prompts the user doesn't need.
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+/**
  * Start the loopback skin HTTP server. Resolves when the server is bound and
- * accepting connections. Rejects with a SKIN_SERVER_PORT_TAKEN-prefixed error
- * if bind fails (extremely rare with port=0; only fires if the system has
- * literally zero free ephemeral ports).
+ * accepting connections.
+ *
+ * Bind strategy: try the FIXED preferred port first (stable URL → CSL config
+ * never goes stale). If it's already in use, fall back to an OS-chosen
+ * ephemeral port (0). Only rejects with a SKIN_SERVER_PORT_TAKEN-prefixed
+ * error if BOTH the preferred port fails for a non-EADDRINUSE reason or the
+ * ephemeral fallback can't bind either (extremely rare — only if the system
+ * has literally zero free ephemeral ports).
+ *
+ * `args.port`, when provided, overrides the preferred port (tests / callers
+ * that want an explicit port); the ephemeral fallback still applies.
  */
 export async function createSkinServer(args: { port?: number } = {}): Promise<SkinServer> {
   const server = http.createServer(async (req, res) => {
@@ -104,22 +152,30 @@ export async function createSkinServer(args: { port?: number } = {}): Promise<Sk
     }
   });
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (err: NodeJS.ErrnoException): void => {
-      server.off('listening', onListening);
-      const e = new Error(`SKIN_SERVER_PORT_TAKEN: ${err.code ?? 'unknown'} ${err.message}`);
-      reject(e);
-    };
-    const onListening = (): void => {
-      server.off('error', onError);
-      resolve();
-    };
-    server.once('error', onError);
-    server.once('listening', onListening);
-    // 127.0.0.1 ONLY. Never widen to 0.0.0.0 — that would expose persona
-    // skins to the LAN AND trigger firewall prompts the user doesn't need.
-    server.listen(args.port ?? 0, '127.0.0.1');
-  });
+  const preferredPort = args.port ?? SKIN_SERVER_PREFERRED_PORT;
+  try {
+    await listenOn(server, preferredPort);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // Only fall back for "port already in use". Any other bind failure
+    // (e.g. EACCES) is surfaced — retrying on a random port wouldn't help.
+    if (code === 'EADDRINUSE' && preferredPort !== 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[sei] skinServer: preferred port ${preferredPort} in use; ` +
+          `falling back to an ephemeral port (CSL config will be re-stamped at boot)`,
+      );
+      try {
+        await listenOn(server, 0);
+      } catch (fallbackErr) {
+        const fe = fallbackErr as NodeJS.ErrnoException;
+        throw new Error(`SKIN_SERVER_PORT_TAKEN: ${fe.code ?? 'unknown'} ${fe.message}`);
+      }
+    } else {
+      const e = err as NodeJS.ErrnoException;
+      throw new Error(`SKIN_SERVER_PORT_TAKEN: ${e.code ?? 'unknown'} ${e.message}`);
+    }
+  }
 
   const addr = server.address();
   if (!addr || typeof addr === 'string') {

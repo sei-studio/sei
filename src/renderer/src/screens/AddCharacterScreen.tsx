@@ -4,16 +4,19 @@
  * Steps:
  *  0. Name.
  *  1. Persona blurb — LLM-facing, synthesized into the model's voice.
- *  2. Card image (skippable).
- *  3. Skin (skippable).
- *  4. Visibility — yes/no, "share with other players?"
- *  5. Description (only if visibility=yes) — human-facing copy other players
+ *  2. Proactiveness — Passive / Reactive / Agentic. Chosen BEFORE expansion so
+ *     the level feeds the expander as a tier hint (and seeds metadata for the
+ *     runtime dial). This step commits the create + runs expansion.
+ *  3. Card image (skippable).
+ *  4. Skin (skippable).
+ *  5. Visibility — yes/no, "share with other players?"
+ *  6. Description (only if visibility=yes) — human-facing copy other players
  *     will read on the World card.
  *
- * The character is persisted as SHARED=false at the end of step 1 (so the
+ * The character is persisted as SHARED=false at the end of step 2 (so the
  * moderation pipeline doesn't fire until the user actually opts in). If the
  * user picks visibility=yes and writes a description, `setShared(true)` runs
- * at the end of step 5 and any moderation failure is surfaced inline.
+ * at the end of step 6 and any moderation failure is surfaced inline.
  *
  * Description vs persona — strictly separated. Persona is the prompt the
  * LLM reads; description is the blurb other players read. Step copy makes
@@ -32,9 +35,10 @@ import { SkinEditor } from '../components/SkinEditor';
 import { Button } from '../components/Button';
 import { PercentBar } from '../components/PercentBar';
 import { CreationLimitModal } from '../components/CreationLimitModal';
+import { PROACTIVENESS_LEVELS, PROACTIVENESS_DEFAULT } from '../lib/proactiveness';
 import type { Character } from '@shared/characterSchema';
 
-const STEPS = 6;
+const STEPS = 7;
 
 export function AddCharacterScreen(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
@@ -46,12 +50,17 @@ export function AddCharacterScreen(): React.ReactElement {
   // rather than letting them reach charsSetShared and hit the "Please sign in
   // and accept the Terms of Service before publishing" error.
   const signedIn = useAuthStore((s) => s.state.kind === 'signed_in');
-  // Signed-in: 6 steps (name → persona → image → skin → visibility → description).
-  // Signed-out: 4 steps (name → persona → image → skin), then save private.
-  const totalSteps = signedIn ? STEPS : 4;
+  // Signed-in: 7 steps (name → persona → proactiveness → image → skin →
+  // visibility → description). Signed-out: 5 steps (name → persona →
+  // proactiveness → image → skin), then save private.
+  const totalSteps = signedIn ? STEPS : 5;
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [personaSource, setPersonaSource] = useState('');
+  // Proactiveness tier (0 Passive / 1 Reactive / 2 Agentic). Chosen on step 2,
+  // BEFORE expansion, so it feeds the expander as a tier hint and seeds the
+  // runtime dial. Defaults to Reactive.
+  const [proactiveness, setProactiveness] = useState<number>(PROACTIVENESS_DEFAULT);
   const [portraitImage, setPortraitImage] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<'public' | 'private' | null>(null);
   const [description, setDescription] = useState('');
@@ -80,10 +89,10 @@ export function AddCharacterScreen(): React.ReactElement {
       navigate({ kind: 'home' });
       return;
     }
-    // Once the character is created (step >= 2), block back-navigation past
-    // the creation point — the record exists and editing happens on the
-    // character page now.
-    if (created && step <= 2) return;
+    // Once the character is created (end of step 2), block back-navigation past
+    // the creation point — the record exists (and expansion already ran with
+    // the chosen proactiveness), so editing happens on the character page now.
+    if (created && step <= 3) return;
     setStep((s) => s - 1);
   };
 
@@ -91,9 +100,10 @@ export function AddCharacterScreen(): React.ReactElement {
     if (submitting) return false;
     if (step === 0) return name.trim() !== '';
     if (step === 1) return personaSource.trim() !== '';
-    if (step === 4) return visibility !== null;
-    if (step === 5) return description.trim() !== '';
-    return true; // 2 & 3 always allow next (skippable)
+    if (step === 2) return true; // proactiveness always has a value (default 1)
+    if (step === 5) return visibility !== null;
+    if (step === 6) return description.trim() !== '';
+    return true; // 3 & 4 always allow next (skippable)
   };
 
   const persistCreate = async (): Promise<Character | null> => {
@@ -114,7 +124,10 @@ export function AddCharacterScreen(): React.ReactElement {
         // then handles the gate.
         shared: false,
         slug: null,
-        metadata: {},
+        // Seed the proactiveness dial from the step-2 choice. characterStore
+        // reads this off metadata to (a) pass the tier hint into the expander
+        // and (b) drive the runtime directive + idle cadence.
+        metadata: { proactiveness },
         created: new Date().toISOString(),
         last_launched: null,
         playtime_ms: 0,
@@ -202,28 +215,26 @@ export function AddCharacterScreen(): React.ReactElement {
       return;
     }
     if (step === 1) {
-      const persisted = await persistCreate();
-      if (persisted) setStep(2);
+      // Persona blurb collected — go pick proactiveness (no create yet).
+      setStep(2);
       return;
     }
     if (step === 2) {
-      await persistPortrait();
-      setStep(3);
+      // Proactiveness chosen — NOW commit the create + run expansion (the
+      // chosen tier is in the draft's metadata, so it reaches the expander).
+      const persisted = await persistCreate();
+      if (persisted) setStep(3);
       return;
     }
     if (step === 3) {
-      // Signed-out users have no visibility/description steps — finish here,
-      // saving the character as private (item 6).
-      if (!signedIn) {
-        await commitFinal();
-        return;
-      }
+      await persistPortrait();
       setStep(4);
       return;
     }
     if (step === 4) {
-      if (visibility === 'private') {
-        // Skip description entirely — private chars have no requirement.
+      // Signed-out users have no visibility/description steps — finish here,
+      // saving the character as private (item 6).
+      if (!signedIn) {
         await commitFinal();
         return;
       }
@@ -231,25 +242,34 @@ export function AddCharacterScreen(): React.ReactElement {
       return;
     }
     if (step === 5) {
+      if (visibility === 'private') {
+        // Skip description entirely — private chars have no requirement.
+        await commitFinal();
+        return;
+      }
+      setStep(6);
+      return;
+    }
+    if (step === 6) {
       await commitFinal();
       return;
     }
   };
 
   const skip = async (): Promise<void> => {
-    if (step === 2) {
+    if (step === 3) {
       // Skip image — keep whatever was already there (likely null) and move on.
-      setStep(3);
+      setStep(4);
       return;
     }
-    if (step === 3) {
+    if (step === 4) {
       // Skip skin. Signed-out users finish here (save private); signed-in
       // users continue to the visibility step (item 6).
       if (!signedIn) {
         await commitFinal();
         return;
       }
-      setStep(4);
+      setStep(5);
       return;
     }
   };
@@ -276,7 +296,7 @@ export function AddCharacterScreen(): React.ReactElement {
     );
   }
 
-  // ── Step 1 — Persona source (commits create) ────────────────────────────
+  // ── Step 1 — Persona source ─────────────────────────────────────────────
   if (step === 1) {
     return (
       <QuestionShell
@@ -287,8 +307,7 @@ export function AddCharacterScreen(): React.ReactElement {
         currentStep={step}
         onBack={back}
         onNext={() => void next()}
-        nextLabel={submitting ? 'Generating…' : 'Create'}
-        nextKind="accent"
+        nextLabel="Next"
         nextDisabled={!validate()}
       >
         <TextField
@@ -298,6 +317,59 @@ export function AddCharacterScreen(): React.ReactElement {
           rows={5}
           aria-label="Persona source"
         />
+      </QuestionShell>
+    );
+  }
+
+  // ── Step 2 — Proactiveness (commits create + runs expansion) ────────────
+  if (step === 2) {
+    return (
+      <QuestionShell
+        eyebrow="How they behave in your world"
+        title="How proactive are they?"
+        hint="Sets how much the character does on its own. You can change this later on the character page."
+        stepCount={totalSteps}
+        currentStep={step}
+        onBack={back}
+        onNext={() => void next()}
+        nextLabel={submitting ? 'Generating…' : 'Create'}
+        nextKind="accent"
+        nextDisabled={!validate()}
+      >
+        <div
+          role="radiogroup"
+          aria-label="Proactiveness level"
+          style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+        >
+          {PROACTIVENESS_LEVELS.map((lvl) => {
+            const selected = proactiveness === lvl.value;
+            return (
+              <button
+                key={lvl.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={submitting}
+                onClick={() => setProactiveness(lvl.value)}
+                style={{
+                  textAlign: 'left',
+                  padding: '14px 16px',
+                  borderRadius: 10,
+                  border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
+                  background: selected ? 'var(--accent-soft)' : 'transparent',
+                  color: 'var(--text)',
+                  cursor: submitting ? 'default' : 'pointer',
+                  font: 'inherit',
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>{lvl.label}</div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.4 }}>
+                  {lvl.blurb}
+                </div>
+              </button>
+            );
+          })}
+        </div>
         {submitting && expansion ? (
           <ExpansionProgressRow pct={expansion.pct} label={expansion.label} />
         ) : null}
@@ -314,8 +386,8 @@ export function AddCharacterScreen(): React.ReactElement {
     );
   }
 
-  // ── Step 2 — Card image (skippable) ─────────────────────────────────────
-  if (step === 2) {
+  // ── Step 3 — Card image (skippable) ─────────────────────────────────────
+  if (step === 3) {
     return (
       <QuestionShell
         title="Add a card image?"
@@ -341,8 +413,8 @@ export function AddCharacterScreen(): React.ReactElement {
     );
   }
 
-  // ── Step 3 — Skin (skippable) ───────────────────────────────────────────
-  if (step === 3) {
+  // ── Step 4 — Skin (skippable) ───────────────────────────────────────────
+  if (step === 4) {
     return (
       <QuestionShell
         title="Select a Minecraft skin"
@@ -368,8 +440,8 @@ export function AddCharacterScreen(): React.ReactElement {
     );
   }
 
-  // ── Step 4 — Visibility (Public / Private) ──────────────────────────────
-  if (step === 4) {
+  // ── Step 5 — Visibility (Public / Private) ──────────────────────────────
+  if (step === 5) {
     return (
       <QuestionShell
         title="Visible to other players?"
@@ -403,13 +475,13 @@ export function AddCharacterScreen(): React.ReactElement {
     );
   }
 
-  // ── Step 5 — Description (only when public) ─────────────────────────────
+  // ── Step 6 — Description (only when public) ─────────────────────────────
   return (
     <QuestionShell
       eyebrow="For other players, NOT for the AI"
       title="Short description for your character?"
       hint="A blurb other players read on the World card. The AI never sees this; it's just for humans browsing."
-      stepCount={STEPS}
+      stepCount={totalSteps}
       currentStep={step}
       onBack={back}
       onNext={() => void next()}

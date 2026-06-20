@@ -44,6 +44,7 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { useWizardStore } from '../lib/stores/useWizardStore';
 import { classifyRendererError } from '../lib/errors';
 import type { Character } from '@shared/characterSchema';
+import { effectiveMcUsername } from '@shared/characterSchema';
 import { Button } from './Button';
 import { TextField } from './TextField';
 import { SkinPreview3d } from './SkinPreview3d';
@@ -134,9 +135,25 @@ export function SkinEditor({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // ── Bot-active gating ────────────────────────────────────────────────────
-  const summon = useDataStore((s) => s.summon);
-  const botActiveForThisPersona =
-    summon.kind === 'online' && summon.characterId === character.id;
+  // Per-character (multi-summon): true only when THIS persona's bot is online.
+  const botActiveForThisPersona = useDataStore(
+    (s) => s.summons[character.id]?.kind === 'online',
+  );
+
+  // ── Username-collision warning ───────────────────────────────────────────
+  // In offline-mode LAN, the world keys inventory + position by the in-game
+  // username (offline UUID). If two characters log in under the SAME name they
+  // share that playerdata — summon one after the other and the second inherits
+  // the first's items and location. Warn when this persona's effective name
+  // collides with another library character so the user can rename one. The
+  // resolved name uses the live draft, so the warning clears as they type.
+  const allCharacters = useDataStore((s) => s.characters);
+  const resolvedMcName = effectiveMcUsername({ username: usernameDraft, name: character.name });
+  const usernameCollision = allCharacters.find(
+    (c) =>
+      c.id !== character.id &&
+      effectiveMcUsername(c).toLowerCase() === resolvedMcName.toLowerCase(),
+  );
 
   // ── Skin-setup gating ────────────────────────────────────────────────────
   // The 3D preview always renders (it hits the local skin server), but the
@@ -382,6 +399,14 @@ export function SkinEditor({
               worlds.
             </p>
           )}
+          {!usernameError && usernameCollision ? (
+            <p className={styles.warnCopy}>
+              {`${usernameCollision.name} also joins as "${resolvedMcName}". In a world, two
+              characters with the same in-game name share one inventory and location — summon one
+              after the other and the second inherits the first's items and spot. Give one a
+              different name to keep them separate.`}
+            </p>
+          ) : null}
 
           {/* SKIN SOURCE radio switch ─────────────────────────────────── */}
           <div className={styles.fieldEyebrow}>SKIN SOURCE</div>

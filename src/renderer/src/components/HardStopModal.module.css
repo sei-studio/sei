@@ -1,9 +1,9 @@
-/* Phase 13 — HardStopModal (PROXY-06).
+/* Phase 13 — HardStopModal (PROXY-06; simplified 260616).
    Visual idiom mirrors AcceptToSModal verbatim: same 460px frame, 32px
-   padding, 0.45 scrim alpha, no new design tokens. The only addition is
-   a `.muted` modifier for the "Switch to your own API key" CTA so the
-   BYOK escape hatch reads as the tertiary option (secondary text color)
-   without breaking the kind="ghost" Button base style. */
+   padding, 0.45 scrim alpha, no new design tokens. The `.muted` modifier
+   demotes the secondary "Close" CTA (secondary text color) so the accent
+   "Recharge" Button reads as primary, without breaking the kind="ghost"
+   Button base style. */
 .scrim {
   position: fixed;
   inset: 0;
@@ -52,10 +52,9 @@
   margin-top: 8px;
 }
 
-/* Tertiary CTA visual demotion. The BYOK escape hatch ("Switch to your
-   own API key") is the lowest-priority action so we render it as a
-   muted ghost Button below the two checkout actions. No font-weight
-   change — Button base owns that. */
+/* Secondary CTA visual demotion. "Close" is the lower-priority action, so we
+   render it as a muted ghost Button below the accent "Recharge" action. No
+   font-weight change — Button base owns that. */
 .muted {
   color: var(--text-2);
 }

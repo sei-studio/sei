@@ -1,20 +1,21 @@
 // src/bot/brain/orchestrator.idleVision.test.js
 //
-// 15-07 coverage — the idle auto-render hook on the existing P3 `sei:idle` tick
-// (VIS-04). These tests drive a REAL orchestrator with a scripted LLM provider
-// and a mock adapter exposing the two 15-07 adapter seams (shouldAutoRenderIdle,
-// renderIdleFrame), and assert the success criteria the orchestrator must hold:
-//   1. Gate CLEAR  → the rendered frame attaches to the idle turn via the SAME
-//                    15-06 image mechanism, AND idle uses the STANDARD LLM path —
-//                    the post-render turn is NOT routed to /vision/v1/messages
-//                    even in cloud mode (D-09: idle never hits the per-hour cap).
-//   2. Gate CLOSED → no render call, no image, normal idle turn proceeds.
-//   3. {skip:true} (D-02 dedupe) / degrade string → no image attached; the idle
-//                    turn still runs (silent no-op for the duplicate frame).
-//
-// The cloud-mode assertion is the load-bearing D-09 proof: 15-06 routes the ONE
-// post-EXPLICIT-visualize turn to /vision; an idle render must NOT — confirmed
-// here by asserting every idle-turn `path` is undefined under cloudMode.
+// Passive-look cadence coverage (vision tiers). These tests drive a REAL
+// orchestrator with a scripted LLM provider and a mock adapter exposing the
+// renderIdleFrame seam, and assert the tier semantics the orchestrator must
+// hold:
+//   1. passive/active → a frame rides the FIRST turn of a session (counter
+//      seeded "due" — the first-join orienting frame), then every
+//      vision.interval_turns turns, on the STANDARD LLM path (D-09: cadence
+//      frames are never routed to /vision/v1/messages, even in cloud mode).
+//   2. off → no renders, ever, and the look tool is not offered.
+//   3. passive → frames flow but the look tool is not offered; active →
+//      tool offered (provider VLM permitting).
+//   4. {skip:true} (D-02 pose-dedupe) / degrade string → no image attached;
+//      the turn still runs. Degrade does NOT reset the cadence (retry next
+//      turn); skip does.
+//   5. Image retention: a newer frame demotes the older one — at most ONE
+//      image block in any payload.
 
 import os from 'node:os'
 import path from 'node:path'
@@ -22,7 +23,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
 import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
 
-const B64 = 'SURMRUZSQU1F' // recognizable idle-frame base64 token
+const B64 = 'SURMRUZSQU1F' // recognizable frame base64 token
 
 const SUCCESS = { text: 'rendered view attached', image: { mediaType: 'image/jpeg', dataBase64: B64 } }
 
@@ -44,12 +45,13 @@ function makeProvider(script, { vision = true } = {}) {
   }
 }
 
-// Mock adapter wiring the 15-07 idle seams. `gateClear` decides shouldAutoRenderIdle;
-// `idleFrame` is what renderIdleFrame resolves to (SUCCESS | {skip:true} | degrade).
-function makeAdapter({ gateClear, idleFrame }) {
-  const captured = { rendered: 0, gateChecks: 0 }
+// Mock adapter wiring the passive-look seam. `idleFrame` is what
+// renderIdleFrame resolves to (SUCCESS | {skip:true} | degrade string), or a
+// function for per-call results.
+function makeAdapter({ idleFrame }) {
+  const captured = { rendered: 0 }
   const adapter = {
-    listActions: () => ['goTo'],
+    listActions: () => ['goTo', 'look'],
     getActionSchema: () => z.object({}),
     getActionDescription: (n) => `do ${n}`,
     capabilityParagraph: () => 'caps',
@@ -63,28 +65,22 @@ function makeAdapter({ gateClear, idleFrame }) {
     chat: vi.fn(),
     closeAnySessions: async () => {},
     executeAction: () => Promise.resolve('done'),
-    // ── 15-07 idle seams ──
-    shouldAutoRenderIdle: (provider) => {
-      captured.gateChecks += 1
-      // Mirror the real gate's dependency on the provider handle (VLM check).
-      return gateClear && !!provider?.capabilities?.vision
-    },
     renderIdleFrame: () => {
       captured.rendered += 1
-      return Promise.resolve(idleFrame)
+      return Promise.resolve(typeof idleFrame === 'function' ? idleFrame(captured.rendered) : idleFrame)
     },
   }
   return { adapter, captured }
 }
 
-function makeConfig({ cloud = false } = {}) {
+function makeConfig({ cloud = false, mode = 'passive', intervalTurns = 5 } = {}) {
   const cfg = {
     player_username: 'Steve',
     preferred_name: 'Steve',
     persona: { name: 'Sei', expanded: 'You are a sharp little companion.' },
     anthropic: { model: 'claude-haiku-4-5', timeout_ms: 20_000, max_retries: 1 },
     llm: { provider: 'anthropic', rate_limit_per_min: 30, debounce_ms: 0, max_hops: 5 },
-    vision: { auto_render: true, resolution_px: 256, image_quality: 0.4 },
+    vision: { mode, interval_turns: intervalTurns, resolution_px: 256, image_quality: 0.4 },
     memory: {
       memory_md_path: path.join(os.tmpdir(), `sei-idle-test-${process.pid}-${Date.now()}-${Math.random()}.md`),
       iteration_cap: 30,
@@ -109,92 +105,135 @@ function makeOrch({ adapter, config, provider }) {
   return { orch, runTurn }
 }
 
-describe('15-07 idle auto-render hook (VIS-04 / D-09)', () => {
-  it('gate CLEAR: attaches the idle frame AND stays on the standard path (NOT /vision) even in cloud mode', async () => {
+const countImages = (messages) => JSON.stringify(messages).split('"type":"image"').length - 1
+
+describe('passive-look cadence (vision tiers)', () => {
+  it('passive: the FIRST turn of a session carries a frame, on the standard path even in cloud mode', async () => {
     _setTickIntervalForTests(10_000_000)
-    const { adapter, captured } = makeAdapter({ gateClear: true, idleFrame: SUCCESS })
-    // ONE idle personality turn (text-only) — the model comments on the frame.
+    const { adapter, captured } = makeAdapter({ idleFrame: SUCCESS })
     const provider = makeProvider([{ text: 'i see a forest', toolUses: [] }])
-    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true }), provider })
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true, mode: 'passive' }), provider })
 
     await runTurn('sei:idle', {})
 
-    // The gate was checked and the frame rendered exactly once.
-    expect(captured.gateChecks).toBe(1)
     expect(captured.rendered).toBe(1)
-    // One personality turn fired (the idle turn that sees the frame).
     expect(provider.calls.length).toBe(1)
-
-    // VIS-02: the idle frame is attached as a provider-neutral image block on a
-    // user turn (the 15-06 mechanism).
     const flat = JSON.stringify(provider.calls[0].messages)
     expect(flat).toContain('"type":"image"')
     expect(flat).toContain(B64)
-
-    // D-09 (the load-bearing assertion): the idle turn uses the STANDARD path —
-    // it is NEVER routed to /vision/v1/messages, even though cloudMode is set.
-    // (Only the EXPLICIT visualize path arms _pendingVisionTurn.)
+    // D-09 (the load-bearing assertion): cadence frames use the STANDARD path —
+    // never routed to /vision/v1/messages, even though cloudMode is set.
     expect(provider.calls[0].path).toBeUndefined()
   })
 
-  it('gate CLOSED: no render, no image, normal idle turn proceeds', async () => {
+  it('passive: after the first frame, the next frame waits interval_turns turns', async () => {
     _setTickIntervalForTests(10_000_000)
-    const { adapter, captured } = makeAdapter({ gateClear: false, idleFrame: SUCCESS })
-    const provider = makeProvider([{ text: 'nothing to do', toolUses: [] }])
-    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true }), provider })
+    const { adapter, captured } = makeAdapter({ idleFrame: SUCCESS })
+    const provider = makeProvider([{ text: 'quiet', toolUses: [] }])
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ mode: 'passive', intervalTurns: 3 }), provider })
+
+    // Turn 1: frame (counter seeded due). Turns 2-3: no frame. Turn 4: frame.
+    await runTurn('sei:idle', {})
+    await runTurn('sei:idle', {})
+    await runTurn('sei:idle', {})
+    await runTurn('sei:idle', {})
+
+    expect(captured.rendered).toBe(2)
+    expect(countImages(provider.calls[0].messages)).toBe(1)
+    expect(countImages(provider.calls[1].messages)).toBe(0)
+    expect(countImages(provider.calls[2].messages)).toBe(0)
+    expect(countImages(provider.calls[3].messages)).toBe(1)
+  })
+
+  it("off: never renders and never offers the look tool", async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { adapter, captured } = makeAdapter({ idleFrame: SUCCESS })
+    const provider = makeProvider([{ text: 'darkness', toolUses: [] }])
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ mode: 'off' }), provider })
 
     await runTurn('sei:idle', {})
 
-    expect(captured.gateChecks).toBe(1)
-    expect(captured.rendered).toBe(0) // gate closed → renderIdleFrame never called
-    expect(provider.calls.length).toBe(1)
-    const flat = JSON.stringify(provider.calls[0].messages)
-    expect(flat).not.toContain('"type":"image"')
-    expect(provider.calls[0].path).toBeUndefined()
-  })
-
-  it('{skip:true} dedupe: silent no-op — frame rendered but NO image attached, idle turn still runs', async () => {
-    _setTickIntervalForTests(10_000_000)
-    const { adapter, captured } = makeAdapter({ gateClear: true, idleFrame: { skip: true } })
-    const provider = makeProvider([{ text: 'same as before', toolUses: [] }])
-    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true }), provider })
-
-    await runTurn('sei:idle', {})
-
-    expect(captured.rendered).toBe(1) // render WAS attempted (dedupe decided inside)
-    expect(provider.calls.length).toBe(1)
-    const flat = JSON.stringify(provider.calls[0].messages)
-    // Dedupe → no image, no base64.
-    expect(flat).not.toContain('"type":"image"')
-    expect(flat).not.toContain(B64)
-    // Standard path either way.
-    expect(provider.calls[0].path).toBeUndefined()
-  })
-
-  it('degrade string: no image attached, idle turn proceeds on the standard path', async () => {
-    _setTickIntervalForTests(10_000_000)
-    const { adapter } = makeAdapter({ gateClear: true, idleFrame: "I can't see clearly right now" })
-    const provider = makeProvider([{ text: 'cant see well', toolUses: [] }])
-    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true }), provider })
-
-    await runTurn('sei:idle', {})
-
-    expect(provider.calls.length).toBe(1)
-    const flat = JSON.stringify(provider.calls[0].messages)
-    expect(flat).not.toContain('"type":"image"')
-    expect(provider.calls[0].path).toBeUndefined()
-  })
-
-  it('a NON-idle (chat) turn never invokes the idle gate', async () => {
-    _setTickIntervalForTests(10_000_000)
-    const { adapter, captured } = makeAdapter({ gateClear: true, idleFrame: SUCCESS })
-    const provider = makeProvider([{ text: 'hi', toolUses: [] }])
-    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true }), provider })
-
-    await runTurn('sei:chat_received', { text: 'hello', username: 'Steve', playerSpoke: true, ts: Date.now() })
-
-    // The gate is idle-only — a player-chat turn must not auto-render.
-    expect(captured.gateChecks).toBe(0)
     expect(captured.rendered).toBe(0)
+    expect(countImages(provider.calls[0].messages)).toBe(0)
+    expect(provider.calls[0].tools.map((t) => t.name)).not.toContain('look')
+  })
+
+  it('passive: frames flow but the look tool is NOT offered; active: it is', async () => {
+    _setTickIntervalForTests(10_000_000)
+    for (const [mode, expectTool] of [['passive', false], ['active', true]]) {
+      const { adapter } = makeAdapter({ idleFrame: SUCCESS })
+      const provider = makeProvider([{ text: 'hm', toolUses: [] }])
+      const { runTurn } = makeOrch({ adapter, config: makeConfig({ mode }), provider })
+      await runTurn('sei:idle', {})
+      const names = provider.calls[0].tools.map((t) => t.name)
+      expect(names.includes('look')).toBe(expectTool)
+      expect(countImages(provider.calls[0].messages)).toBe(1)
+    }
+  })
+
+  it('non-VLM provider: no renders regardless of tier', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { adapter, captured } = makeAdapter({ idleFrame: SUCCESS })
+    const provider = makeProvider([{ text: 'blind', toolUses: [] }], { vision: false })
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ mode: 'active' }), provider })
+
+    await runTurn('sei:idle', {})
+
+    expect(captured.rendered).toBe(0)
+    expect(countImages(provider.calls[0].messages)).toBe(0)
+    expect(provider.calls[0].tools.map((t) => t.name)).not.toContain('look')
+  })
+
+  it('{skip:true} dedupe: render attempted, no image attached, cadence resets', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { adapter, captured } = makeAdapter({ idleFrame: { skip: true } })
+    const provider = makeProvider([{ text: 'same as before', toolUses: [] }])
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ mode: 'passive', intervalTurns: 3 }), provider })
+
+    await runTurn('sei:idle', {})
+    await runTurn('sei:idle', {}) // counter reset by skip → not due yet
+
+    expect(captured.rendered).toBe(1)
+    expect(countImages(provider.calls[0].messages)).toBe(0)
+    expect(countImages(provider.calls[1].messages)).toBe(0)
+  })
+
+  it('degrade string: no image, and the cadence does NOT reset (retries next turn)', async () => {
+    _setTickIntervalForTests(10_000_000)
+    // First render degrades (world loading), second succeeds.
+    const { adapter, captured } = makeAdapter({
+      idleFrame: (n) => (n === 1 ? "I can't see clearly right now" : SUCCESS),
+    })
+    const provider = makeProvider([{ text: 'loading...', toolUses: [] }])
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ mode: 'passive', intervalTurns: 5 }), provider })
+
+    await runTurn('sei:idle', {})
+    await runTurn('sei:idle', {})
+
+    expect(captured.rendered).toBe(2) // retried immediately on the next turn
+    expect(countImages(provider.calls[0].messages)).toBe(0)
+    expect(countImages(provider.calls[1].messages)).toBe(1)
+  })
+
+  it('image retention: a newer frame demotes the older one — at most ONE image per payload', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { adapter } = makeAdapter({ idleFrame: SUCCESS })
+    // interval 1 → a frame on EVERY turn. The tool call keeps the SAME loop
+    // alive across two LLM calls, so without the demotion cap the second
+    // call's history would carry BOTH frames.
+    const provider = makeProvider([
+      { text: 'on it', toolUses: [{ id: 't1', name: 'goTo', input: {} }] },
+      { text: 'arrived', toolUses: [] },
+    ])
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ mode: 'passive', intervalTurns: 1 }), provider })
+
+    await runTurn('sei:idle', {})
+
+    expect(provider.calls.length).toBe(2)
+    expect(countImages(provider.calls[0].messages)).toBe(1)
+    // Second call (same loop): exactly one LIVE image — the older frame is
+    // demoted to its text placeholder, not re-sent as base64.
+    expect(countImages(provider.calls[1].messages)).toBe(1)
+    expect(JSON.stringify(provider.calls[1].messages)).toContain('a picture was shown here on an earlier turn')
   })
 })

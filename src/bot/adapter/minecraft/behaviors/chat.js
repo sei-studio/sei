@@ -18,26 +18,62 @@ function forceCancelBody(bot) {
   try { bot.clearControlStates?.() } catch {}
 }
 
+// 260618: whole-word, case-insensitive name match. Minecraft names are
+// [A-Za-z0-9_], so we require the name not be glued to other name characters —
+// "sui" matches "sui go" and "hey sui!" but NOT "suit" or "result". Used to tell
+// whether a message is aimed at this bot or at one of its sibling companions.
+function mentionsName(message, name) {
+  if (!name) return false
+  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  try { return new RegExp(`(^|[^a-z0-9_])${esc}([^a-z0-9_]|$)`, 'i').test(String(message)) }
+  catch { return String(message).toLowerCase().includes(String(name).toLowerCase()) }
+}
+
 export function startChat(bot, config, orchestrator = null) {
   bot.on('chat', (username, message) => {
     if (username === bot.username) return
     logChatIn(username, message)
 
-    // v1.0 is single-human LAN. We no longer gate "is this the owner?" on a
-    // username match — the GUI "Name" need not equal the in-game name, and
-    // mc_username is no longer collected. Any non-bot chatter (the early
-    // return above already excludes the bot itself) is treated as the player.
-    const playerSpoke = true
+    // v1.0 is single-human LAN, but more than one AI companion can share the
+    // world. The roster of OTHER companion usernames is pushed from main (see
+    // bot/index.js setCompanions) onto the parsed config, which is stable across
+    // reconnects and readable here even though this path has no orchestrator.
+    const roster = Array.isArray(config?._seiCompanions) ? config._seiCompanions : []
+    const fromCompanion = roster.some(c => c && c.toLowerCase() === String(username).toLowerCase())
+
+    const playerSpoke = !fromCompanion
     // Substitute the in-game username with the preferred display name before
-    // anything the LLM reads (chat events, convo memory), so the bot addresses
-    // the player by the GUI-set name rather than their raw gamertag.
-    const displayName = config.player_display_name || username
+    // anything the LLM reads — but ONLY for the human. A sibling AI companion
+    // keeps its own in-game name, otherwise the bot would think its teammate's
+    // chatter came from the player.
+    const displayName = fromCompanion ? username : (config.player_display_name || username)
 
     try { orchestrator?.recordIncomingChat?.(displayName, message) } catch {}
 
+    const addressed = mentionsName(message, bot.username)
+    const addressedToSibling = roster.some(c => mentionsName(message, c))
+    // M1: this bot is NOT the intended recipient when the message names ONLY a
+    // sibling (let that companion field it) or a fellow bot is just chattering
+    // (don't wake on teammate small-talk → no bot-to-bot ping-pong loop).
+    // EXCEPTION (260619): a companion that addresses THIS bot BY NAME ("marv,
+    // mine that stone") is a DIRECTED request and DOES wake us. The player can
+    // delegate task-giving to a teammate ("sui, give marv tasks. marv, listen to
+    // sui"), and a sibling's by-name command is exactly that — blanket-suppressing
+    // it left the directed bot idle while its teammate kept asking (the Marv
+    // multi-agent deadlock). Only UN-addressed companion chatter stays
+    // record-but-no-wake, which still blocks the ping-pong loop (an acknowledgement
+    // that doesn't name anyone never wakes the other bot).
+    // So suppress reduces to: a line that does NOT name this bot AND is either a
+    // teammate talking or a message aimed at a sibling. Either way the line is
+    // still recorded to chat history (brain.onChat records before it checks this
+    // flag), so a suppressed line still surfaces on the next wake — it just
+    // doesn't interrupt.
+    const suppressInterrupt = !addressed && (fromCompanion || addressedToSibling)
+
     // Stop-verb fast path: cancel the body immediately so dig/pathfind/etc.
     // release before the LLM turn fires. Falls through to normal dispatch
-    // so the LLM still sees the chat and can respond in-character.
+    // so the LLM still sees the chat and can respond in-character. Skipped for a
+    // sibling bot's chatter (a teammate saying "stop" must not halt this bot).
     if (playerSpoke && orchestrator) {
       const trimmed = String(message).trim().toLowerCase()
       if (STOP_VERBS.has(trimmed)) {
@@ -47,8 +83,6 @@ export function startChat(bot, config, orchestrator = null) {
       }
     }
 
-    const addressed = message.toLowerCase().includes(bot.username.toLowerCase())
-
     // Check proximity (within 20 blocks)
     const speaker = bot.players[username]
     const botPos = bot.entity?.position
@@ -57,8 +91,12 @@ export function startChat(bot, config, orchestrator = null) {
       nearby = speaker.entity.position.distanceTo(botPos) <= 20
     }
 
-    if (playerSpoke || addressed || nearby) {
-      const payload = { username: displayName, message, addressed, playerSpoke }
+    // Emit (so the line reaches the brain to be recorded) whenever someone is
+    // talking or nearby. `suppressInterrupt` then tells the brain to record but
+    // not wake. We always emit for a sibling so its chatter still lands in
+    // history even when it doesn't interrupt.
+    if (playerSpoke || addressed || nearby || fromCompanion) {
+      const payload = { username: displayName, message, addressed, playerSpoke, suppressInterrupt }
       if (bot._seiDebouncer) {
         bot._seiDebouncer.debounce(`chat:${displayName}`, payload, (p) => bot.emit('sei:chat_received', p))
       } else {

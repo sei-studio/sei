@@ -479,7 +479,15 @@
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
+  column-gap: 5px;
+  /* Row-gap matches the panel's card→stats gap so the proactiveness row below
+     the three stat cells is spaced the same as the description→stats gap. */
+  row-gap: var(--space-md-plus);
+}
+
+/* Proactiveness spans the full row beneath the three stat cells. */
+.statWide {
+  grid-column: 1 / -1;
 }
 
 .stat {

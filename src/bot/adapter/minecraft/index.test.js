@@ -24,6 +24,11 @@ vi.mock('./behaviors/visualize.js', () => ({
   })),
   __resetVisualizeDedupeCache: vi.fn(),
   CANT_SEE_COPY: "I can't see clearly right now",
+  // explore.js imports these capture/face helpers from the same module.
+  orientationToYawOffset: vi.fn(() => null),
+  yawToUnit: vi.fn(() => [0, -1]),
+  faceYaw: vi.fn(async () => {}),
+  captureFrame: vi.fn(async () => ({ ok: true, mediaType: 'image/jpeg', dataBase64: 'AAAA' })),
 }))
 
 import { createMinecraftAdapter } from './index.js'
@@ -94,12 +99,12 @@ describe('adapter.chat — H4 leading-slash guard (260525-s09)', () => {
 // action must EXIST in the registry for the filter to ever offer it. The
 // earlier integration tests used a mock adapter with a hand-rolled
 // listActions, which hid the missing registration entirely.
-describe('visualize registration through the production construction shape', () => {
-  it('visionEnabled: true registers visualize in the real registry', () => {
+describe('look registration through the production construction shape', () => {
+  it('visionEnabled: true registers look in the real registry', () => {
     const bot = { chat: vi.fn(), username: 'sei', players: {} }
     const config = { adapter: { minecraft: {} } }
     const adapter = createMinecraftAdapter({ bot, config, visionEnabled: true })
-    expect(adapter.listActions()).toContain('visualize')
+    expect(adapter.listActions()).toContain('look')
   })
 
   it('the production summon site passes visionEnabled: true (source assertion)', async () => {

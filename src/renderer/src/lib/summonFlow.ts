@@ -23,8 +23,38 @@
  */
 
 import { sei } from './ipcClient';
+import { effectiveMcUsername } from '@shared/characterSchema';
 import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
+
+/**
+ * Multi-summon guard. Two bots cannot share an in-game username — the world
+ * kicks the second with `multiplayer.disconnect.name_taken`. If a
+ * currently-summoned (online or connecting) character already uses the target's
+ * effective MC username, open the conflict popup and return true (refuse). The
+ * supervisor has an authoritative backstop for the click-twice race; this is
+ * the user-facing surface on the common path. Case-insensitive to match MC.
+ */
+function blockedByUsernameConflict(id: string): boolean {
+  const { characters, summons } = useDataStore.getState();
+  const target = characters.find((c) => c.id === id);
+  if (!target) return false;
+  const targetName = effectiveMcUsername(target).toLowerCase();
+  const conflict = characters.find((c) => {
+    if (c.id === id) return false;
+    const st = summons[c.id]?.kind;
+    if (st !== 'online' && st !== 'connecting') return false;
+    return effectiveMcUsername(c).toLowerCase() === targetName;
+  });
+  if (!conflict) return false;
+  useUiStore.getState().openModal({
+    kind: 'summon-conflict',
+    attemptedName: target.name,
+    conflictName: conflict.name,
+    username: effectiveMcUsername(target),
+  });
+  return true;
+}
 
 /**
  * Run the LAN gate and summon. Always navigates to the character page on the
@@ -51,6 +81,8 @@ export function proceedSummon(id: string): void {
  * blocks the summon on the nudge — any IPC failure degrades to the normal flow.
  */
 export async function attemptSummon(id: string): Promise<void> {
+  // Refuse + popup if this character's in-game name collides with a live one.
+  if (blockedByUsernameConflict(id)) return;
   try {
     const { shown } = await sei.wizardPromptShown('get');
     if (!shown) {

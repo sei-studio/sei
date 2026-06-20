@@ -108,6 +108,22 @@ export function SetupWizardModal(): React.ReactElement | null {
   );
 }
 
+/**
+ * The wizard's step machine WITHOUT the modal scrim/card — rendered inline by
+ * the dedicated onboarding SkinSetupScreen so skin setup is a full page (matching
+ * "What should they call you?") rather than a popup. Reads the same useWizardStore
+ * step; the step components' terminal actions (closeWizard) are watched by the
+ * host screen to advance the onboarding flow. The `key` drives the crossfade.
+ */
+export function WizardStepMachine(): React.ReactElement {
+  const step = useWizardStore((s) => s.step);
+  return (
+    <div key={step} className={styles.stepContent}>
+      {renderStep(step)}
+    </div>
+  );
+}
+
 function renderStep(step: WizardStep): React.ReactElement {
   switch (step) {
     case 'welcome':

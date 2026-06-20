@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="760" viewBox="0 0 1160 760">
+<defs>
+<marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+<path d="M0,0 L8,3 L0,6 z" fill="#9aa3b2"/>
+</marker>
+</defs>
+<rect width="1160" height="760" fill="#ffffff"/>
+<text x="60" y="64" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0f2a52" letter-spacing="2">FIGURE 1</text><text x="60" y="90" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1c2230">Proactiveness Levels In Game</text>
+<rect x="430.0" y="110" width="300" height="56" rx="10" ry="10" fill="#eef2f9" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="580.0" y="142.76" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Quiet tick, no goal</text>
+<line x1="580.0" y1="166" x2="250.0" y2="250" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="100.0" y="250" width="300" height="70" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="250.0" y="281.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Passive</text>
+<text x="250.0" y="299.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">every 10 min</text>
+<line x1="250.0" y1="320" x2="250.0" y2="372" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="120.0" y="372" width="260" height="84" rx="10" ry="10" fill="#f3f5f9" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="250.0" y="410.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Comment</text>
+<text x="250.0" y="428.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">or stay quiet</text>
+<line x1="250.0" y1="456" x2="250.0" y2="486" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="140.0" y="486" width="220" height="56" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="250.0" y="518.76" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">No goals of its own</text>
+<line x1="580.0" y1="166" x2="580.0" y2="250" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="430.0" y="250" width="300" height="70" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="580.0" y="281.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Reactive</text>
+<text x="580.0" y="299.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">every 1 min</text>
+<line x1="580.0" y1="320" x2="580.0" y2="372" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="450.0" y="372" width="260" height="84" rx="10" ry="10" fill="#eef4ff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="580.0" y="410.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Comment</text>
+<text x="580.0" y="428.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">or offer help</text>
+<line x1="580.0" y1="456" x2="580.0" y2="486" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="470.0" y="486" width="220" height="56" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="580.0" y="518.76" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">No goals of its own</text>
+<line x1="580.0" y1="166" x2="910.0" y2="250" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="760.0" y="250" width="300" height="70" rx="10" ry="10" fill="#7FB0FF" stroke="#7FB0FF" stroke-width="2"/>
+<text x="910.0" y="281.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0f2a52" text-anchor="middle">Agentic</text>
+<text x="910.0" y="299.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">every 20 sec</text>
+<line x1="910.0" y1="320" x2="910.0" y2="372" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="780.0" y="372" width="260" height="84" rx="10" ry="10" fill="#e6efff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="910.0" y="410.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Resume agenda</text>
+<text x="910.0" y="428.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">set goal if none</text>
+<line x1="910.0" y1="456" x2="910.0" y2="486" stroke="#9aa3b2" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="800.0" y="486" width="220" height="56" rx="10" ry="10" fill="#dbe8ff" stroke="#7FB0FF" stroke-width="1.6"/>
+<text x="910.0" y="518.76" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Sets own goals</text>
+<line x1="250.0" y1="542" x2="250.0" y2="600" stroke="#c2cad8" stroke-width="1.4" marker-end="url(#ah)"/>
+<line x1="580.0" y1="542" x2="580.0" y2="600" stroke="#c2cad8" stroke-width="1.4" marker-end="url(#ah)"/>
+<line x1="910.0" y1="542" x2="910.0" y2="600" stroke="#c2cad8" stroke-width="1.4" marker-end="url(#ah)"/>
+<rect x="100.0" y="600" width="960" height="58" rx="10" ry="10" fill="#eef2f9" stroke="#c2cad8" stroke-width="1.6"/>
+<text x="580.0" y="633.76" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">All record a player's long task with setGoal</text>
+</svg>

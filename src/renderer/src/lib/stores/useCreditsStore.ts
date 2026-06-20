@@ -210,6 +210,14 @@ interface CreditsState {
   usage_pct: number;
   /** ITEM 4: server-supplied remaining-tokens count (undefined during rollout / cold-load). */
   remaining_tokens?: number;
+  /**
+   * Lifetime spend / total granted in USD (dollar form of usage_pct). main
+   * computes these from ledger micros. Deliberately past the PROXY-05 percent-
+   * only line at the owner's request; drives the UsageBar tooltip "$used/$total".
+   * undefined for local/BYOK or before the first seed.
+   */
+  used_usd?: number;
+  total_usd?: number;
   plan: CreditsStatus['plan'];
   renews_at: string | null;
   /**
@@ -329,6 +337,8 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   remaining_pct: 0,
   usage_pct: 0,
   remaining_tokens: undefined,
+  used_usd: undefined,
+  total_usd: undefined,
   plan: 'depleted',
   renews_at: null,
   ends_at: null,
@@ -345,6 +355,24 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   pushSeq: 0,
 };
 
+// 260617: once a subscription goes active, proactively clear any persisted
+// daily-play-limit block (UserConfig.daily_limited_until) so a user who just
+// upgraded past the trial cap is not still blocked at the summon gate. Writes
+// only when the flag is set, and at most once per app session.
+let clearedDailyForActive = false;
+async function clearDailyLimitOnSubscription(): Promise<void> {
+  if (clearedDailyForActive) return;
+  clearedDailyForActive = true;
+  try {
+    const cfg = await sei.getConfig();
+    if (cfg?.daily_limited_until) {
+      await sei.saveConfig({ ...cfg, daily_limited_until: null });
+    }
+  } catch {
+    clearedDailyForActive = false; // transient IPC failure — allow a later retry
+  }
+}
+
 export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) => ({
   ...INITIAL,
 
@@ -358,6 +386,8 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         remaining_pct: status.remaining_pct,
         usage_pct: status.usage_pct ?? 0,
         remaining_tokens: status.remaining_tokens,
+        used_usd: status.used_usd,
+        total_usd: status.total_usd,
         plan: status.plan,
         renews_at: status.renews_at,
         ends_at: status.ends_at,
@@ -380,6 +410,10 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         });
       }
       prevPlanForReceipt = status.plan;
+      // Clear a stale daily-limit block once the account is a subscriber.
+      if (status.subscription_status_raw === 'active') {
+        void clearDailyLimitOnSubscription();
+      }
     });
     const unsubHardStop = sei.onCreditsHardStop((info) => {
       set({
@@ -423,6 +457,8 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
           remaining_pct: status.remaining_pct,
           usage_pct: status.usage_pct ?? 0,
           remaining_tokens: status.remaining_tokens,
+        used_usd: status.used_usd,
+        total_usd: status.total_usd,
           plan: status.plan,
           renews_at: status.renews_at,
           ends_at: status.ends_at,
@@ -463,6 +499,8 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         remaining_pct: status.remaining_pct,
         usage_pct: status.usage_pct ?? 0,
         remaining_tokens: status.remaining_tokens,
+        used_usd: status.used_usd,
+        total_usd: status.total_usd,
         plan: status.plan,
         renews_at: status.renews_at,
         ends_at: status.ends_at,

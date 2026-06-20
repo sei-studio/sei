@@ -29,7 +29,8 @@ export type ErrorClass =
   | 'SKIN_FILE_INVALID'
   | 'SKIN_SERVER_PORT_TAKEN'
   | 'WIZARD_PERMISSION_DENIED'
-  | 'CLOUD_CREDITS_DEPLETED';
+  | 'CLOUD_CREDITS_DEPLETED'
+  | 'DAILY_LIMIT_REACHED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -51,4 +52,5 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'SKIN_SERVER_PORT_TAKEN',
   'WIZARD_PERMISSION_DENIED',
   'CLOUD_CREDITS_DEPLETED',
+  'DAILY_LIMIT_REACHED',
 ]);

@@ -103,6 +103,12 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+/* Selected state for toggle/segmented ghost buttons (aria-pressed). */
+.ghost[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* ── Kind: quiet — borderless, muted ─────────────────────────────────── */
 .quiet {

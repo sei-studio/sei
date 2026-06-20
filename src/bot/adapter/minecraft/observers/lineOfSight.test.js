@@ -57,6 +57,13 @@ describe('hasClearLineOfSight (VIS-05)', () => {
     expect(hasClearLineOfSight(bot, tgt)).toBe(true)
   })
 
+  it('honours a widened maxRange (the snapshot entity filter passes the full radius)', () => {
+    const bot = makeBot({ eye: { x: 0, y: 64, z: 0 }, blockAt: () => airBlock() })
+    const tgt = target({ x: 30, y: 64, z: 0 }) // past the default 16 gate, within 64
+    expect(hasClearLineOfSight(bot, tgt)).toBe(false)
+    expect(hasClearLineOfSight(bot, tgt, { maxRange: 64 })).toBe(true)
+  })
+
   it('returns false when a fluid block lies on the ray (fluids are occluders — raycast would MISS this)', () => {
     const bot = makeBot({
       eye: { x: 0, y: 64, z: 0 },

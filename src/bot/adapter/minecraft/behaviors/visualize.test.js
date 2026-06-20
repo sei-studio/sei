@@ -152,3 +152,51 @@ describe('visualizeAction — idle dedupe (D-02)', () => {
     expect(Object.keys(second)).toEqual(['text', 'image'])
   })
 })
+
+describe('visualizeAction — directional / relative facing (260617)', () => {
+  it('look({orientation}) turns the head before rendering', async () => {
+    renderPovMock.mockResolvedValue(okJpeg())
+    const look = vi.fn(async () => {})
+    const bot = makeBot({ entity: { position: { x: 0, y: 64, z: 0 }, yaw: 0, pitch: 0 }, look })
+
+    const res = await visualizeAction({ orientation: 'right' }, bot, config)
+    expect(Object.keys(res)).toEqual(['text', 'image'])
+    // right = +90° clockwise = -PI/2 yaw offset from a base yaw of 0.
+    expect(look).toHaveBeenCalledWith(-Math.PI / 2, 0, true)
+  })
+
+  it('look() with no direction renders the current view without turning', async () => {
+    renderPovMock.mockResolvedValue(okJpeg())
+    const look = vi.fn(async () => {})
+    const bot = makeBot({ entity: { position: { x: 0, y: 64, z: 0 }, yaw: 0.5, pitch: 0 }, look })
+
+    await visualizeAction({}, bot, config)
+    expect(look).not.toHaveBeenCalled()
+  })
+
+  it('look({around:true}) returns four labelled frames and restores facing', async () => {
+    renderPovMock.mockResolvedValue(okJpeg())
+    const look = vi.fn(async () => {})
+    const bot = makeBot({ entity: { position: { x: 0, y: 64, z: 0 }, yaw: 0.3, pitch: 0 }, look })
+
+    const res = await visualizeAction({ around: true }, bot, config)
+    expect(Object.keys(res)).toEqual(['text', 'images'])
+    expect(res.images).toHaveLength(4)
+    expect(res.images.map((f) => f.label)).toEqual(['forward', 'right', 'behind', 'left'])
+    for (const f of res.images) {
+      expect(f.mediaType).toBe('image/jpeg')
+      expect(typeof f.dataBase64).toBe('string')
+    }
+    // Four direction turns + one restore back to the starting yaw.
+    expect(look).toHaveBeenCalledTimes(5)
+    expect(look).toHaveBeenLastCalledWith(0.3, 0, true)
+  })
+
+  it('look({around:true}) degrades to the string when every frame fails', async () => {
+    renderPovMock.mockResolvedValue({ ok: false, reason: 'cant_see' })
+    const bot = makeBot({ entity: { position: { x: 0, y: 64, z: 0 }, yaw: 0, pitch: 0 }, look: vi.fn(async () => {}) })
+
+    const res = await visualizeAction({ around: true }, bot, config)
+    expect(typeof res).toBe('string')
+  })
+})

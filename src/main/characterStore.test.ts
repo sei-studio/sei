@@ -90,20 +90,27 @@ describe('resetMemoryForCharacter (ui-A9)', () => {
     }
   });
 
-  it('A9.1: wipes memory directory contents', async () => {
-    // Seed the character JSON + a fake memory file the bot would have
-    // written.
+  it('A9.1: wipes memory directory contents — MEMORY.md, PLAYER.md, and goals (HEARTBEAT.md)', async () => {
+    // Seed the character JSON + the files the bot writes at runtime. HEARTBEAT.md
+    // is the committed-goals / standing-orders store (setGoal/clearGoal write
+    // here, path = `${memDir}/HEARTBEAT.md`); it lives INSIDE memoryDir so the
+    // recursive wipe must clear it too. Asserting it explicitly locks the
+    // "reset clears active goals" guarantee against a future refactor that
+    // selectively deletes only MEMORY.md / PLAYER.md or relocates goals.
     await saveCharacter(makeChar());
     await writeFile(path.join(paths.memoryDir(UUID), 'MEMORY.md'), 'remembered facts');
     await writeFile(path.join(paths.memoryDir(UUID), 'PLAYER.md'), 'player notes');
+    await writeFile(path.join(paths.memoryDir(UUID), 'HEARTBEAT.md'), '- [2026-06-16] build a complete base');
 
     const before = await readdir(paths.memoryDir(UUID));
-    expect(before.length).toBeGreaterThan(0);
+    expect(before).toContain('HEARTBEAT.md');
 
     await resetMemoryForCharacter(UUID);
 
     const after = await readdir(paths.memoryDir(UUID));
     expect(after.length).toBe(0);
+    // Goals specifically must be gone, not just "the dir shrank".
+    expect(after).not.toContain('HEARTBEAT.md');
   });
 
   it('A9.2: resets last_launched=null and playtime_ms=0', async () => {

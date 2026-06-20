@@ -8,8 +8,11 @@
  *   - Pitfall 1 (asar path), Pitfall 2 (stdio:'pipe')
  *   - Project Constraint §5 (30s summon timeout, 10s stop timeout)
  *
- * Lifecycle: the supervisor owns ONE bot at a time. Switching characters
- * stops the current bot (10s budget) before starting the new one.
+ * Lifecycle: the supervisor owns a MAP of concurrent bot sessions keyed by
+ * characterId (multi-summon). A summon adds a session without disturbing the
+ * others; stop(id) drains one (10s budget) and stop()/shutdown() drains all.
+ * Two sessions may never share an in-game username (the world kicks the second
+ * with `name_taken`), so summon refuses a colliding name before forking.
  */
 import {
   utilityProcess,
@@ -26,10 +29,10 @@ import type {
   CreditsHardStopEvent,
   VisionCapability,
 } from '../shared/ipc';
-import type { Character } from '../shared/characterSchema';
+import { effectiveMcUsername, type Character } from '../shared/characterSchema';
 import { getCharacter, saveCharacter } from './characterStore';
 import { loadApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
-import { loadConfig as loadUserConfig } from './configStore'; // UserConfig (mc_username, preferred_name) for bot init
+import { loadConfig as loadUserConfig, saveConfig as saveUserConfig } from './configStore'; // UserConfig for bot init + daily-limit gate
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
 
@@ -101,6 +104,13 @@ function botEntryPath(): string {
 export interface BotSupervisorOptions {
   /** Returns the cached LAN port if connected, null otherwise. Wired by main. */
   getLanPort: () => number | null;
+  /**
+   * Returns the cached LAN world MOTD (level name) if connected, else null.
+   * Forwarded into the bot init payload as a human label for the world
+   * registry / MEMORY.md section headers (memory/worlds.js). Optional — when
+   * absent the bot labels worlds by spawn coords instead.
+   */
+  getLanMotd?: () => string | null;
   /** Forward to renderer via webContents.send('bot:status', status). */
   sendStatus: (status: BotStatus) => void;
   /**
@@ -124,8 +134,9 @@ export interface BotSupervisorOptions {
   getSkinServerBaseUrl: () => string | null;
   /**
    * Pre-flight cloud-credit gate (quick/260605). Resolves `true` when the
-   * signed-in account is on the cloud-proxy backend AND its ledger is exhausted
-   * (balance 0 / plan='depleted'). `_summon` consults this BEFORE forking a
+   * signed-in account is on the cloud-proxy backend AND its balance has fallen
+   * below the playable minimum (plan='depleted' — see MIN_PLAYABLE_BALANCE_MICRO
+   * in proxyClient). `_summon` consults this BEFORE forking a
    * cloud bot and refuses to summon when `true`, so a no-credit user never
    * joins the world to idle against a 402-ing proxy. MUST fail-open (resolve
    * `false`) on any error or missing session — a transient ledger-read blip can
@@ -144,9 +155,16 @@ export interface BotSupervisorOptions {
 
 export interface BotSupervisor {
   summon(characterId: string): Promise<void>;
-  stop(): Promise<void>;
+  /** Stop one summoned character, or — with no id — every active session. */
+  stop(characterId?: string): Promise<void>;
+  /** First active character id (or null). Back-compat: callers that only ask
+   *  "is ANY bot running" still work. Prefer getActiveIds()/isActive(id). */
   getActiveId(): string | null;
-  /** For app.before-quit cleanup. Drains any active session with the stop timeout. */
+  /** All currently-summoned character ids (multi-summon). */
+  getActiveIds(): string[];
+  /** True when this specific character has a live (or connecting) session. */
+  isActive(characterId: string): boolean;
+  /** For app.before-quit cleanup. Drains ALL active sessions with the stop timeout. */
   shutdown(): Promise<void>;
   /**
    * Plan 10-06: update the latest known JWT (Supabase access_token) for the
@@ -171,6 +189,12 @@ export interface BotSupervisor {
 
 interface ActiveSession {
   characterId: string;
+  /**
+   * Effective in-game MC username this bot connected under (effectiveMcUsername).
+   * Tracked so a second summon can refuse a name collision before forking — two
+   * bots sharing a username get the second kicked with `name_taken`.
+   */
+  username: string;
   startedAtMs: number;
   child: UtilityProcess;
   port1: Electron.MessagePortMain;
@@ -184,10 +208,19 @@ interface ActiveSession {
    * into a closed port. undefined for BYOK sessions.
    */
   teardownJwtRotation?: () => void;
+  /**
+   * 260618: timestamp of the last reactive JWT-refresh request from this bot
+   * (it posts {type:'request-jwt'} on a 401 expired_jwt). Debounced so a burst
+   * of 401s triggers at most one refreshSession() call.
+   */
+  lastJwtReqAt?: number;
 }
 
 export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
-  let active: ActiveSession | null = null;
+  // Multi-summon: zero-or-more concurrent sessions keyed by characterId. A
+  // fresh summon adds an entry; it no longer stops the others. The common case
+  // (one bot) is just a one-entry map, so single-summon behavior is unchanged.
+  const sessions = new Map<string, ActiveSession>();
   // Plan 10-06: latest known Supabase access_token (JWT). The jwtBridge
   // module-level closure calls updateJwt() on every TOKEN_REFRESHED / SIGNED_IN
   // / USER_UPDATED / SIGNED_OUT (T-10-06-01: only the JWT, never the refresh
@@ -207,7 +240,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       case 'disconnected':
         // Map to a transitional state; renderer can keep the row visible
         // but flip the dot back to amber until reconnect.
-        return { kind: 'connecting' };
+        return { kind: 'connecting', characterId };
       case 'error':
         return { kind: 'error', error: e.error, message: e.message, characterId };
       case 'exit':
@@ -222,9 +255,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }
   };
 
-  async function _stopActive(timeoutMs: number): Promise<void> {
-    if (!active) return;
-    const session = active;
+  async function _stop(characterId: string, timeoutMs: number): Promise<void> {
+    const session = sessions.get(characterId);
+    if (!session) return;
     // BL-01: kill the JWT rotation pump BEFORE port1.close() so a pending
     // tick (in the middle of a refreshSession await) cannot postMessage
     // onto a disposed port. setupJwtRotation re-checks `running` between
@@ -263,19 +296,94 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     } catch {
       // best-effort
     }
-    if (active === session) active = null;
-    opts.sendStatus({ kind: 'idle' });
+    if (sessions.get(characterId) === session) sessions.delete(characterId);
+    // 260618: a companion left — refresh the survivors' rosters.
+    broadcastRoster();
+    opts.sendStatus({ kind: 'idle', characterId });
+  }
+
+  /** Drain every active session in parallel (sign-out / before-quit). */
+  async function _stopAll(timeoutMs: number): Promise<void> {
+    await Promise.all([...sessions.keys()].map((id) => _stop(id, timeoutMs)));
+  }
+
+  /**
+   * 260618 (multi-agent): tell every live bot which OTHER AI companions share
+   * the world right now. Each bot receives the list of the other sessions'
+   * in-game usernames (never its own). The bot uses it to (a) not wake on a
+   * message aimed only at a sibling, (b) see + coordinate with teammates in its
+   * snapshot, and (c) know it may direct a fellow companion. Re-broadcast on
+   * every summon/stop/exit so the roster tracks the live session set. A solo
+   * session just gets [] (no behavior change). Best-effort per port.
+   */
+  function broadcastRoster(): void {
+    for (const session of sessions.values()) {
+      const companions = [...sessions.values()]
+        .filter((s) => s !== session)
+        .map((s) => s.username);
+      try {
+        session.port1.postMessage({ type: 'roster', companions });
+      } catch {
+        /* port closed during teardown; ignore */
+      }
+    }
+  }
+
+  /**
+   * 260618 (freeze fix): a cloud-proxy bot posts {type:'request-jwt'} when a
+   * call returns 401 expired_jwt. The proactive 30-min rotation pump can miss
+   * (machine asleep, a refresh tick that failed), leaving the bot hammering a
+   * dead token and frozen until stopped. Fetch a fresh token on demand
+   * (getProxyJwt refreshes when near/past expiry) and push it straight back on
+   * the same cloud-jwt-update channel the pump uses, so the bot's next call
+   * succeeds. Debounced per session. NEVER logs the token (T-13-14-01).
+   */
+  async function handleJwtRefreshRequest(characterId: string): Promise<void> {
+    const session = sessions.get(characterId);
+    if (!session) return;
+    const now = Date.now();
+    if (session.lastJwtReqAt && now - session.lastJwtReqAt < 8_000) return;
+    session.lastJwtReqAt = now;
+    try {
+      const { getProxyJwt } = await import('./auth/proxyJwtFetcher');
+      const jwt = await getProxyJwt();
+      latestJwt = jwt;
+      try {
+        session.port1.postMessage({ kind: 'cloud-jwt-update', jwt });
+        logger.info(`[sei/sup] pushed a fresh JWT to ${characterId} after a 401 recovery request`);
+      } catch {
+        /* port closed during teardown; ignore */
+      }
+    } catch (err) {
+      // PROXY_NO_SESSION (signed out) or PROXY_REFRESH_FAILED. Nothing to push;
+      // the signed-out case is owned by the renderer's auth / hard-stop flow.
+      logger.warn(
+        `[sei/sup] reactive JWT refresh for ${characterId} failed: ${(err as Error)?.message}`,
+      );
+    }
   }
 
   async function _summon(characterId: string): Promise<void> {
-    // D-16: stop current bot first if any (graceful disconnect via bot.quit
-    // before a fresh fork — guarantees ONE bot at a time).
-    if (active) {
-      await _stopActive(STOP_TIMEOUT_MS);
-    }
+    // Multi-summon: do NOT stop the other bots. Re-summoning an already-running
+    // character is a no-op (the UI shows "unsummon" for live characters, so the
+    // only way here is a double-fire) — never fork a duplicate child for it.
+    if (sessions.has(characterId)) return;
 
     const character: Character | null = await getCharacter(characterId);
     if (!character) throw new Error(`Character not found: ${characterId}`);
+
+    // Duplicate in-game-name guard: two bots can't share a username (the world
+    // kicks the second with `name_taken`). Refuse to fork when a live session
+    // already uses this character's effective MC username. The renderer
+    // pre-checks and raises a popup on the common path; this is the
+    // authoritative backstop that closes the click-twice-fast race. Compared
+    // case-insensitively to match MC's username handling.
+    const username = effectiveMcUsername(character);
+    for (const s of sessions.values()) {
+      if (s.username.toLowerCase() === username.toLowerCase()) {
+        throw new Error(`SUMMON_USERNAME_CONFLICT: ${username}`);
+      }
+    }
 
     // Phase 13-15 (PROXY-07, D-57): branch on AI backend kind.
     //   - 'cloud-proxy' → bot routes Anthropic traffic through the Fly.io
@@ -305,9 +413,40 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // own-key user. The early throw runs BEFORE the 'connecting' status
       // below, so the model row stays idle rather than flashing a connect.
       if (await opts.cloudCreditsDepleted()) {
+        logger.warn(
+          '[sei/sup] summon blocked: out of playtime (balance below the playable minimum) — raising popup, not forking the bot',
+        );
         opts.emitHardStop({ reason: 'depleted' });
-        opts.sendStatus({ kind: 'idle' });
+        opts.sendStatus({ kind: 'idle', characterId });
         throw new Error('CLOUD_CREDITS_DEPLETED');
+      }
+
+      // Daily-play-limit gate (trial $5/day spend cap, 260617). A prior session
+      // that hit the cap persisted daily_limited_until; refuse to fork until the
+      // window resets — the bot would just 429 daily_dollar and bounce. Raise the
+      // same daily-limit popup the mid-session path uses. Subscribers never hit
+      // the trial cap, and the renderer clears this flag on subscription-active,
+      // so a paid upgrade unblocks immediately; a config glitch fails OPEN.
+      try {
+        const cfg = await loadUserConfig();
+        const untilIso = cfg.daily_limited_until;
+        if (untilIso) {
+          const untilMs = Date.parse(untilIso);
+          if (Number.isFinite(untilMs) && Date.now() < untilMs) {
+            const sec = Math.max(1, Math.ceil((untilMs - Date.now()) / 1000));
+            logger.warn(`[sei/sup] summon blocked: daily play limit active ${sec}s more`);
+            opts.emitHardStop({ reason: 'rate_limited', retry_after_seconds: sec });
+            opts.sendStatus({ kind: 'idle', characterId });
+            throw new Error('DAILY_LIMIT_REACHED');
+          }
+          // Window elapsed — clear the stale flag so this and future summons pass.
+          await saveUserConfig({ ...cfg, daily_limited_until: null });
+        }
+      } catch (e) {
+        if ((e as Error)?.message === 'DAILY_LIMIT_REACHED') throw e;
+        logger.warn(
+          `[sei/sup] daily-limit gate check failed (allowing summon): ${(e as Error).message}`,
+        );
       }
     } else {
       // GUI-05: loadApiKey can throw KEYCHAIN_UNAVAILABLE / decrypt errors when
@@ -334,14 +473,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     const userCfg = await loadUserConfig();
     const mc_username = (userCfg.mc_username ?? '').trim();
     const preferred_name = (userCfg.preferred_name ?? '').trim();
-    // Phase 15 (D-05): bridge the user-facing auto-render toggle from UserConfig
-    // into the bot's config.vision.auto_render at fork time. The renderer never
-    // talks to the bot ConfigSchema directly — main is the translator. Only
-    // auto_render is user-toggled in v1.0; the other vision knobs
-    // (render_interval_ms, image_quality, resolution_px cap, explicit_cap_per_hour)
-    // come from the bot config.json defaults. Defaults to false when the field
-    // is absent (pre-Phase-15 config.json), matching the schema default.
-    const visionAutoRender = userCfg.vision_auto_render === true;
+    // Bridge the user-facing vision tier + per-turn cadence from UserConfig
+    // into the bot's config.vision at fork time. The renderer never talks to
+    // the bot ConfigSchema directly — main is the translator. The remaining
+    // vision knobs (image_quality, resolution_px cap, explicit_cap_per_hour)
+    // come from the bot config defaults.
+    const visionMode = userCfg.vision_mode ?? 'active';
+    const visionIntervalTurns = userCfg.vision_interval_turns ?? 5;
     if (!preferred_name) {
       const status: BotStatus = {
         kind: 'error',
@@ -366,7 +504,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }
 
     const startedAtMs = Date.now();
-    opts.sendStatus({ kind: 'connecting' });
+    opts.sendStatus({ kind: 'connecting', characterId });
 
     const router = await createLogRouter({ characterId, sendBatch: opts.sendLog });
     // ITEM 1 (quick/260523-t8d): expose the AI-backend mode + has-key state to
@@ -401,6 +539,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
 
     const session: ActiveSession = {
       characterId,
+      username,
       startedAtMs,
       child,
       port1,
@@ -408,7 +547,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       exited: exitedP,
       resolveExited,
     };
-    active = session;
+    sessions.set(characterId, session);
 
     // stdout/stderr line-split → router. We also keep the last ~4KB of
     // stderr/stdout so the exit-before-ready handler can attach the actual
@@ -467,6 +606,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         opts.sendVisionCapability?.({ visionCapable: data.visionCapable === true });
         return;
       }
+      // 260618 (freeze fix): the bot hit a 401 expired_jwt and is asking for a
+      // fresh token. Fetch on demand and push it back. Not a BotLifecycle event,
+      // so return before lifecycleToStatus.
+      if ((data as { type?: string }).type === 'request-jwt') {
+        void handleJwtRefreshRequest(characterId);
+        return;
+      }
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
@@ -495,6 +641,56 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         summonResolved = true;
         clearTimeout(summonTimer);
         summonReject(new Error(`${data.error}: ${data.message}`));
+      }
+      // Out-of-playtime popup (260616): a CLOUD_CREDITS_DEPLETED lifecycle error
+      // can arrive MID-SESSION — the running bot drew its balance below the
+      // playable minimum and the proxy 402'd its next turn, so orchestrator.js
+      // latched and is tearing the bot down (it leaves the world on its own).
+      // The pre-flight summon gate (_summon → cloudCreditsDepleted) only covers
+      // summon time, so raise the same out-of-playtime popup here for a session
+      // that depletes while live. emitHardStop is idempotent (sets
+      // hardStopActive=true); fires whether or not the summon promise resolved.
+      if (data.type === 'error' && data.error === 'CLOUD_CREDITS_DEPLETED') {
+        logger.warn('[sei/sup] bot depleted mid-session — raising out-of-playtime popup');
+        opts.emitHardStop({ reason: 'depleted' });
+        // The bot latches halted and self-exits, but that self-shutdown is
+        // best-effort: if its gracefulShutdown stalls (a hung brain.stop /
+        // adapter teardown, or a delayed process.exit in the utilityProcess),
+        // the child stays alive and socket-connected and the avatar FREEZES
+        // in-world. Drive the same authoritative drain→kill path as a
+        // user-initiated stop so the character is guaranteed to leave: _stop
+        // posts {type:'stop'}, waits STOP_TIMEOUT_MS, then child.kill(). It
+        // no-ops if the bot already exited (session gone). Fire-and-forget.
+        void _stop(characterId, STOP_TIMEOUT_MS);
+      }
+      // Daily play limit ($5/day trial spend cap) hit MID-SESSION: the bot
+      // latched and is leaving the world quietly (no in-game chat). Raise the
+      // daily-limit popup and PERSIST the reset window so re-summons are blocked
+      // until it clears (the summon gate reads daily_limited_until).
+      // retryAfterSeconds is the honest reset countdown; default 24h if absent.
+      if (data.type === 'error' && data.error === 'DAILY_LIMIT_REACHED') {
+        const sec =
+          typeof data.retryAfterSeconds === 'number' && data.retryAfterSeconds > 0
+            ? data.retryAfterSeconds
+            : 86_400;
+        logger.warn(`[sei/sup] bot hit daily play limit — popup + persisting ${sec}s block`);
+        opts.emitHardStop({ reason: 'rate_limited', retry_after_seconds: sec });
+        void (async (): Promise<void> => {
+          try {
+            const cfg = await loadUserConfig();
+            await saveUserConfig({
+              ...cfg,
+              daily_limited_until: new Date(Date.now() + sec * 1000).toISOString(),
+            });
+          } catch (e) {
+            logger.warn(`[sei/sup] failed to persist daily-limit block: ${(e as Error).message}`);
+          }
+        })();
+        // Same backstop as the depleted path above: the bot is supposed to
+        // leave the world on its own, but a stalled self-shutdown would leave
+        // the avatar frozen in-game (still connected). Authoritatively drain
+        // and, on timeout, kill the child so the character actually leaves.
+        void _stop(characterId, STOP_TIMEOUT_MS);
       }
       const status = lifecycleToStatus(data, characterId, startedAtMs);
       if (status) opts.sendStatus(status);
@@ -544,16 +740,26 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           character,
           apiKey,
           lanPort,
+          // World label for the memory registry / section headers (best-effort).
+          lanMotd: opts.getLanMotd?.() ?? null,
           // Profile-scoped root — the bot resolves memory under this dir, so it
           // must be the active account's profile (paths.profileRoot()), never
           // the device-global userData root.
           userDataDir: paths.profileRoot(),
           mc_username,
           preferred_name,
-          // Phase 15 (D-05): the bridged auto-render toggle. The bot's
-          // bootstrapWithInit reads this into config.vision.auto_render before
-          // ConfigSchema.parse. undefined/absent → false (auto-render OFF).
-          visionAutoRender,
+          // The bridged vision tier + per-turn cadence. The bot's
+          // bootstrapWithInit reads these into config.vision.{mode,
+          // interval_turns} before ConfigSchema.parse.
+          visionMode,
+          visionIntervalTurns,
+          // 260618 (multi-agent): the OTHER AI companions already in this world,
+          // so the new bot knows its teammates from its first tick. The new
+          // session is already in `sessions` (added before this spawn handler),
+          // so filter it out. broadcastRoster() keeps this current afterwards.
+          companions: [...sessions.values()]
+            .filter((s) => s.characterId !== characterId)
+            .map((s) => s.username),
           skinServerBaseUrl: opts.getSkinServerBaseUrl(),
           // Plan 10-06: ship the latest known JWT so a bot summoned while
           // signed_in has a token in hand before TOKEN_REFRESHED fires. Phase
@@ -607,6 +813,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
                     playtime_ms: (c.playtime_ms ?? 0) + sessionMs,
                   });
                 }
+                // Also fold into the profile-wide cumulative total so it
+                // survives this character being deleted later (the deleted
+                // character's time stays counted). Separate from the per-
+                // character write above; a failure in one shouldn't lose the other.
+                try {
+                  const { addPlaytimeMs } = await import('./configStore');
+                  await addPlaytimeMs(sessionMs);
+                } catch (err) {
+                  logger.warn(`failed to accumulate total playtime: ${(err as Error).message}`);
+                }
               } catch (err) {
                 logger.warn(`failed to accumulate playtime for ${characterId}: ${(err as Error).message}`);
               }
@@ -632,16 +848,34 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         opts.sendStatus({ kind: 'error', error: ec, message, characterId });
         summonReject(new Error(message));
       }
-      // Resolve `exited` only AFTER the playtime write lands. _stopActive awaits
+      // Resolve `exited` only AFTER the playtime write lands. _stop awaits
       // `exited` before emitting the idle status, and the renderer refreshes the
       // character's last_launched / total playtime when it sees idle — so the
       // store must already reflect this session's playtime by that point.
-      void playtimeWrite.finally(() => session.resolveExited());
+      //
+      // Drop the dead session from the map here too: a MID-SESSION crash (exit
+      // after summon-ready) never goes through _stop, so without this the slot
+      // would linger — `_summon`'s `sessions.has(id)` early-return would then
+      // silently swallow a "try again", and the username would stay reserved
+      // against the duplicate-name guard. Deleting BEFORE resolveExited means a
+      // concurrent _stop sees an empty slot (skips its own delete) but still
+      // emits its idle status. Guarded by identity so a re-summon that already
+      // replaced this entry is left untouched.
+      void playtimeWrite.finally(() => {
+        if (sessions.get(characterId) === session) sessions.delete(characterId);
+        // 260618: a mid-session crash removes a companion — refresh the roster
+        // of the survivors so they stop treating this bot as present.
+        broadcastRoster();
+        session.resolveExited();
+      });
     });
 
     // Wait for summon-ready or fail
     try {
       await summonPromise;
+      // 260618: the new bot is live — tell it (and every existing bot) the
+      // current companion roster so they all recognize each other immediately.
+      broadcastRoster();
     } catch (err) {
       // Cleanup on failure
       // BL-01: tear down the rotation pump first — same ordering as
@@ -663,7 +897,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       } catch {
         // best-effort
       }
-      if (active === session) active = null;
+      if (sessions.get(characterId) === session) sessions.delete(characterId);
       throw err;
     }
   }
@@ -677,8 +911,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
    * lifecycle of `_summon`, just retargeted at an already-forked child.
    */
   async function _switchBackend(kind: AiBackendKind): Promise<void> {
-    if (!active) return; // idle — next summon reads ai_backend_kind fresh
-    const session = active;
+    if (sessions.size === 0) return; // idle — next summon reads ai_backend_kind fresh
+    // Multi-summon: a backend switch is a per-account setting, so it applies to
+    // EVERY running bot. Acquire the shared credential once, then fan the
+    // `backend-switch` message out to each live session.
     if (kind === 'cloud-proxy') {
       // Acquire a fresh JWT for the immediate switch. Fall back to the cached
       // latestJwt if the on-demand fetch fails — the proxy then 401s and the
@@ -694,66 +930,79 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           `switchBackend(cloud-proxy): getProxyJwt failed, using cached token: ${(err as Error).message}`,
         );
       }
-      try {
-        session.port1.postMessage({
-          type: 'backend-switch',
-          cloudMode: { baseURL: PROXY_BASE_URL, authToken: jwt },
-        });
-      } catch {
-        /* port closed during teardown — ignore */
-      }
-      // (Re)wire the 30-min rotation pump if this session doesn't already have
-      // one (i.e. it was summoned in BYOK mode). Idempotent: a session
-      // summoned in cloud-proxy mode keeps its existing pump. Set up AFTER the
-      // backend-switch post so the bot is already in cloud mode before the
-      // pump's seed tick lands a `cloud-jwt-update` (setAuthToken no-ops until
-      // cloudMode is set).
-      if (!session.teardownJwtRotation) {
+      for (const session of sessions.values()) {
         try {
-          const { setupJwtRotation } = await import('./auth/proxyJwtFetcher');
-          session.teardownJwtRotation = setupJwtRotation(session.port1);
-        } catch (err) {
-          logger.warn(
-            `switchBackend(cloud-proxy): setupJwtRotation failed — continuing without rotation pump: ${(err as Error).message}`,
-          );
+          session.port1.postMessage({
+            type: 'backend-switch',
+            cloudMode: { baseURL: PROXY_BASE_URL, authToken: jwt },
+          });
+        } catch {
+          /* port closed during teardown — ignore */
+        }
+        // (Re)wire the 30-min rotation pump if this session doesn't already have
+        // one (i.e. it was summoned in BYOK mode). Idempotent: a session
+        // summoned in cloud-proxy mode keeps its existing pump. Set up AFTER the
+        // backend-switch post so the bot is already in cloud mode before the
+        // pump's seed tick lands a `cloud-jwt-update` (setAuthToken no-ops until
+        // cloudMode is set).
+        if (!session.teardownJwtRotation) {
+          try {
+            const { setupJwtRotation } = await import('./auth/proxyJwtFetcher');
+            session.teardownJwtRotation = setupJwtRotation(session.port1);
+          } catch (err) {
+            logger.warn(
+              `switchBackend(cloud-proxy): setupJwtRotation failed — continuing without rotation pump: ${(err as Error).message}`,
+            );
+          }
         }
       }
     } else {
-      // local / BYOK. Tear down the rotation pump BEFORE flipping the SDK so a
-      // pending tick can't post a stray cloud-jwt-update after the switch.
-      try { session.teardownJwtRotation?.(); } catch { /* best-effort */ }
-      session.teardownJwtRotation = undefined;
+      // local / BYOK. Load the key once; surface a keychain/missing-key error
+      // (parity with _summon) but STILL flip every live SDK to BYOK below — the
+      // dominant safety property is that a visible switch to "your own key" must
+      // stop routing through the paid cloud immediately (the inverse of the
+      // WR-05 surprise). Bots 401 on their next call until a key is set + re-summon.
       let apiKey = '';
+      let keyError: unknown = null;
       try {
         apiKey = await loadApiKey();
       } catch (err) {
-        // Surface the keychain / missing-key error (parity with _summon), but
-        // STILL flip the live SDK to BYOK with an empty key below: the
-        // dominant safety property is that a visible switch to "your own key"
-        // must stop routing through the paid cloud immediately (the inverse of
-        // the WR-05 surprise). The bot 401s on its next call until the user
-        // sets a key + re-summons.
-        const ec = classifyChildError(err);
-        const message = (err && typeof err === 'object' && 'message' in err)
-          ? String((err as { message: unknown }).message)
-          : String(err);
-        opts.sendStatus({ kind: 'error', error: ec, message, characterId: session.characterId });
+        keyError = err;
       }
-      try {
-        session.port1.postMessage({ type: 'backend-switch', apiKey });
-      } catch {
-        /* port closed during teardown — ignore */
+      for (const session of sessions.values()) {
+        if (keyError) {
+          const ec = classifyChildError(keyError);
+          const message = (keyError && typeof keyError === 'object' && 'message' in keyError)
+            ? String((keyError as { message: unknown }).message)
+            : String(keyError);
+          opts.sendStatus({ kind: 'error', error: ec, message, characterId: session.characterId });
+        }
+        // Tear down the rotation pump BEFORE flipping the SDK so a pending tick
+        // can't post a stray cloud-jwt-update after the switch.
+        try { session.teardownJwtRotation?.(); } catch { /* best-effort */ }
+        session.teardownJwtRotation = undefined;
+        try {
+          session.port1.postMessage({ type: 'backend-switch', apiKey });
+        } catch {
+          /* port closed during teardown — ignore */
+        }
       }
     }
   }
 
   return {
     summon: _summon,
-    stop: () => _stopActive(STOP_TIMEOUT_MS),
+    stop: (characterId?: string) =>
+      characterId ? _stop(characterId, STOP_TIMEOUT_MS) : _stopAll(STOP_TIMEOUT_MS),
     switchBackend: _switchBackend,
-    getActiveId: () => active?.characterId ?? null,
+    getActiveId: () => {
+      const first = sessions.keys().next();
+      return first.done ? null : first.value;
+    },
+    getActiveIds: () => [...sessions.keys()],
+    isActive: (characterId: string) => sessions.has(characterId),
     shutdown: async () => {
-      if (active) await _stopActive(STOP_TIMEOUT_MS);
+      await _stopAll(STOP_TIMEOUT_MS);
     },
     // Plan 10-06: cache the latest JWT and, if a session is live, push it on
     // port1 with a `{type:'jwt'}` message. The utilityProcess in Phase 10
@@ -763,8 +1012,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // own exit handler).
     updateJwt: (jwt: string | null) => {
       latestJwt = jwt;
-      if (active) {
-        try { active.port1.postMessage({ type: 'jwt', jwt }); }
+      for (const session of sessions.values()) {
+        try { session.port1.postMessage({ type: 'jwt', jwt }); }
         catch { /* port closed during teardown; ignore */ }
       }
     },

@@ -9,7 +9,25 @@ let _interval = null
 // { kind: 'entity', entityId, label }. null = not following.
 let _target = null
 
+// No-progress / unreachable detection (260617). The bare Movements below can
+// only climb by placing scaffolding blocks the bot is carrying, so a sheer
+// slope with a dirt-poor inventory yields NO path and GoalFollow silently
+// idles — the body sits still while the target walks away (the cliff freeze in
+// the play log). follow had no timeout/unreachable signal at all (unlike goTo).
+// These track last position + last forward progress so the 1s tick can flag
+// `_stuck`, which the snapshot surfaces so the model reacts instead of
+// narrating "the follow is working fine" for 55s.
+const STUCK_MS = 6000
+let _lastPos = null
+let _lastProgressAt = 0
+let _stuck = null // null | { stuckSec, dist, targetY, deltaY }
+
 export function setFollowTarget(t) {
+  // Reset the progress clock on every (re)assignment so a fresh follow never
+  // inherits a stale stuck state.
+  _stuck = null
+  _lastPos = null
+  _lastProgressAt = Date.now()
   if (t == null) { _target = null; return }
   if (t.kind === 'player' && typeof t.username === 'string') {
     _target = { kind: 'player', username: t.username }
@@ -21,6 +39,14 @@ export function setFollowTarget(t) {
 export function getFollowTargetLabel() {
   if (!_target) return null
   return _target.kind === 'player' ? _target.username : _target.label
+}
+
+// Stuck info for the snapshot composer: null when following normally, or
+// { stuckSec, dist, targetY, deltaY } when the bot has made no forward progress
+// toward a still-distant target for STUCK_MS (e.g. the target climbed terrain
+// the pathfinder can't scale).
+export function getFollowStuckInfo() {
+  return _stuck
 }
 
 function resolveTargetEntity() {
@@ -69,11 +95,33 @@ export function startFollow(bot, config) {
   // LLM-issued movement action (goTo, dig, etc.) without an explicit pause.
   clearInterval(_interval)
   _interval = setInterval(() => {
-    if (!_target) return
-    if (bot.pathfinder.isMoving()) return
+    if (!_target) { _stuck = null; _lastPos = null; return }
     const ent = resolveTargetEntity()
-    if (!ent) return
-    bot.pathfinder.setGoal(new goals.GoalFollow(ent, _config.follow_range), true)
+    const me = bot?.entity
+    if (!ent || !me) return // target or self not loaded — can't assess progress
+    // Re-install the follow goal when the pathfinder has gone idle (yields to
+    // any LLM-issued movement without an explicit pause).
+    if (!bot.pathfinder.isMoving()) {
+      bot.pathfinder.setGoal(new goals.GoalFollow(ent, _config.follow_range), true)
+    }
+    // No-progress tracking: stuck = not moving AND still far from the target
+    // for STUCK_MS. Cleared the instant we move or get within range.
+    const pos = me.position
+    const dist = pos.distanceTo(ent.position)
+    const moved = _lastPos ? pos.distanceTo(_lastPos) : 99
+    const t = Date.now()
+    if (moved > 0.6 || dist <= _config.follow_range + 2) {
+      _lastProgressAt = t
+      _stuck = null
+    } else if (t - _lastProgressAt >= STUCK_MS) {
+      _stuck = {
+        stuckSec: Math.round((t - _lastProgressAt) / 1000),
+        dist: Math.round(dist),
+        targetY: Math.round(ent.position.y),
+        deltaY: Math.round(ent.position.y - pos.y),
+      }
+    }
+    _lastPos = pos.clone()
   }, 1000)
 }
 
@@ -83,4 +131,6 @@ export function stopFollow() {
   _target = null
   _bot = null
   _config = null
+  _stuck = null
+  _lastPos = null
 }

@@ -125,9 +125,23 @@ remount the overlays per-screen.
 **Window shell (`MacosWindow`)** — full-bleed dark window with a **flat
 `--window` field** (no accent-bloom gradient — keep it a solid near-black; the
 grain + vignette overlays supply the only depth). **No visible title bar** — the
-SEI mark + clock were removed; only a thin transparent **drag strip**
-(`.dragStrip`, ~30px) remains so the frameless window stays movable and the OS
-window controls (macOS traffic lights / Windows overlay) clear the content.
+SEI mark + clock were removed; only a thin **drag strip** (`.dragStrip`, ~34px)
+carries a small "Sei Launcher vX.X.X" mark and keeps the frameless window movable.
+Window-control layout is platform-branched (`sei.platform`, set in
+`windowChrome.ts`):
+- **macOS** — native traffic lights (`titleBarStyle: 'hiddenInset'`) at top-left;
+  the mark is padded right of the rail to clear them.
+- **Windows** — frameless (`frame: false`) with our **own** min / maximize /
+  close controls rendered at top-right (`.controls`/`.ctlBtn`, `no-drag`), styled
+  to the dark chrome — muted glyphs → `--text` on hover, close → `--red` on hover.
+  The "Sei Launcher" mark sits at the far **left** (no native controls there). The
+  native `titleBarOverlay` was dropped — its light button box clashed and went
+  missing on some installs.
+- **Linux** — native window frame; no custom controls rendered.
+
+The default window size is also platform-branched (Windows ships smaller —
+1040×700, floor 1024×680 — since it was originally tuned for a desktop; macOS
+keeps 1180×760).
 
 **Sidebar rail (`IconRail`, 74px / `--rail-w`)** — muted icons that light to
 `--text` on hover and `--accent` when active; active nav carries a 2px **left

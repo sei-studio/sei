@@ -31,6 +31,26 @@ import styles from './UsageBar.module.css';
 /** Shown on hover/focus of the estimate so the "~Xh left" is never read as a promise. */
 export const ESTIMATE_TOOLTIP = 'This is an estimate; actual playtime can vary.';
 
+/** "$1.20", or "$—" when the dollar figure isn't available (local/BYOK, no session, cold-load). */
+export function formatUsd(n: number | undefined): string {
+  return typeof n === 'number' && Number.isFinite(n) ? `$${n.toFixed(2)}` : '$—';
+}
+
+/** Cumulative playtime ms → "3h 17m". */
+export function formatPlayed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 60000));
+  return `${Math.floor(total / 60)}h ${total % 60}m`;
+}
+
+/** Bar hover tooltip: "$used/$total used, played Xh Ym". */
+export function usageTooltip(
+  usedUsd: number | undefined,
+  totalUsd: number | undefined,
+  totalPlaytimeMs: number,
+): string {
+  return `${formatUsd(usedUsd)}/${formatUsd(totalUsd)} used, played ${formatPlayed(totalPlaytimeMs)}`;
+}
+
 export interface UsageBarProps {
   /** Bar size — 'lg' is the CreditsScreen hero; 'sm'/'md' for inline rows. */
   size?: 'sm' | 'md' | 'lg';
@@ -39,20 +59,27 @@ export interface UsageBarProps {
 export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   const usagePct = useCreditsStore((s) => s.usage_pct);
   const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
+  const usedUsd = useCreditsStore((s) => s.used_usd);
+  const totalUsd = useCreditsStore((s) => s.total_usd);
   const refresh = useCreditsStore((s) => s.refresh);
   const loading = useCreditsStore((s) => s.loading);
-  // Phase 15 (D-07): when idle auto-look is ON the bot renders its surroundings
-  // periodically, which uses more playtime — so the "~Xh left" figure shrinks via
-  // VISION_MULTIPLIER on the burn rate. Read the toggle from UserConfig (the
-  // source of truth the Settings toggle writes). This is a cloud-proxy-only
-  // surface (UsageBar lives only in CreditsScreen), so D-11 holds: BYO/local
-  // users never see this shrink. Re-fetched on mount so returning from Settings
-  // with the toggle flipped reflects the new estimate.
+  // Cumulative playtime across all of this profile's characters (survives
+  // deletion — accumulated at session-end in config). Read from UserConfig.
+  const [totalPlaytimeMs, setTotalPlaytimeMs] = useState(0);
+  // Phase 15 (D-07): when the vision tier is passive/active the bot renders
+  // its surroundings on cadence, which uses more playtime — so the "~Xh left"
+  // figure shrinks via VISION_MULTIPLIER on the burn rate. Read the tier from
+  // UserConfig (the source of truth Settings writes). This is a
+  // cloud-proxy-only surface (UsageBar lives only in CreditsScreen), so D-11
+  // holds: BYO/local users never see this shrink. Re-fetched on mount so
+  // returning from Settings with the tier changed reflects the new estimate.
   const [autoRenderOn, setAutoRenderOn] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void sei.getConfig().then((c) => {
-      if (!cancelled) setAutoRenderOn(c.vision_auto_render === true);
+      if (cancelled) return;
+      setAutoRenderOn((c.vision_mode ?? 'active') !== 'off');
+      setTotalPlaytimeMs(c.total_playtime_ms ?? 0);
     });
     return () => {
       cancelled = true;
@@ -63,9 +90,16 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
     : DEFAULT_TOKENS_PER_MIN;
   const { display } = tokensRemainingToPlaytime(remainingTokens, rate);
 
+  const tooltip = usageTooltip(usedUsd, totalUsd, totalPlaytimeMs);
+
   return (
     <div className={styles.root}>
-      <div className={styles.barWrap}>
+      <div
+        className={styles.barWrap}
+        data-tip={tooltip}
+        aria-label={tooltip}
+        tabIndex={0}
+      >
         <PercentBar value={usagePct} size={size} label={`${Math.round(usagePct)} percent used`} />
       </div>
       <span
@@ -84,7 +118,10 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
         disabled={loading}
         title="Refresh playtime"
         aria-label="Refresh playtime"
-        onClick={() => void refresh()}
+        onClick={() => {
+          void refresh();
+          void sei.getConfig().then((c) => setTotalPlaytimeMs(c.total_playtime_ms ?? 0));
+        }}
       />
     </div>
   );

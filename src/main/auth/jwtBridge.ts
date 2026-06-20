@@ -27,6 +27,26 @@ import type { BotSupervisor } from '../botSupervisor';
 let supervisorRef: BotSupervisor | null = null;
 let subscription: { unsubscribe: () => void } | null = null;
 
+/**
+ * Arm supabase-js's background refresh ticker. Must be called explicitly in
+ * Electron's main process (see the incident note in initJwtBridge). Best-effort:
+ * a missing method (test mocks) or a transient error never blocks bridge init.
+ */
+function startAutoRefreshSafely(): void {
+  try {
+    const auth = getClient().auth as { startAutoRefresh?: () => Promise<void> };
+    void auth.startAutoRefresh?.()?.catch(() => { /* ticker retries on its own */ });
+  } catch { /* best-effort */ }
+}
+
+/** Stop the refresh ticker (sign-out / re-init). Best-effort, mock-safe. */
+async function supabase_stopAutoRefresh(): Promise<void> {
+  try {
+    const auth = getClient().auth as { stopAutoRefresh?: () => Promise<void> };
+    await auth.stopAutoRefresh?.();
+  } catch { /* best-effort */ }
+}
+
 export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
   // BL-02: bootstrap() can run more than once on macOS (app.on('activate')
   // re-entry). Drop the prior subscription before re-binding so we don't
@@ -34,6 +54,7 @@ export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
   // supervisor.updateJwt on every event) on each reopen.
   subscription?.unsubscribe();
   subscription = null;
+  void supabase_stopAutoRefresh();
   supervisorRef = supervisor;
   const supabase = getClient();
 
@@ -45,6 +66,17 @@ export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
   const initialAccessToken: string | null = data?.session?.access_token ?? null;
   supervisor.updateJwt(initialAccessToken);
 
+  // CRITICAL (260617 expired_jwt incident): `autoRefreshToken: true` is NOT
+  // self-starting outside a browser. supabase-js only arms its refresh ticker
+  // automatically via `visibilitychange`/focus events, which don't exist in
+  // Electron's main process — so the JWT silently expired ~1h after sign-in,
+  // `TOKEN_REFRESHED` never fired, and a live bot 401'd mid-session with no
+  // recovery (it spent 40s hammering a dead token, then dropped). Start the
+  // ticker explicitly: it checks every ~10s and rotates the JWT before expiry,
+  // which fires TOKEN_REFRESHED below and pushes the fresh token to the bot.
+  // Optional-chained so the lightweight test mocks (no startAutoRefresh) no-op.
+  startAutoRefreshSafely();
+
   // Pitfall A4: TOKEN_REFRESHED fires whenever Supabase rotates the JWT
   // (~5 min before expiry; default JWT lifetime 1h). Without forwarding
   // here, a long-running bot would carry a stale JWT until the next sign-in.
@@ -52,12 +84,18 @@ export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
     if (!supervisorRef) return;
     switch (event) {
       case 'SIGNED_IN':
+        // A fresh sign-in (re)arms the refresh ticker — a prior SIGNED_OUT may
+        // have stopped it.
+        startAutoRefreshSafely();
+        supervisorRef.updateJwt(session?.access_token ?? null);
+        break;
       case 'TOKEN_REFRESHED':
       case 'INITIAL_SESSION':
       case 'USER_UPDATED':
         supervisorRef.updateJwt(session?.access_token ?? null);
         break;
       case 'SIGNED_OUT':
+        void supabase_stopAutoRefresh();
         supervisorRef.updateJwt(null);
         break;
       case 'PASSWORD_RECOVERY':
@@ -78,4 +116,5 @@ export function _disposeForTests(): void {
   subscription?.unsubscribe();
   subscription = null;
   supervisorRef = null;
+  void supabase_stopAutoRefresh();
 }

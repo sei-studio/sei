@@ -87,6 +87,45 @@ describe('M18: real-person likeness guard (Cluster K, quick/260525-tia)', () => 
     expect(EXPANSION_SYSTEM).toContain('real living person');
     expect(EXPANSION_SYSTEM).toContain('public figure');
   });
+});
+
+describe('issue #3: persona-derived player-stance + goal-types', () => {
+  it('DEFAULT DYNAMIC instructs deriving a PLAYER-STANCE / ATTACHMENT from personality', () => {
+    expect(EXPANSION_SYSTEM).toContain('PLAYER-STANCE');
+    // The follow decision must be tied to the stance.
+    expect(EXPANSION_SYSTEM).toContain('whether calling `follow` on the player is in-character');
+  });
+
+  it('DEFAULT DYNAMIC tells an independent character NOT to trail or apologize for wandering off', () => {
+    // The exact reflex Sui exhibited in the incident log must be banned for
+    // independent characters at the expansion level.
+    expect(EXPANSION_SYSTEM).toContain('do NOT trail the player');
+    expect(EXPANSION_SYSTEM).toContain('apologize for "wandering off"');
+    expect(EXPANSION_SYSTEM).toContain('expect the player to keep up');
+  });
+
+  it('PROACTIVENESS instructs deriving GOAL-TYPE FIT from personality', () => {
+    expect(EXPANSION_SYSTEM).toContain('GOAL-TYPE FIT');
+    // Kept as interpretable guidance, not a fixed checklist.
+    expect(EXPANSION_SYSTEM).toContain('not a fixed checklist');
+  });
+
+  it('PROACTIVENESS must not contradict the runtime numeric dial', () => {
+    expect(EXPANSION_SYSTEM).toContain('do not contradict the tier hint');
+  });
+
+  it('buildExpansionUserMessage injects the proactiveness tier hint (Agentic = Sui baseline)', () => {
+    const agentic = buildExpansionUserMessage('Sui', 'chaotic builder', undefined, 2);
+    expect(agentic).toContain('Proactiveness tier: AGENTIC');
+    const passive = buildExpansionUserMessage('Marv', 'weary loner', undefined, 0);
+    expect(passive).toContain('Proactiveness tier: PASSIVE');
+    // Legacy / out-of-range values fold to a valid tier rather than crashing.
+    const legacyDriven = buildExpansionUserMessage('Old', 'driven char', undefined, 3);
+    expect(legacyDriven).toContain('Proactiveness tier: AGENTIC');
+    // Omitted tier defaults to Reactive.
+    const def = buildExpansionUserMessage('Def', 'someone');
+    expect(def).toContain('Proactiveness tier: REACTIVE');
+  });
 
   it('expandPersona throws a friendly error when the model emits the refusal sentinel', async () => {
     const fakeClient = {

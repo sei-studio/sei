@@ -305,6 +305,7 @@ function HomeGrid(): React.ReactElement {
                 void handleOpen(c.id);
               }}
               onSummon={() => handleSummon(c.id)}
+              onUnsummon={() => void sei.stop(c.id)}
             />
             {openPrepareError === c.id ? (
               <div
@@ -341,6 +342,7 @@ function HomeGrid(): React.ReactElement {
                   void handleOpen(co.id);
                 }}
                 onSummon={() => handleSummon(co.id)}
+                onUnsummon={() => void sei.stop(co.id)}
               />
               {openPrepareError === co.id ? (
                 <div

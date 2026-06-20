@@ -14,6 +14,20 @@ import { createLoop } from './loop.js'
 
 const IMG = { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } }
 
+describe('createLoop — iterationCap guard (0 = unlimited)', () => {
+  it('accepts 0 (unlimited cap) without throwing', () => {
+    expect(() => createLoop({ iterationCap: 0 })).not.toThrow()
+  })
+  it('accepts a positive backstop', () => {
+    expect(() => createLoop({ iterationCap: 300 })).not.toThrow()
+  })
+  it('rejects negative / non-integer / missing caps', () => {
+    expect(() => createLoop({ iterationCap: -1 })).toThrow()
+    expect(() => createLoop({ iterationCap: 1.5 })).toThrow()
+    expect(() => createLoop({})).toThrow()
+  })
+})
+
 describe('loop.buildAnthropicPayload — image block passthrough (VIS-02, no-edit verification)', () => {
   it('preserves an image block on a user turn unchanged', () => {
     const loop = createLoop({ iterationCap: 30 })
@@ -72,5 +86,91 @@ describe('loop.buildAnthropicPayload — image block passthrough (VIS-02, no-edi
     block.type = 'mutated'
     const payload2 = loop.buildAnthropicPayload()
     expect(payload2[0].content[0].type).toBe('image')
+  })
+})
+
+describe('loop.demoteOlderImages — image retention cap', () => {
+  it('replaces every image block in history with a text placeholder, leaving other blocks intact', () => {
+    const loop = createLoop({ iterationCap: 30 })
+    loop.appendUserTurn([
+      IMG,
+      { type: 'text', name: 'event', text: 'rendered view attached' },
+    ])
+    loop.appendAssistant([{ type: 'text', text: 'nice view' }])
+
+    loop.demoteOlderImages()
+
+    const payload = loop.buildAnthropicPayload()
+    const flat = JSON.stringify(payload)
+    expect(flat).not.toContain('"type":"image"')
+    expect(flat).not.toContain('AAAA')
+    expect(flat).toContain('a picture was shown here on an earlier turn')
+    // The sibling event text and the assistant turn survive untouched.
+    expect(flat).toContain('rendered view attached')
+    expect(flat).toContain('nice view')
+  })
+
+  it('is a no-op on a history with no images', () => {
+    const loop = createLoop({ iterationCap: 30 })
+    loop.appendUserTurn([{ type: 'text', name: 'event', text: 'hello' }])
+    const before = JSON.stringify(loop.buildAnthropicPayload())
+    loop.demoteOlderImages()
+    expect(JSON.stringify(loop.buildAnthropicPayload())).toBe(before)
+  })
+
+  it('bounds byteSize: demote-then-append keeps exactly one frame of base64 in canonical history', () => {
+    const loop = createLoop({ iterationCap: 30 })
+    const bigFrame = (data) => [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } },
+      { type: 'text', name: 'event', text: 'rendered view attached' },
+    ]
+    // Simulate the orchestrator's attach discipline across three frames.
+    loop.appendUserTurn(bigFrame('X'.repeat(8_000)))
+    const oneFrameSize = loop.byteSize()
+    for (const data of ['Y'.repeat(8_000), 'Z'.repeat(8_000)]) {
+      loop.demoteOlderImages()
+      loop.appendUserTurn(bigFrame(data))
+    }
+    // Three attaches, but only ONE frame of base64 remains live — canonical
+    // growth is the two small placeholders, not 16KB of dead base64.
+    expect(loop.byteSize()).toBeLessThan(oneFrameSize + 1_000)
+  })
+})
+
+describe('loop.appendToolResults — say() reminder on every continuation turn (260619)', () => {
+  // Regression: the say() reminder used to ride only on the seed turn, so a long
+  // action chain (gather/dig/craft) ran many continuation turns with NO say()
+  // contract — the model kept acting and leaked any speech to its private text.
+  // appendToolResults now restates the reminder as the LAST block when the loop
+  // was created with one.
+  const toolUseAssistant = (loop) => {
+    loop.appendUserTurn([{ type: 'text', name: 'event', text: 'go' }], { seed: true })
+    loop.appendAssistant([
+      { type: 'text', text: 'on it' },
+      { type: 'tool_use', id: 'tu1', name: 'gather', input: { name: 'oak_log' } },
+    ])
+  }
+
+  it('appends the reminder last on a continuation turn when configured', () => {
+    const loop = createLoop({ iterationCap: 30, speakReminder: 'SAY-REMINDER-TEXT' })
+    toolUseAssistant(loop)
+    loop.appendToolResults(
+      [{ type: 'tool_result', tool_use_id: 'tu1', content: 'done' }],
+      { snapshot: 'SNAP', eventText: 'EVT' },
+    )
+    const payload = loop.buildAnthropicPayload()
+    const lastUser = [...payload].reverse().find(m => m.role === 'user')
+    // Highest-recency position: the reminder is the final block, after the snapshot.
+    expect(lastUser.content[lastUser.content.length - 1]).toEqual({ type: 'text', text: 'SAY-REMINDER-TEXT' })
+  })
+
+  it('omits the reminder when the loop was created without one (back-compat)', () => {
+    const loop = createLoop({ iterationCap: 30 })
+    toolUseAssistant(loop)
+    loop.appendToolResults([{ type: 'tool_result', tool_use_id: 'tu1', content: 'done' }], { snapshot: 'SNAP' })
+    const payload = loop.buildAnthropicPayload()
+    const lastUser = [...payload].reverse().find(m => m.role === 'user')
+    // Last block is the snapshot; no reminder was added.
+    expect(lastUser.content[lastUser.content.length - 1]).toEqual({ type: 'text', text: 'SNAP' })
   })
 })

@@ -45,6 +45,16 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
   if (signal && signal.aborted) return 'aborted'
 
   const movements = new Movements(bot)
+  // 260617 anti-stuck navigation tuning. The bare defaults trap a pickaxe-less
+  // bot: digCost=1 lets the planner route THROUGH stone, which the bot cannot
+  // mine bare-handed — every such dig times out and the bot reads as frozen (the
+  // 260617 "stuck underground" log). Raise digCost so digging is a last resort
+  // and an existing route (walk / parkour / drop) wins. maxDropDown already
+  // defaults to 4 (a 4-block drop costs ~1 dmg; 1-3 are free), so a "drop down to
+  // get out" route was ALWAYS allowed — pathfinder was never the blocker. Set it
+  // explicitly and keep it permissive so dropping to escape beats tunnelling.
+  movements.digCost = 8
+  movements.maxDropDown = 4
   bot.pathfinder.setMovements(movements)
   const goal = new goals.GoalNear(x, y, z, range)
 

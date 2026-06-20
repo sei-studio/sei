@@ -1,0 +1,149 @@
+/* ProactivenessBar.module.css — segmented proactiveness meter.
+ * Follows the StepDots idiom (flat segments, --accent fill, sharp edges to
+ * match the Summoning Terminal look). */
+
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* block — stretch to fill the container (detail-page stat cell). The track
+   grows and its segments share the width equally, so the bar takes up the
+   whole box instead of sitting as a short fixed-width strip. */
+.block {
+  display: flex;
+  width: 100%;
+}
+
+.track {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.block .track {
+  flex: 1;
+  min-width: 0;
+}
+
+.seg {
+  position: relative;
+  background: var(--border-strong);
+  transition: background 240ms var(--ease);
+  cursor: help;
+}
+
+.block .seg {
+  flex: 1;
+  min-width: 0;
+}
+
+.seg.on {
+  background: var(--accent);
+}
+
+/* sm — compact */
+.sm .seg {
+  width: 14px;
+  height: 4px;
+}
+
+/* md — detail page stat cell (taller so the bar reads as a substantial meter
+   and each rung is an easy hover target). */
+.md .seg {
+  width: 20px;
+  height: 14px;
+}
+
+.label {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Detail-page (md) label matches the persona/description body text above it. */
+.md .label {
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: var(--text);
+}
+
+/* Agentic (top tier) reads in the accent. */
+.labelAccent,
+.md .label.labelAccent {
+  color: var(--accent);
+}
+
+/* ── Per-segment instant tooltip (one sentence on what to expect in game) ──
+   Mirrors the IconRail / UsageBar floating-tooltip idiom: a CSS ::after fed
+   from data-tip, shown on hover/focus with no native-title delay. Edge
+   alignment (first segment left-anchored, last right-anchored) keeps the
+   tooltip from clipping off the panel edges. */
+.seg::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 11px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: left;
+  color: var(--text);
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Small caret under the bubble. */
+.seg::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: var(--surface);
+  border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 51;
+}
+
+.seg:hover::after,
+.seg:focus-visible::after,
+.seg:hover::before,
+.seg:focus-visible::before {
+  opacity: 1;
+}
+
+/* Keep edge tooltips on-panel: anchor the first segment's bubble to its left
+   edge and the last segment's to its right edge instead of centering. */
+.track .seg:first-child::after {
+  left: 0;
+  transform: none;
+}
+
+.track .seg:last-child::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}

@@ -18,32 +18,54 @@ function resolveBiomeName(bot, p) {
 }
 
 /**
- * Inside / outside detection. Cheap heuristic from light + sky exposure:
- *   - skyLight 15 with no cover above → outside
- *   - skyLight 0 → enclosed (cave or full roof)
- *   - skyLight in between → covered (under leaves / partial roof)
- * Falls back to a column raycast if light data is unavailable.
+ * Inside / outside detection. Returns one of:
+ *   - 'outside'     — open sky overhead (or a clear vertical column to it)
+ *   - 'sheltered'   — solid cover overhead BUT open sky a short hop away
+ *                     (overhang, cave mouth, tree edge, doorway) — walk out
+ *   - 'underground' — sealed above AND no open sky nearby — genuinely buried
+ *   - 'unknown'     — world data unavailable
+ *
+ * 260617: the old version returned 'underground' on `skyLight === 0` alone.
+ * skyLight reads 0 on freshly-loaded chunks (the first seconds after join) and
+ * at the foot of a cliff even under open sky — so a mountainside spawn was
+ * labelled "underground" and the bot tried to dig straight UP out of open
+ * terrain instead of walking downhill. We now CONFIRM cover with a vertical
+ * raycast (a clear column = outside regardless of stored skyLight) and, when
+ * there IS a roof, probe a horizontal ring for a nearby way out so "rock above
+ * me" is not read as "I must tunnel up".
  */
 function describeSurroundings(bot, p) {
+  const px = Math.floor(p.x), py = Math.floor(p.y), pz = Math.floor(p.z)
+  const headY = py + 1
+  const skyAt = (x, z) => {
+    try { const s = bot.world?.getSkyLight?.({ x, y: headY, z }); return typeof s === 'number' ? s : null }
+    catch { return null }
+  }
+
+  // Clear vertical shot to the sky → outside (cheap common case).
+  const sky = skyAt(px, pz)
+  if (sky != null && sky >= 14) return 'outside'
+
+  // Low/zero skyLight is NOT proof of burial (fresh chunks / cliff-foot
+  // under-report it). Confirm with a raycast: a clear column above = outside.
+  let covered = false
   try {
-    const headPos = { x: Math.floor(p.x), y: Math.floor(p.y) + 1, z: Math.floor(p.z) }
-    const skyLight = bot.world?.getSkyLight?.(headPos)
-    if (typeof skyLight === 'number') {
-      if (skyLight >= 14) return 'outside'
-      if (skyLight === 0) return 'underground'
-      return 'enclosed'
-    }
-  } catch {}
-  // Fallback: scan a small column above the bot for solid blocks.
-  try {
-    const px = Math.floor(p.x), py = Math.floor(p.y), pz = Math.floor(p.z)
-    for (let dy = 2; dy <= 16; dy++) {
+    for (let dy = 2; dy <= 24; dy++) {
       const blk = bot.blockAt?.({ x: px, y: py + dy, z: pz })
-      if (blk && blk.boundingBox === 'block') return 'enclosed'
+      if (blk && blk.boundingBox === 'block') { covered = true; break }
     }
-    return 'outside'
-  } catch {}
-  return 'unknown'
+  } catch { return 'unknown' }
+  if (!covered) return 'outside'
+
+  // Roofed. With no light data we can only say it is covered; otherwise probe a
+  // ring for daylight — an overhang / cave mouth with a way out ('sheltered')
+  // vs a sealed or deep space ('underground').
+  if (sky == null) return 'sheltered'
+  for (const [dx, dz] of [[5, 0], [-5, 0], [0, 5], [0, -5], [4, 4], [-4, -4], [4, -4], [-4, 4]]) {
+    const s = skyAt(px + dx, pz + dz)
+    if (s != null && s >= 12) return 'sheltered'
+  }
+  return 'underground'
 }
 
 /**

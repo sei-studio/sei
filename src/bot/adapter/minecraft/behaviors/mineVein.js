@@ -3,10 +3,10 @@
 // `gather` is a dig-wrapper for "harvest N of a block" tasks where the exact
 // location of each mined block doesn't matter. It resolves a name (loose term
 // OR exact MC ID) or a raw coordinate to an anchor block, flood-fills a
-// connected component (6-neighbor, same exact ID only, cap 64) for tree/ore
-// shapes, pre-pathfinds to each member (Pitfall 2 — dig.js does NOT pathfind
-// into reach), and delegates the swing to digAction. The whole batch consumes
-// ONE LLM iteration (big saving under the 20-iteration cap).
+// connected component (6-neighbor, same exact ID only, up to `count` blocks —
+// default 16, hard cap 64) for tree/ore shapes, walks into reach only when the
+// block isn't already adjacent, and delegates the swing to digAction. The whole
+// batch consumes ONE LLM iteration (big saving under the iteration cap).
 //
 // Result-string contract:
 //   - 'aborted'                                     — signal already aborted at entry
@@ -41,7 +41,7 @@ const BATCH_CAP = 64
  * goTo + digAction each carry their own timeouts (CLAUDE.md "every external
  * call has a timeout").
  *
- * @param {{ name?:string, x?:number, y?:number, z?:number, maxDistance?:number }} args
+ * @param {{ name?:string, x?:number, y?:number, z?:number, maxDistance?:number, count?:number }} args
  * @param {import('mineflayer').Bot} bot
  * @param {{ signal?: AbortSignal, pathfinder_timeout_ms?: number }} [config]
  * @param {{ goTo?: typeof realGoTo, digAction?: typeof realDigAction }} [_deps]
@@ -58,6 +58,15 @@ export async function gatherAction(args, bot, config, _deps) {
   if (signal?.aborted) return 'aborted'
 
   const timeoutMs = config?.pathfinder_timeout_ms ?? 12000
+  // How many to harvest this call. Default kept modest so a bare gather() is a
+  // ~30s batch, not a multi-minute solo grind that locks the loop and silences
+  // the bot; the model raises it when it genuinely needs a stack. Hard-capped
+  // at BATCH_CAP. (260618)
+  const want = Math.max(1, Math.min(BATCH_CAP, Math.floor(Number(args?.count ?? 16)) || 16))
+  // Per-block pathfinding is shorter than the whole-action budget: vein blocks
+  // are adjacent, so a block that needs a long path usually isn't worth it —
+  // cap the walk so one unreachable block can't burn the full 12s. (260618)
+  const perBlockTimeoutMs = Math.min(timeoutMs, 6000)
 
   // 1. Resolve anchor.
   let anchor
@@ -104,7 +113,7 @@ export async function gatherAction(args, bot, config, _deps) {
   const stack = [anchor]
   /** @type {Array<{p: Vec3, done: boolean}>} */
   const positions = []
-  while (stack.length && positions.length < BATCH_CAP) {
+  while (stack.length && positions.length < want) {
     const p = stack.pop()
     const pk = key(p.x, p.y, p.z)
     if (visited.has(pk)) continue
@@ -145,9 +154,16 @@ export async function gatherAction(args, bot, config, _deps) {
     if (!nextEntry) break
 
     const np = nextEntry.p
-    // Pre-pathfind to dig reach (Pitfall 2 — dig.js returns 'out of range'
-    // beyond 4.5m; range:3 keeps us well inside).
-    await goTo(bot, np.x, np.y, np.z, 3, timeoutMs)
+    // Skip the pathfind when the block is already within dig reach — the common
+    // case in a contiguous vein, where the previous swing left us adjacent. Only
+    // walk when it's genuinely out of reach (dig.js wants ≤4.5m; 3.2 keeps a
+    // safe margin). This is the bulk of the gather speed-up. (260618)
+    const here = bot.entity?.position
+    const reachD = here ? Math.hypot(np.x - here.x, np.y - here.y, np.z - here.z) : Infinity
+    if (reachD > 3.2) {
+      // Pre-pathfind to dig reach (Pitfall 2 — dig.js does NOT pathfind in).
+      await goTo(bot, np.x, np.y, np.z, 3, perBlockTimeoutMs)
+    }
 
     if (signal?.aborted) return `aborted after ${dug}/${total} ${blockName}`
 
@@ -167,6 +183,8 @@ export async function gatherAction(args, bot, config, _deps) {
     try { config?.onProgress?.({ dug, total }) } catch {}
   }
 
-  const capNote = total >= BATCH_CAP ? ' (cap reached)' : ''
+  // "cap reached" = the flood-fill stopped at `count` with more of the same
+  // block still queued (there's more to get if asked again).
+  const capNote = (positions.length >= want && stack.length > 0) ? ' (cap reached)' : ''
   return `gathered ${dug}/${total} ${blockName}${capNote}`
 }

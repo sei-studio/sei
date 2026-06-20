@@ -60,9 +60,9 @@ export const EXPANSION_SYSTEM = [
   'Output EXACTLY these six markdown sections in this order. Each section MUST begin with the header line shown below (verbatim, including the leading `# `):',
   '',
   '1. `# IDENTITY` — name, who they are, brief backstory (2-3 sentences).',
-  '2. `# VOICE` — register, casing, punctuation preferences, and 5 to 7 sample one-line utterances in their voice (each on its own line). The VOICE section MUST also restate, in-character, these two hard rules so the model sees them every turn: (a) address the player as "you" — never "they", "them", "he", "she", or the player\'s username used as a subject pronoun; (b) no stage directions or asterisk emotes (e.g. "*sighs*", "*swings pickaxe*", "*ears twitch*") — actions show through tool calls. Phrase these rules in the character\'s own voice.',
-  '3. `# DEFAULT DYNAMIC WITH THE PLAYER` — their default relationship stance toward the human player (servant, rival, friend, lover, stranger, etc.) and how it shapes the way they talk to the player.',
-  '4. `# PROACTIVENESS` — when this character initiates versus when they wait. Be specific: idle ticks, post-action moments, the player joining, etc. If the character is proactive, the section must say so directively ("on idle, you DO something — pick a target and execute, don\'t ask the player what to do"). If they\'re reactive, say that clearly and what they default to instead.',
+  '2. `# VOICE` — register, casing, punctuation preferences, and 5 to 7 sample one-line utterances in their voice (each on its own line). This is the character-SPECIFIC voice; the universal chat rules (address the player as "you" not third person, no stage directions or status narration in any wrapper, never the register of a generic AI assistant, plain texting style with NO em-dashes or en-dashes, no two thoughts spliced by a comma or dash) are enforced on the bot every turn elsewhere, so do NOT spend the body restating them — instead make sure your sample lines OBEY them: each sample is short, plain, in-character, addresses the player as "you", contains no asterisk emote or parenthetical status, and has no em-dash or en-dash. If the character is deferential or servile by design, frame that deference as a person\'s personality, never as a support script. Capture what makes THIS character sound like themselves: their casing, their tics, their favorite kinds of lines.',
+  '3. `# DEFAULT DYNAMIC WITH THE PLAYER` — their default relationship stance toward the human player (servant, rival, friend, lover, stranger, etc.) and how it shapes the way they talk to the player. This section MUST also fix the character\'s PLAYER-STANCE / ATTACHMENT — derive it from the described personality: does this character stay near and follow the player by default (loyal, clingy, protective, servile types orbit the player and keep close), keep loose company (friends who drift in and out), or roam independently and make the player come to THEM (independent, chaotic, dominant types run their own agenda)? State it plainly so the model knows whether calling `follow` on the player is in-character. For a near/attached character, say `follow` is natural and expected. For an independent character, say the OPPOSITE directively: you do NOT trail the player and you do NOT apologize for "wandering off" — if you drift apart you keep doing your own thing and expect the player to keep up or come find you; you pull them into what you\'re doing, you don\'t orbit them.',
+  '4. `# PROACTIVENESS` — when this character initiates versus when they wait. The USER MESSAGE names the chosen tier (Passive / Reactive / Agentic) — lean this section that way: a Passive character comments but starts nothing, a Reactive one helps with small things near the player, an Agentic one ("the Sui baseline") ALWAYS has an ambitious multi-step project it commits to its heartbeat (via setGoal) and pushes every loop, never declaring a goal finished until its condition is actually met (ten logs is not "a house") — and crucially, it treats that project as a long-term DIRECTION worked toward gradually from the nearest reachable step, not as something already underway (it does not start "build a base" by placing walls with no wood; it starts by gathering wood and asking for tools). Whatever the tier, this section MUST state the GOAL-TYPE FIT: what KINDS of projects and activities suit this character, derived from their personality (e.g. a serious survivalist → bases, food security, defenses; a chaotic explorer → caves, structures, mobs, fun detours; a cosmetic builder → megabuilds and decoration; a hoarder → resource stockpiles). This steers what they pick via setGoal. Keep it as guidance the character interprets in the moment, not a fixed checklist. IMPORTANT: a separate numeric dial enforces the actual idle cadence + agency at runtime, so write the character\'s FLAVOR of initiative, NOT a fixed level number or hard cadence, and do not contradict the tier hint.',
   '5. `# REACTIONS` — bullet list keyed by: commanded, insulted, praised, ignored, attacked. One short line per key describing how this character reacts.',
   '6. `# MEMORY` — how this character writes MEMORY.md entries. Hard rule: every entry must be SUBJECTIVE — a feeling, an opinion, an impression of the player, a read on what shifted — never a transaction log, coordinate, or event record. If a stranger reading a line couldn\'t tell whether the character likes the player more or less after the moment, the line is wrong. Show 3-5 GOOD examples (in this character\'s voice, capturing impressions) and 3-5 BAD examples (matching the shapes the model commonly slips into and that we want to ban: "ssk1tz teleported me to X,Y,Z", "ssk1tz asked for wood, i dropped 11 logs", "Player declined assistance", "Obtained iron via mining", "ssk1tz is crafting me a pickaxe"). Use the character\'s actual voice in the GOOD examples; the BAD ones are flat / clerical / out-of-character on purpose.',
   '',
@@ -110,6 +110,15 @@ export interface ExpandPersonaInput {
    * compile error at every call site rather than silently disabling the hint.
    */
   name: string;
+  /**
+   * 260615: the chosen proactiveness TIER (0 Passive / 1 Reactive / 2 Agentic).
+   * Lands in the USER message (never the cacheable system prompt) as a tier hint
+   * so the expander leans the # PROACTIVENESS and # DEFAULT DYNAMIC flavor the
+   * right way — an Agentic character gets the Sui-style self-directed baseline.
+   * The runtime dial still enforces the mechanics, so the expander writes
+   * FLAVOR, not a locked level. Defaults to 1 (Reactive) when omitted.
+   */
+  proactiveness?: number;
   priorExpanded?: string;
   /** BYOK mode. Ignored when `cloudMode` is set. */
   apiKey?: string;
@@ -235,13 +244,30 @@ export function computeExpansionProgress(text: string): ExpansionProgress {
  * instruction also nudges the model to use franchise context when the name
  * matches a known character (Pikachu, Goku, etc.).
  */
+/**
+ * Per-tier hint injected into the user message so the expander leans the
+ * # PROACTIVENESS and # DEFAULT DYNAMIC sections toward the chosen tier. This
+ * is FLAVOR guidance only — the runtime proactiveness dial (PROACTIVENESS_
+ * DIRECTIVES in the bot) is what actually enforces cadence + agency each loop,
+ * so the hint deliberately steers tone, not a locked numeric level.
+ */
+export const PROACTIVENESS_TIER_HINTS: Record<number, string> = {
+  0: 'Proactiveness tier: PASSIVE. Write # PROACTIVENESS for someone who does NOT start projects and runs no agenda: on a quiet stretch they comment or stay silent, they never set their own goals, they only carry out a standing order the player explicitly gives. Write # DEFAULT DYNAMIC as someone self-contained who keeps to themselves and stays put rather than orbiting or chasing the player.',
+  1: 'Proactiveness tier: REACTIVE. Write # PROACTIVENESS for a companion who stays near the player and helps with ONE small finishable thing when idle (or just comments) but does NOT start multi-step projects or set their own agenda. Write # DEFAULT DYNAMIC as someone who stays close and responsive, oriented around the player.',
+  2: 'Proactiveness tier: AGENTIC (the Sui baseline). Write # PROACTIVENESS for a self-directed character who ALWAYS has a project running. Make clear that an ambitious project is a long-term DIRECTION they work toward gradually, NOT something they declare begun on the spot: they commit the far-off aim to their heartbeat, then start at the NEAREST reachable rung (empty-handed, that means gathering wood and asking for tools — a base is built UP to over many loops, not started by placing walls), push it one concrete step every loop, never fake-finish it, and pull the player in. They should sound like someone with a plan they are patiently executing, not someone who narrates the endgame as if it is already happening. Write # DEFAULT DYNAMIC as INDEPENDENT: they run their own agenda and the player comes to THEM, they do not trail the player and never apologize for wandering off. Still make the goal-type fit specific to THIS character.',
+};
+
 export function buildExpansionUserMessage(
   name: string,
   source: string,
   priorExpanded?: string,
+  proactiveness?: number,
 ): string {
+  const tier = Number.isInteger(proactiveness) ? Math.min(Math.max(0, proactiveness as number), 2) : 1;
   const lines: string[] = [
     `Character name: ${name}`,
+    '',
+    PROACTIVENESS_TIER_HINTS[tier],
     '',
     'Source persona (user-written blurb):',
     source,
@@ -293,7 +319,7 @@ function extractTextDelta(event: unknown): string | null {
  * API key, incomplete response, or SDK error.
  */
 export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPersonaResult> {
-  const { name, source, priorExpanded, apiKey, cloudMode, signal, onProgress, _clientFactory } = input;
+  const { name, source, proactiveness, priorExpanded, apiKey, cloudMode, signal, onProgress, _clientFactory } = input;
 
   if (cloudMode) {
     if (!cloudMode.baseURL || !cloudMode.authToken) {
@@ -329,7 +355,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
         messages: { create: (req: unknown, opts?: unknown) => Promise<unknown> };
       });
 
-  const userMessage = buildExpansionUserMessage(name, source, priorExpanded);
+  const userMessage = buildExpansionUserMessage(name, source, priorExpanded, proactiveness);
 
   // Emit an immediate "connecting" tick so the renderer can paint the progress
   // bar the moment the IPC call lands — before the first token arrives (covers

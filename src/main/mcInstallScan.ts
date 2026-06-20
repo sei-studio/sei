@@ -383,7 +383,18 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
       const id = idFor('vanilla', vp);
       const mc_version = await readVanillaMcVersion(vp);
       const fabric = await detectFabricLoader(vp);
-      const csl = await detectCustomSkinLoader(path.join(vp, 'mods'));
+      // Vanilla installs place CSL in the ISOLATED Sei gameDir
+      // (<.minecraft>/sei/mods), not the shared <.minecraft>/mods — the wizard
+      // moved vanilla setups into <.minecraft>/sei/ (260518-o1k T4/T5) so the
+      // user's normal profile stays untouched. Scanning only the shared mods
+      // dir reported csl_installed=false for every freshly-set-up vanilla
+      // install, which surfaced a false "1 install needs update" in Settings
+      // right after a successful skin setup. Check the isolated gameDir first,
+      // then fall back to the legacy shared mods dir for pre-isolation setups.
+      let csl = await detectCustomSkinLoader(path.join(vp, 'sei', 'mods'));
+      if (!csl.installed) {
+        csl = await detectCustomSkinLoader(path.join(vp, 'mods'));
+      }
       results.push({
         id,
         kind: 'vanilla',

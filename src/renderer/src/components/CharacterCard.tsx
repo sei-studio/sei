@@ -30,6 +30,8 @@ export interface CharacterCardProps {
   theme: 'light' | 'dark';
   onOpen: () => void;
   onSummon: () => void;
+  /** Stop this character's running bot (the hover CTA flips to "Unsummon"). */
+  onUnsummon: () => void;
 }
 
 // Home-card status line: the bare date (e.g. "May 23, 2026") once summoned, or
@@ -52,6 +54,7 @@ export function CharacterCard({
   theme,
   onOpen,
   onSummon,
+  onUnsummon,
 }: CharacterCardProps): React.ReactElement {
   const palette = pickPalette(c.id + c.name, theme);
   const isDefault = c.is_default === true;
@@ -73,17 +76,18 @@ export function CharacterCard({
   const signedIn = useAuthStore((s) => s.state.kind === 'signed_in');
   const syncStatus = signedIn ? syncStatusRaw : undefined;
   const retry = useSyncStore((s) => s.retry);
-  // Is THIS character the live bot session? One bot at a time (botSupervisor),
-  // so re-summoning the active character would stop+restart it — surface the
-  // hover CTA as a disabled "Summoned" instead of an actionable "Summon".
-  // Mirrors CharacterPage's `isActive` (status.kind==='online' && id match).
-  const isSummoned = useDataStore(
-    (s) => s.summon.kind === 'online' && s.summon.characterId === c.id,
-  );
+  // Is THIS character currently summoned (multi-summon)? Online OR connecting
+  // counts so the card reflects the in-flight session immediately. The hover
+  // CTA flips to an actionable red "Unsummon", and the card gets the summoned
+  // frame + reflective glint (mirrors the IconRail avatar treatment).
+  const isSummoned = useDataStore((s) => {
+    const st = s.summons[c.id]?.kind;
+    return st === 'online' || st === 'connecting';
+  });
 
   return (
     <div
-      className={`${styles.card} ${ready ? styles.live : ''}`}
+      className={`${styles.card} ${ready ? styles.live : ''} ${isSummoned ? styles.summoned : ''}`}
       onClick={onOpen}
       role="button"
       tabIndex={0}
@@ -112,6 +116,11 @@ export function CharacterCard({
         />
       </div>
       <div className={styles.scrim} />
+
+      {/* Reflective glint sweep while summoned — same animation language as the
+          CharacterPage "summon into Minecraft" deploy button. Clipped to the
+          card by its own overflow:hidden so it can't bleed past the border. */}
+      {isSummoned ? <span className={styles.summonGlint} aria-hidden="true" /> : null}
 
       {/*
         Phase 11 D-18 — sync pill. Sits top-right; absent once synced (no
@@ -146,18 +155,17 @@ export function CharacterCard({
 
       <div className={styles.hoverOverlay}>
         <Button
-          kind="accent"
+          kind={isSummoned ? 'danger' : 'accent'}
           size="md"
           icon={<SparkleIcon size={12} />}
-          disabled={isSummoned}
           onClick={(e) => {
             e.stopPropagation();
-            if (isSummoned) return;
-            onSummon();
+            if (isSummoned) onUnsummon();
+            else onSummon();
           }}
-          aria-label={isSummoned ? `${c.name} is summoned` : `Summon ${c.name}`}
+          aria-label={isSummoned ? `Unsummon ${c.name}` : `Summon ${c.name}`}
         >
-          {isSummoned ? 'Summoned' : 'Summon'}
+          {isSummoned ? 'Unsummon' : 'Summon'}
         </Button>
       </div>
 

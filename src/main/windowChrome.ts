@@ -4,6 +4,7 @@
  */
 import { BrowserWindow, app, nativeImage } from 'electron';
 import path from 'node:path';
+import { IpcChannel } from '../shared/ipc';
 
 export interface CreateMainWindowOptions {
   preloadPath: string;
@@ -11,29 +12,34 @@ export interface CreateMainWindowOptions {
 }
 
 export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
-  const platformChrome: Electron.BrowserWindowConstructorOptions =
-    process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' }
-      : process.platform === 'win32'
-        ? {
-            frame: false,
-            titleBarOverlay: {
-              color: '#F6F5F2',
-              symbolColor: '#1A1D24',
-              height: 38,
-            },
-          }
-        : {}; // Linux: default native frame with standard window controls
+  const isMac = process.platform === 'darwin';
+  const isWin = process.platform === 'win32';
+
+  // macOS keeps native traffic lights (hiddenInset). Windows runs frameless
+  // with the renderer's CUSTOM titlebar controls (MacosWindow) — titleBarOverlay
+  // was dropped because its native buttons rendered in a light box that clashed
+  // with the dark chrome and went missing on some installs. Linux keeps its
+  // native frame + WM-provided controls (no custom controls rendered there).
+  const platformChrome: Electron.BrowserWindowConstructorOptions = isMac
+    ? { titleBarStyle: 'hiddenInset' }
+    : isWin
+      ? { frame: false }
+      : {}; // Linux: native frame
+
+  // Windows was sized for the dev's desktop; on a 1366×768 laptop the
+  // 1180×760 default nearly fills the screen. Ship a smaller default + floor
+  // there (minWidth matches the renderer's lowered CSS floor so the layout
+  // never clips). macOS keeps the original tuning.
+  const dims = isWin
+    ? { width: 1040, height: 700, minWidth: 1024, minHeight: 680 }
+    : { width: 1180, height: 760, minWidth: 1180, minHeight: 760 };
 
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, 'icon.png')
     : path.join(app.getAppPath(), 'build', 'icon.png');
 
   const win = new BrowserWindow({
-    width: 1180,
-    height: 760,
-    minWidth: 1180,
-    minHeight: 760,
+    ...dims,
     show: false,
     title: 'Sei Launcher',
     icon: nativeImage.createFromPath(iconPath),
@@ -46,6 +52,17 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
     },
     ...platformChrome,
   });
+
+  // Custom-titlebar feedback: push every maximize/unmaximize so the renderer's
+  // control can swap the maximize⇄restore icon live. Harmless on macOS (the
+  // native chrome never shows our custom control, but the events still fire).
+  const pushMaximized = (isMaximized: boolean): void => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IpcChannel.window.maximizedChanged, isMaximized);
+    }
+  };
+  win.on('maximize', () => pushMaximized(true));
+  win.on('unmaximize', () => pushMaximized(false));
 
   win.once('ready-to-show', () => {
     win.show();

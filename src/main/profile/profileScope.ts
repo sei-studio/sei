@@ -74,6 +74,39 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
   // 3. Initialize a brand-new profile (returning accounts / 'local' no-op here).
   await ensureProfileInitialized();
 
+  // 3.5 Cross-device hydration (item 4). On sign-in to an existing account from
+  //     a fresh device, the local profile is empty even though the account has
+  //     state in the cloud. Pull it down HERE — before the scope-changed push
+  //     below — so the renderer's re-bootstrap (reload config + characters) sees
+  //     it and doesn't re-prompt onboarding or hide the user's own characters.
+  //     Skipped for sign-out (nextScope === local). Best-effort: a network blip
+  //     just defers hydration to the normal cache-on-demand path.
+  if (nextScope !== SCOPE_LOCAL) {
+    // (a) Display name: backfill local config from public.profiles when this
+    //     device has no name yet, so onboarding doesn't re-ask for a name the
+    //     account already set elsewhere.
+    try {
+      const { loadConfig, saveConfig } = await import('../configStore');
+      const cfg = await loadConfig();
+      if (!(cfg.preferred_name ?? '').trim()) {
+        const { fetchMyProfileName } = await import('../cloud/cloudCharacterClient');
+        const cloudName = await fetchMyProfileName();
+        if (cloudName) await saveConfig({ ...cfg, preferred_name: cloudName });
+      }
+    } catch (err) {
+      console.warn(`[sei] profileScope: cloud name backfill failed: ${(err as Error).message}`);
+    }
+    // (b) Own characters: eagerly cache the account's cloud characters into the
+    //     local library so they appear in the IconRail immediately (not only
+    //     after being opened from the World/Summons list).
+    try {
+      const { cacheMyCloudCharacters } = await import('../cloud/cacheOnDemand');
+      await cacheMyCloudCharacters(nextScope);
+    } catch (err) {
+      console.warn(`[sei] profileScope: own-character hydration failed: ${(err as Error).message}`);
+    }
+  }
+
   // 4. Tell the renderer to re-bootstrap onto the new profile.
   const win = getMainWindowRef();
   if (win && !win.isDestroyed()) {

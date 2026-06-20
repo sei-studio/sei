@@ -264,6 +264,17 @@ describe('cloudCharacterClient.upsertCharacter', () => {
     expect(state.upsert.payload!.persona_expanded).toBe('a friend who helps');
   });
 
+  it('excludes device-local usage stats (last_launched / playtime_ms) from the payload', async () => {
+    const { upsertCharacter } = await import('./cloudCharacterClient');
+    await upsertCharacter(
+      makeCharacter({ last_launched: '2026-06-10T00:00:00.000Z', playtime_ms: 999 }),
+      OWNER,
+    );
+    expect(state.upsert.payload).not.toBeNull();
+    expect(state.upsert.payload).not.toHaveProperty('last_launched');
+    expect(state.upsert.payload).not.toHaveProperty('playtime_ms');
+  });
+
   it('wraps the call in an AbortController — payload signal is the same instance', async () => {
     const { upsertCharacter } = await import('./cloudCharacterClient');
     await upsertCharacter(makeCharacter(), OWNER);
@@ -353,8 +364,8 @@ describe('cloudCharacterClient.listMyCharacters', () => {
         skin_png_sha256: 'sha',
         skin_applied_at: '2026-01-02T00:00:00.000Z',
         username: 'lyrabot',
-        last_launched: null,
-        playtime_ms: 1234,
+        last_launched: '2099-01-01T00:00:00.000Z', // stale device stat — must NOT be adopted
+        playtime_ms: 1234,                          // stale device stat — must NOT be adopted
         portrait_image: 'lyra.png',
         metadata: { foo: 'bar' },
         created_at: '2026-01-01T00:00:00.000Z',
@@ -372,7 +383,9 @@ describe('cloudCharacterClient.listMyCharacters', () => {
     expect(chars[0].shared).toBe(true);
     expect(chars[0].skin.source).toBe('username');
     expect(chars[0].skin.mojang_username).toBe('lyrabot');
-    expect(chars[0].playtime_ms).toBe(1234);
+    // Usage stats are device-local — cloud row values are never adopted.
+    expect(chars[0].last_launched).toBeNull();
+    expect(chars[0].playtime_ms).toBe(0);
     expect(chars[0].portrait_image).toBe('lyra.png');
     expect(chars[0].metadata).toEqual({ foo: 'bar' });
     expect(chars[0].created).toBe('2026-01-01T00:00:00.000Z');

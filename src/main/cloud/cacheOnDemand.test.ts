@@ -318,15 +318,42 @@ describe('ensureLocallyCached — refresh-on-open', () => {
     expect(saveCharacterRawMock).not.toHaveBeenCalled();
   });
 
-  it('char the local user OWNS is never pull-refreshed', async () => {
+  it('own char + NEWER cloud row refreshes (item 4 — cross-device shared toggle propagates)', async () => {
     await makeLocal(UUID_A);
-    // owner === current session user (OWNER) → locally authoritative
-    getCharacterMock.mockResolvedValue(makeLocalChar({ owner: OWNER }));
+    // owner === current session user (OWNER); cloud is strictly newer and has
+    // flipped shared → the user toggled public/private on another device.
+    getCharacterMock.mockResolvedValue(
+      makeLocalChar({ owner: OWNER, shared: true, cloud_updated_at: '2026-03-01T00:00:00.000Z' }),
+    );
+    downloadCharacterMock.mockResolvedValue(
+      makeCharacter({ owner: OWNER, shared: false, cloud_updated_at: '2026-04-01T00:00:00.000Z' }),
+    );
 
     const { ensureLocallyCached } = await import('./cacheOnDemand');
     await ensureLocallyCached(UUID_A);
 
-    expect(downloadCharacterMock).not.toHaveBeenCalled();
+    expect(downloadCharacterMock).toHaveBeenCalledWith(UUID_A);
+    expect(saveCharacterRawMock).toHaveBeenCalledTimes(1);
+    const saved = saveCharacterRawMock.mock.calls[0][0];
+    expect(saved.shared).toBe(false); // adopted the cloud (other-device) value
+    expect(saved.owner).toBe(OWNER); // local identity preserved
+  });
+
+  it('own char + NOT-newer cloud row makes no write (local edits win)', async () => {
+    await makeLocal(UUID_A);
+    // Local watermark is newer than cloud → a local edit hasn't been overtaken;
+    // the watermark guard must skip the write so we never clobber it.
+    getCharacterMock.mockResolvedValue(
+      makeLocalChar({ owner: OWNER, cloud_updated_at: '2026-04-01T00:00:00.000Z' }),
+    );
+    downloadCharacterMock.mockResolvedValue(
+      makeCharacter({ owner: OWNER, cloud_updated_at: '2026-03-01T00:00:00.000Z' }),
+    );
+
+    const { ensureLocallyCached } = await import('./cacheOnDemand');
+    await ensureLocallyCached(UUID_A);
+
+    expect(downloadCharacterMock).toHaveBeenCalledWith(UUID_A);
     expect(saveCharacterRawMock).not.toHaveBeenCalled();
   });
 

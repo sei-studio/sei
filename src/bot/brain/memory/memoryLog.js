@@ -38,7 +38,41 @@ export function createMemoryLog({ path: filePath } = {}) {
     append: (text, when) => appendMemory(filePath, text, when),
     forget: (query) => forgetMemory(filePath, query),
     readAll: () => readMemoryFull(filePath),
+    noteWorld: (num, label) => noteWorld(filePath, num, label),
   }
+}
+
+/**
+ * World awareness: drop a `## World <num> — <label>` section header so the
+ * append-only log reads as world-segmented. Written on join (worlds.js), but
+ * only when the world CHANGED — if the last world header already names this
+ * world, this is a no-op so repeated summons into the same world don't stack
+ * duplicate headers. Headers are deliberately NOT entry lines (`- [`), so
+ * forget() leaves them alone; readMemoryForSeed and the compactor are taught to
+ * preserve them.
+ */
+export async function noteWorld(filePath, num, label) {
+  if (!Number.isFinite(num)) return 0
+  return withFileLock(filePath, async () => {
+    let existing = ''
+    try {
+      existing = await readFile(filePath, 'utf8')
+    } catch (err) {
+      if (err && err.code === 'ENOENT') existing = HEADER
+      else throw err
+    }
+    if (!existing.startsWith('# Memory')) existing = HEADER + existing
+    // Skip if the most recent world header is already this world.
+    const markers = existing.match(/^## World (\d+)\b/gm)
+    if (markers && markers.length) {
+      const last = Number(markers[markers.length - 1].replace(/^## World /, ''))
+      if (last === num) return 0
+    }
+    const labelPart = label ? ` — ${label}` : ''
+    const sep = existing.endsWith('\n') ? '' : '\n'
+    await atomicWrite(filePath, `${existing}${sep}\n## World ${num}${labelPart}\n`)
+    return 1
+  })
 }
 
 export async function appendMemory(filePath, text, when) {
@@ -118,28 +152,41 @@ export async function readMemoryForSeed(filePath, budgetBytes) {
   if (Buffer.byteLength(full, 'utf8') <= budgetBytes) return full
 
   const lines = full.split('\n')
-  // Split into [header, ...entries]. Header ends at the first blank line after
-  // the format-explanation block.
+  // Header ends at the first entry line OR world marker (whichever comes first).
   let headerEnd = 0
   for (let i = 0; i < lines.length; i++) {
-    if (/^- \[/.test(lines[i])) { headerEnd = i; break }
+    if (/^- \[/.test(lines[i]) || /^## World /.test(lines[i])) { headerEnd = i; break }
     headerEnd = i + 1
   }
   const header = lines.slice(0, headerEnd).join('\n')
-  const entries = lines.slice(headerEnd).filter(l => /^- \[/.test(l))
-  if (entries.length === 0) return full
+  const body = lines.slice(headerEnd)
+  const entryIdx = []
+  for (let i = 0; i < body.length; i++) if (/^- \[/.test(body[i])) entryIdx.push(i)
+  if (entryIdx.length === 0) return full
 
+  // World markers are tiny and carry essential context — always keep them.
+  const markerBytes = body
+    .filter((l) => /^## World /.test(l))
+    .reduce((s, l) => s + Buffer.byteLength(l + '\n', 'utf8'), 0)
   const headerBytes = Buffer.byteLength(header + '\n', 'utf8')
-  const marker = '- [...older memory truncated]\n'
-  const markerBytes = Buffer.byteLength(marker, 'utf8')
-  let remaining = budgetBytes - headerBytes - markerBytes
-  const kept = []
-  // Walk newest → oldest, including until budget exhausted.
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const lineBytes = Buffer.byteLength(entries[i] + '\n', 'utf8')
+  const trunc = '- [...older memory truncated]'
+  const truncBytes = Buffer.byteLength(trunc + '\n', 'utf8')
+  let remaining = budgetBytes - headerBytes - markerBytes - truncBytes
+  const keep = new Set()
+  // Walk newest → oldest entries, keeping until the byte budget is exhausted.
+  for (let k = entryIdx.length - 1; k >= 0; k--) {
+    const i = entryIdx[k]
+    const lineBytes = Buffer.byteLength(body[i] + '\n', 'utf8')
     if (lineBytes > remaining) break
-    kept.unshift(entries[i])
+    keep.add(i)
     remaining -= lineBytes
   }
-  return header + '\n' + marker + kept.join('\n') + '\n'
+  // Reconstruct in ORIGINAL order: header, truncation marker, then every world
+  // header plus the kept entries — so the surviving entries stay under their
+  // world's section.
+  const out = [header, trunc]
+  for (let i = 0; i < body.length; i++) {
+    if (/^## World /.test(body[i]) || keep.has(i)) out.push(body[i])
+  }
+  return out.join('\n') + '\n'
 }

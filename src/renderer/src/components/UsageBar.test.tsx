@@ -57,11 +57,12 @@ describe('UsageBar (260602-hbr usage-percent bar)', () => {
     expect(source.includes('s.remaining_tokens')).toBe(true);
     // The estimate is derived from remaining_tokens via tokensRemainingToPlaytime.
     // Phase 15 (D-07): the second arg is now a `rate` that shrinks via
-    // VISION_MULTIPLIER when idle auto-look is on (read from vision_auto_render),
-    // and equals the flat DEFAULT_TOKENS_PER_MIN when it's off — no regression.
+    // VISION_MULTIPLIER when the vision tier is passive/active (read from
+    // vision_mode), and equals the flat DEFAULT_TOKENS_PER_MIN at 'off' — no
+    // regression.
     expect(source.includes('tokensRemainingToPlaytime(remainingTokens, rate)')).toBe(true);
     expect(source.includes('VISION_MULTIPLIER')).toBe(true);
-    expect(source.includes('vision_auto_render')).toBe(true);
+    expect(source.includes('vision_mode')).toBe(true);
     // No per-user tokens_per_min plumbing reaches the component.
     expect(source.includes('tokens_per_min')).toBe(false);
   });
@@ -73,12 +74,28 @@ describe('UsageBar (260602-hbr usage-percent bar)', () => {
     expect(source.includes('{display}')).toBe(true);
   });
 
-  it('Test 5: PROXY-05 — no raw token/dollar counts surfaced', () => {
+  it('Test 5: bar tooltip shows $used/$total + played time (260615 owner-approved PROXY-05 exception)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    // remaining_tokens is only passed to the estimator, never rendered raw.
+    // The bar (barWrap) now carries a usageTooltip with $used/$total + played.
+    expect(source.includes('usageTooltip(')).toBe(true);
+    expect(source.includes('data-tip={tooltip}')).toBe(true);
+    expect(source.includes('s.used_usd')).toBe(true);
+    expect(source.includes('total_playtime_ms')).toBe(true);
+    // Still never render a raw token count or raw micros into the markup.
     expect(source.includes('{remainingTokens}')).toBe(false);
     expect(source.includes('µ$')).toBe(false);
-    expect(source.includes('USD')).toBe(false);
+  });
+
+  it('Test 8: usage-tooltip helpers format dollars + played time', async () => {
+    const { formatUsd, formatPlayed, usageTooltip } = await import('./UsageBar');
+    expect(formatUsd(1.2)).toBe('$1.20');
+    expect(formatUsd(0)).toBe('$0.00');
+    expect(formatUsd(undefined)).toBe('$—');
+    expect(formatPlayed(11_820_000)).toBe('3h 17m'); // 3h17m
+    expect(formatPlayed(0)).toBe('0h 0m');
+    expect(formatPlayed(45 * 60_000)).toBe('0h 45m');
+    expect(usageTooltip(1.2, 5, 11_820_000)).toBe('$1.20/$5.00 used, played 3h 17m');
+    expect(usageTooltip(undefined, undefined, 0)).toBe('$—/$— used, played 0h 0m');
   });
 
   it('Test 6: CSS module defines the row layout', () => {

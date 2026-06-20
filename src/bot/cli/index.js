@@ -70,7 +70,7 @@ const DEFAULT_CONFIG = {
     expanded: '',
   },
   anthropic: { api_key: '' },
-  llm: { rate_limit_per_min: 30, debounce_ms: 500, max_hops: 5, idle_fallback_ms: 10000 },
+  llm: { rate_limit_per_min: 30, debounce_ms: 500, max_hops: 5, idle_fallback_ms: 5000 },
 }
 
 // ─── Banner ──────────────────────────────────────────────────────────────
@@ -141,8 +141,6 @@ function seedPlayerMd(preferredName, playerUsername) {
     `preferred_name: ${preferredName || ''}`,
     'pronouns:',
     '---',
-    '# Notes',
-    '',
     '',
   ].join('\n')
   writeFileSync(PLAYER_MD_PATH, front, 'utf8')

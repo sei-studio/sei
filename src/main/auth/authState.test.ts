@@ -3,8 +3,9 @@
  *
  * Stubs `./tosGate` (created by parallel plan 11-12) so the gate can be
  * exercised in isolation. Asserts the four branches (local / unverified /
- * tos-not-accepted / fully-allowed), the fail-closed branch when isTosAccepted
- * throws, the 60s TTL cache behaviour, and the invalidateTosCache hook.
+ * tos-not-accepted / fully-allowed), the fail-closed branch when the tri-state
+ * getTosAcceptance throws or returns 'unknown' (260610), the 60s TTL cache
+ * behaviour (definitive results only), and the invalidateTosCache hook.
  *
  * The authState module is module-scoped — currentState is a closure variable.
  * We drive transitions via the existing transitionToLocal / transitionToSignedIn
@@ -12,11 +13,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// ---- Mock tosGate (Plan 11-12) ------------------------------------------
-const isTosAcceptedMock = vi.fn();
+// ---- Mock tosGate (Plan 11-12; 260610 tri-state) --------------------------
+const getTosAcceptanceMock = vi.fn();
 
 vi.mock('./tosGate', () => ({
-  isTosAccepted: (...args: unknown[]) => isTosAcceptedMock(...args),
+  getTosAcceptance: (...args: unknown[]) => getTosAcceptanceMock(...args),
 }));
 
 // ---- Mock supabaseClient (260606 — validateSessionOrSignOut) -------------
@@ -53,7 +54,7 @@ function makeUser(overrides: Partial<AuthUser> = {}): AuthUser {
 }
 
 beforeEach(() => {
-  isTosAcceptedMock.mockReset();
+  getTosAcceptanceMock.mockReset();
   getUserMock.mockReset();
   signOutMock.mockReset().mockResolvedValue({ error: null });
   invalidateTosCache();
@@ -70,75 +71,86 @@ describe('isCloudWriteAllowed', () => {
   it('returns false when kind === local (not_signed_in)', async () => {
     transitionToLocal();
     expect(await isCloudWriteAllowed()).toBe(false);
-    expect(isTosAcceptedMock).not.toHaveBeenCalled();
+    expect(getTosAcceptanceMock).not.toHaveBeenCalled();
   });
 
   it('returns false when signed_in but email NOT verified (email_unverified)', async () => {
     transitionToSignedIn(makeUser({ emailVerified: false }));
     expect(await isCloudWriteAllowed()).toBe(false);
-    expect(isTosAcceptedMock).not.toHaveBeenCalled();
+    expect(getTosAcceptanceMock).not.toHaveBeenCalled();
   });
 
   it('returns false when signed_in + verified but tos NOT accepted', async () => {
-    isTosAcceptedMock.mockResolvedValue(false);
+    getTosAcceptanceMock.mockResolvedValue('not_accepted');
     transitionToSignedIn(makeUser({ emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(false);
-    expect(isTosAcceptedMock).toHaveBeenCalledTimes(1);
+    expect(getTosAcceptanceMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns true when signed_in + verified + tos accepted', async () => {
-    isTosAcceptedMock.mockResolvedValue(true);
+    getTosAcceptanceMock.mockResolvedValue('accepted');
     transitionToSignedIn(makeUser({ emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(true);
   });
 
-  it('fails closed (false) when isTosAccepted rejects', async () => {
-    isTosAcceptedMock.mockRejectedValue(new Error('CLOUD_TIMEOUT'));
+  it('fails closed (false) when getTosAcceptance rejects', async () => {
+    getTosAcceptanceMock.mockRejectedValue(new Error('CLOUD_TIMEOUT'));
     transitionToSignedIn(makeUser({ emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(false);
   });
 
-  it('caches the tos result for 60s — two consecutive calls hit isTosAccepted once', async () => {
-    isTosAcceptedMock.mockResolvedValue(true);
+  it('caches the tos result for 60s — two consecutive calls hit getTosAcceptance once', async () => {
+    getTosAcceptanceMock.mockResolvedValue('accepted');
     transitionToSignedIn(makeUser({ emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(true);
     expect(await isCloudWriteAllowed()).toBe(true);
-    expect(isTosAcceptedMock).toHaveBeenCalledTimes(1);
+    expect(getTosAcceptanceMock).toHaveBeenCalledTimes(1);
   });
 
   it('invalidateTosCache forces re-query on next call', async () => {
-    isTosAcceptedMock.mockResolvedValue(true);
+    getTosAcceptanceMock.mockResolvedValue('accepted');
     transitionToSignedIn(makeUser({ emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(true);
     invalidateTosCache();
     expect(await isCloudWriteAllowed()).toBe(true);
-    expect(isTosAcceptedMock).toHaveBeenCalledTimes(2);
+    expect(getTosAcceptanceMock).toHaveBeenCalledTimes(2);
   });
 
   it('cache busts when TTL expires (vi.useFakeTimers)', async () => {
     vi.useFakeTimers();
     try {
-      isTosAcceptedMock.mockResolvedValue(true);
+      getTosAcceptanceMock.mockResolvedValue('accepted');
       transitionToSignedIn(makeUser({ emailVerified: true }));
       expect(await isCloudWriteAllowed()).toBe(true);
       // Advance past the 60s TTL.
       vi.advanceTimersByTime(60_001);
       expect(await isCloudWriteAllowed()).toBe(true);
-      expect(isTosAcceptedMock).toHaveBeenCalledTimes(2);
+      expect(getTosAcceptanceMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
   });
 
+  it("does NOT cache an 'unknown' result — next call re-queries (260610 offline fix)", async () => {
+    getTosAcceptanceMock.mockResolvedValue('unknown');
+    transitionToSignedIn(makeUser({ emailVerified: true }));
+    expect(await isCloudWriteAllowed()).toBe(false);
+    // Connectivity returns — the very next call must re-query instead of
+    // serving a stale 60s "false" from the cache.
+    getTosAcceptanceMock.mockResolvedValue('accepted');
+    expect(await isCloudWriteAllowed()).toBe(true);
+    expect(getTosAcceptanceMock).toHaveBeenCalledTimes(2);
+  });
+
   it('cache is per-user — switching users invalidates the prior cache entry', async () => {
-    isTosAcceptedMock.mockResolvedValue(true);
+    getTosAcceptanceMock.mockResolvedValue('accepted');
     transitionToSignedIn(makeUser({ id: '11111111-1111-4111-8111-111111111111', emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(true);
-    expect(isTosAcceptedMock).toHaveBeenCalledTimes(1);
+    expect(getTosAcceptanceMock).toHaveBeenCalledTimes(1);
 
     transitionToSignedIn(makeUser({ id: '22222222-2222-4222-8222-222222222222', emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(true);
-    expect(isTosAcceptedMock).toHaveBeenCalledTimes(2);
+    expect(getTosAcceptanceMock).toHaveBeenCalledTimes(2);
   });
 });
 

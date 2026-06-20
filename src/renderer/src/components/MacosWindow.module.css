@@ -8,8 +8,11 @@
 .window {
   width: 100%;
   height: 100%;
-  min-width: 1180px;
-  min-height: 760px;
+  /* Floor lowered from 1180 → 1024 so the smaller Windows default window
+     (1040×700, set in windowChrome.ts) doesn't clip / force a scrollbar.
+     macOS still opens at 1180 but can now be dragged narrower. */
+  min-width: 1024px;
+  min-height: 660px;
   /* Flat near-black field — no accent bloom (the previous radial used
      --accent-soft at 16%, ~3× the mockup's faint 5% glow, and read as a
      blue gradient washed over the whole window). */
@@ -48,6 +51,48 @@
      so it clears the OS window controls). */
   padding-left: calc(var(--rail-w) + var(--space-2xl));
   -webkit-app-region: drag;
+}
+
+/* Windows / Linux frameless layout: no native traffic lights on the left, so
+   the "Sei Launcher" mark sits at the far left and our custom controls take the
+   right. (macOS keeps the rail-cleared padding above.) */
+.dragStripCustom {
+  padding-left: var(--space-lg);
+}
+
+/* Custom min / maximize / close controls (Windows/Linux). */
+.controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.ctlBtn {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.ctlBtn:hover {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+
+/* Close button signals danger on hover via the palette's red token (design
+   system §2 — reference tokens, never literal hex). */
+.ctlClose:hover {
+  background-color: var(--red);
+  color: var(--text);
 }
 
 /* Hairline base — only across the content area (right of the rail), so there

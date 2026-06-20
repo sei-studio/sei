@@ -1,4 +1,5 @@
 import { stopFollow, startFollow } from './follow.js'
+import { createThrottle } from '../../../brain/debounce.js'
 
 const HOSTILE_MOBS = new Set([
   'zombie', 'skeleton', 'creeper', 'spider', 'cave_spider', 'witch',
@@ -35,6 +36,19 @@ export function startCombat(bot, config) {
   let _target = null
   let _attackLoop = null
   let _exitTimer = null
+
+  // Leading-edge throttle for sei:attacked emission. The entityHurt handler
+  // below has ALWAYS referenced bot._seiAttackThrottle, but nothing ever
+  // assigned it — so the throttle was dead and EVERY hit emitted a sei:attacked
+  // (the throttle's `else` fallback). Under sustained attack that produced a
+  // preempt storm: each hit aborted the in-flight LLM reaction and reseeded the
+  // loop ~every 300-500ms, faster than Haiku could answer, so the bot never
+  // completed a single reaction (zero say / zero combat action — the "Sui is
+  // frozen and silent in fights" bug). Actually instantiating it here collapses
+  // a burst of hits into one reaction per window. windowMs=0 disables (tests).
+  const mc = config?.adapter?.minecraft ?? config ?? {}
+  const throttleMs = Number.isFinite(mc.attack_react_throttle_ms) ? mc.attack_react_throttle_ms : 3500
+  if (throttleMs > 0) bot._seiAttackThrottle = createThrottle(throttleMs)
 
   function startAttacking(target) {
     _target = target

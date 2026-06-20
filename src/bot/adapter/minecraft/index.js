@@ -10,9 +10,9 @@
 import { ADAPTER_INTERFACE_VERSION } from '../../brain/types.js'
 import { createDefaultRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
+import { getProgression as readProgression } from './observers/progression.js'
 import { closeContainerSession } from './behaviors/container.js'
 import { wireBotEvents } from './fsmWires.js'
-import { shouldAutoRender } from './observers/idleVisionGate.js'
 import { visualizeAction } from './behaviors/visualize.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
@@ -31,7 +31,7 @@ import {
  * @param {Object} args
  * @param {object} args.bot           Mineflayer Bot instance (from createBotInstance).
  * @param {object} args.config        Validated config; passed through to action handlers.
- * @param {boolean} [args.visionEnabled=false]  D-10 gate — register the `visualize`
+ * @param {boolean} [args.visionEnabled=false]  D-10 gate — register the `look`
  *   action only when the active provider is VLM-capable (capabilities.vision).
  *   The construction site (src/bot/index.js) does not hold the provider handle,
  *   so it defaults false here; the orchestrator's tool-list filter (combinedToolsFor)
@@ -71,6 +71,31 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
 
     // ─── World perception + prompt blocks ──────────────────────────────
     createSnapshotComposer: () => createSnapshotComposer({ bot }),
+    /**
+     * World-identity signals for the per-character world registry (worlds.js).
+     * The world spawn point is deterministic from the seed and stable across
+     * sessions, so it fingerprints the world; dimension disambiguates. Returns
+     * floored coords or null when spawn isn't known yet (called post-spawn).
+     */
+    getWorldInfo: () => {
+      const sp = bot.spawnPoint
+      return {
+        spawnPoint:
+          sp && Number.isFinite(sp.x)
+            ? { x: Math.floor(sp.x), y: Math.floor(sp.y), z: Math.floor(sp.z) }
+            : null,
+        dimension: bot.game?.dimension ?? null,
+      }
+    },
+    /**
+     * Minimal vanilla progression view (observers/progression.js). The brain
+     * passes its caller-owned latched flags (entered_nether/entered_end/
+     * killed_dragon); inventory, pickaxe tier and current dimension are read
+     * live off the bot. Used to surface the reachable-next frontier into the
+     * heartbeat and to detect milestone completion in JS (no LLM). Defensive:
+     * never throws (degrades to an empty frontier).
+     */
+    getProgression: (flags = {}) => readProgression(bot, flags),
     worldPrimer,
     capabilityParagraph,
     actionRules,
@@ -125,15 +150,14 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
       try { await closeContainerSession() } catch {}
     },
 
-    // ─── Idle auto-render (VIS-04 — 15-07) ────────────────────────────
-    // The orchestrator drives the periodic "look around" through the adapter so
-    // the bot reference stays adapter-side (the brain↔adapter seam: the
-    // orchestrator never imports mineflayer or src/adapter/). shouldAutoRenderIdle
-    // runs the composite fail-closed gate (toggle + capability + owner + LOS);
-    // renderIdleFrame produces the deduped idle frame via the SAME visualizeAction
-    // the explicit path uses, with idle:true so D-02 pose-dedupe applies. Idle
-    // renders use the STANDARD LLM path — there is NO /vision routing here (D-09).
-    shouldAutoRenderIdle: (provider) => shouldAutoRender(bot, config, provider),
+    // ─── Passive-look render seam ──────────────────────────────────────
+    // The orchestrator drives the periodic "look around" (per-turn cadence,
+    // vision.interval_turns) through the adapter so the bot reference stays
+    // adapter-side (the brain↔adapter seam: the orchestrator never imports
+    // mineflayer or src/adapter/). renderIdleFrame produces the deduped frame
+    // via the SAME visualizeAction the explicit path uses, with idle:true so
+    // D-02 pose-dedupe applies. Cadence renders use the STANDARD LLM path —
+    // there is NO /vision routing here (D-09).
     renderIdleFrame: () => visualizeAction({ idle: true }, bot, config),
 
     // ─── Capabilities (read from registry / plugin presence) ─────────

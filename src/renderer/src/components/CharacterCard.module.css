@@ -58,6 +58,53 @@
   outline: none;
 }
 
+/* ── Summoned state — highlighted frame + reflective glint ───────────────
+ * Mirrors the IconRail avatar's summoned treatment and reuses the deploy
+ * button's glint animation language. The accent frame persists (independent of
+ * hover); the glint sweeps continuously while the bot is live. */
+.card.summoned {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card), 0 0 0 1px var(--accent), 0 0 16px var(--accent-soft);
+}
+
+.card.summoned:hover,
+.card.summoned:focus-visible {
+  /* Keep the lift but preserve the accent frame over the hover frame. */
+  box-shadow: var(--shadow-card), 0 0 0 1px var(--accent), 0 0 20px var(--accent-soft);
+}
+
+/* Travelling glint — clipped to the card by its own overflow:hidden (the card
+ * box itself is overflow:visible for the hover hit-area bridge). Sits above the
+ * scrim/portrait but below the name/meta (later in DOM at the same z-index) and
+ * the hover overlay, and is pointer-transparent. */
+.summonGlint {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.summonGlint::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: card-summon-glint calc(3.4s / var(--flux, 1)) ease-in-out infinite;
+}
+
+@keyframes card-summon-glint {
+  0%, 60% { left: -60%; }
+  85%, 100% { left: 130%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summonGlint::after { animation: none; display: none; }
+}
+
 /* Per-character accent tint, painted via inline style in the TSX. */
 .bg {
   position: absolute;

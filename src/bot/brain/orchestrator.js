@@ -18,14 +18,20 @@ import {
   BASELINE_INSTRUCTIONS,
   PERSONALITY_TOOL_DESCRIPTIONS,
   NUDGES,
+  SPEAK_REMINDER,
   renderPersona,
+  renderHeartbeat,
+  renderProactivenessDirective,
+  renderCompanions,
 } from './prompts.js'
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker } from './inflight.js'
 import { createConvoMemory } from './convoMemory.js'
 import { logChatOut, logActionResult } from './log.js'
 import { createMemoryLog, readMemoryForSeed } from './memory/memoryLog.js'
+import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
+import { createWorldRegistry } from './memory/worlds.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line), force lowercase (hardcoded),
@@ -33,13 +39,64 @@ import { createMemoryCompactor } from './memory/compactor.js'
 // box. Length and shape are the model's job, enforced via the prompt rules
 // in src/bot/brain/prompts.js — truncating mid-sentence here ships
 // nonsense, so we do not.
+// 260616: all hardcoded drop-word / regex content filters removed. The bot's
+// text is no longer suppressed by phrase or keyword — nothing is banned at this
+// layer. What the model says reaches chat (after whitespace/lowercase normalize
+// and the texting-style sentence split below). Output shape is the model's job,
+// shaped by the prompt rules and the per-character persona, not by a code net.
+
+// Per-word casing: a fully-uppercase word (>= 2 consecutive letters, e.g.
+// "WATCH", "DIAMONDS", "AI") is kept verbatim as emphasis; every other token
+// (mixed case, Capitalized, single letters like "I") is lowercased. Punctuation
+// inside the token is preserved. Decided per whitespace-delimited token.
+function smartCase(text) {
+  return text.replace(/\S+/g, (token) => {
+    const letters = token.replace(/[^A-Za-z]/g, '')
+    return (letters.length >= 2 && letters === letters.toUpperCase()) ? token : token.toLowerCase()
+  })
+}
+
 export function postProcessSay(s) {
-  return String(s ?? '')
+  const normalized = String(s ?? '')
     .replace(/\s+/g, ' ')
     .trim()
-    .toLowerCase()
-    .slice(0, 256)
+  if (!normalized) return ''
+  // Normalize only: collapse whitespace, smart-case (keep ALL-CAPS words as
+  // emphasis, lowercase the rest), hard 256 length cap. Nothing is dropped by
+  // content — what the model says reaches chat.
+  return smartCase(normalized).slice(0, 256)
 }
+
+// 260615: humans don't text two sentences in one bubble — they send a second
+// message. Split a cleaned chat line into separate messages on sentence
+// punctuation and on em/en-dashes. A dash becoming a message BREAK (rather than
+// a regex strip) keeps it out of speech without mangling mid-sentence
+// punctuation. Trailing periods are dropped per message (texting style /
+// "minimize punctuation"); ? and ! stay because they carry tone. Commas are
+// left alone — list commas ("walls, roof, door") must not fragment; the prompt
+// handles comma-spliced clauses.
+// 260616: message cap dropped — every segment the split produces ships, no
+// count limit and no content filter.
+export function splitChatMessages(line) {
+  if (!line) return []
+  return line
+    // Break on dashes (with or without surrounding spaces) and after . ? !
+    .split(/\s*[—–]\s*|(?<=[.?!])\s+/)
+    .map((seg) => seg.trim().replace(/[.\s]+$/, '').trim())
+    .filter(Boolean)
+}
+
+// 260616→260617: speech is now gated through the say() TOOL (see personalityTools
+// + emitSayCalls). Haiku's text block is a PRIVATE scratchpad the player never
+// sees; the only words that reach chat are a say() tool call's `text`. This hands
+// the model the "think before you speak" step it never had: the raw text block
+// used to BE the chat channel, so its first free-associated tokens went straight
+// to the player (the root cause of the monologue leak and word-salad replies like
+// "shut up" → "i can hear you"). Extended thinking would also give a scratchpad
+// but makes Haiku go mute, so we carve one out of the text block instead — and,
+// since Haiku honored a text-only say() convention 0× across two live runs while
+// calling real tools reliably, the say() channel is a registered tool, not parsed
+// text. No say() call → silence (the default).
 
 /**
  * Suppress duplicate-consecutive say() within sei:loop_end loops.
@@ -73,9 +130,12 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
 // brain/prompts.js) + adapter.actionRules() (game-specific, adapter/prompts.js).
 // Joined with a blank line so each side can be edited independently.
 // One Haiku call per iteration handles both reasoning and dispatch. The
-// assistant's `text` blocks ARE the player-visible chat channel (like Claude
-// Code / OpenCode): the agent loop emits any mix of text + tool_use per turn;
-// text goes straight to in-game chat, tools execute.
+// assistant's `text` block is a PRIVATE scratchpad (the model reasons there);
+// the only words that reach chat are a say() TOOL call's `text`, and the other
+// tool calls execute. 260616→260617: say()-gating replaced the old "text block
+// IS chat" model — that left Haiku no place to think but the channel wired to
+// chat, so its reasoning leaked — and say() became a real tool after the text
+// convention failed adoption twice. See emitSayCalls() / config.chat_mode.
 
 // Tool names that are personality-only (do not require a follow-up
 // iteration). Anything outside this set is a movement-registry action and
@@ -95,13 +155,24 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
 // new action switches in-place, text + end_loop terminates, text + end_loop
 // + new action terminates AND reseeds. On P2/P3-triggered iterations, text-
 // only still terminates the loop (unchanged).
-const PERSONALITY_NAMES = new Set(['remember', 'forget', 'follow', 'unfollow', 'end_loop'])
+// 260617: `say` is in this set so a say()-only turn yields ZERO movementCalls
+// → continueLoop=false → the loop ends (say is "silence" for loop purposes:
+// it speaks, but it never keeps the bot busy on its own — see the
+// `continueLoop = movementCalls.length > 0` gate in runIterations).
+const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
 // test harness (scripts/test-actionTick.mjs) can shorten it via the
 // `_setTickIntervalForTests` hook below without booting an orchestrator.
-let _TICK_INTERVAL_MS = 10_000
+// 260618: 10s -> 30s. The silent monitor that fires while a long-runner is
+// suspended is a self-check (stuck-detection + the rare milestone line); it is
+// NOT the player-response path (player chat preempts immediately via P1). It
+// mostly returned "keep going" no-ops, and each fire is a full LLM call, so it
+// was a large share of spend. 30s keeps stuck-recovery responsive enough (the
+// snapshot's position-stuck line + each action's own wall-clock timeout still
+// apply) while cutting monitor calls ~3x.
+let _TICK_INTERVAL_MS = 30_000
 export function _setTickIntervalForTests(ms) { _TICK_INTERVAL_MS = ms }
 export function _getTickIntervalForTests() { return _TICK_INTERVAL_MS }
 
@@ -194,6 +265,9 @@ export async function composeSeedBlocks({
   adapter = null,
   recentPlayerChatText = null,
   yourRecentMessagesText = null,
+  playerMessageText = null,
+  companions = [],
+  frontierText = '',
   logger = console,
 }) {
   const player = sessionState.playerData()
@@ -215,13 +289,68 @@ export async function composeSeedBlocks({
         config.memory.seed_memory_budget_bytes ?? 8192,
       )
       if (memoryText && memoryText.length > 0) {
-        blocks.push({ type: 'text', name: 'memory', text: memoryText })
+        // 260616: lead the memory block with a reference cue. These are the
+        // bot's OWN memories of past sessions — surfacing them is not enough;
+        // the bot should bring them up in conversation so the player feels
+        // remembered. A natural callback to a shared moment ("still mad about
+        // that creeper") is worth more than any status line.
+        const memoryPreamble =
+          'These are YOUR memories of this player from past sessions — the reason you two are not strangers. ' +
+          'Let them shape how you treat the player now, and when the moment genuinely connects to one, BRING IT UP ' +
+          'naturally (a callback to something you did or felt together) so they know you remember. Don\'t force it ' +
+          'or recite the list; just don\'t act like every session is the first.\n\n'
+        blocks.push({ type: 'text', name: 'memory', text: memoryPreamble + memoryText })
       }
     } catch (err) {
       if (err && err.code !== 'ENOENT' && err.code !== 'EACCES') {
         logger.warn?.(`[sei/orch] memory read failed: ${err && err.message}`)
       }
     }
+  }
+  // Heartbeat: persisted goals + reachable frontier ONLY. The proactiveness
+  // directive used to lead this block, but it is static for the session, so it
+  // moved to the cached system prefix (renderProactivenessDirective, wired in
+  // rebuildPersonalitySystem) and no longer re-bills here every loop (260618).
+  // Surfaced EVERY loop (after memory, before chat/event) so a multi-step goal
+  // survives a loop ending after one step. Gated on the configured path so
+  // hand-built test configs (no heartbeat) keep their exact seed composition;
+  // production always sets the path.
+  if (config?.memory?.heartbeat_md_path) {
+    let goalsText = ''
+    try {
+      goalsText = await readHeartbeatForSeed(
+        config.memory.heartbeat_md_path,
+        config.memory.seed_heartbeat_budget_bytes ?? 2048,
+      )
+    } catch (err) {
+      if (err && err.code !== 'ENOENT' && err.code !== 'EACCES') {
+        logger.warn?.(`[sei/orch] heartbeat read failed: ${err && err.message}`)
+      }
+    }
+    blocks.push({
+      type: 'text',
+      name: 'heartbeat',
+      // 260618: second cache breakpoint. memory + heartbeat are stable across
+      // consecutive loops (goals/frontier change only when you cross a
+      // milestone), so caching through here lets a steady session re-read them
+      // instead of re-billing every loop. The seed_cuboid_grammar marker above
+      // stays as the fallback breakpoint, so a heartbeat change never costs more
+      // than today. (Anthropic honours the deepest marker whose segment clears
+      // the per-segment minimum.)
+      cache_control: { type: 'ephemeral' },
+      text: renderHeartbeat(config?.persona?.proactiveness ?? 1, goalsText, frontierText),
+    })
+  }
+  // 260618: companions block — only when other AI bots share this world. Sits
+  // right after the heartbeat so multi-agent etiquette (don't both reply, you
+  // may direct a teammate, keep the human involved) is read every loop. Empty
+  // string for single-bot sessions, so their seed composition is unchanged.
+  const companionsText = renderCompanions(
+    companions,
+    config?.player_display_name || config?.player_username || 'the player',
+  )
+  if (companionsText) {
+    blocks.push({ type: 'text', name: 'companions', text: companionsText })
   }
   if (recentPlayerChatText) {
     blocks.push({ type: 'text', name: 'recent_player_chat', text: recentPlayerChatText })
@@ -231,6 +360,17 @@ export async function composeSeedBlocks({
   }
   blocks.push({ type: 'text', name: 'event',    text: eventText })
   blocks.push({ type: 'text', name: 'snapshot', text: snapshotText })
+  // 260616 (#1): high-recency say() reminder on EVERY turn. The live test showed
+  // Haiku ignoring the say() contract from the (cached, far-up) system prompt and
+  // going fully silent, so we restate it right before generation.
+  blocks.push({ type: 'text', name: 'speak_reminder', text: SPEAK_REMINDER })
+  // 260616 (#2): the triggering player message goes LAST — the most-recent
+  // position, read right before the model responds — so it answers the PLAYER,
+  // not the 50-line snapshot that used to follow (and outweigh) it. Only set
+  // for player-chat turns; null otherwise.
+  if (playerMessageText) {
+    blocks.push({ type: 'text', name: 'player_message', text: playerMessageText })
+  }
   return blocks
 }
 
@@ -250,8 +390,43 @@ export async function composeSeedBlocks({
  *   priority queue. Required when the brain runs in production; defaults
  *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, _anthropicOverride = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, _anthropicOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
+  // 260618: roster of OTHER AI companion usernames in this world (multi-bot
+  // sessions). Pushed from main via {type:'roster'} → brain.setCompanions →
+  // setCompanions() below. Drives the snapshot pin/label, the companions seed
+  // block, and chat.js's "don't wake for a message aimed at a sibling" filter.
+  // Empty for the common single-bot case (no behavior change).
+  let companions = []
+  const setCompanions = (names) => {
+    companions = Array.isArray(names)
+      ? names.filter(n => typeof n === 'string' && n.trim() && n !== config?.adapter?.minecraft?.username)
+      : []
+  }
+  // 260618: reactive JWT recovery. A cloud-proxy JWT can expire mid-session even
+  // with the proactive refresh ticker (machine asleep, a build started before
+  // the fix, a failed refresh tick). Without recovery the bot just re-hammers
+  // the dead token on every idle tick and freezes until it's stopped (observed:
+  // ~75s of 401 expired_jwt, then the session died). On a 401 expired_jwt we ask
+  // main ONCE (debounced) for a fresh token; main calls getProxyJwt() →
+  // refreshSession() and pushes it back via cloud-jwt-update → setAuthToken, so
+  // the next call goes through. No-op for BYOK (no onAuthExpired wired).
+  let lastJwtRefreshReqAt = 0
+  function maybeRecoverExpiredJwt(err) {
+    try {
+      if (typeof onAuthExpired !== 'function') return
+      if (err?.status !== 401) return
+      // JWT-specific so a BYOK invalid-key 401 (x-api-key / authentication_error)
+      // doesn't trigger a pointless refresh round-trip. The proxy returns
+      // {"error":"expired_jwt"}; match the broader "jwt" too for safety.
+      if (!/jwt/i.test(String(err?.message ?? ''))) return
+      const now = Date.now()
+      if (now - lastJwtRefreshReqAt < 10_000) return  // at most one request / 10s
+      lastJwtRefreshReqAt = now
+      logger.warn?.('[sei/orch] auth token expired (401) — requesting a fresh JWT from main')
+      onAuthExpired()
+    } catch { /* recovery is best-effort; never throw into the loop */ }
+  }
   // Locally re-bind into the same names the body uses; the registry surface
   // is exposed through the adapter rather than a separate parameter.
   const registry = {
@@ -278,10 +453,35 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // MEMORY.md store — long-term memory the LLM writes via remember() /
   // forget() and reads back in the seed turn each loop.
   const memoryLog = createMemoryLog({ path: config.memory.memory_md_path })
+  // HEARTBEAT.md store — active goals / standing orders the LLM writes via
+  // setGoal() / clearGoal() and reads back (with the proactiveness directive)
+  // in the heartbeat seed block each loop. Gated on the configured path so
+  // hand-built test configs that omit it (no ConfigSchema.parse) simply run
+  // without a heartbeat; production always sets it (config default + index.js).
+  const heartbeatLog = config.memory.heartbeat_md_path
+    ? createHeartbeatLog({ path: config.memory.heartbeat_md_path })
+    : null
   // Compactor: async Haiku-driven rewrite when MEMORY.md exceeds the
   // configured trigger size. Fired fire-and-forget after each successful
   // remember(); single-flight inside the compactor itself.
   const memoryCompactor = createMemoryCompactor({ anthropic, memoryLog, config, logger })
+  // World registry: assigns this session's world a stable number, segments
+  // MEMORY.md by world, and feeds the current-world line into the snapshot so
+  // the bot doesn't conflate progress/relationships across different worlds.
+  const worldRegistry = config.memory.worlds_json_path
+    ? createWorldRegistry({ worldsPath: config.memory.worlds_json_path, memoryLog, logger })
+    : null
+  // 260618: progression-graph state (observers/progression.js, surfaced through
+  // adapter.getProgression). `progressionFlags` are the caller-owned ONE-WAY
+  // latches the graph can't re-derive from live inventory — entered_nether /
+  // entered_end (latched in refreshProgressionForSeed from the current dimension)
+  // and killed_dragon (set true to mark the final milestone; the entityDead →
+  // ender_dragon hookup is the one remaining integration point). `activeFrontierGoal`
+  // links the committed goal back to the spine node it came from, so JS can detect
+  // when that milestone completes, clear the goal, and re-surface the frontier —
+  // { id, text, label } or null.
+  const progressionFlags = { entered_nether: false, entered_end: false, killed_dragon: false }
+  let activeFrontierGoal = null
   const personalityBucket = createTokenBucket({
     capacity: config.llm.rate_limit_per_min,
     refillPerMin: config.llm.rate_limit_per_min,
@@ -307,6 +507,89 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // chains is a no-op shim (kept to preserve any stragglers referencing it).
   const chains = createChainTracker({ maxHops: config.llm.max_hops })
 
+  // 260615: emit a cleaned chat line as one-or-more human-style messages.
+  // splitChatMessages breaks it on sentence punctuation + dashes; we send each
+  // as its own message, lightly staggered so they read as separate texts rather
+  // than landing in the same tick (and so a slow chat queue keeps their order).
+  // Each message is logged + recorded to convo memory in order. Empty input
+  // (e.g. telemetry filtered to '') sends nothing.
+  function emitChatMessages(line) {
+    const msgs = splitChatMessages(line)
+    msgs.forEach((msg, i) => {
+      const send = () => {
+        logChatOut(msg)
+        try { adapter.chat(msg) } catch {}
+        convoMemory.recentChat.pushSelf(config.persona.name, msg)
+      }
+      if (i === 0) send()
+      else setTimeout(send, i * 550)
+    })
+  }
+
+  // 260616: chat_mode 'full' surfaces the private scratchpad to chat with a
+  // [think] prefix so a developer or streamer can watch the reasoning live.
+  // 260617: with say() now a tool, the ENTIRE `text` output is scratchpad (no
+  // trailing say() payload to strip), so we print it whole. Default 'chat'
+  // keeps it hidden. Not recorded to convo memory — debug output, not speech.
+  function emitThinkIfFull(rawText) {
+    if (config.chat_mode !== 'full') return
+    const scratch = String(rawText ?? '').replace(/\s+/g, ' ').trim()
+    if (!scratch) return
+    try { adapter.chat(`[think] ${scratch}`.slice(0, 256)) } catch {}
+  }
+
+  // 260617: emit a single say() tool call's line to chat. Shared by the
+  // up-front emitSayCalls path (normal flow) and the executeInlineMetadata
+  // `say` fallback. Returns the tool_result content string. postProcessSay
+  // strips banned content (coordinates, stage directions); shouldSuppressLoopEndSay
+  // dedups a loop_end turn that merely repeats the last spoken line.
+  function _emitSayLine(loop, rawText) {
+    const line = postProcessSay(String(rawText ?? '').trim())
+    if (!line) {
+      lastActionResult = 'say: empty'
+      // emitted:false — an empty say() does NOT consume the one-per-turn slot.
+      return { emitted: false, content: 'say: nothing sent (empty after cleanup)' }
+    }
+    const suppressed = shouldSuppressLoopEndSay({
+      triggerEvent: loop._triggerEvent,
+      candidateLine: line,
+      lastSelf: convoMemory.recentChat.lastSelf?.() ?? null,
+    })
+    if (suppressed) {
+      logger.info?.(`[sei/orch] dedupeSay suppressed loop_end duplicate (loop=${loop.id}): ${line.slice(0, 80)}`)
+      // A real (deduped) attempt still consumes the slot — a repeat must not
+      // open the door to a second line.
+      return { emitted: true, content: 'said (suppressed duplicate of your last line)' }
+    }
+    emitChatMessages(line)
+    lastActionResult = 'said'
+    return { emitted: true, content: 'said' }
+  }
+
+  // 260617: emit EVERY say() tool call in the batch UP FRONT — before any
+  // suspending action dispatches and suspends the turn — so a boast lands
+  // before the swing regardless of where say() sits in the tool batch (the
+  // for-loop returns early on the first suspending tool, deferring anything
+  // after it). Returns a Map<tool_use_id, tool_result> the dispatch paths
+  // pre-fill so say() is never re-emitted downstream.
+  function emitSayCalls(loop, toolUses) {
+    const out = new Map()
+    let spoken = false
+    for (const u of toolUses ?? []) {
+      if (u.name !== 'say') continue
+      if (spoken) {
+        // Contract is ONE say() per turn (SEND LESS — multiple lines read as
+        // spam). Ignore extras rather than firing several chat messages.
+        out.set(u.id, { type: 'tool_result', tool_use_id: u.id, content: 'ignored: only one say() per turn — combine it into a single line', is_error: false })
+        continue
+      }
+      const r = _emitSayLine(loop, u.input?.text)
+      if (r.emitted) spoken = true
+      out.set(u.id, { type: 'tool_result', tool_use_id: u.id, content: r.content, is_error: false })
+    }
+    return out
+  }
+
   // ─── Single-flight Loop state (Pitfall 6) ────────────────────────────
   // At most one Loop is active at any time. Idle dispatches are gated on
   // currentLoop === null (D-39 / SPEC A2). Player-chat dispatches that arrive
@@ -324,14 +607,118 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // currentLoop === null and opens a fresh loop with the attack seed
   // addendum.
   let pendingAttack = null
+  // 260611: single-flight timer for the rate-limit redrive (see
+  // maybeScheduleRateLimitRedrive). Holds the setTimeout handle while a
+  // delayed re-dispatch of a 429-killed player-visible trigger is pending.
+  let _redriveTimer = null
+  // Consecutive 429-redrives without an intervening successful LLM call.
+  // Reset by callPersonality on success; caps the redrive chain so a
+  // persistent rate limit degrades to silence instead of a polling loop.
+  let _redriveStreak = 0
 
-  // Personality-only tools: remember, forget, end_loop. Player-visible
-  // speech is the assistant's `text` output (handled by the orchestrator's
-  // chat-emit path); there is no `say` tool — text blocks ARE the chat channel.
+  /**
+   * 260611: when a loop dies on a rate limit (the client's short, abortable
+   * rescue retries can't outlast a 15-60s window — by design, 260609), the
+   * triggering player event used to be silently dropped: the bot just never
+   * answered ("thank you. it is my lifelong work" in the 260611 playlog got
+   * nothing; the player quit). Instead, schedule ONE delayed re-dispatch of
+   * the original trigger after the server's retry_after window, so the bot
+   * answers late rather than never. Only player-visible triggers (chat,
+   * attack) are redriven — idle/tick work is droppable; the passive cadence
+   * re-arms on its own.
+   */
+  // A 429 with kind:'daily_dollar' is the proxy's per-day SPEND cap (trial
+  // $5/day) — NOT a transient itpm/rpm blip; it won't clear for hours, so a
+  // retry/redrive is futile. Latch halted and ask the supervisor to tear the bot
+  // down (it leaves the world QUIETLY, like the 402 path) and raise the
+  // daily-limit popup. retry_after_seconds is the honest JSON value (the
+  // Retry-After header is capped at 10s server-side) — it tells the GUI when the
+  // window resets. Idempotent via _halted.
+  function haltOnDailyCap(err) {
+    if (!(err?.status === 429 && err?.error?.kind === 'daily_dollar')) return false
+    if (_halted) return true
+    _halted = true
+    const sec = Number(err?.error?.retry_after_seconds)
+    logger.warn?.('[sei/orch] daily play limit (daily_dollar) hit — halting, signaling popup')
+    if (typeof onTerminalError === 'function') {
+      try {
+        onTerminalError({
+          error: 'DAILY_LIMIT_REACHED',
+          message: 'Daily play limit reached — leaving the world.',
+          retryAfterSeconds: Number.isFinite(sec) && sec > 0 ? sec : null,
+        })
+      } catch (cbErr) {
+        logger.warn?.(`[sei/orch] onTerminalError (daily cap) threw: ${cbErr && cbErr.message}`)
+      }
+    }
+    return true
+  }
+
+  function maybeScheduleRateLimitRedrive(loop, err, override = null) {
+    if (err?.status !== 429) return
+    // A daily-spend-cap 429 is terminal for the session — halt instead of
+    // scheduling a futile redrive.
+    if (haltOnDailyCap(err)) return
+    // `override` lets the action-tick path redrive the chat message the tick
+    // was carrying (the loop's originating trigger could be minutes stale).
+    const trig = override?.event ?? loop?._triggerEvent
+    const trigData = override?.data ?? loop?._triggerData
+    const isP01 = trig === 'player_chat' || trig === 'sei:chat_received' || trig === 'sei:attacked'
+    if (!isP01 || !trigData) return
+    if (_redriveTimer) return            // one pending redrive at a time
+    if (_redriveStreak >= 3) {
+      logger.warn?.(`[sei/orch] rate-limit redrive cap reached — dropping trigger ${trig}`)
+      return
+    }
+    // The proxy's JSON field carries the honest window-reset value; the
+    // Retry-After HEADER is capped at 10s server-side (260610). Prefer the
+    // JSON, fall back to the header, default 5s; clamp to [2s, 30s] and pad
+    // slightly so we land after the window rolls.
+    const jsonSec = Number(err?.error?.retry_after_seconds)
+    let headerMs = null
+    try {
+      const v = err?.headers?.get?.('retry-after')
+      if (v != null && Number.isFinite(Number(v))) headerMs = Number(v) * 1000
+    } catch { /* best-effort */ }
+    const baseMs = Number.isFinite(jsonSec) ? jsonSec * 1000 : (headerMs ?? 5_000)
+    const waitMs = Math.min(Math.max(baseMs + 500, 2_000), 30_000)
+    _redriveStreak++
+    logger.warn?.(`[sei/orch] rate-limited (429) — re-driving ${trig} in ${waitMs}ms (attempt ${_redriveStreak}/3)`)
+    _redriveTimer = setTimeout(() => {
+      _redriveTimer = null
+      try { reenqueue(trig, trigData, trig === 'sei:attacked' ? 0 : 1) } catch (e) {
+        logger.warn?.(`[sei/orch] rate-limit redrive re-enqueue failed: ${e.message}`)
+      }
+    }, waitMs)
+    _redriveTimer.unref?.()
+  }
+
+  // Personality-only (inline) tools: say, remember, forget, setGoal, clearGoal,
+  // end_loop. `say` is the ONLY channel to in-game chat — the model's `text`
+  // output is a private scratchpad and never reaches the player (unless
+  // chat_mode === 'full', which surfaces it as `[think] …`). 260617: say was
+  // promoted from a parsed text convention (extractSay) to a real tool because
+  // Haiku reliably CALLS tools but unreliably honored the text convention — two
+  // live runs adopted say() 0×, even with the contract restated every turn. A
+  // say() with no other action is "silence" for loop purposes: it speaks and
+  // the loop ends (PERSONALITY_NAMES excludes it from movementCalls), so it
+  // never keeps the bot busy on its own.
   //
   // Tool descriptions live in src/bot/brain/prompts.js →
   // PERSONALITY_TOOL_DESCRIPTIONS.
+  const sayTool = {
+    name: 'say',
+    description: PERSONALITY_TOOL_DESCRIPTIONS.say,
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', minLength: 1, description: 'The exact words to speak to the player, in your own voice — one short line.' },
+      },
+      required: ['text'],
+    },
+  }
   const personalityTools = [
+    sayTool,
     {
       name: 'remember',
       description: PERSONALITY_TOOL_DESCRIPTIONS.remember,
@@ -355,6 +742,28 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       },
     },
     {
+      name: 'setGoal',
+      description: PERSONALITY_TOOL_DESCRIPTIONS.setGoal,
+      input_schema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', minLength: 1, description: 'The whole committed goal or standing order, including its finish condition, in one line.' },
+        },
+        required: ['text'],
+      },
+    },
+    {
+      name: 'clearGoal',
+      description: PERSONALITY_TOOL_DESCRIPTIONS.clearGoal,
+      input_schema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', minLength: 1, description: 'A distinctive substring of the goal line to remove. Case-insensitive.' },
+        },
+        required: ['text'],
+      },
+    },
+    {
       name: 'end_loop',
       description: PERSONALITY_TOOL_DESCRIPTIONS.end_loop,
       input_schema: { type: 'object', properties: {}, additionalProperties: false },
@@ -372,16 +781,18 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const descMap = Object.fromEntries(
       subRegistry.list().map(n => [n, adapter.getActionDescription(n)])
     )
-    // VIS-03 / D-10 belt-and-suspenders gate: even if `visualize` leaked into
+    // VIS-03 / D-10 belt-and-suspenders gate: even if `look` leaked into
     // the registry on a non-VLM provider, never offer it in the tool list. The
     // provider handle the orchestrator already holds exposes capabilities.vision
     // (anthropicProvider.js CAPABILITIES; other providers expose the same shape,
     // fail-closed false). This is the AUTHORITATIVE gate — the adapter-side
     // conditional registration (createDefaultRegistry visionEnabled) is the
     // second belt; either alone keeps a non-VLM model from ever seeing the tool.
-    const visionOk = !!anthropic.capabilities?.vision
+    // Tier gate on top: only 'active' offers the tool — 'passive' sees frames
+    // on cadence but cannot request them; 'off' never renders at all.
+    const visionOk = !!anthropic.capabilities?.vision && _visionMode() === 'active'
     const movementTools = buildAnthropicTools(subRegistry, descMap)
-      .filter(t => visionOk || t.name !== 'visualize')
+      .filter(t => visionOk || t.name !== 'look')
     const seen = new Set(personalityTools.map(t => t.name))
     const merged = [...personalityTools]
     for (const t of movementTools) {
@@ -394,7 +805,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   function rebuildPersonalitySystem() {
     // Static blocks composed from brain (game-agnostic) + adapter (game-specific).
     // Order is fixed for cache-key stability and indexed by src/bot/brain/log.js
-    // (persona at [1], capability at [2]).
+    // (persona at [1], capability at [2]) — so the proactiveness directive is
+    // APPENDED last (never inserted before capability) to keep those indices.
+    // 260618: the proactiveness directive lives HERE (cached, sent once per
+    // session) instead of in the per-loop heartbeat, since it is static for the
+    // session. This is the big static block that used to re-bill every loop.
     cachedSystemBlocks = anthropic.buildCachedSystem(
       [
         BASELINE_INSTRUCTIONS,
@@ -402,6 +817,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         adapter.capabilityParagraph(),
         adapter.worldPrimer(),
         adapter.actionRules(),
+        renderProactivenessDirective(config.persona?.proactiveness ?? 1),
       ],
       combinedToolsFor()
     )
@@ -418,11 +834,66 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // `/vision/v1/messages` per-hour cap — and only in cloud-proxy mode (D-11).
   let _pendingVisionTurn = false
 
+  // ── Vision tier + passive-look cadence ──────────────────────────────────
+  // mode: 'off' (no renders, no tool) | 'passive' (frames on cadence) |
+  // 'active' (passive + the visualize tool). Defaults defensively to 'active'
+  // for configs that pre-date the tier fields.
+  function _visionMode() { return config?.vision?.mode ?? 'active' }
+  function _visionIntervalTurns() { return config?.vision?.interval_turns ?? 5 }
+
+  // Turns (LLM calls) since a frame last reached the model. Seeded "due" so
+  // the very first turn of a session carries an orienting frame (the
+  // first-join requirement); reset by handleVisualizeResult on EVERY image
+  // attach — explicit or passive — so an explicit look never stacks a passive
+  // frame onto the same turn.
+  let _turnsSinceFrame = Number.MAX_SAFE_INTEGER
+
+  /**
+   * Passive-look hook — called before EVERY personality call (runIterations is
+   * the single funnel for new-loop turns, in-flight ticks, and action_complete
+   * continuations). Every x-th turn (x = vision.interval_turns) renders the
+   * bot's POV via the adapter seam and attaches it to the turn the model is
+   * about to take. Frames only ever ride turns that already happen — passive
+   * mode never creates LLM calls of its own.
+   *
+   * Result handling mirrors the render contract (15-04):
+   *   success     → attach + counter resets (inside handleVisualizeResult)
+   *   {skip:true} → pose unchanged since last frame — counts as "looked",
+   *                 reset the counter so a parked bot doesn't re-render every
+   *                 turn for nothing
+   *   degrade str → world not ready (chunks loading) — do NOT reset; retry on
+   *                 the next turn so the bot gains sight as soon as possible
+   *                 (matters most for the first frame right after spawn)
+   */
+  async function maybeAttachPassiveFrame(loop) {
+    if (_visionMode() === 'off') return
+    if (!anthropic?.capabilities?.vision) return
+    if (typeof adapter.renderIdleFrame !== 'function') return
+    // An explicit frame is already stashed for this turn (post-visualize
+    // settle) — never render a redundant cadence frame on top of it.
+    if (loop._pendingFrame) return
+    _turnsSinceFrame = Math.min(_turnsSinceFrame + 1, Number.MAX_SAFE_INTEGER)
+    if (_turnsSinceFrame < _visionIntervalTurns()) return
+    try {
+      const result = await adapter.renderIdleFrame()
+      // idle:true ⇒ never arms _pendingVisionTurn (D-09 — cadence frames stay
+      // on the standard /v1/messages path; only EXPLICIT looks hit the cap).
+      handleVisualizeResult(loop, result, { idle: true })
+      if (result && typeof result === 'object' && result.skip === true) {
+        _turnsSinceFrame = 0
+      }
+    } catch (err) {
+      // Best-effort: a render hiccup never wedges or aborts the turn.
+      logger.warn?.(`[sei/orch] passive frame skipped: ${err && err.message}`)
+    }
+  }
+
   /**
    * VIS-02 + VIS-07/D-09: normalize a `visualize` action-completion result and,
-   * for a successful EXPLICIT render, attach the frame as a FRESH user image
-   * turn + arm the one-shot vision-path flag. Called by BOTH action-completion
-   * paths (handleActionComplete and handleActionCompleteTickClaimed) BEFORE the
+   * for a successful render, STASH the frame on the loop (attachPendingFrame
+   * appends it in the runIterations funnel) + arm the one-shot vision-path
+   * flag for EXPLICIT renders. Called by BOTH action-completion paths
+   * (handleActionComplete and handleActionCompleteTickClaimed) BEFORE the
    * generic slot-fill / lastActionResult assignment so the structured
    * { text, image:{ mediaType, dataBase64 } } object NEVER leaks into the
    * tool_result content, into lastActionResult (a string-consumer — the
@@ -438,30 +909,34 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
    * @param {object} loop
    * @param {*} result  data.result from the completion event
    * @param {{ idle?: boolean }} [opts]  idle render (15-07) sets idle:true — it
-   *   attaches an image but NEVER arms the vision-path flag (D-09: idle stays on
+   *   stashes an image but NEVER arms the vision-path flag (D-09: idle stays on
    *   /v1/messages).
    * @returns {{ resultText: string }} the SHORT string to put in the tool_result
    *   content and lastActionResult (caller does the actual slot-fill).
    */
   function handleVisualizeResult(loop, result, { idle = false } = {}) {
-    // Structured success — the ONLY shape that carries an image.
-    if (result && typeof result === 'object' && result.image &&
-        typeof result.text === 'string' &&
-        typeof result.image.dataBase64 === 'string') {
-      const { mediaType, dataBase64 } = result.image
-      try {
-        // Image rides a FRESH user turn (Pitfall 4 — never inside the
-        // tool_result). Provider-neutral block (== Anthropic wire shape);
-        // messageMappers translates it per provider. NO `name` on the image
-        // block (the SDK has no name field there); the event text keeps `name`
-        // so the snapshot-strip rules treat it like any other event line.
-        loop.appendUserTurn([
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: dataBase64 } },
-          { type: 'text', name: 'event', text: result.text },
-        ])
-      } catch (err) {
-        logger.warn?.(`[sei/orch] visualize image append failed: ${err.message}`)
-      }
+    // Structured success — single image ({image}) or look(around)'s four-frame
+    // set ({images:[{...,label}]}). Both carry a short `text`.
+    const isSingle = result && typeof result === 'object' && result.image &&
+      typeof result.text === 'string' &&
+      typeof result.image.dataBase64 === 'string'
+    const isMulti = result && typeof result === 'object' &&
+      Array.isArray(result.images) && result.images.length > 0 &&
+      typeof result.text === 'string'
+    if (isSingle || isMulti) {
+      // Normalize to a frames[] array so attachPendingFrame is shape-agnostic.
+      const frames = isMulti
+        ? result.images.map(f => ({ mediaType: f.mediaType, dataBase64: f.dataBase64, label: f.label }))
+        : [{ mediaType: result.image.mediaType, dataBase64: result.image.dataBase64 }]
+      // STASH, don't append (260610 fix). The settle path appends the
+      // tool_result turn AFTER this helper runs — appending the image turn
+      // here produced [assistant(tool_use), user(image), user(tool_result)],
+      // and the Anthropic API requires each tool_result to live in the message
+      // IMMEDIATELY following its tool_use (a latent 400 the dead proxy route
+      // had been masking). attachPendingFrame (the runIterations funnel)
+      // appends the frame(s) after every tool_result turn is in place, as the
+      // LAST user turn — which also lets it carry the turn's snapshot block.
+      loop._pendingFrame = { frames, text: result.text }
       // VIS-07/D-09: arm the one-shot vision-path flag for EXPLICIT renders
       // only. Idle (15-07) passes idle:true and stays on /v1/messages.
       if (!idle) _pendingVisionTurn = true
@@ -471,6 +946,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // Degrade string (VIS-08), 'aborted', or any other string: pass through as
     // the tool_result text; no image, no vision flag.
     if (typeof result === 'string') return { resultText: result }
+    return _handleVisualizeNonImage(result)
+  }
+
+  function _handleVisualizeNonImage(result) {
     // { skip:true } idle near-duplicate, or any other shape: brief text, no image.
     if (result && typeof result === 'object' && result.skip === true) {
       return { resultText: 'no fresh view' }
@@ -480,13 +959,85 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     return { resultText: typeof result === 'string' ? result : 'done' }
   }
 
+  /**
+   * Append the stashed frame (explicit `visualize` settle OR passive cadence)
+   * as the LAST user turn of the payload the next personality call sends.
+   * Runs in the runIterations funnel right before callPersonality, i.e. after
+   * every tool_result turn was appended — preserving the Anthropic adjacency
+   * invariant (tool_result must be in the message immediately following its
+   * tool_use) AND landing the frame on the final user turn, so it can carry a
+   * fresh snapshot block (the snapshot-strip rule keeps only the last turn's;
+   * before this, a frame turn silently stripped the turn's snapshot entirely).
+   *
+   * Image rides a FRESH user turn (Pitfall 4 — never inside the tool_result).
+   * Provider-neutral block (== Anthropic wire shape); messageMappers
+   * translates it per provider. NO `name` on the image block (the SDK has no
+   * name field there).
+   */
+  function attachPendingFrame(loop) {
+    const frame = loop._pendingFrame
+    if (!frame) return
+    loop._pendingFrame = null
+    try {
+      // Image retention cap: the newest frame supersedes every older one —
+      // demote prior image blocks to text stubs BEFORE appending, so the
+      // loop history (and thus every subsequent payload) carries at most ONE
+      // image regardless of how long the loop lives or how often it looks.
+      loop.demoteOlderImages?.()
+      // One image block per frame; for the multi-frame look(around) set, a short
+      // label text precedes each so the model knows which direction it's seeing.
+      const blocks = []
+      for (const f of frame.frames) {
+        if (f.label) blocks.push({ type: 'text', name: 'event', text: `view — ${f.label}:` })
+        blocks.push({ type: 'image', source: { type: 'base64', media_type: f.mediaType, data: f.dataBase64 } })
+      }
+      blocks.push({ type: 'text', name: 'event', text: frame.text })
+      blocks.push({ type: 'text', name: 'snapshot', text: snapshotText() })
+      loop.appendUserTurn(blocks)
+      // Any attached frame — explicit or passive — restarts the passive
+      // cadence so the next scheduled look lands interval_turns from NOW.
+      _turnsSinceFrame = 0
+      // VIS-02 delivery guard: "attached" is not "seen". The frame only
+      // reaches the model when a subsequent LLM call SUCCEEDS with this
+      // loop's history (callPersonality clears the flag). If the loop dies
+      // first (e.g. the 404→502 chain, 260610), teardownLoop uses this to
+      // re-arm the cadence and keep the snapshot honest. Stores the short
+      // text so teardown can recognize a stale lastActionResult.
+      loop._undeliveredFrame = frame.text
+    } catch (err) {
+      logger.warn?.(`[sei/orch] frame attach failed: ${err.message}`)
+    }
+  }
+
+
   // `start()` is a no-op kept for API compatibility — brain.start() calls
   // `orchestrator.start().catch(...)` after wiring the adapter.
   async function start() {}
 
+  // Resolve which world this session is in, once spawn has landed (the brain
+  // calls this from its onSpawn hook). Assigns/loads a stable world number,
+  // segments MEMORY.md by world, and caches the current world for the snapshot.
+  async function noteSpawn() {
+    if (!worldRegistry) return
+    let info = null
+    try { info = adapter.getWorldInfo?.() } catch { /* adapter may not implement it */ }
+    const sp = info?.spawnPoint
+    if (!sp) return // spawn point not known yet — skip; next session will catch it
+    const dim = info.dimension || 'overworld'
+    const fingerprint = `${dim}@${sp.x},${sp.y},${sp.z}`
+    const motd = (config.lan_motd && String(config.lan_motd).trim()) || ''
+    const label = motd || `spawn ${sp.x},${sp.z}`
+    try {
+      await worldRegistry.resolveOnSpawn({ fingerprint, label })
+    } catch (err) {
+      logger.warn?.(`[sei/orch] world resolve failed: ${err.message}`)
+    }
+  }
+
   // ─── Snapshot helper ────────────────────────────────────────────────
   function snapshotText() {
     try {
+      const w = worldRegistry?.current?.() ?? null
       return snapshotComposer.next({
         lastActionResult,
         inFlight: inflight.current(),
@@ -495,11 +1046,63 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // congestion (sheep / foxes / traders / llamas) can evict the player
         // from the snapshot and the model loses player coords for goTo/follow.
         pinUsername: config.player_username ?? null,
+        // 260618: other AI companions — pinned + labeled "(companion)" so the
+        // model can see and coordinate with its teammates.
+        companions,
+        // Current-world tag (multi-world memory): `#<n> <label>` or null.
+        // Keyed `worldTag` (not `world`) — composeSnapshot imports a `world`
+        // observer fn and a `world` opt would shadow it.
+        worldTag: w ? `#${w.num}${w.label ? ` ${w.label}` : ''}` : null,
       })
     } catch (err) {
       logger.warn(`[sei/orch] composeSnapshot failed: ${err.message}`)
       return '(snapshot unavailable)'
     }
+  }
+
+  // ─── Progression frontier + JS completion detection ──────────────────
+  // Link a free-text goal to a spine node by matching its `key` against the
+  // goal text; the longest match wins ("diamond pickaxe" beats bare "diamond").
+  // Scoped to the nodes just offered (the current frontier), so a stray word
+  // can't mis-link to a far-off milestone.
+  function matchFrontierNode(text, frontier) {
+    const t = String(text ?? '').toLowerCase()
+    if (!t) return null
+    let best = null
+    for (const n of frontier ?? []) {
+      const k = String(n?.key ?? '').toLowerCase()
+      if (k && t.includes(k) && (!best || k.length > best.key.length)) best = n
+    }
+    return best
+  }
+
+  // Called once per fresh-loop seed, BEFORE composeSeedBlocks. Latches the
+  // dimension milestones (one-way), computes the reachable frontier from live
+  // state, and — when the committed goal's milestone has completed — clears that
+  // goal + its plan and returns a one-line note so the next turn re-picks. The
+  // frontier text it returns is what renderHeartbeat frames per proactiveness.
+  async function refreshProgressionForSeed() {
+    if (typeof adapter.getProgression !== 'function') return { frontierText: '', justCompletedNote: '' }
+    // Latch entered_nether/entered_end from the current dimension — leaving the
+    // dimension must NOT re-open the milestone (you've been there).
+    try {
+      const dim = String(adapter.getWorldInfo?.()?.dimension ?? '').toLowerCase()
+      if (dim.includes('nether')) progressionFlags.entered_nether = true
+      else if (dim.includes('end')) progressionFlags.entered_end = true
+    } catch { /* dimension unknown pre-spawn — skip */ }
+    let prog
+    try { prog = adapter.getProgression(progressionFlags) } catch { return { frontierText: '', justCompletedNote: '' } }
+    let justCompletedNote = ''
+    if (activeFrontierGoal && prog?.done?.has?.(activeFrontierGoal.id)) {
+      const label = activeFrontierGoal.label
+      try { await heartbeatLog?.remove(activeFrontierGoal.text) } catch { /* best-effort */ }
+      // Neutral note: renderHeartbeat's per-level frontier framing decides
+      // whether to PROMPT a new pick (agentic) or just stay aware (passive/reactive).
+      justCompletedNote = `\n\nPROGRESS: you just finished "${label}" — that goal is done and has been cleared from your heartbeat.`
+      activeFrontierGoal = null
+    }
+    const frontierText = (prog?.frontier ?? []).map(n => n.label).join(' · ')
+    return { frontierText, justCompletedNote }
   }
 
   // Walk loop history backwards to find the most recent in-flight task
@@ -514,7 +1117,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       for (let j = m.content.length - 1; j >= 0; j--) {
         const blk = m.content[j]
         if (!blk || blk.type !== 'tool_use') continue
-        if (blk.name === 'remember' || blk.name === 'forget') continue
+        if (blk.name === 'remember' || blk.name === 'forget' || blk.name === 'setGoal' || blk.name === 'clearGoal' || blk.name === 'say') continue
         // Combined-mode movement action.
         const a = blk.input ?? {}
         const parts = []
@@ -573,7 +1176,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   //     loop.inFlight.abortController; since every non-inline tool now goes
   //     through startLongRunner, those branches transparently apply to sync
   //     tools too.
-  const INLINE_METADATA = new Set(['remember', 'forget', 'end_loop'])
+  // `say` is inline (it emits chat synchronously and never suspends), so it is
+  // excluded from newSuspendingTools — a say()+action batch suspends only on
+  // the action, and a say()-only batch suspends on nothing. Its result is
+  // actually pre-filled up front by emitSayCalls (so speech lands before any
+  // action dispatches); the executeInlineMetadata `say` branch is a fallback.
+  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -641,21 +1249,30 @@ function shouldPreserveInterrupt(loop, sig) {
 // long-standing `name:ok|fail` shorthand; richer structured payloads (e.g.
 // `find` returning {found,id,pos,distance}) are JSON-stringified so the model
 // can actually act on the data. Capped to keep snapshots bounded.
+// True for any render result that carries image(s) (or the idle skip sentinel)
+// and must reach the orchestrator's image-attach interception as an OBJECT, not
+// a stringified blob. Covers `look` (single + around) AND `explore`'s auto-look.
+function isVisualResult(r) {
+  return !!r && typeof r === 'object' && (
+    (r.image && typeof r.text === 'string') ||
+    (Array.isArray(r.images) && typeof r.text === 'string') ||
+    r.skip === true
+  )
+}
+
 function formatToolResult(name, r) {
   if (typeof r === 'string') return r
   if (r == null) return 'done'
   if (typeof r !== 'object') return String(r)
-  // VIS-02 (hazard #2): the structured `visualize` success result
-  // ({ text, image:{ mediaType, dataBase64 } }) and the idle `{ skip:true }`
-  // sentinel must reach handleActionComplete as OBJECTS, not JSON. If we
-  // stringified here, the base64 would be baked into data.result before the
-  // image-attach interception runs — leaking it into the tool_result and
-  // last_action_result. Pass the structured visualize shape through untouched;
-  // handleVisualizeResult downstream extracts the SHORT text for the tool_result
-  // and rides the image on a fresh user turn.
-  if (name === 'visualize' && (
-    (r.image && typeof r.text === 'string') || r.skip === true
-  )) {
+  // VIS-02 (hazard #2): the structured render success result
+  // ({ text, image|images }) and the idle `{ skip:true }` sentinel must reach
+  // handleActionComplete as OBJECTS, not JSON. If we stringified here, the
+  // base64 would be baked into data.result before the image-attach interception
+  // runs — leaking it into the tool_result and last_action_result. Pass the
+  // structured shape through untouched; handleVisualizeResult downstream
+  // extracts the SHORT text for the tool_result and rides the image on a fresh
+  // user turn.
+  if (isVisualResult(r)) {
     return r
   }
   if (typeof r.ok !== 'undefined' && Object.keys(r).length <= 2) {
@@ -724,7 +1341,15 @@ function maybeWarnByteCap(loop, warned) {
         return
       }
       if (currentLoop.isTerminal) {
-        logger.debug?.(`[sei/orch] sei:action_complete arrived with terminal loop — drop (loop=${currentLoop.id})`)
+        // 260611: a terminal loop that is still `currentLoop` was never torn
+        // down (the R3/R4 abort raced its own settle). Finish the teardown
+        // now instead of dropping — leaving it would zombie the orchestrator:
+        // currentLoop stays set and every subsequent player chat is swallowed
+        // by the single-flight branch (260611 playlog: 40s of silence).
+        logger.debug?.(`[sei/orch] sei:action_complete arrived with terminal loop — tearing down (loop=${currentLoop.id})`)
+        const stale = currentLoop
+        terminateLoop(stale, 'late-settle-on-terminal-loop')
+        await teardownLoop(stale)
         return
       }
       // 260517-fix: tick-claimed path. The action's tool_use was already
@@ -770,6 +1395,18 @@ function maybeWarnByteCap(loop, warned) {
     // fresh dispatch — 260505-twx). Anything else is dropped.
     if (currentLoop !== null) {
       if (isPlayerChat) {
+        // 260611: a terminal loop still sitting in currentLoop is a zombie
+        // (its teardown raced/dropped — see the action_complete terminal
+        // guard above). Don't preserve into it; finish the teardown and
+        // re-handle this chat as a fresh dispatch so the player gets an
+        // answer instead of silence.
+        if (currentLoop.isTerminal || currentLoop._terminated) {
+          const zombie = currentLoop
+          logger.warn?.(`[sei/orch] player chat arrived on terminal loop ${zombie.id} — tearing down and re-dispatching`)
+          terminateLoop(zombie, 'chat-on-terminal-loop')
+          await teardownLoop(zombie)
+          return handleDispatch(event, data, signal)
+        }
         const chatText = (data && (data.text ?? data.message)) ?? JSON.stringify(data ?? {})
         const who = data?.username ?? data?.who ?? ''
         // PLAYER INTERRUPT dedup on a (username:text:500ms-bucket) signature;
@@ -794,7 +1431,18 @@ function maybeWarnByteCap(loop, warned) {
           await handleActionTick(currentLoop, { playerMessage: String(chatText), who })
           return
         }
-        pendingInterrupt = { chatText: String(chatText), who }
+        // 260611: ACCUMULATE, don't overwrite — mirrors handlePreempt's
+        // 260610 fix. Several messages can land while the loop is between
+        // calls (the 260611 playlog: "huuhhh whats not boring then" / "?" /
+        // "??? bro" each overwrote the last; only the final fragment was
+        // ever delivered).
+        {
+          const prevText = pendingInterrupt?.chatText
+          pendingInterrupt = {
+            chatText: prevText ? `${prevText}\n${String(chatText)}` : String(chatText),
+            who,
+          }
+        }
         if (currentLoop.inFlight) {
           clearActionTick(currentLoop.inFlight)
           try { currentLoop.inFlight.abortController.abort() } catch {}
@@ -849,7 +1497,7 @@ function maybeWarnByteCap(loop, warned) {
     // Pitfall 6: clean up any leaked container session from a prior dispatch.
     try { await adapter.closeAnySessions() } catch {}
 
-    const loop = createLoop({ iterationCap: config.memory.iteration_cap, logger })
+    const loop = createLoop({ iterationCap: config.memory.iteration_cap, logger, speakReminder: SPEAK_REMINDER })
     currentLoop = loop
     // Capture trigger context for downstream gating (e.g. loop_end dedup of
     // text emissions). classifyChatEvent handles player_chat / sei:chat_received
@@ -903,6 +1551,7 @@ function maybeWarnByteCap(loop, warned) {
     // form; P1 chat seeds still get the playerInterruptHint.
     const isSafetyEvent = event === 'sei:attacked'
     let eventText
+    let playerMessageText = null
     if (isSafetyEvent && typeof adapter.eventAddendum === 'function') {
       eventText = adapter.eventAddendum(event, data).trim()
     } else {
@@ -912,9 +1561,42 @@ function maybeWarnByteCap(loop, warned) {
       const isP1Event = event === 'player_chat' || event === 'sei:chat_received'
       if (isP1Event) {
         eventAddendum += NUDGES.playerInterruptHint
+        // 260616 (#2): surface the player's actual words as a dedicated
+        // player_message block placed LAST in the turn (composeSeedBlocks), so
+        // the model reads them right before replying — instead of a machine
+        // `Data:` field buried ahead of the snapshot, which made it answer the
+        // scene. Trim the event block to the marker + hint so it isn't dupes.
+        // 260619: attribute the speaker. A teammate bot can now wake us by name
+        // (behaviors/chat.js), so a companion-spoken line must NOT be framed as
+        // "the player just spoke" — that makes the model reply to the human
+        // instead of coordinating with the teammate who actually gave the order.
+        const fromTeammate = data?.playerSpoke === false
+        const speakerName = String(data?.username ?? '').trim()
+        const opener = (fromTeammate && speakerName)
+          ? `your teammate ${speakerName} just spoke to you`
+          : 'the player just spoke to you'
+        playerMessageText = `${opener}. respond to THIS, not to the scene around you:\n"${String(data?.text ?? '').trim()}"`
+        eventText = `Event: ${event}${eventAddendum}`
+      } else {
+        eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
       }
-      eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
     }
+    // 260617: cold-start greeting. The first spawn enqueues a P3 idle tagged
+    // reason:'just_connected_first_spawn' (brain/index.js). Left to the normal
+    // idle framing ("silence is usually right"), the model orients first
+    // (lookAround) and only greets on a SECOND round-trip — the player meets
+    // ~20s of silence on join. Force ONE short in-character greeting on this
+    // very first tick so the first thing they see lands on turn 1, in voice.
+    if (data?.reason === 'just_connected_first_spawn') {
+      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing.`
+    }
+    // 260618: refresh the progression view before composing the seed — latch
+    // dimension milestones, detect whether the committed goal's milestone just
+    // completed (clearing it + appending a note so the next turn re-picks), and
+    // compute the reachable frontier renderHeartbeat will frame per proactiveness.
+    const { frontierText: progFrontierText, justCompletedNote: progCompletedNote } =
+      await refreshProgressionForSeed()
+    if (progCompletedNote) eventText += progCompletedNote
     if (sessionState && playerStore) {
       let seedBlocks
       try {
@@ -923,6 +1605,9 @@ function maybeWarnByteCap(loop, warned) {
           eventText, snapshotText: snapshotText(),
           recentPlayerChatText: convoMemory.recentChat.formatPlayerBlock(),
           yourRecentMessagesText: convoMemory.recentChat.formatSelfBlock(),
+          playerMessageText,
+          companions,
+          frontierText: progFrontierText,
           logger,
         })
       } catch (err) {
@@ -944,34 +1629,11 @@ function maybeWarnByteCap(loop, warned) {
       ])
     }
 
-    // ── VIS-04 (15-07): idle auto-render hook ────────────────────────────
-    // On the existing P3 `sei:idle` tick (NO new timer — 15-PATTERNS.md "Idle
-    // (P3) tick reuse"), BEFORE the normal idle LLM turn, run the composite
-    // fail-closed gate (auto_render ON + provider VLM + owner ≤16 blocks + LOS
-    // clear). When it passes, render the bot's POV (idle:true → D-02 pose-dedupe)
-    // and attach the frame to THIS idle turn's user content via the SAME 15-06
-    // mechanism (handleVisualizeResult). Gated-out, deduped ({skip:true}), and
-    // degrade-string results attach nothing and the loop proceeds with the normal
-    // idle turn. CRITICAL (D-09): idle uses the STANDARD LLM path — handleVisualizeResult
-    // is called with idle:true so it does NOT arm the one-shot _pendingVisionTurn
-    // flag; the idle turn is never routed through /vision/v1/messages (only the
-    // EXPLICIT visualize path hits the per-hour cap). Reuses the adapter so the
-    // bot reference stays adapter-side (brain↔adapter seam).
-    if (isIdle && typeof adapter.shouldAutoRenderIdle === 'function') {
-      try {
-        if (adapter.shouldAutoRenderIdle(anthropic) && typeof adapter.renderIdleFrame === 'function') {
-          const idleResult = await adapter.renderIdleFrame()
-          // Attaches the frame on a fresh image user-turn for the structured
-          // success shape; no-op (text only, no image) for {skip:true} / degrade.
-          // idle:true ⇒ never arms _pendingVisionTurn (D-09 — standard path).
-          handleVisualizeResult(loop, idleResult, { idle: true })
-        }
-      } catch (err) {
-        // Auto-render is best-effort: any failure leaves the normal idle turn
-        // intact. Never let a render hiccup wedge or abort the idle loop.
-        logger.warn?.(`[sei/orch] idle auto-render skipped: ${err && err.message}`)
-      }
-    }
+    // NOTE (vision tiers): the former VIS-04 idle auto-render hook lived here.
+    // It is superseded by the per-turn passive-look cadence in runIterations
+    // (maybeAttachPassiveFrame) — one hook covers idle ticks, chat turns,
+    // in-flight ticks, and continuations alike, and the counter is seeded
+    // "due" so the first turn of a session still carries an orienting frame.
 
     // Bridge: external signal (FSM) -> loop.abortController so handlers
     // respect both. The fresh Loop's controller is what actions hook into.
@@ -1002,6 +1664,8 @@ function maybeWarnByteCap(loop, warned) {
       await runIterations(loop, byteWarn)
     } catch (err) {
       logger.error?.(`[sei/orch] runIterations rejected (loop=${loop.id}): ${err && err.message}`)
+      maybeScheduleRateLimitRedrive(loop, err)
+      maybeRecoverExpiredJwt(err)
       terminateLoop(loop, `error: ${err && err.message}`)
     }
     // Post-iteration disposition: if a long-runner is in_flight, leave the
@@ -1034,6 +1698,25 @@ function maybeWarnByteCap(loop, warned) {
     loop._tornDown = true
     const event = loop._originatingEvent ?? 'unknown'
     logger.info?.(`[sei/orch] loop terminal (id=${loop.id}, iterations=${loop.iterationCount})`)
+    // VIS-02 delivery guard: a frame was attached to this loop's history but
+    // no LLM call succeeded afterwards (e.g. the post-visualize continuation
+    // died on a 404→502 chain, 260610) — the model never saw it, and the
+    // frame dies here with the loop. Recover on the NEXT turn instead of
+    // silently losing sight: re-arm the passive cadence to its "due" seed so
+    // maybeAttachPassiveFrame attaches a FRESH frame (fresher than carrying
+    // this stale one across loops), and stop the snapshot claiming a
+    // delivered view — a confident `last_action_result: rendered view
+    // attached` made the model confabulate scenery it never saw.
+    const lostFrameText = loop._undeliveredFrame ?? loop._pendingFrame?.text
+    if (lostFrameText) {
+      _turnsSinceFrame = Number.MAX_SAFE_INTEGER
+      if (lastActionResult === lostFrameText) {
+        lastActionResult = 'view not delivered (connection trouble) — a fresh look is queued'
+      }
+      loop._undeliveredFrame = null
+      loop._pendingFrame = null
+      logger.warn?.(`[sei/orch] loop died with an undelivered frame — passive cadence re-armed (loop=${loop.id})`)
+    }
     if (sessionState) {
       try {
         const messagesByteSize = JSON.stringify(loop._internal.messages).length
@@ -1057,6 +1740,27 @@ function maybeWarnByteCap(loop, warned) {
       logger.warn?.(`[sei/orch] sei:loop_terminal re-enqueue failed: ${err.message}`)
     }
     currentLoop = null
+    // 260611: a pendingInterrupt still set at teardown is a player message
+    // that was never delivered to the model (the normal paths —
+    // repairAfterAbort and the action_complete folds — consume it). Without
+    // the attack path's preservation it was silently dropped here; re-enqueue
+    // it so a fresh loop answers it. (The attack path below still wins when
+    // pendingAttack is set — it carries its own preservedInterrupt copy.)
+    if (!pendingAttack && pendingInterrupt) {
+      const pi = pendingInterrupt
+      pendingInterrupt = null
+      try {
+        reenqueue('sei:chat_received', {
+          username: pi.who,
+          text: pi.chatText,
+          message: pi.chatText,
+          playerSpoke: true,
+        }, 1 /* Priority.P1_CHAT */)
+        logger.info?.(`[sei/orch] undelivered player chat re-enqueued at teardown: ${pi.chatText.slice(0, 64)}`)
+      } catch (err) {
+        logger.warn?.(`[sei/orch] undelivered-chat re-enqueue failed: ${err.message}`)
+      }
+    }
     pendingInterrupt = null
     // 260505-twx: re-fire pendingAttack so the brain's priority queue
     // re-enqueues at P0 → fresh handleDispatch arrives with currentLoop === null
@@ -1118,6 +1822,14 @@ function maybeWarnByteCap(loop, warned) {
       lastActionResult = 'loop ended'
       return { result: { type: 'tool_result', tool_use_id: use.id, content: 'loop ended', is_error: false }, terminate: true }
     }
+    if (use.name === 'say') {
+      // Normal flow emits say() up front via emitSayCalls and pre-fills the
+      // result, so this branch is a fallback for any path that dispatches say
+      // directly (e.g. a future queue drain). Single-emit either way: a given
+      // tool_use_id is resolved by exactly one of the two paths.
+      const r = _emitSayLine(loop, use.input?.text)
+      return { result: { type: 'tool_result', tool_use_id: use.id, content: r.content, is_error: false }, terminate: false }
+    }
     if (use.name === 'remember') {
       try {
         const text = String(use.input?.text ?? '').trim()
@@ -1151,6 +1863,67 @@ function maybeWarnByteCap(loop, warned) {
         lastActionResult = 'forget error'
         logger.warn(`[sei/orch] forget failed: ${err.message}`)
         return { result: { type: 'tool_result', tool_use_id: use.id, content: `error: ${err?.message ?? 'forget failed'}`, is_error: true }, terminate: false }
+      }
+    }
+    if (use.name === 'setGoal') {
+      try {
+        if (!heartbeatLog) {
+          lastActionResult = 'setGoal: no heartbeat store'
+          return { result: { type: 'tool_result', tool_use_id: use.id, content: 'setGoal: unavailable', is_error: true }, terminate: false }
+        }
+        const text = String(use.input?.text ?? '').trim()
+        if (!text) {
+          lastActionResult = 'setGoal: empty'
+          return { result: { type: 'tool_result', tool_use_id: use.id, content: 'setGoal: empty', is_error: true }, terminate: false }
+        }
+        const added = await heartbeatLog.append(text, new Date())
+        lastActionResult = 'goal set'
+        // 260618: link this goal to the progression spine if it came from the
+        // frontier, so JS can detect its completion later. Setting a NEW
+        // progression goal clears the prior one (one progression goal at a time).
+        if (added === 1 && typeof adapter.getProgression === 'function') {
+          try {
+            const prog = adapter.getProgression(progressionFlags)
+            const node = matchFrontierNode(text, prog?.frontier)
+            if (node) {
+              if (activeFrontierGoal && activeFrontierGoal.id !== node.id) {
+                try { await heartbeatLog.remove(activeFrontierGoal.text) } catch { /* best-effort */ }
+              }
+              activeFrontierGoal = { id: node.id, text, label: node.label }
+            }
+          } catch { /* linking is best-effort; a free-text goal just stays unlinked */ }
+        }
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: 'goal set', is_error: false }, terminate: false }
+      } catch (err) {
+        lastActionResult = 'setGoal error'
+        logger.warn(`[sei/orch] setGoal failed: ${err.message}`)
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: `error: ${err?.message ?? 'setGoal failed'}`, is_error: true }, terminate: false }
+      }
+    }
+    if (use.name === 'clearGoal') {
+      try {
+        if (!heartbeatLog) {
+          lastActionResult = 'clearGoal: no heartbeat store'
+          return { result: { type: 'tool_result', tool_use_id: use.id, content: 'clearGoal: unavailable', is_error: true }, terminate: false }
+        }
+        const text = String(use.input?.text ?? '').trim()
+        if (!text) {
+          lastActionResult = 'clearGoal: empty'
+          return { result: { type: 'tool_result', tool_use_id: use.id, content: 'clearGoal: empty', is_error: true }, terminate: false }
+        }
+        const removed = await heartbeatLog.remove(text)
+        // Drop the progression link if the model cleared the goal it was tracking.
+        if (removed > 0 && activeFrontierGoal &&
+            activeFrontierGoal.text.toLowerCase().includes(text.toLowerCase())) {
+          activeFrontierGoal = null
+        }
+        const content = removed > 0 ? `goal cleared (${removed})` : 'goal cleared 0 (no match)'
+        lastActionResult = content
+        return { result: { type: 'tool_result', tool_use_id: use.id, content, is_error: false }, terminate: false }
+      } catch (err) {
+        lastActionResult = 'clearGoal error'
+        logger.warn(`[sei/orch] clearGoal failed: ${err.message}`)
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: `error: ${err?.message ?? 'clearGoal failed'}`, is_error: true }, terminate: false }
       }
     }
     throw new Error(`[sei/orch] executeInlineMetadata: not an inline metadata tool: ${use.name}`)
@@ -1324,17 +2097,27 @@ function maybeWarnByteCap(loop, warned) {
       logger.warn?.(`[sei/orch] action_complete: no unfilled slot in pendingResults`)
       return
     }
-    // VIS-02/VIS-07: intercept the `visualize` result BEFORE the generic fill
-    // so the structured { text, image } object never lands in the tool_result
-    // content, in lastActionResult (a string-consumer), or in history as raw
-    // base64. The helper appends the image on a FRESH user turn and arms the
-    // one-shot vision-path flag for an explicit render (idle path is 15-07).
+    // VIS-02/VIS-07: intercept any render result (look single/around, or
+    // explore's auto-look) BEFORE the generic fill so the structured
+    // { text, image|images } object never lands in the tool_result content, in
+    // lastActionResult (a string-consumer), or in history as raw base64. The
+    // helper STASHES the frame(s) (attachPendingFrame appends them after the
+    // tool_result turn — Anthropic adjacency invariant) and arms the one-shot
+    // vision-path flag for an explicit render (idle path is 15-07). A non-VLM
+    // provider can't use images (explore is registered everywhere): keep its
+    // text and drop the frame.
     let resultContent = data.result ?? 'done'
     let resultForLast = data.result ?? null
-    if (pendingUse.name === 'visualize') {
-      const { resultText } = handleVisualizeResult(loop, data.result, { idle: !!data.idle })
-      resultContent = resultText
-      resultForLast = resultText
+    if (isVisualResult(data.result)) {
+      if (anthropic?.capabilities?.vision) {
+        const { resultText } = handleVisualizeResult(loop, data.result, { idle: !!data.idle })
+        resultContent = resultText
+        resultForLast = resultText
+      } else {
+        const t = typeof data.result.text === 'string' ? data.result.text : 'done'
+        resultContent = t
+        resultForLast = t
+      }
     }
     pendingResults[slotIdx] = {
       type: 'tool_result',
@@ -1492,6 +2275,8 @@ function maybeWarnByteCap(loop, warned) {
       }
     } catch (err) {
       logger.error?.(`[sei/orch] action_complete continuation failed: ${err && err.message}`)
+      maybeScheduleRateLimitRedrive(loop, err)
+      maybeRecoverExpiredJwt(err)
       terminateLoop(loop, `error: ${err && err.message}`)
     }
     if (loop._terminated) {
@@ -1541,17 +2326,23 @@ function maybeWarnByteCap(loop, warned) {
       return
     }
 
-    // VIS-02/VIS-07: a `visualize` that somehow settled via the tick-claimed
-    // path (would require the render to outlive a 10s tick — its 8s handler
-    // timeout makes this practically unreachable, but cover it for safety).
-    // The tool_use is already closed here, so the image rides a fresh user turn
-    // and lastActionResult/eventText get the SHORT text, never the raw object.
+    // VIS-02/VIS-07: a render result (look / explore auto-look) that somehow
+    // settled via the tick-claimed path (would require the render to outlive a
+    // 10s tick — its 8s handler timeout makes this practically unreachable, but
+    // cover it for safety). The tool_use is already closed here, so the frame is
+    // stashed for the funnel attach (attachPendingFrame) and
+    // lastActionResult/eventText get the SHORT text, never the raw object.
     let resultForLast = data.result ?? null
     let visualizeText = null
-    if (data?.name === 'visualize') {
-      const { resultText } = handleVisualizeResult(loop, data.result, { idle: !!data.idle })
-      resultForLast = resultText
-      visualizeText = resultText
+    if (isVisualResult(data.result)) {
+      if (anthropic?.capabilities?.vision) {
+        const { resultText } = handleVisualizeResult(loop, data.result, { idle: !!data.idle })
+        resultForLast = resultText
+        visualizeText = resultText
+      } else {
+        visualizeText = typeof data.result.text === 'string' ? data.result.text : 'done'
+        resultForLast = visualizeText
+      }
     }
     lastActionResult = resultForLast
     let eventText
@@ -1600,6 +2391,8 @@ function maybeWarnByteCap(loop, warned) {
       }
     } catch (err) {
       logger.error?.(`[sei/orch] action_complete (tick-claimed) continuation failed: ${err && err.message}`)
+      maybeScheduleRateLimitRedrive(loop, err)
+      maybeRecoverExpiredJwt(err)
       terminateLoop(loop, `error: ${err && err.message}`)
     }
     if (loop._terminated) {
@@ -1766,6 +2559,15 @@ function maybeWarnByteCap(loop, warned) {
       }
     } catch (err) {
       logger.error?.(`[sei/orch] action_tick continuation failed: ${err && err.message}`)
+      // A tick that was carrying a player message must not drop it on a rate
+      // limit — redrive the MESSAGE (not the loop's stale originating
+      // trigger). Silent monitor ticks are droppable; no override, no data.
+      if (playerMessage != null) {
+        maybeScheduleRateLimitRedrive(loop, err, {
+          event: 'sei:chat_received',
+          data: { username: who ?? '', text: playerMessage, message: playerMessage, playerSpoke: true },
+        })
+      }
       terminateLoop(loop, `error: ${err && err.message}`)
     }
     if (loop._terminated) {
@@ -1789,13 +2591,24 @@ function maybeWarnByteCap(loop, warned) {
     const cap = config.memory.iteration_cap
 
     while (true) {
-      // Cap check before the next call.
-      if (loop.iterationCount >= cap) {
+      // Cap check before the next call. cap <= 0 means unlimited (disabled) —
+      // the natural loop-end (a turn with no world-acting tool) and the
+      // per-action wall-clock timeouts are then the only terminators.
+      if (cap > 0 && loop.iterationCount >= cap) {
         await gracefulCapClose(loop)
         return
       }
 
       const signal = loop.abortController.signal
+
+      // Passive-look cadence: every x-th personality call gets the bot's POV
+      // attached (runIterations is the single funnel for all turn types, so
+      // this one hook covers new loops, in-flight ticks, and continuations).
+      await maybeAttachPassiveFrame(loop)
+      // Append whatever frame is stashed — explicit visualize settle or the
+      // cadence render above — as the LAST user turn, after every tool_result
+      // turn (Anthropic adjacency invariant; see attachPendingFrame).
+      attachPendingFrame(loop)
 
       let resp
       try {
@@ -1827,15 +2640,18 @@ function maybeWarnByteCap(loop, warned) {
         // (depleted balance, no active subscription, trial already claimed).
         // The Anthropic SDK throws APIError with .status === 402; the proxy
         // also returns {error:'payment_required'} which the SDK exposes on
-        // err.error. Surface ONE in-game line, latch the orchestrator so no
-        // further personality calls fire (each would 402 again and leak the
-        // [haiku?] request payload to local logs), and ask the supervisor to
-        // tear the bot down so the renderer shows the depleted error banner.
+        // err.error. Latch the orchestrator so no further personality calls
+        // fire (each would 402 again and leak the [haiku?] request payload to
+        // local logs), and ask the supervisor to tear the bot down. The bot
+        // leaves the world QUIETLY — no in-game chat line. The player is
+        // informed by the GUI out-of-playtime popup, which main raises off this
+        // CLOUD_CREDITS_DEPLETED lifecycle error (botSupervisor → emitHardStop).
+        // Daily spend cap ($5/day trial) — terminal like 402 but its own
+        // popup/copy. Mutually exclusive with 402; both halt + leave quietly.
+        if (haltOnDailyCap(err)) return
         const is402 = err && (err.status === 402 || err?.error?.type === 'payment_required')
         if (is402) {
           _halted = true
-          const friendly = 'out of cloud credits. top up in sei or plug in your own api key.'
-          try { adapter.chat(friendly) } catch {}
           if (typeof onTerminalError === 'function') {
             try {
               onTerminalError({
@@ -1866,28 +2682,18 @@ function maybeWarnByteCap(loop, warned) {
 
       const toolUses = resp.toolUses ?? []
 
-      // Text-as-chat: the assistant's text output IS the player-visible chat
-      // line. Same emission path whether the response is terminal (no tools)
-      // or mid-loop (text + tool_use). Empty text is fine — the model is free
-      // to make tool calls without saying anything, like Claude Code.
+      // Speech via the say() tool. The assistant's `text` output is a PRIVATE
+      // scratchpad and never reaches chat (chat_mode 'full' surfaces it as
+      // [think]). Emit every say() call UP FRONT — before any suspending action
+      // dispatches and parks the turn — so a boast lands before the swing
+      // regardless of batch order, then pre-fill its result so the dispatch
+      // loop never re-emits. No say() call → nothing emitted (silence is the
+      // default and usually correct). saySpokenThisTurn drives the
+      // silence-cadence reset below.
       const respText = (resp.text ?? '').trim()
-      if (respText) {
-        const line = postProcessSay(respText)
-        if (line) {
-          const suppressed = shouldSuppressLoopEndSay({
-            triggerEvent: loop._triggerEvent,
-            candidateLine: line,
-            lastSelf: convoMemory.recentChat.lastSelf?.() ?? null,
-          })
-          if (suppressed) {
-            logger.info?.(`[sei/orch] dedupeSay suppressed loop_end duplicate (loop=${loop.id}): ${line.slice(0, 80)}`)
-          } else {
-            logChatOut(line)
-            try { adapter.chat(line) } catch {}
-            convoMemory.recentChat.pushSelf(config.persona.name, line)
-          }
-        }
-      }
+      if (respText) emitThinkIfFull(respText)
+      const sayResults = emitSayCalls(loop, toolUses)
+      const saySpokenThisTurn = sayResults.size > 0
 
       // 260514-ngj: R1-R4 interrupt-response dispatcher. Keyed off the
       // CURRENT iteration's trigger (loop._currentIterationTrigger), NOT
@@ -1943,6 +2749,49 @@ function maybeWarnByteCap(loop, warned) {
       // loop via startLongRunner (260514-gam universal-inflight).
       const newSuspendingTools = toolUses.filter(u => !isInlineMetadata(u.name))
 
+      // 260616: a SILENT action_tick is a check-in, not an action channel. The
+      // running long-runner stays in flight; the model may speak, stay silent,
+      // or cancel (end_loop) — but it must NOT re-issue or swap actions here.
+      // Re-issuing gather/dig on a nearby block aborts the in_flight at e.g.
+      // 2/19 and restarts it, so nothing ever finishes (the scavenging-stall
+      // bug). Drop the new movement tool(s), keep the running one alive, and
+      // let the model re-decide after it COMPLETES (handleActionComplete) — or
+      // it cancels via end_loop (handled below as R3/R4). Inline-metadata tools
+      // (remember/forget) in the same batch still execute.
+      const isSilentActionTick =
+        (loop._currentIterationTrigger ?? loop._triggerEvent) === 'sei:action_tick'
+      if (isSilentActionTick && !hasEndLoop && newSuspendingTools.length > 0 && loop.inFlight) {
+        logger.debug?.(`[sei/orch] silent action_tick: dropping new action(s)=${newSuspendingTools.map(u => u.name).join(',')} — in_flight=${loop.inFlight.name} keeps running (loop=${loop.id})`)
+        const results = new Array(toolUses.length)
+        for (let i = 0; i < toolUses.length; i++) {
+          const u = toolUses[i]
+          // say() was already emitted up front — use its pre-filled result so
+          // it speaks during the tick without re-emitting or being "ignored".
+          if (sayResults.has(u.id)) { results[i] = sayResults.get(u.id); continue }
+          if (isInlineMetadata(u.name)) {
+            try {
+              const r = await executeInlineMetadata(loop, u)
+              results[i] = r.result
+            } catch (err) {
+              results[i] = { type: 'tool_result', tool_use_id: u.id, content: `error: ${err.message}`, is_error: true }
+            }
+          } else {
+            results[i] = {
+              type: 'tool_result',
+              tool_use_id: u.id,
+              content: `ignored: ${loop.inFlight.name} is still running — let it finish then act, or call end_loop to cancel it`,
+              is_error: false,
+            }
+          }
+        }
+        try {
+          loop.appendToolResults(results, { snapshot: snapshotText() })
+        } catch (err) {
+          logger.warn?.(`[sei/orch] silent action_tick drop appendToolResults failed: ${err.message}`)
+        }
+        return
+      }
+
       if (hasEndLoop && newSuspendingTools.length > 0) {
         // R4 — text + end_loop + new action: terminate current loop AND
         // open a fresh one seeded with the ORIGINAL trigger event + data
@@ -1961,7 +2810,15 @@ function maybeWarnByteCap(loop, warned) {
           clearActionTick(loop.inFlight)
           try { loop.inFlight.abortController.abort() } catch {}
         }
-        loop.isTerminal = true
+        // 260611: terminateLoop (NOT just isTerminal) so the caller's
+        // post-iteration tail actually tears the loop down. Setting only
+        // isTerminal while the aborted in_flight hadn't settled yet left
+        // `loop.inFlight` truthy → every tail returned "suspended" → the
+        // settle was then dropped by the isTerminal guard in handleDispatch
+        // → zombie loop: currentLoop stayed set and every later player chat
+        // was swallowed until an attack tore it down (260611 playlog,
+        // 40s of silence after "lets go explore" → end_loop).
+        terminateLoop(loop, 'R4-end_loop-reseed')
         try {
           reenqueue(loop._triggerEvent, loop._triggerData ?? null)
         } catch (err) {
@@ -1977,7 +2834,10 @@ function maybeWarnByteCap(loop, warned) {
           clearActionTick(loop.inFlight)
           try { loop.inFlight.abortController.abort() } catch {}
         }
-        loop.isTerminal = true
+        // 260611: terminateLoop, not bare isTerminal — see the R4 note above
+        // (zombie-loop fix). The aborted in_flight settle arrives later and
+        // is dropped as informational; teardown must not wait for it.
+        terminateLoop(loop, 'R3-end_loop')
       } else if (newSuspendingTools.length > 0) {
         // R2 (P0/P1-triggered) OR same-loop continuation (P2/P3-triggered)
         // with a new long-runner: abort any in_flight, new action becomes
@@ -2044,7 +2904,12 @@ function maybeWarnByteCap(loop, warned) {
       // closure only).
       for (let k = 0; k < toolUses.length; k++) {
         const uk = toolUses[k]
-        if (_digCapped.has(uk.id)) {
+        if (sayResults.has(uk.id)) {
+          // say() was already emitted up front (emitSayCalls). Pre-fill its
+          // result so the dispatch loop skips it and the batched-queue drain
+          // never enqueues it — speech is resolved before any action runs.
+          results[k] = sayResults.get(uk.id)
+        } else if (_digCapped.has(uk.id)) {
           results[k] = {
             type: 'tool_result',
             tool_use_id: uk.id,
@@ -2203,8 +3068,11 @@ function maybeWarnByteCap(loop, warned) {
       // nudge into the next user turn asking it to narrate progress briefly.
       // Reset on every say(). Bracketed format mirrors how PLAYER INTERRUPT
       // and other system-tagged prepends are styled in convo history.
-      const hadTextThisTurn = respText.length > 0
-      const shouldNudge = _advanceIterationCadence({ loop, hadSay: hadTextThisTurn })
+      // 260617: "spoke this turn" is now a say() TOOL call, not the presence of
+      // text — the model's text is always-on private scratchpad, so keying off
+      // it would never let the silence nudge fire. Reset the cadence on real
+      // speech (a say() call) only.
+      const shouldNudge = _advanceIterationCadence({ loop, hadSay: saySpokenThisTurn })
       const silenceNudgeText = shouldNudge ? NUDGES.silence : null
       // cant_reach nudge wins over silence nudge — both
       // happen at "things are not progressing" but cant_reach is the proximate
@@ -2366,6 +3234,25 @@ function maybeWarnByteCap(loop, warned) {
   }
 
   async function gracefulCapClose(loop) {
+    // Idempotent: the cap wrap-up runs exactly ONCE per loop. Without this guard
+    // a still-running long-runner's 10s action-tick (or a wrap-up call that
+    // errors instead of tearing the loop down) re-enters runIterations, re-hits
+    // the cap, and re-appends a turn each time — iterationCount then climbs
+    // unbounded (observed 30→73 in one run) while the action keeps mining in the
+    // background and incoming player chat goes unanswered. (260618)
+    if (loop._capClosed) return
+    loop._capClosed = true
+    // Stop the runaway at its source: abort whatever long-runner is still in
+    // flight the instant the cap is hit, so the bot stops moving/mining and its
+    // action-tick interval stops re-entering this path. Mirrors the in-flight
+    // abort done on player-interrupt / attack preemption; the settle handler
+    // nulls loop.inFlight and the resulting action_complete tears the loop down.
+    // (The wrap-up call below uses loop.abortController, NOT the runner's, so it
+    // is unaffected by this abort.)
+    if (loop.inFlight) {
+      clearActionTick(loop.inFlight)
+      try { loop.inFlight.abortController.abort() } catch {}
+    }
     logger.warn(`[sei/orch] iteration cap hit — forcing graceful close (loop=${loop.id}, iterations=${loop.iterationCount})`)
     // Final wrap: ask the model for one line in its own voice. If the call
     // fails or returns empty, stay silent — never substitute a hardcoded
@@ -2377,21 +3264,23 @@ function maybeWarnByteCap(loop, warned) {
     try {
       const resp = await anthropic.call({
         systemBlocks: cachedSystemBlocks,
-        tools: [],
+        // Offer ONLY the say() tool: the wrap-up is one spoken line and nothing
+        // else. (Pre-260617 this used tools:[] + extractSay on the text; say is
+        // a real tool now, so the final line comes through the same channel as
+        // every other turn.)
+        tools: [sayTool],
         messages: loop.buildAnthropicPayload(),
         namedUserBlocks: loop._internal.messages,
         signal: loop.abortController.signal,
         timeoutMs: Math.max(config.anthropic.timeout_ms, 8000),
       })
       loop.appendAssistant(buildAssistantContent(resp))
-      const modelText = (resp.text ?? '').trim()
-      if (modelText) {
-        const text = postProcessSay(modelText)
-        logChatOut(text)
-        try { adapter.chat(text) } catch {}
-        convoMemory.recentChat.pushSelf(config.persona.name, text)
+      emitThinkIfFull(resp.text ?? '')
+      const sayUse = (resp.toolUses ?? []).find(u => u.name === 'say')
+      if (sayUse) {
+        _emitSayLine(loop, sayUse.input?.text)
       } else {
-        logger.warn?.(`[sei/orch] cap-close: model returned empty text — staying silent`)
+        logger.warn?.(`[sei/orch] cap-close: no say() call in model output — staying silent`)
       }
     } catch (err) {
       logger.warn(`[sei/orch] graceful cap close call failed: ${err.message} — staying silent`)
@@ -2420,14 +3309,24 @@ function maybeWarnByteCap(loop, warned) {
     const visionTurn = _pendingVisionTurn
     _pendingVisionTurn = false
     const visionPath = (visionTurn && config.anthropic.cloudMode) ? VISION_MESSAGES_PATH : undefined
+    // 260611: image-bearing turns get a longer wall-clock budget. The 12s
+    // default was tuned for text turns; a vision turn (frame attached, not
+    // yet confirmed delivered — loop._undeliveredFrame) is slower end-to-end
+    // and a timeout costs the whole frame (the 260611 playlog: the model
+    // never saw the "masterpiece" it was asked about). The budget is still
+    // hard-capped and the sleep/abort discipline is unchanged — a player
+    // chat preempt cuts through instantly.
+    const callTimeoutMs = loop._undeliveredFrame
+      ? Math.max(config.anthropic.timeout_ms, 20_000)
+      : config.anthropic.timeout_ms
     try {
-      return await anthropic.call({
+      const resp = await anthropic.call({
       systemBlocks: cachedSystemBlocks,
       tools: combinedToolsFor(),
       messages: loop.buildAnthropicPayload(),
       namedUserBlocks: loop._internal.messages,
       signal,
-      timeoutMs: config.anthropic.timeout_ms,
+      timeoutMs: callTimeoutMs,
       // Small private scratchpad so the model can recap state, plan, and
       // debug failures WITHOUT polluting in-game chat. Text blocks stay
       // reserved for deliberate in-character speech to the player.
@@ -2438,6 +3337,12 @@ function maybeWarnByteCap(loop, warned) {
       // (the default) keeps the SDK on /v1/messages for every other turn.
       ...(visionPath ? { path: visionPath } : {}),
       })
+      // VIS-02 delivery guard: a successful call delivered the full loop
+      // history — including any attached-but-unconfirmed frame.
+      loop._undeliveredFrame = null
+      // 260611: a successful call resets the rate-limit redrive budget.
+      _redriveStreak = 0
+      return resp
     } finally {
       loop._llmCallInFlight = false
     }
@@ -2486,23 +3391,76 @@ function maybeWarnByteCap(loop, warned) {
       return true
     }
     if (event === 'sei:attacked') {
-      // Unblock only; the queued attack drives the existing P0 teardown/reseed.
+      // If the current loop is ITSELF an attack reaction whose LLM call is
+      // still in flight, a fresh hit is the SAME ongoing threat. Aborting +
+      // reseeding here would discard the in-progress reaction; under sustained
+      // attack (the combat.js throttle caps the rate, but a latency spike can
+      // still outlast the window) that loops forever — the bot never finishes a
+      // single reaction and stays silent/frozen while taking damage (the
+      // 2026-06-19 combat-livelock playlogs). Swallow the redundant hit (claim
+      // it, skip enqueuing) and let the in-flight reaction run to completion;
+      // mineflayer's auto-attack interval keeps swinging meanwhile, and the next
+      // throttled hit re-wakes a fresh reaction once this one settles.
+      if (loop._triggerEvent === 'sei:attacked') return true
+      // Otherwise (attacked mid-task — gathering/digging/following): unblock now
+      // so the queued P0 attack drives the existing teardown/reseed and the new
+      // threat preempts the task.
       try { loop.abortController.abort() } catch {}
       return false
     }
     return false
   }
 
+  /**
+   * Hard-stop hook (wired via brain.stop → src/bot/index.js's stop signal).
+   *
+   * The FSM's queue.dispose() only aborts the in-flight DISPATCH (a parked LLM
+   * call). But in the non-blocking dispatch model, once a loop dispatches a
+   * long-runner (gather / dig / explore / build / goTo / follow), handleDispatch
+   * RETURNS and the FSM clears currentAction — the loop is suspended on
+   * sei:action_complete with the action running under currentLoop.inFlight's
+   * OWN abortController, which dispose() never touches. So a stop pressed while
+   * the bot is mid-action (the common case for an agentic bot) had nothing to
+   * cancel: the action ran to completion and the stop only "landed" once
+   * bot.quit() severed the connection — the lag the user sees.
+   *
+   * abortActive() closes that gap: it aborts both the in-flight long-runner and
+   * the current loop's controller so pathfinding/mining/etc. halts immediately.
+   * The resulting sei:action_complete re-enqueue is dropped by the FSM (stop
+   * calls queue.dispose() first, flipping `disposed`). Idempotent + defensive.
+   */
+  function abortActive() {
+    const loop = currentLoop
+    if (!loop) return
+    try {
+      if (loop.inFlight) {
+        clearActionTick(loop.inFlight)
+        try { loop.inFlight.abortController.abort() } catch {}
+      }
+    } catch {}
+    try { loop.abortController.abort() } catch {}
+  }
+
   return {
     start,
+    noteSpawn,
     handleDispatch,
     handlePreempt,
+    abortActive,
     get currentLoop()    { return currentLoop },
     debouncer: ingressDebouncer,
     throttle: ingressThrottle,
     inflight,
     /** Record an incoming chat line in convoMemory (chat.js calls this). */
     recordIncomingChat: (who, text) => convoMemory.recentChat.pushPlayer(who, text),
+    /**
+     * 260618: update the roster of OTHER AI companion usernames in this world.
+     * Called by brain.setCompanions ← src/bot/index.js's {type:'roster'} handler
+     * whenever the supervisor summons/stops a sibling bot. chat.js reads the
+     * roster via getCompanions() to skip interrupts aimed at a sibling.
+     */
+    setCompanions,
+    getCompanions: () => companions.slice(),
     /**
      * Phase 15 (D-10/VIS-03): the active provider's vision capability. Read by
      * the brain → src/bot/index.js so it can push `vision-capability` up the

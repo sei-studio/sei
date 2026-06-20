@@ -15,6 +15,38 @@
 .barWrap {
   flex: 1 1 auto;
   min-width: 0;
+  position: relative;
+}
+
+/* Instant hover/focus tooltip ("$used/$total used, played Xh Ym"). Replaces the
+   native `title` (too slow/unreliable to register as working). Mirrors the
+   IconRail floating-tooltip styling. */
+.barWrap::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  padding: 6px 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 120ms var(--ease), transform 120ms var(--ease);
+  z-index: 9999;
+  box-shadow: var(--shadow-pop);
+}
+
+.barWrap:hover::after,
+.barWrap:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .estimate {

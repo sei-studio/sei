@@ -71,12 +71,23 @@ function buildSdkOptions(config) {
 }
 
 // ── Retry policy for call()'s own (SDK-independent) retry ─────────────────
-// One rescue retry, only when the failure is transient and there is enough
-// budget left for the second attempt to plausibly finish.
+// Up to two rescue retries, only when the failure is transient and there is
+// enough budget left for the next attempt to plausibly finish. Transient
+// failures (5xx / 429 / connection blips) are origin-wide — the vision path
+// and plain /v1/messages share the same proxy origin, so the policy is shared
+// too. Extra attempts trade remaining budget, not worst-case latency: the
+// deadline controller stays the authoritative wall-clock cap, and every sleep
+// is abortable, so a player-chat preempt still cuts through instantly. A
+// dropped turn (silent bot, discarded frame) costs more UX than retrying
+// inside the budget we were going to spend anyway.
+const MAX_RESCUE_RETRIES = 2
 const RETRY_MIN_REMAINING_MS = 2_500
-// Sleep before the rescue attempt: server Retry-After when present, but never
-// more than this — a denied early retry is a cheap rejection, a long sleep is
-// a frozen bot.
+// Default sleep before rescue attempt N (when the server sends no
+// Retry-After): 500ms catches a connection blip / single dropped response;
+// 1.5s rides out a short origin restart (a Fly machine cycles in ~1-2s).
+const RETRY_SLEEP_DEFAULTS_MS = [500, 1_500]
+// Sleep ceiling: server Retry-After is honored but never beyond this — a
+// denied early retry is a cheap rejection, a long sleep is a frozen bot.
 const RETRY_SLEEP_CAP_MS = 2_000
 
 function isRetryableError(err) {
@@ -178,14 +189,14 @@ export function createAnthropicClient(config) {
 
     const startedAt = Date.now()
     try {
-      // Attempt loop: at most 2 attempts, both under the SAME deadline
-      // controller. SDK auto-retry is disabled (buildSdkOptions) because its
-      // Retry-After sleep is un-abortable and uncapped — the mechanism behind
-      // the 30s frozen-bot incident (260609). Our rescue sleep is short,
-      // capped, and aborts with the controller.
-      let attempt = 0
+      // Attempt loop: an optional 404 vision-path reroute plus up to
+      // MAX_RESCUE_RETRIES transient-failure retries, ALL under the SAME
+      // deadline controller. SDK auto-retry is disabled (buildSdkOptions)
+      // because its Retry-After sleep is un-abortable and uncapped — the
+      // mechanism behind the 30s frozen-bot incident (260609). Our rescue
+      // sleeps are short, capped, and abort with the controller.
+      let rescueRetries = 0
       while (true) {
-        attempt++
         try {
           // Per-attempt timeout sits just above the REMAINING budget so the
           // deadline controller is always the authoritative cap.
@@ -227,21 +238,38 @@ export function createAnthropicClient(config) {
             logHaikuError({ elapsedMs, name: 'AbortError', message: 'aborted (preempt)', status: err?.status })
             throw err
           }
-          // One rescue retry for transient failures (429 / 5xx / connection
+          // Vision-path fallback: a 404 on the per-call `path` override means
+          // the deployed proxy doesn't expose /vision/v1/messages (route added
+          // client-side ahead of the proxy rollout). Strip the override and
+          // re-hit the default /v1/messages instead of dropping the turn — the
+          // hourly vision cap is a proxy-side guard, not worth a dead reply
+          // after a successful render. Cannot loop: `path` is cleared before
+          // the continue, so this branch fires at most once per call. It is a
+          // REROUTE, not a retry — it deliberately does not touch
+          // rescueRetries, so the fallback request keeps its full transient-
+          // failure allowance (a 502 right after the 404 detour killed a
+          // rendered frame on 260610).
+          if (path && err?.status === 404) {
+            logHaikuError({ elapsedMs, name: 'NotFoundError', message: `404 on ${path} — falling back to /v1/messages`, status: 404 })
+            path = undefined
+            continue
+          }
+          // Rescue retries for transient failures (429 / 5xx / connection
           // blip), only with enough budget left to plausibly finish. Sleep
           // honors the server's Retry-After but hard-caps it: a denied early
           // retry is a cheap rejection; a long obedient sleep is a dead bot.
           const remainingMs = budgetMs - (Date.now() - startedAt)
-          if (attempt === 1 && isRetryableError(err) && remainingMs > RETRY_MIN_REMAINING_MS) {
+          if (rescueRetries < MAX_RESCUE_RETRIES && isRetryableError(err) && remainingMs > RETRY_MIN_REMAINING_MS) {
             const sleepMs = Math.max(100, Math.min(
-              retryAfterMsFrom(err) ?? 500,
+              retryAfterMsFrom(err) ?? RETRY_SLEEP_DEFAULTS_MS[rescueRetries],
               RETRY_SLEEP_CAP_MS,
               remainingMs - RETRY_MIN_REMAINING_MS + 1_000,
             ))
+            rescueRetries++
             logHaikuError({
               elapsedMs,
               name: err?.name ?? 'Error',
-              message: `${err?.message ?? String(err)} — retrying once in ${sleepMs}ms`,
+              message: `${err?.message ?? String(err)} — retry ${rescueRetries}/${MAX_RESCUE_RETRIES} in ${sleepMs}ms`,
               status: err?.status,
             })
             await abortableSleep(sleepMs, ctrl.signal)

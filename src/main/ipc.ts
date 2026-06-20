@@ -394,8 +394,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     await deps.supervisor.summon(id);
   });
-  ipcMain.handle(IpcChannel.bot.stop, async () => {
-    await deps.supervisor.stop();
+  ipcMain.handle(IpcChannel.bot.stop, async (_event, idArg: unknown) => {
+    // Multi-summon: `stop(id)` drains one session; `stop()` (no id) drains all.
+    const id = idArg == null ? undefined : IdSchema.parse(idArg);
+    await deps.supervisor.stop(id);
   });
 
   // LAN state snapshot (pull). Seeds a freshly-(re)loaded renderer; the
@@ -530,7 +532,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const char = await getCharacter(id);
     if (!char) throw new Error('Character not found.');
     // Refuse to delete the active character — UI should never request this.
-    if (deps.supervisor.getActiveId() === id) {
+    if (deps.supervisor.isActive(id)) {
       throw new Error('Cannot delete the currently summoned character. Stop first.');
     }
     if (char.is_default) {
@@ -589,7 +591,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // Refuses to act while the character is summoned.
   ipcMain.handle(IpcChannel.chars.removeFromLibrary, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
-    if (deps.supervisor.getActiveId() === id) {
+    if (deps.supervisor.isActive(id)) {
       throw new Error('Cannot remove the currently summoned character. Stop first.');
     }
     const { loadConfig, saveConfig } = await import('./configStore');
@@ -643,7 +645,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.chars.resetMemory, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
     // Refuse while bot is reading/writing memory at runtime.
-    if (deps.supervisor.getActiveId() === id) {
+    if (deps.supervisor.isActive(id)) {
       throw new Error('Cannot reset memory of the currently summoned character. Stop first.');
     }
     await resetMemoryForCharacter(id);
@@ -832,7 +834,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // Refuse while bot is connected — bot would keep serving the OLD skin
     // until disconnect, and the user's intuition is "skin shows up on next
     // summon". UI also gates this; defense-in-depth.
-    if (deps.supervisor.getActiveId() === args.characterId) {
+    if (deps.supervisor.isActive(args.characterId)) {
       throw new Error('Stop the bot before changing skin. Skin applies on next summon.');
     }
     const { applyPng } = await import('./skinStore');
@@ -849,7 +851,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   ipcMain.handle(IpcChannel.skin.remove, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg); // Same strict slug validator as skin:apply
-    if (deps.supervisor.getActiveId() === id) {
+    if (deps.supervisor.isActive(id)) {
       throw new Error('Stop the bot before changing skin. Skin applies on next summon.');
     }
     const { removePng } = await import('./skinStore');
@@ -1065,9 +1067,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!session?.user?.id) {
       return { accepted: false, tosVersion: TOS_VERSION, privacyVersion: PRIVACY_VERSION };
     }
-    const { isTosAccepted } = await import('./auth/tosGate');
+    // 260610 — tri-state: a check that never reached the DB (offline/DNS/
+    // timeout) returns accepted:null so the renderer shows the offline-retry
+    // notice instead of re-prompting an already-accepted user with the
+    // blocking legal modal.
+    const { getTosAcceptance } = await import('./auth/tosGate');
+    const status = await getTosAcceptance(session.user.id);
     return {
-      accepted: await isTosAccepted(session.user.id),
+      accepted: status === 'unknown' ? null : status === 'accepted',
       tosVersion: TOS_VERSION,
       privacyVersion: PRIVACY_VERSION,
     };
@@ -1506,6 +1513,26 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   ipcMain.handle(IpcChannel.app.version, async (): Promise<string> => {
     return app.getVersion();
+  });
+
+  // === Frameless window controls (custom titlebar on Windows/Linux) ===
+  // macOS uses native traffic lights and never invokes these, but the handlers
+  // are platform-agnostic. Each resolves the window from the calling
+  // webContents so multi-window is correct without a captured reference.
+  ipcMain.handle(IpcChannel.window.minimize, async (event): Promise<void> => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+  ipcMain.handle(IpcChannel.window.maximizeToggle, async (event): Promise<void> => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.handle(IpcChannel.window.close, async (event): Promise<void> => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+  ipcMain.handle(IpcChannel.window.isMaximized, async (event): Promise<boolean> => {
+    return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
   });
 
   // === Phase 13 — Proxy + billing + credits (PROXY-11 + D-57) ===

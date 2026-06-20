@@ -73,6 +73,28 @@
   color: var(--text-2);
 }
 
+/* Vision tier control: three mutually-exclusive Buttons in a row. Selection
+   state rides Button's own aria-pressed styling; this wrapper only lays them
+   out as one group. */
+.segmented {
+  display: inline-flex;
+  gap: var(--space-xs);
+}
+
+/* Look-cadence slider + live readout. Native range input, token-tinted —
+   no custom thumb chrome beyond accent-color (sharp-edged look stays with
+   the surrounding rows). */
+.sliderGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.slider {
+  width: 160px;
+  accent-color: var(--accent);
+}
+
 .rowEditor {
   display: inline-flex;
   align-items: center;
