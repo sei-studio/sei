@@ -16,7 +16,7 @@
 //
 // `canvas` needs NO patch — package.json `overrides` force canvas@^3 (N-API, ABI-stable).
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -50,6 +50,47 @@ export function patchGlGyp() {
   }
   if (changed) { writeFileSync(f, s); log('patched gl/binding.gyp (c++20 + deployment target)'); }
   else log('gl/binding.gyp already patched');
+}
+
+// Windows/MSVC: Electron 42's V8/cppgc headers (e.g. cppgc/heap.h) use the
+// GCC/Clang builtin __builtin_frame_address, which MSVC does not provide
+// (error C3861). gl compiles against these headers, so we inject a guarded shim
+// that maps it to MSVC's _AddressOfReturnAddress intrinsic. clang/gcc are
+// excluded so the real builtin is used on mac/linux. Pass the path to the
+// downloaded Electron headers (<devdir>/<version>/include/node) — they must
+// already be fetched (see postinstall's Windows pre-fetch step).
+const V8_MSVC_SHIM = `// [sei] MSVC shim for GCC/Clang __builtin_frame_address (Electron V8 headers, C3861).
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__GNUC__)
+#include <intrin.h>
+#ifndef __builtin_frame_address
+#define __builtin_frame_address(x) _AddressOfReturnAddress()
+#endif
+#endif
+`;
+const V8_SHIM_MARKER = '[sei] MSVC shim for GCC/Clang';
+
+export function patchV8MsvcBuiltins(includeNodeDir) {
+  if (process.platform !== 'win32') return; // clang/gcc already have the builtin
+  if (!includeNodeDir || !existsSync(includeNodeDir)) {
+    return log(`electron headers not at ${includeNodeDir} — skipping V8 MSVC shim`);
+  }
+  let patched = 0, scanned = 0;
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      let st;
+      try { st = statSync(p); } catch { continue; }
+      if (st.isDirectory()) { walk(p); continue; }
+      if (!/\.(h|hpp|inc)$/.test(name)) continue;
+      scanned++;
+      const s = readFileSync(p, 'utf8');
+      if (!s.includes('__builtin_frame_address') || s.includes(V8_SHIM_MARKER)) continue;
+      writeFileSync(p, V8_MSVC_SHIM + s);
+      patched++;
+    }
+  };
+  walk(includeNodeDir);
+  log(`V8 MSVC shim: patched ${patched} header(s) using __builtin_frame_address (scanned ${scanned})`);
 }
 
 export function patchNanNew() {

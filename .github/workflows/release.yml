@@ -69,7 +69,10 @@ jobs:
           # texture tree (~32k files) exhausts the default fd limit at sign time
           # (EMFILE). Raise the soft limit before packaging. No-op on Windows.
           if [ "$RUNNER_OS" = "macOS" ]; then
-            ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+            # ulimit alone wasn't enough — the per-process kernel cap is below the
+            # 32k texture-file count. Raise the kernel limits too, then the soft limit.
+            sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=524288 2>/dev/null || true
+            ulimit -n 524288 2>/dev/null || ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
           fi
           npm run ${{ matrix.build_cmd }}
 

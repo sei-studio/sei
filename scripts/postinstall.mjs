@@ -11,10 +11,11 @@
 // and electron-rebuild (step 3) both see a distutils-capable Python. See 15-01-SUMMARY.md.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { applyAll } from './patch-vision-native.mjs';
+import { applyAll, patchV8MsvcBuiltins } from './patch-vision-native.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const log = (m) => console.log(`[postinstall] ${m}`);
@@ -56,6 +57,25 @@ const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: 'inherit'
 // 1. Patch gl/nan sources before any compile.
 log('applying vision native source patches...');
 applyAll();
+
+// 1b. Windows only: gl compiles against Electron's V8 headers, which use the
+// GCC/Clang builtin __builtin_frame_address (MSVC C3861). Pre-fetch the Electron
+// headers into the same devdir @electron/rebuild uses (~/.electron-gyp), then
+// inject the MSVC shim so the gl compile in step 2 finds patched headers.
+if (isWin) {
+  try {
+    const electronVersion = JSON.parse(
+      readFileSync(join(root, 'node_modules/electron/package.json'), 'utf8'),
+    ).version;
+    const devdir = join(homedir(), '.electron-gyp');
+    log(`Windows: pre-fetching Electron ${electronVersion} headers into ${devdir}...`);
+    run('npx', ['node-gyp', 'install', `--devdir=${devdir}`, `--target=${electronVersion}`,
+      '--dist-url=https://electronjs.org/headers', '--arch=x64']);
+    patchV8MsvcBuiltins(join(devdir, electronVersion, 'include', 'node'));
+  } catch (e) {
+    log(`WARNING: Windows header pre-patch failed (${e.message}) — gl may fail to compile`);
+  }
+}
 
 // 2. electron-builder install-app-deps (rebuilds all native deps incl. gl/canvas).
 log('electron-builder install-app-deps...');

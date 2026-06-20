@@ -28,9 +28,10 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { applyAll } from './patch-vision-native.mjs';
+import { applyAll, patchV8MsvcBuiltins } from './patch-vision-native.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const log = (m) => console.log(`[rebuild-vision-native] ${m}`);
@@ -75,6 +76,12 @@ applyAll();
 const electronVersion = JSON.parse(
   readFileSync(join(root, 'node_modules/electron/package.json'), 'utf8'),
 ).version;
+
+// Windows: re-inject the V8 MSVC shim defensively — install-app-deps may have
+// re-extracted pristine Electron headers over the postinstall pre-patch.
+if (process.platform === 'win32') {
+  patchV8MsvcBuiltins(join(homedir(), '.electron-gyp', electronVersion, 'include', 'node'));
+}
 
 log(`rebuilding gl + canvas against Electron ${electronVersion} ABI...`);
 execFileSync(
