@@ -48,6 +48,7 @@ function distutilsPython() {
     '/opt/homebrew/opt/python@3.10/bin/python3.10',
     '/usr/bin/python3', // Apple system Python still ships distutils
     'python3',
+    'python', // Windows (actions/setup-python exposes `python`, not `python3`)
   ];
   for (const p of candidates) {
     try {
@@ -79,6 +80,7 @@ log(`rebuilding gl + canvas against Electron ${electronVersion} ABI...`);
 execFileSync(
   'npx',
   ['electron-rebuild', '-f', '-w', 'gl,canvas', '-v', electronVersion],
-  { cwd: root, stdio: 'inherit', env },
+  // shell on Windows: electron-rebuild resolves to a .cmd shim CreateProcess can't exec directly.
+  { cwd: root, stdio: 'inherit', env, shell: process.platform === 'win32' },
 );
 log('rebuild complete');

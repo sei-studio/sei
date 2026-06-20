@@ -38,6 +38,16 @@ export function patchGlGyp() {
     s = s.replace("'MACOSX_DEPLOYMENT_TARGET':'10.8'", "'MACOSX_DEPLOYMENT_TARGET':'10.15'");
     changed = true;
   }
+  // Windows/MSVC: Electron 42's V8 headers use C++20 (concepts). The stock win block
+  // sets no /std, so MSVC defaults below C++20 and the gl compile fails. Append /std:c++20
+  // to the Release VCCLCompilerTool AdditionalOptions (the mac branch above is clang-only).
+  if (s.includes("'/MP', # compile across multiple CPUs") && !s.includes("'/std:c++20'")) {
+    s = s.replace(
+      "'/MP', # compile across multiple CPUs",
+      "'/MP', # compile across multiple CPUs\n                      '/std:c++20', # Electron 42 V8 headers require C++20 (concepts)",
+    );
+    changed = true;
+  }
   if (changed) { writeFileSync(f, s); log('patched gl/binding.gyp (c++20 + deployment target)'); }
   else log('gl/binding.gyp already patched');
 }

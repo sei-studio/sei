@@ -130,11 +130,9 @@ nsis:
   perMachine: false                        # per-user install — no admin prompt
   allowToChangeInstallationDirectory: true
 
-linux:
-  target:
-    - AppImage
-  category: Game
-  # AppImage is best-effort unsigned per D-60.
+# Linux (AppImage) dropped 2026-06-20: the prismarine-viewer headless-gl native
+# dep won't build on the Linux runner and the target was untested anyway. Re-add a
+# `linux:` block + the ubuntu matrix leg in release.yml if/when it's supported.
 
 # D-63 REVERSED (quick/260604-uoy, 2026-06-04): auto-update is now IN scope.
 # The notify-and-redirect-to-website updater (updateChecker.ts + UpdateToast.tsx)

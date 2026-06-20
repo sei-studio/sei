@@ -21,9 +21,6 @@ jobs:
           - os: windows-latest
             build_cmd: dist:win
             artifact_name: win
-          - os: ubuntu-latest
-            build_cmd: dist:linux
-            artifact_name: linux
 
     runs-on: ${{ matrix.os }}
 
@@ -37,7 +34,17 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      # headless-gl (vision render path) builds from source via node-gyp, which needs
+      # a distutils-capable Python (removed from 3.12+). Provide 3.11 on every runner.
+      - name: Setup Python (distutils for headless-gl native build)
+        uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: '3.11'
+
       - name: Install dependencies
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
         run: npm ci
 
       - name: Build (${{ matrix.os }})
@@ -56,7 +63,15 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run ${{ matrix.build_cmd }}
+        shell: bash
+        run: |
+          # macOS code-signs every file in app.asar.unpacked; the prismarine-viewer
+          # texture tree (~32k files) exhausts the default fd limit at sign time
+          # (EMFILE). Raise the soft limit before packaging. No-op on Windows.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+          fi
+          npm run ${{ matrix.build_cmd }}
 
       - name: Verify cloud config baked into bundle
         # v0.2.0 shipped with empty SUPABASE_URL/ANON because the build-time

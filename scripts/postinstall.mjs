@@ -29,6 +29,7 @@ function distutilsPython() {
     '/opt/homebrew/opt/python@3.10/bin/python3.10',
     '/usr/bin/python3',
     'python3',
+    'python', // Windows (actions/setup-python exposes `python`, not `python3`)
   ]) {
     try { execFileSync(p, ['-c', 'import distutils'], { stdio: 'ignore' }); return p; }
     catch { /* next */ }
@@ -46,7 +47,11 @@ env.PKG_CONFIG_PATH = [
   env.PKG_CONFIG_PATH,
 ].filter(Boolean).join(':');
 
-const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: 'inherit', env });
+// On Windows, `npx`/`electron-builder` resolve to `.cmd` shims that CreateProcess
+// cannot exec directly (spawnSync ENOENT) — they must go through the shell. mac/linux
+// keep the direct exec (no shell) so the working build path is unchanged.
+const isWin = process.platform === 'win32';
+const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: 'inherit', env, shell: isWin });
 
 // 1. Patch gl/nan sources before any compile.
 log('applying vision native source patches...');
