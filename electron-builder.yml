@@ -86,18 +86,22 @@ asarUnpack:
 
 mac:
   category: public.app-category.games
-  # Separate arm64 + x64 dmgs (not universal): the universal merge step in
+  # Separate arm64 + x64 builds (not universal): the universal merge step in
   # @electron/asar bails with "pattern is too long" when asarUnpack covers
-  # node_modules/**/*. Two dmgs ship cleanly with no per-arch reconciliation.
+  # node_modules/**/*.
   #
-  # The `zip` target rides alongside each `dmg` because electron-updater installs
-  # macOS updates from the zip artifact — the dmg is mount-and-drag-only and is
-  # NOT a valid auto-update payload. Both arches now produce a dmg (manual
-  # download from sei.gg) AND a zip (auto-update); the generated latest-mac.yml +
-  # app-update.yml reference the zips.
+  # ZIP-ONLY (dmg dropped 2026-06-21): the bundled prismarine-viewer texture tree
+  # is ~32k tiny files. dmgbuild auto-sizes the DMG volume from the byte-sum of
+  # the .app (+~10%), which badly understates the APFS per-file block/inode
+  # overhead of 32k files — so `ditto` overflows the mounted volume with
+  # "No space left on device" even with 40GB+ free on the runner. There is no
+  # electron-builder knob to pad the DMG size, and the textures can't move into
+  # the asar (node-canvas reads them via native fs, which bypasses Electron's
+  # asar layer). The zip is ALSO the macOS auto-update payload (latest-mac.yml +
+  # app-update.yml reference it), so zip-only loses nothing functional; mac users
+  # unzip and drag to /Applications. Re-add a `dmg` target here if the
+  # texture-count/sizing problem is solved (e.g. prune textures to 1.20-1.21).
   target:
-    - target: dmg
-      arch: [arm64, x64]
     - target: zip
       arch: [arm64, x64]
   hardenedRuntime: true
@@ -107,16 +111,18 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
 
-dmg:
-  sign: false               # default since electron-builder 20.43.0
-  contents:
-    - x: 410
-      y: 220
-      type: link
-      path: /Applications
-    - x: 130
-      y: 220
-      type: file
+# dmg target dropped 2026-06-21 (see mac.target note above) — config kept,
+# commented, for easy re-enable once the 32k-texture-file DMG sizing is solved.
+# dmg:
+#   sign: false               # default since electron-builder 20.43.0
+#   contents:
+#     - x: 410
+#       y: 220
+#       type: link
+#       path: /Applications
+#     - x: 130
+#       y: 220
+#       type: file
 
 win:
   target:
