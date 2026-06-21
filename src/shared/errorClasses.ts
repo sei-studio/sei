@@ -21,6 +21,7 @@ export type ErrorClass =
   | 'KEYCHAIN_LOCKED'
   | 'KEYCHAIN_FALLBACK_PLAINTEXT'
   | 'NATIVE_MODULE_MISMATCH'
+  | 'UNSUPPORTED_MC_VERSION'
   // Skin + setup-wizard surfaces
   | 'MOD_DOWNLOAD_FAILED'
   | 'FABRIC_INSTALL_FAILED'
@@ -43,6 +44,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'KEYCHAIN_LOCKED',
   'KEYCHAIN_FALLBACK_PLAINTEXT',
   'NATIVE_MODULE_MISMATCH',
+  'UNSUPPORTED_MC_VERSION',
   // Skin + setup-wizard surfaces
   'MOD_DOWNLOAD_FAILED',
   'FABRIC_INSTALL_FAILED',

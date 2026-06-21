@@ -13,6 +13,9 @@
 //      MACOSX_DEPLOYMENT_TARGET 10.8 -> 10.15.
 //   2. nan External::New / External::Value: append V8's kExternalPointerTypeTagDefault, which
 //      Electron 42's V8 made a REQUIRED arg and nan (<=2.27.0) has not adopted.
+//   3. nan TypedArrayContents: swap buffer->GetBackingStore()->Data() for buffer->Data().
+//      Electron 42's V8 (v13) dropped the GetBackingStore() export; strict linkers (Windows
+//      MSVC) fail with LNK2019. ArrayBuffer::Data() (V8 11.4+) is the exported replacement.
 //
 // `canvas` needs NO patch — package.json `overrides` force canvas@^3 (N-API, ABI-stable).
 
@@ -131,10 +134,29 @@ export function patchNanValue() {
   log(`patched ${count} nan External::Value read site(s)`);
 }
 
+// nan's TypedArrayContents reads the ArrayBuffer data pointer via
+// `buffer->GetBackingStore()->Data()`. Electron 42's V8 (v13) still DECLARES
+// ArrayBuffer::GetBackingStore() in the headers (so it compiles) but no longer
+// EXPORTS it from the V8 lib — a strict linker (Windows MSVC) then fails with
+// LNK2019. macOS hides this behind dynamic_lookup, which is why the mac CI
+// missed it. The modern, exported replacement is ArrayBuffer::Data() (V8 11.4+).
+export function patchNanTypedArrayContents() {
+  const f = join(root, 'node_modules/nan/nan_typedarray_contents.h');
+  if (!existsSync(f)) return log('nan not installed — skipping TypedArrayContents patch');
+  let s = readFileSync(f, 'utf8');
+  const OLD = 'buffer->GetBackingStore()->Data()';
+  const NEW = 'buffer->Data()';
+  if (!s.includes(OLD)) return log('nan TypedArrayContents already patched (or call shape changed)');
+  const count = s.split(OLD).length - 1;
+  writeFileSync(f, s.split(OLD).join(NEW));
+  log(`patched ${count} nan TypedArrayContents GetBackingStore site(s)`);
+}
+
 export function applyAll() {
   patchGlGyp();
   patchNanNew();
   patchNanValue();
+  patchNanTypedArrayContents();
 }
 
 // Run directly (postinstall step 1)

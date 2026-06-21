@@ -6,7 +6,14 @@
 // a mineflayer Bot instance — it talks to the Adapter built around it.
 
 import { createBot } from 'mineflayer'
+import minecraftProtocol from 'minecraft-protocol'
+import minecraftData from 'minecraft-data'
 import { pathfinder } from 'mineflayer-pathfinder'
+
+// minecraft-protocol / minecraft-data are CJS (and arrive transitively via
+// mineflayer, exactly as the test suite already consumes minecraft-data). Pull
+// the version-resolution surface off the default export to stay ESM-safe.
+const { ping, supportedVersions } = minecraftProtocol
 import { startFollow, stopFollow } from './behaviors/follow.js'
 import { startPosHealer, stopPosHealer } from './observers/posHealer.js'
 import { startChat } from './behaviors/chat.js'
@@ -59,6 +66,108 @@ export function humanizeReason(reason) {
  * LAN / stalled auth hangs silently inside its TCP retry loop.
  */
 const CONNECT_TIMEOUT_MS = 20_000
+
+// Wall-clock budget for the pre-connect status ping (resolveServerVersion).
+// Short — a LAN status query on localhost answers in well under a second; if it
+// stalls we fall back to mineflayer's own auto-detect rather than block summon.
+const PING_TIMEOUT_MS = 5_000
+
+/**
+ * Map a wire protocol number to a version string our networking layer actually
+ * implements (minecraft-protocol.supportedVersions). Returns null when none of
+ * the supported versions speak that protocol.
+ */
+function supportedVersionForProtocol(protocol) {
+  if (typeof protocol !== 'number') return null
+  for (const v of supportedVersions) {
+    let data
+    try { data = minecraftData(v) } catch { continue }
+    if (data && data.version && data.version.version === protocol) return v
+  }
+  return null
+}
+
+/**
+ * Pick the supported version string for a pinged server. Prefer the server's
+ * self-reported name when we support it verbatim (disambiguates versions that
+ * share a protocol number, e.g. 1.20 vs 1.20.1); else fall back to the protocol
+ * match. Returns null when the server's version is outside our supported set.
+ */
+function resolveSupportedVersion(name, protocol) {
+  if (typeof name === 'string' && supportedVersions.includes(name)) return name
+  return supportedVersionForProtocol(protocol)
+}
+
+function pingWithTimeout(options, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      const e = new Error(
+        `LAN_PING_TIMEOUT: no status response from ${options.host}:${options.port} within ${timeoutMs}ms`,
+      )
+      e.code = 'LAN_PING_TIMEOUT'
+      reject(e)
+    }, timeoutMs)
+    try {
+      ping(options, (err, result) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (err) {
+          if (!err.code) err.code = 'LAN_PING_FAILED'
+          reject(err)
+        } else {
+          resolve(result)
+        }
+      })
+    } catch (e) {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(e)
+    }
+  })
+}
+
+/**
+ * Status-ping the LAN server and resolve the Minecraft version Sei should
+ * connect with, bounded to what our networking deps actually implement. The
+ * Electron path passes `version: 'auto'`; this resolves it to an EXPLICIT
+ * supported version which is then handed to createBotInstance — deliberately
+ * sidestepping mineflayer's in-handshake auto-detect, which historically
+ * produced protocol kicks against modern LAN worlds.
+ *
+ * @returns {Promise<string>} a supported version string (e.g. '1.20.6').
+ * @throws  Error with `.code`:
+ *   - 'UNSUPPORTED_MC_VERSION' — the server runs a version outside
+ *     minecraft-protocol.supportedVersions. The caller surfaces a clean error
+ *     and must NOT attempt to connect (it would only earn a protocol kick).
+ *   - 'LAN_PING_TIMEOUT' / 'LAN_PING_FAILED' — the ping itself failed. The
+ *     caller may fall back to mineflayer's auto-detect; a genuinely unreachable
+ *     world is then handled by the normal connect / reconnect path.
+ */
+export async function resolveServerVersion({ host, port, timeoutMs = PING_TIMEOUT_MS, logger = console }) {
+  const status = await pingWithTimeout({ host, port }, timeoutMs)
+  const name = status && status.version && status.version.name
+  const protocol = status && status.version && status.version.protocol
+  const resolved = resolveSupportedVersion(name, protocol)
+  if (!resolved) {
+    const reported = name || (typeof protocol === 'number' ? `protocol ${protocol}` : 'an unknown version')
+    const err = new Error(
+      `UNSUPPORTED_MC_VERSION: This world is running Minecraft ${reported}, which Sei can't join yet. ` +
+      `Sei supports Java ${supportedVersions[0]}–${supportedVersions[supportedVersions.length - 1]}. ` +
+      `Switch your world to a supported version and click Summon again.`,
+    )
+    err.code = 'UNSUPPORTED_MC_VERSION'
+    throw err
+  }
+  logger.info?.(
+    `[sei] Server ping: version "${name ?? '?'}" (protocol ${protocol ?? '?'}) → connecting as ${resolved}`,
+  )
+  return resolved
+}
 
 /**
  * Construct a mineflayer Bot, wire up the always-on adapter behaviors

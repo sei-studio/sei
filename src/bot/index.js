@@ -22,19 +22,16 @@
 
 import { loadConfig, ConfigSchema } from './config.js'
 import { discoverLanPort } from './adapter/minecraft/lanDiscovery.js'  // CLI path only
-import { createBotInstance } from './adapter/minecraft/connect.js'
+import { createBotInstance, resolveServerVersion } from './adapter/minecraft/connect.js'
 
-// Default Minecraft Java protocol version for the Electron path. mineflayer's
-// auto-detection (the value it would otherwise use when `version` is omitted)
-// has been observed to produce protocol-handshake kicks against modern LAN
-// worlds — symptom: bot.on('kicked') fires before spawn with a reason whose
-// raw text was masked by humanizeReason as "Could not reach server". Pinning
-// to a known-supported version matches the working CLI path's config.json
-// (`minecraft_version: "1.21.1"`) and side-steps the auto-detect failure.
-// When the user upgrades their Minecraft client past mineflayer's supported
-// range this becomes a real onboarding setting; until then, '1.21.1' is the
-// stable default that matches the predominant LAN client today.
-const DEFAULT_MC_VERSION = '1.21.1'
+// The Electron path hands the bot `version: 'auto'`. start() resolves that to an
+// EXPLICIT, supported version via a status ping (resolveServerVersion) before
+// the first connect — so the bot matches whatever the player's LAN world runs
+// (1.20.6, 1.21.x, …) while staying bounded to minecraft-protocol's supported
+// set. Pinning a single version (the old '1.21.1') broke every world on a
+// different version; raw mineflayer in-handshake auto-detect was avoided because
+// it produced protocol kicks. Ping-then-pass-explicit gets both: auto-match
+// without the handshake-detect failure mode.
 import { createMinecraftAdapter } from './adapter/minecraft/index.js'
 import { start as startBrain } from './brain/index.js'
 
@@ -76,6 +73,35 @@ export async function start(config, hooks = {}) {
   // brain spawned by bringUp). Reset on first successful spawn.
   const MAX_RECONNECT_ATTEMPTS = 3
   let _reconnectAttempts = 0
+
+  // ─── Resolve the Minecraft protocol version ────────────────────────────────
+  // 'auto' (the Electron default) status-pings the LAN world and selects the
+  // version our networking deps actually implement, then hands mineflayer that
+  // EXPLICIT version below — sidestepping the in-handshake auto-detect path that
+  // historically produced protocol kicks. Resolved ONCE here; reconnects reuse
+  // it. A ping FAILURE is non-fatal: fall back to mineflayer's own auto-detect
+  // (connect.js omits `version` when it sees 'auto'), and let the normal
+  // connect / reconnect loop handle a genuinely unreachable world. Only a
+  // SUCCESSFUL ping reporting an UNSUPPORTED version aborts, with a clear error.
+  if (!mc.version || mc.version === 'auto') {
+    try {
+      mc.version = await resolveServerVersion({ host: mc.host, port: mc.port, logger })
+      logger.info(`Auto-detected Minecraft version: ${mc.version}`)
+    } catch (err) {
+      if (err && err.code === 'UNSUPPORTED_MC_VERSION') {
+        logger.error(`[sei] ${err.message}`)
+        try { onConnectError(err) } catch (cbErr) {
+          logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
+        }
+        return
+      }
+      logger.warn(
+        `[sei] Version ping failed (${err && err.message}) — ` +
+        `falling back to mineflayer auto-detect.`,
+      )
+      mc.version = 'auto' // connect.js omits version when 'auto' → mineflayer detects in-handshake
+    }
+  }
 
   const bringUp = async () => {
     _bot = createBotInstance({
@@ -497,7 +523,9 @@ async function bootstrapWithInit(initData) {
         port: lanPort,
         auth: 'offline',
         username: bot_mc_username,
-        version: DEFAULT_MC_VERSION,
+        // 'auto' → resolved to the world's actual (supported) version by a
+        // status ping in start(); see resolveServerVersion.
+        version: 'auto',
       },
     },
     memory: {
@@ -590,10 +618,15 @@ async function bootstrapWithInit(initData) {
         emitLifecycle({
           type: 'error',
           // A dropped live session and an exhausted initial-connect retry both
-          // arrive tagged "LAN_NOT_OPEN:"; a silent spawn stall (connect.js's
+          // arrive tagged "LAN_NOT_OPEN:"; an unsupported world version is
+          // "UNSUPPORTED_MC_VERSION:"; a silent spawn stall (connect.js's
           // wall-clock guard) is a BOT_START_TIMEOUT. Route to the class whose
           // ERROR_COPY gives the user the right next step.
-          error: message.startsWith('LAN_NOT_OPEN') ? 'LAN_NOT_OPEN' : 'BOT_START_TIMEOUT',
+          error: message.startsWith('UNSUPPORTED_MC_VERSION')
+            ? 'UNSUPPORTED_MC_VERSION'
+            : message.startsWith('LAN_NOT_OPEN')
+              ? 'LAN_NOT_OPEN'
+              : 'BOT_START_TIMEOUT',
           message,
         })
         // The bot can't recover on its own (initial connect exhausted, a live
