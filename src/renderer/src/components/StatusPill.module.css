@@ -71,6 +71,10 @@
   text-transform: none;
   letter-spacing: normal;
   font-weight: 400;
+  /* Defensive: a long secondary (e.g. a file path or error string) must wrap
+   * rather than force the pill's min-content width and blow out its container.
+   * Combined with the labels' min-width:0 this keeps any pill inside its slot. */
+  overflow-wrap: anywhere;
 }
 
 /* ── 8px square dot, sharp corners (D-28) ─────────────────────────── */
