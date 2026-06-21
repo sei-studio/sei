@@ -24,16 +24,13 @@ import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useWizardStore } from '../lib/stores/useWizardStore';
 import { WizardStepMachine } from '../components/SetupWizardModal';
-import { Button } from '../components/Button';
 import styles from './SkinSetupScreen.module.css';
 
 export function SkinSetupScreen(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const openWizard = useWizardStore((s) => s.openWizard);
-  const closeWizard = useWizardStore((s) => s.closeWizard);
   const open = useWizardStore((s) => s.open);
-  const step = useWizardStore((s) => s.step);
 
   const startedRef = useRef(false);
   const wasOpenRef = useRef(false);
@@ -77,15 +74,10 @@ export function SkinSetupScreen(): React.ReactElement {
     <div className={styles.root}>
       <div className={styles.eyebrow}>Final step</div>
       <div className={styles.panel}>
+        {/* The welcome step's footer carries "Set up later" (aligned with
+            Begin); no separate skip row is rendered below the panel anymore. */}
         <WizardStepMachine />
       </div>
-      {step === 'welcome' ? (
-        <div className={styles.skipRow}>
-          <Button kind="quiet" size="md" onClick={() => closeWizard()}>
-            Skip for now
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -82,6 +82,22 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
   //     Skipped for sign-out (nextScope === local). Best-effort: a network blip
   //     just defers hydration to the normal cache-on-demand path.
   if (nextScope !== SCOPE_LOCAL) {
+    // (a0) Default the freshly-scoped account to cloud billing BEFORE the
+    //      scope-changed push below. The push triggers the renderer's
+    //      re-bootstrap (reload config + credits); the prior cloud-default
+    //      write lived in authState.ts AFTER switchScopeForAuth returned —
+    //      i.e. after this push had already fired — so a fresh sign-in
+    //      re-bootstrapped while config.json still held the 'local' default
+    //      and the user landed on API/BYOK mode. Writing it here, inside the
+    //      switch and before the push, closes that race. Idempotent: a later
+    //      in-session switch to BYOK persists, and a session-restore reopen
+    //      hits the same scope so this function early-returns (no re-flip).
+    try {
+      const { setAiBackendKind } = await import('../apiKeyStore');
+      await setAiBackendKind('cloud-proxy');
+    } catch (err) {
+      console.warn(`[sei] profileScope: cloud-billing default failed: ${(err as Error).message}`);
+    }
     // (a) Display name: backfill local config from public.profiles when this
     //     device has no name yet, so onboarding doesn't re-ask for a name the
     //     account already set elsewhere.
@@ -104,6 +120,30 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
       await cacheMyCloudCharacters(nextScope);
     } catch (err) {
       console.warn(`[sei] profileScope: own-character hydration failed: ${(err as Error).message}`);
+    }
+    // (c) Per-DEVICE skin-setup gating. Skin setup installs a Minecraft mod on
+    //     THIS machine, so it must be prompted per device, not per account. An
+    //     existing account signing in on a NEW device gets its name backfilled
+    //     above (so onboarding — which normally arms skin_setup_pending — is
+    //     skipped) and would otherwise sail straight to home, leaving this
+    //     device's Minecraft unconfigured. If the account is onboarded but this
+    //     device has never COMPLETED the wizard, re-arm the pending flag here
+    //     (before the scope-changed push) so the routing resumes the skin-setup
+    //     step. hasRunOnce lives in the app-level skin-setup-state.json (NOT
+    //     profile-scoped), so a second account on a device that already ran
+    //     setup is correctly NOT re-prompted.
+    try {
+      const { loadWizardState } = await import('../wizardStateStore');
+      const wiz = await loadWizardState();
+      if (!wiz.hasRunOnce) {
+        const { loadConfig, saveConfig } = await import('../configStore');
+        const cfg = await loadConfig();
+        if ((cfg.preferred_name ?? '').trim() && cfg.skin_setup_pending !== true) {
+          await saveConfig({ ...cfg, skin_setup_pending: true });
+        }
+      }
+    } catch (err) {
+      console.warn(`[sei] profileScope: per-device skin-setup gate failed: ${(err as Error).message}`);
     }
   }
 

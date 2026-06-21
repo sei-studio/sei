@@ -1,0 +1,99 @@
+/* PortraitCropModal.module.css — crop/preview popup.
+ * Design system: scrim + --surface card, --border-strong outline, sharp
+ * corners (D-28), tokens only. Mirrors the LanModal/SetupWizardModal scrim.
+ */
+
+.wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-xl) var(--space-lg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+}
+
+.title {
+  align-self: flex-start;
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+
+.hint {
+  align-self: flex-start;
+  margin-top: -6px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* Fixed crop frame. The image is absolutely positioned inside; overflow:hidden
+ * clips it to the frame. The grab cursor signals it's draggable. */
+.stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.stage:active {
+  cursor: grabbing;
+}
+
+.img {
+  position: absolute;
+  max-width: none; /* defeat global img{max-width:100%} so zoom can exceed frame */
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Subtle inner outline so the crop bounds read as a frame, not just a clip. */
+.frameOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+
+.zoom {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.zoom:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-md);
+  width: 100%;
+  margin-top: var(--space-xs);
+}

@@ -15,10 +15,54 @@
  * Renderer consumes via webContents.send('lan:state', ...) wired in plan 05.
  */
 import dgram from 'node:dgram';
+import os from 'node:os';
 import type { LanState } from '../shared/ipc';
 
 const MC_LAN_GROUP = '224.0.2.60';
 const MC_LAN_PORT = 4445;
+
+/**
+ * Sei only joins LAN worlds on the SAME machine — the bot always connects to
+ * `127.0.0.1:<lanPort>` (see src/bot/index.js). A Minecraft open-to-LAN beacon
+ * is multicast to the whole subnet, so on a network with more than one PC
+ * running Minecraft (or while testing across a Mac + Windows box at once) the
+ * watcher would otherwise pick up ANOTHER machine's beacon and report
+ * "connected" for a world that loopback can't reach — the observed Windows
+ * "says connected when Minecraft isn't even open" false positive. We therefore
+ * accept a beacon only when its sender address is this host's (loopback or one
+ * of the local interface addresses).
+ */
+function isLoopbackAddr(addr: string): boolean {
+  return (
+    addr === '127.0.0.1' ||
+    addr.startsWith('127.') ||
+    addr === '::1' ||
+    addr === '::ffff:127.0.0.1'
+  );
+}
+
+/** Set of this machine's own addresses (loopback + every interface), incl. the
+ *  IPv4-mapped IPv6 form a udp4 socket may surface for v4 senders. Recomputed
+ *  per call — cheap, and stays correct across Wi-Fi/VPN interface changes. */
+function localAddressSet(): Set<string> {
+  const set = new Set<string>(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+  try {
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const ni of list ?? []) {
+        set.add(ni.address);
+        if (ni.family === 'IPv4') set.add(`::ffff:${ni.address}`);
+      }
+    }
+  } catch {
+    /* best-effort — fall back to the loopback-only seed set */
+  }
+  return set;
+}
+
+function isLocalSender(addr: string | undefined): boolean {
+  if (!addr) return false;
+  return isLoopbackAddr(addr) || localAddressSet().has(addr);
+}
 
 /**
  * ITEM 6 (quick/260523-t8d): re-attempt addMembership every 5s while the
@@ -107,7 +151,10 @@ export function watchLan({ onUpdate, staleMs = 3000 }: WatchLanOptions): { stop:
     staleTimer = setTimeout(emit, staleMs + 100);
   };
 
-  const onMessage = (msg: Buffer): void => {
+  const onMessage = (msg: Buffer, rinfo: dgram.RemoteInfo): void => {
+    // Reject beacons from other machines — only same-host worlds are reachable
+    // over the loopback the bot connects through (see isLocalSender note above).
+    if (!isLocalSender(rinfo?.address)) return;
     const text = msg.toString('utf-8');
     const portMatch = text.match(/\[AD\](\d{1,5})\[\/AD\]/);
     if (!portMatch) return;
@@ -143,9 +190,9 @@ export function watchLan({ onUpdate, staleMs = 3000 }: WatchLanOptions): { stop:
       unavailable = true;
       emit();
     });
-    next.on('message', (msg: Buffer) => {
+    next.on('message', (msg: Buffer, rinfo: dgram.RemoteInfo) => {
       if (socket !== next) return;
-      onMessage(msg);
+      onMessage(msg, rinfo);
     });
     next.bind(MC_LAN_PORT, () => {
       if (socket !== next) return;

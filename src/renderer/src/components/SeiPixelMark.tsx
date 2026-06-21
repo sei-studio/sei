@@ -34,8 +34,13 @@ export function SeiPixelMark(props: SeiPixelMarkProps): React.ReactElement {
         // making it look ~42px off-center on the (centered) auth screen.
         width: height * (81.825691 / 26.458338),
         backgroundColor: color,
-        WebkitMaskImage: "url('./img/sei-logo-small.svg')",
-        maskImage: "url('./img/sei-logo-small.svg')",
+        // Absolute root path (mirrors fonts.css `url('/fonts/…')`). The prior
+        // relative `./img/…` resolved against the document URL, which is fine in
+        // the dev server but breaks in the packaged renderer (the mark silently
+        // vanished on the auth/landing screen). `/img/…` resolves to the
+        // renderer root in both dev and the packaged build.
+        WebkitMaskImage: "url('/img/sei-logo-small.svg')",
+        maskImage: "url('/img/sei-logo-small.svg')",
         WebkitMaskRepeat: 'no-repeat',
         maskRepeat: 'no-repeat',
         WebkitMaskSize: 'contain',

@@ -114,6 +114,16 @@ mac:
   notarize: true   # team id comes from APPLE_TEAM_ID env var (.env.local locally; GH Actions secret in CI)
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # macOS 15+/26 Local Network privacy. Declaring NSLocalNetworkUsageDescription
+  # makes the system show the "allow Sei to find devices on your local network"
+  # prompt and list Sei under System Settings → Privacy & Security → Local
+  # Network. WITHOUT it the packaged app (a distinct TCC identity from the dev
+  # Electron binary) silently cannot receive Minecraft's open-to-LAN multicast
+  # beacon — the world is detected by `npm run dev` but shows "not connected" in
+  # the packaged build. Works together with the multicast entitlement in
+  # build/entitlements.mac.plist.
+  extendInfo:
+    NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
 
 # dmg target dropped 2026-06-21 (see mac.target note above) — config kept,
 # commented, for easy re-enable once the 32k-texture-file DMG sizing is solved.

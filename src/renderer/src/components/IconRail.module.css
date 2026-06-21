@@ -168,7 +168,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #000;
+  /* Backing fill behind the avatar art. Transparent PNG portraits let this
+   * show through, so it must be theme-aware: near-black in dark, white in
+   * light (a hardcoded #000 left a dark hole in the light-mode rail). */
+  background: var(--surface-2);
   border: 1.5px solid var(--border-strong);
   filter: saturate(0.9);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;

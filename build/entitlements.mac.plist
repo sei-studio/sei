@@ -15,5 +15,16 @@
   <!-- LAN multicast watcher (UDP receive bound to 0.0.0.0:4445) -->
   <key>com.apple.security.network.server</key>
   <true/>
+
+  <!-- macOS 15+/26 Local Network privacy: receiving Minecraft's open-to-LAN
+       multicast beacon (224.0.2.60:4445) requires the multicast entitlement.
+       Without it the packaged app (a distinct TCC identity from the dev
+       Electron binary) silently drops the beacon even after the user grants
+       Local Network access — so the world is never detected ("not connected"
+       in the packaged build while `npm run dev` sees it). Paired with
+       NSLocalNetworkUsageDescription in electron-builder.yml `mac.extendInfo`,
+       which makes macOS surface the Local Network prompt + Privacy toggle. -->
+  <key>com.apple.developer.networking.multicast</key>
+  <true/>
 </dict>
 </plist>

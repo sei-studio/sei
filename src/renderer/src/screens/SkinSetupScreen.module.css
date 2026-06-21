@@ -29,9 +29,3 @@
 .panel {
   animation: fade 220ms ease both;
 }
-
-.skipRow {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: var(--space-md);
-}
