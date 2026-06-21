@@ -69,6 +69,18 @@ jobs:
           # texture tree (~32k files) exhausts the default fd limit at sign time
           # (EMFILE). Raise the soft limit before packaging. No-op on Windows.
           if [ "$RUNNER_OS" = "macOS" ]; then
+            # The arm64 + x64 builds each carry the 392MB prismarine-viewer texture
+            # tree (app + zip + dmg staging), overflowing the ~14GB runner disk at
+            # DMG-creation time (dmgbuild → "No space left on device"). Reclaim the
+            # space the preinstalled mobile SDKs hold — electron packaging never uses
+            # the iOS/tvOS/watchOS simulators or the Android SDK.
+            echo "Disk before cleanup:"; df -h /
+            sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/* 2>/dev/null || true
+            sudo rm -rf "$HOME/Library/Developer/CoreSimulator/Caches"/* 2>/dev/null || true
+            xcrun simctl delete all 2>/dev/null || true
+            sudo rm -rf "$HOME/Library/Android" /Users/runner/Library/Android 2>/dev/null || true
+            sudo rm -rf /usr/local/lib/android /opt/homebrew/share/android-* 2>/dev/null || true
+            echo "Disk after cleanup:"; df -h /
             # ulimit alone wasn't enough — the per-process kernel cap is below the
             # 32k texture-file count. Raise the kernel limits too, then the soft limit.
             sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=524288 2>/dev/null || true
