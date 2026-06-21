@@ -101,9 +101,13 @@ mac:
   # app-update.yml reference it), so zip-only loses nothing functional; mac users
   # unzip and drag to /Applications. Re-add a `dmg` target here if the
   # texture-count/sizing problem is solved (e.g. prune textures to 1.20-1.21).
+  #
+  # arm64-only (2026-06-21): validate Apple Silicon + Windows first; x64 (Intel)
+  # mac is re-added below once those are confirmed. Re-add `x64` to the arch list
+  # to restore Intel coverage.
   target:
     - target: zip
-      arch: [arm64, x64]
+      arch: [arm64]
   hardenedRuntime: true
   gatekeeperAssess: false
   identity: "Shang Wang (7485LZ74DA)"   # electron-builder prepends "Developer ID Application:" itself
