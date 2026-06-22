@@ -29,6 +29,7 @@ import { seedDefaultCharacters, refreshSeededDefaults } from './defaultCharacter
 import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
+import { maybeOfferMoveToApplications } from './relocate';
 import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
@@ -495,6 +496,11 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    // First thing on launch (macOS only): offer to relocate to /Applications so
+    // auto-update works. If accepted, the app quits + relaunches from there, so
+    // skip the rest of startup. No-op on Windows/Linux and in dev. See relocate.ts.
+    if (maybeOfferMoveToApplications()) return;
+
     bootstrap().catch((err) => {
       logger.error(`bootstrap failed: ${(err as Error).message}`);
       app.exit(1);
