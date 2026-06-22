@@ -114,6 +114,18 @@ mac:
   notarize: true   # team id comes from APPLE_TEAM_ID env var (.env.local locally; GH Actions secret in CI)
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Skip code-signing the prismarine-viewer texture tree (~32k .png/.json/.mcmeta
+  # data files under asar.unpacked). They contain NO Mach-O / executable code, so
+  # they neither need nor benefit from individual signatures — they stay sealed in
+  # the app's CodeResources via the main bundle signature either way. electron-osx-sign
+  # otherwise runs `codesign --timestamp` once PER FILE, i.e. 32k sequential Apple
+  # timestamp-server round-trips; when that TSA is slow the mac signing step takes
+  # 85min+ or stalls indefinitely (a single hung connection wedges the whole serial
+  # sign). Excluding them drops signing to a few minutes and removes the stall risk.
+  # Scope is deliberately narrow (this texture path only) so real native binaries
+  # — canvas/gl .node, Electron Framework — are STILL signed + hardened + notarized.
+  signIgnore:
+    - "prismarine-viewer/public/textures/"
   # macOS 15+/26 Local Network privacy. Declaring NSLocalNetworkUsageDescription
   # makes the system show the "allow Sei to find devices on your local network"
   # prompt and list Sei under System Settings → Privacy & Security → Local
