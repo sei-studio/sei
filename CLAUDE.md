@@ -1,7 +1,7 @@
 # Sei — Contributor Guide
 
 Sei is a Minecraft AI companion. This repository is the **client**: an Electron
-desktop app ("Sei Launcher") for non-technical users that spawns an AI-driven
+desktop app ("Sei", productName in electron-builder.yml) for non-technical users that spawns an AI-driven
 [mineflayer](https://github.com/PrismarineJS/mineflayer) bot into a **LAN
 (offline-mode) Minecraft Java world**. You pick a character, the bot joins your
 world, and it talks and plays alongside you.

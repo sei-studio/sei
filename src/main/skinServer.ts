@@ -50,8 +50,8 @@ export const SKIN_SERVER_PREFERRED_PORT = 54322;
 
 /**
  * Preferred FIXED loopback port for the DEV build (electron-vite, !app.isPackaged).
- * The dev and packaged builds run from separate userData dirs ("Sei Launcher Dev"
- * vs "Sei Launcher") but otherwise share this machine. If both tried to bind the
+ * The dev and packaged builds run from separate userData dirs ("Sei Dev"
+ * vs "Sei") but otherwise share this machine. If both tried to bind the
  * same SKIN_SERVER_PREFERRED_PORT, whichever launched second would lose the fixed
  * port and fall back to an unstable ephemeral one — and since both write the CSL
  * config of the SAME player MC install, their ports clobber each other and the

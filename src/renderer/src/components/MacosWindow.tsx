@@ -1,7 +1,7 @@
 /**
  * MacosWindow / AppWindow — outer chrome (the "Summoning Terminal" shell).
  *
- * Full-bleed dark window with a thin top bar carrying a small "Sei Launcher"
+ * Full-bleed dark window with a thin top bar carrying a small "Sei"
  * mark. The bar doubles as the drag strip so the frameless window stays
  * movable and the OS window controls have clearance.
  *
@@ -118,7 +118,7 @@ export function MacosWindow({ subtitle: _subtitle, railHidden = false, children 
       <div
         className={`${styles.dragStrip} ${isWindows ? styles.dragStripCustom : ''} ${railHidden ? styles.fullDivider : ''}`}
       >
-        <span className={styles.titleLabel}>Sei Launcher</span>
+        <span className={styles.titleLabel}>Sei</span>
         <span className={styles.versionTag}>{version ? `v${version}` : ''}</span>
         {isWindows && <WindowControls />}
       </div>

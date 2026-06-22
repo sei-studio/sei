@@ -8,7 +8,7 @@
 
 # Locked 2026-05-17 (Phase 8 Plan 01 Task 2 — resolves Phase 4 04-10 BLOCKING).
 appId: com.sei.app
-productName: Sei Launcher
+productName: Sei
 copyright: Copyright (c) 2026 Sei
 
 # In-app auto-update (quick/260604-uoy — reverses D-63, see note at EOF).

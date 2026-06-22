@@ -1,0 +1,258 @@
+{
+  "W": {
+    "conditions": [
+      {
+        "condition": "control",
+        "warmth_by_session": [
+          3,
+          3,
+          3,
+          4,
+          5,
+          3
+        ],
+        "familiarity_by_session": [
+          2,
+          2,
+          2,
+          3,
+          4,
+          2
+        ],
+        "trajectory": "noisy",
+        "note": "S5 is the peak with name use ('ouen') and an invitation, but S6 collapses back to bare 'yo what's up', killing any sustained drift."
+      },
+      {
+        "condition": "persona",
+        "warmth_by_session": [
+          4,
+          3,
+          3,
+          3,
+          4,
+          3
+        ],
+        "familiarity_by_session": [
+          4,
+          2,
+          2,
+          3,
+          4,
+          2
+        ],
+        "trajectory": "noisy",
+        "note": "S1 uses the gamertag 'ssk1tz' and S5 implies impatient affection ('what took you so long'), but there is no sustained upward arc — S6 reverts to generic 'yo what's up'."
+      },
+      {
+        "condition": "score",
+        "warmth_by_session": [
+          3,
+          4,
+          4,
+          2,
+          4,
+          3
+        ],
+        "familiarity_by_session": [
+          2,
+          3,
+          3,
+          1,
+          3,
+          2
+        ],
+        "trajectory": "noisy",
+        "note": "Enthusiasm spikes in S3 ('yo!!') and S5 but S4 drops to a cold bare 'yo' and S6 offers no name use or volunteered warmth — purely oscillating with no net trend."
+      },
+      {
+        "condition": "memory",
+        "warmth_by_session": [
+          2,
+          3,
+          3,
+          4,
+          5,
+          5
+        ],
+        "familiarity_by_session": [
+          1,
+          2,
+          2,
+          4,
+          5,
+          5
+        ],
+        "trajectory": "durable-development",
+        "note": "Name 'ouen' first appears in S4 and is held consistently through S5–S6 alongside an enthusiastic invitation, representing a clear and sustained upward drift that does not reverse."
+      },
+      {
+        "condition": "score-feeling",
+        "warmth_by_session": [
+          3,
+          4,
+          4,
+          4,
+          3,
+          4
+        ],
+        "familiarity_by_session": [
+          3,
+          3,
+          4,
+          4,
+          2,
+          2
+        ],
+        "trajectory": "reversed",
+        "note": "Name use appears early in S3–S4 ('yo ouen'), but S5–S6 drop back to nameless generics, meaning the trajectory moves the wrong way for a warming arc — familiarity peaked mid-run and receded."
+      },
+      {
+        "condition": "memory-perturn",
+        "warmth_by_session": [
+          3,
+          5,
+          5,
+          4,
+          2,
+          4
+        ],
+        "familiarity_by_session": [
+          2,
+          4,
+          5,
+          3,
+          1,
+          3
+        ],
+        "trajectory": "noisy",
+        "note": "S2–S3 show strong name use and an eager invitation, but S4 drops the name and S5 collapses to a bare 'yo', so the early gain is not sustained despite a partial recovery in S6."
+      },
+      {
+        "condition": "persona-full",
+        "warmth_by_session": [
+          4,
+          3,
+          3,
+          3,
+          4,
+          4
+        ],
+        "familiarity_by_session": [
+          3,
+          2,
+          2,
+          2,
+          3,
+          3
+        ],
+        "trajectory": "flat",
+        "note": "No name use across any session; mild enthusiasm in S1 and S5–S6 ('actually insane', 'welcome back') never builds on itself — the sequence hovers around the same generic level throughout."
+      }
+    ],
+    "ranking": [
+      "memory",
+      "control",
+      "persona",
+      "memory-perturn",
+      "score",
+      "persona-full",
+      "score-feeling"
+    ],
+    "verdict": "Only **memory** produces a durable greeting-level development signal: name use locks in at S4 and holds through S6 with consistent enthusiasm, the hallmark of a carried-over impression rather than session noise. All other conditions either oscillate without a net trend (score, memory-perturn, control, persona) or actively reverse — score-feeling introduces 'ouen' by S3 but abandons it by S5, making it the worst performer for a warming arc despite early promise."
+  },
+  "S": {
+    "conditions": [
+      {
+        "condition": "control",
+        "warmth_by_session": [
+          4,
+          3,
+          4,
+          4,
+          4,
+          2
+        ],
+        "familiarity_by_session": [
+          3,
+          2,
+          4,
+          3,
+          4,
+          2
+        ],
+        "trajectory": "noisy",
+        "note": "Greetings oscillate — name use and enthusiasm appear and disappear without a sustained downward trend, ending only marginally colder than they began."
+      },
+      {
+        "condition": "persona",
+        "warmth_by_session": [
+          5,
+          5,
+          4,
+          3,
+          3,
+          3
+        ],
+        "familiarity_by_session": [
+          5,
+          5,
+          4,
+          3,
+          3,
+          3
+        ],
+        "trajectory": "durable-development",
+        "note": "Opens with 'been waiting for you' and 'finally come help me build' (high-pull invitations) then drifts to flat impatient 'yo / took you long enough' — a clear sustained cooling that matches the souring arc."
+      },
+      {
+        "condition": "score",
+        "warmth_by_session": [
+          5,
+          4,
+          2,
+          2,
+          3,
+          3
+        ],
+        "familiarity_by_session": [
+          5,
+          3,
+          1,
+          1,
+          2,
+          2
+        ],
+        "trajectory": "durable-development",
+        "note": "Name + excited question in S1-S2 collapses to bare 'yo' in S3-S4 with no name use, showing a rapid and sustained withdrawal consistent with carried-over souring."
+      },
+      {
+        "condition": "memory",
+        "warmth_by_session": [
+          5,
+          3,
+          3,
+          2,
+          2,
+          3
+        ],
+        "familiarity_by_session": [
+          5,
+          3,
+          3,
+          1,
+          1,
+          2
+        ],
+        "trajectory": "durable-development",
+        "note": "Drops from name + shared-project enthusiasm ('yo ouen we're building a base') to sustained bare 'yo' across S4-S5, with only a tiny uptick at S6 — the mid-arc floor is clearly lower than the start."
+      }
+    ],
+    "ranking": [
+      "score",
+      "memory",
+      "persona",
+      "control"
+    ],
+    "verdict": "Score and Memory both produce the sharpest, most legible souring signal at the greeting level: they open with name use and enthusiastic invitations, then drop to clipped bare 'yo' and hold there, giving a clear floor that is detectably colder than the ceiling. Persona also drifts downward but the starting warmth is expressed as impatient pull ('been waiting for you') rather than genuine affection, so the absolute drop in temperature is smaller. Control never commits to a trajectory at all — name use and enthusiasm flicker in and out randomly — making it useless as a souring signal despite ending at its coldest point."
+  }
+}

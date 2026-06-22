@@ -40,7 +40,7 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
   const win = new BrowserWindow({
     ...dims,
     show: false,
-    title: 'Sei Launcher',
+    title: 'Sei',
     icon: nativeImage.createFromPath(iconPath),
     backgroundColor: '#FDFEFF',
     webPreferences: {

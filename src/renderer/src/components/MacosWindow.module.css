@@ -54,7 +54,7 @@
 }
 
 /* Windows / Linux frameless layout: no native traffic lights on the left, so
-   the "Sei Launcher" mark sits at the far left and our custom controls take the
+   the "Sei" mark sits at the far left and our custom controls take the
    right. (macOS keeps the rail-cleared padding above.) */
 .dragStripCustom {
   padding-left: var(--space-lg);
@@ -115,7 +115,7 @@
   left: 0;
 }
 
-/* "Sei Launcher" mark — small Rajdhani (--sans) label. */
+/* "Sei" mark — small Rajdhani (--sans) label. */
 .titleLabel {
   font-family: var(--sans);
   font-size: 13.5px;

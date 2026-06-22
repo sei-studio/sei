@@ -62,7 +62,7 @@ Note that the cloud features are inactive in a source build for local developmen
 
 **Add your API key** (one of):
 
-- Open Sei Launcher -> Settings -> select provider -> paste your key
+- Open Sei -> Settings -> select provider -> paste your key
 - Edit `config.json` in user-data folder directly
 
 I'm currently working on this project by myself. For general discussions and closer contributions, reach out at [ouen@sei.gg](mailto:ouen@sei.gg). 

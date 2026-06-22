@@ -31,12 +31,12 @@ import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability } from '../shared/ipc';
 
-// Lock the productName early so app.getPath('userData') resolves to
+// Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
 // (your private personas) out of the shipped build.
-app.setName(app.isPackaged ? 'Sei Launcher' : 'Sei Launcher Dev');
+app.setName(app.isPackaged ? 'Sei' : 'Sei Dev');
 if (!app.isPackaged) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'Sei Launcher Dev'));
+  app.setPath('userData', path.join(app.getPath('appData'), 'Sei Dev'));
 }
 
 // Register the `sei-portrait://` privileged scheme that serves locally-stored
