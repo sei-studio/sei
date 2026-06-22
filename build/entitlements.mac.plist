@@ -25,8 +25,8 @@
                  Error -413 No matching profile found"
          launchd: INIT code 163 -> RBSRequestError "Launchd job spawn failed"
        which Finder surfaces as "The application Sei Launcher can't be opened."
-       for EVERY user of v0.3.0. codesign --verify, spctl and notarization all
-       still passed because none of them check the entitlement<->profile
+       for EVERY user of v0.3.0. codesign verify, spctl and notarization all
+       still passed because none of them check the entitlement/profile
        relationship that AMFI enforces at exec time.
 
        The multicast entitlement is an iOS/iPadOS/tvOS construct; on macOS the
