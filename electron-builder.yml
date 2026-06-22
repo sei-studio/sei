@@ -102,12 +102,13 @@ mac:
   # unzip and drag to /Applications. Re-add a `dmg` target here if the
   # texture-count/sizing problem is solved (e.g. prune textures to 1.20-1.21).
   #
-  # arm64-only (2026-06-21): validate Apple Silicon + Windows first; x64 (Intel)
-  # mac is re-added below once those are confirmed. Re-add `x64` to the arch list
-  # to restore Intel coverage.
+  # Dual-arch (2026-06-22): arm64 + x64 build in a SINGLE mac job/invocation, so
+  # one latest-mac.yml covers both (no cross-runner feed merge). x64 native deps
+  # (gl/canvas) cross-compile for x86_64 on the arm64 runner. signIgnore keeps the
+  # per-arch signing fast, so building both no longer balloons the job.
   target:
     - target: zip
-      arch: [arm64]
+      arch: [arm64, x64]
   hardenedRuntime: true
   gatekeeperAssess: false
   identity: "Shang Wang (7485LZ74DA)"   # electron-builder prepends "Developer ID Application:" itself
