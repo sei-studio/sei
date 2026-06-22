@@ -9,17 +9,15 @@ An omni-game AI player mod.
 
 <br />
 
-[<img src="docs/btn-macos.svg" alt="Download for macOS" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.dmg)
+[<img src="docs/btn-macos.svg" alt="Download for macOS" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.zip)
 &nbsp;
 [<img src="docs/btn-windows.svg" alt="Download for Windows" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-win-x64.exe)
-&nbsp;
-[<img src="docs/btn-linux.svg" alt="Download for Linux" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-linux-x86_64.AppImage)
 
 </div>
 
 ---
 
-Sei is a launcher that summons AI characters into video games as players. Pick a character, launch a supported game, and they join your world to play alongside you. Companions remember everything you've done together across sessions and across games. Use Sei to have personalized experiences with new friends and rivals. Sei is currently compatible with Minecraft, and aim to be compatible with most multiplayer games.
+Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI characters into video games as real players, not chatbots. Pick a character, launch a supported game, and they join your world to play alongside you. Companions remember everything you've done together across sessions and across games. Use Sei to have personalized experiences with new friends and rivals. Sei is currently compatible with Minecraft, and aims to support most multiplayer games.
 
 <div align="center">
 
@@ -29,13 +27,13 @@ Sei is a launcher that summons AI characters into video games as players. Pick a
 
 ## Current Capabilities
 
-- Summon AI characters into a Minecraft LAN world as a real second player without additional account
+- Summon a Minecraft AI companion into a LAN world as a real second player, no additional account needed
 - Characters chat, build, gather, fight, follow, and act on their own
 - Per-character persistent memory across sessions
 - Custom Minecraft skins via Fabric + CustomSkinLoader
 - Bring your own API key or sign in for cloud-hosted AI
 - Public cloud character library 
-- Cross-platform: macOS, Windows, Linux
+- Cross-platform: macOS, Windows
 
 ## Upcoming
 
