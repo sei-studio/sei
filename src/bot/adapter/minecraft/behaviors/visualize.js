@@ -34,6 +34,17 @@ import { renderPov } from '../render/povRenderer.js'
 /** VIS-08 degrade copy (D-01 discretion wording). Returned, never thrown. */
 export const CANT_SEE_COPY = "I can't see clearly right now"
 
+/**
+ * Anti-hallucination grounding that rides with every rendered view (the result
+ * `text`, which sits right next to the image and the fresh snapshot in the same
+ * turn). The render is a low-resolution JPEG of a world drawn with frozen,
+ * approximate models, so it is easy to over-read — the model was confidently
+ * reporting "pink sheep" / specific species and counts that the snapshot's
+ * ground-truth entity list contradicted. Tell it to read the picture loosely and
+ * defer to the snapshot for what is actually there.
+ */
+export const VISION_GROUNDING = 'The picture is low resolution and rough, so read it loosely: name only the broad things you can clearly make out (terrain shape, water, trees, structures, your own builds) and do not invent specific mob types, animal colors, counts, or fine detail from it. For which mobs or animals are actually nearby, trust the nearby-entities list in your snapshot, which is accurate, over the picture.'
+
 /** Cap on the pre-render head turn — facing is best-effort, never a stall. */
 export const FACE_TIMEOUT_MS = 800
 
@@ -246,7 +257,7 @@ export async function visualizeAction(args, bot, config) {
     if (signal?.aborted) return 'aborted'
     if (!images.length) return CANT_SEE_COPY
     return {
-      text: `looked around — ${images.length} views: ${images.map((i) => i.label).join(', ')}`,
+      text: `looked around — ${images.length} views: ${images.map((i) => i.label).join(', ')}. ${VISION_GROUNDING}`,
       images,
     }
   }
@@ -265,5 +276,5 @@ export async function visualizeAction(args, bot, config) {
   const f = await captureFrame(bot, config, { idle: args?.idle === true })
   if (typeof f === 'string') return f               // 'aborted' or CANT_SEE_COPY
   if (f.skip === true) return { skip: true }        // idle near-duplicate (D-02)
-  return { text: 'rendered view attached', image: { mediaType: f.mediaType, dataBase64: f.dataBase64 } }
+  return { text: `rendered view attached. ${VISION_GROUNDING}`, image: { mediaType: f.mediaType, dataBase64: f.dataBase64 } }
 }

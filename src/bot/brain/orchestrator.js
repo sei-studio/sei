@@ -176,6 +176,14 @@ let _TICK_INTERVAL_MS = 30_000
 export function _setTickIntervalForTests(ms) { _TICK_INTERVAL_MS = ms }
 export function _getTickIntervalForTests() { return _TICK_INTERVAL_MS }
 
+// Fixed cadence for the 'continuous' Looking mode's automatic view, in TURNS
+// (LLM calls) — frames only ride turns that already happen, so turn count is
+// the honest unit. NOT user-tunable (the Settings cadence control was removed);
+// the module-level let exists only so the vision tests can vary it via
+// `_setPassiveFrameIntervalForTests`, mirroring _setTickIntervalForTests.
+let _PASSIVE_FRAME_INTERVAL_TURNS = 5
+export function _setPassiveFrameIntervalForTests(n) { _PASSIVE_FRAME_INTERVAL_TURNS = n }
+
 /**
  * 260502-h6i: chat-event classification used by the dispatch single-flight
  * branch. Player chat preempts an active Loop; non-player chat (or non-chat
@@ -788,9 +796,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // fail-closed false). This is the AUTHORITATIVE gate — the adapter-side
     // conditional registration (createDefaultRegistry visionEnabled) is the
     // second belt; either alone keeps a non-VLM model from ever seeing the tool.
-    // Tier gate on top: only 'active' offers the tool — 'passive' sees frames
-    // on cadence but cannot request them; 'off' never renders at all.
-    const visionOk = !!anthropic.capabilities?.vision && _visionMode() === 'active'
+    // Tier gate on top: both 'on-demand' and 'continuous' offer look() (the
+    // model can ask for a view); only 'off' withholds it. (explore() is a
+    // movement tool, always offered; its auto-look picture is suppressed in
+    // 'off' by exploreAction's own mode check.)
+    const visionOk = !!anthropic.capabilities?.vision && _visionMode() !== 'off'
     const movementTools = buildAnthropicTools(subRegistry, descMap)
       .filter(t => visionOk || t.name !== 'look')
     const seen = new Set(personalityTools.map(t => t.name))
@@ -834,12 +844,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // `/vision/v1/messages` per-hour cap — and only in cloud-proxy mode (D-11).
   let _pendingVisionTurn = false
 
-  // ── Vision tier + passive-look cadence ──────────────────────────────────
-  // mode: 'off' (no renders, no tool) | 'passive' (frames on cadence) |
-  // 'active' (passive + the visualize tool). Defaults defensively to 'active'
-  // for configs that pre-date the tier fields.
-  function _visionMode() { return config?.vision?.mode ?? 'active' }
-  function _visionIntervalTurns() { return config?.vision?.interval_turns ?? 5 }
+  // ── Looking (vision) mode + automatic-view cadence ───────────────────────
+  // mode: 'off' (no pictures, no tool) | 'on-demand' (look()/explore() on
+  // request, no automatic views) | 'continuous' (on-demand + an automatic view
+  // every _PASSIVE_FRAME_INTERVAL_TURNS turns). Defaults defensively to
+  // 'on-demand' for configs that pre-date the mode field.
+  function _visionMode() { return config?.vision?.mode ?? 'on-demand' }
 
   // Turns (LLM calls) since a frame last reached the model. Seeded "due" so
   // the very first turn of a session carries an orienting frame (the
@@ -849,12 +859,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   let _turnsSinceFrame = Number.MAX_SAFE_INTEGER
 
   /**
-   * Passive-look hook — called before EVERY personality call (runIterations is
-   * the single funnel for new-loop turns, in-flight ticks, and action_complete
-   * continuations). Every x-th turn (x = vision.interval_turns) renders the
-   * bot's POV via the adapter seam and attaches it to the turn the model is
-   * about to take. Frames only ever ride turns that already happen — passive
-   * mode never creates LLM calls of its own.
+   * Automatic-view hook ('continuous' only) — called before EVERY personality
+   * call (runIterations is the single funnel for new-loop turns, in-flight
+   * ticks, and action_complete continuations). Every _PASSIVE_FRAME_INTERVAL_TURNS-th
+   * turn it renders the bot's POV via the adapter seam and attaches it to the
+   * turn the model is about to take. Frames only ever ride turns that already
+   * happen — the automatic view never creates LLM calls of its own.
    *
    * Result handling mirrors the render contract (15-04):
    *   success     → attach + counter resets (inside handleVisualizeResult)
@@ -866,14 +876,17 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
    *                 (matters most for the first frame right after spawn)
    */
   async function maybeAttachPassiveFrame(loop) {
-    if (_visionMode() === 'off') return
+    // Automatic views stream ONLY in 'continuous'. 'on-demand' gives the model
+    // the look()/explore() tools but never feeds it a view it didn't ask for;
+    // 'off' has no vision at all.
+    if (_visionMode() !== 'continuous') return
     if (!anthropic?.capabilities?.vision) return
     if (typeof adapter.renderIdleFrame !== 'function') return
     // An explicit frame is already stashed for this turn (post-visualize
     // settle) — never render a redundant cadence frame on top of it.
     if (loop._pendingFrame) return
     _turnsSinceFrame = Math.min(_turnsSinceFrame + 1, Number.MAX_SAFE_INTEGER)
-    if (_turnsSinceFrame < _visionIntervalTurns()) return
+    if (_turnsSinceFrame < _PASSIVE_FRAME_INTERVAL_TURNS) return
     try {
       const result = await adapter.renderIdleFrame()
       // idle:true ⇒ never arms _pendingVisionTurn (D-09 — cadence frames stay
@@ -994,8 +1007,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       blocks.push({ type: 'text', name: 'event', text: frame.text })
       blocks.push({ type: 'text', name: 'snapshot', text: snapshotText() })
       loop.appendUserTurn(blocks)
-      // Any attached frame — explicit or passive — restarts the passive
-      // cadence so the next scheduled look lands interval_turns from NOW.
+      // Any attached frame — explicit or automatic — restarts the cadence so
+      // the next automatic view lands a full interval from NOW.
       _turnsSinceFrame = 0
       // VIS-02 delivery guard: "attached" is not "seen". The frame only
       // reaches the model when a subsequent LLM call SUCCEEDS with this
@@ -1154,6 +1167,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       stopTool: stopToolForAction(action),
       playerLine: chatText ?? '',
       who: who ?? null,
+      visionOff: _visionMode() === 'off',
     })
   }
 
@@ -1206,7 +1220,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
    * sei:action_complete on settle).
    *
    * Since 260514-gam, this is the universal dispatch path for every
-   * world-touching tool — sync (placeBlock, equip, find, lookAt, dropItem,
+   * world-touching tool — sync (placeBlock, equip, find, dropItem,
    * activateItem, sleep, openContainer, depositItem, withdrawItem,
    * consumeItem, follow, unfollow) and async (goTo, gather, dig, build,
    * attackEntity) alike. Only INLINE_METADATA (remember/forget/end_loop)
@@ -2438,6 +2452,7 @@ function maybeWarnByteCap(loop, warned) {
       playerLine: playerMessage,
       who,
       elapsedSec: playerMessage == null ? elapsedSec : null,
+      visionOff: _visionMode() === 'off',
     })
 
     // Set the iteration trigger BEFORE the haiku call so the R1-R4 gate keeps

@@ -27,20 +27,22 @@ export function SeiPixelMark(props: SeiPixelMarkProps): React.ReactElement {
       style={{
         display: 'inline-block',
         height,
-        // Match the box to the SVG's true aspect ratio (viewBox 81.83×26.46 ≈
-        // 3.09:1). The old `height * 5` over-wide box left ~84px of dead space
-        // on the right, and with mask-size:contain + the default left
-        // mask-position the glyph rendered pinned to the LEFT of the box —
-        // making it look ~42px off-center on the (centered) auth screen.
-        width: height * (81.825691 / 26.458338),
+        // Match the box to the wordmark's true aspect ratio (sei-text.png is
+        // 928×300 ≈ 3.09:1). mask-size:contain + center keep the glyph centered
+        // in the box on the (centered) auth screen.
+        width: height * (928 / 300),
         backgroundColor: color,
-        // Absolute root path (mirrors fonts.css `url('/fonts/…')`). The prior
-        // relative `./img/…` resolved against the document URL, which is fine in
-        // the dev server but breaks in the packaged renderer (the mark silently
-        // vanished on the auth/landing screen). `/img/…` resolves to the
-        // renderer root in both dev and the packaged build.
-        WebkitMaskImage: "url('/img/sei-logo-small.svg')",
-        maskImage: "url('/img/sei-logo-small.svg')",
+        // RASTER source, not the old sei-logo-small.svg. That SVG was a Inkscape
+        // <text> element (live font, not outlined paths); used as a CSS
+        // mask-image it rendered EMPTY whenever the font wasn't resolvable —
+        // which is exactly what happened on the auth/login screen (the wordmark
+        // was invisible). A transparent-background PNG carries the glyph in its
+        // alpha channel, so it has no font dependency and always renders; the
+        // backgroundColor below (var(--accent) → #7fb0ff on the dark theme)
+        // tints it through the mask. Absolute `/img/…` resolves to the renderer
+        // root in both dev and the packaged build.
+        WebkitMaskImage: "url('/img/sei-text.png')",
+        maskImage: "url('/img/sei-text.png')",
         WebkitMaskRepeat: 'no-repeat',
         maskRepeat: 'no-repeat',
         WebkitMaskSize: 'contain',

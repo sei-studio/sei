@@ -473,13 +473,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     const userCfg = await loadUserConfig();
     const mc_username = (userCfg.mc_username ?? '').trim();
     const preferred_name = (userCfg.preferred_name ?? '').trim();
-    // Bridge the user-facing vision tier + per-turn cadence from UserConfig
-    // into the bot's config.vision at fork time. The renderer never talks to
-    // the bot ConfigSchema directly — main is the translator. The remaining
-    // vision knobs (image_quality, resolution_px cap, explicit_cap_per_hour)
-    // come from the bot config defaults.
-    const visionMode = userCfg.vision_mode ?? 'active';
-    const visionIntervalTurns = userCfg.vision_interval_turns ?? 5;
+    // Bridge the user-facing Looking (vision) mode from UserConfig into the
+    // bot's config.vision at fork time. The renderer never talks to the bot
+    // ConfigSchema directly — main is the translator. The remaining vision
+    // knobs (cadence, image_quality, resolution_px cap, explicit_cap_per_hour)
+    // come from the bot config / orchestrator defaults.
+    const visionMode = userCfg.vision_mode ?? 'on-demand';
     if (!preferred_name) {
       const status: BotStatus = {
         kind: 'error',
@@ -748,11 +747,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           userDataDir: paths.profileRoot(),
           mc_username,
           preferred_name,
-          // The bridged vision tier + per-turn cadence. The bot's
-          // bootstrapWithInit reads these into config.vision.{mode,
-          // interval_turns} before ConfigSchema.parse.
+          // The bridged Looking (vision) mode. The bot's bootstrapWithInit
+          // reads this into config.vision.mode before ConfigSchema.parse.
           visionMode,
-          visionIntervalTurns,
           // 260618 (multi-agent): the OTHER AI companions already in this world,
           // so the new bot knows its teammates from its first tick. The new
           // session is already in `sessions` (added before this spawn handler),

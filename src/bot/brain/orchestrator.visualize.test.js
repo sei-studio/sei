@@ -79,6 +79,10 @@ function makeConfig({ cloud = false } = {}) {
     persona: { name: 'Sei', expanded: 'You are a sharp little companion.' },
     anthropic: { model: 'claude-haiku-4-5', timeout_ms: 20_000, max_retries: 1 },
     llm: { provider: 'anthropic', rate_limit_per_min: 30, debounce_ms: 0, max_hops: 5 },
+    // 'continuous' so the explicit-look path AND the automatic-view cadence
+    // (the "cadence re-armed" test) are both exercised; the default is now
+    // 'on-demand', which streams no automatic views.
+    vision: { mode: 'continuous' },
     memory: {
       memory_md_path: path.join(os.tmpdir(), `sei-vis-test-${process.pid}-${Date.now()}-${Math.random()}.md`),
       iteration_cap: 30,
@@ -250,9 +254,9 @@ describe('15-06 explicit visualize — frame delivery + vision-path routing', ()
     // "rendered view attached" (which made it confabulate scenery on 260610).
     expect(flat).toContain('last_action_result=\\"view not delivered (connection trouble) — a fresh look is queued\\"')
     expect(flat).not.toContain('last_action_result=\\"rendered view attached\\"')
-    // Cadence re-armed: loop B's FIRST turn carries a FRESH passive frame
+    // Cadence re-armed: loop B's FIRST turn carries a FRESH automatic view
     // (an un-re-armed counter sits at 0 after the visualize attach and would
-    // skip rendering for interval_turns).
+    // skip rendering for a full cadence interval).
     expect(flat).toContain(B64IDLE)
   })
 

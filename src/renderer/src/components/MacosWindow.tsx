@@ -26,6 +26,14 @@ import styles from './MacosWindow.module.css';
 interface MacosWindowProps {
   /** Kept for back-compat; the window no longer renders a visible title bar. */
   subtitle?: string | null;
+  /**
+   * True on the full-page entry surfaces (onboarding / auth / skin-setup) where
+   * App.tsx omits the IconRail. When set, the top-bar hairline spans the full
+   * width — including the segment under the macOS traffic lights — instead of
+   * being inset to the content area (its default, which avoids a seam where the
+   * bar meets the rail).
+   */
+  railHidden?: boolean;
   children?: React.ReactNode;
 }
 
@@ -84,7 +92,7 @@ function WindowControls(): React.ReactElement {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function MacosWindow({ subtitle: _subtitle, children }: MacosWindowProps): React.ReactElement {
+export function MacosWindow({ subtitle: _subtitle, railHidden = false, children }: MacosWindowProps): React.ReactElement {
   // Track the real packaged version (app.getVersion via IPC) instead of a
   // hardcoded literal — Settings reads the same source, so the two never drift.
   const [version, setVersion] = useState<string>('');
@@ -107,7 +115,9 @@ export function MacosWindow({ subtitle: _subtitle, children }: MacosWindowProps)
         Thin drag strip — keeps the frameless window movable and gives the OS /
         custom window controls clearance above the content.
       */}
-      <div className={`${styles.dragStrip} ${isWindows ? styles.dragStripCustom : ''}`}>
+      <div
+        className={`${styles.dragStrip} ${isWindows ? styles.dragStripCustom : ''} ${railHidden ? styles.fullDivider : ''}`}
+      >
         <span className={styles.titleLabel}>Sei Launcher</span>
         <span className={styles.versionTag}>{version ? `v${version}` : ''}</span>
         {isWindows && <WindowControls />}

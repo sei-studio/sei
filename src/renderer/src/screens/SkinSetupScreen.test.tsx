@@ -66,8 +66,10 @@ describe('SkinSetupScreen — dedicated onboarding step', () => {
 
   it('Test 6: App.tsx renders, isolates, and resumes the step', () => {
     expect(APP.includes('<SkinSetupScreen />')).toBe(true);
-    // IconRail hidden for the full-page step.
-    expect(APP.includes("view.kind !== 'skin-setup' ? <IconRail />")).toBe(true);
+    // IconRail hidden for the full-page step — now via the shared `railHidden`
+    // flag (which includes 'skin-setup'); the rail is gated on `!railHidden`.
+    expect(/const railHidden =[\s\S]*?'skin-setup'/.test(APP)).toBe(true);
+    expect(APP.includes('!railHidden ? <IconRail />')).toBe(true);
     // Global wizard modal suppressed while the page drives it inline.
     expect(APP.includes("view.kind !== 'skin-setup' ? <SetupWizardModal />")).toBe(true);
     // Resume routing keys on skin_setup_pending.

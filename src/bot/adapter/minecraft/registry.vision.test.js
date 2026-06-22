@@ -57,9 +57,9 @@ describe('createDefaultRegistry — look gating (D-10 / VIS-03)', () => {
     const off = createDefaultRegistry({ visionEnabled: false }).list()
     const on = createDefaultRegistry({ visionEnabled: true }).list()
     expect(off).toContain('goTo')
-    expect(off).toContain('lookAt')
+    expect(off).toContain('dig')
     expect(on).toContain('goTo')
-    expect(on).toContain('lookAt')
+    expect(on).toContain('dig')
     // The on-set is exactly the off-set plus look.
     expect(new Set(on)).toEqual(new Set([...off, 'look']))
   })

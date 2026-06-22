@@ -31,7 +31,6 @@ import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
-import { VisionAutoRenderConfirmModal } from '../components/VisionAutoRenderConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderTiles, type Provider } from '../components/ProviderTiles';
 import { BackIcon, SunIcon, MoonIcon } from '../components/icons';
@@ -87,14 +86,6 @@ export function SettingsScreen(): React.ReactElement {
   // confirmation modal instead of toggling directly. Non-null = modal is open
   // for that target backend.
   const [pendingSwitch, setPendingSwitch] = useState<null | 'cloud-proxy' | 'local'>(null);
-  // Leaving vision 'off' is gated behind VisionAutoRenderConfirmModal (frames
-  // use more playtime), so selecting passive/active from off stashes the
-  // target tier here rather than writing immediately. Off→off-adjacent moves
-  // (passive⇄active) and turning off write through directly.
-  const [pendingVisionMode, setPendingVisionMode] = useState<null | 'passive' | 'active'>(null);
-  // Live slider position while dragging; committed to config on release so a
-  // drag doesn't fire a disk write per pixel. null = not dragging, show cfg.
-  const [intervalDraft, setIntervalDraft] = useState<number | null>(null);
   useEffect(() => {
     if (!botRunning) setSwitchNotice(null);
   }, [botRunning]);
@@ -351,12 +342,12 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  // Write through vision_mode / vision_interval_turns to UserConfig (the
-  // config is the source of truth; botSupervisor bridges both into
-  // config.vision at fork). Mirrors onToggleDevConsole's optimistic-then-
-  // rollback discipline. The setting is persistent and ALWAYS editable — it is
-  // deliberately NOT gated on a live bot session or its provider capability
-  // (changes apply at the next summon; a non-VLM provider skips frames).
+  // Write through vision_mode to UserConfig (the config is the source of truth;
+  // botSupervisor bridges it into config.vision at fork). Mirrors
+  // onToggleDevConsole's optimistic-then-rollback discipline. The setting is
+  // persistent and ALWAYS editable — it is deliberately NOT gated on a live bot
+  // session or its provider capability (changes apply at the next summon; a
+  // non-VLM provider skips pictures).
   const writeVisionConfig = async (patch: Partial<UserConfig>): Promise<void> => {
     if (!cfg) return;
     const updated: UserConfig = { ...cfg, ...patch };
@@ -372,29 +363,12 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  // Tier select: moving OFF→(passive|active) opens the cost confirm modal
-  // (D-06); every other move (passive⇄active, anything→off) writes directly —
-  // the heads-up matters only when renders start happening at all.
-  const onSelectVisionMode = (mode: 'off' | 'passive' | 'active'): void => {
-    const current = cfg?.vision_mode ?? 'active';
-    if (mode === current) return;
-    if (current === 'off' && mode !== 'off') setPendingVisionMode(mode);
-    else void writeVisionConfig({ vision_mode: mode });
-  };
-
-  const confirmVisionMode = async (): Promise<void> => {
-    if (pendingVisionMode) await writeVisionConfig({ vision_mode: pendingVisionMode });
-    setPendingVisionMode(null);
-  };
-
-  // Slider commit — fired on pointer/key release, not per onChange tick.
-  const commitVisionInterval = (): void => {
-    if (intervalDraft == null) return;
-    const turns = intervalDraft;
-    setIntervalDraft(null);
-    if (turns !== (cfg?.vision_interval_turns ?? 5)) {
-      void writeVisionConfig({ vision_interval_turns: turns });
-    }
+  // Mode select: every move writes straight through. Continuous (the automatic
+  // view) is no longer behind a confirm step; its extra playtime use surfaces
+  // as the shrunk "~Xh left" figure on the Playtime screen (D-07).
+  const onSelectVisionMode = (mode: 'off' | 'on-demand' | 'continuous'): void => {
+    if (mode === (cfg?.vision_mode ?? 'on-demand')) return;
+    void writeVisionConfig({ vision_mode: mode });
   };
 
   // ui-A9: "Reset all character memories" — iterate the current data-store
@@ -571,67 +545,35 @@ export function SettingsScreen(): React.ReactElement {
         </div>
         <p className={styles.rowHelper}>Useful for debugging skin and bot issues.</p>
         {/*
-          Vision tier — Off / Passive / Active. Leaving 'off' opens
-          VisionAutoRenderConfirmModal (the "uses more playtime" heads-up,
-          D-06); other moves write directly. The control is ALWAYS enabled —
-          it is a persistent setting, not a per-session one (the old
-          visionCapable gate kept it locked until a vision-capable bot had
-          been summoned in the same app run). The cost itself surfaces as the
-          shrunk "~Xh left" playtime figure (D-07), never a number here.
+          Looking (vision): Off / On-demand / Continuous. Every move writes
+          straight through (no confirm step). The control is ALWAYS enabled; it
+          is a persistent setting, not a per-session one. Continuous uses more
+          playtime, which surfaces as the shrunk "~Xh left" figure on the
+          Playtime screen (D-07), never a number here.
         */}
         <div className={styles.row}>
           <span className={styles.rowLabel}>Looking (vision)</span>
           <div className={styles.segmented} role="group" aria-label="Looking mode">
-            {(['off', 'passive', 'active'] as const).map((mode) => (
+            {(['off', 'on-demand', 'continuous'] as const).map((mode) => (
               <Button
                 key={mode}
                 kind="ghost"
                 size="sm"
-                aria-pressed={(cfg?.vision_mode ?? 'active') === mode}
+                aria-pressed={(cfg?.vision_mode ?? 'on-demand') === mode}
                 onClick={() => onSelectVisionMode(mode)}
               >
-                {mode === 'off' ? 'Off' : mode === 'passive' ? 'Passive' : 'Active'}
+                {mode === 'off' ? 'Off' : mode === 'on-demand' ? 'On-demand' : 'Continuous'}
               </Button>
             ))}
           </div>
         </div>
         <p className={styles.rowHelper}>
-          {(cfg?.vision_mode ?? 'active') === 'off'
-            ? 'Your bot is blind: it never renders its surroundings.'
-            : (cfg?.vision_mode ?? 'active') === 'passive'
-              ? 'Your bot sees a fresh view on a fixed cadence, but can’t choose to look.'
-              : 'Cadence looks plus the bot can decide to look around on its own. Uses more playtime.'}
+          {(cfg?.vision_mode ?? 'on-demand') === 'off'
+            ? 'Your companions never look at the world; they play from what they already know.'
+            : (cfg?.vision_mode ?? 'on-demand') === 'on-demand'
+              ? 'Your companions look at the world when they need to, like finding something or when you ask.'
+              : 'Your companions watch the world as they play, and can still look when they need to. Uses more playtime.'}
         </p>
-        {(cfg?.vision_mode ?? 'active') !== 'off' ? (
-          <>
-            <div className={styles.row}>
-              <span className={styles.rowLabel}>Look every</span>
-              <span className={styles.sliderGroup}>
-                <input
-                  type="range"
-                  min={1}
-                  max={20}
-                  step={1}
-                  className={styles.slider}
-                  value={intervalDraft ?? cfg?.vision_interval_turns ?? 5}
-                  aria-label="Look cadence in turns"
-                  onChange={(e) => setIntervalDraft(Number(e.target.value))}
-                  onPointerUp={commitVisionInterval}
-                  onKeyUp={commitVisionInterval}
-                  onBlur={commitVisionInterval}
-                />
-                <span className={styles.rowMonoValue}>
-                  {(intervalDraft ?? cfg?.vision_interval_turns ?? 5) === 1
-                    ? 'every turn'
-                    : `${intervalDraft ?? cfg?.vision_interval_turns ?? 5} turns`}
-                </span>
-              </span>
-            </div>
-            <p className={styles.rowHelper}>
-              How often a view is attached to what your bot is already doing. Lower = sees more, uses more playtime.
-            </p>
-          </>
-        ) : null}
       </section>
 
       {/*
@@ -962,12 +904,6 @@ export function SettingsScreen(): React.ReactElement {
           direction={pendingSwitch}
           onCancel={() => setPendingSwitch(null)}
           onConfirm={confirmSwitch}
-        />
-      ) : null}
-      {pendingVisionMode ? (
-        <VisionAutoRenderConfirmModal
-          onCancel={() => setPendingVisionMode(null)}
-          onConfirm={confirmVisionMode}
         />
       ) : null}
       {dmcaModalOpen ? (

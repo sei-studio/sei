@@ -514,6 +514,7 @@ function WorldGrid(): React.ReactElement {
           aria-label="Search world characters"
         />
       </header>
+      <div className={styles.scroll}>
       {error ? (
         <div className={styles.error} role="alert">
           Couldn&apos;t load World. {error}
@@ -556,6 +557,7 @@ function WorldGrid(): React.ReactElement {
       </div>
       {!exhausted ? <div ref={sentinelRef} className={styles.sentinel} aria-hidden /> : null}
       {loading ? <div className={styles.loading}>Loading…</div> : null}
+      </div>
     </div>
   );
 }

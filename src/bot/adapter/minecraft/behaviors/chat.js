@@ -30,8 +30,43 @@ function mentionsName(message, name) {
 }
 
 export function startChat(bot, config, orchestrator = null) {
+  // Mineflayer's high-level `chat` event is fired by a DEPRECATED catch-all
+  // pattern (LEGACY_VANILLA_CHAT_REGEX) that runs against EVERY `messagestr` —
+  // including systemChat lines (Minecraft command feedback like "Set own game
+  // mode to Creative Mode" after the player runs /gamemode). Those loosely match
+  // the pattern and arrive here looking exactly like a player chat, so the model
+  // was told "the player just spoke to you, respond to THIS" and treated game
+  // output as an instruction. Capture the position of the message that is about
+  // to be parsed so the `chat` handler can tell real player speech ('chat') from
+  // system/command output ('system' | 'game_info'). prependListener so this runs
+  // BEFORE mineflayer's pattern matcher (also a `messagestr` listener) emits `chat`.
+  let _lastMsgPosition = 'chat'
+  const onMessageStr = (_text, position) => { _lastMsgPosition = position || 'chat' }
+  if (typeof bot.prependListener === 'function') bot.prependListener('messagestr', onMessageStr)
+  else bot.on('messagestr', onMessageStr)
+
   bot.on('chat', (username, message) => {
     if (username === bot.username) return
+
+    // System / command-feedback messages are NOT the player speaking to the bot.
+    // The most common case is the player running a Minecraft command (/gamemode,
+    // /time, /give, /tp ...): the server echoes a feedback line that we relabel
+    // as the player running a command and surface as recorded-but-non-interrupting
+    // context, so the model knows it happened without mistaking it for an
+    // instruction directed at it.
+    if (_lastMsgPosition && _lastMsgPosition !== 'chat') {
+      const who = config.player_display_name || (username && username !== bot.username ? username : null) || 'the player'
+      const labeled = `ran a command (in-game, not a message or instruction to you): ${String(message).trim()}`
+      logChatIn(who, labeled)
+      const payload = { username: who, message: labeled, addressed: false, playerSpoke: false, suppressInterrupt: true }
+      if (bot._seiDebouncer) {
+        bot._seiDebouncer.debounce(`cmd:${who}`, payload, (p) => bot.emit('sei:chat_received', p))
+      } else {
+        bot.emit('sei:chat_received', payload)
+      }
+      return
+    }
+
     logChatIn(username, message)
 
     // v1.0 is single-human LAN, but more than one AI companion can share the

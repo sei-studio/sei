@@ -404,12 +404,11 @@ async function bootstrapWithInit(initData) {
     // user's Supabase access_token; jwt rotation arrives via parentPort
     // {type:'jwt'} messages below.
     cloudMode,           // {baseURL, authToken} | undefined
-    // The user-facing vision tier + per-turn cadence, bridged by the
-    // supervisor from UserConfig.{vision_mode, vision_interval_turns}. Maps
-    // into config.vision below; the remaining vision knobs come from the bot
-    // ConfigSchema defaults.
-    visionMode,           // 'off' | 'passive' | 'active' | undefined
-    visionIntervalTurns,  // number | undefined
+    // The user-facing Looking (vision) mode, bridged by the supervisor from
+    // UserConfig.vision_mode. Maps into config.vision below; the remaining
+    // vision knobs (cadence, image_quality, resolution_px, cap) come from the
+    // bot ConfigSchema / orchestrator defaults.
+    visionMode,           // 'off' | 'on-demand' | 'continuous' | undefined
     // 260618: in-game usernames of the OTHER AI companions summoned into this
     // same world (multi-bot sessions). Seeds the roster so the bot knows its
     // teammates from the first tick; the supervisor re-broadcasts on every
@@ -541,7 +540,6 @@ async function bootstrapWithInit(initData) {
     // fields fall to the schema defaults via the conditional spread.
     vision: {
       ...(visionMode != null ? { mode: visionMode } : {}),
-      ...(visionIntervalTurns != null ? { interval_turns: visionIntervalTurns } : {}),
     },
     // llm: omitted — Zod default fills the entire {} sub-tree.
   }

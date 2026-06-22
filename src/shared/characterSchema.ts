@@ -280,26 +280,32 @@ export const UserConfigSchema = z.object({
    */
   has_been_welcomed: z.boolean().optional().default(false),
   /**
-   * Vision tier (supersedes the Phase-15 boolean `vision_auto_render`):
-   *   'off'     — no renders at all; the look tool is not offered.
-   *   'passive' — a frame rides an EXISTING LLM turn every
-   *               vision_interval_turns turns; no look tool.
-   *   'active'  — passive cadence PLUS the model can call look itself.
-   * Settings writes this through the existing saveConfig IPC (leaving 'off' is
-   * gated behind the cost confirm popup, D-06); main bridges it into the forked
-   * bot's `config.vision.mode` at summon time (botSupervisor → bot init payload
-   * → src/bot/index.js ConfigSchema build). The setting is persistent and always
-   * editable — it does NOT depend on a live bot session; a non-VLM provider
-   * simply skips frames at runtime.
+   * Looking (vision) mode — how the companion sees the world:
+   *   'off'        — never looks; plays from world data only. No look()/explore()
+   *                  pictures and no automatic views.
+   *   'on-demand'  — the model can call look() / explore() when it needs to; it
+   *                  never receives a view it did not ask for.
+   *   'continuous' — everything 'on-demand' offers PLUS an automatic view is fed
+   *                  in as it plays.
+   * Settings writes this through the existing saveConfig IPC (switching ON the
+   * automatic views — 'continuous' — is gated behind the cost confirm popup,
+   * D-06); main bridges it into the forked bot's `config.vision.mode` at summon
+   * time (botSupervisor → bot init payload → src/bot/index.js ConfigSchema
+   * build). Persistent and always editable; a non-VLM provider simply skips
+   * pictures at runtime.
+   *
+   * MIGRATION: the pre-simplification values 'passive' and 'active' (both of
+   * which streamed automatic views) collapse to 'continuous'. configStore parses
+   * with .parse() — it THROWS on an unknown enum — so the remap must happen here,
+   * before validation, or existing configs would fail to load.
    */
-  vision_mode: z.enum(['off', 'passive', 'active']).optional().default('active'),
-  /**
-   * Passive-look cadence in TURNS (LLM calls), not seconds — frames only ever
-   * ride turns that are already happening, so turn count is the honest unit.
-   * 1 = a frame on every turn. Applies to both 'passive' and 'active' (active
-   * includes the passive cadence).
-   */
-  vision_interval_turns: z.number().int().min(1).max(50).optional().default(5),
+  vision_mode: z
+    .preprocess(
+      (v) => (v === 'passive' || v === 'active' ? 'continuous' : v),
+      z.enum(['off', 'on-demand', 'continuous']),
+    )
+    .optional()
+    .default('on-demand'),
   /**
    * Cumulative bot playtime for THIS profile, in ms, summed across every
    * character's session. Accumulated at session-end in botSupervisor (alongside

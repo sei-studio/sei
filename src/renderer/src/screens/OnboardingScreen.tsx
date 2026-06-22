@@ -124,13 +124,11 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // one-time "Welcome to Sei" greeting after onboarding completes; it
         // flips true there on first render.
         has_been_welcomed: false,
-        // Vision tier: fresh installs start at 'active' (the flagship
-        // experience — cadence frames + the bot can look on its own). Per-call
-        // image cost is bounded by the loop's one-image retention cap and the
-        // interval_turns cadence; Settings offers 'passive'/'off' for anyone
-        // who wants it cheaper.
-        vision_mode: 'active',
-        vision_interval_turns: 5,
+        // Looking (vision): fresh installs start at 'on-demand' (your
+        // companions look around when they need to, with no automatic views).
+        // Settings offers 'continuous' (automatic views, more playtime) or
+        // 'off' for anyone who wants to change it.
+        vision_mode: 'on-demand',
         // Fresh install: no playtime accumulated yet, nothing to backfill.
         total_playtime_ms: 0,
         total_playtime_backfilled: true,

@@ -23,7 +23,7 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
 import { initUpdater } from './updater';
-import { createSkinServer } from './skinServer';
+import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration } from './migration';
 import { seedDefaultCharacters } from './defaultCharacters';
 import { safeStorageBackendKind } from './apiKeyStore';
@@ -220,7 +220,11 @@ async function bootstrap(): Promise<void> {
   // launches without custom skins, and the renderer's getSkinServerUrl IPC
   // throws SKIN_SERVER_PORT_TAKEN so the UI shows the relevant ERROR_COPY string.
   try {
-    skinServer = await createSkinServer({});
+    // Dev runs from a separate userData dir but shares this machine with any
+    // packaged build; binding a distinct fixed port keeps the dev skin URL
+    // stable and stops the two builds from starving each other onto unstable
+    // ephemeral ports (the recurring "skin shows as Steve" / port-drift bug).
+    skinServer = await createSkinServer(app.isPackaged ? {} : { port: SKIN_SERVER_DEV_PORT });
     logger.info(`skin server listening on ${skinServer.baseUrl}`);
   } catch (err) {
     logger.warn(`skin server failed to start: ${(err as Error).message}`);

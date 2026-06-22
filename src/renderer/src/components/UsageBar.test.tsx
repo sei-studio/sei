@@ -57,9 +57,8 @@ describe('UsageBar (260602-hbr usage-percent bar)', () => {
     expect(source.includes('s.remaining_tokens')).toBe(true);
     // The estimate is derived from remaining_tokens via tokensRemainingToPlaytime.
     // Phase 15 (D-07): the second arg is now a `rate` that shrinks via
-    // VISION_MULTIPLIER when the vision tier is passive/active (read from
-    // vision_mode), and equals the flat DEFAULT_TOKENS_PER_MIN at 'off' — no
-    // regression.
+    // VISION_MULTIPLIER when Looking is 'continuous' (read from vision_mode), and
+    // equals the flat DEFAULT_TOKENS_PER_MIN otherwise — no regression.
     expect(source.includes('tokensRemainingToPlaytime(remainingTokens, rate)')).toBe(true);
     expect(source.includes('VISION_MULTIPLIER')).toBe(true);
     expect(source.includes('vision_mode')).toBe(true);

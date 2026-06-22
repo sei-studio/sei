@@ -16,7 +16,7 @@ import { wireBotEvents } from './fsmWires.js'
 import { visualizeAction } from './behaviors/visualize.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
-  ACTION_DESCRIPTIONS,
+  describeAction,
   worldPrimer,
   capabilityParagraph,
   actionRules,
@@ -52,7 +52,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
     // ─── Action surface ───────────────────────────────────────────────
     listActions: () => registry.list(),
     getActionSchema: (name) => registry.schema(name),
-    getActionDescription: (name) => ACTION_DESCRIPTIONS[name] ?? registry.description?.(name) ?? '',
+    getActionDescription: (name) => describeAction(name, config?.vision?.mode) ?? registry.description?.(name) ?? '',
     executeAction: (name, args, ctx = {}) => {
       // Action handlers receive (args, bot, config). Brain context (signal)
       // is folded into the config-shaped 4th argument so existing handlers
@@ -97,10 +97,10 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
      */
     getProgression: (flags = {}) => readProgression(bot, flags),
     worldPrimer,
-    capabilityParagraph,
-    actionRules,
+    capabilityParagraph: () => capabilityParagraph(config?.vision?.mode),
+    actionRules: () => actionRules(config?.vision?.mode),
     cuboidGrammar,
-    eventAddendum,
+    eventAddendum: (event, data) => eventAddendum(event, data, config?.vision?.mode),
     cantReachNudge,
 
     // ─── Session lifecycle ───────────────────────────────────────────
@@ -150,9 +150,9 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
       try { await closeContainerSession() } catch {}
     },
 
-    // ─── Passive-look render seam ──────────────────────────────────────
-    // The orchestrator drives the periodic "look around" (per-turn cadence,
-    // vision.interval_turns) through the adapter so the bot reference stays
+    // ─── Automatic-view render seam ('continuous' Looking mode) ─────────
+    // The orchestrator drives the periodic "look around" (a fixed per-turn
+    // cadence) through the adapter so the bot reference stays
     // adapter-side (the brain↔adapter seam: the orchestrator never imports
     // mineflayer or src/adapter/). renderIdleFrame produces the deduped frame
     // via the SAME visualizeAction the explicit path uses, with idle:true so

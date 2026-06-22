@@ -22,7 +22,6 @@ import { equipAction } from './behaviors/equip.js'
 import { craftAction } from './behaviors/craft.js'
 import { attackEntityAction } from './behaviors/attack.js'
 import { consumeItemAction } from './behaviors/consume.js'
-import { lookAtAction } from './behaviors/lookAt.js'
 import { visualizeAction } from './behaviors/visualize.js'
 import { dropItemAction } from './behaviors/drop.js'
 import { activateItemAction } from './behaviors/activate.js'
@@ -379,18 +378,6 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     'consumeItem',
     z.object({ item: z.string().optional() }),
     consumeItemAction
-  )
-
-  registry.register(
-    'lookAt',
-    z.object({
-      x: z.number().optional(),
-      y: z.number().optional(),
-      z: z.number().optional(),
-      entity: z.string().optional(),
-      target: z.string().optional(),
-    }),
-    lookAtAction
   )
 
   // VIS-02 / D-10 — the LLM-callable explicit render `look`. Registered ONLY

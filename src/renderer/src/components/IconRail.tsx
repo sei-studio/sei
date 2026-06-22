@@ -229,15 +229,15 @@ export function IconRail(): React.ReactElement {
   const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
   // Phase 15 (D-07): shrink the rail's "Playtime · ~Xh" figure via VISION_MULTIPLIER
-  // when the vision tier is passive/active (heavier usage). Read the tier from
-  // UserConfig. The playtime branch only renders for cloud-proxy users (the
+  // when Looking is 'continuous' (the automatic view — heavier usage). Read the
+  // mode from UserConfig. The playtime branch only renders for cloud-proxy users (the
   // `aiBackendKind === 'cloud-proxy'` gate below), so D-11 holds — BYO/local
   // users never see this.
   const [autoRenderOn, setAutoRenderOn] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void sei.getConfig().then((c) => {
-      if (!cancelled) setAutoRenderOn((c.vision_mode ?? 'active') !== 'off');
+      if (!cancelled) setAutoRenderOn((c.vision_mode ?? 'on-demand') === 'continuous');
     });
     return () => {
       cancelled = true;

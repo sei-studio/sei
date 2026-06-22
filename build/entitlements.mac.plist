@@ -16,15 +16,32 @@
   <key>com.apple.security.network.server</key>
   <true/>
 
-  <!-- macOS 15+/26 Local Network privacy: receiving Minecraft's open-to-LAN
-       multicast beacon (224.0.2.60:4445) requires the multicast entitlement.
-       Without it the packaged app (a distinct TCC identity from the dev
-       Electron binary) silently drops the beacon even after the user grants
-       Local Network access — so the world is never detected ("not connected"
-       in the packaged build while `npm run dev` sees it). Paired with
-       NSLocalNetworkUsageDescription in electron-builder.yml `mac.extendInfo`,
-       which makes macOS surface the Local Network prompt + Privacy toggle. -->
-  <key>com.apple.developer.networking.multicast</key>
-  <true/>
+  <!-- REMOVED 2026-06-21: com.apple.developer.networking.multicast.
+       This is a RESTRICTED ("com.apple.developer.*") entitlement. macOS AMFI
+       only honors it when the .app carries a matching embedded provisioning
+       profile, and we ship Developer ID + notarized with NO profile embedded.
+       Result: AMFI refused to spawn the signed/notarized app at launch —
+         amfid: "Restricted entitlements not validated, bailing out.
+                 Error -413 No matching profile found"
+         launchd: INIT code 163 -> RBSRequestError "Launchd job spawn failed"
+       which Finder surfaces as "The application Sei Launcher can't be opened."
+       for EVERY user of v0.3.0. codesign --verify, spctl and notarization all
+       still passed because none of them check the entitlement<->profile
+       relationship that AMFI enforces at exec time.
+
+       The multicast entitlement is an iOS/iPadOS/tvOS construct; on macOS the
+       open-to-LAN beacon (224.0.2.60:4445) is gated by the Local Network
+       privacy permission — NSLocalNetworkUsageDescription in electron-builder.yml
+       `mac.extendInfo` (already present) plus network.server above — not by this
+       entitlement. Removing it unbreaks launch with no expected macOS regression.
+
+       If LAN detection ever genuinely needs this entitlement on macOS, do NOT
+       just re-add the key — that re-bricks the app. Instead:
+         1. Enable the Multicast Networking capability for App ID com.sei.app in
+            the Apple Developer portal (an Apple-gated request).
+         2. Generate a Developer ID provisioning profile that includes it.
+         3. Set `mac.provisioningProfile: build/embedded.provisionprofile` in
+            electron-builder.yml so it is embedded + sealed at sign time. -->
+
 </dict>
 </plist>

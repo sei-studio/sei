@@ -48,6 +48,20 @@ import { listCharacters } from './characterStore';
  */
 export const SKIN_SERVER_PREFERRED_PORT = 54322;
 
+/**
+ * Preferred FIXED loopback port for the DEV build (electron-vite, !app.isPackaged).
+ * The dev and packaged builds run from separate userData dirs ("Sei Launcher Dev"
+ * vs "Sei Launcher") but otherwise share this machine. If both tried to bind the
+ * same SKIN_SERVER_PREFERRED_PORT, whichever launched second would lose the fixed
+ * port and fall back to an unstable ephemeral one — and since both write the CSL
+ * config of the SAME player MC install, their ports clobber each other and the
+ * config goes stale (the bot renders as Steve). Giving dev its own adjacent fixed
+ * port keeps the dev skin URL stable across restarts and isolated from a
+ * concurrently-running packaged build. Falls back to ephemeral exactly like the
+ * packaged port if 54323 is itself taken.
+ */
+export const SKIN_SERVER_DEV_PORT = 54323;
+
 export interface SkinServer {
   /** Loopback base URL, e.g. 'http://127.0.0.1:54321'. Hand this to CustomSkinLoader's config. */
   baseUrl: string;

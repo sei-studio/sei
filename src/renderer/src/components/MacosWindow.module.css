@@ -107,6 +107,14 @@
   background: var(--border);
 }
 
+/* When the IconRail is hidden (onboarding / auth / skin-setup), there's no rail
+   to read as continuous chrome on the left, so the hairline spans the FULL
+   width — including the segment under the macOS traffic lights. With the rail
+   visible the default inset above keeps that segment clear (no seam). */
+.dragStrip.fullDivider::after {
+  left: 0;
+}
+
 /* "Sei Launcher" mark — small Rajdhani (--sans) label. */
 .titleLabel {
   font-family: var(--sans);

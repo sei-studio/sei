@@ -87,44 +87,43 @@ describe('CharacterSchema — portrait_image is a permissive path-or-null (D-28)
 });
 
 /**
- * Runtime parse-gate for the user-facing vision tier + cadence fields
- * (vision_mode / vision_interval_turns, superseding the Phase-15 boolean
- * toggle). tsc proves the FIELDS exist; only a .parse() exercise proves the
- * RUNTIME default + rejection behavior the Settings write-through and the
- * botSupervisor bridge depend on.
+ * Runtime parse-gate for the user-facing Looking (vision) mode (vision_mode:
+ * 'off' | 'on-demand' | 'continuous'). tsc proves the FIELD exists; only a
+ * .parse() exercise proves the RUNTIME default, the legacy-value migration, and
+ * the rejection behavior the Settings write-through and the botSupervisor
+ * bridge depend on.
  */
-describe('UserConfigSchema — vision_mode / vision_interval_turns', () => {
-  it('defaults to active mode, 5-turn cadence when omitted', () => {
+describe('UserConfigSchema — vision_mode', () => {
+  it('defaults to on-demand when omitted', () => {
     // A minimal valid UserConfig — every other field has its own .default(),
-    // so an empty object round-trips. The tier defaults match the bot
-    // config.vision defaults (mode 'active', interval_turns 5).
+    // so an empty object round-trips. The default matches the bot
+    // config.vision default (mode 'on-demand') and the fresh-install onboarding.
     const parsed = UserConfigSchema.parse({});
-    expect(parsed.vision_mode).toBe('active');
-    expect(parsed.vision_interval_turns).toBe(5);
+    expect(parsed.vision_mode).toBe('on-demand');
   });
 
-  it('round-trips every explicit tier', () => {
-    for (const mode of ['off', 'passive', 'active'] as const) {
+  it('round-trips every explicit mode', () => {
+    for (const mode of ['off', 'on-demand', 'continuous'] as const) {
       const parsed = UserConfigSchema.parse({ vision_mode: mode });
       expect(parsed.vision_mode).toBe(mode);
     }
   });
 
-  it('round-trips an explicit cadence', () => {
-    const parsed = UserConfigSchema.parse({ vision_interval_turns: 1 });
-    expect(parsed.vision_interval_turns).toBe(1);
+  it('migrates the legacy pre-simplification values to continuous', () => {
+    // 'passive' and 'active' both streamed automatic views, so they collapse to
+    // 'continuous'. The remap must survive .parse() (configStore throws on an
+    // unknown enum), so an existing config.json keeps loading.
+    expect(UserConfigSchema.parse({ vision_mode: 'passive' }).vision_mode).toBe('continuous');
+    expect(UserConfigSchema.parse({ vision_mode: 'active' }).vision_mode).toBe('continuous');
   });
 
-  it('rejects an unknown tier and out-of-range / non-integer cadences', () => {
+  it('rejects an unknown mode', () => {
     expect(UserConfigSchema.safeParse({ vision_mode: 'sometimes' }).success).toBe(false);
-    expect(UserConfigSchema.safeParse({ vision_interval_turns: 0 }).success).toBe(false);
-    expect(UserConfigSchema.safeParse({ vision_interval_turns: 51 }).success).toBe(false);
-    expect(UserConfigSchema.safeParse({ vision_interval_turns: 2.5 }).success).toBe(false);
   });
 
-  it('preserves a pre-existing config.json that omits the vision fields (backward compat)', () => {
-    // A config object shaped like an older install (no vision fields at all)
-    // must still parse cleanly and pick up the defaults.
+  it('preserves a pre-existing config.json that omits the vision field (backward compat)', () => {
+    // A config object shaped like an older install (no vision field at all)
+    // must still parse cleanly and pick up the default.
     const parsed = UserConfigSchema.parse({
       mc_username: 'Steve',
       preferred_name: 'Shawn',
@@ -132,7 +131,6 @@ describe('UserConfigSchema — vision_mode / vision_interval_turns', () => {
       ai_backend_kind: 'local',
       dev_console_visible: false,
     });
-    expect(parsed.vision_mode).toBe('active');
-    expect(parsed.vision_interval_turns).toBe(5);
+    expect(parsed.vision_mode).toBe('on-demand');
   });
 });

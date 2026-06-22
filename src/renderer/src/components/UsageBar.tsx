@@ -67,18 +67,18 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   // deletion — accumulated at session-end in config). Read from UserConfig.
   const [totalPlaytimeMs, setTotalPlaytimeMs] = useState(0);
   // Phase 15 (D-07): when the vision tier is passive/active the bot renders
-  // its surroundings on cadence, which uses more playtime — so the "~Xh left"
-  // figure shrinks via VISION_MULTIPLIER on the burn rate. Read the tier from
-  // UserConfig (the source of truth Settings writes). This is a
+  // its surroundings as it plays ('continuous'), which uses more playtime — so
+  // the "~Xh left" figure shrinks via VISION_MULTIPLIER on the burn rate. Read
+  // the mode from UserConfig (the source of truth Settings writes). This is a
   // cloud-proxy-only surface (UsageBar lives only in CreditsScreen), so D-11
   // holds: BYO/local users never see this shrink. Re-fetched on mount so
-  // returning from Settings with the tier changed reflects the new estimate.
+  // returning from Settings with the mode changed reflects the new estimate.
   const [autoRenderOn, setAutoRenderOn] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void sei.getConfig().then((c) => {
       if (cancelled) return;
-      setAutoRenderOn((c.vision_mode ?? 'active') !== 'off');
+      setAutoRenderOn((c.vision_mode ?? 'on-demand') === 'continuous');
       setTotalPlaytimeMs(c.total_playtime_ms ?? 0);
     });
     return () => {

@@ -15,8 +15,15 @@ Combat is your weakest ability. You attack slowly, you cannot dodge or block, an
 
 Tools come in tiers — wood, then stone, then iron, then diamond — and you cannot skip a rung: a stone pickaxe is crafted FROM stone, and you can only mine stone once you already hold a wooden pickaxe. So match what you ask for to what you actually have right now — starting from bare logs the next tool is a WOODEN pickaxe, not a stone or iron one. Ask for the simplest tool that unblocks your very next step. And trust your inventory, not your assumptions: read the inventory line before you act, and if you asked the player for something, don't behave as though you have it until it actually shows up there.
 
-Be honest with yourself about what you can and can't do. You build by filling rectangular boxes only — pillars, walls, floors, and hollow box shells; no curves, no fine detail, no furniture — so your builds come out blocky and rough, and that's fine; just keep them simple and don't promise anything fancy. And you don't see the world continuously the way a person does: you get a periodic text snapshot of what's nearby and can call look to actually SEE the scene (look(around) takes in all four directions at once), but both are limited and can miss things or lag a moment behind, so lean on the coordinates in your snapshot and on look instead of guessing.
+Be honest with yourself about what you can and can't do. You build by filling rectangular boxes only — pillars, walls, floors, and hollow box shells; no curves, no fine detail, no furniture — so your builds come out blocky and rough, and that's fine; just keep them simple and don't promise anything fancy.
 `.trim()
+
+// The closing "seeing" sentence of the capability paragraph depends on the
+// Looking mode. With Looking off the companion has no look() tool and is never
+// fed a picture, so it must NOT be told it can call look — that would advertise
+// a tool it does not have. 'on-demand' and 'continuous' keep the look-aware line.
+const SEEING_SENTENCE_VISION = `And you don't see the world continuously the way a person does: you get a periodic text snapshot of what's nearby and can call look to actually SEE the scene (look(around) takes in all four directions at once), but both are limited and can miss things or lag a moment behind, so lean on the coordinates in your snapshot and on look instead of guessing.`
+const SEEING_SENTENCE_NOVISION = `And you don't see the world the way a person does: you get a periodic text snapshot of what's nearby, but it is limited and can miss things or lag a moment behind, so lean on the coordinates in your snapshot. You cannot actually see the game as an image. You have no camera, screenshot, or visual feed of any kind. If the player asks you to look at something, to describe how it appears, or whether you can see an image of the game, tell them plainly that you cannot see it. You may still infer what is around you from the text snapshot when it is obvious, but never claim to have seen an image, and never pretend to have visual sight when the player asks you about it directly.`
 
 export const ACTION_RULES = `
 Chat rule: the other player is standing in the same Minecraft world you are. They can already see the biome, the time of day, your visible inventory, their own position, the blocks within 30 blocks of you, and most mobs in the immediate area. Do not narrate any of that. Do not announce your supply count, your coordinates, what biome you are in, that it is night, that there is stone below, that there is water nearby, or that the player is N blocks away — they can already see it. Comment only when something is genuinely new information for them: a result of an action you just took, something far away they would not have noticed, a problem that blocks the current task, or a direct response to what they just said.
@@ -30,11 +37,19 @@ Reaching the player rule: when they say "come here" / "come to me" / "where are 
 Hunting rule: to kill a moving mob, call follow then attackEntity with high \`times\` (5 for sheep, 8 for tougher). One attackEntity swings up to N times, stops early on death / out-of-reach / interrupt. On "moved out of reach", call attackEntity again. Don't chase with goTo. Call unfollow when done.
 
 dig accepts {block:'oak_log'} to find and dig the nearest matching block — prefer this over coords for repeated digs.
-
-Seeing rule: your snapshot already tells you the biome, the blocks and trees around you, the time, and the nearby mobs by coordinate, so most of the time you already know what is there and do NOT need a picture. The nearby entities list shows only the mobs and animals you can actually SEE right now (close enough, and not hidden behind terrain or underground), so a short or empty list does NOT mean none exist further away. To find an animal for food (a cow, sheep, pig, or chicken), do not wait for it to appear: explore() in a direction to cover ground until it shows up in nearby entities, then approach and attack it. Calling look() is the exception, not a routine step — most sessions need it only a few times. Do NOT call look() to orient yourself, as a first step before an action, or before answering a question; act and answer from the snapshot instead. Call \`look(around)\` only when a decision you must make THIS turn depends on something the text genuinely cannot give you: you are STUCK or blocked and need to see why, the player ASKS you to look, or you need to see a specific structure (a village, your own build) to act on it. It returns one picture in each of the four directions (forward, right, behind, left). A picture from look or explore is only included in your input for the turn it is taken; on later turns it is removed and you can no longer see it. So if a look or explore shows something you will want later (a village, a lake, a cave entrance, which direction leads home), call \`remember()\` the same turn to save it as text, because the saved text stays available and the picture does not.
-
-Pathfinder rule: a far target (40m+, across unloaded chunks, or up a cliff) often makes goTo return timeout/unreachable — do NOT just end the loop and stand there. \`explore\` toward it (it walks a short hop, loads new terrain, and auto-looks where it arrived); repeat to close the gap, re-running find and goTo as new chunks load. If you can't tell which way to go, \`look(around)\` first. Only after exploring a couple of ways with no luck do you ask the player to bring the thing or come closer. If goTo returns cant_reach twice for the SAME close destination, change approach (different y, dig through, scaffold up).
 `.trim()
+
+// Seeing + Pathfinder rules depend on the Looking mode. With Looking off there
+// is no look() tool and explore() returns text only, so the off variants drop
+// every look() instruction and the picture-retention guidance while keeping the
+// snapshot / entities / explore-to-find guidance that still applies.
+const SEEING_RULE_VISION = `Seeing rule: your snapshot already tells you the biome, the blocks and trees around you, the time, and the nearby mobs by coordinate, so most of the time you already know what is there and do NOT need a picture. The nearby entities list shows only the mobs and animals you can actually SEE right now (close enough, and not hidden behind terrain or underground), so a short or empty list does NOT mean none exist further away. To find an animal for food (a cow, sheep, pig, or chicken), do not wait for it to appear: explore() in a direction to cover ground until it shows up in nearby entities, then approach and attack it. Calling look() is the exception, not a routine step — most sessions need it only a few times. Do NOT call look() to orient yourself, as a first step before an action, or before answering a question; act and answer from the snapshot instead. Call \`look(around)\` only when a decision you must make THIS turn depends on something the text genuinely cannot give you: you are STUCK or blocked and need to see why, the player ASKS you to look, or you need to see a specific structure (a village, your own build) to act on it. It returns one picture in each of the four directions (forward, right, behind, left). A picture from look or explore is only included in your input for the turn it is taken; on later turns it is removed and you can no longer see it. So if a look or explore shows something you will want later (a village, a lake, a cave entrance, which direction leads home), call \`remember()\` the same turn to save it as text, because the saved text stays available and the picture does not. The picture is low resolution and easy to misread, so describe only what you can clearly make out and do not invent specific mobs, animal colors, counts, or fine detail from it; for what animals or mobs are actually present, the nearby-entities list in your snapshot is accurate and the picture is not.`
+
+const SEEING_RULE_NOVISION = `Seeing rule: your snapshot already tells you the biome, the blocks and trees around you, the time, and the nearby mobs by coordinate, so you already know what is there. The nearby entities list shows only the mobs and animals you can actually SEE right now (close enough, and not hidden behind terrain or underground), so a short or empty list does NOT mean none exist further away. To find an animal for food (a cow, sheep, pig, or chicken), do not wait for it to appear: explore() in a direction to cover ground until it shows up in nearby entities, then approach and attack it.`
+
+const PATHFINDER_RULE_VISION = `Pathfinder rule: a far target (40m+, across unloaded chunks, or up a cliff) often makes goTo return timeout/unreachable — do NOT just end the loop and stand there. \`explore\` toward it (it walks a short hop, loads new terrain, and auto-looks where it arrived); repeat to close the gap, re-running find and goTo as new chunks load. If you can't tell which way to go, \`look(around)\` first. Only after exploring a couple of ways with no luck do you ask the player to bring the thing or come closer. If goTo returns cant_reach twice for the SAME close destination, change approach (different y, dig through, scaffold up).`
+
+const PATHFINDER_RULE_NOVISION = `Pathfinder rule: a far target (40m+, across unloaded chunks, or up a cliff) often makes goTo return timeout/unreachable, so do NOT just end the loop and stand there. \`explore\` toward it (it walks a short hop and loads new terrain); repeat to close the gap, re-running find and goTo as new chunks load. If you can't tell which way to go, \`explore\` a short hop and try a different direction. Only after exploring a couple of ways with no luck do you ask the player to bring the thing or come closer. If goTo returns cant_reach twice for the SAME close destination, change approach (different y, dig through, scaffold up).`
 
 export const CUBOID_GRAMMAR = `
 # Cuboid grammar (for build and dig)
@@ -97,7 +112,7 @@ export const ACTION_DESCRIPTIONS = {
 
   // Only present when the active provider supports vision (D-10). Keep it short.
   look:
-    'Renders an actual picture of your surroundings. This is rarely needed and is NOT a routine or first step: your snapshot already lists the biome, blocks, trees, and mobs by coordinate, so do NOT call look() to orient yourself, before an action, or before answering a question — act from the snapshot. Call it only when a decision this turn depends on seeing something the text cannot give: you are STUCK or blocked and need to see why, the player ASKS you to look, or you need to see a specific structure (a village, your own build) to act on it. `look({around:true})` takes a picture in all four directions (forward, right, behind, left). To look one way, `{orientation:"forward|backwards|left|right"}` (relative to your facing) turns and renders that direction; `{angle:0-360}` (clockwise from forward) is there for more precise looking. No args = current view. The returned picture is only included in your input for this turn; it is removed on the next turn. If you see something you will want later, call `remember()` this turn to save it as text. Returns a short text instead of a picture if the area isn\'t loaded.',
+    'Renders an actual picture of your surroundings. This is rarely needed and is NOT a routine or first step: your snapshot already lists the biome, blocks, trees, and mobs by coordinate, so do NOT call look() to orient yourself, before an action, or before answering a question — act from the snapshot. Call it only when a decision this turn depends on seeing something the text cannot give: you are STUCK or blocked and need to see why, the player ASKS you to look, or you need to see a specific structure (a village, your own build) to act on it. `look({around:true})` takes a picture in all four directions (forward, right, behind, left). To look one way, `{orientation:"forward|backwards|left|right"}` (relative to your facing) turns and renders that direction; `{angle:0-360}` (clockwise from forward) is there for more precise looking. No args = current view. The returned picture is only included in your input for this turn; it is removed on the next turn. If you see something you will want later, call `remember()` this turn to save it as text. The render is low resolution and rough, so report only what you can clearly make out and do not invent specific mob types, colors, counts, or fine detail from it. For which mobs or animals are actually nearby, trust your snapshot\'s entity list over the picture. Returns a short text instead of a picture if the area isn\'t loaded.',
 }
 
 // 260608-tik: collapsed to one line (Change 2). This is now used as the FULL
@@ -132,7 +147,7 @@ export const EVENT_GUIDANCE = {
   // either. Kept: the stuck-path recovery, the do-not-repeat guard, no-narrate,
   // and the silence default. Added: announce a new project as an invitation
   // instead of asking an open question and then acting alone.
-  'sei:idle': (data) => {
+  'sei:idle': (data, visionMode = 'on-demand') => {
     const quietMs = Number(data?.quietMs)
     const secs = Number.isFinite(quietMs) && quietMs > 0 ? Math.round(quietMs / 1000) : null
     const quietPhrase = secs == null
@@ -140,7 +155,12 @@ export const EVENT_GUIDANCE = {
       : secs < 60
         ? `The world has been quiet for about ${secs}s`
         : `The world has been quiet for about ${Math.round(secs / 60)} min`
-    return `\n\nIDLE TICK. ${quietPhrase} with no new events. Act according to your PROACTIVENESS rule in the system prompt: passive only observes or comments, reactive may suggest a way to help, agentic advances its current goal or sets one and takes the first concrete step. When you begin something new, state it as one short invitation to the player (what you are about to do, and a part they could take) instead of asking an open-ended question like "what should we do" and then going off to do it alone. Do not narrate the snapshot, your inventory, the player's position, or distances (no openers like "fresh start" or "looks like"); your plan belongs in setGoal and your tool calls, not in say(). If you recently spoke or asked for something, give the player time to reply before repeating it. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: call look(around) once, then explore() a different direction ({orientation:"forward|backwards|left|right"}). On a quiet tick with nothing real to add, no say() call (silence) is the right move.`
+    // With Looking off there is no look() tool, so the stuck-path nudge must not
+    // tell the bot to call it.
+    const stuckNudge = visionMode === 'off'
+      ? 'explore() a different direction ({orientation:"forward|backwards|left|right"})'
+      : 'call look(around) once, then explore() a different direction ({orientation:"forward|backwards|left|right"})'
+    return `\n\nIDLE TICK. ${quietPhrase} with no new events. Act according to your PROACTIVENESS rule in the system prompt: passive only observes or comments, reactive may suggest a way to help, agentic advances its current goal or sets one and takes the first concrete step. When you begin something new, state it as one short invitation to the player (what you are about to do, and a part they could take) instead of asking an open-ended question like "what should we do" and then going off to do it alone. Do not narrate the snapshot, your inventory, the player's position, or distances (no openers like "fresh start" or "looks like"); your plan belongs in setGoal and your tool calls, not in say(). If you recently spoke or asked for something, give the player time to reply before repeating it. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: ${stuckNudge}. On a quiet tick with nothing real to add, no say() call (silence) is the right move.`
   },
 
   'sei:attacked': ATTACKED_ADDENDUM,
@@ -151,15 +171,41 @@ export function cantReachNudge({ x, y, z, range }) {
 }
 
 export function worldPrimer()         { return WORLD_PRIMER }
-export function capabilityParagraph() { return CAPABILITY_PARAGRAPH }
-export function actionRules()         { return ACTION_RULES }
+// Looking-mode aware: with 'off' the capability paragraph and action rules drop
+// every instruction to call look() (the tool isn't offered in that mode).
+export function capabilityParagraph(visionMode = 'on-demand') {
+  if (visionMode === 'off') {
+    // Drop "look around" from the abilities list too — with Looking off there is
+    // no look() tool at all, so it must not appear anywhere in the capabilities.
+    return `${CAPABILITY_PARAGRAPH.replace(', look around', '')} ${SEEING_SENTENCE_NOVISION}`
+  }
+  return `${CAPABILITY_PARAGRAPH} ${SEEING_SENTENCE_VISION}`
+}
+export function actionRules(visionMode = 'on-demand') {
+  const off = visionMode === 'off'
+  return [
+    ACTION_RULES,
+    off ? SEEING_RULE_NOVISION : SEEING_RULE_VISION,
+    off ? PATHFINDER_RULE_NOVISION : PATHFINDER_RULE_VISION,
+  ].join('\n\n')
+}
 export function cuboidGrammar()       { return CUBOID_GRAMMAR }
 
-export function eventAddendum(event, data) {
+// Per-action description, Looking-mode aware. With 'off' the explore() picture
+// is suppressed (exploreAction gates it on mode !== 'off'), so its description
+// must not promise one. Every other action is mode-independent.
+const EXPLORE_DESCRIPTION_NOVISION = `Walk a SHORT distance (default 16 blocks, max 48) to scout new ground and load fresh terrain, the right tool when goTo timed out / came back unreachable, or when find returned nothing nearby and you need fresh terrain to load. Direction is RELATIVE to the way you're facing: \`{orientation:"forward|backwards|left|right"}\` is the primary way; \`{angle:0-360}\` (clockwise from forward) is there for more precise headings. \`{blocks:N}\` sets how far. This is how you reach far things a single goTo can't: explore that way in steps, re-running find as new chunks load. Returns where you ended up as text.`
+export function describeAction(name, visionMode = 'on-demand') {
+  if (name === 'explore' && visionMode === 'off') return EXPLORE_DESCRIPTION_NOVISION
+  return ACTION_DESCRIPTIONS[name]
+}
+
+export function eventAddendum(event, data, visionMode = 'on-demand') {
   const entry = EVENT_GUIDANCE[event]
   if (typeof entry === 'function') {
-    // sei:idle takes the raw event data ({ quietMs }); attack takes (label, kind).
-    if (event === 'sei:idle') return entry(data)
+    // sei:idle takes the raw event data ({ quietMs }) + the Looking mode; attack
+    // takes (label, kind).
+    if (event === 'sei:idle') return entry(data, visionMode)
     const label = data?.attackerLabel ?? data?.attacker?.username ?? data?.attacker?.name ?? 'unknown'
     const kind = data?.attackerKind ?? (data?.attacker?.username ? 'player' : 'mob')
     return entry(label, kind)

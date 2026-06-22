@@ -178,10 +178,12 @@ export const ConfigSchema = z.object({
   // parse UNCHANGED (no shim, matching the project's no-backwards-compat-hack
   // stance).
   //
-  // mode is the user-facing tier (supersedes the Phase-15 auto_render boolean):
-  //   'off'     — no renders; the look tool is not registered.
-  //   'passive' — a frame rides an EXISTING LLM turn every interval_turns turns.
-  //   'active'  — passive cadence PLUS the model can call look itself.
+  // mode is the user-facing Looking tier:
+  //   'off'        — no pictures; the look tool is not registered.
+  //   'on-demand'  — the model can call look()/explore(); no automatic views.
+  //   'continuous' — on-demand PLUS an automatic view rides an existing LLM turn
+  //                  on a fixed cadence (_PASSIVE_FRAME_INTERVAL_TURNS in the
+  //                  orchestrator). Legacy 'passive'/'active' collapse to this.
   //
   // resolution_px is the SINGLE enforcement point of VIS-06's 512×512 ceiling:
   // `.max(512)` here means ConfigSchema.parse REJECTS any larger value, and the
@@ -190,8 +192,10 @@ export const ConfigSchema = z.object({
   // needs general shapes, not detail). explicit_cap_per_hour is a bot-side hint
   // only; the proxy `vision_hourly` bucket (15-02) is the authoritative cap.
   vision: z.object({
-    mode: z.enum(['off', 'passive', 'active']).default('active'),
-    interval_turns: z.number().int().min(1).max(50).default(5),       // passive-look cadence in LLM turns
+    mode: z.preprocess(
+      (v) => (v === 'passive' || v === 'active' ? 'continuous' : v),
+      z.enum(['off', 'on-demand', 'continuous']),
+    ).default('on-demand'),
     image_quality: z.number().min(0.1).max(1).default(0.4),          // "image quality" (D-03)
     resolution_px: z.number().int().min(64).max(512).default(256),   // D-03 ~256; VIS-06 ≤512 HARD CEILING
     explicit_cap_per_hour: z.number().int().min(1).default(10),       // D-09 (proxy authoritative)

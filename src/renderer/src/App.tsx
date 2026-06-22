@@ -572,9 +572,16 @@ export function App(): React.ReactElement {
   // rather than mounting the prior boot pulse.
   if (view.kind === 'loading') return <></>;
 
+  // The IconRail is suppressed on the full-page entry surfaces (onboarding /
+  // sign-in / skin setup). MacosWindow needs the same signal so its top-bar
+  // hairline can span the full width (including under the macOS traffic lights)
+  // when there's no rail to read as continuous chrome on the left.
+  const railHidden =
+    view.kind === 'onboarding' || view.kind === 'auth-choice' || view.kind === 'skin-setup';
+
   return (
     <>
-      <MacosWindow>
+      <MacosWindow railHidden={railHidden}>
         {/*
           MacosWindow's `.body` is a flex row (IconRail | main). To place
           a top-of-window Banner above that row, we render a flex-column
@@ -632,7 +639,7 @@ export function App(): React.ReactElement {
             />
           ) : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            {view.kind !== 'onboarding' && view.kind !== 'auth-choice' && view.kind !== 'skin-setup' ? <IconRail /> : null}
+            {!railHidden ? <IconRail /> : null}
             {/*
               Right-side column stacks the active screen and the LogsBar.
               Wrapping the LogsBar inside this column (rather than as a
