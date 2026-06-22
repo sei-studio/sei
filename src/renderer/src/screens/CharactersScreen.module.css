@@ -81,7 +81,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md-plus);
-  padding: 0 var(--space-2xl) var(--space-3xl);
+  /* Top padding gives headroom for the card hover-lift (translateY(-7px) + the
+   * accent ring/glow); without it overflow:auto clips the lifted top row, same
+   * as the Home grid fix. */
+  padding: 10px var(--space-2xl) var(--space-3xl);
+  scroll-padding-top: 10px;
   /* Hide the scrollbar (still scrolls) — matches the IconRail treatment. */
   scrollbar-width: none;
 }
@@ -153,7 +157,7 @@
   font-weight: 600;
   line-height: 0.9;
   letter-spacing: 0.04em;
-  color: var(--text);
+  color: var(--heading);
   margin: 0;
 }
 

@@ -87,7 +87,7 @@ interface UiState {
    * screen — either by navigating to another view (character/settings/etc.)
    * or by switching CharactersScreen to the World tab. The Home header
    * greeting ("Welcome to Sei" / "Welcome back") shows only while this is
-   * false; once the user has left Home once, it reads "Summons" for the rest
+   * false; once the user has left Home once, it reads "Companions" for the rest
    * of the session. In-memory only (not persisted), so each app launch shows
    * one greeting until the user navigates away.
    */

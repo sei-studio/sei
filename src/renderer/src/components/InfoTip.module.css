@@ -1,0 +1,65 @@
+/* InfoTip.module.css — circular "(i)" button + hover/focus tooltip.
+ * Mirrors the .worldHelp pattern in CharactersScreen.module.css. */
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.dot:hover,
+.dot:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+/* Popover anchored to the dot's left edge, growing rightward + upward so it
+ * never overflows the left gutter of the settings panel. */
+.tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: 280px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: normal;
+  text-transform: none;
+  padding: 8px 12px;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  z-index: 50;
+  box-shadow: var(--shadow-pop);
+}
+
+.dot:hover + .tip,
+.dot:focus-visible + .tip {
+  opacity: 1;
+}

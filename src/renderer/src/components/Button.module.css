@@ -105,9 +105,9 @@
 }
 /* Selected state for toggle/segmented ghost buttons (aria-pressed). */
 .ghost[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 /* ── Kind: quiet — borderless, muted ─────────────────────────────────── */

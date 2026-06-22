@@ -40,7 +40,7 @@
 }
 
 .seg.on {
-  background: var(--accent);
+  background: var(--accent-strong);
 }
 
 /* sm — compact */

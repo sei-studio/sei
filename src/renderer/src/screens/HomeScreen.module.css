@@ -16,9 +16,15 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 26px;
+  /* The 26px design gap to the grid is split 16px here + 10px grid padding-top
+   * so the scroll container gets headroom (see .grid) — net spacing unchanged. */
+  margin-bottom: 16px;
   padding: 34px var(--space-2xl) 0;
   flex-shrink: 0;
+  /* Sit BELOW the cards in stacking order: a hover-lifted top-row card paints
+   * over this pinned header instead of being covered by it. */
+  position: relative;
+  z-index: 0;
 }
 
 .title,
@@ -28,7 +34,7 @@
   font-size: 44px;
   line-height: 0.9;
   letter-spacing: 0.04em;
-  color: var(--text);
+  color: var(--heading);
   margin: 0;
 }
 
@@ -89,8 +95,12 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* The side padding keeps the cards within the same gutter the header uses. */
-  padding: 0 var(--space-2xl) var(--space-2xl);
+  /* Top padding gives headroom for the card hover-lift (translateY(-7px) + the
+   * accent ring/glow). Without it overflow:auto clips the lifted top row, so the
+   * selector effect looked cut off under the pinned header. */
+  padding: 10px var(--space-2xl) var(--space-2xl);
+  /* Keep the scroll resting position flush under the header despite the pad. */
+  scroll-padding-top: 10px;
   /* Hide the scrollbar (still scrolls) — matches the IconRail treatment. */
   scrollbar-width: none;
 }

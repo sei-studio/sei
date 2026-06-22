@@ -46,7 +46,7 @@ export function ResetMemoryConfirmModal({
           Reset {characterName}&apos;s memory?
         </h2>
         <p className={styles.body}>
-          This will reset everything this character remembers about you. It will not reset their
+          This will reset everything this companion remembers about you. It will not reset their
           in-game inventory and location within a world. Please reset manually or create a new world
           to start fresh.
         </p>

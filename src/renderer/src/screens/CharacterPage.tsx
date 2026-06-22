@@ -123,6 +123,27 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // description present.
   const [needsDescription, setNeedsDescription] = useState<boolean>(false);
 
+  // ── Exit animation (mirror of the enter slide) ────────────────────────────
+  // The page enters with a slide (.content → detailIn) + portrait rise (.dPic →
+  // picRise). To play the reverse on close we keep the page mounted briefly:
+  // `leaving` swaps in the *Leaving classes (detailOut / picFall), then we
+  // navigate home after the animation duration. EXIT_MS must match the CSS
+  // (detailOut / picFall = 0.25s).
+  const EXIT_MS = 250;
+  const [leaving, setLeaving] = useState<boolean>(false);
+  const leaveTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (leaveTimer.current !== null) clearTimeout(leaveTimer.current);
+    },
+    [],
+  );
+  const closePage = (): void => {
+    if (leaving) return;
+    setLeaving(true);
+    leaveTimer.current = window.setTimeout(() => navigate({ kind: 'home' }), EXIT_MS);
+  };
+
   // ── Live uptime ticker (hoisted above the early-return for stable hook count) ──
   // The supervisor emits the 'online' status ONCE; there is no periodic re-emit,
   // so without a local clock the status line would sit frozen at "0s" for the
@@ -225,7 +246,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     if (preparing) {
       return (
         <div className={styles.notFound}>
-          <p>Downloading character from cloud…</p>
+          <p>Downloading companion from cloud…</p>
         </div>
       );
     }
@@ -233,8 +254,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       <div className={styles.notFound}>
         <p>
           {prepareError
-            ? "Couldn't load this character. You may be offline, or the character may have been deleted."
-            : 'Character not found.'}
+            ? "Couldn't load this companion. You may be offline, or the companion may have been deleted."
+            : 'Companion not found.'}
         </p>
         <Button kind="primary" size="md" onClick={() => navigate({ kind: 'home' })}>
           Back to Home
@@ -286,7 +307,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     setShareError(null);
     setSharePhase('confirm');
     if (authState.kind !== 'signed_in') {
-      setUpgradeFraming('share this character');
+      setUpgradeFraming('share this companion');
       setPendingShareIntent({ characterId: character.id, createdAt: Date.now() });
       setShowSignIn(true);
       return;
@@ -404,7 +425,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     // modal the share flow uses (item 5). Re-adding a bundled default is
     // local-only and needs no account, so it falls through.
     if (isWorldPreview && authState.kind !== 'signed_in') {
-      setUpgradeFraming('add this character to your library');
+      setUpgradeFraming('add this companion to your library');
       setShowSignIn(true);
       return;
     }
@@ -452,21 +473,21 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           palette={palette}
           size={520}
           portraitImage={character.portrait_image}
-          className={styles.dPic}
+          className={`${styles.dPic} ${leaving ? styles.dPicLeaving : ''}`}
           style={{ width: '100%', height: '100%' }}
         />
         <div className={styles.dScrim} />
       </div>
 
-      <main className={styles.content}>
+      <main className={`${styles.content} ${leaving ? styles.contentLeaving : ''}`}>
         <div className={styles.crumb}>
           <Button
             kind="quiet"
             size="sm"
             icon={<BackIcon size={14} />}
-            onClick={() => navigate({ kind: 'home' })}
+            onClick={closePage}
           >
-            All characters
+            All companions
           </Button>
         </div>
 
@@ -477,10 +498,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               type="button"
               className={styles.reportLink}
               onClick={() => {
-                const subject = `Report character: ${character.name}`;
+                const subject = `Report companion: ${character.name}`;
                 const body =
-                  `Character ID: ${character.id}\n` +
-                  `Character name: ${character.name}\n\n` +
+                  `Companion ID: ${character.id}\n` +
+                  `Companion name: ${character.name}\n\n` +
                   `Reason (CSAM / hate speech / copyright / other):\n\n` +
                   `Details:\n\n`;
                 const href =
@@ -525,15 +546,15 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               aria-pressed={character.shared}
               aria-label={
                 character.shared
-                  ? 'Character is public. Click to make private.'
-                  : 'Character is private. Click to make public.'
+                  ? 'Companion is public. Click to make private.'
+                  : 'Companion is private. Click to make public.'
               }
               title={
                 authState.kind === 'signed_in'
                   ? character.shared
-                    ? 'Visible in the public character library. Click to make private.'
+                    ? 'Visible in the public companion library. Click to make private.'
                     : 'Hidden from the public library. Click to share.'
-                  : 'Sign in to share this character with the community.'
+                  : 'Sign in to share this companion with the community.'
               }
             >
               <span
@@ -681,7 +702,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               type="button"
               className={styles.gearBtn}
               onClick={onGearClick}
-              aria-label={viewOnly ? 'Character options' : 'Edit character'}
+              aria-label={viewOnly ? 'Companion options' : 'Edit companion'}
               aria-haspopup={viewOnly ? 'menu' : undefined}
               aria-expanded={viewOnly ? gearMenuOpen : undefined}
             >
@@ -757,8 +778,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 </h2>
                 <p className={styles.confirmBody}>
                   {shareConfirm === 'going_public'
-                    ? 'Uploading your character and checking it against our content guidelines.'
-                    : 'Making your character private.'}
+                    ? 'Uploading your companion and checking it against our content guidelines.'
+                    : 'Making your companion private.'}
                 </p>
                 <div
                   className={styles.progressTrack}
@@ -775,8 +796,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                   className={`${styles.confirmTitle} ${styles.confirmTitleOk}`}
                 >
                   {shareConfirm === 'going_public'
-                    ? 'Your character is now public'
-                    : 'Your character is now private'}
+                    ? 'Your companion is now public'
+                    : 'Your companion is now private'}
                 </h2>
                 <p className={styles.confirmBody}>
                   {shareConfirm === 'going_public'
@@ -817,13 +838,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               <>
                 <h2 id="share-confirm-title" className={styles.confirmTitle}>
                   {shareConfirm === 'going_public'
-                    ? 'Allow other players to summon your character?'
-                    : 'Make this character private?'}
+                    ? 'Allow other players to summon your companion?'
+                    : 'Make this companion private?'}
                 </h2>
                 <p className={styles.confirmBody}>
                   {shareConfirm === 'going_public'
-                    ? 'Character memory will not be shared.'
-                    : 'Other players will no longer be able to summon your character. Are you sure?'}
+                    ? 'Companion memory will not be shared.'
+                    : 'Other players will no longer be able to summon your companion. Are you sure?'}
                 </p>
                 <div className={styles.confirmActions}>
                   <Button kind="quiet" size="md" onClick={closeShareModal}>

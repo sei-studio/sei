@@ -178,7 +178,7 @@ function WelcomeStep(): React.ReactElement {
       }
     >
       <p>
-        Sei can give each character a custom skin and username inside your Minecraft
+        Sei can give each companion a custom skin and username inside your Minecraft
         world. We&apos;ll install a small mod (CustomSkinLoader) into your Minecraft
         profile. Takes about a minute.
       </p>
@@ -435,7 +435,7 @@ function DoneStep(): React.ReactElement {
       <p>
         {anyFailed
           ? `Some installs didn't finish, but the rest are ready. Open Minecraft, pick the ${profileName} profile from the launcher dropdown, and start your world. You can re-run setup for the others from Settings.`
-          : `Open Minecraft, pick the ${profileName} profile from the launcher dropdown, and start your world. Characters will appear with their chosen skin and username.`}
+          : `Open Minecraft, pick the ${profileName} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.`}
       </p>
 
       {summaries.length > 0 ? (

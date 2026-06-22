@@ -70,9 +70,9 @@ export function SkinSetupPromptModal({
           Set up your Minecraft skin first?
         </h2>
         <p className={styles.body}>
-          Skin setup lets your characters appear with their own look in your world.
+          Skin setup lets your companions appear with their own look in your world.
           It takes about a minute and you can re-run it anytime from Settings. Summon
-          without it and your character uses a default skin.
+          without it and your companion uses a default skin.
         </p>
         <div className={styles.footer}>
           <Button kind="ghost" size="md" onClick={handleSkip}>

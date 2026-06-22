@@ -39,10 +39,13 @@ export function SeiPixelMark(props: SeiPixelMarkProps): React.ReactElement {
         // was invisible). A transparent-background PNG carries the glyph in its
         // alpha channel, so it has no font dependency and always renders; the
         // backgroundColor below (var(--accent) → #7fb0ff on the dark theme)
-        // tints it through the mask. Absolute `/img/…` resolves to the renderer
-        // root in both dev and the packaged build.
-        WebkitMaskImage: "url('/img/sei-text.png')",
-        maskImage: "url('/img/sei-text.png')",
+        // tints it through the mask. The asset lives in the renderer's public/
+        // dir; we prefix it with import.meta.env.BASE_URL ('/' in dev, './' in
+        // the packaged build) so the url() resolves under both the dev server
+        // and the file:// protocol — a bare absolute `/img/…` resolves to the
+        // filesystem root under file:// and renders empty (the v0.3.0 bug).
+        WebkitMaskImage: `url('${import.meta.env.BASE_URL}img/sei-text.png')`,
+        maskImage: `url('${import.meta.env.BASE_URL}img/sei-text.png')`,
         WebkitMaskRepeat: 'no-repeat',
         maskRepeat: 'no-repeat',
         WebkitMaskSize: 'contain',

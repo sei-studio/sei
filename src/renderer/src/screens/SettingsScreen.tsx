@@ -33,6 +33,7 @@ import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderTiles, type Provider } from '../components/ProviderTiles';
+import { InfoTip } from '../components/InfoTip';
 import { BackIcon, SunIcon, MoonIcon } from '../components/icons';
 import type { UserConfig } from '@shared/characterSchema';
 import type { McInstall, WizardState } from '@shared/ipc';
@@ -510,8 +511,44 @@ export function SettingsScreen(): React.ReactElement {
         cloud users with no way to fix a broken skin install.)
       */}
       <section className={styles.section}>
-        <div className={styles.sectionTitle}>MINECRAFT SKINS SETUP</div>
+        <div className={styles.sectionTitle}>MINECRAFT</div>
         <SkinSetupRow />
+        {/*
+          Looking (vision): Off / On-demand / Continuous. Every move writes
+          straight through (no confirm step). The control is ALWAYS enabled; it
+          is a persistent setting, not a per-session one. Continuous uses more
+          playtime, which surfaces as the shrunk "~Xh left" figure on the
+          Playtime screen (D-07), never a number here. The mode-specific
+          explanation lives behind the (i) tip so the row stays compact.
+        */}
+        <div className={styles.row}>
+          <span className={styles.rowLabelGroup}>
+            <span className={styles.rowLabel}>Looking (vision)</span>
+            <InfoTip
+              label="About Looking (vision)"
+              text={
+                (cfg?.vision_mode ?? 'on-demand') === 'off'
+                  ? 'Your companions never look at the world; they play from what they already know.'
+                  : (cfg?.vision_mode ?? 'on-demand') === 'on-demand'
+                    ? 'Your companions look at the world when they need to, like finding something or when you ask.'
+                    : 'Your companions watch the world as they play, and can still look when they need to. Uses more playtime.'
+              }
+            />
+          </span>
+          <div className={styles.segmented} role="group" aria-label="Looking mode">
+            {(['off', 'on-demand', 'continuous'] as const).map((mode) => (
+              <Button
+                key={mode}
+                kind="ghost"
+                size="sm"
+                aria-pressed={(cfg?.vision_mode ?? 'on-demand') === mode}
+                onClick={() => onSelectVisionMode(mode)}
+              >
+                {mode === 'off' ? 'Off' : mode === 'on-demand' ? 'On-demand' : 'Continuous'}
+              </Button>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className={styles.section}>
@@ -530,10 +567,16 @@ export function SettingsScreen(): React.ReactElement {
         {/*
           ui-A7: developer console toggle. Off by default — App.tsx gates
           <LogsBar /> on this flag. Persisted via UserConfig so a relaunch
-          preserves the choice.
+          preserves the choice. Helper copy lives behind the (i) tip.
         */}
         <div className={styles.row}>
-          <span className={styles.rowLabel}>Show developer console</span>
+          <span className={styles.rowLabelGroup}>
+            <span className={styles.rowLabel}>Show developer console</span>
+            <InfoTip
+              label="About the developer console"
+              text="Useful for debugging skin and bot issues."
+            />
+          </span>
           <Button
             kind="ghost"
             size="sm"
@@ -543,37 +586,6 @@ export function SettingsScreen(): React.ReactElement {
             {devConsoleVisible ? 'On' : 'Off'}
           </Button>
         </div>
-        <p className={styles.rowHelper}>Useful for debugging skin and bot issues.</p>
-        {/*
-          Looking (vision): Off / On-demand / Continuous. Every move writes
-          straight through (no confirm step). The control is ALWAYS enabled; it
-          is a persistent setting, not a per-session one. Continuous uses more
-          playtime, which surfaces as the shrunk "~Xh left" figure on the
-          Playtime screen (D-07), never a number here.
-        */}
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Looking (vision)</span>
-          <div className={styles.segmented} role="group" aria-label="Looking mode">
-            {(['off', 'on-demand', 'continuous'] as const).map((mode) => (
-              <Button
-                key={mode}
-                kind="ghost"
-                size="sm"
-                aria-pressed={(cfg?.vision_mode ?? 'on-demand') === mode}
-                onClick={() => onSelectVisionMode(mode)}
-              >
-                {mode === 'off' ? 'Off' : mode === 'on-demand' ? 'On-demand' : 'Continuous'}
-              </Button>
-            ))}
-          </div>
-        </div>
-        <p className={styles.rowHelper}>
-          {(cfg?.vision_mode ?? 'on-demand') === 'off'
-            ? 'Your companions never look at the world; they play from what they already know.'
-            : (cfg?.vision_mode ?? 'on-demand') === 'on-demand'
-              ? 'Your companions look at the world when they need to, like finding something or when you ask.'
-              : 'Your companions watch the world as they play, and can still look when they need to. Uses more playtime.'}
-        </p>
       </section>
 
       {/*
@@ -693,9 +705,9 @@ export function SettingsScreen(): React.ReactElement {
             come back here to upload any chars they skipped previously.
           */}
           <div className={styles.row}>
-            <span className={styles.rowLabel}>Migrate local characters</span>
+            <span className={styles.rowLabel}>Migrate local companions</span>
             <Button kind="ghost" size="md" onClick={() => setMigrateModalOpen(true)}>
-              Migrate local characters
+              Migrate local companions
             </Button>
           </div>
 
@@ -770,10 +782,20 @@ export function SettingsScreen(): React.ReactElement {
           <div className={`${styles.sectionTitle} ${styles.dangerLabel}`}>ACCOUNT MODE</div>
           <div>
             <div className={styles.row}>
-              <span className={styles.rowLabel}>
-                {aiBackendKind === 'local'
-                  ? 'You are using your own API key'
-                  : 'You are using Sei’s managed cloud'}
+              <span className={styles.rowLabelGroup}>
+                <span className={styles.rowLabel}>
+                  {aiBackendKind === 'local'
+                    ? 'You are using your own API key'
+                    : 'You are using Sei’s managed cloud'}
+                </span>
+                <InfoTip
+                  label="About account mode"
+                  text={
+                    aiBackendKind === 'local'
+                      ? 'Managed billing turns off your local API key and routes Sei through our cloud. Switch back any time.'
+                      : 'Switching back uses the API key stored on this device. Your active subscription keeps renewing until you cancel it above.'
+                  }
+                />
               </span>
               {aiBackendKind === 'local' ? (
                 <button
@@ -793,11 +815,6 @@ export function SettingsScreen(): React.ReactElement {
                 </button>
               )}
             </div>
-            <p className={styles.rowHelper}>
-              {aiBackendKind === 'local'
-                ? 'Managed billing turns off your local API key and routes Sei through our cloud. Switch back any time.'
-                : 'Switching back uses the API key stored on this device. Your active subscription keeps renewing until you cancel it above.'}
-            </p>
             {switchNotice !== null && (
               <p className={styles.rowHelper} role="status">
                 {switchNotice === 'switched-to-cloud'
@@ -821,7 +838,7 @@ export function SettingsScreen(): React.ReactElement {
         <div>
           <div className={styles.row}>
             <span className={`${styles.rowLabel} ${styles.dangerLabel}`}>
-              Reset all character memories
+              Reset all companion memories
             </span>
             <button
               type="button"
@@ -839,7 +856,7 @@ export function SettingsScreen(): React.ReactElement {
             </button>
           </div>
           <p className={styles.rowHelper}>
-            Wipes saved chat history and playtime for every character on this
+            Wipes saved chat history and playtime for every companion on this
             device. Persona, portrait, and skin are kept.
           </p>
           {resetAllError ? (

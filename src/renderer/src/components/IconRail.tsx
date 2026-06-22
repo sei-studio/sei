@@ -407,10 +407,10 @@ export function IconRail(): React.ReactElement {
             type="button"
             className={`${styles.circleButton} ${view.kind === 'add-character' ? styles.circleActive : ''}`}
             onClick={() => navigate({ kind: 'add-character' })}
-            aria-label="New character"
-            onMouseEnter={(e) => attachHover(e.currentTarget, 'New character', setHoverTip)}
+            aria-label="New companion"
+            onMouseEnter={(e) => attachHover(e.currentTarget, 'New companion', setHoverTip)}
             onMouseLeave={() => setHoverTip(null)}
-            onFocus={(e) => attachHover(e.currentTarget, 'New character', setHoverTip)}
+            onFocus={(e) => attachHover(e.currentTarget, 'New companion', setHoverTip)}
             onBlur={() => setHoverTip(null)}
           >
             <PlusIcon size={22} />

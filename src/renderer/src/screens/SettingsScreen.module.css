@@ -24,7 +24,7 @@
   font-weight: 600;
   line-height: 0.9;
   letter-spacing: 0.04em;
-  color: var(--text);
+  color: var(--heading);
   margin: 0 0 var(--space-md-plus);
 }
 
@@ -58,6 +58,14 @@
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
+  flex-shrink: 0;
+}
+
+/* Label + an InfoTip "(i)" sitting together on the left of a row. */
+.rowLabelGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
   flex-shrink: 0;
 }
 

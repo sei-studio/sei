@@ -117,3 +117,33 @@ export async function setAiBackendKind(kind: AiBackendKind): Promise<void> {
   const cfg = await loadConfig();
   await saveConfig({ ...cfg, ai_backend_kind: kind });
 }
+
+/**
+ * Boot-time self-heal: ensure a signed-in profile that never received the
+ * cloud default lands on cloud-proxy.
+ *
+ * Signed-in users default to cloud. That default is written on the signed-out→
+ * signed-in TRANSITION (profileScope.switchScopeForAuth → setAiBackendKind), but
+ * NOT on a session-restore launch: boot pre-points the scope from the persisted
+ * session, so the INITIAL_SESSION auth event finds the scope already correct and
+ * `switchScopeForAuth` early-returns. A profile whose last real transition
+ * happened on a build that predates the cloud default — or whose one-time write
+ * failed — therefore stays on the schema default `'local'` on every later
+ * launch, showing the BYOK UI the user never asked for.
+ *
+ * Correct it here, at boot, after the scope + config are settled: when the
+ * active profile is signed in, on `'local'`, and has NO stored API key, switch
+ * it to `'cloud-proxy'`. A genuine BYOK user always has a key on disk, so a
+ * deliberate local choice is never overridden; a key-less signed-in `'local'`
+ * is a non-functional state that can only come from the missing default.
+ *
+ * No-op when signed out, already cloud-proxy, or an API key is present.
+ */
+export async function ensureCloudDefaultForSignedIn(): Promise<void> {
+  const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
+  if (getActiveScope() === SCOPE_LOCAL) return; // signed out → keep local
+  const cfg = await loadConfig();
+  if ((cfg.ai_backend_kind ?? 'local') !== 'local') return; // already cloud-proxy
+  if (await hasApiKey()) return; // a real BYOK choice — never override it
+  await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy' });
+}

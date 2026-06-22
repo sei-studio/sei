@@ -278,7 +278,7 @@ export function AddCharacterScreen(): React.ReactElement {
   if (step === 0) {
     return (
       <QuestionShell
-        title="What is your character's name?"
+        title="What is your companion's name?"
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -290,7 +290,7 @@ export function AddCharacterScreen(): React.ReactElement {
           onChange={setName}
           autoFocus
           onEnter={() => void next()}
-          aria-label="Character name"
+          aria-label="Companion name"
         />
       </QuestionShell>
     );
@@ -300,9 +300,9 @@ export function AddCharacterScreen(): React.ReactElement {
   if (step === 1) {
     return (
       <QuestionShell
-        eyebrow="For the AI: shapes the character's voice"
+        eyebrow="For the AI: shapes the companion's voice"
         title="Who are they?"
-        hint="Describe them in detail; an LLM synthesizes this into your character's soul. Cover personality, occupation, age, gender, and quirks."
+        hint="Describe them in detail; an LLM synthesizes this into your companion's soul. Cover personality, occupation, age, gender, and quirks."
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -327,7 +327,7 @@ export function AddCharacterScreen(): React.ReactElement {
       <QuestionShell
         eyebrow="How they behave in your world"
         title="How proactive are they?"
-        hint="Sets how much the character does on its own. You can change this later on the character page."
+        hint="Sets how much the companion does on its own. You can change this later on the companion page."
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -391,7 +391,7 @@ export function AddCharacterScreen(): React.ReactElement {
     return (
       <QuestionShell
         title="Add a card image?"
-        hint="Optional. Shown on the character card on Home."
+        hint="Optional. Shown on the companion card on Home."
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -445,7 +445,7 @@ export function AddCharacterScreen(): React.ReactElement {
     return (
       <QuestionShell
         title="Visible to other players?"
-        hint="Public characters appear in the World tab and can be summoned by anyone. Private stays only in your library."
+        hint="Public companions appear in the World tab and can be summoned by anyone. Private stays only in your library."
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -479,7 +479,7 @@ export function AddCharacterScreen(): React.ReactElement {
   return (
     <QuestionShell
       eyebrow="For other players, NOT for the AI"
-      title="Short description for your character?"
+      title="Short description for your companion?"
       hint="A blurb other players read on the World card. The AI never sees this; it's just for humans browsing."
       stepCount={totalSteps}
       currentStep={step}

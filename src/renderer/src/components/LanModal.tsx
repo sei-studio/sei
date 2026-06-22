@@ -28,7 +28,7 @@ import styles from './LanModal.module.css';
 const STEPS: readonly string[] = [
   'Launch Minecraft and open your singleplayer world.',
   'Press ESC, then choose Open to LAN.',
-  'Set Allow Cheats to On, then click Start LAN World.',
+  'Click Start LAN World.',
   'Return to Sei and press Summon.',
 ];
 

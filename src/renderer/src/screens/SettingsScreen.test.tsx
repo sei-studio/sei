@@ -9,7 +9,7 @@
  * Invariants under test:
  *   A1.1  — SettingsScreen reads ai_backend_kind from useCreditsStore.
  *   A1.2  — Provider + API-key rows render under a local-only gate.
- *   A1.3  — MINECRAFT SKINS SETUP renders in BOTH cloud and local mode
+ *   A1.3  — MINECRAFT renders in BOTH cloud and local mode
  *           (skin setup is needed regardless of AI backend).
  *   A1.4  — ProviderTiles is imported + used inline (compact picker).
  *   A1.5  — ProviderTiles ships all 13 Phase 14 providers w/ NO "Coming
@@ -70,12 +70,12 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
     expect(providerIdx).toBeGreaterThan(0);
   });
 
-  it('A1.3: MINECRAFT SKINS SETUP section is shown in BOTH cloud and local mode', () => {
+  it('A1.3: MINECRAFT section is shown in BOTH cloud and local mode', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     // Skin sideloading is independent of the AI-backend billing path, so the
     // section must render regardless of mode (cloud-proxy users need to be
     // able to run / re-run it too). Anchor on the JSX section title.
-    const skinsIdx = src.indexOf('>MINECRAFT SKINS SETUP<');
+    const skinsIdx = src.indexOf('>MINECRAFT<');
     expect(skinsIdx).toBeGreaterThan(0);
     // The section must NOT be wrapped in a local-only gate. The 200 chars
     // before the JSX title should not open a `aiBackendKind === 'local'`
@@ -214,7 +214,7 @@ describe('SettingsScreen (D-FIX reset-all-memories unconditional)', () => {
     //
     // We anchor on the JSX label (preceded by `>`) so we skip the code-comment
     // hits at the top of the file.
-    const labelIdx = src.indexOf('>\n              Reset all character memories\n');
+    const labelIdx = src.indexOf('>\n              Reset all companion memories\n');
     expect(labelIdx).toBeGreaterThan(0);
     // The closest `<section` opening above the reset row should be the new
     // DANGER section (not the ACCOUNT-panel section that requires signed_in).

@@ -59,7 +59,7 @@ export function DmcaContactModal({ onClose }: DmcaContactModalProps): React.Reac
           DMCA Designated Agent
         </h2>
         <p className={styles.lede}>
-          To report copyright infringement on a Sei character, send a written DMCA notice to our
+          To report copyright infringement on a Sei companion, send a written DMCA notice to our
           designated agent at:
         </p>
         <p className={styles.email}>

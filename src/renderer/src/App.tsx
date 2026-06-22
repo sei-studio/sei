@@ -601,7 +601,7 @@ export function App(): React.ReactElement {
           {authState.kind === 'signed_in' && !authState.user.emailVerified ? (
             <Banner
               kind="warn"
-              message="Verify your email to publish characters or buy credits. Check your inbox for a link from Sei."
+              message="Verify your email to publish companions or buy credits. Check your inbox for a link from Sei."
             />
           ) : null}
           {/*
@@ -647,8 +647,11 @@ export function App(): React.ReactElement {
               window height when the LogsBar expands — the expansion takes
               from the main content area, not from the rail.
             */}
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-              <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}>
+            {/* Elbow backdrop so the content panel's rounded top-left corner
+                reveals the rail/header junction behind it (chrome-blue in light,
+                a lighter pocket in dark — see --elbow). */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, background: 'var(--elbow)' }}>
+              <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', background: 'var(--window)', borderTopLeftRadius: 12, borderTop: '1px solid var(--border)', borderLeft: '1px solid var(--border)' }}>
                 {view.kind === 'auth-choice' && (
                   <AuthChoiceScreen
                     onChooseLocal={() => {

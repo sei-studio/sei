@@ -93,7 +93,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(source.includes('>Browse</h1>')).toBe(false);
     // Search field must remain.
     expect(source.includes('searchField')).toBe(true);
-    expect(source.includes('Search characters')).toBe(true);
+    expect(source.includes('Search companions')).toBe(true);
   });
 
   it('Test 7: CharacterCard renders no chip text (MINE / WORLD / LOCAL ONLY / CLOUD all removed)', () => {

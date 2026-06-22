@@ -25,7 +25,7 @@ import { createBotSupervisor } from './botSupervisor';
 import { initUpdater } from './updater';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration } from './migration';
-import { seedDefaultCharacters } from './defaultCharacters';
+import { seedDefaultCharacters, refreshSeededDefaults } from './defaultCharacters';
 import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
@@ -202,6 +202,23 @@ async function bootstrap(): Promise<void> {
   // both paths fire.
   try { await seedDefaultCharacters(); }
   catch (err) { logger.warn(`seedDefaultCharacters failed: ${(err as Error).message}`); }
+
+  // 1b-1. Re-assert bundled authored fields (persona, metadata, skin, …) onto
+  // already-seeded defaults so an older build's stale copy is refreshed — e.g.
+  // Sui regaining her current persona + Agentic proactiveness on installs that
+  // first seeded her before those shipped. No-op when nothing drifted. Defaults
+  // are read-only in the UI, so this never clobbers user edits.
+  try { await refreshSeededDefaults(); }
+  catch (err) { logger.warn(`refreshSeededDefaults failed: ${(err as Error).message}`); }
+
+  // 1b-3. Cloud-default self-heal. The signed-in→cloud default is written on the
+  // sign-in TRANSITION only; a session-restore launch re-points the scope at
+  // boot, so that transition never re-fires and a profile stuck on the schema
+  // default 'local' (e.g. last signed in on a build predating the default) would
+  // keep showing BYOK. Flip a signed-in, key-less 'local' profile to cloud-proxy
+  // here. No-op for signed-out, already-cloud, or genuine BYOK (key present).
+  try { const { ensureCloudDefaultForSignedIn } = await import('./apiKeyStore'); await ensureCloudDefaultForSignedIn(); }
+  catch (err) { logger.warn(`ensureCloudDefaultForSignedIn failed: ${(err as Error).message}`); }
 
   // 1b-2. One-time backfill of the profile-wide cumulative playtime total from
   // existing characters' playtime_ms (so historical time shows in the UsageBar

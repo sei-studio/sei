@@ -46,7 +46,7 @@ export function SummonConflictModal({
           Minecraft won&apos;t let two players share a username.
         </p>
         <p className={styles.hint}>
-          Give one of them a different in-game username (on its character page,
+          Give one of them a different in-game username (on its companion page,
           under Skin) and try again.
         </p>
         <div className={styles.actions}>

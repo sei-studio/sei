@@ -324,7 +324,7 @@ export function EditCharacterModal({
           {/* ── Sidebar ── */}
           <aside className={styles.sidebar}>
             <h2 id="edit-character-title" className={styles.title}>
-              Edit character
+              Edit companion
             </h2>
             <nav className={styles.nav}>
               {NAV.map((n) => (
@@ -348,7 +348,7 @@ export function EditCharacterModal({
                 <>
                   <div className={styles.field}>
                     <label className={styles.label}>NAME</label>
-                    <TextField value={name} onChange={setName} aria-label="Character name" />
+                    <TextField value={name} onChange={setName} aria-label="Companion name" />
                   </div>
                   <div className={styles.field}>
                     <label className={styles.label}>DESCRIPTION</label>
@@ -430,7 +430,7 @@ export function EditCharacterModal({
                       <div className={styles.field}>
                         <label className={styles.label}>PERSONA SOURCE</label>
                         <p className={styles.paneHint}>
-                          A short description; the model expands it into the character&apos;s voice and behavior.
+                          A short description; the model expands it into the companion&apos;s voice and behavior.
                         </p>
                         <TextField
                           value={personaSource}
@@ -491,8 +491,8 @@ export function EditCharacterModal({
               {section === 'danger' && !isDefault ? (
                 <div className={styles.dangerPane}>
                   <p className={styles.dangerHint}>
-                    Reset wipes this character&apos;s memory of you and starts fresh. Deleting removes the
-                    character permanently and cannot be undone.
+                    Reset wipes this companion&apos;s memory of you and starts fresh. Deleting removes the
+                    companion permanently and cannot be undone.
                   </p>
                   <div className={styles.dangerRow}>
                     <Button
@@ -504,7 +504,7 @@ export function EditCharacterModal({
                       {resetDone ? 'Memory reset' : resetting ? 'Resetting…' : 'Reset memory'}
                     </Button>
                     <Button kind="danger" size="md" onClick={() => setConfirmingDelete(true)} disabled={busy}>
-                      Delete character
+                      Delete companion
                     </Button>
                   </div>
                 </div>

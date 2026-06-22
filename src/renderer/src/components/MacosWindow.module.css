@@ -77,22 +77,22 @@
   justify-content: center;
   border: none;
   background: transparent;
-  color: var(--muted);
+  color: var(--rail-fg);
   cursor: pointer;
   padding: 0;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .ctlBtn:hover {
-  background-color: var(--surface-2);
-  color: var(--text);
+  background-color: var(--rail-hover);
+  color: var(--rail-fg-strong);
 }
 
 /* Close button signals danger on hover via the palette's red token (design
    system §2 — reference tokens, never literal hex). */
 .ctlClose:hover {
   background-color: var(--red);
-  color: var(--text);
+  color: #ffffff;
 }
 
 /* Hairline base — only across the content area (right of the rail), so there
@@ -104,7 +104,9 @@
   right: 0;
   bottom: 0;
   height: 1px;
-  background: var(--border);
+  /* Seam now drawn by the content panel's rounded border (App.tsx main); a
+     straight hairline here would re-form the old square corner. */
+  display: none;
 }
 
 /* When the IconRail is hidden (onboarding / auth / skin-setup), there's no rail
@@ -115,25 +117,27 @@
   left: 0;
 }
 
+
 /* "Sei" mark — small Rajdhani (--sans) label. */
 .titleLabel {
   font-family: var(--sans);
   font-size: 13.5px;
   font-weight: 500;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--rail-fg);
   text-transform: none;
   user-select: none;
   pointer-events: none;
 }
 
-/* Version tag — same label, one tone darker than --muted (--muted-2). */
+/* Version tag — same label, one tone dimmer than the title. */
 .versionTag {
   font-family: var(--sans);
   font-size: 13.5px;
   font-weight: 500;
   letter-spacing: 0.04em;
-  color: var(--muted-2);
+  color: var(--rail-fg);
+  opacity: 0.7;
   margin-left: var(--space-xs);
   user-select: none;
   pointer-events: none;

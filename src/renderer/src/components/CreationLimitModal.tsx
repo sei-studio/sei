@@ -63,7 +63,7 @@ export function CreationLimitModal({
           Daily limit reached
         </h2>
         <p className={styles.body}>
-          You&rsquo;ve reached your limit for character creation today. Come back
+          You&rsquo;ve reached your limit for companion creation today. Come back
           tomorrow.
         </p>
         {resetHint ? <p className={styles.hint}>Resets {resetHint}</p> : null}

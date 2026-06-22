@@ -61,12 +61,12 @@ export const PENDING_SHARE_INTENT_TTL_MS = 5 * 60 * 1000;
  */
 export type UpgradeFraming =
   | null
-  | 'browse public characters'
+  | 'browse public companions'
   | 'use cloud-hosted AI'
-  | 'share this character'
+  | 'share this companion'
   // Item 5 — a signed-out user tapping "Add to library" on a World character
   // gets the same sign-in modal as the share flow, framed for this action.
-  | 'add this character to your library';
+  | 'add this companion to your library';
 
 interface AuthStore {
   state: AuthState;

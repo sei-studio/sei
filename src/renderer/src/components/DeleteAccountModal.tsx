@@ -86,12 +86,12 @@ export function DeleteAccountModal({
         {phase === 'idle' ? (
           <>
             <p className={styles.body}>
-              Cloud-side, this removes your characters, shared listings, credit ledger, and uploaded
+              Cloud-side, this removes your companions, shared listings, credit ledger, and uploaded
               skin &amp; portrait files within 30 days.
             </p>
             <p className={styles.body}>
-              Local-side, your characters on this machine, your bot&apos;s memory, and any cloud
-              characters you&apos;ve opened locally are untouched.
+              Local-side, your companions on this machine, your bot&apos;s memory, and any cloud
+              companions you&apos;ve opened locally are untouched.
             </p>
             <p id={para3Id} className={styles.body}>
               To confirm, type <strong className={styles.bodyEmphasis}>{accountEmail}</strong>{' '}
