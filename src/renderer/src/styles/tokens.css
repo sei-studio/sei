@@ -168,19 +168,23 @@
  *   bg #09090b · txt #e9e7e1 · accent periwinkle #7FB0FF · sharp · overlays.
  */
 :root[data-theme="dark"] {
-  --bg: #09090b;
-  --bg2: #0e0e12;
-  --bg3: #15151b;
-  --bg4: #1c1c23;
+  /* ── TEMP: dark-blue background experiment (hue of the #7fb0ff accent) ──
+     Navy ramp swapped in for the original near-blacks. To REVERT, restore each
+     value from the trailing comment (the /* was: … *​/ originals) and delete
+     this block header. */
+  --bg: #101828;        /* was: #09090b */
+  --bg2: #161f38;       /* was: #0e0e12 */
+  --bg3: #1e2b49;       /* was: #15151b */
+  --bg4: #28385b;       /* was: #1c1c23 */
 
   /* The mockup's app surface is a single near-black --bg (#09090b); there is
      no lighter "window" tone. Match it exactly so the chrome reads as dark as
      the reference (was #0b0b0e — perceptibly lighter). */
-  --window: #09090b;
-  --desktop: #060608;
-  --surface: #0e0e12;
-  --surface-2: #15151b;
-  --rail: #0a0a0d;
+  --window: #101828;    /* was: #09090b */
+  --desktop: #0a101c;   /* was: #060608 */
+  --surface: #161f38;   /* was: #0e0e12 */
+  --surface-2: #1e2b49; /* was: #15151b */
+  --rail: #0e1626;      /* was: #0a0a0d */
   --rail-active: rgba(255, 255, 255, 0.045);
   /* Rounded content-corner backdrop — matches the chrome; the panel's own
      rounded border (App.tsx main) is what defines the corner. */
@@ -198,8 +202,8 @@
   /* Card portrait backing — the mockup's `.card .bg` linear ramp
      (#0c0c10 → #08080a), darker than the surface tokens so cards read
      near-black behind the per-character tint. */
-  --card-top: #0c0c10;
-  --card-bottom: #08080a;
+  --card-top: #141e33;    /* was: #0c0c10 */
+  --card-bottom: #0d1423;  /* was: #08080a */
 
   --text: #e9e7e1;
   --text-2: #a8a6a0;
