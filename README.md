@@ -9,9 +9,11 @@ An omni-game AI player mod.
 
 <br />
 
-[<img src="docs/btn-macos.svg" alt="Download for macOS" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.zip)
+[<img src="docs/btn-macos.svg" alt="Download for macOS (Apple Silicon)" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.zip)
 &nbsp;
 [<img src="docs/btn-windows.svg" alt="Download for Windows" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-win-x64.exe)
+
+<sub>On an Intel Mac? [Download the Intel build](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-x64.zip).</sub>
 
 </div>
 
