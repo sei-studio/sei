@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.4
 milestone_name: Minimum Desirable Companion
-status: planning
-last_updated: "2026-06-25"
-last_activity: 2026-06-25 -- Milestone v0.4 started (defining requirements)
+status: Defining requirements
+last_updated: "2026-06-25T22:23:55.628Z"
+last_activity: 2026-06-25 -- Milestone v0.4 started
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # State: Sei
@@ -45,6 +44,7 @@ Last activity: 2026-06-25 -- Milestone v0.4 started
 ### Locked Decisions (from research + user)
 
 **v0.4 (this milestone):**
+
 1. **Brain–surface decoupling.** One persona+memory "brain" attaches to a "surface" (Minecraft world / in-app text chat / voice call / minigame). The brain is shared; each surface supplies its own context blocks + output channel.
 2. **Cross-surface continuity = shared memory + handoff bridge.** Durable facts flow through the shared on-disk memory store; transient "what we were just doing" is summarized into a compact bridge at a surface switch. Raw transcripts are NOT dragged across.
 3. **Prompt-cache layout:** `[baseline + persona + memory snapshot]` (always cached, survives switches) → `[interface rules]` (re-cached per surface switch) → `[chat history]` (re-cached per switch) → `[ongoing memory + new messages]` (tail; only new turn written). Memory is a **frozen-per-session snapshot** seeded once at session start, NOT re-ranked every turn (re-ranking would invalidate the cache each turn). Memory the companion writes mid-session appends to the tail. Long conversation buffer is fine — messages are short and cheap.
@@ -57,6 +57,7 @@ Last activity: 2026-06-25 -- Milestone v0.4 started
 10. **Dynamic tone state machine is deferred** — out of scope for v0.4.
 
 **Carried from v0.3 (still binding):**
+
 11. Closed action registry stays closed — the LLM dispatches typed actions, never code or coordinates.
 12. Two backends (local BYOK + cloud proxy); cloud routes through `api.sei.gg`. Runtime memory stays local-only.
 
