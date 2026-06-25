@@ -1,66 +1,75 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Commercializable MVP
-status: executing
-last_updated: "2026-06-10T09:24:56.663Z"
-last_activity: 2026-06-10 -- Phase 15 execution started
+milestone: v0.4
+milestone_name: Minimum Desirable Companion
+status: planning
+last_updated: "2026-06-25"
+last_activity: 2026-06-25 -- Milestone v0.4 started (defining requirements)
 progress:
-  total_phases: 7
-  completed_phases: 5
-  total_plans: 77
-  completed_plans: 70
-  percent: 91
+  total_phases: 6
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # State: Sei
 
 ## Project Reference
 
-- **Core Value:** A Minecraft companion that feels like a real character — it remembers you, reacts to the world, and acts with personality, not like a scripted bot.
-- **Current Focus:** Phase 15 — in-game-vision-via-prismarine-viewer
+- **Core Value:** A gaming companion that feels like a real character — it remembers you across chat and play, reacts with personality, and is worth spending time with whether or not you open Minecraft.
+- **Current Focus:** Milestone v0.4 — Minimum Desirable Companion (defining requirements)
 
 > This is the **client** state. The hosted cloud backend (proxy server, auth/billing/moderation) lives in a separate private repo and is referenced here only at a high level.
 
 ## Current Position
 
-Phase: 15 (in-game-vision-via-prismarine-viewer) — EXECUTING
-Plan: 1 of 7
-Status: Executing Phase 15
-Last activity: 2026-06-10 -- Phase 15 execution started
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-25 -- Milestone v0.4 started
 
 ## Phase Progress
 
 | Phase | Status |
 |-------|--------|
-| 10. Auth Foundation | Complete (9/9 plans) |
-| 11. Cloud Character Library | Complete (19/19 plans) |
-| 12. Character Sharing UI + Moderation | Code complete (18/18 plans); awaiting operator rollout |
-| 13. AI Proxy + Billing + Usage UI | Complete (23/23 plans) |
-| 14. Multi-Provider Model Abstraction | Complete (1/1 plans); reduced scope per user directive |
-| 15. In-Game Vision via prismarine-viewer | Planned (7 plans, ready to execute) |
-| 16. Mod & Version Adapter Pipeline | Not started |
+| 16. Persona & Memory Core | Not started |
+| 17. Minecraft Competence | Not started |
+| 18. Brain–Surface Decoupling + In-App Chat | Not started |
+| 19. UI Overhaul | Not started |
+| 20. ElevenLabs Voice | Not started |
+| 21. Minigames + GeoGuessr | Not started |
 
 ## Accumulated Context
 
 ### Locked Decisions (from research + user)
 
-1. Vision = bot-POV via `prismarine-viewer` headless render. No OS capture. No Fabric mod for vision.
-2. Mod adapters = keybind/item scan → LLM filter → LLM recipe writer → declarative recipes only. No code execution.
-3. Cloud sync = character definition only. Runtime memory (`OWNER.md`, `DIARY.md`) stays local.
-4. Modded textures live in Phase 16 (Mod Adapter), not Phase 15 (Vision).
-5. Cloud-AI routing shipped first as a `baseURL` override before the full multi-provider refactor.
-6. The hosted cloud backend lives in a separate private repo; this client integrates with it over HTTPS at `api.sei.gg`.
+**v0.4 (this milestone):**
+1. **Brain–surface decoupling.** One persona+memory "brain" attaches to a "surface" (Minecraft world / in-app text chat / voice call / minigame). The brain is shared; each surface supplies its own context blocks + output channel.
+2. **Cross-surface continuity = shared memory + handoff bridge.** Durable facts flow through the shared on-disk memory store; transient "what we were just doing" is summarized into a compact bridge at a surface switch. Raw transcripts are NOT dragged across.
+3. **Prompt-cache layout:** `[baseline + persona + memory snapshot]` (always cached, survives switches) → `[interface rules]` (re-cached per surface switch) → `[chat history]` (re-cached per switch) → `[ongoing memory + new messages]` (tail; only new turn written). Memory is a **frozen-per-session snapshot** seeded once at session start, NOT re-ranked every turn (re-ranking would invalidate the cache each turn). Memory the companion writes mid-session appends to the tail. Long conversation buffer is fine — messages are short and cheap.
+4. **Persona drift is attention-decay**, fixed by per-turn re-injection of a compressed persona core at max recency + a few-shot of `say()` voice examples (which generalize), NOT hardcoded scenario scripts (which don't).
+5. **Memory upgrade:** scored retrieval (recency + importance + relevance; importance rated at write time) replacing byte-truncation seeding. Perceived rapport comes from **fact-recall callbacks**, not affinity meters.
+6. **The agent decides when to "launch" a game** — a `launch_game`/`start_session` tool in the chat surface makes the "invite you to play" loop literal.
+7. **Voice and text/in-game chat are mutually exclusive.** When voice is on, text chat + in-game chat box are off. The model knows whether output is spoken vs typed and adjusts formality while staying in character. Voice = ElevenLabs, voice chosen by personality.
+8. **Required minigame: a GeoGuessr clone** (random street/earth scene → map guess → score + timer). Plus 1–2 more simple LLM-playable games. Different personas/models should show varied strategy + skill.
+9. **Usage UI:** keep the plain % ring; **drop** the playtime-hours estimate (chat/voice/MC/minigames burn at different rates, so a single time estimate is misleading). Not a focus area.
+10. **Dynamic tone state machine is deferred** — out of scope for v0.4.
+
+**Carried from v0.3 (still binding):**
+11. Closed action registry stays closed — the LLM dispatches typed actions, never code or coordinates.
+12. Two backends (local BYOK + cloud proxy); cloud routes through `api.sei.gg`. Runtime memory stays local-only.
 
 ### Notes
 
-- **Phase 12** is CODE COMPLETE but not yet live to users — Browse stays behind a capabilities flag until an operator completes the rollout runbook (DMCA registration, backend secret provisioning, moderation backfill, then the config flip). Tracked in the Phase 12 summary.
-- **Phase 14** shipped the `LlmProvider` factory + adapters only. Deferred to backlog (tracked in the Phase 14 context): the list-style onboarding model picker, per-provider $/hr CI benchmark, per-provider caching observability, and Zod re-validation at the adapter boundary. Anthropic remains the default so existing configs boot unchanged.
+- **v0.3 shipped** (Phases 10–15: auth, cloud library, sharing+moderation, billing+% UI, multi-provider, vision). Phase 12 (Browse) remains code-complete behind a capabilities flag pending operator rollout (DMCA registration, moderation backfill, config flip).
+- **Planned v0.3 Phase 16 (mod/version adapter) was dropped** — feasibility investigation found modded Minecraft needs solving mineflayer's vanilla-only registry ingestion (issue #700) plus per-mod protocol code; payoff too small and it shrinks the userbase. Superseded by v0.4.
+- Initial research for v0.4 done this session (codebase grounding + companion/roleplay design). **Deep research is scheduled inside phases:** Minecraft bot SOTA → Phase 17; character.ai/roleplay/Stella → Phase 16; varied-behavior-by-personality → Phase 21.
 
 ### Open Todos
 
-- Run `/gsd-execute-phase 15` (In-Game Vision).
-- Operator-side Phase 12 Browse rollout (see Phase 12 summary).
+- Define v0.4 REQUIREMENTS.md and ROADMAP.md (in progress — this workflow).
+- Operator-side v0.3 Phase 12 Browse rollout (see Phase 12 summary).
 
 ### Blockers
 
@@ -68,8 +77,8 @@ None.
 
 ## Session Continuity
 
-**Phases 10–14 complete.** Auth, cloud character library, sharing UI + moderation surfaces, hosted AI billing + % usage UI, and the multi-provider `LlmProvider` abstraction have all landed. Phase 12 is code-complete and gated behind a capabilities flag pending an operator rollout.
+**v0.3 (Commercializable MVP, Phases 10–15) shipped.** The planned Phase 16 mod adapter was dropped after a feasibility investigation.
 
-**Phase 15 (In-Game Vision via prismarine-viewer) is planned and is the active focus.** It adds bot-POV rendering, a capability-gated `visualize` Zod action, opt-in idle auto-render with a custom line-of-sight helper, and a per-hour vision cap (enforced server-side for cloud-AI users). The native-ABI render spike gates all feature waves.
+**Milestone v0.4 — Minimum Desirable Companion is being defined.** It makes the companion compelling within vanilla Minecraft and accessible beyond it, by decoupling the persona+memory brain from the mineflayer surface (chat / voice / minigame surfaces) with memory continuous across all of them. Six phases (16–21): Persona & Memory Core → Minecraft Competence → Brain–Surface Decoupling + In-App Chat ‖ UI Overhaul → Voice → Minigames.
 
-**Next action:** `/gsd-execute-phase 15`.
+**Next action:** finish REQUIREMENTS.md, then create the ROADMAP via the roadmapper.

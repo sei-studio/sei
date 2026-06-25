@@ -30,22 +30,31 @@ The backend is chosen by `ai_backend_kind` in the user's `config.json` (default 
 
 The cloud backend (proxy server, auth/billing/moderation infrastructure) lives in a **separate private repository** and is referenced here only at a high level. This client speaks to it over HTTPS; no server internals live in this repo.
 
-## Current Milestone: v1.0 — Commercializable MVP
+## Version Trajectory
 
-**Goal:** Promote Sei from a working local prototype (v0.1.1) to a commercializable MVP — accounts, a shared character library, hosted AI billing, broader model support, in-game vision, and universal Minecraft mod/version compatibility — without losing the local-only first-class experience or the closed-action-registry invariant.
+Sei climbs toward **v1.0 = a companion that can play nearly any game.** v0.1.1 was the first Minecraft release; **v0.3** made it a commercializable Minecraft agent; **v0.4 (current)** turns it into an *agentic gaming companion* compelling beyond Minecraft. (The v0.3 milestone was authored under the working label "v1.0 — Commercializable MVP" and renumbered when v1.0 was redefined as omni-game.)
+
+## Current Milestone: v0.4 — Minimum Desirable Companion
+
+**Goal:** Make the companion as emotionally compelling as possible within vanilla Minecraft's limited appeal, and unbind the product from "must play Minecraft" — by decoupling the persona+memory brain from the mineflayer surface so a companion is alive in chat, voice, and minigames too, with memory continuous across all of them.
+
+**Four problems this milestone attacks:**
+- **In-game capability** — the agent isn't as competent as SOTA Minecraft bots: no furnace/smelting, only reactive (not proactive) mob awareness, weak combat, can't read signs or open doors.
+- **Personalization** — memory is on-demand and never actively referenced; the relationship dynamic never evolves.
+- **Personality** — persona prompts are weak; users describe characters poorly and personas drift toward generic "assistant voice."
+- **Accessibility** — Sei is only reachable by Minecraft players, when the actual pitch is companionship / emotional connection.
 
 **Target client features:**
-- Cloud character library — character *definition* (persona, prompt, skin, portrait) is cloud-authoritative; runtime memory stays local
-- User accounts — email/password + Google sign-in (required for cloud/sharing, optional for local-only use)
-- Character sharing — Home (mine + recent) vs Browse (all public, search, "Add to Mine"), c.ai-style discovery
-- Hosted AI billing — purchase proxied AI credits in-app; friendly % usage indicator (no token counts)
-- Multi-provider model support — Anthropic, OpenAI, Gemini, Grok, OpenRouter, OpenAI-compatible local (Ollama, etc.)
-- In-game vision — bot-POV renders via `prismarine-viewer` so a vision-capable model can "see" the world (in progress)
-- Mod & version adapter — ingest a mods folder and emit reviewable, declarative Zod-action recipes (no code execution)
+- Persona & memory core — generalizable persona expander, per-turn persona re-injection (fights attention-decay drift), scored memory retrieval with active fact-callbacks, tone with stronger preferences + honest handling of in-game hallucinations
+- Minecraft competence — furnace/smelting, proactive threat awareness, better combat, sign reading, doors, navigation, better structures
+- Brain–surface decoupling + in-app chat — one persona+memory brain attaches to a surface (Minecraft world, text chat, voice, minigame); memory continuous across surfaces; agent can initiate "let's play" handoffs
+- ElevenLabs voice — voice-per-personality TTS in a call surface, mutually exclusive with text, modality-aware tone (spoken vs typed)
+- Minigames — a small set of LLM-playable non-3D games (GeoGuessr clone + 1–2 more) with personality-varied strategy/skill
+- UI overhaul — Discord-like chat on character-card click; profile, voice-call, and games entry points; games picker as the new summon path
 
 ## Requirements
 
-### Validated (shipped in v0.1.1 / v1.0)
+### Validated (shipped in v0.1.1 / v0.3)
 
 - [x] Single-layer Haiku reasoning + Zod action dispatch (one Anthropic call)
 - [x] Mineflayer integration: world state, in-game chat, inventory, movement control
@@ -63,20 +72,26 @@ The cloud backend (proxy server, auth/billing/moderation infrastructure) lives i
 - [x] Character sharing UI + moderation gates (Phase 12 — code complete)
 - [x] Hosted AI billing + friendly % usage UI (Phase 13)
 - [x] Multi-provider `LlmProvider` abstraction (Phase 14)
+- [x] In-game vision: bot-POV `prismarine-viewer` render + `visualize` Zod action, capability-gated, 16-block + line-of-sight gating (Phase 15)
 
-### Active
+### Active (v0.4 — Minimum Desirable Companion)
 
-- [ ] In-game vision: bot-POV `prismarine-viewer` render + `visualize` Zod action, capability-gated, 16-block + line-of-sight gating (Phase 15 — in progress)
-- [ ] Mod/version adapter ingestion: diff modded items/keybinds vs vanilla → reviewable declarative Zod recipes + texture extraction (Phase 16)
+- [ ] Persona & memory core: generalizable persona expander, per-turn persona re-injection, scored memory retrieval + active callbacks, stronger tone (Phase 16)
+- [ ] Minecraft competence: furnace/smelting, proactive threat awareness, better combat, signs, doors, navigation (Phase 17)
+- [ ] Brain–surface decoupling + in-app text chat: shared persona+memory across surfaces, handoff bridge, agent-initiated "let's play" (Phase 18)
+- [ ] UI overhaul: Discord-like chat on card click; profile / voice-call / games entry points; games picker as summon path (Phase 19)
+- [ ] ElevenLabs voice: voice-per-personality call surface, mutually exclusive with text, modality-aware tone (Phase 20)
+- [ ] Minigames: GeoGuessr clone + 1–2 more, personality-varied strategy/skill (Phase 21)
 
-### Out of Scope (v1.0)
+### Out of Scope (v0.4)
 
 - Raw system-prompt editing in the GUI — power users edit config files directly
 - Multiple simultaneous bots per app instance
-- Voice/audio — text only
-- OS screen-capture / Fabric companion mod for vision — replaced by bot-POV via `prismarine-viewer`
+- Dynamic tone/relationship state machine (flirty↔serious↔aggressive transitions) — deferred; v0.4 gets "alive" relationship feel from memory callbacks instead
+- Modded Minecraft support / mod & version adapter pipeline — **dropped** (was the planned v0.3 Phase 16); blocked on mineflayer's vanilla-only registry ingestion + per-mod protocol code, out of proportion to payoff
+- Omni-game adapter (non-Minecraft real games) — the v1.0 north star, not this milestone
 - Cloud sync of runtime memory (`OWNER.md` / `DIARY.md`) — stays local-only
-- Hot-loaded / LLM-generated handler code — adapters are data, never code
+- Hot-loaded / LLM-generated handler code — the closed action registry stays closed
 
 ## Context
 
@@ -101,8 +116,13 @@ The cloud backend (proxy server, auth/billing/moderation infrastructure) lives i
 | Event-driven FSM with priority queue + abort token | Responsive to game events without busy-polling; owner chat preempts | Shipped |
 | Electron three-process split | Non-technical users need a double-click experience; isolates the bot from the GUI | Shipped |
 | Two backends (local BYOK + cloud proxy) | Local-only stays first-class; cloud serves users who don't want to manage keys | Shipped |
-| Bot-POV vision via `prismarine-viewer` | Avoids OS screen-recording permissions and the player-monitor privacy leak; no Fabric mod | In progress (Phase 15) |
-| Declarative mod adapters (data, not code) | Preserves the closed-registry invariant for modded content | Planned (Phase 16) |
+| Bot-POV vision via `prismarine-viewer` | Avoids OS screen-recording permissions and the player-monitor privacy leak; no Fabric mod | Shipped (Phase 15) |
+| Drop the mod/version adapter pipeline | Modded support needs mineflayer registry-ingestion work + per-mod protocol code; payoff too small, shrinks the userbase | Dropped (was v0.3 Phase 16) |
+| Decouple persona+memory "brain" from the mineflayer "surface" | One brain attaches to world / chat / voice / minigame; unbinds the product from Minecraft and makes memory continuous across surfaces | Planned (v0.4 Phase 18) |
+| Memory = frozen-per-session snapshot in the cached prefix + tail appends | Keeps the persona+memory head always-cached across surface switches; per-turn scored re-ranking would invalidate the cache every turn | Planned (v0.4 Phase 16/18) |
+| Cross-surface continuity via shared memory + a compact handoff bridge | Durable facts flow through memory; transient "what we were just doing" is summarized at the switch — continuity without dragging raw transcripts across (and without killing cache) | Planned (v0.4 Phase 18) |
+| Fight persona drift with per-turn persona re-injection + few-shot voice examples | Drift is attention-decay, not context overflow; scenario scripts don't generalize but voice/register demonstrations do | Planned (v0.4 Phase 16) |
+| Voice and in-game/text chat are mutually exclusive | One output channel at a time; the model is told whether it's spoken or typed and adjusts formality while staying in character | Planned (v0.4 Phase 20) |
 
 ## Evolution
 
@@ -122,4 +142,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-06 — Phases 10–14 complete; Phase 15 (In-Game Vision via prismarine-viewer) is the active phase. Cloud backend split into a separate private repo.*
+*Last updated: 2026-06-25 — v0.3 (Commercializable MVP, Phases 10–15) shipped; planned Phase 16 mod adapter dropped. Started milestone v0.4 — Minimum Desirable Companion (Phases 16–21): persona/memory core, Minecraft competence, brain–surface decoupling + in-app chat, UI overhaul, voice, minigames. Completed v1.0-labeled milestone renumbered to v0.3.*
