@@ -65,11 +65,12 @@ Last activity: 2026-06-25 -- Milestone v0.4 started
 
 - **v0.3 shipped** (Phases 10–15: auth, cloud library, sharing+moderation, billing+% UI, multi-provider, vision). Phase 12 (Browse) remains code-complete behind a capabilities flag pending operator rollout (DMCA registration, moderation backfill, config flip).
 - **Planned v0.3 Phase 16 (mod/version adapter) was dropped** — feasibility investigation found modded Minecraft needs solving mineflayer's vanilla-only registry ingestion (issue #700) plus per-mod protocol code; payoff too small and it shrinks the userbase. Superseded by v0.4.
-- Initial research for v0.4 done this session (codebase grounding + companion/roleplay design). **Deep research is scheduled inside phases:** Minecraft bot SOTA → Phase 17; character.ai/roleplay/Stella → Phase 16; varied-behavior-by-personality → Phase 21.
+- **Deep research front-loaded into the roadmap** (this milestone is research-heavy per user). Full reports in `.planning/research/v0.4-*.md`, synthesized into ROADMAP.md "Research Findings". **4 of 7 streams complete:** `mc-llm-planning`, `mc-mineflayer-skills`, `mc-rl-hybrid` (all Phase 17), and `companion-personality-memory` (Phase 16). **3 streams PENDING (blocked by a provider spend limit, must re-run):** hybrid persona steering (Phase 16 extension), deep memory + relationship infra (Phase 16/18), and varied-behavior + minigames (Phase 21).
+- Phase 17 research verdict: pixel-RL (VPT/STEVE-1/GROOT/DreamerV3) is incompatible with mineflayer's protocol control surface; adopt the hybrid hierarchy via classical game-AI (GOAP + Behavior Trees + Utility AI + steering). Highest-leverage item = a 20Hz reactive threat/combat micro-controller. **Critical blocker to verify first: `bot.activateItem()` broken on MC 1.21+ (mineflayer #3742) — affects eating/shield/bow.**
 
 ### Open Todos
 
-- Define v0.4 REQUIREMENTS.md and ROADMAP.md (in progress — this workflow).
+- **Re-run 3 pending deep-research streams** once the provider spend limit resets: persona-steering hybrid, deep memory+relationship, varied-behavior+minigames (Phase 21). Write to `.planning/research/v0.4-*.md` and fold into ROADMAP.md Research Findings.
 - Operator-side v0.3 Phase 12 Browse rollout (see Phase 12 summary).
 
 ### Blockers

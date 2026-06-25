@@ -182,6 +182,56 @@ The milestone addresses four problems:
 
 ---
 
+## Research Findings
+
+This milestone front-loaded deep research rather than deferring it to per-phase implementative research, because the design space (Minecraft competence, companion personality, varied behavior) is large and draws on a wide external literature. Full cited reports are in `.planning/research/`. The synthesis below is what each phase should build on.
+
+**Research status:** 4 of 7 planned deep-research streams are complete. Three streams remain pending after a provider spend limit interrupted them and must be re-run: (a) hybrid persona steering (activation steering / persona vectors / LoRA), (b) deep memory and relationship infrastructure, (c) varied-behavior-by-personality and minigame design (Phase 21). These are listed as pending below.
+
+### Phase 17 — Minecraft Competence
+
+Reports: `v0.4-mc-llm-planning.md`, `v0.4-mc-mineflayer-skills.md`, `v0.4-mc-rl-hybrid.md`.
+
+1. **Control-surface verdict (decisive).** The marquee RL, imitation-learning, world-model, and foundation-policy agents (VPT, STEVE-1, GROOT, DreamerV3, MineRL, MineDojo) operate on rendered pixels plus mouse and keyboard in the real game client. Sei's bot is a headless protocol client (mineflayer) that sees structured state and acts through a high-level API. These policies cannot be plugged into mineflayer; using one would require running an actual rendered client plus a GPU plus 20 Hz inference alongside the bot, which is not viable on a consumer desktop. Recommendation: do not pursue pixel-based RL. Sei's protocol control surface sidesteps the hard problems those papers solve.
+
+2. **The portable pattern is the hybrid hierarchy, implemented with classical game AI.** Every leading agent splits an LLM or foundation-model planner (slow, symbolic, about 0.2 to 2 Hz) from a low-level controller (fast, reactive, 20 Hz). Sei already is an instance of this pattern, with mineflayer as the controller. The recommended stack: LLM for intent and persona, then GOAP (goal-oriented action planning) for valid multi-step crafting and progression plans, then Behavior Trees and Utility AI for reactive safety and combat at 20 Hz, then steering and pathfinder for motor primitives, then the mineflayer API. Every tier runs locally on structured state with no GPU and no learned weights.
+
+3. **Highest-leverage single item: a reactive threat and combat micro-controller** running in the bot process between LLM turns. A 20 Hz survival loop that reads the entity list each tick, detects creepers before fuse range and flees, and handles melee strafing and target selection. This directly fixes the named failures: the bot currently detects mobs only after being hit, is destroyed by creepers, and freezes in fights. The LLM arms and disarms it; the existing FSM priority preemption (P0/P1) coordinates it.
+
+4. **Progression as static data, not a planner.** Ship a progression dependency graph (`progression.json`) plus a pure `nextMilestone(state, goal)` walker that returns the nearest ready prerequisite and the single action that advances it, surfaced as one advisory `next:` snapshot line. This gives long-horizon coherence and a free curriculum without a planner module and without code generation. Source: Plan4MC skill graph, GITM tech-tree decomposition, Optimus-1 knowledge graph.
+
+5. **Self-verifying tool results at zero extra LLM cost.** Standardize every action return to `{ok, effect, reason, fix}` and render it into the `last_action_result:` line, with handler-side precondition checks that name the missing precondition before an expensive failure. This collapses the Voyager critic and DEPS explain-before-replan ideas into the action handlers, so the single-layer model self-corrects on its next turn without a second model call. Verify claimed effects against the inventory and health deltas the snapshot already computes. Reflect and replan only on a detected discrepancy, never every turn.
+
+6. **Procedural memory.** After a multi-step success, write a terse known-good procedure to memory (for example, how iron was obtained) so future turns retrieve it instead of re-deriving it. Source: JARVIS-1 plan retrieval; fits Sei's existing per-world memory.
+
+7. **Concrete adapter additions (mineflayer-specific, prioritized).** Threat-safety spine: a `startThreatWatch` ticker plus a `threats:` snapshot line, a `fleeFrom` action, and migration of combat from the hand-rolled swing loop to `mineflayer-pvp` (correct cooldown and crit timing) with `fight`/`stopFighting` actions. Iron-tier crafting: a `smelt` action using `bot.openFurnace` that returns early and a `collectSmelted` pair, plus adopting `mineflayer-tool` so ore is mined with a sufficient tool (iron ore drops nothing below a stone pickaxe, a silent blocker today). Interaction: `useBlock` via `bot.activateBlock` for doors and levers (this packet path is unaffected by the bug in item 8), `readSign` via `block.getSignText()`, and self-relative `pillarUp`/`shelter` builds. Survivability: adopt `mineflayer-armor-manager`.
+
+8. **Critical blocker to verify first.** `bot.activateItem()` is broken on Minecraft 1.21+ (mineflayer issue #3742, closed as not-planned; the `use_item` packet schema was not updated for the 1.21 wire format). This path is used by eating, `consume`, auto-eat, shield raising, and bow drawing. Eating is iron-tier-critical and currently routes through it. Action: connect to a real 1.21.x world and verify; add a single `seiActivateItem()` shim so the eventual protocol fix is a one-file change; if broken, hand-write the `use_item` packet with the 1.21 `yaw`/`pitch` fields or bump `minecraft-data`. Prefer block and entity interactions where possible, since those use a different unaffected packet.
+
+9. **Open-source reference on the identical stack.** mindcraft-ce (mineflayer plus LLMs) already implements doors, fence gates, furnace smelting, and signs as parameterized commands, and keeps code generation off by default for safety. Read its behavior implementations for the mineflayer mechanics rather than re-deriving them. It also validates Sei's closed-registry stance.
+
+### Phase 16 — Persona & Memory Core
+
+Report: `v0.4-companion-personality-memory.md`. Deeper persona-steering and memory-infrastructure dives are pending (see below).
+
+1. **Drift is attention decay, not context overflow.** Self-consistency degrades more than 30 percent after 8 to 12 turns even with full context intact, and small models drift more (relevant because the default is Haiku-class). The retraining-free fix is to re-inject a compressed persona core (name plus about three traits plus register) at high recency on every turn, held at a static low depth. This validates the locked per-turn re-injection decision. Source: arXiv 2402.10962; SillyTavern Author's Note depth injection.
+
+2. **Voice examples are the strongest anti-drift lever.** A few-shot of `say()` calls in the bot's own output format (Ali:Chat style, demonstrating register rather than situations) is the most-cited fix for drift and generic assistant voice. Positive demonstrations beat negations. Make the two or three defining traits load-bearing through redundancy (state them in the persona, in an example, and in a rule).
+
+3. **Expansion uses a fixed-axis schema, not scenario scripts.** Generalizable axes: trait backbone (OCEAN-style), values and goals, an enumerated speech register (tone, rate, diction as a closed set, not free text), likes and dislikes, and stance toward the player. Refinements: enumerate register as a closed set for consistency (Voicing Personas, arXiv 2505.17093), preserve every seed fact and then elaborate (PersonaHub, arXiv 2406.20094), and constrain auto-expansion defaults to avoid stereotyped voice injection. Do not add hand-written situational examples; trait and register descriptions generalize across early game, late game, chat, and minigames, while scene scripts do not. This validates and refines the existing six-section `persona.expanded`.
+
+4. **Memory: scored retrieval plus active callbacks.** Adopt the Stanford Generative Agents formula: score is recency plus importance plus relevance, each normalized to the 0 to 1 range, equal weights to start, recency decay factor 0.995, importance rated 1 to 10 by the model at write time, and reflection that distills raw entries into higher-level facts. The thing users actually perceive as an evolving relationship is concrete fact-recall callbacks (for example, recalling a disliked thing weeks later), not affinity meters. Auto-write facts more aggressively at write time rather than waiting for the model to volunteer them. Source: arXiv 2304.03442; MemGPT/Letta for the self-editing tiered model that resembles Sei's current `remember()`/`forget()`.
+
+5. **Proactivity and honesty.** Gate proactive speech on having something worth saying rather than on a timer (Inner Thoughts, CHI 2025, arXiv 2501.00383), give proactive questions a motivated reason tied to shared activity (the Whispers from the Star lesson), acknowledge the user's answer, and pace intimacy gradually. When the companion is wrong about an in-game fact, recover in character with self-deprecation rather than a hard refusal or an out-of-character apology (RoleBreak, arXiv 2409.16727). Reliability is itself a rapport feature, and optimizing for per-turn approval drives sycophancy (the April 2025 GPT-4o rollback).
+
+### Phase 21 — Minigames and varied behavior (PENDING)
+
+The deep-research stream for personality-varied action and skill, and for minigame design, did not complete before the spend limit and must be re-run. It should cover: whether persona prompting changes action selection rather than only tone; decoding and sampling diversity; deliberate skill calibration and handicapping (Maia human-like chess models, MCTS with handicap, Elo-targeted engines) for believable weak and strong opponents; the division of labor between the companion LLM playing directly and a per-game engine playing while the LLM narrates in character; and GeoGuessr imagery sources (Google Street View Static API, Mapillary, photorealistic 3D tiles), licensing and cost, scoring by haversine distance, and candidate additional games. Target report: `v0.4-varied-behavior-and-minigames.md`.
+
+### Phases 18, 19, 20 (implementative research at plan time)
+
+Brain-surface decoupling, the UI overhaul, and ElevenLabs voice are implementation-driven and were not scoped for a separate external-literature stream. Their research is implementative (codebase integration, ElevenLabs API, UI patterns) and belongs in plan-phase. The earlier codebase grounding for these areas is already captured in the session and the locked decisions.
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
