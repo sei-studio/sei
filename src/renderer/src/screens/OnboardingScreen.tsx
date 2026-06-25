@@ -31,7 +31,7 @@ import { classifyRendererError } from '../lib/errors';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
-import { ProviderTiles, type Provider } from '../components/ProviderTiles';
+import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import type { UserConfig } from '@shared/characterSchema';
 
 export interface OnboardingScreenProps {
@@ -230,7 +230,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         onBack={back}
         onNext={next}
       >
-        <ProviderTiles value={provider} onChange={setProvider} />
+        <ProviderSelect value={provider} onChange={setProvider} />
       </QuestionShell>
     );
   }

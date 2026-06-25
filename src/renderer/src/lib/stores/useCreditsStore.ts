@@ -110,6 +110,18 @@ let checkoutMaxTimer: ReturnType<typeof setTimeout> | null = null;
 let checkoutBaseline: CheckoutBaseline | null = null;
 let lastBillingActionAt = 0;
 
+// Monotonic load epoch. Bumped on every reset() — i.e. on every auth/scope
+// transition that re-points which profile the store reflects. init()/refresh()
+// capture the epoch BEFORE their async creditsGet() and discard the result if
+// the epoch advanced while the read was in flight. Without this, the credits
+// init() fired by the SYNCHRONOUS signed_in push (which reads the OLD scope's
+// ai_backend_kind, before the async profile-scope switch has written the
+// cloud-proxy billing default) can resolve AFTER the scope-changed refresh and
+// clobber it back to a stale 'local' — landing a freshly signed-in user on
+// local mode. The epoch makes the LAST-initiated read authoritative regardless
+// of which creditsGet() resolves first.
+let loadEpoch = 0;
+
 function clearCheckoutTimers(): void {
   if (checkoutPollTimer !== null) {
     clearInterval(checkoutPollTimer);
@@ -447,11 +459,15 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
 
     set({ unsubStatus, unsubHardStop, unsubFocus });
 
-    // 2. Seed; skip applying if a push arrived during the await.
+    // 2. Seed; skip applying if a push arrived during the await, OR if a
+    //    reset() (auth/scope transition) superseded this load while it was in
+    //    flight (loadEpoch — see its declaration).
     const seqBefore = get().pushSeq;
+    const epochBefore = loadEpoch;
     set({ loading: true });
     try {
       const status = await sei.creditsGet();
+      if (loadEpoch !== epochBefore) return; // superseded by a newer scope
       if (get().pushSeq === seqBefore) {
         set({
           remaining_pct: status.remaining_pct,
@@ -492,9 +508,11 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
   },
 
   refresh: async (): Promise<void> => {
+    const epochBefore = loadEpoch;
     set({ loading: true });
     try {
       const status = await sei.creditsGet();
+      if (loadEpoch !== epochBefore) return; // superseded by a scope transition
       set({
         remaining_pct: status.remaining_pct,
         usage_pct: status.usage_pct ?? 0,
@@ -602,6 +620,10 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
   },
 
   reset: (): void => {
+    // Invalidate any creditsGet() still in flight from a prior scope (see
+    // loadEpoch docs) so its late resolution can't repopulate this freshly
+    // reset store with the previous profile's values.
+    loadEpoch += 1;
     const { unsubStatus, unsubHardStop, unsubFocus } = get();
     unsubStatus?.();
     unsubHardStop?.();

@@ -371,23 +371,27 @@ describe('ensureLocallyCached — refresh-on-open', () => {
     expect(saveCharacterRawMock.mock.calls[0][0].name).toBe('Backfilled');
   });
 
-  it('default char refreshes prompt but keeps bundled art (cloud portrait null / skin bundled)', async () => {
+  it('bundled default is NOT refreshed from cloud — the app bundle is authoritative', async () => {
+    // refreshSeededDefaults re-asserts a default's authored fields (persona,
+    // metadata.proactiveness, skin, …) from the shipped bundle on every launch.
+    // Pulling the cloud row here would adopt a STALE copy and clobber the bundle
+    // value — e.g. Sui flips from the bundle's Agentic back to the cloud row's
+    // Reactive moments after launch. So a default cache-hit must short-circuit
+    // before the network: no download, no re-save.
     await makeLocal(UUID_A);
     getCharacterMock.mockResolvedValue(
       makeLocalChar({
         is_default: true,
-        owner: null, // defaults stay locally editable — owner must not be adopted
+        owner: null,
         portrait_image: './img/sui.png',
         skin: { source: 'bundled', mojang_username: null, png_sha256: null, applied_at: null },
       }),
     );
     downloadCharacterMock.mockResolvedValue(
       makeCharacter({
-        owner: AUTHOR, // system owner upstream — must NOT leak onto the editable default
+        owner: AUTHOR,
         name: 'Sui v2',
         persona: { source: 'sui v2 src', expanded: 'sui v2 expanded' },
-        portrait_image: null,
-        skin: { source: 'bundled', mojang_username: null, png_sha256: null, applied_at: null },
         cloud_updated_at: '2026-05-01T00:00:00.000Z',
       }),
     );
@@ -395,85 +399,9 @@ describe('ensureLocallyCached — refresh-on-open', () => {
     const { ensureLocallyCached } = await import('./cacheOnDemand');
     await ensureLocallyCached(UUID_A);
 
-    expect(saveCharacterRawMock).toHaveBeenCalledTimes(1);
-    const saved = saveCharacterRawMock.mock.calls[0][0];
-    expect(saved.persona).toEqual({ source: 'sui v2 src', expanded: 'sui v2 expanded' });
-    // Identity preserved: still a default, still owner-null (editable), bundled art kept
-    expect(saved.is_default).toBe(true);
-    expect(saved.owner).toBeNull();
-    expect(saved.portrait_image).toBe('./img/sui.png');
-    expect(saved.skin.source).toBe('bundled');
-  });
-
-  it('default char adopts cloud portrait + skin once the bytes download', async () => {
-    await makeLocal(UUID_A);
-    getCharacterMock.mockResolvedValue(
-      makeLocalChar({
-        is_default: true,
-        owner: null,
-        cloud_updated_at: null,
-        portrait_image: './img/sui.png',
-        skin: { source: 'bundled', mojang_username: null, png_sha256: null, applied_at: null },
-      }),
-    );
-    downloadCharacterMock.mockResolvedValue(
-      makeCharacter({
-        owner: AUTHOR,
-        portrait_image: `${UUID_A}.png`, // rowToCharacter strips the <owner>/ prefix
-        skin: { source: 'upload', mojang_username: null, png_sha256: 'deadbeef', applied_at: '2026-05-01T00:00:00.000Z' },
-        cloud_updated_at: '2026-05-01T00:00:00.000Z',
-      }),
-    );
-    downloadPortraitMock.mockResolvedValue(Buffer.from([1, 2, 3]));
-    downloadSkinMock.mockResolvedValue(Buffer.from([4, 5, 6, 7]));
-
-    const { ensureLocallyCached } = await import('./cacheOnDemand');
-    await ensureLocallyCached(UUID_A);
-
-    // Bytes pulled from the AUTHOR's (system) storage path.
-    expect(downloadPortraitMock).toHaveBeenCalledWith(AUTHOR, UUID_A);
-    expect(downloadSkinMock).toHaveBeenCalledWith(AUTHOR, UUID_A);
-    const saved = saveCharacterRawMock.mock.calls[0][0];
-    expect(saved.portrait_image).toBe(`${UUID_A}.png`);
-    expect(saved.skin.source).toBe('upload');
-    expect(saved.cloud_updated_at).toBe('2026-05-01T00:00:00.000Z');
-    // Still a default and still editable (owner not adopted from the system row)
-    expect(saved.is_default).toBe(true);
-    expect(saved.owner).toBeNull();
-    // Bytes landed on disk
-    expect((await readFile(paths.portraitPath(UUID_A))).length).toBe(3);
-    expect((await readFile(paths.skinPngPath(UUID_A))).length).toBe(4);
-  });
-
-  it('keeps bundled art + does NOT advance the watermark when an asset 404s', async () => {
-    await makeLocal(UUID_A);
-    getCharacterMock.mockResolvedValue(
-      makeLocalChar({
-        is_default: true,
-        owner: null,
-        cloud_updated_at: null,
-        portrait_image: './img/sui.png',
-        skin: { source: 'bundled', mojang_username: null, png_sha256: null, applied_at: null },
-      }),
-    );
-    downloadCharacterMock.mockResolvedValue(
-      makeCharacter({
-        owner: AUTHOR,
-        portrait_image: `${UUID_A}.png`,
-        skin: { source: 'bundled', mojang_username: null, png_sha256: null, applied_at: null },
-        cloud_updated_at: '2026-05-01T00:00:00.000Z',
-      }),
-    );
-    downloadPortraitMock.mockResolvedValue(null); // not yet uploaded → 404
-
-    const { ensureLocallyCached } = await import('./cacheOnDemand');
-    await ensureLocallyCached(UUID_A);
-
-    const saved = saveCharacterRawMock.mock.calls[0][0];
-    // Content still adopted, but the portrait reference stays bundled...
-    expect(saved.portrait_image).toBe('./img/sui.png');
-    // ...and the watermark is NOT advanced, so the next open retries.
-    expect(saved.cloud_updated_at).toBeNull();
+    // Skipped before the network: no cloud download, no clobbering re-save.
+    expect(downloadCharacterMock).not.toHaveBeenCalled();
+    expect(saveCharacterRawMock).not.toHaveBeenCalled();
   });
 });
 

@@ -68,6 +68,24 @@ describe('switchScopeForAuth', () => {
     expect(sendMock).toHaveBeenCalledWith(IpcChannel.app.scopeChanged, { scope: UUID_A, reason: 'sign-in' });
   });
 
+  it('signs in: defaults the freshly-scoped profile to cloud-proxy billing', async () => {
+    await switchScopeForAuth(UUID_A);
+    const { getAiBackendKind } = await import('../apiKeyStore');
+    expect(await getAiBackendKind()).toBe('cloud-proxy');
+  });
+
+  it('re-flips a previously-local profile to cloud-proxy on a fresh sign-in', async () => {
+    // Answers "was I on local because the profile was previously set to local?"
+    // No: every genuine sign-in transition re-asserts the cloud default, so a
+    // prior local/BYOK choice on that profile is overridden on re-login.
+    await switchScopeForAuth(UUID_A);
+    const { setAiBackendKind, getAiBackendKind } = await import('../apiKeyStore');
+    await setAiBackendKind('local'); // pretend this profile chose BYOK before
+    await switchScopeForAuth(null); // sign out
+    await switchScopeForAuth(UUID_A); // sign back in
+    expect(await getAiBackendKind()).toBe('cloud-proxy');
+  });
+
   it('is a no-op when the scope is unchanged', async () => {
     await switchScopeForAuth(UUID_A);
     stopMock.mockClear();

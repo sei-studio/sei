@@ -317,10 +317,19 @@ async function refreshFromCloud(uuid: string): Promise<void> {
     const { data: { session } } = await getClient().auth.getSession();
     const currentUserId = session?.user?.id ?? null;
 
-    const isDefault = local.is_default === true;
+    // Bundled defaults (sui/lyra/clawd) are authoritative from the APP BUNDLE,
+    // never the cloud. refreshSeededDefaults re-asserts their authored fields
+    // (persona, metadata.proactiveness, skin, …) from the shipped source on
+    // every launch, so they auto-update through app releases. Pulling their
+    // cloud row HERE adopts a STALE cloud copy and clobbers the bundle value —
+    // e.g. Sui flips from the bundle's Agentic back to the cloud row's Reactive
+    // moments after launch (the "showed agentic for a second, then dropped to
+    // reactive" report). Skip them entirely; the bundle is the single source of
+    // truth for defaults.
+    if (local.is_default === true) return;
     const isForeign = !!local.owner && local.owner !== currentUserId;
     // Item 4 (cross-device): ALSO refresh the user's OWN cloud-backed characters
-    // (owner === currentUserId), not just defaults + foreign. A public/private
+    // (owner === currentUserId), not just foreign. A public/private
     // toggle (or any edit) made on ANOTHER device bumps the cloud row's
     // updated_at; pulling it here on next open propagates the new `shared` flag
     // (and content) to this device, fixing the "toggle on device A doesn't update
@@ -329,7 +338,7 @@ async function refreshFromCloud(uuid: string): Promise<void> {
     // when a local sync op for this uuid is pending (so unsynced local edits win).
     // Local-only characters (owner === null, no cloud row) are still skipped.
     const isOwnCloud = !!local.owner && local.owner === currentUserId;
-    if (!isDefault && !isForeign && !isOwnCloud) return;
+    if (!isForeign && !isOwnCloud) return;
 
     const { downloadCharacter } = await import('./cloudCharacterClient');
     const cloud = await downloadCharacter(uuid);

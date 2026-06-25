@@ -20,7 +20,7 @@
 import React, { useEffect, useId, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { Button } from './Button';
-import { ProviderTiles, type Provider } from './ProviderTiles';
+import { ProviderSelect, type Provider } from './ProviderSelect';
 import { TextField } from './TextField';
 import styles from './ApiKeySetupModal.module.css';
 
@@ -110,7 +110,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
           Use your own API key
         </h2>
         <p className={styles.body}>Pick a provider and paste a key — Sei runs on your key instead of playtime.</p>
-        <ProviderTiles value={provider} onChange={setProvider} compact />
+        <ProviderSelect value={provider} onChange={setProvider} compact />
         <div className={styles.keyField}>
           <span className={styles.fieldLabel}>Paste your {providerLabel} API key</span>
           <TextField

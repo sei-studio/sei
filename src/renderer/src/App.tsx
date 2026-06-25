@@ -351,6 +351,21 @@ export function App(): React.ReactElement {
         // authState push because app:scope-changed is emitted after the async
         // scope teardown, so the sign-out routing must live here. (Fix 260605.)
         if (ev.reason === 'sign-out') { navigate({ kind: 'auth-choice' }); return; }
+        // Re-seed the credits store now that the scope has ACTUALLY switched.
+        // The authState-keyed effect above already reset()+init()'d it from the
+        // SYNCHRONOUS signed_in push — which fires BEFORE this async scope switch
+        // wrote the cloud-proxy billing default into the new profile's
+        // config.json — so that init() read the OLD scope's
+        // `ai_backend_kind: 'local'`. authState doesn't change again here, so it
+        // never re-reads. reset()+init() re-seeds against the settled scope; the
+        // reset() bumps the store's loadEpoch, which discards the earlier
+        // in-flight creditsGet() (it would otherwise resolve late and clobber us
+        // back to local). Net effect: a freshly signed-in user lands on cloud
+        // mode, deterministically, regardless of which read resolves first.
+        try {
+          useCreditsStore.getState().reset();
+          await useCreditsStore.getState().init();
+        } catch { /* keep last */ }
         // Onboarded but skin-setup still pending → resume the dedicated step.
         if (onboardedName && skinPending) { navigate({ kind: 'skin-setup' }); return; }
         // Onboarded account → straight home, on the HOME tab (which shows the

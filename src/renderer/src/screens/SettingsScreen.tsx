@@ -31,8 +31,9 @@ import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
+import { ResetAllMemoriesConfirmModal } from '../components/ResetAllMemoriesConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
-import { ProviderTiles, type Provider } from '../components/ProviderTiles';
+import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { InfoTip } from '../components/InfoTip';
 import { BackIcon, SunIcon, MoonIcon } from '../components/icons';
 import type { UserConfig } from '@shared/characterSchema';
@@ -152,7 +153,7 @@ export function SettingsScreen(): React.ReactElement {
   // ui-A9: two-click destructive Reset-all-memories state. confirming flag
   // arms the next click; progress carries "X of N" while iterating; done
   // flashes a confirmation when the loop completes.
-  const [confirmingResetAll, setConfirmingResetAll] = useState<boolean>(false);
+  const [resetAllModalOpen, setResetAllModalOpen] = useState<boolean>(false);
   const [resetAllProgress, setResetAllProgress] = useState<{ done: number; total: number } | null>(null);
   const [resetAllDone, setResetAllDone] = useState<boolean>(false);
   const [resetAllError, setResetAllError] = useState<string | null>(null);
@@ -377,15 +378,17 @@ export function SettingsScreen(): React.ReactElement {
   // (the IPC handler itself refuses only when the bot is currently summoned
   // to that character). After each row we refreshCharacter() so the
   // store's last_launched / playtime_ms mirror the on-disk reset.
-  const onResetAllMemoriesClick = async (): Promise<void> => {
-    if (!confirmingResetAll) {
-      setConfirmingResetAll(true);
-      setResetAllError(null);
-      setResetAllDone(false);
-      return;
-    }
+  // Opens the confirm popup. The actual wipe runs in runResetAllMemories once
+  // the user confirms in the modal.
+  const onResetAllMemoriesClick = (): void => {
+    setResetAllError(null);
+    setResetAllDone(false);
+    setResetAllModalOpen(true);
+  };
+
+  const runResetAllMemories = async (): Promise<void> => {
     const snapshot = allCharacters.slice();
-    setConfirmingResetAll(false);
+    setResetAllModalOpen(false);
     setResetAllProgress({ done: 0, total: snapshot.length });
     setResetAllError(null);
     setResetAllDone(false);
@@ -447,10 +450,10 @@ export function SettingsScreen(): React.ReactElement {
         </div>
 
         {/*
-          ui-A1: Provider tiles + API key row are LOCAL-only. Cloud-proxy
+          ui-A1: Provider picker + API key row are LOCAL-only. Cloud-proxy
           users have no BYO key — credits + billing replace these surfaces.
-          The compact ProviderTiles re-renders inline (no separate picker
-          screen / modal) so a vendor switch is one click.
+          The compact ProviderSelect dropdown re-renders inline (no separate
+          picker screen / modal) so a vendor switch is one click.
         */}
         {aiBackendKind === 'local' ? (
           <>
@@ -458,7 +461,7 @@ export function SettingsScreen(): React.ReactElement {
               <span className={styles.rowLabel}>Provider</span>
               <span className={styles.rowEditor} style={{ flex: 1, justifyContent: 'flex-start' }}>
                 <div style={{ flex: 1, maxWidth: 'none' }}>
-                  <ProviderTiles
+                  <ProviderSelect
                     value={currentProvider}
                     onChange={(p) => void onChangeProvider(p)}
                     compact
@@ -844,15 +847,13 @@ export function SettingsScreen(): React.ReactElement {
               type="button"
               className={styles.dangerBtn}
               disabled={resetAllProgress !== null || allCharacters.length === 0}
-              onClick={() => void onResetAllMemoriesClick()}
+              onClick={onResetAllMemoriesClick}
             >
               {resetAllDone
                 ? 'All memories reset'
                 : resetAllProgress
                   ? `Resetting ${resetAllProgress.done} of ${resetAllProgress.total}…`
-                  : confirmingResetAll
-                    ? 'Click again to confirm reset'
-                    : 'Reset all memories…'}
+                  : 'Reset all memories…'}
             </button>
           </div>
           <p className={styles.rowHelper}>
@@ -921,6 +922,13 @@ export function SettingsScreen(): React.ReactElement {
           direction={pendingSwitch}
           onCancel={() => setPendingSwitch(null)}
           onConfirm={confirmSwitch}
+        />
+      ) : null}
+      {resetAllModalOpen ? (
+        <ResetAllMemoriesConfirmModal
+          characterCount={allCharacters.length}
+          onCancel={() => setResetAllModalOpen(false)}
+          onConfirm={runResetAllMemories}
         />
       ) : null}
       {dmcaModalOpen ? (

@@ -211,6 +211,39 @@ describe('useCreditsStore', () => {
     expect(creditsGetMock).toHaveBeenCalledTimes(2);
   });
 
+  it('Test 4b: a creditsGet() in flight across a reset() (scope switch) does NOT clobber the new scope', async () => {
+    // The sign-in race that landed freshly signed-in users on local mode: the
+    // FIRST init() reads the OLD scope (ai_backend_kind: local) and is slow; a
+    // reset()+init() for the NEW scope (cloud-proxy) supersedes it. When the
+    // stale read finally resolves it must be discarded by the loadEpoch guard,
+    // not written over the new scope's value.
+    const resolvers: Array<(s: CreditsStatus) => void> = [];
+    creditsGetMock.mockImplementation(
+      () => new Promise<CreditsStatus>((res) => { resolvers.push(res); }),
+    );
+    const store = await loadStore();
+
+    // Stale load against the old scope — still in flight.
+    const stalePromise = store.getState().init();
+    expect(resolvers.length).toBe(1);
+
+    // Scope switches: reset() bumps the epoch, then a fresh init() loads the new scope.
+    store.getState().reset();
+    const freshPromise = store.getState().init();
+    expect(resolvers.length).toBe(2);
+
+    // The NEW scope's read resolves first → cloud-proxy applied.
+    resolvers[1](status({ ai_backend_kind: 'cloud-proxy', remaining_pct: 50 }));
+    await freshPromise;
+    expect(store.getState().ai_backend_kind).toBe('cloud-proxy');
+
+    // The STALE read resolves LATE with local → epoch guard must discard it.
+    resolvers[0](status({ ai_backend_kind: 'local', remaining_pct: 0 }));
+    await stalePromise;
+    expect(store.getState().ai_backend_kind).toBe('cloud-proxy');
+    expect(store.getState().remaining_pct).toBe(50);
+  });
+
   it('Test 5: onCreditsStatusUpdate push mutates state', async () => {
     creditsGetMock.mockResolvedValue(status({ remaining_pct: 100 }));
     const store = await loadStore();
