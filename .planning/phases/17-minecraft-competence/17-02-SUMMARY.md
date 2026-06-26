@@ -116,6 +116,11 @@ None beyond the deviation above.
 - Plan 05 can frame the `attackerKind:'reflex'` announcement (contract documented above).
 - Plan 06 validates live evasion end-to-end in a real session (checkpoint) — the wiring, yield, and announcement paths are all in place.
 
+## Self-Check: PASSED
+- All 5 modified files present on disk.
+- All 4 commits (3 task + 1 docs) found in git history.
+- STATE.md / ROADMAP.md untouched (worktree mode — orchestrator owns those).
+
 ---
 *Phase: 17-minecraft-competence*
 *Completed: 2026-06-26*
