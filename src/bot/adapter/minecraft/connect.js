@@ -19,6 +19,7 @@ import { startPosHealer, stopPosHealer } from './observers/posHealer.js'
 import { startChat } from './behaviors/chat.js'
 import { startAutoEat } from './behaviors/autoEat.js'
 import { startCombat } from './behaviors/combat.js'
+import { startReflex } from './behaviors/reflex.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -248,10 +249,13 @@ export function createBotInstance({
       startPosHealer(bot)
       startAutoEat(bot)
       startCombat(bot, config)
+      startReflex(bot, config)
       startFollow(bot, config)
       try { onSpawn?.() } catch (err) { logger.warn?.(`[sei/connect] onSpawn hook threw: ${err && err.message}`) }
     } else {
-      // respawn after death — restart follow only
+      // respawn after death — restart follow + re-arm the reflex loop (Plan 01's
+      // disposer tears the loop down on death, so respawn must re-arm it).
+      startReflex(bot, config)
       startFollow(bot, config)
     }
   })
