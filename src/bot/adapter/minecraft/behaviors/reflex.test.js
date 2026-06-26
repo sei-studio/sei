@@ -10,7 +10,7 @@
 // distance of the arrow's ray to the bot, plus an `ahead` flag so an arrow
 // that already flew past never triggers a dodge.
 
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
 import { EventEmitter } from 'node:events'
 import {
   startReflex,
@@ -31,11 +31,27 @@ function makeBot() {
   bot._controls = {}
   bot.setControlState = (name, state) => { bot._controls[name] = state }
   bot.lookAt = () => {}
+  bot._goalLog = []
+  // Mirror mineflayer-pathfinder: setGoal stores the goal and emits
+  // goal_updated (the installed ^2.4.5 does not expose bot.pathfinder.goal, so
+  // the reflex loop tracks the external goal via this event).
   bot.pathfinder = {
     goal: null,
-    setGoal(goal) { this.goal = goal; this._setCount = (this._setCount ?? 0) + 1 },
+    dynamic: false,
+    setGoal(goal, dynamic = false) {
+      this.goal = goal
+      this.dynamic = dynamic
+      this._setCount = (this._setCount ?? 0) + 1
+      bot._goalLog.push(goal)
+      bot.emit('goal_updated', goal, dynamic)
+    },
   }
   return bot
+}
+
+// A creeper entity at a given X distance along +x.
+function creeperAt(d, metadata) {
+  return { id: 7, name: 'creeper', position: { x: d, y: 0, z: 0 }, metadata }
 }
 
 const cfg = (mc = {}) => ({ adapter: { kind: 'minecraft', minecraft: mc } })
@@ -149,5 +165,78 @@ describe('startReflex pulse responses (no pathfinder goal contention)', () => {
     expect(bot.listenerCount('physicsTick')).toBe(1)
     dispose()
     expect(bot.listenerCount('physicsTick')).toBe(0)
+  })
+})
+
+describe('startReflex creeper flee (goal takeover + mutex + announcement)', () => {
+  // GoalInvert/GoalFollow live in the same package the loop uses.
+  let GoalInvert
+  beforeAll(async () => {
+    const pkg = (await import('mineflayer-pathfinder')).default
+    GoalInvert = pkg.goals.GoalInvert
+  })
+
+  it('enters flee: sets _seiReflexActive, saves the goal, installs GoalInvert', () => {
+    const bot = makeBot()
+    const dispose = startReflex(bot, cfg())
+    const priorGoal = { _id: 'gather-goal' }
+    bot.pathfinder.setGoal(priorGoal, true) // an in-flight action goal
+
+    bot.entities[7] = creeperAt(7) // inside the 8-block enter band
+    bot.emit('physicsTick')
+
+    expect(bot._seiReflexActive).toBe(true)
+    expect(bot._seiSavedGoal).toBe(priorGoal)
+    expect(bot.pathfinder.goal).toBeInstanceOf(GoalInvert)
+    dispose()
+  })
+
+  it('drives a creeper 7→13 blocks: GoalInvert set once, saved goal restored once (no oscillation)', () => {
+    const bot = makeBot()
+    const dispose = startReflex(bot, cfg())
+    const priorGoal = { _id: 'gather-goal' }
+    bot.pathfinder.setGoal(priorGoal, true)
+
+    bot.entities[7] = creeperAt(7)
+    bot.emit('physicsTick') // enter flee
+
+    // Inside the hysteresis band (8 < d ≤ 12): keep fleeing, no new setGoal.
+    bot.entities[7].position.x = 9
+    bot.emit('physicsTick')
+    bot.entities[7].position.x = 11
+    bot.emit('physicsTick')
+
+    // Past the exit band → restore.
+    bot.entities[7].position.x = 13
+    bot.emit('physicsTick')
+
+    const invertSets = bot._goalLog.filter((g) => g instanceof GoalInvert)
+    expect(invertSets).toHaveLength(1) // exactly one flee takeover
+    expect(bot._seiReflexActive).toBe(false)
+    expect(bot.pathfinder.goal).toBe(priorGoal) // restored
+    dispose()
+  })
+
+  it('emits exactly one sei:reflex per engagement across many in-range ticks', () => {
+    const bot = makeBot()
+    const events = []
+    bot.on('sei:reflex', (p) => events.push(p))
+    const dispose = startReflex(bot, cfg())
+
+    bot.entities[7] = creeperAt(5) // well inside the enter band
+    for (let i = 0; i < 6; i++) bot.emit('physicsTick')
+
+    expect(events).toHaveLength(1)
+    expect(events[0].threat).toBe('creeper')
+    dispose()
+  })
+
+  it('a fusing creeper panics into flee regardless of distance', () => {
+    const bot = makeBot()
+    const dispose = startReflex(bot, cfg())
+    bot.entities[7] = creeperAt(20, { 16: 1 }) // far, but mid-fuse
+    bot.emit('physicsTick')
+    expect(bot._seiReflexActive).toBe(true)
+    dispose()
   })
 })
