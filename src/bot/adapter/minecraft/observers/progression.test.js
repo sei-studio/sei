@@ -6,6 +6,8 @@ import {
   matchGoalToNode,
   readProgressionState,
   getProgression,
+  nextMilestone,
+  loadSpine,
 } from './progression.js'
 
 const ids = (nodes) => nodes.map(n => n.id)
@@ -135,6 +137,66 @@ describe('spine is consistent with real game data (minecraft-data 1.21.1)', () =
     for (const name of ['oak_log', 'obsidian', 'blaze_rod', 'ender_pearl']) {
       expect(hasRecipe(name), `${name} should NOT be a crafting recipe`).toBe(false)
     }
+  })
+})
+
+describe('progression.json externalization (D-04/D-07)', () => {
+  it('loads the spine from progression.json — all 16 ids incl. iron_pickaxe', () => {
+    const allIds = SPINE.map(n => n.id)
+    expect(allIds).toContain('iron_pickaxe')
+    expect(allIds).toContain('dragon')
+    expect(SPINE.length).toBe(16)
+  })
+
+  it('iron-tier nodes (logs..iron_pickaxe) carry next_action + procedure', () => {
+    const ironTier = ['logs', 'crafting_table', 'wood_pickaxe', 'stone_pickaxe', 'furnace', 'iron_pickaxe']
+    for (const id of ironTier) {
+      const node = SPINE.find(n => n.id === id)
+      expect(node, `node ${id} exists`).toBeTruthy()
+      expect(typeof node.next_action, `${id}.next_action`).toBe('string')
+      expect(node.next_action.length, `${id}.next_action non-empty`).toBeGreaterThan(0)
+      expect(typeof node.procedure, `${id}.procedure`).toBe('string')
+      expect(node.procedure.length, `${id}.procedure non-empty`).toBeGreaterThan(0)
+    }
+  })
+
+  it('loadSpine degrades to an empty spine on a missing/malformed file (never throws)', () => {
+    expect(() => loadSpine(new URL('./does-not-exist-progression.json', import.meta.url))).not.toThrow()
+    expect(loadSpine(new URL('./does-not-exist-progression.json', import.meta.url))).toEqual([])
+  })
+})
+
+describe('nextMilestone walker (D-07)', () => {
+  it('with no goal returns currentMilestone + its advancing action', () => {
+    const nm = nextMilestone({ items: {}, pickaxeTier: 0, dim: 'overworld' })
+    expect(nm.node.id).toBe('logs')
+    expect(nm.action).toBe(SPINE.find(n => n.id === 'logs').next_action)
+  })
+
+  it('a goal that matches a frontier node wins over currentMilestone', () => {
+    // After the Nether, frontier = [blaze_rods, ender_pearls]; currentMilestone is blaze_rods.
+    const state = {
+      items: { iron_pickaxe: 1, diamond_pickaxe: 1, furnace: 1, flint_and_steel: 1 },
+      pickaxeTier: 4,
+      dim: 'the_nether',
+      flags: { entered_nether: true },
+    }
+    expect(nextMilestone(state).node.id).toBe('blaze_rods') // no goal → currentMilestone
+    expect(nextMilestone(state, 'go get some ender pearls').node.id).toBe('ender_pearls') // goal wins
+  })
+
+  it('nextMilestone(state, "iron pickaxe") returns the iron_pickaxe node', () => {
+    const state = { items: { stone_pickaxe: 1, furnace: 1 }, pickaxeTier: 2, dim: 'overworld' }
+    const nm = nextMilestone(state, 'go get an iron pickaxe')
+    expect(nm.node.id).toBe('iron_pickaxe')
+    expect(typeof nm.action).toBe('string')
+    expect(nm.action.length).toBeGreaterThan(0)
+  })
+
+  it('returns { node: null, action: null } when the game is complete', () => {
+    const nm = nextMilestone({ items: {}, pickaxeTier: 0, dim: 'the_end', flags: { entered_end: true, killed_dragon: true } })
+    expect(nm.node).toBe(null)
+    expect(nm.action).toBe(null)
   })
 })
 
