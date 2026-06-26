@@ -59,7 +59,12 @@ The milestone addresses four problems:
   4. A fact the companion writes mid-session is usable later in the same session without rebuilding the cached snapshot.
   5. When the companion is wrong about the world or states an incorrect in-game fact, it acknowledges the error in character rather than repeating it, and runtime memory is never synced to the cloud.
 
-**Plans:** TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 16-01-PLAN.md — Runtime # CORE re-injection at the recency tail + honest-mistakes baseline (PERSONA-03/05/06, MEM-04)
+- [ ] 16-02-PLAN.md — Expander generalization: # CORE section, universal/MC split, scenario-agnostic # VOICE, persona-modulated proactivity (PERSONA-01/02/04)
+- [ ] 16-03-PLAN.md — Memory plumbing correctness + remember() cadence + active recall + local-only guard (MEM-01/02/03/06)
 
 ---
 
@@ -282,7 +287,7 @@ Brain-surface decoupling, the UI overhaul, and ElevenLabs voice are implementati
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 16. Persona & Memory Core | 0/TBD | Not started | - |
+| 16. Persona & Memory Core | 0/3 | Not started | - |
 | 17. Minecraft Competence | 0/6 | Not started | - |
 | 18. Brain–Surface Decoupling + In-App Chat | 0/TBD | Not started | - |
 | 19. UI Overhaul | 0/TBD | Not started | - |
