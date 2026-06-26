@@ -178,12 +178,30 @@ export function startReflex(bot, config) {
   if (mc.reflex_enabled === false) return () => {}
 
   const tickMs = Number.isFinite(mc.reflex_tick_ms) && mc.reflex_tick_ms > 0 ? mc.reflex_tick_ms : 50
+  const TH = resolveReflexThresholds(mc)
 
   let _disposed = false
   let _pulseSide = null
   let _pulseTimer = null
   let _strafeSide = null
   let _strafeFlipAt = 0
+
+  // Creeper-flee goal-ownership state. The installed mineflayer-pathfinder
+  // (^2.4.5) does NOT expose `bot.pathfinder.goal`, so we track the externally
+  // set action goal via the `goal_updated` event (the pathfinder emits it on
+  // every setGoal). `_selfSetting` masks our own flee set/restore so we never
+  // snapshot our own GoalInvert as the goal to restore.
+  let _fleeId = null
+  let _savedDynamic = false
+  let _trackedGoal = null
+  let _trackedDynamic = false
+  let _selfSetting = false
+
+  function onGoalUpdated(goal, dynamic) {
+    if (_selfSetting) return
+    _trackedGoal = goal
+    _trackedDynamic = Boolean(dynamic)
+  }
 
   function releasePulse() {
     if (_pulseTimer) { clearTimeout(_pulseTimer); _pulseTimer = null }
@@ -225,6 +243,69 @@ export function startReflex(bot, config) {
     } catch (_) {}
   }
 
+  function creeperPanic(creeper) {
+    const md = creeper?.metadata
+    // index 16 === 1 → fuse/swelling; index 18 → ignited (flint-and-steel lit).
+    return md != null && (Number(md[16]) === 1 || Boolean(md[18]))
+  }
+
+  function countNearbyHostiles(botPos) {
+    let n = 0
+    for (const id in bot.entities) {
+      const e = bot.entities[id]
+      if (!e || e === bot.entity || !e.position) continue
+      if (e.name !== 'creeper' && !HOSTILE_MOBS.has(e.name)) continue
+      if (dist3(e.position, botPos) <= TH.creeper_flee_exit_blocks) n++
+    }
+    return n
+  }
+
+  // CREEPER response: a GOAL-OWNING flee (the one reflex that takes the
+  // pathfinder goal). Snapshot the action goal, take over with
+  // GoalInvert(GoalFollow(creeper, exit)), and restore on exit — transparent to
+  // gather()/follow() under the bot._seiReflexActive mutex that those consumers
+  // yield to (Plan 02 wiring). Fire exactly one in-character announcement per
+  // engagement (rising edge — enterFlee runs once, the active-flee branch in
+  // tick() keeps us fleeing without re-entering).
+  function enterFlee(creeper) {
+    bot._seiReflexActive = true
+    bot._seiSavedGoal = _trackedGoal ?? bot.pathfinder?.goal ?? null
+    _savedDynamic = _trackedDynamic
+    _fleeId = creeper.id
+    releasePulse() // drop any in-flight sidestep before taking the goal
+    try {
+      const goal = new goals.GoalInvert(new goals.GoalFollow(creeper, TH.creeper_flee_exit_blocks))
+      _selfSetting = true
+      bot.pathfinder.setGoal(goal, true)
+    } catch (_) {} finally { _selfSetting = false }
+    emitReflex(creeper)
+  }
+
+  function exitFlee() {
+    try {
+      _selfSetting = true
+      bot.pathfinder.setGoal(bot._seiSavedGoal ?? null, _savedDynamic)
+    } catch (_) {} finally { _selfSetting = false }
+    bot._seiReflexActive = false
+    bot._seiSavedGoal = null
+    _fleeId = null
+  }
+
+  // The payload is shaped so Plan 02's fsmWires translation can frame an
+  // in-character say() offering attack()/explore(). The emit MUST NOT block
+  // evasion and MUST NOT enqueue into fsm.js.
+  function emitReflex(creeper) {
+    try {
+      bot.emit('sei:reflex', {
+        threat: creeper.name,
+        threatLabel: creeper.name,
+        // noticed: did a positive telegraph fire (fuse/ignite) vs a distance-only flee
+        noticed: creeperPanic(creeper),
+        count: countNearbyHostiles(bot.entity.position),
+      })
+    } catch (_) {}
+  }
+
   function tick() {
     if (_disposed) return
     // Knockback packets occasionally produce transient non-finite velocity /
@@ -237,23 +318,41 @@ export function startReflex(bot, config) {
     if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return
     if (bot.health != null && bot.health <= 0) return
 
+    // Maintain an active flee independent of scanThreats: once fleeing we keep
+    // going until the creeper is gone or beyond the EXIT band (hysteresis —
+    // scanThreats only reports the creeper at ≤ enter band, so the exit decision
+    // must live here). A panicking (fusing) creeper holds the flee at any range.
+    if (_fleeId != null) {
+      const creeper = bot.entities[_fleeId]
+      if (!creeper || !creeper.position) { exitFlee(); return }
+      const d = dist3(creeper.position, pos)
+      if (!creeperPanic(creeper) && d > TH.creeper_flee_exit_blocks) exitFlee()
+      return // creeper is top priority while the flee is active
+    }
+
     const threat = scanThreats(bot, mc)
     if (!threat) return
 
+    if (threat.kind === 'creeper') return enterFlee(threat.entity)
     if (threat.kind === 'arrow') return doArrowDodge(threat)
     if (threat.kind === 'melee') return doMeleeStrafe(threat)
-    // threat.kind === 'creeper' — goal-owning flee added in Task 3.
   }
 
   function dispose() {
     if (_disposed) return
     _disposed = true
     releasePulse()
+    // Clear the mutex so consumers (gather/follow/goTo) never deadlock waiting
+    // on a flee that will never exit; leave the goal as-is on teardown.
+    if (bot._seiReflexActive) { bot._seiReflexActive = false; bot._seiSavedGoal = null }
+    _fleeId = null
     try { bot.removeListener('physicsTick', tick) } catch (_) {}
     try { bot.removeListener('death', dispose) } catch (_) {}
+    try { bot.removeListener('goal_updated', onGoalUpdated) } catch (_) {}
   }
 
   bot.on('physicsTick', tick)
   bot.once('death', dispose)
+  bot.on('goal_updated', onGoalUpdated)
   return dispose
 }
