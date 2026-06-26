@@ -25,6 +25,8 @@ import { consumeItemAction } from './behaviors/consume.js'
 import { visualizeAction } from './behaviors/visualize.js'
 import { dropItemAction } from './behaviors/drop.js'
 import { activateItemAction } from './behaviors/activate.js'
+import { activateBlockAction } from './behaviors/activateBlock.js'
+import { readSignAction } from './behaviors/readSign.js'
 import { sleepAction } from './behaviors/sleep.js'
 import {
   openContainerAction,
@@ -418,6 +420,14 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   )
 
   registry.register('activateItem', z.object({}), activateItemAction)
+
+  // Door/gate/lever activation (MCRAFT-05). Uses the block-interact packet
+  // (bot.activateBlock), unaffected by #3742 — distinct from activateItem.
+  registry.register('activateBlock', TargetShape, activateBlockAction)
+
+  // Bounded + sanitized sign read (MCRAFT-04, T-17-07). Read-only; the text is
+  // control-char-stripped and capped to MAX_SIGN_CHARS before it can reach a prompt.
+  registry.register('readSign', TargetShape, readSignAction)
 
   registry.register('sleep', TargetShape, sleepAction)
 
