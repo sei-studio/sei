@@ -76,14 +76,55 @@ capabilities, it might involve a complete redesign."*
 
 ---
 
-## Claude's Discretion
+---
 
-- Threat/combat disposition (creeper handling, bravery-by-personality vs. fixed
-  hardcoded safety floor) — research-led.
-- Positioning-combat algorithm (kiting/strafing/reach).
-- Vision-assisted navigation aggressiveness — research-led, possibly a redesign.
-- Whether iron-tier progression needs an explicit goal/plan scaffold vs.
-  single-layer reaction to the progression snapshot.
+## Round 2 — after ROADMAP research-fold update
+
+The milestone front-loaded deep research (7 streams; folded into ROADMAP +
+`.planning/research/`). Phase 17 is now research-complete, which *answers* the
+items previously routed to research (reflex design, combat, progression,
+control-surface). Two genuinely-open forks were put to the user.
+
+### Extra scope beyond the requirement-mapped core
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Self-verifying action returns | Uniform {ok,effect,reason,fix} + precondition checks across ~18 actions | |
+| Procedural memory write-back | Cache known-good procedures after multi-step success | ✓ |
+| Per-persona reflex weighting | Personality-weighted reflex thresholds (couples to Phase 16) | |
+
+**User's choice:** Procedural memory write-back only.
+**Notes:** Self-verifying action returns deferred (captured as a fast-follow in
+CONTEXT, not lost). Per-persona reflex weighting deferred → Phase 17 ships fixed
+sensible reflex defaults, keeping it independent of Phase 16.
+
+### Vision-assisted navigation (MCRAFT-08)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| On-demand / on-failure | Reach for `look` when nav fails / terrain ambiguous / asked | ✓ |
+| Proactive at key moments | Auto-look on new terrain + nav failures | |
+| Defer / minimal | Thin pass — just ensure `look` is available | |
+
+**User's choice:** On-demand / on-failure.
+**Notes:** The deep research did not cover vision-nav (MC streams are
+structured-state-focused and rejected pixel control), so this was a fresh,
+fairly answerable decision. Reuses the Phase 15 `look` tool; cheapest path.
+
+---
+
+## Claude's Discretion (resolved by research in Round 2)
+
+The Round-1 "deferred to research" items now have concrete answers from the
+completed reports (see CONTEXT D-02, D-04, D-05, D-07):
+- Threat/combat disposition → reflex micro-controller (`startReflex`), 20 Hz,
+  non-interruptive; arrow dodge / creeper flee / melee strafe; fixed defaults
+  this phase.
+- Positioning-combat algorithm → melee strafe ported from custom-pvp "circle".
+- Vision-nav → on-demand (user-decided, Round 2).
+- Progression scaffold → static `progression.json` + `nextMilestone` walker, NOT
+  a planner / NOT GOAP.
+- Control surface → no pixel-based RL; mineflayer protocol + hybrid hierarchy.
 
 ## Deferred Ideas
 
