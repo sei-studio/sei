@@ -1,13 +1,6 @@
 import { stopFollow, startFollow } from './follow.js'
 import { createThrottle } from '../../../brain/debounce.js'
-
-const HOSTILE_MOBS = new Set([
-  'zombie', 'skeleton', 'creeper', 'spider', 'cave_spider', 'witch',
-  'blaze', 'ghast', 'slime', 'phantom', 'drowned', 'husk', 'stray',
-  'pillager', 'vindicator', 'evoker', 'ravager', 'enderman', 'endermite',
-  'silverfish', 'guardian', 'elder_guardian', 'wither_skeleton', 'hoglin',
-  'piglin_brute', 'zoglin',
-])
+import { HOSTILE_MOBS } from './hostiles.js'
 
 function resolveAttacker(bot, source) {
   // Trust an identified source first — including players. The previous

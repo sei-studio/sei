@@ -31,6 +31,30 @@ const MinecraftAdapterSchema = z.object({
   // before it can speak/act — the combat livelock (Sui frozen + silent while
   // taking damage) seen in the 2026-06-19 playlogs. 0 disables (test escape).
   attack_react_throttle_ms: z.number().int().min(0).default(3500),
+  // Reflex evasion micro-controller (Phase 17, D-05). A ~20 Hz physicsTick
+  // survival loop (behaviors/reflex.js) that evades incoming damage BEFORE it
+  // lands — arrow sidestep, creeper goal-owning flee, melee circle-strafe. It
+  // runs entirely on the adapter side (never enters fsm.js). These seven keys
+  // are read via the `mc = config?.adapter?.minecraft ?? config ?? {}` slice.
+  reflex_enabled: z.boolean().default(true),
+  // physicsTick fires at 20 TPS; 50 ms documents the cadence (the loop binds to
+  // the event, not a timer). 0 keeps the documented default tick budget.
+  reflex_tick_ms: z.number().int().min(0).default(50),
+  // Arm the arrow-dodge when a skeleton is within this radius (its ~16-block
+  // shoot range) and react to any incoming arrow ray regardless of distance.
+  arrow_watch_blocks: z.number().int().min(0).default(16),
+  // Closest-approach miss distance (blocks) below which an incoming arrow ray
+  // triggers a sidestep. Non-int (sub-block precision) → no `.int()`.
+  arrow_miss_threshold: z.number().min(0).default(1.2),
+  // Enter creeper flee at this distance (margin over the 3-block / 30-tick
+  // ignite so the bot breaks contact before the fuse swells).
+  creeper_flee_enter_blocks: z.number().int().min(0).default(8),
+  // Exit creeper flee once the creeper is beyond this distance. Enter < exit
+  // gives hysteresis so the bot does not oscillate at the boundary.
+  creeper_flee_exit_blocks: z.number().int().min(0).default(12),
+  // Melee kite band centre (blocks): strafe to hold ~2.5-4 blocks just outside
+  // a melee mob's reach. Non-int → no `.int()`.
+  melee_kite_blocks: z.number().min(0).default(4.5),
 })
 
 const AdapterSchema = z.object({
