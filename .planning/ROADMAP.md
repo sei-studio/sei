@@ -87,13 +87,13 @@ Plans:
   4. The companion opens and passes through doors and gates, and places blocks to build a simple correct structure such as a small shelter at the intended location.
   5. From a new world the companion progresses to iron tier without help (wood, tools, food, shelter, mining, smelting iron), and when vision is enabled it uses visual input to help navigate rather than relying only on coordinates.
 
-**Plans:** 6 plans
+**Plans:** 3/6 plans executed
 
 Plans:
-- [ ] 17-01-PLAN.md — Reflex evasion controller core (arrow dodge / creeper flee / melee strafe + telegraphs + mutex + config) [wave 1]
+- [x] 17-01-PLAN.md — Reflex evasion controller core (arrow dodge / creeper flee / melee strafe + telegraphs + mutex + config) [wave 1]
 - [ ] 17-02-PLAN.md — Reflex integration: connect wiring, follow/goTo/gather yield, announcement surfacing [wave 2]
-- [ ] 17-03-PLAN.md — Missing primitives: furnace 3-slot, door/gate activateBlock, sign reading, shelter [wave 1]
-- [ ] 17-04-PLAN.md — Progression-as-data (progression.json + nextMilestone), next: line, procedural memory [wave 1]
+- [x] 17-03-PLAN.md — Missing primitives: furnace 3-slot, door/gate activateBlock, sign reading, shelter [wave 1]
+- [x] 17-04-PLAN.md — Progression-as-data (progression.json + nextMilestone), next: line, procedural memory [wave 1]
 - [ ] 17-05-PLAN.md — Capability/disposition/vision prompt rewrite [wave 2]
 - [ ] 17-06-PLAN.md — Integration validation: unaided iron tier + reflex + primitives (human-verify) [wave 3]
 
@@ -288,7 +288,7 @@ Brain-surface decoupling, the UI overhaul, and ElevenLabs voice are implementati
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 16. Persona & Memory Core | 0/3 | Not started | - |
-| 17. Minecraft Competence | 0/6 | Not started | - |
+| 17. Minecraft Competence | 3/6 | In Progress|  |
 | 18. Brain–Surface Decoupling + In-App Chat | 0/TBD | Not started | - |
 | 19. UI Overhaul | 0/TBD | Not started | - |
 | 20. ElevenLabs Voice | 0/TBD | Not started | - |
