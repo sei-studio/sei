@@ -108,6 +108,13 @@ None - no external service configuration required.
 - Plan 05 can reference the `nextMilestone` return shape and the `next:` line format for its disposition framing.
 - The threat register items T-17-11 (parse-failure DoS) and T-17-13 (unbounded memory growth) are mitigated as planned (degrade-to-empty + dedupe/compaction).
 
+## Self-Check: PASSED
+
+- All created/modified files present on disk (progression.json, progression.js, snapshot.js, orchestrator.js, SUMMARY.md).
+- All task commits present: `2f09e21`, `1675823`, `de75e31`, `91dd025`, `93ab2ca`.
+- progression.json parses to 16 nodes including iron_pickaxe.
+- Full plan verification green: 71 tests pass across `observers/` + `orchestrator.test.js`.
+
 ---
 *Phase: 17-minecraft-competence*
 *Completed: 2026-06-26*
