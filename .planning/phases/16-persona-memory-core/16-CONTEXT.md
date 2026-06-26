@@ -6,7 +6,7 @@
 <domain>
 ## Phase Boundary
 
-Phase 16 builds the shared persona + memory substrate, still Minecraft-attached (chat/voice/minigame surfaces arrive in Phases 18-21). It delivers:
+Phase 16 builds the shared persona + memory substrate, still Minecraft-attached (chat/voice/minigame surfaces arrive in Phases 18-21). The scope is small and is mostly prompt and persona-assembly adjustments, not new subsystems. It delivers:
 
 1. A drift-resistant persona: a compressed persona core re-injected at high recency every turn.
 2. A surface-agnostic persona structure: the expander is restructured into a universal core plus a separate Minecraft addendum, so Phase 18 can attach other surfaces without rewriting persona logic.
@@ -21,6 +21,9 @@ Phase 16 builds the shared persona + memory substrate, still Minecraft-attached 
 
 <decisions>
 ## Implementation Decisions
+
+### Prompt language (most important — applies to all prompt edits in this phase)
+- **D-00:** All prompt text touched in this phase (baseline instructions, the `# CORE` section, the expander's section instructions, the persona scaffolding) must use clear, objective, factual language. No expressions, no rhetoric, no em-dashes. This maximizes prompt clarity and how reliably the model follows the instructions. This is the guiding constraint for the persona work, not a style nicety. Note: this governs the instruction/meta text; an individual character's in-voice `say()` samples still carry that character's voice.
 
 ### Persona core (drift fix — PERSONA-03)
 - **D-01:** The persona expander (`src/main/personaExpansion.ts`) gains a dedicated `# CORE` section authored at character-save time: a tight ~3-5 line distillation = name + ~3 defining traits + register. Deterministic, cacheable, author-controlled (chosen over runtime programmatic compression or a runtime LLM re-compression). The runtime lifts `# CORE` and re-injects it at the **recency tail of `composeSeedBlocks` every turn** — this is the core anti-drift mechanism. Validated by research (drift = attention decay; re-inject compressed core at high recency).

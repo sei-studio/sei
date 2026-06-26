@@ -11,8 +11,10 @@
 **Locked decisions:**
 - **Brain–surface decoupling:** one persona+memory "brain" attaches to a "surface" (Minecraft world / in-app text chat / voice call / minigame). The brain is shared; each surface supplies its own context blocks + output channel.
 - **Cross-surface continuity:** shared on-disk memory (durable facts) + a compact handoff bridge (transient "what we were just doing") summarized at each surface switch. Raw transcripts are NOT carried across.
-- **Prompt-cache layout:** `[baseline + persona + memory snapshot]` (always cached, survives switches) → `[interface rules]` → `[chat history]` (both re-cached per switch) → `[ongoing memory + new messages]` (tail). Memory is a **frozen-per-session snapshot**, not re-ranked per turn.
+- **Prompt-cache layout:** `[baseline + persona + memory snapshot]` (always cached, survives switches) → `[interface rules]` → `[chat history]` (both re-cached per switch) → `[ongoing memory + new messages]` (tail). Memory is seeded once per session and frozen, not re-ranked per turn. Scored retrieval and write-time importance ranking are deferred; Phase 16 keeps memory to correct injection + proper remember() usage.
 - **Persona drift = attention-decay:** fixed by per-turn persona re-injection + generalizable few-shot voice examples, NOT hardcoded scenario scripts.
+- **Persona structure:** the expander produces a surface-agnostic persona core plus a separate Minecraft addendum, so later phases attach surfaces without rewriting persona logic. Voice examples are character-specific but scenario-agnostic. Proactivity is persona-modulated (a cold character asks fewer questions than a warm one).
+- **Prompt language:** all LLM-facing prompt text is clear, objective, and factual, with no rhetoric and no em-dashes, to maximize how reliably the model follows it.
 - **Voice ⇆ text are mutually exclusive:** when voice is on, text + in-game chat are off; the model knows spoken-vs-typed and adjusts.
 - **Usage UI:** keep the plain %, drop the playtime-hours estimate.
 - **Dynamic tone state machine is deferred** to a later milestone.
@@ -32,9 +34,9 @@
 
 ### Memory (MEM) — Phase 16
 
-- [ ] **MEM-01**: Each memory is written with an importance rating assigned at write time
-- [ ] **MEM-02**: The per-session memory snapshot is built by scored retrieval (recency + importance + relevance) at session start and stays frozen for the session (no per-turn re-ranking that would break the prompt cache)
-- [ ] **MEM-03**: The companion actively references what it knows about the user during ordinary conversation/play (fact-recall callbacks), not only when explicitly asked
+- [ ] **MEM-01**: MEMORY.md is reliably injected into the assembled prompt each session so the companion can reference what it has recorded (scope-narrowed: importance ratings deferred)
+- [ ] **MEM-02**: `remember()` and `forget()` are used properly (subjective entries, well-paced, no transaction logs); memory work in this phase is limited to correct usage and injection, with no scored retrieval (deferred)
+- [ ] **MEM-03**: The companion actively references what it knows about the user during ordinary conversation/play (fact-recall callbacks), not only when explicitly asked; this comes from MEMORY.md being present plus persona prompting, not a dedicated recall mechanism
 - [ ] **MEM-04**: Memories the companion writes mid-session are usable within the same session (appended to the tail) without rebuilding the cached snapshot
 - [ ] **MEM-05**: Memory is continuous across surfaces — a fact learned in chat is available in-game and vice versa
 - [ ] **MEM-06**: Runtime memory stays local-only and is never synced to the cloud (preserves the v0.3 boundary)
@@ -108,6 +110,8 @@ Not in v0.4. Captured because they came up during planning/research.
 - **Per-activity burn-rate breakdown in the usage UI** — chat/voice/MC/minigames burn differently; for now show only the plain %
 - **Voice input / speech-to-text** (user talks back) — v0.4 voice is companion-TTS output only unless trivially included
 - **More than ~3 minigames / a full game catalog** — start with GeoGuessr + 1–2
+- **Scored memory retrieval + write-time importance ratings** (recency + importance + relevance, Generative Agents style) — researched and recommended, but descoped from v0.4 Phase 16; memory stays at correct injection + proper remember() usage
+- **Atomic-facts store about the player** (separate always-on user-editable facts file) — researched, not added in v0.4
 
 ## Out of Scope
 
