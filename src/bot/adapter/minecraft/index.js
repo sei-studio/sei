@@ -12,6 +12,7 @@ import { createDefaultRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { getProgression as readProgression } from './observers/progression.js'
 import { closeContainerSession } from './behaviors/container.js'
+import { closeFurnaceSession } from './behaviors/furnace.js'
 import { wireBotEvents } from './fsmWires.js'
 import { visualizeAction } from './behaviors/visualize.js'
 import {
@@ -148,6 +149,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
     },
     closeAnySessions: async () => {
       try { await closeContainerSession() } catch {}
+      try { await closeFurnaceSession() } catch {}
     },
 
     // ─── Automatic-view render seam ('continuous' Looking mode) ─────────

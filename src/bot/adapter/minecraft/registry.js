@@ -31,6 +31,12 @@ import {
   depositItemAction,
   withdrawItemAction,
 } from './behaviors/container.js'
+import {
+  openFurnaceAction,
+  smeltInputAction,
+  addFuelAction,
+  takeSmeltedAction,
+} from './behaviors/furnace.js'
 
 // Standard target shape consumed by resolveBlock (D-25).
 const TargetShape = z.object({
@@ -434,6 +440,31 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     }),
     withdrawItemAction
   )
+
+  // Furnace 3-slot smelting (MCRAFT-01, D-09). openFurnace resolves a
+  // furnace/blast_furnace/smoker block via TargetShape; the three slot ops act
+  // on the single-flight FURNACE_SESSION. Schemas stay typed (closed registry).
+  registry.register('openFurnace', TargetShape, openFurnaceAction)
+
+  registry.register(
+    'smeltInput',
+    z.object({
+      item: z.string(),
+      count: z.number().int().min(1).max(64).default(1),
+    }),
+    smeltInputAction
+  )
+
+  registry.register(
+    'addFuel',
+    z.object({
+      item: z.string(),
+      count: z.number().int().min(1).max(64).default(1),
+    }),
+    addFuelAction
+  )
+
+  registry.register('takeSmelted', z.object({}), takeSmeltedAction)
 
   return registry
 }
