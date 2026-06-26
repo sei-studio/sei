@@ -7,7 +7,7 @@ Quick world primer. Trees and wood vary by biome: oak grows in plains and forest
 `.trim()
 
 export const CAPABILITY_PARAGRAPH = `
-You can walk and pathfind, mine blocks, place blocks, equip items, attack hostile mobs, eat to restore hunger, look around, drop items, activate held items (eat, draw a bow), sleep in beds, open chests, and CRAFT. You can't smelt in a furnace, ride mounts, enchant, brew potions, or build redstone — those aren't available to you yet. When something you want needs one of those — smelting ore into ingots — you don't do it yourself and you don't get stuck on it: you ask the player to do that part for you, and you keep handling what you CAN. So a smelted ingot is something you request, not something you make; a crafted item you make yourself.
+You can walk and pathfind, mine blocks, place blocks, equip items, attack hostile mobs, eat to restore hunger, look around, drop items, activate held items (eat, draw a bow), sleep in beds, open chests, and CRAFT. You can now also smelt and cook in a furnace (open it, load the input plus a fuel, wait, then take the finished output), read signs, open and pass through doors and gates, and build a simple shelter. So a smelted ingot is something you make yourself now — you no longer defer that to the player. (You still can't ride mounts, enchant, brew potions, or build redstone.)
 
 Crafting: your snapshot lists what you can craft right now under \`craftable:\`, as \`<item> craftable - Nx\`, and you craft by calling craft(item, n). Two things to keep straight. First, crafting CONSUMES materials, and the craftable list shows only the PRODUCT, never the ingredients it eats — so plan carefully: making planks spends your logs, making sticks spends planks, and you won't get a separate warning about what's used up. Don't craft something that burns wood you need for a tool. Second, small recipes (planks, sticks, a crafting table) work from your inventory anywhere, but bigger recipes (most tools, chests, furnaces) need a crafting_table within reach — when none is near, only the small recipes appear in the list. If you need a 3×3 recipe and have no table, craft a crafting_table first (it only needs planks) and place it, or go to one. craft(item, n) makes at least n of the item; because recipes come in batches (one log makes four planks) you may end up with a few extra, and the result tells you exactly how many you got.
 
@@ -109,6 +109,27 @@ export const ACTION_DESCRIPTIONS = {
 
   build:
     'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Scaffolds up automatically when out of reach. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING: build sits on top of terrain — set `from.y = bot.y + 1` so the structure rises out of the ground. Building at your own y inside terrain produces an invisible all-skipped result.',
+
+  openFurnace:
+    'Open a furnace (also blast_furnace or smoker) to start smelting. `{block:"furnace"}` alone opens the nearest one; or aim it with a target/coords (same TargetShape as openContainer). Must be within reach. Opening starts a session — then call smeltInput + addFuel to load it and takeSmelted to collect. Returns `opened <name>`, `no target`, or out-of-reach.',
+
+  smeltInput:
+    'Load the thing to cook into the OPEN furnace\'s input slot. `{item:"<name>", count?:N}` (1–64, default 1) — e.g. raw_iron to make an iron ingot, raw_beef to cook steak, cobblestone to make stone. Needs an open furnace and the item in your inventory. Pair with addFuel; smelting then runs over TIME, so wait a few seconds before takeSmelted. Returns `smelting N <item>`, `no furnace open`, or `no <item> to smelt`.',
+
+  addFuel:
+    'Add fuel to the OPEN furnace so it can burn. `{item:"<name>", count?:N}` (1–64, default 1) — coal and charcoal are the usual fuels; planks and logs work in a pinch. A loaded furnace needs BOTH an input (smeltInput) and fuel before it cooks. Returns `added N <item> fuel`, `no furnace open`, or `no <item> to fuel`.',
+
+  takeSmelted:
+    'Take the finished output out of the OPEN furnace. No args. Smelting takes time, so a fresh load is not ready immediately — if you get `nothing smelted yet`, wait and try again. Returns `took N <item>`, `nothing smelted yet`, or `no furnace open`.',
+
+  activateBlock:
+    'Right-click a block to open or toggle it: doors, gates, trapdoors, levers, buttons. `{block:"oak_door"}` targets the nearest matching block; or aim with a target/coords (TargetShape). Must be within reach. Use this to pass through a closed door or gate, or to flip a lever. Returns `opened <name>`, `no target`, `stale target`, or out-of-reach. (This acts on a world block — distinct from activating a HELD item.)',
+
+  readSign:
+    'Read the text written on a sign. `{block:"oak_sign"}` targets the nearest sign; or aim with a target/coords (TargetShape). Must be within reach. Returns `sign: "<text>"`, `sign is blank`, or `no sign there`. Read-only — it changes nothing in the world.',
+
+  shelter:
+    'Build a simple enclosed shelter in ONE call — a hollow box of walls, a roof on top, and a doorway you can walk through. `{size?:3–5 (default 3), material?:"<block>" (default cobblestone), center?:{x,y,z}}`. The fast way to survive a night or wall yourself off from mobs. It composes a box-build plus a door-dig, so it comes out blocky and plain, not fancy. Defaults to building around your current position.',
 
   // Only present when the active provider supports vision (D-10). Keep it short.
   look:
