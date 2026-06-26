@@ -1,5 +1,14 @@
 // src/bot/adapter/minecraft/observers/progression.js
 //
+// 17-04: the spine DAG is now EXTERNALIZED to progression.json (D-04/D-07) —
+// the static progression-graph layer of the hybrid hierarchy. The graph is
+// data, not a GOAP planner; this file loads it, derives its maps, and walks it
+// (computeProgression / matchGoalToNode / nextMilestone). The live bot reader
+// stays here. Each node MAY carry two optional fields beyond the original
+// id/kind/label/key/needs/goal: `next_action` (a terse advancing-action phrase
+// for the per-turn `next:` advisory line) and `procedure` (a terse known-good
+// procedure recorded to per-world memory when the milestone completes, D-08).
+//
 // The MINIMAL vanilla progression spine — the critical path from an empty
 // inventory to a dead Ender Dragon — plus the frontier computation that surfaces
 // "what's reachable next" to the brain.
@@ -28,12 +37,15 @@
 // own errors and degrades to an empty state, so a snapshot tick never throws on
 // a stub bot.
 
+import { readFileSync } from 'node:fs'
+
 // Pickaxe material → tool tier. A milestone gated on `pickaxe: N` is satisfied
 // when the bot's BEST pickaxe is tier ≥ N. Gold mines like wood, so it is tier 1.
 const PICKAXE_TIER = { wooden: 1, golden: 1, stone: 2, iron: 3, diamond: 4, netherite: 5 }
 
 // ── The spine ────────────────────────────────────────────────────────────────
-// Each node: { id, kind, label, key, needs[], goal }
+// The spine literal lives in progression.json (D-04/D-07). Each node:
+//   { id, kind, label, key, needs[], goal, next_action?, procedure? }
 //   kind  — general action category: 'get' | 'enter' | 'defeat'. (discover() is
 //           folded into get(): "blaze rods" implies finding a fortress, so the
 //           node is just get(blaze_rod), checkable from inventory — no separate
@@ -49,24 +61,22 @@ const PICKAXE_TIER = { wooden: 1, golden: 1, stone: 2, iron: 3, diamond: 4, neth
 //             { dim }                current dimension is this (or has been —
 //                                     latched via flags.entered_*)
 //             { flag }               a latched one-way flag (e.g. killed_dragon)
-export const SPINE = [
-  { id: 'logs',            kind: 'get',    label: 'gather wood',                         key: 'wood',            needs: [],                              goal: { haveSuffix: '_log', count: 1 } },
-  { id: 'crafting_table',  kind: 'get',    label: 'make a crafting table',               key: 'crafting table',  needs: ['logs'],                        goal: { have: 'crafting_table' } },
-  { id: 'wood_pickaxe',    kind: 'get',    label: 'get a wooden pickaxe',                key: 'wooden pickaxe',  needs: ['crafting_table'],              goal: { pickaxe: 1 } },
-  { id: 'stone_pickaxe',   kind: 'get',    label: 'get a stone pickaxe',                 key: 'stone pickaxe',   needs: ['wood_pickaxe'],                goal: { pickaxe: 2 } },
-  { id: 'furnace',         kind: 'get',    label: 'make a furnace',                      key: 'furnace',         needs: ['stone_pickaxe'],               goal: { have: 'furnace' } },
-  { id: 'iron_pickaxe',    kind: 'get',    label: 'get an iron pickaxe',                 key: 'iron pickaxe',    needs: ['stone_pickaxe', 'furnace'],    goal: { pickaxe: 3 } },
-  { id: 'diamonds',        kind: 'get',    label: 'mine some diamonds',                  key: 'diamond',         needs: ['iron_pickaxe'],                goal: { have: 'diamond', count: 3 } },
-  { id: 'diamond_pickaxe', kind: 'get',    label: 'get a diamond pickaxe',               key: 'diamond pickaxe', needs: ['diamonds'],                    goal: { pickaxe: 4 } },
-  { id: 'flint_and_steel', kind: 'get',    label: 'get flint and steel',                 key: 'flint and steel', needs: ['iron_pickaxe'],                goal: { have: 'flint_and_steel' } },
-  { id: 'obsidian',        kind: 'get',    label: 'gather obsidian for a nether portal', key: 'obsidian',        needs: ['diamond_pickaxe'],             goal: { have: 'obsidian', count: 10 } },
-  { id: 'nether',          kind: 'enter',  label: 'go to the Nether',                    key: 'nether',          needs: ['obsidian', 'flint_and_steel'], goal: { dim: 'the_nether' } },
-  { id: 'blaze_rods',      kind: 'get',    label: 'get blaze rods from a fortress',      key: 'blaze',           needs: ['nether'],                      goal: { have: 'blaze_rod', count: 6 } },
-  { id: 'ender_pearls',    kind: 'get',    label: 'get ender pearls',                    key: 'ender pearl',     needs: ['nether'],                      goal: { have: 'ender_pearl', count: 12 } },
-  { id: 'ender_eyes',      kind: 'get',    label: 'make eyes of ender',                  key: 'eyes of ender',   needs: ['blaze_rods', 'ender_pearls'],  goal: { have: 'ender_eye', count: 12 } },
-  { id: 'end',             kind: 'enter',  label: 'open the End portal and go in',        key: 'the end',         needs: ['ender_eyes'],                  goal: { dim: 'the_end' } },
-  { id: 'dragon',          kind: 'defeat', label: 'beat the ender dragon',               key: 'dragon',          needs: ['end'],                         goal: { flag: 'killed_dragon' } },
-]
+//   next_action — terse advancing-action phrase for the `next:` advisory line.
+//   procedure   — terse known-good procedure recorded to memory on completion.
+//
+// Defensive contract (mirrors readProgressionState): a missing/malformed
+// progression.json degrades to an EMPTY spine rather than throwing, so a module
+// import or snapshot tick never crashes on a bad asset.
+export function loadSpine(url) {
+  try {
+    const arr = JSON.parse(readFileSync(url, 'utf-8'))
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+export const SPINE = loadSpine(new URL('./progression.json', import.meta.url))
 
 const SPINE_BY_ID = new Map(SPINE.map(n => [n.id, n]))
 // id → ids of nodes that list it in `needs` (its successors on the path forward).
@@ -150,6 +160,24 @@ export function matchGoalToNode(goalText, candidates = SPINE) {
     if (t.includes(k) && (!best || k.length > best.key.length)) best = n
   }
   return best
+}
+
+/**
+ * The nearest milestone + the single action that advances it (D-07). This is
+ * the static-graph walker that supersedes a GOAP planner: given the live state
+ * (and an optional free-text goal), it returns the frontier node the goal names
+ * — when the goal matches a reachable frontier node — otherwise the current
+ * milestone (frontier[0]). `action` is the node's `next_action` advisory phrase
+ * (falling back to its `label`, then null when the game is complete).
+ *
+ * @param {object} state  normalized progression state (see computeProgression)
+ * @param {string} [goal] optional free-text goal to bias the pick
+ * @returns {{ node: object|null, action: string|null }}
+ */
+export function nextMilestone(state = {}, goal) {
+  const prog = computeProgression(state)
+  const node = matchGoalToNode(goal, prog.frontier) ?? prog.currentMilestone ?? null
+  return { node, action: node?.next_action ?? node?.label ?? null }
 }
 
 // ── live bot reader (impure; the only part that touches mineflayer) ───────────
