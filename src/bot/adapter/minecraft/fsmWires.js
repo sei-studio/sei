@@ -68,6 +68,32 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:attacked', onSeiAttacked)
 
+  // ── Reflex (proactive threat warning) ───────────────────────────────
+  // reflex.js (behaviors/reflex.js) emits sei:reflex once per engagement when
+  // the survival loop evades a creeper/arrow/melee threat. We translate it onto
+  // the same onAttacked chat-reaction route (P1) but tag attackerKind:'reflex'
+  // (plus the threat label, the `noticed` telegraph flag and nearby `count`) so
+  // Plan 05's prompt framing phrases it as a proactive warning offering
+  // attack()/explore() rather than "you were hit". Thin translation only — this
+  // does NOT enqueue evasion work; the flee already ran in reflex.js's tick.
+  const onSeiReflex = (payload) => {
+    if (!payload) return
+    try {
+      handlers.onAttacked?.({
+        attacker: payload.threat ?? null,
+        attackerLabel: payload.threatLabel
+          ?? payload.threat?.name
+          ?? 'a threat',
+        attackerKind: 'reflex',
+        noticed: !!payload.noticed,
+        count: typeof payload.count === 'number' ? payload.count : 1,
+      })
+    } catch (err) {
+      console.error?.(`[sei/wires] onReflex handler threw: ${err && err.message}`)
+    }
+  }
+  bot.on('sei:reflex', onSeiReflex)
+
   // ── Player join / leave ─────────────────────────────────────────────
   const onPlayerJoined = (player) => {
     if (!player) return
@@ -103,6 +129,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   return function dispose() {
     try { bot.off?.('sei:chat_received', onSeiChat) } catch {}
     try { bot.off?.('sei:attacked', onSeiAttacked) } catch {}
+    try { bot.off?.('sei:reflex', onSeiReflex) } catch {}
     try { bot.off?.('playerJoined', onPlayerJoined) } catch {}
     try { bot.off?.('playerLeft', onPlayerLeft) } catch {}
     try { bot.off?.('spawn', onSpawn) } catch {}
