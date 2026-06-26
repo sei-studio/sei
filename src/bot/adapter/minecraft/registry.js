@@ -17,6 +17,7 @@ import { resolveEntity } from './observers/targeting.js'
 import { digAction } from './behaviors/dig.js'
 import { exploreAction } from './behaviors/explore.js'
 import { buildAction } from './behaviors/build.js'
+import { shelterAction } from './behaviors/shelter.js'
 import { placeBlockAction } from './behaviors/place.js'
 import { equipAction } from './behaviors/equip.js'
 import { craftAction } from './behaviors/craft.js'
@@ -255,6 +256,17 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   )
 
   registry.register('build', BuildSchema, buildAction)
+
+  // `shelter`: a thin convenience composing build() (hollow walls + a roof
+  // layer) and dig() (a doorway) into one enclosed structure. size.max(5) caps
+  // the composed cuboids (≤48 wall + 25 roof cells) well within the 256-cell
+  // guarantee. center defaults to the bot's position (base = bot.y + 1).
+  const ShelterSchema = z.object({
+    center: Vec3Shape.optional(),
+    size: z.number().int().min(3).max(5).default(3),
+    material: z.string().min(1).default('cobblestone'),
+  })
+  registry.register('shelter', ShelterSchema, shelterAction)
 
   registry.register(
     'equip',
