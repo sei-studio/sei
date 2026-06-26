@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.4
 milestone_name: Minimum Desirable Companion
 status: Defining requirements
-last_updated: "2026-06-25T22:23:55.628Z"
+last_updated: "2026-06-26T00:50:10.452Z"
 last_activity: 2026-06-25 -- Milestone v0.4 started
 progress:
   total_phases: 6
