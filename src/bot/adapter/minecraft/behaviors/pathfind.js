@@ -3,6 +3,32 @@ const { Movements, goals } = pkg
 
 /** @typedef {'reached' | 'cant_reach' | 'timeout' | 'no_bot' | 'aborted'} PathfindResult */
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Yield to a reflex-owned pathfinder goal (Plan 01 mutex). While
+ * `bot._seiReflexActive` is true a creeper flee owns the goal; installing our
+ * own goal would race it tick-for-tick. Park here — non-destructively, we never
+ * stop()/abort the action — until the flee releases the goal, the abort signal
+ * fires, or the wall-clock budget elapses. The flee restores `bot._seiSavedGoal`
+ * (this action's goal) on exit, so the caller resumes its original destination.
+ *
+ * @param {object} bot
+ * @param {AbortSignal} [signal]
+ * @param {number} [budgetMs]
+ * @returns {Promise<'clear'|'aborted'|'timeout'>}
+ */
+export async function waitForReflexClear(bot, signal, budgetMs = 12000) {
+  if (!bot?._seiReflexActive) return 'clear'
+  const deadline = Date.now() + budgetMs
+  while (bot._seiReflexActive) {
+    if (signal?.aborted) return 'aborted'
+    if (Date.now() >= deadline) return 'timeout'
+    await sleep(120)
+  }
+  return 'clear'
+}
+
 /**
  * D-09: append `unreachable — try build to Y=N` when pathfinder failure
  * (cant_reach or timeout) is plausibly caused by elevation. Heuristic:
@@ -78,15 +104,30 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
   let timeoutHandle = null
   let abortListener = null
 
-  const navigationPromise = new Promise((resolve) => {
-    bot.pathfinder.goto(goal)
-      .then(() => resolve('reached'))
-      .catch((err) => {
-        const msg = String(err?.message || err).toLowerCase()
-        if (msg.includes('timeout') || msg.includes('stop')) resolve(cantReachWithDistance())
-        else resolve(cantReachWithDistance())
-      })
-  })
+  // 17-02: yield to a reflex creeper-flee that owns the goal. We don't install
+  // (or re-install, after the flee preempts our goto) our goal while
+  // `bot._seiReflexActive` is true — we park and resume rather than race or
+  // abort. A GoalChanged rejection while the reflex is active is the flee taking
+  // over, NOT a cant_reach: loop and re-issue once it clears so an in-flight
+  // goTo pauses and then continues to its original destination.
+  const navigate = async () => {
+    while (true) {
+      if (signal?.aborted) return 'aborted'
+      if (bot._seiReflexActive) {
+        const w = await waitForReflexClear(bot, signal, timeoutMs)
+        if (w === 'aborted') return 'aborted'
+        if (w === 'timeout') return cantReachWithDistance()
+      }
+      try {
+        await bot.pathfinder.goto(goal)
+        return 'reached'
+      } catch {
+        if (bot._seiReflexActive) continue // flee took the goal — yield & resume
+        return cantReachWithDistance()
+      }
+    }
+  }
+  const navigationPromise = navigate()
 
   const timeoutPromise = new Promise((resolve) => {
     timeoutHandle = setTimeout(() => {
