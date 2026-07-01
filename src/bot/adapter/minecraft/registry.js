@@ -17,6 +17,7 @@ import { resolveEntity } from './observers/targeting.js'
 import { digAction } from './behaviors/dig.js'
 import { exploreAction } from './behaviors/explore.js'
 import { buildAction } from './behaviors/build.js'
+import { shelterAction } from './behaviors/shelter.js'
 import { placeBlockAction } from './behaviors/place.js'
 import { equipAction } from './behaviors/equip.js'
 import { craftAction } from './behaviors/craft.js'
@@ -25,12 +26,20 @@ import { consumeItemAction } from './behaviors/consume.js'
 import { visualizeAction } from './behaviors/visualize.js'
 import { dropItemAction } from './behaviors/drop.js'
 import { activateItemAction } from './behaviors/activate.js'
+import { activateBlockAction } from './behaviors/activateBlock.js'
+import { readSignAction } from './behaviors/readSign.js'
 import { sleepAction } from './behaviors/sleep.js'
 import {
   openContainerAction,
   depositItemAction,
   withdrawItemAction,
 } from './behaviors/container.js'
+import {
+  openFurnaceAction,
+  smeltInputAction,
+  addFuelAction,
+  takeSmeltedAction,
+} from './behaviors/furnace.js'
 
 // Standard target shape consumed by resolveBlock (D-25).
 const TargetShape = z.object({
@@ -248,6 +257,17 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
 
   registry.register('build', BuildSchema, buildAction)
 
+  // `shelter`: a thin convenience composing build() (hollow walls + a roof
+  // layer) and dig() (a doorway) into one enclosed structure. size.max(5) caps
+  // the composed cuboids (≤48 wall + 25 roof cells) well within the 256-cell
+  // guarantee. center defaults to the bot's position (base = bot.y + 1).
+  const ShelterSchema = z.object({
+    center: Vec3Shape.optional(),
+    size: z.number().int().min(3).max(5).default(3),
+    material: z.string().min(1).default('cobblestone'),
+  })
+  registry.register('shelter', ShelterSchema, shelterAction)
+
   registry.register(
     'equip',
     z.object({
@@ -413,6 +433,14 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
 
   registry.register('activateItem', z.object({}), activateItemAction)
 
+  // Door/gate/lever activation (MCRAFT-05). Uses the block-interact packet
+  // (bot.activateBlock), unaffected by #3742 — distinct from activateItem.
+  registry.register('activateBlock', TargetShape, activateBlockAction)
+
+  // Bounded + sanitized sign read (MCRAFT-04, T-17-07). Read-only; the text is
+  // control-char-stripped and capped to MAX_SIGN_CHARS before it can reach a prompt.
+  registry.register('readSign', TargetShape, readSignAction)
+
   registry.register('sleep', TargetShape, sleepAction)
 
   registry.register('openContainer', TargetShape, openContainerAction)
@@ -434,6 +462,31 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     }),
     withdrawItemAction
   )
+
+  // Furnace 3-slot smelting (MCRAFT-01, D-09). openFurnace resolves a
+  // furnace/blast_furnace/smoker block via TargetShape; the three slot ops act
+  // on the single-flight FURNACE_SESSION. Schemas stay typed (closed registry).
+  registry.register('openFurnace', TargetShape, openFurnaceAction)
+
+  registry.register(
+    'smeltInput',
+    z.object({
+      item: z.string(),
+      count: z.number().int().min(1).max(64).default(1),
+    }),
+    smeltInputAction
+  )
+
+  registry.register(
+    'addFuel',
+    z.object({
+      item: z.string(),
+      count: z.number().int().min(1).max(64).default(1),
+    }),
+    addFuelAction
+  )
+
+  registry.register('takeSmelted', z.object({}), takeSmeltedAction)
 
   return registry
 }

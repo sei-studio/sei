@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.4
 milestone_name: Minimum Desirable Companion
 status: executing
-last_updated: "2026-06-26T05:03:01.910Z"
-last_activity: 2026-06-26 -- Phase 17 planning complete
+last_updated: "2026-06-26T23:01:40.091Z"
+last_activity: 2026-06-26 -- Phase 17 execution started
 progress:
   total_phases: 6
   completed_phases: 0
@@ -18,16 +18,16 @@ progress:
 ## Project Reference
 
 - **Core Value:** A gaming companion that feels like a real character — it remembers you across chat and play, reacts with personality, and is worth spending time with whether or not you open Minecraft.
-- **Current Focus:** Milestone v0.4 — Minimum Desirable Companion (defining requirements)
+- **Current Focus:** Phase 17 — minecraft-competence
 
 > This is the **client** state. The hosted cloud backend (proxy server, auth/billing/moderation) lives in a separate private repo and is referenced here only at a high level.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Ready to execute
-Last activity: 2026-06-26 -- Phase 17 planning complete
+Phase: 17 (minecraft-competence) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 17
+Last activity: 2026-06-26 -- Phase 17 execution started
 
 ## Phase Progress
 

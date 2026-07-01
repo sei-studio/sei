@@ -18,6 +18,7 @@ import {
   createOrchestrator,
   composeSeedBlocks,
   _setTickIntervalForTests,
+  appendProcedureOnce,
 } from './orchestrator.js'
 
 // ───────────────────────── Change 2: template ─────────────────────────
@@ -455,5 +456,62 @@ describe('say() tool (260617)', () => {
     expect(adapter.chat).toHaveBeenCalledWith('first line')
     expect(adapter.chat).not.toHaveBeenCalledWith('second line')
     expect(adapter.chat).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ──────────── procedural memory write-back on milestone completion (17-04, D-08) ────────────
+//
+// The direct unit proof of D-08: when a milestone newly completes, its terse
+// known-good `procedure` is recorded ONCE into per-world memory (append +
+// compaction trigger), and never a second time for the same node id within the
+// same session. The orchestrator's milestone-complete branch calls this helper.
+
+describe('appendProcedureOnce (procedural memory write-back, D-08)', () => {
+  function deps() {
+    const memoryLog = { append: vi.fn().mockResolvedValue(1) }
+    const memoryCompactor = { maybeCompact: vi.fn().mockResolvedValue(undefined) }
+    const written = new Set()
+    const logger = { warn: vi.fn() }
+    return { memoryLog, memoryCompactor, written, logger }
+  }
+
+  it('writes the completed node\'s procedure once and triggers compaction', async () => {
+    const d = deps()
+    const node = { id: 'iron_pickaxe', procedure: 'iron: stone pickaxe -> mine iron_ore -> smelt -> craft' }
+    const wrote = await appendProcedureOnce(node, d)
+    expect(wrote).toBe(true)
+    expect(d.memoryLog.append).toHaveBeenCalledTimes(1)
+    expect(d.memoryLog.append).toHaveBeenCalledWith(node.procedure, expect.any(Date))
+    expect(d.memoryCompactor.maybeCompact).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT append a second time for the same node id in the same session (dedupe)', async () => {
+    const d = deps()
+    const node = { id: 'iron_pickaxe', procedure: 'iron: ... -> craft iron_pickaxe' }
+    expect(await appendProcedureOnce(node, d)).toBe(true)   // first completion writes
+    expect(await appendProcedureOnce(node, d)).toBe(false)  // subsequent seed: deduped
+    expect(d.memoryLog.append).toHaveBeenCalledTimes(1)     // still exactly one write
+  })
+
+  it('writes distinct procedures for distinct milestones', async () => {
+    const d = deps()
+    await appendProcedureOnce({ id: 'furnace', procedure: 'furnace: 8 cobblestone -> furnace' }, d)
+    await appendProcedureOnce({ id: 'iron_pickaxe', procedure: 'iron: ... -> iron_pickaxe' }, d)
+    expect(d.memoryLog.append).toHaveBeenCalledTimes(2)
+  })
+
+  it('is a no-op for a node with no procedure (later spine nodes leave it empty)', async () => {
+    const d = deps()
+    expect(await appendProcedureOnce({ id: 'diamonds' }, d)).toBe(false)
+    expect(await appendProcedureOnce({ id: 'diamonds', procedure: '' }, d)).toBe(false)
+    expect(await appendProcedureOnce(null, d)).toBe(false)
+    expect(d.memoryLog.append).not.toHaveBeenCalled()
+  })
+
+  it('is best-effort: a throwing memoryLog never propagates', async () => {
+    const d = deps()
+    d.memoryLog.append = vi.fn().mockRejectedValue(new Error('disk full'))
+    await expect(appendProcedureOnce({ id: 'furnace', procedure: 'furnace: ...' }, d)).resolves.toBe(false)
+    expect(d.logger.warn).toHaveBeenCalled()
   })
 })

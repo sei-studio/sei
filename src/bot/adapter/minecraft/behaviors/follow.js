@@ -100,8 +100,11 @@ export function startFollow(bot, config) {
     const me = bot?.entity
     if (!ent || !me) return // target or self not loaded — can't assess progress
     // Re-install the follow goal when the pathfinder has gone idle (yields to
-    // any LLM-issued movement without an explicit pause).
-    if (!bot.pathfinder.isMoving()) {
+    // any LLM-issued movement without an explicit pause). Also yield while a
+    // reflex creeper-flee owns the goal (bot._seiReflexActive, Plan 01 mutex):
+    // re-installing GoalFollow here would fight the flee tick-for-tick. The flee
+    // restores the prior goal when it clears, and this tick resumes naturally.
+    if (!bot.pathfinder.isMoving() && !bot._seiReflexActive) {
       bot.pathfinder.setGoal(new goals.GoalFollow(ent, _config.follow_range), true)
     }
     // No-progress tracking: stuck = not moving AND still far from the target

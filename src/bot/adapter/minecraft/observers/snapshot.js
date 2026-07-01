@@ -9,6 +9,7 @@ import { nearbyEntities, droppedItemName } from './entities.js'
 import { setHandles, HANDLE_TTL_MS } from './targeting.js'
 import { getCraftableEntries } from './craftable.js'
 import { getFollowTargetLabel, getFollowStuckInfo } from '../behaviors/follow.js'
+import { nextMilestone, readProgressionState } from './progression.js'
 // 260513-wkd: centralised in_flight line rendering. Helper preserves the
 // em-dash + y=<currentY> channels byte-stable; only the elapsed
 // trailer changes from `(Xs)` to `started=Xs ago` (locked in CONTEXT.md).
@@ -226,6 +227,17 @@ export function composeSnapshot(bot, opts = {}) {
   } else {
     lines.push(`follow_target: ${followLabel ?? '(none)'}`)
   }
+
+  // Advisory next: line (17-04, D-07). One per-turn surfacing of the nearest
+  // progression milestone + the single action that advances it, so the model
+  // always sees "what's next" without re-deriving it. Best-effort: any error
+  // (or a malformed spine) just skips the line — a snapshot tick never throws.
+  // This is ADDITIVE; the heartbeat frontier path (orchestrator renderHeartbeat)
+  // is complementary and untouched.
+  try {
+    const nm = nextMilestone(readProgressionState(bot))
+    if (nm?.node) lines.push(`next: ${nm.node.label} — ${nm.action}`)
+  } catch { /* progression advisory is best-effort; never break a snapshot tick */ }
 
   // Owner whereabouts (260607). The pinned owner can be BEYOND the entity
   // render radius — then they're absent from `nearby entities` and the model

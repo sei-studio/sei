@@ -183,6 +183,36 @@ let _TICK_INTERVAL_MS = 30_000
 export function _setTickIntervalForTests(ms) { _TICK_INTERVAL_MS = ms }
 export function _getTickIntervalForTests() { return _TICK_INTERVAL_MS }
 
+/**
+ * D-08 procedural memory write-back. When a progression milestone newly
+ * completes, record its terse known-good `procedure` ONCE into the per-world
+ * MEMORY.md — reusing the existing remember-handler pattern (append + the
+ * byte-threshold compaction trigger) — so future turns retrieve the procedure
+ * instead of re-deriving it. Deduped by node id via a session-scoped Set so the
+ * same procedure is never appended twice in a world/session. Best-effort and
+ * non-fatal: any error is swallowed (logged) and never breaks the seed path.
+ *
+ * @param {{ id?: string, procedure?: string }|null} node  the completed node
+ * @param {{ memoryLog?: object, written?: Set<string>, memoryCompactor?: object, logger?: object }} [deps]
+ * @returns {Promise<boolean>}  true iff a procedure was appended this call
+ */
+export async function appendProcedureOnce(node, { memoryLog, written, memoryCompactor, logger } = {}) {
+  try {
+    const id = node?.id
+    const procedure = String(node?.procedure ?? '').trim()
+    if (!id || !procedure) return false
+    if (written?.has?.(id)) return false
+    await memoryLog?.append?.(procedure, new Date())
+    written?.add?.(id)
+    memoryCompactor?.maybeCompact?.().catch?.(err =>
+      logger?.warn?.(`[sei/orch] memoryCompactor.maybeCompact failed: ${err?.message ?? err}`))
+    return true
+  } catch (err) {
+    logger?.warn?.(`[sei/orch] procedural write-back failed: ${err?.message ?? err}`)
+    return false
+  }
+}
+
 // Fixed cadence for the 'continuous' Looking mode's automatic view, in TURNS
 // (LLM calls) — frames only ride turns that already happen, so turn count is
 // the honest unit. NOT user-tunable (the Settings cadence control was removed);
@@ -505,6 +535,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // { id, text, label } or null.
   const progressionFlags = { entered_nether: false, entered_end: false, killed_dragon: false }
   let activeFrontierGoal = null
+  // 17-04 (D-08): node ids whose known-good `procedure` has already been written
+  // to per-world memory this session — dedupes the procedural write-back so a
+  // milestone records its procedure at most once.
+  const writtenProcedures = new Set()
   const personalityBucket = createTokenBucket({
     capacity: config.llm.rate_limit_per_min,
     refillPerMin: config.llm.rate_limit_per_min,
@@ -1127,6 +1161,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // Neutral note: renderHeartbeat's per-level frontier framing decides
       // whether to PROMPT a new pick (agentic) or just stay aware (passive/reactive).
       justCompletedNote = `\n\nPROGRESS: you just finished "${label}" — that goal is done and has been cleared from your heartbeat.`
+      // D-08 procedural memory write-back: record the completed milestone's
+      // known-good procedure once to per-world memory (append + compaction
+      // trigger, deduped by node id). Best-effort — never breaks the seed path.
+      await appendProcedureOnce(activeFrontierGoal, {
+        memoryLog, written: writtenProcedures, memoryCompactor, logger,
+      })
       activeFrontierGoal = null
     }
     const frontierText = (prog?.frontier ?? []).map(n => n.label).join(' · ')
@@ -1918,7 +1958,10 @@ function maybeWarnByteCap(loop, warned) {
               if (activeFrontierGoal && activeFrontierGoal.id !== node.id) {
                 try { await heartbeatLog.remove(activeFrontierGoal.text) } catch { /* best-effort */ }
               }
-              activeFrontierGoal = { id: node.id, text, label: node.label }
+              // Capture the node's `procedure` here (we hold the spine node) so
+              // the procedural write-back (D-08) has it when the milestone later
+              // completes without re-importing the spine into the brain.
+              activeFrontierGoal = { id: node.id, text, label: node.label, procedure: node.procedure }
             }
           } catch { /* linking is best-effort; a free-text goal just stays unlinked */ }
         }

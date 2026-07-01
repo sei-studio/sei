@@ -23,7 +23,7 @@
 import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
 import { resolveTerm } from '../loose-terms.js'
-import { goTo as realGoTo } from './pathfind.js'
+import { goTo as realGoTo, waitForReflexClear } from './pathfind.js'
 import { digAction as realDigAction } from './dig.js'
 
 const NEIGHBOR_OFFSETS = [
@@ -139,6 +139,17 @@ export async function gatherAction(args, bot, config, _deps) {
   try { config?.onProgress?.({ dug, total }) } catch {}
   while (true) {
     if (signal?.aborted) return `aborted after ${dug}/${total} ${blockName}`
+
+    // 17-02: yield to a reflex creeper-flee that owns the goal (bot._seiReflexActive,
+    // Plan 01 mutex). Pause the batch — non-destructively, the vein is not
+    // cancelled — until the flee releases the goal, then resume mining the same
+    // remaining blocks. (goTo below also yields internally; this stands the
+    // whole batch down so we don't even pick/dig the next block mid-flee.)
+    if (bot._seiReflexActive) {
+      const w = await waitForReflexClear(bot, signal, timeoutMs)
+      if (w === 'aborted') return `aborted after ${dug}/${total} ${blockName}`
+      // on 'timeout' fall through — re-check abort and retry the block next loop
+    }
 
     const bp = bot.entity?.position
     let nextEntry = null
