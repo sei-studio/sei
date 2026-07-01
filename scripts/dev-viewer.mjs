@@ -287,7 +287,10 @@ async function handleChat (req, res) {
 // preserved; only the edited string/array literal is swapped. Every save is
 // validated by importing a temp copy first, so a syntactically broken edit can
 // never overwrite the real file. Function-valued object props (NUDGES.actionTurn,
-// EVENT_GUIDANCE['sei:idle'], …) are not editable and are skipped automatically.
+// EVENT_GUIDANCE['sei:idle'], …) are not editable and are skipped automatically —
+// but where such a function's PROSE was factored out into string constants
+// (REFLEX_ADDENDUM_TEXT, IDLE_TICK_TEXT, ATTACKED_ADDENDUM_*, …), those constants
+// ARE listed in LIBRARY_LAYOUT and edit the wording the function fills in.
 
 // GET /api/library -> { fields:[{id,section,label,kind,value}] }
 async function handleLibraryGet (res) {

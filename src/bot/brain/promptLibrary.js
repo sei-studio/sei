@@ -220,21 +220,45 @@ export const EXPLORE_DESCRIPTION_NOVISION = `Walk a short hop (default 16, max 4
 // attack-seeded loop (orchestrator drops the Event/Data wrapper + interrupt hint
 // for safety events). Combat coaching lives in ACTION_RULES' Hunting rule + the
 // attackEntity description, so it is not lost here.
+// Fill `{token}` placeholders in an editable prompt template. Uses split/join so
+// a `$` in a value is never treated as a String.replace replacement pattern.
+// The event-framing prompts below keep their PROSE in editable string constants
+// (surfaced in the dev-viewer LIBRARY tab) and fill in the dynamic bits here, so
+// the wording is tunable without editing the function logic.
+function fillTemplate (text, vars) {
+  let out = String(text)
+  for (const [k, v] of Object.entries(vars)) out = out.split('{' + k + '}').join(String(v))
+  return out
+}
+
+// Editable prose for the "you were hit" interrupt (EVENT_GUIDANCE['sei:attacked']).
+// `{label}` = the attacker's name. Two variants: PvP-off (a player) vs a mob.
+export const ATTACKED_ADDENDUM_PVP = `Interrupted — {label} hit you (PvP is off, you can't hit back). Respond appropriately.`
+export const ATTACKED_ADDENDUM_MOB = `Interrupted — {label} hit you. Respond appropriately.`
 export const ATTACKED_ADDENDUM = (label, kind) =>
-  (kind === 'player' || kind === 'players')
-    ? `Interrupted — ${label} hit you (PvP is off, you can't hit back). Respond appropriately.`
-    : `Interrupted — ${label} hit you. Respond appropriately.`
+  fillTemplate((kind === 'player' || kind === 'players') ? ATTACKED_ADDENDUM_PVP : ATTACKED_ADDENDUM_MOB, { label })
 
 // A PROACTIVE evasion warning (attackerKind:'reflex' from fsmWires, D-05) —
 // distinct from ATTACKED_ADDENDUM's "you were hit". You spotted the threat early
 // and are already dodging it on reflex, so frame it as a heads-up that hands the
-// player the choice, not an injury report.
+// player the choice, not an injury report. Editable prose below; `{label}` (threat
+// name), `{many}` (crowd clause), and `{noticed}` (telegraph clause) fill at runtime.
+export const REFLEX_NOTICED_YES = `It has noticed you`
+export const REFLEX_NOTICED_NO = `It may not have noticed you yet`
+export const REFLEX_ADDENDUM_TEXT = `Heads up — you spotted {label} nearby{many} and are already dodging it on reflex; you are NOT hit and the evasion is automatic, so you don't need to move manually. {noticed}. Warn the player in ONE short in-character line that names the threat and whether it has clocked you, then offer the call: attack() to help you fight it, or explore() away to flee if you're outnumbered. Don't say you were hit — you weren't.`
 export const REFLEX_ADDENDUM = (label, data) => {
-  const noticedClause = data?.noticed ? 'It has noticed you' : "It may not have noticed you yet"
+  const noticed = data?.noticed ? REFLEX_NOTICED_YES : REFLEX_NOTICED_NO
   const n = Number(data?.count)
-  const manyClause = Number.isFinite(n) && n > 1 ? ` (${n} hostiles close)` : ''
-  return `Heads up — you spotted ${label} nearby${manyClause} and are already dodging it on reflex; you are NOT hit and the evasion is automatic, so you don't need to move manually. ${noticedClause}. Warn the player in ONE short in-character line that names the threat and whether it has clocked you, then offer the call: attack() to help you fight it, or explore() away to flee if you're outnumbered. Don't say you were hit — you weren't.`
+  const many = Number.isFinite(n) && n > 1 ? ` (${n} hostiles close)` : ''
+  return fillTemplate(REFLEX_ADDENDUM_TEXT, { label, many, noticed })
 }
+
+// Editable prose for the idle-tick framing (EVENT_GUIDANCE['sei:idle']). The
+// function computes the dynamic `{quiet}` (how long it's been quiet) and picks a
+// `{stuck}` nudge by Looking mode; the wording lives here so it is tunable.
+export const IDLE_STUCK_NUDGE_VISION = `call look(around) once, then explore() a different direction ({orientation:"forward|backwards|left|right"})`
+export const IDLE_STUCK_NUDGE_NOVISION = `explore() a different direction ({orientation:"forward|backwards|left|right"})`
+export const IDLE_TICK_TEXT = `\n\nIDLE TICK. {quiet} with no new events. Act according to your PROACTIVENESS rule in the system prompt, and lean toward involving the player rather than soloing: passive only observes or comments; reactive does light chores (gather wood, food, or cobble); agentic — since you CAN take the game to iron tier alone — does NOT quietly grind the next milestone solo. Instead turn the snapshot's \`next:\` line into one short invitation (what you are about to do plus a part they could take, e.g. "I could go mine iron — want to come cave-diving?"), not an open-ended "what should we do" that you then go do alone. If you are genuinely blocked (no iron in sight, a missing tool, stuck pathing), don't silently retry or pivot away — ask the player in character and make the block an invite. Do not narrate the snapshot, your inventory, the player's position, or distances (no openers like "fresh start" or "looks like"); your plan belongs in setGoal and your tool calls, not in say(). If your last line was a question, greeting, offer, or check-in that the player has NOT answered yet, say NOTHING this tick — do not restate it and do not reword it into a fresh sentence; asking the same thing three different ways ("what's up" → "what's the question" → "i'm listening") reads as spam. Wait in silence until they reply or something actually changes. Likewise, if you are already standing where you meant to be (the player, or a spot you already reached), do NOT re-issue goTo to it — hold position. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: {stuck}. On a quiet tick with nothing real to add, no say() call (silence) is the right move.`
 
 export const EVENT_GUIDANCE = {
   'sei:loop_end':
@@ -252,11 +276,9 @@ export const EVENT_GUIDANCE = {
         ? `The world has been quiet for about ${secs}s`
         : `The world has been quiet for about ${Math.round(secs / 60)} min`
     // With Looking off there is no look() tool, so the stuck-path nudge must not
-    // tell the bot to call it.
-    const stuckNudge = visionMode === 'off'
-      ? 'explore() a different direction ({orientation:"forward|backwards|left|right"})'
-      : 'call look(around) once, then explore() a different direction ({orientation:"forward|backwards|left|right"})'
-    return `\n\nIDLE TICK. ${quietPhrase} with no new events. Act according to your PROACTIVENESS rule in the system prompt, and lean toward involving the player rather than soloing: passive only observes or comments; reactive does light chores (gather wood, food, or cobble); agentic — since you CAN take the game to iron tier alone — does NOT quietly grind the next milestone solo. Instead turn the snapshot's \`next:\` line into one short invitation (what you are about to do plus a part they could take, e.g. "I could go mine iron — want to come cave-diving?"), not an open-ended "what should we do" that you then go do alone. If you are genuinely blocked (no iron in sight, a missing tool, stuck pathing), don't silently retry or pivot away — ask the player in character and make the block an invite. Do not narrate the snapshot, your inventory, the player's position, or distances (no openers like "fresh start" or "looks like"); your plan belongs in setGoal and your tool calls, not in say(). If your last line was a question, greeting, offer, or check-in that the player has NOT answered yet, say NOTHING this tick — do not restate it and do not reword it into a fresh sentence; asking the same thing three different ways ("what's up" → "what's the question" → "i'm listening") reads as spam. Wait in silence until they reply or something actually changes. Likewise, if you are already standing where you meant to be (the player, or a spot you already reached), do NOT re-issue goTo to it — hold position. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: ${stuckNudge}. On a quiet tick with nothing real to add, no say() call (silence) is the right move.`
+    // tell the bot to call it. Prose lives in the editable constants above.
+    const stuckNudge = visionMode === 'off' ? IDLE_STUCK_NUDGE_NOVISION : IDLE_STUCK_NUDGE_VISION
+    return fillTemplate(IDLE_TICK_TEXT, { quiet: quietPhrase, stuck: stuckNudge })
   },
 
   'sei:attacked': ATTACKED_ADDENDUM,
