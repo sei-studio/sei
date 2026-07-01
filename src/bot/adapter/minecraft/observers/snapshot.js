@@ -15,6 +15,34 @@ import { getFollowTargetLabel, getFollowStuckInfo } from '../behaviors/follow.js
 import { getInFlightLineForSnapshot } from '../../../brain/inflight.js'
 
 const MAX_ENTITIES = 6
+
+// Resolve the owner's live player entry. `pinUsername` is the name the bot
+// calls the player (config.player_username — often a preferred_name like
+// "Ouen"), but on a LAN world bot.players is keyed by the actual login (e.g.
+// "SSk1tz"). A hard bot.players[pinUsername] lookup then ALWAYS misses, so the
+// snapshot reported the owner "out of view — position unknown" on EVERY tick
+// even when the player was standing adjacent (field bug 260625), which left the
+// model unable to do anything but follow(). Resolve by exact name, then
+// case-insensitively, then — single-human LAN — the lone human in the tab list
+// that is neither this bot nor a companion. Returns {username, player} or null.
+export function resolveOwner(bot, pinUsername, companions) {
+  if (!pinUsername) return null
+  const players = bot?.players || {}
+  if (players[pinUsername]) return { username: pinUsername, player: players[pinUsername] }
+  const lc = String(pinUsername).toLowerCase()
+  for (const [name, p] of Object.entries(players)) {
+    if (name.toLowerCase() === lc) return { username: name, player: p }
+  }
+  const self = bot?.username
+  const compSet = new Set(
+    (Array.isArray(companions) ? companions : []).map(c => String(c).toLowerCase()),
+  )
+  const humans = Object.entries(players).filter(
+    ([name]) => name !== self && !compSet.has(name.toLowerCase()),
+  )
+  if (humans.length === 1) return { username: humans[0][0], player: humans[0][1] }
+  return null
+}
 // Entity visibility radius (blocks). 64 = 4 chunks, the rough distance at
 // which a real Minecraft player can see and identify another player. Bumped
 // from 24 so the player stays visible (with coords) as they walk a few chunks
@@ -57,7 +85,13 @@ export function composeSnapshot(bot, opts = {}) {
   // (within ENTITY_RADIUS and not occluded by terrain/fluids — so no underground
   // or behind-wall mobs). Entities behind the bot still count; the pinned owner
   // + companions are exempt so their coords never drop out.
-  const ents = nearbyEntities(bot, { radius: ENTITY_RADIUS, count: MAX_ENTITIES, pin: pinUsername ?? null, pins: companions, requireLineOfSight: true })
+  // Resolve the owner's live entity ONCE (handles preferred_name vs LAN login
+  // mismatch — see resolveOwner). The resolved actual username is what we pin in
+  // `nearby entities` so the player can't be evicted by entity congestion, and
+  // it's what the owner-whereabouts line reads coords from below.
+  const owner = resolveOwner(bot, pinUsername ?? null, companions)
+  const ownerPinName = owner?.username ?? (pinUsername ?? null)
+  const ents = nearbyEntities(bot, { radius: ENTITY_RADIUS, count: MAX_ENTITIES, pin: ownerPinName, pins: companions, requireLineOfSight: true })
 
   const lines = []
   // Which world this is (multi-world memory). Surfaced first so the bot anchors
@@ -201,14 +235,18 @@ export function composeSnapshot(bot, opts = {}) {
   // that it's unknown so the model asks/follows instead of guessing.
   if (pinUsername) {
     const me = bot.entity
-    const ownerEnt = bot.players?.[pinUsername]?.entity
+    const ownerEnt = owner?.player?.entity
     if (ownerEnt?.position && me?.position) {
       const ox = Math.round(ownerEnt.position.x)
       const oy = Math.round(ownerEnt.position.y)
       const oz = Math.round(ownerEnt.position.z)
       let dist = null
       try { dist = Math.round(ownerEnt.position.distanceTo(me.position)) } catch { /* leave null */ }
-      lines.push(`owner ${pinUsername}: @${ox},${oy},${oz}${dist != null ? ` (${dist} blocks away)` : ''}`)
+      // Show the live in-game name when it differs from the name we call them,
+      // so the model connects `owner Ouen` with `SSk1tz` in `nearby entities`
+      // (otherwise it can read them as two different people).
+      const liveName = owner?.username && owner.username !== pinUsername ? ` (in-game ${owner.username})` : ''
+      lines.push(`owner ${pinUsername}${liveName}: @${ox},${oy},${oz}${dist != null ? ` (${dist} blocks away)` : ''}`)
     } else {
       lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)`)
     }

@@ -1,18 +1,22 @@
 // scripts/dev-viewer.mjs
 //
 // Dev-only sidecar: wraps `electron-vite dev` and serves a minimal browser
-// viewer at http://localhost:7077 with two tabs:
+// viewer at http://localhost:7077 with three tabs:
 //   LOGS    log tail on the left, latest bot-POV render on the right
 //   PROMPT  persona-expansion tuning tool: edit the user persona blurb and
 //           the expansion instruction, regenerate the final persona prompt,
-//           then chat against it. Mirrors src/main/personaExpansion.ts —
-//           the default instruction and model are extracted from that file
-//           at request time, so edits there show up on reload.
+//           then chat against it. The expansion instruction default is read
+//           live from src/bot/brain/promptLibrary.js (EXPANSION_SYSTEM).
+//   LIBRARY edit EVERY field in src/bot/brain/promptLibrary.js (the single
+//           prompt document) in-browser and save changes straight back to the
+//           file. Each save is validated (temp-import) before it overwrites the
+//           source, so a broken edit can't corrupt it. Re-summon the bot to
+//           pick up changes.
 // Wired as `npm run dev`; use `npm run dev:bare` to launch the app without it.
 //
 // How it gets its data — log + render feeds are file-based, zero IPC:
 //   LOG    tails the newest *.log across BOTH userData log dirs — the dev run
-//          (`Sei Launcher Dev/logs`) and the packaged app (`Sei Launcher/logs`)
+//          (`Sei Dev/logs`) and the packaged app (`Sei/logs`)
 //          — the per-line tee written by src/main/logRouter.ts. Newest-by-mtime
 //          is re-resolved on every poll, so a fresh summon switches files
 //          automatically regardless of which app instance produced it.
@@ -36,10 +40,12 @@
 
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
-import { mkdir, readdir, readFile, stat, open, unlink } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile, rename, stat, open, unlink } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import os from 'node:os'
 import path from 'node:path'
 import Anthropic from '@anthropic-ai/sdk'
+import { buildLibraryFields, applyEdits, ID_SEP } from './lib/promptLibraryEdit.mjs'
 
 const VIEWER_ONLY = process.argv.includes('--viewer-only')
 const BASE_PORT = Number(process.env.SEI_DEV_VIEWER_PORT) || 7077
@@ -51,16 +57,19 @@ function appDataDir () {
   if (process.platform === 'win32') return process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming')
   return process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config')
 }
-// Both possible userData roots (src/main/index.ts: packaged → 'Sei Launcher',
-// dev → 'Sei Launcher Dev'). Summons from EITHER instance must show up here,
-// so the newest-log scan covers both; the `key` prefixes the viewer's file id.
+// Both possible userData roots (src/main/index.ts: app.setName packaged → 'Sei',
+// dev → 'Sei Dev'). Summons from EITHER instance must show up here, so the
+// newest-log scan covers both; the `key` prefixes the viewer's file id.
 const LOG_DIRS = [
-  { key: 'dev', dir: path.join(appDataDir(), 'Sei Launcher Dev', 'logs') },
-  { key: 'app', dir: path.join(appDataDir(), 'Sei Launcher', 'logs') },
+  { key: 'dev', dir: path.join(appDataDir(), 'Sei Dev', 'logs') },
+  { key: 'app', dir: path.join(appDataDir(), 'Sei', 'logs') },
 ]
 const RENDER_DIR = path.join(os.tmpdir(), 'sei-dev-viewer')
 const RENDER_FILE = path.join(RENDER_DIR, 'latest-render.jpg')
 const PERSONA_EXPANSION_TS = new URL('../src/main/personaExpansion.ts', import.meta.url)
+// The single editable prompt document — the LIBRARY tab reads/writes it.
+const PROMPT_LIBRARY_URL = new URL('../src/bot/brain/promptLibrary.js', import.meta.url)
+const PROMPT_LIBRARY_PATH = fileURLToPath(PROMPT_LIBRARY_URL)
 
 async function newestLogFile () {
   let best = null
@@ -153,26 +162,30 @@ async function handleRenderJpg (res) {
 // ---------------------------------------------------------------------------
 // Prompt-tuning tab backend
 //
-// Defaults come straight from src/main/personaExpansion.ts so the tool always
-// starts from what production ships: EXPANSION_SYSTEM is a `[...].join('\n')`
-// array of plain string literals — slice it out and evaluate it as JS. Brittle
-// against a rewrite of that file's shape, but fails soft (empty default).
+// The expansion instruction now lives in the single prompt document
+// (src/bot/brain/promptLibrary.js, exported as EXPANSION_SYSTEM). Import it
+// fresh (cache-busted) so an edit in the LIBRARY tab — or in the file — shows
+// up on the next request without a sidecar restart. The model id still comes
+// from src/main/personaExpansion.ts. Both fail soft (empty / default).
+
+// Re-import promptLibrary.js with a cache-busting query so every read reflects
+// the current on-disk file (ESM caches by full URL, query included).
+async function importLibrary () {
+  return import(PROMPT_LIBRARY_URL.href + '?v=' + Date.now())
+}
 
 async function expansionDefaults () {
+  let instruction = ''
+  let model = 'claude-haiku-4-5'
+  try {
+    const mod = await importLibrary()
+    if (typeof mod.EXPANSION_SYSTEM === 'string') instruction = mod.EXPANSION_SYSTEM
+  } catch { /* fails soft */ }
   try {
     const src = await readFile(PERSONA_EXPANSION_TS, 'utf8')
-    const marker = 'EXPANSION_SYSTEM = ['
-    const start = src.indexOf(marker)
-    const end = src.indexOf('].join(', start)
-    let instruction = ''
-    if (start !== -1 && end !== -1) {
-      instruction = new Function(`return [${src.slice(start + marker.length, end)}]`)().join('\n')
-    }
-    const model = src.match(/EXPANSION_MODEL = '([^']+)'/)?.[1] ?? 'claude-haiku-4-5'
-    return { instruction, model }
-  } catch {
-    return { instruction: '', model: 'claude-haiku-4-5' }
-  }
+    model = src.match(/EXPANSION_MODEL = '([^']+)'/)?.[1] ?? model
+  } catch { /* fails soft */ }
+  return { instruction, model }
 }
 
 // Key resolution: env var wins, else an ANTHROPIC_API_KEY= line in sei/.env
@@ -210,7 +223,7 @@ function expansionUserMessage (name, source) {
     'Source persona (user-written blurb):',
     source,
     '',
-    'Expand into the six-section prompt now. If the name matches a known franchise character (e.g. Pikachu, Goku), let that context inform the IDENTITY and VOICE sections.',
+    'Expand into the four-section prompt now. If the name matches a known franchise character (e.g. Pikachu, Goku), let that context inform the IDENTITY and VOICE sections.',
   ].join('\n')
 }
 
@@ -261,6 +274,60 @@ async function handleChat (req, res) {
     )
     json(res, { text: messageText(msg) })
   } catch (err) {
+    json(res, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// LIBRARY tab backend — read/edit EVERY editable field in promptLibrary.js.
+//
+// Values are read by importing the module (accurate, no parsing). Write-back
+// edits the SOURCE TEXT in place (scripts/lib/promptLibraryEdit.mjs — a small
+// JS-literal-aware scanner) so the file's functions, comments and structure are
+// preserved; only the edited string/array literal is swapped. Every save is
+// validated by importing a temp copy first, so a syntactically broken edit can
+// never overwrite the real file. Function-valued object props (NUDGES.actionTurn,
+// EVENT_GUIDANCE['sei:idle'], …) are not editable and are skipped automatically.
+
+// GET /api/library -> { fields:[{id,section,label,kind,value}] }
+async function handleLibraryGet (res) {
+  try {
+    const mod = await importLibrary()
+    json(res, { fields: buildLibraryFields(mod) })
+  } catch (err) {
+    json(res, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// POST /api/library {edits:[{id,value}]} -> { ok, count } | { error }
+async function handleLibrarySave (req, res) {
+  let tmp
+  try {
+    const { edits = [] } = await readBody(req)
+    if (!Array.isArray(edits) || edits.length === 0) return json(res, { error: 'no edits' })
+    const src = await readFile(PROMPT_LIBRARY_PATH, 'utf8')
+    const next = applyEdits(src, edits)
+    if (next === src) return json(res, { ok: true, count: 0, note: 'no changes' })
+
+    // Validate by importing a temp copy BEFORE touching the real file — a
+    // syntactically broken edit (or a bad scan) can never corrupt the source.
+    tmp = PROMPT_LIBRARY_PATH.replace(/\.js$/, '') + '.devviewer-' + Date.now() + '.mjs'
+    await writeFile(tmp, next, 'utf8')
+    const check = await import('file://' + tmp + '?v=' + Date.now())
+    for (const { id } of edits) {
+      const name = id.indexOf(ID_SEP) === -1 ? id : id.slice(0, id.indexOf(ID_SEP))
+      if (!(name in check)) throw new Error('export missing after edit: ' + name)
+    }
+    await unlink(tmp).catch(() => {})
+    tmp = null
+
+    // Atomic-ish write: temp in the same dir, then rename over the original.
+    const realTmp = PROMPT_LIBRARY_PATH + '.tmp-' + Date.now()
+    await writeFile(realTmp, next, 'utf8')
+    await rename(realTmp, PROMPT_LIBRARY_PATH)
+    json(res, { ok: true, count: edits.length })
+  } catch (err) {
+    if (tmp) await unlink(tmp).catch(() => {})
     json(res, { error: err instanceof Error ? err.message : String(err) })
   }
 }
@@ -317,6 +384,24 @@ const PAGE = /* html */ `<!doctype html>
   #chatlog .user .who { color:var(--accent); }
   #chatlog .note { color:var(--dim); font-style:italic; }
   #chatlog .error { color:var(--error); }
+  /* library editor — full-width scrolling list of every promptLibrary field */
+  #libraryview { display:none; flex-direction:column; min-height:0; font:13px/1.5 -apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif; }
+  #libbar { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--line); flex:none; background:var(--panel); }
+  #libbar .spacer { flex:1; }
+  #libtitle { font-size:11px; font-weight:600; color:var(--dim); letter-spacing:.06em; text-transform:uppercase; }
+  #libstatus { font-size:11px; color:var(--dim); }
+  #libstatus.error { color:var(--error); }
+  #libstatus.ok { color:var(--accent); }
+  #liblist { flex:1; min-height:0; overflow-y:auto; padding:12px 14px 60px; }
+  .libsec { font-size:11px; font-weight:700; color:var(--accent); letter-spacing:.08em; text-transform:uppercase; margin:18px 0 8px; }
+  .libsec:first-child { margin-top:0; }
+  .lfield { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; }
+  .lfield label { font-size:11px; font-weight:600; color:var(--dim); }
+  .lfield.dirty label { color:var(--accent); }
+  .lfield.dirty label::after { content:" ●"; color:var(--accent); }
+  .lfield textarea { resize:vertical; background:var(--panel); border:1px solid var(--line); color:var(--fg); font:12px/1.5 "SF Mono",ui-monospace,Menlo,monospace; padding:8px; outline:none; min-height:60px; }
+  .lfield textarea:focus { border-color:var(--accent); }
+  .lfield.dirty textarea { border-color:var(--accent); }
 </style>
 </head>
 <body>
@@ -324,6 +409,7 @@ const PAGE = /* html */ `<!doctype html>
   <h1>Sei Dev Viewer</h1>
   <button class="tab active" id="tab-logs">Logs</button>
   <button class="tab" id="tab-prompt">Prompt</button>
+  <button class="tab" id="tab-library">Library</button>
   <span class="meta" id="logfile">waiting for bot logs…</span>
 </header>
 <main id="logview">
@@ -369,6 +455,16 @@ const PAGE = /* html */ `<!doctype html>
     </div>
   </div>
 </main>
+<main id="libraryview">
+  <div id="libbar">
+    <span id="libtitle">promptLibrary.js</span>
+    <span class="spacer"></span>
+    <span id="libstatus"></span>
+    <button class="pbtn" id="libreload">Reload</button>
+    <button class="pbtn" id="libsave" disabled>Save</button>
+  </div>
+  <div id="liblist"></div>
+</main>
 <script>
   var $ = function (id) { return document.getElementById(id) }
   var pane = $('logpane')
@@ -381,13 +477,17 @@ const PAGE = /* html */ `<!doctype html>
   function showTab (name) {
     $('logview').style.display = name === 'logs' ? 'flex' : 'none'
     $('promptview').style.display = name === 'prompt' ? 'flex' : 'none'
+    $('libraryview').style.display = name === 'library' ? 'flex' : 'none'
     $('tab-logs').classList.toggle('active', name === 'logs')
     $('tab-prompt').classList.toggle('active', name === 'prompt')
-    document.body.classList.toggle('light', name === 'prompt')
+    $('tab-library').classList.toggle('active', name === 'library')
+    document.body.classList.toggle('light', name !== 'logs')
     logfileEl.style.display = name === 'logs' ? '' : 'none'
+    if (name === 'library' && !libLoaded) loadLibrary()
   }
   $('tab-logs').onclick = function () { showTab('logs') }
   $('tab-prompt').onclick = function () { showTab('prompt') }
+  $('tab-library').onclick = function () { showTab('library') }
 
   // --- log tail ---
   // Stable per-tag color: hash -> hue, skipping the red band (reserved for errors).
@@ -599,6 +699,80 @@ const PAGE = /* html */ `<!doctype html>
   }
   $('chatsend').onclick = sendChat
   $('chatinput').addEventListener('keydown', function (e) { if (e.key === 'Enter') sendChat() })
+
+  // --- library editor ---
+  // Loads every editable field in promptLibrary.js, edits in textareas, and
+  // saves changes straight back to the file (server validates before writing).
+  var libLoaded = false
+  var libFields = []   // [{id, original, el}]
+  function libSetStatus (text, cls) {
+    var s = $('libstatus'); s.textContent = text || ''; s.className = cls || ''
+  }
+  function libRefreshDirty () {
+    var anyDirty = false
+    libFields.forEach(function (f) {
+      var dirty = f.el.value !== f.original
+      f.el.closest('.lfield').classList.toggle('dirty', dirty)
+      if (dirty) anyDirty = true
+    })
+    $('libsave').disabled = !anyDirty
+    return anyDirty
+  }
+  function autoSize (ta) {
+    ta.style.height = 'auto'
+    ta.style.height = Math.min(420, Math.max(60, ta.scrollHeight + 4)) + 'px'
+  }
+  async function loadLibrary () {
+    libSetStatus('loading…')
+    try {
+      var r = await fetch('/api/library')
+      var b = await r.json()
+      if (b.error) { libSetStatus(b.error, 'error'); return }
+      var list = $('liblist'); list.textContent = ''
+      libFields = []
+      var lastSection = null
+      b.fields.forEach(function (f) {
+        if (f.section !== lastSection) {
+          var h = document.createElement('div'); h.className = 'libsec'; h.textContent = f.section
+          list.appendChild(h); lastSection = f.section
+        }
+        var wrap = document.createElement('div'); wrap.className = 'lfield'
+        var lab = document.createElement('label'); lab.textContent = f.label + (f.kind === 'array' ? '  (one line per array entry)' : '')
+        var ta = document.createElement('textarea'); ta.value = f.value; ta.spellcheck = false
+        wrap.append(lab, ta); list.appendChild(wrap)
+        autoSize(ta)
+        ta.addEventListener('input', function () { autoSize(ta); libRefreshDirty() })
+        libFields.push({ id: f.id, original: f.value, el: ta })
+      })
+      libLoaded = true
+      libRefreshDirty()
+      libSetStatus(b.fields.length + ' fields', 'ok')
+    } catch (e) { libSetStatus(String(e), 'error') }
+  }
+  $('libreload').onclick = function () {
+    if (libRefreshDirty() && !confirm('Discard unsaved edits and reload from disk?')) return
+    libLoaded = false; loadLibrary()
+  }
+  $('libsave').onclick = async function () {
+    var edits = libFields.filter(function (f) { return f.el.value !== f.original })
+      .map(function (f) { return { id: f.id, value: f.el.value } })
+    if (!edits.length) return
+    $('libsave').disabled = true
+    libSetStatus('saving ' + edits.length + ' field' + (edits.length > 1 ? 's' : '') + '…')
+    try {
+      var r = await fetch('/api/library', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ edits: edits }),
+      })
+      var b = await r.json()
+      if (b.error) { libSetStatus('save failed: ' + b.error, 'error'); libRefreshDirty(); return }
+      // Commit: the saved values become the new baseline (no reparse needed).
+      libFields.forEach(function (f) { f.original = f.el.value })
+      libRefreshDirty()
+      libSetStatus('saved ' + (b.count || 0) + ' — re-summon the bot to apply', 'ok')
+    } catch (e) { libSetStatus(String(e), 'error'); libRefreshDirty() }
+  }
 </script>
 </body>
 </html>
@@ -616,6 +790,8 @@ function requestHandler (req, res) {
   if (url.pathname === '/api/prompt-config') return void handlePromptConfig(res)
   if (url.pathname === '/api/expand' && req.method === 'POST') return void handleExpand(req, res)
   if (url.pathname === '/api/chat' && req.method === 'POST') return void handleChat(req, res)
+  if (url.pathname === '/api/library' && req.method === 'POST') return void handleLibrarySave(req, res)
+  if (url.pathname === '/api/library') return void handleLibraryGet(res)
   res.writeHead(404)
   res.end()
 }

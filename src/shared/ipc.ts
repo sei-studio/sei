@@ -936,6 +936,14 @@ export interface RendererApi {
   onUpdateError(cb: (message: string) => void): Unsubscribe;
   /** Fires on launch when there's a post-update changelog to show. */
   onWhatsNew(cb: (ev: WhatsNewEvent) => void): Unsubscribe;
+  /**
+   * Pull any pending post-update changelog on mount. The `onWhatsNew` push
+   * fires during early main bootstrap and races the renderer attaching its
+   * listener (it has no buffering), so a forced restart could swallow it. The
+   * renderer also calls this once on mount; returns the event (and consumes it)
+   * or null. Mirrors the `lan:get` snapshot-pull that guards the same race.
+   */
+  getWhatsNew(): Promise<WhatsNewEvent | null>;
   /** Manually trigger an update check (Settings "Check for updates"). */
   checkForUpdates(): Promise<void>;
   /** Consent to download an available optional update (popup "Update now"). */
@@ -1153,6 +1161,7 @@ export const IpcChannel = {
     updateCheck: 'app:update-check',               // manual "Check for updates"
     updateDownload: 'app:update-download',         // optional-accept download
     updateInstall: 'app:update-install',           // quitAndInstall
+    whatsNewGet: 'app:whats-new-get',               // pull pending post-update changelog (race-proof)
     version: 'app:version',                         // app.getVersion()
     // 260603 per-profile partitioning: main pushes this AFTER the active
     // account scope has switched (sign-in / sign-out / account swap) and the

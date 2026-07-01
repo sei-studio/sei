@@ -218,6 +218,7 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.app.whatsNew, handler);
     return () => ipcRenderer.off(IpcChannel.app.whatsNew, handler);
   },
+  getWhatsNew: () => ipcRenderer.invoke(IpcChannel.app.whatsNewGet),
   checkForUpdates: () => ipcRenderer.invoke(IpcChannel.app.updateCheck),
   downloadUpdate: () => ipcRenderer.invoke(IpcChannel.app.updateDownload),
   installUpdate: () => ipcRenderer.invoke(IpcChannel.app.updateInstall),

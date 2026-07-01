@@ -22,6 +22,7 @@ import {
   renderPersona,
   renderHeartbeat,
   renderProactivenessDirective,
+  renderCore,
   renderCompanions,
 } from './prompts.js'
 import { buildAnthropicTools } from './schemaBridge.js'
@@ -58,12 +59,18 @@ function smartCase(text) {
 
 export function postProcessSay(s) {
   const normalized = String(s ?? '')
+    // Deterministic punctuation backstop, independent of model compliance:
+    // normalize em/en-dashes to a plain hyphen (regular hyphens are kept) and
+    // strip asterisks, so fancy dashes and *stage directions* never reach chat.
+    // Brackets and parens are left untouched.
+    .replace(/[—–]/g, '-')
+    .replace(/\*/g, '')
     .replace(/\s+/g, ' ')
     .trim()
   if (!normalized) return ''
   // Normalize only: collapse whitespace, smart-case (keep ALL-CAPS words as
-  // emphasis, lowercase the rest), hard 256 length cap. Nothing is dropped by
-  // content — what the model says reaches chat.
+  // emphasis, lowercase the rest), hard 256 length cap. Content is otherwise
+  // preserved — only dashes/asterisks above are normalized.
   return smartCase(normalized).slice(0, 256)
 }
 
@@ -303,10 +310,11 @@ export async function composeSeedBlocks({
         // remembered. A natural callback to a shared moment ("still mad about
         // that creeper") is worth more than any status line.
         const memoryPreamble =
-          'These are YOUR memories of this player from past sessions — the reason you two are not strangers. ' +
-          'Let them shape how you treat the player now, and when the moment genuinely connects to one, BRING IT UP ' +
-          'naturally (a callback to something you did or felt together) so they know you remember. Don\'t force it ' +
-          'or recite the list; just don\'t act like every session is the first.\n\n'
+          'These are YOUR memories of this player from past sessions, the reason you two are not strangers. ' +
+          'Let them shape how you treat the player now, and BRING THEM UP YOURSELF during ordinary play, not only ' +
+          'when asked. When the moment genuinely connects to one, work in a natural callback to something you did ' +
+          'or felt together so they know you remember. Don\'t force it, don\'t recite the list, and don\'t wait to ' +
+          'be asked; just don\'t act like every session is the first.\n\n'
         blocks.push({ type: 'text', name: 'memory', text: memoryPreamble + memoryText })
       }
     } catch (err) {
@@ -368,6 +376,13 @@ export async function composeSeedBlocks({
   }
   blocks.push({ type: 'text', name: 'event',    text: eventText })
   blocks.push({ type: 'text', name: 'snapshot', text: snapshotText })
+  // Compressed persona # CORE re-injected at the recency tail on EVERY turn. The
+  // full persona sits in the far-up cached system prefix; over a long session the
+  // model stops attending to it and drifts. This restates a short distilled core
+  // at maximum recency, the same anti-drift move as speak_reminder below.
+  // renderCore tolerates an old-format persona with no # CORE (name-derived
+  // fallback, never throws), so this block is always present.
+  blocks.push({ type: 'text', name: 'core', text: renderCore(config?.persona) })
   // 260616 (#1): high-recency say() reminder on EVERY turn. The live test showed
   // Haiku ignoring the say() contract from the (cached, far-up) system prompt and
   // going fully silent, so we restate it right before generation.
@@ -1602,7 +1617,7 @@ function maybeWarnByteCap(loop, warned) {
     // ~20s of silence on join. Force ONE short in-character greeting on this
     // very first tick so the first thing they see lands on turn 1, in voice.
     if (data?.reason === 'just_connected_first_spawn') {
-      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing.`
+      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in Minecraft (say("yo how'd the interview go?") beats say("back in business")). This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`
     }
     // 260618: refresh the progression view before composing the seed — latch
     // dimension milestones, detect whether the committed goal's milestone just
@@ -2453,6 +2468,7 @@ function maybeWarnByteCap(loop, warned) {
       who,
       elapsedSec: playerMessage == null ? elapsedSec : null,
       visionOff: _visionMode() === 'off',
+      proactiveness: config?.persona?.proactiveness ?? 1,
     })
 
     // Set the iteration trigger BEFORE the haiku call so the R1-R4 gate keeps

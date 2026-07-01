@@ -301,6 +301,14 @@ export function App(): React.ReactElement {
         setUpdatePopup({ kind: 'whats-new', version: ev.version, changelog: ev.changelog });
       }),
     ];
+    // Pull any pending post-update changelog on mount. The onWhatsNew push above
+    // fires during early main bootstrap (before this listener exists) and is
+    // dropped — most visibly on a forced apply:"now" restart — so the push alone
+    // never reliably shows the changelog. This pull is the race-proof path; the
+    // guard avoids stomping a live optional-update popup if one is already up.
+    void sei.getWhatsNew().then((ev) => {
+      if (ev) setUpdatePopup((prev) => prev ?? { kind: 'whats-new', version: ev.version, changelog: ev.changelog });
+    });
     return () => unsubs.forEach((u) => u());
   }, []);
 

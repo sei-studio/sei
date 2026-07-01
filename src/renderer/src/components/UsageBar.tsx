@@ -17,6 +17,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
+import { useUiStore } from '../lib/stores/useUiStore';
 import { sei } from '../lib/ipcClient';
 import {
   tokensRemainingToPlaytime,
@@ -42,13 +43,21 @@ export function formatPlayed(ms: number): string {
   return `${Math.floor(total / 60)}h ${total % 60}m`;
 }
 
-/** Bar hover tooltip: "$used/$total used, played Xh Ym". */
+/**
+ * Bar hover tooltip. Defaults to "$used/$total used, played Xh Ym", but the
+ * dollar figures are developer-only: with `showUsd` false (the default UX —
+ * developer console off) the tooltip is just "played Xh Ym", so end users never
+ * see raw spend. Flip `showUsd` true (Settings → Show developer console) to
+ * reveal the "$used/$total used" prefix.
+ */
 export function usageTooltip(
   usedUsd: number | undefined,
   totalUsd: number | undefined,
   totalPlaytimeMs: number,
+  showUsd = true,
 ): string {
-  return `${formatUsd(usedUsd)}/${formatUsd(totalUsd)} used, played ${formatPlayed(totalPlaytimeMs)}`;
+  const played = `played ${formatPlayed(totalPlaytimeMs)}`;
+  return showUsd ? `${formatUsd(usedUsd)}/${formatUsd(totalUsd)} used, ${played}` : played;
 }
 
 export interface UsageBarProps {
@@ -63,6 +72,9 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   const totalUsd = useCreditsStore((s) => s.total_usd);
   const refresh = useCreditsStore((s) => s.refresh);
   const loading = useCreditsStore((s) => s.loading);
+  // The "$used/$total used" figures are developer-only. Off by default; shown
+  // only when Settings → Show developer console is on (ui-A7 flag).
+  const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
   // Cumulative playtime across all of this profile's characters (survives
   // deletion — accumulated at session-end in config). Read from UserConfig.
   const [totalPlaytimeMs, setTotalPlaytimeMs] = useState(0);
@@ -90,7 +102,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
     : DEFAULT_TOKENS_PER_MIN;
   const { display } = tokensRemainingToPlaytime(remainingTokens, rate);
 
-  const tooltip = usageTooltip(usedUsd, totalUsd, totalPlaytimeMs);
+  const tooltip = usageTooltip(usedUsd, totalUsd, totalPlaytimeMs, devConsoleVisible);
 
   return (
     <div className={styles.root}>

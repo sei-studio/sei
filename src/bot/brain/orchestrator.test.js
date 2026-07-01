@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
-import { NUDGES, BASELINE_INSTRUCTIONS } from './prompts.js'
+import { NUDGES } from './prompts.js'
 import {
   createOrchestrator,
   composeSeedBlocks,
@@ -102,6 +102,43 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     expect(t).not.toContain('said:')
   })
 
+  it('agentic + long-running follow flips the silent default to break-off-and-act (260625)', () => {
+    // Yancy bug: an agentic character (proactiveness >= 2) trapped in a follow
+    // that keeps pace with a standing player never trips the STUCK exception, so
+    // the silence-biased default kept it trailing forever — no initiative, no
+    // in-character lines. For that one case the check-in must encourage unfollow
+    // + advancing its own agenda, and allow one short in-character say().
+    const t = NUDGES.actionTurn({
+      action: 'follow Ouen',
+      stopTool: 'unfollow',
+      who: 'Ouen',
+      elapsedSec: 95,
+      proactiveness: 2,
+    })
+    expect(t).toContain('consider doing something else you find interesting')
+    expect(t).toContain('unless the player explicitly asked you to follow them')
+    expect(t).toContain('ONE short in-character say()')
+    expect(t).toContain('To break off and act, call unfollow')
+    // It must NOT carry the blanket silence default from the routine branch.
+    expect(t).not.toContain('call NO say()')
+  })
+
+  it('the agentic-follow flip is gated: non-agentic, short follows, and non-follow keep the silence default', () => {
+    // Non-agentic (default proactiveness) following → unchanged silence default.
+    const passive = NUDGES.actionTurn({ action: 'follow Ouen', stopTool: 'unfollow', elapsedSec: 95 })
+    expect(passive).toContain('call NO say()')
+    expect(passive).not.toContain('consider doing something else you find interesting')
+    // Agentic but still in the warm-up window (< 30s) → not yet flipped.
+    const warmup = NUDGES.actionTurn({ action: 'follow Ouen', stopTool: 'unfollow', elapsedSec: 10, proactiveness: 2 })
+    expect(warmup).toContain('call NO say()')
+    expect(warmup).not.toContain('consider doing something else you find interesting')
+    // Agentic + long-running but a genuinely-completing action (gather, not
+    // follow) → keep the silence default; only follow is the passive trap.
+    const gather = NUDGES.actionTurn({ action: 'gather oak_log', stopTool: 'end_loop', elapsedSec: 95, proactiveness: 2 })
+    expect(gather).toContain('call NO say()')
+    expect(gather).not.toContain('consider doing something else you find interesting')
+  })
+
   it('omits the speaker name when who is absent, falls back when action is null', () => {
     const noWho = NUDGES.actionTurn({ action: 'dig', stopTool: 'end_loop', playerLine: 'hi' })
     expect(noWho).toContain('said: "hi"')
@@ -113,23 +150,11 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
   })
 })
 
-// ──────────────── anti-assistant-tone hardening (260615) ────────────────
-
-describe('BASELINE_INSTRUCTIONS anti-filler rule', () => {
-  it('bans command-acknowledgement filler tokens and offers in-character replacements', () => {
-    // Haiku reflexively opens commands with receipt tokens ("got it, let's dig").
-    // BASELINE must name the ban and point at the two correct moves.
-    expect(BASELINE_INSTRUCTIONS).toContain('NEVER ACKNOWLEDGE A COMMAND WITH FILLER')
-    for (const banned of ['got it', 'sure', 'on it', 'understood', 'will do']) {
-      expect(BASELINE_INSTRUCTIONS).toContain(`"${banned}"`)
-    }
-    // The two correct moves: just DO it (don't call say()) or react IN CHARACTER.
-    expect(BASELINE_INSTRUCTIONS).toContain("don't call say()")
-    expect(BASELINE_INSTRUCTIONS).toMatch(/IN CHARACTER/i)
-    // Obeying must not reset the voice to assistant register.
-    expect(BASELINE_INSTRUCTIONS).toMatch(/compliant-assistant register/i)
-  })
-})
+// 260630: the verbose anti-filler / say-discipline rules that BASELINE_INSTRUCTIONS
+// used to assert moved out when the minecraft surface baseline was replaced with
+// the concise surface-decoupled version (the universal "you are not an assistant"
+// rule + the say()/silence contract now carry that weight). The old
+// BASELINE_INSTRUCTIONS anti-filler test was removed with it.
 
 // ──────────────────── Change 1: no-abort routing ────────────────────
 

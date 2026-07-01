@@ -1511,6 +1511,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     installDownloadedUpdate();
   });
 
+  ipcMain.handle(IpcChannel.app.whatsNewGet, async () => {
+    const { getPendingWhatsNew } = await import('./updater');
+    return getPendingWhatsNew();
+  });
+
   ipcMain.handle(IpcChannel.app.version, async (): Promise<string> => {
     return app.getVersion();
   });

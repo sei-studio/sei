@@ -16,32 +16,14 @@
 import { readFile } from 'node:fs/promises'
 import { atomicWrite } from '../storage/atomicWrite.js'
 import { withFileLock } from '../storage/fileLock.js'
+// Compaction instruction lives in the single editable prompt document.
+import { COMPACTION_SYSTEM } from '../promptLibrary.js'
 
 const HEADER =
   '# Memory\n' +
   '\n' +
   'Append-only record. One line per entry. Written via remember(); removed via forget().\n' +
   '\n'
-
-const COMPACTION_SYSTEM = [
-  'You are compacting a bot\'s long-term memory file (MEMORY.md). The bot will read this file cold at the start of future sessions and use it to understand its relationship with the player, how the player talks, and what to do next in the world.',
-  '',
-  'Keep:',
-  '- Emotional arc across entries — if entries show a relationship shifting (e.g. hostile → warm, distant → close, formal → casual), the condensed version MUST still show that shift. Long-time relationship development depends on the emotional arc surviving compaction; flattening it into a single steady-state summary is forbidden. When in doubt, preserve the trajectory at the cost of literal detail.',
-  '- Specific things the player said, quoted or near-quoted: praise, complaints, jokes, insults, stated preferences, names, "from now on" rules, requests.',
-  '- Specific things the player did that the bot observed.',
-  '- Objective world progress: builds completed, resources stockpiled, base location, milestones reached.',
-  '- Recurring patterns: what the player tends to ask for, what frustrates them, how decisions usually go.',
-  '',
-  'Drop:',
-  '- Generic Minecraft facts.',
-  '- Routine state: inventory counts, coordinates, biome, time of day, whether the player was nearby.',
-  '- The bot\'s own reasoning or inner thoughts.',
-  '- Self-attributed preferences the player did not confirm.',
-  '- Duplicates and near-duplicates of other entries.',
-  '',
-  'Output format: one entry per line. Each line is `- [YYYY-MM-DD] <text>`. Use the date from the original entry where present; if multiple entries collapse into one, use the most recent date among them. Keep entries terse and specific. Quote the player verbatim where the wording matters. Target roughly half the input size; fewer lines is better if many entries are noise. Output the lines only — no headers, no commentary, no markdown other than the list bullets.',
-].join('\n')
 
 /**
  * @param {Object} opts

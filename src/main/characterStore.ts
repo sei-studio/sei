@@ -217,22 +217,12 @@ export async function expandAndSaveCharacter(
   // pulls the Supabase JWT and points the SDK at the Fly.io proxy (same
   // wiring as src/bot/brain/anthropicClient.js).
   const backendKind = await getAiBackendKind();
-  // 260615: pass the chosen proactiveness TIER (0–2, legacy 3 → 2) so the
-  // expander leans the # PROACTIVENESS / # DEFAULT DYNAMIC flavor toward
-  // Passive / Reactive / Agentic. Read off metadata (the schema escape hatch);
-  // default 1 (Reactive). The runtime dial still enforces the mechanics.
-  const rawProactiveness = (validated.metadata as Record<string, unknown> | undefined)?.proactiveness;
-  const proactiveness =
-    typeof rawProactiveness === 'number' && Number.isInteger(rawProactiveness)
-      ? Math.min(Math.max(0, rawProactiveness), 2)
-      : 1;
 
   const expansionInput: Parameters<typeof expandPersona>[0] = {
     // ITEM 12 (quick/260523-t8d): pass the character's name so franchise
     // context (Pikachu / Goku / Mario / etc.) shapes the expanded persona.
     name: validated.name,
     source: validated.persona.source,
-    proactiveness,
     priorExpanded,
     // Streaming progress sink — forwarded by the IPC handler to the renderer's
     // progress bar. Undefined for callers that don't pass one (the call still
@@ -254,13 +244,21 @@ export async function expandAndSaveCharacter(
     expansionInput.apiKey = await loadApiKey();
   }
 
-  const { expanded } = await expandPersona(expansionInput);
+  // 260630: the expander now CHOOSES the proactiveness level (0 passive /
+  // 1 reactive / 2 agentic) from the personality and returns it; we seed it into
+  // metadata, which is what bot/index.js reads to drive the runtime dial. The
+  // manual dial can override this later by editing metadata.proactiveness.
+  const { expanded, proactiveness } = await expandPersona(expansionInput);
 
   const merged: Character = {
     ...validated,
     persona: {
       source: validated.persona.source,
       expanded,
+    },
+    metadata: {
+      ...(validated.metadata as Record<string, unknown> | undefined),
+      proactiveness,
     },
   };
   await saveCharacter(merged);

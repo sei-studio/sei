@@ -117,6 +117,15 @@
   left: 0;
 }
 
+/* ...and with no rail below it, the bar's flat --rail fill (which only reads as
+   chrome BECAUSE it continues into the rail) becomes a stray colored strip over
+   the --window sign-in field. Paint it --window so the rail-less screens read as
+   one uniform color. Keep the left padding: the "Sei" mark still needs the inset
+   to clear the macOS traffic lights. (260625) */
+.dragStrip.fullDivider {
+  background-color: var(--window);
+}
+
 
 /* "Sei" mark — small Rajdhani (--sans) label. */
 .titleLabel {
