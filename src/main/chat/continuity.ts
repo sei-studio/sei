@@ -14,7 +14,7 @@
  * the literal "summarize everything older than 50 every launch" idea by making
  * the summary recursive + watermarked (no redundant re-summarization).
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { paths } from '../paths';
 import { readAll } from './chatStore';
@@ -56,6 +56,16 @@ async function writeBridge(id: string, s: BridgeState): Promise<void> {
 /** Current rolling summary text (read-only; for the chat surface). */
 export async function readSummary(id: string): Promise<string> {
   return (await readBridge(id)).summary;
+}
+
+/**
+ * Drop the rolling summary + watermark for a character. Called from chat:clear
+ * alongside chatStore.clear so wiping the transcript also wipes the derived
+ * summary — otherwise a later summon would re-seed a stale summary of a
+ * conversation the player already cleared.
+ */
+export async function clearContinuity(id: string): Promise<void> {
+  await rm(bridgePath(id), { force: true });
 }
 
 /**

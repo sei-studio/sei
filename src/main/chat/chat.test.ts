@@ -22,7 +22,7 @@ vi.mock('./sdk', () => ({
 }));
 
 import * as chatStore from './chatStore';
-import { buildLaunchContinuity, readSummary } from './continuity';
+import { buildLaunchContinuity, readSummary, clearContinuity } from './continuity';
 
 const CHAR = '33333333-3333-4333-8333-333333333333';
 let dir: string;
@@ -74,6 +74,14 @@ describe('continuity watermark', () => {
 
   it('returns null when there is no conversation', async () => {
     expect(await buildLaunchContinuity(CHAR)).toBeNull();
+  });
+
+  it('clearContinuity wipes the rolling summary so a cleared chat cannot re-seed it', async () => {
+    await seed(60); // 10 older than the window → first launch folds a summary
+    await buildLaunchContinuity(CHAR);
+    expect(await readSummary(CHAR)).toBe('ROLLED SUMMARY');
+    await clearContinuity(CHAR);
+    expect(await readSummary(CHAR)).toBe('');
   });
 
   it('folds aged-out messages once, reuses an unchanged window, then folds only new evictions', async () => {

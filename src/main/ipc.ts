@@ -709,7 +709,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
     const { clear } = await import('./chat/chatStore');
-    await clear(id);
+    const { clearContinuity } = await import('./chat/continuity');
+    // Clear the transcript AND the derived rolling summary/watermark, so a
+    // cleared conversation cannot re-seed a stale summary into a later summon.
+    await Promise.all([clear(id), clearContinuity(id)]);
   });
 
   // ── User profile (Phase 19) ───────────────────────────────────────────────
