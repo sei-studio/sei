@@ -32,6 +32,7 @@ import type {
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
 import { getCharacter, saveCharacter } from './characterStore';
 import { loadApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
+import { buildLaunchContinuity } from './chat/continuity';
 import { loadConfig as loadUserConfig, saveConfig as saveUserConfig } from './configStore'; // UserConfig for bot init + daily-limit gate
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
@@ -725,6 +726,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       }
     }
 
+    // Cross-surface continuity (Phase 18/19): fold any aged-out chat into the
+    // rolling summary and grab the recent window, so the companion carries the
+    // app conversation into the world. Best-effort — never blocks a summon.
+    let continuity: Awaited<ReturnType<typeof buildLaunchContinuity>> = null;
+    try {
+      continuity = await buildLaunchContinuity(characterId);
+    } catch {
+      continuity = null;
+    }
+
     child.once('spawn', () => {
       // Ship mc_username, preferred_name, and skinServerBaseUrl so the bot
       // can satisfy ConfigSchema, seed player_username for player-recognition
@@ -769,6 +780,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           // through Sei's Fly.io proxy (D-40 sub-delivery a). undefined here
           // means BYOK — bot uses the legacy `apiKey` path.
           cloudMode,
+          // Phase 18/19: { summary, recent } from the in-app chat, seeded into
+          // the bot's prompt so it knows what you were just talking about. null
+          // when there is no prior chat. See chat/continuity.ts.
+          continuity,
         },
         [port2],
       );

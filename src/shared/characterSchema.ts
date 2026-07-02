@@ -86,6 +86,11 @@ export const CharacterSchema = z.object({
   metadata: z.record(z.unknown()).default({}),
   created: z.string(),                                // ISO timestamp, immutable (D-11)
   last_launched: z.string().nullable().default(null), // ISO or null (D-11)
+  // Last in-app chat interaction (ISO or absent). Device-local like
+  // last_launched (never mirrored to cloud); optional so existing character
+  // literals need not set it. Combined with last_launched for the card's
+  // "last active" date + ordering. Stamped only on a successful reply.
+  last_chatted: z.string().nullable().optional(),
   playtime_ms: z.number().int().min(0).default(0),    // accumulated (D-11)
   // D-28: portrait_image is a path reference (e.g., '<uuid>.png') or null.
   // Plan 11-06 added a refinement REJECTING legacy data URLs at the IPC
@@ -172,6 +177,18 @@ export type CharacterIndex = z.infer<typeof CharacterIndexSchema>;
 export const UserConfigSchema = z.object({
   mc_username: z.string().default(''),                            // Minecraft account display name
   preferred_name: z.string().default(''),                          // what bot calls the user
+  /**
+   * In-app chat user profile picture — a portrait path ref ('_user.png'),
+   * resolved via the sei-portrait:// protocol like character portraits. Used as
+   * the player's avatar in the Discord-style chat. Must NOT be a data: URL
+   * (same boundary as character portrait_image). Null/absent = no picture.
+   */
+  profile_picture: z
+    .string()
+    .refine((v) => !v.startsWith('data:'), { message: 'profile_picture must be a path reference, not a data URL' })
+    .nullable()
+    .optional()
+    .default(null),
   /**
    * 260617: ISO timestamp until which cloud (trial) play is daily-rate-limited
    * (the proxy's $5/day spend cap). Set when a live session hits the cap; the

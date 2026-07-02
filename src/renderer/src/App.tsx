@@ -29,10 +29,17 @@ import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
+import { ActivityPickerScreen } from './screens/ActivityPickerScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
 import { AddCharacterScreen } from './screens/AddCharacterScreen';
 import { ComingSoonScreen } from './screens/ComingSoonScreen';
 import { CharacterPage } from './screens/CharacterPage';
+import { ChatScreen } from './screens/ChatScreen';
+import { VoiceCallScreen } from './screens/VoiceCallScreen';
+import { MinimizedCall } from './components/MinimizedCall';
+import { SummonedWidget } from './components/SummonedWidget';
+import { GamesPickerModal } from './components/GamesPickerModal';
+import { GameAboutModal } from './components/GameAboutModal';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { CreditsScreen } from './screens/CreditsScreen';
 import { ReceiptScreen } from './screens/ReceiptScreen';
@@ -600,7 +607,10 @@ export function App(): React.ReactElement {
   // hairline can span the full width (including under the macOS traffic lights)
   // when there's no rail to read as continuous chrome on the left.
   const railHidden =
-    view.kind === 'onboarding' || view.kind === 'auth-choice' || view.kind === 'skin-setup';
+    view.kind === 'onboarding' ||
+    view.kind === 'auth-choice' ||
+    view.kind === 'skin-setup' ||
+    view.kind === 'activity-picker';
 
   return (
     <>
@@ -702,9 +712,14 @@ export function App(): React.ReactElement {
                   />
                 )}
                 {view.kind === 'skin-setup' && <SkinSetupScreen />}
+                {view.kind === 'activity-picker' && <ActivityPickerScreen />}
                 {view.kind === 'home' && <CharactersScreen />}
                 {view.kind === 'add-character' && <AddCharacterScreen />}
                 {view.kind === 'character' && <CharacterPage id={view.id} />}
+                {view.kind === 'chat' && <ChatScreen characterId={view.characterId} />}
+                {view.kind === 'voice-call' && (
+                  <VoiceCallScreen characterId={view.characterId} />
+                )}
                 {view.kind === 'settings' && <SettingsScreen />}
                 {view.kind === 'credits' && <CreditsScreen />}
                 {view.kind === 'receipt' && <ReceiptScreen />}
@@ -719,13 +734,20 @@ export function App(): React.ReactElement {
               {devConsoleVisible &&
               view.kind !== 'onboarding' &&
               view.kind !== 'auth-choice' &&
-              view.kind !== 'skin-setup' ? (
+              view.kind !== 'skin-setup' &&
+              view.kind !== 'activity-picker' ? (
                 <LogsBar />
               ) : null}
             </div>
           </div>
         </div>
       </MacosWindow>
+      {/* Chat #6 — the minimized voice-call widget floats above all screens
+          (renders nothing unless a call is minimized). */}
+      <MinimizedCall />
+      {/* Chat #7 — floating "in your world" unsummon popups for live sessions
+          (renders nothing unless a bot is summoned/connecting). */}
+      <SummonedWidget />
       {modal?.kind === 'lan' ? <LanModal mode={modal.mode} /> : null}
       {modal?.kind === 'skin-setup-prompt' ? (
         <SkinSetupPromptModal characterId={modal.characterId} />
@@ -736,6 +758,14 @@ export function App(): React.ReactElement {
           conflictName={modal.conflictName}
           username={modal.username}
         />
+      ) : null}
+      {/* Phase 18/19 — chat "Play together" surfaces: the game picker grid and
+          the per-game About sheet (which carries the Summon CTA). */}
+      {modal?.kind === 'games-picker' ? (
+        <GamesPickerModal characterId={modal.characterId} />
+      ) : null}
+      {modal?.kind === 'game-about' ? (
+        <GameAboutModal characterId={modal.characterId} gameId={modal.gameId} />
       ) : null}
       {/* The skin-setup onboarding page renders the wizard inline (via
           WizardStepMachine), so suppress the global modal there to avoid a

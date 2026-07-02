@@ -20,9 +20,18 @@ export type View =
   // runs the Minecraft skin setup wizard inline. Routed to from OnboardingScreen
   // and resumed on relaunch while UserConfig.skin_setup_pending is true.
   | { kind: 'skin-setup' }
+  // Post-onboarding "what would you like to do?" chooser (chat vs minecraft).
+  // Shown once right after name onboarding; routes to skin-setup (minecraft) or
+  // straight home (chat). A full-page entry surface like onboarding/skin-setup.
+  | { kind: 'activity-picker' }
   | { kind: 'home' }
   | { kind: 'add-character' }
   | { kind: 'character'; id: string }
+  // Phase 18/19 — Discord-style in-app chat with a companion, plus a
+  // placeholder Discord-style voice-call surface. Both are normal in-app
+  // surfaces (the IconRail stays visible, unlike the full-page entry flows).
+  | { kind: 'chat'; characterId: string }
+  | { kind: 'voice-call'; characterId: string }
   | { kind: 'settings' }
   | { kind: 'credits' }
   | { kind: 'coming-soon' }
@@ -43,7 +52,11 @@ export type Modal =
   // Multi-summon guard: blocks summoning a character whose in-game username
   // collides with an already-summoned one (the world would kick the second
   // with `name_taken`). Carries both names + the shared username for the copy.
-  | { kind: 'summon-conflict'; attemptedName: string; conflictName: string; username: string };
+  | { kind: 'summon-conflict'; attemptedName: string; conflictName: string; username: string }
+  // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games
+  // (games-picker) and a per-game About sheet with a Summon button (game-about).
+  | { kind: 'games-picker'; characterId: string }
+  | { kind: 'game-about'; characterId: string; gameId: string };
 
 /**
  * B4 — which tab CharactersScreen should open on. The compass icon in the
@@ -92,6 +105,28 @@ interface UiState {
    * one greeting until the user navigates away.
    */
   homeGreetingDismissed: boolean;
+  /**
+   * Phase 18/19 — when the CharacterPage is opened FROM a chat (the chat
+   * header's Profile button), this records the originating character id so the
+   * page's back button returns to that chat instead of going home. Cleared by
+   * CharacterPage once it routes back. null = the page was opened the normal way
+   * (home / world / rail), so back goes home as before.
+   */
+  chatReturnId: string | null;
+  /**
+   * Voice-call minimize (chat change #6). When the user minimizes the
+   * full-screen voice call, the call keeps "running" as a small floating widget
+   * (MinimizedCall) rendered at the App shell level so it survives navigation.
+   * Holds the character on the call; null when no call is minimized. Restoring
+   * re-opens the voice-call view; hanging up clears it.
+   */
+  minimizedCall: { characterId: string } | null;
+  /**
+   * Mute state for the active voice call, kept here (not in VoiceCallScreen
+   * local state) so it survives minimize → restore and is shared with the
+   * MinimizedCall widget. Reset to false whenever a call ends.
+   */
+  callMuted: boolean;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -102,6 +137,16 @@ interface UiState {
   setDevConsoleVisible: (v: boolean) => void;
   /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
   setVisionCapable: (v: boolean) => void;
+  /** Phase 18/19: record the chat a CharacterPage was opened from (or null). */
+  setChatReturnId: (id: string | null) => void;
+  /** #6: collapse the voice call to the floating corner widget. */
+  minimizeCall: (characterId: string) => void;
+  /** #6: re-open the full voice-call view for the minimized call. */
+  restoreCall: () => void;
+  /** #6: set the active call's mute state (shared by both call surfaces). */
+  setCallMuted: (muted: boolean) => void;
+  /** #6: hang up / dismiss the call (clears the widget + resets mute). */
+  endCall: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -115,6 +160,9 @@ export const useUiStore = create<UiState>((set) => ({
   // capabilities.vision === true over the vision:capability push.
   visionCapable: false,
   homeGreetingDismissed: false,
+  chatReturnId: null,
+  minimizedCall: null,
+  callMuted: false,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
   navigate: (view) =>
@@ -128,4 +176,22 @@ export const useUiStore = create<UiState>((set) => ({
     set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),
   setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
   setVisionCapable: (v) => set({ visionCapable: v }),
+  setChatReturnId: (id) => set({ chatReturnId: id }),
+  // Minimizing leaves the call "running" in the corner and drops the user back
+  // onto that companion's chat (leaving Home, so dismiss the greeting).
+  minimizeCall: (characterId) =>
+    set({
+      minimizedCall: { characterId },
+      view: { kind: 'chat', characterId },
+      modal: null,
+      homeGreetingDismissed: true,
+    }),
+  restoreCall: () =>
+    set((s) =>
+      s.minimizedCall
+        ? { view: { kind: 'voice-call', characterId: s.minimizedCall.characterId }, minimizedCall: null }
+        : {},
+    ),
+  setCallMuted: (muted) => set({ callMuted: muted }),
+  endCall: () => set({ minimizedCall: null, callMuted: false }),
 }));

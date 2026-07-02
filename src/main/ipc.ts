@@ -677,6 +677,59 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await removePortrait(id);
   });
 
+  // ── In-app chat (Phase 18/19) ─────────────────────────────────────────────
+  // The chat LLM call runs entirely in main (mirrors personaExpansion) — no
+  // forked bot. `chat:send` may run the launch tool, which consults the live
+  // LAN state and summons the bot when a world is open.
+  ipcMain.handle(IpcChannel.chat.history, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { readRecent } = await import('./chat/chatService');
+    return await readRecent(id, 50);
+  });
+
+  ipcMain.handle(IpcChannel.chat.send, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        text: z.string().min(1).max(4000),
+        // Quoted-reply reference (chat #1) — was previously dropped here, so the
+        // companion never saw what the user was replying to.
+        replyTo: z
+          .object({ role: z.enum(['user', 'companion']), text: z.string() })
+          .optional(),
+      })
+      .parse(argsRaw);
+    const { sendChatMessage } = await import('./chat/chatService');
+    return await sendChatMessage(
+      { characterId: args.characterId, text: args.text, replyTo: args.replyTo },
+      { getLanState: deps.getLanState, summon: (id) => deps.supervisor.summon(id) },
+    );
+  });
+
+  ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    const { clear } = await import('./chat/chatStore');
+    await clear(id);
+  });
+
+  // ── User profile (Phase 19) ───────────────────────────────────────────────
+  ipcMain.handle(IpcChannel.user.getProfile, async () => {
+    const { getUserProfile } = await import('./userProfile');
+    return await getUserProfile();
+  });
+
+  ipcMain.handle(IpcChannel.user.applyProfilePicture, async (_event, argsRaw: unknown): Promise<string> => {
+    const args = z.object({ bytesBase64: z.string().min(1), format: z.enum(['png', 'jpeg', 'webp']) }).parse(argsRaw);
+    const bytes = Buffer.from(args.bytesBase64, 'base64');
+    const { applyUserProfilePicture } = await import('./userProfile');
+    return await applyUserProfilePicture(bytes);
+  });
+
+  ipcMain.handle(IpcChannel.user.removeProfilePicture, async (): Promise<void> => {
+    const { removeUserProfilePicture } = await import('./userProfile');
+    await removeUserProfilePicture();
+  });
+
   // Phase 11 D-16 — toggle public/private visibility on a character. Defaults
   // are bundle-supplied (D-22) and never appear in the cloud library, so we
   // refuse to flip `shared` on them at the IPC boundary. saveCharacter will

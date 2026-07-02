@@ -172,19 +172,18 @@
      Navy ramp swapped in for the original near-blacks. To REVERT, restore each
      value from the trailing comment (the /* was: … *​/ originals) and delete
      this block header. */
-  --bg: #101828;        /* was: #09090b */
-  --bg2: #161f38;       /* was: #0e0e12 */
-  --bg3: #1e2b49;       /* was: #15151b */
-  --bg4: #28385b;       /* was: #1c1c23 */
+  --bg: #070c17;        /* very dark blue */
+  --bg2: #0c1426;       /* very dark blue */
+  --bg3: #142138;       /* very dark blue */
+  --bg4: #1d2c49;       /* very dark blue */
 
-  /* The mockup's app surface is a single near-black --bg (#09090b); there is
-     no lighter "window" tone. Match it exactly so the chrome reads as dark as
-     the reference (was #0b0b0e — perceptibly lighter). */
-  --window: #101828;    /* was: #09090b */
-  --desktop: #0a101c;   /* was: #060608 */
-  --surface: #161f38;   /* was: #0e0e12 */
-  --surface-2: #1e2b49; /* was: #15151b */
-  --rail: #0e1626;      /* was: #0a0a0d */
+  /* App surface is a single very-dark-blue --bg; there is no lighter "window"
+     tone. Surfaces step up slightly so cards/inputs read against the field. */
+  --window: #070c17;    /* very dark blue */
+  --desktop: #04070f;   /* deepest — the field the window floats on */
+  --surface: #0c1426;   /* very dark blue */
+  --surface-2: #142138; /* very dark blue */
+  --rail: #070d1a;      /* very dark blue */
   --rail-active: rgba(255, 255, 255, 0.045);
   /* Rounded content-corner backdrop — matches the chrome; the panel's own
      rounded border (App.tsx main) is what defines the corner. */

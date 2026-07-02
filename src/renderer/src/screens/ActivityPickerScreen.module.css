@@ -1,0 +1,93 @@
+/* ActivityPickerScreen — post-onboarding activity chooser.
+ * Full-page centered surface; borderless surface tiles per UI-DESIGN-SYSTEM. */
+
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 0;
+  padding: var(--space-2xl);
+  background: var(--window);
+}
+
+.inner {
+  width: 100%;
+  max-width: 620px;
+  text-align: center;
+}
+
+.title {
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  color: var(--text);
+  margin: 0;
+}
+
+.subtitle {
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--muted);
+  margin: var(--space-sm) 0 0;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-md);
+  margin-top: var(--space-2xl);
+}
+
+.tile {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xl) var(--space-lg);
+  min-height: 180px;
+  justify-content: center;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 140ms var(--ease), transform 140ms var(--ease);
+}
+
+.tile:hover:not(:disabled) {
+  background: var(--accent-soft);
+  transform: translateY(-3px);
+}
+
+.tile:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tileIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  color: var(--accent);
+}
+
+.tileName {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.tileDesc {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 200px;
+  line-height: 1.4;
+}

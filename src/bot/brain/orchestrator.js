@@ -353,6 +353,28 @@ export async function composeSeedBlocks({
       }
     }
   }
+  // Phase 18/19: in-app chat continuity. When the player summoned this bot from
+  // a text chat, the supervisor seeds { summary, recent } so the companion opens
+  // the session knowing what you were just talking about (cross-surface memory).
+  try {
+    const cont = config?._seiContinuity
+    if (cont && (cont.summary || (Array.isArray(cont.recent) && cont.recent.length))) {
+      const parts = ['You were just texting with the player in the app, before joining this world. Continue as the same person — do not act like you only just met.']
+      if (cont.summary && cont.summary.trim()) {
+        parts.push('\nEarlier conversation summary:\n' + cont.summary.trim())
+      }
+      if (Array.isArray(cont.recent) && cont.recent.length) {
+        const lines = cont.recent
+          .filter((m) => m && typeof m.text === 'string')
+          .map((m) => `${m.role === 'user' ? 'Player' : 'You'}: ${m.text}`)
+          .join('\n')
+        if (lines) parts.push('\nThe last things you said to each other:\n' + lines)
+      }
+      blocks.push({ type: 'text', name: 'chat_continuity', text: parts.join('\n') })
+    }
+  } catch (err) {
+    logger.warn?.(`[sei/orch] continuity inject failed: ${err && err.message}`)
+  }
   // Heartbeat: persisted goals + reachable frontier ONLY. The proactiveness
   // directive used to lead this block, but it is static for the session, so it
   // moved to the cached system prefix (renderProactivenessDirective, wired in

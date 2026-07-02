@@ -20,6 +20,7 @@ import { Button } from './Button';
 import { StatusPill } from './StatusPill';
 import { SparkleIcon } from './icons';
 import { pickPalette } from '../lib/portraitPalettes';
+import { lastInteractionAt } from '../lib/lastInteraction';
 import { useSyncStore } from '../lib/stores/useSyncStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -34,18 +35,17 @@ export interface CharacterCardProps {
   onUnsummon: () => void;
 }
 
-// Home-card status line: the bare date (e.g. "May 23, 2026") once summoned, or
-// "Never summoned" before the first launch. Per the design owner this drops the
-// mockup's "Last summoned · " prefix on the card preview — the date alone reads
-// cleaner under the name, and the full "Last Launched" label still appears on
-// the detail screen's stat cell.
+// Home-card status line: the bare date of the last interaction — an in-game
+// session OR an in-app chat (#6) — e.g. "May 23, 2026", or "No activity yet"
+// before either has happened. The date alone reads cleaner under the name; the
+// full label still appears on the detail screen's stat cell.
 function formatLast(iso: string | null): string {
-  if (!iso) return 'Never summoned';
+  if (!iso) return 'No activity yet';
   try {
     const d = new Date(iso);
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   } catch {
-    return 'Never summoned';
+    return 'No activity yet';
   }
 }
 
@@ -61,7 +61,8 @@ export function CharacterCard({
   // Per-character accent tint behind the portrait — derived from the seeded
   // palette so each card glows in its own hue (the mockup's `tint` field).
   const tint = palette[2] ?? palette[1] ?? 'var(--accent)';
-  const ready = c.last_launched != null;
+  const lastActive = lastInteractionAt(c);
+  const ready = lastActive != null;
   // Phase 11 D-18 — per-card sync pill driver. Defaults never sync (D-22), so
   // gate every read on !isDefault. Shallow-equality selectors mean a sibling
   // card's status flip never re-renders this one (T-11-16-02 mitigation).
@@ -149,7 +150,7 @@ export function CharacterCard({
         <div className={styles.name}>{c.name}</div>
         <div className={styles.metaLine}>
           <span className={`${styles.dot} ${ready ? styles.dotReady : ''}`} aria-hidden="true" />
-          {formatLast(c.last_launched)}
+          {formatLast(lastActive)}
         </div>
       </div>
 
@@ -163,9 +164,9 @@ export function CharacterCard({
             if (isSummoned) onUnsummon();
             else onSummon();
           }}
-          aria-label={isSummoned ? `Unsummon ${c.name}` : `Summon ${c.name}`}
+          aria-label={isSummoned ? `Unsummon ${c.name}` : `Play with ${c.name}`}
         >
-          {isSummoned ? 'Unsummon' : 'Summon'}
+          {isSummoned ? 'Unsummon' : 'Play'}
         </Button>
       </div>
 

@@ -13,13 +13,14 @@
 
 .header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
   /* The 26px design gap to the grid is split 16px here + 10px grid padding-top
    * so the scroll container gets headroom (see .grid) — net spacing unchanged. */
   margin-bottom: 16px;
-  padding: 34px var(--space-2xl) 0;
+  /* Shared page top margin (matches World / Settings / Playtime). */
+  padding: var(--space-lg) var(--space-2xl) 0;
   flex-shrink: 0;
   /* Sit BELOW the cards in stacking order: a hover-lifted top-row card paints
    * over this pinned header instead of being covered by it. */
@@ -31,7 +32,7 @@
 .greeting {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 44px;
+  font-size: 32px;
   line-height: 0.9;
   letter-spacing: 0.04em;
   color: var(--heading);
