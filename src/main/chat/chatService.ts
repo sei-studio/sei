@@ -121,10 +121,20 @@ export async function sendChatMessage(
       readSummary(args.characterId),
     ]);
 
+    // Author's proactiveness dial (0-2), same source + clamp the bot uses
+    // (character.metadata.proactiveness), so the character is as forward in chat
+    // as it is in-game. Missing/out-of-range → reactive (1).
+    const rawProactiveness = character.metadata?.proactiveness;
+    const proactiveness =
+      typeof rawProactiveness === 'number' && Number.isInteger(rawProactiveness)
+        ? Math.min(Math.max(0, rawProactiveness), 2)
+        : 1;
+
     const system = buildSystemBlocks({
       persona: character.persona,
       name: character.name,
       preferredName: config.preferred_name ?? '',
+      proactiveness,
       memory,
       summary,
     });

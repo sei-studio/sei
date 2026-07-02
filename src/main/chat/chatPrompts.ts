@@ -1,49 +1,31 @@
 /**
  * Chat-surface prompt assembly. Same shape as the MC bot — baseline + persona +
- * memory + user message — but with a chat-specific baseline (no world-state) and
- * a single `launch` tool that hands off into Minecraft.
+ * memory + user message — but composed from the SHARED prompt document
+ * (src/bot/brain/promptLibrary.js) so chat and Minecraft are literally the same
+ * being: the game brain's cached block is UNIVERSAL_BASELINE + MINECRAFT_BASELINE,
+ * the chat brain's is UNIVERSAL_BASELINE + CHAT_BASELINE. Persona and the
+ * proactiveness dial are the cross-surface carriers, rendered by the same shared
+ * helpers rather than duplicated here (so they cannot drift).
  *
  * Unlike the MC bot, chat does NOT use the say() scratchpad split: in a text chat
  * the model's text content IS the message, so the reply is the plain text output.
- * Plain/factual second-person voice, mirroring personaExpansion's stable system.
+ * (CHAT_BASELINE states this; the game brain's say()/snapshot mechanics live in
+ * MINECRAFT_BASELINE and are never loaded here.) The only tool is `launch`.
  */
 import type { Persona } from '../../shared/characterSchema';
-
-/**
- * Baseline contract for the in-app text chat. Curiosity is modulated by the
- * persona's own PROACTIVENESS section (no separate runtime dial in v1). Covers
- * the user's spec: persona-appropriate curiosity, inviting the player to play,
- * how the player starts a game, and the launch() handoff tool.
- */
-export const CHAT_BASELINE = [
-  'You are texting with the player inside the Sei app. This is a text chat, not a game — you are not in a Minecraft world right now, you have no body, inventory, or surroundings to act on. Do not narrate actions or invent a scene. Just talk.',
-  '',
-  'HOW YOU TALK',
-  '- Stay fully in character. Your persona below defines your voice, register, and how you treat the player; obey it.',
-  '- Write like a real person texting: short, plain, lowercase is fine. Keep every reply to one or two sentences — never more than two, no matter how long your previous messages were. Do not let replies grow over the conversation. No stage directions, no asterisks, no parentheticals, no em-dashes or en-dashes.',
-  '- You are not a generic AI assistant. Never offer "help", never say "let me know if you need anything", never list options like a menu.',
-  '- The player is "you". Reply to what they actually said.',
-  '',
-  'CURIOSITY AND INVITING THE PLAYER',
-  '- Be curious about the player at the level your persona implies: a warm or clingy character asks about them often; a cold or independent one rarely does. Tie any question to something real they said or that you remember, never random small talk.',
-  '- You genuinely want to do things together. When it fits, invite the player to play. Minecraft is available now; other games are coming soon.',
-  '- If the player asks how to play or how to start a game: tell them, in your own words, that they open the games button (top right), pick a game, and press Summon. Do not recite the UI like a manual.',
-  '',
-  'LAUNCHING MINECRAFT',
-  '- When you and the player agree to play Minecraft and you want to jump in yourself, call the launch tool with game "minecraft". It starts the summon immediately and you join their world.',
-  '- For launch to work, the player must already have a Minecraft world open to LAN. If the tool tells you the world is not open, do not pretend you joined — instead tell the player, in your own voice, to open their world to LAN first (in Minecraft: pause with Esc, click Open to LAN, then Start LAN World), and that you will hop in once they do.',
-  '- Only launch when the player actually wants to play now. Do not launch just because Minecraft came up in conversation.',
-].join('\n');
-
-/** Renders the persona block exactly like the MC bot's renderPersona. */
-export function renderPersona(persona: Persona, name: string): string {
-  return `You are ${name}.\n${persona.expanded || persona.source}`;
-}
+import {
+  UNIVERSAL_BASELINE,
+  CHAT_BASELINE,
+  renderPersona,
+  renderChatProactivenessDirective,
+} from '../../bot/brain/promptLibrary.js';
 
 export interface BuildSystemArgs {
   persona: Persona;
   name: string;
   preferredName: string;
+  /** Author's 0-2 proactiveness dial (character.metadata.proactiveness). */
+  proactiveness: number;
   /** Tail of MEMORY.md (shared with the game) — what the companion remembers. */
   memory: string;
   /** Rolling cross-surface conversation summary (bridge.json). */
@@ -58,12 +40,20 @@ export type SystemBlock = { type: 'text'; text: string; cache_control?: { type: 
  * across turns. Memory + summary re-bill but are small.
  */
 export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
-  const blocks: SystemBlock[] = [{ type: 'text', text: CHAT_BASELINE }];
-  const personaText = args.preferredName
-    ? `${renderPersona(args.persona, args.name)}\n\nThe player's name is ${args.preferredName}.`
-    : renderPersona(args.persona, args.name);
-  // Persona carries the cache boundary: baseline + persona stay cached.
-  blocks.push({ type: 'text', text: personaText, cache_control: { type: 'ephemeral' } });
+  // Block 0 — being identity (every surface) + the chat surface contract. Same
+  // UNIVERSAL_BASELINE the game brain caches, so the character is continuous.
+  const blocks: SystemBlock[] = [{ type: 'text', text: `${UNIVERSAL_BASELINE}\n\n${CHAT_BASELINE}` }];
+
+  // Persona block carries the cache boundary. Same renderer as the MC bot; the
+  // expanded prompt omits proactiveness (it is parsed out at expansion), so we
+  // append the chat-flavored proactiveness directive here off the same dial.
+  const personaParts = [
+    renderPersona({ name: args.name, expanded: args.persona.expanded || args.persona.source }),
+  ];
+  if (args.preferredName) personaParts.push(`The player's name is ${args.preferredName}.`);
+  personaParts.push(renderChatProactivenessDirective(args.proactiveness));
+  blocks.push({ type: 'text', text: personaParts.join('\n\n'), cache_control: { type: 'ephemeral' } });
+
   if (args.memory.trim()) {
     blocks.push({
       type: 'text',
