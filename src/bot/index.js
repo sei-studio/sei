@@ -414,6 +414,10 @@ async function bootstrapWithInit(initData) {
     // teammates from the first tick; the supervisor re-broadcasts on every
     // summon/stop via a {type:'roster'} port message. Absent / [] for solo bots.
     companions,           // string[] | undefined
+    // Phase 18/19: { summary, recent[] } from the in-app chat, so the companion
+    // carries the app conversation into the world. null when there is no prior
+    // chat. Stashed on config as _seiContinuity and injected by the orchestrator.
+    continuity,           // { summary: string, recent: {role,text}[] } | null
   } = initData
 
   // Build a config shape that satisfies ConfigSchema.parse (see
@@ -563,6 +567,13 @@ async function bootstrapWithInit(initData) {
     config._seiCompanions = Array.isArray(companions)
       ? companions.filter(c => typeof c === 'string' && c.trim() && c !== config.adapter.minecraft.username)
       : []
+  } catch {}
+
+  // Phase 18/19: stash the in-app chat continuity ({summary, recent}) so the
+  // orchestrator can inject it as an early cached seed block. Best-effort.
+  try {
+    config._seiContinuity =
+      continuity && typeof continuity === 'object' ? continuity : null
   } catch {}
 
   emitLifecycle({ type: 'init-ack' })

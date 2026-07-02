@@ -1,0 +1,151 @@
+/* VoiceCallScreen — Discord-style call placeholder (Phase 18/19). No audio. */
+
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 0;
+  gap: var(--space-lg);
+  padding: var(--space-2xl);
+  background: var(--window);
+  text-align: center;
+}
+
+/* Minimize "＿" — top-left, borderless quiet button (→ accent on hover). */
+.minimizeBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  top: var(--space-md);
+  left: var(--space-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 140ms var(--ease);
+}
+
+.minimizeBtn:hover {
+  color: var(--accent);
+}
+
+.avatar {
+  width: 168px;
+  height: 168px;
+  overflow: hidden;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-pop);
+}
+
+.name {
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin: 0;
+}
+
+.subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: calc(-1 * var(--space-sm));
+}
+
+.subtitleDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: callPulse 1.6s var(--ease) infinite;
+}
+
+@keyframes callPulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+  margin-top: var(--space-md);
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.circleBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.circleBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.circleBtnMuted {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.circleBtnHangup {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--accent-text);
+}
+
+.circleBtnHangup:hover {
+  background: var(--red-strong);
+  border-color: var(--red-strong);
+  color: var(--accent-text);
+}
+
+.controlLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}

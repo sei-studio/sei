@@ -12,7 +12,8 @@
  */
 
 .root {
-  padding: 34px 40px 40px;
+  /* Shared page top margin (matches Companions / World / Settings). */
+  padding: var(--space-lg) 40px 40px;
   max-width: 760px;
   display: flex;
   flex-direction: column;
@@ -28,7 +29,7 @@
 
 .title {
   font-family: var(--display);
-  font-size: 44px;
+  font-size: 32px;
   font-weight: 600;
   line-height: 0.9;
   letter-spacing: 0.04em;

@@ -83,6 +83,7 @@ type CharacterTab = 'details' | 'skin';
 
 export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
+  const openModal = useUiStore((s) => s.openModal);
   const characters = useDataStore((s) => s.characters);
   // This page's character status only (multi-summon). All the downstream
   // checks (`summon.kind === 'online' && summon.characterId === id`, the
@@ -141,7 +142,16 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const closePage = (): void => {
     if (leaving) return;
     setLeaving(true);
-    leaveTimer.current = window.setTimeout(() => navigate({ kind: 'home' }), EXIT_MS);
+    // Phase 18/19: when this page was opened FROM a chat (the chat header's
+    // Profile button set chatReturnId), the back crumb returns to that chat
+    // instead of home. Decide the destination now, then clear the marker.
+    const ui = useUiStore.getState();
+    const returnToChat = ui.chatReturnId === id;
+    if (returnToChat) ui.setChatReturnId(null);
+    leaveTimer.current = window.setTimeout(
+      () => navigate(returnToChat ? { kind: 'chat', characterId: id } : { kind: 'home' }),
+      EXIT_MS,
+    );
   };
 
   // ── Live uptime ticker (hoisted above the early-return for stable hook count) ──
@@ -294,11 +304,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       void sei.stop(id);
       return;
     }
-    // attemptSummon runs the one-time skin-setup nudge (if warranted) before
-    // the LAN gate; both the connected-summon and not-connected (LAN modal)
-    // paths live in lib/summonFlow.ts so CharacterPage and CharactersScreen
-    // stay in lockstep.
-    void attemptSummon(id);
+    // "Play together" opens the game picker; each game tile launches through
+    // the shared summonFlow (skin-setup nudge → LAN gate). Keeps CharacterPage
+    // and CharactersScreen in lockstep on the same entry point.
+    openModal({ kind: 'games-picker', characterId: id });
   };
 
   const onToggleShared = (): void => {
@@ -694,7 +703,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               onClick={handleSummonClick}
               disabled={isConnecting && !isActive}
             >
-              {isActive ? 'Stop' : 'Summon into Minecraft'}
+              {isActive ? 'Stop' : 'Play together'}
             </Button>
           )}
           <div className={styles.gearWrap} ref={gearWrapRef}>

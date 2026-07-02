@@ -6,7 +6,7 @@
   width: 100%;
   background: transparent;
   border: none;
-  border-bottom: 1.5px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
   border-radius: 0; /* D-28 */
   color: var(--text);
   font-size: 16px;

@@ -7,6 +7,15 @@ export default defineConfig(({ mode }) => {
   // load. Empty prefix = read all keys; we whitelist explicitly below so we
   // never expose unrelated shell env vars to the bundle.
   const env = loadEnv(mode, process.cwd(), '');
+  // Dev renderer port. This (app-chat-ui) worktree defaults to a DEDICATED port
+  // so it can run at the same time as the main `dev` worktree (5173) without the
+  // two Vite servers colliding. Without a fixed strictPort, the second `npm run
+  // dev` silently auto-increments its Vite server but electron-vite still points
+  // that instance's Electron at the default port — so it loads the OTHER
+  // worktree's renderer and edits appear to "leak" across windows. A fixed
+  // strictPort keeps each worktree's server and Electron on the same, unique
+  // port. Override with SEI_DEV_RENDERER_PORT if needed.
+  const rendererPort = Number(process.env.SEI_DEV_RENDERER_PORT) || 5273;
   return {
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -46,6 +55,9 @@ export default defineConfig(({ mode }) => {
     // file:// in packaged builds needs relative asset URLs; without this,
     // url('/img/...') in CSS resolves to filesystem root → ERR_FILE_NOT_FOUND.
     base: './',
+    // Dedicated strict dev port (see rendererPort above) so this worktree never
+    // shares/loads the `dev` worktree's renderer when both run at once.
+    server: { port: rendererPort, strictPort: true },
     build: {
       outDir: path.resolve('dist/renderer'),
       emptyOutDir: true,

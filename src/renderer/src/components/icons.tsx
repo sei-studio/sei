@@ -377,6 +377,255 @@ export const CloudIcon: React.FC<IconProps> = ({ size = 26 }) => (
 );
 
 /**
+ * GamepadIcon — chat header "Games" affordance (Phase 18/19). A simple stroked
+ * controller body with a d-pad + two action buttons. Inherits currentColor.
+ */
+export const GamepadIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6 12h4M8 10v4" />
+    <circle cx={15.5} cy={11} r={0.6} fill="currentColor" />
+    <circle cx={17.5} cy={13} r={0.6} fill="currentColor" />
+    <path d="M17.5 6H6.5a4.5 4.5 0 0 0-4.46 3.9l-.8 5.6A2.4 2.4 0 0 0 3.6 18.2c.9 0 1.7-.5 2.1-1.3L6.5 15h11l.8 1.9c.4.8 1.2 1.3 2.1 1.3a2.4 2.4 0 0 0 2.36-2.7l-.8-5.6A4.5 4.5 0 0 0 17.5 6z" />
+  </svg>
+);
+
+/**
+ * UserIcon — chat header "Profile" affordance (opens CharacterPage). Stroked
+ * head + shoulders, inherits currentColor.
+ */
+export const UserIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx={12} cy={8} r={3.6} />
+    <path d="M5 20a7 7 0 0 1 14 0" />
+  </svg>
+);
+
+/**
+ * PhoneIcon — chat header "Voice call" affordance. Classic handset glyph,
+ * inherits currentColor.
+ */
+export const PhoneIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6.5 3h3l1.5 4-2 1.5a11 11 0 0 0 5 5l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A16 16 0 0 1 4.5 5.2 2 2 0 0 1 6.5 3z" />
+  </svg>
+);
+
+/**
+ * PhoneOffIcon — voice-call "hang up" control (rotated handset + slash). Filled
+ * red via currentColor at the call site.
+ */
+export const PhoneOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.9}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 10.5c5-4 13-4 18 0v3l-4 .8-.6-2.4a12 12 0 0 0-8.8 0L7 14.3 3 13.5z" />
+    <path d="M2 2l20 20" />
+  </svg>
+);
+
+/** MicIcon — voice-call mute control (unmuted state). */
+export const MicIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x={9} y={3} width={6} height={11} rx={3} />
+    <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+  </svg>
+);
+
+/** MicOffIcon — voice-call mute control (muted state, with slash). */
+export const MicOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M9 9V6a3 3 0 0 1 6 0v5" />
+    <path d="M15 12.4A3 3 0 0 1 9 11" />
+    <path d="M5 11a7 7 0 0 0 10.3 6.2M19 11a7 7 0 0 1-.3 2" />
+    <path d="M12 18v3" />
+    <path d="M3 3l18 18" />
+  </svg>
+);
+
+/** SendIcon — chat composer send button (paper-plane). */
+export const SendIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M22 2L11 13" />
+    <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+  </svg>
+);
+
+/** CopyIcon — duplicate-sheets glyph for the per-message "copy text" action. */
+export const CopyIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x={9} y={9} width={12} height={12} rx={1.5} />
+    <path d="M6 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V6" />
+  </svg>
+);
+
+/** ReplyIcon — curved back-arrow for the per-message "quote & reply" action. */
+export const ReplyIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M9 14L4 9l5-5" />
+    <path d="M4 9h11a5 5 0 0 1 5 5v6" />
+  </svg>
+);
+
+/** MinimizeIcon — a single lower bar; collapses the voice call to the corner. */
+export const MinimizeIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6 18h12" />
+  </svg>
+);
+
+/** ChatIcon — speech bubble, the "just chat" activity tile. */
+export const ChatIcon: React.FC<IconProps> = ({ size = 30 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+  </svg>
+);
+
+/** InfoIcon — circled "i", the per-tile "about this game" affordance. */
+export const InfoIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx={12} cy={12} r={9} />
+    <path d="M12 11v5" />
+    <path d="M12 7.5h.01" />
+  </svg>
+);
+
+/** LockIcon — locked "coming soon" game tile badge. */
+export const LockIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x={5} y={11} width={14} height={9} rx={1.5} />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+
+/**
  * Generic pixel "block" icon — abstract grass-style cube.
  * NOT Minecraft branding (D-34): green grass top, brown dirt body, no logo.
  */

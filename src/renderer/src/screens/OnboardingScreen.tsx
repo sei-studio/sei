@@ -108,6 +108,9 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       await sei.saveConfig({
         mc_username: mc.trim(),
         preferred_name: pref.trim(),
+        // Phase 18/19 — UserConfig now carries the user's chat profile picture;
+        // a fresh onboard has none yet (set later in Settings).
+        profile_picture: null,
         provider,
         provider_config: {},
         theme_mode: themeMode,
@@ -155,9 +158,10 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         }
       }
       if (!isReonboard) {
-        // Fresh onboarding → advance to the dedicated skin-setup step. It clears
-        // skin_setup_pending and lands on home (World tab) when finished/skipped.
-        navigate({ kind: 'skin-setup' });
+        // Fresh onboarding → ask what they want to do first. The activity picker
+        // routes to skin-setup only if they choose Minecraft; choosing Chat skips
+        // straight to home (and clears skin_setup_pending).
+        navigate({ kind: 'activity-picker' });
       } else {
         // Re-onboarding from Settings → straight back to home (no skin step),
         // on the Home tab (which shows the welcome message).

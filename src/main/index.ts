@@ -35,9 +35,16 @@ import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardPr
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
 // (your private personas) out of the shipped build.
-app.setName(app.isPackaged ? 'Sei' : 'Sei Dev');
+//
+// DEV-ONLY: SEI_DEV_USERDATA overrides the dev userData/app name so two dev
+// builds (e.g. this UI-revisions worktree + a separate MC-connecting one) can
+// run side by side. Each distinct name gets its own userData dir, which means a
+// distinct single-instance lock — otherwise the second launch quits. Defaults
+// to "Sei Dev" so normal `npm run dev` is unchanged.
+const devUserData = process.env.SEI_DEV_USERDATA?.trim() || 'Sei Dev';
+app.setName(app.isPackaged ? 'Sei' : devUserData);
 if (!app.isPackaged) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'Sei Dev'));
+  app.setPath('userData', path.join(app.getPath('appData'), devUserData));
 }
 
 // Register the `sei-portrait://` privileged scheme that serves locally-stored

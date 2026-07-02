@@ -59,9 +59,12 @@ describe('SkinSetupScreen — dedicated onboarding step', () => {
     expect(/skin_setup_pending:\s*z\.boolean\(\)/.test(SCHEMA)).toBe(true);
   });
 
-  it('Test 5: OnboardingScreen sets the gate and routes to the skin-setup step', () => {
+  it('Test 5: OnboardingScreen sets the gate and routes to the activity picker', () => {
+    // First-run onboarding still arms the skin-setup gate, but routes to the
+    // activity picker (chat-vs-game chooser); the picker forwards to skin-setup
+    // only when the player chooses Minecraft, else it clears the gate + goes home.
     expect(ONBOARD.includes('skin_setup_pending: !isReonboard')).toBe(true);
-    expect(ONBOARD.includes("navigate({ kind: 'skin-setup' })")).toBe(true);
+    expect(ONBOARD.includes("navigate({ kind: 'activity-picker' })")).toBe(true);
   });
 
   it('Test 6: App.tsx renders, isolates, and resumes the step', () => {

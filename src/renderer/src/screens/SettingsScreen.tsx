@@ -26,7 +26,6 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { applyTheme, type ThemeMode } from '../lib/theme';
 import { Button } from '../components/Button';
 import { TextField } from '../components/TextField';
-import { StatusPill, type StatusPillTone } from '../components/StatusPill';
 import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
@@ -34,10 +33,11 @@ import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmMod
 import { ResetAllMemoriesConfirmModal } from '../components/ResetAllMemoriesConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
+import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { InfoTip } from '../components/InfoTip';
 import { BackIcon, SunIcon, MoonIcon } from '../components/icons';
 import type { UserConfig } from '@shared/characterSchema';
-import type { McInstall, WizardState } from '@shared/ipc';
+import type { WizardState } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
 
 const API_KEY_BULLET_LEN = 24;
@@ -104,6 +104,10 @@ export function SettingsScreen(): React.ReactElement {
   };
   const [cfg, setCfg] = useState<UserConfig | null>(null);
   const [hasKey, setHasKey] = useState<boolean>(false);
+  // Phase 18/19 — the user's chat avatar (path ref '_user.png' or null), seeded
+  // from sei.userGetProfile() on mount. PortraitImagePicker owns apply/remove
+  // via the user-profile IPC overrides below.
+  const [userPic, setUserPic] = useState<string | null>(null);
   // Updates section (quick/260604-uoy). appVersion is read once via getVersion();
   // updateStatus reflects the live updater events while the user is on this
   // screen ("Check for updates" → checking → up-to-date / available / error).
@@ -209,6 +213,13 @@ export function SettingsScreen(): React.ReactElement {
       }
     });
     void sei.hasApiKey().then((b) => setHasKey(b));
+    // Seed the user's profile picture for the chat-avatar section below.
+    void sei
+      .userGetProfile()
+      .then((p) => setUserPic(p.profilePicture))
+      .catch(() => {
+        /* non-fatal — section just shows the empty/NONE state */
+      });
   }, [setDevConsoleVisible]);
 
   // Updates section (quick/260604-uoy): load the current version once, and
@@ -433,17 +444,25 @@ export function SettingsScreen(): React.ReactElement {
         <div className={styles.sectionTitle}>PROFILE</div>
 
         {/*
-          260605: the Minecraft-username row was retired from the GUI.
-          mc_username is still persisted in UserConfig/DB, just no longer
-          surfaced or edited here.
+          Phase 18/19 — the user's profile picture + name on one line, no labels.
+          The circular avatar (PortraitImagePicker 'avatar' variant) reveals a
+          "Change" overlay on hover and opens the same upload/crop/compress
+          pipeline on click, targeting the current user (not a character).
+          mc_username was retired from the GUI (260605) but is still persisted.
         */}
-        <div className={styles.row} onBlur={onPreferredBlur}>
-          <span className={styles.rowLabel}>Name</span>
-          <span className={styles.rowEditor}>
+        <div className={styles.profileRow} onBlur={onPreferredBlur}>
+          <PortraitImagePicker
+            variant="avatar"
+            value={userPic}
+            onChange={setUserPic}
+            applyOverride={(a) => sei.userApplyProfilePicture(a)}
+            removeOverride={() => sei.userRemoveProfilePicture()}
+          />
+          <span className={styles.profileName}>
             <TextField
               value={preferredDraft}
               onChange={setPreferredDraft}
-              placeholder=""
+              placeholder="Your name"
               aria-label="Name"
             />
           </span>
@@ -526,19 +545,13 @@ export function SettingsScreen(): React.ReactElement {
         */}
         <div className={styles.row}>
           <span className={styles.rowLabelGroup}>
-            <span className={styles.rowLabel}>Looking (vision)</span>
+            <span className={styles.rowLabel}>Visual gameplay</span>
             <InfoTip
-              label="About Looking (vision)"
-              text={
-                (cfg?.vision_mode ?? 'on-demand') === 'off'
-                  ? 'Your companions never look at the world; they play from what they already know.'
-                  : (cfg?.vision_mode ?? 'on-demand') === 'on-demand'
-                    ? 'Your companions look at the world when they need to, like finding something or when you ask.'
-                    : 'Your companions watch the world as they play, and can still look when they need to. Uses more playtime.'
-              }
+              label="About visual gameplay"
+              text="Companions usually play from lightweight snapshots of the world, but can pull a full render of what's around them when they need to see it — for example when building or navigating."
             />
           </span>
-          <div className={styles.segmented} role="group" aria-label="Looking mode">
+          <div className={styles.segmented} role="group" aria-label="Visual gameplay mode">
             {(['off', 'on-demand', 'continuous'] as const).map((mode) => (
               <Button
                 key={mode}
@@ -957,7 +970,6 @@ function SkinSetupRow(): React.ReactElement {
   // only fetched once on mount and went stale after setup.
   const wizardOpen = useWizardStore((s) => s.open);
   const [state, setState] = useState<WizardState | null>(null);
-  const [installs, setInstalls] = useState<McInstall[]>([]);
 
   useEffect(() => {
     // Skip while the wizard is open — the fetch would race its in-flight
@@ -967,44 +979,24 @@ function SkinSetupRow(): React.ReactElement {
     void sei.getWizardState().then((s) => {
       if (!cancelled) setState(s);
     });
-    void sei
-      .detectMcInstalls()
-      .then((r) => {
-        if (!cancelled) setInstalls(r.installs);
-      })
-      .catch(() => {
-        /* detection failure is non-fatal here — row falls back to "Not set up yet". */
-      });
     return () => {
       cancelled = true;
     };
   }, [wizardOpen]);
 
   const enabledCount = state?.enabledInstallIds.length ?? 0;
-  // Mod-missing OR version-drift heuristic: an install Sei previously enabled
-  // that the current scan reports as csl_installed=false is broken; flag.
-  const driftCount = installs.filter(
-    (i) => i.sei_enabled && !i.csl_installed,
-  ).length;
-
-  const tone: StatusPillTone =
-    enabledCount > 0 ? (driftCount > 0 ? 'warn' : 'green') : 'muted';
-  const label =
-    enabledCount > 0
-      ? `Sei enabled on ${enabledCount} install${enabledCount === 1 ? '' : 's'}`
-      : 'Not set up yet';
-  const secondary =
-    driftCount > 0
-      ? `${driftCount} install${driftCount === 1 ? '' : 's'} need${driftCount === 1 ? 's' : ''} update`
-      : undefined;
 
   return (
     <div className={styles.row}>
-      <span className={styles.rowEditor} style={{ justifyContent: 'flex-start' }}>
-        <StatusPill tone={tone} label={label} secondary={secondary} />
+      <span className={styles.rowLabelGroup}>
+        <span className={styles.rowLabel}>Custom skins</span>
+        <InfoTip
+          label="About custom skins"
+          text="Give your companion a Minecraft skin so it looks right in your world. This runs a quick one-time setup for your Minecraft install."
+        />
       </span>
-      <Button kind="quiet" size="md" onClick={() => openWizard(true)}>
-        Re-run setup
+      <Button kind="ghost" size="sm" onClick={() => openWizard(true)}>
+        {enabledCount > 0 ? 'Re-run setup' : 'Run setup'}
       </Button>
     </div>
   );

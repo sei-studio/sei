@@ -26,10 +26,13 @@ import { paths } from './paths';
 
 export const PORTRAIT_SCHEME = 'sei-portrait';
 
-// Filenames we will serve: `<uuid>.png`. Restricting the charset + extension
-// (combined with path.basename below) keeps the request inside the portraits
-// dir — no traversal via `..` or absolute paths.
-const SAFE_FILE_RE = /^[0-9a-f-]+\.png$/i;
+// Filenames we will serve: `<uuid>.png` (character portraits) plus the fixed
+// user-profile slot `_user.png`. Restricting the charset + extension (combined
+// with path.basename below) keeps the request inside the portraits dir — no
+// traversal via `..` or absolute paths. The charset allows a-z, digits, dash
+// and underscore so the `_user` slot resolves (the old `[0-9a-f-]` hex-only set
+// rejected it → 400 → the player's avatar silently fell back everywhere).
+const SAFE_FILE_RE = /^[0-9a-z_-]+\.png$/i;
 
 /** Register the privileged scheme. MUST be called before app 'ready'. */
 export function registerPortraitScheme(): void {

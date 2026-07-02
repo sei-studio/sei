@@ -72,6 +72,43 @@ export type LanState =
   | { kind: 'not_connected' }
   | { kind: 'unavailable' };
 
+// ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
+/** A quoted-reply reference (the message this one is replying to). */
+export interface ChatReplyRef {
+  /** Role of the quoted message's author. */
+  role: 'user' | 'companion';
+  /** Verbatim text of the quoted message (snapshot at reply time). */
+  text: string;
+}
+
+/** One persisted chat message. `companion` = the AI; `system` reserved for UI. */
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'companion' | 'system';
+  text: string;
+  /** Unix ms. */
+  ts: number;
+  /** Set when this message is a reply that quotes an earlier one (Discord-style). */
+  replyTo?: ChatReplyRef;
+}
+
+/** Result of a chat turn. `launch` is set when the companion called launch(). */
+export interface ChatSendResult {
+  reply: ChatMessage;
+  launch?: {
+    game: string;
+    /** 'summoning' → the bot is joining a LAN world; 'lan-not-open' → could not join. */
+    status: 'summoning' | 'lan-not-open';
+  };
+}
+
+/** In-app user profile surfaced to the chat + settings. */
+export interface UserProfile {
+  /** Portrait path ref ('_user.png') or null. Resolve via sei-portrait://. */
+  profilePicture: string | null;
+  preferredName: string;
+}
+
 /**
  * Startup warnings reported by main on first boot (one-shot query).
  * `keychainFallbackPlaintext` is true when running on Linux with the
@@ -669,6 +706,22 @@ export interface RendererApi {
   saveApiKey(plaintext: string): Promise<void>;
   hasApiKey(): Promise<boolean>;
 
+  // --- In-app chat (Phase 18/19) ---
+  /** Load a character's persisted chat transcript (recent window). */
+  chatHistory(characterId: string): Promise<ChatMessage[]>;
+  /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game). */
+  chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef }): Promise<ChatSendResult>;
+  /** Clear a character's chat transcript + rolling summary bridge. */
+  chatClear(characterId: string): Promise<void>;
+
+  // --- User profile (Phase 19) ---
+  /** The in-app user profile (avatar ref + preferred name). */
+  userGetProfile(): Promise<UserProfile>;
+  /** Apply user profile-picture bytes; returns the path ref ('_user.png'). */
+  userApplyProfilePicture(args: { bytesBase64: string; format: 'png' | 'jpeg' | 'webp' }): Promise<string>;
+  /** Clear the user profile picture and delete the on-disk file. */
+  userRemoveProfilePicture(): Promise<void>;
+
   // App-level one-shot queries
   getStartupWarnings(): Promise<StartupWarnings>;
 
@@ -1144,6 +1197,16 @@ export const IpcChannel = {
     save: 'config:save',
     saveApiKey: 'config:save-api-key',
     hasApiKey: 'config:has-api-key',
+  },
+  chat: {
+    history: 'chat:history',
+    send: 'chat:send',
+    clear: 'chat:clear',
+  },
+  user: {
+    getProfile: 'user:get-profile',
+    applyProfilePicture: 'user:apply-profile-picture',
+    removeProfilePicture: 'user:remove-profile-picture',
   },
   app: {
     ready: 'app:ready',

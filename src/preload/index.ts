@@ -73,6 +73,16 @@ const api: RendererApi = {
   saveApiKey: (plaintext) => ipcRenderer.invoke(IpcChannel.config.saveApiKey, plaintext),
   hasApiKey: () => ipcRenderer.invoke(IpcChannel.config.hasApiKey),
 
+  // In-app chat (Phase 18/19)
+  chatHistory: (characterId) => ipcRenderer.invoke(IpcChannel.chat.history, characterId),
+  chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),
+  chatClear: (characterId) => ipcRenderer.invoke(IpcChannel.chat.clear, characterId),
+
+  // User profile (Phase 19)
+  userGetProfile: () => ipcRenderer.invoke(IpcChannel.user.getProfile),
+  userApplyProfilePicture: (args) => ipcRenderer.invoke(IpcChannel.user.applyProfilePicture, args),
+  userRemoveProfilePicture: () => ipcRenderer.invoke(IpcChannel.user.removeProfilePicture),
+
   getStartupWarnings: () => ipcRenderer.invoke(IpcChannel.app.warnings),
 
   // --- Skin pipeline ---
