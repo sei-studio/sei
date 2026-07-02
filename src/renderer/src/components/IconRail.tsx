@@ -49,7 +49,11 @@ import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
-import { tokensRemainingToPlaytime } from '../lib/playtimeEstimate';
+import {
+  tokensRemainingToPlaytime,
+  DEFAULT_TOKENS_PER_MIN,
+  VISION_MULTIPLIER,
+} from '../lib/playtimeEstimate';
 
 /**
  * Tooltip hover state lifted to the IconRail component so it can render a
@@ -144,6 +148,8 @@ interface AvatarButtonProps {
   characterName: string;
   portraitImage: string | null;
   active: boolean;
+  /** This character has a live (or connecting) bot session — frame + glint. */
+  summoned: boolean;
   onClick: () => void;
   theme: 'light' | 'dark';
   setHover: SetHover;
@@ -154,6 +160,7 @@ function AvatarButton({
   characterName,
   portraitImage,
   active,
+  summoned,
   onClick,
   theme,
   setHover,
@@ -162,7 +169,13 @@ function AvatarButton({
     () => pickPalette(characterId + characterName, theme),
     [characterId, characterName, theme],
   );
-  const cls = [styles.avatarButton, active ? styles.avatarActive : ''].filter(Boolean).join(' ');
+  const cls = [
+    styles.avatarButton,
+    active ? styles.avatarActive : '',
+    summoned ? styles.avatarSummoned : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <button
       type="button"
@@ -209,12 +222,33 @@ export function IconRail(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const characters = useDataStore((s) => s.characters);
+  // Per-character summoned state (multi-summon) — drives the avatar frame+glint.
+  const summons = useDataStore((s) => s.summons);
   const authState = useAuthStore((s) => s.state);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
-  // 260602-hbr: flat DEFAULT_TOKENS_PER_MIN multiplier (no per-user rate).
-  const playtimeDisplay = tokensRemainingToPlaytime(remainingTokens).display;
+  // Phase 15 (D-07): shrink the rail's "Playtime · ~Xh" figure via VISION_MULTIPLIER
+  // when Looking is 'continuous' (the automatic view — heavier usage). Read the
+  // mode from UserConfig. The playtime branch only renders for cloud-proxy users (the
+  // `aiBackendKind === 'cloud-proxy'` gate below), so D-11 holds — BYO/local
+  // users never see this.
+  const [autoRenderOn, setAutoRenderOn] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void sei.getConfig().then((c) => {
+      if (!cancelled) setAutoRenderOn((c.vision_mode ?? 'on-demand') === 'continuous');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // 260602-hbr: flat DEFAULT_TOKENS_PER_MIN multiplier (no per-user rate);
+  // Phase 15 D-07 scales it up when auto-look is on so the figure shrinks.
+  const playtimeRate = autoRenderOn
+    ? DEFAULT_TOKENS_PER_MIN * VISION_MULTIPLIER
+    : DEFAULT_TOKENS_PER_MIN;
+  const playtimeDisplay = tokensRemainingToPlaytime(remainingTokens, playtimeRate).display;
 
   // B3 — local confirm dialog for the cloud-icon click when the user is on
   // the local backend. Two-button "Switch to cloud?" panel that, on
@@ -262,18 +296,18 @@ export function IconRail(): React.ReactElement {
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
 
-  // Home pill is active when the user is on home (Home tab specifically — the
-  // World sub-tab is its own surface and the rail's home icon should NOT light
-  // up when the compass-driven World tab is selected), on an individual
-  // character, or on the add-character flow.
+  // The Home and World tabs are sibling surfaces; a character profile (and the
+  // add-character flow) is opened ON TOP of whichever tab the user was on.
+  // ITEM 7: opening a character from the World page must KEEP the rail on World
+  // — previously `view.kind === 'character'` unconditionally lit the Home pill,
+  // so the rail snapped to Home on every profile open. Gate both pills on the
+  // preserved `homeTab` instead (it isn't mutated when navigating to a profile),
+  // so the rail reflects the originating tab.
   const homeTab = useUiStore((s) => s.homeTab);
-  const homeActive =
-    (view.kind === 'home' && homeTab === 'home') ||
-    view.kind === 'character' ||
-    view.kind === 'add-character';
-  // World tab is its own surface — the compass nav (now directly under Home,
-  // mockup Sidebar parity) lights up while it's selected.
-  const worldActive = view.kind === 'home' && homeTab === 'world';
+  const onHomeSurface =
+    view.kind === 'home' || view.kind === 'character' || view.kind === 'add-character';
+  const homeActive = onHomeSurface && homeTab === 'home';
+  const worldActive = onHomeSurface && homeTab === 'world';
 
   // Filter to the user's home library — same rule HomeGrid uses so the rail
   // and the Home grid never diverge. Bundled defaults are shown unless the
@@ -363,6 +397,7 @@ export function IconRail(): React.ReactElement {
               characterName={c.name}
               portraitImage={c.portrait_image}
               active={view.kind === 'character' && view.id === c.id}
+              summoned={summons[c.id]?.kind === 'online' || summons[c.id]?.kind === 'connecting'}
               onClick={() => navigate({ kind: 'character', id: c.id })}
               theme={theme}
               setHover={setHoverTip}
@@ -372,10 +407,10 @@ export function IconRail(): React.ReactElement {
             type="button"
             className={`${styles.circleButton} ${view.kind === 'add-character' ? styles.circleActive : ''}`}
             onClick={() => navigate({ kind: 'add-character' })}
-            aria-label="New character"
-            onMouseEnter={(e) => attachHover(e.currentTarget, 'New character', setHoverTip)}
+            aria-label="New companion"
+            onMouseEnter={(e) => attachHover(e.currentTarget, 'New companion', setHoverTip)}
             onMouseLeave={() => setHoverTip(null)}
-            onFocus={(e) => attachHover(e.currentTarget, 'New character', setHoverTip)}
+            onFocus={(e) => attachHover(e.currentTarget, 'New companion', setHoverTip)}
             onBlur={() => setHoverTip(null)}
           >
             <PlusIcon size={22} />

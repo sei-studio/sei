@@ -21,10 +21,26 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { portraitSrc } from '../lib/portraitSrc';
+import { pickPalette } from '../lib/portraitPalettes';
 import styles from './PixelPortrait.module.css';
 
 export const GRID_SIZE = 12;
 export const EYE_COLOR = '#0E0E0E';
+
+/**
+ * Bust silhouette mask (260616). The procedural sprite is carved into a
+ * head-and-shoulders shape: cut cells are LEFT UNPAINTED on the <canvas>, so
+ * they stay transparent and the live theme background shows through — no baked
+ * colour, so it adapts to light/dark on the fly. Cut = the top row, plus the 3
+ * outer columns on each side of the top 7 rows (the head) — leaving a 6-wide
+ * head (cols 3..8) over rows 1..6 on full-width shoulders (rows 7..11).
+ *
+ * Applied at paint time only; `generatePixelGrid` still returns the full 12×12
+ * colour grid (its determinism contract + acceptance pixels are unchanged).
+ */
+export function isBustCut(y: number, x: number): boolean {
+  return y === 0 || (y <= 6 && (x <= 2 || x >= GRID_SIZE - 3));
+}
 
 /** FNV-1a 32-bit hash (matches lib/portraitPalettes.ts).  */
 function hashSeed(str: string): number {
@@ -154,6 +170,13 @@ export function generatePixelGrid(
 
 interface PixelPortraitProps {
   seed: string;
+  /**
+   * Caller-derived (theme-resolved) palette. Retained for the per-card accent
+   * tint the callers compute from it — intentionally NOT used to paint the
+   * sprite: the light/dark palettes are luminance-reversed per index, which
+   * photo-negatives the sprite between themes. The sprite locks to a single
+   * theme-independent palette below so a character reads the same in both modes.
+   */
   palette: string[];
   size?: number;
   /** Optional image override path; falls back to procedural on load error. */
@@ -165,7 +188,6 @@ interface PixelPortraitProps {
 
 export function PixelPortrait({
   seed,
-  palette,
   size = 220,
   portraitImage,
   style,
@@ -175,7 +197,11 @@ export function PixelPortrait({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [imgFailed, setImgFailed] = useState(false);
 
-  const grid = useMemo(() => generatePixelGrid(seed, palette), [seed, palette]);
+  // Lock the sprite to a theme-INDEPENDENT palette so it doesn't photo-negative
+  // between light/dark (the two palette sets are luminance-reversed per index).
+  // Same seed → same character in both themes; the transparent cuts + themed
+  // .root background carry the light/dark difference instead.
+  const grid = useMemo(() => generatePixelGrid(seed, pickPalette(seed, 'dark')), [seed]);
 
   // Paint canvas whenever grid changes.
   useEffect(() => {
@@ -185,8 +211,12 @@ export function PixelPortrait({
     canvas.height = GRID_SIZE;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    // Clear first so bust-cut cells stay transparent across repaints (theme
+    // toggle / seed change) rather than retaining an earlier paint.
+    ctx.clearRect(0, 0, GRID_SIZE, GRID_SIZE);
     for (let y = 0; y < GRID_SIZE; y++) {
       for (let x = 0; x < GRID_SIZE; x++) {
+        if (isBustCut(y, x)) continue; // unpainted → transparent → theme bg shows through
         ctx.fillStyle = grid[y]![x]!;
         ctx.fillRect(x, y, 1, 1);
       }

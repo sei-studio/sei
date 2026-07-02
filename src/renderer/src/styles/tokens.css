@@ -47,56 +47,74 @@
   --pixel: 'Press Start 2P', monospace;
 
   /*
-   * ── LIGHT theme (paper mirror of the terminal) ────────────────
-   * A light-surfaced variant of the same system: sharp edges, condensed
-   * Oswald display, mono labels, periwinkle accent. Overlays (scan/grain)
-   * are toned down for light (see global.css). Default when the OS / user
+   * ── LIGHT theme — "Nurture sky" ───────────────────────────────
+   * Pastel skies + technology (Porter Robinson's Nurture, visualized): a
+   * cloud-white field with a periwinkle #7FB0FF chrome. The IconRail AND the
+   * shared top strip are a solid #7FB0FF inverted-L framing offwhite content;
+   * a fresh spring-green complements the periwinkle on status accents. Sharp
+   * edges, condensed Oswald display, mono labels. Default when the OS / user
    * prefers light; dark is the hero.
+   *
+   * NOTE — "on-rail" foreground tokens (--rail-fg*, --rail-border, --rail-hover)
+   * exist because the chrome is now a saturated fill: content sitting ON it
+   * (rail icons, the "Sei" title, window controls) needs LIGHT foregrounds,
+   * while the same UI on white surfaces stays dark. They're semantic chrome
+   * tokens (not per-component) and are theme-scoped — dark maps them back to
+   * the neutral --muted/--text/--accent it has always used.
    */
-  --bg: #f4f4f2;
-  --bg2: #fbfbfa;
+  --bg: #f3f8ff;
+  --bg2: #ffffff;
   --bg3: #ffffff;
-  --bg4: #ececea;
+  --bg4: #e7f0fd;
   --bg-2: var(--surface-2);   /* legacy alias — some modules read --bg-2 */
 
-  --window: #fbfbfa;
-  --desktop: #e9e8e5;
-  --surface: #f4f4f2;
+  --window: #ffffff;
+  --desktop: #dce9fb;         /* soft sky the window floats on */
+  --surface: #f3f8ff;
   --surface-2: #ffffff;
-  --rail: #efeeec;
-  --rail-active: #e4e3df;
+  --rail: #7fb0ff;            /* the periwinkle chrome (rail + top strip) */
+  --rail-active: #e3edfb;   /* soft sky chip fill (NOT the rail's own hover — see --rail-hover) */
+  --elbow: #7fb0ff;         /* rounded content-corner backdrop — chrome blue in light */
+  --heading: #7fb0ff;       /* thematic periwinkle for screen titles (Companions/World/…); body stays --text */
 
-  /* Card portrait backing (light paper mirror of --card-top/--card-bottom). */
+  /* On-rail foregrounds — content that sits on the #7FB0FF chrome. */
+  --rail-fg: rgba(255, 255, 255, 0.80);
+  --rail-fg-strong: #ffffff;
+  --rail-accent: #ffffff;
+  --rail-border: rgba(255, 255, 255, 0.30);
+  --rail-hover: rgba(255, 255, 255, 0.16);
+
+  /* Card portrait backing (cloud-white mirror of --card-top/--card-bottom). */
   --card-top: #ffffff;
-  --card-bottom: #f0f0ee;
+  --card-bottom: #eaf3ff;
 
-  --text: #1a1d24;
-  --text-2: #4a4d55;
-  --muted: #8a8d95;
-  --muted-2: #a9abb1;
+  --text: #2a3340;
+  --text-2: #586273;
+  --muted: #7d92ab;
+  --muted-2: #a7b6c8;
 
-  --accent: #3f7fd6;
-  --accent-strong: #2f6cc0;
-  --accent-soft: rgba(63, 127, 214, 0.16);
-  --accent-text: #ffffff;
-  --acc: 63 127 214;
+  --accent: #7fb0ff;
+  --accent-strong: #4f8fef;   /* deeper periwinkle — hover / high-contrast text */
+  --accent-soft: rgba(127, 176, 255, 0.18);
+  --accent-text: #ffffff;     /* white text on the periwinkle fill (e.g. Summon CTA) */
+  --acc: 127 176 255;
   --acc-c: rgb(var(--acc));
 
-  --green: #4e8a3e;
-  --red: #c4523a;
-  --red-strong: #a9412c;
-  --warn: #b88a25;
-  --ok: 78 138 62;
+  --green: #18a85c;           /* fresh spring green — complements periwinkle */
+  --red: #d94f3a;
+  --red-strong: #b83f2c;
+  --warn: #d99a2a;
+  --ok: 24 168 92;
 
-  --border: rgba(26, 29, 36, 0.10);
-  --border-strong: rgba(26, 29, 36, 0.18);
+  --border: rgba(22, 32, 46, 0.10);
+  --border-strong: rgba(22, 32, 46, 0.16);
   --line: var(--border);
   --line2: var(--border-strong);
 
-  /* ── Shadow tokens (light) ───────────────────────────────── */
-  --shadow-window: 0 0 0 1px rgba(0, 0, 0, .10), 0 24px 60px rgba(0, 0, 0, .16), 0 4px 16px rgba(0, 0, 0, .06);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 12px rgba(0, 0, 0, .05);
-  --shadow-pop: 0 12px 32px rgba(0, 0, 0, .10);
+  /* ── Shadow tokens (light — soft, faintly cool) ──────────── */
+  --shadow-window: 0 0 0 1px rgba(34, 60, 110, .08), 0 24px 60px rgba(34, 60, 110, .18), 0 4px 16px rgba(34, 60, 110, .07);
+  --shadow-card: 0 1px 2px rgba(34, 60, 110, .05), 0 4px 12px rgba(34, 60, 110, .06);
+  --shadow-pop: 0 12px 32px rgba(34, 60, 110, .12);
 
   /* Once-on-mount diagonal sweep on portraits. */
   --shimmer: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.20) 50%, transparent 70%);
@@ -104,37 +122,44 @@
 
 /* Explicit light selector mirrors :root so applyTheme('light') is unambiguous. */
 :root[data-theme="light"] {
-  --bg: #f4f4f2;
-  --bg2: #fbfbfa;
+  --bg: #f3f8ff;
+  --bg2: #ffffff;
   --bg3: #ffffff;
-  --bg4: #ececea;
-  --window: #fbfbfa;
-  --desktop: #e9e8e5;
-  --surface: #f4f4f2;
+  --bg4: #e7f0fd;
+  --window: #ffffff;
+  --desktop: #dce9fb;
+  --surface: #f3f8ff;
   --surface-2: #ffffff;
-  --rail: #efeeec;
-  --rail-active: #e4e3df;
+  --rail: #7fb0ff;
+  --rail-active: #e3edfb;   /* soft sky chip fill (NOT the rail's own hover — see --rail-hover) */
+  --elbow: #7fb0ff;         /* rounded content-corner backdrop — chrome blue in light */
+  --heading: #7fb0ff;       /* thematic periwinkle for screen titles (Companions/World/…); body stays --text */
+  --rail-fg: rgba(255, 255, 255, 0.80);
+  --rail-fg-strong: #ffffff;
+  --rail-accent: #ffffff;
+  --rail-border: rgba(255, 255, 255, 0.30);
+  --rail-hover: rgba(255, 255, 255, 0.16);
   --card-top: #ffffff;
-  --card-bottom: #f0f0ee;
-  --text: #1a1d24;
-  --text-2: #4a4d55;
-  --muted: #8a8d95;
-  --muted-2: #a9abb1;
-  --accent: #3f7fd6;
-  --accent-strong: #2f6cc0;
-  --accent-soft: rgba(63, 127, 214, 0.16);
+  --card-bottom: #eaf3ff;
+  --text: #2a3340;
+  --text-2: #586273;
+  --muted: #7d92ab;
+  --muted-2: #a7b6c8;
+  --accent: #7fb0ff;
+  --accent-strong: #4f8fef;
+  --accent-soft: rgba(127, 176, 255, 0.18);
   --accent-text: #ffffff;
-  --acc: 63 127 214;
-  --green: #4e8a3e;
-  --red: #c4523a;
-  --red-strong: #a9412c;
-  --warn: #b88a25;
-  --ok: 78 138 62;
-  --border: rgba(26, 29, 36, 0.10);
-  --border-strong: rgba(26, 29, 36, 0.18);
-  --shadow-window: 0 0 0 1px rgba(0, 0, 0, .10), 0 24px 60px rgba(0, 0, 0, .16), 0 4px 16px rgba(0, 0, 0, .06);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 12px rgba(0, 0, 0, .05);
-  --shadow-pop: 0 12px 32px rgba(0, 0, 0, .10);
+  --acc: 127 176 255;
+  --green: #18a85c;
+  --red: #d94f3a;
+  --red-strong: #b83f2c;
+  --warn: #d99a2a;
+  --ok: 24 168 92;
+  --border: rgba(22, 32, 46, 0.10);
+  --border-strong: rgba(22, 32, 46, 0.16);
+  --shadow-window: 0 0 0 1px rgba(34, 60, 110, .08), 0 24px 60px rgba(34, 60, 110, .18), 0 4px 16px rgba(34, 60, 110, .07);
+  --shadow-card: 0 1px 2px rgba(34, 60, 110, .05), 0 4px 12px rgba(34, 60, 110, .06);
+  --shadow-pop: 0 12px 32px rgba(34, 60, 110, .12);
   --shimmer: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.20) 50%, transparent 70%);
 }
 
@@ -143,26 +168,42 @@
  *   bg #09090b · txt #e9e7e1 · accent periwinkle #7FB0FF · sharp · overlays.
  */
 :root[data-theme="dark"] {
-  --bg: #09090b;
-  --bg2: #0e0e12;
-  --bg3: #15151b;
-  --bg4: #1c1c23;
+  /* ── TEMP: dark-blue background experiment (hue of the #7fb0ff accent) ──
+     Navy ramp swapped in for the original near-blacks. To REVERT, restore each
+     value from the trailing comment (the /* was: … *​/ originals) and delete
+     this block header. */
+  --bg: #101828;        /* was: #09090b */
+  --bg2: #161f38;       /* was: #0e0e12 */
+  --bg3: #1e2b49;       /* was: #15151b */
+  --bg4: #28385b;       /* was: #1c1c23 */
 
   /* The mockup's app surface is a single near-black --bg (#09090b); there is
      no lighter "window" tone. Match it exactly so the chrome reads as dark as
      the reference (was #0b0b0e — perceptibly lighter). */
-  --window: #09090b;
-  --desktop: #060608;
-  --surface: #0e0e12;
-  --surface-2: #15151b;
-  --rail: #0a0a0d;
+  --window: #101828;    /* was: #09090b */
+  --desktop: #0a101c;   /* was: #060608 */
+  --surface: #161f38;   /* was: #0e0e12 */
+  --surface-2: #1e2b49; /* was: #15151b */
+  --rail: #0e1626;      /* was: #0a0a0d */
   --rail-active: rgba(255, 255, 255, 0.045);
+  /* Rounded content-corner backdrop — matches the chrome; the panel's own
+     rounded border (App.tsx main) is what defines the corner. */
+  --elbow: var(--rail);
+  --heading: var(--text);   /* dark theme: titles stay the normal light text */
+
+  /* On-rail foregrounds — dark's chrome is near-black, so these map back to the
+     neutral tokens the rail has always read (keeps dark unchanged). */
+  --rail-fg: var(--muted);
+  --rail-fg-strong: var(--text);
+  --rail-accent: var(--accent);
+  --rail-border: var(--border-strong);
+  --rail-hover: rgba(255, 255, 255, 0.06);
 
   /* Card portrait backing — the mockup's `.card .bg` linear ramp
      (#0c0c10 → #08080a), darker than the surface tokens so cards read
      near-black behind the per-character tint. */
-  --card-top: #0c0c10;
-  --card-bottom: #08080a;
+  --card-top: #141e33;    /* was: #0c0c10 */
+  --card-bottom: #0d1423;  /* was: #08080a */
 
   --text: #e9e7e1;
   --text-2: #a8a6a0;

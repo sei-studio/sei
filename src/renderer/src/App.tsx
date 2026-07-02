@@ -28,6 +28,7 @@ import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
 import { OnboardingScreen } from './screens/OnboardingScreen';
+import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
 import { AddCharacterScreen } from './screens/AddCharacterScreen';
 import { ComingSoonScreen } from './screens/ComingSoonScreen';
@@ -37,13 +38,13 @@ import { CreditsScreen } from './screens/CreditsScreen';
 import { ReceiptScreen } from './screens/ReceiptScreen';
 import { LanModal } from './components/LanModal';
 import { SkinSetupPromptModal } from './components/SkinSetupPromptModal';
+import { SummonConflictModal } from './components/SummonConflictModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
 import { SummonToast } from './components/SummonToast';
 import { UpdatePopup, type UpdatePopupState } from './components/UpdatePopup';
 import { Banner } from './components/Banner';
 import { ERROR_COPY } from './lib/errors';
-import { useWizardStore } from './lib/stores/useWizardStore';
 import * as authStore from './lib/stores/useAuthStore';
 const { useAuthStore } = authStore;
 import { useSyncStore } from './lib/stores/useSyncStore';
@@ -52,6 +53,7 @@ import { useCloudCharactersStore } from './lib/stores/useCloudCharactersStore';
 import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
+import { OfflineRetryModal } from './components/OfflineRetryModal';
 import { HardStopModal } from './components/HardStopModal';
 import { SetNewPasswordModal } from './components/SetNewPasswordModal';
 import { MigrateLocalCharsModal } from './components/MigrateLocalCharsModal';
@@ -71,6 +73,14 @@ export function App(): React.ReactElement {
   //           mount AcceptToSModal as a top-level overlay above all other UI.
   const tosAccepted = useAuthStore((s) => s.tosAccepted);
   const refreshTosStatus = useAuthStore((s) => s.refreshTosStatus);
+  // 260610 — inconclusive ToS check (offline / DNS failure). Drives the
+  // dismissible OfflineRetryModal; dismissal is per-outage (the flag resets
+  // when a check succeeds, so a NEW outage re-raises the notice).
+  const tosCheckFailed = useAuthStore((s) => s.tosCheckFailed);
+  const [offlineDismissed, setOfflineDismissed] = useState(false);
+  useEffect(() => {
+    if (!tosCheckFailed) setOfflineDismissed(false);
+  }, [tosCheckFailed]);
   // Password-recovery prompt: set true by the auth:password-recovery push when a
   // reset link lands a recovery session; drives the SetNewPasswordModal overlay.
   const passwordRecovery = useAuthStore((s) => s.passwordRecovery);
@@ -80,11 +90,12 @@ export function App(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const modal = useUiStore((s) => s.modal);
-  const summon = useDataStore((s) => s.summon);
+  const summons = useDataStore((s) => s.summons);
   const characters = useDataStore((s) => s.characters);
-  const openWizard = useWizardStore((s) => s.openWizard);
   const [toast, setToast] = useState<{ id: string; name: string } | null>(null);
-  const [lastToastedSummonId, setLastToastedSummonId] = useState<string | null>(null);
+  // Characters we've already toasted for their current online session. Cleared
+  // per-id when that character leaves 'online' so a later re-summon re-toasts.
+  const toastedSummonIds = useRef<Set<string>>(new Set());
   // In-app updater (quick/260604-uoy). A single discriminated state drives the
   // UpdatePopup across every updater stage (optional-available → downloading →
   // downloaded/forced, plus the standalone post-update what's-new). null = no
@@ -290,6 +301,14 @@ export function App(): React.ReactElement {
         setUpdatePopup({ kind: 'whats-new', version: ev.version, changelog: ev.changelog });
       }),
     ];
+    // Pull any pending post-update changelog on mount. The onWhatsNew push above
+    // fires during early main bootstrap (before this listener exists) and is
+    // dropped — most visibly on a forced apply:"now" restart — so the push alone
+    // never reliably shows the changelog. This pull is the race-proof path; the
+    // guard avoids stomping a live optional-update popup if one is already up.
+    void sei.getWhatsNew().then((ev) => {
+      if (ev) setUpdatePopup((prev) => prev ?? { kind: 'whats-new', version: ev.version, changelog: ev.changelog });
+    });
     return () => unsubs.forEach((u) => u());
   }, []);
 
@@ -311,9 +330,11 @@ export function App(): React.ReactElement {
         // Onboarding completion is keyed on preferred_name (the "Name" field);
         // the Minecraft-username step was retired from the GUI (260605).
         let onboardedName = '';
+        let skinPending = false;
         try {
           const cfg = await sei.getConfig();
           onboardedName = (cfg.preferred_name ?? '').trim();
+          skinPending = cfg.skin_setup_pending === true;
           // Default to the dark "Summoning Terminal" theme on fresh installs
         // (no persisted theme_mode); users can still pick light / system.
         const mode = (cfg.theme_mode ?? 'dark') as ThemeMode;
@@ -338,8 +359,26 @@ export function App(): React.ReactElement {
         // authState push because app:scope-changed is emitted after the async
         // scope teardown, so the sign-out routing must live here. (Fix 260605.)
         if (ev.reason === 'sign-out') { navigate({ kind: 'auth-choice' }); return; }
-        // Onboarded account → straight home. Reset the Home/World tab first
-        // (item 1) so a scope-change sign-in never lands on the World tab.
+        // Re-seed the credits store now that the scope has ACTUALLY switched.
+        // The authState-keyed effect above already reset()+init()'d it from the
+        // SYNCHRONOUS signed_in push — which fires BEFORE this async scope switch
+        // wrote the cloud-proxy billing default into the new profile's
+        // config.json — so that init() read the OLD scope's
+        // `ai_backend_kind: 'local'`. authState doesn't change again here, so it
+        // never re-reads. reset()+init() re-seeds against the settled scope; the
+        // reset() bumps the store's loadEpoch, which discards the earlier
+        // in-flight creditsGet() (it would otherwise resolve late and clobber us
+        // back to local). Net effect: a freshly signed-in user lands on cloud
+        // mode, deterministically, regardless of which read resolves first.
+        try {
+          useCreditsStore.getState().reset();
+          await useCreditsStore.getState().init();
+        } catch { /* keep last */ }
+        // Onboarded but skin-setup still pending → resume the dedicated step.
+        if (onboardedName && skinPending) { navigate({ kind: 'skin-setup' }); return; }
+        // Onboarded account → straight home, on the HOME tab (which shows the
+        // welcome message) — NOT the playtime/credits screen users reported
+        // landing on after sign-in and disliked.
         if (onboardedName) { useUiStore.getState().setHomeTab('home'); navigate({ kind: 'home' }); return; }
         // Fresh account. On FIRST sign-in only (never account→account), offer to
         // import the anonymous local profile's companion if there's anything to
@@ -360,9 +399,17 @@ export function App(): React.ReactElement {
   async function handleImportOfferDone(_didImport: boolean): Promise<void> {
     setImportOffer(null);
     let onboardedName = '';
-    try { onboardedName = ((await sei.getConfig()).preferred_name ?? '').trim(); } catch { /* onboarding */ }
+    let skinPending = false;
+    try {
+      const cfg = await sei.getConfig();
+      onboardedName = (cfg.preferred_name ?? '').trim();
+      skinPending = cfg.skin_setup_pending === true;
+    } catch { /* onboarding */ }
     try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
-    navigate(onboardedName ? { kind: 'home' } : { kind: 'onboarding', isReonboard: false });
+    if (!onboardedName) { navigate({ kind: 'onboarding', isReonboard: false }); return; }
+    if (skinPending) { navigate({ kind: 'skin-setup' }); return; }
+    useUiStore.getState().setHomeTab('home');
+    navigate({ kind: 'home' });
   }
 
   // ── Initial bootstrap: config → characters → first view (with floor) ──
@@ -374,11 +421,16 @@ export function App(): React.ReactElement {
       // freshly signed-up account that hasn't onboarded yet lands on
       // onboarding rather than a home screen whose summons would fail.
       let onboardedName = '';
+      // Whether the onboarding skin-setup step is still pending — drives the
+      // resume-to-skin-setup routing below (set on onboarding submit, cleared
+      // when the user finishes/skips the SkinSetupScreen).
+      let skinPending = false;
       // Load persisted config + theme
       try {
         const cfg = await sei.getConfig();
         if (cancelled) return;
         onboardedName = (cfg.preferred_name ?? '').trim();
+        skinPending = cfg.skin_setup_pending === true;
         // Default to the dark "Summoning Terminal" theme on fresh installs
         // (no persisted theme_mode); users can still pick light / system.
         const mode = (cfg.theme_mode ?? 'dark') as ThemeMode;
@@ -442,9 +494,17 @@ export function App(): React.ReactElement {
       const currentAuth = useAuthStore.getState().state;
       if (currentAuth.kind === 'signed_in') {
         // 260603: a signed-in account that hasn't onboarded yet (no
-        // preferred_name in its profile) is a fresh account → onboarding;
-        // otherwise home.
-        navigate(onboardedName ? { kind: 'home' } : { kind: 'onboarding', isReonboard: false });
+        // preferred_name in its profile) is a fresh account → onboarding.
+        // Onboarded-but-skin-pending → resume the dedicated skin-setup step.
+        // Otherwise home, on the Home tab (which shows the welcome message).
+        if (!onboardedName) {
+          navigate({ kind: 'onboarding', isReonboard: false });
+        } else if (skinPending) {
+          navigate({ kind: 'skin-setup' });
+        } else {
+          useUiStore.getState().setHomeTab('home');
+          navigate({ kind: 'home' });
+        }
       } else {
         navigate({ kind: 'auth-choice' });
       }
@@ -454,60 +514,39 @@ export function App(): React.ReactElement {
     };
   }, [navigate, setThemeMode]);
 
-  // ── First-launch skin-setup wizard trigger ─────────────────────────────
-  // Auto-open SetupWizardModal when:
-  //   1. The user has finished onboarding (hasApiKey === true) — don't pop
-  //      the wizard during API-key entry,
-  //   2. wizardState.hasRunOnce === false — first launch, not dismissed before,
-  //   3. At least one Minecraft install is detected — no "We couldn't find
-  //      Minecraft" pop-up on every launch for users without MC.
-  // Re-running from Settings is handled by SettingsScreen's SkinSetupRow.
-  useEffect(() => {
-    // Only consider auto-opening once the user has actually landed on home —
-    // before that, hasApiKey may still be false (mid-onboarding) and the
-    // effect would no-op. Re-running on view change covers the
-    // onboarding → home transition.
-    if (view.kind !== 'home') return;
-    let cancelled = false;
-    (async () => {
-      const hasKey = await sei.hasApiKey();
-      if (!hasKey || cancelled) return;
-      const state = await sei.getWizardState();
-      if (cancelled) return;
-      if (state.hasRunOnce) return;
-      openWizard(false);
-    })().catch(() => {
-      // Silent — wizard not opening is non-fatal; user can always re-run from Settings.
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [openWizard, view.kind]);
+  // Skin setup is now a dedicated onboarding step (SkinSetupScreen, routed to
+  // while UserConfig.skin_setup_pending is true) rather than a modal auto-opened
+  // on first home — so the old home-trigger effect was removed. Existing users
+  // who predate the step (skin_setup_pending defaults false) aren't forced in;
+  // they still get the one-time first-summon nudge (SkinSetupPromptModal) and the
+  // Settings → "Re-run setup" entry.
 
   // ── Toast on summon transition (UI-SPEC §Summon flow) ─────────────────
-  // Fire SummonToast when a new summon enters 'connecting' (request acked) or
-  // 'online'. We track the last toasted character id so a single summon only
-  // emits one toast as it walks through connecting → online.
+  // Fire SummonToast each time a character reaches 'online'. Multi-summon: any
+  // number of characters can be live, so we track a SET of already-toasted ids
+  // and clear an id once it leaves 'online', so a later re-summon toasts afresh.
   useEffect(() => {
-    if (summon.kind === 'connecting') {
-      // We don't yet know the target character id at the connecting stage
-      // (BotStatus.connecting has no characterId). Skip — the toast fires on
-      // 'online' transition with the resolved character id.
-      return;
+    const onlineIds = new Set(
+      Object.entries(summons)
+        .filter(([, st]) => st.kind === 'online')
+        .map(([id]) => id),
+    );
+    // Forget ids no longer online so their next summon re-toasts.
+    for (const id of toastedSummonIds.current) {
+      if (!onlineIds.has(id)) toastedSummonIds.current.delete(id);
     }
-    if (summon.kind === 'online') {
-      if (summon.characterId === lastToastedSummonId) return;
-      const c = characters.find((x) => x.id === summon.characterId);
-      if (!c) return;
+    // Toast the first newly-online character we haven't announced yet. Each
+    // 'online' arrives in its own push (separate `summons` identity), so a
+    // burst of summons toasts one-per-update rather than all at once.
+    for (const id of onlineIds) {
+      if (toastedSummonIds.current.has(id)) continue;
+      const c = characters.find((x) => x.id === id);
+      if (!c) continue;
+      toastedSummonIds.current.add(id);
       setToast({ id: c.id, name: c.name });
-      setLastToastedSummonId(summon.characterId);
-      return;
+      break;
     }
-    // Reset on idle/error so the next summon fires a fresh toast.
-    if (summon.kind === 'idle' || summon.kind === 'error') {
-      if (lastToastedSummonId !== null) setLastToastedSummonId(null);
-    }
-  }, [summon, characters, lastToastedSummonId]);
+  }, [summons, characters]);
 
   // ── Auth-state transitions driven by the Supabase auth-event push
   //    (initAuthState → onAuthState). We don't await any IPC ourselves.
@@ -529,11 +568,10 @@ export function App(): React.ReactElement {
   const prevAuthKindRef = useRef<typeof authState.kind | null>(null);
   useEffect(() => {
     const prev = prevAuthKindRef.current;
-    // Item 1 — on any fresh sign-in, snap the Home/World tab back to Home. A
-    // user who was browsing the World tab while signed out (homeTab='world')
-    // would otherwise stay on World after authenticating, because homeTab
-    // persists across the auth transition. Only fire on the actual upward edge
-    // (prev was a non-signed_in kind), never on initial mount.
+    // On any fresh sign-in, default the Home/World tab to Home — it shows the
+    // welcome message and is the intended landing surface (not the playtime/
+    // credits screen). Only fire on the actual upward edge (prev was a
+    // non-signed_in kind), never on initial mount.
     if (authState.kind === 'signed_in' && prev !== null && prev !== 'signed_in') {
       setHomeTab('home');
     }
@@ -557,9 +595,16 @@ export function App(): React.ReactElement {
   // rather than mounting the prior boot pulse.
   if (view.kind === 'loading') return <></>;
 
+  // The IconRail is suppressed on the full-page entry surfaces (onboarding /
+  // sign-in / skin setup). MacosWindow needs the same signal so its top-bar
+  // hairline can span the full width (including under the macOS traffic lights)
+  // when there's no rail to read as continuous chrome on the left.
+  const railHidden =
+    view.kind === 'onboarding' || view.kind === 'auth-choice' || view.kind === 'skin-setup';
+
   return (
     <>
-      <MacosWindow>
+      <MacosWindow railHidden={railHidden}>
         {/*
           MacosWindow's `.body` is a flex row (IconRail | main). To place
           a top-of-window Banner above that row, we render a flex-column
@@ -579,7 +624,7 @@ export function App(): React.ReactElement {
           {authState.kind === 'signed_in' && !authState.user.emailVerified ? (
             <Banner
               kind="warn"
-              message="Verify your email to publish characters or buy credits. Check your inbox for a link from Sei."
+              message="Verify your email to publish companions or buy credits. Check your inbox for a link from Sei."
             />
           ) : null}
           {/*
@@ -617,7 +662,7 @@ export function App(): React.ReactElement {
             />
           ) : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            {view.kind !== 'onboarding' && view.kind !== 'auth-choice' ? <IconRail /> : null}
+            {!railHidden ? <IconRail /> : null}
             {/*
               Right-side column stacks the active screen and the LogsBar.
               Wrapping the LogsBar inside this column (rather than as a
@@ -625,19 +670,28 @@ export function App(): React.ReactElement {
               window height when the LogsBar expands — the expansion takes
               from the main content area, not from the rail.
             */}
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-              <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}>
+            {/* Elbow backdrop so the content panel's rounded top-left corner
+                reveals the rail/header junction behind it (chrome-blue in light,
+                a lighter pocket in dark — see --elbow). */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, background: 'var(--elbow)' }}>
+              <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', background: 'var(--window)', borderTopLeftRadius: 12, borderTop: '1px solid var(--border)', borderLeft: '1px solid var(--border)' }}>
                 {view.kind === 'auth-choice' && (
                   <AuthChoiceScreen
                     onChooseLocal={() => {
                       // Pitfall A8: api_key.bin OK → home (already onboarded);
-                      // else onboarding step 0.
-                      sei.hasApiKey()
-                        .then((hasKey) => {
-                          if (hasKey) navigate({ kind: 'home' });
-                          else navigate({ kind: 'onboarding', isReonboard: false });
-                        })
-                        .catch(() => navigate({ kind: 'onboarding', isReonboard: false }));
+                      // else onboarding step 0. An onboarded local user with
+                      // skin setup still pending resumes the dedicated step.
+                      void (async () => {
+                        try {
+                          const hasKey = await sei.hasApiKey();
+                          if (!hasKey) { navigate({ kind: 'onboarding', isReonboard: false }); return; }
+                          const cfg = await sei.getConfig();
+                          if (cfg.skin_setup_pending) { navigate({ kind: 'skin-setup' }); return; }
+                          navigate({ kind: 'home' });
+                        } catch {
+                          navigate({ kind: 'onboarding', isReonboard: false });
+                        }
+                      })();
                     }}
                   />
                 )}
@@ -647,6 +701,7 @@ export function App(): React.ReactElement {
                     signedIn={authState.kind === 'signed_in'}
                   />
                 )}
+                {view.kind === 'skin-setup' && <SkinSetupScreen />}
                 {view.kind === 'home' && <CharactersScreen />}
                 {view.kind === 'add-character' && <AddCharacterScreen />}
                 {view.kind === 'character' && <CharacterPage id={view.id} />}
@@ -663,7 +718,8 @@ export function App(): React.ReactElement {
               */}
               {devConsoleVisible &&
               view.kind !== 'onboarding' &&
-              view.kind !== 'auth-choice' ? (
+              view.kind !== 'auth-choice' &&
+              view.kind !== 'skin-setup' ? (
                 <LogsBar />
               ) : null}
             </div>
@@ -674,7 +730,17 @@ export function App(): React.ReactElement {
       {modal?.kind === 'skin-setup-prompt' ? (
         <SkinSetupPromptModal characterId={modal.characterId} />
       ) : null}
-      <SetupWizardModal />
+      {modal?.kind === 'summon-conflict' ? (
+        <SummonConflictModal
+          attemptedName={modal.attemptedName}
+          conflictName={modal.conflictName}
+          username={modal.username}
+        />
+      ) : null}
+      {/* The skin-setup onboarding page renders the wizard inline (via
+          WizardStepMachine), so suppress the global modal there to avoid a
+          double-render. Elsewhere (Settings "Re-run setup") it works as before. */}
+      {view.kind !== 'skin-setup' ? <SetupWizardModal /> : null}
       {toast ? (
         <SummonToast
           characterId={toast.id}
@@ -712,6 +778,18 @@ export function App(): React.ReactElement {
       */}
       {authState.kind === 'signed_in' && tosAccepted === false ? (
         <AcceptToSModal onAccepted={() => { void refreshTosStatus(); }} />
+      ) : null}
+      {/*
+        260610 — offline-retry notice. Mounts when the ToS status check was
+        INCONCLUSIVE (couldn't reach the database) for a signed-in user, in
+        place of the blocking legal modal — an already-accepted user launching
+        offline used to get re-prompted and then trapped on the duplicate-key
+        insert error. Mutually exclusive with AcceptToSModal: tosCheckFailed
+        implies tosAccepted === null. Dismissible; auto-retries when the OS
+        reports connectivity returning.
+      */}
+      {authState.kind === 'signed_in' && tosCheckFailed && !offlineDismissed ? (
+        <OfflineRetryModal onDismiss={() => setOfflineDismissed(true)} />
       ) : null}
       {/*
         Plan 11-18 (D-20) — one-shot local→cloud migration prompt. Mounts

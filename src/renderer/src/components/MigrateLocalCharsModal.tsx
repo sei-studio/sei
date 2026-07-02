@@ -148,9 +148,9 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
     // stray click during an in-flight upload could lose result visibility.
     <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>Upload local characters?</h2>
+        <h2 id={titleId} className={styles.title}>Upload local companions?</h2>
         <p className={styles.body}>
-          These characters are saved on this machine only. Upload any to your cloud library to use
+          These companions are saved on this machine only. Upload any to your cloud library to use
           them on other devices.
         </p>
         <p className={styles.body}>
@@ -183,7 +183,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
                 </li>
               ))}
               {chars.length === 0 && (
-                <li className={styles.empty}>No local-only characters.</li>
+                <li className={styles.empty}>No local-only companions.</li>
               )}
             </ul>
             <div className={styles.footer}>

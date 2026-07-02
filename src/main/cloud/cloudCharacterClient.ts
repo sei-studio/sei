@@ -116,8 +116,13 @@ function rowToCharacter(row: Record<string, unknown>): Character {
     is_default: false,
     shared: (row.shared as boolean) ?? true,
     created: ((row.created_at as string | null) ?? new Date().toISOString()),
-    last_launched: (row.last_launched as string | null) ?? null,
-    playtime_ms: Number(row.playtime_ms ?? 0),
+    // Usage stats are DEVICE-LOCAL: each install/profile keeps its own
+    // last_launched / playtime_ms, so a cloud-sourced copy always starts at
+    // zero. Adopting the row's values would leak one install's stats onto
+    // another (e.g. the packaged app showing a date stamped by `npm run dev`).
+    // Legacy rows may still carry values upserted by older clients — ignored.
+    last_launched: null,
+    playtime_ms: 0,
     portrait_image: localPortrait,
     skin: {
       source: (row.skin_source as 'bundled' | 'upload' | 'username' | 'none') ?? 'none',
@@ -193,8 +198,10 @@ export async function upsertCharacter(
         username: c.username,
         is_default: false, // defense-in-depth — guard above is the primary gate (D-22)
         shared: c.shared,
-        last_launched: c.last_launched,
-        playtime_ms: c.playtime_ms,
+        // last_launched / playtime_ms deliberately absent — usage stats are
+        // device-local (see rowToCharacter). Omitted keys are left untouched
+        // on conflict-update, so legacy rows keep their stale values; new rows
+        // get the column defaults (null / 0).
         portrait_image: portraitCloud,
         metadata: metadataForCloud,
       })
@@ -256,6 +263,37 @@ export async function upsertMyProfile(preferredName: string): Promise<void> {
       .abortSignal(signal);
     if (error) throw new Error(`profile upsert failed: ${error.message}`);
   });
+}
+
+/**
+ * Item 4 (cross-device) — fetch the SIGNED-IN user's own display name from
+ * public.profiles. Used on sign-in to backfill a fresh device's empty local
+ * config so onboarding doesn't re-prompt "what should they call you?" for an
+ * account that already set a name on another device. Returns the trimmed name
+ * or null (no row / blank / signed out / any error — all non-fatal).
+ */
+export async function fetchMyProfileName(): Promise<string | null> {
+  const { getAuthedClient } = await import('../auth/supabaseClient');
+  const { data: { session } } = await getClient().auth.getSession();
+  const userId = session?.user?.id;
+  const token = session?.access_token;
+  if (!userId || !token) return null;
+  const authed = getAuthedClient(token);
+  try {
+    return await withTimeout(`fetchProfile ${userId}`, async (signal) => {
+      const { data, error } = await authed
+        .from('profiles')
+        .select('preferred_name')
+        .eq('user_id', userId)
+        .abortSignal(signal)
+        .maybeSingle();
+      if (error) return null;
+      const name = ((data as { preferred_name?: string | null } | null)?.preferred_name ?? '').trim();
+      return name || null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**

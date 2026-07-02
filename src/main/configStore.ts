@@ -60,3 +60,60 @@ export async function saveConfig(config: UserConfig): Promise<void> {
     await atomicWrite(target, JSON.stringify(validated, null, 2) + '\n');
   });
 }
+
+/**
+ * Fold a finished session's duration into the profile's cumulative
+ * `total_playtime_ms`. Atomic read-modify-write under the same file lock as
+ * saveConfig so a concurrent settings write can't clobber the increment.
+ * Called at session-end so the running total is independent of any single
+ * character (it survives a character being deleted). No-op for non-positive
+ * deltas. Missing config → seeds from DEFAULT_CONFIG.
+ */
+export async function addPlaytimeMs(deltaMs: number): Promise<void> {
+  if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
+  const target = paths.configPath();
+  await mkdir(path.dirname(target), { recursive: true });
+  await withFileLock(target, async () => {
+    let cfg: UserConfig;
+    try {
+      cfg = UserConfigSchema.parse(JSON.parse(await readFile(target, 'utf8')));
+    } catch (err: unknown) {
+      if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') cfg = { ...DEFAULT_CONFIG };
+      else throw err;
+    }
+    const next = UserConfigSchema.parse({
+      ...cfg,
+      total_playtime_ms: (cfg.total_playtime_ms ?? 0) + Math.round(deltaMs),
+    });
+    await atomicWrite(target, JSON.stringify(next, null, 2) + '\n');
+  });
+}
+
+/**
+ * One-time seed of `total_playtime_ms` from the sum of the profile's existing
+ * characters' `playtime_ms`, so historical playtime (which predates the
+ * cumulative total) is counted. Guarded by `total_playtime_backfilled` so it
+ * runs exactly once per profile. Run at startup AFTER characters are seeded and
+ * BEFORE any session can fire. If listing characters fails, the flag is left
+ * unset so the next launch retries (no partial backfill committed).
+ */
+export async function backfillTotalPlaytimeOnce(): Promise<void> {
+  const cfg = await loadConfig();
+  if (cfg.total_playtime_backfilled) return;
+  let sum = 0;
+  try {
+    const { listCharacters } = await import('./characterStore');
+    for (const c of await listCharacters()) sum += Math.max(0, c.playtime_ms ?? 0);
+  } catch {
+    // Leave the flag unset so the next launch retries rather than committing a
+    // zero/partial backfill.
+    return;
+  }
+  await saveConfig({
+    ...cfg,
+    // max() guards the unlikely case where a session already advanced the total
+    // before the first backfill ran — never shrink an existing total.
+    total_playtime_ms: Math.max(cfg.total_playtime_ms ?? 0, sum),
+    total_playtime_backfilled: true,
+  });
+}

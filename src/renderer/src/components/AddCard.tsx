@@ -18,12 +18,12 @@ export function AddCard({ onClick }: AddCardProps): React.ReactElement {
       type="button"
       className={styles.card}
       onClick={onClick}
-      aria-label="Add new character"
+      aria-label="Add new companion"
     >
       <div className={styles.iconTile}>
         <PlusIcon size={26} />
       </div>
-      <div className={styles.label}>New character</div>
+      <div className={styles.label}>New companion</div>
     </button>
   );
 }

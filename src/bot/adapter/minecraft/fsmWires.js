@@ -36,6 +36,10 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
         playerSpoke: !!payload.playerSpoke,
         addressed: !!payload.addressed,
         nearby: payload.nearby !== false,  // chat.js only emits when at least one of player/addressed/nearby holds
+        // 260618: when set, the brain records this line to history but does NOT
+        // wake on it (message aimed at a sibling companion, or a sibling's own
+        // chatter). See behaviors/chat.js.
+        suppressInterrupt: !!payload.suppressInterrupt,
       })
     } catch (err) {
       // Swallow listener errors so a brain-side throw doesn't crash mineflayer.

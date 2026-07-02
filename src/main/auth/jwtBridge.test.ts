@@ -9,12 +9,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const onAuthStateChangeMock = vi.fn();
 const getSessionMock = vi.fn();
+const startAutoRefreshMock = vi.fn(() => Promise.resolve());
+const stopAutoRefreshMock = vi.fn(() => Promise.resolve());
 
 vi.mock('./supabaseClient', () => ({
   getClient: () => ({
     auth: {
       onAuthStateChange: (...args: unknown[]) => onAuthStateChangeMock(...args),
       getSession: (...args: unknown[]) => getSessionMock(...args),
+      startAutoRefresh: () => startAutoRefreshMock(),
+      stopAutoRefresh: () => stopAutoRefreshMock(),
     },
   }),
 }));
@@ -35,6 +39,8 @@ function makeSupervisorStub(): BotSupervisor & { updateJwt: ReturnType<typeof vi
 beforeEach(() => {
   onAuthStateChangeMock.mockReset();
   getSessionMock.mockReset();
+  startAutoRefreshMock.mockClear();
+  stopAutoRefreshMock.mockClear();
   _disposeForTests();
 });
 
@@ -62,6 +68,28 @@ describe('jwtBridge', () => {
     await initJwtBridge(sup);
     cb?.('TOKEN_REFRESHED', { access_token: 'jwt-refreshed' });
     expect(sup.updateJwt).toHaveBeenLastCalledWith('jwt-refreshed');
+  });
+
+  it('arms the auto-refresh ticker on init (260617 expired_jwt fix)', async () => {
+    getSessionMock.mockResolvedValue({ data: { session: { access_token: 'jwt-initial' } } });
+    onAuthStateChangeMock.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
+    await initJwtBridge(makeSupervisorStub());
+    expect(startAutoRefreshMock).toHaveBeenCalled();
+  });
+
+  it('stops the ticker on SIGNED_OUT and re-arms on SIGNED_IN', async () => {
+    getSessionMock.mockResolvedValue({ data: { session: null } });
+    let cb: ((event: string, session: { access_token: string } | null) => void) | undefined;
+    onAuthStateChangeMock.mockImplementation((fn) => {
+      cb = fn as typeof cb;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    await initJwtBridge(makeSupervisorStub());
+    startAutoRefreshMock.mockClear();
+    cb?.('SIGNED_OUT', null);
+    expect(stopAutoRefreshMock).toHaveBeenCalled();
+    cb?.('SIGNED_IN', { access_token: 'jwt-new' });
+    expect(startAutoRefreshMock).toHaveBeenCalled();
   });
 
   it('pushes null on SIGNED_OUT', async () => {

@@ -5,6 +5,7 @@
  *   appendUserTurn(blocks, { seed })
  *   appendAssistant(content)
  *   appendToolResults(results, { snapshot, eventText })
+ *   demoteOlderImages()        -> replace stale image blocks with a text stub (image cap)
  *   buildAnthropicPayload()    -> SDK-safe array (no `name` field on text blocks)
  *   iterationCount             -> number of user turns (seed counts as 0)
  *   abortController            -> shared signal for the entire loop
@@ -37,10 +38,18 @@ let _loopId = 1
  * @param {number} opts.iterationCap
  * @param {{warn:Function,info?:Function,error?:Function,debug?:Function}} [opts.logger]
  */
-export function createLoop({ iterationCap, logger = console } = {}) {
-  if (!iterationCap || iterationCap < 1) {
-    throw new Error('createLoop requires iterationCap >= 1')
+export function createLoop({ iterationCap, logger = console, speakReminder = null } = {}) {
+  // 0 = unlimited (no cap); the orchestrator's runIterations skips the check
+  // when cap <= 0. Reject only missing / negative / non-integer values.
+  if (iterationCap == null || !Number.isInteger(iterationCap) || iterationCap < 0) {
+    throw new Error('createLoop requires iterationCap >= 0 (0 = unlimited)')
   }
+  // 260619: the say() reminder used to ride only on the SEED turn, so every
+  // mid-loop continuation turn (a long gather/dig/craft chain) carried no say()
+  // contract at all — the model kept acting and dumped any speech into its
+  // private text, which is never sent (the "Sui silent through a whole build"
+  // bug). When set, appendToolResults restates it as the last block of every
+  // continuation turn so the contract is present on EVERY turn, not just the seed.
 
   /** @type {Array<{role:'user'|'assistant', content:any[], seed?:boolean}>} */
   const messages = []
@@ -96,8 +105,34 @@ export function createLoop({ iterationCap, logger = console } = {}) {
       ...results,
       ...(eventText ? [{ type: 'text', name: 'event', text: eventText }] : []),
       ...(snapshot ? [{ type: 'text', name: 'snapshot', text: snapshot }] : []),
+      // Last block = highest recency, read right before the model responds.
+      ...(speakReminder ? [{ type: 'text', name: 'speak_reminder', text: speakReminder }] : []),
     ]
     appendUserTurn(content, { seed: false })
+  }
+
+  /**
+   * Image retention cap: replace every image block currently in history with a
+   * short text placeholder. Called by the orchestrator right BEFORE it appends
+   * a fresh frame, so the canonical history never holds more than one image —
+   * bounding both byteSize() and the per-call payload (each 256px frame is
+   * ~7KB base64 / ~90 input tokens that would otherwise be re-sent on EVERY
+   * subsequent iteration of the loop). This is a deliberate exception to the
+   * "canonical is append-only" posture: the newest view supersedes older ones
+   * the way the newest snapshot supersedes older snapshots (D-43) — but unlike
+   * the snapshot rule it must shrink the CANONICAL array, not just the payload,
+   * or long follow-loops accumulate dead base64 in memory.
+   */
+  function demoteOlderImages() {
+    for (const turn of messages) {
+      if (turn.role !== 'user') continue
+      for (let i = 0; i < turn.content.length; i++) {
+        const blk = turn.content[i]
+        if (blk && blk.type === 'image') {
+          turn.content[i] = { type: 'text', text: '[a picture was shown here on an earlier turn; it has been removed and is no longer visible to you]' }
+        }
+      }
+    }
   }
 
   function buildAnthropicPayload() {
@@ -148,6 +183,7 @@ export function createLoop({ iterationCap, logger = console } = {}) {
     appendUserTurn,
     appendAssistant,
     appendToolResults,
+    demoteOlderImages,
     buildAnthropicPayload,
     byteSize,
     get iterationCount() { return iterationCount },

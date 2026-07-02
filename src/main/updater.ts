@@ -28,7 +28,7 @@
  *   - src/main/updateStateStore.ts (device-global pending/lastSeen persistence)
  */
 import { app, net, type BrowserWindow } from 'electron';
-import { IpcChannel } from '../shared/ipc';
+import { IpcChannel, type WhatsNewEvent } from '../shared/ipc';
 import { deriveLevel, normalizeApply, shouldShowWhatsNew, type ApplyTiming } from './updatePolicy';
 import { loadUpdateState, saveUpdateState } from './updateStateStore';
 
@@ -338,6 +338,34 @@ async function handleUpdateDownloaded(): Promise<void> {
  * string there, and there's no real install to have updated — writing junk to
  * update-state.json would only confuse the next packaged run.
  */
+// Holds the post-update changelog from this launch's check until the renderer
+// pulls it (via getPendingWhatsNew). The `send()` push is fire-and-forget and
+// races the renderer mounting its onWhatsNew listener — especially on a forced
+// `apply:"now"` restart, where the push fires during early main bootstrap and
+// is dropped because nothing is listening yet. Retaining it here lets the
+// renderer pull it on mount, so the changelog is never silently lost. (260625)
+let pendingWhatsNew: WhatsNewEvent | null = null;
+// The launch check runs at most once; the pull awaits it so a renderer that
+// mounts before the (async) check finishes still gets the right answer.
+let whatsNewComputed: Promise<void> | null = null;
+
+function ensureWhatsNewComputed(): Promise<void> {
+  if (!whatsNewComputed) whatsNewComputed = runWhatsNewCheck();
+  return whatsNewComputed;
+}
+
+/**
+ * Renderer pull (app:whats-new-get): wait for this launch's what's-new check to
+ * finish, then return the pending changelog event and consume it (so it shows
+ * exactly once). Returns null when there's nothing to show.
+ */
+export async function getPendingWhatsNew(): Promise<WhatsNewEvent | null> {
+  await ensureWhatsNewComputed();
+  const ev = pendingWhatsNew;
+  pendingWhatsNew = null;
+  return ev;
+}
+
 async function runWhatsNewCheck(): Promise<void> {
   if (!app.isPackaged) {
     logger.info("updater: what's-new check skipped in dev (unpackaged)");
@@ -354,14 +382,16 @@ async function runWhatsNewCheck(): Promise<void> {
 
   let shown = false;
   if (state.pending && state.pending.version === cur) {
-    send(IpcChannel.app.whatsNew, { version: cur, changelog: state.pending.changelog });
+    pendingWhatsNew = { version: cur, changelog: state.pending.changelog };
+    send(IpcChannel.app.whatsNew, pendingWhatsNew);
     shown = true;
   } else if (shouldShowWhatsNew(state.lastSeenVersion, cur)) {
     // Fallback: a patch-only bump with no stash (e.g. installed via the OS
     // quit path before we could stash). Best-effort fetch the changelog.
     const policy = await fetchVersionPolicy();
     if (policy && policy.changelog) {
-      send(IpcChannel.app.whatsNew, { version: cur, changelog: policy.changelog });
+      pendingWhatsNew = { version: cur, changelog: policy.changelog };
+      send(IpcChannel.app.whatsNew, pendingWhatsNew);
     }
     shown = true;
   }
@@ -392,8 +422,9 @@ async function runWhatsNewCheck(): Promise<void> {
 export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null }): void {
   getMainWindow = deps.getMainWindow;
 
-  // Flow D — what's-new on launch (skipped in dev internally).
-  void runWhatsNewCheck();
+  // Flow D — what's-new on launch (skipped in dev internally). Memoized so the
+  // renderer's pull (getPendingWhatsNew) shares this one computation.
+  void ensureWhatsNewComputed();
 
   const au = ensureAutoUpdater();
   if (!au) return; // dev or load failure — nothing else to do.

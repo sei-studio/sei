@@ -263,7 +263,7 @@ function HomeGrid(): React.ReactElement {
       <header className={homeStyles.header}>
         <h2 className={homeStyles.greeting}>
           {greetingDismissed ? (
-            'Summons'
+            'Companions'
           ) : (
             <>
               {greetingLead}
@@ -305,6 +305,7 @@ function HomeGrid(): React.ReactElement {
                 void handleOpen(c.id);
               }}
               onSummon={() => handleSummon(c.id)}
+              onUnsummon={() => void sei.stop(c.id)}
             />
             {openPrepareError === c.id ? (
               <div
@@ -341,6 +342,7 @@ function HomeGrid(): React.ReactElement {
                   void handleOpen(co.id);
                 }}
                 onSummon={() => handleSummon(co.id)}
+                onUnsummon={() => void sei.stop(co.id)}
               />
               {openPrepareError === co.id ? (
                 <div
@@ -499,19 +501,20 @@ function WorldGrid(): React.ReactElement {
           >
             ?
             <span className={styles.worldHelpTip} role="tooltip">
-              Browse and summon characters made by other players.
+              Browse and summon companions made by other players.
             </span>
           </span>
         </div>
         <input
           className={styles.searchField}
           type="search"
-          placeholder="Search characters..."
+          placeholder="Search companions..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search world characters"
+          aria-label="Search world companions"
         />
       </header>
+      <div className={styles.scroll}>
       {error ? (
         <div className={styles.error} role="alert">
           Couldn&apos;t load World. {error}
@@ -519,7 +522,7 @@ function WorldGrid(): React.ReactElement {
       ) : null}
       {entries.length === 0 && defaultEntries.length === 0 && !loading && !error ? (
         <div className={styles.empty}>
-          No public characters yet. Be the first to share one.
+          No public companions yet. Be the first to share one.
         </div>
       ) : null}
       <div className={styles.grid}>
@@ -554,6 +557,7 @@ function WorldGrid(): React.ReactElement {
       </div>
       {!exhausted ? <div ref={sentinelRef} className={styles.sentinel} aria-hidden /> : null}
       {loading ? <div className={styles.loading}>Loading…</div> : null}
+      </div>
     </div>
   );
 }

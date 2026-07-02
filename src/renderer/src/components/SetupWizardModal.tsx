@@ -108,6 +108,22 @@ export function SetupWizardModal(): React.ReactElement | null {
   );
 }
 
+/**
+ * The wizard's step machine WITHOUT the modal scrim/card — rendered inline by
+ * the dedicated onboarding SkinSetupScreen so skin setup is a full page (matching
+ * "What should they call you?") rather than a popup. Reads the same useWizardStore
+ * step; the step components' terminal actions (closeWizard) are watched by the
+ * host screen to advance the onboarding flow. The `key` drives the crossfade.
+ */
+export function WizardStepMachine(): React.ReactElement {
+  const step = useWizardStore((s) => s.step);
+  return (
+    <div key={step} className={styles.stepContent}>
+      {renderStep(step)}
+    </div>
+  );
+}
+
 function renderStep(step: WizardStep): React.ReactElement {
   switch (step) {
     case 'welcome':
@@ -146,7 +162,14 @@ function WelcomeStep(): React.ReactElement {
               Back to settings
             </Button>
           ) : (
-            <span />
+            // First-launch onboarding: the skip control belongs in the footer
+            // row, aligned with Begin. It previously lived in a separate row
+            // BELOW the panel (SkinSetupScreen.skipRow), which made it sit lower
+            // than the primary CTA. closeWizard routes the onboarding page to
+            // home (SkinSetupScreen finalizes on open→closed).
+            <Button kind="quiet" size="md" onClick={closeWizard}>
+              Set up later
+            </Button>
           )}
           <Button kind="accent" size="md" onClick={() => void runDetection()}>
             Begin
@@ -155,7 +178,7 @@ function WelcomeStep(): React.ReactElement {
       }
     >
       <p>
-        Sei can give each character a custom skin and username inside your Minecraft
+        Sei can give each companion a custom skin and username inside your Minecraft
         world. We&apos;ll install a small mod (CustomSkinLoader) into your Minecraft
         profile. Takes about a minute.
       </p>
@@ -353,7 +376,14 @@ function DoneStep(): React.ReactElement {
   const installs = useWizardStore((s) => s.installs);
   const selectedIds = useWizardStore((s) => s.selectedIds);
   const results = useWizardStore((s) => s.results);
+  const error = useWizardStore((s) => s.error);
   const closeWizard = useWizardStore((s) => s.closeWizard);
+
+  // The done step is also reached from one-failed via "Continue anyway", so it
+  // must NOT unconditionally claim success. Treat a stored install error or any
+  // failed result as a partial outcome (empty results + an error = a total
+  // failure that still routed here). Only an all-ok run earns the green pill.
+  const anyFailed = error != null || results.some((r) => !r.ok);
 
   // Derive a representative profile name for the body copy. For vanilla installs
   // the launcher shows a "fabric-loader-{loaderVersion}-{mcVersion}" profile; for
@@ -385,7 +415,7 @@ function DoneStep(): React.ReactElement {
   return (
     <WizardStepShell
       stepNumber={4}
-      heading="All set"
+      heading={anyFailed ? 'Setup finished with issues' : 'All set'}
       footer={
         <>
           <span />
@@ -396,12 +426,16 @@ function DoneStep(): React.ReactElement {
       }
     >
       <div style={{ marginBottom: 'var(--space-md)' }}>
-        <StatusPill tone="green" label="All set" />
+        {anyFailed ? (
+          <StatusPill tone="warn" label="Some installs skipped" />
+        ) : (
+          <StatusPill tone="green" label="All set" />
+        )}
       </div>
       <p>
-        Open Minecraft, pick the {profileName} profile from the launcher dropdown,
-        and start your world. Characters will appear with their chosen skin and
-        username.
+        {anyFailed
+          ? `Some installs didn't finish, but the rest are ready. Open Minecraft, pick the ${profileName} profile from the launcher dropdown, and start your world. You can re-run setup for the others from Settings.`
+          : `Open Minecraft, pick the ${profileName} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.`}
       </p>
 
       {summaries.length > 0 ? (

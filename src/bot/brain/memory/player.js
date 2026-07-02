@@ -1,17 +1,23 @@
 /**
- * PLAYER.md store — YAML-frontmatter + freeform `# Notes` body.
+ * PLAYER.md store — YAML frontmatter only.
  *
  * PLAYER.md is the canonical record of the human player you share the world
- * with — identity (uuid + username), session counters, cosmetic preferences,
- * and a freeform notes body. The bot is a fellow player, not a servant; this
- * file is just "who is the other person in here with me."
+ * with — identity (uuid + username), session counters, cosmetic preferences.
+ * The bot is a fellow player, not a servant; this file is just "who is the
+ * other person in here with me."
  *
  *   - `player_uuid` (source of truth for recognition)
  *   - `player_username` (current display name; not used for recognition)
  *   - `first_seen`, `last_seen` (ISO timestamps)
  *   - `total_sessions` (integer counter)
  *   - `preferred_name`, `pronouns` (cosmetic)
- *   - `# Notes` body (freeform, LLM-managed)
+ *
+ * 260616: the old freeform `# Notes` body was removed. It was advertised as
+ * "LLM-managed" but had no writer (savePlayer is only ever called by the
+ * session lifecycle, never with model-authored notes), so it was always empty
+ * and overlapped MEMORY.md, which is the real home for the bot's evolving read
+ * on the player. A legacy `# Notes` section in an existing PLAYER.md is simply
+ * ignored on read and dropped on the next save.
  *
  * Lazy-create: `loadPlayer` on a missing file returns `{ exists: false, ... }`
  * — it does NOT create the file. Files are only created via `savePlayer`
@@ -45,7 +51,6 @@ const KNOWN_KEYS = [
  * @property {number}      total_sessions
  * @property {string|null} preferred_name
  * @property {string|null} pronouns
- * @property {string}      notes
  * @property {boolean}     exists
  */
 
@@ -58,7 +63,6 @@ function freshPlayerData() {
     total_sessions: 0,
     preferred_name: null,
     pronouns: null,
-    notes: '',
     exists: false,
   }
 }
@@ -84,9 +88,9 @@ function parsePlayer(raw) {
   const data = freshPlayerData()
   data.exists = true
 
-  // Detect frontmatter delimiters: leading `---\n` and a closing `---\n` later.
+  // Parse the frontmatter only. Anything after the closing `---` (e.g. a
+  // legacy `# Notes` section) is ignored — see the module header.
   const lines = raw.split(/\r?\n/)
-  let bodyStart = 0
   if (lines[0] === FRONT_DELIM) {
     let i = 1
     while (i < lines.length && lines[i] !== FRONT_DELIM) {
@@ -105,14 +109,7 @@ function parsePlayer(raw) {
       }
       i++
     }
-    bodyStart = (i < lines.length && lines[i] === FRONT_DELIM) ? i + 1 : i
   }
-
-  let body = lines.slice(bodyStart).join('\n')
-  body = body.replace(/^\s*\n/, '')
-  body = body.replace(/^# Notes\s*\n/, '')
-  body = body.replace(/\s+$/, '')
-  data.notes = body
 
   return data
 }
@@ -129,8 +126,6 @@ async function _writePlayerSerialized(path, data) {
     }
   }
   lines.push(FRONT_DELIM)
-  lines.push('# Notes')
-  lines.push(data.notes ?? '')
   lines.push('')
   await atomicWrite(path, lines.join('\n'))
 }
@@ -145,14 +140,15 @@ export async function savePlayer(path, data) {
 
 /**
  * Format PLAYER.md as the seed_player markdown block injected into every
- * Loop's first user turn. Frontmatter (recognition fields) is always
- * preserved; the notes body is truncated at the byte boundary if the total
- * exceeds budget.
+ * Loop's first user turn — the player's identity frontmatter, nothing more.
+ * The `budgetBytes` argument is retained for call-site compatibility but is
+ * now unused: the block is a small, fixed set of recognition fields with no
+ * freeform body to truncate (the `# Notes` body was removed — see header).
  * @param {PlayerData} player
- * @param {number} budgetBytes
+ * @param {number} [budgetBytes] vestigial; ignored
  * @returns {string}
  */
-export function formatPlayerSeedBlock(player, budgetBytes) {
+export function formatPlayerSeedBlock(player, budgetBytes) { // eslint-disable-line no-unused-vars
   if (!player || !player.exists) {
     return '# Player\n(no player recorded yet)\n'
   }
@@ -162,23 +158,5 @@ export function formatPlayerSeedBlock(player, budgetBytes) {
     const v = player[key]
     headerLines.push(`${key}: ${v == null ? '' : String(v)}`)
   }
-  headerLines.push('')
-  headerLines.push('## Notes')
-  const headerStr = headerLines.join('\n') + '\n'
-  const headerBytes = Buffer.byteLength(headerStr, 'utf8')
-
-  const notes = player.notes ?? ''
-  if (!notes) return headerStr
-
-  const fullBytes = headerBytes + Buffer.byteLength(notes + '\n', 'utf8')
-  if (fullBytes <= budgetBytes) {
-    return headerStr + notes + '\n'
-  }
-
-  const marker = '\n…(truncated)\n'
-  const markerBytes = Buffer.byteLength(marker, 'utf8')
-  const remaining = Math.max(0, budgetBytes - headerBytes - markerBytes)
-  const buf = Buffer.from(notes, 'utf8')
-  const truncated = buf.subarray(0, remaining).toString('utf8')
-  return headerStr + truncated + marker
+  return headerLines.join('\n') + '\n'
 }

@@ -16,6 +16,7 @@ import { createOrchestrator } from './orchestrator.js'
 import { createSessionState } from './sessionState.js'
 import { loadPlayer, savePlayer, formatPlayerSeedBlock } from './memory/player.js'
 import { Priority, createPriorityQueue } from './fsm.js'
+import { idleCadenceMs } from './prompts.js'
 
 const REQUIRED_ADAPTER_MEMBERS = [
   'listActions', 'getActionSchema', 'getActionDescription', 'executeAction',
@@ -48,7 +49,7 @@ function assertAdapter(adapter) {
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [args.logger]
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
-export async function start({ config, adapter, logger = console, onTerminalError = null }) {
+export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null }) {
   assertAdapter(adapter)
 
   // ── Memory layer ────────────────────────────────────────────────────
@@ -132,6 +133,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
     sessionState, playerStore,
     reenqueue,
     onTerminalError,
+    onAuthExpired,
   })
 
   // ── Build the priority queue with the orchestrator's handleDispatch ─
@@ -141,7 +143,11 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // LLM call that is parking the dispatch thread, so the interrupt reaches the
     // model in one round-trip instead of waiting out a slow mid-loop call.
     onPreempt: (event, data) => orchestrator.handlePreempt(event, data),
-    idleFallbackMs: config.llm?.idle_fallback_ms ?? 60_000,
+    // 260615: idle cadence is driven by the proactiveness tier (Passive 10min /
+    // Reactive 1min / Agentic 5s), so a self-directed character resumes its
+    // goal fast while a passive one only stirs rarely. An explicit
+    // llm.idle_fallback_ms in config still wins as a manual override.
+    idleFallbackMs: config.llm?.idle_fallback_ms ?? idleCadenceMs(config.persona?.proactiveness),
     logger,
   })
 
@@ -165,8 +171,14 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // Record incoming chat in convoMemory so the next Loop's seed turn
       // carries it (chat.js used to call orchestrator.recordIncomingChat
       // directly; we keep that record path here so the adapter only emits
-      // normalized events).
+      // normalized events). This runs ALWAYS — even for a suppressed line —
+      // so a message aimed at a sibling still lands in this bot's chat history.
       try { orchestrator.recordIncomingChat?.(evt.username, evt.text) } catch {}
+      // 260618 (M1): a message aimed only at another companion, or a sibling
+      // bot's own chatter, is recorded above but must NOT interrupt this bot.
+      // chat.js set the flag; honoring it here keeps the line in history while
+      // skipping the wake (the "only goes in chat history" behavior).
+      if (evt.suppressInterrupt) return
       // Enqueue with the adapter-compatible payload shape (chat.js produced
       // { username, message, addressed, playerSpoke }; the priority queue's
       // player-chat preemption keys on `data.playerSpoke === true`, so we
@@ -186,6 +198,11 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // D-57: deferred player-presence check after spawn settles.
       sessionState.onSpawn().catch(err =>
         logger.warn?.(`[sei/brain] sessionState.onSpawn failed: ${err.message}`))
+      // World awareness: resolve which world this is (stable number + label),
+      // segment MEMORY.md, and feed the current world into the snapshot. The
+      // spawn point is known by now, so the fingerprint is computable.
+      orchestrator.noteSpawn?.().catch(err =>
+        logger.warn?.(`[sei/brain] orchestrator.noteSpawn failed: ${err.message}`))
       // Initial-greeting nudge moved here from a top-level setTimeout
       // (260508-nkk follow-up). Was previously fired unconditionally on
       // brain start, even when mineflayer never spawned — so a connect
@@ -226,7 +243,18 @@ export async function start({ config, adapter, logger = console, onTerminalError
 
   return {
     async stop() {
+      // Order matters. dispose() FIRST flips the FSM's `disposed` flag (so the
+      // sei:action_complete that an action-abort fires is dropped, not
+      // re-dispatched) and aborts any in-flight DISPATCH (a parked LLM call).
       try { queue.dispose() } catch {}
+      // THEN abort the in-flight long-runner. dispose() can't reach it: when a
+      // gather/dig/explore/goTo/follow is running, the loop is suspended on
+      // sei:action_complete and the FSM's currentAction is null, so the action
+      // lives on currentLoop.inFlight's own controller. Without this, a stop
+      // pressed mid-action didn't cancel anything — the action ran to
+      // completion and the stop only took effect once bot.quit() dropped the
+      // connection (the stop-button lag).
+      try { orchestrator.abortActive?.() } catch {}
       try { await adapter.closeAnySessions() } catch {}
     },
     /**
@@ -235,10 +263,23 @@ export async function start({ config, adapter, logger = console, onTerminalError
      */
     setAuthToken: (token) => { try { orchestrator.setAuthToken?.(token) } catch {} },
     /**
+     * 260618: update the roster of OTHER AI companion usernames sharing this
+     * world. src/bot/index.js calls this from the {type:'roster'} port message
+     * (and once from the init payload). No-op for single-bot sessions.
+     */
+    setCompanions: (names) => { try { orchestrator.setCompanions?.(names) } catch {} },
+    /**
      * WR-05 follow-up: live-swap the AI backend (cloud-proxy ↔ BYOK) on the
      * running orchestrator without re-summoning. No-op when the orchestrator
      * or provider doesn't implement it.
      */
     setBackend: (backend) => { try { orchestrator.setBackend?.(backend) } catch {} },
+    /**
+     * Phase 15 (D-10/VIS-03): the active provider's vision capability boolean.
+     * src/bot/index.js reads this after summon-ready (and after a backend
+     * switch) to push `vision-capability` up the port → main → renderer.
+     * Fail-closed: false if the orchestrator/provider can't report it.
+     */
+    visionCapable: () => { try { return orchestrator.visionCapable?.() === true } catch { return false } },
   }
 }

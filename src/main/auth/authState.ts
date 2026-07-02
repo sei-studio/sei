@@ -26,7 +26,7 @@
 import type { BrowserWindow } from 'electron';
 import type { Session, User } from '@supabase/supabase-js';
 import { getClient } from './supabaseClient';
-import { isTosAccepted } from './tosGate';
+import { getTosAcceptance } from './tosGate';
 import { IpcChannel, type AuthState, type AuthUser } from '../../shared/ipc';
 
 let currentState: AuthState = { kind: 'local' };
@@ -52,6 +52,74 @@ function applySession(session: Session | null): void {
 
 export function getCurrentAuthState(): AuthState {
   return currentState;
+}
+
+/**
+ * Item 3 (cross-device email verification). Supabase confirms an email
+ * SERVER-SIDE the moment the verification link is clicked on ANY device — but
+ * the loopback redirect only delivers the resulting session to the Sei device
+ * itself, and `USER_UPDATED` only fires for a change made through THIS client.
+ * So a user who signs up on the desktop and clicks the link on their phone gets
+ * confirmed server-side, yet the desktop app never notices and keeps showing
+ * "verify your email."
+ *
+ * Fix: while signed in and not-yet-verified, poll `getUser()` (a server
+ * round-trip that reflects the authoritative email_confirmed_at). Once it flips,
+ * refresh the local session so the JWT + persisted user agree, re-broadcast the
+ * now-verified state, and stop polling. Cheap (only runs while the banner is up)
+ * and fully offline-tolerant (a network blip just keeps polling).
+ */
+let emailPollTimer: ReturnType<typeof setInterval> | null = null;
+const EMAIL_POLL_INTERVAL_MS = 10_000;
+
+function stopEmailVerificationPoll(): void {
+  if (emailPollTimer) {
+    clearInterval(emailPollTimer);
+    emailPollTimer = null;
+  }
+}
+
+async function recheckEmailVerification(): Promise<void> {
+  if (currentState.kind !== 'signed_in' || currentState.user.emailVerified) {
+    stopEmailVerificationPoll();
+    return;
+  }
+  try {
+    const supabase = getClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user) return; // transient — keep polling
+    if (data.user.email_confirmed_at != null) {
+      // Confirmed (here or on another device). Refresh the local session so the
+      // JWT + stored user reflect it (TOKEN_REFRESHED re-applies + re-broadcasts),
+      // and update state immediately for snappy banner dismissal.
+      try {
+        await supabase.auth.refreshSession();
+      } catch {
+        /* best-effort — the explicit state update below still clears the banner */
+      }
+      currentState = { kind: 'signed_in', user: toAuthUser(data.user) };
+      broadcastAuthState(mainWindowRef);
+      stopEmailVerificationPoll();
+    }
+  } catch {
+    /* network blip — keep polling */
+  }
+}
+
+/** Start/stop the verification poll to match the current auth state. */
+function syncEmailVerificationPolling(): void {
+  if (currentState.kind === 'signed_in' && !currentState.user.emailVerified) {
+    if (!emailPollTimer) {
+      emailPollTimer = setInterval(() => {
+        void recheckEmailVerification();
+      }, EMAIL_POLL_INTERVAL_MS);
+      // Kick one immediate check so a verification completed while the app was
+      // closed is picked up on launch without waiting a full interval.
+      void recheckEmailVerification();
+    }
+  } else {
+    stopEmailVerificationPoll();
+  }
 }
 
 /**
@@ -152,6 +220,9 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
   // (sessionStore — already wired by bootstrap).
   const { data: { session } } = await supabase.auth.getSession();
   applySession(session);
+  // Item 3: begin polling for a cross-device email confirmation if this cold
+  // start restored a signed-in-but-unverified session.
+  syncEmailVerificationPolling();
   // Fire-and-forget reconciliation on cold-start sign-in. The subscription
   // below detects user-swaps mid-session; this branch handles app-launch
   // with a persisted session, which the onAuthStateChange transition guard
@@ -192,6 +263,10 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
     const prevUserId = currentState.kind === 'signed_in' ? currentState.user.id : null;
     applySession(session);
     broadcastAuthState(mainWindowRef);
+    // Item 3: (re)evaluate the cross-device verification poll on every auth
+    // event — start it on a fresh unverified sign-in, stop it once verified or
+    // signed out.
+    syncEmailVerificationPolling();
     const nextKind = currentState.kind;
     const nextUserId = currentState.kind === 'signed_in' ? currentState.user.id : null;
     // The effective profile scope is the user id (or 'local' when null). A
@@ -355,14 +430,20 @@ export async function isCloudWriteAllowed(): Promise<boolean> {
     return tosCache.accepted;
   }
 
-  let accepted: boolean;
+  let status: Awaited<ReturnType<typeof getTosAcceptance>>;
   try {
-    accepted = await isTosAccepted(userId);
+    status = await getTosAcceptance(userId);
   } catch {
     // Fail closed — mirror tosGate's own contract.
-    accepted = false;
+    status = 'unknown';
   }
-  tosCache = { userId, accepted, cachedAt: now };
+  const accepted = status === 'accepted';
+  // 260610 — only cache DEFINITIVE answers. Caching an 'unknown' (offline /
+  // DNS hiccup) as false would keep blocking cloud writes for up to 60s after
+  // connectivity returns; leaving the cache empty re-queries on the next call.
+  if (status !== 'unknown') {
+    tosCache = { userId, accepted, cachedAt: now };
+  }
   if (!accepted) logCloudWriteDenied('tos_not_accepted');
   return accepted;
 }

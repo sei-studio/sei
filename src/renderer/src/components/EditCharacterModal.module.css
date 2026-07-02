@@ -1,7 +1,10 @@
+/* Summoning-Terminal modal: sharp corners, one accent, mono micro-labels.
+   See .planning/UI-DESIGN-SYSTEM.md. No border-radius anywhere (D-28). */
+
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.62);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -9,27 +12,101 @@
   animation: fade 220ms ease both;
 }
 
+/* Wider, two-column shell: fixed sidebar nav + scrolling content pane. */
 .modal {
-  width: 600px;
+  width: 920px;
   max-width: calc(100vw - 64px);
+  height: 640px;
   max-height: calc(100vh - 64px);
-  overflow-y: auto;
-  background: var(--window);
-  padding: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-pop);
   animation: fade-up 280ms var(--ease-pop) both;
   display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+/* ── Left sidebar ─────────────────────────────────────────────────────── */
+.sidebar {
+  width: 208px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
   flex-direction: column;
-  gap: 16px;
+  padding: 24px 12px;
+  box-sizing: border-box;
 }
 
 .title {
-  font-family: var(--sans);
-  font-size: 22px;
+  font-family: var(--display);
+  font-size: 19px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--text);
-  margin: 0 0 8px;
-  letter-spacing: -0.2px;
+  margin: 0 0 20px;
+  padding: 0 12px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navItem {
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+
+.navItem:hover {
+  color: var(--text);
+}
+
+/* Selected: just a slightly lighter box + lighter text. Same font/weight as the
+   rest, no accent, no bar. */
+.navItemActive,
+.navItemActive:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* ── Right content pane ───────────────────────────────────────────────── */
+.pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 26px 28px 0;
+  overflow: hidden;
+}
+
+.paneScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 16px;
+}
+
+.paneHint {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0;
 }
 
 .field {
@@ -41,142 +118,114 @@
 .label {
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 1.2px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
 .error {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--red);
   padding: 4px 0;
 }
 
-.footer {
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-  margin-top: 8px;
+.savedTag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--green);
 }
 
-.danger {
+/* ── Proactiveness segmented picker ───────────────────────────────────── */
+.proactivenessPicker {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  gap: 4px;
 }
 
-.dangerRow {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+.proactivenessStep {
+  flex: 1;
+  padding: 8px 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease);
 }
 
-.deleteBtn,
-.resetBtn {
-  border: 0;
-  padding: 0 16px;
-  height: 36px;
+.proactivenessStep:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.proactivenessStep:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.proactivenessStepOn {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.proactivenessHelp {
   font-family: var(--sans);
   font-size: 13px;
-  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ── Persona mode tabs (Standard / Advanced) — underline like detail tabs ── */
+.modeTabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--border);
+  align-self: flex-start;
+}
+
+.modeTab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 8px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
   cursor: pointer;
-  letter-spacing: -0.05px;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease);
 }
 
-.deleteBtn {
-  background: var(--red);
-  color: var(--window);
+.modeTab:hover:not(:disabled):not(.modeTabActive) {
+  color: var(--text);
 }
 
-.deleteBtn:hover {
-  filter: brightness(1.05);
-}
-
-.deleteBtn:disabled,
-.resetBtn:disabled {
-  opacity: 0.6;
+.modeTab:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.resetBtn {
-  background: transparent;
-  color: var(--red);
-  border: 1px solid var(--red);
+.modeTabActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
-.resetBtn:hover:not(:disabled) {
-  background: var(--red);
-  color: var(--window);
-}
-
-.deleteBtn:focus-visible,
-.resetBtn:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* 260516-0yw: expanded-prompt collapsible preview */
-.expandedSection {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.expandedToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  border: 0;
-  padding: 4px 0;
-  cursor: pointer;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 1.2px;
-  color: var(--muted);
-  text-align: left;
-}
-
-.expandedToggle:hover {
-  color: var(--text);
-}
-
-.expandedToggle:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.expandedCaret {
-  font-family: var(--mono);
-  font-size: 12px;
-}
-
+/* ── Persona advanced raw-prompt editor (input-style box) ─────────────── */
 .expandedBody {
   position: relative;
-  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--border-strong);
+  background: rgba(127, 127, 127, 0.03);
   padding: 12px;
-  background: var(--window);
 }
 
-.expandedPre {
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-/* 260517-frz: editable expanded prompt — styled to match the prior <pre>
-   look (monospace, scrollable, same border box) so the visual change
-   from read-only → editable is "you can click into it" rather than a
-   different control type. */
 .expandedTextarea {
   display: block;
   width: 100%;
@@ -189,14 +238,12 @@
   border: 0;
   outline: 0;
   resize: vertical;
-  min-height: 280px;
+  min-height: 320px;
   max-height: 560px;
-  padding: 0;
+  padding: 0 64px 0 0;
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  /* Reserve space on the right so the Copy button doesn't overlap text. */
-  padding-right: 64px;
 }
 
 .expandedTextarea:disabled {
@@ -204,70 +251,100 @@
   cursor: progress;
 }
 
-.expandedActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.expandedHelp {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted);
-  font-style: italic;
-}
-
-.regenerateBtn {
-  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
-  background: var(--window);
-  color: var(--text);
-  padding: 6px 12px;
-  font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  letter-spacing: -0.05px;
-}
-
-.regenerateBtn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.regenerateBtn:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.regenerateBtn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .expandedCopy {
   position: absolute;
   top: 8px;
   right: 8px;
-  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
-  background: var(--window);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   color: var(--muted);
   padding: 4px 10px;
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.5px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 .expandedCopy:hover {
-  color: var(--text);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
-.expandedHint {
+/* ── Inline confirm banner (advanced → standard) ──────────────────────── */
+.confirmBanner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  padding: 14px;
+}
+
+.confirmBannerText {
   font-family: var(--sans);
   font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.confirmBannerActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Appearance: stacked sub-sections ─────────────────────────────────── */
+.subSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.appearanceNote {
+  font-family: var(--sans);
+  font-size: 12px;
   color: var(--muted);
   font-style: italic;
-  padding: 4px 0;
+}
+
+/* ── Danger pane ──────────────────────────────────────────────────────── */
+.dangerPane {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 360px;
+}
+
+.dangerHint {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+}
+
+.dangerRow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+/* ── Pane footer ──────────────────────────────────────────────────────── */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.footerHint {
+  margin-right: auto;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
 }

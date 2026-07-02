@@ -9,18 +9,18 @@
  * Invariants under test:
  *   A1.1  — SettingsScreen reads ai_backend_kind from useCreditsStore.
  *   A1.2  — Provider + API-key rows render under a local-only gate.
- *   A1.3  — MINECRAFT SKINS SETUP renders in BOTH cloud and local mode
+ *   A1.3  — MINECRAFT renders in BOTH cloud and local mode
  *           (skin setup is needed regardless of AI backend).
- *   A1.4  — ProviderTiles is imported + used inline (compact picker).
- *   A1.5  — ProviderTiles ships all 13 Phase 14 providers w/ NO "Coming
+ *   A1.4  — ProviderSelect is imported + used inline (compact dropdown).
+ *   A1.5  — ProviderSelect ships all 13 Phase 14 providers w/ NO "Coming
  *           soon" chips.
  *   A1.6  — UserConfigSchema.provider enum now includes all 13 backends
  *           and an optional provider_config field.
  *   A1.7  — ACCOUNT MODE section sits below LEGAL with both directional
  *           buttons present (switch to managed billing / switch to your
  *           own API key), each opening the SwitchBackendConfirmModal.
- *   A1.8  — The legacy 2x2 ProviderTiles enum types (Provider type) is
- *           the new 13-member union.
+ *   A1.8  — ProviderSelect exports the Provider type as the new 13-member
+ *           union.
  *   A1.9  — OnboardingScreen routes the dynamic provider label into the
  *           step-3 title (no hardcoded 'Local' fallback).
  *   A7.1  — useUiStore exposes devConsoleVisible: false default +
@@ -44,7 +44,7 @@ const SETTINGS_TSX = resolve(__dirname, 'SettingsScreen.tsx');
 const ONBOARDING_TSX = resolve(__dirname, 'OnboardingScreen.tsx');
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
 const SCHEMA_TS = resolve(REPO_ROOT, 'src', 'shared', 'characterSchema.ts');
-const PROVIDER_TILES_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'ProviderTiles.tsx');
+const PROVIDER_SELECT_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'ProviderSelect.tsx');
 const USE_UI_STORE_TS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'stores', 'useUiStore.ts');
 const APP_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'App.tsx');
 
@@ -66,16 +66,16 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     expect(src.includes("aiBackendKind === 'local'")).toBe(true);
     // The whole provider+api-key block lives inside one local gate.
-    const providerIdx = src.indexOf('ProviderTiles');
+    const providerIdx = src.indexOf('ProviderSelect');
     expect(providerIdx).toBeGreaterThan(0);
   });
 
-  it('A1.3: MINECRAFT SKINS SETUP section is shown in BOTH cloud and local mode', () => {
+  it('A1.3: MINECRAFT section is shown in BOTH cloud and local mode', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     // Skin sideloading is independent of the AI-backend billing path, so the
     // section must render regardless of mode (cloud-proxy users need to be
     // able to run / re-run it too). Anchor on the JSX section title.
-    const skinsIdx = src.indexOf('>MINECRAFT SKINS SETUP<');
+    const skinsIdx = src.indexOf('>MINECRAFT<');
     expect(skinsIdx).toBeGreaterThan(0);
     // The section must NOT be wrapped in a local-only gate. The 200 chars
     // before the JSX title should not open a `aiBackendKind === 'local'`
@@ -84,15 +84,15 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
     expect(preamble.includes("aiBackendKind === 'local'")).toBe(false);
   });
 
-  it('A1.4: ProviderTiles is imported + rendered in compact mode', () => {
+  it('A1.4: ProviderSelect is imported + rendered in compact mode', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes("from '../components/ProviderTiles'")).toBe(true);
-    expect(src.includes('<ProviderTiles')).toBe(true);
+    expect(src.includes("from '../components/ProviderSelect'")).toBe(true);
+    expect(src.includes('<ProviderSelect')).toBe(true);
     expect(src.includes('compact')).toBe(true);
   });
 
-  it('A1.5: ProviderTiles ships all 13 providers and NO Coming soon chip', () => {
-    const src = readFileSync(PROVIDER_TILES_TSX, 'utf-8');
+  it('A1.5: ProviderSelect ships all 13 providers and NO Coming soon chip', () => {
+    const src = readFileSync(PROVIDER_SELECT_TSX, 'utf-8');
     const wanted = [
       'anthropic',
       'openai',
@@ -143,8 +143,8 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
     expect(src.includes("setPendingSwitch('local')")).toBe(true);
   });
 
-  it('A1.8: ProviderTiles exports the 13-member Provider union type', () => {
-    const src = readFileSync(PROVIDER_TILES_TSX, 'utf-8');
+  it('A1.8: ProviderSelect exports the 13-member Provider union type', () => {
+    const src = readFileSync(PROVIDER_SELECT_TSX, 'utf-8');
     expect(src.includes("export type Provider =")).toBe(true);
     // Spot-check: the new ids are part of the type, not just the runtime tile array.
     expect(src.match(/export type Provider =[\s\S]*?\|\s*'perplexity'/)).toBeTruthy();
@@ -214,7 +214,7 @@ describe('SettingsScreen (D-FIX reset-all-memories unconditional)', () => {
     //
     // We anchor on the JSX label (preceded by `>`) so we skip the code-comment
     // hits at the top of the file.
-    const labelIdx = src.indexOf('>\n              Reset all character memories\n');
+    const labelIdx = src.indexOf('>\n              Reset all companion memories\n');
     expect(labelIdx).toBeGreaterThan(0);
     // The closest `<section` opening above the reset row should be the new
     // DANGER section (not the ACCOUNT-panel section that requires signed_in).
@@ -238,11 +238,14 @@ describe('SettingsScreen (D-FIX reset-all-memories unconditional)', () => {
     expect(dangerIdx).toBeGreaterThan(accountModeIdx);
   });
 
-  it('D-FIX.3: onResetAllMemoriesClick handler is still wired to the button', () => {
+  it('D-FIX.3: reset-all-memories button opens the confirm popup', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    // Behavioural contract is unchanged — only the gating moved.
+    // The button is still wired to its handler...
     expect(src.includes('onResetAllMemoriesClick')).toBe(true);
-    expect(src.includes('Click again to confirm reset')).toBe(true);
     expect(src.includes('Reset all memories…')).toBe(true);
+    // ...but confirmation now goes through a popup modal (replacing the old
+    // inline "click again to confirm" double-tap).
+    expect(src.includes('ResetAllMemoriesConfirmModal')).toBe(true);
+    expect(src.includes('Click again to confirm reset')).toBe(false);
   });
 });

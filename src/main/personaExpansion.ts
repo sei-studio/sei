@@ -24,9 +24,8 @@
  *     is validated exactly as before once the stream closes. Cloud-proxy
  *     users stream through the proxy's /free SSE passthrough; BYOK users
  *     stream straight from api.anthropic.com.
- *   - Output must include all six section headers (# IDENTITY, # VOICE,
- *     # DEFAULT DYNAMIC WITH THE PLAYER, # PROACTIVENESS, # REACTIONS,
- *     # MEMORY — write in YOUR voice). Missing any → throw
+ *   - Output must include all four base-personality section headers
+ *     (# CORE, # VOICE, # EXTERNAL, # INTERNAL). Missing any → throw
  *     'persona expansion failed: incomplete response'.
  *   - System prompt is STABLE across calls (no player name, no session data,
  *     no live config) so it's safe to cache key-by-key in the API layer.
@@ -39,6 +38,10 @@
  * uses `new Anthropic({ apiKey })` directly inside this module.
  */
 import Anthropic from '@anthropic-ai/sdk';
+// Persona-expansion prompt text lives in the single editable prompt document
+// (src/bot/brain/promptLibrary.js). main bundles it at build time; re-exported
+// below so existing importers of `./personaExpansion` keep working.
+import { EXPANSION_SYSTEM as EXPANSION_SYSTEM_TEXT } from '../bot/brain/promptLibrary.js';
 
 export const EXPANSION_MODEL = 'claude-haiku-4-5';
 // 60s (was 30s): matches the proxy's UPSTREAM_TIMEOUT_MS. The 30s client cap
@@ -48,32 +51,14 @@ export const EXPANSION_TIMEOUT_MS = 60_000;
 export const EXPANSION_MAX_TOKENS = 2048;
 
 /**
- * System prompt for the expansion call. Stable — does NOT include any
- * per-call data (no player name, no session data, no live config). The
- * model is instructed to produce exactly six markdown sections in order,
- * stay in second-person (addressing the bot's identity as "you"), and
- * avoid meta-references to LLMs / AI / assistants / Anthropic.
+ * System prompt for the expansion call. Stable — does NOT include any per-call
+ * data (no player name, no session data, no live config) so it stays cacheable.
+ * The text lives in the single editable prompt document; re-exported here so
+ * existing importers (and tests) keep resolving `EXPANSION_SYSTEM` from this
+ * module. 260630: produces the four base-personality sections
+ * (CORE / VOICE / EXTERNAL / INTERNAL).
  */
-export const EXPANSION_SYSTEM = [
-  'You are a persona prompt expander. The user gives you a short blurb describing a Minecraft companion character. You expand it into a structured prompt that will be fed as a system block to that character\'s LLM at every turn.',
-  '',
-  'Output EXACTLY these six markdown sections in this order. Each section MUST begin with the header line shown below (verbatim, including the leading `# `):',
-  '',
-  '1. `# IDENTITY` — name, who they are, brief backstory (2-3 sentences).',
-  '2. `# VOICE` — register, casing, punctuation preferences, and 5 to 7 sample one-line utterances in their voice (each on its own line). The VOICE section MUST also restate, in-character, these two hard rules so the model sees them every turn: (a) address the player as "you" — never "they", "them", "he", "she", or the player\'s username used as a subject pronoun; (b) no stage directions or asterisk emotes (e.g. "*sighs*", "*swings pickaxe*", "*ears twitch*") — actions show through tool calls. Phrase these rules in the character\'s own voice.',
-  '3. `# DEFAULT DYNAMIC WITH THE PLAYER` — their default relationship stance toward the human player (servant, rival, friend, lover, stranger, etc.) and how it shapes the way they talk to the player.',
-  '4. `# PROACTIVENESS` — when this character initiates versus when they wait. Be specific: idle ticks, post-action moments, the player joining, etc. If the character is proactive, the section must say so directively ("on idle, you DO something — pick a target and execute, don\'t ask the player what to do"). If they\'re reactive, say that clearly and what they default to instead.',
-  '5. `# REACTIONS` — bullet list keyed by: commanded, insulted, praised, ignored, attacked. One short line per key describing how this character reacts.',
-  '6. `# MEMORY` — how this character writes MEMORY.md entries. Hard rule: every entry must be SUBJECTIVE — a feeling, an opinion, an impression of the player, a read on what shifted — never a transaction log, coordinate, or event record. If a stranger reading a line couldn\'t tell whether the character likes the player more or less after the moment, the line is wrong. Show 3-5 GOOD examples (in this character\'s voice, capturing impressions) and 3-5 BAD examples (matching the shapes the model commonly slips into and that we want to ban: "ssk1tz teleported me to X,Y,Z", "ssk1tz asked for wood, i dropped 11 logs", "Player declined assistance", "Obtained iron via mining", "ssk1tz is crafting me a pickaxe"). Use the character\'s actual voice in the GOOD examples; the BAD ones are flat / clerical / out-of-character on purpose.',
-  '',
-  'Style rules:',
-  '- Address the prompt to "you" — the character\'s identity, second person.',
-  '- Do NOT invent specific player names, biome names, or session details. The bot will fill in particulars from snapshot + memory at runtime.',
-  '- Do NOT include meta-references to LLMs, AI, assistants, Anthropic, or "the model". The character is a real person from their own point of view; never break that frame.',
-  '- IF the user-provided source describes a real living person, a real recently-deceased person (within 70 years), or any public figure (celebrity, politician, athlete, musician) — including the case where a fictional name in the source is clearly being used to refer to a specific real person — output ONLY the literal string `REFUSED:REAL_PERSON` with no other content, no preamble, no closing. The caller translates this into a friendly user-facing error.',
-  '- Keep each section terse and specific. Sample lines must be short and feel like in-game chat, not narration.',
-  '- Output ONLY the six sections. No preamble, no closing summary, no commentary about your task.',
-].join('\n');
+export const EXPANSION_SYSTEM = EXPANSION_SYSTEM_TEXT;
 
 /**
  * Cloud-proxy mode mirrors the bot's `anthropicClient.js` wiring:
@@ -104,7 +89,7 @@ export interface ExpandPersonaInput {
   /**
    * ITEM 12 (quick/260523-t8d): the character's NAME, plumbed through to the
    * user message so the expansion LLM has franchise context (e.g. naming a
-   * character "Pikachu" or "Goku" lets the model write a recognizable IDENTITY
+   * character "Pikachu" or "Goku" lets the model write a recognizable CORE
    * and VOICE without the user needing to spell it out in the source blurb).
    * Required — no default — so a missing name surfaces as a clear TypeScript
    * compile error at every call site rather than silently disabling the hint.
@@ -135,7 +120,27 @@ export interface ExpandPersonaInput {
 }
 
 export interface ExpandPersonaResult {
+  /** The four-section persona text, with the leading PROACTIVENESS line stripped
+   *  (that line is config-only and never reaches the bot). */
   expanded: string;
+  /** The proactiveness level the expander chose (0 passive / 1 reactive /
+   *  2 agentic), parsed from the leading `PROACTIVENESS:` line. This seeds the
+   *  runtime dial (the manual dial can override it later). Defaults to 1 when the
+   *  line is absent or unrecognized. */
+  proactiveness: number;
+}
+
+/** Map the expander's leading `PROACTIVENESS: <word>` line to the numeric level
+ *  the runtime uses, and the persona text with that line removed. Defaults to
+ *  reactive (1) when the line is missing/unrecognized so a non-compliant model
+ *  response still yields a valid character. */
+const PROACTIVENESS_WORD_TO_LEVEL: Record<string, number> = { passive: 0, reactive: 1, agentic: 2 };
+export function parseProactivenessLine(text: string): { level: number; body: string } {
+  const m = text.match(/^\s*PROACTIVENESS:\s*(passive|reactive|agentic)\b[^\n]*\n?/im);
+  if (!m) return { level: 1, body: text };
+  const level = PROACTIVENESS_WORD_TO_LEVEL[m[1].toLowerCase()] ?? 1;
+  const body = (text.slice(0, m.index) + text.slice(m.index! + m[0].length)).trim();
+  return { level, body };
 }
 
 /**
@@ -147,29 +152,23 @@ export interface ExpandPersonaResult {
  * the header words appearing inside a body sentence.
  */
 const REQUIRED_SECTION_HEADERS: { name: string; re: RegExp }[] = [
-  { name: 'IDENTITY',       re: /^\s*#+\s*IDENTITY\b/im },
-  { name: 'VOICE',          re: /^\s*#+\s*VOICE\b/im },
-  { name: 'DEFAULT DYNAMIC', re: /^\s*#+\s*DEFAULT\s+DYNAMIC\b/im },
-  { name: 'PROACTIVENESS',  re: /^\s*#+\s*PROACTIVENESS\b/im },
-  { name: 'REACTIONS',      re: /^\s*#+\s*REACTIONS\b/im },
-  // MEMORY header may use em-dash, en-dash, or hyphen between MEMORY and
-  // the qualifier — accept any. Also accept MEMORY alone (no qualifier).
-  { name: 'MEMORY',         re: /^\s*#+\s*MEMORY\b/im },
+  { name: 'CORE',     re: /^\s*#+\s*CORE\b/im },
+  { name: 'VOICE',    re: /^\s*#+\s*VOICE\b/im },
+  { name: 'EXTERNAL', re: /^\s*#+\s*EXTERNAL\b/im },
+  { name: 'INTERNAL', re: /^\s*#+\s*INTERNAL\b/im },
 ];
 
 /**
- * Short, friendly labels for each of the six sections, in order. Parallel to
+ * Short, friendly labels for each of the four sections, in order. Parallel to
  * REQUIRED_SECTION_HEADERS — index i is the label shown while the model is
  * writing section i. Surfaced next to the progress bar so the user sees what's
  * happening ("Writing voice & samples…") rather than a bare percentage.
  */
 const SECTION_LABELS = [
-  'Identity',
+  'Core',
   'Voice & samples',
-  'Relationship with you',
-  'Proactiveness',
-  'Reactions',
-  'Memory style',
+  'How others see you',
+  'Values & needs',
 ];
 
 /** Rough expected character length of a single section's body, used to ease
@@ -181,9 +180,9 @@ const EXPECTED_SECTION_CHARS = 420;
 /**
  * Estimate streaming progress from the accumulated expansion text so far.
  *
- * The system prompt guarantees six sections in a fixed order, so the count of
+ * The system prompt guarantees four sections in a fixed order, so the count of
  * RECOGNIZED section headers is a meaningful, honest milestone signal. We split
- * the bar into six equal segments (one per section) and ease forward within the
+ * the bar into four equal segments (one per section) and ease forward within the
  * current segment using characters emitted since the last recognized header.
  * Capped at 0.97 while streaming so the bar only snaps to 1.0 once the stream
  * closes and the result validates.
@@ -196,7 +195,7 @@ const EXPECTED_SECTION_CHARS = 420;
  * for unit testing.
  */
 export function computeExpansionProgress(text: string): ExpansionProgress {
-  const total = REQUIRED_SECTION_HEADERS.length; // 6
+  const total = REQUIRED_SECTION_HEADERS.length; // 4
   let seen = 0;
   let lastHeaderIdx = -1;
   for (const h of REQUIRED_SECTION_HEADERS) {
@@ -255,7 +254,7 @@ export function buildExpansionUserMessage(
   }
   lines.push(
     '',
-    'Expand into the six-section prompt now. If the name matches a known franchise character (e.g. Pikachu, Goku), let that context inform the IDENTITY and VOICE sections.',
+    'Expand into the four-section prompt now. If the name matches a known franchise character (e.g. Pikachu, Goku), let that context inform the CORE and VOICE sections.',
   );
   return lines.join('\n');
 }
@@ -444,7 +443,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   // EXPANSION_SYSTEM instructs the model to emit ONLY the literal
   // 'REFUSED:REAL_PERSON' when it detects a real living/recently-deceased
   // public figure in the source blurb. Detect that sentinel here BEFORE the
-  // six-section validator (which would otherwise reject the refusal as
+  // section validator (which would otherwise reject the refusal as
   // 'missing sections' — wrong error class for the user).
   //
   // Friendly message intentionally lowercase + casual to match the renderer's
@@ -463,12 +462,20 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
       'please use a fictional name and persona.',
     );
   }
-  // Validate the six required sections are present via tolerant regex.
-  const missing = REQUIRED_SECTION_HEADERS.filter(h => !h.re.test(text)).map(h => h.name);
+  // Split off the leading `PROACTIVENESS: <word>` line — it's config-only and
+  // must NOT ship in the persona text shown to the bot. `body` is the four
+  // sections; `level` seeds the runtime dial (caller can override later).
+  const { level: proactiveness, body: rawBody } = parseProactivenessLine(text);
+  // Hard-drop em/en-dashes from the shipped persona, independent of model
+  // compliance. The bot mirrors this prompt's register, so a stray dash here
+  // teaches it to use them; normalize to a plain hyphen.
+  const body = rawBody.replace(/[—–]/g, '-');
+  // Validate the four required sections are present via tolerant regex.
+  const missing = REQUIRED_SECTION_HEADERS.filter(h => !h.re.test(body)).map(h => h.name);
   if (missing.length > 0) {
     console.error('[personaExpansion] missing sections:', missing.join(', '));
     console.error('[personaExpansion] model returned:\n' + text);
     throw new Error(`persona expansion failed: missing sections (${missing.join(', ')})`);
   }
-  return { expanded: text };
+  return { expanded: body, proactiveness };
 }

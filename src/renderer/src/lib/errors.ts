@@ -30,6 +30,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   KEYCHAIN_LOCKED: "Couldn't read your saved API key from the system keychain. Re-run onboarding to re-save it.",
   KEYCHAIN_FALLBACK_PLAINTEXT: "Your system has no secret store. Sei will save your API key but it won't be hardware-protected.",
   NATIVE_MODULE_MISMATCH: "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.",
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version isn't supported yet. Switch your world to a supported Java version (1.20.x or 1.21.x) and press Summon again.",
   // Skin pipeline + setup-wizard errors. Do NOT rephrase — the UI checker
   // matches these strings byte-for-byte against the spec.
   MOD_DOWNLOAD_FAILED: "Couldn't download CustomSkinLoader. Check your connection and try the setup again.",
@@ -40,6 +41,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   SKIN_SERVER_PORT_TAKEN: "Sei couldn't reserve a local port for serving skins. Restart Sei and try again.",
   WIZARD_PERMISSION_DENIED: "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.",
   CLOUD_CREDITS_DEPLETED: "Out of cloud credits. Top up in the Credits screen, or switch to your own API key in Settings.",
+  DAILY_LIMIT_REACHED: "Daily play limit reached for non-subscribers. Wait for the reset, or upgrade to a Party plan.",
 };
 
 /**
@@ -88,6 +90,9 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   }
   if (/enotfound|enetunreach|getaddrinfo|dns|offline|fetch failed/i.test(lower)) {
     return { class: 'NETWORK_OFFLINE', copy: ERROR_COPY.NETWORK_OFFLINE };
+  }
+  if (/unsupported_mc_version|unsupported.*version|version.*not.*support|incompatible.*version/i.test(lower)) {
+    return { class: 'UNSUPPORTED_MC_VERSION', copy: ERROR_COPY.UNSUPPORTED_MC_VERSION };
   }
   if (/lan|multicast|no minecraft lan|open to lan/i.test(lower)) {
     return { class: 'LAN_NOT_OPEN', copy: ERROR_COPY.LAN_NOT_OPEN };

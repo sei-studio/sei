@@ -70,7 +70,7 @@ const DEFAULT_CONFIG = {
     expanded: '',
   },
   anthropic: { api_key: '' },
-  llm: { rate_limit_per_min: 30, debounce_ms: 500, max_hops: 5, idle_fallback_ms: 10000 },
+  llm: { rate_limit_per_min: 30, debounce_ms: 500, max_hops: 5, idle_fallback_ms: 5000 },
 }
 
 // ─── Banner ──────────────────────────────────────────────────────────────
@@ -141,8 +141,6 @@ function seedPlayerMd(preferredName, playerUsername) {
     `preferred_name: ${preferredName || ''}`,
     'pronouns:',
     '---',
-    '# Notes',
-    '',
     '',
   ].join('\n')
   writeFileSync(PLAYER_MD_PATH, front, 'utf8')
@@ -170,7 +168,7 @@ async function onboard({ rl, existing, mode = 'first-run' }) {
   })
 
   // 260516-0yw: ask for a short PERSONA SOURCE blurb. The GUI's main-process
-  // Anthropic call expands this into the six-section persona prompt at
+  // Anthropic call expands this into the four-section persona prompt at
   // character-save time. CLI users won't get the LLM expansion (no Electron
   // safeStorage / IPC pipeline here), so `expanded` stays empty and the bot
   // boot will refuse with a clear error until the GUI is used at least once

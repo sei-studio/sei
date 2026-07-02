@@ -217,6 +217,7 @@ export async function expandAndSaveCharacter(
   // pulls the Supabase JWT and points the SDK at the Fly.io proxy (same
   // wiring as src/bot/brain/anthropicClient.js).
   const backendKind = await getAiBackendKind();
+
   const expansionInput: Parameters<typeof expandPersona>[0] = {
     // ITEM 12 (quick/260523-t8d): pass the character's name so franchise
     // context (Pikachu / Goku / Mario / etc.) shapes the expanded persona.
@@ -243,13 +244,21 @@ export async function expandAndSaveCharacter(
     expansionInput.apiKey = await loadApiKey();
   }
 
-  const { expanded } = await expandPersona(expansionInput);
+  // 260630: the expander now CHOOSES the proactiveness level (0 passive /
+  // 1 reactive / 2 agentic) from the personality and returns it; we seed it into
+  // metadata, which is what bot/index.js reads to drive the runtime dial. The
+  // manual dial can override this later by editing metadata.proactiveness.
+  const { expanded, proactiveness } = await expandPersona(expansionInput);
 
   const merged: Character = {
     ...validated,
     persona: {
       source: validated.persona.source,
       expanded,
+    },
+    metadata: {
+      ...(validated.metadata as Record<string, unknown> | undefined),
+      proactiveness,
     },
   };
   await saveCharacter(merged);

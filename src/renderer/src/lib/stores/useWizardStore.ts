@@ -122,9 +122,14 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         if (selected.size === 0) installs.forEach((i) => selected.add(i.id));
         set({ installs, selectedIds: selected, step: 'pick' });
       } catch (err) {
+        // A detection FAILURE must not land on 'pick' (STEP 2/4) — that screen
+        // shows an empty install list with a disabled Continue and a bogus step
+        // counter (the "jumps straight to 2/4 when setup fails" bug). Route to
+        // the none-found branch instead: it carries Try-again / Open-settings
+        // and no step number, which is the right UI for "couldn't scan".
         set({
           error: (err as Error).message ?? 'Detection failed',
-          step: 'pick',
+          step: 'none-found',
         });
       }
     },

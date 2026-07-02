@@ -5,7 +5,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createPriorityQueue, Priority } from './fsm.js'
 
-const flush = () => new Promise((r) => setTimeout(r, 0))
+// Drain the queue's setImmediate-chained dispatch loop. processNext handles ONE
+// item then re-schedules itself via setImmediate, so draining K items needs K
+// cycles — a single macrotask (setTimeout 0) races under load and could observe
+// 1 dispatch where the test expects 2. Pump several setImmediate cycles so a
+// multi-item enqueue settles deterministically.
+const flush = async () => {
+  for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r))
+}
 
 describe('createPriorityQueue onPreempt hook', () => {
   it('calls onPreempt for a player chat and SKIPS enqueue when claimed', async () => {

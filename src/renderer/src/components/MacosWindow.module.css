@@ -8,8 +8,11 @@
 .window {
   width: 100%;
   height: 100%;
-  min-width: 1180px;
-  min-height: 760px;
+  /* Floor lowered from 1180 → 1024 so the smaller Windows default window
+     (1040×700, set in windowChrome.ts) doesn't clip / force a scrollbar.
+     macOS still opens at 1180 but can now be dragged narrower. */
+  min-width: 1024px;
+  min-height: 660px;
   /* Flat near-black field — no accent bloom (the previous radial used
      --accent-soft at 16%, ~3× the mockup's faint 5% glow, and read as a
      blue gradient washed over the whole window). */
@@ -50,6 +53,48 @@
   -webkit-app-region: drag;
 }
 
+/* Windows / Linux frameless layout: no native traffic lights on the left, so
+   the "Sei" mark sits at the far left and our custom controls take the
+   right. (macOS keeps the rail-cleared padding above.) */
+.dragStripCustom {
+  padding-left: var(--space-lg);
+}
+
+/* Custom min / maximize / close controls (Windows/Linux). */
+.controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.ctlBtn {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--rail-fg);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.ctlBtn:hover {
+  background-color: var(--rail-hover);
+  color: var(--rail-fg-strong);
+}
+
+/* Close button signals danger on hover via the palette's red token (design
+   system §2 — reference tokens, never literal hex). */
+.ctlClose:hover {
+  background-color: var(--red);
+  color: #ffffff;
+}
+
 /* Hairline base — only across the content area (right of the rail), so there
    is no visible seam where the bar meets the IconRail. */
 .dragStrip::after {
@@ -59,28 +104,49 @@
   right: 0;
   bottom: 0;
   height: 1px;
-  background: var(--border);
+  /* Seam now drawn by the content panel's rounded border (App.tsx main); a
+     straight hairline here would re-form the old square corner. */
+  display: none;
 }
 
-/* "Sei Launcher" mark — small Rajdhani (--sans) label. */
+/* When the IconRail is hidden (onboarding / auth / skin-setup), there's no rail
+   to read as continuous chrome on the left, so the hairline spans the FULL
+   width — including the segment under the macOS traffic lights. With the rail
+   visible the default inset above keeps that segment clear (no seam). */
+.dragStrip.fullDivider::after {
+  left: 0;
+}
+
+/* ...and with no rail below it, the bar's flat --rail fill (which only reads as
+   chrome BECAUSE it continues into the rail) becomes a stray colored strip over
+   the --window sign-in field. Paint it --window so the rail-less screens read as
+   one uniform color. Keep the left padding: the "Sei" mark still needs the inset
+   to clear the macOS traffic lights. (260625) */
+.dragStrip.fullDivider {
+  background-color: var(--window);
+}
+
+
+/* "Sei" mark — small Rajdhani (--sans) label. */
 .titleLabel {
   font-family: var(--sans);
   font-size: 13.5px;
   font-weight: 500;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--rail-fg);
   text-transform: none;
   user-select: none;
   pointer-events: none;
 }
 
-/* Version tag — same label, one tone darker than --muted (--muted-2). */
+/* Version tag — same label, one tone dimmer than the title. */
 .versionTag {
   font-family: var(--sans);
   font-size: 13.5px;
   font-weight: 500;
   letter-spacing: 0.04em;
-  color: var(--muted-2);
+  color: var(--rail-fg);
+  opacity: 0.7;
   margin-left: var(--space-xs);
   user-select: none;
   pointer-events: none;

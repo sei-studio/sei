@@ -29,12 +29,24 @@ export function anthropicToOpenAIMessages(messages, systemText) {
       const blocks = Array.isArray(msg.content) ? msg.content : [{ type: 'text', text: String(msg.content ?? '') }]
       // Split tool_results out — they become separate {role:'tool'} messages
       // in OpenAI's protocol. Any text blocks coalesce into one user message.
+      // VIS-02: an `image` block (provider-neutral {type:'image',source:{...}})
+      // becomes an `image_url` data-URL part. When any image is present the
+      // user message MUST use the multimodal ARRAY content form — OpenAI/Ollama
+      // reject an image on a plain-string content, and an image NEVER rides a
+      // {role:'tool'} result message (Pitfall 4).
       const textParts = []
+      const imageParts = []
       const toolResults = []
       for (const blk of blocks) {
         if (!blk) continue
         if (blk.type === 'text') textParts.push(blk.text)
         else if (blk.type === 'tool_result') toolResults.push(blk)
+        else if (blk.type === 'image') {
+          imageParts.push({
+            type: 'image_url',
+            image_url: { url: `data:${blk.source.media_type};base64,${blk.source.data}` },
+          })
+        }
       }
       for (const tr of toolResults) {
         out.push({
@@ -43,7 +55,14 @@ export function anthropicToOpenAIMessages(messages, systemText) {
           content: typeof tr.content === 'string' ? tr.content : JSON.stringify(tr.content),
         })
       }
-      if (textParts.length > 0) {
+      if (imageParts.length > 0) {
+        // Multimodal array form: text parts (if any) before image parts.
+        const arr = [
+          ...textParts.map(text => ({ type: 'text', text })),
+          ...imageParts,
+        ]
+        out.push({ role: 'user', content: arr })
+      } else if (textParts.length > 0) {
         out.push({ role: 'user', content: textParts.join('\n\n') })
       }
     } else if (msg.role === 'assistant') {
@@ -175,6 +194,13 @@ export function anthropicToGeminiContents(messages) {
               name: idToName.get(blk.tool_use_id) ?? blk.tool_use_name ?? 'tool',
               response: responseObj,
             },
+          })
+        }
+        // VIS-02: provider-neutral image block -> Gemini inline_data part. Lands
+        // ONLY on a user turn (Pitfall 4 — never inside a functionResponse).
+        else if (blk.type === 'image') {
+          parts.push({
+            inline_data: { mime_type: blk.source.media_type, data: blk.source.data },
           })
         }
       }

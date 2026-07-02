@@ -110,6 +110,18 @@ let checkoutMaxTimer: ReturnType<typeof setTimeout> | null = null;
 let checkoutBaseline: CheckoutBaseline | null = null;
 let lastBillingActionAt = 0;
 
+// Monotonic load epoch. Bumped on every reset() — i.e. on every auth/scope
+// transition that re-points which profile the store reflects. init()/refresh()
+// capture the epoch BEFORE their async creditsGet() and discard the result if
+// the epoch advanced while the read was in flight. Without this, the credits
+// init() fired by the SYNCHRONOUS signed_in push (which reads the OLD scope's
+// ai_backend_kind, before the async profile-scope switch has written the
+// cloud-proxy billing default) can resolve AFTER the scope-changed refresh and
+// clobber it back to a stale 'local' — landing a freshly signed-in user on
+// local mode. The epoch makes the LAST-initiated read authoritative regardless
+// of which creditsGet() resolves first.
+let loadEpoch = 0;
+
 function clearCheckoutTimers(): void {
   if (checkoutPollTimer !== null) {
     clearInterval(checkoutPollTimer);
@@ -210,6 +222,14 @@ interface CreditsState {
   usage_pct: number;
   /** ITEM 4: server-supplied remaining-tokens count (undefined during rollout / cold-load). */
   remaining_tokens?: number;
+  /**
+   * Lifetime spend / total granted in USD (dollar form of usage_pct). main
+   * computes these from ledger micros. Deliberately past the PROXY-05 percent-
+   * only line at the owner's request; drives the UsageBar tooltip "$used/$total".
+   * undefined for local/BYOK or before the first seed.
+   */
+  used_usd?: number;
+  total_usd?: number;
   plan: CreditsStatus['plan'];
   renews_at: string | null;
   /**
@@ -329,6 +349,8 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   remaining_pct: 0,
   usage_pct: 0,
   remaining_tokens: undefined,
+  used_usd: undefined,
+  total_usd: undefined,
   plan: 'depleted',
   renews_at: null,
   ends_at: null,
@@ -345,6 +367,24 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   pushSeq: 0,
 };
 
+// 260617: once a subscription goes active, proactively clear any persisted
+// daily-play-limit block (UserConfig.daily_limited_until) so a user who just
+// upgraded past the trial cap is not still blocked at the summon gate. Writes
+// only when the flag is set, and at most once per app session.
+let clearedDailyForActive = false;
+async function clearDailyLimitOnSubscription(): Promise<void> {
+  if (clearedDailyForActive) return;
+  clearedDailyForActive = true;
+  try {
+    const cfg = await sei.getConfig();
+    if (cfg?.daily_limited_until) {
+      await sei.saveConfig({ ...cfg, daily_limited_until: null });
+    }
+  } catch {
+    clearedDailyForActive = false; // transient IPC failure — allow a later retry
+  }
+}
+
 export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) => ({
   ...INITIAL,
 
@@ -358,6 +398,8 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         remaining_pct: status.remaining_pct,
         usage_pct: status.usage_pct ?? 0,
         remaining_tokens: status.remaining_tokens,
+        used_usd: status.used_usd,
+        total_usd: status.total_usd,
         plan: status.plan,
         renews_at: status.renews_at,
         ends_at: status.ends_at,
@@ -380,6 +422,10 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         });
       }
       prevPlanForReceipt = status.plan;
+      // Clear a stale daily-limit block once the account is a subscriber.
+      if (status.subscription_status_raw === 'active') {
+        void clearDailyLimitOnSubscription();
+      }
     });
     const unsubHardStop = sei.onCreditsHardStop((info) => {
       set({
@@ -413,16 +459,22 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
 
     set({ unsubStatus, unsubHardStop, unsubFocus });
 
-    // 2. Seed; skip applying if a push arrived during the await.
+    // 2. Seed; skip applying if a push arrived during the await, OR if a
+    //    reset() (auth/scope transition) superseded this load while it was in
+    //    flight (loadEpoch — see its declaration).
     const seqBefore = get().pushSeq;
+    const epochBefore = loadEpoch;
     set({ loading: true });
     try {
       const status = await sei.creditsGet();
+      if (loadEpoch !== epochBefore) return; // superseded by a newer scope
       if (get().pushSeq === seqBefore) {
         set({
           remaining_pct: status.remaining_pct,
           usage_pct: status.usage_pct ?? 0,
           remaining_tokens: status.remaining_tokens,
+        used_usd: status.used_usd,
+        total_usd: status.total_usd,
           plan: status.plan,
           renews_at: status.renews_at,
           ends_at: status.ends_at,
@@ -456,13 +508,17 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
   },
 
   refresh: async (): Promise<void> => {
+    const epochBefore = loadEpoch;
     set({ loading: true });
     try {
       const status = await sei.creditsGet();
+      if (loadEpoch !== epochBefore) return; // superseded by a scope transition
       set({
         remaining_pct: status.remaining_pct,
         usage_pct: status.usage_pct ?? 0,
         remaining_tokens: status.remaining_tokens,
+        used_usd: status.used_usd,
+        total_usd: status.total_usd,
         plan: status.plan,
         renews_at: status.renews_at,
         ends_at: status.ends_at,
@@ -564,6 +620,10 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
   },
 
   reset: (): void => {
+    // Invalidate any creditsGet() still in flight from a prior scope (see
+    // loadEpoch docs) so its late resolution can't repopulate this freshly
+    // reset store with the previous profile's values.
+    loadEpoch += 1;
     const { unsubStatus, unsubHardStop, unsubFocus } = get();
     unsubStatus?.();
     unsubHardStop?.();

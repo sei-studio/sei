@@ -155,18 +155,35 @@ export async function digAction(args, bot, config) {
         : `dig failed for ${blockName} @${bx},${by},${bz}`
     })
 
-  const tmo = new Promise((r) => setTimeout(() => {
-    try { bot.stopDigging() } catch {}
-    r(`timeout digging ${blockName} @${bx},${by},${bz}`)
-  }, timeoutMs))
+  // Tear the timer + abort listener down when the race settles. Previously the
+  // timeout's setTimeout leaked: after a dig resolved normally, its stale timer
+  // still fired ~timeoutMs later and called bot.stopDigging() — but by then the
+  // gather/cuboid loop had MOVED ON, so it aborted the *next* block mid-swing.
+  // That is the "breaks a block most of the way, then cancels and skips to
+  // another" symptom. (Each gather iteration also leaked an abort listener on
+  // the shared signal.) (260617)
+  let timer = null
+  let onAbort = null
+  const cleanup = () => {
+    if (timer) { clearTimeout(timer); timer = null }
+    if (onAbort && signal) { signal.removeEventListener('abort', onAbort); onAbort = null }
+  }
+
+  const tmo = new Promise((r) => {
+    timer = setTimeout(() => {
+      try { bot.stopDigging() } catch {}
+      r(`timeout digging ${blockName} @${bx},${by},${bz}`)
+    }, timeoutMs)
+  })
 
   const abrt = new Promise((r) => {
     if (!signal) return
-    signal.addEventListener('abort', () => {
+    onAbort = () => {
       try { bot.stopDigging() } catch {}
       r('aborted')
-    }, { once: true })
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
   })
 
-  return Promise.race([op, tmo, abrt])
+  return Promise.race([op, tmo, abrt]).finally(cleanup)
 }

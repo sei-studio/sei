@@ -12,6 +12,7 @@ import {
   IpcChannel,
   type RendererApi,
   type BotStatus,
+  type VisionCapability,
   type LanState,
   type LogBatch,
   type WizardProgressEvent,
@@ -29,7 +30,7 @@ import {
 
 const api: RendererApi = {
   summon: (id) => ipcRenderer.invoke(IpcChannel.bot.summon, id),
-  stop: () => ipcRenderer.invoke(IpcChannel.bot.stop),
+  stop: (id) => ipcRenderer.invoke(IpcChannel.bot.stop, id),
 
   listCharacters: () => ipcRenderer.invoke(IpcChannel.chars.list),
   getCharacter: (id) => ipcRenderer.invoke(IpcChannel.chars.get, id),
@@ -156,6 +157,11 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.bot.status, handler);
     return () => ipcRenderer.off(IpcChannel.bot.status, handler);
   },
+  onVisionCapability(cb: (cap: VisionCapability) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, cap: VisionCapability) => cb(cap);
+    ipcRenderer.on(IpcChannel.vision.capability, handler);
+    return () => ipcRenderer.off(IpcChannel.vision.capability, handler);
+  },
   onLog(cb: (batch: LogBatch) => void) {
     const handler = (_e: Electron.IpcRendererEvent, batch: LogBatch) => cb(batch);
     ipcRenderer.on(IpcChannel.bot.logBatch, handler);
@@ -212,10 +218,23 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.app.whatsNew, handler);
     return () => ipcRenderer.off(IpcChannel.app.whatsNew, handler);
   },
+  getWhatsNew: () => ipcRenderer.invoke(IpcChannel.app.whatsNewGet),
   checkForUpdates: () => ipcRenderer.invoke(IpcChannel.app.updateCheck),
   downloadUpdate: () => ipcRenderer.invoke(IpcChannel.app.updateDownload),
   installUpdate: () => ipcRenderer.invoke(IpcChannel.app.updateInstall),
   getVersion: () => ipcRenderer.invoke(IpcChannel.app.version),
+
+  // --- Window chrome (frameless custom titlebar on Windows/Linux) ---
+  platform: process.platform,
+  windowMinimize: () => ipcRenderer.invoke(IpcChannel.window.minimize),
+  windowMaximizeToggle: () => ipcRenderer.invoke(IpcChannel.window.maximizeToggle),
+  windowClose: () => ipcRenderer.invoke(IpcChannel.window.close),
+  windowIsMaximized: () => ipcRenderer.invoke(IpcChannel.window.isMaximized),
+  onWindowMaximizedChanged(cb: (isMaximized: boolean) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, isMaximized: boolean) => cb(isMaximized);
+    ipcRenderer.on(IpcChannel.window.maximizedChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.window.maximizedChanged, handler);
+  },
   onScopeChanged(cb: (ev: ScopeChangedEvent) => void) {
     const handler = (_e: Electron.IpcRendererEvent, ev: ScopeChangedEvent) => cb(ev);
     ipcRenderer.on(IpcChannel.app.scopeChanged, handler);

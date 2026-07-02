@@ -27,6 +27,7 @@
  *   - characterStore.ts (atomic-write + index-update pattern mirrored here)
  */
 import { readFile, mkdir, unlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { app } from 'electron';
@@ -76,10 +77,34 @@ export function bundledSkinPath(character: Pick<Character, 'id' | 'slug'>): stri
   if (!isBundled) return null;
   const slug = character.slug ?? slugFromUuid(character.id);
   if (!slug) return null;
+  const file = `${slug}.png`;
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'skins', `${slug}.png`);
+    // 260607 (packaged skin-load fix): the bundled PNGs can sit in DIFFERENT
+    // places depending on the packaging layout —
+    //   1. <resourcesPath>/app.asar.unpacked/resources/skins/  (asarUnpack — current intent)
+    //   2. inside app.asar at <appPath>/resources/skins/        (the MAIN process can
+    //      still fs.read this via Electron's asar patch even if it was NOT unpacked)
+    //   3. <resourcesPath>/resources/skins/                     (flat extraResources copy)
+    // A single hard-coded guess that misses the actual layout fails SILENTLY
+    // (resolveSkinPng/readSkinPng swallow ENOENT → skin server 404 → in-game &
+    // preview fall back to Steve), which is exactly the "works in dev, broken in
+    // the built release" report. Probe candidates, return the first that exists,
+    // and log loudly when none do so the failure is finally diagnosable.
+    const candidates = [
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'skins', file),
+      path.join(app.getAppPath(), 'resources', 'skins', file),
+      path.join(process.resourcesPath, 'resources', 'skins', file),
+    ];
+    const found = candidates.find((p) => existsSync(p));
+    if (found) return found;
+    console.warn(
+      `[sei] bundledSkinPath: bundled skin '${slug}' not found at any candidate ` +
+        `(isPackaged=true, resourcesPath=${process.resourcesPath}, appPath=${app.getAppPath()}); ` +
+        `tried: ${candidates.join(' | ')}`,
+    );
+    return candidates[0]; // primary — the caller's readFile will ENOENT + log
   }
-  return path.join(__dirname, '..', '..', 'resources', 'skins', `${slug}.png`);
+  return path.join(__dirname, '..', '..', 'resources', 'skins', file);
 }
 
 /**
@@ -117,8 +142,14 @@ export async function resolveSkinPng(character: Character): Promise<Buffer | nul
   if (bundledFallback) {
     try {
       return await readFile(bundledFallback);
-    } catch {
-      /* fall through */
+    } catch (err) {
+      // 260607: was a silent swallow — a packaged ENOENT here IS the "skin
+      // works in dev, Steve in the built release" bug. Log the attempted path
+      // so it surfaces in logs instead of vanishing into a 404.
+      console.warn(
+        `[sei] resolveSkinPng: bundled read failed for ${character.id} at ${bundledFallback}: ` +
+          `${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`,
+      );
     }
   }
   // Non-default 'none'/'bundled', or an 'upload'/'username' with no cached
@@ -314,11 +345,15 @@ export async function readSkinPng(args: {
       if (!p) continue;
       try {
         return await readFile(p);
-      } catch {
-        // ENOENT on bundled asset — should never happen in shipped builds
-        // (electron-builder asarUnpack covers resources/skins/**), but fall
-        // through so the server returns its 404 placeholder instead of
-        // throwing into the request handler.
+      } catch (err) {
+        // 260607: log instead of silently swallowing — a packaged ENOENT here
+        // is the "Steve in the built release" bug. asarUnpack SHOULD cover
+        // resources/skins/**, but if the layout differs this warn is the only
+        // trace; bundledSkinPath() already probed candidates before returning p.
+        console.warn(
+          `[sei] readSkinPng: bundled read failed for ${def.slug} at ${p}: ` +
+            `${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`,
+        );
         continue;
       }
     }

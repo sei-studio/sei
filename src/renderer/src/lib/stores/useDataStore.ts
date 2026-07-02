@@ -16,13 +16,20 @@ import { create } from 'zustand';
 import type { Character } from '@shared/characterSchema';
 import type { BotStatus, LanState, LogEntry, LogBatch } from '@shared/ipc';
 import { sei } from '../ipcClient';
+import { useUiStore } from './useUiStore';
 
 const MAX_LOG_LINES = 5000;
 
 interface DataState {
   characters: Character[];
   lan: LanState;
-  summon: BotStatus;
+  /**
+   * Per-character bot status, keyed by characterId (multi-summon). An absent
+   * key means "not summoned" (idle); a present entry is connecting/online/error.
+   * Components that care about one character read `summons[id]`; "is any bot
+   * running" reads `Object.values(summons)`.
+   */
+  summons: Record<string, BotStatus>;
   logs: LogEntry[];
   /** Cumulative count of dropped lines (Pitfall-7 backpressure sentinel). */
   dropped: number;
@@ -44,6 +51,7 @@ interface DataState {
   removeCharacter: (id: string) => void;
 
   setLan: (state: LanState) => void;
+  /** Route a single status push into the per-character map (idle clears the key). */
   setStatus: (status: BotStatus) => void;
 
   appendLogBatch: (batch: LogBatch) => void;
@@ -54,7 +62,7 @@ export const useDataStore = create<DataState>((set) => ({
   characters: [],
   recentlyDeletedIds: new Set<string>(),
   lan: { kind: 'not_connected' },
-  summon: { kind: 'idle' },
+  summons: {},
   logs: [],
   dropped: 0,
 
@@ -64,6 +72,12 @@ export const useDataStore = create<DataState>((set) => ({
   },
 
   refreshCharacter: async (id) => {
+    // Hard guard: chars:get validates its input as a non-optional string, so a
+    // falsy id (a status push that predates the multi-summon characterId field,
+    // or an undefined route param) would reject with a Zod "Required" error and
+    // surface as an uncaught promise rejection. There is nothing to refresh for
+    // an empty id, so bail before crossing the IPC boundary.
+    if (!id) return;
     const c = await sei.getCharacter(id);
     if (!c) {
       set((s) => ({ characters: s.characters.filter((x) => x.id !== id) }));
@@ -90,7 +104,19 @@ export const useDataStore = create<DataState>((set) => ({
     }),
 
   setLan: (state) => set({ lan: state }),
-  setStatus: (status) => set({ summon: status }),
+  setStatus: (status) =>
+    set((s) => {
+      // Defend the map key: a malformed/legacy status without a characterId
+      // must not land under an `"undefined"` key (which would then route to a
+      // ghost character everywhere `summons[id]` is read). Ignore it.
+      if (!status.characterId) return {};
+      const next = { ...s.summons };
+      // 'idle' means this character's session ended → drop the key so
+      // `summons[id]` reads undefined (not summoned). Everything else upserts.
+      if (status.kind === 'idle') delete next[status.characterId];
+      else next[status.characterId] = status;
+      return { summons: next };
+    }),
 
   appendLogBatch: (batch) =>
     set((s) => {
@@ -125,34 +151,42 @@ export function subscribeIpc(): () => void {
     .catch(() => {
       /* leave initial state; a subsequent push will correct it */
     });
-  // Clear the console when a fresh session starts (idle/error/online → connecting).
-  // Stale lines from a prior summon should not leak into the new one.
-  let prevStatusKind: BotStatus['kind'] | null = null;
-  // Track the character whose bot session is live so that when the session ends
-  // (status → idle) we can pull its freshly-written last_launched / playtime_ms.
-  // The 'idle' status carries no characterId, and main defers emitting it until
-  // the exit-time playtime write lands — so this refresh reads the updated
-  // totals and the CharacterPage stats refresh without a manual reload.
-  let activeCharacterId: string | null = null;
   const offStatus = sei.onStatus((status) => {
-    if (status.kind === 'connecting' && prevStatusKind !== 'connecting') {
-      useDataStore.getState().clearLogs();
+    // Clear the console when the FIRST bot starts connecting (no other session
+    // already live). This preserves single-summon behavior — a fresh session
+    // gets a clean console — while a SECOND concurrent summon must not wipe the
+    // logs of a bot that's already running.
+    if (status.kind === 'connecting') {
+      const others = useDataStore.getState().summons;
+      const anyOther = Object.entries(others).some(
+        ([cid, st]) =>
+          cid !== status.characterId && (st.kind === 'connecting' || st.kind === 'online'),
+      );
+      if (!anyOther) useDataStore.getState().clearLogs();
     }
-    if (status.kind === 'online' || status.kind === 'error') {
-      activeCharacterId = status.characterId;
+    // When a session ends (idle), pull the character's freshly-written
+    // last_launched / playtime_ms. Main defers emitting 'idle' until the
+    // exit-time playtime write lands, so this reads the updated totals — and
+    // every status now carries characterId, so no separate tracking is needed.
+    if (status.kind === 'idle' && status.characterId) {
+      void useDataStore.getState().refreshCharacter(status.characterId);
     }
-    if (status.kind === 'idle' && activeCharacterId) {
-      const endedId = activeCharacterId;
-      activeCharacterId = null;
-      void useDataStore.getState().refreshCharacter(endedId);
-    }
-    prevStatusKind = status.kind;
     useDataStore.getState().setStatus(status);
   });
   const offLog = sei.onLog((batch) => useDataStore.getState().appendLogBatch(batch));
+  // Phase 15 (D-10/VIS-03): mirror the active provider's vision capability into
+  // useUiStore so the Settings auto-render toggle (15-05) gates its disabled
+  // state on a real signal. The bot emits this on summon-ready and on each
+  // backend switch; subscribed here alongside the other store-level bot pushes
+  // (one subscription for the lifetime of the renderer — App.tsx calls
+  // subscribeIpc once). Fail-closed default (false) lives in useUiStore.
+  const offVisionCapability = sei.onVisionCapability((cap) => {
+    useUiStore.getState().setVisionCapable(cap.visionCapable === true);
+  });
   return () => {
     offLan();
     offStatus();
     offLog();
+    offVisionCapability();
   };
 }

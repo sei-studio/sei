@@ -57,10 +57,14 @@ function pillFor(install: McInstall): PillSpec {
   // Lunar Client — read-only "Limited" badge (260518-o1k T7).
   // Branched FIRST so it overrides any other state combo.
   if (install.kind === 'lunar') {
+    // No secondary: the path already renders on its own wrapping line in the
+    // row. Duplicating a long path into the flex-shrink:0 pill slot squeezed
+    // `.text` to near-zero width, so the path wrapped character-by-character
+    // straight down the page (the reported "narrow filepath box → scrollable"
+    // bug). The lunarCaption below already explains the Limited state.
     return {
       tone: 'warn',
       label: 'Limited',
-      secondary: install.path,
     };
   }
 
@@ -92,10 +96,10 @@ function pillFor(install: McInstall): PillSpec {
 
   // Not Sei-enabled — muted pill keyed off install kind.
   if (install.kind === 'vanilla') {
+    // No secondary — the path is on its own line (see the lunar note above).
     return {
       tone: 'muted',
       label: 'Vanilla launcher',
-      secondary: install.path,
     };
   }
   return {

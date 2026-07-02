@@ -1,0 +1,131 @@
+/* ProviderSelect — a select control + popover menu in the "Summoning Terminal"
+ * vocabulary (see .planning/UI-DESIGN-SYSTEM.md). The trigger mirrors the
+ * `ghost` Button / §196 input: faint fill, --border-strong, mono uppercase
+ * tracked label, lights to --accent on hover/focus. The menu follows the modal
+ * surface pattern (--surface + --border-strong + --shadow-pop). Sharp corners,
+ * one accent — no decorative color. */
+
+.root {
+  position: relative;
+  /* Size to the control, not the row — provider names are short, so a
+   * full-width trigger reads as empty dead space. Floor keeps the menu a
+   * sensible width (and stops width jitter as the selected label changes);
+   * cap prevents overflow inside narrow containers (e.g. the API-key modal). */
+  display: inline-block;
+  width: auto;
+  min-width: 200px;
+  max-width: 100%;
+}
+
+/* ── Trigger — ghost-button / input look ─────────────────────────────── */
+.trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 13px;
+  background: rgba(127, 127, 127, 0.03);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.trigger:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.trigger:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Open state keeps the accent border so the control reads as "active". */
+.open .trigger {
+  border-color: var(--accent);
+}
+
+.compact .trigger {
+  min-height: 34px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+
+.label {
+  flex: 1;
+}
+
+.chevron {
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+.trigger:hover .chevron {
+  color: var(--accent);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ── Popover menu — modal/menu surface ───────────────────────────────── */
+.list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 296px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  outline: none;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 11px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.option .label {
+  flex: 1;
+}
+
+/* Keyboard / hover highlight — the only accent in the list. */
+.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Current value — accent text + check, no fill (so it's distinct from the
+ * transient highlight above). */
+.selected {
+  color: var(--accent);
+}
+
+.check {
+  color: var(--accent);
+}

@@ -74,6 +74,79 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
   // 3. Initialize a brand-new profile (returning accounts / 'local' no-op here).
   await ensureProfileInitialized();
 
+  // 3.5 Cross-device hydration (item 4). On sign-in to an existing account from
+  //     a fresh device, the local profile is empty even though the account has
+  //     state in the cloud. Pull it down HERE — before the scope-changed push
+  //     below — so the renderer's re-bootstrap (reload config + characters) sees
+  //     it and doesn't re-prompt onboarding or hide the user's own characters.
+  //     Skipped for sign-out (nextScope === local). Best-effort: a network blip
+  //     just defers hydration to the normal cache-on-demand path.
+  if (nextScope !== SCOPE_LOCAL) {
+    // (a0) Default the freshly-scoped account to cloud billing BEFORE the
+    //      scope-changed push below. The push triggers the renderer's
+    //      re-bootstrap (reload config + credits); the prior cloud-default
+    //      write lived in authState.ts AFTER switchScopeForAuth returned —
+    //      i.e. after this push had already fired — so a fresh sign-in
+    //      re-bootstrapped while config.json still held the 'local' default
+    //      and the user landed on API/BYOK mode. Writing it here, inside the
+    //      switch and before the push, closes that race. Idempotent: a later
+    //      in-session switch to BYOK persists, and a session-restore reopen
+    //      hits the same scope so this function early-returns (no re-flip).
+    try {
+      const { setAiBackendKind } = await import('../apiKeyStore');
+      await setAiBackendKind('cloud-proxy');
+    } catch (err) {
+      console.warn(`[sei] profileScope: cloud-billing default failed: ${(err as Error).message}`);
+    }
+    // (a) Display name: backfill local config from public.profiles when this
+    //     device has no name yet, so onboarding doesn't re-ask for a name the
+    //     account already set elsewhere.
+    try {
+      const { loadConfig, saveConfig } = await import('../configStore');
+      const cfg = await loadConfig();
+      if (!(cfg.preferred_name ?? '').trim()) {
+        const { fetchMyProfileName } = await import('../cloud/cloudCharacterClient');
+        const cloudName = await fetchMyProfileName();
+        if (cloudName) await saveConfig({ ...cfg, preferred_name: cloudName });
+      }
+    } catch (err) {
+      console.warn(`[sei] profileScope: cloud name backfill failed: ${(err as Error).message}`);
+    }
+    // (b) Own characters: eagerly cache the account's cloud characters into the
+    //     local library so they appear in the IconRail immediately (not only
+    //     after being opened from the World/Summons list).
+    try {
+      const { cacheMyCloudCharacters } = await import('../cloud/cacheOnDemand');
+      await cacheMyCloudCharacters(nextScope);
+    } catch (err) {
+      console.warn(`[sei] profileScope: own-character hydration failed: ${(err as Error).message}`);
+    }
+    // (c) Per-DEVICE skin-setup gating. Skin setup installs a Minecraft mod on
+    //     THIS machine, so it must be prompted per device, not per account. An
+    //     existing account signing in on a NEW device gets its name backfilled
+    //     above (so onboarding — which normally arms skin_setup_pending — is
+    //     skipped) and would otherwise sail straight to home, leaving this
+    //     device's Minecraft unconfigured. If the account is onboarded but this
+    //     device has never COMPLETED the wizard, re-arm the pending flag here
+    //     (before the scope-changed push) so the routing resumes the skin-setup
+    //     step. hasRunOnce lives in the app-level skin-setup-state.json (NOT
+    //     profile-scoped), so a second account on a device that already ran
+    //     setup is correctly NOT re-prompted.
+    try {
+      const { loadWizardState } = await import('../wizardStateStore');
+      const wiz = await loadWizardState();
+      if (!wiz.hasRunOnce) {
+        const { loadConfig, saveConfig } = await import('../configStore');
+        const cfg = await loadConfig();
+        if ((cfg.preferred_name ?? '').trim() && cfg.skin_setup_pending !== true) {
+          await saveConfig({ ...cfg, skin_setup_pending: true });
+        }
+      }
+    } catch (err) {
+      console.warn(`[sei] profileScope: per-device skin-setup gate failed: ${(err as Error).message}`);
+    }
+  }
+
   // 4. Tell the renderer to re-bootstrap onto the new profile.
   const win = getMainWindowRef();
   if (win && !win.isDestroyed()) {

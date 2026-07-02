@@ -15,12 +15,14 @@ import { getHealedPos } from './observers/posHealer.js'
 import { setFollowTarget, getFollowTargetLabel } from './behaviors/follow.js'
 import { resolveEntity } from './observers/targeting.js'
 import { digAction } from './behaviors/dig.js'
+import { exploreAction } from './behaviors/explore.js'
 import { buildAction } from './behaviors/build.js'
 import { placeBlockAction } from './behaviors/place.js'
 import { equipAction } from './behaviors/equip.js'
+import { craftAction } from './behaviors/craft.js'
 import { attackEntityAction } from './behaviors/attack.js'
 import { consumeItemAction } from './behaviors/consume.js'
-import { lookAtAction } from './behaviors/lookAt.js'
+import { visualizeAction } from './behaviors/visualize.js'
 import { dropItemAction } from './behaviors/drop.js'
 import { activateItemAction } from './behaviors/activate.js'
 import { sleepAction } from './behaviors/sleep.js'
@@ -111,8 +113,16 @@ function isCoordsAtKnownPlayer(bot, x, y, z) {
   return false
 }
 
-/** Pre-built registry with all minecraft adapter actions registered. */
-export function createDefaultRegistry() {
+/**
+ * Pre-built registry with all minecraft adapter actions registered.
+ *
+ * @param {Object} [opts]
+ * @param {boolean} [opts.visionEnabled=false] — D-10 gate. The `visualize`
+ *   action is registered ONLY when the active provider supports vision
+ *   (capabilities.vision). A non-VLM provider never gets the tool in the
+ *   registry (belt-and-suspenders with the orchestrator tool-list filter).
+ */
+export function createDefaultRegistry({ visionEnabled = false } = {}) {
   const registry = createRegistry()
 
   registry.register(
@@ -124,6 +134,12 @@ export function createDefaultRegistry() {
       range: z.number().min(0).default(1),
     }),
     async (args, bot, config) => {
+      // 260607: an explicit goTo is a "relocate and stay" command — it ends
+      // follow mode. Without this, the 1s follow tick (follow.js) would
+      // re-install GoalFollow the instant goTo reaches its destination and yank
+      // the bot back to the owner. Incidental actions (dig/gather/build) leave
+      // follow intact so the bot resumes trailing after them.
+      setFollowTarget(null)
       const timeoutMs = config?.pathfinder_timeout_ms ?? 12000
       // Default range:2 when target matches a known player's position.
       // Only kicks in when the LLM omitted range
@@ -140,6 +156,22 @@ export function createDefaultRegistry() {
   )
 
   registry.register('dig', DigSchema, digAction)
+
+  // `explore`: short directional hop to load new terrain when a target is
+  // unreachable or there's nothing nearby. Walks `blocks` (default 16) in a
+  // direction RELATIVE to current facing (forward/backwards/left/right, or an
+  // angle 0..360°), then auto-looks in that direction. opts.vision gates the
+  // auto-look so a non-VLM provider gets text only (visionEnabled is always true
+  // at build time — see index.js — so the render-then-drop is handled in the
+  // orchestrator's capabilities.vision gate too).
+  registry.register('explore',
+    z.object({
+      orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right']).optional(),
+      angle: z.number().min(0).max(360).optional(),
+      blocks: z.number().min(4).max(48).optional(),
+    }),
+    (args, bot, config) => exploreAction(args, bot, config, { vision: visionEnabled })
+  )
 
   // `find` resolves a loose term or exact MC ID to the nearest loaded-chunk
   // hit. Does NOT move the bot — returns
@@ -195,6 +227,7 @@ export function createDefaultRegistry() {
       y: z.number().optional(),
       z: z.number().optional(),
       maxDistance: z.number().min(1).max(64).default(32),
+      count: z.number().int().min(1).max(64).default(16),
     }).refine(
       (a) => (typeof a.name === 'string' && a.name.length > 0)
           || (typeof a.x === 'number' && typeof a.y === 'number' && typeof a.z === 'number'),
@@ -207,7 +240,7 @@ export function createDefaultRegistry() {
     'placeBlock',
     z.object({
       block: z.string(),
-      against: TargetShape,
+      against: TargetShape.optional(),
       faceVector: Vec3Shape.optional(),
     }),
     placeBlockAction
@@ -222,6 +255,20 @@ export function createDefaultRegistry() {
       destination: z.enum(['hand', 'off-hand', 'head', 'torso', 'legs', 'feet']),
     }),
     equipAction
+  )
+
+  // `craft`: make N of a product item from inventory materials. `count` is the
+  // number of the PRODUCT wanted; batch recipes (1 log → 4 planks) may overshoot
+  // to the batch boundary, and the result string reports what was actually made.
+  // 3×3 recipes need a crafting_table in reach — craft() does NOT walk there;
+  // the snapshot's `craftable:` list reflects what's possible from where you are.
+  registry.register(
+    'craft',
+    z.object({
+      item: z.string().min(1),
+      count: z.number().int().min(1).max(64).default(1),
+    }),
+    craftAction
   )
 
   // `target` must be a "#N" handle or an entity/block name — never a coordinate
@@ -295,13 +342,21 @@ export function createDefaultRegistry() {
         // existing unit tests don't hang.
         return `following ${label}`
       }
-      if (signal.aborted) { setFollowTarget(null); return `aborted: follow ${label}` }
+      // 260607: do NOT clear the follow target on abort. An abort here is
+      // almost always a PLAYER CHAT waking the suspended loop (handleDispatch
+      // aborts the in-flight long-runner to deliver the message). Clearing the
+      // target made EVERY message cancel the follow, so the model had to
+      // re-issue `follow` each turn — the churn seen in the field logs. Follow
+      // is now PERSISTENT state: the body keeps trailing via the 1s pathfinder
+      // tick, and only `unfollow` or an explicit relocate (goTo) clears it. A
+      // chat-wake therefore leaves the bot following while the model answers; a
+      // real task-switch (goTo / unfollow) ends it cleanly.
+      if (signal.aborted) return `follow ${label} interrupted (still trailing them)`
       await new Promise(resolve => {
         const onAbort = () => { signal.removeEventListener('abort', onAbort); resolve() }
         signal.addEventListener('abort', onAbort)
       })
-      setFollowTarget(null)
-      return `aborted: follow ${label}`
+      return `follow ${label} interrupted (still trailing them)`
     }
   )
 
@@ -325,17 +380,27 @@ export function createDefaultRegistry() {
     consumeItemAction
   )
 
-  registry.register(
-    'lookAt',
-    z.object({
-      x: z.number().optional(),
-      y: z.number().optional(),
-      z: z.number().optional(),
-      entity: z.string().optional(),
-      target: z.string().optional(),
-    }),
-    lookAtAction
-  )
+  // VIS-02 / D-10 — the LLM-callable explicit render `look`. Registered ONLY
+  // when the active provider is VLM-capable (visionEnabled). The orchestrator
+  // ALSO filters `look` out of the tool list when the provider lacks vision, so
+  // even a registration leak never reaches a non-VLM model (belt-and-suspenders,
+  // VIS-03).
+  //
+  // 260617: directional + relative. {orientation} (forward/backwards/left/right)
+  // or {angle} (0..360° clockwise) turns the head before rendering; {around:true}
+  // returns four labelled frames (forward/right/behind/left). No args = current
+  // view. Degrades gracefully if the area isn't loaded.
+  if (visionEnabled) {
+    registry.register(
+      'look',
+      z.object({
+        orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right']).optional(),
+        angle: z.number().min(0).max(360).optional(),
+        around: z.boolean().optional(),
+      }),
+      visualizeAction
+    )
+  }
 
   registry.register(
     'dropItem',

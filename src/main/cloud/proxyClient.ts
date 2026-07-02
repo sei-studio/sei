@@ -94,6 +94,38 @@ const TRIAL_DAILY_CAP = 5_000_000n;
 const SUB_DAILY_CAP = 20_000_000n;
 
 /**
+ * Minimum balance (micro-dollars) at/below which a cloud account is treated as
+ * OUT OF PLAYTIME: `plan = 'depleted'`, which trips the pre-flight summon gate
+ * (`cloudCreditsDepleted`) and the out-of-playtime popup.
+ *
+ * MATCHES THE IN-GAME CUTOFF — this is ONE Sei turn's worst-case reservation:
+ * the same `balance < reservation` test the proxy applies on every call before
+ * it 402s (forward.ts → preDeduct → reserve_credits). Below it the bot's next
+ * brain call can't be reserved at all, so summoning would only join the world
+ * and leave immediately. NOT a round "feels safe" number — gating much above a
+ * turn would refuse summons the proxy itself would have allowed.
+ *
+ * Derived from the proxy's estimateReservationMicro (pricing.ts) at the bot's
+ * defaults — estInput × inputRate × 1.25 + maxOutput × outputRate:
+ *   estInput  ≈ 14_000 tok  (~8K static persona+tools prefix sent on EVERY call
+ *                            — see proxy tokenize.ts — plus live memory/chat for
+ *                            a developed session)
+ *   maxOutput = 1_024 tok   (bot main-loop max_tokens; thinking_budget 0)
+ *   haiku      = 1.0 µ$/tok in, 5.0 µ$/tok out
+ *   = 14_000 × 1.0 × 1.25 + 1_024 × 5.0 = 17_500 + 5_120 ≈ 22_600 µ$
+ * Rounded to 25_000 µ$ ($0.025) for a little headroom. Matches the observed
+ * 260616 depletion: that account 402'd in-game at a 22_606 µ$ balance, so this
+ * also blocks it from re-summoning. Recalibrate if haiku pricing, the static
+ * prefix size, or the bot's default max_tokens change.
+ *
+ * COUPLING — must stay STRICTLY BELOW 2.5% of TRIAL_DAILY_CAP (125_000 µ$): at
+ * or above, a depleted balance rounds `remaining_pct` up to 5% and the popup's
+ * auto-dismiss (gated on `remaining_pct > 0`) would close it the instant it
+ * opens. At $0.025 a depleted balance always rounds to 0%.
+ */
+const MIN_PLAYABLE_BALANCE_MICRO = 25_000n;
+
+/**
  * Round `n` to the nearest `step`, clamping to [0, 100]. Used for the cold-load
  * % fallback so the UI shows the same 5% granularity that server-driven updates
  * use (D-41).
@@ -264,7 +296,13 @@ export async function trialClaim(): Promise<
  *
  * Plan label derivation:
  *   - active subscription          → 'unlimited'
- *   - balance == 0                 → 'depleted'  (triggers HardStopModal)
+ *   - balance < playable minimum   → 'depleted'  (triggers the out-of-playtime
+ *                                                  popup; see
+ *                                                  MIN_PLAYABLE_BALANCE_MICRO —
+ *                                                  NOT just balance == 0, so a
+ *                                                  near-empty account can't
+ *                                                  summon a bot that instantly
+ *                                                  402s and leaves)
  *   - kind='trial' grant exists    → 'trial'     (used the trial; not yet bought)
  *   - otherwise                    → 'pack'      (purchased a one-time pack)
  *
@@ -418,11 +456,19 @@ export async function creditsGet(): Promise<CreditsStatus> {
         )
       : 0;
 
+  // Dollar form of usage for the UsageBar tooltip. The ledger micros are
+  // micro-dollars (see MICRO_PER_TOKEN_BLENDED docblock), so ÷ 1e6 = USD. Owner
+  // opted past the PROXY-05 percent-only line; these stay undefined when there
+  // are no grants so the renderer shows "$—".
+  const MICRO_PER_DOLLAR = 1_000_000;
+  const usedUsd = granted > 0n ? Number(usedMicro) / MICRO_PER_DOLLAR : undefined;
+  const totalUsd = granted > 0n ? Number(granted) / MICRO_PER_DOLLAR : undefined;
+
   // Plan label derivation — order matters: subscriber wins over depleted (a
   // subscriber whose monthly grant hasn't landed yet still sees 'unlimited').
   const plan: CreditsStatus['plan'] = isSubscriber
     ? 'unlimited'
-    : balance === 0n
+    : balance < MIN_PLAYABLE_BALANCE_MICRO
       ? 'depleted'
       : hasTrialGrant
         ? 'trial'
@@ -437,6 +483,8 @@ export async function creditsGet(): Promise<CreditsStatus> {
     trial_claimed: hasTrialGrant,
     ai_backend_kind: backendKind,
     remaining_tokens: remainingTokens,
+    used_usd: usedUsd,
+    total_usd: totalUsd,
     // quick/260525-sbo Task 8: raw LS status passthrough so SettingsScreen
     // can render contextual banners (past-due, paused) without a separate
     // round-trip. null when subRow returned no data (never-subscribed user).
@@ -446,10 +494,12 @@ export async function creditsGet(): Promise<CreditsStatus> {
 
 /**
  * Pre-flight summon gate (quick/260605): resolves `true` ONLY when a signed-in
- * account is on the cloud-proxy backend AND its ledger is exhausted (balance 0
- * → `creditsGet().plan === 'depleted'`). The bot supervisor consults this
- * before forking a cloud bot and refuses to summon when it is `true`, so a
- * no-credit user never joins the world to idle against a 402-ing proxy.
+ * account is on the cloud-proxy backend AND its balance has fallen below the
+ * playable minimum (`creditsGet().plan === 'depleted'` — see
+ * MIN_PLAYABLE_BALANCE_MICRO; NOT just balance 0). The bot supervisor consults
+ * this before forking a cloud bot and refuses to summon when it is `true`, so a
+ * user who can't sustain even one turn never joins the world only to have the
+ * bot 402 on its first brain call and leave immediately.
  *
  * Precise by design — NOT just `creditsGet().plan === 'depleted'`, which also
  * reads 'depleted' for the no-session placeholder:

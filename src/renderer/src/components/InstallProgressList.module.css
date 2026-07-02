@@ -70,11 +70,13 @@
   text-align: right;
 }
 
-/* 4px progress bar — --rail background, --accent fill. */
+/* 4px progress bar — neutral track, --accent fill. (Uses --bg4 rather than
+   --rail: in light the rail is now a saturated #7FB0FF chrome, which would
+   collide with the accent fill and hide the progress.) */
 .bar {
   height: 4px;
   width: 100%;
-  background: var(--rail);
+  background: var(--bg4);
   border-radius: 0;
 }
 

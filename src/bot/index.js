@@ -22,19 +22,16 @@
 
 import { loadConfig, ConfigSchema } from './config.js'
 import { discoverLanPort } from './adapter/minecraft/lanDiscovery.js'  // CLI path only
-import { createBotInstance } from './adapter/minecraft/connect.js'
+import { createBotInstance, resolveServerVersion } from './adapter/minecraft/connect.js'
 
-// Default Minecraft Java protocol version for the Electron path. mineflayer's
-// auto-detection (the value it would otherwise use when `version` is omitted)
-// has been observed to produce protocol-handshake kicks against modern LAN
-// worlds — symptom: bot.on('kicked') fires before spawn with a reason whose
-// raw text was masked by humanizeReason as "Could not reach server". Pinning
-// to a known-supported version matches the working CLI path's config.json
-// (`minecraft_version: "1.21.1"`) and side-steps the auto-detect failure.
-// When the user upgrades their Minecraft client past mineflayer's supported
-// range this becomes a real onboarding setting; until then, '1.21.1' is the
-// stable default that matches the predominant LAN client today.
-const DEFAULT_MC_VERSION = '1.21.1'
+// The Electron path hands the bot `version: 'auto'`. start() resolves that to an
+// EXPLICIT, supported version via a status ping (resolveServerVersion) before
+// the first connect — so the bot matches whatever the player's LAN world runs
+// (1.20.6, 1.21.x, …) while staying bounded to minecraft-protocol's supported
+// set. Pinning a single version (the old '1.21.1') broke every world on a
+// different version; raw mineflayer in-handshake auto-detect was avoided because
+// it produced protocol kicks. Ping-then-pass-explicit gets both: auto-match
+// without the handshake-detect failure mode.
 import { createMinecraftAdapter } from './adapter/minecraft/index.js'
 import { start as startBrain } from './brain/index.js'
 
@@ -58,7 +55,7 @@ const logger = {
 // to emit `summon-ready` / `error` lifecycle messages that reflect the bot's
 // actual world state rather than just "brain initialized."
 export async function start(config, hooks = {}) {
-  const { onReady = () => {}, onConnectError = () => {}, onTerminalError = null } = hooks
+  const { onReady = () => {}, onConnectError = () => {}, onTerminalError = null, onAuthExpired = null } = hooks
   const mc = config.adapter.minecraft
 
   let _brain = null
@@ -76,6 +73,35 @@ export async function start(config, hooks = {}) {
   // brain spawned by bringUp). Reset on first successful spawn.
   const MAX_RECONNECT_ATTEMPTS = 3
   let _reconnectAttempts = 0
+
+  // ─── Resolve the Minecraft protocol version ────────────────────────────────
+  // 'auto' (the Electron default) status-pings the LAN world and selects the
+  // version our networking deps actually implement, then hands mineflayer that
+  // EXPLICIT version below — sidestepping the in-handshake auto-detect path that
+  // historically produced protocol kicks. Resolved ONCE here; reconnects reuse
+  // it. A ping FAILURE is non-fatal: fall back to mineflayer's own auto-detect
+  // (connect.js omits `version` when it sees 'auto'), and let the normal
+  // connect / reconnect loop handle a genuinely unreachable world. Only a
+  // SUCCESSFUL ping reporting an UNSUPPORTED version aborts, with a clear error.
+  if (!mc.version || mc.version === 'auto') {
+    try {
+      mc.version = await resolveServerVersion({ host: mc.host, port: mc.port, logger })
+      logger.info(`Auto-detected Minecraft version: ${mc.version}`)
+    } catch (err) {
+      if (err && err.code === 'UNSUPPORTED_MC_VERSION') {
+        logger.error(`[sei] ${err.message}`)
+        try { onConnectError(err) } catch (cbErr) {
+          logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
+        }
+        return
+      }
+      logger.warn(
+        `[sei] Version ping failed (${err && err.message}) — ` +
+        `falling back to mineflayer auto-detect.`,
+      )
+      mc.version = 'auto' // connect.js omits version when 'auto' → mineflayer detects in-handshake
+    }
+  }
 
   const bringUp = async () => {
     _bot = createBotInstance({
@@ -100,6 +126,28 @@ export async function start(config, hooks = {}) {
         _reconnectAttempts = 0
         try { onReady() } catch (err) {
           logger.warn(`onReady hook threw: ${err && err.message}`)
+        }
+        // TEMPORARY — Phase 15-01 de-risk spike (REMOVE after the packaged-build
+        // checkpoint approves). Behind SEI_VISION_SPIKE=1 so it ships nothing
+        // permanent. Proves the native gl/canvas render path loads + renders inside
+        // the bot utilityProcess under the Electron 42 ABI (dev AND packaged dist).
+        // Dynamic import keeps povRenderer (→ native gl/canvas dlopen) off the normal
+        // startup path; only loaded when the flag is set.
+        if (process.env.SEI_VISION_SPIKE === '1') {
+          // Give chunks ~3s to stream in after spawn before the one-shot render.
+          setTimeout(async () => {
+            try {
+              const { renderPov } = await import('./adapter/minecraft/render/povRenderer.js')
+              const result = await renderPov(_bot)
+              if (result?.ok) {
+                logger.info(`vision spike: rendered ${result.buffer.length} bytes JPEG`)
+              } else {
+                logger.warn(`vision spike: degraded (${result?.reason ?? 'unknown'}) — render returned no frame`)
+              }
+            } catch (err) {
+              logger.error(`vision spike: render threw — ${(err && err.stack) || err}`)
+            }
+          }, 3000)
         }
       },
       onEnd: (humanizedReason) => {
@@ -195,14 +243,21 @@ export async function start(config, hooks = {}) {
       },
     })
 
-    _adapter = createMinecraftAdapter({ bot: _bot, config })
+    // visionEnabled: true — registration is unconditional here because the
+    // provider (and its capabilities.vision) does not exist yet at adapter
+    // construction; the AUTHORITATIVE D-10 gate is the orchestrator's
+    // tool-list filter (combinedToolsFor), which never offers `look` to
+    // a non-VLM provider. Without this flag the action was never registered
+    // at all — the filter can only remove tools, not add them (15-VERIFICATION
+    // gap, VIS-02).
+    _adapter = createMinecraftAdapter({ bot: _bot, config, visionEnabled: true })
     // Keep the brain local until we've confirmed the connection survived the
     // startBrain await. onEnd (a fast-failing reconnect, or the user closing
     // the world) can fire DURING this await — it nulls _bot and _adapter. If
     // we assigned _brain unconditionally and then touched _bot._sei_startChat,
     // we hit "Cannot read properties of null (reading '_sei_startChat')" on
     // every dropped reconnect (observed in the field log).
-    const brain = await startBrain({ config, adapter: _adapter, logger, onTerminalError })
+    const brain = await startBrain({ config, adapter: _adapter, logger, onTerminalError, onAuthExpired })
     if (_stopped || !_bot) {
       // The connection dropped (or we were stopped) while startBrain awaited.
       // This brain is already orphaned — tear it down instead of wiring chat
@@ -211,6 +266,10 @@ export async function start(config, hooks = {}) {
       return
     }
     _brain = brain
+    // 260618: apply any companion roster known before the brain was ready (init
+    // payload, or a {type:'roster'} that arrived during connect / a reconnect).
+    // config._seiCompanions is the cross-reconnect source of truth.
+    try { _brain.setCompanions?.(config._seiCompanions ?? []) } catch {}
 
     // Wire the legacy chat behavior (bot.on('chat') with player/addressed/
     // nearby filtering and sei:chat_received emission) without an
@@ -256,6 +315,20 @@ export async function start(config, hooks = {}) {
       try { _brain?.setAuthToken?.(token) } catch {}
     },
     /**
+     * 260618: update the roster of OTHER AI companions in this world. Called by
+     * the parentPort {type:'roster'} handler whenever the supervisor summons or
+     * stops a sibling bot. Writes config._seiCompanions (read by chat.js, which
+     * has no orchestrator handle) AND forwards to the brain (snapshot pin/label
+     * + companions seed block). No-op list for solo sessions.
+     */
+    setCompanions(names) {
+      const list = Array.isArray(names)
+        ? names.filter(n => typeof n === 'string' && n.trim() && n !== mc.username)
+        : []
+      try { config._seiCompanions = list } catch {}
+      try { _brain?.setCompanions?.(list) } catch {}
+    },
+    /**
      * WR-05 follow-up: live-swap the AI backend (cloud-proxy ↔ BYOK) on the
      * running brain without a re-summon. Called by the parentPort
      * {type:'backend-switch'} handler when the supervisor flips
@@ -265,6 +338,16 @@ export async function start(config, hooks = {}) {
      */
     setBackend(backend) {
       try { _brain?.setBackend?.(backend) } catch {}
+    },
+    /**
+     * Phase 15 (D-10/VIS-03): the active provider's vision capability boolean,
+     * surfaced from the brain. The Electron path reads this to push a
+     * `vision-capability` lifecycle message up the port so the renderer can
+     * gate the Settings auto-render toggle (15-05). Fail-closed: false until a
+     * VLM-backed brain reports true (or when the brain hasn't started).
+     */
+    visionCapable() {
+      try { return _brain?.visionCapable?.() === true } catch { return false }
     },
   }
 }
@@ -277,6 +360,17 @@ export async function start(config, hooks = {}) {
 
 let initPort = null
 let _running = null         // { stop } returned by start()
+
+// 260618: reactive JWT recovery. The brain calls this (via onAuthExpired) when a
+// cloud-proxy call returns 401 expired_jwt. We ask main for a fresh token; main
+// (botSupervisor) handles {type:'request-jwt'} → getProxyJwt() → posts a
+// cloud-jwt-update back → setAuthToken → the next call succeeds. Without this the
+// bot just re-hammers the dead token every idle tick and freezes until stopped.
+// Best-effort: a closed port (teardown) silently no-ops.
+function requestJwtRefresh() {
+  try { initPort?.postMessage({ type: 'request-jwt' }) } catch {}
+}
+let _shuttingDown = false   // re-entry guard for gracefulShutdown
 
 function emitLifecycle(payload) {
   // payload conforms to BotLifecycle (src/shared/ipc.ts):
@@ -295,6 +389,7 @@ async function bootstrapWithInit(initData) {
     character,
     apiKey,
     lanPort,
+    lanMotd,             // LAN world MOTD (level name) for world labeling; may be absent
     userDataDir,
     mc_username,         // Minecraft username collected in onboarding
     preferred_name,      // seeds player_username for player-recognition
@@ -309,6 +404,16 @@ async function bootstrapWithInit(initData) {
     // user's Supabase access_token; jwt rotation arrives via parentPort
     // {type:'jwt'} messages below.
     cloudMode,           // {baseURL, authToken} | undefined
+    // The user-facing Looking (vision) mode, bridged by the supervisor from
+    // UserConfig.vision_mode. Maps into config.vision below; the remaining
+    // vision knobs (cadence, image_quality, resolution_px, cap) come from the
+    // bot ConfigSchema / orchestrator defaults.
+    visionMode,           // 'off' | 'on-demand' | 'continuous' | undefined
+    // 260618: in-game usernames of the OTHER AI companions summoned into this
+    // same world (multi-bot sessions). Seeds the roster so the bot knows its
+    // teammates from the first tick; the supervisor re-broadcasts on every
+    // summon/stop via a {type:'roster'} port message. Absent / [] for solo bots.
+    companions,           // string[] | undefined
   } = initData
 
   // Build a config shape that satisfies ConfigSchema.parse (see
@@ -385,11 +490,23 @@ async function bootstrapWithInit(initData) {
     chat_mode: 'chat',  // default for v1; renderer can flip in a later phase
     player_username: playerName,
     player_display_name: playerDisplayName,
+    // World label for the memory registry / section headers. Trim to null when
+    // absent or blank so worlds.js falls back to a spawn-coords label.
+    lan_motd: (typeof lanMotd === 'string' && lanMotd.trim()) ? lanMotd.trim() : null,
     persona: {
       // persona.name is the MC-safe sanitized name so the bot's in-chat
       // identity and login username always match.
       name: bot_mc_username,
       expanded: character.persona.expanded,
+      // Author-set proactiveness dial off character.metadata (the schema's
+      // forward-compat escape hatch). Drives the heartbeat directive, the idle
+      // cadence, and the UI bar. The dial is now 0–2 (Passive/Reactive/Agentic);
+      // legacy values 2 (old "Active") and 3 (old "Driven") both fold into 2
+      // (Agentic), so we clamp here before ConfigSchema (which now rejects >2).
+      // Out-of-range/missing falls to the ConfigSchema default (1, Reactive).
+      ...(typeof character.metadata?.proactiveness === 'number' && Number.isInteger(character.metadata.proactiveness)
+        ? { proactiveness: Math.min(Math.max(0, character.metadata.proactiveness), 2) }
+        : {}),
     },
     // Phase 13-15: when cloudMode is provided, the SDK routes through the
     // proxy with Bearer auth (apiKey is unused — anthropicClient passes
@@ -405,12 +522,24 @@ async function bootstrapWithInit(initData) {
         port: lanPort,
         auth: 'offline',
         username: bot_mc_username,
-        version: DEFAULT_MC_VERSION,
+        // 'auto' → resolved to the world's actual (supported) version by a
+        // status ping in start(); see resolveServerVersion.
+        version: 'auto',
       },
     },
     memory: {
       player_md_path: `${memDir}/PLAYER.md`,
       memory_md_path: `${memDir}/MEMORY.md`,
+      heartbeat_md_path: `${memDir}/HEARTBEAT.md`,
+      worlds_json_path: `${memDir}/worlds.json`,
+    },
+    // Bridge the vision tier + cadence into config.vision. Every other vision
+    // field (image_quality, resolution_px ≤512 cap, explicit_cap_per_hour) is
+    // filled by the ConfigSchema vision defaults. The `.default({})` on the
+    // vision block means omitting it entirely is also valid; absent init
+    // fields fall to the schema defaults via the conditional spread.
+    vision: {
+      ...(visionMode != null ? { mode: visionMode } : {}),
     },
     // llm: omitted — Zod default fills the entire {} sub-tree.
   }
@@ -425,6 +554,16 @@ async function bootstrapWithInit(initData) {
     })
     return
   }
+
+  // 260618: stash the initial companion roster on the (mutable) parsed config
+  // so chat.js — which runs without an orchestrator handle — can read it to skip
+  // interrupts aimed at a sibling. Re-applied to the brain after it starts, and
+  // updated live via the {type:'roster'} port message.
+  try {
+    config._seiCompanions = Array.isArray(companions)
+      ? companions.filter(c => typeof c === 'string' && c.trim() && c !== config.adapter.minecraft.username)
+      : []
+  } catch {}
 
   emitLifecycle({ type: 'init-ack' })
 
@@ -470,15 +609,22 @@ async function bootstrapWithInit(initData) {
       onReady: () => {
         emitLifecycle({ type: 'summon-ready' })
       },
+      // 260618: reactive JWT recovery — bot → main "send me a fresh token".
+      onAuthExpired: requestJwtRefresh,
       onConnectError: (err) => {
         const message = String((err && err.message) || err)
         emitLifecycle({
           type: 'error',
           // A dropped live session and an exhausted initial-connect retry both
-          // arrive tagged "LAN_NOT_OPEN:"; a silent spawn stall (connect.js's
+          // arrive tagged "LAN_NOT_OPEN:"; an unsupported world version is
+          // "UNSUPPORTED_MC_VERSION:"; a silent spawn stall (connect.js's
           // wall-clock guard) is a BOT_START_TIMEOUT. Route to the class whose
           // ERROR_COPY gives the user the right next step.
-          error: message.startsWith('LAN_NOT_OPEN') ? 'LAN_NOT_OPEN' : 'BOT_START_TIMEOUT',
+          error: message.startsWith('UNSUPPORTED_MC_VERSION')
+            ? 'UNSUPPORTED_MC_VERSION'
+            : message.startsWith('LAN_NOT_OPEN')
+              ? 'LAN_NOT_OPEN'
+              : 'BOT_START_TIMEOUT',
           message,
         })
         // The bot can't recover on its own (initial connect exhausted, a live
@@ -502,11 +648,21 @@ async function bootstrapWithInit(initData) {
           type: 'error',
           error: info?.error ?? 'BOT_CRASH',
           message: info?.message ?? 'Bot halted.',
+          // Forwarded for DAILY_LIMIT_REACHED so the supervisor can persist the
+          // reset window and the GUI can show "come back after X".
+          retryAfterSeconds: info?.retryAfterSeconds,
         })
         setTimeout(() => { gracefulShutdown().catch(() => {}) }, 150)
       },
     })
     _running = _running_local
+    // Phase 15 (D-10/VIS-03): once start() resolves the brain is fully wired
+    // (bringUp → startBrain assigned _brain), so the active provider's vision
+    // capability is now readable. Push it up the port → main → renderer so the
+    // Settings auto-render toggle (15-05) gates its disabled state on a REAL
+    // signal instead of inferring from ai_backend_kind. A later backend switch
+    // re-emits via the parentPort 'backend-switch' handler below.
+    emitVisionCapability()
   } catch (err) {
     emitLifecycle({
       type: 'error',
@@ -516,9 +672,47 @@ async function bootstrapWithInit(initData) {
   }
 }
 
+/**
+ * Phase 15 (D-10/VIS-03): read the active provider's vision capability off the
+ * running brain and push a `{type:'vision-capability', visionCapable}` message
+ * up the port. The supervisor routes it to main → renderer (useUiStore). Fails
+ * closed (visionCapable:false) when the brain hasn't started or can't report.
+ * Idempotent — safe to call on summon-ready and again on a backend switch.
+ */
+function emitVisionCapability() {
+  let visionCapable = false
+  try { visionCapable = _running?.visionCapable?.() === true } catch { visionCapable = false }
+  if (initPort) {
+    try { initPort.postMessage({ type: 'vision-capability', visionCapable }) } catch {}
+  }
+  // Mirror to stdout for log-file visibility (parity with emitLifecycle).
+  console.log(`[lifecycle] ${JSON.stringify({ type: 'vision-capability', visionCapable })}`)
+}
+
 async function gracefulShutdown() {
+  // Re-entry guard. Both the bot's own onTerminalError and the supervisor's
+  // {type:'stop'} can drive shutdown concurrently (the daily-limit / depleted
+  // backstop in botSupervisor.ts now actively drains the session on the same
+  // error the bot self-latches on). Without this, stop() runs twice and two
+  // process.exit timers race; the doc comment on onTerminalError long claimed
+  // this guard existed — now it actually does.
+  if (_shuttingDown) return
+  _shuttingDown = true
+  // Hard deadline: the avatar must LEAVE the world. _running.stop() awaits
+  // brain.stop() → adapter.closeAnySessions(), any of which could stall (a
+  // hung container-close ack, a wedged pathfinder). If stop() never resolves
+  // the process would stay alive and socket-connected and the avatar would
+  // freeze in-game — exactly the trial-rate-limit symptom. So race stop()
+  // against a timeout and exit unconditionally either way: process death
+  // closes the socket and the server reaps the player.
+  const STOP_DEADLINE_MS = 3_000
   try {
-    if (_running && typeof _running.stop === 'function') await _running.stop()
+    if (_running && typeof _running.stop === 'function') {
+      await Promise.race([
+        Promise.resolve(_running.stop()).catch(() => {}),
+        new Promise((r) => setTimeout(r, STOP_DEADLINE_MS)),
+      ])
+    }
   } catch {}
   emitLifecycle({ type: 'summon-stopped' })
   // Give the lifecycle message a tick to flush before exiting
@@ -567,6 +761,11 @@ if (process.parentPort) {
           const data = (e && e.data !== undefined) ? e.data : e
           if (data && data.type === 'stop') {
             gracefulShutdown()
+          } else if (data && data.type === 'roster') {
+            // 260618: the supervisor's roster of OTHER AI companions in this
+            // world changed (a sibling bot was summoned or stopped). Apply it so
+            // the bot's snapshot, seed block, and chat filter stay current.
+            try { _running?.setCompanions?.(Array.isArray(data.companions) ? data.companions : []) } catch {}
           } else if (data && data.type === 'jwt') {
             // Phase 13-15 (PROXY-07): forward the refreshed Supabase JWT into
             // the live Anthropic SDK. No-op if cloudMode is not active or the
@@ -603,6 +802,10 @@ if (process.parentPort) {
                   ? { cloudMode: { baseURL: data.cloudMode.baseURL, authToken: data.cloudMode.authToken } }
                   : { api_key: typeof data.apiKey === 'string' ? data.apiKey : '' },
               )
+              // Phase 15 (D-10/VIS-03): a cloud↔local switch can change the
+              // active provider's vision capability — re-emit so the renderer's
+              // Settings auto-render toggle (15-05) updates its disabled state.
+              emitVisionCapability()
             } catch {}
           }
         } catch (err) {
@@ -639,7 +842,7 @@ if (!process.parentPort) {
       logger.info('Searching for an open LAN world...')
       const { port, motd } = await discoverLanPort({ timeoutMs: 5000 })
       logger.info(`Found LAN world "${motd}" on port ${port}`)
-      const config = loadConfig('./config.json', { port })
+      const config = loadConfig('./config.json', { port, motd })
       await start(config)
     })().catch((err) => {
       console.error(`[sei] Startup failed: ${err.message}`)

@@ -31,8 +31,10 @@ import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
+import { ResetAllMemoriesConfirmModal } from '../components/ResetAllMemoriesConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
-import { ProviderTiles, type Provider } from '../components/ProviderTiles';
+import { ProviderSelect, type Provider } from '../components/ProviderSelect';
+import { InfoTip } from '../components/InfoTip';
 import { BackIcon, SunIcon, MoonIcon } from '../components/icons';
 import type { UserConfig } from '@shared/characterSchema';
 import type { McInstall, WizardState } from '@shared/ipc';
@@ -49,8 +51,11 @@ export function SettingsScreen(): React.ReactElement {
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
   const setDevConsoleVisible = useUiStore((s) => s.setDevConsoleVisible);
   const authState = useAuthStore((s) => s.state);
-  const summon = useDataStore((s) => s.summon);
-  const botRunning = summon.kind === 'connecting' || summon.kind === 'online';
+  // "Is ANY bot running" — gates the live backend switch. Multi-summon: true
+  // when one or more characters are connecting/online.
+  const botRunning = useDataStore((s) =>
+    Object.values(s.summons).some((st) => st.kind === 'connecting' || st.kind === 'online'),
+  );
   // ui-A9: "Reset all character memories" iterates over the renderer's
   // character list. refreshCharacter pulls the post-reset row back into the
   // store so EditCharacterModal / CharacterPage observe last_launched=null
@@ -148,7 +153,7 @@ export function SettingsScreen(): React.ReactElement {
   // ui-A9: two-click destructive Reset-all-memories state. confirming flag
   // arms the next click; progress carries "X of N" while iterating; done
   // flashes a confirmation when the loop completes.
-  const [confirmingResetAll, setConfirmingResetAll] = useState<boolean>(false);
+  const [resetAllModalOpen, setResetAllModalOpen] = useState<boolean>(false);
   const [resetAllProgress, setResetAllProgress] = useState<{ done: number; total: number } | null>(null);
   const [resetAllDone, setResetAllDone] = useState<boolean>(false);
   const [resetAllError, setResetAllError] = useState<string | null>(null);
@@ -339,20 +344,51 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
+  // Write through vision_mode to UserConfig (the config is the source of truth;
+  // botSupervisor bridges it into config.vision at fork). Mirrors
+  // onToggleDevConsole's optimistic-then-rollback discipline. The setting is
+  // persistent and ALWAYS editable — it is deliberately NOT gated on a live bot
+  // session or its provider capability (changes apply at the next summon; a
+  // non-VLM provider skips pictures).
+  const writeVisionConfig = async (patch: Partial<UserConfig>): Promise<void> => {
+    if (!cfg) return;
+    const updated: UserConfig = { ...cfg, ...patch };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+      setSaveError(null);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (vision) failed', err);
+      setCfg(cfg);
+      setSaveError('Failed to save. Try again.');
+    }
+  };
+
+  // Mode select: every move writes straight through. Continuous (the automatic
+  // view) is no longer behind a confirm step; its extra playtime use surfaces
+  // as the shrunk "~Xh left" figure on the Playtime screen (D-07).
+  const onSelectVisionMode = (mode: 'off' | 'on-demand' | 'continuous'): void => {
+    if (mode === (cfg?.vision_mode ?? 'on-demand')) return;
+    void writeVisionConfig({ vision_mode: mode });
+  };
+
   // ui-A9: "Reset all character memories" — iterate the current data-store
   // characters and call chars:reset-memory for each. Includes defaults
   // (the IPC handler itself refuses only when the bot is currently summoned
   // to that character). After each row we refreshCharacter() so the
   // store's last_launched / playtime_ms mirror the on-disk reset.
-  const onResetAllMemoriesClick = async (): Promise<void> => {
-    if (!confirmingResetAll) {
-      setConfirmingResetAll(true);
-      setResetAllError(null);
-      setResetAllDone(false);
-      return;
-    }
+  // Opens the confirm popup. The actual wipe runs in runResetAllMemories once
+  // the user confirms in the modal.
+  const onResetAllMemoriesClick = (): void => {
+    setResetAllError(null);
+    setResetAllDone(false);
+    setResetAllModalOpen(true);
+  };
+
+  const runResetAllMemories = async (): Promise<void> => {
     const snapshot = allCharacters.slice();
-    setConfirmingResetAll(false);
+    setResetAllModalOpen(false);
     setResetAllProgress({ done: 0, total: snapshot.length });
     setResetAllError(null);
     setResetAllDone(false);
@@ -414,10 +450,10 @@ export function SettingsScreen(): React.ReactElement {
         </div>
 
         {/*
-          ui-A1: Provider tiles + API key row are LOCAL-only. Cloud-proxy
+          ui-A1: Provider picker + API key row are LOCAL-only. Cloud-proxy
           users have no BYO key — credits + billing replace these surfaces.
-          The compact ProviderTiles re-renders inline (no separate picker
-          screen / modal) so a vendor switch is one click.
+          The compact ProviderSelect dropdown re-renders inline (no separate
+          picker screen / modal) so a vendor switch is one click.
         */}
         {aiBackendKind === 'local' ? (
           <>
@@ -425,7 +461,7 @@ export function SettingsScreen(): React.ReactElement {
               <span className={styles.rowLabel}>Provider</span>
               <span className={styles.rowEditor} style={{ flex: 1, justifyContent: 'flex-start' }}>
                 <div style={{ flex: 1, maxWidth: 'none' }}>
-                  <ProviderTiles
+                  <ProviderSelect
                     value={currentProvider}
                     onChange={(p) => void onChangeProvider(p)}
                     compact
@@ -478,8 +514,44 @@ export function SettingsScreen(): React.ReactElement {
         cloud users with no way to fix a broken skin install.)
       */}
       <section className={styles.section}>
-        <div className={styles.sectionTitle}>MINECRAFT SKINS SETUP</div>
+        <div className={styles.sectionTitle}>MINECRAFT</div>
         <SkinSetupRow />
+        {/*
+          Looking (vision): Off / On-demand / Continuous. Every move writes
+          straight through (no confirm step). The control is ALWAYS enabled; it
+          is a persistent setting, not a per-session one. Continuous uses more
+          playtime, which surfaces as the shrunk "~Xh left" figure on the
+          Playtime screen (D-07), never a number here. The mode-specific
+          explanation lives behind the (i) tip so the row stays compact.
+        */}
+        <div className={styles.row}>
+          <span className={styles.rowLabelGroup}>
+            <span className={styles.rowLabel}>Looking (vision)</span>
+            <InfoTip
+              label="About Looking (vision)"
+              text={
+                (cfg?.vision_mode ?? 'on-demand') === 'off'
+                  ? 'Your companions never look at the world; they play from what they already know.'
+                  : (cfg?.vision_mode ?? 'on-demand') === 'on-demand'
+                    ? 'Your companions look at the world when they need to, like finding something or when you ask.'
+                    : 'Your companions watch the world as they play, and can still look when they need to. Uses more playtime.'
+              }
+            />
+          </span>
+          <div className={styles.segmented} role="group" aria-label="Looking mode">
+            {(['off', 'on-demand', 'continuous'] as const).map((mode) => (
+              <Button
+                key={mode}
+                kind="ghost"
+                size="sm"
+                aria-pressed={(cfg?.vision_mode ?? 'on-demand') === mode}
+                onClick={() => onSelectVisionMode(mode)}
+              >
+                {mode === 'off' ? 'Off' : mode === 'on-demand' ? 'On-demand' : 'Continuous'}
+              </Button>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className={styles.section}>
@@ -498,10 +570,16 @@ export function SettingsScreen(): React.ReactElement {
         {/*
           ui-A7: developer console toggle. Off by default — App.tsx gates
           <LogsBar /> on this flag. Persisted via UserConfig so a relaunch
-          preserves the choice.
+          preserves the choice. Helper copy lives behind the (i) tip.
         */}
         <div className={styles.row}>
-          <span className={styles.rowLabel}>Show developer console</span>
+          <span className={styles.rowLabelGroup}>
+            <span className={styles.rowLabel}>Show developer console</span>
+            <InfoTip
+              label="About the developer console"
+              text="Useful for debugging skin and bot issues."
+            />
+          </span>
           <Button
             kind="ghost"
             size="sm"
@@ -511,7 +589,6 @@ export function SettingsScreen(): React.ReactElement {
             {devConsoleVisible ? 'On' : 'Off'}
           </Button>
         </div>
-        <p className={styles.rowHelper}>Useful for debugging skin and bot issues.</p>
       </section>
 
       {/*
@@ -631,9 +708,9 @@ export function SettingsScreen(): React.ReactElement {
             come back here to upload any chars they skipped previously.
           */}
           <div className={styles.row}>
-            <span className={styles.rowLabel}>Migrate local characters</span>
+            <span className={styles.rowLabel}>Migrate local companions</span>
             <Button kind="ghost" size="md" onClick={() => setMigrateModalOpen(true)}>
-              Migrate local characters
+              Migrate local companions
             </Button>
           </div>
 
@@ -708,10 +785,20 @@ export function SettingsScreen(): React.ReactElement {
           <div className={`${styles.sectionTitle} ${styles.dangerLabel}`}>ACCOUNT MODE</div>
           <div>
             <div className={styles.row}>
-              <span className={styles.rowLabel}>
-                {aiBackendKind === 'local'
-                  ? 'You are using your own API key'
-                  : 'You are using Sei’s managed cloud'}
+              <span className={styles.rowLabelGroup}>
+                <span className={styles.rowLabel}>
+                  {aiBackendKind === 'local'
+                    ? 'You are using your own API key'
+                    : 'You are using Sei’s managed cloud'}
+                </span>
+                <InfoTip
+                  label="About account mode"
+                  text={
+                    aiBackendKind === 'local'
+                      ? 'Managed billing turns off your local API key and routes Sei through our cloud. Switch back any time.'
+                      : 'Switching back uses the API key stored on this device. Your active subscription keeps renewing until you cancel it above.'
+                  }
+                />
               </span>
               {aiBackendKind === 'local' ? (
                 <button
@@ -731,11 +818,6 @@ export function SettingsScreen(): React.ReactElement {
                 </button>
               )}
             </div>
-            <p className={styles.rowHelper}>
-              {aiBackendKind === 'local'
-                ? 'Managed billing turns off your local API key and routes Sei through our cloud. Switch back any time.'
-                : 'Switching back uses the API key stored on this device. Your active subscription keeps renewing until you cancel it above.'}
-            </p>
             {switchNotice !== null && (
               <p className={styles.rowHelper} role="status">
                 {switchNotice === 'switched-to-cloud'
@@ -759,25 +841,23 @@ export function SettingsScreen(): React.ReactElement {
         <div>
           <div className={styles.row}>
             <span className={`${styles.rowLabel} ${styles.dangerLabel}`}>
-              Reset all character memories
+              Reset all companion memories
             </span>
             <button
               type="button"
               className={styles.dangerBtn}
               disabled={resetAllProgress !== null || allCharacters.length === 0}
-              onClick={() => void onResetAllMemoriesClick()}
+              onClick={onResetAllMemoriesClick}
             >
               {resetAllDone
                 ? 'All memories reset'
                 : resetAllProgress
                   ? `Resetting ${resetAllProgress.done} of ${resetAllProgress.total}…`
-                  : confirmingResetAll
-                    ? 'Click again to confirm reset'
-                    : 'Reset all memories…'}
+                  : 'Reset all memories…'}
             </button>
           </div>
           <p className={styles.rowHelper}>
-            Wipes saved chat history and playtime for every character on this
+            Wipes saved chat history and playtime for every companion on this
             device. Persona, portrait, and skin are kept.
           </p>
           {resetAllError ? (
@@ -842,6 +922,13 @@ export function SettingsScreen(): React.ReactElement {
           direction={pendingSwitch}
           onCancel={() => setPendingSwitch(null)}
           onConfirm={confirmSwitch}
+        />
+      ) : null}
+      {resetAllModalOpen ? (
+        <ResetAllMemoriesConfirmModal
+          characterCount={allCharacters.length}
+          onCancel={() => setResetAllModalOpen(false)}
+          onConfirm={runResetAllMemories}
         />
       ) : null}
       {dmcaModalOpen ? (

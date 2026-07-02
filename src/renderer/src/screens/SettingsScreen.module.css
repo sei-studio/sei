@@ -24,7 +24,7 @@
   font-weight: 600;
   line-height: 0.9;
   letter-spacing: 0.04em;
-  color: var(--text);
+  color: var(--heading);
   margin: 0 0 var(--space-md-plus);
 }
 
@@ -61,6 +61,14 @@
   flex-shrink: 0;
 }
 
+/* Label + an InfoTip "(i)" sitting together on the left of a row. */
+.rowLabelGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
 .rowValue {
   font-family: var(--sans);
   font-size: 14px;
@@ -71,6 +79,28 @@
   font-family: var(--mono);
   font-size: 13px;
   color: var(--text-2);
+}
+
+/* Vision tier control: three mutually-exclusive Buttons in a row. Selection
+   state rides Button's own aria-pressed styling; this wrapper only lays them
+   out as one group. */
+.segmented {
+  display: inline-flex;
+  gap: var(--space-xs);
+}
+
+/* Look-cadence slider + live readout. Native range input, token-tinted —
+   no custom thumb chrome beyond accent-color (sharp-edged look stays with
+   the surrounding rows). */
+.sliderGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.slider {
+  width: 160px;
+  accent-color: var(--accent);
 }
 
 .rowEditor {

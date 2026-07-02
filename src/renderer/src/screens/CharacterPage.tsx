@@ -22,14 +22,23 @@ import { attemptSummon } from '../lib/summonFlow';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { Button } from '../components/Button';
 import { PixelPortrait } from '../components/PixelPortrait';
-import { EditCharacterModal } from '../components/EditCharacterModal';
+import { EditCharacterModal, type EditSection } from '../components/EditCharacterModal';
 import { SignInModal } from '../components/SignInModal';
 import { SkinEditor } from '../components/SkinEditor';
-import { BackIcon, GearIcon, PencilIcon, RotateIcon, SparkleIcon } from '../components/icons';
+import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
+import { ProactivenessBar } from '../components/ProactivenessBar';
+import { getProactiveness } from '../lib/proactiveness';
+import { BackIcon, GearIcon, RotateIcon, SparkleIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
 import { ERROR_COPY } from '../lib/errors';
 import type { Character } from '@shared/characterSchema';
+import type { BotStatus } from '@shared/ipc';
 import styles from './CharacterPage.module.css';
+
+// Stable "not summoned" fallback for the per-character status selector. A
+// module const (not an inline literal) keeps the zustand selector referentially
+// stable so an absent entry doesn't re-render the page on every store change.
+const NOT_SUMMONED: BotStatus = { kind: 'idle', characterId: '' };
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '-';
@@ -75,7 +84,10 @@ type CharacterTab = 'details' | 'skin';
 export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const characters = useDataStore((s) => s.characters);
-  const summon = useDataStore((s) => s.summon);
+  // This page's character status only (multi-summon). All the downstream
+  // checks (`summon.kind === 'online' && summon.characterId === id`, the
+  // uptime line, isConnecting) now resolve per-character automatically.
+  const summon = useDataStore((s) => s.summons[id] ?? NOT_SUMMONED);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
   const authState = useAuthStore((s) => s.state);
   const setUpgradeFraming = useAuthStore((s) => s.setUpgradeFraming);
@@ -84,6 +96,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
 
   const character: Character | undefined = characters.find((c) => c.id === id);
   const [editing, setEditing] = useState<boolean>(false);
+  const [editSection, setEditSection] = useState<EditSection>('basic');
   const [tab, setTab] = useState<CharacterTab>('details');
   const [preparing, setPreparing] = useState<boolean>(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
@@ -97,14 +110,39 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     'confirm',
   );
   const [gearMenuOpen, setGearMenuOpen] = useState<boolean>(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState<boolean>(false);
   const gearWrapRef = useRef<HTMLDivElement | null>(null);
-  const [editingName, setEditingName] = useState<boolean>(false);
-  const [nameDraft, setNameDraft] = useState<string>('');
-  const [editingDescription, setEditingDescription] = useState<boolean>(false);
-  const [descriptionDraft, setDescriptionDraft] = useState<string>('');
-  const [paneTab, setPaneTab] = useState<'persona' | 'description'>('persona');
+  // Own-character details card defaults to the DESCRIPTION when one exists,
+  // otherwise the persona source. The rotate toggle still switches between them.
+  const [paneTab, setPaneTab] = useState<'persona' | 'description'>(
+    () => ((character?.description ?? '').trim() !== '' ? 'description' : 'persona'),
+  );
   const [shareConfirm, setShareConfirm] = useState<'going_public' | 'going_private' | null>(null);
+  // Set when a publish attempt is blocked on a missing description: we open the
+  // edit modal at Basic, and resume the publish once the modal closes with a
+  // description present.
   const [needsDescription, setNeedsDescription] = useState<boolean>(false);
+
+  // ── Exit animation (mirror of the enter slide) ────────────────────────────
+  // The page enters with a slide (.content → detailIn) + portrait rise (.dPic →
+  // picRise). To play the reverse on close we keep the page mounted briefly:
+  // `leaving` swaps in the *Leaving classes (detailOut / picFall), then we
+  // navigate home after the animation duration. EXIT_MS must match the CSS
+  // (detailOut / picFall = 0.25s).
+  const EXIT_MS = 250;
+  const [leaving, setLeaving] = useState<boolean>(false);
+  const leaveTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (leaveTimer.current !== null) clearTimeout(leaveTimer.current);
+    },
+    [],
+  );
+  const closePage = (): void => {
+    if (leaving) return;
+    setLeaving(true);
+    leaveTimer.current = window.setTimeout(() => navigate({ kind: 'home' }), EXIT_MS);
+  };
 
   // ── Live uptime ticker (hoisted above the early-return for stable hook count) ──
   // The supervisor emits the 'online' status ONCE; there is no periodic re-emit,
@@ -197,11 +235,18 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     };
   }, [id, refreshCharacter]);
 
+  // Default the details card to the description when one exists (re-evaluated
+  // per character — navigation reuses this component, so the useState
+  // initializer alone wouldn't update on an id change or a late load).
+  useEffect(() => {
+    setPaneTab((character?.description ?? '').trim() !== '' ? 'description' : 'persona');
+  }, [character?.id]);
+
   if (!character) {
     if (preparing) {
       return (
         <div className={styles.notFound}>
-          <p>Downloading character from cloud…</p>
+          <p>Downloading companion from cloud…</p>
         </div>
       );
     }
@@ -209,8 +254,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       <div className={styles.notFound}>
         <p>
           {prepareError
-            ? "Couldn't load this character. You may be offline, or the character may have been deleted."
-            : 'Character not found.'}
+            ? "Couldn't load this companion. You may be offline, or the companion may have been deleted."
+            : 'Companion not found.'}
         </p>
         <Button kind="primary" size="md" onClick={() => navigate({ kind: 'home' })}>
           Back to Home
@@ -246,7 +291,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
 
   const handleSummonClick = (): void => {
     if (isActive) {
-      void sei.stop();
+      void sei.stop(id);
       return;
     }
     // attemptSummon runs the one-time skin-setup nudge (if warranted) before
@@ -262,7 +307,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     setShareError(null);
     setSharePhase('confirm');
     if (authState.kind !== 'signed_in') {
-      setUpgradeFraming('share this character');
+      setUpgradeFraming('share this companion');
       setPendingShareIntent({ characterId: character.id, createdAt: Date.now() });
       setShowSignIn(true);
       return;
@@ -270,10 +315,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     if (!character.shared) {
       const hasDescription = (character.description ?? '').trim().length > 0;
       if (!hasDescription) {
-        setPaneTab('description');
-        setEditingDescription(true);
-        setDescriptionDraft(character.description ?? '');
+        // Description is edited in the modal now — open it at Basic and resume
+        // the publish when the modal closes with a description present.
         setNeedsDescription(true);
+        setEditSection('basic');
+        setEditing(true);
         return;
       }
       setShareConfirm('going_public');
@@ -307,56 +353,40 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     setShareError(null);
   };
 
-  const onSaveName = async (): Promise<void> => {
-    if (!character) return;
-    const trimmed = nameDraft.trim();
-    if (trimmed === '' || trimmed === character.name) {
-      setEditingName(false);
-      return;
-    }
-    try {
-      const next: Character = { ...character, name: trimmed };
-      await sei.saveCharacter(next, { skipExpansion: true });
-      await refreshCharacter(character.id);
-    } catch (err) {
-      console.error('[CharacterPage] save name failed', err);
-    } finally {
-      setEditingName(false);
-    }
-  };
-
-  const onSaveDescription = async (): Promise<void> => {
-    if (!character) return;
-    const trimmed = descriptionDraft.trim();
-    const next: Character = {
-      ...character,
-      description: trimmed === '' ? null : trimmed,
-    };
-    try {
-      await sei.saveCharacter(next, { skipExpansion: true });
-      await refreshCharacter(character.id);
-      if (needsDescription && trimmed !== '') {
-        setNeedsDescription(false);
-        setSharePhase('confirm');
-        setShareConfirm('going_public');
-      }
-    } catch (err) {
-      console.error('[CharacterPage] save description failed', err);
-    } finally {
-      setEditingDescription(false);
-    }
-  };
-
   const onGearClick = (): void => {
     if (!viewOnly) {
+      setEditSection('basic');
       setEditing(true);
       return;
     }
     setGearMenuOpen((v) => !v);
   };
 
-  const onResetMemoryClick = async (): Promise<void> => {
+  /**
+   * Modal close handler. If a publish attempt was blocked on a missing
+   * description, resume it once the modal closes with a description present
+   * (read the freshest character from the store — the modal refreshed it).
+   */
+  const onEditClose = (): void => {
+    setEditing(false);
+    if (!needsDescription) return;
+    setNeedsDescription(false);
+    const latest = useDataStore.getState().characters.find((c) => c.id === id);
+    if (latest && (latest.description ?? '').trim() !== '') {
+      setSharePhase('confirm');
+      setShareConfirm('going_public');
+    }
+  };
+
+  // Gear → "Reset memory" opens a confirmation popup (reset is irreversible and
+  // does NOT touch in-game inventory/location — the modal copy says so).
+  const onResetMemoryClick = (): void => {
     setGearMenuOpen(false);
+    setResetConfirmOpen(true);
+  };
+
+  const doResetMemory = async (): Promise<void> => {
+    setResetConfirmOpen(false);
     if (!character) return;
     try {
       await sei.resetMemory(character.id);
@@ -395,7 +425,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     // modal the share flow uses (item 5). Re-adding a bundled default is
     // local-only and needs no account, so it falls through.
     if (isWorldPreview && authState.kind !== 'signed_in') {
-      setUpgradeFraming('add this character to your library');
+      setUpgradeFraming('add this companion to your library');
       setShowSignIn(true);
       return;
     }
@@ -443,66 +473,35 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           palette={palette}
           size={520}
           portraitImage={character.portrait_image}
-          className={styles.dPic}
+          className={`${styles.dPic} ${leaving ? styles.dPicLeaving : ''}`}
           style={{ width: '100%', height: '100%' }}
         />
         <div className={styles.dScrim} />
       </div>
 
-      <main className={styles.content}>
+      <main className={`${styles.content} ${leaving ? styles.contentLeaving : ''}`}>
         <div className={styles.crumb}>
           <Button
             kind="quiet"
             size="sm"
             icon={<BackIcon size={14} />}
-            onClick={() => navigate({ kind: 'home' })}
+            onClick={closePage}
           >
-            All characters
+            All companions
           </Button>
         </div>
 
         <div className={styles.titleRow}>
-          {editingName && !viewOnly ? (
-            <input
-              type="text"
-              className={styles.titleInput}
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onBlur={() => { void onSaveName(); }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') { void onSaveName(); }
-                else if (e.key === 'Escape') { setEditingName(false); }
-              }}
-              autoFocus
-              aria-label="Character name"
-            />
-          ) : (
-            <>
-              <h1 className={styles.title}>{character.name}</h1>
-              {!viewOnly ? (
-                <button
-                  type="button"
-                  className={styles.titlePencil}
-                  onClick={() => {
-                    setNameDraft(character.name);
-                    setEditingName(true);
-                  }}
-                  aria-label="Edit name"
-                >
-                  <PencilIcon size={14} />
-                </button>
-              ) : null}
-            </>
-          )}
+          <h1 className={styles.title}>{character.name}</h1>
           {isForeignOwned ? (
             <button
               type="button"
               className={styles.reportLink}
               onClick={() => {
-                const subject = `Report character: ${character.name}`;
+                const subject = `Report companion: ${character.name}`;
                 const body =
-                  `Character ID: ${character.id}\n` +
-                  `Character name: ${character.name}\n\n` +
+                  `Companion ID: ${character.id}\n` +
+                  `Companion name: ${character.name}\n\n` +
                   `Reason (CSAM / hate speech / copyright / other):\n\n` +
                   `Details:\n\n`;
                 const href =
@@ -547,15 +546,15 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               aria-pressed={character.shared}
               aria-label={
                 character.shared
-                  ? 'Character is public. Click to make private.'
-                  : 'Character is private. Click to make public.'
+                  ? 'Companion is public. Click to make private.'
+                  : 'Companion is private. Click to make public.'
               }
               title={
                 authState.kind === 'signed_in'
                   ? character.shared
-                    ? 'Visible in the public character library. Click to make private.'
+                    ? 'Visible in the public companion library. Click to make private.'
                     : 'Hidden from the public library. Click to share.'
-                  : 'Sign in to share this character with the community.'
+                  : 'Sign in to share this companion with the community.'
               }
             >
               <span
@@ -597,9 +596,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             <>
               <div className={styles.card}>
                 {(() => {
+                  // Read-only display. Own characters can toggle between the
+                  // persona source and the public description; editing lives in
+                  // the Edit modal now. Foreign/default chars show description only.
                   const showingPersona = !viewOnly && paneTab === 'persona';
-                  const showingDescription = viewOnly || paneTab === 'description';
-                  const canEditDescription = !viewOnly && showingDescription;
                   return (
                     <>
                       <div className={styles.cardEyebrow}>
@@ -622,73 +622,31 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                         ) : null}
                       </div>
 
-                      {canEditDescription && needsDescription && !editingDescription ? (
-                        <div className={styles.cardWarn} role="alert">
-                          Add a description before sharing. Other players need
-                          something to read on your character card.
-                        </div>
-                      ) : null}
-
                       {showingPersona ? (
                         <div className={styles.cardBody}>{character.persona.source || '-'}</div>
-                      ) : canEditDescription && editingDescription ? (
-                        <>
-                          <textarea
-                            className={styles.descTextarea}
-                            value={descriptionDraft}
-                            onChange={(e) => setDescriptionDraft(e.target.value)}
-                            rows={4}
-                            autoFocus
-                            aria-label="Description"
-                          />
-                          <div className={styles.descActions}>
-                            <Button
-                              kind="quiet"
-                              size="sm"
-                              onClick={() => {
-                                setEditingDescription(false);
-                                setNeedsDescription(false);
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              kind="accent"
-                              size="sm"
-                              onClick={() => { void onSaveDescription(); }}
-                            >
-                              Save
-                            </Button>
-                          </div>
-                        </>
                       ) : (
                         <div className={styles.cardBody}>
                           {character.description?.trim() ||
                             (viewOnly ? 'No description provided.' : 'No description yet.')}
                         </div>
                       )}
-
-                      {canEditDescription && !editingDescription ? (
-                        <div className={styles.cardFooter}>
-                          <button
-                            type="button"
-                            className={styles.cardFooterPencil}
-                            onClick={() => {
-                              setDescriptionDraft(character.description ?? '');
-                              setEditingDescription(true);
-                            }}
-                            aria-label="Edit description"
-                          >
-                            <PencilIcon size={14} />
-                          </button>
-                        </div>
-                      ) : null}
                     </>
                   );
                 })()}
               </div>
 
               <div className={styles.stats}>
+                <div className={`${styles.stat} ${styles.statWide}`}>
+                  <div className={styles.statEyebrow}>PROACTIVENESS</div>
+                  <div className={styles.statValue}>
+                    <ProactivenessBar
+                      level={getProactiveness(character)}
+                      size="md"
+                      showLabel
+                      block
+                    />
+                  </div>
+                </div>
                 <div className={styles.stat}>
                   <div className={styles.statEyebrow}>LAST LAUNCHED</div>
                   <div className={styles.statValue}>{fmtDate(character.last_launched)}</div>
@@ -707,7 +665,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             <SkinEditor
               character={character}
               onChanged={() => void refreshCharacter(id)}
-              viewOnly={viewOnly}
+              viewOnly
               compact
             />
           )}
@@ -744,7 +702,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               type="button"
               className={styles.gearBtn}
               onClick={onGearClick}
-              aria-label={viewOnly ? 'Character options' : 'Edit character'}
+              aria-label={viewOnly ? 'Companion options' : 'Edit companion'}
               aria-haspopup={viewOnly ? 'menu' : undefined}
               aria-expanded={viewOnly ? gearMenuOpen : undefined}
             >
@@ -777,7 +735,18 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       </main>
 
       {editing ? (
-        <EditCharacterModal character={character} onClose={() => setEditing(false)} />
+        <EditCharacterModal
+          character={character}
+          initialSection={editSection}
+          onClose={onEditClose}
+        />
+      ) : null}
+      {resetConfirmOpen ? (
+        <ResetMemoryConfirmModal
+          characterName={character.name}
+          onCancel={() => setResetConfirmOpen(false)}
+          onConfirm={() => { void doResetMemory(); }}
+        />
       ) : null}
       {showSignIn ? (
         <SignInModal
@@ -809,8 +778,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 </h2>
                 <p className={styles.confirmBody}>
                   {shareConfirm === 'going_public'
-                    ? 'Uploading your character and checking it against our content guidelines.'
-                    : 'Making your character private.'}
+                    ? 'Uploading your companion and checking it against our content guidelines.'
+                    : 'Making your companion private.'}
                 </p>
                 <div
                   className={styles.progressTrack}
@@ -827,8 +796,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                   className={`${styles.confirmTitle} ${styles.confirmTitleOk}`}
                 >
                   {shareConfirm === 'going_public'
-                    ? 'Your character is now public'
-                    : 'Your character is now private'}
+                    ? 'Your companion is now public'
+                    : 'Your companion is now private'}
                 </h2>
                 <p className={styles.confirmBody}>
                   {shareConfirm === 'going_public'
@@ -869,13 +838,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               <>
                 <h2 id="share-confirm-title" className={styles.confirmTitle}>
                   {shareConfirm === 'going_public'
-                    ? 'Allow other players to summon your character?'
-                    : 'Make this character private?'}
+                    ? 'Allow other players to summon your companion?'
+                    : 'Make this companion private?'}
                 </h2>
                 <p className={styles.confirmBody}>
                   {shareConfirm === 'going_public'
-                    ? 'Character memory will not be shared.'
-                    : 'Other players will no longer be able to summon your character. Are you sure?'}
+                    ? 'Companion memory will not be shared.'
+                    : 'Other players will no longer be able to summon your companion. Are you sure?'}
                 </p>
                 <div className={styles.confirmActions}>
                   <Button kind="quiet" size="md" onClick={closeShareModal}>

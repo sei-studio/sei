@@ -10,11 +10,13 @@
 import { ADAPTER_INTERFACE_VERSION } from '../../brain/types.js'
 import { createDefaultRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
+import { getProgression as readProgression } from './observers/progression.js'
 import { closeContainerSession } from './behaviors/container.js'
 import { wireBotEvents } from './fsmWires.js'
+import { visualizeAction } from './behaviors/visualize.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
-  ACTION_DESCRIPTIONS,
+  describeAction,
   worldPrimer,
   capabilityParagraph,
   actionRules,
@@ -27,15 +29,20 @@ import {
  * Construct a minecraft Adapter wrapped around a live mineflayer Bot.
  *
  * @param {Object} args
- * @param {object} args.bot         Mineflayer Bot instance (from createBotInstance).
- * @param {object} args.config      Validated config; passed through to action handlers.
+ * @param {object} args.bot           Mineflayer Bot instance (from createBotInstance).
+ * @param {object} args.config        Validated config; passed through to action handlers.
+ * @param {boolean} [args.visionEnabled=false]  D-10 gate — register the `look`
+ *   action only when the active provider is VLM-capable (capabilities.vision).
+ *   The construction site (src/bot/index.js) does not hold the provider handle,
+ *   so it defaults false here; the orchestrator's tool-list filter (combinedToolsFor)
+ *   is the authoritative belt-and-suspenders gate (VIS-03).
  * @returns {import('../../brain/types.js').Adapter}
  */
-export function createMinecraftAdapter({ bot, config }) {
+export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
   if (!bot) throw new Error('createMinecraftAdapter: bot required')
   if (!config) throw new Error('createMinecraftAdapter: config required')
 
-  const registry = createDefaultRegistry()
+  const registry = createDefaultRegistry({ visionEnabled })
   let _attachDispose = null
 
   return {
@@ -45,7 +52,7 @@ export function createMinecraftAdapter({ bot, config }) {
     // ─── Action surface ───────────────────────────────────────────────
     listActions: () => registry.list(),
     getActionSchema: (name) => registry.schema(name),
-    getActionDescription: (name) => ACTION_DESCRIPTIONS[name] ?? registry.description?.(name) ?? '',
+    getActionDescription: (name) => describeAction(name, config?.vision?.mode) ?? registry.description?.(name) ?? '',
     executeAction: (name, args, ctx = {}) => {
       // Action handlers receive (args, bot, config). Brain context (signal)
       // is folded into the config-shaped 4th argument so existing handlers
@@ -64,11 +71,36 @@ export function createMinecraftAdapter({ bot, config }) {
 
     // ─── World perception + prompt blocks ──────────────────────────────
     createSnapshotComposer: () => createSnapshotComposer({ bot }),
+    /**
+     * World-identity signals for the per-character world registry (worlds.js).
+     * The world spawn point is deterministic from the seed and stable across
+     * sessions, so it fingerprints the world; dimension disambiguates. Returns
+     * floored coords or null when spawn isn't known yet (called post-spawn).
+     */
+    getWorldInfo: () => {
+      const sp = bot.spawnPoint
+      return {
+        spawnPoint:
+          sp && Number.isFinite(sp.x)
+            ? { x: Math.floor(sp.x), y: Math.floor(sp.y), z: Math.floor(sp.z) }
+            : null,
+        dimension: bot.game?.dimension ?? null,
+      }
+    },
+    /**
+     * Minimal vanilla progression view (observers/progression.js). The brain
+     * passes its caller-owned latched flags (entered_nether/entered_end/
+     * killed_dragon); inventory, pickaxe tier and current dimension are read
+     * live off the bot. Used to surface the reachable-next frontier into the
+     * heartbeat and to detect milestone completion in JS (no LLM). Defensive:
+     * never throws (degrades to an empty frontier).
+     */
+    getProgression: (flags = {}) => readProgression(bot, flags),
     worldPrimer,
-    capabilityParagraph,
-    actionRules,
+    capabilityParagraph: () => capabilityParagraph(config?.vision?.mode),
+    actionRules: () => actionRules(config?.vision?.mode),
     cuboidGrammar,
-    eventAddendum,
+    eventAddendum: (event, data) => eventAddendum(event, data, config?.vision?.mode),
     cantReachNudge,
 
     // ─── Session lifecycle ───────────────────────────────────────────
@@ -117,6 +149,16 @@ export function createMinecraftAdapter({ bot, config }) {
     closeAnySessions: async () => {
       try { await closeContainerSession() } catch {}
     },
+
+    // ─── Automatic-view render seam ('continuous' Looking mode) ─────────
+    // The orchestrator drives the periodic "look around" (a fixed per-turn
+    // cadence) through the adapter so the bot reference stays
+    // adapter-side (the brain↔adapter seam: the orchestrator never imports
+    // mineflayer or src/adapter/). renderIdleFrame produces the deduped frame
+    // via the SAME visualizeAction the explicit path uses, with idle:true so
+    // D-02 pose-dedupe applies. Cadence renders use the STANDARD LLM path —
+    // there is NO /vision routing here (D-09).
+    renderIdleFrame: () => visualizeAction({ idle: true }, bot, config),
 
     // ─── Capabilities (read from registry / plugin presence) ─────────
     get supportsAutoEat() { return Boolean(bot.autoEat) },

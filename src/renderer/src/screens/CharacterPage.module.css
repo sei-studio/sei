@@ -48,6 +48,22 @@
   }
 }
 
+/* Exit = reverse of picRise: portrait falls + fades out as the page closes. */
+.dPicLeaving {
+  animation: picFall 0.25s var(--ease) both !important;
+}
+
+@keyframes picFall {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(18px) scale(1.02);
+  }
+}
+
 .dScrim {
   position: absolute;
   inset: 0;
@@ -87,6 +103,24 @@
   }
   to {
     transform: none;
+  }
+}
+
+/* Exit = reverse of detailIn: the panel slides back out to the right (plus a
+   fade so the 46px slide doesn't pop, since the panel never fully clears the
+   viewport) as the page closes. */
+.contentLeaving {
+  animation: detailOut 0.25s var(--ease) both !important;
+}
+
+@keyframes detailOut {
+  from {
+    transform: none;
+    opacity: 1;
+  }
+  to {
+    transform: translateX(46px);
+    opacity: 0;
   }
 }
 
@@ -479,7 +513,15 @@
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
+  column-gap: 5px;
+  /* Row-gap matches the panel's card→stats gap so the proactiveness row below
+     the three stat cells is spaced the same as the description→stats gap. */
+  row-gap: var(--space-md-plus);
+}
+
+/* Proactiveness spans the full row beneath the three stat cells. */
+.statWide {
+  grid-column: 1 / -1;
 }
 
 .stat {

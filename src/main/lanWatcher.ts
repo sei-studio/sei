@@ -1,92 +1,67 @@
 /**
- * Long-lived multicast LAN watcher (Electron main process).
+ * Long-lived LAN watcher (Electron main process) — loopback edition.
  *
- * Sources:
- *   - RESEARCH §Pattern 3 (lines 491–541) — verbatim algorithm
- *   - PATTERNS §src/main/lanWatcher.ts — refactor target
- *   - CONTEXT D-20, D-21, D-22 (three-state pill)
+ * Detects a Minecraft "open to LAN" world on THIS machine and exposes its port
+ * + MOTD to the renderer (the connection pill) and to the bot supervisor (which
+ * hands the port to a summoned bot). Sei is same-machine only — the bot always
+ * connects to 127.0.0.1:<lanPort> — so loopback discovery is all we need.
+ *
+ * History: this used to listen for Minecraft's multicast LAN beacon
+ * (224.0.2.60:4445). macOS 26 tightened Local Network privacy to silently drop
+ * custom multicast for SIGNED apps unless they carry the restricted
+ * `com.apple.developer.networking.multicast` entitlement — and that entitlement
+ * bricks app launch without an embedded provisioning profile (AMFI -413). The
+ * packaged app could therefore never receive the beacon, so the pill stuck on
+ * "not connected" and summon had no port. We dropped multicast entirely:
+ *
+ *   1. Enumerate local listening TCP ports (`listeningPorts()` — lsof/netstat).
+ *   2. Status-ping the candidates over loopback (`mcPing()` — raw SLP).
+ *   3. The one that speaks Minecraft IS the open world; read its port + MOTD.
+ *
+ * Loopback TCP is exempt from Local Network privacy, so this needs no
+ * entitlement and no permission prompt. Minecraft's LAN port is random per
+ * session; reading the live socket table every poll recovers it directly, so a
+ * changing port is a non-issue (we never cache or guess it).
  *
  * Behavior:
- *   - Opens once at app boot; lives for the whole app session.
- *   - UDP socket bound to 4445 with reuseAddr:true; joins 224.0.2.60.
- *   - Emits `connected` after each fresh packet; `not_connected` after staleMs;
- *     `unavailable` (sticky) on addMembership failure.
- *
- * Renderer consumes via webContents.send('lan:state', ...) wired in plan 05.
+ *   - Polls every POLL_INTERVAL_MS for the whole app session.
+ *   - Emits `connected` (with port + motd) while a world answers the ping;
+ *     `not_connected` when none does; `unavailable` when the OS port-listing
+ *     tool itself fails (re-evaluated each poll, not sticky).
  */
-import dgram from 'node:dgram';
 import type { LanState } from '../shared/ipc';
+import { listeningPorts, type ListeningPort } from './listeningPorts';
+import { mcPing, type McStatus } from './mcPing';
 
-const MC_LAN_GROUP = '224.0.2.60';
-const MC_LAN_PORT = 4445;
-
-/**
- * ITEM 6 (quick/260523-t8d): re-attempt addMembership every 5s while the
- * launcher is disconnected. This catches the "world opened BEFORE launcher
- * started" case where the initial addMembership() races a not-yet-ready
- * network interface — without retry, the launcher stays 'not_connected'
- * forever even after Minecraft starts beaconing every ~1.5s.
- *
- * Combined latency for the "world opened first" path: 5s rescan + up to
- * 1.5s next beacon = ≤ 6.5s to flip to 'connected'.
- */
-const LAN_RESCAN_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 2000;
+// Per-ping wall clock. Loopback status answers in single-digit ms; this only
+// bounds how long a non-Minecraft listener can stall us.
+const PING_TIMEOUT_MS = 700;
 
 export interface WatchLanOptions {
   onUpdate: (state: LanState) => void;
-  staleMs?: number; // default 3000ms (D-22)
+  /** @deprecated multicast-era knob; ignored by the loopback watcher. */
+  staleMs?: number;
 }
 
-export function watchLan({ onUpdate, staleMs = 3000 }: WatchLanOptions): { stop: () => void } {
-  let socket: dgram.Socket | null = null;
-  let lastSeenAt = 0;
-  let lastPort: number | null = null;
-  let lastMotd = '';
-  let unavailable = false;
-  let staleTimer: NodeJS.Timeout | null = null;
-  let lastEmitted: LanState | null = null;
+/** First candidate that answers the Minecraft status ping, or null. Resolves as
+ *  soon as one succeeds (Promise.any) — it does not wait out slow non-MC ports. */
+async function firstMcWorld(ports: ListeningPort[]): Promise<McStatus | null> {
+  if (ports.length === 0) return null;
+  try {
+    return await Promise.any(ports.map((p) => mcPing(p.port, '127.0.0.1', PING_TIMEOUT_MS)));
+  } catch {
+    return null; // AggregateError — none spoke Minecraft
+  }
+}
+
+export function watchLan({ onUpdate }: WatchLanOptions): { stop: () => void } {
   let stopped = false;
-  // ITEM 6: rescan timer — only runs while we're disconnected.
-  let rescanTimer: NodeJS.Timeout | null = null;
+  let inFlight = false;
+  let timer: NodeJS.Timeout | null = null;
+  let lastEmitted: LanState | null = null;
 
-  const compute = (): LanState => {
-    if (unavailable) return { kind: 'unavailable' };
-    const fresh = lastSeenAt > 0 && Date.now() - lastSeenAt <= staleMs;
-    if (fresh && lastPort !== null) {
-      return { kind: 'connected', port: lastPort, motd: lastMotd, lastSeenAt };
-    }
-    return { kind: 'not_connected' };
-  };
-
-  // ITEM 6: start / stop the re-scan loop based on state.
-  //   - Disconnected (kind === 'not_connected' | 'unavailable') → ensure timer.
-  //   - Connected → ensure timer is stopped.
-  //
-  // The timer RECREATES the receive socket (fresh bind + addMembership). This
-  // is deliberately heavier than a bare addMembership retry: a summon/unsummon
-  // cycle can leave the long-lived socket no longer receiving the host's LAN
-  // beacon (observed bug: the pill flips connected → not_connected and stays
-  // stuck there). On the existing socket, re-issuing addMembership throws
-  // "already a member" and never re-establishes multicast delivery — so the
-  // only reliable recovery is a brand-new socket. A real packet within ~1.5s
-  // of the fresh bind then promotes the state back to 'connected'.
-  const startRescan = (): void => {
-    if (rescanTimer || stopped) return;
-    rescanTimer = setInterval(() => {
-      createSocket();
-    }, LAN_RESCAN_INTERVAL_MS);
-  };
-
-  const stopRescan = (): void => {
-    if (rescanTimer) {
-      clearInterval(rescanTimer);
-      rescanTimer = null;
-    }
-  };
-
-  const emit = (): void => {
-    const next = compute();
-    // Only fire when state.kind changes OR connected payload changes
+  const emit = (next: LanState): void => {
     const changed =
       !lastEmitted ||
       lastEmitted.kind !== next.kind ||
@@ -97,92 +72,47 @@ export function watchLan({ onUpdate, staleMs = 3000 }: WatchLanOptions): { stop:
       lastEmitted = next;
       onUpdate(next);
     }
-    // ITEM 6: keep the rescan loop in sync with current state.
-    if (next.kind === 'connected') stopRescan();
-    else startRescan();
   };
 
-  const scheduleStale = (): void => {
-    if (staleTimer) clearTimeout(staleTimer);
-    staleTimer = setTimeout(emit, staleMs + 100);
-  };
-
-  const onMessage = (msg: Buffer): void => {
-    const text = msg.toString('utf-8');
-    const portMatch = text.match(/\[AD\](\d{1,5})\[\/AD\]/);
-    if (!portMatch) return;
-    const port = Number(portMatch[1]);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return;
-    lastPort = port;
-    lastMotd = text.match(/\[MOTD\](.*?)\[\/MOTD\]/)?.[1] ?? '';
-    lastSeenAt = Date.now();
-    emit();
-    scheduleStale();
-  };
-
-  // (Re)create the receive socket. Called once at startup and again by the
-  // rescan loop to recover from a dropped multicast subscription. The old
-  // socket (if any) is closed first so we never leak fds across recreations.
-  const createSocket = (): void => {
-    if (stopped) return;
-    const prev = socket;
-    if (prev) {
-      prev.removeAllListeners();
+  const poll = async (): Promise<void> => {
+    if (stopped || inFlight) return;
+    inFlight = true;
+    try {
+      let ports: ListeningPort[];
       try {
-        prev.close();
+        ports = await listeningPorts();
       } catch {
-        // ignore — may already be closed
+        emit({ kind: 'unavailable' });
+        return;
       }
+      if (stopped) return;
+      // Ping likely Minecraft (java) ports first so the common case pokes only
+      // the world; fall back to the rest so a non-standard process name still
+      // resolves.
+      const java = ports.filter((p) => /java/i.test(p.command));
+      const rest = ports.filter((p) => !/java/i.test(p.command));
+      const world = (await firstMcWorld(java)) ?? (await firstMcWorld(rest));
+      if (stopped) return;
+      emit(
+        world
+          ? { kind: 'connected', port: world.port, motd: world.motd, lastSeenAt: Date.now() }
+          : { kind: 'not_connected' },
+      );
+    } finally {
+      inFlight = false;
     }
-    const next = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-    socket = next;
-    next.on('error', () => {
-      // Only act on the live socket; a stale handler from a closed socket
-      // must not clobber state.
-      if (socket !== next) return;
-      unavailable = true;
-      emit();
-    });
-    next.on('message', (msg: Buffer) => {
-      if (socket !== next) return;
-      onMessage(msg);
-    });
-    next.bind(MC_LAN_PORT, () => {
-      if (socket !== next) return;
-      try {
-        next.addMembership(MC_LAN_GROUP);
-        // A fresh join clears any prior 'unavailable'; a real packet will
-        // promote to 'connected'. If nothing arrives, scheduleStale's expiry
-        // (or the next rescan) keeps the state correct.
-        unavailable = false;
-        emit();
-      } catch {
-        unavailable = true;
-        emit();
-      }
-      // ITEM 6: ensure the rescan loop is running whenever we're not connected.
-      startRescan();
-    });
   };
 
-  createSocket();
-
-  // Fire initial state synchronously after bind kicks off
-  setImmediate(emit);
+  // Fire immediately, then on a fixed cadence for the session.
+  void poll();
+  timer = setInterval(() => void poll(), POLL_INTERVAL_MS);
 
   return {
     stop: () => {
       stopped = true;
-      if (staleTimer) clearTimeout(staleTimer);
-      stopRescan();
-      if (socket) {
-        socket.removeAllListeners();
-        try {
-          socket.close();
-        } catch {
-          // ignore — socket may already be closed
-        }
-        socket = null;
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
       }
     },
   };

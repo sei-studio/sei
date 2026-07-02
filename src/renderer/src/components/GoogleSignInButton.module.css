@@ -63,6 +63,31 @@
   opacity: 0.38; /* Google's disabled-button opacity */
 }
 
+/* Light-theme variant — Google's official LIGHT button spec (white fill,
+ * #1F1F1F text, #747775 stroke). The base rules above are Google's DARK spec,
+ * which left a near-black button sitting on the light "paper" surface. State
+ * layers darken the white fill on hover/press, mirroring the dark variant. */
+:root[data-theme='light'] .button {
+  color: #1f1f1f;
+  background-color: #ffffff;
+  border-color: #747775;
+}
+
+:root[data-theme='light'] .button:hover:not(:disabled) {
+  background-color: #f7f8f8;
+  border-color: #5f6368;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.18);
+}
+
+:root[data-theme='light'] .button:active:not(:disabled) {
+  background-color: #ececed;
+}
+
+:root[data-theme='light'] .button:focus-visible {
+  border-color: #1f1f1f;
+  box-shadow: 0 0 0 1px #ffffff, 0 0 0 3px rgba(31, 31, 31, 0.35);
+}
+
 .glyphWrap {
   display: inline-flex;
   align-items: center;

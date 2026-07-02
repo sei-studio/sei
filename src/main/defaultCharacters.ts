@@ -150,3 +150,68 @@ export async function seedDefaultCharacters(): Promise<void> {
     catch (err) { logger.warn(`seedDefaultCharacters: tracker write failed: ${(err as Error).message}`); }
   }
 }
+
+/**
+ * The bundle-owned, author-set fields of a default character — everything the
+ * user can NEVER edit through the GUI (defaults render view-only). Used to
+ * decide whether an on-disk default has drifted from the shipped source.
+ */
+function authoredFieldsChanged(onDisk: Character, bundled: Character): boolean {
+  return (
+    onDisk.name !== bundled.name ||
+    JSON.stringify(onDisk.persona) !== JSON.stringify(bundled.persona) ||
+    (onDisk.description ?? null) !== (bundled.description ?? null) ||
+    (onDisk.portrait_image ?? null) !== (bundled.portrait_image ?? null) ||
+    JSON.stringify(onDisk.skin) !== JSON.stringify(bundled.skin) ||
+    (onDisk.username ?? null) !== (bundled.username ?? null) ||
+    (onDisk.slug ?? null) !== (bundled.slug ?? null) ||
+    JSON.stringify(onDisk.metadata) !== JSON.stringify(bundled.metadata)
+  );
+}
+
+/**
+ * Re-assert the bundled source's authored fields onto already-seeded default
+ * characters, on every launch.
+ *
+ * `seedDefaultCharacters` only writes a default the FIRST time its id is seen;
+ * the tracker then blocks re-seeding so user deletions stay deleted. The side
+ * effect is that a default seeded by an OLDER build keeps its stale persona /
+ * metadata forever — e.g. v0.3.0 shipped Sui with an older persona and (before
+ * the proactiveness dial existed) no `metadata.proactiveness`, so getProactiveness
+ * defaulted her to Reactive even though the current bundle sets Agentic (2).
+ *
+ * Defaults are read-only in the UI (the user can never edit a bundled
+ * character), so it is safe to overwrite the authored fields from the bundle
+ * here. Per-user runtime accumulation (created / last_launched / playtime_ms)
+ * and any cloud linkage (owner / cloud_updated_at / shared) are preserved.
+ * Writes only when the authored fields actually drifted, so steady-state
+ * launches do no disk I/O.
+ */
+export async function refreshSeededDefaults(): Promise<void> {
+  for (const bundled of DEFAULT_CHARACTERS) {
+    try {
+      const existing = await getCharacter(bundled.id).catch(() => null);
+      if (!existing) continue;            // never seeded, or user removed it from disk
+      if (existing.is_default !== true) continue; // safety: never clobber a non-default
+      if (!authoredFieldsChanged(existing, bundled)) continue;
+      await saveCharacter({
+        ...existing,
+        // Bundle-owned authored fields:
+        name: bundled.name,
+        persona: bundled.persona,
+        description: bundled.description,
+        portrait_image: bundled.portrait_image,
+        skin: bundled.skin,
+        username: bundled.username,
+        slug: bundled.slug,
+        metadata: bundled.metadata,
+        is_default: true,
+        // Preserved from disk via the spread above:
+        // created, last_launched, playtime_ms, owner, cloud_updated_at, shared.
+      });
+      logger.info(`refreshed default character from bundle: ${bundled.id}`);
+    } catch (err) {
+      logger.warn(`refreshSeededDefaults: failed for ${bundled.id}: ${(err as Error).message}`);
+    }
+  }
+}

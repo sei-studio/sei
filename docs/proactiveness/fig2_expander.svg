@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="700" viewBox="0 0 1240 700">
+<defs>
+<marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+<path d="M0,0 L8,3 L0,6 z" fill="#9aa3b2"/>
+</marker>
+</defs>
+<rect width="1240" height="700" fill="#ffffff"/>
+<text x="60" y="64" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0f2a52" letter-spacing="2">FIGURE 2</text><text x="60" y="90" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1c2230">Character Expander Content</text>
+<rect x="60" y="150" width="210" height="66" rx="10" ry="10" fill="#eef2f9" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="165.0" y="179.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Short blurb</text>
+<text x="165.0" y="197.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">name plus tier</text>
+<rect x="310" y="150" width="200" height="66" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="410.0" y="179.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Expander</text>
+<text x="410.0" y="197.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">Haiku call</text>
+<line x1="270" y1="183.0" x2="310" y2="183.0" stroke="#9aa3b2" stroke-width="1.8" marker-end="url(#ah)"/>
+<rect x="560" y="100" width="360" height="156" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="740.0" y="156.04" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#1c2230" text-anchor="middle">Universal rules</text>
+<text x="740.0" y="175.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">Hard coded, every character</text>
+<text x="740.0" y="193.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">Length and voice</text>
+<text x="740.0" y="211.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">Memory rule, tools</text>
+<rect x="560" y="280" width="360" height="156" rx="10" ry="10" fill="#eef4ff" stroke="#7FB0FF" stroke-width="1.6"/>
+<text x="740.0" y="336.04" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#1c2230" text-anchor="middle">Proactiveness rules</text>
+<text x="740.0" y="355.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">Per tier directive</text>
+<text x="740.0" y="373.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">Cadence and agency</text>
+<text x="740.0" y="391.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">When to set goal</text>
+<rect x="560" y="460" width="360" height="156" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="740.0" y="516.04" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#1c2230" text-anchor="middle">Character flavor</text>
+<text x="740.0" y="535.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">Expander writes this</text>
+<text x="740.0" y="553.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">Identity, voice</text>
+<text x="740.0" y="571.14" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5b6678" text-anchor="middle">Goal type, memory</text>
+<line x1="410.0" y1="216" x2="560" y2="538.0" stroke="#9aa3b2" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="416.0" y="366" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#5b6678" text-anchor="middle">writes only the flavor</text>
+<rect x="1010" y="320" width="200" height="116" rx="10" ry="10" fill="#7FB0FF" stroke="#7FB0FF" stroke-width="2"/>
+<text x="1110.0" y="363.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0f2a52" text-anchor="middle">Assembled</text>
+<text x="1110.0" y="385.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0f2a52" text-anchor="middle">prompt</text>
+<text x="1110.0" y="403.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">each loop</text>
+<line x1="920" y1="178.0" x2="1010" y2="378.0" stroke="#c2cad8" stroke-width="1.4" marker-end="url(#ah)"/>
+<line x1="920" y1="358.0" x2="1010" y2="378.0" stroke="#c2cad8" stroke-width="1.4" marker-end="url(#ah)"/>
+<line x1="920" y1="538.0" x2="1010" y2="378.0" stroke="#c2cad8" stroke-width="1.4" marker-end="url(#ah)"/>
+</svg>

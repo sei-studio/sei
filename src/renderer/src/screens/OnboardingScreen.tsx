@@ -31,7 +31,7 @@ import { classifyRendererError } from '../lib/errors';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
-import { ProviderTiles, type Provider } from '../components/ProviderTiles';
+import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import type { UserConfig } from '@shared/characterSchema';
 
 export interface OnboardingScreenProps {
@@ -48,6 +48,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   // single Name step. Local users get Name → Provider → API key.
   const STEPS = signedIn ? 1 : 3;
   const navigate = useUiStore((s) => s.navigate);
+  const setHomeTab = useUiStore((s) => s.setHomeTab);
   const themeMode = useUiStore((s) => s.themeMode);
   const [step, setStep] = useState(0);
   const [mc, setMc] = useState('');
@@ -123,6 +124,18 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // one-time "Welcome to Sei" greeting after onboarding completes; it
         // flips true there on first render.
         has_been_welcomed: false,
+        // Looking (vision): fresh installs start at 'on-demand' (your
+        // companions look around when they need to, with no automatic views).
+        // Settings offers 'continuous' (automatic views, more playtime) or
+        // 'off' for anyone who wants to change it.
+        vision_mode: 'on-demand',
+        // Fresh install: no playtime accumulated yet, nothing to backfill.
+        total_playtime_ms: 0,
+        total_playtime_backfilled: true,
+        // First-run onboarding flows into the dedicated skin-setup step next;
+        // mark it pending so a relaunch mid-setup resumes there. Re-onboarding
+        // from Settings skips the skin step, so leave it cleared.
+        skin_setup_pending: !isReonboard,
       });
       // D-03 / T-10-04-02 mitigation: signed-in users never reach the API-key
       // step, so saveApiKey MUST be gated behind !signedIn. Otherwise a future
@@ -130,22 +143,25 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       if (!signedIn) {
         await sei.saveApiKey(apiKey.trim());
       }
+      // Signed-in users default to Sei's cloud backend — best-effort auto-claim
+      // the one-time free trial so a fresh account starts with playtime (they
+      // disliked being dropped onto the playtime/credits screen; the summon-time
+      // gate covers a still-empty balance later).
       if (signedIn) {
-        // Item 4: cloud is the default backend for signed-in users. If they
-        // have no usable balance yet (a fresh account that hasn't claimed the
-        // one-time trial), send them to Credits to claim/subscribe; otherwise
-        // straight home. creditsGet reads the server-side balance and is
-        // independent of the ai_backend_kind we just wrote, so a transient
-        // failure falls through to Credits (the safe place to land).
-        let hasBalance = false;
         try {
-          const credits = await sei.creditsGet();
-          hasBalance = credits.plan !== 'depleted';
+          await sei.trialClaim();
         } catch {
-          /* unknown balance → Credits screen */
+          /* best-effort */
         }
-        navigate(hasBalance ? { kind: 'home' } : { kind: 'credits' });
+      }
+      if (!isReonboard) {
+        // Fresh onboarding → advance to the dedicated skin-setup step. It clears
+        // skin_setup_pending and lands on home (World tab) when finished/skipped.
+        navigate({ kind: 'skin-setup' });
       } else {
+        // Re-onboarding from Settings → straight back to home (no skin step),
+        // on the Home tab (which shows the welcome message).
+        if (signedIn) setHomeTab('home');
         navigate({ kind: 'home' });
       }
     } catch (err) {
@@ -214,7 +230,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         onBack={back}
         onNext={next}
       >
-        <ProviderTiles value={provider} onChange={setProvider} />
+        <ProviderSelect value={provider} onChange={setProvider} />
       </QuestionShell>
     );
   }

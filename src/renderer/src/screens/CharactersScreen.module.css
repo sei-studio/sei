@@ -13,6 +13,11 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  /* <main> is a plain (non-flex) overflow:auto block, so flex:1 alone doesn't
+   * bind a height here. height:100% resolves against <main>'s definite height
+   * and gives the home/world panels a bounded box to scroll their lists inside,
+   * instead of the whole screen scrolling under <main>. */
+  height: 100%;
 }
 
 /* ── Tab bar (legacy — rail drives tab switching now, kept for safety) ── */
@@ -48,7 +53,9 @@
 
 /* ── World grid ──────────────────────────────────────────────────────── */
 .browse {
-  padding: 34px var(--space-2xl) var(--space-3xl);
+  /* Top padding only — side/bottom padding lives on the pinned header and the
+   * scroll region so only the list scrolls and its scrollbar is flush right. */
+  padding: 34px 0 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-md-plus);
@@ -61,7 +68,31 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: var(--space-xs);
+  padding: 0 var(--space-2xl);
+  flex-shrink: 0;
+}
+
+/* Scrollable list region: holds the grid plus the infinite-scroll sentinel and
+ * loading/empty/error states, so paging keeps working while the header pins. */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+  /* Top padding gives headroom for the card hover-lift (translateY(-7px) + the
+   * accent ring/glow); without it overflow:auto clips the lifted top row, same
+   * as the Home grid fix. */
+  padding: 10px var(--space-2xl) var(--space-3xl);
+  scroll-padding-top: 10px;
+  /* Hide the scrollbar (still scrolls) — matches the IconRail treatment. */
+  scrollbar-width: none;
+}
+
+.scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
 }
 
 .worldTitleRow {
@@ -126,7 +157,7 @@
   font-weight: 600;
   line-height: 0.9;
   letter-spacing: 0.04em;
-  color: var(--text);
+  color: var(--heading);
   margin: 0;
 }
 

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1420" height="760" viewBox="0 0 1420 760">
+<defs>
+<marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+<path d="M0,0 L8,3 L0,6 z" fill="#9aa3b2"/>
+</marker>
+</defs>
+<rect width="1420" height="760" fill="#ffffff"/>
+<text x="60" y="60" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0f2a52" letter-spacing="2">FIGURE 3</text><text x="60" y="86" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1c2230">Full In Game Loop</text>
+<rect x="60" y="150" width="190" height="56" rx="10" ry="10" fill="#eef2f9" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="155.0" y="182.34" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1c2230" text-anchor="middle">Player chat</text>
+<line x1="250" y1="178.0" x2="320" y2="295.0" stroke="#9aa3b2" stroke-width="1.4" marker-end="url(#ah)"/>
+<rect x="60" y="228" width="190" height="56" rx="10" ry="10" fill="#eef2f9" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="155.0" y="260.34" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1c2230" text-anchor="middle">Attacked</text>
+<line x1="250" y1="256.0" x2="320" y2="295.0" stroke="#9aa3b2" stroke-width="1.4" marker-end="url(#ah)"/>
+<rect x="60" y="306" width="190" height="56" rx="10" ry="10" fill="#eef2f9" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="155.0" y="338.34" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1c2230" text-anchor="middle">Action done</text>
+<line x1="250" y1="334.0" x2="320" y2="295.0" stroke="#9aa3b2" stroke-width="1.4" marker-end="url(#ah)"/>
+<rect x="60" y="384" width="190" height="56" rx="10" ry="10" fill="#eef2f9" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="155.0" y="407.59" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1c2230" text-anchor="middle">Idle tick</text>
+<text x="155.0" y="425.75" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">20 sec to 10 min</text>
+<line x1="250" y1="412.0" x2="320" y2="295.0" stroke="#9aa3b2" stroke-width="1.4" marker-end="url(#ah)"/>
+<rect x="320" y="250" width="210" height="90" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="425.0" y="291.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Priority queue</text>
+<text x="425.0" y="309.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">FSM, one at a time</text>
+<rect x="600" y="250" width="210" height="90" rx="10" ry="10" fill="#eef2f9" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="705.0" y="288.76" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1c2230" text-anchor="middle">Compose</text>
+<text x="705.0" y="310.76" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#1c2230" text-anchor="middle">context</text>
+<line x1="530" y1="295.0" x2="600" y2="295.0" stroke="#9aa3b2" stroke-width="1.8" marker-end="url(#ah)"/>
+<rect x="470" y="70" width="168" height="48" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="554.0" y="97.92" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1c2230" text-anchor="middle">World snapshot</text>
+<line x1="554.0" y1="118" x2="705.0" y2="250" stroke="#c2cad8" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="650" y="70" width="168" height="48" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="734.0" y="97.92" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1c2230" text-anchor="middle">Prismarine view</text>
+<line x1="734.0" y1="118" x2="705.0" y2="250" stroke="#c2cad8" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="830" y="70" width="168" height="48" rx="10" ry="10" fill="#eef4ff" stroke="#7FB0FF" stroke-width="1.6"/>
+<text x="914.0" y="97.92" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1c2230" text-anchor="middle">Heartbeat</text>
+<line x1="914.0" y1="118" x2="705.0" y2="250" stroke="#c2cad8" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1010" y="70" width="168" height="48" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="1094.0" y="97.92" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1c2230" text-anchor="middle">Memory</text>
+<line x1="1094.0" y1="118" x2="705.0" y2="250" stroke="#c2cad8" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="1190" y="70" width="168" height="48" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="1274.0" y="97.92" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1c2230" text-anchor="middle">Recent chat</text>
+<line x1="1274.0" y1="118" x2="705.0" y2="250" stroke="#c2cad8" stroke-width="1.1" marker-end="url(#ah)"/>
+<rect x="900" y="248" width="230" height="94" rx="10" ry="10" fill="#7FB0FF" stroke="#7FB0FF" stroke-width="2"/>
+<text x="1015.0" y="291.01" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0f2a52" text-anchor="middle">LLM brain</text>
+<text x="1015.0" y="309.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5b6678" text-anchor="middle">one call</text>
+<line x1="810" y1="295.0" x2="900" y2="295.0" stroke="#9aa3b2" stroke-width="1.8" marker-end="url(#ah)"/>
+<rect x="900" y="430" width="230" height="52" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="1015.0" y="460.2" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1c2230" text-anchor="middle">Chat to game</text>
+<line x1="1015.0" y1="342" x2="1015.0" y2="430" stroke="#c2cad8" stroke-width="1.2" marker-end="url(#ah)"/>
+<rect x="900" y="496" width="230" height="52" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="1015.0" y="526.2" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1c2230" text-anchor="middle">World action</text>
+<line x1="1015.0" y1="342" x2="1015.0" y2="496" stroke="#c2cad8" stroke-width="1.2" marker-end="url(#ah)"/>
+<rect x="900" y="562" width="230" height="52" rx="10" ry="10" fill="#eef4ff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="1015.0" y="592.2" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1c2230" text-anchor="middle">Set goal or remember</text>
+<line x1="1015.0" y1="342" x2="1015.0" y2="562" stroke="#c2cad8" stroke-width="1.2" marker-end="url(#ah)"/>
+<rect x="900" y="628" width="230" height="52" rx="10" ry="10" fill="#ffffff" stroke="#9aa3b2" stroke-width="1.6"/>
+<text x="1015.0" y="658.2" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1c2230" text-anchor="middle">End loop</text>
+<line x1="1015.0" y1="342" x2="1015.0" y2="628" stroke="#c2cad8" stroke-width="1.2" marker-end="url(#ah)"/>
+<path d="M 900 522.0 C 720 522.0, 700 334.0, 254 334.0" fill="none" stroke="#c2cad8" stroke-width="1.4" marker-end="url(#ah)"/>
+<text x="690" y="672.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#5b6678" text-anchor="middle">action runs, then back to queue</text>
+</svg>

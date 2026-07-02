@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CharacterSchema } from './characterSchema';
+import { CharacterSchema, UserConfigSchema } from './characterSchema';
 
 /**
  * Plan 11-03 Task 1 — Schema contract tests for the UUID identity model,
@@ -83,5 +83,54 @@ describe('CharacterSchema — portrait_image is a permissive path-or-null (D-28)
   it('accepts null', () => {
     const parsed = CharacterSchema.parse(baseRow({ portrait_image: null }));
     expect(parsed.portrait_image).toBeNull();
+  });
+});
+
+/**
+ * Runtime parse-gate for the user-facing Looking (vision) mode (vision_mode:
+ * 'off' | 'on-demand' | 'continuous'). tsc proves the FIELD exists; only a
+ * .parse() exercise proves the RUNTIME default, the legacy-value migration, and
+ * the rejection behavior the Settings write-through and the botSupervisor
+ * bridge depend on.
+ */
+describe('UserConfigSchema — vision_mode', () => {
+  it('defaults to on-demand when omitted', () => {
+    // A minimal valid UserConfig — every other field has its own .default(),
+    // so an empty object round-trips. The default matches the bot
+    // config.vision default (mode 'on-demand') and the fresh-install onboarding.
+    const parsed = UserConfigSchema.parse({});
+    expect(parsed.vision_mode).toBe('on-demand');
+  });
+
+  it('round-trips every explicit mode', () => {
+    for (const mode of ['off', 'on-demand', 'continuous'] as const) {
+      const parsed = UserConfigSchema.parse({ vision_mode: mode });
+      expect(parsed.vision_mode).toBe(mode);
+    }
+  });
+
+  it('migrates the legacy pre-simplification values to continuous', () => {
+    // 'passive' and 'active' both streamed automatic views, so they collapse to
+    // 'continuous'. The remap must survive .parse() (configStore throws on an
+    // unknown enum), so an existing config.json keeps loading.
+    expect(UserConfigSchema.parse({ vision_mode: 'passive' }).vision_mode).toBe('continuous');
+    expect(UserConfigSchema.parse({ vision_mode: 'active' }).vision_mode).toBe('continuous');
+  });
+
+  it('rejects an unknown mode', () => {
+    expect(UserConfigSchema.safeParse({ vision_mode: 'sometimes' }).success).toBe(false);
+  });
+
+  it('preserves a pre-existing config.json that omits the vision field (backward compat)', () => {
+    // A config object shaped like an older install (no vision field at all)
+    // must still parse cleanly and pick up the default.
+    const parsed = UserConfigSchema.parse({
+      mc_username: 'Steve',
+      preferred_name: 'Shawn',
+      provider: 'anthropic',
+      ai_backend_kind: 'local',
+      dev_console_visible: false,
+    });
+    expect(parsed.vision_mode).toBe('on-demand');
   });
 });

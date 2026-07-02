@@ -16,6 +16,10 @@ export type View =
   | { kind: 'loading' }
   | { kind: 'auth-choice' }
   | { kind: 'onboarding'; isReonboard: boolean }
+  // Dedicated full-screen onboarding step (after name/API, before home) that
+  // runs the Minecraft skin setup wizard inline. Routed to from OnboardingScreen
+  // and resumed on relaunch while UserConfig.skin_setup_pending is true.
+  | { kind: 'skin-setup' }
   | { kind: 'home' }
   | { kind: 'add-character' }
   | { kind: 'character'; id: string }
@@ -35,7 +39,11 @@ export type Modal =
   // One-time "run skin setup" nudge shown on the first summon attempt by a
   // user who has never completed skin setup. Carries the character id so a
   // "skip for now" choice can resume the deferred summon.
-  | { kind: 'skin-setup-prompt'; characterId: string };
+  | { kind: 'skin-setup-prompt'; characterId: string }
+  // Multi-summon guard: blocks summoning a character whose in-game username
+  // collides with an already-summoned one (the world would kick the second
+  // with `name_taken`). Carries both names + the shared username for the copy.
+  | { kind: 'summon-conflict'; attemptedName: string; conflictName: string; username: string };
 
 /**
  * B4 — which tab CharactersScreen should open on. The compass icon in the
@@ -65,11 +73,21 @@ interface UiState {
    */
   devConsoleVisible: boolean;
   /**
+   * Phase 15 (D-10/VIS-03) — whether the active bot's LLM provider is
+   * vision-capable. Fed by the `vision:capability` push (bot→main→renderer,
+   * subscribed in useDataStore.subscribeIpc). The 15-05 Settings auto-render
+   * toggle reads `useUiStore(s => s.visionCapable)` to gate its `disabled`
+   * state — a REAL provider signal, not an ai_backend_kind inference and not a
+   * deferral. Default FALSE (fail-closed): the toggle stays disabled until a
+   * VLM-backed bot reports true, so a non-VLM provider can never enable it.
+   */
+  visionCapable: boolean;
+  /**
    * Session-only flag: flips true the first time the user leaves the Home
    * screen — either by navigating to another view (character/settings/etc.)
    * or by switching CharactersScreen to the World tab. The Home header
    * greeting ("Welcome to Sei" / "Welcome back") shows only while this is
-   * false; once the user has left Home once, it reads "Summons" for the rest
+   * false; once the user has left Home once, it reads "Companions" for the rest
    * of the session. In-memory only (not persisted), so each app launch shows
    * one greeting until the user navigates away.
    */
@@ -82,6 +100,8 @@ interface UiState {
   setPendingSummon: (id: string | null) => void;
   setHomeTab: (tab: HomeTab) => void;
   setDevConsoleVisible: (v: boolean) => void;
+  /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
+  setVisionCapable: (v: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -91,6 +111,9 @@ export const useUiStore = create<UiState>((set) => ({
   pendingSummonId: null,
   homeTab: 'home',
   devConsoleVisible: false,
+  // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
+  // capabilities.vision === true over the vision:capability push.
+  visionCapable: false,
   homeGreetingDismissed: false,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
@@ -104,4 +127,5 @@ export const useUiStore = create<UiState>((set) => ({
   setHomeTab: (tab) =>
     set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),
   setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
+  setVisionCapable: (v) => set({ visionCapable: v }),
 }));

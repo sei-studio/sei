@@ -237,13 +237,26 @@ async function selectCslDownloadUrl(
       signal,
     );
     if (Array.isArray(versions)) {
-      const pick = versions.find(
+      const matches = versions.filter(
         (v) =>
           Array.isArray(v.loaders) &&
           v.loaders.includes(loaderKind) &&
           Array.isArray(v.game_versions) &&
           v.game_versions.includes(mcVersion),
       );
+      // Avoid the CSL 15.x "Universal" rework on MC versions a 14.x build still
+      // covers. 15.x replaced the mixin engine with a bootstrap runtime
+      // transformer (customskinloader.bootstrap.*) that aborts game init on
+      // 1.21.x — "Patch ... matched protocol 767 but did not modify any
+      // bytecode" → MixinApplyError → crash code 255. Both 15.0 and 15.0.1 ship
+      // as version_type `release`, so a stability filter can't catch them; we
+      // gate on the major version instead. Modrinth returns newest-first, so
+      // [0] of each list is the freshest. Fall back to the newest match overall
+      // when no pre-15 build lists this MC version, so future-only versions
+      // (and the eventual fixed 15.x) still resolve.
+      const cslMajor = (vn: string): number => parseInt(vn, 10) || 0;
+      const stable = matches.filter((v) => cslMajor(v.version_number) < 15);
+      const pick = stable[0] ?? matches[0];
       if (pick && Array.isArray(pick.files) && pick.files.length > 0) {
         const file = pick.files.find((f) => f.primary) ?? pick.files[0];
         if (typeof file.url === 'string' && typeof file.filename === 'string') {
@@ -335,6 +348,22 @@ export async function downloadCustomSkinLoader(
 
   const tmpJarPath = path.join(tmpDir, `csl-pending-${Date.now()}.jar`);
   await fs.writeFile(tmpJarPath, bytes);
+
+  // Remove any prior CustomSkinLoader jar(s) before placing the new one, so we
+  // never leave two CSL builds in mods/. Fabric loads both, and that is exactly
+  // how a crashing 15.x landed next to a working 14.x and aborted game init
+  // (the filename differs — `_Fabric-14.28` vs `_Fabric-15.0.1-Universal` — so a
+  // plain rename never overwrote it). Done only after the replacement bytes are
+  // validated and staged in tmp, so a failed download never strands the user
+  // with no CSL at all.
+  try {
+    const cslJarRe = /^CustomSkinLoader[_-].*\.jar$/i;
+    for (const name of await fs.readdir(modsDir)) {
+      if (cslJarRe.test(name)) await fs.unlink(path.join(modsDir, name)).catch(() => {});
+    }
+  } catch {
+    /* modsDir freshly created / unreadable — nothing to dedupe */
+  }
 
   const finalPath = path.join(modsDir, finalName);
   try {

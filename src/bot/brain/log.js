@@ -206,7 +206,7 @@ export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }
   ])
 }
 
-export function logHaikuResponse({ text, toolUses, usage, stopReason }) {
+export function logHaikuResponse({ text, toolUses, usage, stopReason, elapsedMs }) {
   // ITEM 1 — paired suppression with logHaikuQuery; never log a response when
   // we suppressed the request.
   if (!shouldLogPrompts()) return
@@ -214,9 +214,27 @@ export function logHaikuResponse({ text, toolUses, usage, stopReason }) {
   const callsBody = calls.length === 0 ? '(none)' : calls.join('\n')
   emitBlock('[haiku!]', [
     { label: 'stop', body: String(stopReason ?? '') },
+    // 260607: per-call wall-clock so latency spikes (and silent SDK retries —
+    // elapsed >> one attempt) are visible. Previously a slow/failed call showed
+    // only as a [haiku?] with no [haiku!], invisible to anyone reading logs.
+    ...(Number.isFinite(elapsedMs) ? [{ label: 'elapsed', body: `${elapsedMs}ms` }] : []),
     { label: 'text', body: text && text.length > 0 ? text : '(empty)' },
     { label: 'calls', body: callsBody },
     { label: 'usage', body: safeStringify(usage) },
+  ])
+}
+
+// 260607: companion to [haiku!] — fires when a personality call ABORTS, TIMES
+// OUT, or ERRORS, instead of silently leaving a [haiku?] with no response.
+// `elapsed` here is the key diagnostic: an elapsed near the per-call budget
+// with a TimeoutError is a stalled upstream; a small elapsed with a 5xx/429 is
+// a fast upstream rejection. Gated like the other haiku logs.
+export function logHaikuError({ elapsedMs, name, message, status }) {
+  if (!shouldLogPrompts()) return
+  const statusPart = (status !== undefined && status !== null) ? ` (${status})` : ''
+  emitBlock('[haiku✗]', [
+    ...(Number.isFinite(elapsedMs) ? [{ label: 'elapsed', body: `${elapsedMs}ms` }] : []),
+    { label: 'error', body: `${name ?? 'Error'}${statusPart}: ${message ?? ''}` },
   ])
 }
 

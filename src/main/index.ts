@@ -23,20 +23,21 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
 import { initUpdater } from './updater';
-import { createSkinServer } from './skinServer';
+import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration } from './migration';
-import { seedDefaultCharacters } from './defaultCharacters';
+import { seedDefaultCharacters, refreshSeededDefaults } from './defaultCharacters';
 import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent } from '../shared/ipc';
+import { maybeOfferMoveToApplications, cleanupRelocationLeftover } from './relocate';
+import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability } from '../shared/ipc';
 
-// Lock the productName early so app.getPath('userData') resolves to
+// Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
 // (your private personas) out of the shipped build.
-app.setName(app.isPackaged ? 'Sei Launcher' : 'Sei Launcher Dev');
+app.setName(app.isPackaged ? 'Sei' : 'Sei Dev');
 if (!app.isPackaged) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'Sei Launcher Dev'));
+  app.setPath('userData', path.join(app.getPath('appData'), 'Sei Dev'));
 }
 
 // Register the `sei-portrait://` privileged scheme that serves locally-stored
@@ -93,6 +94,18 @@ function broadcastStatus(status: BotStatus): void {
   }
 }
 
+/**
+ * Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
+ * renderer over the dedicated `vision:capability` channel (parallel to
+ * broadcastStatus). The renderer holds it in useUiStore.visionCapable so the
+ * Settings auto-render toggle (15-05) can disable itself for a non-VLM provider.
+ */
+function broadcastVisionCapability(cap: VisionCapability): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.vision.capability, cap);
+  }
+}
+
 function broadcastLog(batch: LogBatch): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.bot.logBatch, batch);
@@ -120,6 +133,10 @@ function broadcastExpansionProgress(ev: ExpansionProgressEvent): void {
 
 function getLanPort(): number | null {
   return latestLanState.kind === 'connected' ? latestLanState.port : null;
+}
+
+function getLanMotd(): string | null {
+  return latestLanState.kind === 'connected' ? latestLanState.motd : null;
 }
 
 async function bootstrap(): Promise<void> {
@@ -187,6 +204,33 @@ async function bootstrap(): Promise<void> {
   try { await seedDefaultCharacters(); }
   catch (err) { logger.warn(`seedDefaultCharacters failed: ${(err as Error).message}`); }
 
+  // 1b-1. Re-assert bundled authored fields (persona, metadata, skin, …) onto
+  // already-seeded defaults so an older build's stale copy is refreshed — e.g.
+  // Sui regaining her current persona + Agentic proactiveness on installs that
+  // first seeded her before those shipped. No-op when nothing drifted. Defaults
+  // are read-only in the UI, so this never clobbers user edits.
+  try { await refreshSeededDefaults(); }
+  catch (err) { logger.warn(`refreshSeededDefaults failed: ${(err as Error).message}`); }
+
+  // 1b-3. Cloud-default self-heal. The signed-in→cloud default is written on the
+  // sign-in TRANSITION only; a session-restore launch re-points the scope at
+  // boot, so that transition never re-fires and a profile stuck on the schema
+  // default 'local' (e.g. last signed in on a build predating the default) would
+  // keep showing BYOK. Flip a signed-in, key-less 'local' profile to cloud-proxy
+  // here. No-op for signed-out, already-cloud, or genuine BYOK (key present).
+  try { const { ensureCloudDefaultForSignedIn } = await import('./apiKeyStore'); await ensureCloudDefaultForSignedIn(); }
+  catch (err) { logger.warn(`ensureCloudDefaultForSignedIn failed: ${(err as Error).message}`); }
+
+  // 1b-2. One-time backfill of the profile-wide cumulative playtime total from
+  // existing characters' playtime_ms (so historical time shows in the UsageBar
+  // tooltip). Idempotent via the `total_playtime_backfilled` config flag. Runs
+  // after seeding (characters exist) and before botSupervisor is wired so no
+  // session can race the read-modify-write.
+  try {
+    const { backfillTotalPlaytimeOnce } = await import('./configStore');
+    await backfillTotalPlaytimeOnce();
+  } catch (err) { logger.warn(`playtime backfill failed: ${(err as Error).message}`); }
+
   // 1c. Start the loopback skin HTTP server BEFORE any bot is
   // summoned — the bot supervisor passes the baseUrl into the bot init payload
   // (where the bot logs it for verification; CustomSkinLoader on the host's MC
@@ -194,21 +238,28 @@ async function bootstrap(): Promise<void> {
   // launches without custom skins, and the renderer's getSkinServerUrl IPC
   // throws SKIN_SERVER_PORT_TAKEN so the UI shows the relevant ERROR_COPY string.
   try {
-    skinServer = await createSkinServer({});
+    // Dev runs from a separate userData dir but shares this machine with any
+    // packaged build; binding a distinct fixed port keeps the dev skin URL
+    // stable and stops the two builds from starving each other onto unstable
+    // ephemeral ports (the recurring "skin shows as Steve" / port-drift bug).
+    skinServer = await createSkinServer(app.isPackaged ? {} : { port: SKIN_SERVER_DEV_PORT });
     logger.info(`skin server listening on ${skinServer.baseUrl}`);
   } catch (err) {
     logger.warn(`skin server failed to start: ${(err as Error).message}`);
     skinServer = null;
   }
 
-  // 1d. Port-drift detection.
-  // The skin server binds port 0 (OS-chosen ephemeral) so its port can
-  // differ between launches. If the wizard has been run before AND the
-  // current port differs from the one persisted in wizardState, the CSL
-  // configs on disk for previously-enabled installs point at a stale loopback
-  // URL and skins won't load. Rewrite them in place. Bounded by
-  // enabledInstallIds (≤ ~10 in practice); each rewrite is a small atomic
-  // JSON write, so the bootstrap latency impact is negligible (≤ 1s typical).
+  // 1d. Port-drift detection (now a FALLBACK / migration path).
+  // The skin server normally binds a FIXED port (SKIN_SERVER_PREFERRED_PORT),
+  // so its URL is stable across launches and this block is a no-op. It still
+  // matters in two cases: (a) the fixed port was taken and the server fell
+  // back to an ephemeral one, and (b) one-time migration of configs written
+  // by an older ephemeral-port build (their stored port won't match the new
+  // fixed port). If the wizard has been run before AND the current port
+  // differs from the one persisted in wizardState, the CSL configs on disk
+  // for previously-enabled installs point at a stale loopback URL and skins
+  // won't load — rewrite them in place. Bounded by enabledInstallIds (≤ ~10);
+  // each rewrite is a small atomic JSON write (≤ 1s typical).
   if (skinServer) {
     try {
       const wizardState = await loadWizardState();
@@ -225,7 +276,22 @@ async function bootstrap(): Promise<void> {
         // of customSkinLoader's network-tracing dependencies.
         const { writeCustomSkinLoaderConfig } = await import('./customSkinLoader');
         const { scanMcInstalls } = await import('./mcInstallScan');
-        const installs = await scanMcInstalls();
+        // scanMcInstalls failing here used to abort the whole block via the
+        // outer catch — silently leaving every CSL config frozen at a stale
+        // port (the exact symptom: bot joins as Steve after a Sei restart).
+        // Isolate it so the failure is logged distinctly and we don't persist
+        // a new port we never actually wrote into any config.
+        let installs;
+        try {
+          installs = await scanMcInstalls();
+        } catch (err) {
+          logger.warn(
+            `port drift rewrite: scanMcInstalls failed (${(err as Error).message}); ` +
+              `CSL configs left unchanged — skins may load from a stale port until the wizard is re-run`,
+          );
+          installs = null;
+        }
+        if (installs) {
         const byId = new Map(installs.map((i) => [i.id, i]));
         for (const installId of wizardState.enabledInstallIds) {
           const inst = byId.get(installId);
@@ -266,9 +332,12 @@ async function bootstrap(): Promise<void> {
             logger.warn(`port drift rewrite: ${installId} failed: ${(err as Error).message}`);
           }
         }
-        // Persist the new port so the next launch (if no further drift) is
-        // a no-op rather than re-rewriting the same configs.
-        await saveWizardState({ ...wizardState, lastSkinServerPort: skinServer.port });
+          // Persist the new port so the next launch (if no further drift) is
+          // a no-op rather than re-rewriting the same configs. Only after a
+          // successful scan — otherwise we'd record a port that no config
+          // actually points at.
+          await saveWizardState({ ...wizardState, lastSkinServerPort: skinServer.port });
+        }
       }
     } catch (err) {
       // Non-fatal — bot still launches, just the configs may be stale. User
@@ -304,7 +373,11 @@ async function bootstrap(): Promise<void> {
   // 4. Bot supervisor
   supervisor = createBotSupervisor({
     getLanPort,
+    getLanMotd,
     sendStatus: broadcastStatus,
+    // Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
+    // renderer over the dedicated vision:capability channel.
+    sendVisionCapability: broadcastVisionCapability,
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift
@@ -423,6 +496,15 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    // First thing on launch (macOS only): offer to relocate to /Applications so
+    // auto-update works. If accepted, the app quits + relaunches from there, so
+    // skip the rest of startup. No-op on Windows/Linux and in dev. See relocate.ts.
+    if (maybeOfferMoveToApplications()) return;
+
+    // If a prior launch moved us here from ~/Downloads, trash the leftover copy
+    // now that we're running from /Applications. Best-effort, never blocks.
+    cleanupRelocationLeftover();
+
     bootstrap().catch((err) => {
       logger.error(`bootstrap failed: ${(err as Error).message}`);
       app.exit(1);

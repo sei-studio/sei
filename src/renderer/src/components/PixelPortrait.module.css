@@ -7,6 +7,13 @@
   position: relative;
   overflow: hidden;
   border-radius: 0; /* D-28 */
+  /* Themed backing for the procedural bust's transparent cut cells (260616).
+     The canvas bitmap stays transparent where carved, but it now lands on the
+     live theme surface instead of the portrait frame's fixed-dark decorations
+     (CharacterPage .dPic drop-shadow, card scrims) — which otherwise showed as
+     black in light mode. Tracks light/dark via the CSS var. Opaque uploaded
+     portraits cover this; only see-through pixels reveal it. */
+  background: var(--window);
 }
 
 .canvas {

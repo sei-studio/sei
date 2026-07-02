@@ -23,6 +23,14 @@ const MinecraftAdapterSchema = z.object({
   reconnect_delay_ms: z.number().int().min(0).default(5000),
   pathfinder_timeout_ms: z.number().int().min(1000).default(12000),
   follow_range: z.number().int().min(1).default(3),
+  // Leading-edge throttle window for combat-hit → sei:attacked emission. The
+  // FIRST hit fires a reaction immediately; further hits within the window are
+  // suppressed so a sustained beating (mob hits land every ~250-500ms) does not
+  // re-fire the LLM faster than it can answer. Must comfortably exceed typical
+  // Haiku round-trip (~1.5-3s) or every attack reaction gets preempt-aborted
+  // before it can speak/act — the combat livelock (Sui frozen + silent while
+  // taking damage) seen in the 2026-06-19 playlogs. 0 disables (test escape).
+  attack_react_throttle_ms: z.number().int().min(0).default(3500),
 })
 
 const AdapterSchema = z.object({
@@ -38,6 +46,10 @@ export const ConfigSchema = z.object({
   // on the prior behavior.
   chat_mode: z.enum(['chat', 'full']).default('chat'),
   player_username: z.string(),
+  // LAN world MOTD (level name) from discovery, used as a human label for the
+  // world registry / MEMORY.md section headers. Optional — falls back to spawn
+  // coords when absent (e.g. the broadcast carried no MOTD).
+  lan_motd: z.string().nullable().default(null),
   // Friendly name the LLM addresses the player by. Substituted in chat events
   // and convo memory in place of the raw MC username so the bot never speaks
   // the player's gamertag. Falls back to player_username when empty.
@@ -50,6 +62,15 @@ export const ConfigSchema = z.object({
   persona: z.object({
     name: z.string().min(1),
     expanded: z.string(),
+    // Author-set proactiveness dial (0–2: Passive / Reactive / Agentic).
+    // Drives a shared leveled directive injected into the heartbeat block each
+    // loop (see prompts.js PROACTIVENESS_DIRECTIVES), the idle-tick CADENCE
+    // (IDLE_CADENCE_MS — 10min / 1min / 5s), AND the UI bar. Distinct from
+    // goal-completion: a Passive bot still executes accepted standing orders to
+    // completion, it just never initiates. Default 1 (Reactive) so configs
+    // predating the dial behave sensibly. Legacy value 3 (old "Driven") is
+    // remapped to 2 (Agentic) at the read boundary in src/bot/index.js.
+    proactiveness: z.number().int().min(0).max(2).default(1),
   }),
   anthropic: z.object({
     // Phase 13-15 (D-40 sub-delivery a): api_key is no longer strictly required
@@ -59,7 +80,11 @@ export const ConfigSchema = z.object({
     // need a non-empty key. The cross-field invariant is enforced via .refine.
     api_key: z.string().default(''),                                        // required by .refine when cloudMode absent
     model: z.string().default('claude-haiku-4-5'),                          // family alias → latest Haiku 4.5 snapshot (no dated pin to drift; see personaExpansion.ts EXPANSION_MODEL)
-    timeout_ms: z.number().int().min(1000).default(20_000),
+    // 260610: 20s → 12s. This budget is the player-visible worst-case
+    // silence when the backend misbehaves (healthy calls run 1-3s; a slow
+    // first call with a full cache write plus anthropicClient's one capped
+    // rescue retry still fits comfortably).
+    timeout_ms: z.number().int().min(1000).default(12_000),
     // Extended thinking budget. 0 disables. 1024 is the API minimum; thinking
     // adds latency to every call without changing what the model says aloud,
     // since assistant text blocks ARE the chat channel now (see orchestrator).
@@ -83,7 +108,11 @@ export const ConfigSchema = z.object({
     rate_limit_per_min: z.number().int().min(1).default(30),
     debounce_ms: z.number().int().min(0).default(500),
     max_hops: z.number().int().min(1).default(5),
-    idle_fallback_ms: z.number().int().min(1000).default(60_000),
+    // Optional MANUAL override of the idle-tick interval. When absent (the
+    // normal case) the cadence is derived from the proactiveness tier in
+    // src/bot/brain/index.js (idleCadenceMs: Passive 10min / Reactive 1min /
+    // Agentic 5s). Set this only to pin a fixed interval regardless of tier.
+    idle_fallback_ms: z.number().int().min(1000).optional(),
     // Phase 14: which provider services the bot loop. Defaults to 'anthropic'
     // so configs predating this phase still boot unchanged. The Anthropic
     // path also covers the Sei cloud proxy (`anthropic.cloudMode`).
@@ -115,8 +144,27 @@ export const ConfigSchema = z.object({
   memory: z.object({
     player_md_path: z.string().default('./memory/PLAYER.md'),
     memory_md_path: z.string().default('./memory/MEMORY.md'),
-    iteration_cap: z.number().int().min(1).default(30),
+    // HEARTBEAT.md holds active goals / standing orders, surfaced (with the
+    // proactiveness directive) into every loop so multi-step goals survive a
+    // loop ending after one step. Written via setGoal()/clearGoal().
+    heartbeat_md_path: z.string().default('./memory/HEARTBEAT.md'),
+    // worlds.json holds the per-character registry of LAN worlds joined (stable
+    // number + fingerprint + label), so memories can be segmented by world and
+    // the snapshot can tell the bot which world it's in. See memory/worlds.js.
+    worlds_json_path: z.string().default('./memory/worlds.json'),
+    // Per-loop tool-use chain bound. This is a RUNAWAY BACKSTOP, not an
+    // execution budget: a single dispatch (chat / idle / action-complete) may
+    // chain this many LLM turns — including the 10s action-tick monitors that
+    // fire while a long-runner is suspended — before being force-closed. 30 was
+    // far too low for genuine agentic play (a long gather alone ticks ~6/min, so
+    // a multi-step burst hit it routinely); raised to an effectively-unlimited
+    // backstop that only trips on a true infinite spin. Set to 0 to disable the
+    // cap entirely (no ceiling). The graceful close (orchestrator
+    // gracefulCapClose) aborts the in-flight action and asks for one wrap-up line.
+    iteration_cap: z.number().int().min(0).default(300),
     seed_memory_budget_bytes: z.number().int().min(256).default(8192),
+    // Small: goals are terse, and a big heartbeat would crowd the snapshot.
+    seed_heartbeat_budget_bytes: z.number().int().min(128).default(2048),
     seed_player_budget_bytes: z.number().int().min(256).default(1024),
     spawn_settle_delay_ms: z.number().int().min(0).default(500),
     // MEMORY.md compaction trigger: after a successful remember(), if the
@@ -124,6 +172,33 @@ export const ConfigSchema = z.object({
     // fired (single-flight). Default sits below seed_memory_budget_bytes so
     // compaction runs before the seed-read truncation kicks in.
     compaction_trigger_bytes: z.number().int().min(512).default(4096),
+  }).default({}),
+  // In-game vision knobs. Every field is `.default(...)` and the block itself
+  // `.default({})`, so existing config.json files that lack a `vision` key
+  // parse UNCHANGED (no shim, matching the project's no-backwards-compat-hack
+  // stance).
+  //
+  // mode is the user-facing Looking tier:
+  //   'off'        — no pictures; the look tool is not registered.
+  //   'on-demand'  — the model can call look()/explore(); no automatic views.
+  //   'continuous' — on-demand PLUS an automatic view rides an existing LLM turn
+  //                  on a fixed cadence (_PASSIVE_FRAME_INTERVAL_TURNS in the
+  //                  orchestrator). Legacy 'passive'/'active' collapse to this.
+  //
+  // resolution_px is the SINGLE enforcement point of VIS-06's 512×512 ceiling:
+  // `.max(512)` here means ConfigSchema.parse REJECTS any larger value, and the
+  // downscale/JPEG-encode path (15-01/15-04) reads this cap, so no render can
+  // ever exceed it. Default 256 (D-03: aggressive downscale — the model only
+  // needs general shapes, not detail). explicit_cap_per_hour is a bot-side hint
+  // only; the proxy `vision_hourly` bucket (15-02) is the authoritative cap.
+  vision: z.object({
+    mode: z.preprocess(
+      (v) => (v === 'passive' || v === 'active' ? 'continuous' : v),
+      z.enum(['off', 'on-demand', 'continuous']),
+    ).default('on-demand'),
+    image_quality: z.number().min(0.1).max(1).default(0.4),          // "image quality" (D-03)
+    resolution_px: z.number().int().min(64).max(512).default(256),   // D-03 ~256; VIS-06 ≤512 HARD CEILING
+    explicit_cap_per_hour: z.number().int().min(1).default(10),       // D-09 (proxy authoritative)
   }).default({}),
   adapter: AdapterSchema,
 })
@@ -165,6 +240,9 @@ export function loadConfig(path = './config.json', overrides = {}) {
   if (overrides.port != null) {
     raw.adapter = raw.adapter ?? { kind: 'minecraft', minecraft: {} }
     raw.adapter.minecraft = { ...raw.adapter.minecraft, port: overrides.port }
+  }
+  if (overrides.motd != null && String(overrides.motd).trim()) {
+    raw.lan_motd = String(overrides.motd).trim()
   }
   return ConfigSchema.parse(raw)
 }

@@ -21,6 +21,7 @@ export type ErrorClass =
   | 'KEYCHAIN_LOCKED'
   | 'KEYCHAIN_FALLBACK_PLAINTEXT'
   | 'NATIVE_MODULE_MISMATCH'
+  | 'UNSUPPORTED_MC_VERSION'
   // Skin + setup-wizard surfaces
   | 'MOD_DOWNLOAD_FAILED'
   | 'FABRIC_INSTALL_FAILED'
@@ -29,7 +30,8 @@ export type ErrorClass =
   | 'SKIN_FILE_INVALID'
   | 'SKIN_SERVER_PORT_TAKEN'
   | 'WIZARD_PERMISSION_DENIED'
-  | 'CLOUD_CREDITS_DEPLETED';
+  | 'CLOUD_CREDITS_DEPLETED'
+  | 'DAILY_LIMIT_REACHED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -42,6 +44,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'KEYCHAIN_LOCKED',
   'KEYCHAIN_FALLBACK_PLAINTEXT',
   'NATIVE_MODULE_MISMATCH',
+  'UNSUPPORTED_MC_VERSION',
   // Skin + setup-wizard surfaces
   'MOD_DOWNLOAD_FAILED',
   'FABRIC_INSTALL_FAILED',
@@ -51,4 +54,5 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'SKIN_SERVER_PORT_TAKEN',
   'WIZARD_PERMISSION_DENIED',
   'CLOUD_CREDITS_DEPLETED',
+  'DAILY_LIMIT_REACHED',
 ]);

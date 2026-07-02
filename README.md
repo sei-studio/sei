@@ -9,11 +9,11 @@ An omni-game AI player mod.
 
 <br />
 
-[<img src="docs/btn-macos.svg" alt="Download for macOS" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.dmg)
+[<img src="docs/btn-macos.svg" alt="Download for macOS (Apple Silicon)" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.zip)
 &nbsp;
 [<img src="docs/btn-windows.svg" alt="Download for Windows" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-win-x64.exe)
-&nbsp;
-[<img src="docs/btn-linux.svg" alt="Download for Linux" height="46" />](https://github.com/sei-studio/sei/releases/latest/download/Sei-linux-x86_64.AppImage)
+
+<sub>On an Intel Mac? [Download the Intel build](https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-x64.zip).</sub>
 
 </div>
 
@@ -36,7 +36,7 @@ Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI 
 - Real in-game vision on demand
 - Bring your own API key or sign in for cloud-hosted AI
 - Public cloud character library 
-- Cross-platform: macOS, Windows, Linux
+- Cross-platform: macOS, Windows
 
 ## Upcoming
 
@@ -65,7 +65,7 @@ Note that the cloud features are inactive in a source build for local developmen
 
 **Add your API key** (one of):
 
-- Open Sei Launcher -> Settings -> select provider -> paste your key
+- Open Sei -> Settings -> select provider -> paste your key
 - Edit `config.json` in user-data folder directly
 
 I'm currently working on this project by myself. For general discussions and closer contributions, reach out at [ouen@sei.gg](mailto:ouen@sei.gg). 

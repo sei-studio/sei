@@ -20,10 +20,10 @@
 import React, { useRef } from 'react';
 import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
+import { PortraitCropModal } from './PortraitCropModal';
 
-/** D-28 limits (mirror PORTRAIT_MAX_BYTES / PORTRAIT_MAX_DIM in src/main/portraitImageUtil.ts). */
+/** D-28 size budget (mirrors PORTRAIT_MAX_BYTES in src/main/portraitImageUtil.ts). */
 const MAX_BYTES = 500 * 1024;
-const MAX_DIM = 1024;
 
 export interface PortraitImagePickerProps {
   /** UUID of the persisted character to attach this portrait to. */
@@ -42,12 +42,26 @@ export function PortraitImagePicker({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<boolean>(false);
+  // Decoded source image awaiting crop/preview in the popup (null = closed).
+  const [cropImg, setCropImg] = React.useState<HTMLImageElement | null>(null);
+  // Object URL backing the crop modal's <img>; revoked when the modal closes.
+  const cropUrlRef = useRef<string | null>(null);
 
   const onPick = (): void => {
     if (busy) return;
     inputRef.current?.click();
   };
 
+  const closeCrop = (): void => {
+    if (cropUrlRef.current) {
+      URL.revokeObjectURL(cropUrlRef.current);
+      cropUrlRef.current = null;
+    }
+    setCropImg(null);
+  };
+
+  // Pick → decode → open the crop/preview popup. We no longer reject on size:
+  // any image is accepted here, then downsized to fit on confirm.
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     setError(null);
     const file = e.target.files?.[0];
@@ -57,38 +71,38 @@ export function PortraitImagePicker({
       setError('Pick an image file (PNG/JPG/WebP).');
       return;
     }
-    setBusy(true);
     try {
-      // Step 1+2: decode into <img>, then redraw to <canvas> at ≤1024² preserving aspect.
       const objectUrl = URL.createObjectURL(file);
-      let pngBytes: Uint8Array;
-      try {
-        const img = await loadImage(objectUrl);
-        pngBytes = await resizeToPngBytes(img, MAX_DIM);
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-      }
+      const img = await loadImage(objectUrl);
+      if (cropUrlRef.current) URL.revokeObjectURL(cropUrlRef.current);
+      cropUrlRef.current = objectUrl;
+      setCropImg(img);
+    } catch (err) {
+      setError((err as Error).message ?? 'Could not open that image.');
+    }
+  };
 
-      // Defensive client-side cap before sending across IPC. Main re-checks.
-      if (pngBytes.byteLength > MAX_BYTES) {
-        setError('Image too large after resize (max 500KB). Try a simpler picture.');
+  // Confirm from the crop popup → compress the cropped canvas under the size
+  // budget (auto-downscaling / re-encoding so ANY image fits), then apply.
+  const onCropConfirm = async (canvas: HTMLCanvasElement): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { bytes, format } = await canvasToPortraitBytes(canvas, MAX_BYTES);
+      if (bytes.byteLength > MAX_BYTES) {
+        // Unreachable in practice (the compressor targets the budget), but keep
+        // a guard so a pathological input surfaces a clear message.
+        setError('Could not get this image under 500KB. Try a simpler picture.');
         return;
       }
-
-      // Step 4: base64 + IPC. The byte → base64 conversion uses the
-      // chunked btoa pattern to avoid blowing the stack on large arrays.
-      const bytesBase64 = bytesToBase64(pngBytes);
-      const ref = await sei.charsApplyPortrait({
-        characterId,
-        bytesBase64,
-        format: 'png',
-      });
+      const bytesBase64 = bytesToBase64(bytes);
+      const ref = await sei.charsApplyPortrait({ characterId, bytesBase64, format });
       onChange(ref);
     } catch (err) {
-      const msg = (err as Error).message ?? 'Failed to apply portrait.';
-      setError(prettifyError(msg));
+      setError(prettifyError((err as Error).message ?? 'Failed to apply portrait.'));
     } finally {
       setBusy(false);
+      closeCrop();
     }
   };
 
@@ -107,6 +121,7 @@ export function PortraitImagePicker({
   };
 
   return (
+    <>
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
       {value ? (
         <img
@@ -187,6 +202,15 @@ export function PortraitImagePicker({
         </span>
       ) : null}
     </div>
+    {cropImg ? (
+      <PortraitCropModal
+        image={cropImg}
+        busy={busy}
+        onCancel={closeCrop}
+        onConfirm={(canvas) => void onCropConfirm(canvas)}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -201,23 +225,92 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-async function resizeToPngBytes(img: HTMLImageElement, maxDim: number): Promise<Uint8Array> {
-  const srcW = img.naturalWidth || img.width;
-  const srcH = img.naturalHeight || img.height;
-  if (srcW === 0 || srcH === 0) throw new Error('Image has zero dimensions.');
-  const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
-  const dstW = Math.max(1, Math.round(srcW * scale));
-  const dstH = Math.max(1, Math.round(srcH * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = dstW;
-  canvas.height = dstH;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Could not allocate a 2D canvas context.');
-  ctx.drawImage(img, 0, 0, dstW, dstH);
-  const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.92));
-  if (!blob) throw new Error('Could not re-encode the image as PNG.');
-  const buf = await blob.arrayBuffer();
-  return new Uint8Array(buf);
+type PortraitFormat = 'png' | 'jpeg' | 'webp';
+
+/**
+ * Compress a (cropped) canvas to bytes that fit `maxBytes`, downscaling and
+ * lowering quality as needed so ANY image can be accepted. Strategy:
+ *   - Opaque image → JPEG (great for photos), quality ladder per scale step.
+ *   - Image with transparency → PNG first (lossless, preserves alpha), then
+ *     lossy WebP (still preserves alpha) before shrinking further — we never
+ *     fall back to JPEG for alpha images (it would fill transparent pixels).
+ * The original bug: the old path always re-encoded to lossless PNG at up to
+ * 1024², so a small JPEG photo ballooned past 500KB and was rejected instead
+ * of compressed.
+ */
+async function canvasToPortraitBytes(
+  source: HTMLCanvasElement,
+  maxBytes: number,
+): Promise<{ bytes: Uint8Array; format: PortraitFormat }> {
+  const hasAlpha = canvasHasAlpha(source);
+  const scales = [1, 0.85, 0.7, 0.55, 0.42, 0.32, 0.24];
+  let smallest: { bytes: Uint8Array; format: PortraitFormat } | null = null;
+
+  const consider = async (
+    blob: Blob | null,
+    format: PortraitFormat,
+  ): Promise<{ bytes: Uint8Array; format: PortraitFormat } | null> => {
+    if (!blob) return null;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (!smallest || bytes.byteLength < smallest.bytes.byteLength) smallest = { bytes, format };
+    return bytes.byteLength <= maxBytes ? { bytes, format } : null;
+  };
+
+  for (const s of scales) {
+    const cv = s >= 1 ? source : downscaleCanvas(source, s);
+    if (hasAlpha) {
+      const png = await encode(cv, 'image/png');
+      const rp = await consider(png, 'png');
+      if (rp) return rp;
+      for (const q of [0.92, 0.85, 0.78, 0.7, 0.6, 0.5]) {
+        const webp = await encode(cv, 'image/webp', q);
+        const rw = await consider(webp, 'webp');
+        if (rw) return rw;
+      }
+    } else {
+      for (const q of [0.92, 0.86, 0.8, 0.72, 0.64, 0.55, 0.45, 0.35]) {
+        const jpg = await encode(cv, 'image/jpeg', q);
+        const rj = await consider(jpg, 'jpeg');
+        if (rj) return rj;
+      }
+    }
+  }
+
+  // Nothing fit even at the smallest scale/quality — apply the smallest we got
+  // (main re-validates; an honest error surfaces only for truly pathological input).
+  if (smallest) return smallest;
+  throw new Error('Could not encode the image.');
+}
+
+function encode(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+function downscaleCanvas(src: HTMLCanvasElement, scale: number): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(src.width * scale));
+  c.height = Math.max(1, Math.round(src.height * scale));
+  const ctx = c.getContext('2d');
+  if (!ctx) return src;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** True if any pixel has alpha < 255 (so we must preserve transparency). */
+function canvasHasAlpha(canvas: HTMLCanvasElement): boolean {
+  try {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] < 255) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /**

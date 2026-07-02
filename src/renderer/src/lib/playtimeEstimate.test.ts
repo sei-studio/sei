@@ -13,7 +13,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { tokensRemainingToPlaytime, DEFAULT_TOKENS_PER_MIN } from './playtimeEstimate';
+import {
+  tokensRemainingToPlaytime,
+  DEFAULT_TOKENS_PER_MIN,
+  VISION_MULTIPLIER,
+} from './playtimeEstimate';
 
 describe('tokensRemainingToPlaytime', () => {
   it('returns Calculating… when remainingTokens is undefined', () => {
@@ -131,5 +135,52 @@ describe('260606 minute-precision playtime multiplier', () => {
   it("ouen's live balance (886,314 µ$ → 443,157 tokens) reads ~1h 5min", () => {
     // The 10%-used regression: 65.17 min must show minutes, not snap to ~1h.
     expect(tokensRemainingToPlaytime(886_314 / 2).display).toBe('~1h 5min left');
+  });
+});
+
+describe('Phase 15 (D-07) — vision auto-render playtime shrink', () => {
+  // Auto-look has the bot render its surroundings on its own, which costs more
+  // playtime. D-07 communicates this by SHRINKING the "~Xh left" figure — apply
+  // VISION_MULTIPLIER to the burn rate when auto-render is ON. A higher effective
+  // tokensPerMin yields fewer minutes for the same remaining tokens. PROXY-05
+  // holds: only the displayed TIME shrinks; no token counts surface.
+
+  it('VISION_MULTIPLIER is in the documented 1.3–1.5x range', () => {
+    expect(VISION_MULTIPLIER).toBeGreaterThanOrEqual(1.3);
+    expect(VISION_MULTIPLIER).toBeLessThanOrEqual(1.5);
+  });
+
+  it('VISION_MULTIPLIER is strictly greater than 1 so it shrinks (never grows) the figure', () => {
+    expect(VISION_MULTIPLIER).toBeGreaterThan(1);
+  });
+
+  it('the multiplied rate yields strictly FEWER minutes than the base rate for the same tokens', () => {
+    const remaining = DEFAULT_TOKENS_PER_MIN * 100; // 100 base-minutes worth
+    const baseRate = DEFAULT_TOKENS_PER_MIN;
+    const visionRate = DEFAULT_TOKENS_PER_MIN * VISION_MULTIPLIER;
+
+    const base = tokensRemainingToPlaytime(remaining, baseRate);
+    const withVision = tokensRemainingToPlaytime(remaining, visionRate);
+
+    expect(withVision.minutes).toBeLessThan(base.minutes);
+  });
+
+  it('the shrunk estimate matches the analytic floor(remaining / (rate × multiplier))', () => {
+    const remaining = DEFAULT_TOKENS_PER_MIN * 100;
+    const visionRate = DEFAULT_TOKENS_PER_MIN * VISION_MULTIPLIER;
+    const expectedMin = Math.floor(remaining / visionRate);
+    expect(tokensRemainingToPlaytime(remaining, visionRate).minutes).toBe(expectedMin);
+  });
+
+  it('auto-render OFF (base rate) is UNCHANGED from the prior behavior — no regression', () => {
+    // Passing the base rate (auto-render off) must equal the default-argument
+    // call, i.e. exactly what the UI showed before this change.
+    const remaining = DEFAULT_TOKENS_PER_MIN * 100;
+    const offExplicit = tokensRemainingToPlaytime(remaining, DEFAULT_TOKENS_PER_MIN);
+    const priorBehavior = tokensRemainingToPlaytime(remaining);
+    expect(offExplicit.display).toBe(priorBehavior.display);
+    expect(offExplicit.minutes).toBe(priorBehavior.minutes);
+    // And it is exactly 100 minutes → ~1h 40min left (the pre-vision figure).
+    expect(offExplicit.display).toBe('~1h 40min left');
   });
 });

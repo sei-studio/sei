@@ -19,8 +19,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 interface MockState {
   selectRows: Record<string, unknown>[];
-  selectError: { message: string } | null;
-  insertError: { message: string } | null;
+  selectError: { message: string; code?: string } | null;
+  insertError: { message: string; code?: string } | null;
   capturedSelectFilters: Record<string, string>;
   capturedSelectSignal: AbortSignal | null;
   capturedInsertRow: Record<string, unknown> | null;
@@ -135,6 +135,26 @@ describe('isTosAccepted', () => {
   });
 });
 
+describe('getTosAcceptance', () => {
+  it("returns 'accepted' when a matching row exists", async () => {
+    const { getTosAcceptance } = await import('./tosGate');
+    state.selectRows = [{ tos_version: '2026-05-21', privacy_version: '2026-05-21' }];
+    await expect(getTosAcceptance('user-uuid')).resolves.toBe('accepted');
+  });
+
+  it("returns 'not_accepted' ONLY on a successful empty query", async () => {
+    const { getTosAcceptance } = await import('./tosGate');
+    state.selectRows = [];
+    await expect(getTosAcceptance('user-uuid')).resolves.toBe('not_accepted');
+  });
+
+  it("returns 'unknown' (not 'not_accepted') when supabase returns an error — offline launch must not re-show the legal modal", async () => {
+    const { getTosAcceptance } = await import('./tosGate');
+    state.selectError = { message: 'TypeError: fetch failed' };
+    await expect(getTosAcceptance('user-uuid')).resolves.toBe('unknown');
+  });
+});
+
 describe('recordAcceptance', () => {
   it('inserts a row with user_id, tos_version, privacy_version', async () => {
     const { recordAcceptance } = await import('./tosGate');
@@ -153,6 +173,23 @@ describe('recordAcceptance', () => {
     await expect(recordAcceptance('user-uuid')).rejects.toThrow(
       /TOS_RECORD_FAILED: constraint violation/,
     );
+  });
+
+  it('treats a 23505 duplicate-key error as idempotent success (composite PK — user already accepted)', async () => {
+    const { recordAcceptance } = await import('./tosGate');
+    state.insertError = {
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "tos_acceptance_pkey"',
+    };
+    await expect(recordAcceptance('user-uuid')).resolves.toBeUndefined();
+  });
+
+  it('treats a duplicate-key error without a code field as success (message fallback)', async () => {
+    const { recordAcceptance } = await import('./tosGate');
+    state.insertError = {
+      message: 'duplicate key value violates unique constraint "tos_acceptance_pkey"',
+    };
+    await expect(recordAcceptance('user-uuid')).resolves.toBeUndefined();
   });
 
   it('resolves without throw when insert succeeds', async () => {

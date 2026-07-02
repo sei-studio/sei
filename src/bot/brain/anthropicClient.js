@@ -1,5 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { logHaikuQuery, logHaikuResponse } from './log.js'
+import { logHaikuQuery, logHaikuResponse, logHaikuError } from './log.js'
+
+/**
+ * Per-call URL path for the proxy's per-hour vision-cap route (15-02, VIS-07/D-09).
+ * Passed as `call({ ..., path: VISION_MESSAGES_PATH })` for EXACTLY the one LLM
+ * turn that follows an explicit `visualize`, and ONLY in cloud-proxy mode — the
+ * SDK joins this onto the proxy baseURL (api.sei.gg, no path component) so that
+ * single request hits the `vision_hourly` gate. Single-sourced here so the
+ * orchestrator imports the literal from ONE place (no string drift). BYOK/local
+ * providers never set it (D-11: uncapped).
+ */
+export const VISION_MESSAGES_PATH = '/vision/v1/messages'
 
 /**
  * 260502-h6i: Stamp `cache_control: {type:'ephemeral'}` on the LAST tool entry
@@ -37,14 +48,78 @@ export function stampLastToolCacheControl(tools) {
  *     `this.apiKey == null` (line 124), so NO X-Api-Key header is emitted.
  */
 function buildSdkOptions(config) {
+  // 260610: SDK auto-retries are OFF — `call()` owns retrying. The SDK's
+  // retry loop honors a server `Retry-After` header by `await sleep(...)`
+  // with NO abort-signal wiring and NO cap in v0.91.1 ("If the API asks us
+  // to wait a certain amount of time, just do what it says"). The Sei proxy's
+  // rate-limit gate sends `Retry-After: <seconds-to-window-reset>` (up to
+  // 60); one such 429 parked a messages.create() in a 30s un-abortable sleep
+  // that ignored BOTH the 20s deadline controller and the player-chat
+  // preempt abort — the bot read as frozen for 30s (260609 incident).
+  // call() re-implements the single rescue retry with a short, ABORTABLE
+  // sleep under the same deadline controller.
+  const maxRetries = 0
   if (config.anthropic.cloudMode) {
     return {
       baseURL: config.anthropic.cloudMode.baseURL,
       authToken: config.anthropic.cloudMode.authToken,
       apiKey: null,
+      maxRetries,
     }
   }
-  return { apiKey: config.anthropic.api_key }
+  return { apiKey: config.anthropic.api_key, maxRetries }
+}
+
+// ── Retry policy for call()'s own (SDK-independent) retry ─────────────────
+// Up to two rescue retries, only when the failure is transient and there is
+// enough budget left for the next attempt to plausibly finish. Transient
+// failures (5xx / 429 / connection blips) are origin-wide — the vision path
+// and plain /v1/messages share the same proxy origin, so the policy is shared
+// too. Extra attempts trade remaining budget, not worst-case latency: the
+// deadline controller stays the authoritative wall-clock cap, and every sleep
+// is abortable, so a player-chat preempt still cuts through instantly. A
+// dropped turn (silent bot, discarded frame) costs more UX than retrying
+// inside the budget we were going to spend anyway.
+const MAX_RESCUE_RETRIES = 2
+const RETRY_MIN_REMAINING_MS = 2_500
+// Default sleep before rescue attempt N (when the server sends no
+// Retry-After): 500ms catches a connection blip / single dropped response;
+// 1.5s rides out a short origin restart (a Fly machine cycles in ~1-2s).
+const RETRY_SLEEP_DEFAULTS_MS = [500, 1_500]
+// Sleep ceiling: server Retry-After is honored but never beyond this — a
+// denied early retry is a cheap rejection, a long sleep is a frozen bot.
+const RETRY_SLEEP_CAP_MS = 2_000
+
+function isRetryableError(err) {
+  const s = err?.status
+  if (s === 429 || s === 408 || (typeof s === 'number' && s >= 500)) return true
+  // Connection-level failure (no HTTP status): APIConnectionError family.
+  if (s === undefined && (err?.name === 'APIConnectionError' || err?.name === 'APIConnectionTimeoutError')) return true
+  return false
+}
+
+/** Server-suggested retry delay in ms from an SDK APIError, or null. */
+function retryAfterMsFrom(err) {
+  try {
+    const v = err?.headers?.get?.('retry-after')
+    if (!v) return null
+    const n = Number(v)
+    return Number.isFinite(n) && n >= 0 ? n * 1000 : null
+  } catch { return null }
+}
+
+/** setTimeout that resolves early (without throwing) when `signal` aborts. */
+function abortableSleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve()
+    const t = setTimeout(done, ms)
+    function done() {
+      clearTimeout(t)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    signal?.addEventListener('abort', done, { once: true })
+  })
 }
 
 /**
@@ -69,9 +144,10 @@ export function createAnthropicClient(config) {
    * @param {number} [req.timeoutMs]
    * @param {number} [req.maxTokens]
    * @param {Array<{role:string, content:Array<{type:string, name?:string, text?:string}>}>} [req.namedUserBlocks] Canonical pre-strip messages array carrying `name` fields on text blocks; used by log.js for cache-prefix hash elision. Logger-only; not sent to API.
+   * @param {string} [req.path] Per-call SDK request path override. Used ONLY by the post-explicit-`visualize` turn to hit the proxy `/vision/v1/messages` vision-cap gate (15-02, VIS-07/D-09), and ONLY in cloud-proxy mode (BYOK/local providers never set it — D-11). When undefined the SDK uses its built-in `/v1/messages`.
    * @returns {Promise<{toolUses:Array<{id:string,name:string,input:any}>, text:string, usage:object, stopReason:string}>}
    */
-  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking }) {
+  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking, path }) {
     logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks })
     // 260502-h6i: stamp cache_control on the LAST tool entry so the cache
     // boundary lands at the end of the tools array (system → tools is now
@@ -93,17 +169,131 @@ export function createAnthropicClient(config) {
       messages,
     }
     if (thinking) req.thinking = thinking
-    const resp = await sdk.messages.create(req, { signal, timeout: timeoutMs ?? defaultTimeoutMs })
-    const content = resp.content ?? []
-    const toolUses = content
-      .filter(b => b.type === 'tool_use')
-      .map(b => ({ id: b.id, name: b.name, input: b.input }))
-    const text = content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('')
-    logHaikuResponse({ text, toolUses, usage: resp.usage, stopReason: resp.stop_reason })
-    return { toolUses, text, content, usage: resp.usage, stopReason: resp.stop_reason }
+
+    // 260607: bound the TOTAL wall-clock of this call across the SDK's internal
+    // retries. The SDK `timeout` is PER-ATTEMPT, so maxRetries×timeout (+backoff)
+    // is the true ceiling — that is the mechanism behind the 30-60s freezes.
+    // A single controller aborts the request on EITHER the caller's signal (FSM
+    // preempt) OR a wall-clock budget, whichever fires first, so the in-flight
+    // request is actually cancelled (not left running to burn a proxy
+    // reservation) and the player-visible stall is hard-capped at `budgetMs`.
+    const budgetMs = timeoutMs ?? defaultTimeoutMs
+    const ctrl = new AbortController()
+    let timedOut = false
+    const onExternalAbort = () => { try { ctrl.abort(signal.reason) } catch { ctrl.abort() } }
+    if (signal) {
+      if (signal.aborted) onExternalAbort()
+      else signal.addEventListener('abort', onExternalAbort, { once: true })
+    }
+    const deadline = setTimeout(() => { timedOut = true; ctrl.abort() }, budgetMs)
+
+    const startedAt = Date.now()
+    try {
+      // Attempt loop: an optional 404 vision-path reroute plus up to
+      // MAX_RESCUE_RETRIES transient-failure retries, ALL under the SAME
+      // deadline controller. SDK auto-retry is disabled (buildSdkOptions)
+      // because its Retry-After sleep is un-abortable and uncapped — the
+      // mechanism behind the 30s frozen-bot incident (260609). Our rescue
+      // sleeps are short, capped, and abort with the controller.
+      let rescueRetries = 0
+      while (true) {
+        try {
+          // Per-attempt timeout sits just above the REMAINING budget so the
+          // deadline controller is always the authoritative cap.
+          const remainingMs = budgetMs - (Date.now() - startedAt)
+          // VIS-07/D-09: a per-call `path` (set only on the post-visualize turn
+          // in cloud mode) routes this single request to the proxy's vision-cap
+          // gate; undefined keeps the SDK default `/v1/messages`. The retry
+          // policy is untouched — a 429 from the vision gate re-hits the SAME
+          // path once via the rescue retry (accepted; the gate counts server-side).
+          const resp = await sdk.messages.create(req, { signal: ctrl.signal, timeout: Math.max(1_000, remainingMs + 2_000), ...(path ? { path } : {}) })
+          const elapsedMs = Date.now() - startedAt
+          const content = resp.content ?? []
+          const toolUses = content
+            .filter(b => b.type === 'tool_use')
+            .map(b => ({ id: b.id, name: b.name, input: b.input }))
+          const text = content
+            .filter(b => b.type === 'text')
+            .map(b => b.text)
+            .join('')
+          logHaikuResponse({ text, toolUses, usage: resp.usage, stopReason: resp.stop_reason, elapsedMs })
+          return { toolUses, text, content, usage: resp.usage, stopReason: resp.stop_reason }
+        } catch (err) {
+          const elapsedMs = Date.now() - startedAt
+          // Budget exhaustion: normalize to an AbortError so runIterations
+          // treats it as a clean dropped-turn (loop + any in-flight
+          // long-runner stay intact), not a hard error — and surface it
+          // (previously a slow call was invisible: a [haiku?] with no
+          // [haiku!]).
+          if (timedOut) {
+            logHaikuError({ elapsedMs, name: 'TimeoutError', message: `exceeded ${budgetMs}ms call budget` })
+            const e = new Error(`anthropic call exceeded ${budgetMs}ms budget`)
+            e.name = 'AbortError'
+            e.isTimeout = true
+            throw e
+          }
+          // External preempt (player chat / attack) is expected, not a
+          // failure — bail out immediately, never retry across it.
+          if (signal?.aborted || ctrl.signal.aborted) {
+            logHaikuError({ elapsedMs, name: 'AbortError', message: 'aborted (preempt)', status: err?.status })
+            throw err
+          }
+          // Vision-path fallback: a 404 on the per-call `path` override means
+          // the deployed proxy doesn't expose /vision/v1/messages (route added
+          // client-side ahead of the proxy rollout). Strip the override and
+          // re-hit the default /v1/messages instead of dropping the turn — the
+          // hourly vision cap is a proxy-side guard, not worth a dead reply
+          // after a successful render. Cannot loop: `path` is cleared before
+          // the continue, so this branch fires at most once per call. It is a
+          // REROUTE, not a retry — it deliberately does not touch
+          // rescueRetries, so the fallback request keeps its full transient-
+          // failure allowance (a 502 right after the 404 detour killed a
+          // rendered frame on 260610).
+          if (path && err?.status === 404) {
+            logHaikuError({ elapsedMs, name: 'NotFoundError', message: `404 on ${path} — falling back to /v1/messages`, status: 404 })
+            path = undefined
+            continue
+          }
+          // Rescue retries for transient failures (429 / 5xx / connection
+          // blip), only with enough budget left to plausibly finish. Sleep
+          // honors the server's Retry-After but hard-caps it: a denied early
+          // retry is a cheap rejection; a long obedient sleep is a dead bot.
+          const remainingMs = budgetMs - (Date.now() - startedAt)
+          if (rescueRetries < MAX_RESCUE_RETRIES && isRetryableError(err) && remainingMs > RETRY_MIN_REMAINING_MS) {
+            const sleepMs = Math.max(100, Math.min(
+              retryAfterMsFrom(err) ?? RETRY_SLEEP_DEFAULTS_MS[rescueRetries],
+              RETRY_SLEEP_CAP_MS,
+              remainingMs - RETRY_MIN_REMAINING_MS + 1_000,
+            ))
+            rescueRetries++
+            logHaikuError({
+              elapsedMs,
+              name: err?.name ?? 'Error',
+              message: `${err?.message ?? String(err)} — retry ${rescueRetries}/${MAX_RESCUE_RETRIES} in ${sleepMs}ms`,
+              status: err?.status,
+            })
+            await abortableSleep(sleepMs, ctrl.signal)
+            if (!ctrl.signal.aborted) continue
+            // Aborted mid-sleep: loop once more; the create() call rejects
+            // instantly on the aborted signal and routes through the
+            // timedOut / preempt branches above with correct attribution.
+            continue
+          }
+          // Terminal: 402 (depleted ledger), 4xx, exhausted retry — caller
+          // handles by status.
+          logHaikuError({
+            elapsedMs,
+            name: err?.name ?? 'Error',
+            message: err?.message ?? String(err),
+            status: err?.status,
+          })
+          throw err
+        }
+      }
+    } finally {
+      clearTimeout(deadline)
+      if (signal) signal.removeEventListener('abort', onExternalAbort)
+    }
   }
 
   /**

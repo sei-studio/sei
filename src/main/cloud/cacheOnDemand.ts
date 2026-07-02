@@ -317,9 +317,28 @@ async function refreshFromCloud(uuid: string): Promise<void> {
     const { data: { session } } = await getClient().auth.getSession();
     const currentUserId = session?.user?.id ?? null;
 
-    const isDefault = local.is_default === true;
+    // Bundled defaults (sui/lyra/clawd) are authoritative from the APP BUNDLE,
+    // never the cloud. refreshSeededDefaults re-asserts their authored fields
+    // (persona, metadata.proactiveness, skin, …) from the shipped source on
+    // every launch, so they auto-update through app releases. Pulling their
+    // cloud row HERE adopts a STALE cloud copy and clobbers the bundle value —
+    // e.g. Sui flips from the bundle's Agentic back to the cloud row's Reactive
+    // moments after launch (the "showed agentic for a second, then dropped to
+    // reactive" report). Skip them entirely; the bundle is the single source of
+    // truth for defaults.
+    if (local.is_default === true) return;
     const isForeign = !!local.owner && local.owner !== currentUserId;
-    if (!isDefault && !isForeign) return;
+    // Item 4 (cross-device): ALSO refresh the user's OWN cloud-backed characters
+    // (owner === currentUserId), not just foreign. A public/private
+    // toggle (or any edit) made on ANOTHER device bumps the cloud row's
+    // updated_at; pulling it here on next open propagates the new `shared` flag
+    // (and content) to this device, fixing the "toggle on device A doesn't update
+    // device B" report. Still guarded below by the cloud_updated_at watermark
+    // (never clobbers a NEWER local edit) and by ensureLocallyCached, which bails
+    // when a local sync op for this uuid is pending (so unsynced local edits win).
+    // Local-only characters (owner === null, no cloud row) are still skipped.
+    const isOwnCloud = !!local.owner && local.owner === currentUserId;
+    if (!isForeign && !isOwnCloud) return;
 
     const { downloadCharacter } = await import('./cloudCharacterClient');
     const cloud = await downloadCharacter(uuid);
@@ -448,4 +467,35 @@ export async function listMerged(): Promise<{ characters: MergedCharacterListing
     });
   }
   return { characters: merged };
+}
+
+/**
+ * Item 4 (cross-device) — eagerly pull the signed-in user's OWN cloud
+ * characters into the local library on sign-in, so they appear in the IconRail
+ * + Home grid immediately instead of only after being opened from the World /
+ * Summons list (which is what triggered cache-on-demand before). Each
+ * `ensureLocallyCached` cache-misses → writes the JSON + appends to the index
+ * (so listCharacters surfaces it), or cache-hits → refreshes from cloud. Runs
+ * BEFORE the renderer re-bootstraps (called from profileScope.switchScopeForAuth)
+ * so the post-sign-in character reload sees them. Best-effort throughout.
+ */
+export async function cacheMyCloudCharacters(ownerUuid: string): Promise<void> {
+  if (!ownerUuid) return;
+  try {
+    const { listMyCharacters } = await import('./cloudCharacterClient');
+    const rows = await listMyCharacters(ownerUuid);
+    // Cache in PARALLEL so the wall-time (this runs on the sign-in critical path,
+    // before the renderer re-bootstraps) is bounded by the slowest single
+    // character rather than the sum across an account with many characters. Each
+    // ensureLocallyCached is independently best-effort.
+    await Promise.all(
+      rows.map((row) =>
+        ensureLocallyCached(row.id).catch((err) =>
+          console.warn(`[sei] eager-cache own char ${row.id} failed: ${(err as Error).message}`),
+        ),
+      ),
+    );
+  } catch (err) {
+    console.warn(`[sei] cacheMyCloudCharacters failed: ${(err as Error).message}`);
+  }
 }

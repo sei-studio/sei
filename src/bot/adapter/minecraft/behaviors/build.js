@@ -11,8 +11,11 @@ import { reason } from '../../../brain/errStrings.js'
 export const DEFAULT_TIMEOUT_MS = 4000 // per-cell, inherited via placeBlockAction
 export const ITERATION_ORDER = 'Y-asc → X-asc → Z-asc' // D-07 documented constant
 const REACH = 4.5
-const APEX_MAX_MS = 600
-const LANDING_MAX_MS = 800
+const JUMP_PLACE_WINDOW_MS = 800 // airborne budget to land the scaffold place
+const LANDING_MAX_MS = 800       // max wait to settle on the new block
+const SCAFFOLD_ATTEMPTS = 3      // re-jumps per layer before giving up
+const REFIRE_MS = 150            // min gap between place packets within one jump
+const FACE_UP = new Vec3(0, 1, 0)
 
 // 6 neighbor offsets in placement priority: floor first, then horizontal,
 // then ceiling. Picker iterates this order; first non-air neighbor wins.
@@ -76,15 +79,37 @@ export function withinReach(bot, c) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz) <= REACH
 }
 
-async function waitForApex(bot, maxMs) {
-  const start = Date.now()
-  let lastY = bot.entity?.position?.y ?? 0
-  while (Date.now() - start < maxMs) {
-    await new Promise(r => setTimeout(r, 40))
-    const y = bot.entity?.position?.y ?? lastY
-    if (y <= lastY && bot.entity?.onGround === false) return
-    lastY = y
+/**
+ * Place the scaffold block in the cell the feet just vacated, mid-jump. Fires
+ * the place the instant the feet clear the target cell ON THE WAY UP — not at
+ * the apex. placeBlock has unavoidable latency (it faces the block and waits a
+ * tick); firing while still rising means the bot is HIGHER when the packet
+ * lands, so the cell is reliably clear of its hitbox. The old code placed at the
+ * apex, and that latency let the bot fall back into the cell before the packet
+ * landed, so the server rejected the block. Success is read from the WORLD (the
+ * target cell turned solid), not from placeBlock's promise. (260617)
+ */
+async function jumpPlace(bot, refBlock, col, cellY) {
+  const targetCell = new Vec3(col.x, cellY, col.z)
+  const deadline = Date.now() + JUMP_PLACE_WINDOW_MS
+  let inFlight = false
+  let lastFire = 0
+  while (Date.now() < deadline) {
+    const cur = bot.blockAt(targetCell)
+    if (cur && !isAir(cur.name)) return true
+    const now = Date.now()
+    const feetY = bot.entity?.position?.y ?? 0
+    if (!inFlight && bot.entity?.onGround === false && feetY >= cellY + 1 && now - lastFire >= REFIRE_MS) {
+      lastFire = now
+      inFlight = true
+      // Fire-and-forget: a missed place rejects seconds later via placeBlock's
+      // own block-update wait; we don't await it — the world check confirms.
+      Promise.resolve(bot.placeBlock(refBlock, FACE_UP)).catch(() => {}).finally(() => { inFlight = false })
+    }
+    await new Promise(r => setTimeout(r, 20))
   }
+  const cur = bot.blockAt(targetCell)
+  return !!(cur && !isAir(cur.name))
 }
 
 async function waitForLanding(bot, maxMs) {
@@ -103,27 +128,33 @@ async function waitForLanding(bot, maxMs) {
 export async function scaffoldUp(bot, blockName, targetY, config) {
   while (Math.floor(bot.entity.position.y) < targetY - 1) {
     if (config?.signal?.aborted) return 'aborted'
-    const startY = bot.entity.position.y
     const invItem = bot.inventory.items().find(i => i.name === blockName)
     if (!invItem) return `no ${blockName} in inventory`
     try { await bot.equip(invItem, 'hand') }
     catch (e) { return `cannot hold ${blockName}: ${reason(e) || ''}`.trim() }
-    bot.setControlState('jump', true)
-    await waitForApex(bot, APEX_MAX_MS)
-    bot.setControlState('jump', false)
-    const refPos = new Vec3(
-      Math.floor(bot.entity.position.x),
-      Math.floor(startY) - 1,
-      Math.floor(bot.entity.position.z),
-    )
-    const refBlock = bot.blockAt(refPos)
-    if (!refBlock || isAir(refBlock.name)) return 'scaffold failed: no floor below'
-    try {
-      await bot.placeBlock(refBlock, new Vec3(0, 1, 0))
-    } catch (e) {
-      return `scaffold place failed: ${reason(e) || ''}`.trim()
+
+    // A single jump can miss the place (a hitch in the jump, a slow packet);
+    // re-jump a few times before giving up on the whole build rather than
+    // bailing on the first miss.
+    let placed = false
+    for (let attempt = 0; attempt < SCAFFOLD_ATTEMPTS && !placed; attempt++) {
+      if (config?.signal?.aborted) return 'aborted'
+      const pos = bot.entity.position
+      const cellY = Math.floor(pos.y)               // cell the feet rest in / vacate on jump
+      const col = { x: Math.floor(pos.x), z: Math.floor(pos.z) }
+      const refBlock = bot.blockAt(new Vec3(col.x, cellY - 1, col.z))
+      if (!refBlock || isAir(refBlock.name)) return 'scaffold failed: no floor below'
+
+      // Face straight down first so the in-jump place doesn't spend airtime
+      // turning toward the block. (pitch +PI/2 = straight down)
+      try { await bot.look(bot.entity.yaw, Math.PI / 2, true) } catch {}
+
+      bot.setControlState('jump', true)
+      placed = await jumpPlace(bot, refBlock, col, cellY)
+      bot.setControlState('jump', false)
+      await waitForLanding(bot, LANDING_MAX_MS)      // settle before re-check / re-jump
     }
-    await waitForLanding(bot, LANDING_MAX_MS)
+    if (!placed) return 'scaffold place failed: could not place block under feet'
   }
   return 'ok'
 }
@@ -138,11 +169,16 @@ export async function buildAction(args, bot, config) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
 
-  const invItem = bot.inventory.items().find(i => i.name === args.block)
-  if (!invItem) return `no ${args.block} in inventory`
+  const invCount = () => bot.inventory.items().filter(i => i.name === args.block).reduce((n, i) => n + i.count, 0)
+  if (invCount() === 0) return `no ${args.block} in inventory`
 
   const cells = enumerateBuildCells(args.from, args.to, args.hollow === true)
   const total = cells.length
+  // Material check (260617): how many cells actually need a block placed (the
+  // rest are already solid). If the bot runs out mid-build the end-return says
+  // so explicitly — the old path returned "0 placed" with no hint that the real
+  // problem was too few blocks (the log: a 84-cell wall attempted with 4 dirt).
+  const needed = cells.reduce((n, c) => n + (isOccupied(bot, c) ? 0 : 1), 0)
   let placed = 0, skipped = 0
 
   for (const c of cells) {
@@ -185,5 +221,21 @@ export async function buildAction(args, bot, config) {
     config?.onProgress?.({ placed, skipped, total, currentY: c.y })
   }
 
+  // Ran out of material before finishing (this also catches scaffolding
+  // consumption, since invCount() is the live remaining count). Make it an
+  // explicit, actionable signal — gather/ask for more — instead of a bare
+  // "0 placed" the model couldn't distinguish from building into terrain.
+  if (placed < needed && invCount() === 0) {
+    return `built ${placed} of ~${needed} needed, then ran out of ${args.block}. Get more ${args.block} (gather it, or ask the player for it) before finishing this build.`
+  }
+
+  // 260607: a 0-placed result is NOT a soft success — every cell was already
+  // solid (building into terrain or at the bot's own feet level). The model
+  // previously read "built 0 placed, N skipped" as progress and kept
+  // "extending" a bridge that never grew. Make the no-op explicit so it
+  // changes coordinates instead of repeating the same call.
+  if (placed === 0 && total > 0) {
+    return `built NOTHING: all ${total} cells were already occupied — you are placing into solid blocks (or at your own feet level). Pick a clear span and set from.y = your y + 1.`
+  }
   return `built ${placed} placed, ${skipped} skipped, of ${total} cells`
 }

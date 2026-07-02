@@ -68,7 +68,6 @@ export async function createSessionState({ playerMdPath, config, bot, logger = c
         total_sessions: 1,
         preferred_name: configPreferredName,
         pronouns: null,
-        notes: '',
       }
     } else {
       playerData = {

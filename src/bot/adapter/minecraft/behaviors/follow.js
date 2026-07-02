@@ -9,7 +9,25 @@ let _interval = null
 // { kind: 'entity', entityId, label }. null = not following.
 let _target = null
 
+// No-progress / unreachable detection (260617). The bare Movements below can
+// only climb by placing scaffolding blocks the bot is carrying, so a sheer
+// slope with a dirt-poor inventory yields NO path and GoalFollow silently
+// idles — the body sits still while the target walks away (the cliff freeze in
+// the play log). follow had no timeout/unreachable signal at all (unlike goTo).
+// These track last position + last forward progress so the 1s tick can flag
+// `_stuck`, which the snapshot surfaces so the model reacts instead of
+// narrating "the follow is working fine" for 55s.
+const STUCK_MS = 6000
+let _lastPos = null
+let _lastProgressAt = 0
+let _stuck = null // null | { stuckSec, dist, targetY, deltaY }
+
 export function setFollowTarget(t) {
+  // Reset the progress clock on every (re)assignment so a fresh follow never
+  // inherits a stale stuck state.
+  _stuck = null
+  _lastPos = null
+  _lastProgressAt = Date.now()
   if (t == null) { _target = null; return }
   if (t.kind === 'player' && typeof t.username === 'string') {
     _target = { kind: 'player', username: t.username }
@@ -23,6 +41,14 @@ export function getFollowTargetLabel() {
   return _target.kind === 'player' ? _target.username : _target.label
 }
 
+// Stuck info for the snapshot composer: null when following normally, or
+// { stuckSec, dist, targetY, deltaY } when the bot has made no forward progress
+// toward a still-distant target for STUCK_MS (e.g. the target climbed terrain
+// the pathfinder can't scale).
+export function getFollowStuckInfo() {
+  return _stuck
+}
+
 function resolveTargetEntity() {
   if (!_target || !_bot) return null
   if (_target.kind === 'player') return _bot.players?.[_target.username]?.entity ?? null
@@ -30,16 +56,20 @@ function resolveTargetEntity() {
 }
 
 /**
- * Abort contract (260516-0yw): follow is now an OPEN-ENDED long-runner. The
- * registry handler in src/bot/adapter/minecraft/registry.js installs the
- * follow target and BLOCKS on the AbortSignal until the orchestrator aborts
- * (P0/P1 preempt, R2/R3/R4 dispatch, or the model calls unfollow). When the
- * signal fires, the handler clears the target via `setFollowTarget(null)` and
- * resolves with `aborted: follow <label>`. The 1s background pathfinder tick
- * in this file remains a no-op when `_target` is null, so clearing the target
- * is enough to stop the bot's body movement; the AbortSignal is the channel
- * that drives that target-clear. follow.js itself does not consume the
- * signal — the registry handler owns the long-running lifecycle.
+ * Abort contract (260516-0yw; revised 260607): follow is an OPEN-ENDED
+ * long-runner. The registry handler installs the follow target and BLOCKS on
+ * the AbortSignal until the orchestrator aborts (player-chat preempt, R2/R3/R4
+ * dispatch, or the model calls unfollow).
+ *
+ * 260607 — follow is now PERSISTENT state. The abort does NOT clear `_target`
+ * anymore: an abort is almost always a player chat waking the suspended loop,
+ * and clearing on it made every message cancel the follow (churn). The 1s
+ * background tick below keeps trailing as long as `_target` is set, so the bot
+ * stays on the owner while the model answers a chat. `_target` is cleared ONLY
+ * by `unfollow` or by an explicit relocate (`goTo`, which calls
+ * setFollowTarget(null)); incidental actions (dig/gather/build) leave it set so
+ * the bot resumes trailing once they finish. follow.js itself does not consume
+ * the signal — the registry handler owns the long-running lifecycle.
  */
 export function startFollow(bot, config) {
   _bot = bot
@@ -65,11 +95,33 @@ export function startFollow(bot, config) {
   // LLM-issued movement action (goTo, dig, etc.) without an explicit pause.
   clearInterval(_interval)
   _interval = setInterval(() => {
-    if (!_target) return
-    if (bot.pathfinder.isMoving()) return
+    if (!_target) { _stuck = null; _lastPos = null; return }
     const ent = resolveTargetEntity()
-    if (!ent) return
-    bot.pathfinder.setGoal(new goals.GoalFollow(ent, _config.follow_range), true)
+    const me = bot?.entity
+    if (!ent || !me) return // target or self not loaded — can't assess progress
+    // Re-install the follow goal when the pathfinder has gone idle (yields to
+    // any LLM-issued movement without an explicit pause).
+    if (!bot.pathfinder.isMoving()) {
+      bot.pathfinder.setGoal(new goals.GoalFollow(ent, _config.follow_range), true)
+    }
+    // No-progress tracking: stuck = not moving AND still far from the target
+    // for STUCK_MS. Cleared the instant we move or get within range.
+    const pos = me.position
+    const dist = pos.distanceTo(ent.position)
+    const moved = _lastPos ? pos.distanceTo(_lastPos) : 99
+    const t = Date.now()
+    if (moved > 0.6 || dist <= _config.follow_range + 2) {
+      _lastProgressAt = t
+      _stuck = null
+    } else if (t - _lastProgressAt >= STUCK_MS) {
+      _stuck = {
+        stuckSec: Math.round((t - _lastProgressAt) / 1000),
+        dist: Math.round(dist),
+        targetY: Math.round(ent.position.y),
+        deltaY: Math.round(ent.position.y - pos.y),
+      }
+    }
+    _lastPos = pos.clone()
   }, 1000)
 }
 
@@ -79,4 +131,6 @@ export function stopFollow() {
   _target = null
   _bot = null
   _config = null
+  _stuck = null
+  _lastPos = null
 }
