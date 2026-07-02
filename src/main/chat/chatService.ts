@@ -137,6 +137,9 @@ export async function sendChatMessage(
       proactiveness,
       memory,
       summary,
+      // Per-turn: is an open-to-LAN world detected right now? Lets the model
+      // decide launch() vs. open-to-LAN instructions.
+      openWorldDetected: deps.getLanState().kind === 'open',
     });
 
     const messages = toMessages(history);
@@ -225,7 +228,7 @@ async function executeLaunch(
     };
   }
   const lan = deps.getLanState();
-  if (lan.kind === 'connected') {
+  if (lan.kind === 'open') {
     try {
       await deps.summon(characterId);
       return {

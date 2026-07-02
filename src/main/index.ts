@@ -59,7 +59,7 @@ const logger = {
 };
 
 let mainWindow: BrowserWindow | null = null;
-let latestLanState: LanState = { kind: 'not_connected' };
+let latestLanState: LanState = { kind: 'closed' };
 let lanWatcherHandle: { stop: () => void } | null = null;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
@@ -139,11 +139,11 @@ function broadcastExpansionProgress(ev: ExpansionProgressEvent): void {
 }
 
 function getLanPort(): number | null {
-  return latestLanState.kind === 'connected' ? latestLanState.port : null;
+  return latestLanState.kind === 'open' ? latestLanState.port : null;
 }
 
 function getLanMotd(): string | null {
-  return latestLanState.kind === 'connected' ? latestLanState.motd : null;
+  return latestLanState.kind === 'open' ? latestLanState.motd : null;
 }
 
 async function bootstrap(): Promise<void> {

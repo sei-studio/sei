@@ -61,7 +61,7 @@ interface DataState {
 export const useDataStore = create<DataState>((set) => ({
   characters: [],
   recentlyDeletedIds: new Set<string>(),
-  lan: { kind: 'not_connected' },
+  lan: { kind: 'closed' },
   summons: {},
   logs: [],
   dropped: 0,
@@ -142,9 +142,9 @@ export function subscribeIpc(): () => void {
   const offLan = sei.onLan((state) => useDataStore.getState().setLan(state));
   // Seed the LAN state once the listener is attached. The onLan push only
   // fires on CHANGE, so on a (re)load while a world is already open the store
-  // would otherwise sit at its initial 'not_connected' until the next change.
+  // would otherwise sit at its initial 'closed' until the next change.
   // Pulling the snapshot here (not relying on a replay-push that races this
-  // subscription) fixes "open world → connected → reload → not connected".
+  // subscription) fixes "open world → detected → reload → shows closed".
   void sei
     .getLanState()
     .then((state) => useDataStore.getState().setLan(state))

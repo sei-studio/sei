@@ -66,10 +66,20 @@ export interface VisionCapability {
   visionCapable: boolean;
 }
 
-/** Renderer-facing LAN watcher status (used by HomeScreen pill + LAN modal). */
+/**
+ * LAN world-detection status from the loopback watcher.
+ *
+ * This describes ONLY whether an open-to-LAN Minecraft world is detected on the
+ * machine — NOT whether a companion has joined it. "Connected / not connected"
+ * is reserved for the user-facing *companion-in-game* state (BotStatus). Keep
+ * this vocabulary about world detection:
+ *   - 'open'        → an open-to-LAN world is detected (port + motd known).
+ *   - 'closed'      → no open world detected right now.
+ *   - 'unavailable' → the OS port-listing tool itself failed (can't tell).
+ */
 export type LanState =
-  | { kind: 'connected'; port: number; motd: string; lastSeenAt: number }
-  | { kind: 'not_connected' }
+  | { kind: 'open'; port: number; motd: string; lastSeenAt: number }
+  | { kind: 'closed' }
   | { kind: 'unavailable' };
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────

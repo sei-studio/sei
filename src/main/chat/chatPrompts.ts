@@ -30,6 +30,14 @@ export interface BuildSystemArgs {
   memory: string;
   /** Rolling cross-surface conversation summary (bridge.json). */
   summary: string;
+  /**
+   * Whether an open-to-LAN Minecraft world is DETECTED right now
+   * (LanState.kind === 'open'). Drives the per-turn "can I actually launch?"
+   * status line so the model calls launch() only when a world is open, and
+   * otherwise gives the open-to-LAN steps instead of a launch that would just
+   * bounce back. Detection only — NOT whether the companion has joined.
+   */
+  openWorldDetected: boolean;
 }
 
 export type SystemBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
@@ -69,6 +77,23 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
       text: 'Summary of your earlier conversation with the player:\n\n' + args.summary.trim(),
     });
   }
+
+  // Per-turn world-detection status (uncached — it flips as the player opens or
+  // closes their world). Without it the model has no signal that a world is open
+  // and, given the "you are not in a Minecraft world right now" baseline, tells
+  // the player to open-to-LAN instead of calling launch. Phrased as YOUR OWN
+  // situation, not on-screen UI text, so the model paraphrases rather than
+  // parrots a status string back at the player.
+  blocks.push({
+    type: 'text',
+    text: args.openWorldDetected
+      ? 'Right now an open Minecraft world is detected, so you could join if asked. ' +
+        'Only call launch when the player clearly asks you to play or join right now. ' +
+        'A question like "are you in the game?" or "can you see my world?" is NOT a request to join — just answer it in words; do not launch.'
+      : 'Right now no open Minecraft world is detected — the player has none open to LAN, so launch would fail. ' +
+        'Do not call launch. If they want to play, walk them through opening their world to LAN in your own words. ' +
+        'You cannot see their screen, so describe the steps, do not quote any status text.',
+  });
   return blocks;
 }
 

@@ -3,13 +3,16 @@
  *
  * Two modes:
  *  - 'info'      → opened from HomeScreen LAN pill click. Footer = [Close].
- *  - 'searching' → opened from a Summon attempt while LAN is not connected
+ *  - 'searching' → opened from a Summon attempt while no open world is detected
  *                  (D-24). Footer = [Cancel summon, Close]. Watches
- *                  useDataStore.lan; when it flips to 'connected', auto-closes
+ *                  useDataStore.lan; when it flips to 'open', auto-closes
  *                  and resumes the deferred summon (D-56).
  *
- * Header eyebrow shows the live LAN pill ("CONNECTED" / "NOT CONNECTED" /
- * "UNAVAILABLE ON THIS NETWORK") with a 8px colored dot (D-22).
+ * Header eyebrow shows the live world-DETECTION pill ("OPEN WORLD DETECTED" /
+ * "NO OPEN WORLD" / "UNAVAILABLE ON THIS NETWORK") with an 8px colored dot
+ * (D-22). This is about detecting an open-to-LAN world, NOT whether the
+ * companion has joined — "connected" is reserved for the companion-in-game
+ * status (BotStatus) shown on the character card / page.
  *
  * The prototype's manual LAN-spoof toggle is removed (D-23 / D-57). Renderer
  * never forces LAN state; only the bonjour watcher in main flips lan.kind.
@@ -32,16 +35,16 @@ const STEPS: readonly string[] = [
   'Return to Sei and press Summon.',
 ];
 
-type LanKind = 'connected' | 'not_connected' | 'unavailable';
+type LanKind = 'open' | 'closed' | 'unavailable';
 
 function pillLabel(kind: LanKind): string {
-  if (kind === 'connected') return 'Connected';
+  if (kind === 'open') return 'Open world detected';
   if (kind === 'unavailable') return 'Unavailable on this network';
-  return 'Not connected';
+  return 'No open world';
 }
 
 function pillColor(kind: LanKind): string {
-  if (kind === 'connected') return 'var(--green)';
+  if (kind === 'open') return 'var(--green)';
   if (kind === 'unavailable') return 'var(--muted)';
   return 'var(--red)';
 }
@@ -60,7 +63,7 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
   // ── Auto-resume on connected (D-56) ────────────────────────────────────
   useEffect(() => {
     if (mode !== 'searching') return;
-    if (lan.kind !== 'connected') return;
+    if (lan.kind !== 'open') return;
     if (!pendingSummonId) {
       closeModal();
       return;

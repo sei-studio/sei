@@ -25,9 +25,10 @@
  *
  * Behavior:
  *   - Polls every POLL_INTERVAL_MS for the whole app session.
- *   - Emits `connected` (with port + motd) while a world answers the ping;
- *     `not_connected` when none does; `unavailable` when the OS port-listing
- *     tool itself fails (re-evaluated each poll, not sticky).
+ *   - Emits `open` (with port + motd) while a world answers the ping;
+ *     `closed` when none does; `unavailable` when the OS port-listing
+ *     tool itself fails (re-evaluated each poll, not sticky). These describe
+ *     world DETECTION, not whether a companion has joined.
  */
 import type { LanState } from '../shared/ipc';
 import { listeningPorts, type ListeningPort } from './listeningPorts';
@@ -65,8 +66,8 @@ export function watchLan({ onUpdate }: WatchLanOptions): { stop: () => void } {
     const changed =
       !lastEmitted ||
       lastEmitted.kind !== next.kind ||
-      (next.kind === 'connected' &&
-        lastEmitted.kind === 'connected' &&
+      (next.kind === 'open' &&
+        lastEmitted.kind === 'open' &&
         (next.port !== lastEmitted.port || next.motd !== lastEmitted.motd));
     if (changed) {
       lastEmitted = next;
@@ -95,8 +96,8 @@ export function watchLan({ onUpdate }: WatchLanOptions): { stop: () => void } {
       if (stopped) return;
       emit(
         world
-          ? { kind: 'connected', port: world.port, motd: world.motd, lastSeenAt: Date.now() }
-          : { kind: 'not_connected' },
+          ? { kind: 'open', port: world.port, motd: world.motd, lastSeenAt: Date.now() }
+          : { kind: 'closed' },
       );
     } finally {
       inFlight = false;

@@ -64,7 +64,7 @@ function blockedByUsernameConflict(id: string): boolean {
 export function proceedSummon(id: string): void {
   const ui = useUiStore.getState();
   const lan = useDataStore.getState().lan;
-  if (lan.kind === 'connected') {
+  if (lan.kind === 'open') {
     void sei.summon(id).catch(() => {
       // Errors surface via onStatus → BotStatus.error; the model row owns display.
     });

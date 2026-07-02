@@ -457,7 +457,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // of sticking at the emit-time "0s".
   const liveUptimeMs = summon.kind === 'online' ? Math.max(0, nowMs - summon.startedAtMs) : 0;
   const modelLabel = isActive
-    ? `Online · ${fmtUptime(liveUptimeMs)}`
+    ? `Connected · ${fmtUptime(liveUptimeMs)}`
     : summon.kind === 'error' && summon.characterId === id
       ? (ERROR_COPY[summon.error] ?? ERROR_COPY.BOT_CRASH)
       : isConnecting
