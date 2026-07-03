@@ -145,9 +145,10 @@ export function createAnthropicClient(config) {
    * @param {number} [req.maxTokens]
    * @param {Array<{role:string, content:Array<{type:string, name?:string, text?:string}>}>} [req.namedUserBlocks] Canonical pre-strip messages array carrying `name` fields on text blocks; used by log.js for cache-prefix hash elision. Logger-only; not sent to API.
    * @param {string} [req.path] Per-call SDK request path override. Used ONLY by the post-explicit-`visualize` turn to hit the proxy `/vision/v1/messages` vision-cap gate (15-02, VIS-07/D-09), and ONLY in cloud-proxy mode (BYOK/local providers never set it — D-11). When undefined the SDK uses its built-in `/v1/messages`.
+   * @param {string} [req.model] Per-call model override (260703). Used by the MEMORY.md compactor to run on the latest Sonnet while the main loop stays on the configured (Haiku) model. When undefined the client's configured model is used.
    * @returns {Promise<{toolUses:Array<{id:string,name:string,input:any}>, text:string, usage:object, stopReason:string}>}
    */
-  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking, path }) {
+  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking, path, model: modelOverride }) {
     logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks })
     // 260502-h6i: stamp cache_control on the LAST tool entry so the cache
     // boundary lands at the end of the tools array (system → tools is now
@@ -162,7 +163,7 @@ export function createAnthropicClient(config) {
     // while still giving the model a structured scratchpad to separate
     // private reasoning from in-character speech.
     const req = {
-      model,
+      model: modelOverride ?? model,
       max_tokens: maxTokens,
       system: systemBlocks,
       tools: _tools,

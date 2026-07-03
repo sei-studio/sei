@@ -69,6 +69,13 @@ export const ConfigSchema = z.object({
   // time. Default keeps existing config.json files (which lack the field)
   // on the prior behavior.
   chat_mode: z.enum(['chat', 'full']).default('chat'),
+  // "Realistic typing" (Appearance & feel toggle, bridged from
+  // UserConfig.realistic_typing by botSupervisor). When true, the bot pauses to
+  // "read" the player's message (scaled to its length) before replying, then
+  // staggers the say() line as if typing it (scaled to the say length) — the
+  // same pacing as the in-app chat. Default true; the CLI/standalone path
+  // inherits it when config.json omits the field.
+  realistic_typing: z.boolean().default(true),
   player_username: z.string(),
   // LAN world MOTD (level name) from discovery, used as a human label for the
   // world registry / MEMORY.md section headers. Optional — falls back to spawn

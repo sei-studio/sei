@@ -18,12 +18,14 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from './Button';
 import styles from './PortraitCropModal.module.css';
 
-// On-screen crop frame, portrait card aspect (210:312).
-const FRAME_W = 268;
-const FRAME_H = Math.round(FRAME_W * (312 / 210)); // 398
-// Output resolution of the cropped image (both ≤ 1024 → within PORTRAIT_MAX_DIM).
+// On-screen crop frame dimensions per shape. 'card' is the portrait card aspect
+// (210:312, the hero display); 'avatar' is a square frame with a circular cutout
+// (the round profile picture). Output stays ≤ 1024 on both axes (PORTRAIT_MAX_DIM).
+const FRAME_DIMS = {
+  card: { w: 268, h: Math.round(268 * (312 / 210)) }, // 268 × 398
+  avatar: { w: 320, h: 320 }, // square
+} as const;
 const OUT_W = 600;
-const OUT_H = Math.round(OUT_W * (FRAME_H / FRAME_W));
 const MAX_ZOOM = 4;
 
 export interface PortraitCropModalProps {
@@ -34,6 +36,11 @@ export interface PortraitCropModalProps {
   onConfirm: (canvas: HTMLCanvasElement) => void;
   /** Disables the actions while the parent compresses + uploads. */
   busy?: boolean;
+  /**
+   * Crop frame shape. 'card' (default) = 210:312 portrait for character images;
+   * 'avatar' = a square frame with a circular cutout for round profile pictures.
+   */
+  shape?: 'card' | 'avatar';
 }
 
 interface Offset {
@@ -46,7 +53,11 @@ export function PortraitCropModal({
   onCancel,
   onConfirm,
   busy = false,
+  shape = 'card',
 }: PortraitCropModalProps): React.ReactElement {
+  const FRAME_W = FRAME_DIMS[shape].w;
+  const FRAME_H = FRAME_DIMS[shape].h;
+  const OUT_H = Math.round(OUT_W * (FRAME_H / FRAME_W));
   const imgW = image.naturalWidth || image.width || 1;
   const imgH = image.naturalHeight || image.height || 1;
   // Base scale so the image always COVERS the frame at zoom = 1 (no gaps).
@@ -68,7 +79,7 @@ export function PortraitCropModal({
         y: Math.min(maxY, Math.max(-maxY, o.y)),
       };
     },
-    [imgW, imgH, baseScale],
+    [imgW, imgH, baseScale, FRAME_W, FRAME_H],
   );
 
   // Re-clamp the pan whenever zoom changes (zooming out can push the frame past the edge).
@@ -171,7 +182,10 @@ export function PortraitCropModal({
               top: FRAME_H / 2 + offset.y - dispH / 2,
             }}
           />
-          <div className={styles.frameOverlay} aria-hidden="true" />
+          <div
+            className={shape === 'avatar' ? styles.circleOverlay : styles.frameOverlay}
+            aria-hidden="true"
+          />
         </div>
 
         <input

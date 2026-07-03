@@ -21,6 +21,7 @@ import {
   type SubscriptionStatusInfo,
   type CreditsHardStopEvent,
   type LanState,
+  type BotStatus,
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
@@ -62,11 +63,29 @@ export interface IpcHandlerDeps {
    */
   getLanState: () => LanState;
   /**
-   * Task 1 — record that a summon was launched from the in-app chat (the
-   * `launch` tool), so main can drop the required "joined your world" system
-   * line once that character reaches online. Wired in index.ts to a pending set.
+   * 260703: force one LAN detection pass right now, refreshing the state that
+   * getLanState reads. Awaited at the top of chat:send so the companion's
+   * world-open answer reflects live truth instead of an up-to-2s-stale poll
+   * (the player often messages seconds after clicking "Open to LAN").
+   * Optional — absent means chat answers from the cached poll.
    */
-  markChatLaunch: (characterId: string) => void;
+  refreshLanState?: () => Promise<void>;
+  /**
+   * 260703: like {@link refreshLanState} but RETURNS the fresh LanState. Backs
+   * the `lan:check-now` invoke channel — the renderer's summon click awaits it
+   * so it gates on live ground truth rather than the possibly-damped snapshot
+   * (a world that just closed must not summon into a dead port). Falls back to
+   * the cached `getLanState()` on any error. Optional for older wiring.
+   */
+  checkLanNow?: () => Promise<LanState>;
+  /**
+   * Current per-character bot statuses (snapshot). The `bot:status` channel
+   * only PUSHES on transitions, so a freshly-(re)subscribed renderer pulls
+   * this to seed its summons map — otherwise a session that went online
+   * before the subscription attached stays invisible (no popup, profile stuck
+   * on "Play together"). Wired in index.ts to the currentStatuses map.
+   */
+  getBotStatuses: () => BotStatus[];
   /**
    * A chat-launched join (fired non-blocking so the chat turn doesn't hang)
    * failed. Post a short notice into the transcript so the player isn't left
@@ -413,11 +432,27 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = idArg == null ? undefined : IdSchema.parse(idArg);
     await deps.supervisor.stop(id);
   });
+  // Bot-status snapshot (pull). Seeds a freshly-(re)subscribed renderer's
+  // summons map; the bot:status channel only pushes on transitions.
+  ipcMain.handle(IpcChannel.bot.getStatuses, async (): Promise<BotStatus[]> => {
+    return deps.getBotStatuses();
+  });
 
   // LAN state snapshot (pull). Seeds a freshly-(re)loaded renderer; the
   // lan:state channel only pushes on change.
   ipcMain.handle(IpcChannel.lan.get, async (): Promise<LanState> => {
     return deps.getLanState();
+  });
+
+  // Fresh, undamped LAN detection pass (pull). Backs the summon click's
+  // live-truth gate so a just-closed world isn't summoned into. Falls back to
+  // the cached snapshot if the on-demand check is unwired or throws.
+  ipcMain.handle(IpcChannel.lan.checkNow, async (): Promise<LanState> => {
+    try {
+      return (await deps.checkLanNow?.()) ?? deps.getLanState();
+    } catch {
+      return deps.getLanState();
+    }
   });
 
   // Character CRUD
@@ -714,6 +749,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       })
       .parse(argsRaw);
     const { sendChatMessage } = await import('./chat/chatService');
+    // Fresh world-detection pass before the prompt is built (260703): the
+    // "is my world open?" answer must not come from a stale poll. ~60-100ms.
+    try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
     return await sendChatMessage(
       { characterId: args.characterId, text: args.text, replyTo: args.replyTo },
       {
@@ -723,9 +761,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // message into that live session instead of the standalone chat brain.
         isInGame: (id) => deps.isSessionOnline(id),
         routeToBot: (id, payload) => deps.supervisor.sendSeiChat(id, payload),
-        // Task 1 — flag chat-launched summons for the "joined" acknowledgement.
-        onLaunch: (id) => deps.markChatLaunch(id),
         onLaunchFailed: (id, reason) => deps.notifyLaunchFailed(id, reason),
+        // Task 5 — the companion called quit() from chat: end the live session.
+        leaveGame: (id) => {
+          void deps.supervisor.stop(id);
+        },
       },
     );
   });

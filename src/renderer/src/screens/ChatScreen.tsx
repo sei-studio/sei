@@ -24,7 +24,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
-import { findGame } from '../lib/games';
 import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -257,7 +256,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       </header>
 
       {/* ── Message list ── */}
-      <div className={styles.list} ref={listRef}>
+      <div
+        className={awaiting ? `${styles.list} ${styles.listTyping}` : styles.list}
+        ref={listRef}
+      >
         {messages.length === 0 && !awaiting ? (
           <div className={styles.empty}>
             This is the beginning of your conversation with {companionName}. Say hi.
@@ -266,12 +268,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         {messages.map((m, i) => {
           if (m.role === 'system') {
             if (m.event?.kind === 'play') {
-              const game = findGame(m.event.game);
               return (
                 <div key={m.id} className={`${styles.systemRow} ${styles.playRow}`}>
-                  {game?.image ? (
-                    <img className={styles.playIcon} src={game.image} alt="" aria-hidden="true" />
-                  ) : null}
+                  <span className={styles.playIcon}>
+                    <GamepadIcon size={18} />
+                  </span>
                   <span>{m.text}</span>
                 </div>
               );

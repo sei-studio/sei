@@ -94,6 +94,15 @@ interface UiState {
    */
   devConsoleVisible: boolean;
   /**
+   * "Realistic typing" (Appearance & feel). When on, the chat store holds the
+   * typing indicator back for a "reading" pause scaled to the user's message
+   * length, then keeps it up for a stretch proportional to each reply bubble
+   * (fast-reader / fast-typist pacing). Persisted via UserConfig.realistic_typing
+   * and hydrated here at App.tsx bootstrap so useChatStore.send() can read it
+   * synchronously. Default ON.
+   */
+  realisticTyping: boolean;
+  /**
    * Phase 15 (D-10/VIS-03) — whether the active bot's LLM provider is
    * vision-capable. Fed by the `vision:capability` push (bot→main→renderer,
    * subscribed in useDataStore.subscribeIpc). The 15-05 Settings auto-render
@@ -145,6 +154,8 @@ interface UiState {
   setPendingSummonReturnToChat: (v: boolean) => void;
   setHomeTab: (tab: HomeTab) => void;
   setDevConsoleVisible: (v: boolean) => void;
+  /** Appearance & feel: set the "Realistic typing" pacing toggle. */
+  setRealisticTyping: (v: boolean) => void;
   /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
   setVisionCapable: (v: boolean) => void;
   /** Phase 18/19: record the chat a CharacterPage was opened from (or null). */
@@ -167,6 +178,9 @@ export const useUiStore = create<UiState>((set) => ({
   pendingSummonReturnToChat: false,
   homeTab: 'home',
   devConsoleVisible: false,
+  // Appearance & feel: default ON, matching UserConfig.realistic_typing's
+  // default. App.tsx re-hydrates this from persisted config before first render.
+  realisticTyping: true,
   // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
   // capabilities.vision === true over the vision:capability push.
   visionCapable: false,
@@ -187,6 +201,7 @@ export const useUiStore = create<UiState>((set) => ({
   setHomeTab: (tab) =>
     set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),
   setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
+  setRealisticTyping: (v) => set({ realisticTyping: v }),
   setVisionCapable: (v) => set({ visionCapable: v }),
   setChatReturnId: (id) => set({ chatReturnId: id }),
   // Minimizing leaves the call "running" in the corner and drops the user back

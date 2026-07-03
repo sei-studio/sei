@@ -25,11 +25,12 @@ import { UserIcon } from './icons';
 import styles from './SummonedWidget.module.css';
 
 /**
- * Keep the stack's bottom edge above the chat composer dock (#2). Kept in sync
- * with the ChatScreen `.list` bottom padding / composer dock, and matches the
- * MinimizedCall reserve so the two popups share one baseline.
+ * Keep the stack's bottom edge just above the chat composer box (#5) — sits at
+ * the same height as the most-recent message when highlighted. Kept in sync with
+ * the ChatScreen `.list` bottom padding / composer dock. Lowering this also
+ * relaxes the drag clamp so the card can be dragged further down.
  */
-const BOTTOM_RESERVED = 116;
+const BOTTOM_RESERVED = 72;
 const EDGE_GAP = 8;
 /** Extra lift for the default dock when the minimized call already sits there. */
 const CALL_CLEARANCE = 56;

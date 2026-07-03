@@ -4,9 +4,9 @@
 .stack {
   position: fixed;
   right: var(--space-lg);
-  /* Docked ABOVE the chat composer dock (kept in sync with BOTTOM_RESERVED in
-     SummonedWidget.tsx) so the popup never covers the message box (#2). */
-  bottom: 116px;
+  /* Docked just above the chat composer box (kept in sync with BOTTOM_RESERVED
+     in SummonedWidget.tsx) — level with the latest highlighted message (#5). */
+  bottom: 72px;
   z-index: 55;
   display: flex;
   flex-direction: column;

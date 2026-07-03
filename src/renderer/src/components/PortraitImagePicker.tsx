@@ -68,6 +68,11 @@ export function PortraitImagePicker({
   const [busy, setBusy] = React.useState<boolean>(false);
   // Decoded source image awaiting crop/preview in the popup (null = closed).
   const [cropImg, setCropImg] = React.useState<HTMLImageElement | null>(null);
+  // Cache-buster bumped on each successful apply. The user profile picture keeps
+  // a FIXED path ref ('_user.png'), so re-uploading returns the same ref and the
+  // same URL — without this the <img> src never changes and the browser shows the
+  // stale bytes until a full refresh. Bumping it forces an immediate re-fetch.
+  const [bust, setBust] = React.useState<number>(0);
   // Object URL backing the crop modal's <img>; revoked when the modal closes.
   const cropUrlRef = useRef<string | null>(null);
 
@@ -123,6 +128,7 @@ export function PortraitImagePicker({
       const ref = applyOverride
         ? await applyOverride({ bytesBase64, format })
         : await sei.charsApplyPortrait({ characterId: characterId as string, bytesBase64, format });
+      setBust((b) => b + 1);
       onChange(ref);
     } catch (err) {
       setError(prettifyError((err as Error).message ?? 'Failed to apply portrait.'));
@@ -159,7 +165,8 @@ export function PortraitImagePicker({
 
   // Avatar variant — circular, click-to-change, no buttons (Settings profile).
   if (variant === 'avatar') {
-    const src = value ? portraitSrc(value) : null;
+    const base = value ? portraitSrc(value) : null;
+    const src = base ? `${base}${base.includes('?') ? '&' : '?'}v=${bust}` : null;
     return (
       <>
         <button
@@ -182,6 +189,7 @@ export function PortraitImagePicker({
           <PortraitCropModal
             image={cropImg}
             busy={busy}
+            shape="avatar"
             onCancel={closeCrop}
             onConfirm={(canvas) => void onCropConfirm(canvas)}
           />

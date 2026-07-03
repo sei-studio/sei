@@ -255,11 +255,35 @@ export const UserConfigSchema = z.object({
    */
   ai_backend_kind: z.enum(['local', 'cloud-proxy']).optional().default('local'),
   /**
+   * 260703: who last set `ai_backend_kind`.
+   *   - 'default' → a sign-in/onboarding/boot default (or a pre-existing config
+   *                 from before this field). Sign-in may re-assert the cloud
+   *                 default over it.
+   *   - 'user'    → an explicit user action (the Settings ACCOUNT MODE switch /
+   *                 the API-key setup modal, via proxy:configure →
+   *                 apiKeyStore.setAiBackendKind). Sign-in defaults MUST NOT
+   *                 stomp it — a user who deliberately chose BYOK stays on BYOK
+   *                 across sign-out/sign-in cycles.
+   * Written only by apiKeyStore; read by the cloud-default helpers there.
+   */
+  ai_backend_kind_source: z.enum(['default', 'user']).optional().default('default'),
+  /**
    * ui-A7: developer console (LogsBar) visibility. Off by default —
    * shipping users almost never need the raw bot log. Settings exposes a
    * toggle that flips this and App.tsx gates `<LogsBar />` on it.
    */
   dev_console_visible: z.boolean().optional().default(false),
+  /**
+   * "Realistic typing" (Appearance & feel). When on, the companion pauses to
+   * "read" your message before the typing indicator appears (scaled to your
+   * message length at a fast-reader speed), then keeps the indicator up for a
+   * stretch proportional to each reply bubble at a fast-typist speed. The same
+   * pacing is bridged to the in-game Minecraft bot (botSupervisor →
+   * config.realistic_typing). Off makes replies appear as soon as the model
+   * returns. Default on for a more human feel; `.optional().default(true)`
+   * keeps existing config.json files (which lack the field) on the new default.
+   */
+  realistic_typing: z.boolean().optional().default(true),
   /**
    * Onboarding skin-setup gate. Set true when the user finishes the name/API
    * onboarding step, cleared when they finish OR skip the dedicated skin-setup

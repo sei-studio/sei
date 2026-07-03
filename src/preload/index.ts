@@ -173,6 +173,7 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.bot.status, handler);
     return () => ipcRenderer.off(IpcChannel.bot.status, handler);
   },
+  getBotStatuses: () => ipcRenderer.invoke(IpcChannel.bot.getStatuses),
   onVisionCapability(cb: (cap: VisionCapability) => void) {
     const handler = (_e: Electron.IpcRendererEvent, cap: VisionCapability) => cb(cap);
     ipcRenderer.on(IpcChannel.vision.capability, handler);
@@ -189,6 +190,7 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.lan.state, handler);
   },
   getLanState: () => ipcRenderer.invoke(IpcChannel.lan.get),
+  lanCheckNow: () => ipcRenderer.invoke(IpcChannel.lan.checkNow),
   onWizardProgress(cb: (ev: WizardProgressEvent) => void) {
     const handler = (_e: Electron.IpcRendererEvent, ev: WizardProgressEvent) => cb(ev);
     ipcRenderer.on(IpcChannel.wizard.progress, handler);

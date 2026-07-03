@@ -17,7 +17,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { z } from 'zod'
-import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
+import { createOrchestrator, _setTickIntervalForTests, typingDelayMs, readingDelayMs, splitChatMessages } from './orchestrator.js'
 
 function makeProvider(script) {
   let i = 0
@@ -112,6 +112,31 @@ describe('260611 zombie-loop regression', () => {
     expect(provider.calls.length).toBe(3) // the third chat reached the model
   })
 
+  it('260703: a chat answered with only end_loop still speaks — the scratchpad reply is salvaged', async () => {
+    // Observed failure (playlog 2026-07-03T17-40): "i wanna be alone for a
+    // bit" → model wrote its reply into the invisible text scratchpad and
+    // called only end_loop — the player got pure silence, twice in a row.
+    // The backstop routes that scratchpad through the say pipeline.
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([
+      { text: "I read that. you've made that clear.", toolUses: [{ id: 'el1', name: 'end_loop', input: {} }] },
+    ])
+    const adapter = makeAdapter()
+    const orch = createOrchestrator({
+      adapter,
+      config: makeConfig(),
+      reenqueue: () => {},
+      _anthropicOverride: provider,
+    })
+
+    await orch.handleDispatch('sei:chat_received', chat('i wanna be alone for a bit'))
+    expect(orch.currentLoop).toBeNull() // end_loop still terminates the loop
+    expect(adapter.chat).toHaveBeenCalled() // …but the reply reached chat
+    // postProcessSay may normalize casing — compare case-insensitively.
+    const said = adapter.chat.mock.calls.map((c) => c[0]).join(' ').toLowerCase()
+    expect(said).toContain('i read that')
+  })
+
   it('schedules a delayed redrive of a chat the rate limit killed', async () => {
     vi.useFakeTimers()
     _setTickIntervalForTests(10_000_000)
@@ -139,5 +164,60 @@ describe('260611 zombie-loop regression', () => {
     const redriven = reenqueued.filter(([ev]) => ev === 'sei:chat_received')
     expect(redriven.length).toBe(1)
     expect(redriven[0][1].text).toBe('thank you. it is my lifelong work')
+  })
+
+  it('260703 follow-up: quit() waits for the FULL realistic-typing goodbye, not just the old 2s cap', async () => {
+    // The 2s cap on quit()'s teardown defer predates realistic typing. With
+    // config.realistic_typing on (the default), reading + typing delay alone
+    // can reach 2500 + 5000 = 7500ms before the first goodbye segment even
+    // sends, and a multi-sentence farewell adds (segments-1)*550ms on top —
+    // comfortably over the old 2s cap. This reproduces exactly that: a long
+    // trigger message (caps readingDelayMs) + a long, multi-sentence farewell
+    // (caps typingDelayMs and adds segment stagger) and asserts onQuitRequested
+    // fires only once the real deadline elapses, not at the old 2s mark.
+    vi.useFakeTimers()
+    _setTickIntervalForTests(10_000_000)
+
+    const TRIGGER = 'tell me all about the incredible journey you have been on today, every single detail, i have got all the time in the world to listen so do not leave anything out please'
+    const FAREWELL = 'Goodbye my friend. It has been wonderful adventuring with you today. I will miss our chats and our builds. See you around sometime soon.'
+
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 'q1', name: 'quit', input: { farewell: FAREWELL } }] },
+    ])
+    const onQuitRequested = vi.fn()
+    const adapter = makeAdapter()
+    const config = makeConfig()
+    config.realistic_typing = true
+    const orch = createOrchestrator({
+      adapter,
+      config,
+      reenqueue: () => {},
+      onQuitRequested,
+      _anthropicOverride: provider,
+    })
+
+    await orch.handleDispatch('sei:chat_received', chat(TRIGGER))
+
+    // Derive the expected wait from the same building blocks the orchestrator
+    // uses, so this test doesn't hardcode a number that drifts if the pacing
+    // constants change.
+    const leadMs = readingDelayMs(TRIGGER) + typingDelayMs(FAREWELL)
+    const segments = splitChatMessages(FAREWELL).length
+    const expectedWaitMs = Math.min(10_000, Math.max(0, leadMs + (segments - 1) * 550) + 250)
+    // Sanity check this scenario actually exercises the bug: the legitimate
+    // deadline here must exceed the old (wrong) 2s cap.
+    expect(expectedWaitMs).toBeGreaterThan(2_000)
+
+    // Just short of the real deadline: teardown must NOT have fired yet.
+    await vi.advanceTimersByTimeAsync(expectedWaitMs - 100)
+    expect(onQuitRequested).not.toHaveBeenCalled()
+
+    // Past the real deadline: teardown fires, and by then the full farewell
+    // reached chat (the goodbye-before-teardown guarantee this defer exists for).
+    await vi.advanceTimersByTimeAsync(200)
+    expect(onQuitRequested).toHaveBeenCalledTimes(1)
+    // postProcessSay may normalize casing — compare case-insensitively.
+    const said = adapter.chat.mock.calls.map((c) => c[0]).join(' ').toLowerCase()
+    expect(said).toContain('see you around sometime soon')
   })
 })

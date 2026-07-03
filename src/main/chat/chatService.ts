@@ -15,8 +15,8 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, saveCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
-import { buildSystemBlocks, LAUNCH_TOOL } from './chatPrompts';
-import { readSummary } from './continuity';
+import { buildSystemBlocks, LAUNCH_TOOL, QUIT_TOOL } from './chatPrompts';
+import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import * as chatStore from './chatStore';
 
 export interface ChatDeps {
@@ -30,13 +30,16 @@ export interface ChatDeps {
    * the standalone chat brain.
    */
   routeToBot?: (characterId: string, payload: { from: string; text: string }) => boolean;
-  /** Task 1 — record that this turn launched a game, for the "joined" ack. */
-  onLaunch?: (characterId: string) => void;
-  /** The (non-blocking) join kicked off by launch() failed — post a chat notice. */
+  /** The (non-blocking) join kicked off by launch() failed — report it to the
+   * player in the companion's own voice (index.ts sendLaunchFailedTurn). */
   onLaunchFailed?: (characterId: string, reason: string) => void;
+  /**
+   * Task 5 — the companion called quit() from chat: leave the game and end the
+   * live session (supervisor.stop). A no-op when no session is live.
+   */
+  leaveGame?: (characterId: string) => void;
 }
 
-const RECENT = 50;
 const MEMORY_BUDGET_BYTES = 6000;
 const MAX_HOPS = 3;
 
@@ -89,38 +92,52 @@ function textOf(content: Array<{ type: string }>): string {
     .trim();
 }
 
-/** Map the persisted transcript into an alternating Anthropic messages array. */
-function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assistant'; content: unknown }> {
+/**
+ * Map the persisted transcript into an alternating Anthropic messages array.
+ * Exported for testing. Every emitted row — play rows included — flows through
+ * the ONE shared same-role merge at the bottom: a play row is just a `user` row
+ * with bracketed content, so two adjacent play rows (or a user message followed
+ * by a play row) fold into a single user turn instead of two adjacent `user`
+ * messages that Anthropic rejects with 400 "roles must alternate".
+ */
+export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assistant'; content: unknown }> {
   const out: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
   for (const m of history) {
-    // A finished play session is shared history, not chatter: surface it as a
-    // bracketed system fact so the companion knows you actually played together
-    // (the game→chat memory gap — otherwise chat only sees MEMORY.md, which may
-    // never have captured the session). Framed so the model doesn't read it as
-    // the player speaking or as a still-hypothetical plan.
+    // Per row, derive role + content first; then run the single shared merge.
+    let role: 'user' | 'assistant';
+    let content: string;
     if (m.role === 'system' && m.event?.kind === 'play') {
-      out.push({
-        role: 'user',
-        content: `[Shared history: ${m.text} You were there together in the world — treat it as something you actually did, not a plan.]`,
-      });
+      // A finished play session is shared history, not chatter: surface it as a
+      // bracketed system fact so the companion knows you actually played together
+      // (the game→chat memory gap — otherwise chat only sees MEMORY.md, which may
+      // never have captured the session). Framed so the model doesn't read it as
+      // the player speaking or as a still-hypothetical plan.
+      role = 'user';
+      content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} You were there together in the world — treat it as something you actually did, not a plan.]`;
+    } else if (m.role === 'system') {
+      // Other system rows (e.g. "joined your world") are UI-only; skip them so
+      // they don't pollute the model's turn-taking.
       continue;
+    } else {
+      // A quoted reply is surfaced to the model as a short lead-in so it knows
+      // what the user is referring to, then the actual message text.
+      content = m.text;
+      if (m.replyTo) {
+        const who = m.replyTo.role === 'companion' ? 'your earlier message' : 'their earlier message';
+        content = `(replying to ${who}: "${m.replyTo.text}")\n${m.text}`;
+      }
+      role = m.role === 'companion' ? 'assistant' : 'user';
+      // 260703: stamp USER messages with their send time so the model can feel
+      // gaps (overnight silence vs rapid-fire). Assistant turns stay unstamped —
+      // stamping the model's own prior output teaches it to emit timestamps.
+      if (role === 'user') content = `[${formatChatTimestamp(m.ts)}] ${content}`;
     }
-    // Other system rows (e.g. "joined your world") are UI-only; skip them so
-    // they don't pollute the model's turn-taking.
-    if (m.role === 'system') continue;
-    // A quoted reply is surfaced to the model as a short lead-in so it knows
-    // what the user is referring to, then the actual message text.
-    let content = m.text;
-    if (m.replyTo) {
-      const who = m.replyTo.role === 'companion' ? 'your earlier message' : 'their earlier message';
-      content = `(replying to ${who}: "${m.replyTo.text}")\n${m.text}`;
-    }
-    const role = m.role === 'companion' ? 'assistant' : 'user';
     // Merge consecutive same-role turns. An interrupted turn (#9) leaves a user
-    // message with no reply, so the transcript can hold two user turns in a row;
-    // Anthropic requires strict alternation, so fold them into one.
+    // message with no reply, and play rows arrive as user rows, so the transcript
+    // can hold two user turns in a row; Anthropic requires strict alternation, so
+    // fold them into one.
     const last = out[out.length - 1];
-    if (last && last.role === role && typeof last.content === 'string' && typeof content === 'string') {
+    if (last && last.role === role && typeof last.content === 'string') {
       last.content = `${last.content}\n${content}`;
     } else {
       out.push({ role, content });
@@ -129,6 +146,77 @@ function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assistant';
   // Anthropic requires the first message to be from the user.
   while (out.length && out[0].role !== 'user') out.shift();
   return out;
+}
+
+/**
+ * Author's proactiveness dial (0-2). Missing / non-integer / out-of-range →
+ * reactive (1). MIRROR: src/bot/index.js (~line 538) clamps
+ * character.metadata.proactiveness identically; the bot ships as raw ESM in a
+ * separate process and CANNOT import from src/main, so these two copies must be
+ * kept in sync by hand.
+ */
+function clampProactiveness(raw: unknown): number {
+  return typeof raw === 'number' && Number.isInteger(raw) ? Math.min(Math.max(0, raw), 2) : 1;
+}
+
+/**
+ * Shared prompt assembly for a chat turn — getCharacter, loadConfig, the
+ * summary+memory reads, the proactiveness clamp, the system blocks, and the
+ * alternating messages array. Returns null when the character is missing.
+ * Both sendChatMessage and sendLaunchFailedTurn build on this; the two callers
+ * differ only in the per-turn openWorldDetected/inGame truth they pass in.
+ *
+ * NOTE: sendChatMessage appends the player's new message to the transcript
+ * BEFORE calling this, so readChatContext here already includes it — do not
+ * hoist this call above that append.
+ */
+async function prepareChatTurn(
+  characterId: string,
+  opts: { openWorldDetected: boolean; inGame: boolean },
+) {
+  const character = await getCharacter(characterId);
+  if (!character) return null;
+  const config = await loadConfig();
+  // Watermark-based context (260702): every not-yet-summarized message verbatim
+  // (50-99 between folds) + the rolling summary. Pure read — the batch fold runs
+  // in the background AFTER the reply (see foldIfDue).
+  const [{ summary, history }, memory] = await Promise.all([
+    readChatContext(characterId),
+    readMemoryTail(characterId),
+  ]);
+  // Same source + clamp the bot uses (character.metadata.proactiveness), so the
+  // character is as forward in chat as it is in-game.
+  const proactiveness = clampProactiveness(character.metadata?.proactiveness);
+  const system = buildSystemBlocks({
+    persona: character.persona,
+    name: character.name,
+    preferredName: config.preferred_name ?? '',
+    proactiveness,
+    memory,
+    summary,
+    openWorldDetected: opts.openWorldDetected,
+    inGame: opts.inGame,
+  });
+  const messages = toMessages(history);
+  return { character, config, system, messages };
+}
+
+/**
+ * Split a reply on blank lines (task 8) into separate persisted companion
+ * messages — each its own bubble in the UI, revealed one at a time — and append
+ * them in order (ascending ts so ordering is stable). Shared by the normal turn
+ * and the launch-failed turn.
+ */
+async function persistReplies(characterId: string, replyText: string): Promise<ChatMessage[]> {
+  const now = Date.now();
+  const replies: ChatMessage[] = splitReply(replyText).map((text, i) => ({
+    id: randomUUID(),
+    role: 'companion',
+    text,
+    ts: now + i,
+  }));
+  for (const reply of replies) await chatStore.appendMessage(characterId, reply);
+  return replies;
 }
 
 export async function sendChatMessage(
@@ -167,42 +255,35 @@ export async function sendChatMessage(
     if (deps.isInGame?.(args.characterId) && deps.routeToBot) {
       const from = (config.preferred_name ?? '').trim() || 'The player';
       if (deps.routeToBot(args.characterId, { from, text: args.text })) {
+        // In-game chatter appends to the transcript without ever running a
+        // standalone chat turn, so drain any fold backlog from here too —
+        // otherwise a long play session could grow the window unbounded.
+        void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
         return { replies: [], routed: true };
       }
     }
 
-    const [history, memory, summary] = await Promise.all([
-      chatStore.readRecent(args.characterId, RECENT),
-      readMemoryTail(args.characterId),
-      readSummary(args.characterId),
-    ]);
-
-    // Author's proactiveness dial (0-2), same source + clamp the bot uses
-    // (character.metadata.proactiveness), so the character is as forward in chat
-    // as it is in-game. Missing/out-of-range → reactive (1).
-    const rawProactiveness = character.metadata?.proactiveness;
-    const proactiveness =
-      typeof rawProactiveness === 'number' && Number.isInteger(rawProactiveness)
-        ? Math.min(Math.max(0, rawProactiveness), 2)
-        : 1;
-
-    const system = buildSystemBlocks({
-      persona: character.persona,
-      name: character.name,
-      preferredName: config.preferred_name ?? '',
-      proactiveness,
-      memory,
-      summary,
-      // Per-turn: is an open-to-LAN world detected right now? Lets the model
-      // decide launch() vs. open-to-LAN instructions.
+    // Build the prompt AFTER the user message is appended above, so the turn's
+    // context includes it. Per-turn truth passed in:
+    //   openWorldDetected — is an open-to-LAN world detected right now? Lets the
+    //     model decide launch() vs. open-to-LAN instructions.
+    //   inGame — usually false here (a live session routes messages in-game), but
+    //     re-read so the routed-then-vanished fallback and any races tell the truth.
+    const prep = await prepareChatTurn(args.characterId, {
       openWorldDetected: deps.getLanState().kind === 'open',
+      inGame: deps.isInGame?.(args.characterId) ?? false,
     });
-
-    const messages = toMessages(history);
+    if (!prep) throw new Error('Character not found');
+    const { system, messages } = prep;
     const { client, model } = await buildChatSdk();
 
     let launch: ChatSendResult['launch'];
     let replyText = '';
+    // Task 2 — the actual summon is deferred until AFTER the reply is persisted,
+    // so the companion's "hopping in" acknowledgement lands in chat before the
+    // live-session popup (SummonedWidget) appears. Set when launch() resolves to
+    // an open world; fired at the end of the turn.
+    let startSummon = false;
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
       const res = await client.messages.create(
@@ -211,7 +292,7 @@ export async function sendChatMessage(
         // ceiling it self-conditions on the last (longest) turn and creeps up a
         // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
         // from the system prompt without truncating mid-sentence.
-        { model, max_tokens: 200, system, tools: [LAUNCH_TOOL], messages: messages as never },
+        { model, max_tokens: 200, system, tools: [LAUNCH_TOOL, QUIT_TOOL], messages: messages as never },
         // #9 — abortable: a follow-up send aborts this signal.
         { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
       );
@@ -221,15 +302,30 @@ export async function sendChatMessage(
       const toolUse = res.content.find((b) => b.type === 'tool_use') as
         | { type: 'tool_use'; id: string; name: string; input: { game?: string } }
         | undefined;
-      if (!toolUse || toolUse.name !== 'launch') break;
+      if (!toolUse) break;
 
       messages.push({ role: 'assistant', content: res.content });
-      const game = String(toolUse.input?.game ?? 'minecraft');
-      const result = await executeLaunch(args.characterId, game, deps);
-      launch = result.launch;
+      let note: string;
+      if (toolUse.name === 'launch') {
+        const game = String(toolUse.input?.game ?? 'minecraft');
+        const result = resolveLaunch(game, deps);
+        launch = result.launch;
+        // Defer the real join — don't fire summon mid-loop (task 2).
+        if (result.summon) startSummon = true;
+        note = result.note;
+      } else if (toolUse.name === 'quit') {
+        // Task 5 — leave the game from chat. End the live session (no-op when
+        // none is live) and tell the model it has logged off.
+        deps.leaveGame?.(args.characterId);
+        note =
+          'You have left the Minecraft world and logged off. You are back in chat only now — ' +
+          'say a short goodbye if you have not already. Do not claim you are still in the game.';
+      } else {
+        break;
+      }
       messages.push({
         role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: result.note }] as never,
+        content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: note }] as never,
       });
     }
 
@@ -241,17 +337,24 @@ export async function sendChatMessage(
       throw e;
     }
 
-    // Split on blank lines so a multi-paragraph reply lands as separate messages
-    // (task 8). Each is its own persisted message + its own bubble in the UI,
-    // which reveals them one at a time. Stamp ascending ts so ordering is stable.
-    const now = Date.now();
-    const replies: ChatMessage[] = splitReply(replyText).map((text, i) => ({
-      id: randomUUID(),
-      role: 'companion',
-      text,
-      ts: now + i,
-    }));
-    for (const reply of replies) await chatStore.appendMessage(args.characterId, reply);
+    const replies = await persistReplies(args.characterId, replyText);
+
+    // Background compaction (260702): the reply is persisted, so if 50+
+    // messages have aged past the window, fold them NOW — while the player is
+    // typing — rather than making some future turn (or a summon) pay for it.
+    // Fire-and-forget; single-flighted inside foldIfDue.
+    void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
+
+    // Task 2 — NOW that the "hopping in" reply is persisted (and about to be
+    // returned + rendered), kick off the real join. Firing it here rather than
+    // mid-loop guarantees the acknowledgement message lands before the live-
+    // session popup appears. Still non-blocking: a full join can take many
+    // seconds, so we never await it on the chat turn.
+    if (startSummon) {
+      void deps.summon(args.characterId).catch((e) => {
+        deps.onLaunchFailed?.(args.characterId, (e as Error)?.message ?? 'unknown error');
+      });
+    }
 
     // #6 — stamp last_chatted on a successful reply so a plain chat counts as a
     // "last interaction" for the card date + ordering (device-local, like
@@ -280,32 +383,80 @@ export async function sendChatMessage(
   }
 }
 
-async function executeLaunch(
+/**
+ * 260702 (task 2): the deferred join kicked off by launch() failed AFTER the
+ * companion already told the player it was hopping in. Without a correcting
+ * turn, the companion's own transcript says it joined — so later turns insist
+ * "i'm already in" while nothing is in the world. Run a short persona-voiced
+ * turn around an ephemeral system note so the companion (a) learns the join
+ * failed and (b) tells the player in its own words; its reply is persisted, so
+ * the correction survives into every future turn's history. No tools are
+ * offered — this turn reports the failure, it must not retry the launch.
+ * Replies are persisted here; the caller pushes them to the renderer.
+ */
+export async function sendLaunchFailedTurn(
   characterId: string,
+  reason: string,
+): Promise<ChatMessage[]> {
+  const prep = await prepareChatTurn(characterId, {
+    openWorldDetected: false,
+    // This turn exists BECAUSE the join failed — the companion is not in-game.
+    inGame: false,
+  });
+  if (!prep) return [];
+  const { system, messages } = prep;
+  // Keep the model-facing reason to a single sanitized line — the raw summon
+  // error can carry a multi-line stderr tail.
+  const shortReason = (reason || 'unknown error').split('\n')[0].slice(0, 200);
+  const note =
+    `[System note — not the player speaking: your attempt to join the Minecraft world just failed (${shortReason}). ` +
+    'You never made it in; you are NOT in the world, you are still here in chat. ' +
+    'Tell the player the join failed and that you can try again — one short line, in your own voice. Do not pretend you got in.]';
+  // Anthropic requires strict role alternation; if the transcript already ends
+  // on a user turn (e.g. the player typed something while the join was dying),
+  // fold the note into it instead of appending a second user message.
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'user' && typeof last.content === 'string') {
+    last.content = `${last.content}\n${note}`;
+  } else {
+    messages.push({ role: 'user', content: note });
+  }
+
+  const { client, model } = await buildChatSdk();
+  const res = await client.messages.create(
+    { model, max_tokens: 200, system, messages: messages as never },
+    { timeout: CHAT_TIMEOUT_MS },
+  );
+  const replyText = textOf(res.content);
+  if (!replyText) return [];
+  return persistReplies(characterId, replyText);
+}
+
+/**
+ * Decide what a launch() tool call should do, WITHOUT side effects. The actual
+ * summon is deferred to the caller (fired after the reply persists, task 2), so
+ * this only reads the current LAN state and returns the model-facing note, the
+ * launch descriptor, and whether a join should start.
+ */
+function resolveLaunch(
   game: string,
   deps: ChatDeps,
-): Promise<{ note: string; launch: NonNullable<ChatSendResult['launch']> }> {
+): { note: string; launch: NonNullable<ChatSendResult['launch']>; summon: boolean } {
   if (game !== 'minecraft') {
     return {
       note: `The game "${game}" is not available yet — only Minecraft can be launched right now. Tell the player it is coming soon.`,
       launch: { game, status: 'lan-not-open' },
+      summon: false,
     };
   }
   const lan = deps.getLanState();
   if (lan.kind === 'open') {
-    // Fire the summon but DO NOT await it here — a full join can take many
-    // seconds or time out, and blocking the chat turn on it is what left the UI
-    // stuck on "typing…". Acknowledge immediately; the deterministic "joined
-    // your world" line confirms the real join, and a failure posts a notice.
-    deps.onLaunch?.(characterId);
-    void deps.summon(characterId).catch((e) => {
-      deps.onLaunchFailed?.(characterId, (e as Error)?.message ?? 'unknown error');
-    });
     return {
       note:
         'You are on your way into the player\'s Minecraft world right now — tell them you\'re hopping in. ' +
         'Do NOT claim you have already arrived; you are still joining. Keep it to one short line.',
       launch: { game, status: 'summoning' },
+      summon: true,
     };
   }
   return {
@@ -314,6 +465,7 @@ async function executeLaunch(
       'In Minecraft they need to pause the game (press Esc), click "Open to LAN", then "Start LAN World". ' +
       'Explain this to them in your own voice and ask them to do it, then you can hop in.',
     launch: { game, status: 'lan-not-open' },
+    summon: false,
   };
 }
 

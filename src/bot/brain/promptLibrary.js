@@ -354,11 +354,13 @@ export function renderChatProactivenessDirective(proactiveness) {
 }
 
 // =============================================================================
-// 5. MEMORY — compaction instruction (Haiku rewrites MEMORY.md over threshold).
+// 5. MEMORY — compaction instruction (the compactor rewrites MEMORY.md over
+//    threshold; 260703: runs on the latest Sonnet with the persona appended by
+//    compactor.js so entries keep the being's voice).
 // =============================================================================
 
 export const COMPACTION_SYSTEM = [
-  "You are compacting an AI being's long-term memory file (MEMORY.md). The being will read this file cold at the start of future sessions and use it to understand its relationship with the player, how the player talks, and what to do next in the world. Retain their tone (in the future, we will tweak tone to be more in-character by giving you character prompt)",
+  "You are compacting an AI being's long-term memory file (MEMORY.md). The being will read this file cold at the start of future sessions and use it to understand its relationship with the player, how the player talks, and what to do next in the world. When the being's persona is provided after these rules, write the compacted entries in that voice — these are the being's own notes to itself. Record only what the entries actually say; never assert current world/game state.",
   "",
   "Keep:",
   "- Emotional arc across entries: if entries show a relationship shifting (e.g. hostile → warm, distant → close, formal → casual), the condensed version MUST still show that shift. Long-time relationship development depends on the emotional arc surviving compaction; flattening it into a single steady-state summary is forbidden. When in doubt, preserve the trajectory at the cost of literal detail.",
@@ -433,8 +435,10 @@ export const NUDGES = {
   silence:
     '[several iterations without speaking — call a brief say() if it genuinely fits, or stay silent. don\'t restate numbers; one short observation is enough.]',
 
-  playerInterruptHint:
-    "\n\nYou can end this loop with end_loop, or switch tasks by calling a new action. Replying (one say(), or nothing) without a new action keeps the current action going.",
+  // NB: single template literal, not a `+` chain — the LIBRARY-tab editor's
+  // parser (scripts/lib/promptLibraryEdit.mjs scanValue) reads one literal per
+  // prop; a concatenation hides every prop after this one from the editor.
+  playerInterruptHint: `\n\nYou can end this loop with end_loop, or switch tasks by calling a new action. One say() without a new action keeps the current action going. The player spoke to you, so answer them with say() — your text output is invisible to them, and ending the loop without a say() leaves them on read. What you say is yours (agree, refuse, deflect, one word — whatever fits your voice), but say something.`,
 
   capClose:
     'You hit the iteration cap and have to stop. Wrap up gracefully in your own voice by calling say once — under 12 words. Call only say, nothing else.',

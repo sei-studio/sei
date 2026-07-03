@@ -61,7 +61,7 @@ const logger = {
 
 let mainWindow: BrowserWindow | null = null;
 let latestLanState: LanState = { kind: 'closed' };
-let lanWatcherHandle: { stop: () => void } | null = null;
+let lanWatcherHandle: ReturnType<typeof watchLan> | null = null;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
 // CustomSkinLoader on the host's MC client. Bound on boot (port 0 → OS-chosen
@@ -90,6 +90,14 @@ function rendererTarget(): string {
 }
 
 function broadcastLan(state: LanState): void {
+  // Transition log (260703): broadcastLan only fires on CHANGE (the watcher's
+  // emit gate), so this is one line per flip — enough to reconstruct exactly
+  // what the companion/pill believed at any moment when triaging "Marv says my
+  // open world is closed" reports.
+  console.log(
+    `[sei/lan] world ${state.kind}` +
+    (state.kind === 'open' ? ` (port=${state.port}, motd=${JSON.stringify(state.motd)})` : ''),
+  );
   latestLanState = state;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.lan.state, state);
@@ -97,11 +105,13 @@ function broadcastLan(state: LanState): void {
 }
 
 /**
- * Task 1 — characters whose current summon was launched from the in-app chat
- * (the `launch` tool), pending a one-time "joined your world" system line the
- * moment they actually reach online. Cleared on that ack, or on error/idle.
+ * Current per-character bot status, maintained by broadcastStatus (idle drops
+ * the key, everything else upserts — same shape the renderer keeps). Backs the
+ * bot:get-statuses snapshot pull: status pushes only fire on TRANSITIONS, so a
+ * renderer that (re)subscribes after 'online' — reload, dev HMR, late mount —
+ * would otherwise never learn a session is live (260703).
  */
-const chatLaunchPendingAck = new Set<string>();
+const currentStatuses = new Map<string, BotStatus>();
 
 /**
  * Characters whose bot is fully ONLINE (spawned in-world), so a chat message can
@@ -165,32 +175,29 @@ async function emitPlaySession(characterId: string, durationMs: number): Promise
   });
 }
 
-/** Task 1 — deterministic "joined your world" system line for a chat launch. */
-async function emitJoinAck(characterId: string): Promise<void> {
-  let name = 'Your companion';
-  try {
-    const { getCharacter } = await import('./characterStore');
-    const c = await getCharacter(characterId);
-    if (c?.name) name = c.name;
-  } catch {
-    /* fall back to the generic name */
-  }
-  await appendChatMessage(characterId, {
-    id: randomUUID(),
-    role: 'system',
-    text: `${name} joined your world`,
-    ts: Date.now(),
-  });
-}
+// 260703: the "joined your world" system line was removed — the floating
+// SummonedWidget is the live-session surface, so the chat row was redundant.
 
 function broadcastStatus(status: BotStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.bot.status, status);
   }
-  // Task 1 — fire the required "joined" acknowledgement once a chat-launched
-  // session reaches online; drop the pending flag on a failed/ended summon.
   const id = (status as { characterId?: string }).characterId;
   if (!id) return;
+  // A TRANSIENT error (BotStatus.error.transient) is advisory: the session is
+  // still live (e.g. a mid-session backend switch to local with no key — the
+  // bot stays connected and just 401s). It must NOT be treated as a session
+  // end. We still upsert it into currentStatuses and forward it to the renderer
+  // above (the model row should surface the "no key" error), but we leave
+  // onlineIds and playStartedAt untouched so chat keeps routing to the live bot
+  // and the eventual REAL end still reports the right total duration (260703).
+  const transientError = status.kind === 'error' && status.transient === true;
+  // Snapshot map for bot:get-statuses — mirror the renderer's summons-map
+  // semantics ('idle' means the session is gone). A transient error still
+  // upserts (renderer keeps showing the error over the still-live session).
+  if (status.kind === 'idle') currentStatuses.delete(id);
+  else currentStatuses.set(id, status);
+  if (transientError) return;
   // Track online-ness for chat routing (only route to a spawned bot).
   if (status.kind === 'online') onlineIds.add(id);
   else onlineIds.delete(id);
@@ -204,12 +211,6 @@ function broadcastStatus(status: BotStatus): void {
       playStartedAt.delete(id);
       void emitPlaySession(id, Date.now() - startedAt);
     }
-  }
-  if (status.kind === 'online' && chatLaunchPendingAck.has(id)) {
-    chatLaunchPendingAck.delete(id);
-    void emitJoinAck(id);
-  } else if (status.kind === 'error' || status.kind === 'idle') {
-    chatLaunchPendingAck.delete(id);
   }
 }
 
@@ -549,21 +550,47 @@ async function bootstrap(): Promise<void> {
     // the renderer via the chars:expansion-progress push channel.
     sendExpansionProgress: broadcastExpansionProgress,
     getLanState: () => latestLanState,
-    // Task 1 — chatService flags a chat-initiated launch here so the "joined
-    // your world" ack fires when that summon reaches online (see broadcastStatus).
-    markChatLaunch: (id) => chatLaunchPendingAck.add(id),
+    // 260703: run one detection pass right now (refreshes latestLanState via
+    // the watcher's emit path). The chat turn awaits this before building the
+    // prompt so the companion answers "is my world open?" from live truth —
+    // the player often messages seconds after clicking "Open to LAN", inside
+    // the 2s poll window, and the stale 'closed' had Marv insisting an open
+    // world was "not broadcasting".
+    refreshLanState: async () => {
+      try { await lanWatcherHandle?.checkNow(); } catch { /* best-effort */ }
+    },
+    // 260703: like refreshLanState but RETURNS the fresh state — backs the
+    // `lan:check-now` channel the summon click awaits. checkNow's emit path
+    // also refreshes latestLanState as a side effect, so the getLanPort() the
+    // actual summon reads is fresh by the time it lands. Falls back to the
+    // cached snapshot on error.
+    checkLanNow: async () => {
+      try {
+        return (await lanWatcherHandle?.checkNow()) ?? latestLanState;
+      } catch {
+        return latestLanState;
+      }
+    },
+    // Snapshot pull for the renderer's summons map (see broadcastStatus).
+    getBotStatuses: () => [...currentStatuses.values()],
     // Task 4 — only route chat into a bot that's fully spawned in-world.
     isSessionOnline: (id) => onlineIds.has(id),
-    // A non-blocking chat-launched join failed — drop a system notice so the
-    // player isn't left with "hopping in" and then silence.
-    notifyLaunchFailed: (id) => {
-      chatLaunchPendingAck.delete(id);
-      void appendChatMessage(id, {
-        id: randomUUID(),
-        role: 'system',
-        text: 'Couldn’t join your world — is it still open to LAN?',
-        ts: Date.now(),
-      });
+    // A non-blocking chat-launched join failed — tell the COMPANION (task 2,
+    // 260702): its last message said "hopping in", so without a correcting turn
+    // its own history claims it joined and it later insists "i'm already in".
+    // sendLaunchFailedTurn runs a short persona-voiced turn (persisted), and we
+    // push the replies live. No canned system row (task 7) — the companion
+    // reports the failure in its own words.
+    notifyLaunchFailed: (id, reason) => {
+      void (async () => {
+        try {
+          const { sendLaunchFailedTurn } = await import('./chat/chatService');
+          const replies = await sendLaunchFailedTurn(id, reason);
+          for (const r of replies) pushChatMessage(id, r);
+        } catch (err) {
+          console.warn(`[sei] launch-failed companion turn failed: ${(err as Error).message}`);
+        }
+      })();
     },
   });
 

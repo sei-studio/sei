@@ -65,13 +65,13 @@ const ENTITY_RADIUS = 64
  * Side effect: replaces the targeting handle table with the #N entries from this snapshot.
  *
  * @param {import('mineflayer').Bot} bot
- * @param {{ lastActionResult?:string, inFlight?:{name:string,args:any,startedAt:number}|null, pinUsername?:string|null, companions?:string[], worldTag?:string|null }} [opts]
+ * @param {{ lastActionResult?:string, inFlight?:{name:string,args:any,startedAt:number}|null, pinUsername?:string|null, companions?:string[], worldTag?:string|null, sessionStartedAtMs?:number }} [opts]
  * @returns {string}
  */
 export function composeSnapshot(bot, opts = {}) {
   // NB: `world` (the import) is the world-observer fn; the per-world tag comes
   // in as `worldTag` to avoid shadowing it.
-  const { lastActionResult, inFlight, pinUsername, worldTag } = opts
+  const { lastActionResult, inFlight, pinUsername, worldTag, sessionStartedAtMs } = opts
   // 260618: other AI companions in a multi-bot session. Pinned like the owner
   // (always visible with coords) and labeled "(companion)" so the model can see
   // and coordinate with its teammates instead of confusing them for the human.
@@ -102,6 +102,15 @@ export function composeSnapshot(bot, opts = {}) {
   // Position / biome / time
   lines.push(`pos: ${w.pos.x},${w.pos.y},${w.pos.z}`)
   lines.push(`biome: ${w.biome}  surroundings: ${w.surroundings}  time: ${w.time.isDay ? 'day' : 'night'} (${w.time.timeOfDay})`)
+  // Real-world clock + session age (260703). The model has no sense of elapsed
+  // time and guessed session length wrong ("probably 8-9 mins" on a 7-minute
+  // session) — give it the wall clock and minutes-since-join so "how long have
+  // we been playing" is answered from data, not vibes.
+  if (typeof sessionStartedAtMs === 'number') {
+    const mins = Math.floor((Date.now() - sessionStartedAtMs) / 60_000)
+    const clock = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    lines.push(`real time: ${clock} — you joined this session ${mins < 1 ? 'under a minute' : `${mins} min`} ago`)
+  }
 
   // Vitals
   lines.push(`hp: ${v.hp}/20  food: ${v.food}/20  xp: lvl ${v.xp.level}`)
@@ -294,6 +303,10 @@ export function composeSnapshot(bot, opts = {}) {
 export function createSnapshotComposer({ bot }) {
   let prevInventory = null
   let prevHp = null
+  // Session clock anchor: the composer is created once per bot session (right
+  // around join), so "now minus this" is minutes-in-world for the `real time`
+  // snapshot line.
+  const sessionStartedAtMs = Date.now()
 
   // Real deaths since the last snapshot, grouped by entity name. Populated by
   // the entityDead subscription below; drained each next() call.
@@ -368,7 +381,7 @@ export function createSnapshotComposer({ bot }) {
 
   return {
     next(opts = {}) {
-      const base = composeSnapshot(bot, opts)
+      const base = composeSnapshot(bot, { ...opts, sessionStartedAtMs })
       const currInv = inventory(bot)
       const currHp = Math.round(bot.health ?? 0)
       const { inv, other } = computeEvents(currInv, currHp)

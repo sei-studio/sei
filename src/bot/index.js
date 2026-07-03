@@ -323,6 +323,18 @@ export async function start(config, hooks = {}) {
       try { _brain?.setAuthToken?.(token) } catch {}
     },
     /**
+     * Task 4 (fix 260703): forward an in-app Sei chat message into the live
+     * brain as a P1 chat event. This passthrough was MISSING — the parentPort
+     * 'sei-chat' handler calls `_running?.deliverSeiChat?.(...)`, and with no
+     * such method on this wrapper the optional chain silently no-op'd: every
+     * in-app message to an in-game companion was dropped and the chat UI hung
+     * on "typing…" forever. The brain method existed all along (brain/index.js
+     * deliverSeiChat); it just was never reachable from the port.
+     */
+    deliverSeiChat(payload) {
+      try { _brain?.deliverSeiChat?.(payload) } catch {}
+    },
+    /**
      * 260618: update the roster of OTHER AI companions in this world. Called by
      * the parentPort {type:'roster'} handler whenever the supervisor summons or
      * stops a sibling bot. Writes config._seiCompanions (read by chat.js, which
@@ -417,6 +429,10 @@ async function bootstrapWithInit(initData) {
     // vision knobs (cadence, image_quality, resolution_px, cap) come from the
     // bot ConfigSchema / orchestrator defaults.
     visionMode,           // 'off' | 'on-demand' | 'continuous' | undefined
+    // Appearance & feel: the "Realistic typing" toggle, bridged by the
+    // supervisor from UserConfig.realistic_typing. Maps into
+    // config.realistic_typing below. undefined (older main / CLI) → default true.
+    realisticTyping,      // boolean | undefined
     // 260618: in-game usernames of the OTHER AI companions summoned into this
     // same world (multi-bot sessions). Seeds the roster so the bot knows its
     // teammates from the first tick; the supervisor re-broadcasts on every
@@ -500,6 +516,9 @@ async function bootstrapWithInit(initData) {
 
   const rawConfig = {
     chat_mode: 'chat',  // default for v1; renderer can flip in a later phase
+    // Appearance & feel: mirror the in-app "Realistic typing" toggle. Default
+    // true when the supervisor didn't ship it (older main / CLI standalone).
+    realistic_typing: realisticTyping !== false,
     player_username: playerName,
     player_display_name: playerDisplayName,
     // World label for the memory registry / section headers. Trim to null when
@@ -516,6 +535,9 @@ async function bootstrapWithInit(initData) {
       // legacy values 2 (old "Active") and 3 (old "Driven") both fold into 2
       // (Agentic), so we clamp here before ConfigSchema (which now rejects >2).
       // Out-of-range/missing falls to the ConfigSchema default (1, Reactive).
+      // MIRROR: src/main/chat/chatService.ts clampProactiveness() applies this
+      // exact clamp for the chat surface. The bot ships as raw ESM in a separate
+      // process and CANNOT import from src/main, so keep the two copies in sync.
       ...(typeof character.metadata?.proactiveness === 'number' && Number.isInteger(character.metadata.proactiveness)
         ? { proactiveness: Math.min(Math.max(0, character.metadata.proactiveness), 2) }
         : {}),
@@ -770,7 +792,18 @@ if (process.parentPort) {
   process.parentPort.once('message', (msg) => {
     try {
       const ports = msg.ports || []
-      if (!ports.length) return
+      if (!ports.length) {
+        // A first message with no transferred MessagePort means the init
+        // handshake is broken (or something else beat init onto parentPort).
+        // This used to `return` silently — the once() listener was consumed,
+        // the event loop drained, and the bot exited code 0 with zero output
+        // (the 260702 "stuck connecting" symptom). Surface it loudly instead.
+        surfaceCrash(
+          'parentPort.message',
+          new Error('first parentPort message carried no MessagePort — expected the init handshake with [port2]'),
+        )
+        return
+      }
       initPort = ports[0]
       initPort.start()
       // Future commands from main (e.g. {type:'stop'} during graceful
@@ -848,6 +881,15 @@ if (process.parentPort) {
       const data = msg.data
       if (data && data.type === 'init') {
         bootstrapWithInit(data).catch((err) => surfaceCrash('bootstrapWithInit', err))
+      } else {
+        // The one-shot listener just consumed a non-init message: bootstrap can
+        // never run and the process would otherwise exit 0 in total silence.
+        // Only init is ever posted on parentPort (everything else rides the
+        // transferred port), so this is always a handshake bug — say so.
+        surfaceCrash(
+          'parentPort.message',
+          new Error(`first parentPort message was not init (type=${data && data.type}) — bootstrap cannot run`),
+        )
       }
     } catch (err) {
       surfaceCrash('parentPort.message', err)

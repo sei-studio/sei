@@ -12,12 +12,11 @@
  *       - has key → home
  *  5. Hold the loading screen for ≥ LOADING_FLOOR_MS (1.6s) so the boot pulse
  *     animation reads (UI-SPEC §Animation Tokens).
- *  6. Render modal layer (LanModal) and toast layer (SummonToast on summon
- *     transitions) above the main view.
+ *  6. Render the modal layer (LanModal) above the main view. The live-session
+ *     surface is the floating SummonedWidget, not a transient toast.
  *
  * Source: CONTEXT.md D-15/D-17/D-33/D-35, UI-SPEC.md §Animation Tokens
- *         (LoadingScreen 1.6s floor) + §Interaction Contracts → Theme toggle +
- *         §Summon flow (toast on summon).
+ *         (LoadingScreen 1.6s floor) + §Interaction Contracts → Theme toggle.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -48,7 +47,6 @@ import { SkinSetupPromptModal } from './components/SkinSetupPromptModal';
 import { SummonConflictModal } from './components/SummonConflictModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
-import { SummonToast } from './components/SummonToast';
 import { UpdatePopup, type UpdatePopupState } from './components/UpdatePopup';
 import { Banner } from './components/Banner';
 import { ERROR_COPY } from './lib/errors';
@@ -97,12 +95,6 @@ export function App(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const modal = useUiStore((s) => s.modal);
-  const summons = useDataStore((s) => s.summons);
-  const characters = useDataStore((s) => s.characters);
-  const [toast, setToast] = useState<{ id: string; name: string } | null>(null);
-  // Characters we've already toasted for their current online session. Cleared
-  // per-id when that character leaves 'online' so a later re-summon re-toasts.
-  const toastedSummonIds = useRef<Set<string>>(new Set());
   // In-app updater (quick/260604-uoy). A single discriminated state drives the
   // UpdatePopup across every updater stage (optional-available → downloading →
   // downloaded/forced, plus the standalone post-update what's-new). null = no
@@ -348,6 +340,9 @@ export function App(): React.ReactElement {
           setThemeMode(mode);
           applyTheme(mode);
           useUiStore.getState().setDevConsoleVisible(!!cfg.dev_console_visible);
+          // Appearance & feel: seed the "Realistic typing" pacing toggle
+          // (default ON) so useChatStore.send() reads the right value.
+          useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
         } catch {
           // Fall through with empty onboardedName → onboarding (fresh profile).
         }
@@ -449,6 +444,9 @@ export function App(): React.ReactElement {
         if (typeof cfg.dev_console_visible === 'boolean') {
           useUiStore.getState().setDevConsoleVisible(cfg.dev_console_visible);
         }
+        // Appearance & feel: seed the "Realistic typing" pacing toggle before
+        // first render (default ON when the field is absent).
+        useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
       } catch {
         // Defaults already applied (themeMode='system' from store)
       }
@@ -527,33 +525,6 @@ export function App(): React.ReactElement {
   // who predate the step (skin_setup_pending defaults false) aren't forced in;
   // they still get the one-time first-summon nudge (SkinSetupPromptModal) and the
   // Settings → "Re-run setup" entry.
-
-  // ── Toast on summon transition (UI-SPEC §Summon flow) ─────────────────
-  // Fire SummonToast each time a character reaches 'online'. Multi-summon: any
-  // number of characters can be live, so we track a SET of already-toasted ids
-  // and clear an id once it leaves 'online', so a later re-summon toasts afresh.
-  useEffect(() => {
-    const onlineIds = new Set(
-      Object.entries(summons)
-        .filter(([, st]) => st.kind === 'online')
-        .map(([id]) => id),
-    );
-    // Forget ids no longer online so their next summon re-toasts.
-    for (const id of toastedSummonIds.current) {
-      if (!onlineIds.has(id)) toastedSummonIds.current.delete(id);
-    }
-    // Toast the first newly-online character we haven't announced yet. Each
-    // 'online' arrives in its own push (separate `summons` identity), so a
-    // burst of summons toasts one-per-update rather than all at once.
-    for (const id of onlineIds) {
-      if (toastedSummonIds.current.has(id)) continue;
-      const c = characters.find((x) => x.id === id);
-      if (!c) continue;
-      toastedSummonIds.current.add(id);
-      setToast({ id: c.id, name: c.name });
-      break;
-    }
-  }, [summons, characters]);
 
   // ── Auth-state transitions driven by the Supabase auth-event push
   //    (initAuthState → onAuthState). We don't await any IPC ourselves.
@@ -771,13 +742,6 @@ export function App(): React.ReactElement {
           WizardStepMachine), so suppress the global modal there to avoid a
           double-render. Elsewhere (Settings "Re-run setup") it works as before. */}
       {view.kind !== 'skin-setup' ? <SetupWizardModal /> : null}
-      {toast ? (
-        <SummonToast
-          characterId={toast.id}
-          characterName={toast.name}
-          onDone={() => setToast(null)}
-        />
-      ) : null}
       {updatePopup ? (
         <UpdatePopup
           state={updatePopup}

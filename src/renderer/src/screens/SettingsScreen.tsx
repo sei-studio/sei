@@ -50,6 +50,11 @@ export function SettingsScreen(): React.ReactElement {
   // a relaunch preserves the choice.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
   const setDevConsoleVisible = useUiStore((s) => s.setDevConsoleVisible);
+  // Appearance & feel: "Realistic typing" pacing toggle (default ON). Persisted
+  // via UserConfig.realistic_typing; the chat store + bot read it for reading /
+  // typing delays.
+  const realisticTyping = useUiStore((s) => s.realisticTyping);
+  const setRealisticTyping = useUiStore((s) => s.setRealisticTyping);
   const authState = useAuthStore((s) => s.state);
   // "Is ANY bot running" — gates the live backend switch. Multi-summon: true
   // when one or more characters are connecting/online.
@@ -355,6 +360,23 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
+  // Appearance & feel: persist the "Realistic typing" pacing toggle. Same
+  // optimistic-then-write-through pattern as the dev-console toggle.
+  const onToggleRealisticTyping = async (): Promise<void> => {
+    const next = !realisticTyping;
+    setRealisticTyping(next);
+    if (!cfg) return;
+    try {
+      const updated: UserConfig = { ...cfg, realistic_typing: next };
+      await sei.saveConfig(updated);
+      setCfg(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (realistic_typing) failed', err);
+      setRealisticTyping(!next);
+    }
+  };
+
   // Write through vision_mode to UserConfig (the config is the source of truth;
   // botSupervisor bridges it into config.vision at fork). Mirrors
   // onToggleDevConsole's optimistic-then-rollback discipline. The setting is
@@ -476,16 +498,14 @@ export function SettingsScreen(): React.ReactElement {
         */}
         {aiBackendKind === 'local' ? (
           <>
-            <div className={styles.row} style={{ alignItems: 'flex-start' }}>
+            <div className={styles.row}>
               <span className={styles.rowLabel}>Provider</span>
-              <span className={styles.rowEditor} style={{ flex: 1, justifyContent: 'flex-start' }}>
-                <div style={{ flex: 1, maxWidth: 'none' }}>
-                  <ProviderSelect
-                    value={currentProvider}
-                    onChange={(p) => void onChangeProvider(p)}
-                    compact
-                  />
-                </div>
+              <span className={styles.rowEditor}>
+                <ProviderSelect
+                  value={currentProvider}
+                  onChange={(p) => void onChangeProvider(p)}
+                  compact
+                />
               </span>
             </div>
 
@@ -568,7 +588,7 @@ export function SettingsScreen(): React.ReactElement {
       </section>
 
       <section className={styles.section}>
-        <div className={styles.sectionTitle}>APPEARANCE</div>
+        <div className={styles.sectionTitle}>APPEARANCE &amp; FEEL</div>
         <div className={styles.row}>
           <span className={styles.rowLabel}>Theme</span>
           <Button
@@ -600,6 +620,28 @@ export function SettingsScreen(): React.ReactElement {
             onClick={() => void onToggleDevConsole()}
           >
             {devConsoleVisible ? 'On' : 'Off'}
+          </Button>
+        </div>
+        {/*
+          Appearance & feel: "Realistic typing" pacing. On by default — the chat
+          store adds a reading pause before the typing indicator and scales it to
+          the reply length; the same pacing is bridged to the in-game bot.
+        */}
+        <div className={styles.row}>
+          <span className={styles.rowLabelGroup}>
+            <span className={styles.rowLabel}>Realistic typing</span>
+            <InfoTip
+              label="About realistic typing"
+              text="Pauses to read your message, then paces typing to a human speed, in chat and in-game. Off replies instantly."
+            />
+          </span>
+          <Button
+            kind="ghost"
+            size="sm"
+            aria-pressed={realisticTyping}
+            onClick={() => void onToggleRealisticTyping()}
+          >
+            {realisticTyping ? 'On' : 'Off'}
           </Button>
         </div>
       </section>

@@ -240,23 +240,32 @@ export function createBotInstance({
     }
   }
 
+  // Isolate each spawn-setup step so ONE throwing behavior can never strand the
+  // summon. Reaching 'spawn' means the bot IS in the world, so onSpawn (which
+  // fires summon-ready) must run regardless — otherwise the connect timer is
+  // already cleared and the session hangs on "Connecting…" until the
+  // supervisor's 30s timeout. A failed behavior degrades that one feature only.
+  const safeStart = (label, fn) => {
+    try { fn() } catch (err) { logger.warn?.(`[sei/connect] ${label} failed on spawn: ${err && err.message}`) }
+  }
+
   bot.on('spawn', () => {
     logger.info?.(`[sei] Connected to ${host}:${port} as ${username}`)
     if (!_spawned) {
       _spawned = true
       _clearConnectTimer()
-      bot.loadPlugin(pathfinder)
-      startPosHealer(bot)
-      startAutoEat(bot)
-      startCombat(bot, config)
-      startReflex(bot, config)
-      startFollow(bot, config)
+      safeStart('loadPlugin(pathfinder)', () => bot.loadPlugin(pathfinder))
+      safeStart('startPosHealer', () => startPosHealer(bot))
+      safeStart('startAutoEat', () => startAutoEat(bot))
+      safeStart('startCombat', () => startCombat(bot, config))
+      safeStart('startReflex', () => startReflex(bot, config))
+      safeStart('startFollow', () => startFollow(bot, config))
       try { onSpawn?.() } catch (err) { logger.warn?.(`[sei/connect] onSpawn hook threw: ${err && err.message}`) }
     } else {
       // respawn after death — restart follow + re-arm the reflex loop (Plan 01's
       // disposer tears the loop down on death, so respawn must re-arm it).
-      startReflex(bot, config)
-      startFollow(bot, config)
+      safeStart('startReflex(respawn)', () => startReflex(bot, config))
+      safeStart('startFollow(respawn)', () => startFollow(bot, config))
     }
   })
 

@@ -49,6 +49,27 @@ export const Priority = Object.freeze({
 })
 
 /**
+ * Priority tier for a 'sei:attacked' event, keyed on attackerKind.
+ *
+ * A reflex-tagged event (attackerKind === 'reflex') is a PROACTIVE threat
+ * warning: the bot was NOT hit — reflex.js already ran the evasion in its tick,
+ * and the wire re-frames it as an offer to attack()/explore(). It is therefore
+ * conversation-tier (P1_CHAT), NOT safety-tier: enqueuing it at P0_SAFETY would
+ * let a creeper wandering into flee range preempt (and abort) a player-chat
+ * reply the player is waiting on — a heads-up outranking real conversation, the
+ * opposite of the intent. A REAL attack (attackerKind player/mob) keeps
+ * P0_SAFETY. The event NAME stays 'sei:attacked' either way so downstream
+ * dispatch + attack/reflex prompt framing (which keys on attackerKind) is
+ * unchanged.
+ *
+ * @param {{ attackerKind?: string }} [data]
+ * @returns {number}
+ */
+export function attackedPriority(data) {
+  return data?.attackerKind === 'reflex' ? Priority.P1_CHAT : Priority.P0_SAFETY
+}
+
+/**
  * @typedef {{ priority: number, event: string, data: any }} QueuedEvent
  */
 
@@ -141,7 +162,14 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
     // later dispatch doesn't double-handle it (and doesn't cancel the action).
     if (
       onPreempt &&
-      ((event === 'sei:chat_received' && data?.playerSpoke === true) || event === 'sei:attacked')
+      ((event === 'sei:chat_received' && data?.playerSpoke === true) ||
+        // A reflex-tagged 'sei:attacked' is a PROACTIVE warning routed at
+        // conversation tier (see attackedPriority). It must NOT enter this
+        // fast-path: the path exists to abort an in-flight LLM call that is
+        // parking the dispatch thread, which — for a player-chat turn that is
+        // being answered — is exactly the preemption we must not do for a mere
+        // heads-up. Only a REAL attack keeps the immediate-abort fast-path.
+        (event === 'sei:attacked' && data?.attackerKind !== 'reflex'))
     ) {
       let claimed = false
       try { claimed = !!onPreempt(event, data) } catch (err) {

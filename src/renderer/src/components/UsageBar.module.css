@@ -25,19 +25,24 @@
   content: attr(data-tip);
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 0;
+  top: auto;
+  left: 50%;
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.06em;
-  line-height: 1.2;
+  line-height: 1;
   padding: 6px 10px;
   white-space: nowrap;
+  text-align: center;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(2px);
+  transform: translate(-50%, 2px);
   transition: opacity 120ms var(--ease), transform 120ms var(--ease);
   z-index: 9999;
   box-shadow: var(--shadow-pop);
@@ -45,8 +50,10 @@
 
 .barWrap:hover::after,
 .barWrap:focus-visible::after {
+  /* Instant reveal on hover (fade-out still animates via the base rule). */
+  transition: none;
   opacity: 1;
-  transform: translateY(0);
+  transform: translate(-50%, 0);
 }
 
 .estimate {

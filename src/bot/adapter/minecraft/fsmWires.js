@@ -71,11 +71,15 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   // ── Reflex (proactive threat warning) ───────────────────────────────
   // reflex.js (behaviors/reflex.js) emits sei:reflex once per engagement when
   // the survival loop evades a creeper/arrow/melee threat. We translate it onto
-  // the same onAttacked chat-reaction route (P1) but tag attackerKind:'reflex'
-  // (plus the threat label, the `noticed` telegraph flag and nearby `count`) so
-  // Plan 05's prompt framing phrases it as a proactive warning offering
-  // attack()/explore() rather than "you were hit". Thin translation only — this
-  // does NOT enqueue evasion work; the flee already ran in reflex.js's tick.
+  // the onAttacked route but tag attackerKind:'reflex' (plus the threat label,
+  // the `noticed` telegraph flag and nearby `count`). The 'reflex' tag makes the
+  // brain route it at CONVERSATION tier (P1_CHAT), not safety tier — onAttacked
+  // in src/bot/brain/index.js uses attackedPriority(evt) so a proactive warning
+  // never preempts or aborts a pending/in-flight player chat (a real attack
+  // stays P0_SAFETY). It also drives Plan 05's prompt framing to phrase it as a
+  // proactive warning offering attack()/explore() rather than "you were hit".
+  // Thin translation only — this does NOT enqueue evasion work; the flee already
+  // ran in reflex.js's tick.
   const onSeiReflex = (payload) => {
     if (!payload) return
     try {

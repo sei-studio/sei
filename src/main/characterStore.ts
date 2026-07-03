@@ -241,7 +241,16 @@ export async function expandAndSaveCharacter(
     // (20/user) is enforced by the persona_daily bucket on the proxy side.
     expansionInput.cloudMode = { baseURL: `${PROXY_BASE_URL}/free`, authToken: jwt };
   } else {
-    expansionInput.apiKey = await loadApiKey();
+    // 260703 hard guard: local (BYOK) expansion uses ONLY the on-disk key —
+    // never the Supabase JWT. A missing key fails with an actionable message
+    // (the IPC handler surfaces it verbatim) instead of a raw ENOENT.
+    try {
+      expansionInput.apiKey = await loadApiKey();
+    } catch {
+      throw new Error(
+        'persona expansion failed: local mode is on but no API key is saved — add one in Settings, or switch to managed billing',
+      );
+    }
   }
 
   // 260630: the expander now CHOOSES the proactiveness level (0 passive /

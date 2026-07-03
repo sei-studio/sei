@@ -120,7 +120,13 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // default to BYOK ('local'). Signed-in users with no balance yet are
         // routed to Credits below to claim the trial / subscribe.
         ai_backend_kind: signedIn ? 'cloud-proxy' : 'local',
+        // 260703: this is a DEFAULT, not an explicit user pick — a later
+        // sign-in may re-assert the cloud default over it. Only the Settings
+        // ACCOUNT MODE switch (proxy:configure) stamps 'user'.
+        ai_backend_kind_source: 'default',
         dev_console_visible: false,
+        // Appearance & feel: default the "Realistic typing" pacing on.
+        realistic_typing: true,
         removed_default_ids: [],
         added_world_ids: [],
         // First-login marker stays false here so the Home screen shows the

@@ -124,6 +124,20 @@ describe('scanThreats (classification + priority)', () => {
     const threat = scanThreats(bot, cfg().adapter.minecraft)
     expect(threat).toBeNull()
   })
+
+  it('honors an injected thresholds object over the default resolveReflexThresholds(mc) call', () => {
+    const bot = makeBot()
+    // A calm (non-fusing) creeper 10 blocks out: outside the default 8-block
+    // enter band, so the default-resolved thresholds see no threat...
+    bot.entities[7] = creeperAt(10)
+    expect(scanThreats(bot, cfg().adapter.minecraft)).toBeNull()
+
+    // ...but an injected thresholds object with a wider enter band (as the
+    // install-time TH passed by tick() would be) must classify it as a threat.
+    const th = resolveReflexThresholds({ creeper_flee_enter_blocks: 12 })
+    const threat = scanThreats(bot, cfg().adapter.minecraft, th)
+    expect(threat?.kind).toBe('creeper')
+  })
 })
 
 describe('startReflex pulse responses (no pathfinder goal contention)', () => {

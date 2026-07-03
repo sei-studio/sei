@@ -104,6 +104,16 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
   let timeoutHandle = null
   let abortListener = null
 
+  // Finding 6: once the race below has settled (timeout or abort won), the
+  // navigate() loop must exit cleanly instead of continuing to run — a late
+  // reflex-clear resume must never re-issue `bot.pathfinder.goto(goal)` after
+  // goTo already returned to its caller (same yank hazard as the orphan-timer
+  // fix below, just via the retry loop instead of the setTimeout). Set on the
+  // timeout handler, the abort listener, and immediately once the race
+  // settles (covers the navigate-wins case too; a redundant set there is
+  // harmless).
+  let settled = false
+
   // 17-02: yield to a reflex creeper-flee that owns the goal. We don't install
   // (or re-install, after the flee preempts our goto) our goal while
   // `bot._seiReflexActive` is true — we park and resume rather than race or
@@ -112,9 +122,11 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
   // goTo pauses and then continues to its original destination.
   const navigate = async () => {
     while (true) {
+      if (settled) return 'aborted' // goTo already resolved — don't touch pathfinder again
       if (signal?.aborted) return 'aborted'
       if (bot._seiReflexActive) {
         const w = await waitForReflexClear(bot, signal, timeoutMs)
+        if (settled) return 'aborted' // race settled while we were parked
         if (w === 'aborted') return 'aborted'
         if (w === 'timeout') return cantReachWithDistance()
       }
@@ -122,6 +134,7 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
         await bot.pathfinder.goto(goal)
         return 'reached'
       } catch {
+        if (settled) return 'aborted' // race already settled — do not re-issue goto
         if (bot._seiReflexActive) continue // flee took the goal — yield & resume
         return cantReachWithDistance()
       }
@@ -131,6 +144,7 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
 
   const timeoutPromise = new Promise((resolve) => {
     timeoutHandle = setTimeout(() => {
+      settled = true
       bot.pathfinder.stop()
       resolve('timeout')
     }, timeoutMs)
@@ -142,6 +156,7 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
   const abortPromise = signal
     ? new Promise((resolve) => {
         abortListener = () => {
+          settled = true
           try { bot.pathfinder.stop() } catch {}
           resolve('aborted')
         }
@@ -151,11 +166,18 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
 
   // Clear the timer when navigation resolves first; otherwise the orphan
   // setTimeout fires `pathfinder.stop()` later and yanks whatever goto the
-  // follow tick (or any other consumer) started in the meantime.
+  // follow tick (or any other consumer) started in the meantime. The same
+  // `settled` flag also guards the navigate() retry loop above: without it, a
+  // late reflex-clear resume after the timeout/abort already won the race
+  // would re-issue the stale `pathfinder.goto(goal)` and yank the bot away
+  // from whatever goal a later consumer installed — the exact hazard this
+  // comment originally described, just reached via the retry path instead of
+  // the timer.
   const racers = abortPromise
     ? [navigationPromise, timeoutPromise, abortPromise]
     : [navigationPromise, timeoutPromise]
   const result = await Promise.race(racers)
+  settled = true
   if (timeoutHandle != null) clearTimeout(timeoutHandle)
   if (signal && abortListener) {
     try { signal.removeEventListener('abort', abortListener) } catch {}

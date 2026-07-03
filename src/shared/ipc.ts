@@ -45,7 +45,22 @@ export type BotStatus =
   // emits 'online' only once. `uptimeMs` is the elapsed-at-emit snapshot, kept
   // for callers that just want a number without ticking.
   | { kind: 'online'; uptimeMs: number; startedAtMs: number; characterId: string }
-  | { kind: 'error'; error: ErrorClass; message: string; characterId: string };
+  | {
+      kind: 'error';
+      error: ErrorClass;
+      message: string;
+      characterId: string;
+      /**
+       * When set, the session is still LIVE — this error is advisory, not a
+       * session end (e.g. a mid-session backend switch to local with no saved
+       * key: the bot stays connected in-world and just 401s on LLM calls).
+       * Receivers must NOT treat a transient error as a terminal status: do not
+       * drop the character from the online/routing set and do not post a
+       * "played for X" play-session row. A non-transient error is terminal (the
+       * session is gone or was never live).
+       */
+      transient?: true;
+    };
 
 /**
  * Phase 15 (D-10 / VIS-03) — the active LLM provider's vision capability,
@@ -996,6 +1011,12 @@ export interface RendererApi {
 
   // Push subscriptions — return Unsubscribe (renderer cleans up on unmount)
   onStatus(cb: (status: BotStatus) => void): Unsubscribe;
+  /** Pull the current per-character bot statuses (snapshot). Used to seed a
+   * freshly-(re)subscribed renderer, since onStatus pushes only fire on
+   * TRANSITIONS — a subscriber that attaches after 'online' would otherwise
+   * never learn a session is live (260703: chat-launched Sui session invisible
+   * to the GUI after a dev HMR re-created the store). Mirrors getLanState. */
+  getBotStatuses(): Promise<BotStatus[]>;
   /**
    * Phase 15 (D-10/VIS-03): subscribe to `vision:capability` pushes. Fires on
    * summon-ready and on every live backend switch with the active provider's
@@ -1008,6 +1029,16 @@ export interface RendererApi {
   /** Pull the current LAN state (snapshot). Used to seed a freshly-loaded
    * renderer, since the onLan push only fires on change. */
   getLanState(): Promise<LanState>;
+  /**
+   * Force ONE fresh LAN detection pass right now and return its result (260703).
+   * Unlike {@link getLanState} (a cached snapshot that can lag up to ~4s behind
+   * reality because the background poll damps open→closed transitions), this
+   * reads live ground truth. The summon click awaits it so a world that JUST
+   * closed shows the "open your world" modal instead of summoning into a dead
+   * port. As a side effect it also refreshes main's cached LAN state (so the
+   * getLanPort() the actual summon reads is fresh too).
+   */
+  lanCheckNow(): Promise<LanState>;
   /** Subscribe to per-install progress events during runWizardInstall. */
   onWizardProgress(cb: (ev: WizardProgressEvent) => void): Unsubscribe;
   /** Subscribe to streaming progress for an in-flight persona expansion
@@ -1163,6 +1194,9 @@ export const IpcChannel = {
     summon: 'bot:summon',
     stop: 'bot:stop',
     status: 'bot:status',
+    // Snapshot pull of the current per-character statuses (see
+    // RendererApi.getBotStatuses) — pushes only fire on transitions.
+    getStatuses: 'bot:get-statuses',
     logBatch: 'bot:log:batch',
   },
   /**
@@ -1180,6 +1214,11 @@ export const IpcChannel = {
     // CHANGE, so a freshly-(re)loaded renderer must request the snapshot —
     // relying on a replay-push races the renderer attaching its listener.
     get: 'lan:get',
+    // Force ONE fresh detection pass right now and return its result (260703).
+    // Unlike `get` (a cached snapshot that can be up to ~4s stale under the
+    // poll's open→closed hysteresis), this reads live ground truth — the summon
+    // click uses it so a world that just closed doesn't summon into a dead port.
+    checkNow: 'lan:check-now',
   },
   chars: {
     list: 'chars:list',

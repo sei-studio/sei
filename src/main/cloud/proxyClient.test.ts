@@ -325,7 +325,7 @@ describe('trialClaim', () => {
 });
 
 describe('creditsGet', () => {
-  it('returns the depleted/local placeholder when there is no session', async () => {
+  it('returns the depleted placeholder with the REAL backend kind when there is no session', async () => {
     const { creditsGet } = await import('./proxyClient');
     const res = await creditsGet();
     // ITEM 4 (quick/260523-t8d): the placeholder response stays minimal —
@@ -338,7 +338,11 @@ describe('creditsGet', () => {
       renews_at: null,
       ends_at: null,
       trial_claimed: false,
-      ai_backend_kind: 'local',
+      // 260703: no longer a hardcoded 'local' — the placeholder reports the
+      // persisted getAiBackendKind() (mocked 'cloud-proxy' above) so a
+      // transient getSession() miss can't paint a cloud profile as BYOK on
+      // the ACCOUNT MODE surface while the calls keep spending credits.
+      ai_backend_kind: 'cloud-proxy',
       // quick/260525-sbo Task 8: subscription_status_raw is part of the
       // no-session placeholder — null when the caller has never subscribed
       // (or is signed out). SettingsScreen reads this to decide whether to

@@ -97,12 +97,18 @@ function arrowSideHint(arrowPos, arrowVel, botPos) {
  * `{ kind:'arrow'|'creeper'|'melee', entity, sideHint?, panic? }`.
  *
  * Priority: creeper-panic > arrow > creeper > melee.
+ *
+ * `th` defaults to a freshly resolved thresholds object but callers on the hot
+ * path (tick(), ~20 Hz) should pass the install-time `TH` they already hold so
+ * this never re-allocates per tick. `resolveReflexThresholds` remains the
+ * single D-06 override point either way — a future per-persona hook still only
+ * has to recompute `TH` once, at whatever cadence it needs, and thread it
+ * through here.
  */
-export function scanThreats(bot, mc) {
+export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
   const me = bot.entity
   const botPos = me?.position
   if (!botPos) return null
-  const th = resolveReflexThresholds(mc)
 
   let best = null
   let bestRank = Infinity
@@ -342,7 +348,7 @@ export function startReflex(bot, config) {
       return // creeper is top priority while the flee is active
     }
 
-    const threat = scanThreats(bot, mc)
+    const threat = scanThreats(bot, mc, TH)
     // Any tick that is not a live melee engagement drops leftover strafe control
     // states (mob died/left, or a higher-priority threat took over) so the bot
     // does not keep drifting after the fight.

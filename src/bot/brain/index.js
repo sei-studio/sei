@@ -15,7 +15,7 @@
 import { createOrchestrator } from './orchestrator.js'
 import { createSessionState } from './sessionState.js'
 import { loadPlayer, savePlayer, formatPlayerSeedBlock } from './memory/player.js'
-import { Priority, createPriorityQueue } from './fsm.js'
+import { Priority, createPriorityQueue, attackedPriority } from './fsm.js'
 import { idleCadenceMs } from './prompts.js'
 
 const REQUIRED_ADAPTER_MEMBERS = [
@@ -196,7 +196,13 @@ export async function start({ config, adapter, logger = console, onTerminalError
       })
     },
     onAttacked: (evt) => {
-      queue.enqueue(Priority.P0_SAFETY, 'sei:attacked', evt)
+      // Tier by attackerKind: a reflex (proactive threat warning — the bot was
+      // NOT hit) is conversation-tier (P1_CHAT) so it never preempts/aborts a
+      // player-chat reply; a real attack (player/mob) stays safety-tier
+      // (P0_SAFETY). The event NAME stays 'sei:attacked' — downstream dispatch
+      // and the reflex-vs-attack prompt framing key on attackerKind, not the
+      // name. See attackedPriority in ./fsm.js.
+      queue.enqueue(attackedPriority(evt), 'sei:attacked', evt)
     },
     onSpawn: () => {
       // D-57: deferred player-presence check after spawn settles.

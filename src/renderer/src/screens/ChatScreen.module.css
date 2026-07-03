@@ -106,11 +106,21 @@
   min-height: 0;
   overflow-y: auto;
   /* Bottom padding leaves room for the floating composer that hovers over
-     the list (change #3). */
-  padding: var(--space-lg) var(--space-lg) 104px;
+     the list (change #3) — kept just tall enough to clear the composer so the
+     latest message sits close to the message box (#6). */
+  padding: var(--space-lg) var(--space-lg) 72px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  /* No inter-row gap — vertical rhythm comes from each row's own padding, so
+     consecutive same-author "double texts" stack tightly like Discord (#4). */
+  gap: 0;
+}
+
+/* While the companion is typing, the composer dock grows by the "…is typing"
+   line, so reserve extra bottom space (defined AFTER .list so this padding-bottom
+   wins) — otherwise the taller dock overlaps the most recent message (#4). */
+.listTyping {
+  padding-bottom: 100px;
 }
 
 .empty {
@@ -123,17 +133,20 @@
   line-height: 1.5;
 }
 
-/* A message row that starts a new author run: avatar gutter + header + text. */
+/* A message row that starts a new author run: avatar gutter + header + text.
+ * A small top margin separates author groups (now that .list has no row gap);
+ * the negative side margins bleed the hover highlight to the list edges (#4). */
 .rowLead {
   position: relative;
   display: grid;
   grid-template-columns: 40px 1fr;
   column-gap: var(--space-md);
-  margin: 0 calc(-1 * var(--space-lg));
-  padding: var(--space-sm) var(--space-lg);
+  margin: var(--space-sm) calc(-1 * var(--space-lg)) 0;
+  padding: var(--space-xs) var(--space-lg);
 }
 
-/* A continuation row (same author): no avatar, text aligned to the gutter. */
+/* A continuation row (same author): no avatar, text aligned to the gutter.
+ * Tight vertical padding keeps "double texts" close (#4). */
 .rowCont {
   position: relative;
   display: grid;
@@ -328,19 +341,28 @@
 }
 
 /* Play-session row (Discord-style "You and X played Minecraft for Y") — the
-   game icon sits inline before the greyed system text. */
+   general game icon sits in the avatar gutter, greyed text aligns with the chat
+   messages and matches the author-name font/size (left-aligned, not centered). */
 .playRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: var(--space-md);
   align-items: center;
-  justify-content: center;
-  gap: var(--space-sm);
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 15px;
+  letter-spacing: normal;
+  color: var(--muted);
+  margin: var(--space-sm) calc(-1 * var(--space-lg)) 0;
+  padding: var(--space-xs) var(--space-lg);
 }
 
 .playIcon {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  color: var(--muted);
   flex: none;
 }
 
@@ -354,11 +376,11 @@
   flex-direction: column;
   align-items: stretch;
   /* Slightly wider message box — tighter side padding than the list gutter.
-   * #4 — extra top padding + a window-colored fade form a full-width band under
-   * the message box so messages scrolling past are hidden behind it (not peeking
-   * through the gaps around the floating composer). */
-  padding: var(--space-2xl) var(--space-md) var(--space-md);
-  background: linear-gradient(to top, var(--window) 62%, transparent);
+   * #6 — a solid window-colored band (no gradient fade) hides messages
+   * scrolling behind the floating composer; the thin top padding keeps the
+   * latest message close to the message box. */
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  background: var(--window);
   pointer-events: none;
 }
 

@@ -8,9 +8,9 @@
  * Anthropic API key (decrypted from safeStorage via apiKeyStore).
  *
  * Contract:
- *   - Fixed model: 'claude-haiku-4-5' — the family alias (latest Haiku 4.5
- *     snapshot), matching src/bot/config.js and the proxy /free route's allowed
- *     set. MUST stay in lockstep with forwardFree.ts's ALLOWED_EXPANSION_MODELS.
+ *   - Fixed model: 'claude-sonnet-5' — latest Sonnet family alias (260702;
+ *     was claude-haiku-4-5). MUST stay in lockstep with the proxy /free
+ *     route's ALLOWED_EXPANSION_MODELS (forwardFree.ts).
  *   - Wall-clock timeout: 60s (per CLAUDE.md "every external call has a
  *     timeout"). Plumbed through the SDK's request-level `timeout` option,
  *     which the SDK enforces internally (no Promise.race wrapper needed).
@@ -43,7 +43,12 @@ import Anthropic from '@anthropic-ai/sdk';
 // below so existing importers of `./personaExpansion` keep working.
 import { EXPANSION_SYSTEM as EXPANSION_SYSTEM_TEXT } from '../bot/brain/promptLibrary.js';
 
-export const EXPANSION_MODEL = 'claude-haiku-4-5';
+// 260702: bumped from claude-haiku-4-5 — persona quality compounds (the
+// expansion is re-read by every bot and chat call for the character's
+// lifetime), so it's worth the latest Sonnet. MUST stay in lockstep with the
+// proxy's forwardFree.ts ALLOWED_EXPANSION_MODELS (add claude-sonnet-5 there
+// BEFORE shipping this, or cloud-proxy expansion will be rejected).
+export const EXPANSION_MODEL = 'claude-sonnet-5';
 // 60s (was 30s): matches the proxy's UPSTREAM_TIMEOUT_MS. The 30s client cap
 // could abort an otherwise-successful long generation (large output + Fly
 // cold start, possibly with one SDK retry) while the proxy was still waiting.

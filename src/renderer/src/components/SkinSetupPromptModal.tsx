@@ -33,8 +33,9 @@ export function SkinSetupPromptModal({
 
   const handleSkip = (): void => {
     // proceedSummon replaces this modal (LAN modal) or navigates (summon),
-    // so it clears the prompt; no explicit closeModal needed.
-    proceedSummon(characterId);
+    // so it clears the prompt; no explicit closeModal needed. Async now
+    // (it awaits a fresh LAN check) — fire-and-forget from this click handler.
+    void proceedSummon(characterId);
   };
 
   const handleSetup = (): void => {

@@ -15,6 +15,7 @@
 import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useDataStore } from './useDataStore';
+import { useUiStore } from './useUiStore';
 import type { ChatMessage, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
@@ -50,9 +51,47 @@ function isChatAbort(err: unknown): boolean {
   return /CHAT_ABORTED/.test(String((err as { message?: string })?.message ?? err));
 }
 
-/** Small pause between multi-message replies so they arrive one at a time. */
+/**
+ * 260703 hard guard surface: main's buildChatSdk throws a LOCAL_NO_API_KEY-
+ * prefixed error when the profile is in local (BYOK) mode with no saved key —
+ * local mode NEVER falls back to the cloud JWT, so the failure must be told to
+ * the user plainly instead of hiding behind the generic "sorry" line.
+ */
+function isLocalNoApiKey(err: unknown): boolean {
+  return /LOCAL_NO_API_KEY/.test(String((err as { message?: string })?.message ?? err));
+}
+
+/** Small pause between multi-message replies so they arrive one at a time. Used
+ *  only when "Realistic typing" is OFF (otherwise the gap is length-scaled). */
 const REPLY_GAP_MS = 650;
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * "Realistic typing" pacing (Appearance & feel toggle,
+ * UserConfig.realistic_typing, hydrated into useUiStore at boot). Two effects:
+ *   - task 2: a "reading" pause before the typing indicator appears, scaled to
+ *     the length of the USER's message at a fast-reader speed, and
+ *   - task 1: the typing indicator then stays up before each reply bubble for a
+ *     stretch proportional to that bubble's length at a fast-typist speed.
+ * chars/sec ≈ wpm * 5 / 60 — ~200 wpm typing (a very fast typist), ~300 wpm
+ * reading (faster than the ~240 wpm average, on purpose). Clamps keep the delays
+ * snappy and bounded no matter how long the message is; the proportional range
+ * covers ~5-83 chars (typing) / ~5-60 chars (reading) before hitting the cap,
+ * which is where most chat bubbles live. The in-game bot mirrors these constants
+ * in src/bot/brain/orchestrator.js so chat and Minecraft feel the same.
+ */
+const TYPING_CPS = 16.67;
+const READING_CPS = 25;
+function typingDelayMs(text: string): number {
+  const len = text.length;
+  if (!len) return 0;
+  return Math.min(5000, Math.max(500, Math.round((len / TYPING_CPS) * 1000)));
+}
+function readingDelayMs(text: string): number {
+  const len = text.length;
+  if (!len) return 0;
+  return Math.min(2500, Math.max(300, Math.round((len / READING_CPS) * 1000)));
+}
 
 /**
  * Safety net for a message ROUTED into a live game session (task 4): the reply
@@ -122,12 +161,31 @@ export const useChatStore = create<ChatState>((set, get) => {
       ts: Date.now(),
       ...(replyTo ? { replyTo } : {}),
     };
+    // "Realistic typing" (Appearance & feel): when ON, hold the typing indicator
+    // back until the companion has "read" your message (task 2), then keep it up
+    // for a length-scaled stretch before each reply bubble (task 1). When OFF,
+    // the indicator shows instantly and follow-up bubbles use the fixed gap.
+    const realism = useUiStore.getState().realisticTyping;
     set((s) => ({
       messages: appendMessage(s.messages, characterId, userMsg),
-      awaiting: { ...s.awaiting, [characterId]: true },
+      awaiting: { ...s.awaiting, [characterId]: !realism },
     }));
+    // Kick the reply off NOW so model generation overlaps the reading pause.
+    const replyPromise = sei.chatSend({ characterId, text, replyTo });
     try {
-      const result = await sei.chatSend({ characterId, text, replyTo });
+      if (realism) {
+        // Task 2 — "reading" pause before the companion starts typing, scaled to
+        // how long YOUR message takes to read (fast-reader speed).
+        await delay(readingDelayMs(text));
+        // Superseded during the pause — the follow-up owns state now. Swallow the
+        // in-flight reply's (possibly aborted) rejection so it isn't unhandled.
+        if (!isCurrent()) {
+          void replyPromise.catch(() => {});
+          return null;
+        }
+        set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+      }
+      const result = await replyPromise;
       // A newer send superseded us mid-flight — it owns the reply + awaiting now.
       if (!isCurrent()) return result;
       // Task 4 — routed into a live game session: the reply comes back async over
@@ -141,14 +199,18 @@ export const useChatStore = create<ChatState>((set, get) => {
         }, ROUTED_AWAIT_TIMEOUT_MS);
         return result;
       }
-      // Reveal a multi-message reply one bubble at a time (task 8): append the
-      // first immediately, then pause with the typing indicator still up before
-      // each follow-up, so a split reply reads as sent-as-typed rather than a
-      // wall of text landing at once. `awaiting` stays true between chunks.
+      // Reveal a multi-message reply one bubble at a time (task 8): keep the
+      // typing indicator up before each bubble, then append it, so a split reply
+      // reads as sent-as-typed rather than a wall of text landing at once.
+      // Realism ON → the pre-bubble wait is proportional to that bubble's length
+      // (task 1, fast-typist speed); OFF → the first bubble is instant and
+      // follow-ups use the fixed gap. `awaiting` stays true between chunks.
       const replies = result.replies;
       for (let i = 0; i < replies.length; i++) {
-        if (i > 0) {
-          await delay(REPLY_GAP_MS);
+        const waitMs = realism ? typingDelayMs(replies[i].text) : i > 0 ? REPLY_GAP_MS : 0;
+        if (waitMs > 0) {
+          set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+          await delay(waitMs);
           if (!isCurrent()) return result;
         }
         set((s) => ({
@@ -171,10 +233,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
       // Real failure — never strand the typing indicator: surface an apologetic
       // companion line and clear `awaiting` so the composer stays usable.
+      // 260703: the local-mode/no-key failure gets specific, actionable copy —
+      // this state is deliberate (local mode never silently uses the cloud) and
+      // the fix is in Settings, so "try again in a moment" would be a lie.
       const fallback: ChatMessage = {
         id: `local-err-${Date.now()}`,
         role: 'companion',
-        text: "sorry, i couldn't reply just now. try again in a moment?",
+        text: isLocalNoApiKey(err)
+          ? "i can't reply — you're in local mode but no API key is saved. add one in Settings, or switch to managed billing."
+          : "sorry, i couldn't reply just now. try again in a moment?",
         ts: Date.now(),
       };
       set((s) => ({

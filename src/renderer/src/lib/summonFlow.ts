@@ -61,9 +61,19 @@ function blockedByUsernameConflict(id: string): boolean {
  * connected path — harmless when the caller is already on that page
  * (CharacterPage) and matches the CharactersScreen card behavior.
  */
-export function proceedSummon(id: string): void {
+export async function proceedSummon(id: string): Promise<void> {
   const ui = useUiStore.getState();
-  const lan = useDataStore.getState().lan;
+  // 260703: gate on a FRESH LAN read, not the store snapshot. The background
+  // poll damps open→closed transitions (OPEN_MISS_TOLERANCE), so a world that
+  // actually closed can keep reporting 'open' in the store for up to ~4s — long
+  // enough that a summon click would fire sei.summon(id) into a dead port and
+  // surface a connection error instead of the "open your world" LAN modal. The
+  // fresh check reads live ground truth; fall back to the store snapshot if the
+  // IPC fails. (A false 'closed' here self-heals: the LanModal auto-resumes the
+  // pending summon when the next poll flips back to open.) checkNow also
+  // refreshes main's cached LAN state, so the port the actual summon reads is
+  // fresh too.
+  const lan = await sei.lanCheckNow().catch(() => useDataStore.getState().lan);
   // Task 6 — if this summon was launched from THIS character's chat (the games
   // popup opens over the chat view), keep the user in that chat once the bot
   // joins rather than yanking them to the profile page. The floating widget +
@@ -106,5 +116,5 @@ export async function attemptSummon(id: string): Promise<void> {
   } catch {
     // Best-effort — never let the nudge bookkeeping block a summon.
   }
-  proceedSummon(id);
+  await proceedSummon(id);
 }
