@@ -271,6 +271,22 @@ export function createBotInstance({
 
   bot.on('death', () => {
     logger.info?.('[sei] Sei died — respawning...')
+    // Snapshot the death position BEFORE bot.respawn() teleports the entity
+    // back to world spawn — that's where everything the bot was carrying
+    // dropped, so the brain needs it to tell the player where to recover their
+    // items. Guard against a partially-loaded entity (NaN coords) so a bad
+    // position degrades to null (no coords) rather than "~NaN,NaN,NaN".
+    let pos = null
+    try {
+      const p = bot.entity?.position
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)) {
+        pos = { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }
+      }
+    } catch { /* pos stays null */ }
+    // Emit once per death, up to the brain (fsmWires → handlers.onDeath). The
+    // respawn timer is unchanged; the priority queue serializes the death event
+    // and the respawn spawn, so they don't race.
+    try { bot.emit('sei:death', { pos }) } catch (err) { logger.warn?.(`[sei/connect] sei:death emit threw: ${err && err.message}`) }
     setTimeout(() => bot.respawn(), 500)
   })
 

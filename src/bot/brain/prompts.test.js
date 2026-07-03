@@ -11,7 +11,31 @@ import {
   renderHeartbeat,
   renderProactivenessDirective,
   PROACTIVENESS_DIRECTIVES,
+  NUDGES,
 } from './prompts.js'
+// SESSION_END_CLAUSE is not (yet) re-exported through the prompts.js barrel —
+// pull it straight from the source of truth.
+import { SESSION_END_CLAUSE } from './promptLibrary.js'
+
+// 260703: live-session bug — the player said "lets call it here for now" / "cya"
+// / "bye" and the bot kept saying goodbye lines without ever calling quit, so it
+// stood in the world until the player manually stopped the session. The quit
+// tool's own description already covers this, but Haiku follows the per-turn
+// addenda more strongly, and those never named quit. SESSION_END_CLAUSE is the
+// one shared sentence reused everywhere a player message can land, so this
+// locks both the shared const and its presence in NUDGES.playerInterruptHint.
+describe('SESSION_END_CLAUSE — session-end vs task-stop disambiguation (260703)', () => {
+  it('names quit, the farewell field, and concrete leaving phrases', () => {
+    expect(SESSION_END_CLAUSE).toContain('quit')
+    expect(SESSION_END_CLAUSE).toContain('farewell')
+    expect(SESSION_END_CLAUSE).toContain('ENDING THE SESSION')
+    expect(SESSION_END_CLAUSE).toMatch(/"bye"/)
+    expect(SESSION_END_CLAUSE).toMatch(/"cya"/)
+  })
+  it('is reused verbatim in NUDGES.playerInterruptHint rather than a divergent copy', () => {
+    expect(NUDGES.playerInterruptHint).toContain(SESSION_END_CLAUSE)
+  })
+})
 
 describe('renderProactivenessDirective — static, cached-system directive', () => {
   it('returns the level directive under a PROACTIVENESS header', () => {

@@ -66,6 +66,51 @@ describe('chatStore', () => {
   it('readAll returns [] for a character with no transcript', async () => {
     expect(await chatStore.readAll('44444444-4444-4444-8444-444444444444')).toEqual([]);
   });
+
+  it('readAll drops legacy event-less system rows (pre-260703 join acks) but keeps everything else', async () => {
+    const legacyJoin: ChatMessage = { id: 'l1', role: 'system', text: 'Marv joined your world', ts: 1000 };
+    const legacyFail: ChatMessage = {
+      id: 'l2',
+      role: 'system',
+      text: "Couldn't join your world — is it still open to LAN?",
+      ts: 1500,
+    };
+    const play: ChatMessage = {
+      id: 'p1',
+      role: 'system',
+      text: 'You and Marv played Minecraft for 5 minutes.',
+      ts: 2000,
+      event: { kind: 'play', game: 'minecraft', durationMs: 300_000 },
+    };
+    const user: ChatMessage = { id: 'u1', role: 'user', text: 'hey', ts: 2500 };
+    const companion: ChatMessage = { id: 'c1', role: 'companion', text: 'hi', ts: 3000 };
+
+    for (const m of [legacyJoin, legacyFail, play, user, companion]) {
+      await chatStore.appendMessage(CHAR, m);
+    }
+
+    const all = await chatStore.readAll(CHAR);
+    expect(all.map((m) => m.id)).toEqual(['p1', 'u1', 'c1']);
+  });
+
+  it('filterLegacySystemRows is a pure helper: drops event-less system rows, keeps the rest', () => {
+    const legacy: ChatMessage = { id: 'l1', role: 'system', text: 'Marv joined your world', ts: 1000 };
+    const play: ChatMessage = {
+      id: 'p1',
+      role: 'system',
+      text: 'You and Marv played Minecraft for 5 minutes.',
+      ts: 2000,
+      event: { kind: 'play', game: 'minecraft', durationMs: 300_000 },
+    };
+    const user: ChatMessage = { id: 'u1', role: 'user', text: 'hey', ts: 2500 };
+    const companion: ChatMessage = { id: 'c1', role: 'companion', text: 'hi', ts: 3000 };
+
+    expect(chatStore.filterLegacySystemRows([legacy, play, user, companion]).map((m) => m.id)).toEqual([
+      'p1',
+      'u1',
+      'c1',
+    ]);
+  });
 });
 
 describe('splitReply — blank line → separate messages (task 8)', () => {

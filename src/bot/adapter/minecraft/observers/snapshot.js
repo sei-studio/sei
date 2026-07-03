@@ -44,6 +44,23 @@ export function resolveOwner(bot, pinUsername, companions) {
   if (humans.length === 1) return { username: humans[0][0], player: humans[0][1] }
   return null
 }
+
+// 260703 — owner-distance NaN guard. Right after combat / a teleport / a
+// respawn, a player or the bot's own entity can be partially loaded with NaN
+// position components. The old owner-whereabouts line did
+// `Math.round(ownerEnt.position.distanceTo(me.position))`, which returns NaN
+// for such a position; `NaN != null` is true, so the snapshot printed
+// "(NaN blocks away)". Compute the straight-line distance from the raw coords
+// with a hard Number.isFinite gate on every component and return null (→ omit
+// the parenthetical) when any is non-finite. Pure + exported for unit testing.
+export function ownerDistanceBlocks(ownerPos, selfPos) {
+  if (!ownerPos || !selfPos) return null
+  const ax = Number(ownerPos.x), ay = Number(ownerPos.y), az = Number(ownerPos.z)
+  const bx = Number(selfPos.x), by = Number(selfPos.y), bz = Number(selfPos.z)
+  if (![ax, ay, az, bx, by, bz].every(Number.isFinite)) return null
+  const d = Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2)
+  return Number.isFinite(d) ? Math.round(d) : null
+}
 // Entity visibility radius (blocks). 64 = 4 chunks, the rough distance at
 // which a real Minecraft player can see and identify another player. Bumped
 // from 24 so the player stays visible (with coords) as they walk a few chunks
@@ -261,8 +278,14 @@ export function composeSnapshot(bot, opts = {}) {
       const ox = Math.round(ownerEnt.position.x)
       const oy = Math.round(ownerEnt.position.y)
       const oz = Math.round(ownerEnt.position.z)
+      // A partially-loaded player/self entity can carry NaN coords right after
+      // combat/teleport; the old `Math.round(distanceTo(...))` then yielded NaN
+      // and `NaN != null` is true, so the snapshot printed "(NaN blocks away)".
+      // ownerDistanceBlocks computes the distance from the coords with a
+      // Number.isFinite gate and returns null when any coord is non-finite, so
+      // the parenthetical is omitted rather than showing garbage.
       let dist = null
-      try { dist = Math.round(ownerEnt.position.distanceTo(me.position)) } catch { /* leave null */ }
+      try { dist = ownerDistanceBlocks(ownerEnt.position, me.position) } catch { /* leave null */ }
       // Show the live in-game name when it differs from the name we call them,
       // so the model connects `owner Ouen` with `SSk1tz` in `nearby entities`
       // (otherwise it can read them as two different people).

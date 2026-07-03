@@ -20,10 +20,25 @@ export async function appendMessage(characterId: string, msg: ChatMessage): Prom
   await appendFile(p, JSON.stringify(msg) + '\n', 'utf8');
 }
 
+/**
+ * Drops legacy UI-only system rows from a read. Builds before 260703 persisted
+ * `{ role: 'system', text: '<name> joined your world', ts }` (and the LAN
+ * join-failure counterpart) via an `emitJoinAck` that was removed in commit
+ * 2418088. Those rows carry no `event` field. Every system row the current
+ * code writes — see `emitPlaySession` in src/main/index.ts — always sets
+ * `event: { kind: 'play', ... }`, so an event-less system row is unambiguously
+ * one of the old join-ack lines. They should neither render in the chat UI nor
+ * reach the model as history, so scrub them at read time rather than rewriting
+ * transcripts on disk.
+ */
+export function filterLegacySystemRows(rows: ChatMessage[]): ChatMessage[] {
+  return rows.filter((m) => m.role !== 'system' || m.event !== undefined);
+}
+
 export async function readAll(characterId: string): Promise<ChatMessage[]> {
   try {
     const raw = await readFile(chatPath(characterId), 'utf8');
-    return raw
+    const rows = raw
       .split('\n')
       .filter((l) => l.trim())
       .map((l) => {
@@ -34,6 +49,7 @@ export async function readAll(characterId: string): Promise<ChatMessage[]> {
         }
       })
       .filter((m): m is ChatMessage => m !== null);
+    return filterLegacySystemRows(rows);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw e;

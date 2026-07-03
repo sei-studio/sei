@@ -1720,6 +1720,28 @@ function maybeWarnByteCap(loop, warned) {
         await teardownLoop(dyingLoop)
         return
       }
+      if (event === 'sei:death') {
+        // 260703 (death→brain): the player killed us mid-action. A death must
+        // still reach the model, so mirror the sei:attacked teardown-and-refire
+        // above: abort the in-flight action + the loop, tear the loop down
+        // (clears currentLoop), then re-fire sei:death as a fresh dispatch —
+        // this time it lands in the fresh-loop branch and opens a clean turn.
+        // Re-fired at P1_CHAT (conversation tier), never P0, so it does not
+        // outrank a genuine safety event. Kept minimal and separate from the
+        // interrupt / action_complete handling to avoid churn there.
+        const dyingLoop = currentLoop
+        if (dyingLoop.inFlight) {
+          clearActionTick(dyingLoop.inFlight)
+          try { dyingLoop.inFlight.abortController.abort() } catch {}
+        }
+        try { dyingLoop.abortController.abort() } catch {}
+        terminateLoop(dyingLoop, 'death-preempt')
+        await teardownLoop(dyingLoop)
+        try { reenqueue('sei:death', data, 1 /* Priority.P1_CHAT */) } catch (err) {
+          logger.warn?.(`[sei/orch] sei:death re-enqueue failed: ${err.message}`)
+        }
+        return
+      }
       logger.warn(`[sei/orch] dispatch ${event} arrived while loop active — dropping`)
       return
     }
@@ -1918,6 +1940,62 @@ function maybeWarnByteCap(loop, warned) {
   }
 
   /**
+   * 260703-fix (b): when a loop tears down while a batched tool dispatch is
+   * still mid-drain, it can leave un-dispatched, model-ordered tools stranded on
+   * `loop._pendingToolUses` (e.g. the 3 remaining diamond-armor equips in the
+   * 260703 incident: the batch dispatched the helmet, and the loop then died
+   * before its action_complete drained the rest). Those are actions the model
+   * committed to in THIS single turn and the player is actively watching for.
+   *
+   * Chosen semantics: EXECUTE the abandoned world-acting tools, do not silently
+   * drop them. They are already model-ordered, so we just run them directly
+   * through the registry — with NO further LLM call and NO action_complete
+   * re-enqueue (the loop is gone; there is nothing to resume or narrate). This
+   * keeps the "one haiku per logical turn" invariant (we add ZERO haiku calls)
+   * while still honoring the turn the model already decided on.
+   *
+   * Only world-acting tools are drained. Inline metadata
+   * (say/remember/forget/setGoal/clearGoal/end_loop/quit) is loop-local
+   * bookkeeping — say() already emitted up front, and the rest dies with the
+   * loop with no player-visible effect worth reviving.
+   *
+   * Reason-agnostic on purpose: the same drain is correct whether the teardown
+   * came from an error/timeout/terminal death (the incident's now-also-prevented
+   * root cause) or a P0-attack preempt — arming the armor the model just called
+   * for is, if anything, MORE desirable the instant you take a hit. The fresh
+   * loop the attack reseeds is a separate concern; equips don't move the bot and
+   * are effectively idempotent, so a rare overlap is a harmless no-op. Execution
+   * is sequential + detached so a slow action can't hold up teardown and two
+   * equips can't race; each action's own wall-clock timeout still bounds it.
+   */
+  function drainPendingToolsOnTeardown(loop) {
+    const queue = loop?._pendingToolUses
+    loop._pendingToolUses = null
+    loop._pendingActionUse = null
+    loop._pendingResults = null
+    if (!Array.isArray(queue) || queue.length === 0) return
+    const worldTools = queue.filter(e => e && e.use && !isInlineMetadata(e.use.name))
+    if (worldTools.length === 0) return
+    const names = worldTools.map(e => e.use.name).join(', ')
+    logger.warn?.(`[sei/orch] loop ${loop.id} tore down mid-batch with ${worldTools.length} undispatched tool(s) [${names}] — draining directly (no LLM) so the player's ordered actions still happen`)
+    // Surface the drain in the snapshot line too, so the next loop's model sees
+    // that these actions were finished after the turn ended rather than dropped.
+    lastActionResult = `finishing queued actions after the turn ended: ${names}`
+    void (async () => {
+      for (const entry of worldTools) {
+        try {
+          const r = await registry.execute(entry.use.name, entry.use.input, null, {
+            ...config, signal: new AbortController().signal,
+          })
+          try { logActionResult(entry.use.name, r) } catch {}
+        } catch (err) {
+          logger.warn?.(`[sei/orch] post-teardown drain ${entry.use.name} failed: ${err?.message ?? err}`)
+        }
+      }
+    })()
+  }
+
+  /**
    * 260513-wkd: tear down a terminal loop. Idempotent — repeat calls are
    * no-ops (guarded by loop._tornDown). Runs the loop-history push,
    * sei:loop_terminal re-enqueue, currentLoop=null reset, and pendingAttack
@@ -1930,6 +2008,10 @@ function maybeWarnByteCap(loop, warned) {
     loop._tornDown = true
     const event = loop._originatingEvent ?? 'unknown'
     logger.info?.(`[sei/orch] loop terminal (id=${loop.id}, iterations=${loop.iterationCount})`)
+    // 260703-fix (b): finish any model-ordered batch tools stranded by an
+    // abnormal teardown (see drainPendingToolsOnTeardown). No-op in the common
+    // case (pending queue already drained → null), so it never double-executes.
+    drainPendingToolsOnTeardown(loop)
     // VIS-02 delivery guard: a frame was attached to this loop's history but
     // no LLM call succeeded afterwards (e.g. the post-visualize continuation
     // died on a 404→502 chain, 260610) — the model never saw it, and the
@@ -2599,6 +2681,27 @@ function maybeWarnByteCap(loop, warned) {
     }
     if (!interrupting && loop.inFlight) {
       logger.debug?.(`[sei/orch] action_complete tick-claimed but new in_flight present — drop stale settle (loop=${loop.id}, stale=${data?.name}, current=${loop.inFlight.name})`)
+      return
+    }
+    // 260703-fix: a tick-claimed settle whose tool_use was ALREADY paired by the
+    // tick is purely informational — it must only drive an iteration when the
+    // loop is idle-waiting on exactly that action. If the loop has since moved on
+    // to a NEW batch (a fresh suspending tool was dispatched after the tick and
+    // its own action_complete has not drained yet — _pendingActionUse /
+    // _pendingResults are set — EVEN IF that fast tool already settled and nulled
+    // loop.inFlight, so the guard above missed it), this settle is STALE. Its
+    // result was already seen by the model (it surfaced as last_action_result on
+    // the interrupt turn that folded before this settle drained) and its tool_use
+    // is already paired via the tick, so dropping it preserves the tool_use /
+    // tool_result invariant. Driving an iteration here instead would (1) hijack
+    // the current batch with a stale narration and (2) append a user turn while
+    // the new batch's tool_uses are still open. This is the 260703 armor-equip
+    // incident: a stale "goTo -> reached" tick-claimed settle, FIFO-queued ahead
+    // of the equip batch's own settles, stalled the 3 remaining equips and burned
+    // an LLM iteration that then died on a 502/timeout. Dropping it lets the real
+    // batch settle (the helmet equip's action_complete) drain the rest.
+    if (!interrupting && (loop._pendingActionUse || loop._pendingResults)) {
+      logger.debug?.(`[sei/orch] action_complete tick-claimed but loop is mid-batch on a new action (pending=${loop._pendingActionUse?.name ?? 'results'}) — drop stale settle (loop=${loop.id}, stale=${data?.name})`)
       return
     }
 

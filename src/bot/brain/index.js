@@ -95,6 +95,11 @@ export async function start({ config, adapter, logger = console, onTerminalError
       switch (event) {
         case 'sei:attacked':       p = Priority.P0_SAFETY; break
         case 'sei:chat_received':  p = Priority.P1_CHAT; break
+        // A death is worth a prompt turn + a say(), but must NOT outrank a real
+        // P0 safety event — route at conversation tier (mirrors the reflex
+        // reasoning on attackedPriority). Used when the orchestrator re-fires a
+        // death that arrived mid-loop (see handleDispatch's single-flight case).
+        case 'sei:death':          p = Priority.P1_CHAT; break
         // 260514-ngj: sei:joined retired — spawn first-fire enqueues
         // sei:idle (P3) instead. Routing left absent on purpose so a
         // stray sei:joined would land at default (P2_MOVEMENT) and surface
@@ -203,6 +208,18 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // and the reflex-vs-attack prompt framing key on attackerKind, not the
       // name. See attackedPriority in ./fsm.js.
       queue.enqueue(attackedPriority(evt), 'sei:attacked', evt)
+    },
+    onDeath: (evt) => {
+      // The player killed the bot (or it fell/burned/etc). Enqueue a real
+      // prompt turn so the model reacts in character and can decide whether to
+      // recover its dropped items — the old code only logged + respawned, so
+      // the next turn showed full hp / empty inventory with no explanation and
+      // the model confabulated. P1_CHAT: earns a say() without preempting a
+      // genuine P0 attack. The FSM serializes this against the respawn spawn
+      // (onSpawn is greeting-guarded and only enqueues on the FIRST spawn), so
+      // there's no double-fire / race. evt.pos is the death location (may be
+      // null if the entity position was unreadable).
+      queue.enqueue(Priority.P1_CHAT, 'sei:death', { pos: evt?.pos ?? null })
     },
     onSpawn: () => {
       // D-57: deferred player-presence check after spawn settles.

@@ -98,6 +98,18 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:reflex', onSeiReflex)
 
+  // ── Death ───────────────────────────────────────────────────────────
+  // connect.js emits sei:death once per death, snapshotting the death position
+  // BEFORE bot.respawn() teleports back to world spawn (that's where the bot's
+  // items dropped). Thin translation to handlers.onDeath; the brain enqueues it
+  // at P1_CHAT (see src/bot/brain/index.js) so it earns a prompt turn + a say()
+  // but never outranks a real P0 safety event.
+  const onSeiDeath = (payload) => {
+    try { handlers.onDeath?.({ pos: payload?.pos ?? null }) }
+    catch (err) { console.error?.(`[sei/wires] onDeath handler threw: ${err && err.message}`) }
+  }
+  bot.on('sei:death', onSeiDeath)
+
   // ── Player join / leave ─────────────────────────────────────────────
   const onPlayerJoined = (player) => {
     if (!player) return
@@ -134,6 +146,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
     try { bot.off?.('sei:chat_received', onSeiChat) } catch {}
     try { bot.off?.('sei:attacked', onSeiAttacked) } catch {}
     try { bot.off?.('sei:reflex', onSeiReflex) } catch {}
+    try { bot.off?.('sei:death', onSeiDeath) } catch {}
     try { bot.off?.('playerJoined', onPlayerJoined) } catch {}
     try { bot.off?.('playerLeft', onPlayerLeft) } catch {}
     try { bot.off?.('spawn', onSpawn) } catch {}

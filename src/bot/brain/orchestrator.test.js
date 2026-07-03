@@ -149,6 +149,50 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     expect(noAction).toContain('your action')
     expect(noAction).not.toContain('(null')
   })
+
+  // 260703: session-end vs task-stop disambiguation (live-session bug — the bot
+  // said goodbye three times in a row and never left, because every per-turn
+  // addendum only ever named end_loop/stopTool and never mentioned quit). Every
+  // player-message variant of actionTurn must name quit for session-end phrasing,
+  // distinct from the stopTool it names for pausing a task.
+  it('mid-action player-message variant distinguishes stopping a task from ending the session (names quit)', () => {
+    const t = NUDGES.actionTurn({
+      action: 'gather oak_log',
+      stopTool: 'end_loop',
+      playerLine: "lets call it here for now",
+      who: 'Ouen',
+    })
+    expect(t).toContain('call end_loop')
+    expect(t).toContain('ENDING THE SESSION')
+    expect(t).toContain('call quit')
+    expect(t).toContain('farewell')
+    expect(t).toMatch(/"bye".*"cya"|cya/i)
+  })
+
+  it('not-mid-action player-message variant also names quit for session-end phrasing', () => {
+    const t = NUDGES.actionTurn({ action: null, stopTool: 'end_loop', playerLine: 'cya', who: 'Ouen' })
+    expect(t).toContain('ENDING THE SESSION')
+    expect(t).toContain('call quit')
+    expect(t).toContain('farewell')
+  })
+
+  it('the silent-monitor variant (no player message) does NOT mention quit', () => {
+    // Session-end guidance only makes sense as a reaction to something the
+    // player said, so it must not leak into the routine self-check-in tick.
+    const silent = NUDGES.actionTurn({ action: 'gather oak_log', stopTool: 'end_loop', elapsedSec: 12 })
+    expect(silent).not.toContain('quit')
+  })
+})
+
+describe('NUDGES.playerInterruptHint — session-end disambiguation (260703)', () => {
+  it('names quit as distinct from ending the loop, with concrete trigger phrases', () => {
+    const t = NUDGES.playerInterruptHint
+    expect(t).toContain('end_loop')
+    expect(t).toContain('ENDING THE SESSION')
+    expect(t).toContain('call quit')
+    expect(t).toContain('farewell')
+    expect(t).toMatch(/"bye".*"cya"|cya/i)
+  })
 })
 
 // 260630: the verbose anti-filler / say-discipline rules that BASELINE_INSTRUCTIONS
