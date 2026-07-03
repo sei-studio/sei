@@ -130,7 +130,7 @@
   grid-template-columns: 40px 1fr;
   column-gap: var(--space-md);
   margin: 0 calc(-1 * var(--space-lg));
-  padding: var(--space-md) var(--space-lg) 2px;
+  padding: var(--space-sm) var(--space-lg);
 }
 
 /* A continuation row (same author): no avatar, text aligned to the gutter. */
@@ -164,14 +164,18 @@
   min-width: 0;
 }
 
-/* #1 — Discord-style quoted-reply reference shown above the message, with an
- * elbow connector reaching back toward the author gutter. */
+/* #1 — Discord-style quoted-reply reference. It spans the FULL row above the
+ * message (grid-column 1 / -1) and is indented to the message-body gutter, so
+ * the avatar below aligns with the author header instead of overlapping the
+ * quote. An elbow connector drops from the quote down into the avatar. */
 .quoteRef {
   position: relative;
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  margin-bottom: 3px;
+  margin-bottom: 2px;
+  padding-left: calc(40px + var(--space-md));
   min-width: 0;
   font-family: var(--sans);
   font-size: 13px;
@@ -181,13 +185,14 @@
 .quoteRef::before {
   content: '';
   position: absolute;
-  left: -22px;
+  /* ~centre of the 40px avatar that sits directly below. */
+  left: 19px;
   top: 50%;
-  bottom: -7px;
-  width: 16px;
+  bottom: -12px;
+  width: calc(40px + var(--space-md) - 19px);
   border-left: 2px solid var(--border-strong);
   border-top: 2px solid var(--border-strong);
-  border-top-left-radius: 7px;
+  border-top-left-radius: 8px;
 }
 
 .quoteAvatar {

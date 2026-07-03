@@ -164,9 +164,9 @@ export function CharacterCard({
             if (isSummoned) onUnsummon();
             else onSummon();
           }}
-          aria-label={isSummoned ? `Unsummon ${c.name}` : `Play with ${c.name}`}
+          aria-label={isSummoned ? `Disconnect ${c.name}` : `Play with ${c.name}`}
         >
-          {isSummoned ? 'Unsummon' : 'Play'}
+          {isSummoned ? 'Disconnect' : 'Play'}
         </Button>
       </div>
 

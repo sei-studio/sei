@@ -71,7 +71,7 @@ export function SkinSetupPromptModal({
         </h2>
         <p className={styles.body}>
           Skin setup lets your companions appear with their own look in your world.
-          It takes about a minute and you can re-run it anytime from Settings. Summon
+          It takes about a minute and you can re-run it anytime from Settings. Connect
           without it and your companion uses a default skin.
         </p>
         <div className={styles.footer}>

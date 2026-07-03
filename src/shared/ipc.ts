@@ -104,12 +104,31 @@ export interface ChatMessage {
 
 /** Result of a chat turn. `launch` is set when the companion called launch(). */
 export interface ChatSendResult {
-  reply: ChatMessage;
+  /**
+   * The companion's reply, split into one-or-more messages on blank lines (a
+   * paragraph break sends a new message, like double-tapping enter). The renderer
+   * reveals them one at a time. Always at least one entry.
+   */
+  replies: ChatMessage[];
+  /**
+   * True when the character has a LIVE in-game session and this message was
+   * routed INTO that session instead of the standalone chat brain (so the two
+   * surfaces share one conversation). The reply then arrives asynchronously over
+   * the `chat:message` push, so `replies` is empty and the renderer keeps the
+   * typing indicator up until the pushed reply lands.
+   */
+  routed?: boolean;
   launch?: {
     game: string;
     /** 'summoning' → the bot is joining a LAN world; 'lan-not-open' → could not join. */
     status: 'summoning' | 'lan-not-open';
   };
+}
+
+/** A main → renderer chat push (bot reply while in-game, or a system line). */
+export interface ChatMessagePush {
+  characterId: string;
+  message: ChatMessage;
 }
 
 /** In-app user profile surfaced to the chat + settings. */
@@ -723,6 +742,12 @@ export interface RendererApi {
   chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef }): Promise<ChatSendResult>;
   /** Clear a character's chat transcript + rolling summary bridge. */
   chatClear(characterId: string): Promise<void>;
+  /**
+   * Subscribe to chat messages pushed OUTSIDE a send() round-trip: the live
+   * game bot replying to a routed message, and "joined/left your world" system
+   * lines. The renderer appends them to the transcript (deduped by id).
+   */
+  onChatMessage(cb: (push: ChatMessagePush) => void): Unsubscribe;
 
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
@@ -1212,6 +1237,10 @@ export const IpcChannel = {
     history: 'chat:history',
     send: 'chat:send',
     clear: 'chat:clear',
+    /** Push (main → renderer): a companion/system message authored outside a
+     * send() round-trip — the live game bot replying to a routed message, or a
+     * deterministic "joined/left your world" system line. */
+    message: 'chat:message',
   },
   user: {
     getProfile: 'user:get-profile',

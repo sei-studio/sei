@@ -22,6 +22,18 @@ import * as chatStore from './chatStore';
 export interface ChatDeps {
   getLanState: () => LanState;
   summon: (characterId: string) => Promise<void>;
+  /** Task 4 — true when the character's bot is fully spawned in-world right now. */
+  isInGame?: (characterId: string) => boolean;
+  /**
+   * Task 4 — route a message INTO the live game session (shared brain + prompt
+   * cache). Returns false if no session took it, so the caller can fall back to
+   * the standalone chat brain.
+   */
+  routeToBot?: (characterId: string, payload: { from: string; text: string }) => boolean;
+  /** Task 1 — record that this turn launched a game, for the "joined" ack. */
+  onLaunch?: (characterId: string) => void;
+  /** The (non-blocking) join kicked off by launch() failed — post a chat notice. */
+  onLaunchFailed?: (characterId: string, reason: string) => void;
 }
 
 const RECENT = 50;
@@ -52,6 +64,21 @@ async function readMemoryTail(characterId: string): Promise<string> {
   } catch {
     return '';
   }
+}
+
+/**
+ * Split a reply into the separate chat messages the UI should send. A blank line
+ * (paragraph break) is the split point, so a model that writes two thoughts with
+ * an empty line between them lands as two messages — the way a person double-taps
+ * enter in a chat. No blank line → one message. Empty chunks are dropped; a reply
+ * with no content collapses to a single "…" so the turn is never message-less.
+ */
+export function splitReply(text: string): string[] {
+  const parts = text
+    .split(/\n\s*\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length ? parts : ['…'];
 }
 
 /** Concatenate the text blocks of an Anthropic response content array. */
@@ -114,6 +141,20 @@ export async function sendChatMessage(
       ...(args.replyTo ? { replyTo: args.replyTo } : {}),
     };
     await chatStore.appendMessage(args.characterId, userMsg);
+
+    // Task 4 — if the companion is live in-game, route this message INTO that
+    // session (same brain + prompt cache) instead of the standalone chat brain,
+    // so the two surfaces are one conversation. The bot receives it as an
+    // out-of-band "message via Sei chat" and replies asynchronously over the
+    // chat:message push; we return `routed` so the renderer keeps the typing
+    // indicator up until that reply lands. Falls through to the chat brain if
+    // the session vanished between the check and the post.
+    if (deps.isInGame?.(args.characterId) && deps.routeToBot) {
+      const from = (config.preferred_name ?? '').trim() || 'The player';
+      if (deps.routeToBot(args.characterId, { from, text: args.text })) {
+        return { replies: [], routed: true };
+      }
+    }
 
     const [history, memory, summary] = await Promise.all([
       chatStore.readRecent(args.characterId, RECENT),
@@ -185,9 +226,17 @@ export async function sendChatMessage(
       throw e;
     }
 
-    if (!replyText) replyText = '…';
-    const reply: ChatMessage = { id: randomUUID(), role: 'companion', text: replyText, ts: Date.now() };
-    await chatStore.appendMessage(args.characterId, reply);
+    // Split on blank lines so a multi-paragraph reply lands as separate messages
+    // (task 8). Each is its own persisted message + its own bubble in the UI,
+    // which reveals them one at a time. Stamp ascending ts so ordering is stable.
+    const now = Date.now();
+    const replies: ChatMessage[] = splitReply(replyText).map((text, i) => ({
+      id: randomUUID(),
+      role: 'companion',
+      text,
+      ts: now + i,
+    }));
+    for (const reply of replies) await chatStore.appendMessage(args.characterId, reply);
 
     // #6 — stamp last_chatted on a successful reply so a plain chat counts as a
     // "last interaction" for the card date + ordering (device-local, like
@@ -199,7 +248,7 @@ export async function sendChatMessage(
       console.warn(`[sei] failed to stamp last_chatted for ${args.characterId}: ${(err as Error).message}`);
     }
 
-    return { reply, launch };
+    return { replies, launch };
   } catch (err) {
     // Interrupt/supersede surfaces as a typed sentinel so the renderer can tell
     // it apart from a real failure (and NOT show the "sorry" fallback).
@@ -229,18 +278,20 @@ async function executeLaunch(
   }
   const lan = deps.getLanState();
   if (lan.kind === 'open') {
-    try {
-      await deps.summon(characterId);
-      return {
-        note: 'Launched. You are now joining the player\'s Minecraft world. Tell them you are jumping in.',
-        launch: { game, status: 'summoning' },
-      };
-    } catch (e) {
-      return {
-        note: `Could not join: ${(e as Error).message}. Tell the player something came up and you could not join this time.`,
-        launch: { game, status: 'lan-not-open' },
-      };
-    }
+    // Fire the summon but DO NOT await it here — a full join can take many
+    // seconds or time out, and blocking the chat turn on it is what left the UI
+    // stuck on "typing…". Acknowledge immediately; the deterministic "joined
+    // your world" line confirms the real join, and a failure posts a notice.
+    deps.onLaunch?.(characterId);
+    void deps.summon(characterId).catch((e) => {
+      deps.onLaunchFailed?.(characterId, (e as Error)?.message ?? 'unknown error');
+    });
+    return {
+      note:
+        'You are on your way into the player\'s Minecraft world right now — tell them you\'re hopping in. ' +
+        'Do NOT claim you have already arrived; you are still joining. Keep it to one short line.',
+      launch: { game, status: 'summoning' },
+    };
   }
   return {
     note:

@@ -502,7 +502,7 @@ function WorldGrid(): React.ReactElement {
           >
             ?
             <span className={styles.worldHelpTip} role="tooltip">
-              Browse and summon companions made by other players.
+              Browse companions made by other players.
             </span>
           </span>
         </div>

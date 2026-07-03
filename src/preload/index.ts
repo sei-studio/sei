@@ -26,6 +26,7 @@ import {
   type SyncStatusPushEvent,
   type CreditsStatus,
   type CreditsHardStopEvent,
+  type ChatMessagePush,
 } from '../shared/ipc';
 
 const api: RendererApi = {
@@ -77,6 +78,11 @@ const api: RendererApi = {
   chatHistory: (characterId) => ipcRenderer.invoke(IpcChannel.chat.history, characterId),
   chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),
   chatClear: (characterId) => ipcRenderer.invoke(IpcChannel.chat.clear, characterId),
+  onChatMessage(cb: (push: ChatMessagePush) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, push: ChatMessagePush) => cb(push);
+    ipcRenderer.on(IpcChannel.chat.message, handler);
+    return () => ipcRenderer.off(IpcChannel.chat.message, handler);
+  },
 
   // User profile (Phase 19)
   userGetProfile: () => ipcRenderer.invoke(IpcChannel.user.getProfile),

@@ -75,6 +75,14 @@ interface UiState {
    * character id is held here until LAN flips to connected (D-24/D-56).
    */
   pendingSummonId: string | null;
+  /**
+   * Phase 18/19 (task 6) — when a summon is launched from the chat surface (the
+   * "Play together" games popup), the user should be RETURNED to that chat once
+   * the bot joins, not yanked to the profile page. This records that intent so a
+   * deferred summon (LAN-not-open → LanModal auto-resume) lands back in chat too.
+   * Set alongside pendingSummonId; consumed + cleared by the LanModal resume.
+   */
+  pendingSummonReturnToChat: boolean;
   /** B3/B4 — IconRail compass + CharactersScreen tab persistence. */
   homeTab: HomeTab;
   /**
@@ -133,6 +141,8 @@ interface UiState {
   closeModal: () => void;
   setThemeMode: (mode: ThemeMode) => void;
   setPendingSummon: (id: string | null) => void;
+  /** Task 6: record whether the pending summon should return to chat on resume. */
+  setPendingSummonReturnToChat: (v: boolean) => void;
   setHomeTab: (tab: HomeTab) => void;
   setDevConsoleVisible: (v: boolean) => void;
   /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
@@ -154,6 +164,7 @@ export const useUiStore = create<UiState>((set) => ({
   modal: null,
   themeMode: 'system',
   pendingSummonId: null,
+  pendingSummonReturnToChat: false,
   homeTab: 'home',
   devConsoleVisible: false,
   // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
@@ -171,6 +182,7 @@ export const useUiStore = create<UiState>((set) => ({
   closeModal: () => set({ modal: null }),
   setThemeMode: (mode) => set({ themeMode: mode }),
   setPendingSummon: (id) => set({ pendingSummonId: id }),
+  setPendingSummonReturnToChat: (v) => set({ pendingSummonReturnToChat: v }),
   // Switching to the World tab also counts as leaving Home.
   setHomeTab: (tab) =>
     set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),

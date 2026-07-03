@@ -283,6 +283,24 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
           const row = isLead ? (
             <div className={styles.rowLead}>
+              {/* Quoted reply spans the full row ABOVE the avatar (Discord-style)
+                  so the 40px avatar aligns with the author header, not the quote. */}
+              {m.replyTo ? (
+                <div className={styles.quoteRef}>
+                  <span className={styles.quoteAvatar}>
+                    <MessageAvatar
+                      role={m.replyTo.role}
+                      character={character}
+                      theme={theme}
+                      userProfile={userProfile}
+                    />
+                  </span>
+                  <span className={styles.quoteName}>
+                    {m.replyTo.role === 'companion' ? companionName : userName}
+                  </span>
+                  <span className={styles.quoteText}>{m.replyTo.text}</span>
+                </div>
+              ) : null}
               <div className={styles.avatarCell}>
                 <MessageAvatar
                   role={m.role}
@@ -292,22 +310,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 />
               </div>
               <div className={styles.msgBody}>
-                {m.replyTo ? (
-                  <div className={styles.quoteRef}>
-                    <span className={styles.quoteAvatar}>
-                      <MessageAvatar
-                        role={m.replyTo.role}
-                        character={character}
-                        theme={theme}
-                        userProfile={userProfile}
-                      />
-                    </span>
-                    <span className={styles.quoteName}>
-                      {m.replyTo.role === 'companion' ? companionName : userName}
-                    </span>
-                    <span className={styles.quoteText}>{m.replyTo.text}</span>
-                  </div>
-                ) : null}
                 <div className={styles.msgHeader}>
                   <span className={styles.authorName}>
                     {m.role === 'user' ? userName : companionName}

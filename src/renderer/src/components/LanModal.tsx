@@ -32,7 +32,7 @@ const STEPS: readonly string[] = [
   'Launch Minecraft and open your singleplayer world.',
   'Press ESC, then choose Open to LAN.',
   'Click Start LAN World.',
-  'Return to Sei and press Summon.',
+  'Return to Sei and press Connect.',
 ];
 
 type LanKind = 'open' | 'closed' | 'unavailable';
@@ -58,6 +58,8 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
   const closeModal = useUiStore((s) => s.closeModal);
   const pendingSummonId = useUiStore((s) => s.pendingSummonId);
   const setPendingSummon = useUiStore((s) => s.setPendingSummon);
+  const returnToChat = useUiStore((s) => s.pendingSummonReturnToChat);
+  const setPendingSummonReturnToChat = useUiStore((s) => s.setPendingSummonReturnToChat);
   const navigate = useUiStore((s) => s.navigate);
 
   // ── Auto-resume on connected (D-56) ────────────────────────────────────
@@ -69,13 +71,25 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
       return;
     }
     const id = pendingSummonId;
+    const toChat = returnToChat;
     setPendingSummon(null);
+    setPendingSummonReturnToChat(false);
     closeModal();
     sei.summon(id).catch(() => {
       // Errors surface via onStatus → BotStatus.error; the model row owns display.
     });
-    navigate({ kind: 'character', id });
-  }, [mode, lan, pendingSummonId, closeModal, setPendingSummon, navigate]);
+    // Task 6 — a chat-launched summon returns to that chat, not the profile.
+    navigate(toChat ? { kind: 'chat', characterId: id } : { kind: 'character', id });
+  }, [
+    mode,
+    lan,
+    pendingSummonId,
+    returnToChat,
+    closeModal,
+    setPendingSummon,
+    setPendingSummonReturnToChat,
+    navigate,
+  ]);
 
   // ── ESC handling (D-24): in searching mode, ESC also clears pending summon
   useEffect(() => {
@@ -96,7 +110,7 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
           {pillLabel(lan.kind).toUpperCase()}
         </div>
         <h2 id="lan-modal-title" className={styles.title}>
-          To summon a character into your world
+          To connect a character to your world
         </h2>
         <ol className={styles.steps}>
           {STEPS.map((step, i) => (
@@ -108,10 +122,10 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
         </ol>
         {mode === 'searching' ? (
           <div className={styles.searching}>
-            <span className={styles.searchDots}>
-              <span style={{ animationDelay: '0ms' }} />
-              <span style={{ animationDelay: '160ms' }} />
-              <span style={{ animationDelay: '320ms' }} />
+            <span className={styles.searchDots} aria-hidden="true">
+              <span />
+              <span />
+              <span />
             </span>
             Searching for an open LAN world…
           </div>
@@ -123,10 +137,11 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
               size="md"
               onClick={() => {
                 setPendingSummon(null);
+                setPendingSummonReturnToChat(false);
                 closeModal();
               }}
             >
-              Cancel summon
+              Cancel
             </Button>
           ) : null}
           <Button kind="primary" size="md" onClick={closeModal}>

@@ -23,9 +23,10 @@
 // The being is one identity that reaches the world through different SURFACES.
 // UNIVERSAL_BASELINE is who they are everywhere; CHAT_BASELINE and
 // MINECRAFT_BASELINE describe the surface they happen to be acting through.
-// Today only the minecraft surface is wired live (BASELINE_INSTRUCTIONS below
-// composes UNIVERSAL + MINECRAFT into one cached block); CHAT_BASELINE is
-// authored ahead of the chat surface landing.
+// Both surfaces are wired live: the minecraft bot composes UNIVERSAL +
+// MINECRAFT via BASELINE_INSTRUCTIONS below, and the in-app chat brain
+// (src/main/chat/chatPrompts.ts) composes UNIVERSAL + CHAT — same document, so
+// the two surfaces are literally the same being and cannot drift.
 
 // =============================================================================
 // 1. UNIVERSAL — being-level, every surface. Never game-specific.

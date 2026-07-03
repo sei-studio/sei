@@ -50,6 +50,18 @@ function isChatAbort(err: unknown): boolean {
   return /CHAT_ABORTED/.test(String((err as { message?: string })?.message ?? err));
 }
 
+/** Small pause between multi-message replies so they arrive one at a time. */
+const REPLY_GAP_MS = 650;
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Safety net for a message ROUTED into a live game session (task 4): the reply
+ * arrives asynchronously over the chat:message push, so we keep the typing
+ * indicator up — but clear it after this long if nothing lands, so the composer
+ * never gets stuck (e.g. the bot didn't produce a spoken reply that turn).
+ */
+const ROUTED_AWAIT_TIMEOUT_MS = 45000;
+
 /** Append `msg` to a character's list immutably. */
 function appendMessage(
   map: Record<string, ChatMessage[]>,
@@ -59,7 +71,26 @@ function appendMessage(
   return { ...map, [characterId]: [...(map[characterId] ?? []), msg] };
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
+export const useChatStore = create<ChatState>((set, get) => {
+  // Subscribe once to main → renderer chat pushes: the live game bot replying to
+  // a routed message (task 4), and "joined/left your world" system lines (task
+  // 1). Append deduped by id and clear the typing indicator for that character.
+  try {
+    sei.onChatMessage?.(({ characterId, message }) => {
+      set((s) => {
+        const list = s.messages[characterId] ?? [];
+        if (list.some((m) => m.id === message.id)) return {} as Partial<ChatState>;
+        return {
+          messages: { ...s.messages, [characterId]: [...list, message] },
+          awaiting: { ...s.awaiting, [characterId]: false },
+        };
+      });
+    });
+  } catch {
+    /* preload without onChatMessage — routed replies just won't stream live */
+  }
+
+  return {
   messages: {},
   awaiting: {},
   loaded: {},
@@ -99,10 +130,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const result = await sei.chatSend({ characterId, text, replyTo });
       // A newer send superseded us mid-flight — it owns the reply + awaiting now.
       if (!isCurrent()) return result;
-      set((s) => ({
-        messages: appendMessage(s.messages, characterId, result.reply),
-        awaiting: { ...s.awaiting, [characterId]: false },
-      }));
+      // Task 4 — routed into a live game session: the reply comes back async over
+      // the chat:message push, so keep the typing indicator up and let the push
+      // handler append + clear it. Safety-clear after a timeout if nothing lands.
+      if (result.routed) {
+        window.setTimeout(() => {
+          if (sendSeq[characterId] === token) {
+            set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+          }
+        }, ROUTED_AWAIT_TIMEOUT_MS);
+        return result;
+      }
+      // Reveal a multi-message reply one bubble at a time (task 8): append the
+      // first immediately, then pause with the typing indicator still up before
+      // each follow-up, so a split reply reads as sent-as-typed rather than a
+      // wall of text landing at once. `awaiting` stays true between chunks.
+      const replies = result.replies;
+      for (let i = 0; i < replies.length; i++) {
+        if (i > 0) {
+          await delay(REPLY_GAP_MS);
+          if (!isCurrent()) return result;
+        }
+        set((s) => ({
+          messages: appendMessage(s.messages, characterId, replies[i]),
+          awaiting: { ...s.awaiting, [characterId]: i < replies.length - 1 },
+        }));
+      }
       // #6 — main stamped last_chatted on this successful reply; refresh the
       // character so the Home grid + IconRail re-sort by last interaction.
       void useDataStore.getState().refreshCharacter(characterId);
@@ -136,4 +189,5 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await sei.chatClear(characterId);
     set((s) => ({ messages: { ...s.messages, [characterId]: [] } }));
   },
-}));
+  };
+});

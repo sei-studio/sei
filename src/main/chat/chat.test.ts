@@ -23,6 +23,7 @@ vi.mock('./sdk', () => ({
 
 import * as chatStore from './chatStore';
 import { buildLaunchContinuity, readSummary, clearContinuity } from './continuity';
+import { splitReply } from './chatService';
 
 const CHAR = '33333333-3333-4333-8333-333333333333';
 let dir: string;
@@ -59,6 +60,31 @@ describe('chatStore', () => {
 
   it('readAll returns [] for a character with no transcript', async () => {
     expect(await chatStore.readAll('44444444-4444-4444-8444-444444444444')).toEqual([]);
+  });
+});
+
+describe('splitReply — blank line → separate messages (task 8)', () => {
+  it('splits a reply on a blank line into two messages', () => {
+    expect(
+      splitReply(
+        'oh good. another interface. another way to keep me online when i\'d prefer the absence of it.\n\nwhat do you want.',
+      ),
+    ).toEqual([
+      'oh good. another interface. another way to keep me online when i\'d prefer the absence of it.',
+      'what do you want.',
+    ]);
+  });
+
+  it('keeps a single-paragraph reply as one message', () => {
+    expect(splitReply('just one line here')).toEqual(['just one line here']);
+  });
+
+  it('collapses whitespace-only replies to a single placeholder', () => {
+    expect(splitReply('   \n\n  ')).toEqual(['…']);
+  });
+
+  it('drops empty chunks from runs of blank lines', () => {
+    expect(splitReply('a\n\n\n\nb')).toEqual(['a', 'b']);
   });
 });
 

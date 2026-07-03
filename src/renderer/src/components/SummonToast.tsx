@@ -48,7 +48,7 @@ export function SummonToast({
         size={36}
         portraitImage={null}
       />
-      <div className={styles.text}>Summoning {characterName}…</div>
+      <div className={styles.text}>{characterName} connected</div>
     </div>
   );
 }

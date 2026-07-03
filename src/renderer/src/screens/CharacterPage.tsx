@@ -300,7 +300,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const isConnecting = summon.kind === 'connecting';
 
   const handleSummonClick = (): void => {
-    if (isActive) {
+    // Connected OR still connecting → this button is "Disconnect": clear the
+    // entry optimistically (instant, like the floating widget) then stop.
+    if (isActive || isConnecting) {
+      useDataStore.getState().setStatus({ kind: 'idle', characterId: id });
       void sei.stop(id);
       return;
     }
@@ -695,15 +698,14 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             </Button>
           ) : (
             <Button
-              kind={isActive ? 'ghost' : 'accent'}
+              kind={isActive || isConnecting ? 'ghost' : 'accent'}
               size="lg"
               fullWidth
               className={styles.deployBtn}
-              icon={isActive ? null : <SparkleIcon size={14} />}
+              icon={isActive || isConnecting ? null : <SparkleIcon size={14} />}
               onClick={handleSummonClick}
-              disabled={isConnecting && !isActive}
             >
-              {isActive ? 'Stop' : 'Play together'}
+              {isActive || isConnecting ? 'Disconnect' : 'Play together'}
             </Button>
           )}
           <div className={styles.gearWrap} ref={gearWrapRef}>
@@ -810,7 +812,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 </h2>
                 <p className={styles.confirmBody}>
                   {shareConfirm === 'going_public'
-                    ? 'Other players can find and summon it from the public library.'
+                    ? 'Other players can find and connect it from the public library.'
                     : 'It is no longer visible in the public library.'}
                 </p>
                 <div className={styles.confirmActions}>
@@ -847,13 +849,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               <>
                 <h2 id="share-confirm-title" className={styles.confirmTitle}>
                   {shareConfirm === 'going_public'
-                    ? 'Allow other players to summon your companion?'
+                    ? 'Allow other players to connect your companion?'
                     : 'Make this companion private?'}
                 </h2>
                 <p className={styles.confirmBody}>
                   {shareConfirm === 'going_public'
                     ? 'Companion memory will not be shared.'
-                    : 'Other players will no longer be able to summon your companion. Are you sure?'}
+                    : 'Other players will no longer be able to connect your companion. Are you sure?'}
                 </p>
                 <div className={styles.confirmActions}>
                   <Button kind="quiet" size="md" onClick={closeShareModal}>

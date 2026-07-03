@@ -61,6 +61,20 @@ export interface IpcHandlerDeps {
    * getter so it always reflects main's latest `latestLanState`.
    */
   getLanState: () => LanState;
+  /**
+   * Task 1 — record that a summon was launched from the in-app chat (the
+   * `launch` tool), so main can drop the required "joined your world" system
+   * line once that character reaches online. Wired in index.ts to a pending set.
+   */
+  markChatLaunch: (characterId: string) => void;
+  /**
+   * A chat-launched join (fired non-blocking so the chat turn doesn't hang)
+   * failed. Post a short notice into the transcript so the player isn't left
+   * with the companion's "hopping in" and then silence. Wired in index.ts.
+   */
+  notifyLaunchFailed: (characterId: string, reason: string) => void;
+  /** Task 4 — true only when the character's bot is fully spawned in-world. */
+  isSessionOnline: (characterId: string) => boolean;
 }
 
 /**
@@ -702,7 +716,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { sendChatMessage } = await import('./chat/chatService');
     return await sendChatMessage(
       { characterId: args.characterId, text: args.text, replyTo: args.replyTo },
-      { getLanState: deps.getLanState, summon: (id) => deps.supervisor.summon(id) },
+      {
+        getLanState: deps.getLanState,
+        summon: (id) => deps.supervisor.summon(id),
+        // Task 4 — when the character is already in-game (spawned), route this
+        // message into that live session instead of the standalone chat brain.
+        isInGame: (id) => deps.isSessionOnline(id),
+        routeToBot: (id, payload) => deps.supervisor.sendSeiChat(id, payload),
+        // Task 1 — flag chat-launched summons for the "joined" acknowledgement.
+        onLaunch: (id) => deps.markChatLaunch(id),
+        onLaunchFailed: (id, reason) => deps.notifyLaunchFailed(id, reason),
+      },
     );
   });
 

@@ -49,7 +49,7 @@ function assertAdapter(adapter) {
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [args.logger]
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
-export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null }) {
+export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null }) {
   assertAdapter(adapter)
 
   // ── Memory layer ────────────────────────────────────────────────────
@@ -134,6 +134,10 @@ export async function start({ config, adapter, logger = console, onTerminalError
     reenqueue,
     onTerminalError,
     onAuthExpired,
+    // Task 4 — where to send a reply when the turn was triggered by a Sei-chat
+    // message (route to chat surface), and how to honor a quit() tool call.
+    onSeiChatReply,
+    onQuitRequested,
   })
 
   // ── Build the priority queue with the orchestrator's handleDispatch ─
@@ -242,6 +246,31 @@ export async function start({ config, adapter, logger = console, onTerminalError
   logger.info?.('[CONSOLE] [sei] Sei online.')
 
   return {
+    // Task 4 — deliver a message that arrived over Sei chat (player is NOT
+    // in-game) as a priority chat event on THIS session, framed so the bot knows
+    // it's out-of-band and that quit() leaves the game. Its reply routes back to
+    // the chat surface via onSeiChatReply (see orchestrator._emitSayLine).
+    deliverSeiChat({ from, text } = {}) {
+      const raw = String(text ?? '').trim()
+      if (!raw) return
+      const who = String(from || 'The player')
+      const framed =
+        `${who} messaged you through Sei chat — they are NOT in the game with you right now. ` +
+        `They said: "${raw}". Reply to them in chat. If you would rather stop playing to talk, call quit().`
+      try { orchestrator.recordIncomingChat?.(who, raw) } catch {}
+      try {
+        queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
+          username: who,
+          message: framed,
+          text: framed,
+          addressed: true,
+          playerSpoke: true,
+          seiChat: true,
+        })
+      } catch (err) {
+        logger.warn?.(`[sei/brain] deliverSeiChat enqueue failed: ${err.message}`)
+      }
+    },
     async stop() {
       // Order matters. dispose() FIRST flips the FSM's `disposed` flag (so the
       // sei:action_complete that an action-abort fires is dropped, not

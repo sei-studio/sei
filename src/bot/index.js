@@ -257,7 +257,15 @@ export async function start(config, hooks = {}) {
     // we assigned _brain unconditionally and then touched _bot._sei_startChat,
     // we hit "Cannot read properties of null (reading '_sei_startChat')" on
     // every dropped reconnect (observed in the field log).
-    const brain = await startBrain({ config, adapter: _adapter, logger, onTerminalError, onAuthExpired })
+    const brain = await startBrain({
+      config, adapter: _adapter, logger, onTerminalError, onAuthExpired,
+      // Task 4 — a reply to a message that came in over Sei chat (not in-game)
+      // is routed back UP to the chat surface instead of spoken in-world.
+      onSeiChatReply: (text) => emitLifecycle({ type: 'chat', from: config?.persona?.name ?? 'your companion', text }),
+      // Task 4 — the bot called quit(): leave the game the same graceful way a
+      // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
+      onQuitRequested: () => { try { gracefulShutdown() } catch {} },
+    })
     if (_stopped || !_bot) {
       // The connection dropped (or we were stopped) while startBrain awaited.
       // This brain is already orphaned — tear it down instead of wiring chat
@@ -772,6 +780,12 @@ if (process.parentPort) {
           const data = (e && e.data !== undefined) ? e.data : e
           if (data && data.type === 'stop') {
             gracefulShutdown()
+          } else if (data && data.type === 'sei-chat') {
+            // Task 4: the player messaged this bot through Sei chat while it is
+            // in-game. Inject it into the brain as an out-of-band chat event so
+            // it runs on the SAME session (brain + prompt cache) and replies
+            // back to the chat surface (see onSeiChatReply above).
+            try { _running?.deliverSeiChat?.({ from: data.from, text: data.text }) } catch {}
           } else if (data && data.type === 'roster') {
             // 260618: the supervisor's roster of OTHER AI companions in this
             // world changed (a sibling bot was summoned or stopped). Apply it so

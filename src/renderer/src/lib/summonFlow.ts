@@ -64,14 +64,22 @@ function blockedByUsernameConflict(id: string): boolean {
 export function proceedSummon(id: string): void {
   const ui = useUiStore.getState();
   const lan = useDataStore.getState().lan;
+  // Task 6 — if this summon was launched from THIS character's chat (the games
+  // popup opens over the chat view), keep the user in that chat once the bot
+  // joins rather than yanking them to the profile page. The floating widget +
+  // summon toast still surface the live session from anywhere.
+  const view = ui.view;
+  const fromChat = view.kind === 'chat' && view.characterId === id;
   if (lan.kind === 'open') {
     void sei.summon(id).catch(() => {
       // Errors surface via onStatus → BotStatus.error; the model row owns display.
     });
-    ui.navigate({ kind: 'character', id });
+    ui.navigate(fromChat ? { kind: 'chat', characterId: id } : { kind: 'character', id });
     return;
   }
   ui.setPendingSummon(id);
+  // Remember the origin so the LanModal auto-resume lands back in chat too.
+  ui.setPendingSummonReturnToChat(fromChat);
   ui.openModal({ kind: 'lan', mode: 'searching' });
 }
 

@@ -18,6 +18,7 @@
  */
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { createMainWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { watchLan } from './lanWatcher';
@@ -30,7 +31,7 @@ import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { maybeOfferMoveToApplications, cleanupRelocationLeftover } from './relocate';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability } from '../shared/ipc';
+import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability, type ChatMessage } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
@@ -95,9 +96,73 @@ function broadcastLan(state: LanState): void {
   }
 }
 
+/**
+ * Task 1 — characters whose current summon was launched from the in-app chat
+ * (the `launch` tool), pending a one-time "joined your world" system line the
+ * moment they actually reach online. Cleared on that ack, or on error/idle.
+ */
+const chatLaunchPendingAck = new Set<string>();
+
+/**
+ * Characters whose bot is fully ONLINE (spawned in-world), so a chat message can
+ * be safely routed into that live session (task 4). A merely-'connecting' session
+ * must NOT be routed to — it may never spawn, which would strand the chat's
+ * typing indicator waiting for a reply that never comes.
+ */
+const onlineIds = new Set<string>();
+
+/** Push a chat message (bot reply while in-game, or a system line) to the UI. */
+function pushChatMessage(characterId: string, message: ChatMessage): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.chat.message, { characterId, message });
+  }
+}
+
+/** Persist a pushed chat message to the transcript, then surface it live. */
+async function appendChatMessage(characterId: string, message: ChatMessage): Promise<void> {
+  try {
+    const { appendMessage } = await import('./chat/chatStore');
+    await appendMessage(characterId, message);
+  } catch (err) {
+    console.warn(`[sei] failed to persist pushed chat message: ${(err as Error).message}`);
+  }
+  pushChatMessage(characterId, message);
+}
+
+/** Task 1 — deterministic "joined your world" system line for a chat launch. */
+async function emitJoinAck(characterId: string): Promise<void> {
+  let name = 'Your companion';
+  try {
+    const { getCharacter } = await import('./characterStore');
+    const c = await getCharacter(characterId);
+    if (c?.name) name = c.name;
+  } catch {
+    /* fall back to the generic name */
+  }
+  await appendChatMessage(characterId, {
+    id: randomUUID(),
+    role: 'system',
+    text: `${name} joined your world`,
+    ts: Date.now(),
+  });
+}
+
 function broadcastStatus(status: BotStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.bot.status, status);
+  }
+  // Task 1 — fire the required "joined" acknowledgement once a chat-launched
+  // session reaches online; drop the pending flag on a failed/ended summon.
+  const id = (status as { characterId?: string }).characterId;
+  if (!id) return;
+  // Track online-ness for chat routing (only route to a spawned bot).
+  if (status.kind === 'online') onlineIds.add(id);
+  else onlineIds.delete(id);
+  if (status.kind === 'online' && chatLaunchPendingAck.has(id)) {
+    chatLaunchPendingAck.delete(id);
+    void emitJoinAck(id);
+  } else if (status.kind === 'error' || status.kind === 'idle') {
+    chatLaunchPendingAck.delete(id);
   }
 }
 
@@ -385,6 +450,18 @@ async function bootstrap(): Promise<void> {
     // Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
     // renderer over the dedicated vision:capability channel.
     sendVisionCapability: broadcastVisionCapability,
+    // Task 4 — a live in-game bot replied to a message routed in from the chat.
+    // Persist it to the transcript and surface it live (same as a normal reply).
+    onBotChat: (characterId, text) => {
+      const trimmed = (text ?? '').trim();
+      if (!trimmed) return;
+      void appendChatMessage(characterId, {
+        id: randomUUID(),
+        role: 'companion',
+        text: trimmed,
+        ts: Date.now(),
+      });
+    },
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift
@@ -425,6 +502,22 @@ async function bootstrap(): Promise<void> {
     // the renderer via the chars:expansion-progress push channel.
     sendExpansionProgress: broadcastExpansionProgress,
     getLanState: () => latestLanState,
+    // Task 1 — chatService flags a chat-initiated launch here so the "joined
+    // your world" ack fires when that summon reaches online (see broadcastStatus).
+    markChatLaunch: (id) => chatLaunchPendingAck.add(id),
+    // Task 4 — only route chat into a bot that's fully spawned in-world.
+    isSessionOnline: (id) => onlineIds.has(id),
+    // A non-blocking chat-launched join failed — drop a system notice so the
+    // player isn't left with "hopping in" and then silence.
+    notifyLaunchFailed: (id) => {
+      chatLaunchPendingAck.delete(id);
+      void appendChatMessage(id, {
+        id: randomUUID(),
+        role: 'system',
+        text: 'Couldn’t join your world — is it still open to LAN?',
+        ts: Date.now(),
+      });
+    },
   });
 
   // 5b. Auth state broadcast (initial replay + Supabase auth-event

@@ -122,6 +122,12 @@ export interface BotSupervisorOptions {
    * disable itself for a non-VLM provider. Optional — undefined no-ops.
    */
   sendVisionCapability?: (cap: VisionCapability) => void;
+  /**
+   * The live game bot authored a chat message (a reply to a message routed in
+   * from the in-app chat while it is in-game). Main persists it to the chat
+   * transcript and pushes it to the renderer. Optional — undefined no-ops.
+   */
+  onBotChat?: (characterId: string, text: string) => void;
   /** Forward to renderer via webContents.send('bot:log:batch', batch). Batched. */
   sendLog: (batch: LogBatch) => void;
   /**
@@ -165,6 +171,12 @@ export interface BotSupervisor {
   getActiveIds(): string[];
   /** True when this specific character has a live (or connecting) session. */
   isActive(characterId: string): boolean;
+  /**
+   * Task 4 — route an in-app chat message into a live game session (shared
+   * brain + prompt cache). Returns false if no session is live (caller falls
+   * back to the standalone chat brain).
+   */
+  sendSeiChat(characterId: string, payload: { from: string; text: string }): boolean;
   /** For app.before-quit cleanup. Drains ALL active sessions with the stop timeout. */
   shutdown(): Promise<void>;
   /**
@@ -258,7 +270,14 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
 
   async function _stop(characterId: string, timeoutMs: number): Promise<void> {
     const session = sessions.get(characterId);
-    if (!session) return;
+    if (!session) {
+      // No live session — but the renderer may still be showing a stale entry
+      // for this id (e.g. a mid-session crash that already dropped the session
+      // without a terminal push). Emit `idle` so a "Disconnect" click always
+      // clears the widget instead of no-op'ing on an orphaned status.
+      opts.sendStatus({ kind: 'idle', characterId });
+      return;
+    }
     // BL-01: kill the JWT rotation pump BEFORE port1.close() so a pending
     // tick (in the middle of a refreshSession await) cannot postMessage
     // onto a disposed port. setupJwtRotation re-checks `running` between
@@ -613,6 +632,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         void handleJwtRefreshRequest(characterId);
         return;
       }
+      // The in-game bot is replying to a message that was routed in from the
+      // in-app chat (task 4). Deliver it to the chat transcript + renderer. Not
+      // a BotStatus event, so return before lifecycleToStatus.
+      if (data.type === 'chat') {
+        opts.onBotChat?.(characterId, (data as { text?: string }).text ?? '');
+        return;
+      }
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
@@ -859,6 +885,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         const ec = classifyChildError(message);
         opts.sendStatus({ kind: 'error', error: ec, message, characterId });
         summonReject(new Error(message));
+      } else {
+        // The bot WAS live (reached summon-ready) and has now exited without
+        // going through `_stop` — a spontaneous end: the player closed their
+        // world, the connection dropped, or the child crashed mid-session.
+        // Nothing else emits a terminal status on this path, so without this the
+        // renderer's `summons[id]` stays stuck at 'online'/'connecting' and the
+        // floating widget keeps a stale "Disconnect" button. Push `idle` so the
+        // widget clears. (A clean `_stop` also emits idle after `exited`
+        // resolves; a duplicate idle is harmless — the delete is idempotent.)
+        opts.sendStatus({ kind: 'idle', characterId });
       }
       // Resolve `exited` only AFTER the playtime write lands. _stop awaits
       // `exited` before emitting the idle status, and the renderer refreshes the
@@ -1013,6 +1049,23 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     },
     getActiveIds: () => [...sessions.keys()],
     isActive: (characterId: string) => sessions.has(characterId),
+    /**
+     * Task 4 — route an in-app chat message INTO a live game session so both
+     * surfaces share one conversation (same brain + prompt cache). Posts a
+     * `sei-chat` command over the port; the bot injects it as a priority chat
+     * event and replies back over the `type:'chat'` lifecycle. Returns false
+     * (caller falls back to the standalone chat brain) if no session is live.
+     */
+    sendSeiChat: (characterId: string, payload: { from: string; text: string }): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'sei-chat', from: payload.from, text: payload.text });
+        return true;
+      } catch {
+        return false;
+      }
+    },
     shutdown: async () => {
       await _stopAll(STOP_TIMEOUT_MS);
     },

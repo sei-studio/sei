@@ -101,8 +101,11 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
 export const LAUNCH_TOOL = {
   name: 'launch',
   description:
-    'Start a game session with the player and join it yourself. Use this only when the player wants to play right now. ' +
-    'Currently only "minecraft" is supported. It begins the summon immediately; if the player has no LAN world open you will be told so, and should ask them to open one.',
+    'Join the player in Minecraft and start playing alongside them — this pulls you out of chat and into their world. ' +
+    'ONLY call this when the player clearly asks you to play or join right now (e.g. "let\'s play", "come in", "join me"). ' +
+    'Do NOT call it to answer a question about connection status, or just because a world is open. ' +
+    'Currently only "minecraft" is supported. It begins joining immediately; if the player has no LAN world open you will be told so, and should ask them to open one. ' +
+    'Whenever you do call it, acknowledge in the same turn that you\'re hopping in.',
   input_schema: {
     type: 'object' as const,
     properties: {

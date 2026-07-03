@@ -166,7 +166,7 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
 // → continueLoop=false → the loop ends (say is "silence" for loop purposes:
 // it speaks, but it never keeps the bot busy on its own — see the
 // `continueLoop = movementCalls.length > 0` gate in runIterations).
-const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say'])
+const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
@@ -465,7 +465,7 @@ export async function composeSeedBlocks({
  *   priority queue. Required when the brain runs in production; defaults
  *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, _anthropicOverride = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, _anthropicOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
   // 260618: roster of OTHER AI companion usernames in this world (multi-bot
   // sessions). Pushed from main via {type:'roster'} → brain.setCompanions →
@@ -639,6 +639,17 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // A real (deduped) attempt still consumes the slot — a repeat must not
       // open the door to a second line.
       return { emitted: true, content: 'said (suppressed duplicate of your last line)' }
+    }
+    // Task 4 — if this turn was triggered by a message from Sei chat (the player
+    // is not in-game), route the reply UP to the chat surface instead of
+    // speaking it in-world. Still logged + recorded to convo memory for
+    // continuity, just delivered over the port rather than bot.chat.
+    if (loop._triggerData?.seiChat && typeof onSeiChatReply === 'function') {
+      try { logChatOut(line) } catch {}
+      try { onSeiChatReply(line) } catch (err) { logger.warn?.(`[sei/orch] onSeiChatReply failed: ${err?.message ?? err}`) }
+      try { convoMemory.recentChat.pushSelf(config.persona.name, line) } catch {}
+      lastActionResult = 'said (sei chat)'
+      return { emitted: true, content: 'sent to chat' }
     }
     emitChatMessages(line)
     lastActionResult = 'said'
@@ -845,6 +856,18 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     {
       name: 'end_loop',
       description: PERSONALITY_TOOL_DESCRIPTIONS.end_loop,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    },
+    {
+      // Task 4 — leave the game entirely. Ends this in-game session (the bot
+      // disconnects from the world); the player can still chat with it from Sei.
+      // Use only when the player clearly wants you to stop playing / log off —
+      // NOT for pausing an action (that's end_loop). Say a goodbye first.
+      name: 'quit',
+      description:
+        'Leave the Minecraft game and disconnect from the world, ending this play session. ' +
+        'Use only when the player wants you to stop playing or log off — not to pause a task (use end_loop for that). ' +
+        'Say goodbye in the same turn before calling this. You can still be reached in Sei chat afterward.',
       input_schema: { type: 'object', properties: {}, additionalProperties: false },
     },
   ]
@@ -1272,7 +1295,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // the action, and a say()-only batch suspends on nothing. Its result is
   // actually pre-filled up front by emitSayCalls (so speech lands before any
   // action dispatches); the executeInlineMetadata `say` branch is a fallback.
-  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say'])
+  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -1912,6 +1935,15 @@ function maybeWarnByteCap(loop, warned) {
       // (in_flight abort + optional reseed) lives in runIterations.
       lastActionResult = 'loop ended'
       return { result: { type: 'tool_result', tool_use_id: use.id, content: 'loop ended', is_error: false }, terminate: true }
+    }
+    if (use.name === 'quit') {
+      // Task 4 — leave the game. Terminate this loop like end_loop, and ask the
+      // host to gracefully shut the session down (drain → disconnect → exit; the
+      // supervisor reaps it and the renderer's summon widget clears). A goodbye
+      // say() in the same batch is emitted up front by emitSayCalls before this.
+      lastActionResult = 'quit game'
+      try { onQuitRequested?.() } catch (err) { logger.warn?.(`[sei/orch] onQuitRequested failed: ${err?.message ?? err}`) }
+      return { result: { type: 'tool_result', tool_use_id: use.id, content: 'leaving the game', is_error: false }, terminate: true }
     }
     if (use.name === 'say') {
       // Normal flow emits say() up front via emitSayCalls and pre-fills the
