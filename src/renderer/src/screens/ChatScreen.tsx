@@ -24,6 +24,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
+import { findGame } from '../lib/games';
 import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -264,6 +265,17 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         ) : null}
         {messages.map((m, i) => {
           if (m.role === 'system') {
+            if (m.event?.kind === 'play') {
+              const game = findGame(m.event.game);
+              return (
+                <div key={m.id} className={`${styles.systemRow} ${styles.playRow}`}>
+                  {game?.image ? (
+                    <img className={styles.playIcon} src={game.image} alt="" aria-hidden="true" />
+                  ) : null}
+                  <span>{m.text}</span>
+                </div>
+              );
+            }
             return (
               <div key={m.id} className={styles.systemRow}>
                 {m.text}

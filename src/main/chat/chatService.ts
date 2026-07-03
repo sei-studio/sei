@@ -93,6 +93,21 @@ function textOf(content: Array<{ type: string }>): string {
 function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assistant'; content: unknown }> {
   const out: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
   for (const m of history) {
+    // A finished play session is shared history, not chatter: surface it as a
+    // bracketed system fact so the companion knows you actually played together
+    // (the game→chat memory gap — otherwise chat only sees MEMORY.md, which may
+    // never have captured the session). Framed so the model doesn't read it as
+    // the player speaking or as a still-hypothetical plan.
+    if (m.role === 'system' && m.event?.kind === 'play') {
+      out.push({
+        role: 'user',
+        content: `[Shared history: ${m.text} You were there together in the world — treat it as something you actually did, not a plan.]`,
+      });
+      continue;
+    }
+    // Other system rows (e.g. "joined your world") are UI-only; skip them so
+    // they don't pollute the model's turn-taking.
+    if (m.role === 'system') continue;
     // A quoted reply is surfaced to the model as a short lead-in so it knows
     // what the user is referring to, then the actual message text.
     let content = m.text;

@@ -129,6 +129,42 @@ async function appendChatMessage(characterId: string, message: ChatMessage): Pro
   pushChatMessage(characterId, message);
 }
 
+// Play-session tracking: when a bot goes online we stamp the moment; when it
+// leaves (idle/error) we post a Discord-style "You and X played Minecraft for Y"
+// system row into that character's chat transcript. First-online wins so a
+// mid-session backend-switch re-emit doesn't reset the clock.
+const playStartedAt = new Map<string, number>();
+
+/** Human phrase for a play-session length ("a few seconds" / "N minutes" / "N hours"). */
+function formatPlayDuration(ms: number): string {
+  if (ms < 60_000) return 'a few seconds';
+  if (ms < 3_600_000) {
+    const m = Math.max(1, Math.round(ms / 60_000));
+    return `${m} minute${m === 1 ? '' : 's'}`;
+  }
+  const h = Math.max(1, Math.round(ms / 3_600_000));
+  return `${h} hour${h === 1 ? '' : 's'}`;
+}
+
+/** Post the "You and <name> played Minecraft for <duration>" system row. */
+async function emitPlaySession(characterId: string, durationMs: number): Promise<void> {
+  let name = 'your companion';
+  try {
+    const { getCharacter } = await import('./characterStore');
+    const c = await getCharacter(characterId);
+    if (c?.name) name = c.name;
+  } catch {
+    /* fall back to the generic name */
+  }
+  await appendChatMessage(characterId, {
+    id: randomUUID(),
+    role: 'system',
+    text: `You and ${name} played Minecraft for ${formatPlayDuration(durationMs)}.`,
+    ts: Date.now(),
+    event: { kind: 'play', game: 'minecraft', durationMs },
+  });
+}
+
 /** Task 1 — deterministic "joined your world" system line for a chat launch. */
 async function emitJoinAck(characterId: string): Promise<void> {
   let name = 'Your companion';
@@ -158,6 +194,17 @@ function broadcastStatus(status: BotStatus): void {
   // Track online-ness for chat routing (only route to a spawned bot).
   if (status.kind === 'online') onlineIds.add(id);
   else onlineIds.delete(id);
+  // Play-session bookkeeping: stamp first-online, and on the terminal
+  // idle/error post a "played for X" row (only if the bot was actually live).
+  if (status.kind === 'online') {
+    if (!playStartedAt.has(id)) playStartedAt.set(id, Date.now());
+  } else if (status.kind === 'error' || status.kind === 'idle') {
+    const startedAt = playStartedAt.get(id);
+    if (startedAt !== undefined) {
+      playStartedAt.delete(id);
+      void emitPlaySession(id, Date.now() - startedAt);
+    }
+  }
   if (status.kind === 'online' && chatLaunchPendingAck.has(id)) {
     chatLaunchPendingAck.delete(id);
     void emitJoinAck(id);

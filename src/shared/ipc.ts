@@ -100,6 +100,14 @@ export interface ChatMessage {
   ts: number;
   /** Set when this message is a reply that quotes an earlier one (Discord-style). */
   replyTo?: ChatReplyRef;
+  /**
+   * Set on a `system` row that records a finished play session, so the UI can
+   * render it with the game icon (Discord-style "You and X played Minecraft for
+   * Y"). `text` carries the human-readable line; `event` carries the structured
+   * data. Also read by the chat brain (toMessages) as shared history so the
+   * companion knows you actually played, not just talked about it.
+   */
+  event?: { kind: 'play'; game: string; durationMs: number };
 }
 
 /** Result of a chat turn. `launch` is set when the companion called launch(). */

@@ -327,6 +327,23 @@
   padding: var(--space-sm) 0;
 }
 
+/* Play-session row (Discord-style "You and X played Minecraft for Y") — the
+   game icon sits inline before the greyed system text. */
+.playRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+}
+
+.playIcon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex: none;
+}
+
 /* ── Floating composer dock (hovers over the bottom of the list) ─────────── */
 .composerDock {
   position: absolute;
