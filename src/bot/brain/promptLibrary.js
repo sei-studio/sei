@@ -300,8 +300,20 @@ export function cantReachNudge({ x, y, z, range }) {
 // =============================================================================
 
 // 260616→260617: short say() reminder injected as the last user block EVERY turn.
+// 260703: names the scratchpad contract — live-session bug: on "yo" the model
+// wrote "yo." into its private text and called placeBlock with no say(), so the
+// player got silence despite the reply existing.
 export const SPEAK_REMINDER =
-  `Remember to use say() if you intend to speak to the player this turn.`
+  `Remember to use say() if you intend to speak to the player this turn — words in your text output never reach the player.`
+
+// 260703: sticky greeting hint. The full FIRST CONTACT block rides only the
+// first idle tick; when that loop is preempted (attack, chat) before the model
+// greets, the instruction is gone and the player meets silence ("u should say
+// hi to me next time when u join"). While no say() line has reached chat this
+// session, the orchestrator appends this SHORT hint to every composed turn
+// instead (skipped when the full FIRST CONTACT block is present).
+export const GREETING_HINT =
+  `You have not greeted the player yet this session — work one short in-character hello into this turn's say(), before or alongside whatever else you do.`
 
 export const PERSONALITY_TOOL_DESCRIPTIONS = {
   say:
@@ -438,7 +450,7 @@ export const SEED_HEADERS = {
 // clause, reused verbatim everywhere a player message can land, so STOPPING A
 // TASK (end_loop/stopTool) and ENDING THE SESSION (quit) stay one consistent
 // distinction instead of three divergent copies.
-export const SESSION_END_CLAUSE = `That's for pausing a TASK — if instead they're ENDING THE SESSION ("bye", "cya", "gtg", "let's call it here", "i'm done for today"), their LAN world goes down when they leave, so call quit (goodbye in \`farewell\`) instead of just waving and standing there; you can make the case to keep playing if you'd rather, but once they confirm they're leaving, quit.`
+export const SESSION_END_CLAUSE = `That's for pausing a TASK — if instead they're ENDING THE SESSION ("bye", "cya", "gtg", "let's call it here", "i'm done for today"), their LAN world goes down when they leave, so call quit (goodbye in \`farewell\`) instead of just waving and standing there; you can make the case to keep playing if you'd rather, but once they confirm they're leaving, quit. Before you quit, if this session left something worth keeping (something they said about themselves or you, something you did together), call remember() in the same turn — remember, say, and quit can all be called together.`
 
 export const NUDGES = {
   silence:
@@ -447,7 +459,7 @@ export const NUDGES = {
   // NB: single template literal, not a `+` chain — the LIBRARY-tab editor's
   // parser (scripts/lib/promptLibraryEdit.mjs scanValue) reads one literal per
   // prop; a concatenation hides every prop after this one from the editor.
-  playerInterruptHint: `\n\nYou can end this loop with end_loop, or switch tasks by calling a new action. ${SESSION_END_CLAUSE} One say() without a new action keeps the current action going. The player spoke to you, so answer them with say() — your text output is invisible to them, and ending the loop without a say() leaves them on read. What you say is yours (agree, refuse, deflect, one word — whatever fits your voice), but say something.`,
+  playerInterruptHint: `\n\nYou can end this loop with end_loop, or switch tasks by calling a new action. ${SESSION_END_CLAUSE} One say() without a new action keeps the current action going. The player spoke to you, so answer them with say() — your text output is invisible to them, and ending the loop without a say() leaves them on read. What you say is yours (agree, refuse, deflect, one word — whatever fits your voice), but say something. When they state a preference, correction, or fact about themselves or about how they want YOU to behave ("you should…", "i like…", "call me…", "next time…"), record it with remember() in the same turn — that is exactly what memory is for.`,
 
   capClose:
     'You hit the iteration cap and have to stop. Wrap up gracefully in your own voice by calling say once — under 12 words. Call only say, nothing else.',

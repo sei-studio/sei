@@ -19,6 +19,7 @@ import {
   PERSONALITY_TOOL_DESCRIPTIONS,
   NUDGES,
   SPEAK_REMINDER,
+  GREETING_HINT,
   renderPersona,
   renderHeartbeat,
   renderProactivenessDirective,
@@ -722,6 +723,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // 260703: track per-loop speech so a player-message loop can refuse to
     // end silently (see the end_loop deferral in the dispatch predicates).
     loop._spokeThisLoop = true
+    // 260703: any line actually reaching the player counts as this session's
+    // greeting — stop injecting the sticky GREETING_HINT from here on.
+    greetedPlayer = true
     // Task 4 — if this turn was triggered by a message from Sei chat (the player
     // is not in-game), route the reply UP to the chat surface instead of
     // speaking it in-world. Still logged + recorded to convo memory for
@@ -778,6 +782,23 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // is dropped with a structured warn (defense-in-depth; the FSM should
   // already prevent it).
   let currentLoop = null
+  // 260703: sticky greeting. The full FIRST CONTACT block rides only the first
+  // idle tick (reason:'just_connected_first_spawn'); when that loop is preempted
+  // (attack, chat) before the model replies, the greet instruction is gone and
+  // the player meets a session with no hello. greetedPlayer flips true the first
+  // time ANY say() line actually reaches chat this session (_emitSayLine — a
+  // quit farewell counts, since it rides the same pipe); until then every
+  // composed turn's event/nudge text carries the SHORT GREETING_HINT instead.
+  // Per-session (orchestrator-instance) state, never reset per loop. Skipped
+  // when the full FIRST CONTACT block is already present so the first idle tick
+  // never double-injects.
+  let greetedPlayer = false
+  function withGreetingHint(text) {
+    if (greetedPlayer) return text
+    const t = String(text ?? '')
+    if (t.includes('FIRST CONTACT')) return t
+    return `${t}\n\n${GREETING_HINT}`
+  }
   // Pending interrupt blocks supplied via abort signal — picked up by the
   // catch arm to render the PLAYER INTERRUPT user turn.
   let pendingInterrupt = null
@@ -1379,13 +1400,15 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // salvage at end_loop) keys off it, and a say() from BEFORE this
     // interrupt doesn't count as answering it.
     if (chatText && String(chatText).trim()) loop._spokeThisLoop = false
-    return NUDGES.actionTurn({
+    // 260703: mid-loop interrupt turns carry the sticky greet hint too (no-op
+    // once a say() line has reached chat this session).
+    return withGreetingHint(NUDGES.actionTurn({
       action,
       stopTool: stopToolForAction(action),
       playerLine: chatText ?? '',
       who: who ?? null,
       visionOff: _visionMode() === 'off',
-    })
+    }))
   }
 
   // 260514-gam D1 (B/A/A locked): every world-touching tool dispatches
@@ -1829,7 +1852,8 @@ function maybeWarnByteCap(loop, warned) {
           ? `your teammate ${speakerName} just spoke to you`
           : 'the player just spoke to you'
         playerMessageText = `${opener}. respond to THIS, not to the scene around you:\n"${String(data?.text ?? '').trim()}"\n` +
-          'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word.'
+          'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
+          'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them.'
         eventText = `Event: ${event}${eventAddendum}`
       } else {
         eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
@@ -1851,6 +1875,10 @@ function maybeWarnByteCap(loop, warned) {
     const { frontierText: progFrontierText, justCompletedNote: progCompletedNote } =
       await refreshProgressionForSeed()
     if (progCompletedNote) eventText += progCompletedNote
+    // 260703: sticky greeting — until a say() line has actually reached chat
+    // this session, every fresh-loop seed carries the short greet hint (no-op
+    // once greeted, and skipped when the full FIRST CONTACT block is present).
+    eventText = withGreetingHint(eventText)
     if (sessionState && playerStore) {
       let seedBlocks
       try {
@@ -2149,6 +2177,13 @@ function maybeWarnByteCap(loop, warned) {
       // host to gracefully shut the session down (drain → disconnect → exit; the
       // supervisor reaps it and the renderer's summon widget clears). A goodbye
       // say() in the same batch is emitted up front by emitSayCalls before this.
+      //
+      // 260703b: batch-order note — a remember() in the SAME batch executes
+      // regardless of position: quit's terminate=true only gates NON-inline
+      // (suspending) tools, inline metadata after it still runs, and the actual
+      // teardown (onQuitRequested) is deferred on a >=250ms timer below while
+      // memoryLog.append is awaited inline first. So "remember + say + quit in
+      // one turn" is safe in any order; SESSION_END_CLAUSE promises exactly that.
       //
       // 260703: that goodbye may be a MULTI-part staggered send (550ms apart);
       // tearing the connection down immediately truncated it to its first
@@ -2811,7 +2846,9 @@ function maybeWarnByteCap(loop, warned) {
     const playerMessage = (typeof data?.playerMessage === 'string') ? data.playerMessage : null
     const who = data?.who ?? null
     const action = extractPriorTask(loop)
-    const tickEventText = NUDGES.actionTurn({
+    // 260703: the tick turn carries the sticky greet hint too (no-op once a
+    // say() line has reached chat this session).
+    const tickEventText = withGreetingHint(NUDGES.actionTurn({
       action,
       stopTool: stopToolForAction(action),
       playerLine: playerMessage,
@@ -2819,7 +2856,7 @@ function maybeWarnByteCap(loop, warned) {
       elapsedSec: playerMessage == null ? elapsedSec : null,
       visionOff: _visionMode() === 'off',
       proactiveness: config?.persona?.proactiveness ?? 1,
-    })
+    }))
 
     // Set the iteration trigger BEFORE the haiku call so the R1-R4 gate keeps
     // the loop alive on a text-only response. A carried player message is

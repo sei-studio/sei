@@ -15,6 +15,7 @@ export {
   BASELINE_INSTRUCTIONS,
   // Per-turn speak reminder + tool / personality text.
   SPEAK_REMINDER,
+  GREETING_HINT,
   PERSONALITY_TOOL_DESCRIPTIONS,
   PROACTIVENESS_DIRECTIVES,
   SEED_HEADERS,

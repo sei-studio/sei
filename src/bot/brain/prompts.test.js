@@ -12,6 +12,8 @@ import {
   renderProactivenessDirective,
   PROACTIVENESS_DIRECTIVES,
   NUDGES,
+  SPEAK_REMINDER,
+  GREETING_HINT,
 } from './prompts.js'
 // SESSION_END_CLAUSE is not (yet) re-exported through the prompts.js barrel —
 // pull it straight from the source of truth.
@@ -34,6 +36,52 @@ describe('SESSION_END_CLAUSE — session-end vs task-stop disambiguation (260703
   })
   it('is reused verbatim in NUDGES.playerInterruptHint rather than a divergent copy', () => {
     expect(NUDGES.playerInterruptHint).toContain(SESSION_END_CLAUSE)
+  })
+  // 260703b: session-end memory nudge — across 8 live sessions MEMORY.md gained
+  // 3 entries (2 near-dupes) because nothing ever pointed at remember() when a
+  // short session wrapped up. The clause now tells the model that remember, say,
+  // and quit all fit in one turn (the orchestrator executes inline metadata in
+  // batch order and defers the quit teardown, so the write always lands).
+  it('nudges a same-turn remember() alongside quit at session end', () => {
+    expect(SESSION_END_CLAUSE).toContain('remember()')
+    expect(SESSION_END_CLAUSE).toContain('in the same turn')
+    expect(SESSION_END_CLAUSE).toContain('remember, say, and quit can all be called together')
+  })
+})
+
+// 260703b: preference capture. A live player complaint ("u should say hi to me
+// next time when u join") — a durable preference — was never written via
+// remember(); short sessions are all P1 chat interrupts with no natural slot.
+// The player-message nudge now names the exact trigger shapes.
+describe('NUDGES.playerInterruptHint — preference capture (260703b)', () => {
+  it('tells the model to remember() a stated preference/correction in the same turn', () => {
+    const t = NUDGES.playerInterruptHint
+    expect(t).toContain('preference, correction, or fact')
+    expect(t).toContain('record it with remember() in the same turn')
+    expect(t).toContain('that is exactly what memory is for')
+    expect(t).toMatch(/"you should…", "i like…", "call me…", "next time…"/)
+  })
+})
+
+// 260703b: scratchpad contract. On "yo" the model wrote "yo." into its private
+// text and called placeBlock with no say() — the player got silence. The
+// per-turn reminder now states that text output never reaches the player.
+describe('SPEAK_REMINDER — scratchpad contract (260703b)', () => {
+  it('says words in the text output never reach the player', () => {
+    expect(SPEAK_REMINDER).toContain('say()')
+    expect(SPEAK_REMINDER).toContain('words in your text output never reach the player')
+  })
+})
+
+// 260703b: sticky greeting. The full FIRST CONTACT block rides only the first
+// idle tick; when that loop is preempted the greeting was lost forever. The
+// short hint rides every composed turn until a say() line reaches chat.
+describe('GREETING_HINT — sticky greeting hint (260703b)', () => {
+  it('is a short greet-now nudge routed through say()', () => {
+    expect(GREETING_HINT).toContain('not greeted the player yet this session')
+    expect(GREETING_HINT).toContain("say()")
+    // It must stay SHORT — it rides every turn until the first spoken line.
+    expect(GREETING_HINT.length).toBeLessThan(200)
   })
 })
 
