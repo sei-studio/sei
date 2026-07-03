@@ -41,65 +41,75 @@ export async function attackEntityAction(args, bot, config) {
   const entityId = entity.id
   const startedAt = Date.now()
 
-  let hits = 0
-  for (let i = 0; i < times; i++) {
-    if (signal?.aborted) {
-      return hits ? `aborted after ${hits}/${times} hits on ${name}` : 'aborted'
-    }
-    if (Date.now() - startedAt > timeoutMs) {
-      return hits ? `timeout after ${hits}/${times} hits on ${name}` : `timeout attacking ${name}`
-    }
-
-    let live = bot.entities?.[entityId]
-    if (!live) {
-      return hits ? `killed ${name} (${hits} hits)` : 'target gone'
-    }
-
-    let dist = bot.entity?.position?.distanceTo?.(live.position)
-    if (typeof dist === 'number' && dist > REACH) {
-      // Pursue: close the gap, then re-check. Built-in follow so the LLM
-      // doesn't have to orchestrate follow+attack.
-      const remaining = timeoutMs - (Date.now() - startedAt)
-      const budget = Math.min(PURSUE_BUDGET_MS, remaining)
-      if (budget < 250) {
-        return hits ? `timeout after ${hits}/${times} hits on ${name}` : `timeout chasing ${name}`
+  // Mark this mob as the deliberate offensive target so the survival reflex
+  // (reflex.js) suppresses its melee circle-strafe while we are actively
+  // attacking it — otherwise the reflex fights our own lookAt/positioning.
+  // Cleared on every exit path (finally) and guarded so a newer attack's flag
+  // is never clobbered.
+  bot._seiOffensiveTarget = entityId
+  try {
+    let hits = 0
+    for (let i = 0; i < times; i++) {
+      if (signal?.aborted) {
+        return hits ? `aborted after ${hits}/${times} hits on ${name}` : 'aborted'
       }
-      await goTo(bot, live.position.x, live.position.y, live.position.z, PURSUE_RANGE, budget)
-      if (signal?.aborted) return hits ? `aborted after ${hits}/${times} hits on ${name}` : 'aborted'
-      live = bot.entities?.[entityId]
-      if (!live) return hits ? `killed ${name} (${hits} hits)` : 'target gone'
-      dist = bot.entity?.position?.distanceTo?.(live.position)
+      if (Date.now() - startedAt > timeoutMs) {
+        return hits ? `timeout after ${hits}/${times} hits on ${name}` : `timeout attacking ${name}`
+      }
+
+      let live = bot.entities?.[entityId]
+      if (!live) {
+        return hits ? `killed ${name} (${hits} hits)` : 'target gone'
+      }
+
+      let dist = bot.entity?.position?.distanceTo?.(live.position)
       if (typeof dist === 'number' && dist > REACH) {
-        // Still out of reach after a chase — burn this iteration and try again.
-        // Avoids spinning on a fleeing mob with zero forward progress.
-        if (i === times - 1) {
-          return hits
-            ? `${hits}/${times} hits then lost ${name} (${dist.toFixed(1)}m after chase)`
-            : `cant catch ${name} (${dist.toFixed(1)}m after chase)`
+        // Pursue: close the gap, then re-check. Built-in follow so the LLM
+        // doesn't have to orchestrate follow+attack.
+        const remaining = timeoutMs - (Date.now() - startedAt)
+        const budget = Math.min(PURSUE_BUDGET_MS, remaining)
+        if (budget < 250) {
+          return hits ? `timeout after ${hits}/${times} hits on ${name}` : `timeout chasing ${name}`
         }
-        continue
+        await goTo(bot, live.position.x, live.position.y, live.position.z, PURSUE_RANGE, budget)
+        if (signal?.aborted) return hits ? `aborted after ${hits}/${times} hits on ${name}` : 'aborted'
+        live = bot.entities?.[entityId]
+        if (!live) return hits ? `killed ${name} (${hits} hits)` : 'target gone'
+        dist = bot.entity?.position?.distanceTo?.(live.position)
+        if (typeof dist === 'number' && dist > REACH) {
+          // Still out of reach after a chase — burn this iteration and try again.
+          // Avoids spinning on a fleeing mob with zero forward progress.
+          if (i === times - 1) {
+            return hits
+              ? `${hits}/${times} hits then lost ${name} (${dist.toFixed(1)}m after chase)`
+              : `cant catch ${name} (${dist.toFixed(1)}m after chase)`
+          }
+          continue
+        }
+      }
+
+      try {
+        bot.lookAt?.(live.position.offset(0, live.height ? live.height * 0.5 : 0.5, 0), true)
+        bot.attack(live)
+        bot.swingArm?.()
+        hits++
+      } catch (err) {
+        const r = reason(err)
+        return hits
+          ? `${hits}/${times} hits then attack failed (${name}): ${r ?? 'unknown'}`
+          : (r ? `attack failed (${name}): ${r}` : `attack failed (${name})`)
+      }
+
+      if (i < times - 1) {
+        const waited = await sleepOrAbort(SWING_DELAY_MS, signal)
+        if (waited === 'aborted') return `aborted after ${hits}/${times} hits on ${name}`
       }
     }
 
-    try {
-      bot.lookAt?.(live.position.offset(0, live.height ? live.height * 0.5 : 0.5, 0), true)
-      bot.attack(live)
-      bot.swingArm?.()
-      hits++
-    } catch (err) {
-      const r = reason(err)
-      return hits
-        ? `${hits}/${times} hits then attack failed (${name}): ${r ?? 'unknown'}`
-        : (r ? `attack failed (${name}): ${r}` : `attack failed (${name})`)
-    }
-
-    if (i < times - 1) {
-      const waited = await sleepOrAbort(SWING_DELAY_MS, signal)
-      if (waited === 'aborted') return `aborted after ${hits}/${times} hits on ${name}`
-    }
+    return `attacked ${name} ${hits}× (target still alive)`
+  } finally {
+    if (bot._seiOffensiveTarget === entityId) bot._seiOffensiveTarget = null
   }
-
-  return `attacked ${name} ${hits}× (target still alive)`
 }
 
 function clampTimes(t) {

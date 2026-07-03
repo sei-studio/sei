@@ -27,6 +27,38 @@ export {
   actionRules,
   cuboidGrammar,
   describeAction,
-  eventAddendum,
   cantReachNudge,
 } from '../../brain/promptLibrary.js'
+
+import { eventAddendum as baseEventAddendum } from '../../brain/promptLibrary.js'
+
+// ── Death event framing (sei:death) ──────────────────────────────────────
+// This prose lives HERE rather than in promptLibrary.js's EVENT_GUIDANCE (where
+// its peers — sei:idle / sei:loop_end / sei:attacked — live) purely for merge
+// hygiene: the death→brain event was added while promptLibrary.js was owned by a
+// concurrent change, so the small, adapter-specific death text rides in the
+// barrel wrapper below instead. If/when things settle, this can move into
+// EVENT_GUIDANCE with the other events.
+export const DEATH_ADDENDUM_WITH_POS =
+  '\n\nYou DIED and respawned at the world spawn. Everything you were carrying dropped where you died (~{x},{y},{z}) — it despawns in about 5 minutes. Your health and hunger are full again. React in character in ONE short say() line, and decide whether to go recover your items (head back toward those coords) or let them go.'
+export const DEATH_ADDENDUM_NO_POS =
+  '\n\nYou DIED and respawned at the world spawn. Everything you were carrying dropped where you died — it despawns in about 5 minutes. Your health and hunger are full again. React in character in ONE short say() line, and decide whether to go recover your items or let them go.'
+
+function deathAddendum(data) {
+  const p = data?.pos
+  if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)) {
+    return DEATH_ADDENDUM_WITH_POS
+      .replace('{x}', String(Math.round(p.x)))
+      .replace('{y}', String(Math.round(p.y)))
+      .replace('{z}', String(Math.round(p.z)))
+  }
+  return DEATH_ADDENDUM_NO_POS
+}
+
+// Wrap the shared eventAddendum so a 'sei:death' event gets its framing (the
+// base function returns '' for events absent from EVENT_GUIDANCE). Everything
+// else delegates unchanged, preserving the existing barrel surface.
+export function eventAddendum(event, data, visionMode = 'on-demand') {
+  if (event === 'sei:death') return deathAddendum(data)
+  return baseEventAddendum(event, data, visionMode)
+}

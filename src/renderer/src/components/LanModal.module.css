@@ -34,12 +34,14 @@
 }
 
 .title {
-  font-family: var(--sans);
-  font-size: 22px;
+  /* Design system §5: modal titles are Oswald display, not Rajdhani. */
+  font-family: var(--display);
+  font-size: 26px;
   font-weight: 600;
   color: var(--text);
   margin: 0 0 24px;
-  letter-spacing: -0.2px;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
 }
 
 .steps {
@@ -58,8 +60,12 @@
 }
 
 .stepNumber {
-  font-family: var(--pixel);
-  font-size: 11px;
+  /* Design system §3: tracked uppercase mono micro-label — the pixel font is
+     reserved for the procedural portrait fallback only, not UI numerics. */
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   color: var(--accent);
   width: 22px;
   flex-shrink: 0;
@@ -84,15 +90,47 @@
 
 .searchDots {
   display: inline-flex;
-  gap: 4px;
+  align-items: center;
+  gap: 5px;
 }
 
+/* Three accent dots pulsing in a left-to-right wave = "actively searching".
+   Circular (design system: the only curves are circular status dots), staggered
+   via :nth-child so the sequence reads even when React strips inline styles. */
 .searchDots span {
-  width: 6px;
-  height: 6px;
-  background: var(--muted);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
   display: block;
-  animation: seiDot 1100ms ease-in-out infinite;
+  animation: lanSearchPulse 1000ms ease-in-out infinite;
+}
+
+.searchDots span:nth-child(2) {
+  animation-delay: 200ms;
+}
+
+.searchDots span:nth-child(3) {
+  animation-delay: 400ms;
+}
+
+@keyframes lanSearchPulse {
+  0%,
+  100% {
+    transform: scale(0.55);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .searchDots span {
+    animation: none;
+    opacity: 0.75;
+  }
 }
 
 .footer {

@@ -31,7 +31,8 @@ import type {
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
 import { getCharacter, saveCharacter } from './characterStore';
-import { loadApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
+import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
+import { buildLaunchContinuity } from './chat/continuity';
 import { loadConfig as loadUserConfig, saveConfig as saveUserConfig } from './configStore'; // UserConfig for bot init + daily-limit gate
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
@@ -121,6 +122,12 @@ export interface BotSupervisorOptions {
    * disable itself for a non-VLM provider. Optional — undefined no-ops.
    */
   sendVisionCapability?: (cap: VisionCapability) => void;
+  /**
+   * The live game bot authored a chat message (a reply to a message routed in
+   * from the in-app chat while it is in-game). Main persists it to the chat
+   * transcript and pushes it to the renderer. Optional — undefined no-ops.
+   */
+  onBotChat?: (characterId: string, text: string) => void;
   /** Forward to renderer via webContents.send('bot:log:batch', batch). Batched. */
   sendLog: (batch: LogBatch) => void;
   /**
@@ -164,6 +171,12 @@ export interface BotSupervisor {
   getActiveIds(): string[];
   /** True when this specific character has a live (or connecting) session. */
   isActive(characterId: string): boolean;
+  /**
+   * Task 4 — route an in-app chat message into a live game session (shared
+   * brain + prompt cache). Returns false if no session is live (caller falls
+   * back to the standalone chat brain).
+   */
+  sendSeiChat(characterId: string, payload: { from: string; text: string }): boolean;
   /** For app.before-quit cleanup. Drains ALL active sessions with the stop timeout. */
   shutdown(): Promise<void>;
   /**
@@ -195,6 +208,14 @@ interface ActiveSession {
    * bots sharing a username get the second kicked with `name_taken`.
    */
   username: string;
+  /**
+   * 260703 hard guard: which AI backend this session was forked under (updated
+   * live by _switchBackend). `updateJwt` and the reactive 401 refresh only push
+   * JWTs to 'cloud-proxy' sessions — a BYOK bot must NEVER receive the Supabase
+   * token, so a local session cannot silently authenticate against the paid
+   * proxy even if the bot-side cloudMode guard were to regress.
+   */
+  backendKind: AiBackendKind;
   startedAtMs: number;
   child: UtilityProcess;
   port1: Electron.MessagePortMain;
@@ -257,7 +278,14 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
 
   async function _stop(characterId: string, timeoutMs: number): Promise<void> {
     const session = sessions.get(characterId);
-    if (!session) return;
+    if (!session) {
+      // No live session — but the renderer may still be showing a stale entry
+      // for this id (e.g. a mid-session crash that already dropped the session
+      // without a terminal push). Emit `idle` so a "Disconnect" click always
+      // clears the widget instead of no-op'ing on an orphaned status.
+      opts.sendStatus({ kind: 'idle', characterId });
+      return;
+    }
     // BL-01: kill the JWT rotation pump BEFORE port1.close() so a pending
     // tick (in the middle of a refreshSession await) cannot postMessage
     // onto a disposed port. setupJwtRotation re-checks `running` between
@@ -341,6 +369,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   async function handleJwtRefreshRequest(characterId: string): Promise<void> {
     const session = sessions.get(characterId);
     if (!session) return;
+    // 260703 hard guard: only a cloud-proxy session may be handed a JWT. A
+    // BYOK bot never legitimately sends request-jwt; if one does, ignore it.
+    if (session.backendKind !== 'cloud-proxy') return;
     const now = Date.now();
     if (session.lastJwtReqAt && now - session.lastJwtReqAt < 8_000) return;
     session.lastJwtReqAt = now;
@@ -449,6 +480,18 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         );
       }
     } else {
+      // 260703 hard guard: local (BYOK) mode must NEVER fall back to the cloud
+      // JWT. A missing key fails HERE — visibly, before any fork — instead of
+      // surfacing as an opaque ENOENT-flavored BOT_CRASH (or worse, a summon
+      // that quietly rode the signed-in user's Supabase token through the
+      // paid proxy). INVALID_API_KEY is the closest ERROR_COPY class; the
+      // explicit message tells the user exactly which state they're in.
+      if (!(await hasApiKey())) {
+        const message =
+          'Local mode is on but no API key is saved. Add your API key in Settings, or switch to managed billing.';
+        opts.sendStatus({ kind: 'error', error: 'INVALID_API_KEY', message, characterId });
+        throw new Error(`LOCAL_NO_API_KEY: ${message}`);
+      }
       // GUI-05: loadApiKey can throw KEYCHAIN_UNAVAILABLE / decrypt errors when
       // the user is locked out of their keychain. classify before forwarding so
       // the renderer's CharacterPage shows ERROR_COPY[KEYCHAIN_LOCKED] copy
@@ -479,6 +522,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // knobs (cadence, image_quality, resolution_px cap, explicit_cap_per_hour)
     // come from the bot config / orchestrator defaults.
     const visionMode = userCfg.vision_mode ?? 'on-demand';
+    // Appearance & feel: bridge the "Realistic typing" toggle into the bot so
+    // in-game replies get the same reading/typing pacing as the in-app chat.
+    // Default ON (matches UserConfig.realistic_typing) when the field is absent.
+    const realisticTyping = userCfg.realistic_typing !== false;
     if (!preferred_name) {
       const status: BotStatus = {
         kind: 'error',
@@ -506,6 +553,17 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     opts.sendStatus({ kind: 'connecting', characterId });
 
     const router = await createLogRouter({ characterId, sendBatch: opts.sendLog });
+    // Cross-surface continuity (Phase 18/19): the rolling summary + recent
+    // window, so the companion carries the app conversation into the world.
+    // PURE DISK READ (260702) — compaction runs only as a chat-surface
+    // background task (foldIfDue), so a summon never waits on an LLM call.
+    // Still kicked off before the fork and awaited inside the 'spawn' handler:
+    // when this was an await between fork and the child event registrations,
+    // the child's one-shot 'spawn' event fired before the listener attached —
+    // init was never posted and the bot exited silently with code 0 (the
+    // 260702 "stuck connecting" regression).
+    const continuityP: Promise<Awaited<ReturnType<typeof buildLaunchContinuity>>> =
+      buildLaunchContinuity(characterId).catch(() => null);
     // ITEM 1 (quick/260523-t8d): expose the AI-backend mode + has-key state to
     // the bot child so brain/log.js can suppress the noisy game-state +
     // [haiku?] prompt logs when running in local (BYOK) mode without a key —
@@ -539,6 +597,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     const session: ActiveSession = {
       characterId,
       username,
+      backendKind: aiBackendKind,
       startedAtMs,
       child,
       port1,
@@ -610,6 +669,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // so return before lifecycleToStatus.
       if ((data as { type?: string }).type === 'request-jwt') {
         void handleJwtRefreshRequest(characterId);
+        return;
+      }
+      // The in-game bot is replying to a message that was routed in from the
+      // in-app chat (task 4). Deliver it to the chat transcript + renderer. Not
+      // a BotStatus event, so return before lifecycleToStatus.
+      if (data.type === 'chat') {
+        opts.onBotChat?.(characterId, (data as { text?: string }).text ?? '');
         return;
       }
       if (data.type === 'summon-ready' && !summonResolved) {
@@ -710,68 +776,83 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // Without this wiring, `setupJwtRotation` was dead code — the bot
     // relied on Supabase TOKEN_REFRESHED → jwtBridge → updateJwt for
     // its rolling JWT, with no documented 30-min safety net.
-    if (aiBackendKind === 'cloud-proxy') {
-      try {
-        const { setupJwtRotation } = await import('./auth/proxyJwtFetcher');
-        session.teardownJwtRotation = setupJwtRotation(port1);
-      } catch (err) {
-        // The pump is a safety net — if the dynamic import fails for any
-        // reason (path mismatch in a packaged build, module load error),
-        // we log and keep going. The bot will still receive JWTs via
-        // updateJwt() on TOKEN_REFRESHED ticks.
-        logger.warn(
-          `setupJwtRotation failed to load — continuing without rotation pump: ${(err as Error).message}`,
-        );
-      }
-    }
-
+    // NOTE: every child.once/child.on registration from here through the
+    // 'exit' handler below MUST stay synchronous with the fork above — an
+    // `await` in between loses one-shot events ('spawn' especially) that fire
+    // while main is parked on the microtask queue. The JWT rotation pump and
+    // the continuity await both live elsewhere for exactly this reason.
     child.once('spawn', () => {
-      // Ship mc_username, preferred_name, and skinServerBaseUrl so the bot
-      // can satisfy ConfigSchema, seed player_username for player-recognition
-      // without disk reads, and log the skin server URL for verification.
-      // The bot itself never hits the skin server — the consumer is the host
-      // MC client via CustomSkinLoader. character.username is preferred over
-      // sanitizeMcName(character.name) so each persona connects under its
-      // own in-game name.
-      child.postMessage(
-        {
-          type: 'init',
-          character,
-          apiKey,
-          lanPort,
-          // World label for the memory registry / section headers (best-effort).
-          lanMotd: opts.getLanMotd?.() ?? null,
-          // Profile-scoped root — the bot resolves memory under this dir, so it
-          // must be the active account's profile (paths.profileRoot()), never
-          // the device-global userData root.
-          userDataDir: paths.profileRoot(),
-          mc_username,
-          preferred_name,
-          // The bridged Looking (vision) mode. The bot's bootstrapWithInit
-          // reads this into config.vision.mode before ConfigSchema.parse.
-          visionMode,
-          // 260618 (multi-agent): the OTHER AI companions already in this world,
-          // so the new bot knows its teammates from its first tick. The new
-          // session is already in `sessions` (added before this spawn handler),
-          // so filter it out. broadcastRoster() keeps this current afterwards.
-          companions: [...sessions.values()]
-            .filter((s) => s.characterId !== characterId)
-            .map((s) => s.username),
-          skinServerBaseUrl: opts.getSkinServerBaseUrl(),
-          // Plan 10-06: ship the latest known JWT so a bot summoned while
-          // signed_in has a token in hand before TOKEN_REFRESHED fires. Phase
-          // 13 reads this; in Phase 10 the bot loop ignores it.
-          initialJwt: latestJwt,
-          // Phase 13-15 (PROXY-07): when the user has selected cloud-proxy as
-          // their AI backend, ship the proxy baseURL + initial Supabase JWT.
-          // The bot constructs the Anthropic SDK with
-          // {baseURL, authToken, apiKey:null} so all Anthropic traffic flows
-          // through Sei's Fly.io proxy (D-40 sub-delivery a). undefined here
-          // means BYOK — bot uses the legacy `apiKey` path.
-          cloudMode,
-        },
-        [port2],
-      );
+      void (async (): Promise<void> => {
+        // Wait (briefly) for the pre-fork continuity build. Capped so a slow
+        // summarization degrades to a continuity-less join instead of eating
+        // the 30s summon budget — the fold still lands in bridge.json for the
+        // next launch.
+        const continuity = await Promise.race([
+          continuityP,
+          new Promise<null>((r) => setTimeout(() => r(null), 4_000)),
+        ]);
+        // Ship mc_username, preferred_name, and skinServerBaseUrl so the bot
+        // can satisfy ConfigSchema, seed player_username for player-recognition
+        // without disk reads, and log the skin server URL for verification.
+        // The bot itself never hits the skin server — the consumer is the host
+        // MC client via CustomSkinLoader. character.username is preferred over
+        // sanitizeMcName(character.name) so each persona connects under its
+        // own in-game name.
+        try {
+          child.postMessage(
+            {
+              type: 'init',
+              character,
+              apiKey,
+              lanPort,
+              // World label for the memory registry / section headers (best-effort).
+              lanMotd: opts.getLanMotd?.() ?? null,
+              // Profile-scoped root — the bot resolves memory under this dir, so it
+              // must be the active account's profile (paths.profileRoot()), never
+              // the device-global userData root.
+              userDataDir: paths.profileRoot(),
+              mc_username,
+              preferred_name,
+              // The bridged Looking (vision) mode. The bot's bootstrapWithInit
+              // reads this into config.vision.mode before ConfigSchema.parse.
+              visionMode,
+              // Appearance & feel: the "Realistic typing" toggle. The bot's
+              // bootstrapWithInit reads this into config.realistic_typing.
+              realisticTyping,
+              // 260618 (multi-agent): the OTHER AI companions already in this world,
+              // so the new bot knows its teammates from its first tick. The new
+              // session is already in `sessions` (added before this spawn handler),
+              // so filter it out. broadcastRoster() keeps this current afterwards.
+              companions: [...sessions.values()]
+                .filter((s) => s.characterId !== characterId)
+                .map((s) => s.username),
+              skinServerBaseUrl: opts.getSkinServerBaseUrl(),
+              // Plan 10-06: ship the latest known JWT so a bot summoned while
+              // signed_in has a token in hand before TOKEN_REFRESHED fires. Phase
+              // 13 reads this; in Phase 10 the bot loop ignores it.
+              // 260703 hard guard: cloud-proxy sessions ONLY — a BYOK bot has no
+              // business holding the Supabase token at all, even unused.
+              initialJwt: aiBackendKind === 'cloud-proxy' ? latestJwt : null,
+              // Phase 13-15 (PROXY-07): when the user has selected cloud-proxy as
+              // their AI backend, ship the proxy baseURL + initial Supabase JWT.
+              // The bot constructs the Anthropic SDK with
+              // {baseURL, authToken, apiKey:null} so all Anthropic traffic flows
+              // through Sei's Fly.io proxy (D-40 sub-delivery a). undefined here
+              // means BYOK — bot uses the legacy `apiKey` path.
+              cloudMode,
+              // Phase 18/19: { summary, recent } from the in-app chat, seeded into
+              // the bot's prompt so it knows what you were just talking about. null
+              // when there is no prior chat. See chat/continuity.ts.
+              continuity,
+            },
+            [port2],
+          );
+        } catch (err) {
+          // Child died between spawn and the (post-continuity) post. The 'exit'
+          // handler owns the failure surface; just log.
+          logger.warn(`init postMessage failed for ${characterId}: ${(err as Error).message}`);
+        }
+      })();
     });
 
     // GUI-05: `child.on('error')` covers the rare case where Node emits an
@@ -844,6 +925,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         const ec = classifyChildError(message);
         opts.sendStatus({ kind: 'error', error: ec, message, characterId });
         summonReject(new Error(message));
+      } else {
+        // The bot WAS live (reached summon-ready) and has now exited without
+        // going through `_stop` — a spontaneous end: the player closed their
+        // world, the connection dropped, or the child crashed mid-session.
+        // Nothing else emits a terminal status on this path, so without this the
+        // renderer's `summons[id]` stays stuck at 'online'/'connecting' and the
+        // floating widget keeps a stale "Disconnect" button. Push `idle` so the
+        // widget clears. (A clean `_stop` also emits idle after `exited`
+        // resolves; a duplicate idle is harmless — the delete is idempotent.)
+        opts.sendStatus({ kind: 'idle', characterId });
       }
       // Resolve `exited` only AFTER the playtime write lands. _stop awaits
       // `exited` before emitting the idle status, and the renderer refreshes the
@@ -866,6 +957,31 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         session.resolveExited();
       });
     });
+
+    // BL-01 (Phase 13 REVIEW): wire the 30-min JWT rotation pump for
+    // cloud-proxy sessions. The pump:
+    //   - fires once IMMEDIATELY (seed) to give the bot a fresh JWT,
+    //   - then every 30 min (well within the 1h Supabase JWT expiry),
+    //   - posts `{kind:'cloud-jwt-update', jwt}` onto port1 → bot's
+    //     parentPort handler calls _running.setAuthToken (BL-02 fix).
+    // Lifecycle: the teardown closure is stored on `session` so `_stop`
+    // calls it BEFORE port1.close(). BYOK sessions skip the pump entirely.
+    // Runs AFTER all child event registrations — this `await import` was the
+    // first async gap that could swallow the one-shot 'spawn' event.
+    if (aiBackendKind === 'cloud-proxy') {
+      try {
+        const { setupJwtRotation } = await import('./auth/proxyJwtFetcher');
+        session.teardownJwtRotation = setupJwtRotation(port1);
+      } catch (err) {
+        // The pump is a safety net — if the dynamic import fails for any
+        // reason (path mismatch in a packaged build, module load error),
+        // we log and keep going. The bot will still receive JWTs via
+        // updateJwt() on TOKEN_REFRESHED ticks.
+        logger.warn(
+          `setupJwtRotation failed to load — continuing without rotation pump: ${(err as Error).message}`,
+        );
+      }
+    }
 
     // Wait for summon-ready or fail
     try {
@@ -928,6 +1044,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         );
       }
       for (const session of sessions.values()) {
+        // Track the live kind so updateJwt / the reactive 401 refresh treat
+        // this session as a legitimate JWT consumer from here on (260703).
+        session.backendKind = 'cloud-proxy';
         try {
           session.port1.postMessage({
             type: 'backend-switch',
@@ -962,17 +1081,41 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       let apiKey = '';
       let keyError: unknown = null;
       try {
+        // 260703: a MISSING key gets the same clear INVALID_API_KEY surface as
+        // a cold summon (see _summon) instead of an ENOENT that classifies as
+        // an opaque BOT_CRASH. The SDK still flips to BYOK below either way.
+        if (!(await hasApiKey())) {
+          throw new Error(
+            'LOCAL_NO_API_KEY: Local mode is on but no API key is saved. Add your API key in Settings, or switch to managed billing.',
+          );
+        }
         apiKey = await loadApiKey();
       } catch (err) {
         keyError = err;
       }
       for (const session of sessions.values()) {
+        // 260703 hard guard: flip the tracked kind FIRST so no concurrent
+        // updateJwt tick can post a token to a session that is now BYOK.
+        session.backendKind = 'local';
         if (keyError) {
-          const ec = classifyChildError(keyError);
           const message = (keyError && typeof keyError === 'object' && 'message' in keyError)
             ? String((keyError as { message: unknown }).message)
             : String(keyError);
-          opts.sendStatus({ kind: 'error', error: ec, message, characterId: session.characterId });
+          const ec = message.startsWith('LOCAL_NO_API_KEY')
+            ? ('INVALID_API_KEY' as const)
+            : classifyChildError(keyError);
+          // ADVISORY, not terminal: this session STAYS LIVE — the bot remains
+          // connected in-world and just 401s on its next LLM call. Flag
+          // transient so broadcastStatus does not drop it from onlineIds (which
+          // would silently reroute in-game chat to the standalone brain) or post
+          // a spurious mid-session "played for X" row (260703).
+          opts.sendStatus({
+            kind: 'error',
+            error: ec,
+            message,
+            characterId: session.characterId,
+            transient: true,
+          });
         }
         // Tear down the rotation pump BEFORE flipping the SDK so a pending tick
         // can't post a stray cloud-jwt-update after the switch.
@@ -998,6 +1141,23 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     },
     getActiveIds: () => [...sessions.keys()],
     isActive: (characterId: string) => sessions.has(characterId),
+    /**
+     * Task 4 — route an in-app chat message INTO a live game session so both
+     * surfaces share one conversation (same brain + prompt cache). Posts a
+     * `sei-chat` command over the port; the bot injects it as a priority chat
+     * event and replies back over the `type:'chat'` lifecycle. Returns false
+     * (caller falls back to the standalone chat brain) if no session is live.
+     */
+    sendSeiChat: (characterId: string, payload: { from: string; text: string }): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'sei-chat', from: payload.from, text: payload.text });
+        return true;
+      } catch {
+        return false;
+      }
+    },
     shutdown: async () => {
       await _stopAll(STOP_TIMEOUT_MS);
     },
@@ -1010,6 +1170,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     updateJwt: (jwt: string | null) => {
       latestJwt = jwt;
       for (const session of sessions.values()) {
+        // 260703 hard guard: BYOK sessions never receive the Supabase token —
+        // the bot-side setAuthToken already no-ops without cloudMode, but the
+        // token must not cross into a local child's process at all.
+        if (session.backendKind !== 'cloud-proxy') continue;
         try { session.port1.postMessage({ type: 'jwt', jwt }); }
         catch { /* port closed during teardown; ignore */ }
       }

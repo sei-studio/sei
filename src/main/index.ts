@@ -18,6 +18,7 @@
  */
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { createMainWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { watchLan } from './lanWatcher';
@@ -30,14 +31,21 @@ import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { maybeOfferMoveToApplications, cleanupRelocationLeftover } from './relocate';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability } from '../shared/ipc';
+import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability, type ChatMessage } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
 // (your private personas) out of the shipped build.
-app.setName(app.isPackaged ? 'Sei' : 'Sei Dev');
+//
+// DEV-ONLY: SEI_DEV_USERDATA overrides the dev userData/app name so two dev
+// builds (e.g. this UI-revisions worktree + a separate MC-connecting one) can
+// run side by side. Each distinct name gets its own userData dir, which means a
+// distinct single-instance lock — otherwise the second launch quits. Defaults
+// to "Sei Dev" so normal `npm run dev` is unchanged.
+const devUserData = process.env.SEI_DEV_USERDATA?.trim() || 'Sei Dev';
+app.setName(app.isPackaged ? 'Sei' : devUserData);
 if (!app.isPackaged) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'Sei Dev'));
+  app.setPath('userData', path.join(app.getPath('appData'), devUserData));
 }
 
 // Register the `sei-portrait://` privileged scheme that serves locally-stored
@@ -52,8 +60,8 @@ const logger = {
 };
 
 let mainWindow: BrowserWindow | null = null;
-let latestLanState: LanState = { kind: 'not_connected' };
-let lanWatcherHandle: { stop: () => void } | null = null;
+let latestLanState: LanState = { kind: 'closed' };
+let lanWatcherHandle: ReturnType<typeof watchLan> | null = null;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
 // CustomSkinLoader on the host's MC client. Bound on boot (port 0 → OS-chosen
@@ -82,15 +90,127 @@ function rendererTarget(): string {
 }
 
 function broadcastLan(state: LanState): void {
+  // Transition log (260703): broadcastLan only fires on CHANGE (the watcher's
+  // emit gate), so this is one line per flip — enough to reconstruct exactly
+  // what the companion/pill believed at any moment when triaging "Marv says my
+  // open world is closed" reports.
+  console.log(
+    `[sei/lan] world ${state.kind}` +
+    (state.kind === 'open' ? ` (port=${state.port}, motd=${JSON.stringify(state.motd)})` : ''),
+  );
   latestLanState = state;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.lan.state, state);
   }
 }
 
+/**
+ * Current per-character bot status, maintained by broadcastStatus (idle drops
+ * the key, everything else upserts — same shape the renderer keeps). Backs the
+ * bot:get-statuses snapshot pull: status pushes only fire on TRANSITIONS, so a
+ * renderer that (re)subscribes after 'online' — reload, dev HMR, late mount —
+ * would otherwise never learn a session is live (260703).
+ */
+const currentStatuses = new Map<string, BotStatus>();
+
+/**
+ * Characters whose bot is fully ONLINE (spawned in-world), so a chat message can
+ * be safely routed into that live session (task 4). A merely-'connecting' session
+ * must NOT be routed to — it may never spawn, which would strand the chat's
+ * typing indicator waiting for a reply that never comes.
+ */
+const onlineIds = new Set<string>();
+
+/** Push a chat message (bot reply while in-game, or a system line) to the UI. */
+function pushChatMessage(characterId: string, message: ChatMessage): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.chat.message, { characterId, message });
+  }
+}
+
+/** Persist a pushed chat message to the transcript, then surface it live. */
+async function appendChatMessage(characterId: string, message: ChatMessage): Promise<void> {
+  try {
+    const { appendMessage } = await import('./chat/chatStore');
+    await appendMessage(characterId, message);
+  } catch (err) {
+    console.warn(`[sei] failed to persist pushed chat message: ${(err as Error).message}`);
+  }
+  pushChatMessage(characterId, message);
+}
+
+// Play-session tracking: when a bot goes online we stamp the moment; when it
+// leaves (idle/error) we post a Discord-style "You and X played Minecraft for Y"
+// system row into that character's chat transcript. First-online wins so a
+// mid-session backend-switch re-emit doesn't reset the clock.
+const playStartedAt = new Map<string, number>();
+
+/** Human phrase for a play-session length ("a few seconds" / "N minutes" / "N hours"). */
+function formatPlayDuration(ms: number): string {
+  if (ms < 60_000) return 'a few seconds';
+  if (ms < 3_600_000) {
+    const m = Math.max(1, Math.round(ms / 60_000));
+    return `${m} minute${m === 1 ? '' : 's'}`;
+  }
+  const h = Math.max(1, Math.round(ms / 3_600_000));
+  return `${h} hour${h === 1 ? '' : 's'}`;
+}
+
+/** Post the "You and <name> played Minecraft for <duration>" system row. */
+async function emitPlaySession(characterId: string, durationMs: number): Promise<void> {
+  let name = 'your companion';
+  try {
+    const { getCharacter } = await import('./characterStore');
+    const c = await getCharacter(characterId);
+    if (c?.name) name = c.name;
+  } catch {
+    /* fall back to the generic name */
+  }
+  await appendChatMessage(characterId, {
+    id: randomUUID(),
+    role: 'system',
+    text: `You and ${name} played Minecraft for ${formatPlayDuration(durationMs)}.`,
+    ts: Date.now(),
+    event: { kind: 'play', game: 'minecraft', durationMs },
+  });
+}
+
+// 260703: the "joined your world" system line was removed — the floating
+// SummonedWidget is the live-session surface, so the chat row was redundant.
+
 function broadcastStatus(status: BotStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.bot.status, status);
+  }
+  const id = (status as { characterId?: string }).characterId;
+  if (!id) return;
+  // A TRANSIENT error (BotStatus.error.transient) is advisory: the session is
+  // still live (e.g. a mid-session backend switch to local with no key — the
+  // bot stays connected and just 401s). It must NOT be treated as a session
+  // end. We still upsert it into currentStatuses and forward it to the renderer
+  // above (the model row should surface the "no key" error), but we leave
+  // onlineIds and playStartedAt untouched so chat keeps routing to the live bot
+  // and the eventual REAL end still reports the right total duration (260703).
+  const transientError = status.kind === 'error' && status.transient === true;
+  // Snapshot map for bot:get-statuses — mirror the renderer's summons-map
+  // semantics ('idle' means the session is gone). A transient error still
+  // upserts (renderer keeps showing the error over the still-live session).
+  if (status.kind === 'idle') currentStatuses.delete(id);
+  else currentStatuses.set(id, status);
+  if (transientError) return;
+  // Track online-ness for chat routing (only route to a spawned bot).
+  if (status.kind === 'online') onlineIds.add(id);
+  else onlineIds.delete(id);
+  // Play-session bookkeeping: stamp first-online, and on the terminal
+  // idle/error post a "played for X" row (only if the bot was actually live).
+  if (status.kind === 'online') {
+    if (!playStartedAt.has(id)) playStartedAt.set(id, Date.now());
+  } else if (status.kind === 'error' || status.kind === 'idle') {
+    const startedAt = playStartedAt.get(id);
+    if (startedAt !== undefined) {
+      playStartedAt.delete(id);
+      void emitPlaySession(id, Date.now() - startedAt);
+    }
   }
 }
 
@@ -132,11 +252,11 @@ function broadcastExpansionProgress(ev: ExpansionProgressEvent): void {
 }
 
 function getLanPort(): number | null {
-  return latestLanState.kind === 'connected' ? latestLanState.port : null;
+  return latestLanState.kind === 'open' ? latestLanState.port : null;
 }
 
 function getLanMotd(): string | null {
-  return latestLanState.kind === 'connected' ? latestLanState.motd : null;
+  return latestLanState.kind === 'open' ? latestLanState.motd : null;
 }
 
 async function bootstrap(): Promise<void> {
@@ -378,6 +498,18 @@ async function bootstrap(): Promise<void> {
     // Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
     // renderer over the dedicated vision:capability channel.
     sendVisionCapability: broadcastVisionCapability,
+    // Task 4 — a live in-game bot replied to a message routed in from the chat.
+    // Persist it to the transcript and surface it live (same as a normal reply).
+    onBotChat: (characterId, text) => {
+      const trimmed = (text ?? '').trim();
+      if (!trimmed) return;
+      void appendChatMessage(characterId, {
+        id: randomUUID(),
+        role: 'companion',
+        text: trimmed,
+        ts: Date.now(),
+      });
+    },
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift
@@ -418,6 +550,48 @@ async function bootstrap(): Promise<void> {
     // the renderer via the chars:expansion-progress push channel.
     sendExpansionProgress: broadcastExpansionProgress,
     getLanState: () => latestLanState,
+    // 260703: run one detection pass right now (refreshes latestLanState via
+    // the watcher's emit path). The chat turn awaits this before building the
+    // prompt so the companion answers "is my world open?" from live truth —
+    // the player often messages seconds after clicking "Open to LAN", inside
+    // the 2s poll window, and the stale 'closed' had Marv insisting an open
+    // world was "not broadcasting".
+    refreshLanState: async () => {
+      try { await lanWatcherHandle?.checkNow(); } catch { /* best-effort */ }
+    },
+    // 260703: like refreshLanState but RETURNS the fresh state — backs the
+    // `lan:check-now` channel the summon click awaits. checkNow's emit path
+    // also refreshes latestLanState as a side effect, so the getLanPort() the
+    // actual summon reads is fresh by the time it lands. Falls back to the
+    // cached snapshot on error.
+    checkLanNow: async () => {
+      try {
+        return (await lanWatcherHandle?.checkNow()) ?? latestLanState;
+      } catch {
+        return latestLanState;
+      }
+    },
+    // Snapshot pull for the renderer's summons map (see broadcastStatus).
+    getBotStatuses: () => [...currentStatuses.values()],
+    // Task 4 — only route chat into a bot that's fully spawned in-world.
+    isSessionOnline: (id) => onlineIds.has(id),
+    // A non-blocking chat-launched join failed — tell the COMPANION (task 2,
+    // 260702): its last message said "hopping in", so without a correcting turn
+    // its own history claims it joined and it later insists "i'm already in".
+    // sendLaunchFailedTurn runs a short persona-voiced turn (persisted), and we
+    // push the replies live. No canned system row (task 7) — the companion
+    // reports the failure in its own words.
+    notifyLaunchFailed: (id, reason) => {
+      void (async () => {
+        try {
+          const { sendLaunchFailedTurn } = await import('./chat/chatService');
+          const replies = await sendLaunchFailedTurn(id, reason);
+          for (const r of replies) pushChatMessage(id, r);
+        } catch (err) {
+          console.warn(`[sei] launch-failed companion turn failed: ${(err as Error).message}`);
+        }
+      })();
+    },
   });
 
   // 5b. Auth state broadcast (initial replay + Supabase auth-event

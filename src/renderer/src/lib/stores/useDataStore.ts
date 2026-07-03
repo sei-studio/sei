@@ -61,7 +61,7 @@ interface DataState {
 export const useDataStore = create<DataState>((set) => ({
   characters: [],
   recentlyDeletedIds: new Set<string>(),
-  lan: { kind: 'not_connected' },
+  lan: { kind: 'closed' },
   summons: {},
   logs: [],
   dropped: 0,
@@ -133,18 +133,18 @@ export const useDataStore = create<DataState>((set) => ({
 
 /**
  * Wire push subscriptions from preload into the data store.
- * Called once at App.tsx mount; returns a teardown function.
+ * Returns a teardown function.
  *
  * Per RESEARCH §Resolved Q5: subscriptions live at the STORE level, not inside
  * individual screen components. Navigation cannot drop log lines.
  */
-export function subscribeIpc(): () => void {
+function wireIpc(): () => void {
   const offLan = sei.onLan((state) => useDataStore.getState().setLan(state));
   // Seed the LAN state once the listener is attached. The onLan push only
   // fires on CHANGE, so on a (re)load while a world is already open the store
-  // would otherwise sit at its initial 'not_connected' until the next change.
+  // would otherwise sit at its initial 'closed' until the next change.
   // Pulling the snapshot here (not relying on a replay-push that races this
-  // subscription) fixes "open world → connected → reload → not connected".
+  // subscription) fixes "open world → detected → reload → shows closed".
   void sei
     .getLanState()
     .then((state) => useDataStore.getState().setLan(state))
@@ -173,6 +173,25 @@ export function subscribeIpc(): () => void {
     }
     useDataStore.getState().setStatus(status);
   });
+  // Seed the summons map once the listener is attached (260703). Status pushes
+  // fire only on TRANSITIONS, so a subscriber attaching after a session went
+  // 'online' — full reload, dev HMR re-wire, late mount — would otherwise never
+  // learn it is live (no floating widget, profile stuck on "Play together").
+  // Replace the map wholesale: the snapshot is authoritative, so this also
+  // clears stale entries whose terminal 'idle' push was missed. Optional-call —
+  // a not-yet-reloaded preload without getBotStatuses just skips the seed.
+  void sei
+    .getBotStatuses?.()
+    .then((list) => {
+      const summons: Record<string, BotStatus> = {};
+      for (const st of list) {
+        if (st.characterId && st.kind !== 'idle') summons[st.characterId] = st;
+      }
+      useDataStore.setState({ summons });
+    })
+    .catch(() => {
+      /* leave the push-fed map; the next status transition corrects it */
+    });
   const offLog = sei.onLog((batch) => useDataStore.getState().appendLogBatch(batch));
   // Phase 15 (D-10/VIS-03): mirror the active provider's vision capability into
   // useUiStore so the Settings auto-render toggle (15-05) gates its disabled
@@ -189,4 +208,44 @@ export function subscribeIpc(): () => void {
     offLog();
     offVisionCapability();
   };
+}
+
+/**
+ * At most one live wiring per MODULE INSTANCE. subscribeIpc() (App.tsx mount,
+ * StrictMode re-runs) swaps the active wiring instead of stacking; the returned
+ * teardown is idempotent.
+ */
+let activeTeardown: (() => void) | null = null;
+
+export function subscribeIpc(): () => void {
+  activeTeardown?.();
+  const off = wireIpc();
+  let done = false;
+  const teardown = (): void => {
+    if (done) return;
+    done = true;
+    off();
+    if (activeTeardown === teardown) activeTeardown = null;
+  };
+  activeTeardown = teardown;
+  return teardown;
+}
+
+// Self-subscribe at module scope (260703). App.tsx's mount effect used to be
+// the only subscriber — but when Vite HMR re-executes THIS module (editing this
+// file, or a store it imports, while the app runs), `create()` builds a fresh
+// store that every re-imported component reads, while App's old effect keeps
+// feeding the ORPHANED previous instance. Result: bot:status/lan pushes landed
+// in a dead store — a chat-launched session showed no popup and the profile
+// stayed on "Play together". Wiring here runs on every (re)execution, so the
+// instance components read is always the instance the pushes feed (and the
+// snapshot seeds above backfill anything missed in between). App.tsx's
+// subscribeIpc() call remains as the production-path subscription; it swaps
+// this wiring rather than duplicating it. Guarded: under vitest/jsdom the
+// preload bridge is absent or a partial stub, and importing this module must
+// not throw — App.tsx wires it on mount in that world.
+try {
+  if (typeof window !== 'undefined' && window.sei) subscribeIpc();
+} catch {
+  /* partial bridge (tests) — App.tsx's mount call owns the wiring there */
 }

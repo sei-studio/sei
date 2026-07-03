@@ -1,0 +1,183 @@
+/* GamesPickerModal — tiled game grid (Phase 18/19).
+ * Sharp, borderless tiles (per UI-DESIGN-SYSTEM): a surface fill that lights to
+ * accent-soft on hover, no boxy outlines, no status badges. Token colors only. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fade 220ms ease both;
+}
+
+.modal {
+  width: 560px;
+  max-width: calc(100vw - 64px);
+  max-height: calc(100vh - 64px);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  animation: fade-up 280ms var(--ease-pop) both;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  padding: var(--space-lg) var(--space-lg) var(--space-sm);
+}
+
+.title {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin: 0;
+}
+
+.subtitle {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  margin: var(--space-xs) 0 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg) var(--space-lg);
+  overflow-y: auto;
+}
+
+/* Tile = borderless surface card; the (i) button overlays its top-right. */
+.tile {
+  position: relative;
+  background: var(--surface-2);
+  transition: background 140ms var(--ease);
+}
+
+.tile:not(.tileLocked):not(.tileImage):hover {
+  background: var(--accent-soft);
+}
+
+/* Image tile (e.g. Minecraft) — full-bleed art with a bottom scrim so the name
+ * stays legible, matching the character cards. */
+.tileImage {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.tileImage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 8, 10, 0.2) 0%,
+    transparent 38%,
+    rgba(6, 6, 8, 0.88) 100%
+  );
+}
+
+.tileImage:not(.tileLocked):hover {
+  filter: brightness(1.08);
+}
+
+/* Name pinned bottom-left over the scrim, white regardless of theme. */
+.tileImage .tileMain {
+  position: relative;
+  z-index: 1;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: var(--space-md);
+}
+
+.tileImage .tileName {
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.tileMain {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-lg) var(--space-md-plus);
+  min-height: 128px;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tileLocked {
+  opacity: 0.5;
+}
+
+.tileLocked .tileMain {
+  cursor: default;
+}
+
+.tileIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+}
+
+.tileLocked .tileIcon {
+  color: var(--muted);
+}
+
+.tileName {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Top-right (i) — borderless quiet icon button (→ accent on hover). */
+.infoBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  bottom: var(--space-sm);
+  right: var(--space-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.infoBtn:hover {
+  color: var(--accent);
+}
+
+/* Over art, the (i) sits above the scrim and reads white. */
+.tileImage .infoBtn {
+  z-index: 2;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.tileImage .infoBtn:hover {
+  color: #fff;
+}

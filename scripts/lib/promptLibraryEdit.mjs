@@ -26,6 +26,16 @@ export const LIBRARY_LAYOUT = [
     ['EXPLORE_DESCRIPTION_NOVISION', 'explore() description (no vision)'],
     ['ACTION_DESCRIPTIONS', 'Action description'],
     ['EVENT_GUIDANCE', 'Event guidance'],
+    // Event framing whose functions interpolate dynamic bits — the editable
+    // PROSE lives in these string constants (the functions just fill {tokens}).
+    ['ATTACKED_ADDENDUM_PVP', 'Attacked framing (PvP off)'],
+    ['ATTACKED_ADDENDUM_MOB', 'Attacked framing (mob)'],
+    ['REFLEX_ADDENDUM_TEXT', 'Reflex warning'],
+    ['REFLEX_NOTICED_YES', 'Reflex · noticed you'],
+    ['REFLEX_NOTICED_NO', 'Reflex · not noticed'],
+    ['IDLE_TICK_TEXT', 'Idle tick framing'],
+    ['IDLE_STUCK_NUDGE_VISION', 'Idle stuck nudge (vision)'],
+    ['IDLE_STUCK_NUDGE_NOVISION', 'Idle stuck nudge (no vision)'],
   ] },
   { section: 'Personality & tools', items: [
     ['SPEAK_REMINDER', 'Speak reminder'],

@@ -15,7 +15,7 @@
 import { createOrchestrator } from './orchestrator.js'
 import { createSessionState } from './sessionState.js'
 import { loadPlayer, savePlayer, formatPlayerSeedBlock } from './memory/player.js'
-import { Priority, createPriorityQueue } from './fsm.js'
+import { Priority, createPriorityQueue, attackedPriority } from './fsm.js'
 import { idleCadenceMs } from './prompts.js'
 
 const REQUIRED_ADAPTER_MEMBERS = [
@@ -49,7 +49,7 @@ function assertAdapter(adapter) {
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [args.logger]
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
-export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null }) {
+export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null }) {
   assertAdapter(adapter)
 
   // ── Memory layer ────────────────────────────────────────────────────
@@ -95,6 +95,11 @@ export async function start({ config, adapter, logger = console, onTerminalError
       switch (event) {
         case 'sei:attacked':       p = Priority.P0_SAFETY; break
         case 'sei:chat_received':  p = Priority.P1_CHAT; break
+        // A death is worth a prompt turn + a say(), but must NOT outrank a real
+        // P0 safety event — route at conversation tier (mirrors the reflex
+        // reasoning on attackedPriority). Used when the orchestrator re-fires a
+        // death that arrived mid-loop (see handleDispatch's single-flight case).
+        case 'sei:death':          p = Priority.P1_CHAT; break
         // 260514-ngj: sei:joined retired — spawn first-fire enqueues
         // sei:idle (P3) instead. Routing left absent on purpose so a
         // stray sei:joined would land at default (P2_MOVEMENT) and surface
@@ -134,6 +139,10 @@ export async function start({ config, adapter, logger = console, onTerminalError
     reenqueue,
     onTerminalError,
     onAuthExpired,
+    // Task 4 — where to send a reply when the turn was triggered by a Sei-chat
+    // message (route to chat surface), and how to honor a quit() tool call.
+    onSeiChatReply,
+    onQuitRequested,
   })
 
   // ── Build the priority queue with the orchestrator's handleDispatch ─
@@ -192,7 +201,25 @@ export async function start({ config, adapter, logger = console, onTerminalError
       })
     },
     onAttacked: (evt) => {
-      queue.enqueue(Priority.P0_SAFETY, 'sei:attacked', evt)
+      // Tier by attackerKind: a reflex (proactive threat warning — the bot was
+      // NOT hit) is conversation-tier (P1_CHAT) so it never preempts/aborts a
+      // player-chat reply; a real attack (player/mob) stays safety-tier
+      // (P0_SAFETY). The event NAME stays 'sei:attacked' — downstream dispatch
+      // and the reflex-vs-attack prompt framing key on attackerKind, not the
+      // name. See attackedPriority in ./fsm.js.
+      queue.enqueue(attackedPriority(evt), 'sei:attacked', evt)
+    },
+    onDeath: (evt) => {
+      // The player killed the bot (or it fell/burned/etc). Enqueue a real
+      // prompt turn so the model reacts in character and can decide whether to
+      // recover its dropped items — the old code only logged + respawned, so
+      // the next turn showed full hp / empty inventory with no explanation and
+      // the model confabulated. P1_CHAT: earns a say() without preempting a
+      // genuine P0 attack. The FSM serializes this against the respawn spawn
+      // (onSpawn is greeting-guarded and only enqueues on the FIRST spawn), so
+      // there's no double-fire / race. evt.pos is the death location (may be
+      // null if the entity position was unreadable).
+      queue.enqueue(Priority.P1_CHAT, 'sei:death', { pos: evt?.pos ?? null })
     },
     onSpawn: () => {
       // D-57: deferred player-presence check after spawn settles.
@@ -242,6 +269,31 @@ export async function start({ config, adapter, logger = console, onTerminalError
   logger.info?.('[CONSOLE] [sei] Sei online.')
 
   return {
+    // Task 4 — deliver a message that arrived over Sei chat (player is NOT
+    // in-game) as a priority chat event on THIS session, framed so the bot knows
+    // it's out-of-band and that quit() leaves the game. Its reply routes back to
+    // the chat surface via onSeiChatReply (see orchestrator._emitSayLine).
+    deliverSeiChat({ from, text } = {}) {
+      const raw = String(text ?? '').trim()
+      if (!raw) return
+      const who = String(from || 'The player')
+      const framed =
+        `${who} messaged you through Sei chat — they are NOT in the game with you right now. ` +
+        `They said: "${raw}". Reply to them in chat. If you would rather stop playing to talk, call quit().`
+      try { orchestrator.recordIncomingChat?.(who, raw) } catch {}
+      try {
+        queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
+          username: who,
+          message: framed,
+          text: framed,
+          addressed: true,
+          playerSpoke: true,
+          seiChat: true,
+        })
+      } catch (err) {
+        logger.warn?.(`[sei/brain] deliverSeiChat enqueue failed: ${err.message}`)
+      }
+    },
     async stop() {
       // Order matters. dispose() FIRST flips the FSM's `disposed` flag (so the
       // sei:action_complete that an action-abort fires is dropped, not

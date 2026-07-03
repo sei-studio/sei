@@ -19,6 +19,7 @@ import {
   PERSONALITY_TOOL_DESCRIPTIONS,
   NUDGES,
   SPEAK_REMINDER,
+  GREETING_HINT,
   renderPersona,
   renderHeartbeat,
   renderProactivenessDirective,
@@ -91,6 +92,24 @@ export function splitChatMessages(line) {
     .split(/\s*[—–]\s*|(?<=[.?!])\s+/)
     .map((seg) => seg.trim().replace(/[.\s]+$/, '').trim())
     .filter(Boolean)
+}
+
+// "Realistic typing" pacing (Appearance & feel toggle, config.realistic_typing).
+// Mirrors the in-app chat store (src/renderer/.../useChatStore.ts): chars/sec ≈
+// wpm * 5 / 60 for a very fast typist (~200 wpm) and a faster-than-average reader
+// (~300 wpm), clamped so the delay stays snappy and bounded no matter the
+// length. typingDelayMs keys ONLY on the say() output; readingDelayMs keys ONLY
+// on the parsed player message — never the full in-game prompt or the model's
+// scratchpad. Empty text → 0 (e.g. an idle-triggered say has no message to read).
+export function typingDelayMs(text) {
+  const len = String(text ?? '').length
+  if (!len) return 0
+  return Math.min(5000, Math.max(500, Math.round((len / 16.67) * 1000)))
+}
+export function readingDelayMs(text) {
+  const len = String(text ?? '').length
+  if (!len) return 0
+  return Math.min(2500, Math.max(300, Math.round((len / 25) * 1000)))
 }
 
 // 260616→260617: speech is now gated through the say() TOOL (see personalityTools
@@ -166,7 +185,7 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
 // → continueLoop=false → the loop ends (say is "silence" for loop purposes:
 // it speaks, but it never keeps the bot busy on its own — see the
 // `continueLoop = movementCalls.length > 0` gate in runIterations).
-const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say'])
+const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
@@ -182,6 +201,36 @@ const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 let _TICK_INTERVAL_MS = 30_000
 export function _setTickIntervalForTests(ms) { _TICK_INTERVAL_MS = ms }
 export function _getTickIntervalForTests() { return _TICK_INTERVAL_MS }
+
+/**
+ * D-08 procedural memory write-back. When a progression milestone newly
+ * completes, record its terse known-good `procedure` ONCE into the per-world
+ * MEMORY.md — reusing the existing remember-handler pattern (append + the
+ * byte-threshold compaction trigger) — so future turns retrieve the procedure
+ * instead of re-deriving it. Deduped by node id via a session-scoped Set so the
+ * same procedure is never appended twice in a world/session. Best-effort and
+ * non-fatal: any error is swallowed (logged) and never breaks the seed path.
+ *
+ * @param {{ id?: string, procedure?: string }|null} node  the completed node
+ * @param {{ memoryLog?: object, written?: Set<string>, memoryCompactor?: object, logger?: object }} [deps]
+ * @returns {Promise<boolean>}  true iff a procedure was appended this call
+ */
+export async function appendProcedureOnce(node, { memoryLog, written, memoryCompactor, logger } = {}) {
+  try {
+    const id = node?.id
+    const procedure = String(node?.procedure ?? '').trim()
+    if (!id || !procedure) return false
+    if (written?.has?.(id)) return false
+    await memoryLog?.append?.(procedure, new Date())
+    written?.add?.(id)
+    memoryCompactor?.maybeCompact?.().catch?.(err =>
+      logger?.warn?.(`[sei/orch] memoryCompactor.maybeCompact failed: ${err?.message ?? err}`))
+    return true
+  } catch (err) {
+    logger?.warn?.(`[sei/orch] procedural write-back failed: ${err?.message ?? err}`)
+    return false
+  }
+}
 
 // Fixed cadence for the 'continuous' Looking mode's automatic view, in TURNS
 // (LLM calls) — frames only ride turns that already happen, so turn count is
@@ -323,6 +372,71 @@ export async function composeSeedBlocks({
       }
     }
   }
+  // Phase 18/19: in-app chat continuity. When the player summoned this bot from
+  // a text chat, the supervisor seeds { summary, recent } so the companion opens
+  // the session knowing what you were just talking about (cross-surface memory).
+  try {
+    const cont = config?._seiContinuity
+    if (cont && (cont.summary || (Array.isArray(cont.recent) && cont.recent.length))) {
+      // 260703: anchor the handoff in real elapsed time. Without this the bot
+      // treated a chat exchange from 30 seconds ago like ancient history
+      // ("how'd that connection issue treat you" — it was one minute old).
+      // Computed ONCE per session (from the newest chat ts vs join time) so
+      // the seed block stays byte-stable across loops for the prompt cache.
+      let lead = 'You were just texting with the player in the app, before joining this world. Continue as the same person — do not act like you only just met.'
+      try {
+        // Memoized on config: computed once at the session's first seed build,
+        // then reused verbatim so the block stays byte-stable for the prompt
+        // cache (a live Date.now() here would re-word itself every minute).
+        if (typeof config._seiContinuityLead === 'string') {
+          lead = config._seiContinuityLead
+        } else {
+          const newestTs = (cont.recent ?? [])
+            .map((m) => (typeof m?.ts === 'number' ? m.ts : 0))
+            .reduce((a, b) => Math.max(a, b), 0)
+          if (newestTs > 0) {
+            const gapMin = Math.max(0, Math.round((Date.now() - newestTs) / 60_000))
+            const gapPhrase =
+              gapMin < 3 ? 'moments'
+              : gapMin < 60 ? `about ${gapMin} minutes`
+              : gapMin < 1_440 ? `about ${Math.round(gapMin / 60)} hour${Math.round(gapMin / 60) === 1 ? '' : 's'}`
+              : `about ${Math.round(gapMin / 1_440)} day${Math.round(gapMin / 1_440) === 1 ? '' : 's'}`
+            lead =
+              `You were texting with the player in the app ${gapPhrase} before joining this world. ` +
+              'Continue as the same person — do not act like you only just met.' +
+              (gapMin < 3
+                ? ' That conversation is only moments old — pick it up mid-thread; do not greet or reminisce like time has passed.'
+                : '')
+          }
+          config._seiContinuityLead = lead
+        }
+      } catch {}
+      const parts = [lead]
+      if (cont.summary && cont.summary.trim()) {
+        parts.push('\nEarlier conversation summary:\n' + cont.summary.trim())
+      }
+      if (Array.isArray(cont.recent) && cont.recent.length) {
+        // 260703: stamp each line with its send time so the bot can feel the
+        // gap between the chat and now ("hop on" said overnight vs just now).
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        const stamp = (ts) => {
+          if (typeof ts !== 'number' || !Number.isFinite(ts)) return ''
+          const d = new Date(ts)
+          const hh = String(d.getHours()).padStart(2, '0')
+          const mm = String(d.getMinutes()).padStart(2, '0')
+          return ` (${d.getDate()} ${months[d.getMonth()]} ${hh}:${mm})`
+        }
+        const lines = cont.recent
+          .filter((m) => m && typeof m.text === 'string')
+          .map((m) => `${m.role === 'user' ? 'Player' : 'You'}${stamp(m.ts)}: ${m.text}`)
+          .join('\n')
+        if (lines) parts.push('\nThe last things you said to each other:\n' + lines)
+      }
+      blocks.push({ type: 'text', name: 'chat_continuity', text: parts.join('\n') })
+    }
+  } catch (err) {
+    logger.warn?.(`[sei/orch] continuity inject failed: ${err && err.message}`)
+  }
   // Heartbeat: persisted goals + reachable frontier ONLY. The proactiveness
   // directive used to lead this block, but it is static for the session, so it
   // moved to the cached system prefix (renderProactivenessDirective, wired in
@@ -413,7 +527,7 @@ export async function composeSeedBlocks({
  *   priority queue. Required when the brain runs in production; defaults
  *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, _anthropicOverride = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, _anthropicOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
   // 260618: roster of OTHER AI companion usernames in this world (multi-bot
   // sessions). Pushed from main via {type:'roster'} → brain.setCompanions →
@@ -505,6 +619,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // { id, text, label } or null.
   const progressionFlags = { entered_nether: false, entered_end: false, killed_dragon: false }
   let activeFrontierGoal = null
+  // 17-04 (D-08): node ids whose known-good `procedure` has already been written
+  // to per-world memory this session — dedupes the procedural write-back so a
+  // milestone records its procedure at most once.
+  const writtenProcedures = new Set()
   const personalityBucket = createTokenBucket({
     capacity: config.llm.rate_limit_per_min,
     refillPerMin: config.llm.rate_limit_per_min,
@@ -536,16 +654,32 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // than landing in the same tick (and so a slow chat queue keeps their order).
   // Each message is logged + recorded to convo memory in order. Empty input
   // (e.g. telemetry filtered to '') sends nothing.
-  function emitChatMessages(line) {
+  // 260703: when the last message of a staggered batch will actually hit the
+  // socket. quit() consults this so teardown doesn't race the goodbye — the
+  // observed failure: say("nope. …. see you on the other side.") split into
+  // three staggered messages + quit() in the same batch; the disconnect fired
+  // before the +550ms timers, so the player got just "nope" and he left.
+  let _lastChatSendDeadline = 0
+
+  // leadMs — "Realistic typing" delay before the FIRST segment hits the socket
+  // (0 when the toggle is off, preserving the old instant behavior). The
+  // per-segment 550ms stagger still rides on top. The quit() goodbye race guard
+  // (_lastChatSendDeadline) includes leadMs so teardown waits for the delayed
+  // line. Note: with a lead delay, a suspending world action dispatched right
+  // after emitSayCalls may begin before the words land — acceptable (and arguably
+  // realistic) for this opt-in mode; quit() is the one teardown that waits.
+  function emitChatMessages(line, leadMs = 0) {
     const msgs = splitChatMessages(line)
+    if (msgs.length) _lastChatSendDeadline = Date.now() + leadMs + (msgs.length - 1) * 550
     msgs.forEach((msg, i) => {
       const send = () => {
         logChatOut(msg)
         try { adapter.chat(msg) } catch {}
         convoMemory.recentChat.pushSelf(config.persona.name, msg)
       }
-      if (i === 0) send()
-      else setTimeout(send, i * 550)
+      const at = leadMs + i * 550
+      if (at <= 0) send()
+      else setTimeout(send, at)
     })
   }
 
@@ -581,10 +715,38 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (suppressed) {
       logger.info?.(`[sei/orch] dedupeSay suppressed loop_end duplicate (loop=${loop.id}): ${line.slice(0, 80)}`)
       // A real (deduped) attempt still consumes the slot — a repeat must not
-      // open the door to a second line.
+      // open the door to a second line. It also counts as having spoken for
+      // the player-message silence guard (the line IS already in chat).
+      loop._spokeThisLoop = true
       return { emitted: true, content: 'said (suppressed duplicate of your last line)' }
     }
-    emitChatMessages(line)
+    // 260703: track per-loop speech so a player-message loop can refuse to
+    // end silently (see the end_loop deferral in the dispatch predicates).
+    loop._spokeThisLoop = true
+    // 260703: any line actually reaching the player counts as this session's
+    // greeting — stop injecting the sticky GREETING_HINT from here on.
+    greetedPlayer = true
+    // Task 4 — if this turn was triggered by a message from Sei chat (the player
+    // is not in-game), route the reply UP to the chat surface instead of
+    // speaking it in-world. Still logged + recorded to convo memory for
+    // continuity, just delivered over the port rather than bot.chat.
+    if (loop._triggerData?.seiChat && typeof onSeiChatReply === 'function') {
+      try { logChatOut(line) } catch {}
+      try { onSeiChatReply(line) } catch (err) { logger.warn?.(`[sei/orch] onSeiChatReply failed: ${err?.message ?? err}`) }
+      try { convoMemory.recentChat.pushSelf(config.persona.name, line) } catch {}
+      lastActionResult = 'said (sei chat)'
+      return { emitted: true, content: 'sent to chat' }
+    }
+    // "Realistic typing" (config.realistic_typing): delay the in-world line as if
+    // the bot read the player's message and then typed the reply. Reading keys on
+    // the PARSED player message only (loop._triggerData.text — not the full
+    // prompt), typing keys on the say() LINE only (not the scratchpad or other
+    // tool calls). Non-chat triggers (idle/attack) have no player text → reading
+    // is 0 and only the typing stagger applies. Off → 0 (unchanged instant send).
+    const leadMs = config.realistic_typing
+      ? readingDelayMs(loop?._triggerData?.text) + typingDelayMs(line)
+      : 0
+    emitChatMessages(line, leadMs)
     lastActionResult = 'said'
     return { emitted: true, content: 'said' }
   }
@@ -620,6 +782,23 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // is dropped with a structured warn (defense-in-depth; the FSM should
   // already prevent it).
   let currentLoop = null
+  // 260703: sticky greeting. The full FIRST CONTACT block rides only the first
+  // idle tick (reason:'just_connected_first_spawn'); when that loop is preempted
+  // (attack, chat) before the model replies, the greet instruction is gone and
+  // the player meets a session with no hello. greetedPlayer flips true the first
+  // time ANY say() line actually reaches chat this session (_emitSayLine — a
+  // quit farewell counts, since it rides the same pipe); until then every
+  // composed turn's event/nudge text carries the SHORT GREETING_HINT instead.
+  // Per-session (orchestrator-instance) state, never reset per loop. Skipped
+  // when the full FIRST CONTACT block is already present so the first idle tick
+  // never double-injects.
+  let greetedPlayer = false
+  function withGreetingHint(text) {
+    if (greetedPlayer) return text
+    const t = String(text ?? '')
+    if (t.includes('FIRST CONTACT')) return t
+    return `${t}\n\n${GREETING_HINT}`
+  }
   // Pending interrupt blocks supplied via abort signal — picked up by the
   // catch arm to render the PLAYER INTERRUPT user turn.
   let pendingInterrupt = null
@@ -709,7 +888,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     logger.warn?.(`[sei/orch] rate-limited (429) — re-driving ${trig} in ${waitMs}ms (attempt ${_redriveStreak}/3)`)
     _redriveTimer = setTimeout(() => {
       _redriveTimer = null
-      try { reenqueue(trig, trigData, trig === 'sei:attacked' ? 0 : 1) } catch (e) {
+      // A REAL attack redrives at P0; a reflex-tagged attack (proactive warning)
+      // stays conversation-tier (P1) so a rate-limit redrive can't promote it
+      // above pending player chat. Chat/other triggers redrive at P1.
+      const redrivePriority = (trig === 'sei:attacked' && trigData?.attackerKind !== 'reflex') ? 0 : 1
+      try { reenqueue(trig, trigData, redrivePriority) } catch (e) {
         logger.warn?.(`[sei/orch] rate-limit redrive re-enqueue failed: ${e.message}`)
       }
     }, waitMs)
@@ -790,6 +973,35 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       name: 'end_loop',
       description: PERSONALITY_TOOL_DESCRIPTIONS.end_loop,
       input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    },
+    {
+      // Task 4 — leave the game entirely. Ends this in-game session (the bot
+      // disconnects from the world); the player can still chat with it from Sei.
+      // Use only when the player clearly wants you to stop playing / log off —
+      // NOT for pausing an action (that's end_loop). Say a goodbye first.
+      name: 'quit',
+      description:
+        'Leave the Minecraft game and disconnect from the world, ending this play session. ' +
+        'Use only when the player wants you to stop playing or log off — not to pause a task (use end_loop for that). ' +
+        'You are playing in the player\'s LAN world, so you cannot stay on if they leave: if the player says they want to leave or stop playing, that means you will need to quit too and continue next time. ' +
+        'Put your goodbye in the `farewell` field — it is spoken to chat for you as you leave, so do NOT also call say(). ' +
+        'Calling quit means you ARE leaving: the farewell must read as a goodbye, never "no" or "I\'m staying". ' +
+        'If you intend to stay, do not call quit. You can still be reached in Sei chat afterward.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          // 260703: the goodbye lives INSIDE the leave action. When it was a
+          // separate say() call, the model could (and did) put one stance in
+          // each — say("nope … i'm staying") + quit() — because nothing tied
+          // the two together. A farewell that is definitionally "the thing you
+          // say as you log off" cannot claim to stay.
+          farewell: {
+            type: 'string',
+            description: 'Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving.',
+          },
+        },
+        additionalProperties: false,
+      },
     },
   ]
 
@@ -1127,6 +1339,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // Neutral note: renderHeartbeat's per-level frontier framing decides
       // whether to PROMPT a new pick (agentic) or just stay aware (passive/reactive).
       justCompletedNote = `\n\nPROGRESS: you just finished "${label}" — that goal is done and has been cleared from your heartbeat.`
+      // D-08 procedural memory write-back: record the completed milestone's
+      // known-good procedure once to per-world memory (append + compaction
+      // trigger, deduped by node id). Best-effort — never breaks the seed path.
+      await appendProcedureOnce(activeFrontierGoal, {
+        memoryLog, written: writtenProcedures, memoryCompactor, logger,
+      })
       activeFrontierGoal = null
     }
     const frontierText = (prog?.frontier ?? []).map(n => n.label).join(' · ')
@@ -1177,13 +1395,20 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // matches the silent action-tick monitor — it just carries the player's words.
   function interruptTurnText(loop, chatText, who = null) {
     const action = extractPriorTask(loop)
-    return NUDGES.actionTurn({
+    // 260703: a fresh player line resets the per-loop "have I spoken since
+    // the player's latest message" flag — the silence backstop (scratchpad
+    // salvage at end_loop) keys off it, and a say() from BEFORE this
+    // interrupt doesn't count as answering it.
+    if (chatText && String(chatText).trim()) loop._spokeThisLoop = false
+    // 260703: mid-loop interrupt turns carry the sticky greet hint too (no-op
+    // once a say() line has reached chat this session).
+    return withGreetingHint(NUDGES.actionTurn({
       action,
       stopTool: stopToolForAction(action),
       playerLine: chatText ?? '',
       who: who ?? null,
       visionOff: _visionMode() === 'off',
-    })
+    }))
   }
 
   // 260514-gam D1 (B/A/A locked): every world-touching tool dispatches
@@ -1210,7 +1435,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // the action, and a say()-only batch suspends on nothing. Its result is
   // actually pre-filled up front by emitSayCalls (so speech lands before any
   // action dispatches); the executeInlineMetadata `say` branch is a fallback.
-  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say'])
+  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -1518,6 +1743,28 @@ function maybeWarnByteCap(loop, warned) {
         await teardownLoop(dyingLoop)
         return
       }
+      if (event === 'sei:death') {
+        // 260703 (death→brain): the player killed us mid-action. A death must
+        // still reach the model, so mirror the sei:attacked teardown-and-refire
+        // above: abort the in-flight action + the loop, tear the loop down
+        // (clears currentLoop), then re-fire sei:death as a fresh dispatch —
+        // this time it lands in the fresh-loop branch and opens a clean turn.
+        // Re-fired at P1_CHAT (conversation tier), never P0, so it does not
+        // outrank a genuine safety event. Kept minimal and separate from the
+        // interrupt / action_complete handling to avoid churn there.
+        const dyingLoop = currentLoop
+        if (dyingLoop.inFlight) {
+          clearActionTick(dyingLoop.inFlight)
+          try { dyingLoop.inFlight.abortController.abort() } catch {}
+        }
+        try { dyingLoop.abortController.abort() } catch {}
+        terminateLoop(dyingLoop, 'death-preempt')
+        await teardownLoop(dyingLoop)
+        try { reenqueue('sei:death', data, 1 /* Priority.P1_CHAT */) } catch (err) {
+          logger.warn?.(`[sei/orch] sei:death re-enqueue failed: ${err.message}`)
+        }
+        return
+      }
       logger.warn(`[sei/orch] dispatch ${event} arrived while loop active — dropping`)
       return
     }
@@ -1604,7 +1851,9 @@ function maybeWarnByteCap(loop, warned) {
         const opener = (fromTeammate && speakerName)
           ? `your teammate ${speakerName} just spoke to you`
           : 'the player just spoke to you'
-        playerMessageText = `${opener}. respond to THIS, not to the scene around you:\n"${String(data?.text ?? '').trim()}"`
+        playerMessageText = `${opener}. respond to THIS, not to the scene around you:\n"${String(data?.text ?? '').trim()}"\n` +
+          'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
+          'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them.'
         eventText = `Event: ${event}${eventAddendum}`
       } else {
         eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
@@ -1626,6 +1875,10 @@ function maybeWarnByteCap(loop, warned) {
     const { frontierText: progFrontierText, justCompletedNote: progCompletedNote } =
       await refreshProgressionForSeed()
     if (progCompletedNote) eventText += progCompletedNote
+    // 260703: sticky greeting — until a say() line has actually reached chat
+    // this session, every fresh-loop seed carries the short greet hint (no-op
+    // once greeted, and skipped when the full FIRST CONTACT block is present).
+    eventText = withGreetingHint(eventText)
     if (sessionState && playerStore) {
       let seedBlocks
       try {
@@ -1715,6 +1968,62 @@ function maybeWarnByteCap(loop, warned) {
   }
 
   /**
+   * 260703-fix (b): when a loop tears down while a batched tool dispatch is
+   * still mid-drain, it can leave un-dispatched, model-ordered tools stranded on
+   * `loop._pendingToolUses` (e.g. the 3 remaining diamond-armor equips in the
+   * 260703 incident: the batch dispatched the helmet, and the loop then died
+   * before its action_complete drained the rest). Those are actions the model
+   * committed to in THIS single turn and the player is actively watching for.
+   *
+   * Chosen semantics: EXECUTE the abandoned world-acting tools, do not silently
+   * drop them. They are already model-ordered, so we just run them directly
+   * through the registry — with NO further LLM call and NO action_complete
+   * re-enqueue (the loop is gone; there is nothing to resume or narrate). This
+   * keeps the "one haiku per logical turn" invariant (we add ZERO haiku calls)
+   * while still honoring the turn the model already decided on.
+   *
+   * Only world-acting tools are drained. Inline metadata
+   * (say/remember/forget/setGoal/clearGoal/end_loop/quit) is loop-local
+   * bookkeeping — say() already emitted up front, and the rest dies with the
+   * loop with no player-visible effect worth reviving.
+   *
+   * Reason-agnostic on purpose: the same drain is correct whether the teardown
+   * came from an error/timeout/terminal death (the incident's now-also-prevented
+   * root cause) or a P0-attack preempt — arming the armor the model just called
+   * for is, if anything, MORE desirable the instant you take a hit. The fresh
+   * loop the attack reseeds is a separate concern; equips don't move the bot and
+   * are effectively idempotent, so a rare overlap is a harmless no-op. Execution
+   * is sequential + detached so a slow action can't hold up teardown and two
+   * equips can't race; each action's own wall-clock timeout still bounds it.
+   */
+  function drainPendingToolsOnTeardown(loop) {
+    const queue = loop?._pendingToolUses
+    loop._pendingToolUses = null
+    loop._pendingActionUse = null
+    loop._pendingResults = null
+    if (!Array.isArray(queue) || queue.length === 0) return
+    const worldTools = queue.filter(e => e && e.use && !isInlineMetadata(e.use.name))
+    if (worldTools.length === 0) return
+    const names = worldTools.map(e => e.use.name).join(', ')
+    logger.warn?.(`[sei/orch] loop ${loop.id} tore down mid-batch with ${worldTools.length} undispatched tool(s) [${names}] — draining directly (no LLM) so the player's ordered actions still happen`)
+    // Surface the drain in the snapshot line too, so the next loop's model sees
+    // that these actions were finished after the turn ended rather than dropped.
+    lastActionResult = `finishing queued actions after the turn ended: ${names}`
+    void (async () => {
+      for (const entry of worldTools) {
+        try {
+          const r = await registry.execute(entry.use.name, entry.use.input, null, {
+            ...config, signal: new AbortController().signal,
+          })
+          try { logActionResult(entry.use.name, r) } catch {}
+        } catch (err) {
+          logger.warn?.(`[sei/orch] post-teardown drain ${entry.use.name} failed: ${err?.message ?? err}`)
+        }
+      }
+    })()
+  }
+
+  /**
    * 260513-wkd: tear down a terminal loop. Idempotent — repeat calls are
    * no-ops (guarded by loop._tornDown). Runs the loop-history push,
    * sei:loop_terminal re-enqueue, currentLoop=null reset, and pendingAttack
@@ -1727,6 +2036,10 @@ function maybeWarnByteCap(loop, warned) {
     loop._tornDown = true
     const event = loop._originatingEvent ?? 'unknown'
     logger.info?.(`[sei/orch] loop terminal (id=${loop.id}, iterations=${loop.iterationCount})`)
+    // 260703-fix (b): finish any model-ordered batch tools stranded by an
+    // abnormal teardown (see drainPendingToolsOnTeardown). No-op in the common
+    // case (pending queue already drained → null), so it never double-executes.
+    drainPendingToolsOnTeardown(loop)
     // VIS-02 delivery guard: a frame was attached to this loop's history but
     // no LLM call succeeded afterwards (e.g. the post-visualize continuation
     // died on a 404→502 chain, 260610) — the model never saw it, and the
@@ -1797,7 +2110,15 @@ function maybeWarnByteCap(loop, warned) {
     if (pendingAttack) {
       const pa = pendingAttack
       pendingAttack = null
-      try { reenqueue('sei:attacked', pa.data, 0 /* Priority.P0_SAFETY */) } catch (err) {
+      // A reflex that landed mid-loop was folded into pendingAttack above; it
+      // must re-fire at conversation tier (P1_CHAT), NOT P0. Re-firing a
+      // proactive warning at P0 here would be a side door that promotes it back
+      // above pending player chat — the exact preemption the P1 routing avoids.
+      // A real attack (player/mob) still re-fires at P0_SAFETY. Mirrors
+      // attackedPriority(); kept as a literal because reenqueue takes a raw
+      // priority and orchestrator.js does not import from fsm.js.
+      const refirePriority = pa.data?.attackerKind === 'reflex' ? 1 /* P1_CHAT */ : 0 /* P0_SAFETY */
+      try { reenqueue('sei:attacked', pa.data, refirePriority) } catch (err) {
         logger.warn?.(`[sei/orch] sei:attacked re-enqueue failed: ${err.message}`)
       }
       if (pa.preservedInterrupt) {
@@ -1850,6 +2171,46 @@ function maybeWarnByteCap(loop, warned) {
       // (in_flight abort + optional reseed) lives in runIterations.
       lastActionResult = 'loop ended'
       return { result: { type: 'tool_result', tool_use_id: use.id, content: 'loop ended', is_error: false }, terminate: true }
+    }
+    if (use.name === 'quit') {
+      // Task 4 — leave the game. Terminate this loop like end_loop, and ask the
+      // host to gracefully shut the session down (drain → disconnect → exit; the
+      // supervisor reaps it and the renderer's summon widget clears). A goodbye
+      // say() in the same batch is emitted up front by emitSayCalls before this.
+      //
+      // 260703b: batch-order note — a remember() in the SAME batch executes
+      // regardless of position: quit's terminate=true only gates NON-inline
+      // (suspending) tools, inline metadata after it still runs, and the actual
+      // teardown (onQuitRequested) is deferred on a >=250ms timer below while
+      // memoryLog.append is awaited inline first. So "remember + say + quit in
+      // one turn" is safe in any order; SESSION_END_CLAUSE promises exactly that.
+      //
+      // 260703: that goodbye may be a MULTI-part staggered send (550ms apart);
+      // tearing the connection down immediately truncated it to its first
+      // fragment ("nope" → gone). Defer the shutdown until the last scheduled
+      // chat message has left (+ a small socket-flush pad). The cap below is a
+      // SAFETY BOUND for a corrupt/absurd deadline, not a normal-case ceiling —
+      // it must sit above the worst legitimate deadline. With config.realistic_typing
+      // on (default), _lastChatSendDeadline can legitimately reach
+      // readingDelayMs max (2500) + typingDelayMs max (5000) + a few segments'
+      // worth of the 550ms stagger + the 250ms flush pad below ≈ 9s, so the cap
+      // is set to 10s. Revisit this if those constants change.
+      lastActionResult = 'quit game'
+      // 260703: the goodbye rides IN the quit call (input.farewell) so it can
+      // never contradict the action. Emit it through the normal say pipeline
+      // (postProcessSay + sei-chat routing + dedupe — a same-line say() from
+      // the legacy path is suppressed as a duplicate, so nothing double-sends).
+      const farewell = String(use.input?.farewell ?? '').trim()
+      if (farewell) {
+        try { _emitSayLine(loop, farewell) } catch {}
+      }
+      const fireQuit = () => {
+        try { onQuitRequested?.() } catch (err) { logger.warn?.(`[sei/orch] onQuitRequested failed: ${err?.message ?? err}`) }
+      }
+      const waitMs = Math.min(10_000, Math.max(0, _lastChatSendDeadline - Date.now()) + 250)
+      if (waitMs > 250) logger.info?.(`[sei/orch] quit deferred ${waitMs}ms so the goodbye finishes sending`)
+      setTimeout(fireQuit, waitMs)
+      return { result: { type: 'tool_result', tool_use_id: use.id, content: 'leaving the game', is_error: false }, terminate: true }
     }
     if (use.name === 'say') {
       // Normal flow emits say() up front via emitSayCalls and pre-fills the
@@ -1918,7 +2279,10 @@ function maybeWarnByteCap(loop, warned) {
               if (activeFrontierGoal && activeFrontierGoal.id !== node.id) {
                 try { await heartbeatLog.remove(activeFrontierGoal.text) } catch { /* best-effort */ }
               }
-              activeFrontierGoal = { id: node.id, text, label: node.label }
+              // Capture the node's `procedure` here (we hold the spine node) so
+              // the procedural write-back (D-08) has it when the milestone later
+              // completes without re-importing the spine into the brain.
+              activeFrontierGoal = { id: node.id, text, label: node.label, procedure: node.procedure }
             }
           } catch { /* linking is best-effort; a free-text goal just stays unlinked */ }
         }
@@ -2354,6 +2718,27 @@ function maybeWarnByteCap(loop, warned) {
       logger.debug?.(`[sei/orch] action_complete tick-claimed but new in_flight present — drop stale settle (loop=${loop.id}, stale=${data?.name}, current=${loop.inFlight.name})`)
       return
     }
+    // 260703-fix: a tick-claimed settle whose tool_use was ALREADY paired by the
+    // tick is purely informational — it must only drive an iteration when the
+    // loop is idle-waiting on exactly that action. If the loop has since moved on
+    // to a NEW batch (a fresh suspending tool was dispatched after the tick and
+    // its own action_complete has not drained yet — _pendingActionUse /
+    // _pendingResults are set — EVEN IF that fast tool already settled and nulled
+    // loop.inFlight, so the guard above missed it), this settle is STALE. Its
+    // result was already seen by the model (it surfaced as last_action_result on
+    // the interrupt turn that folded before this settle drained) and its tool_use
+    // is already paired via the tick, so dropping it preserves the tool_use /
+    // tool_result invariant. Driving an iteration here instead would (1) hijack
+    // the current batch with a stale narration and (2) append a user turn while
+    // the new batch's tool_uses are still open. This is the 260703 armor-equip
+    // incident: a stale "goTo -> reached" tick-claimed settle, FIFO-queued ahead
+    // of the equip batch's own settles, stalled the 3 remaining equips and burned
+    // an LLM iteration that then died on a 502/timeout. Dropping it lets the real
+    // batch settle (the helmet equip's action_complete) drain the rest.
+    if (!interrupting && (loop._pendingActionUse || loop._pendingResults)) {
+      logger.debug?.(`[sei/orch] action_complete tick-claimed but loop is mid-batch on a new action (pending=${loop._pendingActionUse?.name ?? 'results'}) — drop stale settle (loop=${loop.id}, stale=${data?.name})`)
+      return
+    }
 
     // VIS-02/VIS-07: a render result (look / explore auto-look) that somehow
     // settled via the tick-claimed path (would require the render to outlive a
@@ -2461,7 +2846,9 @@ function maybeWarnByteCap(loop, warned) {
     const playerMessage = (typeof data?.playerMessage === 'string') ? data.playerMessage : null
     const who = data?.who ?? null
     const action = extractPriorTask(loop)
-    const tickEventText = NUDGES.actionTurn({
+    // 260703: the tick turn carries the sticky greet hint too (no-op once a
+    // say() line has reached chat this session).
+    const tickEventText = withGreetingHint(NUDGES.actionTurn({
       action,
       stopTool: stopToolForAction(action),
       playerLine: playerMessage,
@@ -2469,7 +2856,7 @@ function maybeWarnByteCap(loop, warned) {
       elapsedSec: playerMessage == null ? elapsedSec : null,
       visionOff: _visionMode() === 'off',
       proactiveness: config?.persona?.proactiveness ?? 1,
-    })
+    }))
 
     // Set the iteration trigger BEFORE the haiku call so the R1-R4 gate keeps
     // the loop alive on a text-only response. A carried player message is
@@ -2771,6 +3158,28 @@ function maybeWarnByteCap(loop, warned) {
         // will call teardownLoop when neither loop.inFlight nor
         // loop._terminated holds.
         return
+      }
+
+      // 260703: a player message must not be answered with silence — the
+      // observed failure: the model writes its reply into the invisible text
+      // scratchpad and calls only end_loop, leaving the player on read
+      // ("I read that. you've made that clear. I'll stay put." → nothing in
+      // chat, twice in one session). When that exact shape occurs (P1-origin
+      // loop, an end_loop in this batch, nothing say()'d since the player's
+      // message, non-empty scratchpad), salvage the scratchpad through the
+      // normal say pipeline — postProcessSay cleans it exactly like a real
+      // say(), and the sei-chat routing applies as usual. Termination
+      // proceeds unchanged; this only makes the already-written reply
+      // audible. The prompt-side fixes (playerInterruptHint /
+      // player_message) push the model to call say() itself; this is the
+      // mechanical backstop.
+      const _p1Trigger = (() => {
+        const e = loop._currentIterationTrigger ?? loop._triggerEvent
+        return e === 'player_chat' || e === 'sei:chat_received'
+      })()
+      if (_p1Trigger && !loop._spokeThisLoop && respText && toolUses.some(u => u.name === 'end_loop')) {
+        logger.info?.(`[sei/orch] salvaging scratchpad as reply — player message was about to end unspoken (loop=${loop.id})`)
+        try { _emitSayLine(loop, respText) } catch {}
       }
 
       // 260514-ngj: tool composition predicates for R2/R3/R4.

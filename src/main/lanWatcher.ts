@@ -25,9 +25,10 @@
  *
  * Behavior:
  *   - Polls every POLL_INTERVAL_MS for the whole app session.
- *   - Emits `connected` (with port + motd) while a world answers the ping;
- *     `not_connected` when none does; `unavailable` when the OS port-listing
- *     tool itself fails (re-evaluated each poll, not sticky).
+ *   - Emits `open` (with port + motd) while a world answers the ping;
+ *     `closed` when none does; `unavailable` when the OS port-listing
+ *     tool itself fails (re-evaluated each poll, not sticky). These describe
+ *     world DETECTION, not whether a companion has joined.
  */
 import type { LanState } from '../shared/ipc';
 import { listeningPorts, type ListeningPort } from './listeningPorts';
@@ -55,18 +56,39 @@ async function firstMcWorld(ports: ListeningPort[]): Promise<McStatus | null> {
   }
 }
 
-export function watchLan({ onUpdate }: WatchLanOptions): { stop: () => void } {
+/**
+ * A previously-open world is only demoted to closed/unavailable after this
+ * many CONSECUTIVE non-open polls (260703). A single slow lsof (4s timeout
+ * under load) or one missed ping used to flip the state instantly — and the
+ * chat companion would then confidently tell the player their open world "is
+ * not broadcasting". Two misses ≈ 4s of real absence before we believe it.
+ */
+const OPEN_MISS_TOLERANCE = 2;
+
+export function watchLan({ onUpdate }: WatchLanOptions): {
+  stop: () => void;
+  /**
+   * Run one detection pass RIGHT NOW and return the raw fresh state (260703).
+   * Used by the chat turn so the companion answers "is my world open?" from
+   * live truth instead of an up-to-2s-stale poll — the player often messages
+   * seconds after clicking "Open to LAN". Also feeds the shared emit path, so
+   * the cached state + renderer pill refresh as a side effect. ~60-100ms on a
+   * healthy system (one lsof + loopback pings).
+   */
+  checkNow: () => Promise<LanState>;
+} {
   let stopped = false;
   let inFlight = false;
   let timer: NodeJS.Timeout | null = null;
   let lastEmitted: LanState | null = null;
+  let missStreak = 0;
 
   const emit = (next: LanState): void => {
     const changed =
       !lastEmitted ||
       lastEmitted.kind !== next.kind ||
-      (next.kind === 'connected' &&
-        lastEmitted.kind === 'connected' &&
+      (next.kind === 'open' &&
+        lastEmitted.kind === 'open' &&
         (next.port !== lastEmitted.port || next.motd !== lastEmitted.motd));
     if (changed) {
       lastEmitted = next;
@@ -74,30 +96,46 @@ export function watchLan({ onUpdate }: WatchLanOptions): { stop: () => void } {
     }
   };
 
+  /** Emit with open→non-open hysteresis: transient misses don't demote. */
+  const emitDamped = (next: LanState): void => {
+    if (next.kind === 'open') {
+      missStreak = 0;
+      emit(next);
+      return;
+    }
+    if (lastEmitted?.kind === 'open') {
+      missStreak += 1;
+      if (missStreak < OPEN_MISS_TOLERANCE) return; // hold 'open' through the blip
+    }
+    emit(next);
+  };
+
+  /** One full detection pass: socket table → java-first pings → state. */
+  const runCheck = async (): Promise<LanState> => {
+    let ports: ListeningPort[];
+    try {
+      ports = await listeningPorts();
+    } catch {
+      return { kind: 'unavailable' };
+    }
+    // Ping likely Minecraft (java) ports first so the common case pokes only
+    // the world; fall back to the rest so a non-standard process name still
+    // resolves.
+    const java = ports.filter((p) => /java/i.test(p.command));
+    const rest = ports.filter((p) => !/java/i.test(p.command));
+    const world = (await firstMcWorld(java)) ?? (await firstMcWorld(rest));
+    return world
+      ? { kind: 'open', port: world.port, motd: world.motd, lastSeenAt: Date.now() }
+      : { kind: 'closed' };
+  };
+
   const poll = async (): Promise<void> => {
     if (stopped || inFlight) return;
     inFlight = true;
     try {
-      let ports: ListeningPort[];
-      try {
-        ports = await listeningPorts();
-      } catch {
-        emit({ kind: 'unavailable' });
-        return;
-      }
+      const next = await runCheck();
       if (stopped) return;
-      // Ping likely Minecraft (java) ports first so the common case pokes only
-      // the world; fall back to the rest so a non-standard process name still
-      // resolves.
-      const java = ports.filter((p) => /java/i.test(p.command));
-      const rest = ports.filter((p) => !/java/i.test(p.command));
-      const world = (await firstMcWorld(java)) ?? (await firstMcWorld(rest));
-      if (stopped) return;
-      emit(
-        world
-          ? { kind: 'connected', port: world.port, motd: world.motd, lastSeenAt: Date.now() }
-          : { kind: 'not_connected' },
-      );
+      emitDamped(next);
     } finally {
       inFlight = false;
     }
@@ -114,6 +152,28 @@ export function watchLan({ onUpdate }: WatchLanOptions): { stop: () => void } {
         clearInterval(timer);
         timer = null;
       }
+    },
+    checkNow: async (): Promise<LanState> => {
+      if (stopped) return lastEmitted ?? { kind: 'closed' };
+      // Deliberately ignores `inFlight` — a concurrent scheduled poll is
+      // harmless (both are read-only), and the caller needs an answer now.
+      const next = await runCheck();
+      // UNDAMPED on purpose (260703): checkNow is a deliberate user-action-time
+      // ground-truth read (chat turn, summon click), so it must NOT be held back
+      // by the background poll's open→closed hysteresis (emitDamped). Broadcast
+      // the fresh result straight through `emit` and reset `missStreak` so a
+      // just-observed 'closed' immediately refreshes latestLanState + the pill —
+      // a stale 'open' would summon into a dead world (connection error) instead
+      // of showing the "open your world" modal. A false 'closed' at click time is
+      // self-healing: the next poll flips back to 'open' and the LanModal
+      // auto-resumes the pending summon.
+      if (!stopped) {
+        missStreak = 0;
+        emit(next);
+      }
+      // Return the RAW fresh result: for the asking caller, a just-observed
+      // 'closed' is the truth even while any prior damped broadcast held 'open'.
+      return next;
     },
   };
 }

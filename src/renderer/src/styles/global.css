@@ -165,9 +165,55 @@ textarea {
   right: 0;
   bottom: 0;
   pointer-events: none;
-  background: radial-gradient(120% 100% at 50% 40%, transparent 55%, rgba(0, 0, 0, 0.10) 100%);
+  /* Vignette darkening removed — no dark gradient at the bottom of the content
+     panel (grain overlay is kept for texture). */
+  background: none;
 }
 
 :root[data-theme="dark"] .hud-vignette {
-  background: radial-gradient(120% 100% at 50% 40%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+  background: none;
+}
+
+/* ── Fast tooltip (data-tip) ─────────────────────────────────────────────
+ * Native `title` tooltips take ~1.5s to appear. This CSS tooltip shows on a
+ * short standard delay (~300ms). Add `data-tip="Label"` to any element (keep
+ * aria-label for a11y); it appears BELOW the element so header buttons at the
+ * top of a pane aren't clipped. Sharp, mono, token-colored per the design system. */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1;
+  padding: 5px 7px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease);
+  transition-delay: 0s;
+  z-index: 200;
+}
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  opacity: 1;
+  transition-delay: 300ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tip]::after {
+    transition: none;
+  }
 }

@@ -4,11 +4,12 @@
  */
 
 .root {
-  padding: 34px var(--space-2xl) var(--space-2xl);
+  /* Shared page top margin + smaller inter-section gap (#2). */
+  padding: var(--space-lg) var(--space-2xl) var(--space-2xl);
   max-width: 760px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-xl);
+  gap: var(--space-lg);
 }
 
 .backRow {
@@ -20,7 +21,7 @@
 
 .title {
   font-family: var(--display);
-  font-size: 44px;
+  font-size: 32px;
   font-weight: 600;
   line-height: 0.9;
   letter-spacing: 0.04em;
@@ -42,7 +43,20 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: var(--space-md) 0;
+  margin: var(--space-sm) 0;
+}
+
+/* #3 — profile picture (circular) + name on one line, no labels. */
+.profileRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+}
+
+.profileName {
+  flex: 1;
+  min-width: 0;
 }
 
 .row {

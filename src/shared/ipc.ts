@@ -45,7 +45,22 @@ export type BotStatus =
   // emits 'online' only once. `uptimeMs` is the elapsed-at-emit snapshot, kept
   // for callers that just want a number without ticking.
   | { kind: 'online'; uptimeMs: number; startedAtMs: number; characterId: string }
-  | { kind: 'error'; error: ErrorClass; message: string; characterId: string };
+  | {
+      kind: 'error';
+      error: ErrorClass;
+      message: string;
+      characterId: string;
+      /**
+       * When set, the session is still LIVE — this error is advisory, not a
+       * session end (e.g. a mid-session backend switch to local with no saved
+       * key: the bot stays connected in-world and just 401s on LLM calls).
+       * Receivers must NOT treat a transient error as a terminal status: do not
+       * drop the character from the online/routing set and do not post a
+       * "played for X" play-session row. A non-transient error is terminal (the
+       * session is gone or was never live).
+       */
+      transient?: true;
+    };
 
 /**
  * Phase 15 (D-10 / VIS-03) — the active LLM provider's vision capability,
@@ -66,11 +81,85 @@ export interface VisionCapability {
   visionCapable: boolean;
 }
 
-/** Renderer-facing LAN watcher status (used by HomeScreen pill + LAN modal). */
+/**
+ * LAN world-detection status from the loopback watcher.
+ *
+ * This describes ONLY whether an open-to-LAN Minecraft world is detected on the
+ * machine — NOT whether a companion has joined it. "Connected / not connected"
+ * is reserved for the user-facing *companion-in-game* state (BotStatus). Keep
+ * this vocabulary about world detection:
+ *   - 'open'        → an open-to-LAN world is detected (port + motd known).
+ *   - 'closed'      → no open world detected right now.
+ *   - 'unavailable' → the OS port-listing tool itself failed (can't tell).
+ */
 export type LanState =
-  | { kind: 'connected'; port: number; motd: string; lastSeenAt: number }
-  | { kind: 'not_connected' }
+  | { kind: 'open'; port: number; motd: string; lastSeenAt: number }
+  | { kind: 'closed' }
   | { kind: 'unavailable' };
+
+// ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
+/** A quoted-reply reference (the message this one is replying to). */
+export interface ChatReplyRef {
+  /** Role of the quoted message's author. */
+  role: 'user' | 'companion';
+  /** Verbatim text of the quoted message (snapshot at reply time). */
+  text: string;
+}
+
+/** One persisted chat message. `companion` = the AI; `system` reserved for UI. */
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'companion' | 'system';
+  text: string;
+  /** Unix ms. */
+  ts: number;
+  /** Set when this message is a reply that quotes an earlier one (Discord-style). */
+  replyTo?: ChatReplyRef;
+  /**
+   * Set on a `system` row that records a finished play session, so the UI can
+   * render it with the game icon (Discord-style "You and X played Minecraft for
+   * Y"). `text` carries the human-readable line; `event` carries the structured
+   * data. Also read by the chat brain (toMessages) as shared history so the
+   * companion knows you actually played, not just talked about it.
+   */
+  event?: { kind: 'play'; game: string; durationMs: number };
+}
+
+/** Result of a chat turn. `launch` is set when the companion called launch(). */
+export interface ChatSendResult {
+  /**
+   * The companion's reply, split into one-or-more messages on blank lines (a
+   * paragraph break sends a new message, like double-tapping enter). The renderer
+   * reveals them one at a time. Always at least one entry.
+   */
+  replies: ChatMessage[];
+  /**
+   * True when the character has a LIVE in-game session and this message was
+   * routed INTO that session instead of the standalone chat brain (so the two
+   * surfaces share one conversation). The reply then arrives asynchronously over
+   * the `chat:message` push, so `replies` is empty and the renderer keeps the
+   * typing indicator up until the pushed reply lands.
+   */
+  routed?: boolean;
+  launch?: {
+    game: string;
+    /** 'summoning' → the bot is joining a LAN world; 'lan-not-open' → could not join. */
+    status: 'summoning' | 'lan-not-open';
+  };
+}
+
+/** A main → renderer chat push (bot reply while in-game, or a system line). */
+export interface ChatMessagePush {
+  characterId: string;
+  message: ChatMessage;
+}
+
+/** In-app user profile surfaced to the chat + settings. */
+export interface UserProfile {
+  /** Portrait path ref ('_user.png') or null. Resolve via sei-portrait://. */
+  profilePicture: string | null;
+  preferredName: string;
+}
 
 /**
  * Startup warnings reported by main on first boot (one-shot query).
@@ -669,6 +758,28 @@ export interface RendererApi {
   saveApiKey(plaintext: string): Promise<void>;
   hasApiKey(): Promise<boolean>;
 
+  // --- In-app chat (Phase 18/19) ---
+  /** Load a character's persisted chat transcript (recent window). */
+  chatHistory(characterId: string): Promise<ChatMessage[]>;
+  /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game). */
+  chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef }): Promise<ChatSendResult>;
+  /** Clear a character's chat transcript + rolling summary bridge. */
+  chatClear(characterId: string): Promise<void>;
+  /**
+   * Subscribe to chat messages pushed OUTSIDE a send() round-trip: the live
+   * game bot replying to a routed message, and "joined/left your world" system
+   * lines. The renderer appends them to the transcript (deduped by id).
+   */
+  onChatMessage(cb: (push: ChatMessagePush) => void): Unsubscribe;
+
+  // --- User profile (Phase 19) ---
+  /** The in-app user profile (avatar ref + preferred name). */
+  userGetProfile(): Promise<UserProfile>;
+  /** Apply user profile-picture bytes; returns the path ref ('_user.png'). */
+  userApplyProfilePicture(args: { bytesBase64: string; format: 'png' | 'jpeg' | 'webp' }): Promise<string>;
+  /** Clear the user profile picture and delete the on-disk file. */
+  userRemoveProfilePicture(): Promise<void>;
+
   // App-level one-shot queries
   getStartupWarnings(): Promise<StartupWarnings>;
 
@@ -900,6 +1011,12 @@ export interface RendererApi {
 
   // Push subscriptions — return Unsubscribe (renderer cleans up on unmount)
   onStatus(cb: (status: BotStatus) => void): Unsubscribe;
+  /** Pull the current per-character bot statuses (snapshot). Used to seed a
+   * freshly-(re)subscribed renderer, since onStatus pushes only fire on
+   * TRANSITIONS — a subscriber that attaches after 'online' would otherwise
+   * never learn a session is live (260703: chat-launched Sui session invisible
+   * to the GUI after a dev HMR re-created the store). Mirrors getLanState. */
+  getBotStatuses(): Promise<BotStatus[]>;
   /**
    * Phase 15 (D-10/VIS-03): subscribe to `vision:capability` pushes. Fires on
    * summon-ready and on every live backend switch with the active provider's
@@ -912,6 +1029,16 @@ export interface RendererApi {
   /** Pull the current LAN state (snapshot). Used to seed a freshly-loaded
    * renderer, since the onLan push only fires on change. */
   getLanState(): Promise<LanState>;
+  /**
+   * Force ONE fresh LAN detection pass right now and return its result (260703).
+   * Unlike {@link getLanState} (a cached snapshot that can lag up to ~4s behind
+   * reality because the background poll damps open→closed transitions), this
+   * reads live ground truth. The summon click awaits it so a world that JUST
+   * closed shows the "open your world" modal instead of summoning into a dead
+   * port. As a side effect it also refreshes main's cached LAN state (so the
+   * getLanPort() the actual summon reads is fresh too).
+   */
+  lanCheckNow(): Promise<LanState>;
   /** Subscribe to per-install progress events during runWizardInstall. */
   onWizardProgress(cb: (ev: WizardProgressEvent) => void): Unsubscribe;
   /** Subscribe to streaming progress for an in-flight persona expansion
@@ -1067,6 +1194,9 @@ export const IpcChannel = {
     summon: 'bot:summon',
     stop: 'bot:stop',
     status: 'bot:status',
+    // Snapshot pull of the current per-character statuses (see
+    // RendererApi.getBotStatuses) — pushes only fire on transitions.
+    getStatuses: 'bot:get-statuses',
     logBatch: 'bot:log:batch',
   },
   /**
@@ -1084,6 +1214,11 @@ export const IpcChannel = {
     // CHANGE, so a freshly-(re)loaded renderer must request the snapshot —
     // relying on a replay-push races the renderer attaching its listener.
     get: 'lan:get',
+    // Force ONE fresh detection pass right now and return its result (260703).
+    // Unlike `get` (a cached snapshot that can be up to ~4s stale under the
+    // poll's open→closed hysteresis), this reads live ground truth — the summon
+    // click uses it so a world that just closed doesn't summon into a dead port.
+    checkNow: 'lan:check-now',
   },
   chars: {
     list: 'chars:list',
@@ -1144,6 +1279,20 @@ export const IpcChannel = {
     save: 'config:save',
     saveApiKey: 'config:save-api-key',
     hasApiKey: 'config:has-api-key',
+  },
+  chat: {
+    history: 'chat:history',
+    send: 'chat:send',
+    clear: 'chat:clear',
+    /** Push (main → renderer): a companion/system message authored outside a
+     * send() round-trip — the live game bot replying to a routed message, or a
+     * deterministic "joined/left your world" system line. */
+    message: 'chat:message',
+  },
+  user: {
+    getProfile: 'user:get-profile',
+    applyProfilePicture: 'user:apply-profile-picture',
+    removeProfilePicture: 'user:remove-profile-picture',
   },
   app: {
     ready: 'app:ready',

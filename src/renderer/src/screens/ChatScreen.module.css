@@ -1,0 +1,539 @@
+/* ChatScreen — Discord-style in-app chat (Phase 18/19).
+ * "Summoning Terminal" look: sharp edges, periwinkle accent, no bubbles.
+ * All values from tokens.css — no literal hex/px colors. */
+
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--window);
+}
+
+/* ── Header bar (compact — no status row) ───────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Back "<" — far left of the header. */
+.backBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 140ms var(--ease);
+}
+
+.backBtn:hover {
+  color: var(--accent);
+}
+
+/* #1 — avatar matches the name's cap height, not a big circle. */
+.headerAvatar {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.headerText {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.headerName {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+/* Naked icon buttons — no bordered square box (change #4). */
+.iconBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 140ms var(--ease);
+}
+
+.iconBtn:hover {
+  color: var(--accent);
+}
+
+/* ── Message list ───────────────────────────────────────────────────────── */
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Bottom padding leaves room for the floating composer that hovers over
+     the list (change #3) — kept just tall enough to clear the composer so the
+     latest message sits close to the message box (#6). */
+  padding: var(--space-lg) var(--space-lg) 72px;
+  display: flex;
+  flex-direction: column;
+  /* No inter-row gap — vertical rhythm comes from each row's own padding, so
+     consecutive same-author "double texts" stack tightly like Discord (#4). */
+  gap: 0;
+}
+
+/* While the companion is typing, the composer dock grows by the "…is typing"
+   line, so reserve extra bottom space (defined AFTER .list so this padding-bottom
+   wins) — otherwise the taller dock overlaps the most recent message (#4). */
+.listTyping {
+  padding-bottom: 100px;
+}
+
+.empty {
+  margin: auto;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--muted);
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+/* A message row that starts a new author run: avatar gutter + header + text.
+ * A small top margin separates author groups (now that .list has no row gap);
+ * the negative side margins bleed the hover highlight to the list edges (#4). */
+.rowLead {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: var(--space-md);
+  margin: var(--space-sm) calc(-1 * var(--space-lg)) 0;
+  padding: var(--space-xs) var(--space-lg);
+}
+
+/* A continuation row (same author): no avatar, text aligned to the gutter.
+ * Tight vertical padding keeps "double texts" close (#4). */
+.rowCont {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: var(--space-md);
+  margin: 0 calc(-1 * var(--space-lg));
+  padding: 1px var(--space-lg);
+}
+
+/* Change #9 — hover shade on the whole row. */
+.rowLead:hover,
+.rowCont:hover {
+  background: var(--accent-soft);
+}
+
+.avatarCell {
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.msgBody {
+  min-width: 0;
+}
+
+/* #1 — Discord-style quoted-reply reference. It spans the FULL row above the
+ * message (grid-column 1 / -1) and is indented to the message-body gutter, so
+ * the avatar below aligns with the author header instead of overlapping the
+ * quote. An elbow connector drops from the quote down into the avatar. */
+.quoteRef {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: 2px;
+  padding-left: calc(40px + var(--space-md));
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.quoteRef::before {
+  content: '';
+  position: absolute;
+  /* ~centre of the 40px avatar that sits directly below. */
+  left: 19px;
+  top: 50%;
+  bottom: -12px;
+  width: calc(40px + var(--space-md) - 19px);
+  border-left: 2px solid var(--border-strong);
+  border-top: 2px solid var(--border-strong);
+  border-top-left-radius: 8px;
+}
+
+.quoteAvatar {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quoteName {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.quoteText {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.msgHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-bottom: 2px;
+}
+
+/* Change #8 — companion name is white/text-colored, same as the user. */
+.authorName {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.timestamp {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
+}
+
+.msgText {
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Change #9 — per-message copy / reply cluster, revealed on row hover, pinned
+ * to the right of the row. Sharp hairline surface chip (Summoning Terminal). */
+.rowActions {
+  position: absolute;
+  top: 6px;
+  right: var(--space-md);
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease);
+}
+
+.rowLead:hover .rowActions,
+.rowCont:hover .rowActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Borderless "quiet" icon button — muted, lights to accent on hover (§5). */
+.rowActionBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.rowActionBtn:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Change #7 — day separator: "───── 17 Apr 2026 ─────". */
+.daySeparator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin: var(--space-md) 0 var(--space-xs);
+}
+
+.daySeparator::before,
+.daySeparator::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border-strong);
+}
+
+.daySeparatorLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* Defensive: centered system note (none persisted today). */
+.systemRow {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: var(--space-sm) 0;
+}
+
+/* Play-session row (Discord-style "You and X played Minecraft for Y") — the
+   general game icon sits in the avatar gutter, greyed text aligns with the chat
+   messages and matches the author-name font/size (left-aligned, not centered). */
+.playRow {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: var(--space-md);
+  align-items: center;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 15px;
+  letter-spacing: normal;
+  color: var(--muted);
+  margin: var(--space-sm) calc(-1 * var(--space-lg)) 0;
+  padding: var(--space-xs) var(--space-lg);
+}
+
+.playIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  color: var(--muted);
+  flex: none;
+}
+
+/* ── Floating composer dock (hovers over the bottom of the list) ─────────── */
+.composerDock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* Slightly wider message box — tighter side padding than the list gutter.
+   * #6 — a solid window-colored band (no gradient fade) hides messages
+   * scrolling behind the floating composer; the thin top padding keeps the
+   * latest message close to the message box. */
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  background: var(--window);
+  pointer-events: none;
+}
+
+.composerDock > * {
+  pointer-events: auto;
+}
+
+/* #3 — transient "copied to clipboard" flash, centered above the message box. */
+.copiedToast {
+  pointer-events: none;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  padding: 3px var(--space-sm);
+  margin-bottom: var(--space-xs);
+  animation: copiedFade 160ms var(--ease);
+}
+
+@keyframes copiedFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Change #2 — "<name> is typing…" sits just above the composer. */
+.typingLine {
+  pointer-events: none;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+/* Change #9 — quoted-reply line on top of the message window. */
+.replyBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px var(--space-md);
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-bottom: none;
+}
+
+.replyName {
+  flex-shrink: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.replyQuote {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.replyClose {
+  -webkit-appearance: none;
+  appearance: none;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.replyClose:hover {
+  color: var(--red);
+}
+
+/* Change #3 — the composer is a hovering rectangle, not an inset row. */
+/* #4 — no border, fill a shade close to the window background. */
+.composer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  background: var(--surface);
+  border: none;
+}
+
+.input {
+  flex: 1;
+  resize: none;
+  min-height: 26px;
+  max-height: 160px;
+  padding: 6px var(--space-sm);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.input::placeholder {
+  color: var(--muted-2);
+}
+
+/* Change #3 — send button only mounts when the draft is non-empty, and is
+ * small enough (#2) that it never grows the message box height. */
+.sendBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+  transition: opacity 140ms var(--ease), background 140ms var(--ease);
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.sendBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

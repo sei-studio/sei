@@ -3,13 +3,16 @@
  *
  * Two modes:
  *  - 'info'      → opened from HomeScreen LAN pill click. Footer = [Close].
- *  - 'searching' → opened from a Summon attempt while LAN is not connected
+ *  - 'searching' → opened from a Summon attempt while no open world is detected
  *                  (D-24). Footer = [Cancel summon, Close]. Watches
- *                  useDataStore.lan; when it flips to 'connected', auto-closes
+ *                  useDataStore.lan; when it flips to 'open', auto-closes
  *                  and resumes the deferred summon (D-56).
  *
- * Header eyebrow shows the live LAN pill ("CONNECTED" / "NOT CONNECTED" /
- * "UNAVAILABLE ON THIS NETWORK") with a 8px colored dot (D-22).
+ * Header eyebrow shows the live world-DETECTION pill ("OPEN WORLD DETECTED" /
+ * "NO OPEN WORLD" / "UNAVAILABLE ON THIS NETWORK") with an 8px colored dot
+ * (D-22). This is about detecting an open-to-LAN world, NOT whether the
+ * companion has joined — "connected" is reserved for the companion-in-game
+ * status (BotStatus) shown on the character card / page.
  *
  * The prototype's manual LAN-spoof toggle is removed (D-23 / D-57). Renderer
  * never forces LAN state; only the bonjour watcher in main flips lan.kind.
@@ -29,19 +32,19 @@ const STEPS: readonly string[] = [
   'Launch Minecraft and open your singleplayer world.',
   'Press ESC, then choose Open to LAN.',
   'Click Start LAN World.',
-  'Return to Sei and press Summon.',
+  'Return to Sei and press Connect.',
 ];
 
-type LanKind = 'connected' | 'not_connected' | 'unavailable';
+type LanKind = 'open' | 'closed' | 'unavailable';
 
 function pillLabel(kind: LanKind): string {
-  if (kind === 'connected') return 'Connected';
+  if (kind === 'open') return 'Open world detected';
   if (kind === 'unavailable') return 'Unavailable on this network';
-  return 'Not connected';
+  return 'No open world';
 }
 
 function pillColor(kind: LanKind): string {
-  if (kind === 'connected') return 'var(--green)';
+  if (kind === 'open') return 'var(--green)';
   if (kind === 'unavailable') return 'var(--muted)';
   return 'var(--red)';
 }
@@ -55,24 +58,38 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
   const closeModal = useUiStore((s) => s.closeModal);
   const pendingSummonId = useUiStore((s) => s.pendingSummonId);
   const setPendingSummon = useUiStore((s) => s.setPendingSummon);
+  const returnToChat = useUiStore((s) => s.pendingSummonReturnToChat);
+  const setPendingSummonReturnToChat = useUiStore((s) => s.setPendingSummonReturnToChat);
   const navigate = useUiStore((s) => s.navigate);
 
   // ── Auto-resume on connected (D-56) ────────────────────────────────────
   useEffect(() => {
     if (mode !== 'searching') return;
-    if (lan.kind !== 'connected') return;
+    if (lan.kind !== 'open') return;
     if (!pendingSummonId) {
       closeModal();
       return;
     }
     const id = pendingSummonId;
+    const toChat = returnToChat;
     setPendingSummon(null);
+    setPendingSummonReturnToChat(false);
     closeModal();
     sei.summon(id).catch(() => {
       // Errors surface via onStatus → BotStatus.error; the model row owns display.
     });
-    navigate({ kind: 'character', id });
-  }, [mode, lan, pendingSummonId, closeModal, setPendingSummon, navigate]);
+    // Task 6 — a chat-launched summon returns to that chat, not the profile.
+    navigate(toChat ? { kind: 'chat', characterId: id } : { kind: 'character', id });
+  }, [
+    mode,
+    lan,
+    pendingSummonId,
+    returnToChat,
+    closeModal,
+    setPendingSummon,
+    setPendingSummonReturnToChat,
+    navigate,
+  ]);
 
   // ── ESC handling (D-24): in searching mode, ESC also clears pending summon
   useEffect(() => {
@@ -93,7 +110,7 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
           {pillLabel(lan.kind).toUpperCase()}
         </div>
         <h2 id="lan-modal-title" className={styles.title}>
-          To summon a character into your world
+          To connect a character to your world
         </h2>
         <ol className={styles.steps}>
           {STEPS.map((step, i) => (
@@ -105,10 +122,10 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
         </ol>
         {mode === 'searching' ? (
           <div className={styles.searching}>
-            <span className={styles.searchDots}>
-              <span style={{ animationDelay: '0ms' }} />
-              <span style={{ animationDelay: '160ms' }} />
-              <span style={{ animationDelay: '320ms' }} />
+            <span className={styles.searchDots} aria-hidden="true">
+              <span />
+              <span />
+              <span />
             </span>
             Searching for an open LAN world…
           </div>
@@ -120,10 +137,11 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
               size="md"
               onClick={() => {
                 setPendingSummon(null);
+                setPendingSummonReturnToChat(false);
                 closeModal();
               }}
             >
-              Cancel summon
+              Cancel
             </Button>
           ) : null}
           <Button kind="primary" size="md" onClick={closeModal}>

@@ -79,6 +79,20 @@
   box-shadow: inset 0 0 0 1px var(--accent-soft);
 }
 
+/* Avatar shape: a circular cutout. The div is a centered circle; the huge
+ * outward box-shadow spread darkens everything OUTSIDE it (clipped by the
+ * stage's overflow:hidden), and the accent ring outlines the circle. This is
+ * the round profile-picture preview — what's inside the circle is what's kept. */
+.circleOverlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px var(--accent-soft);
+}
+
 .zoom {
   width: 100%;
   accent-color: var(--accent);

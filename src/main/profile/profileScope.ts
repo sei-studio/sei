@@ -92,9 +92,14 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
     //      switch and before the push, closes that race. Idempotent: a later
     //      in-session switch to BYOK persists, and a session-restore reopen
     //      hits the same scope so this function early-returns (no re-flip).
+    //      260703: routed through applyCloudDefaultForSignIn so a profile that
+    //      EXPLICITLY chose BYOK (ai_backend_kind_source === 'user', or a
+    //      legacy 'local' with a stored key) keeps its choice across
+    //      sign-out/sign-in — the raw setAiBackendKind('cloud-proxy') here
+    //      used to stomp it on every re-login.
     try {
-      const { setAiBackendKind } = await import('../apiKeyStore');
-      await setAiBackendKind('cloud-proxy');
+      const { applyCloudDefaultForSignIn } = await import('../apiKeyStore');
+      await applyCloudDefaultForSignIn();
     } catch (err) {
       console.warn(`[sei] profileScope: cloud-billing default failed: ${(err as Error).message}`);
     }

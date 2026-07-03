@@ -312,13 +312,26 @@ export async function trialClaim(): Promise<
 export async function creditsGet(): Promise<CreditsStatus> {
   const session = await getSessionOrNull();
   if (!session) {
+    // 260703: report the REAL persisted backend kind, not a hardcoded 'local'.
+    // This snapshot is the renderer's sole source for the ACCOUNT MODE surface
+    // (useCreditsStore.ai_backend_kind → SettingsScreen); the old placeholder
+    // made a transient getSession() miss (e.g. an expired token mid-refresh at
+    // boot) paint a cloud-proxy profile as BYOK — while every actual LLM call
+    // kept reading config.json directly and spending cloud credits. The UI
+    // must never claim a mode the calls don't use. Best-effort: a config read
+    // failure falls back to the schema default.
+    let backendKind: CreditsStatus['ai_backend_kind'] = 'local';
+    try {
+      const { getAiBackendKind } = await import('../apiKeyStore');
+      backendKind = await getAiBackendKind();
+    } catch { /* keep the schema default */ }
     return {
       remaining_pct: 0,
       plan: 'depleted',
       renews_at: null,
       ends_at: null,
       trial_claimed: false,
-      ai_backend_kind: 'local',
+      ai_backend_kind: backendKind,
       // quick/260525-sbo Task 8: explicit null on no-session (never
       // subscribed from this client's POV; no banner should render).
       subscription_status_raw: null,

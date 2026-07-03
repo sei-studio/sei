@@ -99,7 +99,7 @@
   color: var(--text);
   padding: 10px 12px;
   background: rgba(255, 196, 0, 0.12);
-  border-left: 3px solid var(--yellow, #d4a017);
+  border-left: 2px solid var(--warn);
   margin: 0;
 }
 

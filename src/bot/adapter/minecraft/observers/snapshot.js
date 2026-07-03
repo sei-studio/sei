@@ -9,6 +9,7 @@ import { nearbyEntities, droppedItemName } from './entities.js'
 import { setHandles, HANDLE_TTL_MS } from './targeting.js'
 import { getCraftableEntries } from './craftable.js'
 import { getFollowTargetLabel, getFollowStuckInfo } from '../behaviors/follow.js'
+import { nextMilestone, readProgressionState } from './progression.js'
 // 260513-wkd: centralised in_flight line rendering. Helper preserves the
 // em-dash + y=<currentY> channels byte-stable; only the elapsed
 // trailer changes from `(Xs)` to `started=Xs ago` (locked in CONTEXT.md).
@@ -43,6 +44,23 @@ export function resolveOwner(bot, pinUsername, companions) {
   if (humans.length === 1) return { username: humans[0][0], player: humans[0][1] }
   return null
 }
+
+// 260703 — owner-distance NaN guard. Right after combat / a teleport / a
+// respawn, a player or the bot's own entity can be partially loaded with NaN
+// position components. The old owner-whereabouts line did
+// `Math.round(ownerEnt.position.distanceTo(me.position))`, which returns NaN
+// for such a position; `NaN != null` is true, so the snapshot printed
+// "(NaN blocks away)". Compute the straight-line distance from the raw coords
+// with a hard Number.isFinite gate on every component and return null (→ omit
+// the parenthetical) when any is non-finite. Pure + exported for unit testing.
+export function ownerDistanceBlocks(ownerPos, selfPos) {
+  if (!ownerPos || !selfPos) return null
+  const ax = Number(ownerPos.x), ay = Number(ownerPos.y), az = Number(ownerPos.z)
+  const bx = Number(selfPos.x), by = Number(selfPos.y), bz = Number(selfPos.z)
+  if (![ax, ay, az, bx, by, bz].every(Number.isFinite)) return null
+  const d = Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2)
+  return Number.isFinite(d) ? Math.round(d) : null
+}
 // Entity visibility radius (blocks). 64 = 4 chunks, the rough distance at
 // which a real Minecraft player can see and identify another player. Bumped
 // from 24 so the player stays visible (with coords) as they walk a few chunks
@@ -64,13 +82,13 @@ const ENTITY_RADIUS = 64
  * Side effect: replaces the targeting handle table with the #N entries from this snapshot.
  *
  * @param {import('mineflayer').Bot} bot
- * @param {{ lastActionResult?:string, inFlight?:{name:string,args:any,startedAt:number}|null, pinUsername?:string|null, companions?:string[], worldTag?:string|null }} [opts]
+ * @param {{ lastActionResult?:string, inFlight?:{name:string,args:any,startedAt:number}|null, pinUsername?:string|null, companions?:string[], worldTag?:string|null, sessionStartedAtMs?:number }} [opts]
  * @returns {string}
  */
 export function composeSnapshot(bot, opts = {}) {
   // NB: `world` (the import) is the world-observer fn; the per-world tag comes
   // in as `worldTag` to avoid shadowing it.
-  const { lastActionResult, inFlight, pinUsername, worldTag } = opts
+  const { lastActionResult, inFlight, pinUsername, worldTag, sessionStartedAtMs } = opts
   // 260618: other AI companions in a multi-bot session. Pinned like the owner
   // (always visible with coords) and labeled "(companion)" so the model can see
   // and coordinate with its teammates instead of confusing them for the human.
@@ -101,6 +119,15 @@ export function composeSnapshot(bot, opts = {}) {
   // Position / biome / time
   lines.push(`pos: ${w.pos.x},${w.pos.y},${w.pos.z}`)
   lines.push(`biome: ${w.biome}  surroundings: ${w.surroundings}  time: ${w.time.isDay ? 'day' : 'night'} (${w.time.timeOfDay})`)
+  // Real-world clock + session age (260703). The model has no sense of elapsed
+  // time and guessed session length wrong ("probably 8-9 mins" on a 7-minute
+  // session) — give it the wall clock and minutes-since-join so "how long have
+  // we been playing" is answered from data, not vibes.
+  if (typeof sessionStartedAtMs === 'number') {
+    const mins = Math.floor((Date.now() - sessionStartedAtMs) / 60_000)
+    const clock = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    lines.push(`real time: ${clock} — you joined this session ${mins < 1 ? 'under a minute' : `${mins} min`} ago`)
+  }
 
   // Vitals
   lines.push(`hp: ${v.hp}/20  food: ${v.food}/20  xp: lvl ${v.xp.level}`)
@@ -227,6 +254,17 @@ export function composeSnapshot(bot, opts = {}) {
     lines.push(`follow_target: ${followLabel ?? '(none)'}`)
   }
 
+  // Advisory next: line (17-04, D-07). One per-turn surfacing of the nearest
+  // progression milestone + the single action that advances it, so the model
+  // always sees "what's next" without re-deriving it. Best-effort: any error
+  // (or a malformed spine) just skips the line — a snapshot tick never throws.
+  // This is ADDITIVE; the heartbeat frontier path (orchestrator renderHeartbeat)
+  // is complementary and untouched.
+  try {
+    const nm = nextMilestone(readProgressionState(bot))
+    if (nm?.node) lines.push(`next: ${nm.node.label} — ${nm.action}`)
+  } catch { /* progression advisory is best-effort; never break a snapshot tick */ }
+
   // Owner whereabouts (260607). The pinned owner can be BEYOND the entity
   // render radius — then they're absent from `nearby entities` and the model
   // has no coords for "come to me", so it hallucinates (in the field logs it
@@ -240,8 +278,14 @@ export function composeSnapshot(bot, opts = {}) {
       const ox = Math.round(ownerEnt.position.x)
       const oy = Math.round(ownerEnt.position.y)
       const oz = Math.round(ownerEnt.position.z)
+      // A partially-loaded player/self entity can carry NaN coords right after
+      // combat/teleport; the old `Math.round(distanceTo(...))` then yielded NaN
+      // and `NaN != null` is true, so the snapshot printed "(NaN blocks away)".
+      // ownerDistanceBlocks computes the distance from the coords with a
+      // Number.isFinite gate and returns null when any coord is non-finite, so
+      // the parenthetical is omitted rather than showing garbage.
       let dist = null
-      try { dist = Math.round(ownerEnt.position.distanceTo(me.position)) } catch { /* leave null */ }
+      try { dist = ownerDistanceBlocks(ownerEnt.position, me.position) } catch { /* leave null */ }
       // Show the live in-game name when it differs from the name we call them,
       // so the model connects `owner Ouen` with `SSk1tz` in `nearby entities`
       // (otherwise it can read them as two different people).
@@ -282,6 +326,10 @@ export function composeSnapshot(bot, opts = {}) {
 export function createSnapshotComposer({ bot }) {
   let prevInventory = null
   let prevHp = null
+  // Session clock anchor: the composer is created once per bot session (right
+  // around join), so "now minus this" is minutes-in-world for the `real time`
+  // snapshot line.
+  const sessionStartedAtMs = Date.now()
 
   // Real deaths since the last snapshot, grouped by entity name. Populated by
   // the entityDead subscription below; drained each next() call.
@@ -356,7 +404,7 @@ export function createSnapshotComposer({ bot }) {
 
   return {
     next(opts = {}) {
-      const base = composeSnapshot(bot, opts)
+      const base = composeSnapshot(bot, { ...opts, sessionStartedAtMs })
       const currInv = inventory(bot)
       const currHp = Math.round(bot.health ?? 0)
       const { inv, other } = computeEvents(currInv, currHp)

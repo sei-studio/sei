@@ -19,6 +19,7 @@ import { startPosHealer, stopPosHealer } from './observers/posHealer.js'
 import { startChat } from './behaviors/chat.js'
 import { startAutoEat } from './behaviors/autoEat.js'
 import { startCombat } from './behaviors/combat.js'
+import { startReflex } from './behaviors/reflex.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -239,25 +240,53 @@ export function createBotInstance({
     }
   }
 
+  // Isolate each spawn-setup step so ONE throwing behavior can never strand the
+  // summon. Reaching 'spawn' means the bot IS in the world, so onSpawn (which
+  // fires summon-ready) must run regardless — otherwise the connect timer is
+  // already cleared and the session hangs on "Connecting…" until the
+  // supervisor's 30s timeout. A failed behavior degrades that one feature only.
+  const safeStart = (label, fn) => {
+    try { fn() } catch (err) { logger.warn?.(`[sei/connect] ${label} failed on spawn: ${err && err.message}`) }
+  }
+
   bot.on('spawn', () => {
     logger.info?.(`[sei] Connected to ${host}:${port} as ${username}`)
     if (!_spawned) {
       _spawned = true
       _clearConnectTimer()
-      bot.loadPlugin(pathfinder)
-      startPosHealer(bot)
-      startAutoEat(bot)
-      startCombat(bot, config)
-      startFollow(bot, config)
+      safeStart('loadPlugin(pathfinder)', () => bot.loadPlugin(pathfinder))
+      safeStart('startPosHealer', () => startPosHealer(bot))
+      safeStart('startAutoEat', () => startAutoEat(bot))
+      safeStart('startCombat', () => startCombat(bot, config))
+      safeStart('startReflex', () => startReflex(bot, config))
+      safeStart('startFollow', () => startFollow(bot, config))
       try { onSpawn?.() } catch (err) { logger.warn?.(`[sei/connect] onSpawn hook threw: ${err && err.message}`) }
     } else {
-      // respawn after death — restart follow only
-      startFollow(bot, config)
+      // respawn after death — restart follow + re-arm the reflex loop (Plan 01's
+      // disposer tears the loop down on death, so respawn must re-arm it).
+      safeStart('startReflex(respawn)', () => startReflex(bot, config))
+      safeStart('startFollow(respawn)', () => startFollow(bot, config))
     }
   })
 
   bot.on('death', () => {
     logger.info?.('[sei] Sei died — respawning...')
+    // Snapshot the death position BEFORE bot.respawn() teleports the entity
+    // back to world spawn — that's where everything the bot was carrying
+    // dropped, so the brain needs it to tell the player where to recover their
+    // items. Guard against a partially-loaded entity (NaN coords) so a bad
+    // position degrades to null (no coords) rather than "~NaN,NaN,NaN".
+    let pos = null
+    try {
+      const p = bot.entity?.position
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)) {
+        pos = { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }
+      }
+    } catch { /* pos stays null */ }
+    // Emit once per death, up to the brain (fsmWires → handlers.onDeath). The
+    // respawn timer is unchanged; the priority queue serializes the death event
+    // and the respawn spawn, so they don't race.
+    try { bot.emit('sei:death', { pos }) } catch (err) { logger.warn?.(`[sei/connect] sei:death emit threw: ${err && err.message}`) }
     setTimeout(() => bot.respawn(), 500)
   })
 

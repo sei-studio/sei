@@ -41,6 +41,7 @@ import { Button } from './Button';
 import { SignInModal } from './SignInModal';
 import { SwitchBackendConfirmModal } from './SwitchBackendConfirmModal';
 import { sei } from '../lib/ipcClient';
+import { lastInteractionAt } from '../lib/lastInteraction';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -326,14 +327,14 @@ export function IconRail(): React.ReactElement {
     });
   }, [characters, currentUserId, removedDefaultIds, addedWorldIds]);
 
-  // Stable sort: last_launched desc (nulls last), then created desc.
+  // Stable sort: last interaction desc (summon OR chat; nulls last), then created desc.
   const sortedCharacters = useMemo(() => {
     const copy = homeCharacters.slice();
     copy.sort((a, b) => {
-      const aLast = a.last_launched ?? '';
-      const bLast = b.last_launched ?? '';
+      const aLast = lastInteractionAt(a) ?? '';
+      const bLast = lastInteractionAt(b) ?? '';
       if (aLast !== bLast) {
-        // Most-recently-launched first; empty strings (never launched) sort last.
+        // Most-recently-active first; empty strings (no activity) sort last.
         if (!aLast) return 1;
         if (!bLast) return -1;
         return bLast.localeCompare(aLast);
@@ -396,9 +397,15 @@ export function IconRail(): React.ReactElement {
               characterId={c.id}
               characterName={c.name}
               portraitImage={c.portrait_image}
-              active={view.kind === 'character' && view.id === c.id}
+              active={
+                (view.kind === 'character' && view.id === c.id) ||
+                ((view.kind === 'chat' || view.kind === 'voice-call') &&
+                  view.characterId === c.id)
+              }
               summoned={summons[c.id]?.kind === 'online' || summons[c.id]?.kind === 'connecting'}
-              onClick={() => navigate({ kind: 'character', id: c.id })}
+              // Phase 18/19: the rail avatar opens the in-app chat (the new
+              // primary surface), not the read-only character profile.
+              onClick={() => navigate({ kind: 'chat', characterId: c.id })}
               theme={theme}
               setHover={setHoverTip}
             />

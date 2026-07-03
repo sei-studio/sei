@@ -21,29 +21,58 @@ import React, { useRef } from 'react';
 import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
 import { PortraitCropModal } from './PortraitCropModal';
+import { UserIcon } from './icons';
+import avatarStyles from './PortraitImagePicker.module.css';
 
 /** D-28 size budget (mirrors PORTRAIT_MAX_BYTES in src/main/portraitImageUtil.ts). */
 const MAX_BYTES = 500 * 1024;
 
 export interface PortraitImagePickerProps {
-  /** UUID of the persisted character to attach this portrait to. */
-  characterId: string;
+  /**
+   * UUID of the persisted character to attach this portrait to. Optional when
+   * `applyOverride` / `removeOverride` are provided (e.g. the user-profile
+   * variant in Settings, which targets the current user instead of a character).
+   */
+  characterId?: string;
   /** Current portrait reference ('<uuid>.png') or null. */
   value: string | null;
   /** Called with the new path reference after a successful apply, or null on remove. */
   onChange: (portraitRef: string | null) => void;
+  /**
+   * Phase 18/19 — apply/remove override hooks. When provided, the picker calls
+   * these instead of the character portrait IPC (sei.charsApplyPortrait /
+   * sei.charsRemovePortrait), letting the same control target the user's profile
+   * picture. The bytes/encoding pipeline is unchanged. (D-28 semantics: main
+   * still re-validates magic + size + dims.)
+   */
+  applyOverride?: (args: { bytesBase64: string; format: 'png' | 'jpeg' | 'webp' }) => Promise<string>;
+  removeOverride?: () => Promise<void>;
+  /**
+   * Presentation. 'default' = square preview + Upload/Change/Remove buttons.
+   * 'avatar' = a circular preview that reveals a "Change" overlay on hover and
+   * opens the picker on click (the user's profile picture in Settings).
+   */
+  variant?: 'default' | 'avatar';
 }
 
 export function PortraitImagePicker({
   characterId,
   value,
   onChange,
+  applyOverride,
+  removeOverride,
+  variant = 'default',
 }: PortraitImagePickerProps): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<boolean>(false);
   // Decoded source image awaiting crop/preview in the popup (null = closed).
   const [cropImg, setCropImg] = React.useState<HTMLImageElement | null>(null);
+  // Cache-buster bumped on each successful apply. The user profile picture keeps
+  // a FIXED path ref ('_user.png'), so re-uploading returns the same ref and the
+  // same URL — without this the <img> src never changes and the browser shows the
+  // stale bytes until a full refresh. Bumping it forces an immediate re-fetch.
+  const [bust, setBust] = React.useState<number>(0);
   // Object URL backing the crop modal's <img>; revoked when the modal closes.
   const cropUrlRef = useRef<string | null>(null);
 
@@ -96,7 +125,10 @@ export function PortraitImagePicker({
         return;
       }
       const bytesBase64 = bytesToBase64(bytes);
-      const ref = await sei.charsApplyPortrait({ characterId, bytesBase64, format });
+      const ref = applyOverride
+        ? await applyOverride({ bytesBase64, format })
+        : await sei.charsApplyPortrait({ characterId: characterId as string, bytesBase64, format });
+      setBust((b) => b + 1);
       onChange(ref);
     } catch (err) {
       setError(prettifyError((err as Error).message ?? 'Failed to apply portrait.'));
@@ -111,7 +143,8 @@ export function PortraitImagePicker({
     setBusy(true);
     setError(null);
     try {
-      await sei.charsRemovePortrait(characterId);
+      if (removeOverride) await removeOverride();
+      else await sei.charsRemovePortrait(characterId as string);
       onChange(null);
     } catch (err) {
       setError((err as Error).message ?? 'Failed to remove portrait.');
@@ -119,6 +152,51 @@ export function PortraitImagePicker({
       setBusy(false);
     }
   };
+
+  const hiddenInput = (
+    <input
+      ref={inputRef}
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      onChange={(e) => void onFile(e)}
+      style={{ display: 'none' }}
+    />
+  );
+
+  // Avatar variant — circular, click-to-change, no buttons (Settings profile).
+  if (variant === 'avatar') {
+    const base = value ? portraitSrc(value) : null;
+    const src = base ? `${base}${base.includes('?') ? '&' : '?'}v=${bust}` : null;
+    return (
+      <>
+        <button
+          type="button"
+          className={avatarStyles.avatar}
+          onClick={onPick}
+          disabled={busy}
+          aria-label={value ? 'Change profile picture' : 'Add profile picture'}
+        >
+          {src ? (
+            <img src={src} alt="" className={avatarStyles.avatarImg} />
+          ) : (
+            <UserIcon size={22} />
+          )}
+          <span className={avatarStyles.avatarOverlay}>{busy ? '…' : 'Change'}</span>
+        </button>
+        {hiddenInput}
+        {error ? <span className={avatarStyles.err}>{error}</span> : null}
+        {cropImg ? (
+          <PortraitCropModal
+            image={cropImg}
+            busy={busy}
+            shape="avatar"
+            onCancel={closeCrop}
+            onConfirm={(canvas) => void onCropConfirm(canvas)}
+          />
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <>

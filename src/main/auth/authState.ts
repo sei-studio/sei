@@ -296,9 +296,13 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
           // session-restore (same user → scopeChanged false), so a user who
           // deliberately switched to BYOK isn't re-flipped on every reopen.
           // Best-effort: a config write failure must never block sign-in.
+          // 260703: routed through applyCloudDefaultForSignIn — an explicit
+          // BYOK choice (ai_backend_kind_source === 'user', or a legacy
+          // 'local' with a stored key) survives re-login instead of being
+          // force-flipped back to cloud billing.
           try {
-            const { setAiBackendKind } = await import('../apiKeyStore');
-            await setAiBackendKind('cloud-proxy');
+            const { applyCloudDefaultForSignIn } = await import('../apiKeyStore');
+            await applyCloudDefaultForSignIn();
           } catch (err) {
             console.warn(`[sei] sign-in cloud-default failed: ${(err as Error).message}`);
           }

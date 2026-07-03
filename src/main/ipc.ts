@@ -21,6 +21,7 @@ import {
   type SubscriptionStatusInfo,
   type CreditsHardStopEvent,
   type LanState,
+  type BotStatus,
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
@@ -61,6 +62,38 @@ export interface IpcHandlerDeps {
    * getter so it always reflects main's latest `latestLanState`.
    */
   getLanState: () => LanState;
+  /**
+   * 260703: force one LAN detection pass right now, refreshing the state that
+   * getLanState reads. Awaited at the top of chat:send so the companion's
+   * world-open answer reflects live truth instead of an up-to-2s-stale poll
+   * (the player often messages seconds after clicking "Open to LAN").
+   * Optional — absent means chat answers from the cached poll.
+   */
+  refreshLanState?: () => Promise<void>;
+  /**
+   * 260703: like {@link refreshLanState} but RETURNS the fresh LanState. Backs
+   * the `lan:check-now` invoke channel — the renderer's summon click awaits it
+   * so it gates on live ground truth rather than the possibly-damped snapshot
+   * (a world that just closed must not summon into a dead port). Falls back to
+   * the cached `getLanState()` on any error. Optional for older wiring.
+   */
+  checkLanNow?: () => Promise<LanState>;
+  /**
+   * Current per-character bot statuses (snapshot). The `bot:status` channel
+   * only PUSHES on transitions, so a freshly-(re)subscribed renderer pulls
+   * this to seed its summons map — otherwise a session that went online
+   * before the subscription attached stays invisible (no popup, profile stuck
+   * on "Play together"). Wired in index.ts to the currentStatuses map.
+   */
+  getBotStatuses: () => BotStatus[];
+  /**
+   * A chat-launched join (fired non-blocking so the chat turn doesn't hang)
+   * failed. Post a short notice into the transcript so the player isn't left
+   * with the companion's "hopping in" and then silence. Wired in index.ts.
+   */
+  notifyLaunchFailed: (characterId: string, reason: string) => void;
+  /** Task 4 — true only when the character's bot is fully spawned in-world. */
+  isSessionOnline: (characterId: string) => boolean;
 }
 
 /**
@@ -399,11 +432,27 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = idArg == null ? undefined : IdSchema.parse(idArg);
     await deps.supervisor.stop(id);
   });
+  // Bot-status snapshot (pull). Seeds a freshly-(re)subscribed renderer's
+  // summons map; the bot:status channel only pushes on transitions.
+  ipcMain.handle(IpcChannel.bot.getStatuses, async (): Promise<BotStatus[]> => {
+    return deps.getBotStatuses();
+  });
 
   // LAN state snapshot (pull). Seeds a freshly-(re)loaded renderer; the
   // lan:state channel only pushes on change.
   ipcMain.handle(IpcChannel.lan.get, async (): Promise<LanState> => {
     return deps.getLanState();
+  });
+
+  // Fresh, undamped LAN detection pass (pull). Backs the summon click's
+  // live-truth gate so a just-closed world isn't summoned into. Falls back to
+  // the cached snapshot if the on-demand check is unwired or throws.
+  ipcMain.handle(IpcChannel.lan.checkNow, async (): Promise<LanState> => {
+    try {
+      return (await deps.checkLanNow?.()) ?? deps.getLanState();
+    } catch {
+      return deps.getLanState();
+    }
   });
 
   // Character CRUD
@@ -675,6 +724,77 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = z.string().uuid().parse(idArg);
     const { removePortrait } = await import('./portraitStore');
     await removePortrait(id);
+  });
+
+  // ── In-app chat (Phase 18/19) ─────────────────────────────────────────────
+  // The chat LLM call runs entirely in main (mirrors personaExpansion) — no
+  // forked bot. `chat:send` may run the launch tool, which consults the live
+  // LAN state and summons the bot when a world is open.
+  ipcMain.handle(IpcChannel.chat.history, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { readRecent } = await import('./chat/chatService');
+    return await readRecent(id, 50);
+  });
+
+  ipcMain.handle(IpcChannel.chat.send, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        text: z.string().min(1).max(4000),
+        // Quoted-reply reference (chat #1) — was previously dropped here, so the
+        // companion never saw what the user was replying to.
+        replyTo: z
+          .object({ role: z.enum(['user', 'companion']), text: z.string() })
+          .optional(),
+      })
+      .parse(argsRaw);
+    const { sendChatMessage } = await import('./chat/chatService');
+    // Fresh world-detection pass before the prompt is built (260703): the
+    // "is my world open?" answer must not come from a stale poll. ~60-100ms.
+    try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
+    return await sendChatMessage(
+      { characterId: args.characterId, text: args.text, replyTo: args.replyTo },
+      {
+        getLanState: deps.getLanState,
+        summon: (id) => deps.supervisor.summon(id),
+        // Task 4 — when the character is already in-game (spawned), route this
+        // message into that live session instead of the standalone chat brain.
+        isInGame: (id) => deps.isSessionOnline(id),
+        routeToBot: (id, payload) => deps.supervisor.sendSeiChat(id, payload),
+        onLaunchFailed: (id, reason) => deps.notifyLaunchFailed(id, reason),
+        // Task 5 — the companion called quit() from chat: end the live session.
+        leaveGame: (id) => {
+          void deps.supervisor.stop(id);
+        },
+      },
+    );
+  });
+
+  ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    const { clear } = await import('./chat/chatStore');
+    const { clearContinuity } = await import('./chat/continuity');
+    // Clear the transcript AND the derived rolling summary/watermark, so a
+    // cleared conversation cannot re-seed a stale summary into a later summon.
+    await Promise.all([clear(id), clearContinuity(id)]);
+  });
+
+  // ── User profile (Phase 19) ───────────────────────────────────────────────
+  ipcMain.handle(IpcChannel.user.getProfile, async () => {
+    const { getUserProfile } = await import('./userProfile');
+    return await getUserProfile();
+  });
+
+  ipcMain.handle(IpcChannel.user.applyProfilePicture, async (_event, argsRaw: unknown): Promise<string> => {
+    const args = z.object({ bytesBase64: z.string().min(1), format: z.enum(['png', 'jpeg', 'webp']) }).parse(argsRaw);
+    const bytes = Buffer.from(args.bytesBase64, 'base64');
+    const { applyUserProfilePicture } = await import('./userProfile');
+    return await applyUserProfilePicture(bytes);
+  });
+
+  ipcMain.handle(IpcChannel.user.removeProfilePicture, async (): Promise<void> => {
+    const { removeUserProfilePicture } = await import('./userProfile');
+    await removeUserProfilePicture();
   });
 
   // Phase 11 D-16 — toggle public/private visibility on a character. Defaults

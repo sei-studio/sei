@@ -319,8 +319,6 @@ export function SkinEditor({
   // ── Render helpers ───────────────────────────────────────────────────────
   const applyDisabled =
     !stagedPng || mode === 'applying' || botActiveForThisPersona || !!usernameError;
-  const showDefaultBadge =
-    character.skin.source === 'bundled' && !stagedPng;
 
   // Left column = 3D preview, optionally covered by the skin-setup nudge.
   // Shared between the view-only/default branch and the editable branch so
@@ -350,18 +348,10 @@ export function SkinEditor({
       <section className={sectionClass}>
         <div className={styles.header}>
           <div className={styles.eyebrow}>SKIN &amp; USERNAME</div>
-          <span className={styles.defaultBadge}>Public skin</span>
         </div>
         <div className={styles.cols}>
           {previewColumn}
-          <div className={styles.right}>
-            {/*
-              ITEM 14 (quick/260523-t8d): removed the "Default personas keep their
-              bundled skin and username. Create a custom persona to use your own
-              skin." paragraph — the Public skin badge above already conveys
-              read-only state.
-            */}
-          </div>
+          <div className={styles.right} />
         </div>
       </section>
     );
@@ -371,10 +361,6 @@ export function SkinEditor({
     <section className={sectionClass}>
       <div className={styles.header}>
         <div className={styles.eyebrow}>SKIN &amp; USERNAME</div>
-        {showDefaultBadge ? (
-          // ITEM 14 (quick/260523-t8d): "Default skin" → "Public skin".
-          <span className={styles.defaultBadge}>Public skin</span>
-        ) : null}
       </div>
 
       <div className={styles.cols}>
@@ -402,7 +388,7 @@ export function SkinEditor({
           {!usernameError && usernameCollision ? (
             <p className={styles.warnCopy}>
               {`${usernameCollision.name} also joins as "${resolvedMcName}". In a world, two
-              characters with the same in-game name share one inventory and location — summon one
+              characters with the same in-game name share one inventory and location — connect one
               after the other and the second inherits the first's items and spot. Give one a
               different name to keep them separate.`}
             </p>
@@ -486,7 +472,7 @@ export function SkinEditor({
           {/* Inline status copy band ───────────────────────────────────── */}
           {botActiveForThisPersona ? (
             <p className={styles.warnCopy}>
-              Stop the bot before changing skin. Skin applies on next summon.
+              Stop the bot before changing skin. Skin applies on next connect.
             </p>
           ) : null}
           {error ? <p className={styles.errorCopy}>{error}</p> : null}
@@ -501,7 +487,7 @@ export function SkinEditor({
           ) : null}
           {successToast ? (
             <p className={styles.successCopy}>
-              {"Skin applied. It'll show up on the next bot summon."}
+              {"Skin applied. It'll show up the next time the bot connects."}
             </p>
           ) : null}
         </div>

@@ -44,6 +44,20 @@ describe('buildLibraryFields', () => {
     expect(fields.find((f) => f.id === 'PROACTIVENESS_DIRECTIVES' + ID_SEP + '2')).toBeTruthy()
   })
 
+  it('surfaces the extracted event-framing prose constants (reflex/idle/attacked)', () => {
+    const ids = fields.map((f) => f.id)
+    expect(ids).toContain('REFLEX_ADDENDUM_TEXT')
+    expect(ids).toContain('IDLE_TICK_TEXT')
+    expect(ids).toContain('ATTACKED_ADDENDUM_PVP')
+    expect(ids).toContain('ATTACKED_ADDENDUM_MOB')
+    expect(ids).toContain('IDLE_STUCK_NUDGE_VISION')
+    // The extracted prose actually flows through the runtime functions.
+    expect(mod.REFLEX_ADDENDUM('a creeper', { noticed: true, count: 3 })).toContain('a creeper')
+    expect(mod.REFLEX_ADDENDUM('a creeper', { noticed: true, count: 3 })).toContain('3 hostiles close')
+    expect(mod.EVENT_GUIDANCE['sei:idle']({ quietMs: 5000 }, 'on-demand')).toContain('IDLE TICK')
+    expect(mod.ATTACKED_ADDENDUM('Steve', 'player')).toContain('PvP is off')
+  })
+
   it('skips function-valued props (only string entries are editable)', () => {
     const nudgeIds = fields.filter((f) => f.id.startsWith('NUDGES' + ID_SEP)).map((f) => f.id)
     expect(nudgeIds).toContain('NUDGES' + ID_SEP + 'silence')

@@ -11,13 +11,15 @@
 
 import os from 'node:os'
 import path from 'node:path'
-import { describe, it, expect, vi } from 'vitest'
+import fs from 'node:fs/promises'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { z } from 'zod'
-import { NUDGES } from './prompts.js'
+import { NUDGES, GREETING_HINT } from './prompts.js'
 import {
   createOrchestrator,
   composeSeedBlocks,
   _setTickIntervalForTests,
+  appendProcedureOnce,
 } from './orchestrator.js'
 
 // ───────────────────────── Change 2: template ─────────────────────────
@@ -147,6 +149,50 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     const noAction = NUDGES.actionTurn({ action: null, stopTool: 'end_loop', elapsedSec: null })
     expect(noAction).toContain('your action')
     expect(noAction).not.toContain('(null')
+  })
+
+  // 260703: session-end vs task-stop disambiguation (live-session bug — the bot
+  // said goodbye three times in a row and never left, because every per-turn
+  // addendum only ever named end_loop/stopTool and never mentioned quit). Every
+  // player-message variant of actionTurn must name quit for session-end phrasing,
+  // distinct from the stopTool it names for pausing a task.
+  it('mid-action player-message variant distinguishes stopping a task from ending the session (names quit)', () => {
+    const t = NUDGES.actionTurn({
+      action: 'gather oak_log',
+      stopTool: 'end_loop',
+      playerLine: "lets call it here for now",
+      who: 'Ouen',
+    })
+    expect(t).toContain('call end_loop')
+    expect(t).toContain('ENDING THE SESSION')
+    expect(t).toContain('call quit')
+    expect(t).toContain('farewell')
+    expect(t).toMatch(/"bye".*"cya"|cya/i)
+  })
+
+  it('not-mid-action player-message variant also names quit for session-end phrasing', () => {
+    const t = NUDGES.actionTurn({ action: null, stopTool: 'end_loop', playerLine: 'cya', who: 'Ouen' })
+    expect(t).toContain('ENDING THE SESSION')
+    expect(t).toContain('call quit')
+    expect(t).toContain('farewell')
+  })
+
+  it('the silent-monitor variant (no player message) does NOT mention quit', () => {
+    // Session-end guidance only makes sense as a reaction to something the
+    // player said, so it must not leak into the routine self-check-in tick.
+    const silent = NUDGES.actionTurn({ action: 'gather oak_log', stopTool: 'end_loop', elapsedSec: 12 })
+    expect(silent).not.toContain('quit')
+  })
+})
+
+describe('NUDGES.playerInterruptHint — session-end disambiguation (260703)', () => {
+  it('names quit as distinct from ending the loop, with concrete trigger phrases', () => {
+    const t = NUDGES.playerInterruptHint
+    expect(t).toContain('end_loop')
+    expect(t).toContain('ENDING THE SESSION')
+    expect(t).toContain('call quit')
+    expect(t).toContain('farewell')
+    expect(t).toMatch(/"bye".*"cya"|cya/i)
   })
 })
 
@@ -455,5 +501,254 @@ describe('say() tool (260617)', () => {
     expect(adapter.chat).toHaveBeenCalledWith('first line')
     expect(adapter.chat).not.toHaveBeenCalledWith('second line')
     expect(adapter.chat).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ──────────── procedural memory write-back on milestone completion (17-04, D-08) ────────────
+//
+// The direct unit proof of D-08: when a milestone newly completes, its terse
+// known-good `procedure` is recorded ONCE into per-world memory (append +
+// compaction trigger), and never a second time for the same node id within the
+// same session. The orchestrator's milestone-complete branch calls this helper.
+
+describe('appendProcedureOnce (procedural memory write-back, D-08)', () => {
+  function deps() {
+    const memoryLog = { append: vi.fn().mockResolvedValue(1) }
+    const memoryCompactor = { maybeCompact: vi.fn().mockResolvedValue(undefined) }
+    const written = new Set()
+    const logger = { warn: vi.fn() }
+    return { memoryLog, memoryCompactor, written, logger }
+  }
+
+  it('writes the completed node\'s procedure once and triggers compaction', async () => {
+    const d = deps()
+    const node = { id: 'iron_pickaxe', procedure: 'iron: stone pickaxe -> mine iron_ore -> smelt -> craft' }
+    const wrote = await appendProcedureOnce(node, d)
+    expect(wrote).toBe(true)
+    expect(d.memoryLog.append).toHaveBeenCalledTimes(1)
+    expect(d.memoryLog.append).toHaveBeenCalledWith(node.procedure, expect.any(Date))
+    expect(d.memoryCompactor.maybeCompact).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT append a second time for the same node id in the same session (dedupe)', async () => {
+    const d = deps()
+    const node = { id: 'iron_pickaxe', procedure: 'iron: ... -> craft iron_pickaxe' }
+    expect(await appendProcedureOnce(node, d)).toBe(true)   // first completion writes
+    expect(await appendProcedureOnce(node, d)).toBe(false)  // subsequent seed: deduped
+    expect(d.memoryLog.append).toHaveBeenCalledTimes(1)     // still exactly one write
+  })
+
+  it('writes distinct procedures for distinct milestones', async () => {
+    const d = deps()
+    await appendProcedureOnce({ id: 'furnace', procedure: 'furnace: 8 cobblestone -> furnace' }, d)
+    await appendProcedureOnce({ id: 'iron_pickaxe', procedure: 'iron: ... -> iron_pickaxe' }, d)
+    expect(d.memoryLog.append).toHaveBeenCalledTimes(2)
+  })
+
+  it('is a no-op for a node with no procedure (later spine nodes leave it empty)', async () => {
+    const d = deps()
+    expect(await appendProcedureOnce({ id: 'diamonds' }, d)).toBe(false)
+    expect(await appendProcedureOnce({ id: 'diamonds', procedure: '' }, d)).toBe(false)
+    expect(await appendProcedureOnce(null, d)).toBe(false)
+    expect(d.memoryLog.append).not.toHaveBeenCalled()
+  })
+
+  it('is best-effort: a throwing memoryLog never propagates', async () => {
+    const d = deps()
+    d.memoryLog.append = vi.fn().mockRejectedValue(new Error('disk full'))
+    await expect(appendProcedureOnce({ id: 'furnace', procedure: 'furnace: ...' }, d)).resolves.toBe(false)
+    expect(d.logger.warn).toHaveBeenCalled()
+  })
+})
+
+// ──────────── remember() nudges + same-batch remember/say/quit (260703b) ────────────
+//
+// Live-session evidence (character "Marv"): across 8 sessions MEMORY.md gained 3
+// entries, 2 near-duplicates — nothing ever nudged the model toward remember().
+// Two nudges now do (SESSION_END_CLAUSE + the preference-capture sentence in
+// playerInterruptHint), and the orchestrator guarantees a remember() in the same
+// batch as quit() still lands (inline metadata executes in batch order; quit's
+// teardown is deferred on a >=250ms timer while memoryLog.append is awaited).
+
+describe('remember() nudges (260703b)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('a player-message turn carries the session-end remember guidance alongside quit', async () => {
+    const { adapter } = makeAdapter()
+    const provider = makeProvider([{ text: '', toolUses: [] }])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('gtg, cya'))
+    const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
+    expect(turn).toContain('ENDING THE SESSION')
+    expect(turn).toContain('remember, say, and quit can all be called together')
+  })
+
+  it('a player-message turn carries the preference-capture nudge', async () => {
+    const { adapter } = makeAdapter()
+    const provider = makeProvider([{ text: '', toolUses: [] }])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('you should say hi to me next time when u join'))
+    const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
+    expect(turn).toContain('record it with remember() in the same turn')
+    expect(turn).toContain('that is exactly what memory is for')
+  })
+
+  it('remember() + say() + quit() in ONE turn: the memory write lands AND quit proceeds (remember AFTER quit in batch order)', async () => {
+    vi.useFakeTimers()
+    _setTickIntervalForTests(10_000_000)
+    const config = makeConfig()
+    // remember is deliberately placed AFTER quit — quit's terminate=true only
+    // gates non-inline tools, so a later inline remember() must still execute.
+    const provider = makeProvider([
+      { text: '', toolUses: [
+        { id: 's1', name: 'say', input: { text: 'later, keep the base safe' } },
+        { id: 'q1', name: 'quit', input: { farewell: 'cya nerd' } },
+        { id: 'r1', name: 'remember', input: { text: 'player wants a hello whenever I join' } },
+      ] },
+    ])
+    const onQuitRequested = vi.fn()
+    const { adapter } = makeAdapter()
+    const orch = createOrchestrator({
+      adapter, config, reenqueue: () => {}, onQuitRequested, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('bye!'))
+
+    // The memory write actually happened — the entry is on disk.
+    const md = await fs.readFile(config.memory.memory_md_path, 'utf8')
+    expect(md).toContain('player wants a hello whenever I join')
+    // The say() line and the farewell both reached chat.
+    expect(adapter.chat).toHaveBeenCalledWith('later, keep the base safe')
+    expect(adapter.chat).toHaveBeenCalledWith('cya nerd')
+    // Quit still proceeds — teardown fires once the goodbye defer elapses.
+    expect(onQuitRequested).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(11_000)
+    expect(onQuitRequested).toHaveBeenCalledTimes(1)
+    // The loop ended (quit is terminal).
+    expect(orch.currentLoop).toBeNull()
+  })
+})
+
+// ──────────── sticky greeting hint (260703b) ────────────
+//
+// Live-session evidence: loop-1 (the first idle tick carrying FIRST CONTACT) was
+// preempted 6s in by sei:attacked (a phantom), the greeting instruction existed
+// only on that one event, and the player later complained "u should say hi to me
+// next time when u join". The greet instruction is now sticky: until ANY say()
+// line reaches chat this session, every composed turn carries GREETING_HINT
+// (except the first idle tick, where the full FIRST CONTACT block already rides).
+
+describe('sticky greeting hint (260703b)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('survives a FIRST CONTACT loop preempted by an attack, and clears once a say() emits', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { adapter } = makeAdapter()
+    let releaseFirstCall
+    const provider = makeProvider([
+      // Call 1 — the FIRST CONTACT idle tick. Hangs so the attack preempts it
+      // BEFORE the LLM returns (the exact live failure shape).
+      () => new Promise((res) => { releaseFirstCall = res }),
+      // Call 2 — the attack loop: the model greets (and ends the loop).
+      { text: '', toolUses: [
+        { id: 's1', name: 'say', input: { text: 'yo, rough landing' } },
+        { id: 'el1', name: 'end_loop', input: {} },
+      ] },
+      // Call 3 — a later idle tick, after the greeting was spoken.
+      { text: '', toolUses: [] },
+    ])
+    const reenqueued = []
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(),
+      reenqueue: (ev, d) => reenqueued.push([ev, d]),
+      _anthropicOverride: provider,
+    })
+
+    // First idle tick opens the FIRST CONTACT loop; the LLM call is in flight.
+    const p1 = orch.handleDispatch('sei:idle', { reason: 'just_connected_first_spawn', quietMs: 0 })
+    await flush()
+    expect(provider.calls.length).toBe(1)
+
+    // The attack lands before the LLM returns — the FIRST CONTACT loop dies and
+    // the attack is re-enqueued for a fresh loop.
+    await orch.handleDispatch('sei:attacked', { attackerLabel: 'phantom', attackerKind: 'mob' })
+    releaseFirstCall({ text: '', toolUses: [] })
+    await p1
+    expect(orch.currentLoop).toBeNull()
+
+    // The first idle tick carried the FULL block, and never the short hint
+    // (no double-inject on the first tick).
+    const turn1 = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
+    expect(turn1).toContain('FIRST CONTACT')
+    expect(turn1).not.toContain(GREETING_HINT)
+
+    // Dispatch the re-fired attack like the FSM would: its prompt must carry
+    // the sticky hint — the greeting instruction survived the preempt.
+    const atk = reenqueued.find(([ev]) => ev === 'sei:attacked')
+    expect(atk).toBeTruthy()
+    await orch.handleDispatch('sei:attacked', atk[1])
+    const turn2 = JSON.stringify(provider.calls[1].messages ?? provider.calls[1])
+    expect(turn2).toContain(GREETING_HINT.slice(0, 40))
+    // The greeting reached chat this time.
+    expect(adapter.chat).toHaveBeenCalledWith('yo, rough landing')
+    expect(orch.currentLoop).toBeNull()
+
+    // Once a say() line has emitted, subsequent turns carry NO hint.
+    await orch.handleDispatch('sei:idle', { quietMs: 60_000 })
+    expect(provider.calls.length).toBe(3)
+    const turn3 = JSON.stringify(provider.calls[2].messages ?? provider.calls[2])
+    expect(turn3).not.toContain(GREETING_HINT.slice(0, 40))
+  })
+
+  it('rides ungreeted player-chat turns too, and a quit farewell counts as the greeting', async () => {
+    vi.useFakeTimers()
+    _setTickIntervalForTests(10_000_000)
+    const { adapter } = makeAdapter()
+    const provider = makeProvider([
+      // Call 1 — a chat turn before anything was ever said: hint must ride.
+      { text: '', toolUses: [{ id: 'q1', name: 'quit', input: { farewell: 'fine cya then' } }] },
+    ])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, onQuitRequested: () => {}, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('actually gtg, bye'))
+    const turn1 = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
+    expect(turn1).toContain(GREETING_HINT.slice(0, 40))
+    // The farewell rode the shared say pipeline — it flips the greeted flag.
+    expect(adapter.chat).toHaveBeenCalledWith('fine cya then')
+  })
+})
+
+// ──────────── player_message scratchpad contract (260703b) ────────────
+//
+// Live-session evidence: on "yo" the model wrote "yo." into its private text and
+// called placeBlock with NO say() — the player got silence. The player_message
+// block now spells out that the text output is a scratchpad the player never sees.
+
+describe('player_message block — scratchpad contract (260703b)', () => {
+  it('tells the model its text output is a private scratchpad the player can never see', async () => {
+    const { adapter } = makeAdapter()
+    const provider = makeProvider([{ text: 'yo.', toolUses: [] }])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(),
+      // sessionState + playerStore stubs so the seed path composes the
+      // player_message block (the fallback seed omits it).
+      sessionState: { playerData: () => ({}), onLoopTerminal: async () => {} },
+      playerStore: { formatPlayerSeedBlock: () => 'PLAYER' },
+      reenqueue: () => {}, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('yo'))
+    const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
+    expect(turn).toContain('private scratchpad the player can NEVER see')
+    expect(turn).toContain('only say() reaches them')
   })
 })

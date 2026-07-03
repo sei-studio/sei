@@ -74,16 +74,28 @@ describe('switchScopeForAuth', () => {
     expect(await getAiBackendKind()).toBe('cloud-proxy');
   });
 
-  it('re-flips a previously-local profile to cloud-proxy on a fresh sign-in', async () => {
-    // Answers "was I on local because the profile was previously set to local?"
-    // No: every genuine sign-in transition re-asserts the cloud default, so a
-    // prior local/BYOK choice on that profile is overridden on re-login.
+  it('re-flips a DEFAULT-sourced local profile to cloud-proxy on a fresh sign-in', async () => {
+    // A 'local' that came from a default write (a pre-source-field config, or a
+    // build that never wrote the cloud default) is re-asserted to cloud on
+    // every genuine sign-in transition — it was never a deliberate BYOK choice.
     await switchScopeForAuth(UUID_A);
     const { setAiBackendKind, getAiBackendKind } = await import('../apiKeyStore');
-    await setAiBackendKind('local'); // pretend this profile chose BYOK before
+    await setAiBackendKind('local', 'default'); // schema-default-flavored local
     await switchScopeForAuth(null); // sign out
     await switchScopeForAuth(UUID_A); // sign back in
     expect(await getAiBackendKind()).toBe('cloud-proxy');
+  });
+
+  it('keeps an EXPLICIT user choice of local across sign-out/sign-in (260703)', async () => {
+    // The user flipped ACCOUNT MODE to BYOK themselves (proxy:configure →
+    // setAiBackendKind, default source 'user'). Re-login must NOT stomp it back
+    // to cloud billing — that silently moved their calls onto paid credits.
+    await switchScopeForAuth(UUID_A);
+    const { setAiBackendKind, getAiBackendKind } = await import('../apiKeyStore');
+    await setAiBackendKind('local'); // source defaults to 'user' (explicit)
+    await switchScopeForAuth(null); // sign out
+    await switchScopeForAuth(UUID_A); // sign back in
+    expect(await getAiBackendKind()).toBe('local');
   });
 
   it('is a no-op when the scope is unchanged', async () => {

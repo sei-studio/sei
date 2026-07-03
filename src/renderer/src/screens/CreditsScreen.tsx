@@ -65,12 +65,12 @@ const ESTIMATE_DISCLAIMER = 'Playtime shown is an estimate; actual playtime vari
 function claimErrorCopy(code: string): string {
   switch (code) {
     case 'already_claimed':
-      return 'Trial already claimed.';
+      return 'Encounter already claimed.';
     case 'device_claimed':
       // Per-device anti-abuse gate: this machine already spent its one free
       // trial (possibly under a different account). Distinct from the
       // account-level "already claimed" so the message isn't misleading.
-      return 'This device already used its free trial. Try Quest or Party below.';
+      return 'This device already used its free Encounter. Try Quest or Party below.';
     default:
       return 'Could not claim. Please try again.';
   }
@@ -232,7 +232,7 @@ export function CreditsScreen(): React.ReactElement {
         <div className={styles.plansRow}>
           {/* Trial — claim the one-time free trial (Supabase-backed). */}
           <div className={styles.planCard}>
-            <div className={styles.planName}>Trial</div>
+            <div className={styles.planName}>Encounter</div>
             <div className={styles.planPrice}>Free</div>
             <p className={styles.planPlaytime}>~1 hour of playtime</p>
             {claimError ? <p className={styles.claimError}>{claimError}</p> : null}

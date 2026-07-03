@@ -3,7 +3,7 @@
 // parked inside onDispatch. See createPriorityQueue({ onPreempt }).
 
 import { describe, it, expect, vi } from 'vitest'
-import { createPriorityQueue, Priority } from './fsm.js'
+import { createPriorityQueue, Priority, attackedPriority } from './fsm.js'
 
 // Drain the queue's setImmediate-chained dispatch loop. processNext handles ONE
 // item then re-schedules itself via setImmediate, so draining K items needs K
@@ -101,5 +101,82 @@ describe('createPriorityQueue onPreempt hook', () => {
     // Hook threw → not claimed → event still dispatched (no message lost).
     expect(onDispatch).toHaveBeenCalledTimes(1)
     q.dispose()
+  })
+})
+
+// A proactive reflex warning arrives on the 'sei:attacked' event but tagged
+// attackerKind:'reflex'. The bot was NOT hit (reflex.js already evaded); the
+// warning is conversation-tier, so it must never outrank or abort player chat.
+// These tests pin the two mechanisms that keep it at P1: the attackedPriority
+// helper (used by index.js onAttacked) and the enqueue-time onPreempt fast-path
+// exclusion.
+describe('reflex-tagged sei:attacked is conversation-tier, not safety-tier', () => {
+  it('(i) attackedPriority: reflex → P1_CHAT, real attack (player/mob/unknown) → P0_SAFETY', () => {
+    expect(attackedPriority({ attackerKind: 'reflex' })).toBe(Priority.P1_CHAT)
+    expect(attackedPriority({ attackerKind: 'player' })).toBe(Priority.P0_SAFETY)
+    expect(attackedPriority({ attackerKind: 'mob' })).toBe(Priority.P0_SAFETY)
+    expect(attackedPriority({})).toBe(Priority.P0_SAFETY)
+    expect(attackedPriority(undefined)).toBe(Priority.P0_SAFETY)
+  })
+
+  it('(ii) a reflex sei:attacked does NOT trigger the onPreempt abort fast-path', async () => {
+    const onDispatch = vi.fn()
+    const onPreempt = vi.fn(() => false)
+    const q = createPriorityQueue({ onDispatch, onPreempt, idleFallbackMs: 1_000_000 })
+
+    // Enqueued at the tier attackedPriority assigns it (P1_CHAT).
+    q.enqueue(attackedPriority({ attackerKind: 'reflex' }), 'sei:attacked', {
+      attackerKind: 'reflex',
+      attackerLabel: 'a creeper',
+    })
+    await flush()
+
+    // Fast-path excluded → no attempt to abort a parked LLM call. It still
+    // dispatches normally through the queue.
+    expect(onPreempt).not.toHaveBeenCalled()
+    expect(onDispatch).toHaveBeenCalledTimes(1)
+    expect(onDispatch.mock.calls[0][0]).toBe('sei:attacked')
+    q.dispose()
+  })
+
+  it('(ii) a REAL attack sei:attacked STILL triggers the onPreempt fast-path', async () => {
+    const onDispatch = vi.fn()
+    const onPreempt = vi.fn(() => false)
+    const q = createPriorityQueue({ onDispatch, onPreempt, idleFallbackMs: 1_000_000 })
+
+    q.enqueue(attackedPriority({ attackerKind: 'mob' }), 'sei:attacked', { attackerKind: 'mob' })
+    await flush()
+
+    expect(onPreempt).toHaveBeenCalledTimes(1)
+    expect(onPreempt.mock.calls[0][0]).toBe('sei:attacked')
+    q.dispose()
+  })
+
+  it('a reflex does NOT outrank a pending player chat (FIFO within P1); a real attack DOES (P0 first)', async () => {
+    // Ordering proof through the real queue. No onPreempt so the fast-path is a
+    // no-op; nothing is in flight at enqueue time so the chat→P0 promotion does
+    // not apply. Priority ordering alone decides dispatch order.
+    const order = []
+    const onDispatch = vi.fn((event) => { order.push(event) })
+    const q = createPriorityQueue({ onDispatch, idleFallbackMs: 1_000_000 })
+
+    // Player chat queued FIRST, then a reflex — both land at P1_CHAT.
+    q.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true, text: 'hi' })
+    q.enqueue(attackedPriority({ attackerKind: 'reflex' }), 'sei:attacked', { attackerKind: 'reflex' })
+    await flush()
+
+    // Same tier → FIFO → the waiting player is answered before the heads-up.
+    expect(order).toEqual(['sei:chat_received', 'sei:attacked'])
+    q.dispose()
+
+    // Contrast: a REAL attack queued AFTER the chat still preempts it (P0 < P1).
+    const order2 = []
+    const onDispatch2 = vi.fn((event) => { order2.push(event) })
+    const q2 = createPriorityQueue({ onDispatch: onDispatch2, idleFallbackMs: 1_000_000 })
+    q2.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true, text: 'hi' })
+    q2.enqueue(attackedPriority({ attackerKind: 'player' }), 'sei:attacked', { attackerKind: 'player' })
+    await flush()
+    expect(order2).toEqual(['sei:attacked', 'sei:chat_received'])
+    q2.dispose()
   })
 })

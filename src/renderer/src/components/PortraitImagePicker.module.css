@@ -1,0 +1,59 @@
+/* Avatar variant — circular preview that reveals a "Change" overlay on hover
+ * and opens the picker on click (used for the user's profile picture). */
+
+.avatar {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.avatar:disabled {
+  cursor: wait;
+}
+
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatarOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+
+.avatar:hover .avatarOverlay,
+.avatar:focus-visible .avatarOverlay {
+  opacity: 1;
+}
+
+.err {
+  color: var(--red);
+  font-size: 12px;
+  font-family: var(--mono);
+}

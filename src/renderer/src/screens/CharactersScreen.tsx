@@ -34,12 +34,12 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
-import { attemptSummon } from '../lib/summonFlow';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { lastInteractionAt } from '../lib/lastInteraction';
 import { Button } from '../components/Button';
 import { PlusIcon } from '../components/icons';
 import { CharacterCard } from '../components/CharacterCard';
@@ -78,12 +78,6 @@ function makeCloudPlaceholder(id: string, name: string): Character {
   };
 }
 
-function lanLabel(kind: 'connected' | 'not_connected' | 'unavailable'): string {
-  if (kind === 'connected') return 'CONNECTED';
-  if (kind === 'not_connected') return 'NOT CONNECTED';
-  return 'UNAVAILABLE';
-}
-
 export function CharactersScreen(): React.ReactElement {
   // The IconRail Home pill writes homeTab='home'; the compass writes
   // homeTab='world'. Subscribe live so a click on either rail button swaps
@@ -111,7 +105,6 @@ export function CharactersScreen(): React.ReactElement {
 function HomeGrid(): React.ReactElement {
   const characters = useDataStore((s) => s.characters);
   const recentlyDeletedIds = useDataStore((s) => s.recentlyDeletedIds);
-  const lan = useDataStore((s) => s.lan);
   const navigate = useUiStore((s) => s.navigate);
   const openModal = useUiStore((s) => s.openModal);
   const greetingDismissed = useUiStore((s) => s.homeGreetingDismissed);
@@ -194,19 +187,10 @@ function HomeGrid(): React.ReactElement {
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
 
-  const lanDotColor =
-    lan.kind === 'connected'
-      ? 'var(--green)'
-      : lan.kind === 'not_connected'
-        ? 'var(--red)'
-        : 'var(--muted)';
-  const lanTitle =
-    lan.kind === 'unavailable' ? 'LAN auto-detect unavailable on this network.' : undefined;
-
   const handleSummon = (id: string): void => {
-    // Shared flow (lib/summonFlow.ts): one-time skin-setup nudge → LAN gate →
-    // summon. Keeps this card in lockstep with CharacterPage's deploy bar.
-    void attemptSummon(id);
+    // The card's "Play" CTA opens the game picker; each tile launches through
+    // the shared summonFlow (skin-setup nudge → LAN gate). Mirrors CharacterPage.
+    openModal({ kind: 'games-picker', characterId: id });
   };
 
   const handleOpen = async (id: string): Promise<void> => {
@@ -221,9 +205,11 @@ function HomeGrid(): React.ReactElement {
     try {
       await useDataStore.getState().refreshCharacter(id);
     } catch {
-      // Non-fatal — CharacterPage will refetch via its own mount-time effect.
+      // Non-fatal — ChatScreen / CharacterPage refetch via their own effects.
     }
-    navigate({ kind: 'character', id });
+    // Phase 18/19: a Home card click now opens the in-app chat (the new primary
+    // surface); CharacterPage stays reachable via the chat header's Profile button.
+    navigate({ kind: 'chat', characterId: id });
   };
 
   const removedDefaultIds = useLibraryStateStore((s) => s.removedDefaultIds);
@@ -255,6 +241,21 @@ function HomeGrid(): React.ReactElement {
     return c.owner == null;
   });
 
+  // #7 — order the grid by last interaction (summon OR chat), matching the
+  // IconRail: most-recently-active first, then created desc. A failed summon
+  // never stamps last_launched (backstopped in botSupervisor) and a chat only
+  // stamps last_chatted on a successful reply, so failures don't reorder cards.
+  const orderedCharacters = homeCharacters.slice().sort((a, b) => {
+    const aLast = lastInteractionAt(a) ?? '';
+    const bLast = lastInteractionAt(b) ?? '';
+    if (aLast !== bLast) {
+      if (!aLast) return 1;
+      if (!bLast) return -1;
+      return bLast.localeCompare(aLast);
+    }
+    return (b.created ?? '').localeCompare(a.created ?? '');
+  });
+
   const displayName = preferredName.trim() || 'friend';
   const greetingLead = isFirstLogin ? 'Welcome to Sei, ' : 'Welcome back, ';
 
@@ -272,31 +273,19 @@ function HomeGrid(): React.ReactElement {
           )}
         </h2>
         <div className={homeStyles.actions}>
-          <button
-            type="button"
-            className={homeStyles.lanPill}
-            onClick={() => openModal({ kind: 'lan', mode: 'info' })}
-            title={lanTitle}
-            aria-label={`LAN: ${lanLabel(lan.kind).toLowerCase()}`}
-          >
-            <span
-              className={homeStyles.lanDot}
-              style={{ background: lanDotColor, color: lanDotColor }}
-            />
-            {lanLabel(lan.kind)}
-          </button>
           <Button
             kind="accent"
             size="md"
             icon={<PlusIcon size={14} />}
             onClick={() => void handleAddClick()}
+            style={{ minWidth: 168 }}
           >
-            New
+            New companion
           </Button>
         </div>
       </header>
       <section className={homeStyles.grid}>
-        {homeCharacters.map((c) => (
+        {orderedCharacters.map((c) => (
           <div key={c.id} style={{ position: 'relative' }}>
             <CharacterCard
               character={c}
@@ -397,6 +386,10 @@ function WorldGrid(): React.ReactElement {
   const loadMore = useBrowseStore((s) => s.loadMore);
   const prefetch = useBrowseStore((s) => s.prefetch);
 
+  // #6 — World sort. Alphabetical by default; "Newest" sorts by updatedAt desc.
+  // Client-side over the currently-loaded pages (infinite scroll appends more).
+  const [worldSort, setWorldSort] = useState<'alpha' | 'recent'>('alpha');
+
   const localCharacters = useDataStore((s) => s.characters);
   const removedDefaultIds = useLibraryStateStore((s) => s.removedDefaultIds);
   // Bundled defaults (sui/lyra/clawd) are surfaced as system-authored World
@@ -488,6 +481,14 @@ function WorldGrid(): React.ReactElement {
     navigate({ kind: 'character', id: entry.id });
   };
 
+  // Merge defaults + cloud rows into one list, then sort per the dropdown.
+  const worldEntries = [
+    ...defaultEntries,
+    ...entries.filter((e) => !defaultEntries.some((d) => d.id === e.id)),
+  ].sort((a, b) =>
+    worldSort === 'alpha' ? a.name.localeCompare(b.name) : b.updatedAt.localeCompare(a.updatedAt),
+  );
+
   return (
     <div className={styles.browse}>
       <header className={styles.browseHeader}>
@@ -501,18 +502,29 @@ function WorldGrid(): React.ReactElement {
           >
             ?
             <span className={styles.worldHelpTip} role="tooltip">
-              Browse and summon companions made by other players.
+              Browse companions made by other players.
             </span>
           </span>
         </div>
-        <input
-          className={styles.searchField}
-          type="search"
-          placeholder="Search companions..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search world companions"
-        />
+        <div className={styles.browseControls}>
+          <input
+            className={styles.searchField}
+            type="search"
+            placeholder="Search companions..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search world companions"
+          />
+          <select
+            className={styles.sortSelect}
+            value={worldSort}
+            onChange={(e) => setWorldSort(e.target.value as 'alpha' | 'recent')}
+            aria-label="Sort companions"
+          >
+            <option value="alpha">A–Z</option>
+            <option value="recent">Newest</option>
+          </select>
+        </div>
       </header>
       <div className={styles.scroll}>
       {error ? (
@@ -526,23 +538,7 @@ function WorldGrid(): React.ReactElement {
         </div>
       ) : null}
       <div className={styles.grid}>
-        {defaultEntries.map((entry) => (
-          <div key={entry.id} style={{ position: 'relative' }}>
-            <BrowseCard
-              entry={entry}
-              theme={theme}
-              onOpen={() => {
-                void handleOpen(entry);
-              }}
-              onPrefetch={() => handlePrefetch(entry)}
-            />
-          </div>
-        ))}
-        {entries
-          // Don't double-render a default if a cloud row with the same id ever
-          // surfaces (defaults aren't uploaded per D-22, but belt-and-suspenders).
-          .filter((e) => !defaultEntries.some((d) => d.id === e.id))
-          .map((entry) => (
+        {worldEntries.map((entry) => (
           <div key={entry.id} style={{ position: 'relative' }}>
             <BrowseCard
               entry={entry}

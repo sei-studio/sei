@@ -122,6 +122,24 @@ let lastBillingActionAt = 0;
 // of which creditsGet() resolves first.
 let loadEpoch = 0;
 
+/**
+ * 260703: read `ai_backend_kind` straight from the persisted UserConfig. The
+ * credits snapshot (creditsGet) can fail transiently (offline ledger read,
+ * IPC hiccup) — but the backend kind is a LOCAL config fact, and it gates the
+ * Settings ACCOUNT MODE surface + the credits UI. If a failed seed left the
+ * INITIAL 'local' in place while the actual calls ran cloud-proxy, the UI
+ * claimed BYOK while spending cloud credits. Null on failure → caller keeps
+ * the current value.
+ */
+async function readBackendKindFromConfig(): Promise<CreditsStatus['ai_backend_kind'] | null> {
+  try {
+    const cfg = await sei.getConfig();
+    return cfg?.ai_backend_kind === 'cloud-proxy' ? 'cloud-proxy' : 'local';
+  } catch {
+    return null;
+  }
+}
+
 function clearCheckoutTimers(): void {
   if (checkoutPollTimer !== null) {
     clearInterval(checkoutPollTimer);
@@ -502,8 +520,17 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     } catch {
       // Transient IPC failure: leave the store at defaults, mark initialized
       // so we don't busy-retry. The next push (or a manual refresh) will
-      // re-populate.
-      set({ initialized: true, loading: false });
+      // re-populate. 260703: EXCEPT ai_backend_kind — the INITIAL 'local'
+      // must not stand in for a cloud-proxy profile (the UI would claim BYOK
+      // while every LLM call reads config.json and spends cloud credits), so
+      // seed it from the local config, which doesn't need the ledger.
+      const kind = await readBackendKindFromConfig();
+      if (loadEpoch !== epochBefore) return; // superseded by a newer scope
+      set({
+        initialized: true,
+        loading: false,
+        ...(kind !== null ? { ai_backend_kind: kind } : {}),
+      });
     }
   },
 
@@ -528,7 +555,11 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         loading: false,
       });
     } catch {
-      set({ loading: false });
+      // 260703: same backend-kind backstop as init() — a failed snapshot must
+      // not leave a stale/incorrect mode on the ACCOUNT MODE surface.
+      const kind = await readBackendKindFromConfig();
+      if (loadEpoch !== epochBefore) return; // superseded by a scope transition
+      set({ loading: false, ...(kind !== null ? { ai_backend_kind: kind } : {}) });
     }
   },
 

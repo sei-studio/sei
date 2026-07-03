@@ -112,10 +112,43 @@ export async function getAiBackendKind(): Promise<AiBackendKind> {
 /**
  * Persist the AI backend kind. Round-trips through configStore.saveConfig so
  * the Zod schema + atomic write + file-lock semantics are inherited.
+ *
+ * 260703: also stamps `ai_backend_kind_source` so the sign-in cloud default
+ * can tell an EXPLICIT user choice apart from a prior default write:
+ *   - 'user' (the default here) → the caller is a user action (the Settings
+ *     ACCOUNT MODE switch / API-key setup modal via ipc proxy:configure).
+ *     applyCloudDefaultForSignIn / ensureCloudDefaultForSignedIn never
+ *     override it.
+ *   - 'default' → a programmatic default (sign-in transition, boot self-heal).
  */
-export async function setAiBackendKind(kind: AiBackendKind): Promise<void> {
+export async function setAiBackendKind(
+  kind: AiBackendKind,
+  source: 'default' | 'user' = 'user',
+): Promise<void> {
   const cfg = await loadConfig();
-  await saveConfig({ ...cfg, ai_backend_kind: kind });
+  await saveConfig({ ...cfg, ai_backend_kind: kind, ai_backend_kind_source: source });
+}
+
+/**
+ * Sign-in cloud default (260703 — single helper for BOTH sign-in writers:
+ * authState's sign-in reconcile and profileScope's pre-push default). A
+ * signed-in profile defaults to cloud billing, but ONLY when the profile has
+ * not made a deliberate BYOK choice:
+ *   - `ai_backend_kind_source === 'user'` → the user explicitly picked this
+ *     backend in Settings; never stomp it (previously every re-sign-in
+ *     force-flipped an explicit 'local' back to cloud, silently moving the
+ *     user's calls onto paid credits).
+ *   - 'local' WITH a stored API key → a real BYOK setup from before the
+ *     source field existed; treat as deliberate.
+ * Everything else (fresh profile, key-less default-'local') lands on
+ * cloud-proxy, stamped source:'default'.
+ */
+export async function applyCloudDefaultForSignIn(): Promise<void> {
+  const cfg = await loadConfig();
+  if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — keep it
+  if ((cfg.ai_backend_kind ?? 'local') === 'local' && (await hasApiKey())) return; // legacy BYOK
+  if (cfg.ai_backend_kind === 'cloud-proxy') return; // already there — no write
+  await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' });
 }
 
 /**
@@ -137,13 +170,16 @@ export async function setAiBackendKind(kind: AiBackendKind): Promise<void> {
  * deliberate local choice is never overridden; a key-less signed-in `'local'`
  * is a non-functional state that can only come from the missing default.
  *
- * No-op when signed out, already cloud-proxy, or an API key is present.
+ * No-op when signed out, already cloud-proxy, an API key is present, or the
+ * user explicitly chose the backend (`ai_backend_kind_source === 'user'`,
+ * 260703) — an explicit BYOK pick must survive every launch, key or no key.
  */
 export async function ensureCloudDefaultForSignedIn(): Promise<void> {
   const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
   if (getActiveScope() === SCOPE_LOCAL) return; // signed out → keep local
   const cfg = await loadConfig();
   if ((cfg.ai_backend_kind ?? 'local') !== 'local') return; // already cloud-proxy
+  if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — never override it
   if (await hasApiKey()) return; // a real BYOK choice — never override it
-  await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy' });
+  await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' });
 }

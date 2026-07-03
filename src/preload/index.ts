@@ -26,6 +26,7 @@ import {
   type SyncStatusPushEvent,
   type CreditsStatus,
   type CreditsHardStopEvent,
+  type ChatMessagePush,
 } from '../shared/ipc';
 
 const api: RendererApi = {
@@ -72,6 +73,21 @@ const api: RendererApi = {
   saveConfig: (c) => ipcRenderer.invoke(IpcChannel.config.save, c),
   saveApiKey: (plaintext) => ipcRenderer.invoke(IpcChannel.config.saveApiKey, plaintext),
   hasApiKey: () => ipcRenderer.invoke(IpcChannel.config.hasApiKey),
+
+  // In-app chat (Phase 18/19)
+  chatHistory: (characterId) => ipcRenderer.invoke(IpcChannel.chat.history, characterId),
+  chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),
+  chatClear: (characterId) => ipcRenderer.invoke(IpcChannel.chat.clear, characterId),
+  onChatMessage(cb: (push: ChatMessagePush) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, push: ChatMessagePush) => cb(push);
+    ipcRenderer.on(IpcChannel.chat.message, handler);
+    return () => ipcRenderer.off(IpcChannel.chat.message, handler);
+  },
+
+  // User profile (Phase 19)
+  userGetProfile: () => ipcRenderer.invoke(IpcChannel.user.getProfile),
+  userApplyProfilePicture: (args) => ipcRenderer.invoke(IpcChannel.user.applyProfilePicture, args),
+  userRemoveProfilePicture: () => ipcRenderer.invoke(IpcChannel.user.removeProfilePicture),
 
   getStartupWarnings: () => ipcRenderer.invoke(IpcChannel.app.warnings),
 
@@ -157,6 +173,7 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.bot.status, handler);
     return () => ipcRenderer.off(IpcChannel.bot.status, handler);
   },
+  getBotStatuses: () => ipcRenderer.invoke(IpcChannel.bot.getStatuses),
   onVisionCapability(cb: (cap: VisionCapability) => void) {
     const handler = (_e: Electron.IpcRendererEvent, cap: VisionCapability) => cb(cap);
     ipcRenderer.on(IpcChannel.vision.capability, handler);
@@ -173,6 +190,7 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.lan.state, handler);
   },
   getLanState: () => ipcRenderer.invoke(IpcChannel.lan.get),
+  lanCheckNow: () => ipcRenderer.invoke(IpcChannel.lan.checkNow),
   onWizardProgress(cb: (ev: WizardProgressEvent) => void) {
     const handler = (_e: Electron.IpcRendererEvent, ev: WizardProgressEvent) => cb(ev);
     ipcRenderer.on(IpcChannel.wizard.progress, handler);
