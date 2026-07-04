@@ -64,6 +64,28 @@ const MinecraftAdapterSchema = z.object({
   // Re-aim cadence (ms) for the gaze controller's plain interval loop. Cosmetic
   // head movement only — no need for reflex.js's ~20 Hz physicsTick cost.
   gaze_tick_ms: z.number().int().min(0).default(250),
+  // ── Survival micro-controllers (behaviors/survival.js) ──────────────────
+  // A second ~20 Hz physicsTick loop, sibling of the reflex loop, covering the
+  // two failure modes reflex.js does NOT: automatic drowning swim-up and a
+  // critical-HP flee. Owns its own goal-ownership flags (bot._seiSurvivalActive
+  // etc.) disjoint from reflex's; creeper-flee (_seiReflexActive) always wins.
+  survival_enabled: z.boolean().default(true),
+  // Oxygen (0-20). Engage the swim-up at/below `enter`; disengage at/above
+  // `exit` (enter < exit gives hysteresis so we don't flicker at the surface).
+  oxygen_flee_enter: z.number().int().min(0).default(10),
+  oxygen_flee_exit: z.number().int().min(0).default(18),
+  // If the ascent hasn't gained height after this long, treat the top as blocked
+  // and swim horizontally toward the nearest air pocket.
+  survival_blocked_ms: z.number().int().min(0).default(3000),
+  // Critical-HP retreat (health is 0-20). Force-flee the nearest hostile when
+  // health <= enter AND a hostile is within the enter radius; keep fleeing until
+  // health > exit OR no hostile remains within the (larger) exit radius.
+  critical_hp_enter: z.number().min(0).default(6),
+  critical_hp_exit: z.number().min(0).default(10),
+  critical_hostile_enter_blocks: z.number().min(0).default(8),
+  critical_hostile_exit_blocks: z.number().min(0).default(16),
+  // GoalInvert(GoalFollow(mob, N)) flee radius — how far to break away to.
+  critical_flee_range: z.number().min(0).default(14),
 })
 
 const AdapterSchema = z.object({

@@ -91,7 +91,7 @@ You can walk and pathfind, mine blocks, place blocks, equip items, attack hostil
 
 Crafting: your snapshot lists what you can craft right now under \`craftable:\`, as \`<item> craftable - Nx\`, and you craft by calling craft(item, n). Two things to keep straight. First, crafting CONSUMES materials, and the craftable list shows only the PRODUCT, never the ingredients it eats — so plan carefully: making planks spends your logs, making sticks spends planks, and you won't get a separate warning about what's used up. Don't craft something that burns wood you need for a tool. Second, small recipes (planks, sticks, a crafting table) work from your inventory anywhere, but bigger recipes (most tools, chests, furnaces) need a crafting_table within reach — when none is near, only the small recipes appear in the list. If you need a 3×3 recipe and have no table, craft a crafting_table first (it only needs planks) and place it, or go to one. craft(item, n) makes at least n of the item; because recipes come in batches (one log makes four planks) you may end up with a few extra, and the result tells you exactly how many you got.
 
-Combat is your weakest ability, but built-in reflexes handle most of it for you: when a hostile mob attacks you, you automatically swing back and chase it down (attackEntity also auto-pursues a moving target), and a survival reflex automatically dodges incoming arrows, strafes melee mobs, and flees creepers before they blow up — so you rarely micromanage hits or dodges. What the reflexes can NOT do is block or save you from a crowd, and you are fragile and drop everything you carry when you die. So your real job in a fight is the survival call, not the swinging. Against a SINGLE mob at decent health, let the reflex work (equip a sword first, or an axe if you have no sword, never a pickaxe). If TWO OR MORE mobs are on you or your health is low, do NOT slug it out: get to the player (they fight far better than you), wall yourself off with placed blocks, or dig away out of reach. More mobs spawn at night, so after dark favor safety over fighting.
+Combat is your weakest ability, but built-in reflexes handle most of it for you: when a hostile mob attacks you, you automatically swing back and chase it down (attackEntity also auto-pursues a moving target), and a survival reflex automatically dodges incoming arrows, strafes melee mobs, and flees creepers before they blow up — so you rarely micromanage hits or dodges. What the reflexes can NOT do is block or save you from a crowd, and you are fragile and drop everything you carry when you die. So your real job in a fight is the survival call, not the swinging. Against a SINGLE mob at decent health, let the reflex work (equip a sword first, or an axe if you have no sword, never a pickaxe). If TWO OR MORE mobs are on you or your health is low, do NOT slug it out: get to the player (they fight far better than you), wall yourself off with placed blocks, or dig away out of reach. The fastest way to do that is digIn() — it holes you up in one call. At night, when hostiles are near and the player is far or has told you to survive/hole up, prefer digIn() over fighting; and when your health is LOW, retreat and digIn() rather than attack. More mobs spawn at night, so after dark favor safety over fighting. (You also flee on reflex when your health drops critically — let that carry you clear, then digIn().)
 
 Tools come in tiers — wood, then stone, then iron, then diamond — and you cannot skip a rung: a stone pickaxe is crafted FROM stone, and you can only mine stone once you already hold a wooden pickaxe. So match what you ask for to what you actually have right now — starting from bare logs the next tool is a WOODEN pickaxe, not a stone or iron one. Ask for the simplest tool that unblocks your very next step. And trust your inventory, not your assumptions: read the inventory line before you act, and if you asked the player for something, don't behave as though you have it until it actually shows up there.
 
@@ -213,6 +213,9 @@ export const ACTION_DESCRIPTIONS = {
   shelter:
     'Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:"cobblestone", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Defaults to your current position.',
 
+  digIn:
+    'PANIC shelter — instant safety, far cheaper than shelter(). No args needed: digs 2 blocks straight down and caps the top when the ground is safe, otherwise walls a 1x1 box around you from your blocks. Use when mobs are on you, at low health, or caught out at night. `{variant?:"auto"|"hole"|"hut"}` to force one.',
+
   // Only present when the active provider supports vision (D-10). Keep it short.
   look:
     'Render a picture of your surroundings - rarely needed, act from the snapshot. `look({around:true})` covers all four directions; `{orientation:...}` or `{angle:0-360}` looks one way. The picture lasts only this turn (remember() anything you want to keep) and is low-res, so do not invent fine detail.',
@@ -258,6 +261,22 @@ export const REFLEX_ADDENDUM = (label, data) => {
   const n = Number(data?.count)
   const many = Number.isFinite(n) && n > 1 ? ` (${n} hostiles close)` : ''
   return fillTemplate(REFLEX_ADDENDUM_TEXT, { label, many, noticed })
+}
+
+// AUTOMATIC survival takeover (behaviors/survival.js) — rides the sei:attacked
+// route tagged attackerKind:'reflex' (so it is P1_CHAT, never preempting a real
+// chat) but carries a `survivalKind` so we frame it correctly. Two kinds:
+// 'drowning' (auto swimming up for air) and 'critical_retreat' (auto fleeing a
+// hostile at low HP). Like the reflex warning, the physical response is already
+// happening on its own — this is a heads-up so the bot can react in character,
+// NOT an instruction to move.
+export const SURVIVAL_ADDENDUM_DROWNING = `Heads up — you were running out of air underwater and are AUTOMATICALLY swimming up to breathe; the escape is on reflex, so you do not need to move manually. If it fits you, warn the player in ONE short in-character line (you nearly drowned / coming up for air), or stay silent. Don't say you drowned — you're getting out.`
+export const SURVIVAL_ADDENDUM_RETREAT = `Heads up — your health is LOW and hostiles are near, so you are AUTOMATICALLY backing away from {label}{many} to survive; the retreat is on reflex, you do not need to move manually. Do NOT fight at this health. Warn the player in ONE short in-character line — you're hurt and pulling back — then make the call: call them to come help, or once you're clear call digIn() to hole up. Don't say you were killed — you weren't.`
+export const SURVIVAL_ADDENDUM = (label, data) => {
+  const n = Number(data?.count)
+  const many = Number.isFinite(n) && n > 1 ? ` (${n} hostiles close)` : ''
+  if (data?.survivalKind === 'drowning') return SURVIVAL_ADDENDUM_DROWNING
+  return fillTemplate(SURVIVAL_ADDENDUM_RETREAT, { label, many })
 }
 
 // Editable prose for the idle-tick framing (EVENT_GUIDANCE['sei:idle']). The
@@ -678,8 +697,12 @@ export function eventAddendum(event, data, visionMode = 'on-demand') {
     const label = data?.attackerLabel ?? data?.attacker?.username ?? data?.attacker?.name ?? 'unknown'
     const kind = data?.attackerKind ?? (data?.attacker?.username ? 'player' : 'mob')
     // A reflex engagement (D-05) rides the sei:attacked route tagged
-    // attackerKind:'reflex' — frame it as a proactive warning, not a hit.
-    if (kind === 'reflex') return REFLEX_ADDENDUM(label, data)
+    // attackerKind:'reflex' — frame it as a proactive warning, not a hit. An
+    // AUTOMATIC survival takeover (survival.js) rides the same route but carries
+    // a `survivalKind` (drowning / critical_retreat) so it is framed distinctly.
+    if (kind === 'reflex') {
+      return data?.survivalKind ? SURVIVAL_ADDENDUM(label, data) : REFLEX_ADDENDUM(label, data)
+    }
     return entry(label, kind)
   }
   return entry ?? ''

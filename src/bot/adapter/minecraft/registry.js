@@ -18,6 +18,7 @@ import { digAction } from './behaviors/dig.js'
 import { exploreAction } from './behaviors/explore.js'
 import { buildAction } from './behaviors/build.js'
 import { shelterAction } from './behaviors/shelter.js'
+import { digInAction } from './behaviors/digIn.js'
 import { placeBlockAction } from './behaviors/place.js'
 import { equipAction } from './behaviors/equip.js'
 import { craftAction } from './behaviors/craft.js'
@@ -175,11 +176,25 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   // orchestrator's capabilities.vision gate too).
   registry.register('explore',
     z.object({
-      orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right']).optional(),
+      orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right', 'up', 'down']).optional(),
       angle: z.number().min(0).max(360).optional(),
       blocks: z.number().min(4).max(48).optional(),
     }),
-    (args, bot, config) => exploreAction(args, bot, config, { vision: visionEnabled })
+    (args, bot, config) => {
+      // 'up'/'down' used to hard-REJECT at the schema (invalid_enum_value), so the
+      // LLM couldn't even ask to escape vertically (live drowning run). Accept
+      // them now but intercept before exploreAction (which is yaw-only, horizontal):
+      // vertical isn't an explore hop, so return actionable guidance instead.
+      if (args?.orientation === 'up') {
+        return bot?.entity?.isInWater
+          ? "you're in water — swimming up is automatic; stay put or dig up to break out"
+          : "can't fly up — build up with scaffold/build, or dig up to break through the ceiling"
+      }
+      if (args?.orientation === 'down') {
+        return 'can\'t drop straight down with explore — use dig to tunnel down, or digIn to hole up'
+      }
+      return exploreAction(args, bot, config, { vision: visionEnabled })
+    }
   )
 
   // `find` resolves a loose term or exact MC ID to the nearest loaded-chunk
@@ -267,6 +282,16 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     material: z.string().min(1).default('cobblestone'),
   })
   registry.register('shelter', ShelterSchema, shelterAction)
+
+  // `digIn`: a FAST panic shelter, much cheaper than shelter(). Digs 2 blocks
+  // straight down and caps the top (when the ground below is safe), or walls up a
+  // 1x1 cell from inventory solids when it can't dig. No args needed; `variant`
+  // ('auto'|'hole'|'hut') can force one. For low-HP / night-swarm survival.
+  registry.register(
+    'digIn',
+    z.object({ variant: z.enum(['auto', 'hole', 'hut']).optional() }),
+    digInAction,
+  )
 
   registry.register(
     'equip',

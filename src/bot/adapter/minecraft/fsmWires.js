@@ -98,6 +98,29 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:reflex', onSeiReflex)
 
+  // ── Survival takeover (drowning / critical-HP retreat) ──────────────
+  // survival.js emits sei:survival once per automatic engagement (swimming up
+  // for air, or fleeing a hostile at low HP). We route it onto the SAME onAttacked
+  // path as reflex, tagged attackerKind:'reflex' so it lands at P1_CHAT (never
+  // preempts a player chat), plus a `survivalKind` so the prompt framing
+  // (SURVIVAL_ADDENDUM) describes drowning/retreat instead of a threat dodge. The
+  // physical response already ran in survival.js's tick — this is narration only.
+  const onSeiSurvival = (payload) => {
+    if (!payload) return
+    try {
+      handlers.onAttacked?.({
+        attacker: null,
+        attackerLabel: payload.threatLabel ?? 'danger',
+        attackerKind: 'reflex',
+        survivalKind: payload.kind ?? 'critical_retreat',
+        count: typeof payload.count === 'number' ? payload.count : 1,
+      })
+    } catch (err) {
+      console.error?.(`[sei/wires] onSurvival handler threw: ${err && err.message}`)
+    }
+  }
+  bot.on('sei:survival', onSeiSurvival)
+
   // ── Death ───────────────────────────────────────────────────────────
   // connect.js emits sei:death once per death, snapshotting the death position
   // BEFORE bot.respawn() teleports back to world spawn (that's where the bot's
@@ -146,6 +169,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
     try { bot.off?.('sei:chat_received', onSeiChat) } catch {}
     try { bot.off?.('sei:attacked', onSeiAttacked) } catch {}
     try { bot.off?.('sei:reflex', onSeiReflex) } catch {}
+    try { bot.off?.('sei:survival', onSeiSurvival) } catch {}
     try { bot.off?.('sei:death', onSeiDeath) } catch {}
     try { bot.off?.('playerJoined', onPlayerJoined) } catch {}
     try { bot.off?.('playerLeft', onPlayerLeft) } catch {}

@@ -21,6 +21,7 @@ import { startAutoEat } from './behaviors/autoEat.js'
 import { startCombat } from './behaviors/combat.js'
 import { startReflex } from './behaviors/reflex.js'
 import { startGaze } from './behaviors/gaze.js'
+import { startSurvival } from './behaviors/survival.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -260,13 +261,15 @@ export function createBotInstance({
       safeStart('startAutoEat', () => startAutoEat(bot))
       safeStart('startCombat', () => startCombat(bot, config))
       safeStart('startReflex', () => startReflex(bot, config))
+      safeStart('startSurvival', () => startSurvival(bot, config))
       safeStart('startGaze', () => startGaze(bot, config))
       safeStart('startFollow', () => startFollow(bot, config))
       try { onSpawn?.() } catch (err) { logger.warn?.(`[sei/connect] onSpawn hook threw: ${err && err.message}`) }
     } else {
-      // respawn after death — restart follow + re-arm the reflex/gaze loops
-      // (their disposers tear down on death, so respawn must re-arm them).
+      // respawn after death — restart follow + re-arm the reflex/survival/gaze
+      // loops (their disposers tear down on death, so respawn must re-arm).
       safeStart('startReflex(respawn)', () => startReflex(bot, config))
+      safeStart('startSurvival(respawn)', () => startSurvival(bot, config))
       safeStart('startGaze(respawn)', () => startGaze(bot, config))
       safeStart('startFollow(respawn)', () => startFollow(bot, config))
     }
