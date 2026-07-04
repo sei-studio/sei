@@ -105,6 +105,7 @@ export async function attackEntityAction(args, bot, config) {
   const times = clampTimes(args.times)
   const timeoutMs = args.timeout_ms ?? config?.attack_timeout_ms ?? DEFAULT_TIMEOUT_MS
   const entityId = entity.id
+  const isPlayerTarget = entity.type === 'player' || entity.username != null
   const startedAt = Date.now()
 
   // Mark this mob as the deliberate offensive target so the survival reflex
@@ -113,6 +114,10 @@ export async function attackEntityAction(args, bot, config) {
   // Cleared on every exit path (finally) and guarded so a newer attack's flag
   // is never clobbered.
   bot._seiOffensiveTarget = entityId
+  // Attacking a player IS a PvP exchange — lock them as the reflex opponent
+  // (Task 2) so reflex.js kites this player and only this player. The `at`
+  // refreshes on each swing below and decays ~10s after the last blow.
+  if (isPlayerTarget && bot._seiPvp) bot._seiPvpOpponent = { id: entityId, at: Date.now() }
   try {
     // Set anti-stuck movements once for the whole engagement (pursueUntilInReach
     // installs GoalFollow against these). goTo resets movements on its next call.
@@ -155,6 +160,9 @@ export async function attackEntityAction(args, bot, config) {
         bot.attack(live)
         bot.swingArm?.()
         hits++
+        // Refresh the PvP opponent lock on every swing so the reflex keeps
+        // kiting this player through the exchange (decays ~10s after the last).
+        if (isPlayerTarget && bot._seiPvp) bot._seiPvpOpponent = { id: entityId, at: Date.now() }
       } catch (err) {
         const r = reason(err)
         return hits
@@ -171,12 +179,17 @@ export async function attackEntityAction(args, bot, config) {
     return `attacked ${name} ${hits}× (target still alive)`
   } finally {
     // Release the sprint + pursuit goal we installed. NEVER yank a creeper-flee's
-    // goal (bot._seiReflexActive): it owns bot._seiSavedGoal and restores the
-    // pre-attack goal itself on exit. When no flee is active, clearing to null
-    // lets the 1s follow tick (follow.js) re-install GoalFollow(owner) if a
-    // follow target is set — the single-owner restore convention.
+    // goal (bot._seiReflexActive) OR a survival takeover's flee goal
+    // (bot._seiSurvivalActive / _seiCriticalRetreat): those own the goal and
+    // restore/re-assert it themselves, so nulling it here would just wipe an
+    // active flee (survival re-asserts on goal_updated, but the wipe is a needless
+    // race). When none is active, clearing to null lets the 1s follow tick
+    // (follow.js) re-install GoalFollow(owner) if a follow target is set — the
+    // single-owner restore convention.
     try { bot.setControlState?.('sprint', false) } catch (_) {}
-    if (!bot._seiReflexActive) { try { bot.pathfinder?.setGoal?.(null) } catch (_) {} }
+    if (!bot._seiReflexActive && !bot._seiSurvivalActive && !bot._seiCriticalRetreat) {
+      try { bot.pathfinder?.setGoal?.(null) } catch (_) {}
+    }
     if (bot._seiOffensiveTarget === entityId) bot._seiOffensiveTarget = null
   }
 }

@@ -85,6 +85,11 @@ export function startGaze(bot, config) {
   const mc = config?.adapter?.minecraft ?? config ?? {}
   if (mc.gaze_enabled === false) return () => {}
 
+  // Idempotent re-arm: a dimension-change 'spawn' fires WITHOUT a 'death' and
+  // connect.js re-arms on every non-first spawn — tear down any previous install
+  // first, or each portal trip stacks a duplicate 250ms interval.
+  if (typeof bot._seiGazeDispose === 'function') { try { bot._seiGazeDispose() } catch (_) {} }
+
   const rangeBlocks = Number.isFinite(mc.gaze_range_blocks) ? mc.gaze_range_blocks : DEFAULT_RANGE_BLOCKS
   const tickMs = Number.isFinite(mc.gaze_tick_ms) && mc.gaze_tick_ms > 0 ? mc.gaze_tick_ms : DEFAULT_TICK_MS
   // player_username lives at the config TOP LEVEL (not adapter.minecraft) —
@@ -175,8 +180,17 @@ export function startGaze(bot, config) {
     _disposed = true
     clearInterval(interval)
     try { bot.removeListener('death', dispose) } catch (_) {}
+    try { bot.removeListener('end', dispose) } catch (_) {}
+    if (bot._seiGazeDispose === dispose) bot._seiGazeDispose = null
   }
 
+  // Dispose on BOTH death and end. Unlike reflex/survival (whose physicsTick
+  // loops go inert on a dead bot), this setInterval keeps firing after a bot
+  // 'end' (kick/disconnect — no 'death' fires), leaking a live timer per
+  // reconnect — so wiring 'end' here is what actually stops the leak.
+  // dispose is _disposed-guarded, so firing on both is safe.
   bot.once('death', dispose)
+  bot.once('end', dispose)
+  bot._seiGazeDispose = dispose
   return dispose
 }

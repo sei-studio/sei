@@ -102,13 +102,37 @@ const placedOk = (r) => typeof r === 'string' && r.startsWith('placed ')
 export async function digInAction(args, bot, config) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
-  const deadline = Date.now() + (config?.digin_timeout_ms ?? DEFAULT_TIMEOUT_MS)
+
+  // Don't fight a reflex creeper-flee or a survival takeover for the pathfinder —
+  // they own movement and would drag the bot out of the half-dug hole. Defer.
+  if (bot._seiReflexActive || bot._seiSurvivalActive || bot._seiCriticalRetreat) {
+    return 'busy surviving — try again in a moment'
+  }
+
+  // digIn has no config knob — it is bounded by the args.timeout_ms override if
+  // the caller passes one, else the hardcoded DEFAULT_TIMEOUT_MS.
+  const deadline = Date.now() + (args?.timeout_ms ?? DEFAULT_TIMEOUT_MS)
   const overBudget = () => Date.now() > deadline
 
   const p = bot.entity?.position
   if (!p || !Number.isFinite(p.x)) return 'no_bot'
   const fx = Math.floor(p.x), fy = Math.floor(p.y), fz = Math.floor(p.z)
 
+  // Hold position against follow.js's independent 1s tick, which would otherwise
+  // re-install GoalFollow(owner) between our dig primitives and walk the bot out
+  // of the half-dug hole (the second dig would then target the moved position — a
+  // trench, not a shelter). follow's tick skips while this counter is > 0. Clear
+  // any active goal now so the pathfinder isn't already steering us away.
+  bot._seiHoldPosition = (bot._seiHoldPosition ?? 0) + 1
+  try { bot.pathfinder?.setGoal?.(null) } catch (_) {}
+  try {
+    return await digInRun(args, bot, config, { fx, fy, fz }, overBudget, signal)
+  } finally {
+    bot._seiHoldPosition = Math.max(0, (bot._seiHoldPosition ?? 1) - 1)
+  }
+}
+
+async function digInRun(args, bot, config, { fx, fy, fz }, overBudget, signal) {
   const variant = args?.variant ?? 'auto'
 
   // Ground-safety check for the HOLE variant: the two cells we dig (fy-1, fy-2)

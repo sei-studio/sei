@@ -104,12 +104,21 @@ export function startFollow(bot, config) {
     // reflex creeper-flee owns the goal (bot._seiReflexActive, Plan 01 mutex):
     // re-installing GoalFollow here would fight the flee tick-for-tick. The flee
     // restores the prior goal when it clears, and this tick resumes naturally.
-    // Also hold off during a player-knockback stagger window (Task 3): while
-    // bot._seiStaggerUntil is in the future, re-installing GoalFollow would path
-    // the bot straight back and walk off the knockback the stagger is meant to
-    // let play out. The window is ~350ms; the next tick resumes normally.
+    // Also yield to a survival takeover (bot._seiSurvivalActive / _seiCriticalRetreat,
+    // survival.js — the drowning swim-up / critical-HP flee): re-installing here
+    // would tug against the flee whenever the pathfinder momentarily idles.
+    // Also hold off while digIn is holding position (bot._seiHoldPosition > 0):
+    // re-installing GoalFollow(owner) between dig primitives walks the bot out of
+    // the half-dug hole (Fix 5). And hold off during a player-knockback stagger
+    // window (Task 3): while bot._seiStaggerUntil is in the future, re-installing
+    // GoalFollow would path the bot straight back and walk off the knockback the
+    // stagger is meant to let play out. The window is ~350ms; the next tick resumes.
     const staggering = bot._seiStaggerUntil != null && Date.now() < bot._seiStaggerUntil
-    if (!bot.pathfinder.isMoving() && !bot._seiReflexActive && !staggering) {
+    const holding = bot._seiHoldPosition > 0
+    if (
+      !bot.pathfinder.isMoving() && !bot._seiReflexActive &&
+      !bot._seiSurvivalActive && !bot._seiCriticalRetreat && !holding && !staggering
+    ) {
       bot.pathfinder.setGoal(new goals.GoalFollow(ent, _config.follow_range), true)
     }
     // No-progress tracking: stuck = not moving AND still far from the target

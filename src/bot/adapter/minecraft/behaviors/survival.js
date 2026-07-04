@@ -42,7 +42,10 @@ import { Vec3 } from 'vec3'
 import { HOSTILE_MOBS } from './hostiles.js'
 const { goals } = pkg
 
-const WATER = new Set(['water', 'bubble_column'])
+// Columns that drown you: open water/bubbles PLUS kelp and seagrass, which are
+// waterlogged by definition — a bot submerged in a kelp/seagrass column loses
+// oxygen just the same, so the swim-up must trigger there too.
+const WATER = new Set(['water', 'bubble_column', 'kelp', 'kelp_plant', 'seagrass', 'tall_seagrass'])
 const AIR = new Set(['air', 'cave_air', 'void_air'])
 
 function dist3(a, b) {
@@ -84,6 +87,11 @@ function headCell(pos) {
 export function startSurvival(bot, config) {
   const mc = config?.adapter?.minecraft ?? config ?? {}
   if (mc.survival_enabled === false) return () => {}
+
+  // Idempotent re-arm: a dimension-change 'spawn' fires WITHOUT a 'death' and
+  // connect.js re-arms on every non-first spawn — tear down any previous install
+  // first, or each portal trip stacks a duplicate physicsTick loop.
+  if (typeof bot._seiSurvivalDispose === 'function') { try { bot._seiSurvivalDispose() } catch (_) {} }
 
   const TH = resolveSurvivalThresholds(mc)
 
@@ -376,11 +384,17 @@ export function startSurvival(bot, config) {
     _retreatActive = false
     try { bot.removeListener('physicsTick', tick) } catch (_) {}
     try { bot.removeListener('death', dispose) } catch (_) {}
+    try { bot.removeListener('end', dispose) } catch (_) {}
     try { bot.removeListener('goal_updated', onGoalUpdated) } catch (_) {}
+    if (bot._seiSurvivalDispose === dispose) bot._seiSurvivalDispose = null
   }
 
   bot.on('physicsTick', tick)
+  // Dispose on BOTH death and end (kick/disconnect — no 'death' fires there).
+  // dispose is _disposed-guarded, so firing on both is safe.
   bot.once('death', dispose)
+  bot.once('end', dispose)
   bot.on('goal_updated', onGoalUpdated)
+  bot._seiSurvivalDispose = dispose
   return dispose
 }

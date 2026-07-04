@@ -335,6 +335,9 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     z.object({ enabled: z.boolean() }),
     async (args, bot) => {
       bot._seiPvp = Boolean(args.enabled)
+      // Drop the reflex opponent lock when leaving PvP so the bot stops kiting
+      // the last opponent the instant sparring is turned off (Task 2).
+      if (!bot._seiPvp) bot._seiPvpOpponent = null
       return bot._seiPvp
         ? 'PvP mode ON — sparring enabled; you can attack the player and hit back. Turn it off when they ask to stop.'
         : 'PvP mode OFF — you will no longer attack or hit the player back.'

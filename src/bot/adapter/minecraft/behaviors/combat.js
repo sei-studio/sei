@@ -107,6 +107,15 @@ export function startCombat(bot, config) {
 
     const isPlayer = Boolean(target.username) || target.type === 'player'
 
+    // ── PvP opponent lock (Task 2) ────────────────────────────────────────────
+    // When a player lands a hit and PvP spar mode is on, lock them as THE
+    // opponent so reflex.js circle-strafes only this player (not the owner or a
+    // bystander). The `at` timestamp refreshes on every hit and decays ~10s after
+    // the last blow, so the bot can idle/talk between rounds with PvP still armed.
+    if (isPlayer && bot._seiPvp && target.id != null) {
+      bot._seiPvpOpponent = { id: target.id, at: Date.now() }
+    }
+
     // ── Player-knockback stagger (Task 3) ─────────────────────────────────────
     // A player landing a hit opens a short window during which the movement
     // controllers (reflex strafe, follow re-path, attack pursuit) stop asserting

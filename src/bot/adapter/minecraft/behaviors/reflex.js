@@ -19,6 +19,12 @@ const { goals } = pkg
 // Skeletons that draw bows (the bow-draw telegraph applies to all of these).
 const RANGED_SKELETONS = new Set(['skeleton', 'stray', 'bogged', 'wither_skeleton'])
 
+// PvP opponent lock decay: a player counts as a melee threat only while we are
+// in an active exchange with them — the lock's `at` timestamp must be fresher
+// than this to keep circle-strafing. After the last blow it decays so the bot
+// can stand/talk/follow normally between rounds with PvP still armed (Task 2).
+const PVP_OPPONENT_TTL_MS = 10000
+
 // Threat priority ranks (lower wins): a creeper mid-fuse is the most urgent,
 // then an incoming arrow, then a creeper merely in flee range, then a melee mob.
 const RANK = { creeperPanic: 0, arrow: 1, creeper: 2, melee: 3 }
@@ -165,12 +171,20 @@ export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
       if (e.name !== 'wither_skeleton') continue
     }
 
-    // ── Melee mobs (and, in PvP mode, players): kite when just outside reach ──
-    // (band + 2 for approach margin). PvP: when bot._seiPvp is on, the human
-    // opponent is treated like a melee threat so the companion circle-strafes and
-    // holds the 2.5-4 band while sparring. The _seiOffensiveTarget suppression in
-    // doMeleeStrafe still applies, so it stops strafing to commit a hit.
-    const isPvpOpponent = bot._seiPvp && (e.type === 'player' || e.username != null)
+    // ── Melee mobs (and, in PvP mode, the ACTUAL opponent): kite when just
+    // outside reach ── (band + 2 for approach margin). PvP: when bot._seiPvp is
+    // on, ONLY the locked opponent is kited — the player we are exchanging blows
+    // with (bot._seiPvpOpponent, `at` fresher than PVP_OPPONENT_TTL_MS) or the
+    // one we are actively attacking (bot._seiOffensiveTarget). Treating ANY
+    // player as a threat made the bot circle-strafe its own owner constantly.
+    // The _seiOffensiveTarget suppression in doMeleeStrafe still applies, so it
+    // stops strafing to commit a hit.
+    const isPlayer = e.type === 'player' || e.username != null
+    const lock = bot._seiPvpOpponent
+    const isPvpOpponent = bot._seiPvp && isPlayer && (
+      (lock != null && e.id === lock.id && (Date.now() - lock.at) < PVP_OPPONENT_TTL_MS) ||
+      e.id === bot._seiOffensiveTarget
+    )
     if ((HOSTILE_MOBS.has(e.name) || isPvpOpponent) && dist <= th.melee_kite_blocks + 2) {
       consider({ kind: 'melee', entity: e }, RANK.melee)
     }
@@ -193,6 +207,12 @@ export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
 export function startReflex(bot, config) {
   const mc = config?.adapter?.minecraft ?? config ?? {}
   if (mc.reflex_enabled === false) return () => {}
+
+  // Idempotent re-arm: mineflayer emits 'spawn' on a dimension change WITHOUT a
+  // 'death', and connect.js re-arms on every non-first spawn — so tear down any
+  // previous install before wiring a new one, or each portal trip stacks a
+  // duplicate physicsTick loop / goal_updated listener.
+  if (typeof bot._seiReflexDispose === 'function') { try { bot._seiReflexDispose() } catch (_) {} }
 
   const tickMs = Number.isFinite(mc.reflex_tick_ms) && mc.reflex_tick_ms > 0 ? mc.reflex_tick_ms : 50
   const TH = resolveReflexThresholds(mc)
@@ -393,11 +413,17 @@ export function startReflex(bot, config) {
     _fleeId = null
     try { bot.removeListener('physicsTick', tick) } catch (_) {}
     try { bot.removeListener('death', dispose) } catch (_) {}
+    try { bot.removeListener('end', dispose) } catch (_) {}
     try { bot.removeListener('goal_updated', onGoalUpdated) } catch (_) {}
+    if (bot._seiReflexDispose === dispose) bot._seiReflexDispose = null
   }
 
   bot.on('physicsTick', tick)
+  // Dispose on BOTH death and end (kick/disconnect — no 'death' fires there).
+  // dispose is _disposed-guarded, so firing on both is safe.
   bot.once('death', dispose)
+  bot.once('end', dispose)
   bot.on('goal_updated', onGoalUpdated)
+  bot._seiReflexDispose = dispose
   return dispose
 }
