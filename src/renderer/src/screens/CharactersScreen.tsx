@@ -11,8 +11,14 @@
  *                      they live on the World tab instead.
  *
  *   - <WorldGrid />  : public character listing (previously called Browse).
- *                      Mounts a search field + grid + IntersectionObserver
- *                      sentinel for infinite scroll, backed by useBrowseStore.
+ *                      Mounts a search field + grid backed by useBrowseStore.
+ *                      Shows ROWS_PER_BATCH (4) rows at a time — row width is
+ *                      measured live off the responsive grid, so "4 rows"
+ *                      stays correct when the card count per row changes —
+ *                      with an explicit "Load more" button at the bottom
+ *                      (260704: replaced the IntersectionObserver infinite
+ *                      scroll; bounds the portrait-download burst that tripped
+ *                      the per-IP rate limit on the proxy).
  *
  * B4 changes vs. the prior version:
  *   1. Capability gate removed — the tab bar is always rendered. The default
@@ -32,7 +38,7 @@
  *   - LAN pill belongs ONLY in HomeGrid.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -46,6 +52,7 @@ import { CreationLimitModal } from '../components/CreationLimitModal';
 import { AddCompanionChooserModal } from '../components/AddCompanionChooserModal';
 import { SignInModal } from '../components/SignInModal';
 import { BrowseCard } from '../components/BrowseCard';
+import { Button } from '../components/Button';
 import type { Character } from '@shared/characterSchema';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
 import type { BrowseEntry } from '@shared/ipc';
@@ -53,6 +60,14 @@ import homeStyles from './HomeScreen.module.css';
 import styles from './CharactersScreen.module.css';
 
 type Tab = 'home' | 'world';
+
+/**
+ * World grid batch size in ROWS (260704). Rows, not cards: cards-per-row is
+ * responsive, so WorldGrid measures the live column count off the grid and
+ * shows `columns × visibleRows` cards. Each "Load more" click adds this many
+ * rows. Keeps the first paint (and its portrait-download burst) bounded.
+ */
+const ROWS_PER_BATCH = 4;
 
 /**
  * Phase 11 plan 19 (D-19, LIB-04) — cloud-only entry shape.
@@ -440,6 +455,27 @@ function WorldGrid(): React.ReactElement {
   const loadMore = useBrowseStore((s) => s.loadMore);
   const prefetch = useBrowseStore((s) => s.prefetch);
 
+  // Paged display (260704): show ROWS_PER_BATCH rows per "Load more" click.
+  // Cards-per-row is responsive (grid auto-fill), so the column count is
+  // measured off the rendered grid rather than hardcoded.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState(1);
+  const [visibleRows, setVisibleRows] = useState(ROWS_PER_BATCH);
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const measure = (): void => {
+      // Computed grid-template-columns resolves auto-fill to the actual
+      // track list ("190px 190px …") — its length IS the live column count.
+      const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length;
+      setColumns((prev) => (prev === cols ? prev : Math.max(1, cols)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // #6 — World sort. Alphabetical by default; "Newest" sorts by updatedAt desc.
   // Client-side over the currently-loaded pages (infinite scroll appends more).
   const [worldSort, setWorldSort] = useState<'alpha' | 'recent'>('alpha');
@@ -479,8 +515,6 @@ function WorldGrid(): React.ReactElement {
 
   const navigate = useUiStore((s) => s.navigate);
 
-  const sentinelRef = useRef<HTMLDivElement>(null);
-
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
 
@@ -493,18 +527,10 @@ function WorldGrid(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A new search shows a fresh result set — restart at the first batch.
   useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) void loadMore();
-      },
-      { rootMargin: '200px' },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [loadMore, exhausted]);
+    setVisibleRows(ROWS_PER_BATCH);
+  }, [query]);
 
   // Prefetch dedup — one warm-up per id per mount. main's in-flight guard +
   // existsSync already make repeats cheap, but this avoids redundant IPC churn
@@ -544,6 +570,22 @@ function WorldGrid(): React.ReactElement {
   ].sort((a, b) =>
     worldSort === 'alpha' ? a.name.localeCompare(b.name) : b.updatedAt.localeCompare(a.updatedAt),
   );
+
+  // Cap the DISPLAY to whole rows; the store keeps its own page size. Cards
+  // render → portraits download, so this cap is what bounds the network burst.
+  const visibleCount = columns * visibleRows;
+  const shownEntries = worldEntries.slice(0, visibleCount);
+
+  // Backfill: when the display window outruns what's loaded (initial batch on
+  // a wide window, or "Load more" past the last fetched page), pull the next
+  // page. loadMore() no-ops while loading/exhausted, so this can't stack.
+  useEffect(() => {
+    if (worldEntries.length < visibleCount && !exhausted && !loading) void loadMore();
+  }, [worldEntries.length, visibleCount, exhausted, loading, loadMore]);
+
+  // More to show: either already-loaded rows beyond the cap, or more pages
+  // server-side. Hidden while the very first page is still loading.
+  const hasMoreToShow = worldEntries.length > visibleCount || !exhausted;
 
   return (
     <div className={styles.browse}>
@@ -593,8 +635,8 @@ function WorldGrid(): React.ReactElement {
           No public companions yet. Be the first to share one.
         </div>
       ) : null}
-      <div className={styles.grid}>
-        {worldEntries.map((entry) => (
+      <div className={styles.grid} ref={gridRef}>
+        {shownEntries.map((entry) => (
           <div key={entry.id} style={{ position: 'relative' }}>
             <BrowseCard
               entry={entry}
@@ -607,8 +649,14 @@ function WorldGrid(): React.ReactElement {
           </div>
         ))}
       </div>
-      {!exhausted ? <div ref={sentinelRef} className={styles.sentinel} aria-hidden /> : null}
       {loading ? <div className={styles.loading}>Loading…</div> : null}
+      {hasMoreToShow && !loading ? (
+        <div className={styles.loadMoreRow}>
+          <Button kind="ghost" onClick={() => setVisibleRows((r) => r + ROWS_PER_BATCH)}>
+            Load more
+          </Button>
+        </div>
+      ) : null}
       </div>
     </div>
   );

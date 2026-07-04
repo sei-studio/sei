@@ -73,7 +73,7 @@
   flex-shrink: 0;
 }
 
-/* Scrollable list region: holds the grid plus the infinite-scroll sentinel and
+/* Scrollable list region: holds the grid plus the "Load more" row and
  * loading/empty/error states, so paging keeps working while the header pins. */
 .scroll {
   flex: 1;
@@ -239,8 +239,12 @@
   color: var(--red);
 }
 
-.sentinel {
-  height: 1px;
+/* Centered "Load more" row below the World grid (260704 — replaced the
+ * infinite-scroll sentinel). */
+.loadMoreRow {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-md) 0;
 }
 
 .cardPlaceholder {
