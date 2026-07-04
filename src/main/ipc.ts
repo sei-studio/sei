@@ -16,6 +16,9 @@ import {
   RecordConsentArgsSchema,
   type WizardProgressEvent,
   type ExpansionProgressEvent,
+  type GenProgressEvent,
+  type GenerateUniqueResult,
+  type PrefsGetResult,
   type BrowseEntry,
   type CreditsStatus,
   type SubscriptionStatusInfo,
@@ -23,9 +26,10 @@ import {
   type LanState,
   type BotStatus,
 } from '../shared/ipc';
-import { CharacterSchema, UserConfigSchema, type Character, type UserConfig } from '../shared/characterSchema';
+import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
 import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota } from './characterStore';
+import { libraryCharacterCount } from './uniqueGeneration';
 import { paths } from './paths';
 import { saveApiKey, hasApiKey, safeStorageBackendKind } from './apiKeyStore';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
@@ -54,6 +58,14 @@ export interface IpcHandlerDeps {
    * `chars:expansion-progress` channel. Injected from main/index.ts.
    */
   sendExpansionProgress: (ev: ExpansionProgressEvent) => void;
+  /**
+   * 260703 procgen — stage-progress sink for the unique-companion generation
+   * pipeline (gen:start). The generateUnique `emit` callback funnels through
+   * here so the IPC handler can push each GenProgressEvent tick onto the
+   * gen:progress channel; the renderer filters by requestId. Injected from
+   * main/index.ts (mirrors sendExpansionProgress).
+   */
+  sendGenProgress: (ev: GenProgressEvent) => void;
   /**
    * Returns the current LAN state snapshot. The `lan:state` channel only
    * PUSHES on change, so a freshly-(re)loaded renderer pulls this on mount to
@@ -114,6 +126,22 @@ const IdSchema = z.string().regex(
   { message: 'characterId must be a UUID' },
 );
 const PlaintextSchema = z.string().min(1);
+
+/**
+ * 260703 procgen — thrown when a CREATE (chars:save of a new id) or a
+ * library-add (chars:add-to-library / chars:restore-default) would push the
+ * Home companion count past MAX_COMPANION_SLOTS. The message begins with the
+ * stable `SLOT_LIMIT_REACHED` sentinel so the renderer can pattern-match it —
+ * these handlers surface failures via `err.message` (catch-and-toast).
+ */
+const SLOT_LIMIT_REACHED_MESSAGE =
+  `SLOT_LIMIT_REACHED: You can only have ${MAX_COMPANION_SLOTS} companions. Remove one to make room.`;
+
+/** Current Home companion count ≥ the slot cap (see libraryCharacterCount). */
+async function libraryIsFull(): Promise<boolean> {
+  const [cfg, chars] = await Promise.all([loadConfig(), listCharacters()]);
+  return libraryCharacterCount(chars, cfg) >= MAX_COMPANION_SLOTS;
+}
 
 /**
  * Auth channel Zod gates (Phase 10). signin allows any non-empty password
@@ -482,6 +510,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // prompt — the user's edits win, no regeneration is triggered.
   ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown, optsArg: unknown): Promise<Character> => {
     const parsedCharacter = CharacterSchema.parse(charArg);
+
+    // 260703 procgen slot backstop — a CREATE (id not yet on disk) may not push
+    // the Home library past MAX_COMPANION_SLOTS. Updates to an existing
+    // character are always allowed (they don't add a slot). Defaults are never
+    // saved through this path. This is defense-in-depth behind the renderer's
+    // pre-check and the generateUnique guard.
+    {
+      const existing = await getCharacter(parsedCharacter.id).catch(() => null);
+      if (!existing && (await libraryIsFull())) {
+        throw new Error(SLOT_LIMIT_REACHED_MESSAGE);
+      }
+    }
+
     const skipExpansion =
       optsArg != null &&
       typeof optsArg === 'object' &&
@@ -611,6 +652,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     const { loadConfig, saveConfig } = await import('./configStore');
     const cfg = await loadConfig();
+    // 260703 procgen slot backstop — re-adding a default to Home occupies a
+    // slot; refuse when the library is already full UNLESS this default is
+    // already counted (a no-op re-add must not falsely block).
+    const alreadyOnHome = (cfg.added_default_ids ?? []).includes(id);
+    if (!alreadyOnHome && (await libraryIsFull())) {
+      throw new Error(SLOT_LIMIT_REACHED_MESSAGE);
+    }
     const removed = (cfg.removed_default_ids ?? []).filter((x) => x !== id);
     await saveConfig({ ...cfg, removed_default_ids: removed });
   });
@@ -623,6 +671,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   //          someone else. Defaults follow the restoreDefault path above.
   ipcMain.handle(IpcChannel.chars.addToLibrary, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
+    // 260703 procgen slot backstop — adding a World character occupies a Home
+    // slot; refuse when the library is already full UNLESS it's already counted
+    // (already in added_world_ids, or a non-default local copy already exists).
+    {
+      const { loadConfig: loadCfg } = await import('./configStore');
+      const preCfg = await loadCfg();
+      const alreadyAdded = (preCfg.added_world_ids ?? []).includes(id);
+      const localExisting = await getCharacter(id).catch(() => null);
+      const alreadyCounted = alreadyAdded || (localExisting != null && !localExisting.is_default);
+      if (!alreadyCounted && (await libraryIsFull())) {
+        throw new Error(SLOT_LIMIT_REACHED_MESSAGE);
+      }
+    }
     const { ensureLocallyCached } = await import('./cloud/cacheOnDemand');
     await ensureLocallyCached(id);
     const { loadConfig, saveConfig } = await import('./configStore');
@@ -1098,6 +1159,110 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.config.hasApiKey, async (): Promise<boolean> => {
     return await hasApiKey();
+  });
+
+  // === 260703 procgen — unique-companion generation + questionnaire prefs ===
+  //
+  // gen:start runs the full pipeline (soulcaster sheet → parallel portrait/skin
+  // + persona expansion → save). It NEVER throws for expected failures — it
+  // returns the discriminated GenerateUniqueResult. Stage ticks push over
+  // gen:progress, tagged with the caller's requestId (same routing pattern as
+  // chars:expansion-progress).
+  const GenerateUniqueSchema = z.object({
+    requestId: z.string().min(1),
+    gender: z.enum(['male', 'female', 'other']),
+  });
+  ipcMain.handle(IpcChannel.gen.start, async (_event, argsRaw: unknown): Promise<GenerateUniqueResult> => {
+    const args = GenerateUniqueSchema.parse(argsRaw);
+    const { generateUnique } = await import('./uniqueGeneration');
+    try {
+      return await generateUnique(args, {
+        emit: (stage, status, message) =>
+          deps.sendGenProgress({ requestId: args.requestId, stage, status, message }),
+      });
+    } catch (err) {
+      // Backstop: generateUnique is written to never throw for expected
+      // failures, but an unexpected throw must still resolve the union rather
+      // than reject the IPC call.
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[sei] gen:start unexpected throw: ${message}`);
+      return { ok: false, code: 'generation_failed', message };
+    }
+  });
+
+  // prefs:get — local config.user_profile merged with the cloud user_preferences
+  // row (cloud wins when it has a newer completed_at). `needed` drives the
+  // first-sign-in questionnaire gate: signed-in AND no completed_at anywhere.
+  ipcMain.handle(IpcChannel.prefs.get, async (): Promise<PrefsGetResult> => {
+    const cfg = await loadConfig();
+    const localProfile = cfg.user_profile ?? null;
+
+    const { getClient } = await import('./auth/supabaseClient');
+    const session = (await getClient().auth.getSession()).data.session;
+    if (!session?.user?.id || !session.access_token) {
+      // Signed out — no cloud row, questionnaire never forced.
+      return { profile: localProfile, needed: false };
+    }
+
+    // Best-effort cloud read of the user_preferences row (user_id PK,
+    // preferences jsonb). A failure falls back to the local copy.
+    let cloudProfile: import('../shared/characterSchema').UserPreferences | null = null;
+    try {
+      const { getAuthedClient } = await import('./auth/supabaseClient');
+      const { data, error } = await getAuthedClient(session.access_token)
+        .from('user_preferences')
+        .select('preferences')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+      if (!error && data && (data as { preferences?: unknown }).preferences != null) {
+        const parsed = UserPreferencesSchema.safeParse((data as { preferences: unknown }).preferences);
+        if (parsed.success) cloudProfile = parsed.data;
+      }
+    } catch (err) {
+      console.warn(`[sei] prefs:get cloud read failed: ${(err as Error).message}`);
+    }
+
+    const { resolvePrefs } = await import('./uniqueGeneration');
+    const { profile, cloudIsNewer, hasCompleted } = resolvePrefs(localProfile, cloudProfile);
+
+    // Merge the newer cloud copy back into local config so a re-install / second
+    // device skips the questionnaire without a round-trip next time.
+    if (cloudIsNewer) {
+      try {
+        await saveConfig({ ...cfg, user_profile: profile });
+      } catch (err) {
+        console.warn(`[sei] prefs:get config write-back failed: ${(err as Error).message}`);
+      }
+    }
+
+    return { profile, needed: !hasCompleted };
+  });
+
+  // prefs:save — validate, stamp completed_at when absent, write to config, and
+  // best-effort upsert the cloud user_preferences row. Non-fatal on cloud error
+  // (a later prefs:save retries — no queue needed).
+  ipcMain.handle(IpcChannel.prefs.save, async (_event, profileArg: unknown): Promise<void> => {
+    const profile = UserPreferencesSchema.parse(profileArg);
+    const stamped: import('../shared/characterSchema').UserPreferences = {
+      ...profile,
+      completed_at: profile.completed_at ?? new Date().toISOString(),
+    };
+    const cfg = await loadConfig();
+    await saveConfig({ ...cfg, user_profile: stamped });
+
+    try {
+      const { getClient } = await import('./auth/supabaseClient');
+      const session = (await getClient().auth.getSession()).data.session;
+      if (session?.user?.id && session.access_token) {
+        const { getAuthedClient } = await import('./auth/supabaseClient');
+        const { error } = await getAuthedClient(session.access_token)
+          .from('user_preferences')
+          .upsert({ user_id: session.user.id, preferences: stamped });
+        if (error) console.warn(`[sei] prefs:save cloud upsert failed: ${error.message}`);
+      }
+    } catch (err) {
+      console.warn(`[sei] prefs:save cloud upsert threw: ${(err as Error).message}`);
+    }
   });
 
   // App-level one-shot queries

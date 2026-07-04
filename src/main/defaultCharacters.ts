@@ -71,10 +71,13 @@ export type DefaultCharacterSlug = keyof typeof DEFAULT_CHARACTER_UUIDS;
  * Plan 11-05's slug→UUID migration rewrites any pre-existing slug-keyed
  * tracker on first run of the new build.
  */
+// 260703 procgen: bundled defaults now live in the World tab (the renderer hides
+// them from Home unless their id is in config.added_default_ids), so they carry
+// kind 'world'. The bundled JSON predates the kind field, so we stamp it here.
 export const DEFAULT_CHARACTERS: readonly Character[] = Object.freeze([
-  { ...CharacterSchema.parse(sui),   id: DEFAULT_CHARACTER_UUIDS.sui },
-  { ...CharacterSchema.parse(lyra),  id: DEFAULT_CHARACTER_UUIDS.lyra },
-  { ...CharacterSchema.parse(clawd), id: DEFAULT_CHARACTER_UUIDS.clawd },
+  { ...CharacterSchema.parse(sui),   id: DEFAULT_CHARACTER_UUIDS.sui,   kind: 'world' as const },
+  { ...CharacterSchema.parse(lyra),  id: DEFAULT_CHARACTER_UUIDS.lyra,  kind: 'world' as const },
+  { ...CharacterSchema.parse(clawd), id: DEFAULT_CHARACTER_UUIDS.clawd, kind: 'world' as const },
 ]);
 
 interface SeededTracker {
@@ -165,6 +168,7 @@ function authoredFieldsChanged(onDisk: Character, bundled: Character): boolean {
     JSON.stringify(onDisk.skin) !== JSON.stringify(bundled.skin) ||
     (onDisk.username ?? null) !== (bundled.username ?? null) ||
     (onDisk.slug ?? null) !== (bundled.slug ?? null) ||
+    (onDisk.kind ?? 'custom') !== (bundled.kind ?? 'custom') ||
     JSON.stringify(onDisk.metadata) !== JSON.stringify(bundled.metadata)
   );
 }
@@ -204,6 +208,7 @@ export async function refreshSeededDefaults(): Promise<void> {
         skin: bundled.skin,
         username: bundled.username,
         slug: bundled.slug,
+        kind: bundled.kind,
         metadata: bundled.metadata,
         is_default: true,
         // Preserved from disk via the spread above:
