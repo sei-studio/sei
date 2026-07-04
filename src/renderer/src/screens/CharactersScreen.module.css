@@ -226,7 +226,6 @@
 }
 
 .empty,
-.loading,
 .error {
   padding: var(--space-xl) 0;
   text-align: center;
@@ -245,6 +244,51 @@
   display: flex;
   justify-content: center;
   padding: var(--space-md) 0;
+}
+
+/* Wireframe placeholder card shown in unfilled grid slots while a World page
+ * is fetching (260704 — replaced the "Loading…" text row). Mirrors the real
+ * card chrome: 210/312 portrait block + name/meta bars pinned bottom-left,
+ * with the shared --shimmer sweep looping over the whole card. */
+.skeletonCard {
+  position: relative;
+  aspect-ratio: 210 / 312;
+  min-height: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.skeletonCard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--shimmer);
+  animation: skeletonSweep 1400ms ease-in-out infinite;
+}
+
+.skeletonName,
+.skeletonMeta {
+  position: absolute;
+  left: 14px;
+  background: var(--border);
+}
+
+.skeletonName {
+  bottom: 34px;
+  width: 60%;
+  height: 14px;
+}
+
+.skeletonMeta {
+  bottom: 14px;
+  width: 40%;
+  height: 8px;
+}
+
+@keyframes skeletonSweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
 }
 
 .cardPlaceholder {

@@ -587,6 +587,12 @@ function WorldGrid(): React.ReactElement {
   // server-side. Hidden while the very first page is still loading.
   const hasMoreToShow = worldEntries.length > visibleCount || !exhausted;
 
+  // Wireframe placeholders while a fetch is in flight: fill the unfilled slots
+  // of the current display window (whole 4-row window on a cold open / new
+  // search, just the tail slots on a Load-more backfill). Zero when a
+  // background fetch isn't going to change what's on screen.
+  const skeletonCount = loading ? Math.max(0, visibleCount - shownEntries.length) : 0;
+
   return (
     <div className={styles.browse}>
       <header className={styles.browseHeader}>
@@ -648,8 +654,13 @@ function WorldGrid(): React.ReactElement {
             />
           </div>
         ))}
+        {Array.from({ length: skeletonCount }, (_, i) => (
+          <div key={`skeleton-${i}`} className={styles.skeletonCard} aria-hidden>
+            <div className={styles.skeletonName} />
+            <div className={styles.skeletonMeta} />
+          </div>
+        ))}
       </div>
-      {loading ? <div className={styles.loading}>Loading…</div> : null}
       {hasMoreToShow && !loading ? (
         <div className={styles.loadMoreRow}>
           <Button kind="ghost" onClick={() => setVisibleRows((r) => r + ROWS_PER_BATCH)}>
