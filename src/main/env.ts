@@ -1,14 +1,22 @@
 /**
- * Build-time-injected env vars.
+ * Build-time-injected env vars — all OPTIONAL since the 260704 anon-key
+ * migration.
  *
- * Wiring: electron.vite.config.ts main.define replaces `import.meta.env.SUPABASE_URL`
- * (and SUPABASE_ANON_KEY) with the JSON-stringified value of process.env.<NAME> at
- * BUILD time. Dev runs `electron-vite dev` which reads from .env automatically.
+ * Default wiring (no .env at all — the GitHub build-from-source path):
+ * Supabase access routes through the sei proxy's transparent `/supabase/*`
+ * reverse proxy (`https://api.sei.gg/supabase`). The proxy holds the real
+ * anon key and injects it server-side; the client sends a placeholder that
+ * the proxy recognizes as "anonymous client" and replaces. A signed-in
+ * user's JWT bearer passes through untouched, so RLS behaves identically to
+ * hitting Supabase directly.
  *
- * If you see SUPABASE_ENV_MISSING at boot, your .env is missing or the build
- * was produced without the env vars set. See .env.example.
+ * Overrides (a .env with SUPABASE_URL + SUPABASE_ANON_KEY): electron-vite's
+ * main.define replaces `import.meta.env.SUPABASE_URL` / `SUPABASE_ANON_KEY`
+ * with the .env values at BUILD time, and the client talks to that Supabase
+ * project directly — the path for self-hosters pointing at their own stack.
  *
- * Source: 10-01-PLAN, RESEARCH §Standard Stack, CONTEXT D-13 (safeStorage pattern reuse).
+ * Source: 10-01-PLAN, RESEARCH §Standard Stack; 260704 anon-key migration
+ * (sei-proxy src/supabaseProxy/forward.ts holds the header contract).
  */
 
 // Augment ImportMeta so the build-time-defined env vars are typed in the
@@ -26,18 +34,24 @@ declare global {
 const URL_RAW = import.meta.env.SUPABASE_URL as string | undefined;
 const ANON_RAW = import.meta.env.SUPABASE_ANON_KEY as string | undefined;
 
-function requireEnv(name: string, value: string | undefined): string {
-  if (!value || value.length === 0) {
-    throw new Error(`SUPABASE_ENV_MISSING: ${name} must be set at build time (see .env.example)`);
-  }
-  return value;
+/** Same default as every SEI_PROXY_URL consumer (botSupervisor, proxyClient…). */
+const PROXY_BASE_DEFAULT = 'https://api.sei.gg';
+
+/**
+ * Placeholder anon key sent when none is baked into the build. Never accepted
+ * by Supabase itself — the proxy's /supabase route overwrites the `apikey`
+ * header and swaps an `Authorization: Bearer <this placeholder>` (supabase-js's
+ * signed-out default) for the real anon bearer before forwarding.
+ */
+export const PROXY_ROUTED_ANON_KEY = 'sei-proxy-routed';
+
+export function getSupabaseUrl(): string {
+  if (URL_RAW && URL_RAW.length > 0) return URL_RAW;
+  const proxyBase = process.env.SEI_PROXY_URL ?? PROXY_BASE_DEFAULT;
+  return `${proxyBase}/supabase`;
 }
 
-// Lazy getters so module import doesn't crash when env is missing in test envs
-// that never call into Supabase.
-export function getSupabaseUrl(): string {
-  return requireEnv('SUPABASE_URL', URL_RAW);
-}
 export function getSupabaseAnonKey(): string {
-  return requireEnv('SUPABASE_ANON_KEY', ANON_RAW);
+  if (ANON_RAW && ANON_RAW.length > 0) return ANON_RAW;
+  return PROXY_ROUTED_ANON_KEY;
 }

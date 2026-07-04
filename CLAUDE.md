@@ -250,9 +250,16 @@ primitives (`Button`, `CharacterCard`, modal patterns) before writing new CSS.
 Bundler is **electron-vite** (`electron.vite.config.ts`), three targets:
 
 - `main` and `preload` use `externalizeDepsPlugin`; **preload outputs `.cjs`**.
-- Build-time `define` injects `SUPABASE_URL`, `SUPABASE_ANON_KEY` (public by
-  design — RLS is the security boundary), and `SEI_PROXY_URL` from `.env`. See
-  `.env.example`.
+- Build-time `define` injects OPTIONAL overrides from `.env`: `SUPABASE_URL` +
+  `SUPABASE_ANON_KEY` (direct-to-Supabase, for self-hosters; anon key is public
+  by design — RLS is the security boundary) and `SEI_PROXY_URL`. Since the
+  260704 anon-key migration a build with NO `.env` is fully functional:
+  `src/main/env.ts` routes Supabase through the proxy's transparent
+  `/supabase/*` reverse proxy (`https://api.sei.gg/supabase`) with a
+  placeholder key the proxy swaps for the real anon key server-side.
+  `SEI_PROXY_URL` is defined ONLY when set — an unconditional `?? ''` define
+  used to replace `process.env.SEI_PROXY_URL` with `''` and dead-code every
+  `?? 'https://api.sei.gg'` runtime fallback. See `.env.example`.
 
 Packaging is **electron-builder** (`electron-builder.yml`):
 
