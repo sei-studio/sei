@@ -51,7 +51,7 @@ Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI 
 
 ## Development
 
-Contributions are welcome. Particularly with persona expansion, the mineflayer adapter, adapters for other games, and the loop architecture. Your own LLM API key is required for local development.
+Contributions are welcome. Particularly with persona expansion, the mineflayer adapter, adapters for other games, and the loop architecture.
 
 ```bash
 git clone https://github.com/sei-studio/sei.git
@@ -60,9 +60,9 @@ npm install
 npm run dev
 ```
 
-Note that the cloud features are inactive in a source build for local development.
+A source build works out of the box with no `.env` and no Supabase credentials — the same experience as the packaged app. Database and auth traffic routes through the Sei cloud proxy (`api.sei.gg/supabase`), which holds the public anon key server-side, so signing in, cloud characters, and cloud AI all work from a plain `git clone`. (A `.env` is only for overrides — pointing at your own proxy or your own Supabase project; see `.env.example`.)
 
-**Add your API key** (one of):
+Prefer local mode (your own LLM API key, no account)? **Add your API key** (one of):
 
 - Open Sei -> Settings -> select provider -> paste your key
 - Edit `config.json` in user-data folder directly
