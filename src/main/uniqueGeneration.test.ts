@@ -183,6 +183,41 @@ describe('buildPersonaBlurb / buildDescription', () => {
     expect(blurb).not.toContain('{');
   });
 
+  it('omits the Appearance line when the sheet carries no appearance data', () => {
+    // SAMPLE_SHEET.appearance is {} — defensive fixture for older/incomplete sheets.
+    const blurb = buildPersonaBlurb(SAMPLE_SHEET);
+    expect(blurb).not.toContain('Appearance:');
+  });
+
+  it('folds outfit + hair/eyes/build/accessories into a compact Appearance line', () => {
+    const sheet = {
+      ...SAMPLE_SHEET,
+      appearance: {
+        overall: 'A weathered wood elf with a wanderer\'s ease',
+        hair: 'moss-green, braided back',
+        eyes: 'amber',
+        skin: 'sun-browned',
+        height: 'tall',
+        build: 'lean',
+        bust: null,
+        outfit: 'A patched brown leather jerkin over a faded green tunic, with a woven grey traveling cloak.',
+        accessories: ['a river-stone necklace', 'a carved walking staff'],
+        distinguishing_features: ['a thin scar over one brow'],
+      },
+    };
+    const blurb = buildPersonaBlurb(sheet);
+    expect(blurb).toContain('Appearance:');
+    expect(blurb).toContain('Wears: A patched brown leather jerkin over a faded green tunic');
+    expect(blurb).toContain('Hair: moss-green, braided back');
+    expect(blurb).toContain('Eyes: amber');
+    expect(blurb).toContain('tall, lean');
+    expect(blurb).toContain('Accessories: a river-stone necklace, a carved walking staff');
+    expect(blurb).toContain('Features: a thin scar over one brow');
+    // Appearance line must land before Backstory, after Voice, and stay compact.
+    expect(blurb.indexOf('Voice:')).toBeLessThan(blurb.indexOf('Appearance:'));
+    expect(blurb.indexOf('Appearance:')).toBeLessThan(blurb.indexOf('Backstory:'));
+  });
+
   it('uses the backstory verbatim (whitespace-collapsed) as the public description', () => {
     const desc = buildDescription(SAMPLE_SHEET);
     const collapsed = SAMPLE_SHEET.backstory.replace(/\s+/g, ' ').trim();

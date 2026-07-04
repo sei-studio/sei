@@ -175,14 +175,54 @@ type Sheet = {
 };
 
 /**
+ * Build a compact appearance/outfit summary from the sheet's `appearance`
+ * block, or '' when there's nothing usable (defensive; soulcaster's schema
+ * requires these fields, but older sheets / test fixtures may omit them).
+ *
+ * 260704: the sheet's appearance (incl. `outfit`, a specific, prompt-enforced
+ * garment description) was being generated but never reaching the character's
+ * persona/description — the LLM playing the companion had no idea what it
+ * wore. This folds outfit + hair/eyes/height/build + accessories/distinguishing
+ * features into one terse line so both `expandPersona` and the bot's runtime
+ * persona know what the character looks like and is wearing.
+ */
+function buildAppearanceSummary(appearance: Record<string, unknown> | null | undefined): string {
+  const a = appearance ?? {};
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  const list = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : [];
+  const sentence = (s: string): string => (s === '' || /[.…]$/.test(s) ? s : `${s}.`);
+
+  const overall = condense(str(a.overall), 1, 160);
+  const outfit = condense(str(a.outfit), 2, 280);
+  const hair = str(a.hair);
+  const eyes = str(a.eyes);
+  const heightBuild = [str(a.height), str(a.build)].filter(Boolean).join(', ');
+  const accessories = list(a.accessories);
+  const features = list(a.distinguishing_features);
+
+  const bits: string[] = [];
+  if (overall) bits.push(sentence(overall));
+  if (outfit) bits.push(sentence(`Wears: ${outfit}`));
+  if (hair) bits.push(sentence(`Hair: ${hair}`));
+  if (eyes) bits.push(sentence(`Eyes: ${eyes}`));
+  if (heightBuild) bits.push(sentence(heightBuild));
+  if (accessories.length) bits.push(sentence(`Accessories: ${accessories.slice(0, 3).join(', ')}`));
+  if (features.length) bits.push(sentence(`Features: ${features.slice(0, 2).join(', ')}`));
+
+  return bits.join(' ');
+}
+
+/**
  * Compose the persona `source` blurb the expander consumes — a compact readable
- * paragraph (NOT raw JSON) covering identity, personality, voice, and a
- * condensed backstory.
+ * paragraph (NOT raw JSON) covering identity, personality, voice, appearance
+ * (incl. outfit), and a condensed backstory.
  */
 export function buildPersonaBlurb(sheet: Sheet): string {
   const p = sheet.personality;
   const ageBit = sheet.age_note ? `${sheet.age} (${sheet.age_note})` : `${sheet.age}`;
   const species = sheet.species_detail || sheet.background;
+  const appearanceSummary = buildAppearanceSummary(sheet.appearance);
   const lines = [
     `${sheet.name} — ${species}, age ${ageBit}.`,
     `Tone: ${sheet.personality.tone}`,
@@ -190,6 +230,7 @@ export function buildPersonaBlurb(sheet: Sheet): string {
     `Quirks: ${(p.quirks ?? []).join(', ')}`,
     `Fears: ${(p.fears ?? []).join(', ')}`,
     `Voice: ${sheet.voice_style}`,
+    ...(appearanceSummary ? [`Appearance: ${appearanceSummary}`] : []),
     `Backstory: ${condense(sheet.backstory, 4, 600)}`,
   ];
   return lines.join('\n');
