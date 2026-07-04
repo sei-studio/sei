@@ -31,7 +31,7 @@ import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { maybeOfferMoveToApplications, cleanupRelocationLeftover } from './relocate';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type VisionCapability, type ChatMessage } from '../shared/ipc';
+import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
@@ -248,6 +248,15 @@ function broadcastWizardProgress(ev: WizardProgressEvent): void {
 function broadcastExpansionProgress(ev: ExpansionProgressEvent): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.chars.expansionProgress, ev);
+  }
+}
+
+// 260703 procgen — unique-companion generation stage-progress push channel. The
+// gen:start handler forwards each GenProgressEvent through here so the renderer's
+// `window.sei.onGenProgress(...)` subscription drives the generation ritual UI.
+function broadcastGenProgress(ev: GenProgressEvent): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.gen.progress, ev);
   }
 }
 
@@ -549,6 +558,9 @@ async function bootstrap(): Promise<void> {
     // chars:save forwards streaming persona-expansion progress here; piped to
     // the renderer via the chars:expansion-progress push channel.
     sendExpansionProgress: broadcastExpansionProgress,
+    // gen:start forwards unique-companion generation stage ticks here; piped to
+    // the renderer via the gen:progress push channel.
+    sendGenProgress: broadcastGenProgress,
     getLanState: () => latestLanState,
     // 260703: run one detection pass right now (refreshes latestLanState via
     // the watcher's emit path). The chat turn awaits this before building the
