@@ -116,11 +116,45 @@ async function writeTracker(t: SeededTracker): Promise<void> {
  * Runs after `runFirstLaunchMigration` so the migration's `is_default`
  * sui (from a legacy CLI clone) wins over the shipped default if both
  * paths fire.
+ *
+ * 260704: bundled defaults are opt-in World entries now (procgen's
+ * `added_default_ids` model) rather than a permanent Home freebie — a
+ * brand-new install/profile should start with ZERO defaults on disk, same as
+ * any other "future player" World entry, instead of inheriting sui/lyra/clawd
+ * files nobody asked for. "Brand-new" is detected as: the seeded tracker has
+ * never recorded ANY of the three ids AND none of the three already exist on
+ * disk. An install mid-upgrade (tracker already has entries) or one where a
+ * default was created some other way (migration, import) is NOT fresh — it
+ * falls through to the existing seed-everything loop below, unchanged. Either
+ * way the tracker is written so a later relaunch never seeds retroactively.
  */
 export async function seedDefaultCharacters(): Promise<void> {
   const tracker = await readTracker();
   const already = new Set(tracker.ids);
   let mutated = false;
+
+  if (already.size === 0) {
+    let anyOnDisk = false;
+    for (const c of DEFAULT_CHARACTERS) {
+      if (await getCharacter(c.id).catch(() => null)) {
+        anyOnDisk = true;
+        break;
+      }
+    }
+    if (!anyOnDisk) {
+      const freshTracker: SeededTracker = {
+        version: 1,
+        ids: DEFAULT_CHARACTERS.map((c) => c.id),
+      };
+      try {
+        await writeTracker(freshTracker);
+        logger.info('seedDefaultCharacters: fresh install — skipping default seed, tracker marked');
+      } catch (err) {
+        logger.warn(`seedDefaultCharacters: fresh-install tracker write failed: ${(err as Error).message}`);
+      }
+      return;
+    }
+  }
 
   for (const c of DEFAULT_CHARACTERS) {
     if (already.has(c.id)) continue;

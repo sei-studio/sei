@@ -27,6 +27,7 @@ import { SignInModal } from '../components/SignInModal';
 import { IdTag } from '../components/IdTag';
 import { SkinEditor } from '../components/SkinEditor';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
+import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
 import { ProactivenessBar } from '../components/ProactivenessBar';
 import { getProactiveness } from '../lib/proactiveness';
 import { BackIcon, GearIcon, RotateIcon, SparkleIcon } from '../components/icons';
@@ -116,6 +117,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   );
   const [gearMenuOpen, setGearMenuOpen] = useState<boolean>(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState<boolean>(false);
+  const [unbindConfirmOpen, setUnbindConfirmOpen] = useState<boolean>(false);
   const gearWrapRef = useRef<HTMLDivElement | null>(null);
   // Own-character details card defaults to the DESCRIPTION when one exists,
   // otherwise the persona source. The rotate toggle still switches between them.
@@ -422,8 +424,16 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     }
   };
 
-  const onRemoveFromLibraryClick = async (): Promise<void> => {
+  // Gear → "Unbind" opens a confirmation popup (mirrors onResetMemoryClick) —
+  // the actual removal is destructive (drops the companion from the library)
+  // so it runs only from doUnbind, after the user confirms.
+  const onUnbindClick = (): void => {
     setGearMenuOpen(false);
+    setUnbindConfirmOpen(true);
+  };
+
+  const doUnbind = async (): Promise<void> => {
+    setUnbindConfirmOpen(false);
     if (!character) return;
     try {
       if (isAddedFromWorld) {
@@ -732,40 +742,54 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               {isActive || isConnecting ? 'Disconnect' : 'Play together'}
             </Button>
           )}
-          <div className={styles.gearWrap} ref={gearWrapRef}>
-            <button
-              type="button"
-              className={styles.gearBtn}
-              onClick={onGearClick}
-              aria-label={viewOnly ? 'Companion options' : 'Edit companion'}
-              aria-haspopup={viewOnly ? 'menu' : undefined}
-              aria-expanded={viewOnly ? gearMenuOpen : undefined}
-            >
-              <GearIcon size={18} />
-            </button>
-            {viewOnly && gearMenuOpen ? (
-              <div className={styles.gearMenu} role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={styles.gearMenuItem}
-                  onClick={() => { void onResetMemoryClick(); }}
-                >
-                  Reset memory
-                </button>
-                {!isWorldPreview ? (
+          {/* 260704: World preview companions (foreign-owned, not yet added)
+              get NO settings button at all — there's nothing to reset or
+              unbind for a companion that isn't in the library yet. Gate the
+              whole gearWrap (button + menu) on !isWorldPreview so the ref'd
+              node simply doesn't exist for a preview; the outside-click
+              effect below already no-ops when gearWrapRef.current is null. */}
+          {!isWorldPreview ? (
+            <div className={styles.gearWrap} ref={gearWrapRef}>
+              <button
+                type="button"
+                className={styles.gearBtn}
+                onClick={onGearClick}
+                aria-label={viewOnly ? 'Companion options' : 'Edit companion'}
+                aria-haspopup={viewOnly ? 'menu' : undefined}
+                aria-expanded={viewOnly ? gearMenuOpen : undefined}
+              >
+                <GearIcon size={18} />
+              </button>
+              {viewOnly && gearMenuOpen ? (
+                <div className={styles.gearMenu} role="menu">
                   <button
                     type="button"
                     role="menuitem"
                     className={styles.gearMenuItem}
-                    onClick={() => { void onRemoveFromLibraryClick(); }}
+                    onClick={() => { void onResetMemoryClick(); }}
                   >
-                    Remove from library
+                    Reset memory
                   </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+                  {/* 260704: a default the user hasn't invited into a Home slot
+                      (isRemovedDefault) was never "in the library" to begin
+                      with — showing "Unbind" here was the exact bug report
+                      (defaults reading as added when they weren't). isWorldPreview
+                      is always false inside this branch; kept explicit for
+                      defensive clarity if the outer gate ever changes. */}
+                  {!isWorldPreview && !isRemovedDefault ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.gearMenuItem}
+                      onClick={onUnbindClick}
+                    >
+                      Unbind
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </main>
 
@@ -781,6 +805,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           characterName={character.name}
           onCancel={() => setResetConfirmOpen(false)}
           onConfirm={() => { void doResetMemory(); }}
+        />
+      ) : null}
+      {unbindConfirmOpen ? (
+        <UnbindConfirmModal
+          characterName={character.name}
+          onCancel={() => setUnbindConfirmOpen(false)}
+          onConfirm={() => { void doUnbind(); }}
         />
       ) : null}
       {showSignIn ? (
