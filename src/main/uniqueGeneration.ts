@@ -195,8 +195,55 @@ export function buildPersonaBlurb(sheet: Sheet): string {
   return lines.join('\n');
 }
 
-/** 1-2 sentence public-facing summary for the character's `description`. */
+/**
+ * Safety cap for `buildDescription`'s output. `Character.description` in
+ * src/shared/characterSchema.ts is an UNBOUNDED `z.string()` — no `.max()` —
+ * so nothing downstream enforces a length. soulcaster's prompt asks for a
+ * 150-300 word backstory (prompt.js) but only Zod-validates `min(1)`, so a
+ * misbehaving model could in principle return something far longer. This cap
+ * (~300+ words of headroom) is therefore a defensive backstop, not a schema
+ * requirement — under normal generation the full backstory always fits and
+ * is used verbatim.
+ */
+const DESCRIPTION_MAX_CHARS = 2200;
+
+/**
+ * Trim `text` to at most `maxChars`, preferring a sentence boundary. Returns
+ * the trimmed text plus whether any trimming occurred (the caller decides
+ * whether to append an ellipsis — only meaningful when the cut lands
+ * mid-thought, i.e. no sentence boundary was found to land on cleanly).
+ */
+function trimToSentenceBoundary(clean: string, maxChars: number): { text: string; truncated: boolean } {
+  if (clean.length <= maxChars) return { text: clean, truncated: false };
+  const sentences = clean.match(/[^.!?]+[.!?]+/g) ?? [clean];
+  let out = '';
+  for (const s of sentences) {
+    if ((out + s).length > maxChars) break;
+    out += s;
+  }
+  out = out.trim();
+  if (out) return { text: out, truncated: true };
+  // Not even the first sentence fits — hard cut.
+  return { text: clean.slice(0, maxChars).trimEnd(), truncated: true };
+}
+
+/**
+ * User-facing `description`: the soulcaster sheet's own backstory paragraph,
+ * verbatim (whitespace-collapsed) when it fits. This IS the public-facing
+ * text shown on the World tab / CharacterPage — the backstory is
+ * prompt-enforced to explain how the character's look and personality
+ * cohere, so it reads as a real description rather than a stat line.
+ *
+ * Falls back to the old `"{name}, a {species}. {first sentence}"` stat-line
+ * format only when the backstory is missing/empty/whitespace — defensive,
+ * since the soulcaster schema requires `backstory: z.string().min(1)`.
+ */
 export function buildDescription(sheet: Sheet): string {
+  const clean = String(sheet.backstory ?? '').replace(/\s+/g, ' ').trim();
+  if (clean) {
+    const { text, truncated } = trimToSentenceBoundary(clean, DESCRIPTION_MAX_CHARS);
+    return truncated ? `${text}…` : text;
+  }
   const species = sheet.species_detail || sheet.background;
   const first = condense(sheet.backstory, 1, 160);
   const base = `${sheet.name}, a ${species}.`;
@@ -289,15 +336,22 @@ async function toCompliantPortraitPng(bytes: Buffer): Promise<Buffer> {
  * Turn a full-body character PNG into a valid 64×64 Minecraft skin via
  * img2skin's deterministic 'fallback' branch (no API key required). Writes the
  * source + reads the skin through a scratch temp dir that is always cleaned up.
+ *
+ * `variant` selects the Minecraft skin model geometry — 'slim' (Alex, narrow
+ * arms) vs 'classic' (Steve, wide arms). The bot serves skins via
+ * CustomSkinLoader with model "auto", which detects slim vs classic from the
+ * PNG's arm-region geometry, so passing the right variant here is what makes
+ * female companions actually render as slim in-game (no schema/server change
+ * needed).
  */
-async function rawPngToSkin(rawPng: Buffer): Promise<Buffer> {
+async function rawPngToSkin(rawPng: Buffer, variant: 'slim' | 'classic'): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), 'sei-skin-'));
   const src = path.join(dir, 'character.png');
   const out = path.join(dir, 'skin.png');
   try {
     await writeFile(src, rawPng);
     const { characterToSkin } = await import('img2skin/src/pipeline.js');
-    await characterToSkin(src, out, { branch: 'fallback' });
+    await characterToSkin(src, out, { branch: 'fallback', variant });
     return await readFile(out);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
@@ -528,7 +582,7 @@ async function runPipeline(args: {
     }
     emit('skin', 'start');
     try {
-      skinBytes = await rawPngToSkin(rawPng);
+      skinBytes = await rawPngToSkin(rawPng, gender === 'female' ? 'slim' : 'classic');
       emit('skin', 'done');
     } catch (err) {
       skinBytes = null;

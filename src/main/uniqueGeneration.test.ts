@@ -183,9 +183,26 @@ describe('buildPersonaBlurb / buildDescription', () => {
     expect(blurb).not.toContain('{');
   });
 
-  it('produces a short public description', () => {
+  it('uses the backstory verbatim (whitespace-collapsed) as the public description', () => {
     const desc = buildDescription(SAMPLE_SHEET);
-    expect(desc).toContain('Mirelle');
-    expect(desc.length).toBeLessThanOrEqual(221);
+    const collapsed = SAMPLE_SHEET.backstory.replace(/\s+/g, ' ').trim();
+    expect(desc).toBe(collapsed);
+    expect(desc).toContain('Mirelle grew up in a canopy village');
+  });
+
+  it('trims an oversized backstory at a sentence boundary with a trailing ellipsis', () => {
+    const longSentence = 'She wandered for many long years across distant lands seeking the truth. ';
+    const sheet = { ...SAMPLE_SHEET, backstory: longSentence.repeat(80) };
+    const desc = buildDescription(sheet);
+    expect(desc.length).toBeLessThanOrEqual(2201);
+    expect(desc.endsWith('…')).toBe(true);
+    // Cuts on a sentence boundary: strip the ellipsis and it should still end mid-period.
+    expect(desc.slice(0, -1).trimEnd().endsWith('.')).toBe(true);
+  });
+
+  it('falls back to the stat-line format when backstory is missing/empty/whitespace', () => {
+    const sheet = { ...SAMPLE_SHEET, backstory: '   ' };
+    const desc = buildDescription(sheet);
+    expect(desc).toBe('Mirelle, a wood elf with tapered ears.');
   });
 });
