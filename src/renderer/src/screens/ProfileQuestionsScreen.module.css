@@ -1,0 +1,54 @@
+/* ProfileQuestionsScreen — first-sign-in questionnaire tile groups.
+ * Radio-tile idiom mirrors AddCharacterScreen's proactiveness step (accent
+ * border + soft fill when selected). Tokens only. */
+
+.tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.tile:hover {
+  border-color: var(--border-strong);
+}
+
+.tileSelected,
+.tileSelected:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.tileLabel {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: 0.01em;
+}
+
+.tileSub {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.error {
+  margin-top: 12px;
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 13px;
+}

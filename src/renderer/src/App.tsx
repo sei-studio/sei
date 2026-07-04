@@ -35,6 +35,10 @@ import { ComingSoonScreen } from './screens/ComingSoonScreen';
 import { CharacterPage } from './screens/CharacterPage';
 import { ChatScreen } from './screens/ChatScreen';
 import { VoiceCallScreen } from './screens/VoiceCallScreen';
+import { ProfileQuestionsScreen } from './screens/ProfileQuestionsScreen';
+import { UniqueGenderScreen } from './screens/UniqueGenderScreen';
+import { UniqueCastingScreen } from './screens/UniqueCastingScreen';
+import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { MinimizedCall } from './components/MinimizedCall';
 import { SummonedWidget } from './components/SummonedWidget';
 import { GamesPickerModal } from './components/GamesPickerModal';
@@ -567,6 +571,43 @@ export function App(): React.ReactElement {
     prevAuthKindRef.current = authState.kind;
   }, [authState, view.kind, navigate, setHomeTab]);
 
+  // ── First-sign-in questionnaire gate (260703 procgen, spec item 6). ────────
+  //    Once a signed-in user lands on Home, ask main whether the companion
+  //    questionnaire is still needed (no completed local profile AND no cloud
+  //    user_preferences row). If so, route to ProfileQuestionsScreen BEFORE they
+  //    use Home — mirroring how onboarding/skin-setup gate the home route.
+  //
+  //    Minimal + non-looping: a ref records the user id we already checked, so
+  //    navigating to the questionnaire and back to Home never re-fires it; a
+  //    sign-out clears the ref so a different account is re-checked. Gating on
+  //    view.kind === 'home' means a fresh un-onboarded account (routed to
+  //    onboarding first) is never interrupted mid-setup.
+  const prefsCheckedForUserRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (authState.kind !== 'signed_in') {
+      prefsCheckedForUserRef.current = null;
+      return;
+    }
+    if (view.kind !== 'home') return;
+    const uid = authState.user.id;
+    if (prefsCheckedForUserRef.current === uid) return;
+    prefsCheckedForUserRef.current = uid;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await sei.prefsGet();
+        if (cancelled) return;
+        if (res.needed) navigate({ kind: 'profile-questions', next: 'home' });
+      } catch {
+        // Best-effort — a transient failure just means we ask next time Home
+        // renders for this user (the ref is already set, so not this render).
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authState, view.kind, navigate]);
+
   // B5: LoadingScreen is gone — the renderer routes directly to the initial
   // view in the bootstrap effect above. The 'loading' view variant is a
   // transient state before that effect resolves; render nothing for a frame
@@ -581,7 +622,13 @@ export function App(): React.ReactElement {
     view.kind === 'onboarding' ||
     view.kind === 'auth-choice' ||
     view.kind === 'skin-setup' ||
-    view.kind === 'activity-picker';
+    view.kind === 'activity-picker' ||
+    // 260703 procgen — the unique-companion flow + first-sign-in questionnaire
+    // are full-page ritual surfaces (like onboarding), so the rail is hidden.
+    view.kind === 'profile-questions' ||
+    view.kind === 'unique-gender' ||
+    view.kind === 'unique-casting' ||
+    view.kind === 'unique-reveal';
 
   return (
     <>
@@ -695,6 +742,16 @@ export function App(): React.ReactElement {
                 {view.kind === 'credits' && <CreditsScreen />}
                 {view.kind === 'receipt' && <ReceiptScreen />}
                 {view.kind === 'coming-soon' && <ComingSoonScreen />}
+                {view.kind === 'profile-questions' && (
+                  <ProfileQuestionsScreen next={view.next} />
+                )}
+                {view.kind === 'unique-gender' && <UniqueGenderScreen />}
+                {view.kind === 'unique-casting' && (
+                  <UniqueCastingScreen gender={view.gender} />
+                )}
+                {view.kind === 'unique-reveal' && (
+                  <UniqueRevealScreen characterId={view.characterId} />
+                )}
               </main>
               {/*
                 LogsBar — quick task 260508-mun item 5. Hidden during
