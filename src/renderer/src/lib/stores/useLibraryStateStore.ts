@@ -2,9 +2,8 @@
  * useLibraryStateStore — per-user library visibility state.
  *
  * Tracks two parallel sets keyed by character UUID:
- *   - removedDefaultIds: bundled defaults (sui/lyra/clawd) the user has
- *     "removed from library". Hidden from Home + IconRail; their on-disk JSON
- *     stays so the World tab can still render them as system-authored.
+ *   - addedDefaultIds: bundled defaults (sui/lyra/clawd) the user has invited
+ *     into a Home slot (260703 procgen opt-in semantics — see below).
  *   - addedWorldIds: non-default foreign-owned characters the user explicitly
  *     added from the World tab. Normally HomeGrid hides chars with
  *     owner !== currentUserId; this set opts them back in so Home reflects
@@ -13,9 +12,9 @@
  * Both surfaces drive:
  *   - HomeGrid + IconRail filtering.
  *   - WorldGrid's `inMyLibrary` pill swap.
- *   - CharacterPage Summon CTA copy for removed/added states.
+ *   - CharacterPage Summon CTA copy for invited/added states.
  *
- * Source of truth lives in UserConfig (removed_default_ids, added_world_ids);
+ * Source of truth lives in UserConfig (added_default_ids, added_world_ids);
  * this store reads via sei.getConfig on init and is refreshed by the renderer
  * after each add / remove / restore action.
  */
@@ -24,14 +23,13 @@ import { create } from 'zustand';
 import { sei } from '../ipcClient';
 
 interface LibraryStateStore {
-  removedDefaultIds: Set<string>;
   addedWorldIds: Set<string>;
   /**
    * 260703 procgen — bundled defaults the user has EXPLICITLY invited into a
-   * Home slot (UserConfig.added_default_ids). Semantics are inverted from
-   * removedDefaultIds: defaults now live in the World tab and are hidden from
-   * Home UNLESS their id appears here. The Home slot grid consults this set;
-   * the legacy removedDefaultIds is retained for the World "in library" pill.
+   * Home slot (UserConfig.added_default_ids). Defaults now live in the World
+   * tab and are hidden from Home UNLESS their id appears here. Consulted by
+   * HomeGrid, IconRail, WorldGrid's "in library" pill, and CharacterPage's
+   * Add-to-library CTA. The legacy removed_default_ids config field is dead.
    */
   addedDefaultIds: Set<string>;
   initialized: boolean;
@@ -39,18 +37,15 @@ interface LibraryStateStore {
 }
 
 export const useLibraryStateStore = create<LibraryStateStore>((set) => ({
-  removedDefaultIds: new Set<string>(),
   addedWorldIds: new Set<string>(),
   addedDefaultIds: new Set<string>(),
   initialized: false,
   refresh: async () => {
     try {
       const cfg = await sei.getConfig();
-      const removed = new Set<string>(cfg.removed_default_ids ?? []);
       const added = new Set<string>(cfg.added_world_ids ?? []);
       const addedDefaults = new Set<string>(cfg.added_default_ids ?? []);
       set({
-        removedDefaultIds: removed,
         addedWorldIds: added,
         addedDefaultIds: addedDefaults,
         initialized: true,

@@ -164,10 +164,10 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
   it('Test 14: Home filter uses added_default_ids (defaults hidden unless invited)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     // Defaults are opt-IN on Home now (added_default_ids), not opt-out: the
-    // is_default branch of the Home filter returns addedDefaultIds.has(c.id).
-    // (WorldGrid still reads removedDefaultIds for its "in library" pill, so we
-    // assert the positive Home-filter shape rather than a whole-file absence.)
+    // is_default branch of the Home filter returns addedDefaultIds.has(c.id),
+    // and WorldGrid's "in library" pill reads the same set.
     expect(source.includes('return addedDefaultIds.has(c.id);')).toBe(true);
+    expect(source.includes('removedDefaultIds')).toBe(false);
   });
 
   it('Test 15: an empty slot opens the three-way AddCompanionChooserModal', () => {

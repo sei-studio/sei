@@ -35,7 +35,7 @@ import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { InfoTip } from '../components/InfoTip';
-import { BackIcon, SunIcon, MoonIcon } from '../components/icons';
+import { BackIcon, SunIcon, MoonIcon, CopyIcon } from '../components/icons';
 import type { UserConfig } from '@shared/characterSchema';
 import type { WizardState } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
@@ -726,10 +726,11 @@ export function SettingsScreen(): React.ReactElement {
           <div className={styles.row}>
             <span className={styles.rowLabel}>Account ID</span>
             <span className={`${styles.rowValue} ${styles.uuidRowValue}`}>
-              <span className={styles.monoValue}>{authState.user.id}</span>
-              <Button
-                kind="quiet"
-                size="sm"
+              <button
+                type="button"
+                className={styles.uuidCopyBtn}
+                aria-label="Copy account ID"
+                data-tip={uuidCopied ? 'Copied' : 'Copy'}
                 onClick={() => {
                   void navigator.clipboard
                     .writeText(authState.user.id)
@@ -745,8 +746,9 @@ export function SettingsScreen(): React.ReactElement {
                     });
                 }}
               >
-                {uuidCopied ? 'Copied' : 'Copy'}
-              </Button>
+                <CopyIcon size={15} />
+              </button>
+              <span className={styles.monoValue}>{authState.user.id}</span>
             </span>
           </div>
 
@@ -851,7 +853,7 @@ export function SettingsScreen(): React.ReactElement {
                   text={
                     aiBackendKind === 'local'
                       ? 'Managed billing turns off your local API key and routes Sei through our cloud. Switch back any time.'
-                      : 'Switching back uses the API key stored on this device. Your active subscription keeps renewing until you cancel it above.'
+                      : 'Switching back uses the API key stored on this device. Your active subscription keeps renewing until you cancel it.'
                   }
                 />
               </span>

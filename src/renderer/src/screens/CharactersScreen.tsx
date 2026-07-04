@@ -445,7 +445,7 @@ function WorldGrid(): React.ReactElement {
   const [worldSort, setWorldSort] = useState<'alpha' | 'recent'>('alpha');
 
   const localCharacters = useDataStore((s) => s.characters);
-  const removedDefaultIds = useLibraryStateStore((s) => s.removedDefaultIds);
+  const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
   // Bundled defaults (sui/lyra/clawd) are surfaced as system-authored World
   // entries so the user can find them next to other public characters even
   // though they live in the local store and don't have a cloud row (D-22).
@@ -472,7 +472,9 @@ function WorldGrid(): React.ReactElement {
       portraitUrl: c.portrait_image,
       skinUrl: null,
       updatedAt: c.created,
-      inMyLibrary: !removedDefaultIds.has(c.id),
+      // 260703 procgen: defaults are opt-in on Home — "in library" means the
+      // user invited this default (matches the HomeGrid/IconRail filter).
+      inMyLibrary: addedDefaultIds.has(c.id),
     }));
 
   const navigate = useUiStore((s) => s.navigate);

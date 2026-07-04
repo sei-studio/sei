@@ -171,7 +171,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   }, [onlineForThisChar]);
 
   // ── Library-state hooks (hoisted above the early-return for stable count) ──
-  const removedDefaultIds = useLibraryStateStore((s) => s.removedDefaultIds);
+  const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
   const refreshLibraryState = useLibraryStateStore((s) => s.refresh);
 
@@ -276,7 +276,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   }
 
   const isDefault = character.is_default;
-  const isRemovedDefault = isDefault && removedDefaultIds.has(character.id);
+  // 260703 procgen: defaults are opt-in on Home — a default NOT in
+  // added_default_ids shows "Add to library" instead of the Summon CTA.
+  const isRemovedDefault = isDefault && !addedDefaultIds.has(character.id);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   // A character with a cloud owner that isn't the current user is foreign /
   // view-only. This now holds for SIGNED-OUT users too (currentUserId === null):

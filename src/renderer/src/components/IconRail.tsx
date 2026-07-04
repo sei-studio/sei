@@ -311,21 +311,21 @@ export function IconRail(): React.ReactElement {
   const worldActive = onHomeSurface && homeTab === 'world';
 
   // Filter to the user's home library — same rule HomeGrid uses so the rail
-  // and the Home grid never diverge. Bundled defaults are shown unless the
-  // user has removed them from their library via the gear menu. Foreign
-  // chars are hidden unless the user added them from the World tab
-  // (UserConfig.added_world_ids).
-  const removedDefaultIds = useLibraryStateStore((s) => s.removedDefaultIds);
+  // and the Home grid never diverge. 260703 procgen: bundled defaults are
+  // OPT-IN — hidden unless the user invited them from the World tab
+  // (UserConfig.added_default_ids). Foreign chars are hidden unless added
+  // from the World tab (UserConfig.added_world_ids).
+  const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
   const homeCharacters = useMemo(() => {
     return characters.filter((c) => {
-      if (c.is_default === true) return !removedDefaultIds.has(c.id);
+      if (c.is_default === true) return addedDefaultIds.has(c.id);
       if (currentUserId && c.owner != null && c.owner !== currentUserId) {
         return addedWorldIds.has(c.id);
       }
       return true;
     });
-  }, [characters, currentUserId, removedDefaultIds, addedWorldIds]);
+  }, [characters, currentUserId, addedDefaultIds, addedWorldIds]);
 
   // Stable sort: last interaction desc (summon OR chat; nulls last), then created desc.
   const sortedCharacters = useMemo(() => {

@@ -629,15 +629,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     if (char.is_default) {
       // Defaults are bundled (D-22) and never actually leave the disk —
-      // "remove from library" is a per-user visibility flag tracked in
-      // UserConfig.removed_default_ids. Re-adding via charsRestoreDefault
-      // simply clears the entry.
+      // 260703 procgen: Home visibility for defaults is OPT-IN via
+      // UserConfig.added_default_ids (they live in the World tab otherwise),
+      // so "remove from library" strips the id from that list. The legacy
+      // removed_default_ids field is no longer consulted anywhere.
       const { loadConfig, saveConfig } = await import('./configStore');
       const cfg = await loadConfig();
-      const removed = new Set(cfg.removed_default_ids ?? []);
-      if (!removed.has(id)) {
-        removed.add(id);
-        await saveConfig({ ...cfg, removed_default_ids: Array.from(removed) });
+      const added = (cfg.added_default_ids ?? []).filter((x) => x !== id);
+      if (added.length !== (cfg.added_default_ids ?? []).length) {
+        await saveConfig({ ...cfg, added_default_ids: added });
       }
       return;
     }
@@ -659,8 +659,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!alreadyOnHome && (await libraryIsFull())) {
       throw new Error(SLOT_LIMIT_REACHED_MESSAGE);
     }
-    const removed = (cfg.removed_default_ids ?? []).filter((x) => x !== id);
-    await saveConfig({ ...cfg, removed_default_ids: removed });
+    // 260703 procgen: Home visibility for defaults is OPT-IN — inviting a
+    // default writes it into added_default_ids (the set HomeGrid/IconRail and
+    // the slot guard above actually read).
+    if (!alreadyOnHome) {
+      const added = [...(cfg.added_default_ids ?? []), id];
+      await saveConfig({ ...cfg, added_default_ids: added });
+    }
   });
 
   // Add a non-default foreign-owned (World) character to the user's library.

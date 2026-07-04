@@ -182,6 +182,29 @@
   gap: var(--space-sm);
 }
 
+/* Icon-only copy affordance for the Account ID row — same shape as the chat
+   message hover actions (ChatScreen .rowActionBtn); the "Copied" flash rides
+   the global data-tip tooltip instead of swapping button text. */
+.uuidCopyBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms var(--ease), background 120ms var(--ease);
+}
+.uuidCopyBtn:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.uuidCopyBtn:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 2px; }
+
 .resendStatus {
   font-family: var(--sans);
   font-size: 14px;
