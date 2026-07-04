@@ -133,4 +133,58 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(css.includes('.tabBar')).toBe(true);
     expect(css.includes('.tabActive')).toBe(true);
   });
+
+  // ── 260703 procgen — fixed 4-slot Home + add-companion chooser ──────────
+  const HOME_CSS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'screens', 'HomeScreen.module.css');
+  const CHOOSER = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'AddCompanionChooserModal.tsx');
+
+  it('Test 12: Home renders a fixed 4-slot grid capped at MAX_COMPANION_SLOTS', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    // Slots are driven by the shared MAX_COMPANION_SLOTS constant (not a magic 4).
+    expect(source.includes('MAX_COMPANION_SLOTS')).toBe(true);
+    expect(source.includes('slotCharacters')).toBe(true);
+    // Uses the non-scrolling slot grid, not the old auto-fill .grid.
+    expect(source.includes('homeStyles.slotGrid')).toBe(true);
+    const homeCss = readFileSync(HOME_CSS, 'utf-8');
+    expect(homeCss.includes('.slotGrid')).toBe(true);
+    expect(homeCss.includes('repeat(4, 1fr)')).toBe(true);
+  });
+
+  it('Test 13: empty slots use the slot AddCard, header "New companion" button is gone', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    // The header CTA was removed — slots are now the creation affordance.
+    expect(source.includes('New companion')).toBe(false);
+    // Empty slots render the AddCard slot variant labelled "Summon a companion".
+    expect(source.includes("variant=\"slot\"")).toBe(true);
+    expect(source.includes('Summon a companion')).toBe(true);
+    // The card renders with the slot variant so it stretches to full height.
+    expect(source.includes("variant=\"slot\"")).toBe(true);
+  });
+
+  it('Test 14: Home filter uses added_default_ids (defaults hidden unless invited)', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    // Defaults are opt-IN on Home now (added_default_ids), not opt-out: the
+    // is_default branch of the Home filter returns addedDefaultIds.has(c.id).
+    // (WorldGrid still reads removedDefaultIds for its "in library" pill, so we
+    // assert the positive Home-filter shape rather than a whole-file absence.)
+    expect(source.includes('return addedDefaultIds.has(c.id);')).toBe(true);
+  });
+
+  it('Test 15: an empty slot opens the three-way AddCompanionChooserModal', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes('AddCompanionChooserModal')).toBe(true);
+    expect(existsSync(CHOOSER)).toBe(true);
+    const chooser = readFileSync(CHOOSER, 'utf-8');
+    // Three tiles: unique / custom / world.
+    expect(chooser.includes('Meet your unique companion')).toBe(true);
+    expect(chooser.includes('Create from scratch')).toBe(true);
+    expect(chooser.includes('Invite an existing companion')).toBe(true);
+  });
+
+  it('Test 16: unique path gates on sign-in via the meet-your-unique framing', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes("setUpgradeFraming('meet your unique companion')")).toBe(true);
+    // Backend gate: local (BYOK) users are also routed to sign-in.
+    expect(source.includes("!== 'cloud-proxy'")).toBe(true);
+  });
 });

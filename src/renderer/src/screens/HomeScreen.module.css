@@ -110,3 +110,33 @@
   display: none;
   width: 0;
 }
+
+/* ── Slot grid (260703 procgen) — the Home page's fixed companion slots ────
+ * A single non-scrolling row of exactly MAX_COMPANION_SLOTS (4) equal columns
+ * that fills the viewport height under the pinned header. Each card (filled or
+ * empty) stretches to the bottom of the window via its 'slot' variant. */
+.slotGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  /* Headroom for the card hover-lift (translateY(-7px) + accent ring) so it
+   * isn't clipped by the row's own overflow:hidden. */
+  padding: 10px var(--space-2xl) var(--space-2xl);
+}
+
+/* Each slot is a positioned box so the per-card open-error overlay anchors to
+ * it and the card can stretch to full height. */
+.slot {
+  position: relative;
+  min-height: 0;
+  display: flex;
+}
+
+.slot > * {
+  flex: 1;
+  min-height: 0;
+}

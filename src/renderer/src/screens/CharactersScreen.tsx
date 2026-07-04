@@ -40,13 +40,14 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { lastInteractionAt } from '../lib/lastInteraction';
-import { Button } from '../components/Button';
-import { PlusIcon } from '../components/icons';
 import { CharacterCard } from '../components/CharacterCard';
 import { AddCard } from '../components/AddCard';
 import { CreationLimitModal } from '../components/CreationLimitModal';
+import { AddCompanionChooserModal } from '../components/AddCompanionChooserModal';
+import { SignInModal } from '../components/SignInModal';
 import { BrowseCard } from '../components/BrowseCard';
 import type { Character } from '@shared/characterSchema';
+import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
 import type { BrowseEntry } from '@shared/ipc';
 import homeStyles from './HomeScreen.module.css';
 import styles from './CharactersScreen.module.css';
@@ -109,9 +110,12 @@ function HomeGrid(): React.ReactElement {
   const recentlyDeletedIds = useDataStore((s) => s.recentlyDeletedIds);
   const navigate = useUiStore((s) => s.navigate);
   const openModal = useUiStore((s) => s.openModal);
+  const setHomeTab = useUiStore((s) => s.setHomeTab);
   const greetingDismissed = useUiStore((s) => s.homeGreetingDismissed);
   const authState = useAuthStore((s) => s.state);
   const authKind = authState.kind;
+  const setUpgradeFraming = useAuthStore((s) => s.setUpgradeFraming);
+  const upgradeFraming = useAuthStore((s) => s.upgradeFraming);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   const [cloudOnly, setCloudOnly] = useState<Array<{ id: string; name: string }>>([]);
   const [openPrepareError, setOpenPrepareError] = useState<string | null>(null);
@@ -121,10 +125,15 @@ function HomeGrid(): React.ReactElement {
   // new-character flow so a maxed-out user gets a "come back tomorrow" modal
   // instead of failing mid-expansion. null = hidden.
   const [createLimit, setCreateLimit] = useState<{ resetsAt: string | null } | null>(null);
+  // 260703 procgen — the add-companion chooser (opened from an empty slot) and
+  // the sign-in prompt shown when a signed-out / local-mode user picks the
+  // flagship "unique companion" path.
+  const [chooserOpen, setChooserOpen] = useState<boolean>(false);
+  const [showSignIn, setShowSignIn] = useState<boolean>(false);
 
-  // Gate both creation entry points (header "New" + AddCard tile) on the daily
-  // quota. checkCreateQuota fails open (blocked:false) for BYOK users and on
-  // any error, so this never wrongly blocks creation.
+  // Gate the custom-creation entry point on the daily quota. checkCreateQuota
+  // fails open (blocked:false) for BYOK users and on any error, so this never
+  // wrongly blocks creation.
   const handleAddClick = async (): Promise<void> => {
     const quota = await sei.checkCreateQuota();
     if (quota.blocked) {
@@ -132,6 +141,58 @@ function HomeGrid(): React.ReactElement {
       return;
     }
     navigate({ kind: 'add-character' });
+  };
+
+  // Chooser → "Create from scratch": the existing custom wizard (quota-gated).
+  const handlePickCustom = (): void => {
+    setChooserOpen(false);
+    void handleAddClick();
+  };
+
+  // Chooser → "Invite an existing companion": switch the Home view to World.
+  const handlePickWorld = (): void => {
+    setChooserOpen(false);
+    setHomeTab('world');
+  };
+
+  // Chooser → flagship "Meet your unique companion". Cloud + signed-in only:
+  // a signed-out user OR a local-mode (BYOK) user is routed to the sign-in
+  // modal (framed for this action), same pattern as the cloud-AI upsell. When
+  // eligible, run the first-sign-in questionnaire gate if it hasn't been
+  // answered yet, then land on the per-slot gender question.
+  const handlePickUnique = async (): Promise<void> => {
+    if (authKind !== 'signed_in') {
+      setChooserOpen(false);
+      setUpgradeFraming('meet your unique companion');
+      setShowSignIn(true);
+      return;
+    }
+    let backendLocal = false;
+    try {
+      const cfg = await sei.getConfig();
+      backendLocal = (cfg.ai_backend_kind ?? 'local') !== 'cloud-proxy';
+    } catch {
+      // Fail OPEN — let the generation pipeline surface any real backend issue
+      // rather than blocking an eligible user on a transient config read.
+      backendLocal = false;
+    }
+    if (backendLocal) {
+      setChooserOpen(false);
+      setUpgradeFraming('meet your unique companion');
+      setShowSignIn(true);
+      return;
+    }
+    setChooserOpen(false);
+    try {
+      const prefs = await sei.prefsGet();
+      if (prefs.needed) {
+        navigate({ kind: 'profile-questions', next: 'unique-gender' });
+        return;
+      }
+    } catch {
+      // Fail open — proceed to the gender step; the pipeline can still run.
+    }
+    navigate({ kind: 'unique-gender' });
   };
 
   useEffect(() => {
@@ -214,16 +275,17 @@ function HomeGrid(): React.ReactElement {
     navigate({ kind: 'chat', characterId: id });
   };
 
-  const removedDefaultIds = useLibraryStateStore((s) => s.removedDefaultIds);
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
+  const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
 
   /**
-   * Home filter (mirrored in IconRail so the rail and the grid never diverge):
-   *   - bundled defaults → shown unless the user has "removed" them from the
-   *     library via the gear menu (tracked by UserConfig.removed_default_ids).
+   * Home filter (260703 procgen — the fixed-slot model):
+   *   - bundled defaults → now live on the World tab; hidden from Home UNLESS
+   *     the user has explicitly invited them into a slot
+   *     (UserConfig.added_default_ids). The old removed_default_ids logic no
+   *     longer drives Home.
    *   - foreign chars (owner stamped, doesn't match current user) → hidden
-   *     UNLESS the id is in UserConfig.added_world_ids (the user clicked
-   *     "+ Add to Mine" on it in the World tab).
+   *     UNLESS the id is in UserConfig.added_world_ids (invited from World).
    *   - legacy null-owner chars (created before owner-stamping landed) → shown
    *     for everyone; they're treated as the current session's local library.
    *   - own chars (owner === currentUserId) → shown.
@@ -232,7 +294,7 @@ function HomeGrid(): React.ReactElement {
    */
   const homeCharacters = characters.filter((c) => {
     if (c.is_default === true) {
-      return !removedDefaultIds.has(c.id);
+      return addedDefaultIds.has(c.id);
     }
     if (currentUserId) {
       if (c.owner != null && c.owner !== currentUserId) {
@@ -261,6 +323,21 @@ function HomeGrid(): React.ReactElement {
   const displayName = preferredName.trim() || 'friend';
   const greetingLead = isFirstLogin ? 'Welcome to Sei, ' : 'Welcome back, ';
 
+  // 260703 procgen — the Home page is a fixed row of exactly
+  // MAX_COMPANION_SLOTS (4) slots. Fill order: library characters ordered by
+  // last interaction, then cloud-only placeholder rows (which count toward the
+  // 4), capped at 4. Any remaining slots render an empty "summon a companion"
+  // add tile that opens the three-way chooser.
+  const cloudPlaceholders = cloudOnly
+    .filter((co) => !characters.some((c) => c.id === co.id))
+    .filter((co) => !recentlyDeletedIds.has(co.id))
+    .map((co) => makeCloudPlaceholder(co.id, co.name));
+  const slotCharacters = [...orderedCharacters, ...cloudPlaceholders].slice(
+    0,
+    MAX_COMPANION_SLOTS,
+  );
+  const emptyCount = Math.max(0, MAX_COMPANION_SLOTS - slotCharacters.length);
+
   return (
     <div className={homeStyles.root}>
       <header className={homeStyles.header}>
@@ -274,24 +351,14 @@ function HomeGrid(): React.ReactElement {
             </>
           )}
         </h2>
-        <div className={homeStyles.actions}>
-          <Button
-            kind="accent"
-            size="md"
-            icon={<PlusIcon size={14} />}
-            onClick={() => void handleAddClick()}
-            style={{ minWidth: 168 }}
-          >
-            New companion
-          </Button>
-        </div>
       </header>
-      <section className={homeStyles.grid}>
-        {orderedCharacters.map((c) => (
-          <div key={c.id} style={{ position: 'relative' }}>
+      <section className={homeStyles.slotGrid}>
+        {slotCharacters.map((c) => (
+          <div key={c.id} className={homeStyles.slot}>
             <CharacterCard
               character={c}
               theme={theme}
+              variant="slot"
               onOpen={() => {
                 void handleOpen(c.id);
               }}
@@ -321,45 +388,30 @@ function HomeGrid(): React.ReactElement {
             ) : null}
           </div>
         ))}
-        {cloudOnly
-          .filter((co) => !characters.some((c) => c.id === co.id))
-          .filter((co) => !recentlyDeletedIds.has(co.id))
-          .map((co) => (
-            <div key={co.id} style={{ position: 'relative' }}>
-              <CharacterCard
-                character={makeCloudPlaceholder(co.id, co.name)}
-                theme={theme}
-                onOpen={() => {
-                  void handleOpen(co.id);
-                }}
-                onSummon={() => handleSummon(co.id)}
-                onUnsummon={() => void sei.stop(co.id)}
-              />
-              {openPrepareError === co.id ? (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: 12,
-                    bottom: 60,
-                    padding: '4px 8px',
-                    background: 'var(--red)',
-                    color: 'white',
-                    fontFamily: 'var(--mono)',
-                    fontSize: 10,
-                    letterSpacing: 1,
-                    textTransform: 'uppercase',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                  role="alert"
-                >
-                  DOWNLOAD FAILED
-                </div>
-              ) : null}
-            </div>
-          ))}
-        <AddCard onClick={() => void handleAddClick()} />
+        {Array.from({ length: emptyCount }).map((_, i) => (
+          <div key={`empty-slot-${i}`} className={homeStyles.slot}>
+            <AddCard
+              variant="slot"
+              label="Summon a companion"
+              onClick={() => setChooserOpen(true)}
+            />
+          </div>
+        ))}
       </section>
+      {chooserOpen ? (
+        <AddCompanionChooserModal
+          onPickUnique={() => void handlePickUnique()}
+          onPickCustom={handlePickCustom}
+          onPickWorld={handlePickWorld}
+          onClose={() => setChooserOpen(false)}
+        />
+      ) : null}
+      {showSignIn ? (
+        <SignInModal
+          framingLabel={upgradeFraming}
+          onClose={() => setShowSignIn(false)}
+        />
+      ) : null}
       {createLimit ? (
         <CreationLimitModal
           resetsAt={createLimit.resetsAt}
