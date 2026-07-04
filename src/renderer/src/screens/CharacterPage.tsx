@@ -24,6 +24,7 @@ import { Button } from '../components/Button';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { EditCharacterModal, type EditSection } from '../components/EditCharacterModal';
 import { SignInModal } from '../components/SignInModal';
+import { IdTag } from '../components/IdTag';
 import { SkinEditor } from '../components/SkinEditor';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { ProactivenessBar } from '../components/ProactivenessBar';
@@ -286,7 +287,15 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     !isDefault &&
     !!character.owner &&
     character.owner !== currentUserId;
-  const viewOnly = isDefault || isForeignOwned;
+  // 260703 procgen (spec item 5): only user-created ('custom') characters are
+  // editable. System-generated 'unique' companions — even ones the user owns —
+  // are NOT editable (remove / reset-memory only), exactly like foreign-owned
+  // World characters. `kind` defaults to 'custom', so every pre-existing
+  // character stays editable. This folds into the existing viewOnly guard so
+  // all the edit surfaces (Edit modal, name/persona/skin/portrait, visibility
+  // toggle) hide behind one predicate.
+  const isNonEditableKind = character.kind !== 'custom';
+  const viewOnly = isDefault || isForeignOwned || isNonEditableKind;
   const isWorldPreview = isForeignOwned && !addedWorldIds.has(character.id);
   const isAddedFromWorld = isForeignOwned && addedWorldIds.has(character.id);
   const themeAttr = document.documentElement.getAttribute('data-theme');
@@ -505,6 +514,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
 
         <div className={styles.titleRow}>
           <h1 className={styles.title}>{character.name}</h1>
+          {character.public_id ? <IdTag id={character.public_id} size="md" /> : null}
           {isForeignOwned ? (
             <button
               type="button"
