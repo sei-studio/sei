@@ -61,6 +61,9 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
           ?? 'unknown',
         attackerKind: payload.attackerKind
           ?? (payload.attacker?.username ? 'player' : 'mob'),
+        // Forward the live PvP flag (combat.js stamps it) so the prompt addendum
+        // can pick "hit back" vs "can't hit back" framing on a player hit.
+        pvp: !!payload.pvp,
       })
     } catch (err) {
       console.error?.(`[sei/wires] onAttacked handler threw: ${err && err.message}`)

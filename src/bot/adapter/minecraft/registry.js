@@ -324,6 +324,23 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     { message: 'target must be #N or an entity name, not coordinates' },
   )
 
+  // `setPvp`: toggle PvP spar mode on/off at the player's request. Off by
+  // default and reset every session (a plain per-bot runtime flag, bot._seiPvp;
+  // never persisted). When ON, the companion may attack the player back
+  // (attackEntity accepts player targets), auto-retaliates against player hits,
+  // and circle-strafes the player like a melee opponent (reflex.js). When OFF,
+  // all of that reverts to the no-auto-PvP default.
+  registry.register(
+    'setPvp',
+    z.object({ enabled: z.boolean() }),
+    async (args, bot) => {
+      bot._seiPvp = Boolean(args.enabled)
+      return bot._seiPvp
+        ? 'PvP mode ON — sparring enabled; you can attack the player and hit back. Turn it off when they ask to stop.'
+        : 'PvP mode OFF — you will no longer attack or hit the player back.'
+    }
+  )
+
   registry.register(
     'attackEntity',
     z.object({

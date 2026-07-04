@@ -86,6 +86,12 @@ const MinecraftAdapterSchema = z.object({
   critical_hostile_exit_blocks: z.number().min(0).default(16),
   // GoalInvert(GoalFollow(mob, N)) flee radius — how far to break away to.
   critical_flee_range: z.number().min(0).default(14),
+  // Player-knockback stagger window (ms). When a PLAYER hits the bot, combat.js
+  // opens this window during which reflex.js, follow.js, and attack.js pursuit
+  // stop asserting movement controls so the server knockback impulse plays out
+  // visibly instead of being walked off within a tick or two. 0 disables. Kept
+  // short so normal movement resumes almost immediately after the shove.
+  player_stagger_ms: z.number().int().min(0).default(350),
 })
 
 const AdapterSchema = z.object({

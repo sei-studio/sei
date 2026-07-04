@@ -30,6 +30,23 @@ export function startCombat(bot, config) {
   let _attackLoop = null
   let _exitTimer = null
 
+  // ── Per-bot runtime flags (NOT persisted; reset each session) ──────────────
+  // Goal / control ownership rules these flags participate in:
+  //  • bot._seiPvp (default false): PvP spar mode, toggled ONLY by the setPvp
+  //    tool. Read by attack.js (allow player targets), reflex.js (kite players),
+  //    and the retaliation branch below. It owns NO goal — it just gates policy.
+  //  • bot._seiStaggerUntil (timestamp): a short window opened here on a PLAYER
+  //    hit. During it, reflex.js and follow.js SKIP asserting movement controls
+  //    and attack.js pursuit yields, so the server knockback plays out. It is a
+  //    plain timestamp — it does NOT touch bot._seiSavedGoal, so it never
+  //    collides with the creeper-flee goal mutex (bot._seiReflexActive).
+  //  • The goal-owning reflexes (creeper-flee via _seiReflexActive/_seiSavedGoal)
+  //    and attack.js pursuit remain the authoritative goal owners; stagger only
+  //    pauses re-assertion, it never snapshots or restores a goal.
+  if (bot._seiPvp == null) bot._seiPvp = false
+  const mcSlice = config?.adapter?.minecraft ?? config ?? {}
+  const staggerMs = Number.isFinite(mcSlice.player_stagger_ms) ? mcSlice.player_stagger_ms : 350
+
   // Leading-edge throttle for sei:attacked emission. The entityHurt handler
   // below has ALWAYS referenced bot._seiAttackThrottle, but nothing ever
   // assigned it — so the throttle was dead and EVERY hit emitted a sei:attacked
@@ -89,10 +106,30 @@ export function startCombat(bot, config) {
     if (!target) return
 
     const isPlayer = Boolean(target.username) || target.type === 'player'
+
+    // ── Player-knockback stagger (Task 3) ─────────────────────────────────────
+    // A player landing a hit opens a short window during which the movement
+    // controllers (reflex strafe, follow re-path, attack pursuit) stop asserting
+    // controls so the server's knockback impulse is visible instead of being
+    // walked off. We clear controls now and briefly stop the pathfinder; follow's
+    // 1s tick re-installs its goal after the window (its target is persistent),
+    // and a creeper-flee goal is left untouched. We NEVER rewrite
+    // bot.entity.velocity/position (anti-cheat kicks — see the NaN-skip comment
+    // below). Trade-off: an in-flight goTo gets interrupted (returns cant_reach)
+    // when punched mid-navigation; acceptable for a deliberate melee hit.
+    if (isPlayer && staggerMs > 0) {
+      bot._seiStaggerUntil = Date.now() + staggerMs
+      try { bot.clearControlStates?.() } catch (_) {}
+      try { bot.pathfinder?.stop?.() } catch (_) {}
+    }
+
     const attackedPayload = {
       attacker: target,
       attackerLabel: target.username ?? target.name ?? 'unknown',
       attackerKind: isPlayer ? 'player' : (HOSTILE_MOBS.has(target.name) ? 'hostile_mob' : 'other'),
+      // Surface the live PvP flag so the prompt addendum can pick "hit back"
+      // (PvP on) vs "you can't hit back" (PvP off) framing at injection time.
+      pvp: Boolean(bot._seiPvp),
     }
     // Leading-edge throttle: react to the FIRST hit immediately; suppress
     // rapid follow-ups within the throttle window so a burst of entityHurt
@@ -104,9 +141,13 @@ export function startCombat(bot, config) {
       bot.emit('sei:attacked', attackedPayload)
     }
 
-    // Never auto-retaliate against players (REQUIREMENTS Out-of-Scope: Auto-PvP).
-    // The sei:attacked event still fires so the LLM can react verbally.
-    if (!isPlayer) {
+    // Auto-retaliate against mobs always, and against players ONLY when PvP mode
+    // is on (bot._seiPvp) — a spar the player opted into. With PvP off we keep
+    // the original "never hit back at a player" behavior (the sei:attacked event
+    // still fires so the LLM can react verbally). The 250ms attack loop only
+    // faces + swings (no movement controls), so it does not walk off the stagger
+    // knockback above; reflex.js circle-strafes the opponent for positioning.
+    if (!isPlayer || bot._seiPvp) {
       if (_target?.id !== target.id) {
         stopFollow()
         startAttacking(target)

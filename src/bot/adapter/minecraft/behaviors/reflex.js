@@ -148,7 +148,13 @@ export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
     // ── Skeletons (ranged): arm the arrow dodge on the bow-draw telegraph ──
     // metadata index 8 bit 0x01 = "hand active" (drawing the bow).
     if (RANGED_SKELETONS.has(e.name)) {
-      if (dist <= th.arrow_watch_blocks) {
+      // Suppress the PRE-EMPTIVE bow-draw sidestep on a skeleton we are actively
+      // attacking (bot._seiOffensiveTarget): a committed attacker must CLOSE the
+      // distance to land hits, not dodge laterally off its pursuit line (the
+      // skeleton-kite bug). The REAL incoming-arrow dodge (the `arrow` branch
+      // above) stays active always — dodging a live arrow while charging is fine.
+      const committed = bot._seiOffensiveTarget != null && bot._seiOffensiveTarget === e.id
+      if (!committed && dist <= th.arrow_watch_blocks) {
         const md = e.metadata
         if (md != null && (Number(md[8]) & 0x01) === 1) {
           const v = me.velocity ?? { x: 0, y: 0, z: 1 }
@@ -159,8 +165,13 @@ export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
       if (e.name !== 'wither_skeleton') continue
     }
 
-    // ── Melee mobs: kite when just outside reach (band + 2 for approach margin) ──
-    if (HOSTILE_MOBS.has(e.name) && dist <= th.melee_kite_blocks + 2) {
+    // ── Melee mobs (and, in PvP mode, players): kite when just outside reach ──
+    // (band + 2 for approach margin). PvP: when bot._seiPvp is on, the human
+    // opponent is treated like a melee threat so the companion circle-strafes and
+    // holds the 2.5-4 band while sparring. The _seiOffensiveTarget suppression in
+    // doMeleeStrafe still applies, so it stops strafing to commit a hit.
+    const isPvpOpponent = bot._seiPvp && (e.type === 'player' || e.username != null)
+    if ((HOSTILE_MOBS.has(e.name) || isPvpOpponent) && dist <= th.melee_kite_blocks + 2) {
       consider({ kind: 'melee', entity: e }, RANK.melee)
     }
   }
@@ -335,6 +346,17 @@ export function startReflex(bot, config) {
     if (!Number.isFinite(vel.x) || !Number.isFinite(vel.y) || !Number.isFinite(vel.z)) return
     if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return
     if (bot.health != null && bot.health <= 0) return
+
+    // Player-knockback stagger (Task 3): while a stagger window from a player
+    // hit is open, assert NO movement control states — let the server's
+    // knockback velocity play out visibly instead of the strafe/flee walking it
+    // off within a tick or two. combat.js opened the window and already called
+    // clearControlStates(); we just drop our own bookkeeping and yield the window.
+    if (bot._seiStaggerUntil != null && Date.now() < bot._seiStaggerUntil) {
+      releasePulse()
+      releaseStrafe()
+      return
+    }
 
     // Maintain an active flee independent of scanThreats: once fleeing we keep
     // going until the creeper is gone or beyond the EXIT band (hysteresis —

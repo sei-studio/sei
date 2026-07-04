@@ -168,6 +168,9 @@ export const ACTION_DESCRIPTIONS = {
   attackEntity:
     'Swing at an entity `times` (1-10) in one call; a combat reflex auto-pursues a moving target, so one call usually suffices. Equip a sword or axe first.',
 
+  setPvp:
+    'Toggle PvP spar mode: `{enabled:true}` when the player asks to spar/fight/duel/PvP you, `{enabled:false}` when they ask to stop. While ON you may attackEntity the player and hit back when they hit you; while OFF (the default) you never attack or retaliate against the player. Turn it OFF the moment they call it off.',
+
   dig:
     'Break a block: `{block:"<name>"}` for the nearest of that type, `{x,y,z}` for an exact cell, or `{x,y,z, to:{x,y,z}}` for a cuboid (<=256, top-down). Use gather for whole trees / ore / N of one block. Needs a pickaxe for stone or ore.',
 
@@ -242,11 +245,18 @@ function fillTemplate (text, vars) {
 }
 
 // Editable prose for the "you were hit" interrupt (EVENT_GUIDANCE['sei:attacked']).
-// `{label}` = the attacker's name. Two variants: PvP-off (a player) vs a mob.
+// `{label}` = the attacker's name. Three variants: a player with PvP OFF (can't
+// hit back), a player with PvP ON (sparring — hit back), or a mob.
 export const ATTACKED_ADDENDUM_PVP = `Interrupted — {label} hit you (PvP is off, you can't hit back). Respond appropriately.`
+export const ATTACKED_ADDENDUM_PVP_ON = `Interrupted — {label} hit you, and you're in a PvP spar (PvP is on). Hit back with attackEntity, keep moving, and trash-talk in character. Call setPvp({enabled:false}) if they say stop.`
 export const ATTACKED_ADDENDUM_MOB = `Interrupted — {label} hit you. Respond appropriately.`
-export const ATTACKED_ADDENDUM = (label, kind) =>
-  fillTemplate((kind === 'player' || kind === 'players') ? ATTACKED_ADDENDUM_PVP : ATTACKED_ADDENDUM_MOB, { label })
+export const ATTACKED_ADDENDUM = (label, kind, pvp = false) => {
+  const isPlayer = kind === 'player' || kind === 'players'
+  const tmpl = isPlayer
+    ? (pvp ? ATTACKED_ADDENDUM_PVP_ON : ATTACKED_ADDENDUM_PVP)
+    : ATTACKED_ADDENDUM_MOB
+  return fillTemplate(tmpl, { label })
+}
 
 // A PROACTIVE evasion warning (attackerKind:'reflex' from fsmWires, D-05) —
 // distinct from ATTACKED_ADDENDUM's "you were hit". You spotted the threat early
@@ -703,7 +713,9 @@ export function eventAddendum(event, data, visionMode = 'on-demand') {
     if (kind === 'reflex') {
       return data?.survivalKind ? SURVIVAL_ADDENDUM(label, data) : REFLEX_ADDENDUM(label, data)
     }
-    return entry(label, kind)
+    // combat.js stamps `pvp` (the live bot._seiPvp) onto the payload so a hit
+    // from a player picks "hit back" (PvP on) vs "can't hit back" (PvP off).
+    return entry(label, kind, !!data?.pvp)
   }
   return entry ?? ''
 }
