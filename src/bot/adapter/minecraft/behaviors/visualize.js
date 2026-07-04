@@ -97,10 +97,18 @@ export function yawToUnit(yaw) {
 export async function faceYaw(bot, yaw) {
   if (typeof bot?.look !== 'function' || !Number.isFinite(yaw)) return
   let timer = null
-  await Promise.race([
-    Promise.resolve().then(() => bot.look(yaw, 0, true)).catch(() => { /* best-effort */ }),
-    new Promise((resolve) => { timer = setTimeout(resolve, FACE_TIMEOUT_MS) }),
-  ])
+  // Hold the gaze controller (behaviors/gaze.js) off the head while we aim
+  // this render's turn — it would otherwise fight this lookAt on its own
+  // ~4Hz tick and jitter the shot.
+  if (bot) bot._seiGazeHold = (bot._seiGazeHold ?? 0) + 1
+  try {
+    await Promise.race([
+      Promise.resolve().then(() => bot.look(yaw, 0, true)).catch(() => { /* best-effort */ }),
+      new Promise((resolve) => { timer = setTimeout(resolve, FACE_TIMEOUT_MS) }),
+    ])
+  } finally {
+    if (bot) bot._seiGazeHold = Math.max(0, (bot._seiGazeHold ?? 1) - 1)
+  }
   if (timer != null) clearTimeout(timer)
 }
 

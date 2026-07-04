@@ -55,6 +55,15 @@ const MinecraftAdapterSchema = z.object({
   // Melee kite band centre (blocks): strafe to hold ~2.5-4 blocks just outside
   // a melee mob's reach. Non-int → no `.int()`.
   melee_kite_blocks: z.number().min(0).default(4.5),
+  // Head-look ("gaze", behaviors/gaze.js): cosmetic, LLM-uninvolved tracking of
+  // the owner — full yaw+pitch when idle and within range, pitch-only tracking
+  // while moving toward them (follow/goTo) so the pathfinder keeps yaw.
+  gaze_enabled: z.boolean().default(true),
+  // Idle gaze range (blocks). 96 = 6 chunks per the feature request.
+  gaze_range_blocks: z.number().int().min(0).default(96),
+  // Re-aim cadence (ms) for the gaze controller's plain interval loop. Cosmetic
+  // head movement only — no need for reflex.js's ~20 Hz physicsTick cost.
+  gaze_tick_ms: z.number().int().min(0).default(250),
 })
 
 const AdapterSchema = z.object({

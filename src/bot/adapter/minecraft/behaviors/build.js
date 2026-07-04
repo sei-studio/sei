@@ -145,14 +145,21 @@ export async function scaffoldUp(bot, blockName, targetY, config) {
       const refBlock = bot.blockAt(new Vec3(col.x, cellY - 1, col.z))
       if (!refBlock || isAir(refBlock.name)) return 'scaffold failed: no floor below'
 
-      // Face straight down first so the in-jump place doesn't spend airtime
-      // turning toward the block. (pitch +PI/2 = straight down)
-      try { await bot.look(bot.entity.yaw, Math.PI / 2, true) } catch {}
+      // Hold the gaze controller (behaviors/gaze.js) off the head for this
+      // aim + jump-place step so it doesn't fight the forced look-down.
+      bot._seiGazeHold = (bot._seiGazeHold ?? 0) + 1
+      try {
+        // Face straight down first so the in-jump place doesn't spend airtime
+        // turning toward the block. (pitch +PI/2 = straight down)
+        try { await bot.look(bot.entity.yaw, Math.PI / 2, true) } catch {}
 
-      bot.setControlState('jump', true)
-      placed = await jumpPlace(bot, refBlock, col, cellY)
-      bot.setControlState('jump', false)
-      await waitForLanding(bot, LANDING_MAX_MS)      // settle before re-check / re-jump
+        bot.setControlState('jump', true)
+        placed = await jumpPlace(bot, refBlock, col, cellY)
+        bot.setControlState('jump', false)
+        await waitForLanding(bot, LANDING_MAX_MS)      // settle before re-check / re-jump
+      } finally {
+        bot._seiGazeHold = Math.max(0, (bot._seiGazeHold ?? 1) - 1)
+      }
     }
     if (!placed) return 'scaffold place failed: could not place block under feet'
   }
