@@ -1,0 +1,96 @@
+/* UniqueRevealScreen — the "meet <name>" moment. Centered column with a large
+ * bracketed portrait. Tokens only. */
+
+.root {
+  display: flex;
+  flex: 1;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3xl) var(--space-2xl);
+}
+
+.center {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  animation: revealUp 420ms var(--ease-pop) both;
+}
+
+.portraitFrame {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+/* Keep the corner brackets visible (not hover-gated) on the reveal. */
+.portraitFrame :global(.u-brk) {
+  opacity: 1;
+  z-index: 2;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.heading {
+  font-family: var(--display);
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--heading);
+  margin: 0;
+}
+
+.intro {
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 0;
+  max-width: 42ch;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@keyframes revealUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .center {
+    animation: none;
+  }
+}

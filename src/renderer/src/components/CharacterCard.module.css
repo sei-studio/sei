@@ -11,6 +11,7 @@
 .card {
   position: relative;
   aspect-ratio: 210 / 312;
+  min-height: 0;
   /* overflow:visible (was hidden) so the hover hit-area bridge below isn't
      clipped. The portrait's scale(1.05) is already clipped by .portraitWrap's
      own overflow:hidden, so the card box itself never needs to clip. */
@@ -56,6 +57,21 @@
   border-color: var(--accent-strong);
   box-shadow: var(--shadow-card), 0 0 0 1px var(--accent-strong);
   outline: none;
+}
+
+/* ── Slot variant (260703 procgen) — Home's fixed 4-slot row ──────────────
+ * Drops the 210/312 aspect so the card stretches to fill the full height of
+ * its grid slot (the row itself is a single 1fr band under the pinned header).
+ * The portrait (.portraitWrap inset:0 + PixelPortrait width/height 100%) scales
+ * with the card, and the name/meta stay pinned bottom-left. */
+.card.slot {
+  aspect-ratio: auto;
+  height: 100%;
+}
+
+/* Give the name a touch more presence at the taller slot size. */
+.card.slot .name {
+  font-size: 28px;
 }
 
 /* ── Summoned state — highlighted frame + reflective glint ───────────────

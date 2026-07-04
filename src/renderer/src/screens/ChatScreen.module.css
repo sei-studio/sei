@@ -58,6 +58,7 @@
 .headerText {
   display: flex;
   align-items: center;
+  gap: var(--space-sm);
   min-width: 0;
   flex: 1;
 }

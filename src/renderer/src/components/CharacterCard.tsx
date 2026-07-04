@@ -33,6 +33,13 @@ export interface CharacterCardProps {
   onSummon: () => void;
   /** Stop this character's running bot (the hover CTA flips to "Unsummon"). */
   onUnsummon: () => void;
+  /**
+   * 260703 procgen — layout variant. 'grid' (default) keeps the fixed 210/312
+   * portrait aspect used on the World tab. 'slot' drops the aspect-ratio and
+   * stretches the card to fill its Home slot's full height so the four fixed
+   * companion slots reach the bottom of the window.
+   */
+  variant?: 'grid' | 'slot';
 }
 
 // Home-card status line: the bare date of the last interaction — an in-game
@@ -55,6 +62,7 @@ export function CharacterCard({
   onOpen,
   onSummon,
   onUnsummon,
+  variant = 'grid',
 }: CharacterCardProps): React.ReactElement {
   const palette = pickPalette(c.id + c.name, theme);
   const isDefault = c.is_default === true;
@@ -88,7 +96,7 @@ export function CharacterCard({
 
   return (
     <div
-      className={`${styles.card} ${ready ? styles.live : ''} ${isSummoned ? styles.summoned : ''}`}
+      className={`${styles.card} ${variant === 'slot' ? styles.slot : ''} ${ready ? styles.live : ''} ${isSummoned ? styles.summoned : ''}`}
       onClick={onOpen}
       role="button"
       tabIndex={0}

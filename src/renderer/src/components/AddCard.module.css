@@ -25,6 +25,14 @@
   transform: translateY(-7px);
 }
 
+/* Slot variant (260703 procgen) — fills an empty Home companion slot's full
+ * height instead of the fixed portrait aspect. */
+.card.slot {
+  aspect-ratio: auto;
+  height: 100%;
+  min-height: 0;
+}
+
 .iconTile {
   width: 46px;
   height: 46px;

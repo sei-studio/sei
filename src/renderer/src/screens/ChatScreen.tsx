@@ -37,6 +37,7 @@ import {
   CopyIcon,
   ReplyIcon,
 } from '../components/icons';
+import { IdTag } from '../components/IdTag';
 import type { ChatMessage, ChatReplyRef, UserProfile } from '@shared/ipc';
 import type { Character } from '@shared/characterSchema';
 import styles from './ChatScreen.module.css';
@@ -220,6 +221,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         </div>
         <div className={styles.headerText}>
           <span className={styles.headerName}>{companionName}</span>
+          {character?.public_id ? <IdTag id={character.public_id} size="sm" /> : null}
         </div>
         <div className={styles.headerActions}>
           <button

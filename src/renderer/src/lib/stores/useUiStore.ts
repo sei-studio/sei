@@ -11,6 +11,7 @@
 
 import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
+import type { UniqueGender } from '@shared/ipc';
 
 export type View =
   | { kind: 'loading' }
@@ -35,6 +36,20 @@ export type View =
   | { kind: 'settings' }
   | { kind: 'credits' }
   | { kind: 'coming-soon' }
+  // 260703 procgen — the "unique companion" (system-generated) flow. All four
+  // are renderer-only full-page surfaces (rail hidden), routed from the
+  // add-companion chooser or the App-level first-sign-in questionnaire gate:
+  //   - profile-questions : the first-sign-in questionnaire (age + art style).
+  //                          `next` decides where to land on submit (home when
+  //                          triggered app-level; unique-gender when it gated
+  //                          the unique path).
+  //   - unique-gender     : the single per-slot gender question.
+  //   - unique-casting    : the full-screen generation/ritual progress screen.
+  //   - unique-reveal     : the "meet <name>" moment after a successful gen.
+  | { kind: 'profile-questions'; next: 'home' | 'unique-gender' }
+  | { kind: 'unique-gender' }
+  | { kind: 'unique-casting'; gender: UniqueGender }
+  | { kind: 'unique-reveal'; characterId: string }
   // quick/260525-sbo Task 6 — FTC 16 CFR §425.5 in-app receipt after a
   // first-time subscription activation. Auto-navigated by useCreditsStore
   // when the plan transitions from non-'unlimited' → 'unlimited' (once per
