@@ -54,6 +54,8 @@ const UUID = '550e8400-e29b-41d4-a716-446655440099';
 function makeChar(): Character {
   return {
     id: UUID,
+    kind: 'custom',
+    public_id: null,
     name: 'TestPersona',
     persona: { source: 'a quiet companion', expanded: 'long persona text' },
     is_default: false,

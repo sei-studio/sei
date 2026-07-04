@@ -107,6 +107,10 @@ function rowToCharacter(row: Record<string, unknown>): Character {
       : rawPortrait;
   return {
     id: row.id as string,
+    // 260703 procgen: kind + server-assigned 4-char public tag ride the cloud
+    // row; rows written before the migration lack both → default custom/null.
+    kind: ((row.kind as string | null) ?? 'custom') as Character['kind'],
+    public_id: (row.public_id as string | null) ?? null,
     name: row.name as string,
     slug: (row.slug as string | null) ?? null,
     persona: {

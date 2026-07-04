@@ -92,6 +92,8 @@ export async function runFirstLaunchMigration(
   const p = parsed.persona;
   const character: Character = {
     id: 'sui',
+    kind: 'custom',
+    public_id: null,
     name: typeof p.name === 'string' && p.name.trim() ? p.name : 'Sui',
     persona: {
       source: typeof p.backstory === 'string' && p.backstory.trim()

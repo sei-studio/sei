@@ -128,7 +128,11 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // Appearance & feel: default the "Realistic typing" pacing on.
         realistic_typing: true,
         removed_default_ids: [],
+        added_default_ids: [],
         added_world_ids: [],
+        // 260703 procgen: questionnaire answers start empty; the first-sign-in
+        // questionnaire (cloud users) fills these via prefs:save.
+        user_profile: { companion_age_range: null, art_style: null, completed_at: null },
         // First-login marker stays false here so the Home screen shows the
         // one-time "Welcome to Sei" greeting after onboarding completes; it
         // flips true there on first render.

@@ -345,6 +345,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       upsertCharacter: async (char, ownerUuid) => {
         const characterShape = {
           id: char.id,
+          kind: ((char.kind as string | null) ?? 'custom') as Character['kind'],
+          public_id: (char.public_id as string | null) ?? null,
           name: char.name,
           slug: (char.slug as string | null) ?? null,
           persona: {

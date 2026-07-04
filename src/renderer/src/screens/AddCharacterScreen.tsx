@@ -116,6 +116,8 @@ export function AddCharacterScreen(): React.ReactElement {
     try {
       const draft: Character = {
         id: crypto.randomUUID(),
+        kind: 'custom',
+        public_id: null,
         name: name.trim(),
         persona: { source: personaSource.trim(), expanded: '' },
         is_default: false,

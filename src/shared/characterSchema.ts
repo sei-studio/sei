@@ -68,11 +68,37 @@ export type Skin = z.infer<typeof SkinSchema>;
  * the user sets one in the SkinEditor. Regex `^[A-Za-z0-9_]+$` + 16-char cap
  * match Minecraft's username constraints.
  */
+/**
+ * 260703 procgen: how a companion entered the user's library.
+ *   - 'unique' — system-generated ("Meet your unique companion"): soulcaster-1
+ *                sheet + generated portrait/skin. Cloud-stored from birth,
+ *                NOT editable (remove / reset-memory only).
+ *   - 'custom' — user-created from scratch (the classic AddCharacter wizard).
+ *                Fully editable. All pre-existing characters default here.
+ *   - 'world'  — a public character invited from the World tab (foreign-owned
+ *                or a bundled default). Not editable.
+ */
+export const CharacterKindSchema = z.enum(['unique', 'custom', 'world']);
+export type CharacterKind = z.infer<typeof CharacterKindSchema>;
+
+/** 260703 procgen: the Home grid is a fixed set of companion slots. */
+export const MAX_COMPANION_SLOTS = 4;
+
+/** Server-assigned public tag: 4 chars, A-Z / 0-9 (cloud `characters.public_id`). */
+export const PUBLIC_ID_REGEX = /^[A-Z0-9]{4}$/;
+
 export const CharacterSchema = z.object({
   // D-23: UUID v4 is canonical. Slug-based ids are LEGACY and rejected at the
   // boundary — Plan 11-05 (slug→UUID migration) rewrites existing local rows.
   // No backward-compat shim (CLAUDE.md: no backwards-compat hacks).
   id: z.string().uuid({ message: 'characterId must be a UUID v4' }),
+  // 260703 procgen: origin discriminator (see CharacterKindSchema). Optional +
+  // default 'custom' so every pre-existing character JSON round-trips unchanged.
+  kind: CharacterKindSchema.optional().default('custom'),
+  // 260703 procgen: server-assigned 4-char public tag ([A-Z0-9]{4}), mirrored
+  // from the cloud row after the first upsert. Null for characters that have
+  // never been stored on cloud. NEVER minted client-side.
+  public_id: z.string().regex(PUBLIC_ID_REGEX).nullable().optional().default(null),
   name: z.string().min(1),
   persona: PersonaSchema,                             // 260516-0yw: replaces description + persona_prompt
   is_default: z.boolean().default(false),             // sui = true after migration (D-10)
@@ -141,6 +167,26 @@ export const CharacterSchema = z.object({
 });
 
 export type Character = z.infer<typeof CharacterSchema>;
+
+/**
+ * 260703 procgen: answers from the first-sign-in questionnaire, used as the
+ * generation seed for 'unique' companions. Stored locally in
+ * UserConfig.user_profile AND mirrored to the cloud `user_preferences` table
+ * (own-only RLS) so a re-install / second device skips the questionnaire.
+ * All fields nullable: null = not answered yet.
+ */
+export const UserPreferencesSchema = z.object({
+  /** Preferred companion age band (companion's age, not the user's). */
+  companion_age_range: z
+    .enum(['young-adult', 'adult', 'mature', 'elder', 'timeless'])
+    .nullable()
+    .default(null),
+  /** Preferred art style for generated portraits. */
+  art_style: z.enum(['chibi', 'anime', 'celshaded', 'cartoon', '3d']).nullable().default(null),
+  /** ISO timestamp when the questionnaire was completed; null = pending. */
+  completed_at: z.string().nullable().default(null),
+});
+export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 
 /**
  * The in-game Minecraft username a summoned bot connects under: the per-persona
@@ -303,6 +349,14 @@ export const UserConfigSchema = z.object({
    */
   removed_default_ids: z.array(z.string().uuid()).optional().default([]),
   /**
+   * 260703 procgen: bundled defaults the user has EXPLICITLY invited into a
+   * Home slot. Semantics inverted from removed_default_ids — defaults now live
+   * in the World tab and are hidden from Home unless listed here. The old
+   * removed_default_ids field is retained (harmless) but no longer consulted
+   * by the Home grid.
+   */
+  added_default_ids: z.array(z.string().uuid()).optional().default([]),
+  /**
    * Foreign-owned characters the user added to their library from the World
    * tab. HomeGrid + IconRail otherwise hide chars where owner !== currentUserId
    * (per the Mine/World split); this list opts those characters back into the
@@ -363,6 +417,16 @@ export const UserConfigSchema = z.object({
    * at startup; fresh installs set it true in onboarding (nothing to backfill).
    */
   total_playtime_backfilled: z.boolean().optional().default(false),
+  /**
+   * 260703 procgen: first-sign-in questionnaire answers (see UserPreferencesSchema).
+   * Local cache of the cloud `user_preferences` row; the cloud copy wins on
+   * sign-in when both exist. Defaults to all-null (questionnaire pending).
+   */
+  user_profile: UserPreferencesSchema.optional().default({
+    companion_age_range: null,
+    art_style: null,
+    completed_at: null,
+  }),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

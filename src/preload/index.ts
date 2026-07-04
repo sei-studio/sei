@@ -27,6 +27,7 @@ import {
   type CreditsStatus,
   type CreditsHardStopEvent,
   type ChatMessagePush,
+  type GenProgressEvent,
 } from '../shared/ipc';
 
 const api: RendererApi = {
@@ -201,6 +202,16 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.chars.expansionProgress, handler);
     return () => ipcRenderer.off(IpcChannel.chars.expansionProgress, handler);
   },
+
+  // 260703 procgen — unique-companion generation + questionnaire prefs.
+  generateUnique: (input) => ipcRenderer.invoke(IpcChannel.gen.start, input),
+  onGenProgress(cb: (ev: GenProgressEvent) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, ev: GenProgressEvent) => cb(ev);
+    ipcRenderer.on(IpcChannel.gen.progress, handler);
+    return () => ipcRenderer.off(IpcChannel.gen.progress, handler);
+  },
+  prefsGet: () => ipcRenderer.invoke(IpcChannel.prefs.get),
+  prefsSave: (profile) => ipcRenderer.invoke(IpcChannel.prefs.save, profile),
   onUpdateAvailable(cb: (info: UpdateAvailableEvent) => void) {
     const handler = (_e: Electron.IpcRendererEvent, info: UpdateAvailableEvent) => cb(info);
     ipcRenderer.on(IpcChannel.app.updateAvailable, handler);

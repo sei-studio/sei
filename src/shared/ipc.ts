@@ -15,7 +15,7 @@
  */
 
 import { z } from 'zod';
-import type { Character, Skin, SkinSource, UserConfig } from './characterSchema';
+import type { Character, Skin, SkinSource, UserConfig, UserPreferences } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
 export type { ErrorClass } from './errorClasses';
 
@@ -318,6 +318,59 @@ export interface ExpansionProgressEvent {
   requestId: string;
   fraction: number;
   section: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Unique-companion generation (260703 procgen)                              */
+/* -------------------------------------------------------------------------- */
+
+/** The single per-slot question asked before generating a unique companion. */
+export type UniqueGender = 'male' | 'female' | 'other';
+
+export interface GenerateUniqueInput {
+  /** Correlates gen:progress pushes to this invocation (renderer-minted UUID),
+   *  mirroring the expansionRequestId pattern on chars:save. */
+  requestId: string;
+  gender: UniqueGender;
+}
+
+/**
+ * Result of the full generation pipeline (soulcaster-1 sheet → parallel
+ * portrait/skin + persona expansion → save). Resolves only when the character
+ * is saved locally (cloud mirror is the standard async syncQueue path).
+ */
+export type GenerateUniqueResult =
+  | { ok: true; characterId: string }
+  | {
+      ok: false;
+      code: 'not_signed_in' | 'slot_limit' | 'daily_limit' | 'generation_failed' | 'network';
+      message: string;
+    };
+
+/**
+ * Pipeline stages, in rough order. 'portrait' and 'persona' run in parallel;
+ * 'skin' follows 'portrait' (img2skin). Renderer shows these as ritual copy
+ * on the generation progress screen.
+ */
+export type GenStage = 'sheet' | 'portrait' | 'skin' | 'persona' | 'saving';
+
+export interface GenProgressEvent {
+  requestId: string;
+  stage: GenStage;
+  status: 'start' | 'done' | 'error';
+  /** Optional human-readable detail (e.g. the error summary for status 'error'). */
+  message?: string;
+}
+
+/** Result of prefs:get — the questionnaire gate reads `needed`. */
+export interface PrefsGetResult {
+  profile: UserPreferences | null;
+  /**
+   * True when the signed-in user should be shown the first-sign-in
+   * questionnaire: no completed profile locally AND no cloud
+   * user_preferences row. Always false when signed out.
+   */
+  needed: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1106,6 +1159,26 @@ export interface RendererApi {
    * its stores + routing in response (260603 per-profile partitioning).
    */
   onScopeChanged(cb: (ev: ScopeChangedEvent) => void): Unsubscribe;
+  /* ── Unique-companion generation (260703 procgen) ─────────────────────── */
+  /**
+   * Run the full unique-companion pipeline (cloud mode + signed-in only):
+   * soulcaster-1 character sheet → parallel { portrait via proxy image gen →
+   * img2skin skin } + persona expansion → save (kind 'unique', shared false).
+   * Long-running (~30–90s); subscribe to onGenProgress with the same
+   * requestId for stage ticks. Never throws for expected failures — returns
+   * the discriminated GenerateUniqueResult instead.
+   */
+  generateUnique(input: GenerateUniqueInput): Promise<GenerateUniqueResult>;
+  /** Subscribe to generation pipeline stage ticks (filter by requestId). */
+  onGenProgress(cb: (ev: GenProgressEvent) => void): Unsubscribe;
+  /**
+   * Read the user-profile questionnaire state: local config.user_profile
+   * merged with the cloud user_preferences row (cloud wins). `needed` drives
+   * the first-sign-in questionnaire gate.
+   */
+  prefsGet(): Promise<PrefsGetResult>;
+  /** Persist questionnaire answers locally + upsert to cloud user_preferences. */
+  prefsSave(profile: UserPreferences): Promise<void>;
 }
 
 /** Payload pushed by main when the active profile scope switches. */
@@ -1279,6 +1352,18 @@ export const IpcChannel = {
     save: 'config:save',
     saveApiKey: 'config:save-api-key',
     hasApiKey: 'config:has-api-key',
+  },
+  // 260703 procgen — unique-companion generation pipeline + user-profile
+  // questionnaire (see GenerateUniqueInput / GenProgressEvent / PrefsGetResult).
+  gen: {
+    start: 'gen:start',
+    // Push channel (main → renderer): pipeline stage ticks, tagged with the
+    // caller's requestId (same filtering pattern as chars:expansion-progress).
+    progress: 'gen:progress',
+  },
+  prefs: {
+    get: 'prefs:get',
+    save: 'prefs:save',
   },
   chat: {
     history: 'chat:history',

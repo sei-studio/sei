@@ -62,6 +62,8 @@ type Tab = 'home' | 'world';
 function makeCloudPlaceholder(id: string, name: string): Character {
   return {
     id,
+    kind: 'custom',
+    public_id: null,
     name,
     slug: null,
     persona: { source: '', expanded: '' },
