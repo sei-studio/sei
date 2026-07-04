@@ -169,7 +169,9 @@ describe('ensureLocallyCached', () => {
     const { ensureLocallyCached } = await import('./cacheOnDemand');
     await expect(ensureLocallyCached(UUID_A)).resolves.toBeUndefined();
     expect(downloadCharacterMock).toHaveBeenCalledWith(UUID_A);
-    expect(saveCharacterRawMock).toHaveBeenCalledWith(cloudChar);
+    // 260703 procgen: a foreign-owned World character is stamped kind 'world'
+    // on the local copy (it lives in the World tab and isn't editable here).
+    expect(saveCharacterRawMock).toHaveBeenCalledWith({ ...cloudChar, kind: 'world' });
     // Asset path uses the ORIGINAL creator's owner id, not a (missing) session.
     expect(downloadSkinMock).toHaveBeenCalledWith(OWNER, UUID_A);
   });

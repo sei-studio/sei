@@ -154,9 +154,16 @@ async function ensureLocallyCachedImpl(uuid: string): Promise<void> {
   // signed out and the row somehow has no owner, skip the asset downloads.
   const ownerUuid = cloud.owner ?? session?.user?.id ?? null;
 
+  // 260703 procgen: a FOREIGN-owned character cached from the World tab is a
+  // 'world' companion locally, regardless of the kind the author stored (it is
+  // not editable here and lives in the World tab). Own cloud copies keep their
+  // authored kind. Legacy null-owner rows are left as-is.
+  const isForeign = !!cloud.owner && cloud.owner !== (session?.user?.id ?? null);
+  const toCache: Character = isForeign ? { ...cloud, kind: 'world' } : cloud;
+
   // Write character JSON via saveCharacterRaw (BYPASSES cloud-mirror enqueue).
   const { saveCharacterRaw } = await import('../characterStore');
-  await saveCharacterRaw(cloud);
+  await saveCharacterRaw(toCache);
 
   if (ownerUuid) {
     // Skin + portrait bytes — best-effort and INDEPENDENT, so download them

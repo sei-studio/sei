@@ -191,6 +191,10 @@ export async function upsertCharacter(
       .upsert({
         id: c.id,
         owner: ownerUuid,
+        // 260703 procgen: origin discriminator rides the cloud row. public_id is
+        // NEVER sent — the server assigns it. Rows written before the column
+        // existed default to 'custom' on read (rowToCharacter).
+        kind: c.kind ?? 'custom',
         slug: c.slug ?? null,
         name: c.name,
         persona_source: c.persona.source,
