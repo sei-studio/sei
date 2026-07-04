@@ -72,6 +72,9 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
   );
   const [blurred, setBlurred] = useState(false);
   const [errCode, setErrCode] = useState<ErrCode | null>(null);
+  // The pipeline's specific failure reason (e.g. which stage broke and why).
+  // Shown as a dim detail line so a failed cast is diagnosable, not just poetic.
+  const [errDetail, setErrDetail] = useState<string | null>(null);
   // Bumping `attempt` re-runs the generation effect (Try again).
   const [attempt, setAttempt] = useState(0);
 
@@ -81,6 +84,7 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
     setStageState({});
     setBlurred(false);
     setErrCode(null);
+    setErrDetail(null);
 
     const off = sei.onGenProgress((ev) => {
       if (cancelled || ev.requestId !== requestId) return;
@@ -103,10 +107,14 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
           navigate({ kind: 'unique-reveal', characterId: res.characterId });
         } else {
           setErrCode(res.code);
+          setErrDetail(res.message || null);
         }
       })
-      .catch(() => {
-        if (!cancelled) setErrCode('generation_failed');
+      .catch((err) => {
+        if (!cancelled) {
+          setErrCode('generation_failed');
+          setErrDetail(err instanceof Error ? err.message : null);
+        }
       });
 
     return () => {
@@ -123,6 +131,11 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
         <div className={styles.center}>
           <div className={styles.errTitle}>{copy.title}</div>
           <p className={styles.errBody}>{copy.body}</p>
+          {errDetail ? (
+            <p className={styles.errDetail} title={errDetail}>
+              {errDetail.length > 200 ? `${errDetail.slice(0, 200)}…` : errDetail}
+            </p>
+          ) : null}
           <div className={styles.actions}>
             <Button kind="quiet" size="md" onClick={() => navigate({ kind: 'home' })}>
               Back

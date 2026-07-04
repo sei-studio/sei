@@ -67,6 +67,17 @@
   margin: 0;
 }
 
+/* Specific pipeline failure reason under the poetic copy — diagnosable casts. */
+.errDetail {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+  margin: 8px 0 0;
+  max-width: 520px;
+  overflow-wrap: anywhere;
+}
+
 .actions {
   display: flex;
   gap: 12px;
