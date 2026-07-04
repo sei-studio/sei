@@ -89,8 +89,11 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
   const themeAttr = document.documentElement.getAttribute('data-theme');
   const theme: 'light' | 'dark' = themeAttr === 'dark' ? 'dark' : 'light';
   const palette = pickPalette(character.id + character.name, theme);
+  // description is now the full backstory paragraph (150-300 words) — clamp it
+  // to a couple of sentences here so the reveal stays a short intro with the
+  // CTAs above the fold; the full text lives on the character page.
   const intro =
-    (character.description ?? '').trim() || firstSentences(character.persona?.source ?? '');
+    firstSentences(character.description ?? '') || firstSentences(character.persona?.source ?? '');
 
   return (
     <div className={styles.root}>

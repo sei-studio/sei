@@ -52,9 +52,12 @@ async function pursueUntilInReach(bot, entityId, reach, deadline, signal) {
     if (!live || !live.position) return 'gone'
     const dist = bot.entity?.position?.distanceTo?.(live.position)
     if (typeof dist === 'number' && dist <= reach) return 'reached'
-    // Yield the goal to a creeper-flee (Plan 01 mutex) or a stagger window;
-    // don't fight them tick-for-tick. Re-assert once they clear.
-    if (bot._seiReflexActive || inStaggerWindow(bot)) {
+    // Yield the goal to a creeper-flee (Plan 01 mutex), a survival takeover
+    // (drowning swim-up / critical-HP retreat — survival.js re-asserts its flee
+    // goal on any foreign goal_updated, so fighting it would just waste the
+    // pursuit budget), or a stagger window; don't fight them tick-for-tick.
+    // Re-assert once they clear.
+    if (bot._seiReflexActive || bot._seiSurvivalActive || bot._seiCriticalRetreat || inStaggerWindow(bot)) {
       goalOwned = false
       await sleep(PURSUE_POLL_MS)
       continue
