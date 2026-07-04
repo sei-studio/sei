@@ -141,11 +141,18 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
   }
 
   // ── Progress state ───────────────────────────────────────────────────────
-  const doneCount = STAGE_ORDER.filter((s) => stageState[s] === 'done').length;
-  const pct = Math.round((doneCount / STAGE_ORDER.length) * 100);
+  // 'error' counts as settled: portrait/skin errors are non-fatal (the pipeline
+  // continues without art), so the bar must still reach 100% on a successful
+  // cast instead of stalling at 60% and jumping to the reveal.
+  const settledCount = STAGE_ORDER.filter(
+    (s) => stageState[s] === 'done' || stageState[s] === 'error',
+  ).length;
+  const pct = Math.round((settledCount / STAGE_ORDER.length) * 100);
+  // Show the EARLIEST in-flight stage — portrait and persona run in parallel,
+  // and the first unfinished one is the honest headline.
   const activeStage =
-    [...STAGE_ORDER].reverse().find((s) => stageState[s] === 'start') ??
-    STAGE_ORDER.find((s) => stageState[s] !== 'done') ??
+    STAGE_ORDER.find((s) => stageState[s] === 'start') ??
+    STAGE_ORDER.find((s) => stageState[s] !== 'done' && stageState[s] !== 'error') ??
     'saving';
 
   return (

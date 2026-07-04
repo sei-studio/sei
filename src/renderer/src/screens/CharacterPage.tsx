@@ -102,6 +102,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [tab, setTab] = useState<CharacterTab>('details');
   const [preparing, setPreparing] = useState<boolean>(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
+  // 260703 procgen: inline failure line for the Add-to-library CTA (e.g. the
+  // main-process slot-limit backstop) — a silent no-op reads as a broken button.
+  const [addError, setAddError] = useState<string | null>(null);
   const [showSignIn, setShowSignIn] = useState<boolean>(false);
   const [shareError, setShareError] = useState<string | null>(null);
   // The publish/unpublish modal is multi-phase: the user confirms, then the
@@ -452,6 +455,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       setShowSignIn(true);
       return;
     }
+    setAddError(null);
     try {
       if (character.is_default) {
         await sei.charsRestoreDefault(character.id);
@@ -463,6 +467,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       await refreshLibraryState();
     } catch (err) {
       console.error('[CharacterPage] add to library failed', err);
+      // Surface the failure (e.g. the slot-limit backstop) instead of a
+      // silent no-op — the handler messages are already user-readable.
+      setAddError(err instanceof Error && err.message ? err.message : "Couldn't add this companion. Please try again.");
     }
   };
 
@@ -696,6 +703,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         </div>
 
         {/* Deploy bar — Summon CTA + gear, pinned to the bottom of the panel. */}
+        {addError ? (
+          <p className={styles.sharedError} role="alert">
+            {addError}
+          </p>
+        ) : null}
         <div className={styles.foot}>
           {isRemovedDefault || isWorldPreview ? (
             <Button

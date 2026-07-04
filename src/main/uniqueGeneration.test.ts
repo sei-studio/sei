@@ -66,6 +66,27 @@ describe('libraryCharacterCount', () => {
     const chars: MiniChar[] = [{ id: 'a', is_default: false }, { id: 'sui', is_default: true }];
     expect(libraryCharacterCount(chars, {} as { added_default_ids?: string[] })).toBe(1);
   });
+
+  it('excludes foreign-owned cached chars not added from World (browse must not eat slots)', () => {
+    // Hovering World cards caches foreign rows locally (ensureLocallyCached);
+    // they only occupy a slot once explicitly added (added_world_ids).
+    const me = 'user-me';
+    const chars = [
+      { id: 'mine', is_default: false, owner: me },
+      { id: 'legacy', is_default: false, owner: null },
+      { id: 'hovered-1', is_default: false, owner: 'someone-else' },
+      { id: 'hovered-2', is_default: false, owner: 'someone-else' },
+      { id: 'invited', is_default: false, owner: 'someone-else' },
+    ];
+    expect(
+      libraryCharacterCount(chars, { added_default_ids: [], added_world_ids: ['invited'] }, me),
+    ).toBe(3); // mine + legacy + invited; the two hovered caches don't count
+  });
+
+  it('counts foreign-owned chars when signed out (no owner comparison possible)', () => {
+    const chars = [{ id: 'x', is_default: false, owner: 'someone-else' }];
+    expect(libraryCharacterCount(chars, { added_default_ids: [] }, null)).toBe(1);
+  });
 });
 
 const prefs = (over: Partial<UserPreferences> = {}): UserPreferences => ({

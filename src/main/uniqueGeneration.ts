@@ -58,26 +58,35 @@ export type GenEmit = (stage: GenStage, status: 'start' | 'done' | 'error', mess
 /* -------------------------------------------------------------------------- */
 
 /**
- * Number of Home companion slots the user currently occupies.
+ * Number of Home companion slots the user currently occupies. MUST mirror the
+ * renderer's Home/IconRail library filter, or the slot guard rejects on a
+ * visibly non-full grid (and vice versa):
  *
- *   library count = local non-default characters
- *                 + bundled defaults whose id is in config.added_default_ids
- *
- * Non-default characters (kind 'unique' / 'custom' / 'world') always occupy a
- * slot. Bundled defaults (is_default=true) live in the World tab and only take a
- * slot once explicitly added to Home (added_default_ids). Counting `!is_default`
- * for the first term and the added-defaults intersection for the second avoids
- * double-counting (defaults are is_default=true, excluded from the first term).
+ *   - bundled defaults (is_default) occupy a slot only when invited
+ *     (config.added_default_ids);
+ *   - FOREIGN-owned characters (owner set, !== current user) occupy a slot
+ *     only when explicitly added from the World tab (config.added_world_ids).
+ *     This matters because merely hovering/opening a World card caches the
+ *     foreign row locally (charsOpenPrepare → ensureLocallyCached), so a bare
+ *     `!is_default` count would inflate with every browse;
+ *   - everything else (own + legacy null-owner local chars) always counts.
  */
 export function libraryCharacterCount(
-  characters: Pick<Character, 'id' | 'is_default'>[],
-  config: { added_default_ids?: string[] | null },
+  characters: Pick<Character, 'id' | 'is_default' | 'owner'>[],
+  config: { added_default_ids?: string[] | null; added_world_ids?: string[] | null },
+  currentUserId: string | null = null,
 ): number {
-  const added = new Set(config.added_default_ids ?? []);
+  const addedDefaults = new Set(config.added_default_ids ?? []);
+  const addedWorld = new Set(config.added_world_ids ?? []);
   let n = 0;
   for (const c of characters) {
-    if (!c.is_default) n += 1;
-    else if (added.has(c.id)) n += 1;
+    if (c.is_default) {
+      if (addedDefaults.has(c.id)) n += 1;
+    } else if (currentUserId && c.owner != null && c.owner !== currentUserId) {
+      if (addedWorld.has(c.id)) n += 1;
+    } else {
+      n += 1;
+    }
   }
   return n;
 }
@@ -420,7 +429,7 @@ export async function generateUnique(
   const { listCharacters } = await import('./characterStore');
   const config = await loadConfig();
   const characters = await listCharacters();
-  if (libraryCharacterCount(characters, config) >= MAX_COMPANION_SLOTS) {
+  if (libraryCharacterCount(characters, config, userId) >= MAX_COMPANION_SLOTS) {
     return {
       ok: false,
       code: 'slot_limit',
@@ -439,15 +448,24 @@ export async function generateUnique(
     };
   }
 
-  // Everything past the guards is bounded by the wall-clock cap.
-  const pipeline = runPipeline({ gender, jwt, userId, config, emit });
+  // Everything past the guards is bounded by the wall-clock cap. The cap ABORTS
+  // the pipeline (checked before the save step) — a timed-out run must never
+  // save an orphan companion the user was told failed, or a "Try again" would
+  // mint a duplicate into a slot the orphan already consumed.
+  const cap = new AbortController();
+  const pipeline = runPipeline({ gender, jwt, userId, config, emit, signal: cap.signal });
+  let capTimer: ReturnType<typeof setTimeout> | undefined;
   const capped = new Promise<GenerateUniqueResult>((resolve) => {
-    setTimeout(
-      () => resolve({ ok: false, code: 'generation_failed', message: 'Generation timed out. Please try again.' }),
-      PIPELINE_CAP_MS,
-    );
+    capTimer = setTimeout(() => {
+      cap.abort();
+      resolve({ ok: false, code: 'generation_failed', message: 'Generation timed out. Please try again.' });
+    }, PIPELINE_CAP_MS);
   });
-  return await Promise.race([pipeline, capped]);
+  try {
+    return await Promise.race([pipeline, capped]);
+  } finally {
+    clearTimeout(capTimer);
+  }
 }
 
 async function runPipeline(args: {
@@ -456,8 +474,10 @@ async function runPipeline(args: {
   userId: string;
   config: UserConfig;
   emit: GenEmit;
+  /** Set by the wall-clock cap: once aborted, the pipeline must not save. */
+  signal: AbortSignal;
 }): Promise<GenerateUniqueResult> {
-  const { gender, jwt, userId, config, emit } = args;
+  const { gender, jwt, userId, config, emit, signal } = args;
 
   // ── Stage 'sheet' — soulcaster consolidation ───────────────────────────
   let sheet: Sheet;
@@ -544,6 +564,11 @@ async function runPipeline(args: {
   }
 
   // ── Stage 'saving' — persist + apply portrait/skin + public_id fetch-back ─
+  // The wall-clock cap already resolved the race with a failure once `signal`
+  // is aborted — saving now would create an invisible orphan that eats a slot.
+  if (signal.aborted) {
+    return { ok: false, code: 'generation_failed', message: 'Generation timed out. Please try again.' };
+  }
   emit('saving', 'start');
   const id = randomUUID();
   const now = new Date().toISOString();

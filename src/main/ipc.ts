@@ -130,17 +130,22 @@ const PlaintextSchema = z.string().min(1);
 /**
  * 260703 procgen — thrown when a CREATE (chars:save of a new id) or a
  * library-add (chars:add-to-library / chars:restore-default) would push the
- * Home companion count past MAX_COMPANION_SLOTS. The message begins with the
- * stable `SLOT_LIMIT_REACHED` sentinel so the renderer can pattern-match it —
- * these handlers surface failures via `err.message` (catch-and-toast).
+ * Home companion count past MAX_COMPANION_SLOTS. Plain human-readable text:
+ * these handlers surface failures via `err.message` directly (the renderer
+ * pre-checks slots in the UI, so this backstop message IS the user copy).
  */
 const SLOT_LIMIT_REACHED_MESSAGE =
-  `SLOT_LIMIT_REACHED: You can only have ${MAX_COMPANION_SLOTS} companions. Remove one to make room.`;
+  `You can only have ${MAX_COMPANION_SLOTS} companions. Remove one to make room.`;
 
 /** Current Home companion count ≥ the slot cap (see libraryCharacterCount). */
 async function libraryIsFull(): Promise<boolean> {
   const [cfg, chars] = await Promise.all([loadConfig(), listCharacters()]);
-  return libraryCharacterCount(chars, cfg) >= MAX_COMPANION_SLOTS;
+  // Foreign World characters cached by mere browsing must not count — mirror
+  // the renderer's library filter (libraryCharacterCount does the same).
+  const { getCurrentAuthState } = await import('./auth/authState');
+  const auth = getCurrentAuthState();
+  const currentUserId = auth.kind === 'signed_in' ? auth.user.id : null;
+  return libraryCharacterCount(chars, cfg, currentUserId) >= MAX_COMPANION_SLOTS;
 }
 
 /**
