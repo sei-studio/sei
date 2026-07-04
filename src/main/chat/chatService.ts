@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, ChatSendResult, LanState } from '../../shared/ipc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
@@ -299,34 +300,40 @@ export async function sendChatMessage(
       const text = textOf(res.content);
       if (text) replyText = text;
 
-      const toolUse = res.content.find((b) => b.type === 'tool_use') as
-        | { type: 'tool_use'; id: string; name: string; input: { game?: string } }
-        | undefined;
-      if (!toolUse) break;
+      // With two tools offered the model may call both in one response (e.g.
+      // quit + launch for "log off and hop back in"). Every tool_use id in an
+      // assistant turn MUST get a matching tool_result in the next user message
+      // or the follow-up create() 400s — so answer ALL of them, not just the
+      // first.
+      const toolUses = res.content.filter((b) => b.type === 'tool_use');
+      if (!toolUses.length) break;
 
       messages.push({ role: 'assistant', content: res.content });
-      let note: string;
-      if (toolUse.name === 'launch') {
-        const game = String(toolUse.input?.game ?? 'minecraft');
-        const result = resolveLaunch(game, deps);
-        launch = result.launch;
-        // Defer the real join — don't fire summon mid-loop (task 2).
-        if (result.summon) startSummon = true;
-        note = result.note;
-      } else if (toolUse.name === 'quit') {
-        // Task 5 — leave the game from chat. End the live session (no-op when
-        // none is live) and tell the model it has logged off.
-        deps.leaveGame?.(args.characterId);
-        note =
-          'You have left the Minecraft world and logged off. You are back in chat only now — ' +
-          'say a short goodbye if you have not already. Do not claim you are still in the game.';
-      } else {
-        break;
+      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+      for (const toolUse of toolUses) {
+        let note: string;
+        if (toolUse.name === 'launch') {
+          const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
+          const result = resolveLaunch(game, deps);
+          launch = result.launch;
+          // Defer the real join — don't fire summon mid-loop (task 2).
+          if (result.summon) startSummon = true;
+          note = result.note;
+        } else if (toolUse.name === 'quit') {
+          // Task 5 — leave the game from chat. End the live session (no-op when
+          // none is live) and tell the model it has logged off.
+          deps.leaveGame?.(args.characterId);
+          note =
+            'You have left the Minecraft world and logged off. You are back in chat only now — ' +
+            'say a short goodbye if you have not already. Do not claim you are still in the game.';
+        } else {
+          // Unreachable with the closed tool set, but an unanswered tool_use
+          // would poison the next hop — answer it rather than break mid-turn.
+          note = `The tool "${toolUse.name}" is not available. Reply without using tools.`;
+        }
+        toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note });
       }
-      messages.push({
-        role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: note }] as never,
-      });
+      messages.push({ role: 'user', content: toolResults });
     }
 
     // #9 — if a newer send arrived (or we were aborted) while this turn ran,
@@ -359,9 +366,13 @@ export async function sendChatMessage(
     // #6 — stamp last_chatted on a successful reply so a plain chat counts as a
     // "last interaction" for the card date + ordering (device-local, like
     // last_launched; the cloud upsert omits it). Best-effort — a persistence
-    // hiccup must not fail the chat turn.
+    // hiccup must not fail the chat turn. Re-read before stamping (same as the
+    // last_launched stamp in botSupervisor): `character` was snapshotted before
+    // the LLM round-trip, and spreading that stale copy would silently revert
+    // any edit the player saved while the reply was generating.
     try {
-      await saveCharacter({ ...character, last_chatted: new Date().toISOString() });
+      const fresh = await getCharacter(args.characterId);
+      if (fresh) await saveCharacter({ ...fresh, last_chatted: new Date().toISOString() });
     } catch (err) {
       console.warn(`[sei] failed to stamp last_chatted for ${args.characterId}: ${(err as Error).message}`);
     }
