@@ -49,7 +49,7 @@ function assertAdapter(adapter) {
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [args.logger]
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
-export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null }) {
+export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null }) {
   assertAdapter(adapter)
 
   // ── Memory layer ────────────────────────────────────────────────────
@@ -143,6 +143,9 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // message (route to chat surface), and how to honor a quit() tool call.
     onSeiChatReply,
     onQuitRequested,
+    // Voice calls (260705) — how to honor an end_call() tool call (hang up the
+    // player's call without leaving the game).
+    onCallEndRequested,
   })
 
   // ── Build the priority queue with the orchestrator's handleDispatch ─
@@ -292,6 +295,30 @@ export async function start({ config, adapter, logger = console, onTerminalError
         })
       } catch (err) {
         logger.warn?.(`[sei/brain] deliverSeiChat enqueue failed: ${err.message}`)
+      }
+    },
+    /**
+     * Voice calls (260705): the player just opened a voice call and the audio
+     * pipeline is live — prompt the bot to speak first (like greeting on spawn).
+     * P1 like player chat so it preempts idle work; setVoiceCall(true) has
+     * already flipped, so the say() reply routes into the call.
+     */
+    deliverVoiceCallGreeting() {
+      const framed =
+        '[A voice call with the player just connected — they can hear your voice now. ' +
+        'Say a short in-character hello first, like picking up a phone. One line, via say(). ' +
+        'Do not mention tools or that this is a system message.]'
+      try {
+        queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
+          username: 'sei',
+          message: framed,
+          text: framed,
+          addressed: true,
+          playerSpoke: true,
+          seiChat: true,
+        })
+      } catch (err) {
+        logger.warn?.(`[sei/brain] deliverVoiceCallGreeting enqueue failed: ${err.message}`)
       }
     },
     async stop() {

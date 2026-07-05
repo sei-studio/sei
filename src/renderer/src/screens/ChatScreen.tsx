@@ -281,6 +281,18 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 </div>
               );
             }
+            // Voice calls (260705): "You and X called for Y." — same Discord-
+            // style session row as play, with the handset glyph.
+            if (m.event?.kind === 'call') {
+              return (
+                <div key={m.id} className={`${styles.systemRow} ${styles.playRow}`}>
+                  <span className={styles.playIcon}>
+                    <PhoneIcon size={18} />
+                  </span>
+                  <span>{m.text}</span>
+                </div>
+              );
+            }
             return (
               <div key={m.id} className={styles.systemRow}>
                 {m.text}

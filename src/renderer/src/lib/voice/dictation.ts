@@ -12,10 +12,14 @@
  *   - Mute is renderer-side: the stream keeps running (fast unmute) but frames
  *     are discarded and any in-progress utterance is dropped.
  *
- * VAD: 16kHz mono via ScriptProcessor frames; speech opens when frame RMS
+ * VAD: 16kHz mono frames captured by a tiny AudioWorklet (see WORKLET_SRC —
+ * inline blob module, so no bundler plumbing); speech opens when frame RMS
  * exceeds an adaptive noise floor, closes after END_SILENCE_MS below it.
  * Utterances shorter than MIN_UTTERANCE_MS are discarded (coughs, clicks);
  * longer than MAX_UTTERANCE_MS are force-flushed so a monologue still lands.
+ * The VAD math runs on the main thread off the worklet's posted frames — the
+ * worklet only batches samples (128-sample render quanta → 2048-sample frames,
+ * ~8 messages/sec).
  */
 
 export type DictationStatus = 'loading-model' | 'ready' | 'error';
@@ -40,10 +44,49 @@ const FRAME_SIZE = 2048; // ~128ms at 16kHz
 const START_RMS_FLOOR = 0.012; // absolute minimum to open speech
 const NOISE_ADAPT = 0.02; // EMA rate for the noise floor
 const START_FACTOR = 3; // open at noiseFloor * factor (≥ START_RMS_FLOOR)
-const END_SILENCE_MS = 900;
+// 700ms (was 900): every ms here is dead air on the player's end of the call —
+// the whole reply pipeline (Whisper + LLM + TTS) queues behind utterance-end
+// detection. 700 still comfortably clears intra-sentence pauses.
+const END_SILENCE_MS = 700;
 const MIN_UTTERANCE_MS = 350;
 const MAX_UTTERANCE_MS = 15_000;
 const PRE_ROLL_FRAMES = 2; // frames kept from before the trigger
+
+/**
+ * AudioWorklet processor (issue: ScriptProcessorNode is deprecated). Batches
+ * the 128-sample render quanta into FRAME_SIZE frames and posts them to the
+ * main thread (transferred, zero-copy). Inlined as a blob module so it needs
+ * no bundler/worklet build plumbing; it must stay dependency-free JS.
+ */
+const WORKLET_SRC = `
+class SeiVadCapture extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._buf = new Float32Array(${FRAME_SIZE});
+    this._n = 0;
+  }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (ch) {
+      let i = 0;
+      while (i < ch.length) {
+        const take = Math.min(ch.length - i, this._buf.length - this._n);
+        this._buf.set(ch.subarray(i, i + take), this._n);
+        this._n += take;
+        i += take;
+        if (this._n === this._buf.length) {
+          const out = this._buf;
+          this.port.postMessage(out, [out.buffer]);
+          this._buf = new Float32Array(${FRAME_SIZE});
+          this._n = 0;
+        }
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('sei-vad-capture', SeiVadCapture);
+`;
 
 export async function createDictation(opts: {
   onUtterance: (text: string) => void;
@@ -110,9 +153,26 @@ export async function createDictation(opts: {
 
   const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
   const source = ctx.createMediaStreamSource(stream);
-  // ScriptProcessor is deprecated but dependency-free and fine at this frame
-  // size; swap for an AudioWorklet if it ever shows up in profiles.
-  const processor = ctx.createScriptProcessor(FRAME_SIZE, 1, 1);
+  // AudioWorklet capture (replaces the deprecated ScriptProcessorNode). The
+  // module is a blob URL built from WORKLET_SRC above.
+  const workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'text/javascript' }));
+  let captureNode: AudioWorkletNode;
+  try {
+    await ctx.audioWorklet.addModule(workletUrl);
+    captureNode = new AudioWorkletNode(ctx, 'sei-vad-capture', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      channelCount: 1,
+    });
+  } catch (err) {
+    URL.revokeObjectURL(workletUrl);
+    void ctx.close().catch(() => {});
+    stream.getTracks().forEach((t) => t.stop());
+    worker.terminate();
+    opts.onStatus('error', 'audio capture failed');
+    throw err;
+  }
+  URL.revokeObjectURL(workletUrl);
 
   let muted = false;
   let hold = false;
@@ -153,8 +213,9 @@ export async function createDictation(opts: {
     return (samples / SAMPLE_RATE) * 1000;
   }
 
-  processor.onaudioprocess = (e) => {
-    const frame = e.inputBuffer.getChannelData(0);
+  captureNode.port.onmessage = (e: MessageEvent) => {
+    const frame = e.data as Float32Array;
+    if (!(frame instanceof Float32Array) || frame.length === 0) return;
     if (muted || hold) {
       if (inSpeech) resetUtterance();
       preRoll.length = 0;
@@ -191,12 +252,12 @@ export async function createDictation(opts: {
     }
   };
 
-  source.connect(processor);
-  // ScriptProcessor needs a sink to fire; route through a zero-gain node so
-  // nothing echoes to the speakers.
+  source.connect(captureNode);
+  // Keep the node pulled by the rendered graph via a zero-gain sink so capture
+  // never stalls, and nothing echoes to the speakers.
   const sink = ctx.createGain();
   sink.gain.value = 0;
-  processor.connect(sink);
+  captureNode.connect(sink);
   sink.connect(ctx.destination);
 
   return {
@@ -210,7 +271,8 @@ export async function createDictation(opts: {
     },
     speechActive: () => inSpeech,
     stop() {
-      try { processor.disconnect(); source.disconnect(); sink.disconnect(); } catch { /* torn down */ }
+      try { captureNode.port.onmessage = null; } catch { /* torn down */ }
+      try { captureNode.disconnect(); source.disconnect(); sink.disconnect(); } catch { /* torn down */ }
       void ctx.close().catch(() => {});
       stream.getTracks().forEach((t) => t.stop());
       worker.terminate();

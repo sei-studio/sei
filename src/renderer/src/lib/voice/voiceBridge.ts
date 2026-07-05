@@ -13,6 +13,11 @@ interface VoiceHooks {
   onCompanionText(characterId: string, text: string): void;
   /** Is a voice call currently open with this character? */
   isCallActive(characterId: string): boolean;
+  /**
+   * The companion asked to hang up (end_call() — via the send() result flag or
+   * the voice:call-ended push). Finish speaking what's queued, then end.
+   */
+  onRemoteEndCall(characterId: string): void;
 }
 
 let hooks: VoiceHooks | null = null;
@@ -34,5 +39,13 @@ export function isVoiceCallActive(characterId: string): boolean {
     return hooks?.isCallActive(characterId) ?? false;
   } catch {
     return false;
+  }
+}
+
+export function requestRemoteEndCall(characterId: string): void {
+  try {
+    hooks?.onRemoteEndCall(characterId);
+  } catch {
+    /* voice layer must never break chat */
   }
 }

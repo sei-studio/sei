@@ -106,6 +106,19 @@ export interface IpcHandlerDeps {
   notifyLaunchFailed: (characterId: string, reason: string) => void;
   /** Task 4 — true only when the character's bot is fully spawned in-world. */
   isSessionOnline: (characterId: string) => boolean;
+  /**
+   * Voice calls (260705): a call that was actually LIVE just ended (renderer
+   * reports how long audio flowed). Posts the "You and X called for Y" system
+   * row to the transcript. Wired in index.ts to emitCallSession.
+   */
+  notifyCallEnded?: (characterId: string, connectedMs: number) => void;
+  /**
+   * Voice calls (260705): the call pipeline went live — make the companion
+   * speak first. In-game → supervisor.greetVoiceCall port event; idle → a
+   * standalone chat-brain greeting turn (replies pushed + spoken). Wired in
+   * index.ts.
+   */
+  greetVoiceCall?: (characterId: string) => void;
 }
 
 /**
@@ -858,10 +871,29 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.voice.callState, async (_event, argsRaw: unknown): Promise<void> => {
-    const args = z.object({ characterId: IdSchema, active: z.boolean() }).parse(argsRaw);
+    const args = z
+      .object({
+        characterId: IdSchema,
+        active: z.boolean(),
+        // Hang-up only: how long the call was actually LIVE. Present → post
+        // the "You and X called for Y" row. Absent → the call never connected
+        // (dial error), so nothing is logged.
+        connectedMs: z.number().int().nonnegative().optional(),
+      })
+      .parse(argsRaw);
     const { setCallActive } = await import('./voice/callState');
     setCallActive(args.characterId, args.active);
     deps.supervisor.setVoiceCall(args.characterId, args.active);
+    if (!args.active && typeof args.connectedMs === 'number' && args.connectedMs > 0) {
+      deps.notifyCallEnded?.(args.characterId, args.connectedMs);
+    }
+  });
+
+  // Voice calls (260705): the renderer's call pipeline just went live — ask the
+  // companion to speak first (like answering the phone).
+  ipcMain.handle(IpcChannel.voice.greet, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    deps.greetVoiceCall?.(id);
   });
 
   ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {

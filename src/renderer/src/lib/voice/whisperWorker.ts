@@ -14,9 +14,24 @@
  *        (audio: Float32Array, 16kHz mono)          errors → { type: 'transcript', id, text: '' }
  */
 
-import { pipeline } from '@huggingface/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 
 const MODEL = 'onnx-community/whisper-tiny.en';
+
+// Multi-threaded WASM when SharedArrayBuffer is available (main enables the
+// Chromium feature flag — see src/main/index.ts). Cuts utterance
+// transcription time by roughly the thread count; falls back to 1 thread
+// (the old behavior) when SAB is absent (older builds / flag removed).
+try {
+  if (typeof SharedArrayBuffer !== 'undefined' && env?.backends?.onnx?.wasm) {
+    env.backends.onnx.wasm.numThreads = Math.min(
+      4,
+      Math.max(1, navigator.hardwareConcurrency || 1),
+    );
+  }
+} catch {
+  /* env shape changed — single-threaded is still correct */
+}
 
 type Asr = (audio: Float32Array) => Promise<{ text: string } | Array<{ text: string }>>;
 

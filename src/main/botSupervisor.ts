@@ -166,6 +166,13 @@ export interface BotSupervisorOptions {
    * Wired to voice/callState.isCallActive; optional so tests can omit it.
    */
   isVoiceCallActive?: (characterId: string) => boolean;
+  /**
+   * Voice calls (260705): the in-game bot called end_call() — it wants the
+   * player's voice call hung up (it stays in the game). Main clears the call
+   * state and pushes voice:call-ended to the renderer, which drains the TTS
+   * queue (the farewell) before tearing the call down. Optional — no-ops.
+   */
+  onCallEndRequested?: (characterId: string) => void;
 }
 
 export interface BotSupervisor {
@@ -216,6 +223,13 @@ export interface BotSupervisor {
    * opts.isVoiceCallActive, so calling this on an idle character is fine.
    */
   setVoiceCall(characterId: string, active: boolean): boolean;
+  /**
+   * Voice calls (260705): the renderer's call pipeline just went live — ask a
+   * live in-game session to greet the player first ({type:'voice-call-greet'}
+   * on port1). Returns false when the character has no live session (the
+   * caller runs the standalone chat-brain greeting instead).
+   */
+  greetVoiceCall(characterId: string): boolean;
 }
 
 interface ActiveSession {
@@ -694,6 +708,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // a BotStatus event, so return before lifecycleToStatus.
       if (data.type === 'chat') {
         opts.onBotChat?.(characterId, (data as { text?: string }).text ?? '');
+        return;
+      }
+      // Voice calls (260705): the in-game bot called end_call() — hang up the
+      // player's call (the bot stays in the game). Not a BotStatus event.
+      if ((data as { type?: string }).type === 'call-end') {
+        opts.onCallEndRequested?.(characterId);
         return;
       }
       if (data.type === 'summon-ready' && !summonResolved) {
@@ -1191,6 +1211,18 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (!session) return false;
       try {
         session.port1.postMessage({ type: 'voice-call', active });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    // Voice calls (260705): ask a live in-game session to greet the player
+    // now that the call pipeline is live. False → caller uses the chat brain.
+    greetVoiceCall: (characterId: string): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'voice-call-greet' });
         return true;
       } catch {
         return false;

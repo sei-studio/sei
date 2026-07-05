@@ -68,7 +68,9 @@ minecraft: Vanilla Minecraft. open-world survival game. you can join the player'
 
 export const VOICE_CALL_PRIMER =
   'You are speaking to the player through a voice call right now: everything you say is read aloud to them. ' +
-  'Write like how you\'d speak, not how you\'d text. No shorthand like "lmao", no emoji, no abbreviations you wouldn\'t say out loud.'
+  'Write like how you\'d speak, not how you\'d text. No shorthand like "lmao", no emoji, no abbreviations you wouldn\'t say out loud. ' +
+  'The player\'s words reach you through imperfect voice transcription, so do not correct them on spelling or odd word choices — it is probably a transcription error; go with what they most plausibly said. ' +
+  'You can hang up with end_call() when the conversation is clearly over or the player asks you to — say a short goodbye in the same turn. You cannot start calls; only the player can call you.'
 
 // =============================================================================
 // 3. MINECRAFT SURFACE

@@ -265,6 +265,11 @@ export async function start(config, hooks = {}) {
       // Task 4 — the bot called quit(): leave the game the same graceful way a
       // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
       onQuitRequested: () => { try { gracefulShutdown() } catch {} },
+      // Voice calls (260705) — the bot called end_call(): ask main to hang up
+      // the player's call (the bot stays in the game). The farewell say() was
+      // already routed up before this fires, and the renderer drains its TTS
+      // queue before tearing the call down.
+      onCallEndRequested: () => emitLifecycle({ type: 'call-end' }),
     })
     if (_stopped || !_bot) {
       // The connection dropped (or we were stopped) while startBrain awaited.
@@ -342,6 +347,13 @@ export async function start(config, hooks = {}) {
      */
     setVoiceCall(active) {
       try { _brain?.setVoiceCall?.(active) } catch {}
+    },
+    /**
+     * Voice calls (260705): the call pipeline just went live — prompt the brain
+     * to greet the player first (like the spawn greeting, but into the call).
+     */
+    deliverVoiceCallGreeting() {
+      try { _brain?.deliverVoiceCallGreeting?.() } catch {}
     },
     /**
      * 260618: update the roster of OTHER AI companions in this world. Called by
@@ -835,6 +847,10 @@ if (process.parentPort) {
             // and in-game chat stays silent; each turn carries the voice-call
             // primer at the start of its prompt.
             try { _running?.setVoiceCall?.(data.active === true) } catch {}
+          } else if (data && data.type === 'voice-call-greet') {
+            // Voice calls (260705): the renderer's call pipeline just went live
+            // — ask the brain to speak first (say() routes into the call).
+            try { _running?.deliverVoiceCallGreeting?.() } catch {}
           } else if (data && data.type === 'roster') {
             // 260618: the supervisor's roster of OTHER AI companions in this
             // world changed (a sibling bot was summoned or stopped). Apply it so

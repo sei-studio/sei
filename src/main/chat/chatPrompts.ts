@@ -170,6 +170,26 @@ export const LAUNCH_TOOL = {
  * so telling it "you can log off now" in chat ends the live session. Wired to
  * supervisor.stop via ChatDeps.leaveGame; a no-op when no session is live.
  */
+/**
+ * Voice calls (260705) — hang up the live call from the chat surface. Offered
+ * ONLY while a call is open (buildSystemBlocks already flips block 0 for the
+ * primer, so the tool-list flip costs no extra cache churn). The primer tells
+ * the model it can end but never start calls.
+ */
+export const END_CALL_TOOL = {
+  name: 'end_call',
+  description:
+    'Hang up the live voice call with the player. ' +
+    'Use it when the conversation is clearly over or the player asks you to hang up. ' +
+    'Say a short goodbye in the same turn — it is spoken aloud before the call ends. ' +
+    'You cannot start calls, only end them; after hanging up you can still be reached in text chat.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {},
+    required: [] as string[],
+  },
+};
+
 export const QUIT_TOOL = {
   name: 'quit',
   description:

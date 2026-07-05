@@ -186,7 +186,7 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
 // → continueLoop=false → the loop ends (say is "silence" for loop purposes:
 // it speaks, but it never keeps the bot busy on its own — see the
 // `continueLoop = movementCalls.length > 0` gate in runIterations).
-const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit'])
+const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit', 'end_call'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
@@ -538,7 +538,7 @@ export async function composeSeedBlocks({
  *   priority queue. Required when the brain runs in production; defaults
  *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, _anthropicOverride = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, _anthropicOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
   // 260618: roster of OTHER AI companion usernames in this world (multi-bot
   // sessions). Pushed from main via {type:'roster'} → brain.setCompanions →
@@ -1023,6 +1023,29 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         additionalProperties: false,
       },
     },
+    {
+      // Voice calls (260705): hang up the live voice call WITHOUT leaving the
+      // game. Registered unconditionally (a per-call tool-list flip would bust
+      // the prompt cache every call toggle); a call with no call open is a
+      // harmless error result. The primer (VOICE_CALL_PRIMER) tells the model
+      // it can end but never start calls.
+      name: 'end_call',
+      description:
+        'Hang up the live voice call with the player. Only meaningful while a voice call is open — if none is, this does nothing. ' +
+        'Use it when the conversation is clearly over or the player asks you to hang up. You stay in the game; only the call ends. ' +
+        'Put your goodbye in the `farewell` field — it is spoken into the call for you as it ends, so do NOT also call say(). ' +
+        'You cannot start calls, only end them.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          farewell: {
+            type: 'string',
+            description: 'Your goodbye line, spoken into the call as it ends. Short, in your own voice.',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
   ]
 
   // Combined tools = personality tools + movement registry tools.
@@ -1455,7 +1478,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // the action, and a say()-only batch suspends on nothing. Its result is
   // actually pre-filled up front by emitSayCalls (so speech lands before any
   // action dispatches); the executeInlineMetadata `say` branch is a fallback.
-  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit'])
+  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit', 'end_call'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -2232,6 +2255,25 @@ function maybeWarnByteCap(loop, warned) {
       if (waitMs > 250) logger.info?.(`[sei/orch] quit deferred ${waitMs}ms so the goodbye finishes sending`)
       setTimeout(fireQuit, waitMs)
       return { result: { type: 'tool_result', tool_use_id: use.id, content: 'leaving the game', is_error: false }, terminate: true }
+    }
+    if (use.name === 'end_call') {
+      // Voice calls (260705): hang up the live call, stay in the game. The
+      // farewell rides IN the call (same rationale as quit.farewell) and is
+      // emitted through the normal say pipeline — voiceCallActive is still
+      // true here, so it routes up to the call and gets spoken. THEN the host
+      // is asked to end the call; the renderer drains the TTS queue before
+      // tearing down, so the goodbye is heard in full.
+      if (!voiceCallActive) {
+        lastActionResult = 'end_call: no call open'
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: 'no voice call is open — nothing to hang up', is_error: true }, terminate: false }
+      }
+      const farewell = String(use.input?.farewell ?? '').trim()
+      if (farewell) {
+        try { _emitSayLine(loop, farewell) } catch {}
+      }
+      lastActionResult = 'ended call'
+      try { onCallEndRequested?.() } catch (err) { logger.warn?.(`[sei/orch] onCallEndRequested failed: ${err?.message ?? err}`) }
+      return { result: { type: 'tool_result', tool_use_id: use.id, content: 'call ended — you are still in the game', is_error: false }, terminate: false }
     }
     if (use.name === 'say') {
       // Normal flow emits say() up front via emitSayCalls and pre-fills the

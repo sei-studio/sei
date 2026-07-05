@@ -11,8 +11,9 @@
  * Model/format pins mirror the proxy (sei-proxy src/tts/forward.ts).
  *
  * Errors are thrown as Error with a sentinel message prefix the renderer can
- * match on: VOICE_NO_SESSION, VOICE_RATE_LIMITED, VOICE_NOT_CONFIGURED,
- * VOICE_TTS_FAILED.
+ * match on: VOICE_NO_SESSION, VOICE_NO_CREDITS (402 — playtime balance
+ * exhausted; TTS bills from the same ledger as LLM turns), VOICE_RATE_LIMITED
+ * (429 — daily $ cap), VOICE_NOT_CONFIGURED, VOICE_TTS_FAILED.
  */
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
@@ -52,7 +53,8 @@ async function fetchAudio(url: string, headers: Record<string, string>, body: un
   if (!res.ok) {
     clearTimeout(timeout);
     const text = await res.text().catch(() => '');
-    if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily voice allowance reached');
+    if (res.status === 402) throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
+    if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily usage cap reached');
     if (res.status === 503) throw new Error('VOICE_NOT_CONFIGURED: voice service unavailable');
     // Log a truncated excerpt for diagnosis; never bubble upstream bodies.
     console.warn(`[sei/voice] tts upstream ${res.status}: ${text.slice(0, 200)}`);

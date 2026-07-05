@@ -121,8 +121,10 @@ export interface ChatMessage {
    * Y"). `text` carries the human-readable line; `event` carries the structured
    * data. Also read by the chat brain (toMessages) as shared history so the
    * companion knows you actually played, not just talked about it.
+   * `call` (260705) is the same pattern for a finished voice call ("You and X
+   * called for Y"), rendered with a phone icon.
    */
-  event?: { kind: 'play'; game: string; durationMs: number };
+  event?: { kind: 'play'; game: string; durationMs: number } | { kind: 'call'; durationMs: number };
 }
 
 /** Result of a chat turn. `launch` is set when the companion called launch(). */
@@ -146,6 +148,12 @@ export interface ChatSendResult {
     /** 'summoning' → the bot is joining a LAN world; 'lan-not-open' → could not join. */
     status: 'summoning' | 'lan-not-open';
   };
+  /**
+   * Voice calls (260705): true when the companion called end_call() this turn —
+   * it wants to hang up. The renderer speaks the replies (the goodbye) first,
+   * then ends the call once the TTS queue drains.
+   */
+  endCall?: boolean;
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
@@ -844,8 +852,26 @@ export interface RendererApi {
    * session so say() reroutes to the call instead of in-game chat. The
    * supervisor re-applies the state on summon-ready, so a companion that
    * launch()es into the world mid-call keeps speaking to the call.
+   *
+   * `connectedMs` (hang-up only): how long the call was LIVE (audio flowing),
+   * renderer-measured. When present and >0, main posts the "You and X called
+   * for Y" system row to the chat transcript. Omitted when the call never
+   * connected (error before live) so a failed dial never logs a call.
    */
-  voiceCallSetActive(args: { characterId: string; active: boolean }): Promise<void>;
+  voiceCallSetActive(args: { characterId: string; active: boolean; connectedMs?: number }): Promise<void>;
+  /**
+   * The call pipeline just went LIVE — ask the companion to speak first (like
+   * greeting on spawn). In-game sessions get a {type:'voice-call-greet'} port
+   * event; idle characters run a standalone chat-brain greeting turn whose
+   * replies arrive over the chat:message push (and are spoken via TTS).
+   */
+  voiceGreet(characterId: string): Promise<void>;
+  /**
+   * Subscribe to main-initiated call hang-ups: the companion called
+   * end_call() (from in-game or from the idle chat brain). The renderer
+   * finishes speaking whatever is queued (the goodbye), then ends the call.
+   */
+  onVoiceCallEnded(cb: (push: { characterId: string }) => void): Unsubscribe;
 
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
@@ -1399,8 +1425,12 @@ export const IpcChannel = {
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',
-    /** Invoke: open/hang-up a voice call ({characterId, active}). */
+    /** Invoke: open/hang-up a voice call ({characterId, active, connectedMs?}). */
     callState: 'voice:call-state',
+    /** Invoke: the call went live — companion should greet first (characterId). */
+    greet: 'voice:greet',
+    /** Push (main → renderer): companion hung up via end_call() ({characterId}). */
+    callEnded: 'voice:call-ended',
   },
   user: {
     getProfile: 'user:get-profile',

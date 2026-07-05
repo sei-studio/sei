@@ -16,7 +16,7 @@ import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
-import { notifyCompanionText, isVoiceCallActive } from '../voice/voiceBridge';
+import { notifyCompanionText, isVoiceCallActive, requestRemoteEndCall } from '../voice/voiceBridge';
 import type { ChatMessage, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
@@ -234,6 +234,10 @@ export const useChatStore = create<ChatState>((set, get) => {
         // queue serializes clips, so multi-bubble replies stay in order.
         notifyCompanionText(characterId, replies[i].text);
       }
+      // Voice calls (260705): the companion called end_call() this turn. Its
+      // goodbye replies are already queued for TTS above; the voice store ends
+      // the call once they finish playing.
+      if (result.endCall) requestRemoteEndCall(characterId);
       // #6 — main stamped last_chatted on this successful reply; refresh the
       // character so the Home grid + IconRail re-sort by last interaction.
       void useDataStore.getState().refreshCharacter(characterId);
