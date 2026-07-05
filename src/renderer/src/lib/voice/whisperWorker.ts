@@ -22,29 +22,31 @@ type Asr = (audio: Float32Array) => Promise<{ text: string } | Array<{ text: str
 let asr: Asr | null = null;
 
 async function init(): Promise<void> {
-  // WebGPU is dramatically faster when the Chromium build exposes it; fall
-  // back to WASM otherwise. Both are local inference.
-  try {
-    asr = (await pipeline('automatic-speech-recognition', MODEL, {
-      device: 'webgpu',
-      dtype: 'q8',
-    })) as unknown as Asr;
-  } catch {
-    asr = (await pipeline('automatic-speech-recognition', MODEL, {
-      device: 'wasm',
-      dtype: 'q8',
-    })) as unknown as Asr;
-  }
+  // WASM on purpose, NOT webgpu: verified live (260705, Electron 37) that
+  // webgpu + q8 loads and runs but emits garbage tokens (the known
+  // transformers.js webgpu quantization corruption), while wasm + q8
+  // transcribes correctly. tiny.en on wasm is fast enough for utterance-sized
+  // clips; revisit webgpu with fp32/fp16 dtypes if latency ever matters more.
+  asr = (await pipeline('automatic-speech-recognition', MODEL, {
+    device: 'wasm',
+    dtype: 'q8',
+  })) as unknown as Asr;
 }
 
 /** Whisper hallucinates fillers on silence/noise; drop the well-known ones. */
 const NOISE_TRANSCRIPTS = new Set([
   '', 'you', 'thank you.', 'thanks for watching!', 'thank you for watching!',
-  '[blank_audio]', '[music]', '(music)', '.', 'bye.', 'so', 'the',
+  '.', 'bye.', 'so', 'the',
 ]);
 
 function cleanTranscript(raw: string): string {
-  const text = raw.trim();
+  // Whisper annotates non-speech as bracketed/parenthesized tags — observed
+  // live: keyboard sounds → "[clicking]". Strip every such group; if nothing
+  // spoken remains, the utterance was noise, not words.
+  const text = raw
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return NOISE_TRANSCRIPTS.has(text.toLowerCase()) ? '' : text;
 }
 

@@ -23,7 +23,7 @@ import { createMainWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
-import { isCallActive } from './voice/callState';
+import { isCallActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initUpdater } from './updater';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration } from './migration';
@@ -493,6 +493,18 @@ async function bootstrap(): Promise<void> {
       mainWindow.webContents.send(IpcChannel.lan.state, latestLanState);
     }
   });
+
+  // Voice calls (260705): a call cannot survive its renderer — the mic and
+  // audio playback live there. Sweep the call flags on any main-frame
+  // navigation (incl. reload/HMR) and on renderer death, telling any live bot
+  // to resume normal in-game chat; without this a mid-call reload leaves the
+  // bot muted in minecraft chat forever.
+  const sweepVoiceCalls = (): void => {
+    for (const id of activeCallIds()) supervisor?.setVoiceCall(id, false);
+    clearAllCalls();
+  };
+  mainWindow.webContents.on('did-navigate', sweepVoiceCalls);
+  mainWindow.webContents.on('render-process-gone', sweepVoiceCalls);
 
   // 3. LAN watcher (D-21 — single instance for the whole app session)
   lanWatcherHandle = watchLan({

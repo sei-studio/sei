@@ -21,3 +21,18 @@ export function setCallActive(characterId: string, active: boolean): void {
 export function isCallActive(characterId: string): boolean {
   return activeCalls.has(characterId);
 }
+
+/** Ids with an open call — used by the renderer-death sweep in index.ts. */
+export function activeCallIds(): string[] {
+  return [...activeCalls];
+}
+
+/**
+ * Drop every open call. A call cannot survive its renderer (the mic + audio
+ * live there), so index.ts calls this when the renderer navigates/reloads or
+ * its process dies — otherwise a mid-call reload leaves the flag stuck and an
+ * in-game bot mutes its minecraft chat forever.
+ */
+export function clearAllCalls(): void {
+  activeCalls.clear();
+}
