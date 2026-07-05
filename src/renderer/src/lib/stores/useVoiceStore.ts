@@ -42,6 +42,9 @@ interface VoiceState {
   lastSpoken: string;
   /** User-facing error copy when status === 'error'. */
   error: string | null;
+  /** While connecting: model-download percentage ('43') or null (no download
+   * in flight — cached model, or still acquiring the mic). */
+  connectingDetail: string | null;
 
   startCall: (characterId: string) => Promise<void>;
   endCall: () => void;
@@ -98,6 +101,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     lastHeard: '',
     lastSpoken: '',
     error: null,
+    connectingDetail: null,
 
     startCall: async (characterId) => {
       const prev = get();
@@ -112,6 +116,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastHeard: '',
         lastSpoken: '',
         error: null,
+        connectingDetail: null,
       });
 
       // Tell main immediately so an in-game bot goes quiet in chat and starts
@@ -126,7 +131,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
 
       try {
         dictation = await createDictation({
-          onStatus: () => {},
+          // First-run model download progress → "Preparing voice… N%" so the
+          // ~40MB fetch never reads as a hang (260705 field report).
+          onStatus: (status, detail) => {
+            if (session !== mySession) return;
+            set({ connectingDetail: status === 'loading-model' && detail ? detail : null });
+          },
           onUtterance: (text) => {
             if (session !== mySession) return;
             const s = get();
@@ -142,7 +152,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         queue?.stop();
         queue = null;
         void sei.voiceCallSetActive({ characterId, active: false }).catch(() => {});
-        set({ status: 'error', error: friendlyError(err) });
+        set({ status: 'error', error: friendlyError(err), connectingDetail: null });
         return;
       }
 
@@ -153,7 +163,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         return;
       }
       dictation.setMuted(useUiStore.getState().callMuted);
-      set({ status: 'live' });
+      set({ status: 'live', connectingDetail: null });
     },
 
     endCall: () => {
@@ -173,6 +183,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastHeard: '',
         lastSpoken: '',
         error: null,
+        connectingDetail: null,
       });
       // Keep the legacy UI-store call state in sync (MinimizedCall/mute).
       useUiStore.getState().endCall();

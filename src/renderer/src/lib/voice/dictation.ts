@@ -20,6 +20,10 @@
 
 export type DictationStatus = 'loading-model' | 'ready' | 'error';
 
+/** First-run model download is ~40MB; a stalled CDN must surface as an error
+ * instead of an eternal "Connecting…" (260705 field report). */
+const MODEL_LOAD_TIMEOUT_MS = 180_000;
+
 export interface Dictation {
   /** Renderer-side mute: discard mic input without stopping the stream. */
   setMuted(muted: boolean): void;
@@ -52,11 +56,23 @@ export async function createDictation(opts: {
   let nextId = 1;
   const inflight = new Map<number, (text: string) => void>();
   const ready = new Promise<void>((resolve, reject) => {
+    const watchdog = setTimeout(
+      () => reject(new Error('voice recognition took too long to download — check your connection and retry')),
+      MODEL_LOAD_TIMEOUT_MS,
+    );
     worker.onmessage = (e: MessageEvent) => {
-      const msg = e.data as { type: string; id?: number; text?: string; message?: string };
-      if (msg.type === 'ready') resolve();
-      else if (msg.type === 'init-error') reject(new Error(msg.message ?? 'model load failed'));
-      else if (msg.type === 'transcript' && typeof msg.id === 'number') {
+      const msg = e.data as { type: string; id?: number; text?: string; message?: string; pct?: number };
+      if (msg.type === 'ready') {
+        clearTimeout(watchdog);
+        resolve();
+      } else if (msg.type === 'init-error') {
+        clearTimeout(watchdog);
+        reject(new Error(msg.message ?? 'model load failed'));
+      } else if (msg.type === 'progress' && typeof msg.pct === 'number') {
+        // First-run download progress — surfaced so "Connecting…" shows a
+        // moving percentage instead of looking hung for ~40MB.
+        opts.onStatus('loading-model', `${Math.min(99, msg.pct)}`);
+      } else if (msg.type === 'transcript' && typeof msg.id === 'number') {
         inflight.get(msg.id)?.(msg.text ?? '');
         inflight.delete(msg.id);
       }

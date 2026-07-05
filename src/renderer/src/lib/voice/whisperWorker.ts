@@ -8,7 +8,8 @@
  * browser Cache API, so later calls start offline-fast.
  *
  * Protocol (postMessage):
- *   in:  { type: 'init' }                         → { type: 'ready' } | { type: 'init-error', message }
+ *   in:  { type: 'init' }                         → { type: 'progress', pct }* then
+ *                                                   { type: 'ready' } | { type: 'init-error', message }
  *   in:  { type: 'transcribe', id, audio }        → { type: 'transcript', id, text }
  *        (audio: Float32Array, 16kHz mono)          errors → { type: 'transcript', id, text: '' }
  */
@@ -22,6 +23,23 @@ type Asr = (audio: Float32Array) => Promise<{ text: string } | Array<{ text: str
 let asr: Asr | null = null;
 
 async function init(): Promise<void> {
+  // Aggregate download progress across the model's files so the UI can show a
+  // real percentage during the ~40MB first-run fetch (after that the browser
+  // cache makes this instant). transformers.js fires progress_callback per
+  // file with { status: 'progress', file, loaded, total }.
+  const files = new Map<string, { loaded: number; total: number }>();
+  const reportProgress = (info: { status?: string; file?: string; loaded?: number; total?: number }): void => {
+    if (info.status !== 'progress' || !info.file || !info.total) return;
+    files.set(info.file, { loaded: info.loaded ?? 0, total: info.total });
+    let loaded = 0;
+    let total = 0;
+    for (const f of files.values()) {
+      loaded += f.loaded;
+      total += f.total;
+    }
+    if (total > 0) self.postMessage({ type: 'progress', pct: Math.round((100 * loaded) / total) });
+  };
+
   // WASM on purpose, NOT webgpu: verified live (260705, Electron 37) that
   // webgpu + q8 loads and runs but emits garbage tokens (the known
   // transformers.js webgpu quantization corruption), while wasm + q8
@@ -30,6 +48,7 @@ async function init(): Promise<void> {
   asr = (await pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
     dtype: 'q8',
+    progress_callback: reportProgress,
   })) as unknown as Asr;
 }
 

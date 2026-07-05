@@ -40,6 +40,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const lastHeard = useVoiceStore((s) => s.lastHeard);
   const lastSpoken = useVoiceStore((s) => s.lastSpoken);
   const error = useVoiceStore((s) => s.error);
+  const connectingDetail = useVoiceStore((s) => s.connectingDetail);
   const callCharacterId = useVoiceStore((s) => s.callCharacterId);
   const startCall = useVoiceStore((s) => s.startCall);
   const endCall = useVoiceStore((s) => s.endCall);
@@ -63,7 +64,9 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
     status === 'error'
       ? error ?? 'Call failed'
       : status === 'connecting'
-        ? 'Connecting…'
+        ? connectingDetail
+          ? `Preparing voice recognition… ${connectingDetail}%`
+          : 'Connecting…'
         : speaking
           ? 'Speaking'
           : muted
