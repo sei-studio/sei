@@ -773,8 +773,6 @@ export interface RendererApi {
   chatHistory(characterId: string): Promise<ChatMessage[]>;
   /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game). */
   chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef }): Promise<ChatSendResult>;
-  /** Clear a character's chat transcript + rolling summary bridge. */
-  chatClear(characterId: string): Promise<void>;
   /**
    * Subscribe to chat messages pushed OUTSIDE a send() round-trip: the live
    * game bot replying to a routed message, and "joined/left your world" system
@@ -1293,7 +1291,6 @@ export const IpcChannel = {
   chat: {
     history: 'chat:history',
     send: 'chat:send',
-    clear: 'chat:clear',
     /** Push (main → renderer): a companion/system message authored outside a
      * send() round-trip — the live game bot replying to a routed message, or a
      * deterministic "joined/left your world" system line. */

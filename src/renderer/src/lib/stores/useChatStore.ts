@@ -5,8 +5,8 @@
  * character that drives the typing indicator while a reply is in flight, and a
  * `loaded` flag so history is fetched at most once per character.
  *
- * The persisted transcript lives in main (chat:history / chat:send / chat:clear
- * over `window.sei`); this store is the renderer-side cache + optimistic-append
+ * The persisted transcript lives in main (chat:history / chat:send over
+ * `window.sei`); this store is the renderer-side cache + optimistic-append
  * layer. `send()` appends the user message immediately (temp id), flips
  * `awaiting` on, awaits the companion reply, then appends it. Errors degrade to
  * an apologetic companion message so the UI never gets stuck "typing".
@@ -33,8 +33,13 @@ interface ChatState {
    * it, and return the full ChatSendResult so the screen can act on `.launch`.
    */
   send: (characterId: string, text: string, replyTo?: ChatReplyRef) => Promise<ChatSendResult | null>;
-  /** Clear the persisted transcript + empty the local array. */
-  clear: (characterId: string) => Promise<void>;
+  /**
+   * 260705: drop the local cache for a character so the next load() refetches.
+   * Renderer-side only (no IPC) — called after Reset memory, whose memory-dir
+   * wipe deletes the persisted transcript in main; without this eviction the
+   * loaded-once guard would keep showing the wiped conversation from cache.
+   */
+  evictLocal: (characterId: string) => void;
 }
 
 /**
@@ -252,9 +257,12 @@ export const useChatStore = create<ChatState>((set, get) => {
     }
   },
 
-  clear: async (characterId) => {
-    await sei.chatClear(characterId);
-    set((s) => ({ messages: { ...s.messages, [characterId]: [] } }));
+  evictLocal: (characterId) => {
+    set((s) => ({
+      messages: { ...s.messages, [characterId]: [] },
+      awaiting: { ...s.awaiting, [characterId]: false },
+      loaded: { ...s.loaded, [characterId]: false },
+    }));
   },
   };
 });

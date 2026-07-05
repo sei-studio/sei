@@ -19,6 +19,7 @@
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useChatStore } from '../lib/stores/useChatStore';
 import { useWizardStore } from '../lib/stores/useWizardStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
@@ -430,6 +431,8 @@ export function SettingsScreen(): React.ReactElement {
       const c = snapshot[i];
       try {
         await sei.resetMemory(c.id);
+        // Chat transcript lives in the wiped memory dir — evict the cache.
+        useChatStore.getState().evictLocal(c.id);
         await refreshCharacter(c.id);
       } catch (err) {
         if (firstError === null) {

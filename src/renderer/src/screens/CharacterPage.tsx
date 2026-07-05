@@ -17,6 +17,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { attemptSummon } from '../lib/summonFlow';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
@@ -402,6 +403,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     if (!character) return;
     try {
       await sei.resetMemory(character.id);
+      // The memory-dir wipe also deleted the chat transcript — evict the
+      // renderer cache so the chat screen refetches (empty) instead of
+      // showing the wiped conversation from the loaded-once cache.
+      useChatStore.getState().evictLocal(character.id);
       await refreshCharacter(character.id);
     } catch (err) {
       console.error('[CharacterPage] resetMemory failed', err);
