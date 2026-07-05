@@ -121,25 +121,28 @@ export async function getCharacter(id: string): Promise<Character | null> {
 
 export async function saveCharacter(character: Character): Promise<void> {
   await saveCharacterRaw(character);
+  enqueueCloudMirror(character);
+}
 
-  // Phase 11 D-18 — Local write completed; mirror to cloud via the sync queue.
-  // Fire-and-forget: cloud failure does NOT block GUI. Defaults (D-22) never
-  // upload — cloudCharacterClient throws CLOUD_SYNC_REFUSED_DEFAULT as a
-  // belt-and-suspenders guard, but skipping the enqueue here avoids needless
-  // queue churn for the sui/lyra/clawd bundle.
-  if (!character.is_default) {
-    void (async () => {
-      try {
-        const { enqueueUpsert, processNext } = await import('./cloud/syncQueue');
-        await enqueueUpsert(character.id);
-        // Drain attempt; gated on isCloudWriteAllowed inside processNext so
-        // signed-out users just leave the op pending in the queue.
-        void processNext();
-      } catch (err) {
-        console.warn(`[sei] cloud mirror enqueue failed for ${character.id}: ${(err as Error).message}`);
-      }
-    })();
-  }
+// Phase 11 D-18 — Local write completed; mirror to cloud via the sync queue.
+// Fire-and-forget: cloud failure does NOT block GUI. Defaults (D-22) never
+// upload — cloudCharacterClient throws CLOUD_SYNC_REFUSED_DEFAULT as a
+// belt-and-suspenders guard, but skipping the enqueue here avoids needless
+// queue churn for the sui/lyra/clawd bundle. (260705: extracted from
+// saveCharacter so patchCharacter mirrors identically.)
+function enqueueCloudMirror(character: Character): void {
+  if (character.is_default) return;
+  void (async () => {
+    try {
+      const { enqueueUpsert, processNext } = await import('./cloud/syncQueue');
+      await enqueueUpsert(character.id);
+      // Drain attempt; gated on isCloudWriteAllowed inside processNext so
+      // signed-out users just leave the op pending in the queue.
+      void processNext();
+    } catch (err) {
+      console.warn(`[sei] cloud mirror enqueue failed for ${character.id}: ${(err as Error).message}`);
+    }
+  })();
 }
 
 /**
@@ -165,7 +168,7 @@ export async function saveCharacterRaw(character: Character): Promise<void> {
   await mkdir(paths.charactersDir(), { recursive: true });
 
   await withFileLock(target, async () => {
-    await atomicWrite(target, JSON.stringify(validated, null, 2) + '\n');
+    await writeCharacterFileUnlocked(validated);
   });
 
   // Pre-create the per-character memory directory so the bot's atomic-write
@@ -180,6 +183,51 @@ export async function saveCharacterRaw(character: Character): Promise<void> {
     idx.order.push(validated.id);
     await writeIndex(idx);
   }
+}
+
+// 260705: unlocked write core shared by saveCharacterRaw and patchCharacter —
+// one serialization site (2-space indent + trailing newline) so the two paths
+// can never drift in on-disk format. Callers MUST already hold
+// withFileLock(characterPath(id)); withFileLock does not re-enter, so nesting
+// it here would deadlock patchCharacter against its own lock.
+async function writeCharacterFileUnlocked(validated: Character): Promise<void> {
+  await atomicWrite(paths.characterPath(validated.id), JSON.stringify(validated, null, 2) + '\n');
+}
+
+/**
+ * 260705: the standard way to update a subset of an existing character's
+ * fields — prefer it over hand-rolled get→spread→save at any new call site.
+ * Invariant it encodes: NEVER spread a stale snapshot into
+ * saveCharacter — a snapshot taken before an await (LLM round-trip, bot
+ * session) silently reverts any edit the user saved in between, and the
+ * revert then rides the cloud mirror. Here the file lock spans the WHOLE
+ * read-modify-write (saveCharacter's lock covers only the write), so
+ * concurrent patches serialize instead of losing updates.
+ *
+ * An updater callback rather than a Partial merge so arithmetic patches
+ * (playtime accumulation) compose the same way as timestamp stamps.
+ *
+ * Returns the persisted Character, or null (no write) when the character is
+ * missing — e.g. the patch raced a delete.
+ */
+export async function patchCharacter(
+  id: string,
+  updater: (c: Character) => Character,
+): Promise<Character | null> {
+  const patched = await withFileLock(paths.characterPath(id), async () => {
+    const current = await getCharacter(id);
+    if (!current) return null;
+    // Same Zod gate as saveCharacterRaw — an updater cannot smuggle an
+    // invalid shape onto disk.
+    const validated = CharacterSchema.parse(updater(current));
+    await writeCharacterFileUnlocked(validated);
+    return validated;
+  });
+  if (!patched) return null;
+  // An existing character already has its memory dir and index entry (created
+  // by the original saveCharacter), so only the cloud mirror follows the write.
+  enqueueCloudMirror(patched);
+  return patched;
 }
 
 /**
@@ -352,13 +400,10 @@ export async function resetMemoryForCharacter(id: string): Promise<void> {
   await rm(paths.memoryDir(id), { recursive: true, force: true });
   await mkdir(paths.memoryDir(id), { recursive: true });
   // ui-A9: reset launch + playtime stats. If the character JSON is missing
-  // (race with a delete), the read returns null and we skip the write —
+  // (race with a delete), patchCharacter returns null without writing —
   // there's nothing left to mutate.
   try {
-    const prior = await getCharacter(id);
-    if (prior) {
-      await saveCharacter({ ...prior, last_launched: null, playtime_ms: 0 });
-    }
+    await patchCharacter(id, (c) => ({ ...c, last_launched: null, playtime_ms: 0 }));
   } catch (err) {
     logger.warn(`reset stats failed for ${id}: ${(err as Error).message}`);
   }

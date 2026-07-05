@@ -14,7 +14,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, ChatSendResult, LanState } from '../../shared/ipc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
-import { getCharacter, saveCharacter } from '../characterStore';
+import { getCharacter, patchCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
 import { buildSystemBlocks, LAUNCH_TOOL, QUIT_TOOL } from './chatPrompts';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
@@ -366,13 +366,12 @@ export async function sendChatMessage(
     // #6 — stamp last_chatted on a successful reply so a plain chat counts as a
     // "last interaction" for the card date + ordering (device-local, like
     // last_launched; the cloud upsert omits it). Best-effort — a persistence
-    // hiccup must not fail the chat turn. Re-read before stamping (same as the
-    // last_launched stamp in botSupervisor): `character` was snapshotted before
-    // the LLM round-trip, and spreading that stale copy would silently revert
-    // any edit the player saved while the reply was generating.
+    // hiccup must not fail the chat turn. 260705: patchCharacter, never a spread
+    // of the turn-opening `character` snapshot — it predates the LLM round-trip,
+    // and spreading that stale copy would silently revert any edit the player
+    // saved while the reply was generating.
     try {
-      const fresh = await getCharacter(args.characterId);
-      if (fresh) await saveCharacter({ ...fresh, last_chatted: new Date().toISOString() });
+      await patchCharacter(args.characterId, (c) => ({ ...c, last_chatted: new Date().toISOString() }));
     } catch (err) {
       console.warn(`[sei] failed to stamp last_chatted for ${args.characterId}: ${(err as Error).message}`);
     }

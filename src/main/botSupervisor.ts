@@ -30,7 +30,7 @@ import type {
   VisionCapability,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
-import { getCharacter, saveCharacter } from './characterStore';
+import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
 import { buildLaunchContinuity } from './chat/continuity';
 import { loadConfig as loadUserConfig, saveConfig as saveUserConfig } from './configStore'; // UserConfig for bot init + daily-limit gate
@@ -685,8 +685,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // still show '—' until they reach summon-ready at least once.
         void (async () => {
           try {
-            const c = await getCharacter(characterId);
-            if (c) await saveCharacter({ ...c, last_launched: new Date().toISOString() });
+            await patchCharacter(characterId, (c) => ({ ...c, last_launched: new Date().toISOString() }));
           } catch (err) {
             logger.warn(`failed to stamp last_launched for ${characterId}: ${(err as Error).message}`);
           }
@@ -884,13 +883,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         sessionMs > 0
           ? (async () => {
               try {
-                const c = await getCharacter(characterId);
-                if (c) {
-                  await saveCharacter({
-                    ...c,
-                    playtime_ms: (c.playtime_ms ?? 0) + sessionMs,
-                  });
-                }
+                await patchCharacter(characterId, (c) => ({
+                  ...c,
+                  playtime_ms: (c.playtime_ms ?? 0) + sessionMs,
+                }));
                 // Also fold into the profile-wide cumulative total so it
                 // survives this character being deleted later (the deleted
                 // character's time stays counted). Separate from the per-
