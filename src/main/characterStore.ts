@@ -397,6 +397,23 @@ export async function checkCreateQuota(): Promise<{
  * Caller (main/ipc.ts) gates against resetting an actively summoned bot.
  */
 export async function resetMemoryForCharacter(id: string): Promise<void> {
+  // 260705: a blank slate must stay blank. The memory dir also holds the
+  // in-app chat transcript (chat.jsonl) and rolling summary (bridge.json), and
+  // two in-flight LLM calls could repopulate it AFTER the rm:
+  //   - an in-flight chat turn would append its reply to chat.jsonl — abort it
+  //     (the turn throws the CHAT_ABORTED interrupt sentinel, never persists);
+  //   - an in-flight summary fold (up to 20s in the summarizer, fired by the
+  //     chat surface regardless of whether a bot is summoned — the caller's
+  //     isActive gate does NOT cover it) would rewrite bridge.json —
+  //     clearContinuity bumps the clear epoch so the fold drops its write.
+  // Dynamic imports: chatService statically imports this module
+  // (patchCharacter), so a static import back would be a cycle.
+  const [{ cancelInflightTurn }, { clearContinuity }] = await Promise.all([
+    import('./chat/chatService'),
+    import('./chat/continuity'),
+  ]);
+  cancelInflightTurn(id);
+  await clearContinuity(id);
   await rm(paths.memoryDir(id), { recursive: true, force: true });
   await mkdir(paths.memoryDir(id), { recursive: true });
   // ui-A9: reset launch + playtime stats. If the character JSON is missing

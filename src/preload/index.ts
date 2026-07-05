@@ -77,7 +77,6 @@ const api: RendererApi = {
   // In-app chat (Phase 18/19)
   chatHistory: (characterId) => ipcRenderer.invoke(IpcChannel.chat.history, characterId),
   chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),
-  chatClear: (characterId) => ipcRenderer.invoke(IpcChannel.chat.clear, characterId),
   onChatMessage(cb: (push: ChatMessagePush) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: ChatMessagePush) => cb(push);
     ipcRenderer.on(IpcChannel.chat.message, handler);

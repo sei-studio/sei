@@ -771,14 +771,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     );
   });
 
-  ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {
-    const id = IdSchema.parse(idArg);
-    const { clear } = await import('./chat/chatStore');
-    const { clearContinuity } = await import('./chat/continuity');
-    // Clear the transcript AND the derived rolling summary/watermark, so a
-    // cleared conversation cannot re-seed a stale summary into a later summon.
-    await Promise.all([clear(id), clearContinuity(id)]);
-  });
+  // 260705: chat:clear removed — no UI ever invoked it, and the product wipe
+  // surface is Reset memory (chars:reset-memory), which clears the transcript
+  // + summary as part of the memory-dir wipe (see resetMemoryForCharacter).
 
   // ── User profile (Phase 19) ───────────────────────────────────────────────
   ipcMain.handle(IpcChannel.user.getProfile, async () => {

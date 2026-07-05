@@ -26,6 +26,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { useChatStore } from '../lib/stores/useChatStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from './Button';
 import { PercentBar } from './PercentBar';
@@ -284,6 +285,8 @@ export function EditCharacterModal({
     setError(null);
     try {
       await sei.resetMemory(character.id);
+      // Chat transcript lives in the wiped memory dir — evict the cache.
+      useChatStore.getState().evictLocal(character.id);
       setResetDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset memory.');

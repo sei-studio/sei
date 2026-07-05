@@ -36,7 +36,7 @@ vi.mock('../configStore', () => ({
 }));
 
 import type { ChatDeps } from './chatService';
-import { sendChatMessage } from './chatService';
+import { sendChatMessage, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
 let dir: string;
@@ -142,5 +142,31 @@ describe('sendChatMessage — last_chatted stamp', () => {
     };
     expect(saved.persona.expanded).toBe('EDITED WHILE REPLYING');
     expect(saved.last_chatted).toBeTruthy();
+  });
+});
+
+describe('cancelInflightTurn (260705 — reset-memory interrupt)', () => {
+  it('aborts the in-flight turn: CHAT_ABORTED surfaces, nothing persists after the wipe', async () => {
+    // Park the LLM call on a deferred so the cancel can land mid-turn.
+    let release!: (v: { content: Array<{ type: string; text: string }> }) => void;
+    createSpy.mockImplementationOnce(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+
+    const turn = sendChatMessage({ characterId: CHAR, text: 'hi' }, deps());
+    const settled = expect(turn).rejects.toThrow(CHAT_ABORTED);
+    await vi.waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
+
+    // Reset memory fires the external interrupt, then the LLM resolves anyway —
+    // the reply must be dropped, not appended to the freshly wiped transcript.
+    cancelInflightTurn(CHAR);
+    release({ content: [{ type: 'text', text: 'too late — the wipe already ran' }] });
+    await settled;
+
+    // The success-path tail never ran: no reply persisted, no last_chatted stamp.
+    const { readAll } = await import('./chatStore');
+    const rows = await readAll(CHAR);
+    expect(rows.filter((m) => m.role === 'companion')).toHaveLength(0);
+    expect(patchCharacterSpy).not.toHaveBeenCalled();
   });
 });
