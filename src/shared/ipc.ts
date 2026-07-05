@@ -98,6 +98,16 @@ export type LanState =
   | { kind: 'unavailable' };
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
+/**
+ * 260705: max characters per outgoing chat message — single source of truth for
+ * the chat:send Zod gate (main) AND the composer's maxLength (renderer). The two
+ * MUST agree: an over-limit paste passes the composer, renders an optimistic
+ * bubble, then dies at the IPC gate pre-persist — the user sees the retryable
+ * "try again" failure copy for a rejection that no retry can fix, and the
+ * bubble vanishes on reload.
+ */
+export const CHAT_TEXT_MAX = 4000;
+
 /** A quoted-reply reference (the message this one is replying to). */
 export interface ChatReplyRef {
   /** Role of the quoted message's author. */

@@ -115,12 +115,25 @@ export async function readSummary(id: string): Promise<string> {
 }
 
 /**
+ * 260705: per-character clear generation — supersede guard for the fold's LLM
+ * gap. foldIntoSummary snapshots the transcript, then spends up to
+ * SUMMARY_TIMEOUT_MS in the summarizer; a chat:clear landing inside that gap
+ * deletes bridge.json, and an unconditional writeBridge afterwards would
+ * RESURRECT a summary of the wiped conversation. Same shape as chatService's
+ * inflight controller: capture before the call, compare after, drop the write
+ * when superseded.
+ */
+const clearEpochs = new Map<string, number>();
+const clearEpoch = (id: string): number => clearEpochs.get(id) ?? 0;
+
+/**
  * Drop the rolling summary + watermark for a character. Called from chat:clear
  * alongside chatStore.clear so wiping the transcript also wipes the derived
  * summary — otherwise a later summon would re-seed a stale summary of a
  * conversation the player already cleared.
  */
 export async function clearContinuity(id: string): Promise<void> {
+  clearEpochs.set(id, clearEpoch(id) + 1);
   await rm(bridgePath(id), { force: true });
 }
 
@@ -128,23 +141,29 @@ const isCounted = (m: ChatMessage): boolean => m.role === 'user' || m.role === '
 
 /**
  * Shared read core: transcript + bridge + clamped watermark. PURE — never
- * folds, never calls an LLM. The watermark is clamped so an externally
- * shrunken transcript (manual edits) can never produce a negative window.
+ * folds, never calls an LLM. A bridge whose watermark outran the transcript
+ * (shrunken transcript) is treated as reset — see the 260705 comment below.
  */
 async function readWindow(
   characterId: string,
 ): Promise<{ bridge: BridgeState; raw: ChatMessage[]; watermark: number }> {
   const raw = await readAll(characterId);
   const counted = raw.filter(isCounted);
-  const bridge = await readBridge(characterId);
-  // Upper-clamp to summarizedCount (an externally shrunken transcript can't yield
-  // a negative window) AND lower-clamp to counted.length - MAX_UNSUMMARIZED so a
-  // persistently-failing fold degrades to dropping the oldest messages rather than
-  // growing context until every turn 400s (see MAX_UNSUMMARIZED).
-  const watermark = Math.max(
-    Math.min(bridge.summarizedCount, counted.length),
-    counted.length - MAX_UNSUMMARIZED,
-  );
+  let bridge = await readBridge(characterId);
+  // 260705: summarizedCount ABOVE the live transcript means the transcript shrank
+  // underneath the bridge (a clear racing a fold, manual edits) — the summary
+  // describes messages that no longer exist. min() would pin the watermark at
+  // counted.length: ZERO history, every send 400s ("at least one message
+  // required") until the fresh conversation outgrows the stale count. Treat it
+  // as a RESET — a shrunken transcript degrades to "no summary", never "no
+  // history".
+  if (bridge.summarizedCount >= counted.length && bridge.summarizedCount > 0) {
+    bridge = { summary: '', summarizedCount: 0 };
+  }
+  // Lower-clamp to counted.length - MAX_UNSUMMARIZED so a persistently-failing
+  // fold degrades to dropping the oldest messages rather than growing context
+  // until every turn 400s (see MAX_UNSUMMARIZED).
+  const watermark = Math.max(bridge.summarizedCount, counted.length - MAX_UNSUMMARIZED);
   return { bridge, raw, watermark };
 }
 
@@ -168,18 +187,24 @@ export async function foldIfDue(characterId: string, personaExpanded?: string): 
   if (foldInFlight.has(characterId)) return;
   foldInFlight.add(characterId);
   try {
+    // 260705: capture BEFORE the transcript read — a clear landing between
+    // this snapshot and the summarizer's return must invalidate the fold.
+    const epoch = clearEpoch(characterId);
     const raw = await readAll(characterId);
     const counted = raw.filter(isCounted);
     let bridge = await readBridge(characterId);
-    if (bridge.summarizedCount > counted.length) {
-      bridge = { ...bridge, summarizedCount: counted.length };
+    // Same stale-bridge reset as readWindow (shrunken transcript → the summary
+    // describes messages that no longer exist): degrade to "no summary" rather
+    // than folding fresh messages into a stale one.
+    if (bridge.summarizedCount >= counted.length && bridge.summarizedCount > 0) {
+      bridge = { summary: '', summarizedCount: 0 };
     }
     const unsummarized = counted.slice(bridge.summarizedCount);
     if (unsummarized.length < RECENT_WINDOW + FOLD_BATCH) return;
     const evicted = unsummarized
       .slice(0, unsummarized.length - RECENT_WINDOW)
       .map((m) => ({ role: m.role as 'user' | 'companion', text: m.text, ts: m.ts }));
-    await foldIntoSummary(characterId, bridge, evicted, personaExpanded);
+    await foldIntoSummary(characterId, bridge, evicted, epoch, personaExpanded);
   } finally {
     foldInFlight.delete(characterId);
   }
@@ -231,6 +256,9 @@ async function foldIntoSummary(
   id: string,
   bridge: BridgeState,
   newMsgs: Array<{ role: 'user' | 'companion'; text: string; ts?: number }>,
+  // 260705: the clear epoch foldIfDue captured BEFORE snapshotting the
+  // transcript; compared before writeBridge.
+  epoch: number,
   personaExpanded?: string,
 ): Promise<BridgeState> {
   try {
@@ -263,6 +291,12 @@ async function foldIntoSummary(
       .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : ''))
       .join('')
       .trim();
+    // clearContinuity ran while the summarizer was in flight: the snapshot this
+    // fold summarized was wiped, and writing would resurrect the deleted bridge.
+    if (clearEpoch(id) !== epoch) {
+      console.warn(`[sei] chat summary fold for ${id} superseded by clear — dropping`);
+      return bridge;
+    }
     const next: BridgeState = {
       summary: text || bridge.summary,
       summarizedCount: bridge.summarizedCount + newMsgs.length,
