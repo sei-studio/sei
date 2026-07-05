@@ -6,9 +6,10 @@
  *     the next user message. With launch + quit both offered, the model can
  *     call them in parallel ("say bye and log off, then hop back in") — an
  *     unanswered tool_use id makes the follow-up create() 400.
- *   - The last_chatted stamp re-reads the character before saving. The turn's
- *     opening snapshot is seconds stale by the time the reply lands; spreading
- *     it would silently revert an edit saved mid-reply (and sync the revert to
+ *   - The last_chatted stamp goes through patchCharacter (260705: fresh read
+ *     inside the store's lock), never the turn's opening snapshot — that
+ *     snapshot is seconds stale by the time the reply lands; spreading it
+ *     would silently revert an edit saved mid-reply (and sync the revert to
  *     the cloud). Mirrors the last_launched stamp in botSupervisor.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -17,10 +18,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _setUserDataOverride } from '../paths';
 
-const { createSpy, getCharacterSpy, saveCharacterSpy } = vi.hoisted(() => ({
+const { createSpy, getCharacterSpy, patchCharacterSpy } = vi.hoisted(() => ({
   createSpy: vi.fn(),
   getCharacterSpy: vi.fn(),
-  saveCharacterSpy: vi.fn(async (_character: unknown) => undefined),
+  patchCharacterSpy: vi.fn(),
 }));
 vi.mock('./sdk', () => ({
   CHAT_TIMEOUT_MS: 30_000,
@@ -28,7 +29,7 @@ vi.mock('./sdk', () => ({
 }));
 vi.mock('../characterStore', () => ({
   getCharacter: getCharacterSpy,
-  saveCharacter: saveCharacterSpy,
+  patchCharacter: patchCharacterSpy,
 }));
 vi.mock('../configStore', () => ({
   loadConfig: vi.fn(async () => ({ preferred_name: 'Player' })),
@@ -58,8 +59,17 @@ beforeEach(async () => {
   };
   // Every read returns the CURRENT character — like the store, not a snapshot.
   getCharacterSpy.mockImplementation(async () => structuredClone(character));
+  // patchCharacter fake mirrors the real contract: read the CURRENT character,
+  // apply the updater, PERSIST the result back to the store (so later reads
+  // see it), and hand it back (recorded in mock.results).
+  patchCharacterSpy.mockReset();
+  patchCharacterSpy.mockImplementation(
+    async (_id: string, updater: (c: typeof character) => typeof character) => {
+      character = updater(structuredClone(character));
+      return structuredClone(character);
+    },
+  );
   createSpy.mockReset();
-  saveCharacterSpy.mockClear();
 });
 afterEach(async () => {
   _setUserDataOverride(null);
@@ -125,8 +135,8 @@ describe('sendChatMessage — last_chatted stamp', () => {
 
     await sendChatMessage({ characterId: CHAR, text: 'hi' }, deps());
 
-    expect(saveCharacterSpy).toHaveBeenCalledTimes(1);
-    const saved = saveCharacterSpy.mock.calls[0][0] as {
+    expect(patchCharacterSpy).toHaveBeenCalledTimes(1);
+    const saved = (await patchCharacterSpy.mock.results[0].value) as {
       persona: { expanded: string };
       last_chatted?: string;
     };
