@@ -37,7 +37,7 @@ import {
   CopyIcon,
   ReplyIcon,
 } from '../components/icons';
-import type { ChatMessage, ChatReplyRef, UserProfile } from '@shared/ipc';
+import { CHAT_TEXT_MAX, type ChatMessage, type ChatReplyRef, type UserProfile } from '@shared/ipc';
 import type { Character } from '@shared/characterSchema';
 import styles from './ChatScreen.module.css';
 
@@ -393,6 +393,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={`Message ${companionName}…`}
+            // 260705: mirror the chat:send Zod cap — an over-limit paste would
+            // otherwise be rejected pre-persist and show unfixable "try again" copy.
+            maxLength={CHAT_TEXT_MAX}
             rows={1}
             aria-label={`Message ${companionName}`}
           />

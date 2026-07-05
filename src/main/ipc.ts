@@ -11,6 +11,7 @@ import { ipcMain, BrowserWindow, app } from 'electron';
 import { z } from 'zod';
 import {
   IpcChannel,
+  CHAT_TEXT_MAX,
   ProxyConfigureArgsSchema,
   CreditsCheckoutArgsSchema,
   RecordConsentArgsSchema,
@@ -740,7 +741,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const args = z
       .object({
         characterId: IdSchema,
-        text: z.string().min(1).max(4000),
+        text: z.string().min(1).max(CHAT_TEXT_MAX),
         // Quoted-reply reference (chat #1) — was previously dropped here, so the
         // companion never saw what the user was replying to.
         replyTo: z
