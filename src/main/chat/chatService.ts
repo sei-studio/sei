@@ -61,6 +61,18 @@ function isAbortError(err: unknown): boolean {
   return e?.name === 'AbortError' || /abort/i.test(e?.message ?? '');
 }
 
+/**
+ * 260705: external interrupt for a character's in-flight chat turn.
+ * resetMemoryForCharacter calls this before wiping the memory dir — a reply
+ * still in the LLM would otherwise append to chat.jsonl AFTER the wipe,
+ * repopulating the "blank slate" with one orphan companion message. Rides the
+ * existing supersede path: the aborted turn throws the CHAT_ABORTED sentinel
+ * (renderer treats it as an interrupt, not a failure) and never persists.
+ */
+export function cancelInflightTurn(characterId: string): void {
+  inflight.get(characterId)?.abort();
+}
+
 async function readMemoryTail(characterId: string): Promise<string> {
   try {
     const raw = await readFile(path.join(paths.memoryDir(characterId), 'MEMORY.md'), 'utf8');
