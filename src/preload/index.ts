@@ -89,6 +89,8 @@ const api: RendererApi = {
   voiceTts: (args) => ipcRenderer.invoke(IpcChannel.voice.tts, args),
   voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
   voiceGreet: (characterId) => ipcRenderer.invoke(IpcChannel.voice.greet, characterId),
+  voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
+  voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   onVoiceCallEnded(cb: (push: { characterId: string }) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: { characterId: string }) => cb(push);
     ipcRenderer.on(IpcChannel.voice.callEnded, handler);

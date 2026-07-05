@@ -116,6 +116,14 @@ export interface ChatMessage {
   /** Set when this message is a reply that quotes an earlier one (Discord-style). */
   replyTo?: ChatReplyRef;
   /**
+   * Voice calls (260705): true when this message was part of a live voice call
+   * (a transcribed utterance or a spoken companion line). Persisted — the
+   * model still reads it as conversation history — but HIDDEN in the chat UI:
+   * the transcript shows only the "You and X called for Y" row, not a wall of
+   * caption spam.
+   */
+  voice?: boolean;
+  /**
    * Set on a `system` row that records a finished play session, so the UI can
    * render it with the game icon (Discord-style "You and X played Minecraft for
    * Y"). `text` carries the human-readable line; `event` carries the structured
@@ -154,6 +162,19 @@ export interface ChatSendResult {
    * then ends the call once the TTS queue drains.
    */
   endCall?: boolean;
+}
+
+/** One curated-pool voice, renderer-safe (creation-flow voice picker, 260705). */
+export interface VoiceInfo {
+  /** ElevenLabs voice id (what gets persisted as metadata.voiceId). */
+  id: string;
+  /** Human display name ("Sarah"). */
+  label: string;
+  gender: 'male' | 'female' | 'neutral' | string;
+  age: 'young' | 'adult' | 'elder' | string;
+  tags: string[];
+  /** Few-word sound description ("upbeat and cheery, young British"). */
+  vibe: string;
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
@@ -872,6 +893,10 @@ export interface RendererApi {
    * finishes speaking whatever is queued (the goodbye), then ends the call.
    */
   onVoiceCallEnded(cb: (push: { characterId: string }) => void): Unsubscribe;
+  /** The curated voice pool (labels + vibe blurbs) for the creation picker. */
+  voiceListVoices(): Promise<VoiceInfo[]>;
+  /** Speak the canned preview line in an arbitrary pool voice (picker). */
+  voicePreview(args: { voiceId: string }): Promise<ArrayBuffer>;
 
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
@@ -1431,6 +1456,10 @@ export const IpcChannel = {
     greet: 'voice:greet',
     /** Push (main → renderer): companion hung up via end_call() ({characterId}). */
     callEnded: 'voice:call-ended',
+    /** Invoke: curated voice pool for the creation picker → VoiceInfo[]. */
+    list: 'voice:list',
+    /** Invoke: preview an arbitrary pool voice ({voiceId}) → ArrayBuffer. */
+    preview: 'voice:preview',
   },
   user: {
     getProfile: 'user:get-profile',

@@ -9,8 +9,10 @@
  *     runtime dial). This step commits the create + runs expansion.
  *  3. Card image (skippable).
  *  4. Skin (skippable).
- *  5. Visibility — yes/no, "share with other players?"
- *  6. Description (only if visibility=yes) — human-facing copy other players
+ *  5. Voice (260705) — Auto (runtime picks a fitting, roster-deduped voice) or
+ *     an explicit pick from the curated pool, with per-voice previews.
+ *  6. Visibility — yes/no, "share with other players?"
+ *  7. Description (only if visibility=yes) — human-facing copy other players
  *     will read on the World card.
  *
  * The character is persisted as SHARED=false at the end of step 2 (so the
@@ -32,13 +34,14 @@ import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { SkinEditor } from '../components/SkinEditor';
+import { VoicePicker } from '../components/VoicePicker';
 import { Button } from '../components/Button';
 import { PercentBar } from '../components/PercentBar';
 import { CreationLimitModal } from '../components/CreationLimitModal';
 import { PROACTIVENESS_LEVELS, PROACTIVENESS_DEFAULT } from '../lib/proactiveness';
 import type { Character } from '@shared/characterSchema';
 
-const STEPS = 7;
+const STEPS = 8;
 
 export function AddCharacterScreen(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
@@ -50,10 +53,10 @@ export function AddCharacterScreen(): React.ReactElement {
   // rather than letting them reach charsSetShared and hit the "Please sign in
   // and accept the Terms of Service before publishing" error.
   const signedIn = useAuthStore((s) => s.state.kind === 'signed_in');
-  // Signed-in: 7 steps (name → persona → proactiveness → image → skin →
-  // visibility → description). Signed-out: 5 steps (name → persona →
-  // proactiveness → image → skin), then save private.
-  const totalSteps = signedIn ? STEPS : 5;
+  // Signed-in: 8 steps (name → persona → proactiveness → image → skin → voice
+  // → visibility → description). Signed-out: 6 steps (name → persona →
+  // proactiveness → image → skin → voice), then save private.
+  const totalSteps = signedIn ? STEPS : 6;
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [personaSource, setPersonaSource] = useState('');
@@ -62,6 +65,9 @@ export function AddCharacterScreen(): React.ReactElement {
   // runtime dial. Defaults to Reactive.
   const [proactiveness, setProactiveness] = useState<number>(PROACTIVENESS_DEFAULT);
   const [portraitImage, setPortraitImage] = useState<string | null>(null);
+  // Voice (step 5): null = Auto — leave metadata.voiceId unset so the runtime
+  // assigns a deterministic, roster-deduped pick on first use.
+  const [voiceId, setVoiceId] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<'public' | 'private' | null>(null);
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -101,9 +107,9 @@ export function AddCharacterScreen(): React.ReactElement {
     if (step === 0) return name.trim() !== '';
     if (step === 1) return personaSource.trim() !== '';
     if (step === 2) return true; // proactiveness always has a value (default 1)
-    if (step === 5) return visibility !== null;
-    if (step === 6) return description.trim() !== '';
-    return true; // 3 & 4 always allow next (skippable)
+    if (step === 6) return visibility !== null;
+    if (step === 7) return description.trim() !== '';
+    return true; // 3, 4 & 5 always allow next (skippable / Auto default)
   };
 
   const persistCreate = async (): Promise<Character | null> => {
@@ -197,7 +203,13 @@ export function AddCharacterScreen(): React.ReactElement {
     try {
       const desc = description.trim() === '' ? null : description.trim();
       const latest = (await sei.getCharacter(created.id)) ?? created;
-      const next: Character = { ...latest, description: desc };
+      const next: Character = {
+        ...latest,
+        description: desc,
+        // Voice (step 5): an explicit pick pins metadata.voiceId; Auto leaves
+        // it unset for the deterministic runtime assignment.
+        metadata: { ...latest.metadata, ...(voiceId ? { voiceId } : {}) },
+      };
       const saved = await sei.saveCharacter(next, { skipExpansion: true });
       if (visibility === 'public') {
         await sei.charsSetShared({ id: saved.id, shared: true });
@@ -234,18 +246,14 @@ export function AddCharacterScreen(): React.ReactElement {
       return;
     }
     if (step === 4) {
-      // Signed-out users have no visibility/description steps — finish here,
-      // saving the character as private (item 6).
-      if (!signedIn) {
-        await commitFinal();
-        return;
-      }
+      // Everyone continues to the voice step (260705).
       setStep(5);
       return;
     }
     if (step === 5) {
-      if (visibility === 'private') {
-        // Skip description entirely — private chars have no requirement.
+      // Voice chosen (or Auto). Signed-out users have no visibility/
+      // description steps — finish here, saving the character as private.
+      if (!signedIn) {
         await commitFinal();
         return;
       }
@@ -253,6 +261,15 @@ export function AddCharacterScreen(): React.ReactElement {
       return;
     }
     if (step === 6) {
+      if (visibility === 'private') {
+        // Skip description entirely — private chars have no requirement.
+        await commitFinal();
+        return;
+      }
+      setStep(7);
+      return;
+    }
+    if (step === 7) {
       await commitFinal();
       return;
     }
@@ -265,12 +282,7 @@ export function AddCharacterScreen(): React.ReactElement {
       return;
     }
     if (step === 4) {
-      // Skip skin. Signed-out users finish here (save private); signed-in
-      // users continue to the visibility step (item 6).
-      if (!signedIn) {
-        await commitFinal();
-        return;
-      }
+      // Skip skin — continue to the voice step.
       setStep(5);
       return;
     }
@@ -426,7 +438,7 @@ export function AddCharacterScreen(): React.ReactElement {
         wide
         onBack={back}
         onNext={() => void next()}
-        nextLabel={!signedIn ? (submitting ? 'Saving…' : 'Finish') : 'Next'}
+        nextLabel="Next"
         secondaryLabel="Skip"
         onSecondary={() => void skip()}
       >
@@ -442,8 +454,28 @@ export function AddCharacterScreen(): React.ReactElement {
     );
   }
 
-  // ── Step 5 — Visibility (Public / Private) ──────────────────────────────
+  // ── Step 5 — Voice (260705) ─────────────────────────────────────────────
   if (step === 5) {
+    return (
+      <QuestionShell
+        eyebrow="How they sound on voice calls"
+        title="Pick their voice?"
+        hint="Auto picks one that fits their personality. Tap play to preview; you can change this later."
+        stepCount={totalSteps}
+        currentStep={step}
+        onBack={back}
+        onNext={() => void next()}
+        nextLabel={!signedIn ? (submitting ? 'Saving…' : 'Finish') : 'Next'}
+        nextDisabled={!validate()}
+      >
+        <VoicePicker value={voiceId} onChange={setVoiceId} />
+        {error ? <ErrorRow message={error} /> : null}
+      </QuestionShell>
+    );
+  }
+
+  // ── Step 6 — Visibility (Public / Private) ──────────────────────────────
+  if (step === 6) {
     return (
       <QuestionShell
         title="Visible to other players?"
@@ -477,7 +509,7 @@ export function AddCharacterScreen(): React.ReactElement {
     );
   }
 
-  // ── Step 6 — Description (only when public) ─────────────────────────────
+  // ── Step 7 — Description (only when public) ─────────────────────────────
   return (
     <QuestionShell
       eyebrow="For other players, NOT for the AI"

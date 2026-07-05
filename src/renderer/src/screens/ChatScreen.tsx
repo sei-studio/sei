@@ -83,6 +83,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   );
 
   const messages = useChatStore((s) => s.messages[characterId]) ?? EMPTY;
+  // Voice-call lines (transcribed utterances / spoken replies) are persisted
+  // for the model's continuity but hidden here — a call is represented by its
+  // "You and X called for Y" row alone. Filtered BEFORE the map so day
+  // separators and author-run detection key on the visible neighbors.
+  const visibleMessages = useMemo(() => messages.filter((m) => !m.voice), [messages]);
   const awaiting = useChatStore((s) => s.awaiting[characterId]) ?? false;
   const load = useChatStore((s) => s.load);
   const send = useChatStore((s) => s.send);
@@ -264,12 +269,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         className={awaiting ? `${styles.list} ${styles.listTyping}` : styles.list}
         ref={listRef}
       >
-        {messages.length === 0 && !awaiting ? (
+        {visibleMessages.length === 0 && !awaiting ? (
           <div className={styles.empty}>
             This is the beginning of your conversation with {companionName}. Say hi.
           </div>
         ) : null}
-        {messages.map((m, i) => {
+        {visibleMessages.map((m, i, arr) => {
           if (m.role === 'system') {
             if (m.event?.kind === 'play') {
               return (
@@ -299,7 +304,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               </div>
             );
           }
-          const prev = messages[i - 1];
+          const prev = arr[i - 1];
           const newDay = !prev || dayKey(prev.ts) !== dayKey(m.ts);
           // A day break — or a quoted reply — restarts an author run so the
           // avatar + header (and the quote reference above it) are shown.

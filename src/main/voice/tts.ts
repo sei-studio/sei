@@ -17,7 +17,7 @@
  */
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
-import { resolveVoiceId } from './voiceAssign';
+import { resolveVoiceId, isPoolVoiceId } from './voiceAssign';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 const ELEVENLABS_TTS_MODEL = 'eleven_flash_v2_5';
@@ -65,14 +65,8 @@ async function fetchAudio(url: string, headers: Record<string, string>, body: un
   return buf;
 }
 
-/** Synthesize `text` in `characterId`'s voice; resolves to audio/mpeg bytes. */
-export async function voiceTts(args: { characterId: string; text: string }): Promise<ArrayBuffer> {
-  const character = await getCharacter(args.characterId);
-  if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
-  const voiceId = await resolveVoiceId(character);
-  const text = args.text.trim().slice(0, MAX_TTS_CHARS);
-  if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
-
+/** Route a (text, voiceId) pair to the dev key or the proxy. */
+async function synthesize(text: string, voiceId: string): Promise<ArrayBuffer> {
   const devKey = process.env.SEI_TTS_DEV_KEY;
   if (devKey) {
     return fetchAudio(
@@ -81,7 +75,6 @@ export async function voiceTts(args: { characterId: string; text: string }): Pro
       { text, model_id: ELEVENLABS_TTS_MODEL },
     );
   }
-
   const jwt = await getJwtOrNull();
   if (!jwt) throw new Error('VOICE_NO_SESSION: sign in to use voice calls');
   return fetchAudio(
@@ -89,4 +82,27 @@ export async function voiceTts(args: { characterId: string; text: string }): Pro
     { Authorization: `Bearer ${jwt}` },
     { text, voice_id: voiceId },
   );
+}
+
+/** Synthesize `text` in `characterId`'s voice; resolves to audio/mpeg bytes. */
+export async function voiceTts(args: { characterId: string; text: string }): Promise<ArrayBuffer> {
+  const character = await getCharacter(args.characterId);
+  if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
+  const voiceId = await resolveVoiceId(character);
+  const text = args.text.trim().slice(0, MAX_TTS_CHARS);
+  if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
+  return synthesize(text, voiceId);
+}
+
+/** One canned line for the creation-flow voice picker (~60 chars — cheap). */
+const PREVIEW_LINE = "Hey! Ready when you are — grab your gear and let's head out.";
+
+/**
+ * Voice-picker preview (260705): speak the canned line in an arbitrary
+ * curated-pool voice — no character needed (the picker runs before the voice
+ * is committed). Pool membership is enforced here AND by the proxy allowlist.
+ */
+export async function voicePreviewTts(voiceId: string): Promise<ArrayBuffer> {
+  if (!isPoolVoiceId(voiceId)) throw new Error('VOICE_TTS_FAILED: unknown voice');
+  return synthesize(PREVIEW_LINE, voiceId);
 }

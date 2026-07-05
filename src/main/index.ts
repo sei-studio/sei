@@ -566,6 +566,9 @@ async function bootstrap(): Promise<void> {
         role: 'companion',
         text: trimmed,
         ts: Date.now(),
+        // An in-game say() routed up while a call is open is SPOKEN — hidden
+        // in the chat UI like every other call line (ChatMessage.voice).
+        ...(isCallActive(characterId) ? { voice: true } : {}),
       });
     },
     sendLog: broadcastLog,

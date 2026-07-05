@@ -214,13 +214,19 @@ async function prepareChatTurn(
  * them in order (ascending ts so ordering is stable). Shared by the normal turn
  * and the launch-failed turn.
  */
-async function persistReplies(characterId: string, replyText: string): Promise<ChatMessage[]> {
+async function persistReplies(
+  characterId: string,
+  replyText: string,
+  opts?: { voice?: boolean },
+): Promise<ChatMessage[]> {
   const now = Date.now();
   const replies: ChatMessage[] = splitReply(replyText).map((text, i) => ({
     id: randomUUID(),
     role: 'companion',
     text,
     ts: now + i,
+    // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
+    ...(opts?.voice ? { voice: true } : {}),
   }));
   for (const reply of replies) await chatStore.appendMessage(characterId, reply);
   return replies;
@@ -249,6 +255,9 @@ export async function sendChatMessage(
       text: args.text,
       ts: Date.now(),
       ...(args.replyTo ? { replyTo: args.replyTo } : {}),
+      // Sent during a live call (a transcribed utterance, or typed mid-call —
+      // either way the exchange is spoken) → hidden in the chat UI.
+      ...(args.voiceCall === true ? { voice: true } : {}),
     };
     await chatStore.appendMessage(args.characterId, userMsg);
 
@@ -361,7 +370,7 @@ export async function sendChatMessage(
       throw e;
     }
 
-    const replies = await persistReplies(args.characterId, replyText);
+    const replies = await persistReplies(args.characterId, replyText, { voice: args.voiceCall === true });
 
     // Background compaction (260702): the reply is persisted, so if 50+
     // messages have aged past the window, fold them NOW — while the player is
@@ -499,7 +508,7 @@ export async function sendVoiceGreetingTurn(characterId: string): Promise<ChatMe
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     const replyText = textOf(res.content);
     if (!replyText) return [];
-    return await persistReplies(characterId, replyText);
+    return await persistReplies(characterId, replyText, { voice: true });
   } catch (err) {
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.

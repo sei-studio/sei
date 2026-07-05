@@ -41,6 +41,28 @@ export function assignedVoiceId(character: Character): string | null {
   return typeof v === 'string' && VOICE_IDS.has(v) ? v : null;
 }
 
+/** True when `id` is a curated-pool voice (defense at the IPC boundary). */
+export function isPoolVoiceId(id: string): boolean {
+  return VOICE_IDS.has(id);
+}
+
+/**
+ * The curated voice pool, renderer-safe (voice-picker UI, 260705). Strips the
+ * internal `owner` hash; the rest is what a picker needs to label + filter.
+ */
+export function listPoolVoices(): Array<{
+  id: string;
+  label: string;
+  gender: string;
+  age: string;
+  tags: string[];
+  vibe: string;
+}> {
+  return (VOICES as Array<{ id: string; label: string; gender: string; age: string; tags: string[]; vibe: string }>).map(
+    (v) => ({ id: v.id, label: v.label, gender: v.gender, age: v.age, tags: [...v.tags], vibe: v.vibe }),
+  );
+}
+
 /**
  * Resolve (and persist, when newly assigned) the character's TTS voice id.
  * Never throws for assignment reasons — the fallback roll always lands on a

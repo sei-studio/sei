@@ -896,6 +896,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     deps.greetVoiceCall?.(id);
   });
 
+  // Voice picker (creation flow, 260705): the curated pool + per-voice preview.
+  ipcMain.handle(IpcChannel.voice.list, async () => {
+    const { listPoolVoices } = await import('./voice/voiceAssign');
+    return listPoolVoices();
+  });
+
+  ipcMain.handle(IpcChannel.voice.preview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { voicePreviewTts } = await import('./voice/tts');
+    return await voicePreviewTts(args.voiceId);
+  });
+
   ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
     const { clear } = await import('./chat/chatStore');

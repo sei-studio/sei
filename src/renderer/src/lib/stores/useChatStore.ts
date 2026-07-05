@@ -163,12 +163,15 @@ export const useChatStore = create<ChatState>((set, get) => {
     sendSeq[characterId] = token;
     const isCurrent = (): boolean => sendSeq[characterId] === token;
 
+    const inCallEarly = isVoiceCallActive(characterId);
     const userMsg: ChatMessage = {
       id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
       text,
       ts: Date.now(),
       ...(replyTo ? { replyTo } : {}),
+      // Mirror main's persisted flag so the optimistic bubble is hidden too.
+      ...(inCallEarly ? { voice: true } : {}),
     };
     // "Realistic typing" (Appearance & feel): when ON, hold the typing indicator
     // back until the companion has "read" your message (task 2), then keep it up
@@ -177,11 +180,13 @@ export const useChatStore = create<ChatState>((set, get) => {
     // Voice calls (260705): during a call the reply is heard, not read — the
     // typing theater (reading pause, per-bubble typing delay) would just delay
     // the audio, so pacing is disabled for the call's character.
-    const inCall = isVoiceCallActive(characterId);
+    const inCall = inCallEarly;
     const realism = !inCall && useUiStore.getState().realisticTyping;
     set((s) => ({
       messages: appendMessage(s.messages, characterId, userMsg),
-      awaiting: { ...s.awaiting, [characterId]: !realism },
+      // In-call exchanges are hidden in the chat UI (ChatMessage.voice), so a
+      // typing indicator would point at bubbles that never appear — keep it off.
+      awaiting: { ...s.awaiting, [characterId]: !realism && !inCall },
     }));
     // Kick the reply off NOW so model generation overlaps the reading pause.
     const replyPromise = sei.chatSend({ characterId, text, replyTo });
@@ -228,7 +233,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         }
         set((s) => ({
           messages: appendMessage(s.messages, characterId, replies[i]),
-          awaiting: { ...s.awaiting, [characterId]: i < replies.length - 1 },
+          awaiting: { ...s.awaiting, [characterId]: !inCall && i < replies.length - 1 },
         }));
         // Voice calls (260705): speak each reply bubble as it lands. The TTS
         // queue serializes clips, so multi-bubble replies stay in order.

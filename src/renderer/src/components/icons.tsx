@@ -441,6 +441,26 @@ export const PhoneIcon: React.FC<IconProps> = ({ size = 18 }) => (
 );
 
 /**
+ * PlayIcon — voice-preview play control (VoicePicker). Filled triangle,
+ * inherits currentColor.
+ */
+export const PlayIcon: React.FC<IconProps> = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M7 4.5v15l13-7.5z" />
+  </svg>
+);
+
+/**
+ * StopIcon — voice-preview stop control (VoicePicker). Filled square,
+ * inherits currentColor.
+ */
+export const StopIcon: React.FC<IconProps> = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <rect x={6} y={6} width={12} height={12} rx={1.5} />
+  </svg>
+);
+
+/**
  * PhoneOffIcon — voice-call "hang up" control (rotated handset + slash). Filled
  * red via currentColor at the call site.
  */
