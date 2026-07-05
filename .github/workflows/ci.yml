@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+# Cancel superseded runs — a force-push to a PR branch would otherwise stack
+# builds behind the stale one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # headless-gl (vision render path) builds from source via node-gyp, which needs
+      # a distutils-capable Python (removed from 3.12+). Provide 3.11 on every runner.
+      - name: Setup Python (distutils for headless-gl native build)
+        uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: '3.11'
+
+      # postinstall rebuilds native modules against Electron's ABI
+      # (electron-builder install-app-deps), which compiles the gl package
+      # from source on linux — that needs X11/GL headers the ubuntu runner
+      # image doesn't ship.
+      - name: Install headless-gl build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libxi-dev libglu1-mesa-dev libglew-dev
+
+      - name: Install dependencies
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
