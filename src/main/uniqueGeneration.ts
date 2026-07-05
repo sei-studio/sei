@@ -170,6 +170,10 @@ type Sheet = {
   personality: { tone: string; values: string[]; quirks: string[]; fears: string[] };
   backstory: string;
   voice_style: string;
+  /** ElevenLabs voice id from soulcaster's curated pool — stamped by castSoul
+   * (never LLM-authored). Optional: sheets generated before voices existed
+   * lack it; resolveVoiceId (voice/voiceAssign.ts) backfills those. */
+  voice_id?: string;
   appearance: Record<string, unknown>;
   image_prompt: string;
 };
@@ -579,9 +583,21 @@ async function runPipeline(args: {
   emit('sheet', 'start');
   try {
     const { castSoul } = await import('soulcaster');
+    // Voice roll (260705): exclude voices the library already uses so a
+    // roster's companions rarely share a voice. Best-effort — an unreadable
+    // library just means no exclusions.
+    let takenVoiceIds: string[] = [];
+    try {
+      const { listCharacters } = await import('./characterStore');
+      const { assignedVoiceId } = await import('./voice/voiceAssign');
+      takenVoiceIds = (await listCharacters())
+        .map((c) => assignedVoiceId(c))
+        .filter((v): v is string => v !== null);
+    } catch {}
     const { sheet: cast } = await castSoul({
       gender,
       userProfile: config.user_profile ?? null,
+      takenVoiceIds,
       llm: buildSoulcasterLlm(jwt),
     });
     sheet = cast as Sheet;
@@ -676,7 +692,13 @@ async function runPipeline(args: {
     is_default: false,
     shared: false,
     slug: null,
-    metadata: { proactiveness: 1, soulcaster_sheet: sheet as unknown as Record<string, unknown> },
+    metadata: {
+      proactiveness: 1,
+      soulcaster_sheet: sheet as unknown as Record<string, unknown>,
+      // TTS voice for voice calls. metadata rides the cloud sync verbatim, so
+      // the assignment follows the character across devices.
+      ...(sheet.voice_id ? { voiceId: sheet.voice_id } : {}),
+    },
     created: now,
     last_launched: null,
     playtime_ms: 0,

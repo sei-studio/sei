@@ -13,6 +13,7 @@ export {
   CHAT_BASELINE,
   MINECRAFT_BASELINE,
   BASELINE_INSTRUCTIONS,
+  VOICE_CALL_PRIMER,
   // Per-turn speak reminder + tool / personality text.
   SPEAK_REMINDER,
   GREETING_HINT,

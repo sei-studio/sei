@@ -16,6 +16,7 @@ import { createChainTracker } from './chains.js'
 import { createLoop } from './loop.js'
 import {
   BASELINE_INSTRUCTIONS,
+  VOICE_CALL_PRIMER,
   PERSONALITY_TOOL_DESCRIPTIONS,
   NUDGES,
   SPEAK_REMINDER,
@@ -332,6 +333,7 @@ export async function composeSeedBlocks({
   playerMessageText = null,
   companions = [],
   frontierText = '',
+  voiceCall = false,
   logger = console,
 }) {
   const player = sessionState.playerData()
@@ -346,6 +348,15 @@ export async function composeSeedBlocks({
     // appended every loop so caching it would never hit).
     { type: 'text', name: 'seed_cuboid_grammar', text: cuboidGrammarText, cache_control: { type: 'ephemeral' } },
   ]
+  // Voice-call mode: the player has a live call open, so every say() line is
+  // spoken aloud instead of typed into chat. The primer sits at the very START
+  // of the turn (per the mode's contract — it must beat UNIVERSAL_BASELINE's
+  // 'lmao'-style text-chat allowances by position). Stable for the duration of
+  // a call, so the cache breakpoint below it keeps hitting; toggling the call
+  // costs one cache rebuild, which is the honest price of a mode flip.
+  if (voiceCall) {
+    blocks.unshift({ type: 'text', name: 'voice_call', text: `[voice call] ${VOICE_CALL_PRIMER}` })
+  }
   if (config?.memory?.memory_md_path) {
     try {
       const memoryText = await readMemoryForSeed(
@@ -730,7 +741,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // is not in-game), route the reply UP to the chat surface instead of
     // speaking it in-world. Still logged + recorded to convo memory for
     // continuity, just delivered over the port rather than bot.chat.
-    if (loop._triggerData?.seiChat && typeof onSeiChatReply === 'function') {
+    // Voice-call mode extends this to EVERY say() line, whatever triggered the
+    // turn: while a call is live, speech goes to the player's ear (TTS via the
+    // chat surface) and in-game chat stays silent — that's the mode's contract.
+    if ((voiceCallActive || loop._triggerData?.seiChat) && typeof onSeiChatReply === 'function') {
       try { logChatOut(line) } catch {}
       try { onSeiChatReply(line) } catch (err) { logger.warn?.(`[sei/orch] onSeiChatReply failed: ${err?.message ?? err}`) }
       try { convoMemory.recentChat.pushSelf(config.persona.name, line) } catch {}
@@ -782,6 +796,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // is dropped with a structured warn (defense-in-depth; the FSM should
   // already prevent it).
   let currentLoop = null
+  // Voice-call mode (260705): true while the player has a live voice call open
+  // with this companion. Flipped by setVoiceCall (parentPort {type:'voice-call'}
+  // → brain.setVoiceCall). Effects: every say() routes up to the call instead
+  // of in-game chat (_emitSayLine), and composeSeedBlocks prepends the
+  // VOICE_CALL_PRIMER to each turn.
+  let voiceCallActive = false
   // 260703: sticky greeting. The full FIRST CONTACT block rides only the first
   // idle tick (reason:'just_connected_first_spawn'); when that loop is preempted
   // (attack, chat) before the model replies, the greet instruction is gone and
@@ -1890,6 +1910,7 @@ function maybeWarnByteCap(loop, warned) {
           playerMessageText,
           companions,
           frontierText: progFrontierText,
+          voiceCall: voiceCallActive,
           logger,
         })
       } catch (err) {
@@ -3901,6 +3922,13 @@ function maybeWarnByteCap(loop, warned) {
      */
     setCompanions,
     getCompanions: () => companions.slice(),
+    /**
+     * Voice-call mode (260705). Called by brain.setVoiceCall ←
+     * src/bot/index.js's parentPort {type:'voice-call'} handler when the
+     * player opens or hangs up a call. See the voiceCallActive declaration
+     * for the two effects.
+     */
+    setVoiceCall: (active) => { voiceCallActive = active === true },
     /**
      * Phase 15 (D-10/VIS-03): the active provider's vision capability. Read by
      * the brain → src/bot/index.js so it can push `vision-capability` up the

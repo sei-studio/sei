@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
+import { notifyCompanionText, isVoiceCallActive } from '../voice/voiceBridge';
 import type { ChatMessage, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
@@ -116,14 +117,22 @@ export const useChatStore = create<ChatState>((set, get) => {
   // 1). Append deduped by id and clear the typing indicator for that character.
   try {
     sei.onChatMessage?.(({ characterId, message }) => {
+      let appended = false;
       set((s) => {
         const list = s.messages[characterId] ?? [];
         if (list.some((m) => m.id === message.id)) return {} as Partial<ChatState>;
+        appended = true;
         return {
           messages: { ...s.messages, [characterId]: [...list, message] },
           awaiting: { ...s.awaiting, [characterId]: false },
         };
       });
+      // Voice calls (260705): a companion line that arrived over the push (an
+      // in-game bot routing say() to the call) is spoken aloud. System lines
+      // ("joined your world") stay text-only.
+      if (appended && message.role === 'companion') {
+        notifyCompanionText(characterId, message.text);
+      }
     });
   } catch {
     /* preload without onChatMessage — routed replies just won't stream live */
@@ -165,7 +174,11 @@ export const useChatStore = create<ChatState>((set, get) => {
     // back until the companion has "read" your message (task 2), then keep it up
     // for a length-scaled stretch before each reply bubble (task 1). When OFF,
     // the indicator shows instantly and follow-up bubbles use the fixed gap.
-    const realism = useUiStore.getState().realisticTyping;
+    // Voice calls (260705): during a call the reply is heard, not read — the
+    // typing theater (reading pause, per-bubble typing delay) would just delay
+    // the audio, so pacing is disabled for the call's character.
+    const inCall = isVoiceCallActive(characterId);
+    const realism = !inCall && useUiStore.getState().realisticTyping;
     set((s) => ({
       messages: appendMessage(s.messages, characterId, userMsg),
       awaiting: { ...s.awaiting, [characterId]: !realism },
@@ -207,7 +220,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // follow-ups use the fixed gap. `awaiting` stays true between chunks.
       const replies = result.replies;
       for (let i = 0; i < replies.length; i++) {
-        const waitMs = realism ? typingDelayMs(replies[i].text) : i > 0 ? REPLY_GAP_MS : 0;
+        const waitMs = inCall ? 0 : realism ? typingDelayMs(replies[i].text) : i > 0 ? REPLY_GAP_MS : 0;
         if (waitMs > 0) {
           set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
           await delay(waitMs);
@@ -217,6 +230,9 @@ export const useChatStore = create<ChatState>((set, get) => {
           messages: appendMessage(s.messages, characterId, replies[i]),
           awaiting: { ...s.awaiting, [characterId]: i < replies.length - 1 },
         }));
+        // Voice calls (260705): speak each reply bubble as it lands. The TTS
+        // queue serializes clips, so multi-bubble replies stay in order.
+        notifyCompanionText(characterId, replies[i].text);
       }
       // #6 — main stamped last_chatted on this successful reply; refresh the
       // character so the Home grid + IconRail re-sort by last interaction.

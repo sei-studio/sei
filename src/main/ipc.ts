@@ -822,11 +822,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       })
       .parse(argsRaw);
     const { sendChatMessage } = await import('./chat/chatService');
+    const { isCallActive } = await import('./voice/callState');
     // Fresh world-detection pass before the prompt is built (260703): the
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
     try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
     return await sendChatMessage(
-      { characterId: args.characterId, text: args.text, replyTo: args.replyTo },
+      // voiceCall (260705): while a call is open the reply is spoken aloud, so
+      // the prompt leads with the voice-call primer (spoken register).
+      { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: isCallActive(args.characterId) },
       {
         getLanState: deps.getLanState,
         summon: (id) => deps.supervisor.summon(id),
@@ -841,6 +844,24 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         },
       },
     );
+  });
+
+  // ── Voice calls (260705) ──────────────────────────────────────────────────
+  // TTS synthesis (proxy passthrough; the ElevenLabs key never reaches the
+  // renderer or the repo) + the call open/hang-up toggle. The toggle records
+  // main-side state (idle-chat prompts read it) and forwards the mode into a
+  // live game session so say() reroutes to the call.
+  ipcMain.handle(IpcChannel.voice.tts, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
+    const args = z.object({ characterId: IdSchema, text: z.string().min(1).max(4000) }).parse(argsRaw);
+    const { voiceTts } = await import('./voice/tts');
+    return await voiceTts(args);
+  });
+
+  ipcMain.handle(IpcChannel.voice.callState, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ characterId: IdSchema, active: z.boolean() }).parse(argsRaw);
+    const { setCallActive } = await import('./voice/callState');
+    setCallActive(args.characterId, args.active);
+    deps.supervisor.setVoiceCall(args.characterId, args.active);
   });
 
   ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {

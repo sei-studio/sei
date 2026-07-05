@@ -335,6 +335,15 @@ export async function start(config, hooks = {}) {
       try { _brain?.deliverSeiChat?.(payload) } catch {}
     },
     /**
+     * Voice-call mode (260705): forward the call-open/hang-up toggle from the
+     * parentPort {type:'voice-call'} handler into the live brain. No-op until
+     * the brain has started; the supervisor re-sends the current state on
+     * summon-ready so a call opened before spawn still applies.
+     */
+    setVoiceCall(active) {
+      try { _brain?.setVoiceCall?.(active) } catch {}
+    },
+    /**
      * 260618: update the roster of OTHER AI companions in this world. Called by
      * the parentPort {type:'roster'} handler whenever the supervisor summons or
      * stops a sibling bot. Writes config._seiCompanions (read by chat.js, which
@@ -819,6 +828,13 @@ if (process.parentPort) {
             // it runs on the SAME session (brain + prompt cache) and replies
             // back to the chat surface (see onSeiChatReply above).
             try { _running?.deliverSeiChat?.({ from: data.from, text: data.text }) } catch {}
+          } else if (data && data.type === 'voice-call') {
+            // Voice-call mode (260705): the player opened (active:true) or hung
+            // up (active:false) a voice call with this companion. While active,
+            // say() lines route up to the chat surface (→ TTS in the renderer)
+            // and in-game chat stays silent; each turn carries the voice-call
+            // primer at the start of its prompt.
+            try { _running?.setVoiceCall?.(data.active === true) } catch {}
           } else if (data && data.type === 'roster') {
             // 260618: the supervisor's roster of OTHER AI companions in this
             // world changed (a sibling bot was summoned or stopped). Apply it so

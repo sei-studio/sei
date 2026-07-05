@@ -172,7 +172,7 @@ function clampProactiveness(raw: unknown): number {
  */
 async function prepareChatTurn(
   characterId: string,
-  opts: { openWorldDetected: boolean; inGame: boolean },
+  opts: { openWorldDetected: boolean; inGame: boolean; voiceCall?: boolean },
 ) {
   const character = await getCharacter(characterId);
   if (!character) return null;
@@ -196,6 +196,7 @@ async function prepareChatTurn(
     summary,
     openWorldDetected: opts.openWorldDetected,
     inGame: opts.inGame,
+    voiceCall: opts.voiceCall === true,
   });
   const messages = toMessages(history);
   return { character, config, system, messages };
@@ -220,7 +221,7 @@ async function persistReplies(characterId: string, replyText: string): Promise<C
 }
 
 export async function sendChatMessage(
-  args: { characterId: string; text: string; replyTo?: ChatMessage['replyTo'] },
+  args: { characterId: string; text: string; replyTo?: ChatMessage['replyTo']; voiceCall?: boolean },
   deps: ChatDeps,
 ): Promise<ChatSendResult> {
   // #9 — supersede any in-flight turn for this character: abort its LLM call so
@@ -272,6 +273,9 @@ export async function sendChatMessage(
     const prep = await prepareChatTurn(args.characterId, {
       openWorldDetected: deps.getLanState().kind === 'open',
       inGame: deps.isInGame?.(args.characterId) ?? false,
+      // 260705: while a voice call is open the reply is read aloud by TTS, so
+      // the system prompt leads with the voice-call primer (spoken register).
+      voiceCall: args.voiceCall === true,
     });
     if (!prep) throw new Error('Character not found');
     const { system, messages } = prep;

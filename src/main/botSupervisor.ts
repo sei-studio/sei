@@ -158,6 +158,14 @@ export interface BotSupervisorOptions {
    * instead of a bot that joins and does nothing.
    */
   emitHardStop: (info: CreditsHardStopEvent) => void;
+  /**
+   * Voice calls (260705): is a voice call currently open for this character?
+   * Read on summon-ready so a bot that spawns MID-call (the launch()-from-a-
+   * call handoff) immediately gets {type:'voice-call', active:true} — without
+   * this, its say() lines would land in in-game chat instead of the call.
+   * Wired to voice/callState.isCallActive; optional so tests can omit it.
+   */
+  isVoiceCallActive?: (characterId: string) => boolean;
 }
 
 export interface BotSupervisor {
@@ -198,6 +206,16 @@ export interface BotSupervisor {
    * sources of truth agree.
    */
   switchBackend(kind: AiBackendKind): Promise<void>;
+  /**
+   * Voice calls (260705): forward the call open/hang-up toggle into a live
+   * game session ({type:'voice-call', active} on port1). While active the
+   * bot's say() lines route up to the chat surface (→ TTS) instead of in-game
+   * chat, and each turn carries the voice-call primer. Returns true when a
+   * live session took the message; false (no-op) when the character has no
+   * session — the mode is also re-applied on summon-ready via
+   * opts.isVoiceCallActive, so calling this on an idle character is fine.
+   */
+  setVoiceCall(characterId: string, active: boolean): boolean;
 }
 
 interface ActiveSession {
@@ -681,6 +699,14 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
+        // Voice calls (260705): if the player has a call open with this
+        // character (it launch()ed into the world mid-call), apply the mode
+        // now — the bot only learns it over the port.
+        try {
+          if (opts.isVoiceCallActive?.(characterId)) {
+            port1.postMessage({ type: 'voice-call', active: true });
+          }
+        } catch { /* port raced closed — the call toggle will re-send */ }
         // Stamp last_launched on successful connect — never-launched personas
         // still show '—' until they reach summon-ready at least once.
         void (async () => {
@@ -1153,6 +1179,18 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (!session) return false;
       try {
         session.port1.postMessage({ type: 'sei-chat', from: payload.from, text: payload.text });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    // Voice calls (260705): forward the open/hang-up toggle into the live
+    // session. Same port-may-be-closed tolerance as sendSeiChat.
+    setVoiceCall: (characterId: string, active: boolean): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'voice-call', active });
         return true;
       } catch {
         return false;

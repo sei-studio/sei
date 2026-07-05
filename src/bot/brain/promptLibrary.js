@@ -55,6 +55,22 @@ minecraft: Vanilla Minecraft. open-world survival game. you can join the player'
 `.trim()
 
 // =============================================================================
+// 2b. VOICE CALL MODE — prepended to the START of the prompt (both surfaces:
+//     the idle chat brain's block 0 and the game brain's per-turn seed) while
+//     the player has a live voice call open. Everything the model writes for
+//     the player is spoken aloud by TTS, so text-chat habits (which
+//     UNIVERSAL_BASELINE explicitly allows, e.g. 'lmao') must flip to spoken
+//     register for the duration of the call. Kept short and imperative; it
+//     must win over the baseline by position (start of prompt) and refers to
+//     itself as the CURRENT mode so the model drops it cleanly when the call
+//     ends.
+// =============================================================================
+
+export const VOICE_CALL_PRIMER =
+  'You are speaking to the player through a voice call right now: everything you say is read aloud to them. ' +
+  'Write like how you\'d speak, not how you\'d text. No shorthand like "lmao", no emoji, no abbreviations you wouldn\'t say out loud.'
+
+// =============================================================================
 // 3. MINECRAFT SURFACE
 // =============================================================================
 

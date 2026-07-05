@@ -65,6 +65,14 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [react()],
+    // Voice dictation (260705): the Whisper STT worker
+    // (lib/voice/whisperWorker.ts) imports @huggingface/transformers, which
+    // code-splits — Vite's default iife worker format can't hold multiple
+    // chunks, so production builds need ES-module workers (dev always uses
+    // ESM workers regardless).
+    worker: {
+      format: 'es' as const,
+    },
     resolve: {
       alias: {
         '@': path.resolve('src/renderer/src'),

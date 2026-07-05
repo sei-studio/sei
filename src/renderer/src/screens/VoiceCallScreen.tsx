@@ -1,16 +1,22 @@
 /**
- * VoiceCallScreen — Discord-style call PLACEHOLDER (Phase 18/19). No real audio.
+ * VoiceCallScreen — the live Discord-style call view (260705, real audio).
  *
- * Centered large companion avatar, name, an "on call" subtitle, and two
- * circular controls: a local-only mute toggle and a red hang-up button that
- * returns to the chat. Reached via view.kind === 'voice-call'.
+ * Centered large companion avatar (pulsing while the companion is speaking),
+ * name, a status subtitle (connecting / listening / speaking / error), two
+ * caption lines (what you last said, what the companion last said), and the
+ * mute + hang-up controls. Reached via view.kind === 'voice-call'.
  *
- * Source: .planning/design/app-chat-and-memory.md §5 (VoiceCallModal) + R6.
+ * The call session itself lives in useVoiceStore (mic → local Whisper →
+ * chat pipeline → TTS queue); this screen renders it and ensures a call is
+ * started for the viewed character (idempotent — restore from the minimized
+ * widget re-enters without restarting the pipeline). Mute stays in useUiStore,
+ * shared with MinimizedCall.
  */
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { MicIcon, MicOffIcon, PhoneOffIcon, UserIcon, MinimizeIcon } from '../components/icons';
@@ -28,9 +34,21 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const muted = useUiStore((s) => s.callMuted);
   const setMuted = useUiStore((s) => s.setCallMuted);
   const minimizeCall = useUiStore((s) => s.minimizeCall);
-  const endCall = useUiStore((s) => s.endCall);
-  // Fresh calls start unmuted because endCall() resets callMuted on every
-  // hang-up; a restore keeps the carried-over mute state (so no reset here).
+
+  const status = useVoiceStore((s) => s.status);
+  const speaking = useVoiceStore((s) => s.speaking);
+  const lastHeard = useVoiceStore((s) => s.lastHeard);
+  const lastSpoken = useVoiceStore((s) => s.lastSpoken);
+  const error = useVoiceStore((s) => s.error);
+  const callCharacterId = useVoiceStore((s) => s.callCharacterId);
+  const startCall = useVoiceStore((s) => s.startCall);
+  const endCall = useVoiceStore((s) => s.endCall);
+
+  // Entering this view IS the intent to be on a call (idempotent when the
+  // pipeline is already up for this character, e.g. restore-from-minimize).
+  useEffect(() => {
+    if (callCharacterId !== characterId) void startCall(characterId);
+  }, [characterId, callCharacterId, startCall]);
 
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
@@ -40,6 +58,17 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   );
 
   const companionName = character?.name ?? 'Companion';
+
+  const subtitle =
+    status === 'error'
+      ? error ?? 'Call failed'
+      : status === 'connecting'
+        ? 'Connecting…'
+        : speaking
+          ? 'Speaking'
+          : muted
+            ? 'On call · muted'
+            : 'On call · listening';
 
   return (
     <div className={styles.root}>
@@ -54,7 +83,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         <MinimizeIcon size={20} />
       </button>
 
-      <div className={styles.avatar}>
+      <div className={speaking ? `${styles.avatar} ${styles.avatarSpeaking}` : styles.avatar}>
         {character ? (
           <PixelPortrait
             seed={character.id + character.name}
@@ -69,10 +98,20 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
       </div>
 
       <h1 className={styles.name}>{companionName}</h1>
-      <span className={styles.subtitle}>
-        <span className={styles.subtitleDot} aria-hidden="true" />
-        On call
+      <span className={status === 'error' ? `${styles.subtitle} ${styles.subtitleError}` : styles.subtitle}>
+        {status !== 'error' ? <span className={styles.subtitleDot} aria-hidden="true" /> : null}
+        {subtitle}
       </span>
+
+      {/* Captions — the last line each side said, so a glance explains the audio. */}
+      <div className={styles.captions} aria-live="polite">
+        {lastSpoken ? (
+          <p className={styles.captionCompanion}>{lastSpoken}</p>
+        ) : status === 'live' ? (
+          <p className={styles.captionHint}>Say something — {companionName} can hear you.</p>
+        ) : null}
+        {lastHeard ? <p className={styles.captionUser}>You: {lastHeard}</p> : null}
+      </div>
 
       <div className={styles.controls}>
         <div className={styles.control}>

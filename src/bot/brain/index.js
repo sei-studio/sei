@@ -321,6 +321,14 @@ export async function start({ config, adapter, logger = console, onTerminalError
      */
     setCompanions: (names) => { try { orchestrator.setCompanions?.(names) } catch {} },
     /**
+     * Voice-call mode (260705): the player opened/hung up a voice call with
+     * this companion. src/bot/index.js calls this from the {type:'voice-call'}
+     * port message. While active, say() routes to the call (chat surface →
+     * TTS) instead of in-game chat, and each turn is prefixed with the
+     * voice-call primer.
+     */
+    setVoiceCall: (active) => { try { orchestrator.setVoiceCall?.(active) } catch {} },
+    /**
      * WR-05 follow-up: live-swap the AI backend (cloud-proxy ↔ BYOK) on the
      * running orchestrator without re-summoning. No-op when the orchestrator
      * or provider doesn't implement it.

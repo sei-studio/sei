@@ -15,6 +15,7 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from './PixelPortrait';
@@ -39,7 +40,9 @@ export function MinimizedCall(): React.ReactElement | null {
   const minimizedCall = useUiStore((s) => s.minimizedCall);
   const muted = useUiStore((s) => s.callMuted);
   const setMuted = useUiStore((s) => s.setCallMuted);
-  const endCall = useUiStore((s) => s.endCall);
+  // Real teardown (mic + TTS queue + main call-state) lives in useVoiceStore;
+  // it also clears the UI store's minimized/mute state.
+  const endCall = useVoiceStore((s) => s.endCall);
   const restoreCall = useUiStore((s) => s.restoreCall);
 
   const character = useDataStore((s) =>

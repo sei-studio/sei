@@ -85,6 +85,10 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.chat.message, handler);
   },
 
+  // Voice calls (260705)
+  voiceTts: (args) => ipcRenderer.invoke(IpcChannel.voice.tts, args),
+  voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
+
   // User profile (Phase 19)
   userGetProfile: () => ipcRenderer.invoke(IpcChannel.user.getProfile),
   userApplyProfilePicture: (args) => ipcRenderer.invoke(IpcChannel.user.applyProfilePicture, args),

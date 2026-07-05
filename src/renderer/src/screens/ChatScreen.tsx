@@ -22,6 +22,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { sei } from '../lib/ipcClient';
@@ -92,7 +93,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const [replyTo, setReplyTo] = useState<ChatReplyRef | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   // Transient toast for the "coming soon" phone notice.
-  const [notice, setNotice] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -237,8 +237,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             type="button"
             className={styles.iconBtn}
             onClick={() => {
-              setNotice('Voice call coming later this month!');
-              window.setTimeout(() => setNotice((n) => (n ? null : n)), 2200);
+              // Kick the pipeline (mic + model + call-state) and open the call
+              // view; VoiceCallScreen renders the connecting/live/error states.
+              void useVoiceStore.getState().startCall(characterId);
+              navigate({ kind: 'voice-call', characterId });
             }}
             aria-label="Voice call"
             data-tip="Voice call"
@@ -380,11 +382,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         {copiedId ? (
           <div className={styles.copiedToast} aria-live="polite">
             Copied to clipboard
-          </div>
-        ) : null}
-        {notice ? (
-          <div className={styles.copiedToast} aria-live="polite">
-            {notice}
           </div>
         ) : null}
         <div className={styles.composer}>

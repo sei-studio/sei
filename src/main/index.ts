@@ -23,6 +23,7 @@ import { createMainWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
+import { isCallActive } from './voice/callState';
 import { initUpdater } from './updater';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration } from './migration';
@@ -537,6 +538,9 @@ async function bootstrap(): Promise<void> {
       }
     },
     emitHardStop: emitCreditsHardStop,
+    // Voice calls (260705): lets summon-ready re-apply an open call to a bot
+    // that spawned mid-call (launch()-from-a-call handoff).
+    isVoiceCallActive: isCallActive,
   });
 
   // 4b. Per-profile scope switcher (260603). Re-points the local data scope

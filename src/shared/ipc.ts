@@ -825,6 +825,28 @@ export interface RendererApi {
    */
   onChatMessage(cb: (push: ChatMessagePush) => void): Unsubscribe;
 
+  // --- Voice calls (260705) ---
+  /**
+   * Synthesize a companion's spoken line in its assigned ElevenLabs voice.
+   * Resolves to encoded audio bytes (audio/mpeg) for renderer playback. Main
+   * resolves the character's voice (metadata.voiceId, with a deterministic
+   * fallback assignment for pre-voice characters) and routes through the Sei
+   * proxy with the Supabase JWT — the ElevenLabs key never reaches the client.
+   * Rejects with sentinel-prefixed messages: VOICE_NO_SESSION (signed out),
+   * VOICE_RATE_LIMITED (daily voice allowance), VOICE_NOT_CONFIGURED,
+   * VOICE_TTS_FAILED.
+   */
+  voiceTts(args: { characterId: string; text: string }): Promise<ArrayBuffer>;
+  /**
+   * Mark a voice call open (active:true) or hung up (active:false) for a
+   * character. Main records it (voice/callState) so idle-chat prompts carry
+   * the voice-call primer, and forwards {type:'voice-call'} into a live game
+   * session so say() reroutes to the call instead of in-game chat. The
+   * supervisor re-applies the state on summon-ready, so a companion that
+   * launch()es into the world mid-call keeps speaking to the call.
+   */
+  voiceCallSetActive(args: { characterId: string; active: boolean }): Promise<void>;
+
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
   userGetProfile(): Promise<UserProfile>;
@@ -1373,6 +1395,12 @@ export const IpcChannel = {
      * send() round-trip — the live game bot replying to a routed message, or a
      * deterministic "joined/left your world" system line. */
     message: 'chat:message',
+  },
+  voice: {
+    /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
+    tts: 'voice:tts',
+    /** Invoke: open/hang-up a voice call ({characterId, active}). */
+    callState: 'voice:call-state',
   },
   user: {
     getProfile: 'user:get-profile',
