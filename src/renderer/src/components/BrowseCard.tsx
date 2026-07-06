@@ -2,37 +2,33 @@
  * BrowseCard — World scouting card (Party redesign §4.4, mockup .wcard).
  *
  * 3:4 art block (portrait cover via PixelPortrait's image override, procedural
- * sprite fallback) with a hover overlay carrying the single Invite action,
- * then a meta row below: name (Oswald 16px) + "by {creator}" line. The card
- * body opens the character profile; Invite adds directly to the library
- * (parent-provided — same IPC path as CharacterPage's "Add to library").
+ * sprite fallback), then a meta row below: name (Oswald 16px) + "by {creator}"
+ * line. The whole card body opens the character profile, where the "Add to
+ * library" CTA lives — there is no in-card invite action anymore.
  *
  * Lean-component contract (CONTEXT D-31c): does NOT subscribe to auth/sync/
- * cloud stores — `inviteState` is precomputed by the parent (library presence
- * + open party slots).
- *
- * Pitfall 7 (12-RESEARCH.md): the inner Invite button stopPropagations.
+ * cloud stores.
  */
 
 import React, { useState } from 'react';
 import type { BrowseEntry } from '@shared/ipc';
 import { PixelPortrait } from './PixelPortrait';
 import { pickPalette } from '../lib/portraitPalettes';
-import { Button } from './Button';
 import { IdTag } from './IdTag';
 import styles from './BrowseCard.module.css';
-
-/** Hover-overlay action state, precomputed by the parent grid. */
-export type InviteState = 'open' | 'in-party' | 'full';
 
 export interface BrowseCardProps {
   entry: BrowseEntry;
   theme: 'light' | 'dark';
-  /** open → primary Invite; in-party / full → disabled ghost label. */
-  inviteState: InviteState;
-  /** Direct add-to-library (parent runs the CharacterPage IPC path). */
-  onInvite: () => void;
   onOpen: () => void;
+  /**
+   * External reveal gate for the above-the-fold rows. The parent holds the
+   * first two visible rows as one group and flips this true once every
+   * portrait in those rows has loaded (or failed / timed out), so they reveal
+   * together instead of popping in one by one. Omit for below-the-fold cards —
+   * they fall back to the per-card lazy reveal (settle on their own portrait).
+   */
+  ready?: boolean;
   /**
    * Fired on hover / focus to warm the cache-on-demand path (character row +
    * skin + portrait) so the subsequent open is instant. Fire-and-forget and
@@ -45,9 +41,8 @@ export interface BrowseCardProps {
 export function BrowseCard({
   entry,
   theme,
-  inviteState,
-  onInvite,
   onOpen,
+  ready: readyOverride,
   onPrefetch,
 }: BrowseCardProps): React.ReactElement {
   const palette = pickPalette(entry.id + entry.name, theme);
@@ -57,8 +52,12 @@ export function BrowseCard({
   // blocks while Storage images stream (260705). PixelPortrait stays mounted
   // underneath (visibility-hidden) so the image keeps loading; the static
   // skeleton overlay mirrors the card layout so nothing jumps on reveal.
+  //
+  // `readyOverride` (when supplied) hands the gate to the parent so the first
+  // two rows reveal as a coordinated group; below-the-fold cards leave it
+  // undefined and fall back to their own per-card settle.
   const [artSettled, setArtSettled] = useState(false);
-  const ready = !entry.portraitUrl || artSettled;
+  const ready = readyOverride ?? (!entry.portraitUrl || artSettled);
 
   return (
     <div
@@ -85,24 +84,6 @@ export function BrowseCard({
           onImageSettled={() => setArtSettled(true)}
           style={{ width: '100%', height: '100%' }}
         />
-        <div className={styles.over}>
-          {inviteState === 'open' ? (
-            <Button
-              kind="primary"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onInvite();
-              }}
-            >
-              Invite
-            </Button>
-          ) : (
-            <Button kind="ghost" size="sm" disabled>
-              {inviteState === 'in-party' ? 'In your party' : 'Party full'}
-            </Button>
-          )}
-        </div>
       </div>
       <div className={styles.meta}>
         <div className={styles.nameRow}>

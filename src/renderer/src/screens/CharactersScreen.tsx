@@ -14,7 +14,8 @@
  *
  *   - <WorldGrid />  : public character listing. Search + sort top bar with a
  *                      right-aligned party-slots indicator, 3:4 "scouting"
- *                      cards (BrowseCard) with a hover Invite action, paged by
+ *                      cards (BrowseCard) whose body opens the character
+ *                      profile (where "Add to library" lives), paged by
  *                      ROWS_PER_BATCH rows behind an explicit "Load more"
  *                      button (260704: bounds the portrait-download burst that
  *                      tripped the per-IP rate limit on the proxy).
@@ -43,9 +44,8 @@ import { Presence } from '../components/Presence';
 import { GatherPixels } from '../components/GatherPixels';
 import type { GatherCycle } from '../components/GatherPixels';
 import { CreationLimitModal } from '../components/CreationLimitModal';
-import { SignInModal } from '../components/SignInModal';
 import { BrowseCard } from '../components/BrowseCard';
-import type { InviteState } from '../components/BrowseCard';
+import { portraitSrc } from '../lib/portraitSrc';
 import { Button } from '../components/Button';
 import type { Character } from '@shared/characterSchema';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
@@ -75,6 +75,14 @@ const GATHER_CYCLES: readonly GatherCycle[] = ['a', 'b', 'c', 'd'];
  * fixed two-row block (never a partial third row).
  */
 const SKELETON_ROWS = 2;
+
+/**
+ * Above-the-fold group reveal: the first two visible World rows stay wireframed
+ * until every portrait in them has loaded, then reveal together (no per-card
+ * pop-in). This is the safety net — reveal anyway after it elapses so a slow or
+ * broken portrait can never pin the wireframe forever.
+ */
+const FIRST_ROWS_REVEAL_TIMEOUT_MS = 4000;
 
 /**
  * Phase 11 plan 19 (D-19, LIB-04) — cloud-only entry shape.
@@ -444,9 +452,9 @@ function HomeGrid(): React.ReactElement {
  * WorldGrid — public character listing backed by useBrowseStore (§4.4).
  *
  * Top bar: search + sort on the left, party-slots indicator on the right.
- * Cards: 3:4 scouting cards with a hover Invite action that adds directly to
- * the library (same IPC path as CharacterPage's "Add to library" CTA); the
- * card body still opens the character profile.
+ * Cards: 3:4 scouting cards whose body opens the character profile; adding to
+ * the library happens there via CharacterPage's "Add to library" CTA (there is
+ * no in-grid invite action).
  */
 function WorldGrid(): React.ReactElement {
   const entries = useBrowseStore((s) => s.entries);
@@ -486,13 +494,8 @@ function WorldGrid(): React.ReactElement {
   const localCharacters = useDataStore((s) => s.characters);
   const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
-  const refreshLibraryState = useLibraryStateStore((s) => s.refresh);
   const authState = useAuthStore((s) => s.state);
-  const setUpgradeFraming = useAuthStore((s) => s.setUpgradeFraming);
-  const upgradeFraming = useAuthStore((s) => s.upgradeFraming);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
-  const [showSignIn, setShowSignIn] = useState<boolean>(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Party-slots indicator — counts the SAME set the party wall shows (minus
   // cloud-only placeholders, which have no local row to count here).
@@ -535,7 +538,6 @@ function WorldGrid(): React.ReactElement {
       // user invited this default (matches the HomeGrid/IconRail filter).
       inMyLibrary: addedDefaultIds.has(c.id),
     }));
-  const defaultIds = new Set(defaultEntries.map((d) => d.id));
 
   const navigate = useUiStore((s) => s.navigate);
 
@@ -582,44 +584,6 @@ function WorldGrid(): React.ReactElement {
     navigate({ kind: 'character', id: entry.id });
   };
 
-  // "Invite" — the SAME direct add-to-library path as CharacterPage's
-  // "Add to library" CTA: charsRestoreDefault for bundled defaults (local-only,
-  // no account needed), charsAddToLibrary for foreign World characters (cloud
-  // library write → sign-in gated). Refreshes both the library-state sets and
-  // the local character list so Home + the slots indicator update in place.
-  const handleInvite = async (entry: BrowseEntry): Promise<void> => {
-    const isDefault = defaultIds.has(entry.id);
-    if (!isDefault && authState.kind !== 'signed_in') {
-      setUpgradeFraming('add this companion to your library');
-      setShowSignIn(true);
-      return;
-    }
-    setInviteError(null);
-    try {
-      if (isDefault) {
-        await sei.charsRestoreDefault(entry.id);
-      } else {
-        await sei.charsAddToLibrary(entry.id);
-      }
-      await refreshLibraryState();
-      await useDataStore.getState().loadCharacters();
-    } catch (err) {
-      // Surface the failure (e.g. the slot-limit backstop) instead of a
-      // silent no-op — the handler messages are already user-readable.
-      setInviteError(
-        err instanceof Error && err.message
-          ? err.message
-          : "Couldn't invite this companion. Please try again.",
-      );
-    }
-  };
-
-  const inviteStateFor = (entry: BrowseEntry): InviteState => {
-    if (entry.inMyLibrary) return 'in-party';
-    if (partyFull) return 'full';
-    return 'open';
-  };
-
   // Merge defaults + cloud rows into one list, then sort per the dropdown.
   const worldEntries = [
     ...defaultEntries,
@@ -637,6 +601,80 @@ function WorldGrid(): React.ReactElement {
   // of three real cards next to skeletons.
   const initialLoading = loading && entries.length === 0;
   const shownEntries = initialLoading ? [] : worldEntries.slice(0, visibleCount);
+
+  // Group-reveal gate for the first two visible rows (above the fold): hold
+  // their wireframes until every portrait in those rows has actually loaded
+  // (or failed / timed out), then reveal them together — instead of letting
+  // each card pop in as its own image streams (260706). Rows past the first
+  // two keep the per-card lazy reveal. "Two rows" tracks the live measured
+  // column count, so it follows the responsive grid.
+  const firstRowsCount = columns * SKELETON_ROWS;
+  const firstRowsEntries = shownEntries.slice(0, firstRowsCount);
+  // A stable key over the first-rows set: re-gate only when the actual cards
+  // (or their portrait refs) change — not on every render.
+  const firstRowsKey = firstRowsEntries
+    .map((e) => `${e.id}:${e.portraitUrl ?? ''}`)
+    .join('|');
+  const firstRowsSrcs = firstRowsEntries
+    .map((e) => portraitSrc(e.portraitUrl))
+    .filter((s): s is string => !!s);
+  const [firstRowsReady, setFirstRowsReady] = useState(false);
+  useEffect(() => {
+    // Nothing on screen yet (still fetching page 0) → stay gated so the
+    // initial-loading skeletons keep holding.
+    if (firstRowsEntries.length === 0) {
+      setFirstRowsReady(false);
+      return;
+    }
+    // No portraits to wait on (all procedural) → reveal at once.
+    if (firstRowsSrcs.length === 0) {
+      setFirstRowsReady(true);
+      return;
+    }
+    setFirstRowsReady(false);
+    let settled = 0;
+    let done = false;
+    const finish = (): void => {
+      if (done) return;
+      settled += 1;
+      if (settled >= firstRowsSrcs.length) {
+        done = true;
+        setFirstRowsReady(true);
+      }
+    };
+    const imgs = firstRowsSrcs.map((src) => {
+      const img = new Image();
+      let counted = false;
+      const once = (): void => {
+        if (counted) return;
+        counted = true;
+        finish();
+      };
+      // A broken image resolves via onerror — treated as "done" so it never
+      // holds the group.
+      img.onload = once;
+      img.onerror = once;
+      img.src = src;
+      // A cached image can already be complete before the handlers attach.
+      if (img.complete) once();
+      return img;
+    });
+    const timer = window.setTimeout(() => {
+      if (!done) {
+        done = true;
+        setFirstRowsReady(true);
+      }
+    }, FIRST_ROWS_REVEAL_TIMEOUT_MS);
+    return () => {
+      window.clearTimeout(timer);
+      imgs.forEach((img) => {
+        img.onload = null;
+        img.onerror = null;
+      });
+    };
+    // firstRowsKey uniquely determines firstRowsEntries/firstRowsSrcs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstRowsKey]);
 
   // Backfill: when the display window outruns what's loaded (initial batch on
   // a wide window, or "Load more" past the last fetched page), pull the next
@@ -704,26 +742,18 @@ function WorldGrid(): React.ReactElement {
           Couldn&apos;t load World. {error}
         </div>
       ) : null}
-      {inviteError ? (
-        <div className={styles.error} role="alert">
-          {inviteError}
-        </div>
-      ) : null}
       {entries.length === 0 && defaultEntries.length === 0 && !loading && !error ? (
         <div className={styles.empty}>
           No public companions yet. Be the first to share one.
         </div>
       ) : null}
       <div className={styles.grid} ref={gridRef}>
-        {shownEntries.map((entry) => (
+        {shownEntries.map((entry, i) => (
           <BrowseCard
             key={entry.id}
             entry={entry}
             theme={theme}
-            inviteState={inviteStateFor(entry)}
-            onInvite={() => {
-              void handleInvite(entry);
-            }}
+            ready={i < firstRowsCount ? firstRowsReady : undefined}
             onOpen={() => {
               void handleOpen(entry);
             }}
@@ -746,9 +776,6 @@ function WorldGrid(): React.ReactElement {
         </div>
       ) : null}
       </div>
-      {showSignIn ? (
-        <SignInModal framingLabel={upgradeFraming} onClose={() => setShowSignIn(false)} />
-      ) : null}
     </div>
   );
 }

@@ -240,16 +240,41 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(source.includes('slotsOpen')).toBe(true);
   });
 
-  it('Test 19: World Invite reuses the CharacterPage add-to-library IPC path', () => {
+  it('Test 19: World invite moved to CharacterPage; the in-card hover CTA is gone', () => {
+    // 260706: the hover Invite overlay was removed from World cards. Invite is
+    // still reachable — the card body opens CharacterPage, whose "Add to
+    // library" CTA runs the same charsAddToLibrary / charsRestoreDefault path
+    // (with the identical sign-in gate). So the invite plumbing left WorldGrid.
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes('charsAddToLibrary')).toBe(true);
-    expect(source.includes('charsRestoreDefault')).toBe(true);
-    // Foreign adds are sign-in gated with the same framing as CharacterPage.
-    expect(source.includes("setUpgradeFraming('add this companion to your library')")).toBe(true);
+    expect(source.includes('handleInvite')).toBe(false);
+    expect(source.includes('inviteState')).toBe(false);
     const card = readFileSync(BROWSE_CARD, 'utf-8');
-    expect(card.includes("'open' | 'in-party' | 'full'")).toBe(true);
-    expect(card.includes('In your party')).toBe(true);
-    expect(card.includes('Party full')).toBe(true);
-    expect(card.includes('stopPropagation')).toBe(true);
+    // No invite action, state, or overlay left in the card.
+    expect(card.includes('onInvite')).toBe(false);
+    expect(card.includes('InviteState')).toBe(false);
+    expect(card.includes('styles.over')).toBe(false);
+    // The card body still opens the profile where "Add to library" lives.
+    expect(card.includes('onOpen')).toBe(true);
+    // CharacterPage carries the add-to-library CTA the invite now flows through.
+    const characterPage = readFileSync(
+      resolve(REPO_ROOT, 'src', 'renderer', 'src', 'screens', 'CharacterPage.tsx'),
+      'utf-8',
+    );
+    expect(characterPage.includes('charsAddToLibrary')).toBe(true);
+    expect(characterPage.includes('Add to library')).toBe(true);
+  });
+
+  it('Test 20: World first two rows gate reveal on portrait load (group reveal)', () => {
+    // The above-the-fold rows hold a wireframe until every portrait in them
+    // loads (or errors / times out), then reveal together via BrowseCard's
+    // `ready` override — no per-card pop-in.
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes('firstRowsReady')).toBe(true);
+    expect(source.includes('FIRST_ROWS_REVEAL_TIMEOUT_MS')).toBe(true);
+    expect(source.includes('new Image()')).toBe(true);
+    // Two rows tracks the live column count.
+    expect(source.includes('columns * SKELETON_ROWS')).toBe(true);
+    const card = readFileSync(BROWSE_CARD, 'utf-8');
+    expect(card.includes('readyOverride')).toBe(true);
   });
 });

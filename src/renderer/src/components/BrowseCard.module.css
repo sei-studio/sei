@@ -58,22 +58,6 @@
   overflow: hidden;
 }
 
-/* Hover overlay with the centered Invite action. */
-.over {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: color-mix(in srgb, var(--bg) 50%, transparent);
-  opacity: 0;
-  transition: opacity 0.15s var(--ease);
-}
-
-.card:hover .over,
-.card:focus-within .over {
-  opacity: 1;
-}
-
 .meta {
   padding: 9px 12px 11px;
   display: flex;
@@ -109,8 +93,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card,
-  .over {
+  .card {
     transition: none;
   }
 }
