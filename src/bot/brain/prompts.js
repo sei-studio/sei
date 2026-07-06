@@ -18,11 +18,13 @@ export {
   GREETING_HINT,
   PERSONALITY_TOOL_DESCRIPTIONS,
   PROACTIVENESS_DIRECTIVES,
+  PUNCTUATION_DIRECTIVES,
   SEED_HEADERS,
   NUDGES,
   // Render functions (interpolate runtime values into the prompt text).
   renderPersona,
   renderProactivenessDirective,
+  renderPunctuationDirective,
   renderCore,
   renderHeartbeat,
   renderCompanions,

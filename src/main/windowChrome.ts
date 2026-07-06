@@ -26,12 +26,10 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
       ? { frame: false }
       : {}; // Linux: native frame
 
-  // Same default + floor on every platform (1180×760) so the card grid lays out
-  // identically (5 per row). The window is resizable (Electron default — no
-  // `resizable: false` anywhere) and can grow freely; it just can't shrink below
-  // the 1180×760 floor. Windows previously shipped smaller (1040×700) to fit
-  // 1366×768 laptops, but is now matched to macOS per product direction.
-  const dims = { width: 1180, height: 760, minWidth: 1180, minHeight: 760 };
+  // Same default on every platform. The Party redesign shortened the window
+  // (1180×720, was ×760) and unlocked the floor (1000×560) — panels flex, so
+  // the layout survives small sizes and the window can grow freely.
+  const dims = { width: 1180, height: 720, minWidth: 1000, minHeight: 560 };
 
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, 'icon.png')

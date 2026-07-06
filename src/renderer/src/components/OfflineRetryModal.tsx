@@ -15,13 +15,13 @@
  * also auto-retry once when the OS reports connectivity returning (window
  * 'online' event) so the common laptop-wake case heals without a click.
  *
- * Layout idiom mirrors AcceptToSModal / DeleteAccountModal: 460px frame,
- * 32px padding, 0.45-alpha scrim, token-only colors.
+ * Renders through ModalShell; Esc dismisses (this is a notice, not a gate).
  */
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './OfflineRetryModal.module.css';
 
 export interface OfflineRetryModalProps {
@@ -57,41 +57,25 @@ export function OfflineRetryModal({ onDismiss }: OfflineRetryModalProps): React.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ESC dismisses — this is a notice, not a gate.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onDismiss();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onDismiss]);
-
-  const titleId = 'offline-retry-title';
-
   return (
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>
-          You&rsquo;re offline
-        </h2>
-        <p className={styles.body}>
-          Sei couldn&rsquo;t reach the cloud to check your account. You can keep playing locally
-          &mdash; cloud features like character sync will reconnect once you&rsquo;re back online.
+    <ModalShell title="You're offline" onClose={onDismiss}>
+      <p className={styles.body}>
+        Sei couldn&rsquo;t reach the cloud to check your account. You can keep playing locally
+        &mdash; cloud features like character sync will reconnect once you&rsquo;re back online.
+      </p>
+      {retryFailed ? (
+        <p className={styles.errorText} role="alert">
+          Still can&rsquo;t connect. Check your internet connection and try again.
         </p>
-        {retryFailed ? (
-          <p className={styles.errorText} role="alert">
-            Still can&rsquo;t connect. Check your internet connection and try again.
-          </p>
-        ) : null}
-        <div className={styles.footer}>
-          <Button kind="ghost" size="md" onClick={onDismiss} disabled={retrying}>
-            Continue offline
-          </Button>
-          <Button kind="accent" size="md" onClick={() => void retry()} disabled={retrying}>
-            {retrying ? 'Retrying…' : 'Retry'}
-          </Button>
-        </div>
-      </div>
-    </div>
+      ) : null}
+      <ModalFooter>
+        <Button kind="ghost" size="md" onClick={onDismiss} disabled={retrying}>
+          Continue offline
+        </Button>
+        <Button kind="primary" size="md" onClick={() => void retry()} disabled={retrying}>
+          {retrying ? 'Retrying…' : 'Retry'}
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

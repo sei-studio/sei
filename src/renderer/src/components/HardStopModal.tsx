@@ -31,10 +31,11 @@
  *          useCreditsStore.ts (hardStopActive / acknowledgeHardStop wire).
  */
 
-import React, { useEffect, useId } from 'react';
+import React, { useEffect } from 'react';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './HardStopModal.module.css';
 
 /** "Come back after 9:30 PM" / "Come back Tuesday after 2:00 AM" for the daily-limit copy. */
@@ -54,22 +55,8 @@ export function HardStopModal(): React.ReactElement | null {
   const rateLimitedUntil = useCreditsStore((s) => s.rateLimitedUntil);
   const acknowledgeHardStop = useCreditsStore((s) => s.acknowledgeHardStop);
   const navigate = useUiStore((s) => s.navigate);
-  const titleId = useId();
 
-  // ESC dismisses the popup (informational notice, not a blocking gate). The
-  // handler mounts/unmounts with the modal so we never leak a global keydown
-  // listener while it's hidden.
-  useEffect(() => {
-    if (!hardStopActive) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        acknowledgeHardStop();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [hardStopActive, acknowledgeHardStop]);
+  // ESC dismissal is owned by ModalShell (escClose default true → onClose).
 
   // Auto-dismiss on balance refill. Gated on reason==='depleted' so a
   // rate-limited hard-stop doesn't clear just because the balance is non-zero
@@ -95,27 +82,27 @@ export function HardStopModal(): React.ReactElement | null {
   };
 
   return (
-    // Click-outside intentionally does NOT dismiss (no onClick on scrim) — Close,
-    // the primary CTA, and ESC are the deliberate dismiss paths.
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>
-          {isDaily ? 'Daily limit reached' : <>You&rsquo;re out of playtime</>}
-        </h2>
-        <p className={styles.body}>
-          {isDaily
-            ? `Sorry — we don't have many servers this early, so daily play is limited for non-subscribers. ${formatResetWhen(rateLimitedUntil)}, or upgrade to a Party plan to keep playing.`
-            : 'Sei has run out of cloud credits. Recharge to keep playing.'}
-        </p>
-        <div className={styles.footer}>
-          <Button kind="accent" onClick={handlePrimary}>
-            {isDaily ? 'Upgrade to Party' : 'Recharge'}
-          </Button>
-          <Button kind="ghost" className={styles.muted} onClick={acknowledgeHardStop}>
-            Close
-          </Button>
-        </div>
-      </div>
-    </div>
+    // Click-outside intentionally does NOT dismiss (scrimClose omitted) — Close,
+    // the primary CTA, and ESC are the deliberate dismiss paths. Base tier: the
+    // consent gate (AutoRenewalConsentModal) stacks above this at 1100.
+    <ModalShell
+      title={isDaily ? 'Daily limit reached' : 'You’re out of playtime'}
+      width={440}
+      onClose={acknowledgeHardStop}
+    >
+      <p className={styles.body}>
+        {isDaily
+          ? `Sorry, we don't have many servers this early, so daily play is limited for non-subscribers. ${formatResetWhen(rateLimitedUntil)}, or upgrade to a Party plan to keep playing.`
+          : 'Sei has run out of cloud credits. Recharge to keep playing.'}
+      </p>
+      <ModalFooter>
+        <Button kind="quiet" size="md" onClick={acknowledgeHardStop}>
+          Close
+        </Button>
+        <Button kind="accent" size="md" onClick={handlePrimary}>
+          {isDaily ? 'Upgrade to Party' : 'Recharge'}
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

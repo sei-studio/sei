@@ -21,6 +21,7 @@ import { sei } from '../lib/ipcClient';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from './PixelPortrait';
 import { Button } from './Button';
+import { Presence } from './Presence';
 import { UserIcon } from './icons';
 import styles from './SummonedWidget.module.css';
 
@@ -152,13 +153,10 @@ export function SummonedWidget(): React.ReactElement | null {
             </div>
             <div className={styles.meta}>
               <span className={styles.name}>{name}</span>
-              <span className={styles.status}>
-                <span
-                  className={`${styles.dot} ${connecting ? styles.dotConnecting : ''}`}
-                  aria-hidden="true"
-                />
-                {connecting ? 'Connecting…' : 'Connected'}
-              </span>
+              <Presence
+                category={connecting ? 'connecting' : 'in-game'}
+                label={connecting ? 'Connecting…' : 'In your world'}
+              />
             </div>
             <Button
               kind="danger"

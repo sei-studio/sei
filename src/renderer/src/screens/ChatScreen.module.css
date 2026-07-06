@@ -3,12 +3,22 @@
  * All values from tokens.css — no literal hex/px colors. */
 
 .root {
-  position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
   min-height: 0;
   background: var(--window);
+}
+
+/* The message column owns the absolute-positioned floating composer, so it is
+   the positioning context (not .root, which now also holds the side panel). */
+.chatCol {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* ── Header bar (compact — no status row) ───────────────────────────────── */
@@ -55,23 +65,40 @@
   justify-content: center;
 }
 
-.headerText {
+/* The name is a button that opens the full profile page (260705; the presence
+   panel is reachable via message author names). Rendered as plain text
+   (button reset), lights to accent on hover. Baseline alignment keeps the
+   IdTag on the name's baseline instead of floating at the flex center (the
+   display font sits low in its line box, so centering read as misaligned). */
+.nameToggle {
+  -webkit-appearance: none;
+  appearance: none;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-sm);
   min-width: 0;
   flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nameToggle:hover .headerName {
+  color: var(--accent);
 }
 
 .headerName {
   font-family: var(--display);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 140ms var(--ease);
 }
 
 .headerActions {
@@ -124,6 +151,20 @@
   padding-bottom: 100px;
 }
 
+/* Scrollbar hidden at rest — the thumb shows only while actively scrolling
+   (ChatScreen sets data-scrolling during scroll, clears it after idle). */
+.list::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.list[data-scrolling]::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+}
+
+.list[data-scrolling]::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
 .empty {
   margin: auto;
   text-align: center;
@@ -132,6 +173,52 @@
   color: var(--muted);
   max-width: 320px;
   line-height: 1.5;
+}
+
+/* ── Loading skeleton ───────────────────────────────────────────────────── */
+/* Wireframe transcript shown while history is fetching (before any bubble can
+ * pop in). Mirrors the real row layout — 40px avatar gutter + text — so nothing
+ * jumps when messages land. Static by design (260705) — no shimmer sweep. */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.skelRowLead,
+.skelRowCont {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: var(--space-md);
+}
+
+.skelRowLead {
+  align-items: start;
+}
+
+.skelAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg3);
+}
+
+.skelBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.skelName {
+  height: 11px;
+  width: 96px;
+  background: var(--border);
+}
+
+.skelBar {
+  height: 13px;
+  background: var(--border);
 }
 
 /* A message row that starts a new author run: avatar gutter + header + text.
@@ -242,12 +329,24 @@
   margin-bottom: 2px;
 }
 
-/* Change #8 — companion name is white/text-colored, same as the user. */
+/* Change #8 — companion name is white/text-colored, same as the user. §4.5 —
+   it is a button: clicking an author's name swaps the presence panel card. */
 .authorName {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
   font-family: var(--sans);
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
+}
+
+.authorName:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .timestamp {
@@ -324,9 +423,8 @@
 
 .daySeparatorLabel {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -394,9 +492,8 @@
   pointer-events: none;
   align-self: center;
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--accent);
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
@@ -476,15 +573,15 @@
   color: var(--red);
 }
 
-/* Change #3 — the composer is a hovering rectangle, not an inset row. */
-/* #4 — no border, fill a shade close to the window background. */
+/* §4.5 — the mockup boxed composer: --bg2 fill, --border-strong hairline,
+   input + accent send glyph. Still hovers over the list via .composerDock. */
 .composer {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm);
-  background: var(--surface);
-  border: none;
+  gap: 10px;
+  padding: 11px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border-strong);
 }
 
 .input {
@@ -511,30 +608,143 @@
   color: var(--muted-2);
 }
 
-/* Change #3 — send button only mounts when the draft is non-empty, and is
- * small enough (#2) that it never grows the message box height. */
+/* §4.5 — the send button is a borderless accent GLYPH (mockup .send), mounted
+ * only when the draft is non-empty. Small enough it never grows the box. */
 .sendBtn {
   -webkit-appearance: none;
   appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
+  border: none;
+  background: transparent;
+  color: var(--accent);
   cursor: pointer;
-  transition: opacity 140ms var(--ease), background 140ms var(--ease);
+  transition: color 140ms var(--ease);
 }
 
 .sendBtn:hover:not(:disabled) {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 .sendBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ── Presence side panel (§4.5, mockup .pres-panel) ─────────────────────── */
+/* Collapsible 260px right column; width animates open/closed. Default CLOSED
+ * (260705). --pres-tint (set inline from the portrait's dominant color)
+ * washes the surface; unset → plain --bg2. */
+.presPanel {
+  width: 0;
+  flex: none;
+  border-left: 1px solid transparent;
+  background: color-mix(in srgb, var(--pres-tint, transparent) 20%, var(--bg2));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  transition: width 300ms var(--ease), border-color 300ms var(--ease);
+}
+
+.presOpen .presPanel {
+  width: 260px;
+  border-left-color: var(--border);
+  overflow-y: auto;
+}
+
+/* Fixed-width inner so content doesn't reflow during the width transition. */
+.presInner {
+  width: 260px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.presArt {
+  height: 190px;
+  flex: none;
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.presArtImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Face-biased crop anchor, same 18% convention as IconRail avatars. */
+  object-position: 50% 18%;
+}
+
+.presArtFallback {
+  color: var(--muted);
+}
+
+/* Bottom fade of the portrait art down into the panel fill (tinted to match
+ * the .presPanel wash). */
+.presFade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 50%,
+    color-mix(in srgb, var(--pres-tint, transparent) 20%, var(--bg2)) 100%
+  );
+}
+
+.presBody {
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.presNameRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.presName {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 23px;
+  line-height: 1;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.presKind {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.presNow {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.presActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presPanel {
+    transition: none;
+  }
 }

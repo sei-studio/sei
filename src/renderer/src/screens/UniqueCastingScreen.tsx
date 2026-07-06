@@ -11,8 +11,9 @@
  *   persona → "Teaching them who they are…"
  *   saving  → "Binding to your world…"
  *
- * Portrait/skin stage errors are NON-fatal — they surface a subtle
- * "(the vision blurred — continuing)" line rather than failing the ritual.
+ * Portrait/skin stage errors are NON-fatal — they surface a plain-spoken
+ * "Image generation failed…" / "Skin generation failed…" line rather than
+ * failing the ritual (260705: replaced the cryptic "the vision blurred").
  * On { ok:false } we swap to a code-appropriate error state with Try again /
  * Back. On { ok:true } we refresh the character list and route to the reveal.
  */
@@ -27,6 +28,24 @@ import type { GenStage, GenerateUniqueResult, UniqueGender } from '@shared/ipc';
 import styles from './UniqueCastingScreen.module.css';
 
 const STAGE_ORDER: GenStage[] = ['sheet', 'portrait', 'skin', 'persona', 'saving'];
+
+/**
+ * Rough share of wall-clock each stage takes (sums to 100). The bar credits a
+ * stage's full weight when it settles and creeps toward 90% of an in-flight
+ * stage's weight while it runs, so the long LLM calls (sheet, persona) read as
+ * live motion instead of a frozen bar that lurches in 20% steps.
+ */
+const STAGE_WEIGHT: Record<GenStage, number> = {
+  sheet: 30,
+  portrait: 20,
+  skin: 10,
+  persona: 30,
+  saving: 10,
+};
+
+const CREEP_TICK_MS = 200;
+/** Fraction of the remaining gap closed per tick (~4s time constant). */
+const CREEP_RATE = 0.05;
 
 const STAGE_COPY: Record<GenStage, string> = {
   sheet: 'Casting their soul…',
@@ -70,28 +89,35 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
   const [stageState, setStageState] = useState<Partial<Record<GenStage, 'start' | 'done' | 'error'>>>(
     {},
   );
-  const [blurred, setBlurred] = useState(false);
+  // Non-fatal art failures, reported honestly under the bar. A portrait
+  // failure implies no custom skin either (the skin derives from the same
+  // image), so only the portrait line shows in that case.
+  const [portraitFailed, setPortraitFailed] = useState(false);
+  const [skinFailed, setSkinFailed] = useState(false);
   const [errCode, setErrCode] = useState<ErrCode | null>(null);
   // The pipeline's specific failure reason (e.g. which stage broke and why).
   // Shown as a dim detail line so a failed cast is diagnosable, not just poetic.
   const [errDetail, setErrDetail] = useState<string | null>(null);
   // Bumping `attempt` re-runs the generation effect (Try again).
   const [attempt, setAttempt] = useState(0);
+  // Smoothed bar value — creeps toward `ceilingPct` between stage events.
+  const [displayPct, setDisplayPct] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const requestId = crypto.randomUUID();
     setStageState({});
-    setBlurred(false);
+    setPortraitFailed(false);
+    setSkinFailed(false);
     setErrCode(null);
     setErrDetail(null);
+    setDisplayPct(0);
 
     const off = sei.onGenProgress((ev) => {
       if (cancelled || ev.requestId !== requestId) return;
       setStageState((prev) => ({ ...prev, [ev.stage]: ev.status }));
-      if (ev.status === 'error' && (ev.stage === 'portrait' || ev.stage === 'skin')) {
-        setBlurred(true);
-      }
+      if (ev.status === 'error' && ev.stage === 'portrait') setPortraitFailed(true);
+      if (ev.status === 'error' && ev.stage === 'skin') setSkinFailed(true);
     });
 
     void sei
@@ -122,6 +148,38 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
       off();
     };
   }, [gender, attempt, navigate]);
+
+  // ── Progress accounting ──────────────────────────────────────────────────
+  // 'error' counts as settled: portrait/skin errors are non-fatal (the pipeline
+  // continues without art), so the bar must still reach 100% on a successful
+  // cast instead of stalling and jumping to the reveal.
+  const settledPct = STAGE_ORDER.reduce(
+    (acc, s) => acc + (stageState[s] === 'done' || stageState[s] === 'error' ? STAGE_WEIGHT[s] : 0),
+    0,
+  );
+  // Ceiling the creep may approach: settled weight + 90% of every in-flight
+  // stage's weight. Never reaches a stage boundary before the stage settles.
+  const ceilingPct =
+    settledPct +
+    STAGE_ORDER.reduce(
+      (acc, s) => acc + (stageState[s] === 'start' ? STAGE_WEIGHT[s] * 0.9 : 0),
+      0,
+    );
+
+  // Creep the displayed value toward the ceiling; jump instantly when real
+  // progress (a settled stage) lands. Never moves backwards. (Must run before
+  // the error-state early return — hooks order.)
+  useEffect(() => {
+    setDisplayPct((p) => Math.max(p, settledPct));
+    const timer = window.setInterval(() => {
+      setDisplayPct((p) => {
+        const base = Math.max(p, settledPct);
+        const next = base + Math.max(0, ceilingPct - base) * CREEP_RATE;
+        return next > base ? next : base;
+      });
+    }, CREEP_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [settledPct, ceilingPct]);
 
   // ── Error state ──────────────────────────────────────────────────────────
   if (errCode) {
@@ -154,13 +212,7 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
   }
 
   // ── Progress state ───────────────────────────────────────────────────────
-  // 'error' counts as settled: portrait/skin errors are non-fatal (the pipeline
-  // continues without art), so the bar must still reach 100% on a successful
-  // cast instead of stalling at 60% and jumping to the reveal.
-  const settledCount = STAGE_ORDER.filter(
-    (s) => stageState[s] === 'done' || stageState[s] === 'error',
-  ).length;
-  const pct = Math.round((settledCount / STAGE_ORDER.length) * 100);
+  const pct = Math.round(displayPct);
   // Show the EARLIEST in-flight stage — portrait and persona run in parallel,
   // and the first unfinished one is the honest headline.
   const activeStage =
@@ -178,8 +230,10 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
         <div className={styles.barWrap}>
           <PercentBar value={pct} size="md" label={`Casting your companion, ${pct} percent`} />
         </div>
-        {blurred ? (
-          <p className={styles.blurred}>(the vision blurred — continuing)</p>
+        {portraitFailed ? (
+          <p className={styles.blurred}>Image generation failed. Continuing without a portrait.</p>
+        ) : skinFailed ? (
+          <p className={styles.blurred}>Skin generation failed. Continuing with the default skin.</p>
         ) : null}
       </div>
     </div>

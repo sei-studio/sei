@@ -463,8 +463,8 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   // no separate regex needed (Test 4 trailing-whitespace case covered).
   if (text === 'REFUSED:REAL_PERSON') {
     throw new Error(
-      "persona expansion failed: you can't create characters of real people — " +
-      'please use a fictional name and persona.',
+      "persona expansion failed: you can't create characters of real people. " +
+      'Please use a fictional name and persona.',
     );
   }
   // Split off the leading `PROACTIVENESS: <word>` line — it's config-only and

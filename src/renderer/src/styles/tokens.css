@@ -115,9 +115,6 @@
   --shadow-window: 0 0 0 1px rgba(34, 60, 110, .08), 0 24px 60px rgba(34, 60, 110, .18), 0 4px 16px rgba(34, 60, 110, .07);
   --shadow-card: 0 1px 2px rgba(34, 60, 110, .05), 0 4px 12px rgba(34, 60, 110, .06);
   --shadow-pop: 0 12px 32px rgba(34, 60, 110, .12);
-
-  /* Once-on-mount diagonal sweep on portraits. */
-  --shimmer: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.20) 50%, transparent 70%);
 }
 
 /* Explicit light selector mirrors :root so applyTheme('light') is unambiguous. */
@@ -160,7 +157,6 @@
   --shadow-window: 0 0 0 1px rgba(34, 60, 110, .08), 0 24px 60px rgba(34, 60, 110, .18), 0 4px 16px rgba(34, 60, 110, .07);
   --shadow-card: 0 1px 2px rgba(34, 60, 110, .05), 0 4px 12px rgba(34, 60, 110, .06);
   --shadow-pop: 0 12px 32px rgba(34, 60, 110, .12);
-  --shimmer: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.20) 50%, transparent 70%);
 }
 
 /*
@@ -232,6 +228,4 @@
   --shadow-window: 0 0 0 1px rgba(0, 0, 0, .5), 0 24px 60px rgba(0, 0, 0, .55), 0 4px 16px rgba(0, 0, 0, .35);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .25), 0 18px 40px -16px rgba(0, 0, 0, .80);
   --shadow-pop: 0 18px 40px -8px rgba(0, 0, 0, .70);
-
-  --shimmer: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.10) 50%, transparent 70%);
 }

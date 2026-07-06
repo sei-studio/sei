@@ -1,15 +1,12 @@
-/* IdTag.module.css — dim, bordered mono chip for a companion's public_id.
- * Tokens only (Summoning Terminal): mono type, muted color, sharp border. */
+/* IdTag.module.css — plain mono id mark next to a name (mockup .idtag).
+ * No border, no fill: it reads as quiet metadata, not a chip. */
 
 .tag {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   font-family: var(--mono);
-  letter-spacing: 0.14em;
-  color: var(--muted);
-  border: 1px solid var(--border-strong);
-  background: rgba(127, 127, 127, 0.04);
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-2);
   white-space: nowrap;
   user-select: text;
   flex-shrink: 0;
@@ -17,11 +14,9 @@
 }
 
 .sm {
-  font-size: 10px;
-  padding: 3px var(--space-sm);
+  font-size: 10.5px;
 }
 
 .md {
   font-size: 12px;
-  padding: 4px 10px;
 }

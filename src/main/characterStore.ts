@@ -248,7 +248,7 @@ export async function expandAndSaveCharacter(
       expansionInput.apiKey = await loadApiKey();
     } catch {
       throw new Error(
-        'persona expansion failed: local mode is on but no API key is saved — add one in Settings, or switch to managed billing',
+        'persona expansion failed: local mode is on but no API key is saved. Add one in Settings, or switch to managed billing',
       );
     }
   }
@@ -349,6 +349,10 @@ export async function checkCreateQuota(): Promise<{
  * Caller (main/ipc.ts) gates against resetting an actively summoned bot.
  */
 export async function resetMemoryForCharacter(id: string): Promise<void> {
+  // Full wipe — MEMORY.md, PLAYER.md, goals, chat.jsonl AND bridge.json all
+  // live in memoryDir, so reset erases the companion's memory and the chat
+  // history together (260705: reset is the ONE deliberate erase; the hidden
+  // compaction mechanism never trims what the chat UI shows).
   await rm(paths.memoryDir(id), { recursive: true, force: true });
   await mkdir(paths.memoryDir(id), { recursive: true });
   // ui-A9: reset launch + playtime stats. If the character JSON is missing

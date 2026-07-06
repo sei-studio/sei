@@ -61,6 +61,39 @@ export async function readRecent(characterId: string, n: number): Promise<ChatMe
   return all.slice(-n);
 }
 
+/**
+ * Cheap read of the LAST renderable chat message for roster previews
+ * (chat:previews / Party redesign §2). Scans lines from the end and
+ * short-circuits on the first parseable, non-legacy row — so it never
+ * materializes the whole transcript into a filtered array. Legacy event-less
+ * system rows are skipped (see filterLegacySystemRows). Returns null when the
+ * file is missing or holds no renderable message.
+ */
+export async function readLast(characterId: string): Promise<ChatMessage | null> {
+  let raw: string;
+  try {
+    raw = await readFile(chatPath(characterId), 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
+  const lines = raw.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    let msg: ChatMessage;
+    try {
+      msg = JSON.parse(line) as ChatMessage;
+    } catch {
+      continue;
+    }
+    // Skip legacy join-ack system rows (no `event`) — same rule as filterLegacySystemRows.
+    if (msg.role === 'system' && msg.event === undefined) continue;
+    return msg;
+  }
+  return null;
+}
+
 export async function clear(characterId: string): Promise<void> {
   try {
     await rm(chatPath(characterId));

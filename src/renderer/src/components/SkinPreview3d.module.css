@@ -13,8 +13,8 @@
 
   width: var(--skin-preview-w);
   height: var(--skin-preview-h);
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  border: 1px solid var(--border);
   display: grid;
   place-items: center;
   position: relative;

@@ -39,19 +39,19 @@ export function ReceiptScreen(): React.ReactElement {
 
   return (
     <div className={styles.root}>
-      <div className={styles.backRow}>
-        <Button
-          kind="quiet"
-          size="sm"
-          icon={<BackIcon size={14} />}
-          onClick={() => navigate({ kind: 'home' })}
-        >
-          Back
-        </Button>
-      </div>
-      <h1 className={styles.title}>Welcome to Party!</h1>
+      <div className={styles.col}>
+        <div className={styles.backRow}>
+          <Button
+            kind="quiet"
+            size="sm"
+            icon={<BackIcon size={14} />}
+            onClick={() => navigate({ kind: 'home' })}
+          >
+            Back
+          </Button>
+        </div>
+        <h1 className={styles.title}>Welcome to Party!</h1>
 
-      <section className={styles.section}>
         <div className={styles.tile}>
           {/*
             * PROXY-05 carve-out (quick/260525-sbo Task 6): "$20.00 charged
@@ -65,13 +65,14 @@ export function ReceiptScreen(): React.ReactElement {
           <p className={styles.line}>
             Cancel anytime in Settings → Cloud AI → Cancel subscription.
           </p>
-          <div className={styles.actions}>
-            <Button kind="primary" onClick={() => navigate({ kind: 'home' })}>
-              Back to Sei
-            </Button>
-          </div>
         </div>
-      </section>
+
+        <div className={styles.actions}>
+          <Button kind="primary" onClick={() => navigate({ kind: 'home' })}>
+            Back to Sei
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -31,13 +31,14 @@
  *   - src/main/cloud/proxyClient.ts recordSubscriptionConsent (IPC backend)
  *   - src/shared/legalVersions.ts TOS_VERSION (consent_version source)
  */
-import React, { useEffect, useId, useState } from 'react';
+import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
 // Use relative import (not @shared alias) so vitest can resolve without
 // extra config — the legacy tsconfig.web.json paths are not registered in
 // vitest.config.ts.
 import { TOS_VERSION } from '../../../shared/legalVersions';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import { PreCtaDisclosure } from './PreCtaDisclosure';
 import styles from './AutoRenewalConsentModal.module.css';
 
@@ -97,18 +98,10 @@ export function AutoRenewalConsentModal({
 }: AutoRenewalConsentModalProps): React.ReactElement {
   const [checked, setChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const titleId = useId();
 
   // ESC closes (non-blocking — the user CAN dismiss without consenting, in
-  // which case no checkout opens). Mirrors SignInModal:74-81. ESC is
-  // suppressed while submitting so we don't drop an in-flight INSERT.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !submitting) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, submitting]);
+  // which case no checkout opens), but is suppressed while submitting so we
+  // don't drop an in-flight INSERT. ModalShell owns the listener.
 
   const handleConfirm = async (): Promise<void> => {
     if (!checked || submitting) return;
@@ -141,58 +134,61 @@ export function AutoRenewalConsentModal({
   };
 
   return (
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>
-          Confirm your subscription
-        </h2>
-        <p className={styles.body}>
-          Party gives you heavier daily playtime that recharges every billing cycle. Polar
-          handles secure checkout and payment.
-        </p>
+    // Stacked tier (1100) so it layers above HardStopModal's base scrim when the
+    // consent gate fires from the hard-stop CTA path. ESC suppressed mid-submit.
+    <ModalShell
+      title="Confirm your subscription"
+      width={440}
+      tier="stacked"
+      escClose={!submitting}
+      onClose={onClose}
+    >
+      <p className={styles.body}>
+        Party gives you heavier daily playtime that recharges every billing cycle. Polar
+        handles secure checkout and payment.
+      </p>
 
-        {/*
-         * CA ARL §17602(a)(1) clear-and-conspicuous pre-purchase disclosure
-         * (price + frequency + auto-renew + cancellation method). This modal is
-         * the actual "request for consent" surface, so the disclosure lives HERE
-         * in visual proximity to the checkbox — the duplicate box that used to
-         * sit on the CreditsScreen Party card was removed 260603. renewsAt=null:
-         * a first-time subscriber has no renewal date yet, so PreCtaDisclosure
-         * renders the "Auto-renews monthly until you cancel" fallback.
-         */}
-        <PreCtaDisclosure renewsAt={null} />
+      {/*
+       * CA ARL §17602(a)(1) clear-and-conspicuous pre-purchase disclosure
+       * (price + frequency + auto-renew + cancellation method). This modal is
+       * the actual "request for consent" surface, so the disclosure lives HERE
+       * in visual proximity to the checkbox — the duplicate box that used to
+       * sit on the CreditsScreen Party card was removed 260603. renewsAt=null:
+       * a first-time subscriber has no renewal date yet, so PreCtaDisclosure
+       * renders the "Auto-renews monthly until you cancel" fallback.
+       */}
+      <PreCtaDisclosure renewsAt={null} />
 
-        {/*
-         * PROXY-05 carve-out (quick/260525-sbo Task 3): the literal "$20/month"
-         * string MUST appear in the consent checkbox label per CA ARL
-         * §17602(a)(1). The PROXY-05 bright-line ("no dollar amounts in
-         * renderer") is suspended for the at-purchase legal-disclosure surface
-         * only.
-         */}
-        <label className={styles.checkboxRow}>
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={(e) => setChecked(e.target.checked)}
-            aria-label="I agree to be charged $20/month until I cancel"
-          />
-          <span>I agree to be charged $20/month until I cancel.</span>
-        </label>
+      {/*
+       * PROXY-05 carve-out (quick/260525-sbo Task 3): the literal "$20/month"
+       * string MUST appear in the consent checkbox label per CA ARL
+       * §17602(a)(1). The PROXY-05 bright-line ("no dollar amounts in
+       * renderer") is suspended for the at-purchase legal-disclosure surface
+       * only.
+       */}
+      <label className={styles.checkboxRow}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => setChecked(e.target.checked)}
+          aria-label="I agree to be charged $20/month until I cancel"
+        />
+        <span>I agree to be charged $20/month until I cancel.</span>
+      </label>
 
-        <div className={styles.footer}>
-          <Button kind="quiet" size="md" onClick={onClose} disabled={submitting}>
-            Back
-          </Button>
-          <Button
-            kind="primary"
-            size="md"
-            onClick={() => void handleConfirm()}
-            disabled={!checked || submitting}
-          >
-            {submitting ? 'Opening in your browser…' : 'Continue to checkout'}
-          </Button>
-        </div>
-      </div>
-    </div>
+      <ModalFooter>
+        <Button kind="quiet" size="md" onClick={onClose} disabled={submitting}>
+          Back
+        </Button>
+        <Button
+          kind="primary"
+          size="md"
+          onClick={() => void handleConfirm()}
+          disabled={!checked || submitting}
+        >
+          {submitting ? 'Opening in your browser…' : 'Continue to checkout'}
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

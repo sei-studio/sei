@@ -1,5 +1,6 @@
 /**
- * Tests for CharactersScreen — B4 (Home / World tabs, capability gate removal).
+ * Tests for CharactersScreen — B4 (Home / World tabs) + Party redesign
+ * (party wall home, awaken view, World scouting grid).
  *
  * Project convention (no @testing-library/react installed): exercise the
  * source contract via grep-style file presence checks plus module-import
@@ -7,16 +8,16 @@
  *
  * Invariants under test:
  *   1. Module exports a CharactersScreen function symbol.
- *   2. The capability gate (`getCapabilities`, `browseEnabled` state, capability
- *      IPC) is gone from the source.
- *   3. Tab labels are "Home" and "World" (not "Browse").
+ *   2. The capability gate is gone from the source.
+ *   3. Navigation lives in the IconRail (no tab buttons here).
  *   4. Default tab is driven by useUiStore.homeTab.
- *   5. HomeGrid filters out foreign-owned characters (only defaults, owned,
- *      or legacy null-owner chars survive).
- *   6. WorldGrid drops the H1 heading and keeps only the search field at top.
- *   7. CharacterCard chip text is now MINE / WORLD (not PUBLIC / CUSTOM).
- *   8. main/capabilities.ts and main/capabilities.test.ts files are deleted.
- *   9. UserConfigSchema no longer carries `browse_enabled`.
+ *   5. HomeGrid filters out foreign-owned characters.
+ *   6. WorldGrid keeps the search field.
+ *   7. CharacterCard renders no chip text.
+ *   8-10. Legacy capability plumbing stays deleted.
+ *   11-19. Party redesign: party wall panels, dormant Awaken slots, presence +
+ *          lastline plumbing, AwakenScreen replaces AddCompanionChooserModal,
+ *          World top bar slots indicator + direct Invite path.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -30,6 +31,9 @@ import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TSX_PATH = resolve(__dirname, 'CharactersScreen.tsx');
 const CSS_PATH = resolve(__dirname, 'CharactersScreen.module.css');
+// 260706: the home-library membership rule moved to a shared module so
+// IconRail can use the exact same predicate (it used to diverge signed-out).
+const HOME_LIB_PATH = resolve(__dirname, '..', 'lib', 'homeLibrary.ts');
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
 const SCHEMA_PATH = resolve(REPO_ROOT, 'src', 'shared', 'characterSchema.ts');
 const CARD_PATH = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'CharacterCard.tsx');
@@ -67,8 +71,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     // No "Browse" anywhere as a label.
     expect(/>\s*Browse\s*</.test(source)).toBe(false);
-    // The Home/World tab BUTTONS are gone (rail handles navigation). A welcome
-    // header replaces them; no role="tab" / tablist in the screen any more.
+    // No role="tab" / tablist in the screen.
     expect(source.includes('role="tab"')).toBe(false);
     expect(source.includes('role="tablist"')).toBe(false);
   });
@@ -82,12 +85,16 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
   it('Test 5: HomeGrid filters out defaults + foreign-owned characters', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     expect(source.includes('homeCharacters')).toBe(true);
-    expect(source.includes('is_default === true')).toBe(true);
+    // The membership rule itself lives in the shared homeLibrary module
+    // (260706) so IconRail applies the identical predicate.
+    expect(source.includes('isHomeCharacter')).toBe(true);
+    const lib = readFileSync(HOME_LIB_PATH, 'utf-8');
+    expect(lib.includes('is_default === true')).toBe(true);
     // Strict mismatch against currentUserId hides foreign-owned chars.
-    expect(source.includes('c.owner !== currentUserId')).toBe(true);
+    expect(lib.includes('c.owner !== currentUserId')).toBe(true);
   });
 
-  it('Test 6: WorldGrid drops the H1 heading and keeps the search field', () => {
+  it('Test 6: WorldGrid keeps the search field', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     // No more <h1>Browse</h1>.
     expect(source.includes('>Browse</h1>')).toBe(false);
@@ -96,16 +103,11 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(source.includes('Search companions')).toBe(true);
   });
 
-  it('Test 7: CharacterCard renders no chip text (MINE / WORLD / LOCAL ONLY / CLOUD all removed)', () => {
-    const source = readFileSync(CARD_PATH, 'utf-8');
-    expect(source.includes("'MINE'")).toBe(false);
-    expect(source.includes("'WORLD'")).toBe(false);
-    // The legacy PUBLIC / CUSTOM vocabulary also must not return.
-    expect(source.includes("isDefault ? 'PUBLIC' : 'CUSTOM'")).toBe(false);
-    // LOCAL ONLY chip removed.
-    expect(source.includes('LOCAL ONLY')).toBe(false);
-    // chipLocalOnly CSS class no longer referenced from JSX.
-    expect(source.includes('chipLocalOnly')).toBe(false);
+  it('Test 7: CharacterCard is fully retired (party wall replaced the card grid)', () => {
+    // The component was deleted outright in the Party redesign — the home
+    // surface renders full-height panels, not cards, so no chip vocabulary
+    // (MINE / WORLD / LOCAL ONLY / CLOUD) can ever return.
+    expect(existsSync(CARD_PATH)).toBe(false);
   });
 
   it('Test 8: capabilities.ts and capabilities.test.ts are deleted', () => {
@@ -128,63 +130,129 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(mainIpc.includes('IpcChannel.capabilities')).toBe(false);
   });
 
-  it('Test 11: CSS module still exposes tabBar + tabActive', () => {
+  // ── Party redesign (UI-REDESIGN-PARTY.md §4.2–§4.4) ─────────────────────
+  const HOME_CSS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'screens', 'HomeScreen.module.css');
+  const CHOOSER = resolve(
+    REPO_ROOT, 'src', 'renderer', 'src', 'components', 'AddCompanionChooserModal.tsx',
+  );
+  const AWAKEN = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'screens', 'AwakenScreen.tsx');
+  const APP = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'App.tsx');
+  const UI_STORE = resolve(
+    REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'stores', 'useUiStore.ts',
+  );
+  const BROWSE_CARD = resolve(
+    REPO_ROOT, 'src', 'renderer', 'src', 'components', 'BrowseCard.tsx',
+  );
+
+  it('Test 11: World CSS exposes the top bar (search + sort + slots indicator)', () => {
     const css = readFileSync(CSS_PATH, 'utf-8');
-    expect(css.includes('.tabBar')).toBe(true);
-    expect(css.includes('.tabActive')).toBe(true);
+    expect(css.includes('.worldTop')).toBe(true);
+    expect(css.includes('.search')).toBe(true);
+    expect(css.includes('.sortSelect')).toBe(true);
+    expect(css.includes('.slots')).toBe(true);
+    // The legacy mono/uppercase tab bar is gone.
+    expect(css.includes('.tabBar')).toBe(false);
+    expect(css.includes('text-transform: uppercase')).toBe(false);
   });
 
-  // ── 260703 procgen — fixed 4-slot Home + add-companion chooser ──────────
-  const HOME_CSS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'screens', 'HomeScreen.module.css');
-  const CHOOSER = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'AddCompanionChooserModal.tsx');
-
-  it('Test 12: Home renders a fixed 4-slot grid capped at MAX_COMPANION_SLOTS', () => {
+  it('Test 12: Home renders the party wall capped at MAX_COMPANION_SLOTS', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     // Slots are driven by the shared MAX_COMPANION_SLOTS constant (not a magic 4).
     expect(source.includes('MAX_COMPANION_SLOTS')).toBe(true);
     expect(source.includes('slotCharacters')).toBe(true);
-    // Uses the non-scrolling slot grid, not the old auto-fill .grid.
-    expect(source.includes('homeStyles.slotGrid')).toBe(true);
+    // Uses the full-height flex panels, not the old card grid.
+    expect(source.includes('homeStyles.panels')).toBe(true);
+    expect(source.includes('homeStyles.panel')).toBe(true);
     const homeCss = readFileSync(HOME_CSS, 'utf-8');
-    expect(homeCss.includes('.slotGrid')).toBe(true);
-    expect(homeCss.includes('repeat(4, 1fr)')).toBe(true);
+    expect(homeCss.includes('.panels')).toBe(true);
+    expect(homeCss.includes('.dormant')).toBe(true);
+    // Hover expansion choreography from the mockup.
+    expect(homeCss.includes('flex: 1.65')).toBe(true);
+    expect(homeCss.includes('flex: 0.84')).toBe(true);
+    // The greeting header + old slot grid are gone.
+    expect(source.includes('Welcome back')).toBe(false);
+    expect(homeCss.includes('.slotGrid')).toBe(false);
   });
 
-  it('Test 13: empty slots use the slot AddCard, header "New companion" button is gone', () => {
+  it('Test 13: empty slots are dormant Awaken panels (GatherPixels), AddCard retired from home', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    // The header CTA was removed — slots are now the creation affordance.
+    expect(source.includes('GatherPixels')).toBe(true);
+    expect(source.includes('Awaken')).toBe(true);
+    expect(source.includes('AddCard')).toBe(false);
+    expect(source.includes('Summon a companion')).toBe(false);
     expect(source.includes('New companion')).toBe(false);
-    // Empty slots render the AddCard slot variant labelled "Summon a companion".
-    expect(source.includes("variant=\"slot\"")).toBe(true);
-    expect(source.includes('Summon a companion')).toBe(true);
-    // The card renders with the slot variant so it stretches to full height.
-    expect(source.includes("variant=\"slot\"")).toBe(true);
+    // Dormant slots route to the awaken view behind the creation-quota gate.
+    expect(source.includes("navigate({ kind: 'awaken' })")).toBe(true);
+    expect(source.includes('checkCreateQuota')).toBe(true);
+    expect(source.includes('CreationLimitModal')).toBe(true);
   });
 
   it('Test 14: Home filter uses added_default_ids (defaults hidden unless invited)', () => {
+    const lib = readFileSync(HOME_LIB_PATH, 'utf-8');
+    expect(lib.includes('return addedDefaultIds.has(c.id);')).toBe(true);
+    expect(lib.includes('removedDefaultIds')).toBe(false);
     const source = readFileSync(TSX_PATH, 'utf-8');
-    // Defaults are opt-IN on Home now (added_default_ids), not opt-out: the
-    // is_default branch of the Home filter returns addedDefaultIds.has(c.id),
-    // and WorldGrid's "in library" pill reads the same set.
-    expect(source.includes('return addedDefaultIds.has(c.id);')).toBe(true);
     expect(source.includes('removedDefaultIds')).toBe(false);
   });
 
-  it('Test 15: an empty slot opens the three-way AddCompanionChooserModal', () => {
+  it('Test 15: panels carry presence + lastline plumbing (presenceOf / actionVerb / chat previews)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes('AddCompanionChooserModal')).toBe(true);
-    expect(existsSync(CHOOSER)).toBe(true);
-    const chooser = readFileSync(CHOOSER, 'utf-8');
-    // Three tiles: unique / custom / world.
-    expect(chooser.includes('Meet your unique companion')).toBe(true);
-    expect(chooser.includes('Create from scratch')).toBe(true);
-    expect(chooser.includes('Invite an existing companion')).toBe(true);
+    expect(source.includes('presenceOf')).toBe(true);
+    expect(source.includes('useMinuteTick')).toBe(true);
+    expect(source.includes('actionVerb')).toBe(true);
+    expect(source.includes('chatPreviewFor')).toBe(true);
+    expect(source.includes('loadPreviews')).toBe(true);
+    // New companions get the "Say hello" primary instead of Message.
+    expect(source.includes("'Say hello'")).toBe(true);
+    expect(source.includes("'Message'")).toBe(true);
+    // Play opens the games picker without triggering the panel open.
+    expect(source.includes("kind: 'games-picker'")).toBe(true);
+    expect(source.includes('stopPropagation')).toBe(true);
   });
 
-  it('Test 16: unique path gates on sign-in via the meet-your-unique framing', () => {
+  it('Test 16: AddCompanionChooserModal is retired; AwakenScreen replaces it', () => {
+    expect(existsSync(CHOOSER)).toBe(false);
+    expect(existsSync(AWAKEN)).toBe(true);
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes("setUpgradeFraming('meet your unique companion')")).toBe(true);
+    expect(source.includes('AddCompanionChooserModal')).toBe(false);
+    // The awaken view is a routed surface: view kind + App route exist.
+    const uiStore = readFileSync(UI_STORE, 'utf-8');
+    expect(uiStore.includes("{ kind: 'awaken' }")).toBe(true);
+    const app = readFileSync(APP, 'utf-8');
+    expect(app.includes("view.kind === 'awaken' && <AwakenScreen />")).toBe(true);
+  });
+
+  it('Test 17: AwakenScreen keeps the unique-path gates (sign-in + cloud backend + prefs)', () => {
+    const awaken = readFileSync(AWAKEN, 'utf-8');
+    expect(awaken.includes("setUpgradeFraming('meet your unique companion')")).toBe(true);
     // Backend gate: local (BYOK) users are also routed to sign-in.
-    expect(source.includes("!== 'cloud-proxy'")).toBe(true);
+    expect(awaken.includes("!== 'cloud-proxy'")).toBe(true);
+    // Questionnaire gate → profile-questions with the unique-gender next hop.
+    expect(awaken.includes("next: 'unique-gender'")).toBe(true);
+    expect(awaken.includes("navigate({ kind: 'unique-gender' })")).toBe(true);
+    // The other two origins: custom wizard (quota-gated) + World tab.
+    expect(awaken.includes('checkCreateQuota')).toBe(true);
+    expect(awaken.includes("navigate({ kind: 'add-character' })")).toBe(true);
+    expect(awaken.includes("setHomeTab('world')")).toBe(true);
+  });
+
+  it('Test 18: World top bar shows the party-slots indicator from the shared home filter', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes('isHomeCharacter')).toBe(true);
+    expect(source.includes('Party full')).toBe(true);
+    expect(source.includes('slotsOpen')).toBe(true);
+  });
+
+  it('Test 19: World Invite reuses the CharacterPage add-to-library IPC path', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes('charsAddToLibrary')).toBe(true);
+    expect(source.includes('charsRestoreDefault')).toBe(true);
+    // Foreign adds are sign-in gated with the same framing as CharacterPage.
+    expect(source.includes("setUpgradeFraming('add this companion to your library')")).toBe(true);
+    const card = readFileSync(BROWSE_CARD, 'utf-8');
+    expect(card.includes("'open' | 'in-party' | 'full'")).toBe(true);
+    expect(card.includes('In your party')).toBe(true);
+    expect(card.includes('Party full')).toBe(true);
+    expect(card.includes('stopPropagation')).toBe(true);
   });
 });

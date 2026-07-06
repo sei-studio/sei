@@ -26,6 +26,7 @@ import { sei } from '../lib/ipcClient';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './LanModal.module.css';
 
 const STEPS: readonly string[] = [
@@ -91,64 +92,58 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
     navigate,
   ]);
 
-  // ── ESC handling (D-24): in searching mode, ESC also clears pending summon
-  useEffect(() => {
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return;
-      if (mode === 'searching') setPendingSummon(null);
-      closeModal();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [mode, closeModal, setPendingSummon]);
+  // ── Dismiss (D-24): in searching mode, closing also clears the pending summon.
+  //    ModalShell drives Esc → onClose; the footer buttons call the same handler.
+  const onClose = (): void => {
+    if (mode === 'searching') {
+      setPendingSummon(null);
+      setPendingSummonReturnToChat(false);
+    }
+    closeModal();
+  };
 
   return (
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby="lan-modal-title">
-      <div className={styles.modal}>
-        <div className={styles.headerEyebrow}>
-          <span className={styles.headerDot} style={{ background: pillColor(lan.kind) }} />
-          {pillLabel(lan.kind).toUpperCase()}
-        </div>
-        <h2 id="lan-modal-title" className={styles.title}>
-          To connect a character to your world
-        </h2>
-        <ol className={styles.steps}>
-          {STEPS.map((step, i) => (
-            <li key={i} className={styles.step}>
-              <span className={styles.stepNumber}>{String(i + 1).padStart(2, '0')}</span>
-              <span className={styles.stepBody}>{step}</span>
-            </li>
-          ))}
-        </ol>
-        {mode === 'searching' ? (
-          <div className={styles.searching}>
-            <span className={styles.searchDots} aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-            Searching for an open LAN world…
-          </div>
-        ) : null}
-        <div className={styles.footer}>
-          {mode === 'searching' ? (
-            <Button
-              kind="quiet"
-              size="md"
-              onClick={() => {
-                setPendingSummon(null);
-                setPendingSummonReturnToChat(false);
-                closeModal();
-              }}
-            >
-              Cancel
-            </Button>
-          ) : null}
-          <Button kind="primary" size="md" onClick={closeModal}>
-            Close
-          </Button>
-        </div>
+    <ModalShell
+      title={null}
+      width={520}
+      onClose={onClose}
+      aria-label="To connect a character to your world"
+    >
+      <div className={styles.headerEyebrow}>
+        <span className={styles.headerDot} style={{ background: pillColor(lan.kind) }} />
+        {pillLabel(lan.kind)}
       </div>
-    </div>
+      <h2 id="lan-modal-title" className={styles.title}>
+        To connect a character to your world
+      </h2>
+      <ol className={styles.steps}>
+        {STEPS.map((step, i) => (
+          <li key={i} className={styles.step}>
+            <span className={styles.stepNumber}>{String(i + 1).padStart(2, '0')}</span>
+            <span className={styles.stepBody}>{step}</span>
+          </li>
+        ))}
+      </ol>
+      {mode === 'searching' ? (
+        <div className={styles.searching}>
+          <span className={styles.searchDots} aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          Searching for an open LAN world…
+        </div>
+      ) : null}
+      <ModalFooter>
+        {mode === 'searching' ? (
+          <Button kind="quiet" size="md" onClick={onClose}>
+            Cancel
+          </Button>
+        ) : null}
+        <Button kind="primary" size="md" onClick={onClose}>
+          Close
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

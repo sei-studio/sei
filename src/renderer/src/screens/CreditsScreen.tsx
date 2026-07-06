@@ -1,11 +1,12 @@
 /**
  * CreditsScreen — Playtime plan-picker surface (revamped 260602-uv9, 260603).
  *
- * Layout:
- *   - BackRow + h1 "Playtime" + a USAGE section (UsageBar size="lg" hero +,
- *     for active subscribers, a "Next renewal" line). No plan label — the
- *     prior "No active plan" / "Depleted" text is gone (260603).
- *   - A single PLANS section with THREE side-by-side cards (Trial / Quest /
+ * Layout (Party redesign, mockup .pt-*): a centered 620px column —
+ *   - BackRow + a percent-used HERO: "{pct}% used" (Oswald) + a flat accent
+ *     usage bar and a quiet refresh, with a renewal/end-date sub-line for
+ *     active subscribers. (260705: was "{pct}% left" over a remaining-fill
+ *     bar, which read as its opposite; the "~Xh left" estimate was removed.)
+ *   - An "Add playtime" section with THREE plan cards (Encounter / Quest /
  *     Party). Each card body reads: plan NAME → big money number → small
  *     "~X hours of playtime" line → button.
  *       - Trial: "Free", "~1 hour", "Claim" → claimTrial() → "Claimed" once the
@@ -50,16 +51,16 @@ import React, { useEffect, useState } from 'react';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from '../components/Button';
-import { BackIcon } from '../components/icons';
-// 260602-hbr: primary usage display is a usage-percent progress bar
-// (used/available) with a "~Xh left" estimate beside it.
-import { UsageBar } from '../components/UsageBar';
+import { ModalShell, ModalFooter } from '../components/ModalShell';
+import { BackIcon, RefreshIcon } from '../components/icons';
+import { formatPlayed } from '../components/UsageBar';
+import { sei } from '../lib/ipcClient';
 import { AutoRenewalConsentModal } from '../components/AutoRenewalConsentModal';
 import { formatRenewal } from '../lib/formatRenewal';
 import styles from './CreditsScreen.module.css';
 
-/** Reused estimate-disclaimer copy (matches UsageBar's ESTIMATE_TOOLTIP spirit). */
-const ESTIMATE_DISCLAIMER = 'Playtime shown is an estimate; actual playtime varies by usage.';
+/** Estimate disclaimer shown in the footer (matches ESTIMATE_TOOLTIP spirit). */
+const ESTIMATE_DISCLAIMER = 'Estimates only. Actual playtime varies by usage.';
 
 /** Plain-English copy for the (rare) trial-claim failure branches. */
 function claimErrorCopy(code: string): string {
@@ -88,7 +89,7 @@ function manageErrorCopy(code: string): string {
     case 'PROXY_NO_PORTAL_URL':
       // No Polar customer on record yet (trial-only / never purchased) or the
       // billing backend is unavailable — nothing to manage.
-      return 'No billing to manage yet — purchase or subscribe first.';
+      return 'No billing to manage yet. Purchase or subscribe first.';
     default:
       return 'Could not open billing. Please try again.';
   }
@@ -96,7 +97,9 @@ function manageErrorCopy(code: string): string {
 
 export function CreditsScreen(): React.ReactElement {
   // Separate selectors so React only re-subscribes the slices we read.
-  // The UsageBar subscribes to usage_pct + remaining_tokens directly.
+  // The hero reads usage_pct (number + bar fill).
+  const usagePct = useCreditsStore((s) => s.usage_pct);
+  const loading = useCreditsStore((s) => s.loading);
   const plan = useCreditsStore((s) => s.plan);
   const renewsAt = useCreditsStore((s) => s.renews_at);
   const endsAt = useCreditsStore((s) => s.ends_at);
@@ -132,6 +135,36 @@ export function CreditsScreen(): React.ReactElement {
   // Drives the Purchase/Subscribe button disabled state so the user can't kick
   // off a second checkout while one is being watched.
   const checkoutActive = checkoutStatus !== 'idle';
+
+  // Hero shows percent USED with a matching usage fill (260705: the previous
+  // "{pct}% left" number over a remaining-fill bar read as its opposite — a
+  // filled bar universally parses as consumption). The "~Xh left" playtime
+  // estimate that sat beside the bar is removed (user direction, same date).
+  const usedPct = Math.max(0, Math.min(100, Math.round(usagePct)));
+
+  // Hover on the bar shows total time played (260705). Sourced from
+  // UserConfig.total_playtime_ms — accumulated at session-end in botSupervisor
+  // and seeded from historical characters, so it survives deletion (same
+  // source the old UsageBar tooltip used).
+  const [totalPlaytimeMs, setTotalPlaytimeMs] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    void sei.getConfig().then((c) => {
+      if (cancelled) return;
+      setTotalPlaytimeMs(c.total_playtime_ms ?? 0);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const playedTip = `Played ${formatPlayed(totalPlaytimeMs)} total`;
+
+  // Immediate creditsGet() on top of the 60s poll; re-read the playtime total
+  // so the tooltip stays fresh after a session ends.
+  const handleRefresh = (): void => {
+    void refresh();
+    void sei.getConfig().then((c) => setTotalPlaytimeMs(c.total_playtime_ms ?? 0));
+  };
 
   // Pull a fresh playtime snapshot when the page opens, then poll every 60s
   // while it stays open (260606). The app-level init() seeds + subscribes to IPC
@@ -201,141 +234,181 @@ export function CreditsScreen(): React.ReactElement {
   const cancelScheduled = isSubscribed && subscriptionStatusRaw === 'cancelled';
   const endsText = formatRenewal(endsAt);
 
+  // Renewal / end-date sub-line beside the hero (kept from the prior USAGE
+  // section — subscribers only).
+  const heroSub = cancelScheduled && endsText
+    ? `Subscription ends ${endsText}`
+    : isSubscribed && renewalText
+      ? `Next renewal ${renewalText}`
+      : null;
+
   return (
     <div className={styles.root}>
-      <div className={styles.backRow}>
-        <Button
-          kind="quiet"
-          size="sm"
-          icon={<BackIcon size={14} />}
-          onClick={() => navigate({ kind: 'home' })}
-        >
-          Back
-        </Button>
-      </div>
-      <h1 className={styles.title}>Playtime</h1>
+      <div className={styles.col}>
+        <div className={styles.backRow}>
+          <Button
+            kind="quiet"
+            size="sm"
+            icon={<BackIcon size={14} />}
+            onClick={() => navigate({ kind: 'home' })}
+          >
+            Back
+          </Button>
+        </div>
 
-      {/* USAGE — usage-percent bar + "~Xh left" estimate + refresh (in UsageBar). */}
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>USAGE</div>
-        <UsageBar size="lg" />
-        {cancelScheduled && endsText ? (
-          <p className={styles.muted}>Subscription will end {endsText}</p>
-        ) : isSubscribed && renewalText ? (
-          <p className={styles.muted}>Next renewal: {renewalText}</p>
-        ) : null}
-      </section>
-
-      {/* PLANS — three side-by-side cards: Trial / Quest / Party. */}
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>PLANS</div>
-        <div className={styles.plansRow}>
-          {/* Trial — claim the one-time free trial (Supabase-backed). */}
-          <div className={styles.planCard}>
-            <div className={styles.planName}>Encounter</div>
-            <div className={styles.planPrice}>Free</div>
-            <p className={styles.planPlaytime}>~1 hour of playtime</p>
-            {claimError ? <p className={styles.claimError}>{claimError}</p> : null}
-            <div className={styles.planCardActions}>
-              <Button
-                kind="accent"
-                disabled={trialClaimed || claiming || deviceBlocked}
-                aria-disabled={trialClaimed || claiming || deviceBlocked}
-                onClick={() => void handleClaim()}
-              >
-                {trialClaimed
-                  ? 'Claimed'
-                  : deviceBlocked
-                    ? 'Unavailable'
-                    : claiming
-                      ? 'Claiming…'
-                      : 'Claim'}
-              </Button>
+        {/* Hero — "{pct}% used" + refresh beside it + matching usage fill (260705). */}
+        <div className={styles.hero}>
+          <div className={styles.heroTop}>
+            <div className={styles.heroBig}>
+              {usedPct}%<small>used</small>
             </div>
+            {/* Immediate creditsGet() on top of the 60s poll (260606). */}
+            <Button
+              kind="quiet"
+              size="sm"
+              icon={<RefreshIcon size={14} />}
+              disabled={loading}
+              title="Refresh playtime"
+              aria-label="Refresh playtime"
+              onClick={handleRefresh}
+            />
           </div>
-
-          {/* Quest — one-time pack; opens checkout directly (no consent gate). */}
-          <div className={styles.planCard}>
-            <div className={styles.planName}>Quest</div>
-            <div className={styles.planPrice}>
-              $5
-              <span className={styles.planPriceQualifier}>one time</span>
-            </div>
-            <p className={styles.planPlaytime}>~5 hours of playtime</p>
-            <div className={styles.planCardActions}>
-              <Button kind="accent" disabled={checkoutActive} onClick={handlePurchase}>
-                Purchase
-              </Button>
-            </div>
+          <div
+            className={styles.heroBar}
+            data-tip={playedTip}
+            data-tip-instant=""
+            aria-label={playedTip}
+            tabIndex={0}
+          >
+            <i style={{ width: `${usedPct}%` }} />
           </div>
+          {heroSub ? <p className={styles.heroSub}>{heroSub}</p> : null}
+        </div>
 
-          {/* Party — subscription; MUST flow through the consent gate. */}
-          <div className={`${styles.planCard} ${isSubscribed ? styles.planCardActive : ''}`}>
-            <div className={styles.planName}>Party</div>
-            <div className={styles.planPrice}>
-              $20
-              <span className={styles.planPriceQualifier}>/month</span>
-            </div>
-            <p className={styles.planPlaytime}>~20 hours of playtime</p>
-            <div className={styles.planCardActions}>
-              {cancelScheduled ? (
-                // Resume the existing to-be-cancelled sub (Polar portal uncancel)
-                // rather than starting a new one that bills immediately.
-                <Button kind="primary" disabled={checkoutActive} onClick={handleResume}>
-                  Resume
-                </Button>
-              ) : isSubscribed ? (
-                <Button kind="primary" disabled aria-disabled>
-                  Subscribed
-                </Button>
-              ) : (
+        {/* Add playtime — three plan cards: Encounter / Quest / Party (mockup .plans). */}
+        <div className={styles.plans}>
+          <h3 className={styles.plansTitle}>Add playtime</h3>
+          <div className={styles.plansRow}>
+            {/* Encounter — claim the one-time free trial (Supabase-backed). */}
+            <div className={styles.planCard}>
+              <span className={styles.planName}>Encounter</span>
+              <span className={styles.planPrice}>Free</span>
+              <span className={styles.planPlaytime}>~1 hour to try</span>
+              {claimError ? <p className={styles.claimError}>{claimError}</p> : null}
+              <div className={styles.planCardActions}>
                 <Button
-                  kind="primary"
-                  disabled={checkoutActive}
-                  onClick={() => setShowConsentModal(true)}
+                  kind="accent"
+                  size="sm"
+                  fullWidth
+                  disabled={trialClaimed || claiming || deviceBlocked}
+                  aria-disabled={trialClaimed || claiming || deviceBlocked}
+                  onClick={() => void handleClaim()}
                 >
-                  Subscribe
+                  {trialClaimed
+                    ? 'Claimed'
+                    : deviceBlocked
+                      ? 'Unavailable'
+                      : claiming
+                        ? 'Claiming…'
+                        : 'Claim'}
                 </Button>
-              )}
+              </div>
+            </div>
+
+            {/* Quest — one-time pack; opens checkout directly (no consent gate). */}
+            <div className={styles.planCard}>
+              <span className={styles.planName}>Quest</span>
+              <span className={styles.planPrice}>
+                $5<span className={styles.planPriceQualifier}>one time</span>
+              </span>
+              <span className={styles.planPlaytime}>~5 hours</span>
+              <div className={styles.planCardActions}>
+                <Button
+                  kind="accent"
+                  size="sm"
+                  fullWidth
+                  disabled={checkoutActive}
+                  onClick={handlePurchase}
+                >
+                  Purchase
+                </Button>
+              </div>
+            </div>
+
+            {/* Party — subscription; MUST flow through the consent gate. */}
+            <div className={`${styles.planCard} ${isSubscribed ? styles.planCardActive : ''}`}>
+              <span className={styles.planName}>Party</span>
+              <span className={styles.planPrice}>
+                $20<span className={styles.planPriceQualifier}>/mo</span>
+              </span>
+              <span className={styles.planPlaytime}>~20 hours monthly</span>
+              <div className={styles.planCardActions}>
+                {cancelScheduled ? (
+                  // Resume the existing to-be-cancelled sub (Polar portal uncancel)
+                  // rather than starting a new one that bills immediately.
+                  <Button
+                    kind="primary"
+                    size="sm"
+                    fullWidth
+                    disabled={checkoutActive}
+                    onClick={handleResume}
+                  >
+                    Resume
+                  </Button>
+                ) : isSubscribed ? (
+                  <Button kind="primary" size="sm" fullWidth disabled aria-disabled>
+                    Subscribed
+                  </Button>
+                ) : (
+                  <Button
+                    kind="primary"
+                    size="sm"
+                    fullWidth
+                    disabled={checkoutActive}
+                    onClick={() => setShowConsentModal(true)}
+                  >
+                    Subscribe
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
+
+          {/*
+            Renewal note under the cards for Party subscribers: the renewal date
+            while auto-renewing, or a "won't renew" line once the subscription is
+            cancel-scheduled (still active until ends_at). Subscribers only.
+          */}
+          {cancelScheduled ? (
+            <p className={styles.planRenewalNote}>
+              {endsText
+                ? `Your Party plan will not renew. Access ends ${endsText}.`
+                : 'Your Party plan will not renew.'}
+            </p>
+          ) : isSubscribed && renewalText ? (
+            <p className={styles.planRenewalNote}>Your Party plan renews on {renewalText}.</p>
+          ) : null}
         </div>
 
         {/*
-          Small note under the three plan cards for Party subscribers: the
-          renewal date while auto-renewing, or a "won't renew" line once the
-          subscription is cancel-scheduled (still active until ends_at). Shown
-          only to subscribers; non-subscribers see nothing here.
+          Footer: "Manage billing" (Polar customer-portal flow via handleManage,
+          shown for everyone; never-subscribed users no-op gracefully — FTC
+          Click-to-Cancel online cancel path) + the estimate disclaimer.
         */}
-        {cancelScheduled ? (
-          <p className={styles.planRenewalNote}>
-            {endsText
-              ? `Your Party plan will not renew — access ends ${endsText}.`
-              : 'Your Party plan will not renew.'}
-          </p>
-        ) : isSubscribed && renewalText ? (
-          <p className={styles.planRenewalNote}>Your Party plan renews on {renewalText}.</p>
-        ) : null}
-      </section>
-
-      {/*
-        Single bottom "Manage billing" button (replaces the per-card portal /
-        Unsubscribe links). Routes through handleManage() → Polar customer-portal
-        flow. Shown for everyone; never-subscribed users no-op gracefully. FTC
-        Click-to-Cancel: this is the online cancel path (no email round-trip).
-      */}
-      <div className={styles.manageBilling}>
-        <Button
-          kind="quiet"
-          disabled={managing}
-          aria-disabled={managing}
-          onClick={() => void handleManage()}
-        >
-          {managing ? 'Opening…' : 'Manage billing'}
-        </Button>
+        <div className={styles.foot}>
+          <Button
+            kind="ghost"
+            size="sm"
+            disabled={managing}
+            aria-disabled={managing}
+            onClick={() => void handleManage()}
+          >
+            {managing ? 'Opening…' : 'Manage billing'}
+          </Button>
+          <span className={styles.disc}>{ESTIMATE_DISCLAIMER}</span>
+        </div>
+        {manageError ? <p className={styles.manageError}>{manageError}</p> : null}
       </div>
-      {manageError ? <p className={styles.manageError}>{manageError}</p> : null}
-      <p className={styles.estimateDisclaimer}>{ESTIMATE_DISCLAIMER}</p>
 
       {showConsentModal ? (
         <AutoRenewalConsentModal
@@ -378,76 +451,68 @@ function CheckoutWaitingModal({
   kind: 'pack' | 'subscription' | 'resume' | null;
   onClose: () => void;
 }): React.ReactElement {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const isResume = kind === 'resume';
   const product = kind === 'pack' ? 'Quest' : 'Party';
 
+  const title =
+    status === 'waiting'
+      ? isResume
+        ? 'Resume your subscription'
+        : 'Complete your purchase'
+      : status === 'confirmed'
+        ? isResume
+          ? 'Subscription resumed'
+          : 'Purchase complete'
+        : 'Still processing';
+
   return (
-    <div
-      className={styles.checkoutScrim}
-      role="dialog"
-      aria-modal="true"
+    // Stacked tier (1100): this watcher sits above the base playtime screen.
+    // ESC / the footer button dismiss it without cancelling the browser purchase.
+    <ModalShell
+      title={title}
+      tier="stacked"
+      onClose={onClose}
       aria-label={isResume ? 'Resume subscription status' : 'Checkout status'}
     >
-      <div className={styles.checkoutCard}>
+      <div className={styles.checkoutBody}>
         {status === 'waiting' ? (
           <>
             <span className={styles.checkoutSpinner} aria-hidden="true" />
-            <p className={styles.checkoutTitle}>
-              {isResume ? 'Resume your subscription' : 'Complete your purchase'}
-            </p>
             <p className={styles.checkoutMsg}>
               {isResume
                 ? `Resume your ${product} subscription in your browser. This screen updates automatically once it's confirmed.`
                 : `Finish checking out for ${product} in your browser. Your credits update here automatically once the payment is confirmed.`}
             </p>
-            <div className={styles.checkoutActions}>
-              <Button kind="quiet" size="md" onClick={onClose}>
-                Close
-              </Button>
-            </div>
           </>
         ) : status === 'confirmed' ? (
           <>
             <span className={styles.checkoutCheck} aria-hidden="true">
               ✓
             </span>
-            <p className={styles.checkoutTitle}>
-              {isResume ? 'Subscription resumed' : 'Purchase complete'}
-            </p>
             <p className={styles.checkoutMsg}>
               {isResume
                 ? `Your ${product} subscription will continue, with no end date.`
                 : `Your ${product} credits are now available.`}
             </p>
-            <div className={styles.checkoutActions}>
-              <Button kind="primary" size="md" onClick={onClose}>
-                Done
-              </Button>
-            </div>
           </>
         ) : (
-          <>
-            <p className={styles.checkoutTitle}>Still processing</p>
-            <p className={styles.checkoutMsg}>
-              This is taking longer than usual. You can close this; it will update here
-              automatically once it completes.
-            </p>
-            <div className={styles.checkoutActions}>
-              <Button kind="quiet" size="md" onClick={onClose}>
-                Close
-              </Button>
-            </div>
-          </>
+          <p className={styles.checkoutMsg}>
+            This is taking longer than usual. You can close this; it will update here
+            automatically once it completes.
+          </p>
         )}
       </div>
-    </div>
+      <ModalFooter>
+        {status === 'confirmed' ? (
+          <Button kind="primary" size="md" onClick={onClose}>
+            Done
+          </Button>
+        ) : (
+          <Button kind="quiet" size="md" onClick={onClose}>
+            Close
+          </Button>
+        )}
+      </ModalFooter>
+    </ModalShell>
   );
 }

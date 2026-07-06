@@ -4,34 +4,13 @@
  * Scrim alpha (0.45) matches LanModal — both wizards share dismissal semantics.
  */
 
-.modalWrap {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  z-index: 1001;
-}
-
-.scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  z-index: 1000;
-}
-
-.modal {
-  position: relative;
-  z-index: 1002;
-  background: var(--window);
-  width: 680px;
-  max-width: 90vw;
+/* Panel overrides applied on top of ModalShell's base panel (bg2 + border +
+ * sharp corners + shadow-pop). Restores the wizard's 680×520 geometry and its
+ * roomier padding; the step content flexes to fill so footers stick to the base. */
+.wizardPanel {
   min-height: 520px;
   padding: 24px 40px 40px;
-  box-shadow: var(--shadow-pop);
-  display: flex;
-  flex-direction: column;
-  /* Sharp corners (D-28) — explicit zero so nothing inherits a radius. */
-  border-radius: 0;
+  gap: 0;
 }
 
 .stepContent {

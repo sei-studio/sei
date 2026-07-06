@@ -1,45 +1,8 @@
-/* UpdatePopup — in-app updater modal (quick/260604-uoy).
+/* UpdatePopup — in-app updater modal (Party redesign).
  *
- * Mirrors AutoRenewalConsentModal.module.css structure (scrim + sharp card),
- * snapped to the Summoning Terminal design system: dark, sharp-edged, periwinkle
- * accent, tokens only — never literal hex/px. The changelog block uses the mono
- * label face for headings (terminal feel) and the body face for prose.
+ * The scrim, panel, title, footer + stacking are owned by ModalShell now; only
+ * the body copy + changelog block styles remain here. Tokens only (no hex).
  */
-
-.scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1100;
-  animation: fade 220ms ease both;
-}
-
-.modal {
-  width: 460px;
-  max-width: calc(100vw - var(--space-2xl));
-  background: var(--window);
-  padding: var(--space-lg) var(--space-2xl) var(--space-2xl);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-pop);
-  font-family: var(--sans);
-  animation: fadeUp 280ms var(--ease-pop) both;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md-plus);
-}
-
-.title {
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.2px;
-  color: var(--text);
-  margin: 0;
-}
 
 .body {
   font-size: 14px;
@@ -60,9 +23,8 @@
 
 .changelogHeading {
   font-family: var(--mono);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 11px;
+  letter-spacing: 0.04em;
   color: var(--accent);
   margin-top: var(--space-xs);
 }
@@ -86,18 +48,4 @@
   font-size: 14px;
   color: var(--text);
   line-height: 1.4;
-}
-
-.footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-md);
-  margin-top: var(--space-xs);
-}
-
-@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
-
-@media (prefers-reduced-motion: reduce) {
-  .scrim, .modal { animation: none; }
 }

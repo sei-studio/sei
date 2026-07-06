@@ -559,6 +559,23 @@ export function renderPersona(persona) {
   return `You are ${persona.name}.\n${persona.expanded}`
 }
 
+// 260705: texting punctuation directive — static per character (from
+// character.metadata.punctuation), rendered into the cached persona prefix on
+// BOTH surfaces (game brain + chat brain) so they cannot drift. The directive
+// and the mechanical post-processing always agree: 'casual' matches the
+// trailing-period strip in splitChatMessages / stripTrailingPeriod, and
+// 'deliberate' turns that strip off. Like proactiveness, this is a dial ABOUT
+// the persona, not part of the expanded prompt text.
+export const PUNCTUATION_DIRECTIVES = {
+  casual: `You text like a person messaging a friend: no period at the end of a sentence. Question marks and exclamation points are fine when they carry tone, and an ellipsis (...) is fine when you trail off. This is punctuation only — it does not make you casual, it is just how everyone texts.`,
+  deliberate: `You end your sentences with periods, on purpose, even in relaxed chat. Your messages read flat, measured, and final; to a modern texter that full stop can land as cold or pointed, and that is part of your voice. Keep it consistent — even a one-word reply carries the period.`,
+}
+
+export function renderPunctuationDirective(punctuation) {
+  const key = punctuation === 'deliberate' ? 'deliberate' : 'casual'
+  return `# TEXTING\n${PUNCTUATION_DIRECTIVES[key]}`
+}
+
 // 260618: the proactiveness directive is STATIC for a session — selected once by
 // the author's dial — so it lives in the cached system prefix, NOT the per-loop
 // heartbeat. Wrapped with a header so it reads as its own section.

@@ -21,9 +21,9 @@ export function IdTag({ id, size = 'sm' }: IdTagProps): React.ReactElement {
     <span
       className={`${styles.tag} ${size === 'md' ? styles.md : styles.sm}`}
       aria-label={`Public ID ${id}`}
-      title={`Public ID · ${id}`}
+      title={`Public ID · #${id}`}
     >
-      {id}
+      #{id}
     </span>
   );
 }

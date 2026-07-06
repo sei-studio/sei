@@ -262,6 +262,16 @@ export async function start(config, hooks = {}) {
       // Task 4 — a reply to a message that came in over Sei chat (not in-game)
       // is routed back UP to the chat surface instead of spoken in-world.
       onSeiChatReply: (text) => emitLifecycle({ type: 'chat', from: config?.persona?.name ?? 'your companion', text }),
+      // Party redesign §2/§5 — the orchestrator dispatched a world-acting tool
+      // (name set) or drained back to idle (name null). Emit an `action`
+      // lifecycle so main forwards it to the renderer's presence verb line.
+      // Same emit path as onSeiChatReply; emitLifecycle guards the port (a CLI
+      // run has no port and just logs). Non-throwing.
+      onAction: (payload) => {
+        try {
+          emitLifecycle({ type: 'action', name: payload?.name ?? null, args: payload?.args })
+        } catch {}
+      },
       // Task 4 — the bot called quit(): leave the game the same graceful way a
       // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
       onQuitRequested: () => { try { gracefulShutdown() } catch {} },
@@ -541,6 +551,12 @@ async function bootstrapWithInit(initData) {
       ...(typeof character.metadata?.proactiveness === 'number' && Number.isInteger(character.metadata.proactiveness)
         ? { proactiveness: Math.min(Math.max(0, character.metadata.proactiveness), 2) }
         : {}),
+      // Texting punctuation register off character.metadata (260705). Only the
+      // exact 'deliberate' value opts out of the casual trailing-period strip;
+      // anything else (missing, junk) falls to the ConfigSchema default
+      // ('casual'). MIRROR: src/main/chat/chatService.ts clampPunctuation()
+      // applies the same read for the chat surface — keep the two in sync.
+      ...(character.metadata?.punctuation === 'deliberate' ? { punctuation: 'deliberate' } : {}),
     },
     // Phase 13-15: when cloudMode is provided, the SDK routes through the
     // proxy with Bearer auth (apiKey is unused — anthropicClient passes

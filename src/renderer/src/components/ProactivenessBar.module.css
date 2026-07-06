@@ -20,6 +20,10 @@
   display: flex;
   gap: 3px;
   align-items: center;
+  /* Positioning context for the segment tooltips: the bubble anchors to the
+     WHOLE track (not the hovered 20px segment), so it spans the bar's width
+     and can never poke past the content panel's overflow-x clip. */
+  position: relative;
 }
 
 .block .track {
@@ -28,9 +32,11 @@
 }
 
 .seg {
-  position: relative;
-  background: var(--border-strong);
-  transition: background 240ms var(--ease);
+  /* NOT position:relative — the tooltip pseudo-elements must resolve against
+     .track (see above) so the bubble gets the full bar width. */
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  transition: background 240ms var(--ease), border-color 240ms var(--ease);
   cursor: help;
 }
 
@@ -40,7 +46,8 @@
 }
 
 .seg.on {
-  background: var(--accent-strong);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 /* sm — compact */
@@ -82,17 +89,18 @@
 
 /* ── Per-segment instant tooltip (one sentence on what to expect in game) ──
    Mirrors the IconRail / UsageBar floating-tooltip idiom: a CSS ::after fed
-   from data-tip, shown on hover/focus with no native-title delay. Edge
-   alignment (first segment left-anchored, last right-anchored) keeps the
-   tooltip from clipping off the panel edges. */
+   from data-tip, shown on hover/focus with no native-title delay. The bubble
+   is anchored to the TRACK (left:0/right:0 against the positioned .track),
+   not the hovered segment: a segment-centered fixed-width bubble used to
+   cross the content panel's overflow-x:hidden edge and get its text clipped
+   mid-line. Full-track width always fits the panel, so the copy always fits
+   the box. */
 .seg::after {
   content: attr(data-tip);
   position: absolute;
-  bottom: calc(100% + 9px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: 240px;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
   padding: 8px 11px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
@@ -106,44 +114,13 @@
   text-align: left;
   color: var(--text);
   white-space: normal;
+  overflow-wrap: break-word;
   opacity: 0;
   pointer-events: none;
   z-index: 50;
 }
 
-/* Small caret under the bubble. */
-.seg::before {
-  content: '';
-  position: absolute;
-  bottom: calc(100% + 3px);
-  left: 50%;
-  transform: translateX(-50%) rotate(45deg);
-  width: 8px;
-  height: 8px;
-  background: var(--surface);
-  border-right: 1px solid var(--border-strong);
-  border-bottom: 1px solid var(--border-strong);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 51;
-}
-
 .seg:hover::after,
-.seg:focus-visible::after,
-.seg:hover::before,
-.seg:focus-visible::before {
+.seg:focus-visible::after {
   opacity: 1;
-}
-
-/* Keep edge tooltips on-panel: anchor the first segment's bubble to its left
-   edge and the last segment's to its right edge instead of centering. */
-.track .seg:first-child::after {
-  left: 0;
-  transform: none;
-}
-
-.track .seg:last-child::after {
-  left: auto;
-  right: 0;
-  transform: none;
 }

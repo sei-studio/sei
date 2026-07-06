@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
 import styles from './SummonConflictModal.module.css';
 
@@ -28,33 +29,28 @@ export function SummonConflictModal({
 }: SummonConflictModalProps): React.ReactElement {
   const closeModal = useUiStore((s) => s.closeModal);
   return (
-    <div
-      className={styles.scrim}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="summon-conflict-title"
-      onClick={closeModal}
+    <ModalShell
+      title="Name already in use"
+      width={420}
+      scrimClose
+      onClose={closeModal}
+      aria-label="Name already in use"
     >
-      <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
-        <h2 id="summon-conflict-title" className={styles.title}>
-          Name already in use
-        </h2>
-        <p className={styles.body}>
-          <strong>{attemptedName}</strong> wants to join as{' '}
-          <span className={styles.username}>{username}</span>, but{' '}
-          <strong>{conflictName}</strong> is already in the world under that name.
-          Minecraft won&apos;t let two players share a username.
-        </p>
-        <p className={styles.hint}>
-          Give one of them a different in-game username (on its companion page,
-          under Skin) and try again.
-        </p>
-        <div className={styles.actions}>
-          <Button kind="accent" size="md" onClick={closeModal}>
-            Got it
-          </Button>
-        </div>
-      </div>
-    </div>
+      <p className={styles.body}>
+        <strong>{attemptedName}</strong> wants to join as{' '}
+        <span className={styles.username}>{username}</span>, but{' '}
+        <strong>{conflictName}</strong> is already in the world under that name.
+        Minecraft won&apos;t let two players share a username.
+      </p>
+      <p className={styles.hint}>
+        Give one of them a different in-game username (on its companion page,
+        under Skin) and try again.
+      </p>
+      <ModalFooter>
+        <Button kind="accent" size="md" onClick={closeModal}>
+          Got it
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

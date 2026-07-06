@@ -26,6 +26,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Button } from './Button';
 import { StatusPill } from './StatusPill';
+import { ModalShell } from './ModalShell';
 import { WizardStepShell } from './WizardStepShell';
 import { McInstallList } from './McInstallList';
 import { InstallProgressList } from './InstallProgressList';
@@ -38,24 +39,14 @@ export function SetupWizardModal(): React.ReactElement | null {
   const open = useWizardStore((s) => s.open);
   const step = useWizardStore((s) => s.step);
   const closeWizard = useWizardStore((s) => s.closeWizard);
-  const modalRef = useRef<HTMLDivElement | null>(null);
-
-  // ── ESC dismissal (matches LanModal pattern) ────────────────────────────
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return;
-      closeWizard();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [open, closeWizard]);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   // ── Focus trap: focus the first interactive element when the wizard opens
   //    or whenever the step changes. Tab / Shift+Tab wrap inside the modal.
+  //    (ESC dismissal + the scrim are owned by ModalShell now.)
   useEffect(() => {
     if (!open) return;
-    const node = modalRef.current;
+    const node = contentRef.current;
     if (!node) return;
 
     // Focus the first focusable element so keyboard users land on the primary CTA.
@@ -90,21 +81,18 @@ export function SetupWizardModal(): React.ReactElement | null {
   if (!open) return null;
 
   return (
-    <div className={styles.modalWrap}>
-      <div className={styles.scrim} />
-      <div
-        ref={modalRef}
-        className={styles.modal}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Set up Minecraft skins"
-      >
-        {/* key on step so React unmounts/remounts on transition → CSS crossfade applies */}
-        <div key={step} className={styles.stepContent}>
-          {renderStep(step)}
-        </div>
+    <ModalShell
+      title={null}
+      width={680}
+      panelClassName={styles.wizardPanel}
+      onClose={closeWizard}
+      aria-label="Set up Minecraft skins"
+    >
+      {/* key on step so React unmounts/remounts on transition → CSS crossfade applies */}
+      <div key={step} ref={contentRef} className={styles.stepContent}>
+        {renderStep(step)}
       </div>
-    </div>
+    </ModalShell>
   );
 }
 

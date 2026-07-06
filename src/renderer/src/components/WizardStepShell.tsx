@@ -35,7 +35,7 @@ export function WizardStepShell({
   return (
     <div className={styles.shell}>
       {stepNumber !== null ? (
-        <div className={styles.stepIndicator}>STEP {stepNumber} / 4</div>
+        <div className={styles.stepIndicator}>Step {stepNumber} / 4</div>
       ) : null}
       <h2 className={styles.heading}>{heading}</h2>
       <div className={styles.body}>{children}</div>

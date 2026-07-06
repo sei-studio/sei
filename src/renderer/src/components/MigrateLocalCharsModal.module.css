@@ -1,40 +1,5 @@
-/* Phase 11 plan 18 — MigrateLocalCharsModal (D-20). Mirrors AcceptToSModal /
-   DeleteAccountModal visual idiom: same scrim alpha, same 460px frame, same
-   32px padding, same color tokens. No new design tokens introduced. */
-.scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: fade 220ms ease both;
-}
-
-.modal {
-  width: 460px;
-  max-height: 80vh;
-  background: var(--window);
-  padding: 32px;
-  box-shadow: var(--shadow-pop);
-  font-family: var(--sans);
-  animation: fadeUp 280ms var(--ease-pop) both;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.title {
-  font-family: var(--sans);
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.2px;
-  color: var(--text);
-  margin: 0;
-}
-
+/* MigrateLocalCharsModal (D-20) — content styles only; scrim, panel, title,
+   footer and animation come from ModalShell. */
 .body {
   font-family: var(--sans);
   font-size: 15px;
@@ -98,7 +63,6 @@
   line-height: 1.4;
   color: var(--text);
   padding: 10px 12px;
-  background: rgba(255, 196, 0, 0.12);
   border-left: 2px solid var(--warn);
   margin: 0;
 }
@@ -121,37 +85,4 @@
 .resultMessage {
   color: var(--text-2);
   font-size: 13px;
-}
-
-.footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .scrim,
-  .modal {
-    animation: none;
-  }
 }

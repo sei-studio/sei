@@ -66,9 +66,21 @@ export interface SkinEditorProps {
   /**
    * When true, drop the standalone-section chrome (top margin, outer border,
    * extra padding) so the editor fits inside a host panel — e.g. the
-   * CharacterPage Skin tab — without forcing the panel to scroll.
+   * CharacterPage Game tab — without forcing the panel to scroll.
    */
   compact?: boolean;
+  /**
+   * Party redesign §4.6: caption shown beside the read-only 3D preview in the
+   * skin-pane layout (e.g. "This is how they appear in your world."). Only used
+   * on the viewOnly / default preview path.
+   */
+  previewCaption?: string;
+  /**
+   * When provided (editable chars on the profile Game tab), renders a ghost
+   * "Edit skin" button beside the read-only preview that routes to the full
+   * editor (EditCharacterModal → Appearance). Only used on the viewOnly path.
+   */
+  onEditSkin?: () => void;
 }
 
 interface StagedPng {
@@ -107,6 +119,8 @@ export function SkinEditor({
   onChanged,
   viewOnly = false,
   compact = false,
+  previewCaption,
+  onEditSkin,
 }: SkinEditorProps): React.ReactElement {
   const sectionClass = compact ? `${styles.section} ${styles.sectionCompact}` : styles.section;
   // ── Source-of-skin switch + staged PNG bytes ─────────────────────────────
@@ -344,14 +358,19 @@ export function SkinEditor({
   // characters (ITEM 13 viewOnly path) — show the 3D preview but hide every
   // edit affordance. Users who want a different skin create their own persona.
   if (character.is_default || viewOnly) {
+    // Skin-pane layout (mockup .skin-pane): read-only 3D preview + a side
+    // column with the caption and, for editable chars, an "Edit skin" button
+    // that routes to the full editor.
     return (
-      <section className={sectionClass}>
-        <div className={styles.header}>
-          <div className={styles.eyebrow}>SKIN &amp; USERNAME</div>
-        </div>
-        <div className={styles.cols}>
-          {previewColumn}
-          <div className={styles.right} />
+      <section className={`${sectionClass} ${styles.skinPane}`}>
+        {previewColumn}
+        <div className={styles.skinSide}>
+          {previewCaption ? <span className={styles.skinCaption}>{previewCaption}</span> : null}
+          {onEditSkin ? (
+            <Button kind="ghost" size="sm" onClick={onEditSkin}>
+              Edit skin
+            </Button>
+          ) : null}
         </div>
       </section>
     );
@@ -360,15 +379,15 @@ export function SkinEditor({
   return (
     <section className={sectionClass}>
       <div className={styles.header}>
-        <div className={styles.eyebrow}>SKIN &amp; USERNAME</div>
+        <div className={styles.eyebrow}>Skin &amp; username</div>
       </div>
 
       <div className={styles.cols}>
         {previewColumn}
 
         <div className={styles.right}>
-          {/* IN-GAME USERNAME field ─────────────────────────────────────── */}
-          <div className={styles.fieldEyebrow}>IN-GAME USERNAME</div>
+          {/* In-game username field ─────────────────────────────────────── */}
+          <div className={styles.fieldEyebrow}>In-game username</div>
           <TextField
             value={usernameDraft}
             onChange={onUsernameChange}
@@ -388,14 +407,14 @@ export function SkinEditor({
           {!usernameError && usernameCollision ? (
             <p className={styles.warnCopy}>
               {`${usernameCollision.name} also joins as "${resolvedMcName}". In a world, two
-              characters with the same in-game name share one inventory and location — connect one
+              characters with the same in-game name share one inventory and location: connect one
               after the other and the second inherits the first's items and spot. Give one a
               different name to keep them separate.`}
             </p>
           ) : null}
 
-          {/* SKIN SOURCE radio switch ─────────────────────────────────── */}
-          <div className={styles.fieldEyebrow}>SKIN SOURCE</div>
+          {/* Skin source radio switch ─────────────────────────────────── */}
+          <div className={styles.fieldEyebrow}>Skin source</div>
           <div className={styles.sourceTabs} role="radiogroup" aria-label="Skin source">
             <label className={styles.sourceTabLabel}>
               <input

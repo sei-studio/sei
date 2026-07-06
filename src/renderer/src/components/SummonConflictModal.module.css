@@ -1,37 +1,5 @@
-/* SummonConflictModal.module.css — multi-summon name-collision popup.
- * Mirrors the IconRail "Switch to cloud?" prompt scaffolding (scrim + panel). */
-
-.scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.62);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.panel {
-  width: 420px;
-  max-width: calc(100vw - 48px);
-  background: var(--surface);
-  padding: var(--space-lg) 28px;
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-pop);
-  font-family: var(--sans);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.title {
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text);
-  margin: 0;
-}
+/* SummonConflictModal.module.css — multi-summon name-collision popup body.
+ * Scrim + panel + title come from ModalShell; this styles the copy only. */
 
 .body {
   font-size: 15px;
@@ -52,11 +20,4 @@
   line-height: 1.5;
   color: var(--muted);
   margin: 0;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-sm);
-  margin-top: 4px;
 }

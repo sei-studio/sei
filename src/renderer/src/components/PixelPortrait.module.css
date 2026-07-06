@@ -33,6 +33,10 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* Anchor the crop toward the face: portraits are head-at-top compositions,
+     so a centered cover crop in a shorter frame cuts the head off (a full-body
+     render loses the face entirely). 18% matches IconRail's avatar bias. */
+  object-position: 50% 18%;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }

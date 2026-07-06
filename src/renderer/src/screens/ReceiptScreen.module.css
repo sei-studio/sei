@@ -1,47 +1,48 @@
-/* ReceiptScreen — quick/260525-sbo Task 6.
+/* ReceiptScreen — quick/260525-sbo Task 6 (Party redesign).
  *
- * Mirrors CreditsScreen.module.css (.root, .title, .backRow, .section,
- * .tile) so the FTC 16 CFR §425.5 receipt surface reads visually as a
- * sibling to the surrounding Settings/Credits screens.
+ * Mirrors CreditsScreen.module.css (.root / .col / .backRow) so the FTC 16 CFR
+ * §425.5 receipt reads as a sibling to the Playtime screen: centered 620px
+ * column, Oswald title, a sharp bordered tile (no border-radius).
  */
 
 .root {
-  padding: 32px 40px 40px;
-  max-width: 720px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 0 40px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+}
+
+.col {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 0 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .backRow {
-  align-self: flex-start;
+  margin-left: -12px;
 }
 
 .title {
-  font-family: var(--sans);
-  font-size: 30px;
+  font-family: var(--display);
   font-weight: 600;
-  letter-spacing: -0.4px;
+  font-size: 30px;
+  line-height: 1;
   color: var(--heading);
-  margin: 0 0 16px;
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 8px 0 16px;
-  border-top: 1px solid var(--border);
+  margin: 0;
 }
 
 .tile {
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-strong);
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--window);
+  background: var(--bg2);
 }
 
 .line {
@@ -54,6 +55,4 @@
 
 .actions {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
 }

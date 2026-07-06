@@ -15,7 +15,15 @@
  */
 
 import { z } from 'zod';
-import type { Character, Skin, SkinSource, UserConfig, UserPreferences } from './characterSchema';
+import type {
+  Character,
+  PrefQuestion,
+  Skin,
+  SkinSource,
+  UserConfig,
+  UserPreferences,
+  UserPreferencesPatch,
+} from './characterSchema';
 import type { ErrorClass } from './errorClasses';
 export type { ErrorClass } from './errorClasses';
 
@@ -159,6 +167,11 @@ export interface UserProfile {
   /** Portrait path ref ('_user.png') or null. Resolve via sei-portrait://. */
   profilePicture: string | null;
   preferredName: string;
+  /**
+   * 260705: the user's 4-char public handle (profiles.handle, same generator
+   * as characters.public_id). Null when signed out / offline / not assigned.
+   */
+  handle: string | null;
 }
 
 /**
@@ -197,9 +210,32 @@ export type BotLifecycle =
   | { type: 'disconnected'; reason?: string }
   | { type: 'error'; error: ErrorClass; message: string; retryAfterSeconds?: number }
   | { type: 'chat'; from: string; text: string }
+  /**
+   * Current world action (Party redesign §2/§5): emitted when the brain
+   * dispatches a world-acting tool; `name: null` clears it (loop ended). The
+   * renderer maps name+args to a verb line ("gathering wood…").
+   */
+  | { type: 'action'; name: string | null; args?: Record<string, unknown> }
   | { type: 'summon-ready' }
   | { type: 'summon-stopped' }
   | { type: 'exit'; code: number | null };
+
+/** A main → renderer current-action push (bot:action). */
+export interface BotActionPush {
+  characterId: string;
+  /** Tool name, or null when the action finished/cleared. */
+  name: string | null;
+  args?: Record<string, unknown>;
+  /** Unix ms when main forwarded it. */
+  ts: number;
+}
+
+/** Last chat line per character for roster previews (chat:previews). */
+export interface ChatPreview {
+  role: 'user' | 'companion' | 'system';
+  text: string;
+  ts: number;
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Skin pipeline + setup-wizard domain types                                  */
@@ -362,7 +398,7 @@ export interface GenProgressEvent {
   message?: string;
 }
 
-/** Result of prefs:get — the questionnaire gate reads `needed`. */
+/** Result of prefs:get — the questionnaire gates read `needed` / `missing`. */
 export interface PrefsGetResult {
   profile: UserPreferences | null;
   /**
@@ -371,6 +407,14 @@ export interface PrefsGetResult {
    * user_preferences row. Always false when signed out.
    */
   needed: boolean;
+  /**
+   * 260706: questions the effective profile has no answer for, in ask order.
+   * Non-empty even when `needed` is false — a questionnaire completed before
+   * a new question shipped (or abandoned partway) reports its gaps here. The
+   * "Meet my companion" gate asks these before casting; the App-level Home
+   * gate keys on `needed` alone so completed users are never nagged at Home.
+   */
+  missing: PrefQuestion[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -538,6 +582,8 @@ export interface BrowseEntry {
   personaSnippet: string;
   /** "by anonymous" or "by user-<short uuid frag>" per CONTEXT §specifics. */
   creatorLabel: string;
+  /** 4-char share code shown beside the name (null for pre-260703 rows). */
+  publicId: string | null;
   /** Public Storage URL (Pitfall 11: never round-trip to Mojang here). */
   portraitUrl: string | null;
   skinUrl: string | null;
@@ -819,6 +865,19 @@ export interface RendererApi {
   /** Clear a character's chat transcript + rolling summary bridge. */
   chatClear(characterId: string): Promise<void>;
   /**
+   * Signal that the chat surface was opened for a character. Main decides whether
+   * a first-meeting greeting fires (unique companion, empty transcript, never
+   * chatted) and returns any greeting replies to append; returns [] otherwise.
+   * Safe to call on every empty-history open — main no-ops when ineligible.
+   */
+  chatOpened(characterId: string): Promise<ChatMessage[]>;
+  /**
+   * Last chat line per character (Party redesign §2) — the roster "lastline"
+   * preview without loading full transcripts. Keys are character ids; missing
+   * key = no messages yet.
+   */
+  chatPreviews(): Promise<Record<string, ChatPreview>>;
+  /**
    * Subscribe to chat messages pushed OUTSIDE a send() round-trip: the live
    * game bot replying to a routed message, and "joined/left your world" system
    * lines. The renderer appends them to the transcript (deduped by id).
@@ -1071,6 +1130,12 @@ export interface RendererApi {
    * to the GUI after a dev HMR re-created the store). Mirrors getLanState. */
   getBotStatuses(): Promise<BotStatus[]>;
   /**
+   * Subscribe to `bot:action` pushes (Party redesign §2) — the companion's
+   * current world action (tool name + args; name null = cleared). Drives the
+   * "gathering wood…" presence lines.
+   */
+  onBotAction(cb: (push: BotActionPush) => void): Unsubscribe;
+  /**
    * Phase 15 (D-10/VIS-03): subscribe to `vision:capability` pushes. Fires on
    * summon-ready and on every live backend switch with the active provider's
    * `capabilities.vision`. The renderer feeds it into useUiStore.visionCapable
@@ -1177,8 +1242,13 @@ export interface RendererApi {
    * the first-sign-in questionnaire gate.
    */
   prefsGet(): Promise<PrefsGetResult>;
-  /** Persist questionnaire answers locally + upsert to cloud user_preferences. */
-  prefsSave(profile: UserPreferences): Promise<void>;
+  /**
+   * Persist questionnaire answers locally + upsert to cloud user_preferences.
+   * 260706: takes a PARTIAL patch — omitted answers keep their stored value
+   * (main merges under the config file lock and stamps completed_at), so
+   * "ask only the missing questions" and full retakes share one channel.
+   */
+  prefsSave(patch: UserPreferencesPatch): Promise<void>;
 }
 
 /** Payload pushed by main when the active profile scope switches. */
@@ -1271,6 +1341,9 @@ export const IpcChannel = {
     // RendererApi.getBotStatuses) — pushes only fire on transitions.
     getStatuses: 'bot:get-statuses',
     logBatch: 'bot:log:batch',
+    /** Push (main → renderer): current world action for presence verb lines
+     * (BotActionPush; name null clears). Party redesign §2/§5. */
+    action: 'bot:action',
   },
   /**
    * Phase 15 (D-10/VIS-03): dedicated bot→main→renderer push for the active
@@ -1369,10 +1442,16 @@ export const IpcChannel = {
     history: 'chat:history',
     send: 'chat:send',
     clear: 'chat:clear',
+    /** Pull: the chat surface was opened. Main decides (kind 'unique', empty
+     * transcript, never chatted) whether the companion speaks first and returns
+     * any greeting replies; a no-op returns []. */
+    opened: 'chat:opened',
     /** Push (main → renderer): a companion/system message authored outside a
      * send() round-trip — the live game bot replying to a routed message, or a
      * deterministic "joined/left your world" system line. */
     message: 'chat:message',
+    /** Pull: last chat line per character for roster previews (ChatPreview). */
+    previews: 'chat:previews',
   },
   user: {
     getProfile: 'user:get-profile',

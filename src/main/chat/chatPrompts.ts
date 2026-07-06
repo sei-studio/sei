@@ -18,6 +18,7 @@ import {
   CHAT_BASELINE,
   renderPersona,
   renderChatProactivenessDirective,
+  renderPunctuationDirective,
 } from '../../bot/brain/promptLibrary.js';
 
 export interface BuildSystemArgs {
@@ -26,6 +27,12 @@ export interface BuildSystemArgs {
   preferredName: string;
   /** Author's 0-2 proactiveness dial (character.metadata.proactiveness). */
   proactiveness: number;
+  /**
+   * Texting punctuation register (character.metadata.punctuation, 260705).
+   * Rendered as the same PUNCTUATION_DIRECTIVES text the game brain caches, and
+   * enforced mechanically by splitReply's trailing-period strip (casual only).
+   */
+  punctuation: 'casual' | 'deliberate';
   /** Tail of MEMORY.md (shared with the game) — what the companion remembers. */
   memory: string;
   /** Rolling cross-surface conversation summary (bridge.json). */
@@ -89,6 +96,7 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   ];
   if (args.preferredName) personaParts.push(`The player's name is ${args.preferredName}.`);
   personaParts.push(renderChatProactivenessDirective(args.proactiveness));
+  personaParts.push(renderPunctuationDirective(args.punctuation));
   blocks.push({ type: 'text', text: personaParts.join('\n\n'), cache_control: { type: 'ephemeral' } });
 
   if (args.memory.trim()) {

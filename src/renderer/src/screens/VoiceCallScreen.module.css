@@ -62,12 +62,10 @@
 .subtitle {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
+  gap: 7px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
   margin-top: calc(-1 * var(--space-sm));
 }
 
@@ -143,9 +141,7 @@
 }
 
 .controlLabel {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: var(--sans);
+  font-size: 12px;
   color: var(--muted);
 }

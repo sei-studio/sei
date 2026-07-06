@@ -11,13 +11,14 @@
  * Only offered on local→account first sign-in — never account→account, so
  * switching between accounts always starts fresh.
  *
- * Reuses MigrateLocalCharsModal's stylesheet for a consistent modal chrome.
+ * Renders through ModalShell; dismissal is button-only (choice is required).
  */
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import type { PeekLocalProfileResult } from '../../../shared/ipc';
-import styles from './MigrateLocalCharsModal.module.css';
+import styles from './confirmModal.module.css';
 
 export interface ImportLocalProfileModalProps {
   peek: PeekLocalProfileResult;
@@ -27,7 +28,6 @@ export interface ImportLocalProfileModalProps {
 
 export function ImportLocalProfileModal({ peek, onDone }: ImportLocalProfileModalProps): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
-  const titleId = 'import-local-title';
   const count = peek.migratableCharacterIds.length;
   const charLabel = count === 1 ? 'companion' : 'companions';
 
@@ -44,23 +44,24 @@ export function ImportLocalProfileModal({ peek, onDone }: ImportLocalProfileModa
   }
 
   return (
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>Bring your companion to this account?</h2>
-        <p className={styles.body}>
-          {count > 0
-            ? `You set up ${count} ${charLabel} before signing in. Bring ${count === 1 ? 'it' : 'them'}, along with your memories together, into this account, or start fresh.`
-            : `Bring your existing setup into this account, or start fresh.`}
-        </p>
-        {submitting ? (
-          <p className={styles.status}>Importing…</p>
-        ) : (
-          <div className={styles.footer}>
-            <Button kind="ghost" onClick={() => onDone(false)}>Start fresh</Button>
-            <Button kind="primary" onClick={() => void handleImport()}>Bring it over</Button>
-          </div>
-        )}
-      </div>
-    </div>
+    <ModalShell title="Bring your companion to this account?" escClose={false}>
+      <p className={styles.body}>
+        {count > 0
+          ? `You set up ${count} ${charLabel} before signing in. Bring ${count === 1 ? 'it' : 'them'}, along with your memories together, into this account, or start fresh.`
+          : `Bring your existing setup into this account, or start fresh.`}
+      </p>
+      {submitting ? (
+        <p className={styles.status}>Importing…</p>
+      ) : (
+        <ModalFooter>
+          <Button kind="ghost" onClick={() => onDone(false)}>
+            Start fresh
+          </Button>
+          <Button kind="primary" onClick={() => void handleImport()}>
+            Bring it over
+          </Button>
+        </ModalFooter>
+      )}
+    </ModalShell>
   );
 }

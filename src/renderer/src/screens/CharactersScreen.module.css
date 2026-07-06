@@ -1,11 +1,11 @@
 /*
- * CharactersScreen — tab control + World grid styling.
+ * CharactersScreen — screen shell + World grid styling (Party redesign §4.4).
  *
  * Home tab uses HomeScreen.module.css (imported by HomeGrid). This module owns
- * the World grid header (Oswald title + terminal search), the card grid, and
- * the empty/loading/error + Add-to-Mine toast states.
+ * the World top bar (search + sort + slots indicator), the scouting card grid,
+ * and the empty/loading/error states.
  *
- * Source: .planning/UI-DESIGN-SYSTEM.md §Screens → World.
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §4.4; mockup .world-top/.wgrid.
  */
 
 .screen {
@@ -20,42 +20,8 @@
   height: 100%;
 }
 
-/* ── Tab bar (legacy — rail drives tab switching now, kept for safety) ── */
-.tabBar {
-  display: flex;
-  gap: var(--space-sm);
-  padding: var(--space-md) var(--space-2xl) 0;
-  align-items: center;
-}
-
-.tab {
-  background: transparent;
-  border: 1px solid transparent;
-  padding: 6px 14px;
-  color: var(--muted);
-  cursor: pointer;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-.tabActive {
-  composes: tab;
-  background: var(--surface);
-  border-color: var(--border-strong);
-  color: var(--accent);
-}
-
-/* ── World grid ──────────────────────────────────────────────────────── */
+/* ── World ───────────────────────────────────────────────────────────── */
 .browse {
-  /* Top padding only — side/bottom padding lives on the pinned header and the
-   * scroll region so only the list scrolls and its scrollbar is flush right.
-   * Shared page top margin (matches Companions / Settings / Playtime). */
   padding: var(--space-lg) 0 0;
   display: flex;
   flex-direction: column;
@@ -64,141 +30,60 @@
   min-height: 0;
 }
 
-.browseHeader {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 0 var(--space-2xl);
-  flex-shrink: 0;
-}
-
-/* Scrollable list region: holds the grid plus the "Load more" row and
- * loading/empty/error states, so paging keeps working while the header pins. */
-.scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md-plus);
-  /* Top padding gives headroom for the card hover-lift (translateY(-7px) + the
-   * accent ring/glow); without it overflow:auto clips the lifted top row, same
-   * as the Home grid fix. */
-  padding: 10px var(--space-2xl) var(--space-3xl);
-  scroll-padding-top: 10px;
-  /* Hide the scrollbar (still scrolls) — matches the IconRail treatment. */
-  scrollbar-width: none;
-}
-
-.scroll::-webkit-scrollbar {
-  display: none;
-  width: 0;
-}
-
-.worldTitleRow {
+/* Top bar: search + sort left, slots indicator right. */
+.worldTop {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-}
-
-.worldHelp {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: help;
-  user-select: none;
-}
-
-.worldHelp:hover,
-.worldHelp:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
-  outline: none;
-}
-
-.worldHelpTip {
-  position: absolute;
-  top: 50%;
-  left: calc(100% + 8px);
-  transform: translateY(-50%);
-  background: var(--surface-2);
-  color: var(--text);
-  border: 1px solid var(--border-strong);
-  font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.4;
-  padding: 8px 12px;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 120ms ease;
-  z-index: 50;
-  box-shadow: var(--shadow-pop);
-}
-
-.worldHelp:hover .worldHelpTip,
-.worldHelp:focus-visible .worldHelpTip {
-  opacity: 1;
-}
-
-.browseTitle {
-  font-family: var(--display);
-  font-size: 32px;
-  font-weight: 600;
-  line-height: 0.9;
-  letter-spacing: 0.04em;
-  color: var(--heading);
-  margin: 0;
-}
-
-/* Search + sort sit together on the right of the World header. */
-.browseControls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
+  padding: 0 var(--space-lg);
   flex-shrink: 0;
 }
 
-.searchField {
-  padding: 11px 14px;
+.search {
+  width: 280px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg2);
   border: 1px solid var(--border-strong);
-  background: rgba(127, 127, 127, 0.03);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  min-width: 220px;
-  outline: none;
+  padding: 9px 12px;
+  color: var(--muted);
   transition: border-color 0.2s ease;
 }
 
-/* #6 — World sort dropdown, styled to match the search input (sharp, mono). */
+.search:focus-within {
+  border-color: var(--accent);
+}
+
+.searchField {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  outline: none;
+}
+
+.searchField::placeholder {
+  color: var(--muted-2);
+}
+
+/* Sort select, restyled to match the search box (sans, sharp, bg2). */
 .sortSelect {
   -webkit-appearance: none;
   appearance: none;
-  padding: 11px 28px 11px 12px;
+  padding: 9px 28px 9px 12px;
   border: 1px solid var(--border-strong);
-  background: rgba(127, 127, 127, 0.03);
+  background: var(--bg2);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-family: var(--sans);
+  font-size: 13px;
   outline: none;
   cursor: pointer;
   transition: border-color 0.2s ease;
-  /* Chevron drawn with a background SVG (currentColor not available in url()). */
+  /* Chevron drawn with a background gradient (currentColor unavailable in url()). */
   background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
     linear-gradient(135deg, var(--muted) 50%, transparent 50%);
   background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
@@ -210,18 +95,41 @@
   border-color: var(--accent);
 }
 
-.searchField::placeholder {
-  color: var(--muted-2);
+/* Right-aligned party-slots indicator (mono muted). */
+.slots {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 
-.searchField:focus {
-  border-color: var(--accent);
+/* Scrollable list region: holds the grid plus the "Load more" row and
+ * loading/empty/error states, so paging keeps working while the top bar pins. */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+  /* Top padding gives headroom for the card hover-lift so overflow:auto
+   * doesn't clip the lifted top row. */
+  padding: 10px var(--space-lg) var(--space-3xl);
+  scroll-padding-top: 10px;
+  /* Hide the scrollbar (still scrolls) — matches the IconRail treatment. */
+  scrollbar-width: none;
+}
+
+.scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
   align-items: start;
 }
 
@@ -247,81 +155,31 @@
 }
 
 /* Wireframe placeholder card shown in unfilled grid slots while a World page
- * is fetching (260704 — replaced the "Loading…" text row). Mirrors the real
- * card chrome: 210/312 portrait block + name/meta bars pinned bottom-left,
- * with the shared --shimmer sweep looping over the whole card. */
+ * is fetching. Mirrors the scouting card chrome: 3:4 art block + name/meta
+ * bars below. Static by design (260705) — no shimmer sweep. */
 .skeletonCard {
-  position: relative;
-  aspect-ratio: 210 / 312;
-  min-height: 0;
   background: var(--bg2);
   border: 1px solid var(--border);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.skeletonCard::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--shimmer);
-  animation: skeletonSweep 1400ms ease-in-out infinite;
+.skeletonArt {
+  aspect-ratio: 3 / 4;
+  background: var(--bg3);
 }
 
 .skeletonName,
 .skeletonMeta {
-  position: absolute;
-  left: 14px;
   background: var(--border);
-}
-
-.skeletonName {
-  bottom: 34px;
+  margin: 8px 12px 0;
+  height: 12px;
   width: 60%;
-  height: 14px;
 }
 
 .skeletonMeta {
-  bottom: 14px;
-  width: 40%;
   height: 8px;
+  width: 40%;
+  margin-bottom: 12px;
 }
 
-@keyframes skeletonSweep {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(100%); }
-}
-
-.cardPlaceholder {
-  border: 1px solid var(--border);
-  padding: var(--space-md-plus);
-  font-family: var(--sans);
-  color: var(--text);
-  font-size: 14px;
-  background: var(--surface);
-}
-
-/* ── Add-to-Mine toast ───────────────────────────────────────────────── */
-.toastSuccess,
-.toastError {
-  position: fixed;
-  bottom: 1.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 10px 18px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #fff;
-  z-index: 100;
-  box-shadow: var(--shadow-pop);
-  max-width: min(480px, calc(100vw - 64px));
-}
-
-.toastSuccess {
-  background: var(--green);
-}
-
-.toastError {
-  background: var(--red);
-}

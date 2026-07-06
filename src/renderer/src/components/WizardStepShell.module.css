@@ -9,22 +9,23 @@
   min-height: 480px;
 }
 
+/* Mono micro-label (see .u-lbl). Sentence case; no uppercase / pixel font. */
 .stepIndicator {
-  font-family: var(--pixel);
-  font-size: 16px;
+  font-family: var(--mono);
+  font-size: 10.5px;
   color: var(--text-2);
   margin-bottom: var(--space-md);
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
 }
 
 .heading {
-  font-family: var(--sans);
+  font-family: var(--display);
   font-size: 24px;
   font-weight: 600;
   line-height: 1.2;
   color: var(--text);
   margin: 0 0 var(--space-lg) 0;
-  letter-spacing: -0.2px;
+  letter-spacing: 0.01em;
 }
 
 .body {

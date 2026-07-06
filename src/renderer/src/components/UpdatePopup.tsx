@@ -26,8 +26,9 @@
  *   - src/renderer/src/components/Button.tsx / PercentBar.tsx (reused primitives)
  *   - .planning/quick/260604-uoy-... PLAN.md Task 6
  */
-import React, { useEffect, useId } from 'react';
+import React from 'react';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import { PercentBar } from './PercentBar';
 import styles from './UpdatePopup.module.css';
 
@@ -98,22 +99,14 @@ function renderChangelog(text: string): React.ReactNode {
 }
 
 export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps): React.ReactElement {
-  const titleId = useId();
   const dismissable =
     state.kind === 'available-optional' ||
     state.kind === 'whats-new' ||
     state.kind === 'downloaded-on-restart';
 
   // ESC dismisses only the dismissable states; forced/downloading/downloaded
-  // never close on ESC (the restart is in flight / about to be).
-  useEffect(() => {
-    if (!dismissable) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onDismiss?.();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [dismissable, onDismiss]);
+  // never close on ESC (the restart is in flight / about to be). ModalShell
+  // owns the keydown listener; escClose is gated on `dismissable`.
 
   let body: React.ReactNode;
   let footer: React.ReactNode = null;
@@ -195,19 +188,17 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps)
   }
 
   return (
-    <div
-      className={styles.scrim}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
+    // Stacked tier (1100) per the modal z-tier spec (OAuth / AutoRenewal /
+    // UpdatePopup / ApiKeySetup). Non-dismissable states pin the shell open.
+    <ModalShell
+      title={title}
+      width={460}
+      tier="stacked"
+      escClose={dismissable}
+      onClose={dismissable ? onDismiss : undefined}
     >
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>
-          {title}
-        </h2>
-        {body}
-        {footer ? <div className={styles.footer}>{footer}</div> : null}
-      </div>
-    </div>
+      {body}
+      {footer ? <ModalFooter>{footer}</ModalFooter> : null}
+    </ModalShell>
   );
 }

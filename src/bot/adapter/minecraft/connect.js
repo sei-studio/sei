@@ -52,10 +52,10 @@ export function humanizeReason(reason) {
   if (!reason) return 'Unknown reason'
   const text = extractReasonText(reason)
   const r = text.toLowerCase()
-  if (r.includes('econnrefused') || r.includes('connect')) return 'Could not reach server — make sure a LAN world is open'
-  if (r.includes('timeout')) return 'Connection timed out — server may be unreachable'
+  if (r.includes('econnrefused') || r.includes('connect')) return 'Could not reach server. Make sure a LAN world is open'
+  if (r.includes('timeout')) return 'Connection timed out. The server may be unreachable'
   if (r.includes('kicked')) return `Kicked: ${text}`
-  if (r.includes('invalid session') || r.includes('auth')) return 'Authentication failed — check auth mode'
+  if (r.includes('invalid session') || r.includes('auth')) return 'Authentication failed. Check auth mode'
   return text || 'Unknown reason'
 }
 

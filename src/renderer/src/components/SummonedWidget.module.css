@@ -67,25 +67,4 @@
   text-overflow: ellipsis;
 }
 
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 6px currentColor;
-}
-
-.dotConnecting {
-  background: var(--warn);
-}
+/* Status line is now the shared <Presence> component (in-game / connecting). */

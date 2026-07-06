@@ -178,6 +178,22 @@ async function emitPlaySession(characterId: string, durationMs: number): Promise
 // 260703: the "joined your world" system line was removed — the floating
 // SummonedWidget is the live-session surface, so the chat row was redundant.
 
+/**
+ * Party redesign §2/§5: push the companion's current world action to the
+ * renderer over `bot:action`. `name` null clears the verb (loop idle / session
+ * ended). The renderer maps name+args to a presence phrase.
+ */
+function broadcastAction(
+  characterId: string,
+  name: string | null,
+  args: Record<string, unknown> | undefined,
+  ts: number,
+): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.bot.action, { characterId, name, args, ts });
+  }
+}
+
 function broadcastStatus(status: BotStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.bot.status, status);
@@ -519,6 +535,8 @@ async function bootstrap(): Promise<void> {
         ts: Date.now(),
       });
     },
+    // Party redesign §2/§5 — the live bot's current world action (verb line).
+    onBotAction: broadcastAction,
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift

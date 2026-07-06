@@ -1,74 +1,116 @@
-/*
- * BrowseCard.module.css — Phase 12 Plan 11.
- *
- * Adds the Browse-specific bits ONLY. The base card chrome (.card,
- * .portraitWrap, .gradient, .nameOverlay, .hoverOverlay) is composed from
- * CharacterCard.module.css so Home + Browse grids read as visually
- * coherent surfaces.
- *
- * Color tokens follow the project's existing vocabulary: --text, --text-2,
- * --bg-2, --border, --muted, --red, --green. See HomeScreen.module.css and
- * CharactersScreen.module.css for the canonical token names.
- */
+/* BrowseCard.module.css — World scouting card (mockup .wcard/.wart/.wmeta).
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §4.4. */
 
-.cardExtras {
+.card {
   position: relative;
-}
-
-/*
- * Hover overlay primary action — "+ Add to Mine". Mirrors CharacterCard's
- * Summon button position (centered) but uses neutral surface tokens so the
- * Browse grid doesn't pulse with the same accent color as the Home grid's
- * Summon button.
- */
-.addBtn {
-  background: var(--bg-2);
-  color: var(--text);
+  text-align: left;
   border: 1px solid var(--border);
-  padding: 8px 14px;
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
+  background: var(--bg2);
   cursor: pointer;
-  transition: background 160ms ease, transform 120ms var(--ease-pop);
+  transition: transform 0.15s var(--ease), border-color 0.15s var(--ease);
+  display: flex;
+  flex-direction: column;
 }
 
-.addBtn:hover {
-  background: var(--text);
-  color: var(--bg-2);
+/* Portrait still streaming: hide the real content (it keeps layout AND the
+ * <img> keeps loading) under a static wireframe overlay matching the World
+ * grid's skeleton cards (260705). */
+.loading .art,
+.loading .meta {
+  visibility: hidden;
 }
 
-.addBtn:active {
-  transform: translateY(1px);
+.skel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
 }
 
-/*
- * "Already in My Library" pill — replaces the Add button when
- * entry.inMyLibrary === true (predicate computed by main per Researcher
- * correction #4: useDataStore.characters local-file presence, NOT
- * useCloudCharactersStore.cloudIds).
- */
-.alreadyPill {
-  background: rgba(0, 0, 0, 0.55);
-  color: rgba(255, 255, 255, 0.92);
-  padding: 6px 12px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
+.skelArt {
+  aspect-ratio: 3 / 4;
+  background: var(--bg3);
 }
 
-/*
- * Creator attribution row — sits between the portrait and the persona
- * snippet. v1.0 renders the short "by user-a1b2" / "by anonymous" label
- * computed by main. Creator profile pages defer to v1.x (SHARE-10).
- */
-.metaRow {
-  padding: 10px 14px 12px;
+.skelName,
+.skelBy {
+  background: var(--border);
+  margin: 8px 12px 0;
+  height: 12px;
+  width: 60%;
 }
 
-.creatorMeta {
-  font-family: var(--sans);
-  font-size: 11px;
+.skelBy {
+  height: 8px;
+  width: 40%;
+}
+
+.card:hover,
+.card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+}
+
+.art {
+  aspect-ratio: 3 / 4;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Hover overlay with the centered Invite action. */
+.over {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 50%, transparent);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
+}
+
+.card:hover .over,
+.card:focus-within .over {
+  opacity: 1;
+}
+
+.meta {
+  padding: 9px 12px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.name {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.by {
   color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .over {
+    transition: none;
+  }
 }

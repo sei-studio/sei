@@ -7,7 +7,7 @@
  *      Opens the World tab (sets homeTab='world' then navigate home); active
  *      while the World tab is selected.
  *   3. Thin divider
- *   4. Scrollable 44px circular character avatars sorted by last_launched desc,
+ *   4. Scrollable 40px circular character sockets sorted by last_launched desc,
  *      then created desc. Active when view.kind==='character' && id matches.
  *   5. Round + button — navigates to add-character
  *   6. Flex spacer
@@ -38,10 +38,12 @@ import {
 } from './icons';
 import { PixelPortrait } from './PixelPortrait';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import { SignInModal } from './SignInModal';
 import { SwitchBackendConfirmModal } from './SwitchBackendConfirmModal';
 import { sei } from '../lib/ipcClient';
 import { lastInteractionAt } from '../lib/lastInteraction';
+import { isHomeCharacter } from '../lib/homeLibrary';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -142,7 +144,7 @@ function RailButton({
 /**
  * Single avatar in the scrollable character cluster. Uses the character's
  * portrait_image when present (rendered as a circular <img>), otherwise
- * a 44px PixelPortrait inside a circular clip.
+ * a 40px PixelPortrait inside a circular clip.
  */
 interface AvatarButtonProps {
   characterId: string;
@@ -200,15 +202,15 @@ function AvatarButton({
           <img
             src={portraitSrc(portraitImage)!}
             alt=""
-            width={44}
-            height={44}
+            width={40}
+            height={40}
             className={styles.avatarImg}
           />
         ) : (
           <PixelPortrait
             seed={characterId + characterName}
             palette={palette}
-            size={44}
+            size={40}
             className={styles.avatarImg}
             aria-label={characterName}
           />
@@ -310,21 +312,17 @@ export function IconRail(): React.ReactElement {
   const homeActive = onHomeSurface && homeTab === 'home';
   const worldActive = onHomeSurface && homeTab === 'world';
 
-  // Filter to the user's home library — same rule HomeGrid uses so the rail
-  // and the Home grid never diverge. 260703 procgen: bundled defaults are
-  // OPT-IN — hidden unless the user invited them from the World tab
-  // (UserConfig.added_default_ids). Foreign chars are hidden unless added
-  // from the World tab (UserConfig.added_world_ids).
+  // Filter to the user's home library — the SHARED isHomeCharacter rule, so
+  // the rail, the Home grid, and the slots indicator never diverge. (260706:
+  // an inline copy here skipped the owner check when signed out, so cached
+  // copies of other users' World characters showed on the rail while the
+  // slots indicator counted zero.)
   const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
   const homeCharacters = useMemo(() => {
-    return characters.filter((c) => {
-      if (c.is_default === true) return addedDefaultIds.has(c.id);
-      if (currentUserId && c.owner != null && c.owner !== currentUserId) {
-        return addedWorldIds.has(c.id);
-      }
-      return true;
-    });
+    return characters.filter((c) =>
+      isHomeCharacter(c, currentUserId, addedDefaultIds, addedWorldIds),
+    );
   }, [characters, currentUserId, addedDefaultIds, addedWorldIds]);
 
   // Stable sort: last interaction desc (summon OR chat; nulls last), then created desc.
@@ -412,15 +410,15 @@ export function IconRail(): React.ReactElement {
           ))}
           <button
             type="button"
-            className={`${styles.circleButton} ${view.kind === 'add-character' ? styles.circleActive : ''}`}
-            onClick={() => navigate({ kind: 'add-character' })}
-            aria-label="New companion"
-            onMouseEnter={(e) => attachHover(e.currentTarget, 'New companion', setHoverTip)}
+            className={`${styles.circleButton} ${view.kind === 'awaken' || view.kind === 'add-character' ? styles.circleActive : ''}`}
+            onClick={() => navigate({ kind: 'awaken' })}
+            aria-label="Awaken a companion"
+            onMouseEnter={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
             onMouseLeave={() => setHoverTip(null)}
-            onFocus={(e) => attachHover(e.currentTarget, 'New companion', setHoverTip)}
+            onFocus={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
             onBlur={() => setHoverTip(null)}
           >
-            <PlusIcon size={22} />
+            <PlusIcon size={18} />
           </button>
         </div>
 
@@ -478,35 +476,32 @@ export function IconRail(): React.ReactElement {
       ) : null}
 
       {showCloudPrompt ? (
-        <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby="cloud-prompt-title">
-          <div className={styles.cloudPrompt}>
-            <h2 id="cloud-prompt-title" className={styles.cloudPromptTitle}>Switch to cloud?</h2>
-            <p className={styles.cloudPromptBody}>
-              Sign in to use Sei&apos;s hosted AI. You keep your local characters either way.
-            </p>
-            <div className={styles.cloudPromptActions}>
-              <Button
-                kind="quiet"
-                size="md"
-                onClick={() => setShowCloudPrompt(false)}
-              >
-                Not now
-              </Button>
-              <Button
-                kind="accent"
-                size="md"
-                onClick={() => {
-                  setShowCloudPrompt(false);
-                  setShowSignIn(true);
-                  // Once sign-in lands, the effect above flips us to cloud.
-                  setPendingCloudAfterSignIn(true);
-                }}
-              >
-                Continue
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ModalShell
+          title="Switch to cloud?"
+          onClose={() => setShowCloudPrompt(false)}
+          scrimClose
+        >
+          <p className={styles.cloudPromptBody}>
+            Sign in to use Sei&apos;s hosted AI. You keep your local characters either way.
+          </p>
+          <ModalFooter>
+            <Button kind="quiet" size="md" onClick={() => setShowCloudPrompt(false)}>
+              Not now
+            </Button>
+            <Button
+              kind="primary"
+              size="md"
+              onClick={() => {
+                setShowCloudPrompt(false);
+                setShowSignIn(true);
+                // Once sign-in lands, the effect above flips us to cloud.
+                setPendingCloudAfterSignIn(true);
+              }}
+            >
+              Continue
+            </Button>
+          </ModalFooter>
+        </ModalShell>
       ) : null}
 
       {showSignIn ? (

@@ -1,42 +1,8 @@
-/* AutoRenewalConsentModal — quick/260525-sbo Task 3.
+/* AutoRenewalConsentModal — Party redesign.
  *
- * Mirrors SignInModal.module.css structure. The scrim z-index is 1100 (vs.
- * SignInModal's 1000) so the modal can stack above HardStopModal's scrim
- * cleanly when the consent gate fires from the hard-stop CTA path.
+ * The scrim, panel, title, footer + stacking (tier 'stacked' = 1100) are owned
+ * by ModalShell now; only the body copy + consent-checkbox row remain here.
  */
-
-.scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1100;
-  animation: fade 220ms ease both;
-}
-
-.modal {
-  width: 460px;
-  background: var(--window);
-  padding: 24px 40px 40px;
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-pop);
-  font-family: var(--sans);
-  animation: fadeUp 280ms var(--ease-pop) both;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md-plus);
-}
-
-.title {
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.2px;
-  color: var(--text);
-  margin: 0;
-}
 
 .body {
   font-size: 14px;
@@ -45,9 +11,7 @@
   line-height: 1.45;
 }
 
-/* Consent-checkbox row — mirrors SignInModal .tosCheckbox typography so the
- * required-checkbox doesn't read as a separate visual layer.
- */
+/* Consent-checkbox row — required-checkbox reads inline with the body copy. */
 .checkboxRow {
   display: flex;
   align-items: flex-start;
@@ -62,18 +26,4 @@
   flex: none;
   margin-top: 3px;
   cursor: pointer;
-}
-
-.footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-md);
-  margin-top: var(--space-md-plus);
-}
-
-@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
-
-@media (prefers-reduced-motion: reduce) {
-  .scrim, .modal { animation: none; }
 }

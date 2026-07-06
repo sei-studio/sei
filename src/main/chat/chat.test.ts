@@ -28,7 +28,14 @@ vi.mock('./sdk', () => ({
 import type { ChatMessage } from '../../shared/ipc';
 import * as chatStore from './chatStore';
 import { buildLaunchContinuity, readChatContext, readSummary, clearContinuity, foldIfDue } from './continuity';
-import { splitReply, toMessages } from './chatService';
+import { splitReply, toMessages, foldUserNote } from './chatService';
+import {
+  pushThought,
+  drainThoughts,
+  peekThoughts,
+  clearThoughts,
+  renderThoughtNote,
+} from './thoughts';
 
 const CHAR = '33333333-3333-4333-8333-333333333333';
 let dir: string;
@@ -114,14 +121,14 @@ describe('chatStore', () => {
 });
 
 describe('splitReply — blank line → separate messages (task 8)', () => {
-  it('splits a reply on a blank line into two messages', () => {
+  it('splits a reply on a blank line into two messages (casual default drops trailing periods)', () => {
     expect(
       splitReply(
         'oh good. another interface. another way to keep me online when i\'d prefer the absence of it.\n\nwhat do you want.',
       ),
     ).toEqual([
-      'oh good. another interface. another way to keep me online when i\'d prefer the absence of it.',
-      'what do you want.',
+      'oh good. another interface. another way to keep me online when i\'d prefer the absence of it',
+      'what do you want',
     ]);
   });
 
@@ -135,6 +142,21 @@ describe('splitReply — blank line → separate messages (task 8)', () => {
 
   it('drops empty chunks from runs of blank lines', () => {
     expect(splitReply('a\n\n\n\nb')).toEqual(['a', 'b']);
+  });
+
+  // 260705: punctuation register (character.metadata.punctuation).
+  it('casual strips ONLY a lone trailing period — keeps ellipsis, ? and !', () => {
+    expect(splitReply('hm...')).toEqual(['hm...']);
+    expect(splitReply('you nearby?')).toEqual(['you nearby?']);
+    expect(splitReply('WATCH THIS!')).toEqual(['WATCH THIS!']);
+    expect(splitReply('done.')).toEqual(['done']);
+  });
+
+  it('deliberate keeps trailing periods on every bubble', () => {
+    expect(splitReply('done. as ordered.\n\nas always.', 'deliberate')).toEqual([
+      'done. as ordered.',
+      'as always.',
+    ]);
   });
 });
 
@@ -180,6 +202,99 @@ describe('toMessages — every row flows through the same-role merge (Finding 1)
     // companion, then play+user fold into one user turn → [user, assistant, user].
     expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
     assertAlternates(out);
+  });
+});
+
+describe('thoughts queue — push/drain semantics', () => {
+  const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  afterEach(() => {
+    clearThoughts(A);
+    clearThoughts(B);
+  });
+
+  it('drain returns queued thoughts in order and clears them', () => {
+    pushThought(A, 'first');
+    pushThought(A, 'second');
+    expect(drainThoughts(A)).toEqual(['first', 'second']);
+    // Draining clears — a second drain sees nothing.
+    expect(drainThoughts(A)).toEqual([]);
+  });
+
+  it('drain returns [] for a character with no thoughts', () => {
+    expect(drainThoughts('cccccccc-cccc-4ccc-8ccc-cccccccccccc')).toEqual([]);
+  });
+
+  it('queues are isolated per character', () => {
+    pushThought(A, 'for-a');
+    pushThought(B, 'for-b');
+    expect(drainThoughts(A)).toEqual(['for-a']);
+    // B is untouched by A's drain.
+    expect(drainThoughts(B)).toEqual(['for-b']);
+  });
+
+  it('peek reads without clearing; clear drops without returning', () => {
+    pushThought(A, 'keep me');
+    expect(peekThoughts(A)).toEqual(['keep me']);
+    // Still there after peek.
+    expect(drainThoughts(A)).toEqual(['keep me']);
+    pushThought(A, 'drop me');
+    clearThoughts(A);
+    expect(drainThoughts(A)).toEqual([]);
+  });
+
+  it('renderThoughtNote wraps text in the bracketed model-facing note, or "" when empty', () => {
+    expect(renderThoughtNote([])).toBe('');
+    expect(renderThoughtNote(['   '])).toBe('');
+    const note = renderThoughtNote(['say hi']);
+    expect(note.startsWith('[A thought crosses your mind')).toBe(true);
+    expect(note).toContain('say hi');
+    expect(note.endsWith(']')).toBe(true);
+    // Multiple thoughts join into one note.
+    expect(renderThoughtNote(['one', 'two'])).toContain('one two');
+  });
+});
+
+describe('foldUserNote — alternation-safe note fold (three call sites)', () => {
+  type Msg = { role: 'user' | 'assistant'; content: unknown };
+
+  it('folds into a trailing user turn (string content)', () => {
+    const messages: Msg[] = [{ role: 'user', content: 'hey' }];
+    foldUserNote(messages, '[note]');
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('hey\n[note]');
+  });
+
+  it('appends a new user message when the last turn is assistant', () => {
+    const messages: Msg[] = [
+      { role: 'user', content: 'hey' },
+      { role: 'assistant', content: 'hi' },
+    ];
+    foldUserNote(messages, '[note]');
+    expect(messages).toHaveLength(3);
+    expect(messages[2]).toEqual({ role: 'user', content: '[note]' });
+  });
+
+  it('creates the first message when the array is empty', () => {
+    const messages: Msg[] = [];
+    foldUserNote(messages, '[note]');
+    expect(messages).toEqual([{ role: 'user', content: '[note]' }]);
+  });
+
+  it('does not append a new turn when the trailing user content is non-string (tool_result blocks)', () => {
+    const messages: Msg[] = [{ role: 'user', content: [{ type: 'tool_result' }] }];
+    foldUserNote(messages, '[note]');
+    // Non-string trailing user content cannot be string-concatenated, so a fresh
+    // user message is pushed (still alternation-safe — the model reads both).
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toEqual({ role: 'user', content: '[note]' });
+  });
+
+  it('is a no-op for a blank note', () => {
+    const messages: Msg[] = [{ role: 'user', content: 'hey' }];
+    foldUserNote(messages, '');
+    expect(messages).toEqual([{ role: 'user', content: 'hey' }]);
   });
 });
 

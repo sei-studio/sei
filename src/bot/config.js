@@ -139,6 +139,12 @@ export const ConfigSchema = z.object({
     // predating the dial behave sensibly. Legacy value 3 (old "Driven") is
     // remapped to 2 (Agentic) at the read boundary in src/bot/index.js.
     proactiveness: z.number().int().min(0).max(2).default(1),
+    // 260705: texting punctuation register (character.metadata.punctuation).
+    // 'casual' = normal modern texting, trailing periods stripped per message
+    // (most characters). 'deliberate' = sentences keep their full stops (flat,
+    // measured — e.g. Marv). Drives PUNCTUATION_DIRECTIVES in the cached
+    // system prefix AND the splitChatMessages trailing-period behavior.
+    punctuation: z.enum(['casual', 'deliberate']).default('casual'),
   }),
   anthropic: z.object({
     // Phase 13-15 (D-40 sub-delivery a): api_key is no longer strictly required

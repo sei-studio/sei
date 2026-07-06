@@ -91,4 +91,19 @@ describe('splitChatMessages — texting-style split (no content filter)', () => 
     expect(splitChatMessages('')).toEqual([])
     expect(splitChatMessages(null)).toEqual([])
   })
+
+  // 260705: per-character punctuation register (config.persona.punctuation).
+  it('casual keeps a trailing ellipsis — only a LONE period is stripped', () => {
+    expect(splitChatMessages('hm... fine')).toEqual(['hm...', 'fine'])
+    expect(splitChatMessages('great...')).toEqual(['great...'])
+    expect(splitChatMessages('done.')).toEqual(['done'])
+  })
+
+  it('deliberate keeps trailing periods but still splits into messages', () => {
+    expect(splitChatMessages('done. as ordered. as always.', 'deliberate'))
+      .toEqual(['done.', 'as ordered.', 'as always.'])
+    expect(splitChatMessages('you nearby? i need wood.', 'deliberate'))
+      .toEqual(['you nearby?', 'i need wood.'])
+    expect(splitChatMessages('hm... fine.', 'deliberate')).toEqual(['hm...', 'fine.'])
+  })
 })

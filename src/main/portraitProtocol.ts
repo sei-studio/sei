@@ -39,7 +39,17 @@ export function registerPortraitScheme(): void {
   protocol.registerSchemesAsPrivileged([
     {
       scheme: PORTRAIT_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+      // corsEnabled + the ACAO header below let the renderer fetch() portrait
+      // bytes cross-origin (dev origin is http://localhost:5173) — needed for
+      // canvas color extraction (useDominantColor); a plain <img> src doesn't
+      // allow readback from a custom scheme.
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+        stream: true,
+      },
     },
   ]);
 }
@@ -50,7 +60,10 @@ export function registerPortraitProtocol(): void {
     const { pathname } = new URL(request.url);
     const file = path.basename(decodeURIComponent(pathname));
     if (!SAFE_FILE_RE.test(file)) {
-      return new Response('bad request', { status: 400 });
+      return new Response('bad request', {
+        status: 400,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
     }
     const uuid = file.replace(/\.png$/i, '');
     try {
@@ -62,12 +75,19 @@ export function registerPortraitProtocol(): void {
           // Portrait bytes change in place on re-upload (same uuid → same URL),
           // so forbid caching to avoid a stale thumbnail surviving a "Change".
           'Cache-Control': 'no-cache, no-store, must-revalidate',
+          // Local-only bytes the renderer already displays; * lets fetch()
+          // succeed from both the dev (http://localhost:5173) and packaged
+          // origins for color extraction.
+          'Access-Control-Allow-Origin': '*',
         },
       });
     } catch {
       // Missing file → 404 so the renderer's <img onError> falls back to the
       // procedural sprite (D-14), exactly as a deleted portrait should.
-      return new Response('not found', { status: 404 });
+      return new Response('not found', {
+        status: 404,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
     }
   });
 }

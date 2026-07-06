@@ -15,12 +15,16 @@ declare module 'soulcaster' {
   }
   export function castSoul(args: {
     gender: string;
+    /** Relationship dynamic key (soulcaster DYNAMICS) or null to free-roll. */
+    dynamic?: string | null;
     userProfile?: unknown;
     llm: (a: SoulcasterLlmArgs) => Promise<string>;
     rng?: () => number;
   }): Promise<{ sheet: unknown; rolled: unknown }>;
   export function rollFields(args?: unknown): unknown;
   export const CharacterSheetSchema: unknown;
+  /** Relationship-dynamics table; keys must mirror COMPANION_DYNAMICS (characterSchema). */
+  export const DYNAMICS: Record<string, { label: string; hint: string; seed_pool: string[] }>;
 }
 
 declare module 'img2skin/src/pipeline.js' {

@@ -41,8 +41,7 @@
   color: #fff;
   font-family: var(--mono);
   font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   opacity: 0;
   transition: opacity 120ms var(--ease);
 }

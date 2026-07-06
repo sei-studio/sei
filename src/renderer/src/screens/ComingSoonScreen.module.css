@@ -9,18 +9,20 @@
   text-align: center;
 }
 
+/* Mono micro-label (see .u-lbl). Sentence case; no uppercase / pixel font. */
 .eyebrow {
-  font-family: var(--pixel);
-  font-size: 22px;
-  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
   margin-bottom: 8px;
 }
 
 .title {
-  font-family: var(--sans);
+  font-family: var(--display);
   font-size: 28px;
   font-weight: 600;
-  letter-spacing: -0.4px;
+  letter-spacing: 0.01em;
   color: var(--heading);
   margin: 0 0 16px;
 }

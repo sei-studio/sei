@@ -128,6 +128,20 @@ export interface BotSupervisorOptions {
    * transcript and pushes it to the renderer. Optional — undefined no-ops.
    */
   onBotChat?: (characterId: string, text: string) => void;
+  /**
+   * Party redesign §2/§5: the live game bot dispatched a world-acting tool
+   * (`name` set) or drained back to idle (`name` null). Main forwards this to
+   * the renderer over `bot:action` so the presence line can show a verb
+   * ("gathering wood…"). The supervisor also calls this with `name: null` when
+   * a session stops/exits, so a stale verb never lingers after the bot is gone.
+   * Optional — undefined no-ops.
+   */
+  onBotAction?: (
+    characterId: string,
+    name: string | null,
+    args: Record<string, unknown> | undefined,
+    ts: number,
+  ) => void;
   /** Forward to renderer via webContents.send('bot:log:batch', batch). Batched. */
   sendLog: (batch: LogBatch) => void;
   /**
@@ -328,6 +342,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // 260618: a companion left — refresh the survivors' rosters.
     broadcastRoster();
     opts.sendStatus({ kind: 'idle', characterId });
+    // Party redesign §5: the session is gone — clear any lingering action verb
+    // so the roster line doesn't stick on "gathering wood…" after Disconnect.
+    opts.onBotAction?.(characterId, null, undefined, Date.now());
   }
 
   /** Drain every active session in parallel (sign-out / before-quit). */
@@ -678,6 +695,14 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         opts.onBotChat?.(characterId, (data as { text?: string }).text ?? '');
         return;
       }
+      // Party redesign §2/§5: current world action. `name` set = a world-acting
+      // tool started; `name` null = the loop drained to idle. Forward to the
+      // renderer's presence-verb line. Not a BotStatus event — return before
+      // lifecycleToStatus.
+      if (data.type === 'action') {
+        opts.onBotAction?.(characterId, data.name ?? null, data.args, Date.now());
+        return;
+      }
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
@@ -954,6 +979,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // 260618: a mid-session crash removes a companion — refresh the roster
         // of the survivors so they stop treating this bot as present.
         broadcastRoster();
+        // Party redesign §5: session ended (clean exit or crash) — clear the
+        // action verb so a stale "gathering…" doesn't outlive the bot.
+        opts.onBotAction?.(characterId, null, undefined, Date.now());
         session.resolveExited();
       });
     });

@@ -1,12 +1,17 @@
 /**
  * ChatScreen — Discord-style in-app chat with a companion (Phase 18/19).
  *
- * Layout: a compact header (back button + avatar + companion name, with Games /
- * Voice / Profile icon buttons on the right), a scrollable NO-BUBBLE message
- * list (avatar + author header + text, grouped by consecutive author, split by
- * per-day separators), a small "<name> is typing…" line while a reply is in
- * flight, and a floating composer that hovers over the bottom of the window
- * (the send button appears only once the draft is non-empty).
+ * Layout: a compact header (back button + avatar + a name TOGGLE that opens the
+ * presence side panel + Play / Voice icon buttons), a scrollable NO-BUBBLE
+ * message list (avatar + author header + text, grouped by consecutive author,
+ * split by per-day separators), a "<name> is typing…" line while a reply is in
+ * flight, and a floating boxed composer (send button appears once the draft is
+ * non-empty).
+ *
+ * Party redesign (§4.5): the header name toggles a collapsible 260px presence
+ * side panel (portrait art + kind + Presence line + live action verb + an action
+ * stack). Clicking a message author's name swaps the panel between the companion
+ * card and the "You" (user) card; clicking the same author again closes it.
  *
  * Per-message hover affordances (copy / reply). Reply quotes the message: the
  * quote shows as a line above the composer and is prepended to the outgoing
@@ -17,7 +22,7 @@
  * handles the procedural fallback); the user avatar is their profile picture
  * (sei.userGetProfile), falling back to a generic glyph.
  *
- * Source: .planning/design/app-chat-and-memory.md §5 (UI plan) + R4/R6/R9.
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §4.5.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -27,7 +32,12 @@ import { useChatStore } from '../lib/stores/useChatStore';
 import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
 import { pickPalette } from '../lib/portraitPalettes';
+import { useDominantColor } from '../lib/useDominantColor';
+import { presenceOf, useMinuteTick } from '../lib/presence';
+import { actionVerb } from '../lib/actionVerb';
 import { PixelPortrait } from '../components/PixelPortrait';
+import { Presence } from '../components/Presence';
+import { Button } from '../components/Button';
 import {
   GamepadIcon,
   UserIcon,
@@ -45,6 +55,9 @@ import styles from './ChatScreen.module.css';
 export interface ChatScreenProps {
   characterId: string;
 }
+
+/** Which resident the presence side panel is showing. */
+type PanelCard = 'companion' | 'user';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -80,9 +93,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const character: Character | undefined = useDataStore((s) =>
     s.characters.find((c) => c.id === characterId),
   );
+  const summon = useDataStore((s) => s.summons[characterId]);
+  const action = useDataStore((s) => s.actions[characterId]);
 
   const messages = useChatStore((s) => s.messages[characterId]) ?? EMPTY;
   const awaiting = useChatStore((s) => s.awaiting[characterId]) ?? false;
+  const loading = useChatStore((s) => s.loading[characterId]) ?? false;
   const load = useChatStore((s) => s.load);
   const send = useChatStore((s) => s.send);
 
@@ -93,6 +109,23 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const [copiedId, setCopiedId] = useState<string | null>(null);
   // Transient toast for the "coming soon" phone notice.
   const [notice, setNotice] = useState<string | null>(null);
+  // §4.5 — presence side panel: default OPEN (260705 revision); hiding it is a
+  // sticky preference across companions and app restarts (useUiStore, persisted
+  // via UserConfig.chat_panel_hidden). Which card shows stays per-screen state.
+  const panelHidden = useUiStore((s) => s.chatPanelHidden);
+  const setChatPanelHidden = useUiStore((s) => s.setChatPanelHidden);
+  const panelOpen = !panelHidden;
+  const setPanelOpen = (open: boolean): void => {
+    setChatPanelHidden(!open);
+    // Persist best-effort: read-modify-write the config off the current value.
+    void sei
+      .getConfig()
+      .then((cfg) => sei.saveConfig({ ...cfg, chat_panel_hidden: !open }))
+      .catch(() => {
+        /* preference still applies for this session */
+      });
+  };
+  const [panelCard, setPanelCard] = useState<PanelCard>('companion');
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -124,11 +157,65 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, awaiting]);
 
+  // Scrollbar auto-hide: the thumb is transparent at rest and shows only
+  // while the list is actively scrolling (data-scrolling, cleared after a
+  // short idle). Direct DOM writes — no re-render per scroll frame.
+  const scrollFadeTimer = useRef<number | null>(null);
+  const onListScroll = (): void => {
+    const el = listRef.current;
+    if (!el) return;
+    el.dataset.scrolling = 'true';
+    if (scrollFadeTimer.current !== null) window.clearTimeout(scrollFadeTimer.current);
+    scrollFadeTimer.current = window.setTimeout(() => {
+      delete el.dataset.scrolling;
+    }, 700);
+  };
+  useEffect(
+    () => () => {
+      if (scrollFadeTimer.current !== null) window.clearTimeout(scrollFadeTimer.current);
+    },
+    [],
+  );
+
+  // Re-render each minute so the Presence line decays online → idle (§2).
+  useMinuteTick();
+
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
 
   const companionName = character?.name ?? 'Companion';
   const userName = userProfile?.preferredName?.trim() || 'You';
+  // Panel kind line: the character's one-line description with the leading
+  // "<Name>, " and trailing period stripped ("A wolf-person"), replacing the
+  // generic "Companion" label. Long descriptions (hand-written customs can be
+  // paragraphs) fall back to the generic label so the panel never floods.
+  const kindLine = useMemo(() => {
+    let d = (character?.description ?? '').replace(/\s+/g, ' ').trim();
+    const name = (character?.name ?? '').trim();
+    if (name) {
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      d = d.replace(new RegExp(`^${esc},?\\s+`, 'i'), '');
+    }
+    d = d.replace(/[.\s]+$/, '');
+    if (!d || d.length > 80) return 'Companion';
+    return d.charAt(0).toUpperCase() + d.slice(1);
+  }, [character?.description, character?.name]);
+
+  const panelPalette = useMemo(
+    () => pickPalette((character?.id ?? '') + (character?.name ?? ''), theme),
+    [character?.id, character?.name, theme],
+  );
+  const userArtSrc = portraitSrc(userProfile?.profilePicture);
+  // §4.5 (260705) — tint the presence panel with the portrait's main color.
+  // Null (no portrait / extraction blocked) falls back to the plain surface.
+  const panelTint = useDominantColor(portraitSrc(character?.portrait_image ?? null));
+
+  const presence = character
+    ? presenceOf(character, summon)
+    : ({ category: 'idle', label: 'Idle' } as const);
+  const online = summon?.kind === 'online';
+  const connecting = summon?.kind === 'connecting';
+  const nowVerb = presence.category === 'in-game' ? actionVerb(action) : null;
 
   const doSend = (): void => {
     const text = draft.trim();
@@ -140,9 +227,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     const ref = replyTo ?? undefined;
     setDraft('');
     setReplyTo(null);
-    // The launch toast is already wired in App (it toasts on 'online'); we leave
-    // the user in chat regardless of the launch outcome — the reply text already
-    // instructs them when the LAN world isn't open.
     void send(characterId, text, ref);
   };
 
@@ -156,6 +240,28 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const onProfile = (): void => {
     setChatReturnId(characterId);
     navigate({ kind: 'character', id: characterId });
+  };
+
+  const onVoiceStub = (): void => {
+    setNotice('Voice call coming later this month!');
+    window.setTimeout(() => setNotice((n) => (n ? null : n)), 2200);
+  };
+
+  const onDisconnect = (): void => {
+    // Instant: drop the entry from the store immediately so the panel flips to
+    // "Play"; `stop` still tears down any live session (idempotent).
+    useDataStore.getState().setStatus({ kind: 'idle', characterId });
+    void sei.stop(characterId);
+  };
+
+  /** Show a resident's card in the side panel; clicking the same one closes it. */
+  const showCard = (who: PanelCard): void => {
+    if (panelOpen && panelCard === who) {
+      setPanelOpen(false);
+      return;
+    }
+    setPanelCard(who);
+    setPanelOpen(true);
   };
 
   const onCopy = (m: ChatMessage): void => {
@@ -199,224 +305,345 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     </div>
   );
 
-  return (
-    <div className={styles.root}>
-      {/* ── Header ── */}
-      <header className={styles.header}>
-        <button
-          type="button"
-          className={styles.backBtn}
-          onClick={() => navigate({ kind: 'home' })}
-          aria-label="Back"
-          data-tip="Back"
-        >
-          <BackIcon size={20} />
-        </button>
-        <div className={styles.headerAvatar}>
-          {character ? (
-            <CompanionAvatar character={character} theme={theme} size={22} />
-          ) : (
-            <UserIcon size={14} />
-          )}
-        </div>
-        <div className={styles.headerText}>
-          <span className={styles.headerName}>{companionName}</span>
-          {character?.public_id ? <IdTag id={character.public_id} size="sm" /> : null}
-        </div>
-        <div className={styles.headerActions}>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={() => openModal({ kind: 'games-picker', characterId })}
-            aria-label="Play together"
-            data-tip="Play together"
-          >
-            <GamepadIcon size={18} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={() => {
-              setNotice('Voice call coming later this month!');
-              window.setTimeout(() => setNotice((n) => (n ? null : n)), 2200);
-            }}
-            aria-label="Voice call"
-            data-tip="Voice call"
-          >
-            <PhoneIcon size={18} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={onProfile}
-            aria-label={`${companionName} profile`}
-            data-tip="Profile"
-          >
-            <UserIcon size={18} />
-          </button>
-        </div>
-      </header>
+  const showingUser = panelCard === 'user';
 
-      {/* ── Message list ── */}
-      <div
-        className={awaiting ? `${styles.list} ${styles.listTyping}` : styles.list}
-        ref={listRef}
-      >
-        {messages.length === 0 && !awaiting ? (
-          <div className={styles.empty}>
-            This is the beginning of your conversation with {companionName}. Say hi.
+  return (
+    <div className={`${styles.root} ${panelOpen ? styles.presOpen : ''}`}>
+      <div className={styles.chatCol}>
+        {/* ── Header ── */}
+        <header className={styles.header}>
+          <button
+            type="button"
+            className={styles.backBtn}
+            onClick={() => navigate({ kind: 'home' })}
+            aria-label="Back"
+            data-tip="Back"
+          >
+            <BackIcon size={20} />
+          </button>
+          <div className={styles.headerAvatar}>
+            {character ? (
+              <CompanionAvatar character={character} theme={theme} size={22} />
+            ) : (
+              <UserIcon size={14} />
+            )}
           </div>
-        ) : null}
-        {messages.map((m, i) => {
-          if (m.role === 'system') {
-            if (m.event?.kind === 'play') {
+          {/* 260705: the header name opens the full profile page (the side
+              panel is reachable via message author names + open by default). */}
+          <button
+            type="button"
+            className={styles.nameToggle}
+            onClick={onProfile}
+            aria-label={`Open ${companionName}'s profile`}
+          >
+            <span className={styles.headerName}>{companionName}</span>
+            {character?.public_id ? <IdTag id={character.public_id} size="sm" /> : null}
+          </button>
+          <div className={styles.headerActions}>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={() => openModal({ kind: 'games-picker', characterId })}
+              aria-label="Play together"
+              data-tip="Play together"
+            >
+              <GamepadIcon size={18} />
+            </button>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={onVoiceStub}
+              aria-label="Voice call"
+              data-tip="Voice call"
+            >
+              <PhoneIcon size={18} />
+            </button>
+          </div>
+        </header>
+
+        {/* ── Message list ── */}
+        <div
+          className={awaiting ? `${styles.list} ${styles.listTyping}` : styles.list}
+          ref={listRef}
+          onScroll={onListScroll}
+        >
+          {loading ? <ChatSkeleton /> : null}
+          {!loading && messages.length === 0 && !awaiting ? (
+            <div className={styles.empty}>
+              This is the beginning of your conversation with {companionName}. Say hi.
+            </div>
+          ) : null}
+          {loading ? null : messages.map((m, i) => {
+            if (m.role === 'system') {
+              if (m.event?.kind === 'play') {
+                return (
+                  <div key={m.id} className={`${styles.systemRow} ${styles.playRow}`}>
+                    <span className={styles.playIcon}>
+                      <GamepadIcon size={18} />
+                    </span>
+                    <span>{m.text}</span>
+                  </div>
+                );
+              }
               return (
-                <div key={m.id} className={`${styles.systemRow} ${styles.playRow}`}>
-                  <span className={styles.playIcon}>
-                    <GamepadIcon size={18} />
-                  </span>
-                  <span>{m.text}</span>
+                <div key={m.id} className={styles.systemRow}>
+                  {m.text}
                 </div>
               );
             }
-            return (
-              <div key={m.id} className={styles.systemRow}>
-                {m.text}
+            const prev = messages[i - 1];
+            const newDay = !prev || dayKey(prev.ts) !== dayKey(m.ts);
+            // A day break — or a quoted reply — restarts an author run so the
+            // avatar + header (and the quote reference above it) are shown.
+            const isLead = newDay || !!m.replyTo || !prev || prev.role !== m.role;
+            const separator = newDay ? (
+              <div className={styles.daySeparator}>
+                <span className={styles.daySeparatorLabel}>{fmtDay(m.ts)}</span>
+              </div>
+            ) : null;
+
+            const row = isLead ? (
+              <div className={styles.rowLead}>
+                {/* Quoted reply spans the full row ABOVE the avatar (Discord-style)
+                    so the 40px avatar aligns with the author header, not the quote. */}
+                {m.replyTo ? (
+                  <div className={styles.quoteRef}>
+                    <span className={styles.quoteAvatar}>
+                      <MessageAvatar
+                        role={m.replyTo.role}
+                        character={character}
+                        theme={theme}
+                        userProfile={userProfile}
+                      />
+                    </span>
+                    <span className={styles.quoteName}>
+                      {m.replyTo.role === 'companion' ? companionName : userName}
+                    </span>
+                    <span className={styles.quoteText}>{m.replyTo.text}</span>
+                  </div>
+                ) : null}
+                <div className={styles.avatarCell}>
+                  <MessageAvatar
+                    role={m.role}
+                    character={character}
+                    theme={theme}
+                    userProfile={userProfile}
+                  />
+                </div>
+                <div className={styles.msgBody}>
+                  <div className={styles.msgHeader}>
+                    <button
+                      type="button"
+                      className={styles.authorName}
+                      onClick={() => showCard(m.role === 'user' ? 'user' : 'companion')}
+                    >
+                      {m.role === 'user' ? userName : companionName}
+                    </button>
+                    <span className={styles.timestamp}>{fmtTimestamp(m.ts)}</span>
+                  </div>
+                  <div className={styles.msgText}>{m.text}</div>
+                </div>
+                {rowActions(m)}
+              </div>
+            ) : (
+              <div className={styles.rowCont}>
+                <span aria-hidden="true" />
+                <div className={styles.msgText}>{m.text}</div>
+                {rowActions(m)}
               </div>
             );
-          }
-          const prev = messages[i - 1];
-          const newDay = !prev || dayKey(prev.ts) !== dayKey(m.ts);
-          // A day break — or a quoted reply — restarts an author run so the
-          // avatar + header (and the quote reference above it) are shown.
-          const isLead = newDay || !!m.replyTo || !prev || prev.role !== m.role;
-          const separator = newDay ? (
-            <div className={styles.daySeparator}>
-              <span className={styles.daySeparatorLabel}>{fmtDay(m.ts)}</span>
-            </div>
-          ) : null;
 
-          const row = isLead ? (
-            <div className={styles.rowLead}>
-              {/* Quoted reply spans the full row ABOVE the avatar (Discord-style)
-                  so the 40px avatar aligns with the author header, not the quote. */}
-              {m.replyTo ? (
-                <div className={styles.quoteRef}>
-                  <span className={styles.quoteAvatar}>
-                    <MessageAvatar
-                      role={m.replyTo.role}
-                      character={character}
-                      theme={theme}
-                      userProfile={userProfile}
-                    />
-                  </span>
-                  <span className={styles.quoteName}>
-                    {m.replyTo.role === 'companion' ? companionName : userName}
-                  </span>
-                  <span className={styles.quoteText}>{m.replyTo.text}</span>
-                </div>
-              ) : null}
-              <div className={styles.avatarCell}>
-                <MessageAvatar
-                  role={m.role}
-                  character={character}
-                  theme={theme}
-                  userProfile={userProfile}
-                />
-              </div>
-              <div className={styles.msgBody}>
-                <div className={styles.msgHeader}>
-                  <span className={styles.authorName}>
-                    {m.role === 'user' ? userName : companionName}
-                  </span>
-                  <span className={styles.timestamp}>{fmtTimestamp(m.ts)}</span>
-                </div>
-                <div className={styles.msgText}>{m.text}</div>
-              </div>
-              {rowActions(m)}
-            </div>
-          ) : (
-            <div className={styles.rowCont}>
-              <span aria-hidden="true" />
-              <div className={styles.msgText}>{m.text}</div>
-              {rowActions(m)}
-            </div>
-          );
+            return (
+              <React.Fragment key={m.id}>
+                {separator}
+                {row}
+              </React.Fragment>
+            );
+          })}
+        </div>
 
-          return (
-            <React.Fragment key={m.id}>
-              {separator}
-              {row}
-            </React.Fragment>
-          );
-        })}
-      </div>
-
-      {/* ── Floating composer (hovers over the chat window) ── */}
-      <div className={styles.composerDock}>
-        {awaiting ? (
-          <div className={styles.typingLine} aria-live="polite">
-            {companionName} is typing…
-          </div>
-        ) : null}
-        {replyTo ? (
-          <div className={styles.replyBar}>
-            <ReplyIcon size={14} />
-            <span className={styles.replyName}>
-              {replyTo.role === 'companion' ? companionName : userName}
-            </span>
-            <span className={styles.replyQuote}>{replyTo.text}</span>
-            <button
-              type="button"
-              className={styles.replyClose}
-              onClick={() => setReplyTo(null)}
-              aria-label="Cancel reply"
-              title="Cancel reply"
-            >
-              ×
-            </button>
-          </div>
-        ) : null}
-        {copiedId ? (
-          <div className={styles.copiedToast} aria-live="polite">
-            Copied to clipboard
-          </div>
-        ) : null}
-        {notice ? (
-          <div className={styles.copiedToast} aria-live="polite">
-            {notice}
-          </div>
-        ) : null}
-        <div className={styles.composer}>
-          <textarea
-            ref={inputRef}
-            className={styles.input}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={`Message ${companionName}…`}
-            rows={1}
-            aria-label={`Message ${companionName}`}
-          />
-          {draft.trim() !== '' ? (
-            <button
-              type="button"
-              className={styles.sendBtn}
-              onClick={doSend}
-              aria-label="Send"
-              title="Send"
-            >
-              <SendIcon size={18} />
-            </button>
+        {/* ── Floating composer (hovers over the chat window) ── */}
+        <div className={styles.composerDock}>
+          {awaiting ? (
+            <div className={styles.typingLine} aria-live="polite">
+              {companionName} is typing…
+            </div>
           ) : null}
+          {replyTo ? (
+            <div className={styles.replyBar}>
+              <ReplyIcon size={14} />
+              <span className={styles.replyName}>
+                {replyTo.role === 'companion' ? companionName : userName}
+              </span>
+              <span className={styles.replyQuote}>{replyTo.text}</span>
+              <button
+                type="button"
+                className={styles.replyClose}
+                onClick={() => setReplyTo(null)}
+                aria-label="Cancel reply"
+                title="Cancel reply"
+              >
+                ×
+              </button>
+            </div>
+          ) : null}
+          {copiedId ? (
+            <div className={styles.copiedToast} aria-live="polite">
+              Copied to clipboard
+            </div>
+          ) : null}
+          {notice ? (
+            <div className={styles.copiedToast} aria-live="polite">
+              {notice}
+            </div>
+          ) : null}
+          <div className={styles.composer}>
+            <textarea
+              ref={inputRef}
+              className={styles.input}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={`Message ${companionName}…`}
+              rows={1}
+              aria-label={`Message ${companionName}`}
+            />
+            {draft.trim() !== '' ? (
+              <button
+                type="button"
+                className={styles.sendBtn}
+                onClick={doSend}
+                aria-label="Send"
+                title="Send"
+              >
+                <SendIcon size={18} />
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
+
+      {/* ── Presence side panel (§4.5) ── */}
+      <aside
+        className={styles.presPanel}
+        style={
+          !showingUser && panelTint
+            ? ({ '--pres-tint': panelTint } as React.CSSProperties)
+            : undefined
+        }
+        aria-label={showingUser ? 'You' : `${companionName} details`}
+        aria-hidden={!panelOpen}
+      >
+        <div className={styles.presInner}>
+          <div className={styles.presArt}>
+            {showingUser ? (
+              userArtSrc ? (
+                <img src={userArtSrc} alt="" className={styles.presArtImg} />
+              ) : (
+                <span className={styles.presArtFallback}>
+                  <UserIcon size={72} />
+                </span>
+              )
+            ) : character ? (
+              <PixelPortrait
+                seed={character.id + character.name}
+                palette={panelPalette}
+                size={190}
+                portraitImage={character.portrait_image}
+                style={{ width: '100%', height: '100%' }}
+              />
+            ) : (
+              <span className={styles.presArtFallback}>
+                <UserIcon size={72} />
+              </span>
+            )}
+            <span className={styles.presFade} aria-hidden="true" />
+          </div>
+          <div className={styles.presBody}>
+            <div className={styles.presNameRow}>
+              <span className={styles.presName}>{showingUser ? userName : companionName}</span>
+              {showingUser
+                ? userProfile?.handle && <IdTag id={userProfile.handle} size="sm" />
+                : character?.public_id && <IdTag id={character.public_id} size="sm" />}
+            </div>
+            <div className={styles.presKind}>{showingUser ? 'Human' : kindLine}</div>
+            {!showingUser ? <Presence category={presence.category} label={presence.label} /> : null}
+            {!showingUser && nowVerb ? <div className={styles.presNow}>{nowVerb}</div> : null}
+            {!showingUser ? (
+              <div className={styles.presActions}>
+                {online ? (
+                  <Button kind="danger" fullWidth onClick={onDisconnect}>
+                    Disconnect
+                  </Button>
+                ) : connecting ? (
+                  <Button kind="ghost" fullWidth disabled>
+                    Connecting…
+                  </Button>
+                ) : (
+                  <Button
+                    kind="primary"
+                    fullWidth
+                    onClick={() => openModal({ kind: 'games-picker', characterId })}
+                  >
+                    Play
+                  </Button>
+                )}
+                <Button kind="ghost" fullWidth onClick={onVoiceStub}>
+                  Call
+                </Button>
+                <Button kind="ghost" fullWidth onClick={onProfile}>
+                  Profile
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }
 
 /** Stable empty array so the selector doesn't churn re-renders. */
 const EMPTY: ChatMessage[] = [];
+
+/**
+ * Wireframe rows shown while the persisted transcript is still loading. Each row
+ * mirrors the real message layout (40px avatar gutter + text) so nothing jumps
+ * when content lands: `lead` rows carry a circular avatar placeholder + a short
+ * name bar, continuation rows are gutter-aligned text only. Widths vary 42-66%
+ * to read like real chat. Static by design (260705) — no shimmer sweep.
+ */
+const SKELETON_ROWS: ReadonlyArray<{ lead: boolean; width: string }> = [
+  { lead: true, width: '52%' },
+  { lead: false, width: '42%' },
+  { lead: true, width: '66%' },
+  { lead: true, width: '48%' },
+  { lead: false, width: '58%' },
+  { lead: true, width: '44%' },
+];
+
+function ChatSkeleton(): React.ReactElement {
+  return (
+    <div className={styles.skeleton} aria-hidden="true">
+      {SKELETON_ROWS.map((r, i) =>
+        r.lead ? (
+          <div key={i} className={styles.skelRowLead}>
+            <span className={styles.skelAvatar} />
+            <div className={styles.skelBody}>
+              <span className={styles.skelName} />
+              <span className={styles.skelBar} style={{ width: r.width }} />
+            </div>
+          </div>
+        ) : (
+          <div key={i} className={styles.skelRowCont}>
+            <span aria-hidden="true" />
+            <span className={styles.skelBar} style={{ width: r.width }} />
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
 
 /** Circular companion avatar (portrait → procedural fallback via PixelPortrait). */
 function CompanionAvatar({

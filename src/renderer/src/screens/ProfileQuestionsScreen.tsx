@@ -1,23 +1,44 @@
 /**
- * ProfileQuestionsScreen — the first-sign-in questionnaire (260703 procgen,
- * spec item 6). Two QuestionShell steps of tile options that seed a user
- * profile used later as the generation seed for 'unique' companions:
+ * ProfileQuestionsScreen — the companion questionnaire (260703 procgen, spec
+ * item 6; reworked 260706). Up to three QuestionShell steps of tile options
+ * that seed a user profile used as the generation seed for 'unique'
+ * companions, in ask order (PREF_QUESTIONS):
  *   1. How old should your companions feel? (companion_age_range)
- *   2. Pick an art style. (art_style)
+ *   2. What are you looking for? (companion_dynamics — RANKED, partial ok)
+ *   3. Pick an art style. (art_style)
  *
- * Submit persists via sei.prefsSave (local config.user_profile + cloud
- * user_preferences upsert). On completion it routes to `next`:
- *   - 'home'          → the App-level gate ran it before landing home.
- *   - 'unique-gender' → the add-companion chooser gated the unique path on it.
+ * The dynamics step is a ranking, not a single pick: ranked relationships are
+ * granted one cast each, top pick first (resolveDynamic in
+ * src/main/uniqueGeneration.ts). "Surprise me" is exclusive — selecting it
+ * locks the other tiles and saves an empty ranking.
+ *
+ * Modes (260706):
+ *   - 'missing' — asks ONLY the unanswered questions (fresh onboarding asks
+ *     all three; a profile completed before a new question shipped, or
+ *     abandoned partway, re-asks just the gaps). Used by every gate flow.
+ *   - 'all'     — full retake, every question prefilled with the current
+ *     answer. Used by the "Update my preferences" entries (Awaken, Settings).
+ *
+ * Submit persists ONLY the questions that were shown, via sei.prefsSave —
+ * a partial patch that main merges over the stored answers under the config
+ * file lock (local config.user_profile + cloud user_preferences upsert).
+ * On completion it routes to `next`; cancelling (Back on the first step)
+ * returns to the flow's origin.
  *
  * Names only for the art styles for now (spec: example images come later).
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { QuestionShell } from '../components/QuestionShell';
-import type { UserPreferences } from '@shared/characterSchema';
+import type {
+  CompanionDynamic,
+  PrefQuestion,
+  UserPreferences,
+  UserPreferencesPatch,
+} from '@shared/characterSchema';
+import { PREF_QUESTIONS } from '@shared/characterSchema';
 import styles from './ProfileQuestionsScreen.module.css';
 
 type AgeRange = NonNullable<UserPreferences['companion_age_range']>;
@@ -28,7 +49,15 @@ const AGE_OPTIONS: Array<{ value: AgeRange; label: string; sub: string }> = [
   { value: 'adult', label: 'Adult', sub: 'Grounded and self-assured.' },
   { value: 'mature', label: 'Mature', sub: 'Seasoned, with lived-in wisdom.' },
   { value: 'elder', label: 'Elder', sub: 'Old souls who have seen it all.' },
-  { value: 'timeless', label: 'Timeless', sub: 'Ageless — beyond years entirely.' },
+  { value: 'timeless', label: 'Timeless', sub: 'Ageless, beyond years entirely.' },
+];
+
+const DYNAMIC_OPTIONS: Array<{ value: CompanionDynamic; label: string; sub: string }> = [
+  { value: 'partner-in-crime', label: 'A partner in crime', sub: 'Always game for the questionable idea.' },
+  { value: 'caretaker', label: 'Someone to look after you', sub: 'Warm, steady, keeps an eye on you.' },
+  { value: 'protege', label: 'Someone to look after', sub: 'A little green. They grow at your side.' },
+  { value: 'chill-friend', label: 'A chill friend', sub: 'Easy company, no drama.' },
+  { value: 'challenger', label: 'Someone who pushes you', sub: 'Keeps you sharp, keeps you honest.' },
 ];
 
 const STYLE_OPTIONS: Array<{ value: ArtStyle; label: string; sub: string }> = [
@@ -39,38 +68,125 @@ const STYLE_OPTIONS: Array<{ value: ArtStyle; label: string; sub: string }> = [
   { value: '3d', label: '3D', sub: 'Rendered, dimensional, modern.' },
 ];
 
+const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
+
 export interface ProfileQuestionsScreenProps {
-  next: 'home' | 'unique-gender';
+  next: 'home' | 'unique-gender' | 'activity-picker' | 'awaken' | 'settings';
+  mode: 'missing' | 'all';
 }
 
-export function ProfileQuestionsScreen({ next }: ProfileQuestionsScreenProps): React.ReactElement {
+export function ProfileQuestionsScreen({ next, mode }: ProfileQuestionsScreenProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
-  const [step, setStep] = useState<0 | 1>(0);
+  // Questions this run asks, resolved from the current profile on mount.
+  // null = still loading the profile.
+  const [questions, setQuestions] = useState<PrefQuestion[] | null>(null);
+  const [step, setStep] = useState(0);
   const [age, setAge] = useState<AgeRange | null>(null);
+  const [ranking, setRanking] = useState<CompanionDynamic[]>([]);
+  const [surprise, setSurprise] = useState(false);
   const [style, setStyle] = useState<ArtStyle | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const goTo = (view: ProfileQuestionsScreenProps['next']): void => {
+    if (view === 'home') {
+      navigate({ kind: 'home' });
+    } else if (view === 'unique-gender') {
+      navigate({ kind: 'unique-gender' });
+    } else if (view === 'activity-picker') {
+      navigate({ kind: 'activity-picker' });
+    } else if (view === 'awaken') {
+      navigate({ kind: 'awaken' });
+    } else {
+      navigate({ kind: 'settings' });
+    }
+  };
+
+  // Where Back-on-the-first-step (cancel) lands. Gate flows return to a
+  // sensible origin; the mid-onboarding flow has no "back" (onboarding is
+  // already submitted), so cancel just continues onward — the missing
+  // answers are re-asked at "Meet my companion".
+  const cancel = (): void => {
+    if (next === 'unique-gender' || next === 'awaken') {
+      navigate({ kind: 'awaken' });
+    } else if (next === 'activity-picker') {
+      navigate({ kind: 'activity-picker' });
+    } else if (next === 'settings') {
+      navigate({ kind: 'settings' });
+    } else {
+      navigate({ kind: 'home' });
+    }
+  };
+
+  // Resolve which questions to ask + prefill current answers. 'all' shows
+  // every question; 'missing' only the unanswered ones (and routes straight
+  // onward if nothing is missing — e.g. a stale gate).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let profile: UserPreferences | null = null;
+      let missing: PrefQuestion[] = [...PREF_QUESTIONS];
+      try {
+        const res = await sei.prefsGet();
+        profile = res.profile;
+        missing = res.missing;
+      } catch {
+        // Fall through: ask everything, prefill nothing.
+      }
+      if (cancelled) return;
+      if (profile) {
+        setAge(profile.companion_age_range);
+        setStyle(profile.art_style);
+        if (profile.companion_dynamics !== null) {
+          setSurprise(profile.companion_dynamics.length === 0);
+          setRanking(profile.companion_dynamics);
+        }
+      }
+      const asked = mode === 'all' ? [...PREF_QUESTIONS] : missing;
+      if (asked.length === 0) {
+        goTo(next);
+        return;
+      }
+      setQuestions(asked);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, next]);
+
+  if (questions === null) return <></>;
+
+  const current = questions[step];
+  const isLast = step === questions.length - 1;
+
+  const answered = (q: PrefQuestion): boolean => {
+    if (q === 'companion_age_range') return age !== null;
+    if (q === 'companion_dynamics') return surprise || ranking.length > 0;
+    return style !== null;
+  };
+
   const goNext = async (): Promise<void> => {
-    if (step === 0) {
-      setStep(1);
+    if (!isLast) {
+      setStep((s) => s + 1);
       return;
     }
-    // Step 1 — persist and route onward.
-    if (!age || !style) return;
+    if (!questions.every(answered)) return;
     setSubmitting(true);
     setError(null);
     try {
-      await sei.prefsSave({
-        companion_age_range: age,
-        art_style: style,
-        completed_at: new Date().toISOString(),
-      });
-      if (next === 'unique-gender') {
-        navigate({ kind: 'unique-gender' });
-      } else {
-        navigate({ kind: 'home' });
+      // Persist ONLY the questions this run asked — main merges the patch
+      // over the stored answers (see prefs:save), so an unshown question's
+      // existing answer is never touched.
+      const patch: UserPreferencesPatch = {};
+      for (const q of questions) {
+        if (q === 'companion_age_range') patch.companion_age_range = age;
+        // [] is the explicit "Surprise me" (vs null = never asked).
+        else if (q === 'companion_dynamics') patch.companion_dynamics = surprise ? [] : ranking;
+        else patch.art_style = style;
       }
+      await sei.prefsSave(patch);
+      goTo(next);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -79,27 +195,42 @@ export function ProfileQuestionsScreen({ next }: ProfileQuestionsScreenProps): R
   };
 
   const back = (): void => {
-    if (step === 1) {
-      setStep(0);
+    if (step > 0) {
+      setStep((s) => s - 1);
       return;
     }
-    // Step 0 back cancels the questionnaire and returns home (the App-level gate
-    // won't immediately re-trigger — it fires once per signed-in user).
-    navigate({ kind: 'home' });
+    cancel();
   };
 
-  if (step === 0) {
+  const toggleDynamic = (v: CompanionDynamic): void => {
+    if (surprise) return; // locked while "Surprise me" is on
+    setRanking((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v]));
+  };
+
+  const toggleSurprise = (): void => {
+    setSurprise((prev) => {
+      if (!prev) setRanking([]); // turning it on wipes the ranking
+      return !prev;
+    });
+  };
+
+  const shellProps = {
+    eyebrow: 'Set up your companions',
+    stepCount: questions.length,
+    currentStep: step,
+    onBack: back,
+    onNext: () => void goNext(),
+    nextLabel: isLast ? (submitting ? 'Saving…' : 'Finish') : 'Continue',
+    nextKind: isLast ? ('accent' as const) : undefined,
+    nextDisabled: !answered(current) || submitting,
+  };
+
+  if (current === 'companion_age_range') {
     return (
       <QuestionShell
-        eyebrow="Set up your companions"
+        {...shellProps}
         title="How old should your companions feel?"
-        hint="This shapes how the companions Sei casts for you come across. You can revisit this later."
-        stepCount={2}
-        currentStep={0}
-        onBack={back}
-        onNext={() => void goNext()}
-        nextLabel="Continue"
-        nextDisabled={age === null}
+        hint="This shapes how the companions Sei casts for you come across. You can update this any time from Settings."
       >
         <TileGroup
           ariaLabel="Companion age range"
@@ -107,22 +238,74 @@ export function ProfileQuestionsScreen({ next }: ProfileQuestionsScreenProps): R
           value={age}
           onChange={setAge}
         />
+        {isLast && error ? (
+          <div className={styles.error} role="alert">
+            {error}
+          </div>
+        ) : null}
+      </QuestionShell>
+    );
+  }
+
+  if (current === 'companion_dynamics') {
+    return (
+      <QuestionShell
+        {...shellProps}
+        title="What are you looking for?"
+        hint="Rank what you're hoping to meet. Your first companion matches your first pick, the next one your second, and so on. You don't have to rank them all."
+      >
+        <div className={styles.tiles} aria-label="Companion dynamics ranking">
+          {DYNAMIC_OPTIONS.map((opt) => {
+            const rank = ranking.indexOf(opt.value);
+            const ranked = rank !== -1;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={ranked}
+                disabled={surprise}
+                className={[
+                  styles.tile,
+                  styles.rankTile,
+                  ranked ? styles.tileSelected : '',
+                  surprise ? styles.tileLocked : '',
+                ].join(' ')}
+                onClick={() => toggleDynamic(opt.value)}
+              >
+                <span className={styles.rankTileText}>
+                  <span className={styles.tileLabel}>{opt.label}</span>
+                  <span className={styles.tileSub}>{opt.sub}</span>
+                </span>
+                {ranked ? <span className={styles.rankBadge}>{ORDINALS[rank]}</span> : null}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            aria-pressed={surprise}
+            className={`${styles.tile} ${styles.rankTile} ${surprise ? styles.tileSelected : ''}`}
+            onClick={toggleSurprise}
+          >
+            <span className={styles.rankTileText}>
+              <span className={styles.tileLabel}>Surprise me</span>
+              <span className={styles.tileSub}>Let the cast decide who you meet.</span>
+            </span>
+          </button>
+        </div>
+        {isLast && error ? (
+          <div className={styles.error} role="alert">
+            {error}
+          </div>
+        ) : null}
       </QuestionShell>
     );
   }
 
   return (
     <QuestionShell
-      eyebrow="Set up your companions"
+      {...shellProps}
       title="Pick an art style"
       hint="How your companions look when Sei gives them a face."
-      stepCount={2}
-      currentStep={1}
-      onBack={back}
-      onNext={() => void goNext()}
-      nextLabel={submitting ? 'Saving…' : 'Finish'}
-      nextKind="accent"
-      nextDisabled={style === null || submitting}
     >
       <TileGroup
         ariaLabel="Art style"
@@ -130,7 +313,7 @@ export function ProfileQuestionsScreen({ next }: ProfileQuestionsScreenProps): R
         value={style}
         onChange={setStyle}
       />
-      {error ? (
+      {isLast && error ? (
         <div className={styles.error} role="alert">
           {error}
         </div>

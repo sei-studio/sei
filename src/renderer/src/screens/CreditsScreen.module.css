@@ -1,195 +1,199 @@
 /**
- * CreditsScreen — Mana / Pacts plan-picker (terminal restyle).
+ * CreditsScreen — Playtime surface (Party redesign, mockup pt-*).
  *
- * USAGE hero (UsageBar) + a PLANS row of three pact cards (Trial / Quest /
- * Party). Shares .title / .section / .sectionTitle idioms with SettingsScreen
- * for rhythm across the rail screens. Sharp edges, Oswald display, mono
- * eyebrows, accent CTAs.
+ * A single centered 620px column: a percent-left hero (big Oswald % + a flat
+ * accent bar + a small estimate/refresh line), an "Add playtime" section of
+ * three plan cards, and a footer with Manage billing + the estimate
+ * disclaimer. Sharp edges, Oswald display, tokens only (no hex).
  *
- * Source: .planning/UI-DESIGN-SYSTEM.md §Screens → Mana; mockup ui.jsx Mana.
  * 260602-uv9 PROXY-05 override: plan cards intentionally render monetary
- * amounts. All colors via theme tokens (no hex).
+ * amounts. The percent-only rule still governs the store/IPC shape.
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §4.8; mockup .pt-* / .plan.
  */
 
 .root {
-  /* Shared page top margin (matches Companions / World / Settings). */
-  padding: var(--space-lg) 40px 40px;
-  max-width: 760px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 0 40px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+}
+
+.col {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 0 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
 }
 
 .backRow {
-  align-self: flex-start;
-  /* Pull left by the quiet/sm button's 13px horizontal padding so the back
-     button's icon lines up with the title + content left margin. */
-  margin-left: -13px;
+  /* Pull left by the quiet/sm button's horizontal padding so the icon lines up
+     with the column's content edge. */
+  margin-left: -12px;
 }
 
-.title {
+/* ── Hero: {pct}% used + flat usage bar + refresh ─────────────── */
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.heroBig {
   font-family: var(--display);
-  font-size: 32px;
   font-weight: 600;
-  line-height: 0.9;
-  letter-spacing: 0.04em;
-  color: var(--heading);
-  margin: 0 0 12px;
+  font-size: 46px;
+  line-height: 1;
+  color: var(--text);
 }
 
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 8px 0 16px;
-  border-top: 1px solid var(--border);
-}
-
-.sectionTitle {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+.heroBig small {
+  font-size: 18px;
   color: var(--muted);
-  margin: 14px 0 12px;
+  font-weight: 400;
+  margin-left: 8px;
 }
 
-.muted {
-  font-family: var(--sans);
-  color: var(--text-2);
-  font-size: 14px;
-  margin-top: 4px;
+.heroBar {
+  height: 10px;
+  background: var(--bg3);
 }
 
-/* PLANS — three side-by-side pact cards. */
-.plansRow {
+.heroBar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms var(--ease);
+}
+
+/* "{pct}% used" + the quiet refresh button on one line. */
+.heroTop {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  align-items: stretch;
+  align-items: center;
+  gap: 10px;
 }
 
-.planCard {
-  flex: 1 1 200px;
-  min-width: 200px;
-  border: 1px solid var(--border);
-  background: rgba(127, 127, 127, 0.03);
-  padding: 22px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  position: relative;
-}
-
-/* Active subscription — accent outline + soft ring (mockup .plan.on). */
-.planCardActive {
-  border-color: var(--accent-strong);
-  box-shadow: inset 0 0 0 2px var(--accent-strong), 0 0 30px -16px var(--accent);
-}
-
-.claimError {
+.heroSub {
   font-family: var(--sans);
   font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ── Add playtime: three plan cards ──────────────────────────── */
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plansTitle {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 16px;
   color: var(--text-2);
   margin: 0;
 }
 
-/* "Your Party plan renews on …" / "… will not renew" note under the plan cards. */
-.planRenewalNote {
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--text-2);
-  text-align: center;
-  margin: var(--space-sm) 0 0;
+.plansRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.planCard {
+  border: 1px solid var(--border-strong);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 158px;
+}
+
+/* Active subscription — accent outline (mockup .plan.on). */
+.planCardActive {
+  border-color: var(--accent);
 }
 
 .planName {
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .planPrice {
   font-family: var(--display);
-  font-size: 40px;
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 28px;
   line-height: 1;
   color: var(--text);
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-xs);
 }
 
 .planPriceQualifier {
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 13px;
   font-weight: 400;
-  letter-spacing: 0.04em;
   color: var(--muted);
+  margin-left: 3px;
 }
 
 .planPlaytime {
   font-family: var(--sans);
-  font-size: 14px;
-  color: var(--muted);
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.claimError {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
   margin: 0;
 }
 
 .planCardActions {
-  display: flex;
-  gap: var(--space-sm);
   margin-top: auto;
-  padding-top: var(--space-md);
+  padding-top: 8px;
 }
 
-/* Bottom Manage-billing + disclaimer. */
-.manageBilling {
+/* "Your Party plan renews on …" / "… will not renew" note under the cards. */
+.planRenewalNote {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 4px 0 0;
+}
+
+/* ── Footer: Manage billing + disclaimer ─────────────────────── */
+.foot {
   display: flex;
-  justify-content: center;
-  margin-top: var(--space-sm);
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
-/* Inline error when the Manage-billing portal can't be opened. */
+.disc {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted-2);
+}
+
 .manageError {
   font-family: var(--sans);
   font-size: 13px;
   color: var(--warn);
-  text-align: center;
-  margin: var(--space-xs) 0 0;
+  margin: 0;
 }
 
-.estimateDisclaimer {
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--muted-2);
-  text-align: center;
-  margin: var(--space-xs) 0 0;
-}
-
-/* "Opening checkout…" overlay. */
-.checkoutScrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.62);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1100;
-}
-
-.checkoutCard {
+/* ── Checkout-waiting modal body (renders inside ModalShell) ──── */
+.checkoutBody {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-sm);
-  background: var(--surface);
-  padding: 24px 28px;
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-pop);
-  max-width: 340px;
+  gap: 12px;
   text-align: center;
 }
 
@@ -218,26 +222,11 @@
   line-height: 1;
 }
 
-.checkoutTitle {
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text);
-  margin: 0;
-}
-
 .checkoutMsg {
   font-family: var(--sans);
   font-size: 14px;
   color: var(--muted);
   margin: 0;
-}
-
-.checkoutActions {
-  display: flex;
-  gap: var(--space-sm);
-  margin-top: var(--space-xs);
 }
 
 @keyframes checkoutSpin {
@@ -249,5 +238,8 @@
 @media (prefers-reduced-motion: reduce) {
   .checkoutSpinner {
     animation: none;
+  }
+  .heroBar i {
+    transition: none;
   }
 }

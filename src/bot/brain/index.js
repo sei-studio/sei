@@ -49,7 +49,7 @@ function assertAdapter(adapter) {
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [args.logger]
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
-export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null }) {
+export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onAction = null }) {
   assertAdapter(adapter)
 
   // ── Memory layer ────────────────────────────────────────────────────
@@ -143,6 +143,8 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // message (route to chat surface), and how to honor a quit() tool call.
     onSeiChatReply,
     onQuitRequested,
+    // Party redesign §2/§5 — current world-action verb emitter (or null clear).
+    onAction,
   })
 
   // ── Build the priority queue with the orchestrator's handleDispatch ─

@@ -18,6 +18,7 @@
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import { TextField } from './TextField';
 import styles from './SetNewPasswordModal.module.css';
 
@@ -61,73 +62,67 @@ export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): Reac
     }
   };
 
-  const titleId = 'set-new-password-title';
-
+  // BLOCKING recovery gate (tier 'recovery', z 1200): ESC does not close and
+  // there is no scrim-click dismiss — finishing the reset is the only way out.
   // Success sub-state — confirm and let the user dismiss back into the app.
   if (done) {
     return (
-      <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div className={styles.modal}>
-          <h2 id={titleId} className={styles.title}>Password updated</h2>
-          <p className={styles.framing}>
-            You can sign in with your new password next time. You're all set for now.
-          </p>
-          <div className={styles.footer}>
-            <Button kind="accent" size="md" onClick={onClose}>
-              Back to Sei
-            </Button>
-          </div>
-        </div>
-      </div>
+      <ModalShell title="Password updated" width={460} tier="recovery" escClose={false}>
+        <p className={styles.framing}>
+          You can sign in with your new password next time. You're all set for now.
+        </p>
+        <ModalFooter>
+          <Button kind="accent" size="md" onClick={onClose}>
+            Back to Sei
+          </Button>
+        </ModalFooter>
+      </ModalShell>
     );
   }
 
   return (
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>Choose a new password</h2>
-        <p className={styles.framing}>
-          Enter a new password for your Sei account. At least {MIN_PASSWORD_LEN} characters.
-        </p>
+    <ModalShell title="Choose a new password" width={460} tier="recovery" escClose={false}>
+      <p className={styles.framing}>
+        Enter a new password for your Sei account. At least {MIN_PASSWORD_LEN} characters.
+      </p>
 
-        <form className={styles.form} onSubmit={onSubmit}>
-          <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel} htmlFor="new-password">New password</label>
-            <TextField
-              value={password}
-              onChange={setPassword}
-              placeholder={`At least ${MIN_PASSWORD_LEN} characters`}
-              type="password"
-              autoFocus
-              aria-label="New password"
-              aria-invalid={!!error}
-            />
-          </div>
+      <form className={styles.form} onSubmit={onSubmit}>
+        <div className={styles.fieldGroup}>
+          <label className={styles.fieldLabel} htmlFor="new-password">New password</label>
+          <TextField
+            value={password}
+            onChange={setPassword}
+            placeholder={`At least ${MIN_PASSWORD_LEN} characters`}
+            type="password"
+            autoFocus
+            aria-label="New password"
+            aria-invalid={!!error}
+          />
+        </div>
 
-          <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel} htmlFor="confirm-password">Confirm password</label>
-            <TextField
-              value={confirm}
-              onChange={setConfirm}
-              placeholder="Re-enter your new password"
-              type="password"
-              aria-label="Confirm password"
-              aria-invalid={!!error}
-            />
-          </div>
+        <div className={styles.fieldGroup}>
+          <label className={styles.fieldLabel} htmlFor="confirm-password">Confirm password</label>
+          <TextField
+            value={confirm}
+            onChange={setConfirm}
+            placeholder="Re-enter your new password"
+            type="password"
+            aria-label="Confirm password"
+            aria-invalid={!!error}
+          />
+        </div>
 
-          {error ? <p className={styles.errorText} role="alert">{error}</p> : null}
+        {error ? <p className={styles.errorText} role="alert">{error}</p> : null}
 
-          <Button
-            kind="accent"
-            size="md"
-            type="submit"
-            disabled={submitting || !password || !confirm}
-          >
-            {submitting ? 'Saving…' : 'Save new password'}
-          </Button>
-        </form>
-      </div>
-    </div>
+        <Button
+          kind="accent"
+          size="md"
+          type="submit"
+          disabled={submitting || !password || !confirm}
+        >
+          {submitting ? 'Saving…' : 'Save new password'}
+        </Button>
+      </form>
+    </ModalShell>
   );
 }

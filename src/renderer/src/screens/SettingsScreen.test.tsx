@@ -1,34 +1,23 @@
 /**
- * Tests for SettingsScreen — ui-A1 (cloud/local mode gating + 13-provider
- * picker) and ui-A7 (developer console toggle).
+ * Tests for SettingsScreen — "Party" restyle (§4.7) plus the preserved
+ * ui-A1 (backend mode gating + 13-provider picker), ui-A7 (developer console),
+ * and D-FIX (unconditional reset-all-memories) invariants.
  *
  * Project convention (no @testing-library/react installed): exercise the
  * source contract via grep-style file presence checks. Mirrors
  * src/renderer/src/screens/CharactersScreen.test.tsx.
  *
- * Invariants under test:
- *   A1.1  — SettingsScreen reads ai_backend_kind from useCreditsStore.
- *   A1.2  — Provider + API-key rows render under a local-only gate.
- *   A1.3  — MINECRAFT renders in BOTH cloud and local mode
- *           (skin setup is needed regardless of AI backend).
- *   A1.4  — ProviderSelect is imported + used inline (compact dropdown).
- *   A1.5  — ProviderSelect ships all 13 Phase 14 providers w/ NO "Coming
- *           soon" chips.
- *   A1.6  — UserConfigSchema.provider enum now includes all 13 backends
- *           and an optional provider_config field.
- *   A1.7  — ACCOUNT MODE section sits below LEGAL with both directional
- *           buttons present (switch to managed billing / switch to your
- *           own API key), each opening the SwitchBackendConfirmModal.
- *   A1.8  — ProviderSelect exports the Provider type as the new 13-member
- *           union.
- *   A1.9  — OnboardingScreen routes the dynamic provider label into the
- *           step-3 title (no hardcoded 'Local' fallback).
- *   A7.1  — useUiStore exposes devConsoleVisible: false default +
- *           setDevConsoleVisible action.
- *   A7.2  — App.tsx gates <LogsBar /> on devConsoleVisible.
- *   A7.3  — UserConfigSchema carries `dev_console_visible?: boolean`.
- *   A7.4  — SettingsScreen surfaces the "Show developer console" row +
- *           helper sentence in APPEARANCE.
+ * Structural invariants (Party restyle):
+ *   S.1  — sentence-case Oswald group headers (Profile / Account / AI /
+ *          Minecraft / Appearance / About / Danger); no all-caps eyebrows.
+ *   S.2  — Backend switch is a <Seg> (Cloud / My key) that drives the
+ *          SwitchBackendConfirmModal; cancel reverts because the value tracks
+ *          ai_backend_kind.
+ *   S.3  — Theme is a <Seg> with the added System option.
+ *   S.4  — Realistic typing + developer console are <Toggle>s.
+ *   S.5  — Danger actions use the shared Button danger kind (no bespoke
+ *          .dangerBtn CSS).
+ *   S.6  — Cloud users get a Playtime row whose Add navigates to credits.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -56,6 +45,66 @@ beforeEach(() => {
   };
 });
 
+describe('SettingsScreen (Party restyle structure)', () => {
+  it('S.1: sentence-case Oswald group headers, no all-caps eyebrows', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    for (const h of ['>Profile<', '>Account<', '>AI<', '>Minecraft<', '>Appearance<', '>About<', '>Danger<']) {
+      expect(src.includes(h)).toBe(true);
+    }
+    // The old uppercase section eyebrows are gone.
+    for (const old of ['>PROFILE<', '>MINECRAFT<', '>APPEARANCE', '>LEGAL<', '>ACCOUNT MODE<', '>UPDATES<']) {
+      expect(src.includes(old)).toBe(false);
+    }
+  });
+
+  it('S.2: backend switch is a Seg wired to SwitchBackendConfirmModal', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes("from '../components/Seg'")).toBe(true);
+    expect(src.includes('aria-label="AI backend"')).toBe(true);
+    // Both directional intents route through the confirm modal — the Seg maps
+    // its value to the target backend, then arms the pending switch.
+    expect(src.includes('SwitchBackendConfirmModal')).toBe(true);
+    expect(src.includes("v === 'cloud' ? 'cloud-proxy' : 'local'")).toBe(true);
+    expect(src.includes('setPendingSwitch(target)')).toBe(true);
+    // The old danger-styled inline switch buttons are retired.
+    expect(src.includes('Switch to managed billing')).toBe(false);
+    expect(src.includes('Switch to your own API key')).toBe(false);
+  });
+
+  it('S.3: theme is a Seg with the System option', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes('aria-label="Theme"')).toBe(true);
+    // dark / light / system all offered.
+    expect(src.includes("value: 'dark'")).toBe(true);
+    expect(src.includes("value: 'light'")).toBe(true);
+    expect(src.includes("value: 'system'")).toBe(true);
+    // Persisted via saveConfig theme_mode, and reads themeMode from the store.
+    expect(src.includes('theme_mode: mode')).toBe(true);
+    expect(src.includes('useUiStore((s) => s.themeMode)')).toBe(true);
+  });
+
+  it('S.4: realistic typing + developer console are Toggles', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes("from '../components/Toggle'")).toBe(true);
+    expect(src.includes('<Toggle')).toBe(true);
+    expect(src.includes('onToggleRealisticTyping')).toBe(true);
+    expect(src.includes('onToggleDevConsole')).toBe(true);
+  });
+
+  it('S.5: danger actions use the shared Button danger kind, not .dangerBtn', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes('styles.dangerBtn')).toBe(false);
+    expect(src.includes('kind="danger"')).toBe(true);
+  });
+
+  it('S.6: cloud users get a Playtime row whose Add navigates to credits', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes('>Playtime<')).toBe(true);
+    expect(src.includes('tokensRemainingToPlaytime')).toBe(true);
+    expect(src.includes("navigate({ kind: 'credits' })")).toBe(true);
+  });
+});
+
 describe('SettingsScreen (ui-A1 mode gating)', () => {
   it('A1.1: reads ai_backend_kind from useCreditsStore', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
@@ -65,7 +114,6 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
   it('A1.2: provider + api-key rows gated on aiBackendKind === local', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     expect(src.includes("aiBackendKind === 'local'")).toBe(true);
-    // The whole provider+api-key block lives inside one local gate.
     const providerIdx = src.indexOf('ProviderSelect');
     expect(providerIdx).toBeGreaterThan(0);
   });
@@ -73,13 +121,11 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
   it('A1.3: MINECRAFT section is shown in BOTH cloud and local mode', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     // Skin sideloading is independent of the AI-backend billing path, so the
-    // section must render regardless of mode (cloud-proxy users need to be
-    // able to run / re-run it too). Anchor on the JSX section title.
-    const skinsIdx = src.indexOf('>MINECRAFT<');
+    // group must render regardless of mode. Anchor on the sentence-case header.
+    const skinsIdx = src.indexOf('>Minecraft<');
     expect(skinsIdx).toBeGreaterThan(0);
-    // The section must NOT be wrapped in a local-only gate. The 200 chars
-    // before the JSX title should not open a `aiBackendKind === 'local'`
-    // conditional.
+    // The group must NOT be wrapped in a local-only gate. The 200 chars before
+    // the header should not open an `aiBackendKind === 'local'` conditional.
     const preamble = src.slice(Math.max(0, skinsIdx - 200), skinsIdx);
     expect(preamble.includes("aiBackendKind === 'local'")).toBe(false);
   });
@@ -109,9 +155,6 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
       'perplexity',
     ];
     for (const id of wanted) expect(src.includes(`'${id}'`)).toBe(true);
-    // The doc comment may legitimately mention "Coming soon" in describing
-    // the migration away from chip-disabled tiles; the regression we care
-    // about is the actual JSX <span className={styles.chip}>Coming soon</span>.
     expect(src.includes('styles.chip')).toBe(false);
     expect(src.includes('>Coming soon<')).toBe(false);
   });
@@ -124,38 +167,16 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
     expect(src.includes('provider_config')).toBe(true);
   });
 
-  it('A1.7: ACCOUNT MODE section sits below LEGAL with both switch buttons', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    // The LEGAL <div> sectionTitle marker is unique to the rendered JSX.
-    const legalIdx = src.indexOf('>LEGAL<');
-    expect(legalIdx).toBeGreaterThan(0);
-    // The ACCOUNT MODE sectionTitle div renders later in the JSX. The
-    // top-of-file imports/docs comment mentioning the same string sits
-    // ABOVE the render — use lastIndexOf to land on the JSX site.
-    const accountModeIdx = src.lastIndexOf('>ACCOUNT MODE<');
-    expect(accountModeIdx).toBeGreaterThan(legalIdx);
-    expect(src.includes('Switch to managed billing')).toBe(true);
-    expect(src.includes('Switch to your own API key')).toBe(true);
-    // Switching cloud ⇄ local now routes through a confirmation modal
-    // (uncommon, consequential action) rather than toggling directly.
-    expect(src.includes('SwitchBackendConfirmModal')).toBe(true);
-    expect(src.includes("setPendingSwitch('cloud-proxy')")).toBe(true);
-    expect(src.includes("setPendingSwitch('local')")).toBe(true);
-  });
-
   it('A1.8: ProviderSelect exports the 13-member Provider union type', () => {
     const src = readFileSync(PROVIDER_SELECT_TSX, 'utf-8');
     expect(src.includes("export type Provider =")).toBe(true);
-    // Spot-check: the new ids are part of the type, not just the runtime tile array.
     expect(src.match(/export type Provider =[\s\S]*?\|\s*'perplexity'/)).toBeTruthy();
   });
 
   it('A1.9: OnboardingScreen routes the dynamic provider label into step-3 title', () => {
     const src = readFileSync(ONBOARDING_TSX, 'utf-8');
     expect(src.includes('PROVIDER_LABELS')).toBe(true);
-    // Hardcoded "Local" fallback gone.
     expect(src.includes("provider === 'anthropic' ? 'Anthropic' : 'Local'")).toBe(false);
-    // Saves the selected provider verbatim instead of forcing 'anthropic'.
     expect(src.includes('provider,')).toBe(true);
   });
 });
@@ -171,7 +192,6 @@ describe('SettingsScreen + App (ui-A7 dev console toggle)', () => {
   it('A7.2: App.tsx gates <LogsBar /> on devConsoleVisible', () => {
     const src = readFileSync(APP_TSX, 'utf-8');
     expect(src.includes('devConsoleVisible')).toBe(true);
-    // LogsBar conditional must reference devConsoleVisible.
     const logsBarIdx = src.lastIndexOf('<LogsBar />');
     expect(logsBarIdx).toBeGreaterThan(0);
     const surrounding = src.slice(Math.max(0, logsBarIdx - 300), logsBarIdx);
@@ -183,9 +203,9 @@ describe('SettingsScreen + App (ui-A7 dev console toggle)', () => {
     expect(src.includes('dev_console_visible')).toBe(true);
   });
 
-  it('A7.4: SettingsScreen surfaces the developer console row + helper sentence', () => {
+  it('A7.4: SettingsScreen surfaces the developer console toggle + helper sentence', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes('Show developer console')).toBe(true);
+    expect(src.includes('Developer console')).toBe(true);
     expect(src.includes('Useful for debugging skin and bot issues.')).toBe(true);
     expect(src.includes('onToggleDevConsole')).toBe(true);
   });
@@ -197,54 +217,35 @@ describe('SettingsScreen + App (ui-A7 dev console toggle)', () => {
 });
 
 describe('SettingsScreen (D-FIX reset-all-memories unconditional)', () => {
-  /*
-   * D-FIX: the user spec ("'reset memory' button per-character in character
-   * page and for all characters in settings page") is unconditional, but
-   * ALPHA initially gated the row inside `authState.kind === 'signed_in'`.
-   * These tests pin the row OUT of that conditional so local-mode users
-   * can reset all memories too.
-   */
-
   it('D-FIX.1: Reset-all-memories row is NOT nested inside the signed-in section', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    // The signed-in ACCOUNT panel opens with `authState.kind === 'signed_in' ? (`
-    // and contains the ACCOUNT section + delete-account row. The new DANGER
-    // section that owns the reset-all-memories button must sit OUTSIDE that
-    // conditional so it renders in local mode too.
-    //
-    // We anchor on the JSX label (preceded by `>`) so we skip the code-comment
-    // hits at the top of the file.
-    const labelIdx = src.indexOf('>\n              Reset all companion memories\n');
+    // The reset row lives in the terminal DANGER group, which renders
+    // regardless of auth state so local-mode users can reset too.
+    const labelIdx = src.indexOf('Reset all companion memories');
     expect(labelIdx).toBeGreaterThan(0);
-    // The closest `<section` opening above the reset row should be the new
-    // DANGER section (not the ACCOUNT-panel section that requires signed_in).
     const preamble = src.slice(0, labelIdx);
-    const lastSection = preamble.lastIndexOf('<section');
-    expect(lastSection).toBeGreaterThan(0);
-    const sectionBlock = preamble.slice(lastSection);
-    // The section block above the row must not open with the signed-in gate.
-    expect(sectionBlock.includes("authState.kind === 'signed_in'")).toBe(false);
-    // And the section must carry the DANGER eyebrow.
-    expect(sectionBlock.includes('>DANGER<')).toBe(true);
+    // The nearest group header above the row must be Danger.
+    const lastH3 = preamble.lastIndexOf('<h3');
+    const h3Block = preamble.slice(lastH3);
+    expect(h3Block.includes('>Danger<')).toBe(true);
+    // The group's opening <div> must not be behind a signed-in gate.
+    const lastGroup = preamble.lastIndexOf('className={styles.group}');
+    const groupBlock = preamble.slice(lastGroup);
+    expect(groupBlock.includes("authState.kind === 'signed_in'")).toBe(false);
   });
 
-  it('D-FIX.2: DANGER section sits AFTER the conditional ACCOUNT MODE block', () => {
+  it('D-FIX.2: DANGER group is the terminus, after About', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    // The DANGER section is the terminus of the screen — below ACCOUNT MODE
-    // so it's the last visual section regardless of auth state.
-    const accountModeIdx = src.lastIndexOf('>ACCOUNT MODE<');
-    const dangerIdx = src.lastIndexOf('>DANGER<');
-    expect(accountModeIdx).toBeGreaterThan(0);
-    expect(dangerIdx).toBeGreaterThan(accountModeIdx);
+    const aboutIdx = src.indexOf('>About<');
+    const dangerIdx = src.indexOf('>Danger<');
+    expect(aboutIdx).toBeGreaterThan(0);
+    expect(dangerIdx).toBeGreaterThan(aboutIdx);
   });
 
   it('D-FIX.3: reset-all-memories button opens the confirm popup', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    // The button is still wired to its handler...
     expect(src.includes('onResetAllMemoriesClick')).toBe(true);
     expect(src.includes('Reset all memories…')).toBe(true);
-    // ...but confirmation now goes through a popup modal (replacing the old
-    // inline "click again to confirm" double-tap).
     expect(src.includes('ResetAllMemoriesConfirmModal')).toBe(true);
     expect(src.includes('Click again to confirm reset')).toBe(false);
   });

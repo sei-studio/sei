@@ -46,6 +46,41 @@
   color: var(--muted);
 }
 
+/* --- Ranked tiles (the "what are you looking for?" step) ------------------ */
+/* Same tile idiom, but selection assigns an ORDINAL (1st, 2nd, …) shown as a
+ * badge on the right; tapping a ranked tile un-ranks it. The exclusive
+ * "Surprise me" tile locks the others (dimmed, not interactive). */
+
+.rankTile {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rankTileText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rankBadge {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 3px 8px;
+}
+
+.tileLocked,
+.tileLocked:hover {
+  border-color: var(--border);
+  opacity: 0.45;
+  cursor: default;
+}
+
 .error {
   margin-top: 12px;
   color: var(--red);

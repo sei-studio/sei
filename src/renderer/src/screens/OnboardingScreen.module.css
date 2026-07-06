@@ -1,0 +1,9 @@
+/* OnboardingScreen — inline error line under a QuestionShell field.
+ * Mono micro-label rhythm; tokens only. */
+
+.error {
+  margin-top: 12px;
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 13px;
+}
