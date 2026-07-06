@@ -129,7 +129,18 @@ export function startCombat(bot, config) {
     if (isPlayer && staggerMs > 0) {
       bot._seiStaggerUntil = Date.now() + staggerMs
       try { bot.clearControlStates?.() } catch (_) {}
-      try { bot.pathfinder?.stop?.() } catch (_) {}
+      // Do NOT stop the pathfinder while a P0 safety escape/takeover owns the
+      // goal: a creeper-flee (bot._seiReflexActive) or a survival takeover
+      // (drowning swim-up / critical-HP retreat — bot._seiSurvivalActive /
+      // _seiCriticalRetreat). Clearing the goal here would strand the escape —
+      // reflex's active-flee tick only re-checks distance/panic, it never
+      // re-issues its setGoal, so the flee goal would stay cleared and the bot
+      // would stand next to a fusing creeper and die (an owner punch with PvP
+      // off must never cancel a safety escape). The stagger's control clear is
+      // enough; the flee keeps its goal and its knockback plays out anyway.
+      if (!bot._seiReflexActive && !bot._seiSurvivalActive && !bot._seiCriticalRetreat) {
+        try { bot.pathfinder?.stop?.() } catch (_) {}
+      }
     }
 
     const attackedPayload = {

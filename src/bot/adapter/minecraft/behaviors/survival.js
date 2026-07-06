@@ -365,7 +365,23 @@ export function startSurvival(bot, config) {
     // Drowning has priority over the HP retreat — you die in seconds underwater.
     const oxy = bot.oxygenLevel
     if (updateDrown(pos, oxy)) {
-      if (_retreatActive) retreatDisengage()
+      // Drowning just took over from an active critical retreat. Drop the
+      // retreat's OWN state but do NOT call retreatDisengage() — its
+      // endOwnership() would restore the pre-retreat action goal and clear
+      // _seiSurvivalActive WHILE the swim-up is still running, steering the
+      // pathfinder back toward the old goal and making follow/attack/gaze stop
+      // yielding, so the bot fails to surface and drowns (the exact death this
+      // reflex prevents). drownEngage()'s beginOwnership() was a no-op (retreat
+      // already held ownership), so bot._seiSurvivalSavedGoal still holds the
+      // original action goal — drowning keeps that ownership and restores it on
+      // drownDisengage(). Mirrors the reflex-wins retreat sub-branch above; no
+      // releaseControls() here because updateDrown() already set this tick's
+      // swim-up controls.
+      if (_retreatActive) {
+        _retreatActive = false
+        _retreatMobId = null
+        bot._seiCriticalRetreat = false
+      }
       return
     }
 

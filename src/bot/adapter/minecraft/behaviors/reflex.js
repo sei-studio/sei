@@ -236,6 +236,15 @@ export function startReflex(bot, config) {
 
   function onGoalUpdated(goal, dynamic) {
     if (_selfSetting) return
+    // A survival takeover (drowning swim-up / critical-HP retreat) installs a
+    // transient safety goal, not the action goal we must restore on flee exit.
+    // Ignore goal updates while survival owns the goal: _trackedGoal keeps the
+    // real pre-survival action goal (the same value survival saved in its own
+    // slot). Without this, a creeper appearing mid-retreat would snapshot
+    // survival's flee-the-mob goal as bot._seiSavedGoal and, on flee exit,
+    // restore THAT instead of the goto/gather/build goal — which is then lost
+    // and the action times out as cant_reach. Mirrors survival's own tracker.
+    if (bot._seiSurvivalActive || bot._seiCriticalRetreat) return
     _trackedGoal = goal
     _trackedDynamic = Boolean(dynamic)
   }

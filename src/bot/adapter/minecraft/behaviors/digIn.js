@@ -168,6 +168,9 @@ async function digInRun(args, bot, config, { fx, fy, fz }, overBudget, signal) {
     if (signal?.aborted) return `aborted after digging ${dug}`
     if (overBudget()) break
     const cur = bot.entity?.position
+    // Entity can vanish mid-dig (death / disconnect while under attack — digIn
+    // is the low-HP panic shelter). Bail gracefully instead of throwing on cur.y.
+    if (!cur) return `aborted after digging ${dug}`
     const cy = Math.floor(cur.y)
     // Re-guard: the block below must still be a non-liquid solid.
     const target = blockName(bot, fx, cy - 1, fz)

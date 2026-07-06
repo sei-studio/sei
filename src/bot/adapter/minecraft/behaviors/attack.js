@@ -187,6 +187,14 @@ export async function attackEntityAction(args, bot, config) {
     // (follow.js) re-install GoalFollow(owner) if a follow target is set — the
     // single-owner restore convention.
     try { bot.setControlState?.('sprint', false) } catch (_) {}
+    // Restore the default Movements. We swapped in pursuitMovements (digCost=8,
+    // maxDropDown=4) globally for the chase; the pathfinder keeps whatever
+    // Movements were last set, and follow.js installs its bare `new Movements`
+    // only ONCE at startFollow (it re-installs GoalFollow each tick WITHOUT
+    // resetting movements). So without this the companion would trail with
+    // pursuit movements (permitting larger drops) after every fight until the
+    // next goTo() reset them. Reset here so they never leak past the engagement.
+    try { bot.pathfinder?.setMovements?.(new Movements(bot)) } catch (_) {}
     if (!bot._seiReflexActive && !bot._seiSurvivalActive && !bot._seiCriticalRetreat) {
       try { bot.pathfinder?.setGoal?.(null) } catch (_) {}
     }
