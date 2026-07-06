@@ -83,6 +83,20 @@ export default defineConfig(({ mode }) => {
     worker: {
       format: 'es' as const,
     },
+    // Pre-bundle the Whisper dep at dev-server startup. @huggingface/transformers
+    // is imported ONLY inside the whisperWorker Web Worker, and Vite's startup
+    // dependency scanner does not crawl `new Worker(new URL(...))` graphs — so on
+    // a cold cache the dep is absent from the initial optimize pass. The FIRST
+    // voice call then loads the worker, Vite discovers the heavy new dep, re-runs
+    // optimization, and issues a full-page reload ("optimized dependencies
+    // changed. reloading"). That reload remounts the app and the bootstrap effect
+    // routes to Home — i.e. clicking "call" bounced the user to the home screen
+    // (dev only; packaged builds are pre-bundled so never hit this). Forcing the
+    // dep into `include` makes it part of the startup optimize pass, so the
+    // worker's first load finds it already optimized and no reload fires.
+    optimizeDeps: {
+      include: ['@huggingface/transformers'],
+    },
     resolve: {
       alias: {
         '@': path.resolve('src/renderer/src'),
