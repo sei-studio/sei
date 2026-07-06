@@ -353,6 +353,13 @@ export const UserConfigSchema = z.object({
    */
   realistic_typing: z.boolean().optional().default(true),
   /**
+   * "Call captions" (Appearance & feel, 260705). When on, the voice-call
+   * screen shows the two live caption lines (companion's last spoken line +
+   * your last transcribed utterance). Off by default — a call should feel
+   * like audio, not subtitles; captions are an accessibility/debugging aid.
+   */
+  call_captions: z.boolean().optional().default(false),
+  /**
    * Onboarding skin-setup gate. Set true when the user finishes the name/API
    * onboarding step, cleared when they finish OR skip the dedicated skin-setup
    * page. While true, the app routes to `{ kind: 'skin-setup' }` instead of home

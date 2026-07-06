@@ -166,6 +166,9 @@ interface UiState {
    * surfaces). Reset to false whenever a call ends.
    */
   callDeafened: boolean;
+  /** Appearance & feel: live captions on the voice-call screen (persisted via
+   * UserConfig.call_captions; App.tsx hydrates). Off by default. */
+  callCaptions: boolean;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -190,6 +193,8 @@ interface UiState {
   setCallMuted: (muted: boolean) => void;
   /** 260705: set the active call's deafen state (output silence). */
   setCallDeafened: (deafened: boolean) => void;
+  /** Appearance & feel: set the call-captions toggle. */
+  setCallCaptions: (v: boolean) => void;
   /** #6: hang up / dismiss the call (clears the widget + resets mute). */
   endCall: () => void;
 }
@@ -213,6 +218,7 @@ export const useUiStore = create<UiState>((set) => ({
   minimizedCall: null,
   callMuted: false,
   callDeafened: false,
+  callCaptions: false,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
   navigate: (view) =>
@@ -246,5 +252,6 @@ export const useUiStore = create<UiState>((set) => ({
     ),
   setCallMuted: (muted) => set({ callMuted: muted }),
   setCallDeafened: (deafened) => set({ callDeafened: deafened }),
+  setCallCaptions: (v) => set({ callCaptions: v }),
   endCall: () => set({ minimizedCall: null, callMuted: false, callDeafened: false }),
 }));

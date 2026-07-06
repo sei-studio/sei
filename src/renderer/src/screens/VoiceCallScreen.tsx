@@ -65,6 +65,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const setMuted = useUiStore((s) => s.setCallMuted);
   const deafened = useUiStore((s) => s.callDeafened);
   const setDeafened = useUiStore((s) => s.setCallDeafened);
+  const captionsOn = useUiStore((s) => s.callCaptions);
   const minimizeCall = useUiStore((s) => s.minimizeCall);
 
   const status = useVoiceStore((s) => s.status);
@@ -245,11 +246,15 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         {subtitle}
       </span>
 
-      {/* Captions — the last line each side said, so a glance explains the audio. */}
-      <div className={styles.captions} aria-live="polite">
-        {lastSpoken ? <p className={styles.captionCompanion}>{lastSpoken}</p> : null}
-        {lastHeard ? <p className={styles.captionUser}>You: {lastHeard}</p> : null}
-      </div>
+      {/* Captions — opt-in (Appearance & feel → Call captions, default off).
+          Not rendered at all when off so the reserved min-height collapses and
+          the controls sit closer to the name. */}
+      {captionsOn ? (
+        <div className={styles.captions} aria-live="polite">
+          {lastSpoken ? <p className={styles.captionCompanion}>{lastSpoken}</p> : null}
+          {lastHeard ? <p className={styles.captionUser}>You: {lastHeard}</p> : null}
+        </div>
+      ) : null}
 
       <div className={styles.controls}>
         <button
