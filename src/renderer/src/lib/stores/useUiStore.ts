@@ -26,6 +26,9 @@ export type View =
   // straight home (chat). A full-page entry surface like onboarding/skin-setup.
   | { kind: 'activity-picker' }
   | { kind: 'home' }
+  // Party redesign §4.3 — the "awaken a companion" chooser view (replaces
+  // AddCompanionChooserModal). A normal in-app surface: the rail stays visible.
+  | { kind: 'awaken' }
   | { kind: 'add-character' }
   | { kind: 'character'; id: string }
   // Phase 18/19 — Discord-style in-app chat with a companion, plus a
@@ -39,14 +42,23 @@ export type View =
   // 260703 procgen — the "unique companion" (system-generated) flow. All four
   // are renderer-only full-page surfaces (rail hidden), routed from the
   // add-companion chooser or the App-level first-sign-in questionnaire gate:
-  //   - profile-questions : the first-sign-in questionnaire (age + art style).
-  //                          `next` decides where to land on submit (home when
-  //                          triggered app-level; unique-gender when it gated
-  //                          the unique path).
+  //   - profile-questions : the companion questionnaire (age + dynamics +
+  //                          art style). `next` decides where Finish lands:
+  //                          'activity-picker' (mid-onboarding, signed-in),
+  //                          'home' (App gate), 'unique-gender' (Awaken cast
+  //                          gate), 'awaken' / 'settings' ("Update my
+  //                          preferences" entries — cancel also returns
+  //                          there). `mode`: 'missing' asks only unanswered
+  //                          questions; 'all' is a full retake prefilled
+  //                          with current answers.
   //   - unique-gender     : the single per-slot gender question.
   //   - unique-casting    : the full-screen generation/ritual progress screen.
   //   - unique-reveal     : the "meet <name>" moment after a successful gen.
-  | { kind: 'profile-questions'; next: 'home' | 'unique-gender' }
+  | {
+      kind: 'profile-questions';
+      next: 'home' | 'unique-gender' | 'activity-picker' | 'awaken' | 'settings';
+      mode: 'missing' | 'all';
+    }
   | { kind: 'unique-gender' }
   | { kind: 'unique-casting'; gender: UniqueGender }
   | { kind: 'unique-reveal'; characterId: string }
@@ -118,6 +130,13 @@ interface UiState {
    */
   realisticTyping: boolean;
   /**
+   * 260705 — the chat presence side panel is open by default; hiding it is a
+   * sticky preference across companions and app restarts. Persisted via
+   * UserConfig.chat_panel_hidden and hydrated here at App.tsx bootstrap (same
+   * pattern as realisticTyping); ChatScreen persists changes on toggle.
+   */
+  chatPanelHidden: boolean;
+  /**
    * Phase 15 (D-10/VIS-03) — whether the active bot's LLM provider is
    * vision-capable. Fed by the `vision:capability` push (bot→main→renderer,
    * subscribed in useDataStore.subscribeIpc). The 15-05 Settings auto-render
@@ -181,6 +200,7 @@ interface UiState {
   setDevConsoleVisible: (v: boolean) => void;
   /** Appearance & feel: set the "Realistic typing" pacing toggle. */
   setRealisticTyping: (v: boolean) => void;
+  setChatPanelHidden: (v: boolean) => void;
   /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
   setVisionCapable: (v: boolean) => void;
   /** Phase 18/19: record the chat a CharacterPage was opened from (or null). */
@@ -210,6 +230,8 @@ export const useUiStore = create<UiState>((set) => ({
   // Appearance & feel: default ON, matching UserConfig.realistic_typing's
   // default. App.tsx re-hydrates this from persisted config before first render.
   realisticTyping: true,
+  // Panel open by default; App.tsx re-hydrates from UserConfig.chat_panel_hidden.
+  chatPanelHidden: false,
   // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
   // capabilities.vision === true over the vision:capability push.
   visionCapable: false,
@@ -233,6 +255,7 @@ export const useUiStore = create<UiState>((set) => ({
     set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),
   setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
   setRealisticTyping: (v) => set({ realisticTyping: v }),
+  setChatPanelHidden: (v) => set({ chatPanelHidden: v }),
   setVisionCapable: (v) => set({ visionCapable: v }),
   setChatReturnId: (id) => set({ chatReturnId: id }),
   // Minimizing leaves the call "running" in the corner and drops the user back

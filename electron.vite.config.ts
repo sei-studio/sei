@@ -36,6 +36,16 @@ export default defineConfig(({ mode }) => {
       ...(env.SEI_PROXY_URL
         ? { 'process.env.SEI_PROXY_URL': JSON.stringify(env.SEI_PROXY_URL) }
         : {}),
+      // KusArt image generation (uniqueGeneration.ts). Same defined-only-when-
+      // set rule as SEI_PROXY_URL: without a key the runtime lookup stays live
+      // and generatePortraitPng fails soft ("KUSART_API_KEY is not configured"
+      // — the companion still saves, just without portrait/skin art).
+      ...(env.KUSART_API_KEY
+        ? { 'process.env.KUSART_API_KEY': JSON.stringify(env.KUSART_API_KEY) }
+        : {}),
+      ...(env.KUSART_BASE_URL
+        ? { 'process.env.KUSART_BASE_URL': JSON.stringify(env.KUSART_BASE_URL) }
+        : {}),
     },
   },
   preload: {

@@ -24,6 +24,7 @@ import {
   renderPersona,
   renderHeartbeat,
   renderProactivenessDirective,
+  renderPunctuationDirective,
   renderCore,
   renderCompanions,
 } from './prompts.js'
@@ -80,18 +81,30 @@ export function postProcessSay(s) {
 // message. Split a cleaned chat line into separate messages on sentence
 // punctuation and on em/en-dashes. A dash becoming a message BREAK (rather than
 // a regex strip) keeps it out of speech without mangling mid-sentence
-// punctuation. Trailing periods are dropped per message (texting style /
-// "minimize punctuation"); ? and ! stay because they carry tone. Commas are
-// left alone — list commas ("walls, roof, door") must not fragment; the prompt
+// punctuation. ? and ! always stay because they carry tone. Commas are left
+// alone — list commas ("walls, roof, door") must not fragment; the prompt
 // handles comma-spliced clauses.
 // 260616: message cap dropped — every segment the split produces ships, no
 // count limit and no content filter.
-export function splitChatMessages(line) {
+// 260705: trailing-period handling is now the per-character `punctuation`
+// texting register (character.metadata.punctuation → config.persona):
+//   'casual'     — drop a single trailing period per message (how most people
+//                  text). ONLY a lone period: an ellipsis ("hm...") carries
+//                  tone and is kept — the old [.\s]+$ strip used to eat it.
+//   'deliberate' — keep trailing periods; the split still happens, so
+//                  "done. as ordered." ships as "done." / "as ordered." —
+//                  the flat, measured register (e.g. Marv).
+// The matching prompt text is PUNCTUATION_DIRECTIVES (promptLibrary.js); this
+// is the deterministic backstop, independent of model compliance.
+export function splitChatMessages(line, punctuation = 'casual') {
   if (!line) return []
   return line
     // Break on dashes (with or without surrounding spaces) and after . ? !
     .split(/\s*[—–]\s*|(?<=[.?!])\s+/)
-    .map((seg) => seg.trim().replace(/[.\s]+$/, '').trim())
+    .map((seg) => {
+      const s = seg.trim()
+      return punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')
+    })
     .filter(Boolean)
 }
 
@@ -187,6 +200,15 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
 // it speaks, but it never keeps the bot busy on its own — see the
 // `continueLoop = movementCalls.length > 0` gate in runIterations).
 const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit', 'end_call'])
+// Party redesign §2/§5: tool names that must NOT surface as a world-action verb
+// (the `onAction` presence hook). These are brain/personality tools with no
+// in-world motion — say (chat), remember/forget/end_loop (memory + loop
+// control), setGoal/clearGoal (goal bookkeeping), quit (session end), end_call
+// (hang up a voice call). Everything else that reaches startLongRunner (follow,
+// goto, gather, dig, build, …) is a real world action and DOES emit. Kept
+// separate from PERSONALITY_NAMES so follow/unfollow still surface a verb even
+// though they're personality-tagged.
+const ACTION_VERB_SKIP = new Set(['say', 'remember', 'forget', 'end_loop', 'setGoal', 'clearGoal', 'quit', 'end_call'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
@@ -538,7 +560,7 @@ export async function composeSeedBlocks({
  *   priority queue. Required when the brain runs in production; defaults
  *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, _anthropicOverride = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null, _anthropicOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
   // 260618: roster of OTHER AI companion usernames in this world (multi-bot
   // sessions). Pushed from main via {type:'roster'} → brain.setCompanions →
@@ -646,6 +668,26 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // and follow.js can pause for the entire action lifecycle (not just the
   // dispatch lifecycle). See ./inflight.js.
   const inflight = createInflightTracker()
+
+  // Party redesign §2/§5: emit the current world-action verb up to main/renderer
+  // (via the onAction hook wired in bot/index.js → emitLifecycle). `name` set = a
+  // world-acting tool started; `name` null = the loop drained to idle. Cheap and
+  // strictly non-throwing — a broken/absent hook (CLI standalone) must never
+  // perturb the dispatch path. args are shallow-JSON-sanitized so a large or
+  // circular tool input can't blow up postMessage; sanitize failure drops args.
+  function emitActionVerb(name, args) {
+    if (typeof onAction !== 'function') return
+    let safeArgs
+    if (name && args && typeof args === 'object') {
+      try { safeArgs = JSON.parse(JSON.stringify(args)) } catch { safeArgs = undefined }
+    }
+    try {
+      onAction({ name: name ?? null, args: safeArgs })
+    } catch (err) {
+      try { logger.debug?.(`[sei/orch] onAction hook threw: ${err?.message ?? err}`) } catch {}
+    }
+  }
+
   // Stateful snapshot composer — wraps the adapter's per-instance composer
   // and injects a `recent_events:` line with inventory/kill/hp deltas since
   // the prior snapshot for this orchestrator instance.
@@ -680,7 +722,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // after emitSayCalls may begin before the words land — acceptable (and arguably
   // realistic) for this opt-in mode; quit() is the one teardown that waits.
   function emitChatMessages(line, leadMs = 0) {
-    const msgs = splitChatMessages(line)
+    const msgs = splitChatMessages(line, config.persona?.punctuation)
     if (msgs.length) _lastChatSendDeadline = Date.now() + leadMs + (msgs.length - 1) * 550
     msgs.forEach((msg, i) => {
       const send = () => {
@@ -745,9 +787,16 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // turn: while a call is live, speech goes to the player's ear (TTS via the
     // chat surface) and in-game chat stays silent — that's the mode's contract.
     if ((voiceCallActive || loop._triggerData?.seiChat) && typeof onSeiChatReply === 'function') {
-      try { logChatOut(line) } catch {}
-      try { onSeiChatReply(line) } catch (err) { logger.warn?.(`[sei/orch] onSeiChatReply failed: ${err?.message ?? err}`) }
-      try { convoMemory.recentChat.pushSelf(config.persona.name, line) } catch {}
+      // 260705: same texting-style split as in-world chat, so the app surface
+      // obeys the character's punctuation register too (previously the whole
+      // line shipped as one bubble with its periods intact). Sent in order,
+      // no stagger — the chat panel renders arrival order.
+      for (const msg of splitChatMessages(line, config.persona?.punctuation)) {
+        try { logChatOut(msg) } catch {}
+        try { onSeiChatReply(msg) } catch (err) { logger.warn?.(`[sei/orch] onSeiChatReply failed: ${err?.message ?? err}`) }
+        try { convoMemory.recentChat.pushSelf(config.persona.name, msg) } catch {}
+      }
+
       lastActionResult = 'said (sei chat)'
       return { emitted: true, content: 'sent to chat' }
     }
@@ -1098,6 +1147,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         adapter.worldPrimer(),
         adapter.actionRules(),
         renderProactivenessDirective(config.persona?.proactiveness ?? 1),
+        // 260705: texting punctuation — static per character, appended (never
+        // inserted) for the same cache-key index-stability reason as above.
+        renderPunctuationDirective(config.persona?.punctuation),
       ],
       combinedToolsFor()
     )
@@ -1515,6 +1567,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
    */
   function startLongRunner(name, args, execOpts) {
     const handle = inflight.start({ name, args })
+    // Party redesign §2/§5: this is the single world-tool dispatch path. Surface
+    // the action as a presence verb — but only for real world tools, never for
+    // brain/personality tools (say/remember/forget/end_loop/setGoal/clearGoal/
+    // quit; most of those skip this path anyway via INLINE_METADATA + emitSayCalls).
+    if (!ACTION_VERB_SKIP.has(name)) emitActionVerb(name, args)
     const abortController = new AbortController()
     const opts = _buildExecOpts(name, args, { ...execOpts, signal: abortController.signal }, handle)
     const promise = (async () => {
@@ -2126,6 +2183,10 @@ function maybeWarnByteCap(loop, warned) {
       logger.warn?.(`[sei/orch] sei:loop_terminal re-enqueue failed: ${err.message}`)
     }
     currentLoop = null
+    // Party redesign §2/§5: the loop drained back to idle — clear any lingering
+    // action verb so the presence line doesn't stick on the last tool. A fresh
+    // loop (pendingAttack re-fire below) will re-emit its own verb on dispatch.
+    emitActionVerb(null)
     // 260611: a pendingInterrupt still set at teardown is a player message
     // that was never delivered to the model (the normal paths —
     // repairAfterAbort and the action_complete folds — consume it). Without

@@ -1,16 +1,17 @@
 /**
  * CharacterPage — full-bleed character detail (the "Summoning Terminal").
  *
- * Layout (mockup ui.jsx CharacterDetail): the portrait bleeds off the RIGHT
- * edge behind a left-to-right scrim; a left content panel carries the back
- * crumb, an Oswald name, the live status line, the public/private toggle,
- * Details/Skin tabs, the persona/description card + stats, and a bottom deploy
- * bar (Summon CTA + gear). All prior functionality is preserved verbatim —
- * inline name + description editors, share toggle + confirm, gear menu,
- * add/remove-from-library, report, cache-on-demand, and the model status row.
+ * Layout (Party redesign §4.6): the portrait bleeds off the RIGHT edge behind a
+ * left-to-right scrim; a left content panel carries a quiet back crumb, an
+ * Oswald name + IdTag, the public/private share row (own chars),
+ * the live status line, Description / Game tabs, and a bottom deploy row
+ * (Play/Disconnect + a settings gear menu holding Reset memory and Unbind).
+ * All prior functionality is preserved — persona /
+ * description display + rotate, share toggle + multi-phase confirm, edit,
+ * add/remove-from-library, report, cache-on-demand, reset memory, and the model
+ * status row.
  *
- * Source: .planning/UI-DESIGN-SYSTEM.md §Screens → Character detail;
- *         04-UI-SPEC.md §CharacterPage; D-49..D-53; quick task 260508-mun.
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §4.6.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -18,9 +19,12 @@ import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
-import { attemptSummon } from '../lib/summonFlow';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { useChatStore } from '../lib/stores/useChatStore';
 import { Button } from '../components/Button';
+import { Toggle } from '../components/Toggle';
+import { Presence } from '../components/Presence';
+import { ModalShell, ModalFooter } from '../components/ModalShell';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { EditCharacterModal, type EditSection } from '../components/EditCharacterModal';
 import { SignInModal } from '../components/SignInModal';
@@ -28,9 +32,10 @@ import { IdTag } from '../components/IdTag';
 import { SkinEditor } from '../components/SkinEditor';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ProactivenessBar } from '../components/ProactivenessBar';
 import { getProactiveness } from '../lib/proactiveness';
-import { BackIcon, GearIcon, RotateIcon, SparkleIcon } from '../components/icons';
+import { BackIcon, GearIcon, RotateIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
 import { ERROR_COPY } from '../lib/errors';
 import type { Character } from '@shared/characterSchema';
@@ -81,7 +86,48 @@ export interface CharacterPageProps {
   id: string;
 }
 
-type CharacterTab = 'details' | 'skin';
+type CharacterTab = 'description' | 'game';
+
+/**
+ * Wireframe shown while a not-yet-cached character downloads (or on the first
+ * paint before the mount effect resolves). Mirrors the real page frame — a
+ * portrait block bleeding off the right, name / chip / description / kv / deploy
+ * bars on the left — static grey blocks (260705: no shimmer sweep), so the wait
+ * reads as intentional instead of a blank flash. Keeps a working Back crumb so
+ * the user is never stranded.
+ */
+function CharacterPageSkeleton({ onBack }: { onBack: () => void }): React.ReactElement {
+  return (
+    <div className={styles.root} aria-busy="true" aria-label="Loading companion">
+      <div className={styles.portraitLayer} aria-hidden="true">
+        <div className={styles.skelPortrait} />
+        <div className={styles.dScrim} />
+      </div>
+      <main className={styles.content}>
+        <div className={styles.crumb}>
+          <Button kind="quiet" size="sm" icon={<BackIcon size={13} />} onClick={onBack}>
+            Back
+          </Button>
+        </div>
+        <div className={styles.skelTitle} aria-hidden="true" />
+        <div className={styles.skelBlock} aria-hidden="true">
+          <div className={styles.skelLine} />
+          <div className={styles.skelLine} />
+          <div className={`${styles.skelLine} ${styles.skelLineShort}`} />
+        </div>
+        <div className={styles.skelKv} aria-hidden="true">
+          <div className={styles.skelKvRow} />
+          <div className={styles.skelKvRow} />
+          <div className={styles.skelKvRow} />
+        </div>
+        <div className={styles.skelDeploy} aria-hidden="true">
+          <div className={styles.skelBtn} />
+          <div className={styles.skelBtnSm} />
+        </div>
+      </main>
+    </div>
+  );
+}
 
 export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
@@ -100,8 +146,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const character: Character | undefined = characters.find((c) => c.id === id);
   const [editing, setEditing] = useState<boolean>(false);
   const [editSection, setEditSection] = useState<EditSection>('basic');
-  const [tab, setTab] = useState<CharacterTab>('details');
+  const [tab, setTab] = useState<CharacterTab>('description');
   const [preparing, setPreparing] = useState<boolean>(false);
+  // Flips true once the cache-miss mount effect has concluded (downloaded, or
+  // tried and still nothing). Distinguishes "still loading → skeleton" from
+  // "genuinely not here → not-found text" so neither state flashes the other.
+  const [resolved, setResolved] = useState<boolean>(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
   // 260703 procgen: inline failure line for the Add-to-library CTA (e.g. the
   // main-process slot-limit backstop) — a silent no-op reads as a broken button.
@@ -115,10 +165,30 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [sharePhase, setSharePhase] = useState<'confirm' | 'working' | 'success' | 'error'>(
     'confirm',
   );
-  const [gearMenuOpen, setGearMenuOpen] = useState<boolean>(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState<boolean>(false);
-  const [unbindConfirmOpen, setUnbindConfirmOpen] = useState<boolean>(false);
-  const gearWrapRef = useRef<HTMLDivElement | null>(null);
+  // Unbind = remove from library / delete. World-added chars unbind; owned
+  // chars delete. Which confirm modal renders is chosen by isAddedFromWorld.
+  const [releaseConfirmOpen, setReleaseConfirmOpen] = useState<boolean>(false);
+  // Settings (gear) popup in the deploy row — holds Reset memory + Unbind.
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onDown = (e: MouseEvent): void => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setSettingsOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [settingsOpen]);
   // Own-character details card defaults to the DESCRIPTION when one exists,
   // otherwise the persona source. The rotate toggle still switches between them.
   const [paneTab, setPaneTab] = useState<'persona' | 'description'>(
@@ -165,7 +235,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // so without a local clock the status line would sit frozen at "0s" for the
   // whole session. We derive a live uptime from the session's absolute
   // startedAtMs (Date.now() - startedAtMs) and re-render every second so
-  // "Online · Xs" counts up — correct even if the page is opened mid-session.
+  // "Connected · Xs" counts up — correct even if the page is opened mid-session.
   const onlineForThisChar = summon.kind === 'online' && summon.characterId === id;
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   useEffect(() => {
@@ -180,22 +250,14 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
   const refreshLibraryState = useLibraryStateStore((s) => s.refresh);
 
-  useEffect(() => {
-    if (!gearMenuOpen) return;
-    const onDocMouseDown = (e: MouseEvent): void => {
-      const node = gearWrapRef.current;
-      if (node && e.target instanceof Node && !node.contains(e.target)) {
-        setGearMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [gearMenuOpen]);
-
   // T-04-37 + Phase 11 plan 19: rehydrate / cache-on-demand on mount.
   useEffect(() => {
     if (character) return;
     let cancelled = false;
+    // Fresh attempt for this id — clear any prior error/resolved so a re-nav to
+    // a different missing character shows the skeleton, not a stale not-found.
+    setPrepareError(null);
+    setResolved(false);
     void (async () => {
       try {
         await refreshCharacter(id);
@@ -214,7 +276,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         if (cancelled) return;
         setPrepareError((err as Error).message);
       } finally {
-        if (!cancelled) setPreparing(false);
+        if (!cancelled) {
+          setPreparing(false);
+          setResolved(true);
+        }
       }
     })();
     return () => {
@@ -259,30 +324,30 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   }, [character?.id]);
 
   if (!character) {
-    if (preparing) {
+    // A download error, or a concluded attempt that turned up nothing → the
+    // actionable text surface with a way home. Otherwise (first paint or a
+    // download in flight) → a wireframe skeleton so the wait reads as
+    // intentional instead of a blank flash or a bare "Downloading…" line.
+    if (prepareError || (resolved && !preparing)) {
       return (
         <div className={styles.notFound}>
-          <p>Downloading companion from cloud…</p>
+          <p>
+            {prepareError
+              ? "Couldn't load this companion. You may be offline, or the companion may have been deleted."
+              : 'Companion not found.'}
+          </p>
+          <Button kind="primary" size="md" onClick={() => navigate({ kind: 'home' })}>
+            Back to home
+          </Button>
         </div>
       );
     }
-    return (
-      <div className={styles.notFound}>
-        <p>
-          {prepareError
-            ? "Couldn't load this companion. You may be offline, or the companion may have been deleted."
-            : 'Companion not found.'}
-        </p>
-        <Button kind="primary" size="md" onClick={() => navigate({ kind: 'home' })}>
-          Back to Home
-        </Button>
-      </div>
-    );
+    return <CharacterPageSkeleton onBack={() => navigate({ kind: 'home' })} />;
   }
 
   const isDefault = character.is_default;
   // 260703 procgen: defaults are opt-in on Home — a default NOT in
-  // added_default_ids shows "Add to library" instead of the Summon CTA.
+  // added_default_ids shows "Add to library" instead of the Play CTA.
   const isRemovedDefault = isDefault && !addedDefaultIds.has(character.id);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   // A character with a cloud owner that isn't the current user is foreign /
@@ -290,30 +355,34 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // a local user opening a World character must view it read-only, not see edit
   // controls and the publish toggle (item 5). Legacy null-owner local chars
   // stay editable for everyone.
-  const isForeignOwned =
-    !isDefault &&
-    !!character.owner &&
-    character.owner !== currentUserId;
+  const isForeignOwned = !isDefault && !!character.owner && character.owner !== currentUserId;
   // 260703 procgen (spec item 5): only user-created ('custom') characters are
   // editable. System-generated 'unique' companions — even ones the user owns —
   // are NOT editable (remove / reset-memory only), exactly like foreign-owned
   // World characters. `kind` defaults to 'custom', so every pre-existing
   // character stays editable. This folds into the existing viewOnly guard so
-  // all the edit surfaces (Edit modal, name/persona/skin/portrait, visibility
-  // toggle) hide behind one predicate.
+  // all the edit surfaces hide behind one predicate.
   const isNonEditableKind = character.kind !== 'custom';
   const viewOnly = isDefault || isForeignOwned || isNonEditableKind;
   const isWorldPreview = isForeignOwned && !addedWorldIds.has(character.id);
   const isAddedFromWorld = isForeignOwned && addedWorldIds.has(character.id);
+  // World-preview / removed-default entries aren't in the library yet — no
+  // memory to reset and nothing to release.
+  const isPreview = isWorldPreview || isRemovedDefault;
   const themeAttr = document.documentElement.getAttribute('data-theme');
   const theme: 'light' | 'dark' = themeAttr === 'dark' ? 'dark' : 'light';
   const palette = pickPalette(character.id + character.name, theme);
-  // Per-character accent tint for the portrait bloom (mockup d-bg radial).
+  // Per-character accent tint for the portrait bloom.
   const tint = palette[2] ?? palette[1] ?? 'var(--accent)';
 
   const isActive = summon.kind === 'online' && summon.characterId === id;
   const isErrored = summon.kind === 'error' && summon.characterId === id;
   const isConnecting = summon.kind === 'connecting';
+
+  const openEdit = (section: EditSection): void => {
+    setEditSection(section);
+    setEditing(true);
+  };
 
   const handleSummonClick = (): void => {
     // Connected OR still connecting → this button is "Disconnect": clear the
@@ -323,9 +392,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       void sei.stop(id);
       return;
     }
-    // "Play together" opens the game picker; each game tile launches through
-    // the shared summonFlow (skin-setup nudge → LAN gate). Keeps CharacterPage
-    // and CharactersScreen in lockstep on the same entry point.
+    // "Play" opens the game picker; each game tile launches through the shared
+    // summonFlow (skin-setup nudge → LAN gate). Keeps CharacterPage and
+    // CharactersScreen in lockstep on the same entry point.
     openModal({ kind: 'games-picker', characterId: id });
   };
 
@@ -381,15 +450,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     setShareError(null);
   };
 
-  const onGearClick = (): void => {
-    if (!viewOnly) {
-      setEditSection('basic');
-      setEditing(true);
-      return;
-    }
-    setGearMenuOpen((v) => !v);
-  };
-
   /**
    * Modal close handler. If a publish attempt was blocked on a missing
    * description, resume it once the modal closes with a description present
@@ -406,10 +466,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     }
   };
 
-  // Gear → "Reset memory" opens a confirmation popup (reset is irreversible and
-  // does NOT touch in-game inventory/location — the modal copy says so).
+  // Reset memory opens a confirmation popup (reset is irreversible and does NOT
+  // touch in-game inventory/location — the modal copy says so).
   const onResetMemoryClick = (): void => {
-    setGearMenuOpen(false);
     setResetConfirmOpen(true);
   };
 
@@ -418,22 +477,20 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     if (!character) return;
     try {
       await sei.resetMemory(character.id);
+      // Reset deletes the chat transcript too — drop the renderer's cached
+      // messages/preview so an open chat doesn't keep showing erased history.
+      await useChatStore.getState().clear(character.id);
       await refreshCharacter(character.id);
     } catch (err) {
       console.error('[CharacterPage] resetMemory failed', err);
     }
   };
 
-  // Gear → "Unbind" opens a confirmation popup (mirrors onResetMemoryClick) —
-  // the actual removal is destructive (drops the companion from the library)
-  // so it runs only from doUnbind, after the user confirms.
-  const onUnbindClick = (): void => {
-    setGearMenuOpen(false);
-    setUnbindConfirmOpen(true);
-  };
-
-  const doUnbind = async (): Promise<void> => {
-    setUnbindConfirmOpen(false);
+  // Release runs after the confirm modal is accepted. World-added chars unbind
+  // (drop from the library); owned chars delete permanently. Defaults in a Home
+  // slot delete + refresh library state (restorable from the World tab).
+  const doRelease = async (): Promise<void> => {
+    setReleaseConfirmOpen(false);
     if (!character) return;
     try {
       if (isAddedFromWorld) {
@@ -450,7 +507,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       }
       navigate({ kind: 'home' });
     } catch (err) {
-      console.error('[CharacterPage] deleteCharacter failed', err);
+      console.error('[CharacterPage] release failed', err);
     }
   };
 
@@ -479,7 +536,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       console.error('[CharacterPage] add to library failed', err);
       // Surface the failure (e.g. the slot-limit backstop) instead of a
       // silent no-op — the handler messages are already user-readable.
-      setAddError(err instanceof Error && err.message ? err.message : "Couldn't add this companion. Please try again.");
+      setAddError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Couldn't add this companion. Please try again.",
+      );
     }
   };
 
@@ -487,17 +548,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // Live-ticked uptime from the session start, so the label counts up instead
   // of sticking at the emit-time "0s".
   const liveUptimeMs = summon.kind === 'online' ? Math.max(0, nowMs - summon.startedAtMs) : 0;
-  const modelLabel = isActive
-    ? `Connected · ${fmtUptime(liveUptimeMs)}`
-    : summon.kind === 'error' && summon.characterId === id
+  const errorLabel =
+    summon.kind === 'error' && summon.characterId === id
       ? (ERROR_COPY[summon.error] ?? ERROR_COPY.BOT_CRASH)
-      : isConnecting
-        ? 'Connecting…'
-        : 'Ready';
-  const modelDotColor = isErrored ? 'var(--red)' : isConnecting ? 'var(--warn)' : 'var(--green)';
-  // The resting "Ready" status is intentionally not shown — the status line
-  // only appears when there's a live state to report (online / connecting /
-  // errored).
+      : '';
+  // The resting/idle status is intentionally not shown — the status line only
+  // appears when there's a live state to report (online / connecting / errored).
   const showStatusRow = isActive || isConnecting || isErrored;
 
   return (
@@ -521,13 +577,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
 
       <main className={`${styles.content} ${leaving ? styles.contentLeaving : ''}`}>
         <div className={styles.crumb}>
-          <Button
-            kind="quiet"
-            size="sm"
-            icon={<BackIcon size={14} />}
-            onClick={closePage}
-          >
-            All companions
+          <Button kind="quiet" size="sm" icon={<BackIcon size={13} />} onClick={closePage}>
+            Back
           </Button>
         </div>
 
@@ -557,239 +608,227 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           ) : null}
         </div>
 
-        {/* Live status line (mockup d-status) — dot + tracked label. Hidden in
-            the resting/idle state so no "Ready" label shows. */}
-        {showStatusRow ? (
-          <div className={styles.modelRow}>
-            <span className={styles.modelDot} style={{ background: modelDotColor }} />
-            <span className={styles.modelLabel}>{modelLabel}</span>
-            {isErrored ? (
-              <button type="button" className={styles.tryAgain} onClick={handleSummonClick}>
-                TRY AGAIN
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* Public/private toggle (hidden for defaults + foreign-owned). */}
+        {/* Public/private share row (own chars only) — Toggle + label. */}
         {!viewOnly ? (
-          <div className={styles.sharedToggleRow}>
-            <button
-              type="button"
-              className={`${styles.sharedToggle} ${
-                character.shared ? styles.sharedToggleOn : styles.sharedToggleOff
-              }`}
-              onClick={() => { void onToggleShared(); }}
-              disabled={
-                shareConfirm !== null ||
-                (authState.kind !== 'signed_in' && character.shared)
-              }
-              aria-pressed={character.shared}
+          <div className={styles.shareRow}>
+            <Toggle
+              on={character.shared}
+              onChange={() => onToggleShared()}
+              disabled={shareConfirm !== null || (authState.kind !== 'signed_in' && character.shared)}
               aria-label={
                 character.shared
-                  ? 'Companion is public. Click to make private.'
-                  : 'Companion is private. Click to make public.'
+                  ? 'Companion is public. Turn off to make private.'
+                  : 'Companion is private. Turn on to make public.'
               }
-              title={
-                authState.kind === 'signed_in'
-                  ? character.shared
-                    ? 'Visible in the public companion library. Click to make private.'
-                    : 'Hidden from the public library. Click to share.'
-                  : 'Sign in to share this companion with the community.'
-              }
-            >
-              <span
-                className={`${styles.sharedDot} ${
-                  character.shared ? styles.sharedDotOn : styles.sharedDotOff
-                }`}
-                aria-hidden="true"
-              />
-              <span className={styles.sharedLabel}>
-                {character.shared ? 'Public' : 'Private'}
-              </span>
-            </button>
+            />
+            <span className={styles.shareLabel}>
+              {character.shared ? 'Public: others can invite' : 'Private'}
+            </span>
           </div>
         ) : null}
 
+        {/* Live status line (online / connecting / errored). */}
+        {showStatusRow ? (
+          <div className={styles.statusRow}>
+            {isErrored ? (
+              <>
+                <span className={styles.errDot} />
+                <span className={styles.statusLabel}>{errorLabel}</span>
+                <button type="button" className={styles.tryAgain} onClick={handleSummonClick}>
+                  Try again
+                </button>
+              </>
+            ) : (
+              <>
+                <Presence
+                  category={isConnecting ? 'connecting' : 'in-game'}
+                  label={isConnecting ? 'Connecting…' : 'In your world'}
+                />
+                {isActive ? <span className={styles.uptime}>{fmtUptime(liveUptimeMs)}</span> : null}
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {/* Tabs (mockup .pf-tab underline). */}
         <div className={styles.tabs} role="tablist">
           <button
             type="button"
             role="tab"
-            aria-selected={tab === 'details'}
-            className={tab === 'details' ? styles.tabActive : styles.tab}
-            onClick={() => setTab('details')}
+            aria-selected={tab === 'description'}
+            className={tab === 'description' ? styles.tabActive : styles.tab}
+            onClick={() => setTab('description')}
           >
-            Details
+            Description
           </button>
           <button
             type="button"
             role="tab"
-            aria-selected={tab === 'skin'}
-            className={tab === 'skin' ? styles.tabActive : styles.tab}
-            onClick={() => setTab('skin')}
+            aria-selected={tab === 'game'}
+            className={tab === 'game' ? styles.tabActive : styles.tab}
+            onClick={() => setTab('game')}
           >
-            Skin
+            Game
           </button>
         </div>
 
-        <div className={styles.panel}>
-          {tab === 'details' ? (
-            <>
-              <div className={styles.card}>
-                {(() => {
-                  // Read-only display. Own characters can toggle between the
-                  // persona source and the public description; editing lives in
-                  // the Edit modal now. Foreign/default chars show description only.
-                  const showingPersona = !viewOnly && paneTab === 'persona';
-                  return (
-                    <>
-                      <div className={styles.cardEyebrow}>
-                        {showingPersona ? 'PERSONA SOURCE' : 'DESCRIPTION'}
-                        {!viewOnly ? (
-                          <button
-                            type="button"
-                            className={styles.cardEyebrowRotate}
-                            onClick={() =>
-                              setPaneTab(paneTab === 'persona' ? 'description' : 'persona')
-                            }
-                            aria-label={
-                              paneTab === 'persona'
-                                ? 'Switch to description'
-                                : 'Switch to persona'
-                            }
-                          >
-                            <RotateIcon size={14} />
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {showingPersona ? (
-                        <div className={styles.cardBody}>{character.persona.source || '-'}</div>
-                      ) : (
-                        <div className={styles.cardBody}>
-                          {character.description?.trim() ||
-                            (viewOnly ? 'No description provided.' : 'No description yet.')}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
+        {tab === 'description' ? (
+          <div className={styles.pane}>
+            {viewOnly ? (
+              // Non-editable chars (system-generated uniques, World invites,
+              // defaults) get the same boxed description card as customs
+              // (260705: recovered from the dev-branch layout; a bare italic
+              // quote read as unstyled).
+              <div className={styles.persona}>
+                <div className={styles.personaHead}>
+                  <span className="u-lbl">Description</span>
+                </div>
+                <div className={styles.personaBody}>
+                  {character.description?.trim() ||
+                    character.persona.source?.trim() ||
+                    'No description provided.'}
+                </div>
               </div>
-
-              <div className={styles.stats}>
-                <div className={`${styles.stat} ${styles.statWide}`}>
-                  <div className={styles.statEyebrow}>PROACTIVENESS</div>
-                  <div className={styles.statValue}>
-                    <ProactivenessBar
-                      level={getProactiveness(character)}
-                      size="md"
-                      showLabel
-                      block
-                    />
+            ) : (
+              <div className={styles.personaBlock}>
+                <div className={styles.persona}>
+                  <div className={styles.personaHead}>
+                    <span className="u-lbl">
+                      {paneTab === 'persona' ? 'Persona' : 'Description'}
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.rotateBtn}
+                      onClick={() =>
+                        setPaneTab(paneTab === 'persona' ? 'description' : 'persona')
+                      }
+                      aria-label={
+                        paneTab === 'persona' ? 'Switch to description' : 'Switch to persona'
+                      }
+                    >
+                      <RotateIcon size={13} />
+                    </button>
+                  </div>
+                  <div className={styles.personaBody}>
+                    {paneTab === 'persona'
+                      ? character.persona.source || '–'
+                      : character.description?.trim() || 'No description yet.'}
                   </div>
                 </div>
-                <div className={styles.stat}>
-                  <div className={styles.statEyebrow}>LAST LAUNCHED</div>
-                  <div className={styles.statValue}>{fmtDate(character.last_launched)}</div>
-                </div>
-                <div className={styles.stat}>
-                  <div className={styles.statEyebrow}>TOTAL PLAYTIME</div>
-                  <div className={styles.statValue}>{fmtMs(character.playtime_ms)}</div>
-                </div>
-                <div className={styles.stat}>
-                  <div className={styles.statEyebrow}>CREATED</div>
-                  <div className={styles.statValue}>{fmtDate(character.created)}</div>
-                </div>
+                <Button
+                  kind="ghost"
+                  size="sm"
+                  onClick={() => openEdit(paneTab === 'persona' ? 'persona' : 'basic')}
+                >
+                  Edit
+                </Button>
               </div>
-            </>
-          ) : (
+            )}
+
+            {/* Boxed stat cells (260705: recovered from the dev-branch layout,
+                which framed these as cards instead of hairline kv rows). */}
+            <div className={styles.stats}>
+              <div className={styles.stat}>
+                <div className={`u-lbl ${styles.statEyebrow}`}>Bonded</div>
+                <div className={styles.statValue}>{fmtDate(character.created)}</div>
+              </div>
+              <div className={styles.stat}>
+                <div className={`u-lbl ${styles.statEyebrow}`}>Played</div>
+                <div className={styles.statValue}>{fmtMs(character.playtime_ms)}</div>
+              </div>
+              <div className={styles.stat}>
+                <div className={`u-lbl ${styles.statEyebrow}`}>Last launch</div>
+                <div className={styles.statValue}>{fmtDate(character.last_launched)}</div>
+              </div>
+              {/* Reset memory moved into the deploy row's settings (gear) menu. */}
+            </div>
+          </div>
+        ) : (
+          <div className={styles.pane}>
             <SkinEditor
               character={character}
               onChanged={() => void refreshCharacter(id)}
               viewOnly
               compact
+              previewCaption="This is how they appear in your world."
+              onEditSkin={viewOnly ? undefined : () => openEdit('appearance')}
             />
-          )}
-        </div>
+            <div className={styles.proactRow}>
+              <span className="u-lbl">Proactiveness</span>
+              <ProactivenessBar level={getProactiveness(character)} size="md" showLabel block />
+            </div>
+          </div>
+        )}
 
-        {/* Deploy bar — Summon CTA + gear, pinned to the bottom of the panel. */}
+        {/* Deploy row — Play / Disconnect + settings gear, pinned to the bottom. */}
         {addError ? (
-          <p className={styles.sharedError} role="alert">
+          <p className={styles.addError} role="alert">
             {addError}
           </p>
         ) : null}
-        <div className={styles.foot}>
-          {isRemovedDefault || isWorldPreview ? (
+        <div className={styles.deploy}>
+          {isPreview ? (
             <Button
               kind="accent"
               size="lg"
-              fullWidth
-              className={styles.deployBtn}
-              icon={<SparkleIcon size={14} />}
-              onClick={() => { void onAddToLibraryClick(); }}
+              className={styles.deployBig}
+              onClick={() => {
+                void onAddToLibraryClick();
+              }}
             >
               Add to library
             </Button>
           ) : (
-            <Button
-              kind={isActive || isConnecting ? 'ghost' : 'accent'}
-              size="lg"
-              fullWidth
-              className={styles.deployBtn}
-              icon={isActive || isConnecting ? null : <SparkleIcon size={14} />}
-              onClick={handleSummonClick}
-            >
-              {isActive || isConnecting ? 'Disconnect' : 'Play together'}
-            </Button>
-          )}
-          {/* 260704: World preview companions (foreign-owned, not yet added)
-              get NO settings button at all — there's nothing to reset or
-              unbind for a companion that isn't in the library yet. Gate the
-              whole gearWrap (button + menu) on !isWorldPreview so the ref'd
-              node simply doesn't exist for a preview; the outside-click
-              effect below already no-ops when gearWrapRef.current is null. */}
-          {!isWorldPreview ? (
-            <div className={styles.gearWrap} ref={gearWrapRef}>
-              <button
-                type="button"
-                className={styles.gearBtn}
-                onClick={onGearClick}
-                aria-label={viewOnly ? 'Companion options' : 'Edit companion'}
-                aria-haspopup={viewOnly ? 'menu' : undefined}
-                aria-expanded={viewOnly ? gearMenuOpen : undefined}
+            <>
+              <Button
+                kind={isActive ? 'danger' : 'accent'}
+                size="lg"
+                className={styles.deployBig}
+                disabled={isConnecting}
+                onClick={handleSummonClick}
               >
-                <GearIcon size={18} />
-              </button>
-              {viewOnly && gearMenuOpen ? (
-                <div className={styles.gearMenu} role="menu">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={styles.gearMenuItem}
-                    onClick={() => { void onResetMemoryClick(); }}
-                  >
-                    Reset memory
-                  </button>
-                  {/* 260704: a default the user hasn't invited into a Home slot
-                      (isRemovedDefault) was never "in the library" to begin
-                      with — showing "Unbind" here was the exact bug report
-                      (defaults reading as added when they weren't). isWorldPreview
-                      is always false inside this branch; kept explicit for
-                      defensive clarity if the outer gate ever changes. */}
-                  {!isWorldPreview && !isRemovedDefault ? (
+                {isActive ? 'Disconnect' : isConnecting ? 'Connecting…' : 'Play'}
+              </Button>
+              <div className={styles.settingsWrap} ref={settingsRef}>
+                <Button
+                  kind="ghost"
+                  size="lg"
+                  aria-haspopup="menu"
+                  aria-expanded={settingsOpen}
+                  aria-label="Companion settings"
+                  onClick={() => setSettingsOpen((o) => !o)}
+                >
+                  <GearIcon size={18} />
+                </Button>
+                {settingsOpen ? (
+                  <div className={styles.settingsMenu} role="menu" aria-label="Companion settings">
                     <button
                       type="button"
                       role="menuitem"
-                      className={styles.gearMenuItem}
-                      onClick={onUnbindClick}
+                      className={styles.settingsItem}
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        onResetMemoryClick();
+                      }}
+                    >
+                      Reset memory
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={`${styles.settingsItem} ${styles.settingsItemDanger}`}
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        setReleaseConfirmOpen(true);
+                      }}
                     >
                       Unbind
                     </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
         </div>
       </main>
 
@@ -804,15 +843,29 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         <ResetMemoryConfirmModal
           characterName={character.name}
           onCancel={() => setResetConfirmOpen(false)}
-          onConfirm={() => { void doResetMemory(); }}
+          onConfirm={() => {
+            void doResetMemory();
+          }}
         />
       ) : null}
-      {unbindConfirmOpen ? (
-        <UnbindConfirmModal
-          characterName={character.name}
-          onCancel={() => setUnbindConfirmOpen(false)}
-          onConfirm={() => { void doUnbind(); }}
-        />
+      {releaseConfirmOpen ? (
+        isAddedFromWorld ? (
+          <UnbindConfirmModal
+            characterName={character.name}
+            onCancel={() => setReleaseConfirmOpen(false)}
+            onConfirm={() => {
+              void doRelease();
+            }}
+          />
+        ) : (
+          <DeleteConfirmModal
+            characterName={character.name}
+            onCancel={() => setReleaseConfirmOpen(false)}
+            onConfirm={() => {
+              void doRelease();
+            }}
+          />
+        )
       ) : null}
       {showSignIn ? (
         <SignInModal
@@ -826,108 +879,102 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         />
       ) : null}
       {shareConfirm ? (
-        <div
-          className={styles.confirmScrim}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="share-confirm-title"
-          onClick={(e) => {
-            // Don't let a stray backdrop click abandon an in-flight publish.
-            if (e.target === e.currentTarget && sharePhase !== 'working') closeShareModal();
-          }}
+        <ModalShell
+          title={null}
+          width={420}
+          escClose={sharePhase !== 'working'}
+          scrimClose={sharePhase !== 'working'}
+          onClose={closeShareModal}
+          aria-label="Sharing"
         >
-          <div className={styles.confirmModal}>
-            {sharePhase === 'working' ? (
-              <>
-                <h2 id="share-confirm-title" className={styles.confirmTitle}>
-                  {shareConfirm === 'going_public' ? 'Publishing…' : 'Updating…'}
-                </h2>
-                <p className={styles.confirmBody}>
-                  {shareConfirm === 'going_public'
-                    ? 'Uploading your companion and checking it against our content guidelines.'
-                    : 'Making your companion private.'}
-                </p>
-                <div
-                  className={styles.progressTrack}
-                  role="progressbar"
-                  aria-label={shareConfirm === 'going_public' ? 'Publishing' : 'Updating'}
+          {sharePhase === 'working' ? (
+            <>
+              <h3 className={styles.confirmTitle}>
+                {shareConfirm === 'going_public' ? 'Publishing…' : 'Updating…'}
+              </h3>
+              <p className={styles.confirmBody}>
+                {shareConfirm === 'going_public'
+                  ? 'Uploading your companion and checking it against our content guidelines.'
+                  : 'Making your companion private.'}
+              </p>
+              <div
+                className={styles.progressTrack}
+                role="progressbar"
+                aria-label={shareConfirm === 'going_public' ? 'Publishing' : 'Updating'}
+              >
+                <div className={styles.progressIndeterminate} />
+              </div>
+            </>
+          ) : sharePhase === 'success' ? (
+            <>
+              <h3 className={`${styles.confirmTitle} ${styles.confirmTitleOk}`}>
+                {shareConfirm === 'going_public'
+                  ? 'Your companion is now public'
+                  : 'Your companion is now private'}
+              </h3>
+              <p className={styles.confirmBody}>
+                {shareConfirm === 'going_public'
+                  ? 'Other players can find and invite it from the public library.'
+                  : 'It is no longer visible in the public library.'}
+              </p>
+              <ModalFooter>
+                <Button kind="primary" size="md" onClick={closeShareModal}>
+                  Done
+                </Button>
+              </ModalFooter>
+            </>
+          ) : sharePhase === 'error' ? (
+            <>
+              <h3 className={`${styles.confirmTitle} ${styles.confirmTitleError}`}>
+                {shareConfirm === 'going_public' ? "Couldn't publish" : "Couldn't update sharing"}
+              </h3>
+              <p className={`${styles.confirmBody} ${styles.confirmErrorBody}`} role="alert">
+                {shareError ?? 'Something went wrong. Please try again.'}
+              </p>
+              <ModalFooter>
+                <Button kind="quiet" size="md" onClick={closeShareModal}>
+                  Close
+                </Button>
+                <Button
+                  kind={shareConfirm === 'going_public' ? 'accent' : 'primary'}
+                  size="md"
+                  onClick={() => {
+                    void onConfirmShareToggle();
+                  }}
                 >
-                  <div className={styles.progressIndeterminate} />
-                </div>
-              </>
-            ) : sharePhase === 'success' ? (
-              <>
-                <h2
-                  id="share-confirm-title"
-                  className={`${styles.confirmTitle} ${styles.confirmTitleOk}`}
+                  Try again
+                </Button>
+              </ModalFooter>
+            </>
+          ) : (
+            <>
+              <h3 className={styles.confirmTitle}>
+                {shareConfirm === 'going_public'
+                  ? 'Allow other players to invite your companion?'
+                  : 'Make this companion private?'}
+              </h3>
+              <p className={styles.confirmBody}>
+                {shareConfirm === 'going_public'
+                  ? 'Companion memory will not be shared.'
+                  : 'Other players will no longer be able to invite your companion. Are you sure?'}
+              </p>
+              <ModalFooter>
+                <Button kind="quiet" size="md" onClick={closeShareModal}>
+                  Cancel
+                </Button>
+                <Button
+                  kind={shareConfirm === 'going_public' ? 'accent' : 'primary'}
+                  size="md"
+                  onClick={() => {
+                    void onConfirmShareToggle();
+                  }}
                 >
-                  {shareConfirm === 'going_public'
-                    ? 'Your companion is now public'
-                    : 'Your companion is now private'}
-                </h2>
-                <p className={styles.confirmBody}>
-                  {shareConfirm === 'going_public'
-                    ? 'Other players can find and connect it from the public library.'
-                    : 'It is no longer visible in the public library.'}
-                </p>
-                <div className={styles.confirmActions}>
-                  <Button kind="primary" size="md" onClick={closeShareModal}>
-                    Done
-                  </Button>
-                </div>
-              </>
-            ) : sharePhase === 'error' ? (
-              <>
-                <h2
-                  id="share-confirm-title"
-                  className={`${styles.confirmTitle} ${styles.confirmTitleError}`}
-                >
-                  {shareConfirm === 'going_public' ? "Couldn't publish" : "Couldn't update sharing"}
-                </h2>
-                <p className={`${styles.confirmBody} ${styles.confirmErrorBody}`} role="alert">
-                  {shareError ?? 'Something went wrong. Please try again.'}
-                </p>
-                <div className={styles.confirmActions}>
-                  <Button kind="quiet" size="md" onClick={closeShareModal}>
-                    Close
-                  </Button>
-                  <Button
-                    kind={shareConfirm === 'going_public' ? 'accent' : 'primary'}
-                    size="md"
-                    onClick={() => { void onConfirmShareToggle(); }}
-                  >
-                    Try again
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 id="share-confirm-title" className={styles.confirmTitle}>
-                  {shareConfirm === 'going_public'
-                    ? 'Allow other players to connect your companion?'
-                    : 'Make this companion private?'}
-                </h2>
-                <p className={styles.confirmBody}>
-                  {shareConfirm === 'going_public'
-                    ? 'Companion memory will not be shared.'
-                    : 'Other players will no longer be able to connect your companion. Are you sure?'}
-                </p>
-                <div className={styles.confirmActions}>
-                  <Button kind="quiet" size="md" onClick={closeShareModal}>
-                    Cancel
-                  </Button>
-                  <Button
-                    kind={shareConfirm === 'going_public' ? 'accent' : 'primary'}
-                    size="md"
-                    onClick={() => { void onConfirmShareToggle(); }}
-                  >
-                    {shareConfirm === 'going_public' ? 'Make public' : 'Make private'}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+                  {shareConfirm === 'going_public' ? 'Make public' : 'Make private'}
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalShell>
       ) : null}
     </div>
   );

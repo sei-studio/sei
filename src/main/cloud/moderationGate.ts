@@ -72,7 +72,7 @@ const MODERATION_TIMEOUT_MS = 30_000;
 
 /** Friendly copy — never references provider names or raw categories (D-33c / T-12-07-03). */
 const FRIENDLY_IMAGE_FLAGGED =
-  'Image flagged by automated review — please use a different portrait.';
+  'Image flagged by automated review. Please use a different portrait.';
 const FRIENDLY_PROMPT_FLAGGED =
   "We can't publish this character because the persona description hits our content guidelines. " +
   'Edit the persona and try again, or save it as private.';

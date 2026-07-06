@@ -1,4 +1,4 @@
-# Sei UI Design System — "Summoning Terminal"
+# Sei UI Design System — "Summoning Terminal / Party"
 
 > **This is the single source of truth for Sei's GUI look & feel.** Any new
 > frontend work — new screens, components, modals, states — MUST snap to what's
@@ -8,73 +8,60 @@
 > inline). When in doubt, open the app, find the closest existing surface, and
 > match it.
 >
-> Ported from the `~/Downloads/sei-gui-improved` mockup (Jun 2026). Tokens live
-> in `src/renderer/src/styles/tokens.css`; globals + utilities in `global.css`;
-> fonts in `fonts.css`. Per-component visuals live in each component's
-> `*.module.css`.
+> Current language: the **Party concept** (Jul 2026, merged from the
+> sei-roster-concept mockup — see `.planning/design/UI-REDESIGN-PARTY.md` for
+> the merge spec). Tokens live in `src/renderer/src/styles/tokens.css`; globals
+> + utilities in `global.css`; fonts in `fonts.css`. Per-component visuals live
+> in each component's `*.module.css`.
 
 ---
 
 ## 1. The aesthetic in one breath
 
-A dark, sci-fi **summoning terminal**: sharp-edged, full-bleed, condensed
-display type over tracked mono micro-labels, a single periwinkle accent, and a
-faint atmosphere (static grain + edge vignette only). Characters are
-"summons"; the app reads like an operator console, not a SaaS dashboard. Dark is
-the hero; a light "paper" mirror exists for the theme toggle.
+A dark, sci-fi **summoning terminal** that reads like a party roster: sharp
+edges, full-bleed character panels, condensed display type over quiet mono
+micro-labels, one periwinkle accent, faint film-grain atmosphere. Companions
+are residents, not files. Dark is the hero; a light "paper" mirror exists for
+the theme toggle.
 
 **Five principles**
 
-1. **Sharp, never round.** Every corner is square (`border-radius: 0`, D-28),
-   **including the rail's character avatars**. The only curves are circular
-   status dots. Emphasis comes from the accent and the clip-path notch, not from
-   rounding.
+1. **Sharp, almost never round.** Corners are square (`border-radius: 0`,
+   D-28). The deliberate circles: rail sockets/avatars, status dots, the
+   Toggle pill, PercentBar. Nothing else rounds.
 2. **One accent, used sparingly.** Periwinkle `#7FB0FF`. It marks the active
-   nav, the primary CTA, focus rings, hovered borders, and live status — nothing
-   decorative. Surfaces stay near-black; the accent is the only saturated color.
-3. **Three voices of type.** Condensed **Oswald** for display (names, headings,
-   big numbers); **Rajdhani** for body/UI; **JetBrains Mono** for every tracked
-   uppercase micro-label and numeric. A label is almost always mono + uppercase +
-   wide tracking.
-4. **Portraits are the hero image.** Cards and the detail screen are built
-   around full-bleed character art with a per-character accent tint behind it and
-   a bottom/side scrim for legibility.
-5. **Atmosphere, not animation.** Motion is restrained: hover lifts, an accent
-   bar that fills, a decode/glint shimmer on the CTA. The window field is a
-   flat near-black (no accent bloom, no sweep band, no scanlines).
+   nav, the primary CTA, focus rings, hovered borders, "new" presence — nothing
+   decorative. Surfaces stay dark navy; green is reserved for live/in-world.
+3. **Three voices of type, regular case.** Condensed **Oswald** for display;
+   **Rajdhani** for body/UI and buttons; **JetBrains Mono** for micro-labels,
+   ids and numerics. Nothing is uppercase-transformed anymore; labels are
+   written in sentence case with quiet tracking (`.04em`).
+4. **Portraits are the hero image.** The home party wall and profile are
+   built around full-bleed character art behind a legibility scrim; art is
+   desaturated at rest and comes alive on hover.
+5. **Atmosphere, not animation.** Hover lifts, panel flex expansion, presence
+   pulses, the gathering-pixels mark. Flat near-black field, static grain only.
    Everything respects `prefers-reduced-motion`.
 
 ---
 
 ## 2. Color tokens
 
-Defined in `tokens.css` under `:root[data-theme="dark"]` (hero) and `:root` /
-`:root[data-theme="light"]` (paper mirror). **Always reference the token, never
-the hex.** Components are theme-agnostic because they read semantic tokens.
+Defined in `tokens.css` under `:root[data-theme="dark"]` (hero, a navy ramp
+`#070c17 → #1d2c49`) and `:root` / `:root[data-theme="light"]` (paper mirror).
+**Always reference the token, never the hex.**
 
-| Token | Dark (hero) | Role |
-|---|---|---|
-| `--bg` `--bg2` `--bg3` `--bg4` | `#09090b` → `#1c1c23` | Background ramp (darkest→lightest) |
-| `--window` | `#09090b` | App window fill (matches `--bg` — the mockup has no lighter "window" tone) |
-| `--surface` `--surface-2` | `#0e0e12` / `#15151b` | Cards, panels, inputs, menus |
-| `--card-top` `--card-bottom` | `#0c0c10` / `#08080a` | Portrait-card backing ramp (darker than surfaces; the per-character tint sits over it) |
-| `--rail` | `#0a0a0d` | Sidebar rail |
-| `--text` | `#e9e7e1` | Primary text |
-| `--text-2` | `#a8a6a0` | Secondary text |
-| `--muted` `--muted-2` | `#82807a` / `#56544e` | Labels, hints, disabled |
-| `--accent` | `#7FB0FF` | The one accent |
-| `--accent-strong` | `#9cc4ff` | Accent hover |
-| `--accent-soft` | `rgba(127,176,255,.16)` | Accent tints, glows, rings |
-| `--accent-text` | `#1a1206` | Text/icon on an accent fill (near-black; mockup CTA value) |
-| `--acc` / `--acc-c` | `127 176 255` / `rgb(var(--acc))` | rgb-triple for custom `rgba()` |
-| `--green` | `#78c878` | Ready / online / public |
-| `--red` `--red-strong` | `#c0443c` / `#e8746b` | Error / danger / disconnected |
-| `--warn` | `#e0be5c` | Warnings, connecting |
-| `--border` / `--line` | `rgba(255,255,255,.07)` | Hairline dividers, card borders |
-| `--border-strong` / `--line2` | `rgba(255,255,255,.13)` | Stronger borders, inputs, secondary buttons |
+Key semantic tokens: surfaces `--bg --bg2 --bg3 --bg4 --window --desktop
+--surface --surface-2`; chrome `--rail --rail-fg* --elbow`; text `--text
+--text-2 --muted --muted-2`; accent `--accent --accent-strong --accent-soft
+--accent-text --acc` (rgb triple); status `--green --red --red-strong --warn`;
+lines `--border --border-strong`; shadows `--shadow-window --shadow-card
+--shadow-pop`; motion `--ease --ease-pop --flux`.
 
-Shadows: `--shadow-card`, `--shadow-pop`, `--shadow-window`. Theme-aware fades
-inside scrims use `color-mix(in srgb, var(--window) NN%, transparent)`.
+Presence colors: in-world = `--green` (glowing dot), online = `--green`
+(plain dot), idle = `--warn` yellow dot, new = `--accent` (glowing
+dot), connecting = `--accent` (pulsing dot). Use the `Presence` component,
+never hand-rolled dots.
 
 ---
 
@@ -82,162 +69,133 @@ inside scrims use `color-mix(in srgb, var(--window) NN%, transparent)`.
 
 Fonts are self-hosted woff2 in `public/fonts/` (no CDN — D-05). Stacks:
 
-- `--display: 'Oswald', 'Noto Sans', system-ui, sans-serif` — condensed display.
-  Weights 500/600/700. Use for: page titles (44px), character names
-  (`clamp(40px,8vh,72px)` on the detail screen, 25px on cards), stat values
-  (19px), plan prices (40px). Letter-spacing ~`.02–.04em`, line-height `.84–.95`.
-- `--sans: 'Rajdhani', 'Noto Sans', …` — body & UI. Descriptions, settings rows,
-  modal copy. 14–16px.
-- `--mono: 'JetBrains Mono', …` — **every tracked micro-label**, numerics, ids,
-  the clock, button labels. 10–12px, `letter-spacing .14–.22em`,
-  `text-transform: uppercase`. The smaller the label, the wider the tracking.
-- `--pixel: 'Press Start 2P'` — reserved for procedural pixel-portrait fallback
-  only. Do not use for UI text.
+- `--display: 'Oswald', …` — condensed display, weight 600. Names (30px on
+  panels, 38px profile), screen/modal titles (18–34px), section h3s (16px),
+  big numbers (46px playtime hero, 28px plan prices).
+- `--sans: 'Rajdhani', …` — body & UI at 13–15px, and **all buttons**
+  (600 weight, sentence case).
+- `--mono: 'JetBrains Mono', …` — micro-labels (`.u-lbl`: 10.5px, `.04em`,
+  regular case), ids (`IdTag`), kv keys, timestamps, day separators.
+- `--pixel` — reserved for the procedural pixel-portrait fallback only.
 
-**Rule of thumb:** heading → Oswald; prose → Rajdhani; anything UPPERCASE & small
-→ JetBrains Mono.
+**No `text-transform: uppercase` anywhere** (sole exemption: Google button,
+brand-locked). Write labels in sentence case.
 
 ---
 
 ## 4. Utility classes (global.css)
 
-Use these instead of re-deriving the ramp:
-
-- `.u-lbl` — the workhorse tracked uppercase mono micro-label (10px / `.22em`).
+- `.u-lbl` — mono micro-label (10.5px / `.04em`, regular case).
 - `.u-mono` — mono with tabular numerics.
 - `.u-display` — Oswald display.
-- `.u-brk` + `.tl/.tr/.bl/.br` — the four L-shaped corner brackets that frame a
-  card/panel. Place four `<span class="u-brk tl">…</span>` inside a
-  `position:relative` ancestor; toggle opacity on hover in the component module
-  via `.card:hover :global(.u-brk){opacity:1}`.
+- `.u-brk` + `.tl/.tr/.bl/.br` — corner brackets (used by UniqueReveal).
+- `[data-tip]` — fast CSS tooltip (mono, sharp, below the element).
 
-HUD overlay layers are mounted once by `MacosWindow` above all content,
-`pointer-events:none`. Only **two** layers ship: `.hud-grain` (faint film
-grain) and `.hud-vignette` (soft edge darkening). The mockup's scanline layer
-(`--scan:0`) and its travelling accent "sweep" band are **off by design** — they
-read as a distracting moving scan over the UI; do not reintroduce them. Don't
-remount the overlays per-screen.
+HUD overlays (grain only; vignette neutralized) are mounted once by
+`MacosWindow`. No scanlines, no sweep band — do not reintroduce.
 
 ---
 
 ## 5. Components & patterns (the placed vocabulary — match these)
 
-**Window shell (`MacosWindow`)** — full-bleed dark window with a **flat
-`--window` field** (no accent-bloom gradient — keep it a solid near-black; the
-grain + vignette overlays supply the only depth). **No visible title bar** — the
-SEI mark + clock were removed; only a thin **drag strip** (`.dragStrip`, ~34px)
-carries a small "Sei Launcher vX.X.X" mark and keeps the frameless window movable.
-Window-control layout is platform-branched (`sei.platform`, set in
-`windowChrome.ts`):
-- **macOS** — native traffic lights (`titleBarStyle: 'hiddenInset'`) at top-left;
-  the mark is padded right of the rail to clear them.
-- **Windows** — frameless (`frame: false`) with our **own** min / maximize /
-  close controls rendered at top-right (`.controls`/`.ctlBtn`, `no-drag`), styled
-  to the dark chrome — muted glyphs → `--text` on hover, close → `--red` on hover.
-  The "Sei Launcher" mark sits at the far **left** (no native controls there). The
-  native `titleBarOverlay` was dropped — its light button box clashed and went
-  missing on some installs.
-- **Linux** — native window frame; no custom controls rendered.
+**Window shell (`MacosWindow`)** — frameless dark window, 34px drag strip with
+the "Sei vX.X.X" mark, platform-branched controls (macOS traffic lights /
+Windows custom / Linux native). Default size **1180×720, floor 1000×560**
+(`src/main/windowChrome.ts`; the CSS floor in `MacosWindow.module.css`
+matches).
 
-The default window size is also platform-branched (Windows ships smaller —
-1040×700, floor 1024×680 — since it was originally tuned for a desktop; macOS
-keeps 1180×760).
+**Rail (`IconRail`, 74px `--rail-w`)** — top→bottom: Home (2×2 grid icon),
+World (compass), divider, **character sockets**, dormant + socket, spacer,
+Playtime (spark, cloud only), Settings. Sockets are 40px **circles**:
+`--border-strong` ring at rest, **green pulsing ring when summoned**, accent
+double ring when selected, hover lifts 1px. The dormant socket is a
+accent-tinted circle with a plus that routes to the Awaken view. Active nav =
+3px left accent bar.
 
-**Sidebar rail (`IconRail`, 74px / `--rail-w`)** — muted icons that light to
-`--text` on hover and `--accent` when active; active nav carries a 2px **left
-accent bar**. Glyphs are the mockup's sharp/geometric set (`hud.jsx Icon.*`):
-the Home/roster nav is a **2×2 square grid** (`RosterIcon`), World is a globe,
-Mana is a four-point spark (`StarIcon`), Settings is a two-track slider
-(`SettingsIcon` — the cog is reserved for the per-character `GearIcon`).
-Character avatars are 38px **squares** with a `--border-strong` ring, accent
-ring when active, `scale(1.06)` on hover (the +/World tiles in that cluster are
-square too, to match).
+**Buttons (`Button`)** — Rajdhani 600, sentence case, sharp, padding-driven
+sizes (sm 5×12 / md 7×14 / lg 10×24).
+- `primary` (and legacy alias `accent`) = accent fill, `--accent-text` text,
+  hover `--accent-strong`. No clip-path notch — that language is retired.
+- `ghost` = bordered `--border-strong`, hover lights to accent + accent-soft.
+- `quiet` = borderless muted, hover accent. Used for Cancel/back/text actions.
+- `danger` = red-tinted border + `--red-strong` text, full red on hover.
 
-**Buttons (`Button`)** — mono, uppercase, tracked, sharp.
-- `accent` = primary CTA: accent fill + **notched clip-path corner**
-  (`polygon(8px 0, … 0 8px)`), weight 700, hover `brightness(1.12)`.
-- `primary` = accent fill, square.
-- `ghost` = bordered (`--border-strong`), transparent, lights to accent on hover
-  (the mockup's `.btn-sec` secondary — used for most non-primary actions).
-- `quiet` = borderless muted, → accent on hover.
-- `danger` = bordered red (`.btn-sec.danger`) for destructive actions.
-- Sizes sm/md/lg. The big detail CTA adds a travelling glint (`.deployBtn`).
-- **The primary "create" action is `accent`, not `ghost`** — e.g. Home's "New".
+**Modals (`ModalShell` + `ModalFooter`)** — the ONLY modal pattern. Scrim
+`rgba(4,7,15,.72)`; panel `--bg2` + `--border-strong`, 20px padding, Oswald
+18px title; z tiers `base` 1000 / `stacked` 1100 / `recovery` 1200; Esc and
+scrim-click behavior via props. Footer: quiet/ghost dismiss first, then one
+`primary` (confirm) or `danger` (destructive) CTA. Never hand-roll a scrim.
 
-**Cards (`CharacterCard` / `BrowseCard` / `AddCard`)** — tall `aspect-ratio:
-210/312` portrait tiles. Layers (z 0→5): per-character accent **tint** bg →
-full-bleed portrait → bottom **scrim** → top-right chip/sync rail → bottom
-**meta** (Oswald name + mono status line with a status dot) → hover overlay
-(quick action). The status line shows the bare last-summoned **date** (e.g.
-"May 23, 2026") or "Never summoned" — no "Last summoned ·" prefix on the card
-(the full label lives on the detail screen's stat cell). Hover:
-`translateY(-7px)`, accent border + soft ring, portrait
-`scale(1.05)`, accent **bar** fills the bottom, corner brackets fade in. Grid:
-`repeat(auto-fill, minmax(190px,1fr))`, `gap: 6px`. `AddCard` = dashed tile, same
-footprint.
+**Presence (`Presence` + `lib/presence.ts`)** — dot + label line for the five
+categories (in-game "In your world" / connecting / new / online / idle),
+computed by `presenceOf(character, summons[id])` with `useMinuteTick()` for
+decay. In-game "now" lines come from `actionVerb(useDataStore.actions[id])`
+("gathering wood…", "following you…").
 
-**Character detail (`CharacterPage`)** — portrait **bleeds off the right edge**
-(56% wide) behind a left→right `--window` scrim; a left content panel (≤640px)
-holds: back crumb (mono) → Oswald name (huge) → inline status line (dot + tracked
-label) → public/private toggle → underlined tabs (Details/Skin) → persona/desc
-card + 3 stat cells → a bottom **deploy bar** (accent Summon CTA with glint +
-square gear button). All editors/menus/modals preserved.
+**Home party wall (`CharactersScreen` HomeGrid)** — 4 full-height flex panels
+(one per slot): full-bleed portrait (desaturated at rest), bottom scrim,
+Oswald name + Presence line; hover expands the panel and reveals the lastline
+(chat preview via `chatPreviewFor`, or the action verb when in-game) +
+[Message primary][Play ghost]. Empty slots are dormant panels with the
+`GatherPixels` mark + "Awaken" → Awaken view.
 
-**Tabs** — mono uppercase tracked; active tab marked by a 2px accent underline,
-muted otherwise.
+**Awaken view (`AwakenScreen`)** — "Meet my companion" match hero (unique
+flow, Leo starfield) + side column "Create my own" / "Invite from World".
+Replaces the old chooser modal.
 
-**Stat / info cells** — `--surface` tint, hairline border, mono eyebrow
-(`.u-lbl` style) + Oswald value. Lay out in tight `gap: 5px` grids.
+**World grid (`WorldGrid` + `BrowseCard`)** — search + sort + "N slots open"
+top bar; 3:4 art cards with meta below (Oswald 16px name, "by creator") and a
+hover overlay button (Invite / In your party / Party full).
 
-**Status dots** — circular, color by state (`--green` ready/online/public,
-`--warn` connecting, `--red` error/offline, `--muted` idle), `box-shadow: 0 0 6–8px
-currentColor` glow when "live". Paired with a mono uppercase label.
+**Chat (`ChatScreen`)** — Discord-style list (grouped rows, mono day
+separators), boxed composer (`--bg2` + `--border-strong`, accent send glyph),
+and the collapsible 260px **presence panel** (portrait, presence + now line,
+Play/Disconnect + Voice call + Full profile). Header name toggles the panel;
+author-name clicks swap the card.
 
-**Inputs / search** — `rgba(127,127,127,.03)` fill, `--border-strong` border,
-mono text, border → `--accent` on focus, sharp.
+**Profile (`CharacterPage`)** — full-bleed right portrait, left content: back,
+Oswald name + IdTag, origin chip (Matched / Created by you / Invited / Sei),
+share Toggle, tabs **Description** (persona card + kv rows Bonded / Played /
+Last launch / Memory+Reset) and **Game** (skin pane + proactiveness), deploy
+row [Play primary][Release danger].
 
-**Modals / sheets** — scrim `rgba(0,0,0,.62)`; card on `--surface` with a
-`--border-strong` outline + `--shadow-pop`; Oswald title, Rajdhani body, button
-row bottom-right (`quiet` cancel + `accent`/`primary` confirm). Sharp.
+**Settings / Playtime rhythm** — centered column (560 / 620px), Oswald 16px
+group h3s, hairline rows `label | value | control` using `Seg` (segmented
+control) and `Toggle` (pill switch) primitives.
 
-**Section layout (Settings / Mana)** — `--space-xl` between sections, a
-`--border` top rule per section, a mono uppercase **eyebrow** title, then
-key/value rows. Danger zone = bordered red `dangerBtn`, red label.
+**Inputs / search** — underline or boxed with `--border-strong`, focus →
+accent. TextField unchanged.
+
+**Status dots** — use `Presence` for residents; `StatusPill` remains for
+install/sync states (sans 12px, regular case).
 
 ---
 
 ## 6. Motion
 
-- Easing: `--ease` `cubic-bezier(.22,.61,.36,1)` (entrances/cards), `--ease-pop`
-  for snappy pops. `--flux` scales durations (calm/standard/max).
-- Card hover lift + accent-bar fill (`.35s var(--ease)`), portrait `scale`.
-- Detail name uses a decode-in shimmer; the deploy CTA has a looping glint.
-- No full-window "sweep" band and no scanlines — atmosphere is just static grain
-  + vignette (see §4). Motion is reserved for direct interaction feedback.
-- **Always** wrap motion so `@media (prefers-reduced-motion: reduce)` neutralizes
-  it (already global in `animations.css` + `global.css`).
+- Easing `--ease` / `--ease-pop`; `--flux` scales durations.
+- Panel flex expansion (.34s), art scale + saturate on hover, `.more` 0fr→1fr
+  reveals, presence/socket pulses (2.6s opacity), GatherPixels cycle (8s).
+- No full-window sweep, no scanlines. Motion is interaction feedback plus the
+  two ambient marks (socket pulse, gathering pixels).
+- **Always** neutralize under `prefers-reduced-motion` (global in
+  `animations.css`; component keyframes carry their own guards).
 
 ---
 
 ## 7. Adding new UI — the checklist
 
-1. **Theme via tokens only.** No literal hex/px colors; reference `tokens.css`.
-   New shared value → add a token there with a one-line rationale.
-2. **Pick the right type voice** (Oswald / Rajdhani / JetBrains Mono) per §3.
-3. **Sharp corners**, one accent, generous tracking on small labels.
-4. **Reuse a placed component** (`Button`, card primitives in
-   `CharacterCard.module.css`, stat cells, status dots, the modal pattern)
-   before writing new CSS. Composing `CharacterCard.module.css` is how Browse
-   cards stay identical to Home cards — prefer that over a parallel implementation.
-5. **Match an existing screen's rhythm** (padding `34px 40px`, section
-   `--space-xl`, grid `gap 6px`, etc.).
-6. **Both themes must read** — check dark (hero) and light. Token references make
-   this automatic; only override per-theme when truly needed
-   (`:root[data-theme="light"] .x { … }`).
+1. **Theme via tokens only.** No literal hex/px colors.
+2. **Pick the right type voice** per §3 — and no uppercase transforms.
+3. **Sharp corners**; circles only for sockets/dots/Toggle.
+4. **Reuse a placed component** (`Button`, `ModalShell`, `Presence`, `Seg`,
+   `Toggle`, `GatherPixels`, panel recipes in `HomeScreen.module.css`) before
+   writing new CSS.
+5. **Match an existing screen's rhythm** (20px modal grid, 560/620px columns,
+   12px row padding, hairline dividers).
+6. **Both themes must read** — dark (hero) and light.
 7. **Respect reduced motion** on anything animated.
-8. **Never remove an existing feature** to match a mock. The mockup is a visual
-   reference, not a feature spec — popups, sync pills, billing, editors, etc.
-   stay; restyle them, don't drop them.
+8. **Never remove an existing feature** to match a mock. Restyle, don't drop.
 
 ---
 
@@ -247,15 +205,20 @@ key/value rows. Danger zone = bordered red `dangerBtn`, red label.
 |---|---|
 | Color / type / motion / layout tokens | `src/renderer/src/styles/tokens.css` |
 | `@font-face` (self-hosted woff2) | `src/renderer/src/styles/fonts.css` + `public/fonts/` |
-| Resets, wallpaper, utilities, HUD overlays | `src/renderer/src/styles/global.css` |
+| Resets, utilities, HUD overlays, data-tip | `src/renderer/src/styles/global.css` |
 | Keyframes | `src/renderer/src/styles/animations.css` |
-| Window shell + title bar + overlay mount | `components/MacosWindow.tsx` |
-| Rail | `components/IconRail.*` |
+| Window shell + drag strip + size floor | `components/MacosWindow.*`, `src/main/windowChrome.ts` |
+| Rail + sockets | `components/IconRail.*` |
 | Buttons | `components/Button.*` |
-| Card primitives (shared) | `components/CharacterCard.module.css` |
-| Detail screen | `screens/CharacterPage.*` |
-| Summons / World grids | `screens/HomeScreen.module.css`, `screens/CharactersScreen.module.css` |
-| Mana / Settings rhythm | `screens/CreditsScreen.module.css`, `screens/SettingsScreen.module.css` |
+| Modal primitive | `components/ModalShell.*` |
+| Seg / Toggle / Presence / GatherPixels | `components/Seg.*`, `Toggle.*`, `Presence.*`, `GatherPixels.*` |
+| Presence + action-verb model | `lib/presence.ts`, `lib/actionVerb.ts` |
+| Party wall + World grid | `screens/CharactersScreen.*`, `screens/HomeScreen.module.css`, `components/BrowseCard.*` |
+| Awaken | `screens/AwakenScreen.*` |
+| Chat + presence panel | `screens/ChatScreen.*` |
+| Profile | `screens/CharacterPage.*` |
+| Settings / Playtime rhythm | `screens/SettingsScreen.module.css`, `screens/CreditsScreen.module.css` |
 
-The earlier `04-UI-SPEC.md` (archived milestone) described the prior light
-macOS-window design and is **superseded by this document** for all look & feel.
+The pre-Party language (mono/uppercase buttons, notched CTA, card grid home,
+per-modal scrims) is retired; if you find a straggler, migrate it to the
+patterns above rather than matching it.

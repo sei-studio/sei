@@ -55,14 +55,14 @@ describe('IconRail (B3 Discord-style sidebar)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     expect(source.includes('PixelPortrait')).toBe(true);
     expect(source.includes('avatarCluster')).toBe(true);
-    expect(source.includes('size={44}')).toBe(true);
+    expect(source.includes('size={40}')).toBe(true);
     // <img> path for portrait_image fallback
     expect(source.includes('portraitImage ?')).toBe(true);
   });
 
-  it('Test 4: round + button navigates to add-character', () => {
+  it('Test 4: dormant + socket navigates to awaken', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes("navigate({ kind: 'add-character' })")).toBe(true);
+    expect(source.includes("navigate({ kind: 'awaken' })")).toBe(true);
     expect(source.includes('PlusIcon')).toBe(true);
   });
 

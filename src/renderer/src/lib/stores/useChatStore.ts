@@ -17,7 +17,7 @@ import { sei } from '../ipcClient';
 import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
 import { notifyCompanionText, isVoiceCallActive, requestRemoteEndCall } from '../voice/voiceBridge';
-import type { ChatMessage, ChatReplyRef, ChatSendResult } from '@shared/ipc';
+import type { ChatMessage, ChatPreview, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
   /** characterId → ordered message list (oldest first). */
@@ -26,9 +26,23 @@ interface ChatState {
   awaiting: Record<string, boolean>;
   /** characterId → history already fetched (idempotent load guard). */
   loaded: Record<string, boolean>;
+  /**
+   * characterId → true while the persisted transcript is being fetched (drives
+   * the wireframe skeleton). Distinct from `awaiting`: this covers ONLY the
+   * history pull, not the first-meeting greeting turn (that is `awaiting`).
+   */
+  loading: Record<string, boolean>;
+  /**
+   * characterId → last persisted chat line (Party redesign §2), fetched in one
+   * bulk chat:previews pull for the roster. Read through
+   * {@link chatPreviewFor}, which prefers the live transcript when loaded.
+   */
+  previews: Record<string, ChatPreview>;
 
   /** Fetch the persisted transcript once. No-op if already loaded. */
   load: (characterId: string) => Promise<void>;
+  /** Bulk-fetch roster last-line previews (idempotent per call; cheap). */
+  loadPreviews: () => Promise<void>;
   /**
    * Optimistically append the user message, await the companion reply, append
    * it, and return the full ChatSendResult so the screen can act on `.launch`.
@@ -148,17 +162,63 @@ export const useChatStore = create<ChatState>((set, get) => {
   messages: {},
   awaiting: {},
   loaded: {},
+  loading: {},
+  previews: {},
+
+  loadPreviews: async () => {
+    try {
+      const previews = await sei.chatPreviews?.();
+      if (previews) set({ previews });
+    } catch {
+      /* roster falls back to transcript-derived lines only */
+    }
+  },
 
   load: async (characterId) => {
     if (get().loaded[characterId]) return;
     // Mark loaded up front so a re-entry while the fetch is in flight doesn't
-    // double-fire; on failure we reset it so a later open can retry.
-    set((s) => ({ loaded: { ...s.loaded, [characterId]: true } }));
+    // double-fire; on failure we reset it so a later open can retry. `loading`
+    // flips on synchronously alongside it — it drives the wireframe skeleton and
+    // is cleared the moment the history lands (before the greeting turn, which
+    // the typing indicator covers via `awaiting`).
+    set((s) => ({
+      loaded: { ...s.loaded, [characterId]: true },
+      loading: { ...s.loading, [characterId]: true },
+    }));
     try {
       const history = await sei.chatHistory(characterId);
-      set((s) => ({ messages: { ...s.messages, [characterId]: history } }));
+      set((s) => ({
+        messages: { ...s.messages, [characterId]: history },
+        loading: { ...s.loading, [characterId]: false },
+      }));
+      // First-meeting greeting: on an empty transcript, tell main the chat was
+      // opened. Main decides eligibility (unique companion, never chatted) and
+      // returns any greeting replies to append — the renderer never decides
+      // policy, so calling on every empty open is fine (main no-ops otherwise).
+      // Show the typing indicator while we wait, then append via the same deduped
+      // path a live push uses.
+      if (history.length === 0 && sei.chatOpened) {
+        set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+        try {
+          const greeting = await sei.chatOpened(characterId);
+          set((s) => {
+            const list = s.messages[characterId] ?? [];
+            const seen = new Set(list.map((m) => m.id));
+            const next = [...list, ...greeting.filter((m) => !seen.has(m.id))];
+            return {
+              messages: { ...s.messages, [characterId]: next },
+              awaiting: { ...s.awaiting, [characterId]: false },
+            };
+          });
+        } catch {
+          set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+        }
+      }
     } catch {
-      set((s) => ({ loaded: { ...s.loaded, [characterId]: false } }));
+      set((s) => ({
+        loaded: { ...s.loaded, [characterId]: false },
+        loading: { ...s.loading, [characterId]: false },
+      }));
     }
   },
 
@@ -216,6 +276,9 @@ export const useChatStore = create<ChatState>((set, get) => {
       // the chat:message push, so keep the typing indicator up and let the push
       // handler append + clear it. Safety-clear after a timeout if nothing lands.
       if (result.routed) {
+        // Main stamped last_chatted when it routed the message; refresh the
+        // character so Home presence flips off "New" without a reload.
+        void useDataStore.getState().refreshCharacter(characterId);
         window.setTimeout(() => {
           if (sendSeq[characterId] === token) {
             set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
@@ -271,7 +334,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         id: `local-err-${Date.now()}`,
         role: 'companion',
         text: isLocalNoApiKey(err)
-          ? "i can't reply — you're in local mode but no API key is saved. add one in Settings, or switch to managed billing."
+          ? "i can't reply: you're in local mode but no API key is saved. add one in Settings, or switch to managed billing."
           : "sorry, i couldn't reply just now. try again in a moment?",
         ts: Date.now(),
       };
@@ -285,7 +348,11 @@ export const useChatStore = create<ChatState>((set, get) => {
 
   clear: async (characterId) => {
     await sei.chatClear(characterId);
-    set((s) => ({ messages: { ...s.messages, [characterId]: [] } }));
+    set((s) => {
+      const previews = { ...s.previews };
+      delete previews[characterId];
+      return { messages: { ...s.messages, [characterId]: [] }, previews };
+    });
   },
   };
 });
@@ -297,4 +364,23 @@ if (import.meta.hot) {
     offChatMessage?.();
     offChatMessage = null;
   });
+}
+
+/**
+ * Roster last-line for a character: the tail of the live transcript when any
+ * messages are in memory, else the bulk-fetched preview. Skips `system` rows
+ * (play events) — the roster wants the last spoken line.
+ */
+export function chatPreviewFor(s: ChatState, characterId: string): ChatPreview | null {
+  const list = s.messages[characterId];
+  if (list && list.length > 0) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].role !== 'system') {
+        return { role: list[i].role, text: list[i].text, ts: list[i].ts };
+      }
+    }
+    return null;
+  }
+  const p = s.previews[characterId];
+  return p && p.role !== 'system' ? p : null;
 }

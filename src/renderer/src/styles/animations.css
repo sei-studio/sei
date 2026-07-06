@@ -49,25 +49,6 @@
   }
 }
 
-/*
- * D6: CharacterCard portrait shimmer — runs once on mount, sweeps a
- * diagonal white gradient across the portrait. background-position is
- * the load-bearing axis (background-size: 200% 100% gives twice the
- * portrait width so the gradient enters off-screen left and exits
- * off-screen right). Pairs with `.shimmer` in CharacterCard.module.css
- * which sets `animation: cardShimmer 1200ms var(--ease-pop) 0ms 1 forwards`.
- */
-@keyframes cardShimmer {
-  from {
-    background-position: 200% 0;
-    opacity: 1;
-  }
-  to {
-    background-position: -100% 0;
-    opacity: 0;
-  }
-}
-
 /* prefers-reduced-motion — UI-SPEC §Accessibility.
  * Neutralizes every animation/transition without breaking layout (clamps duration to ~0).
  */

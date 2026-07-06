@@ -1,142 +1,302 @@
-/* HomeScreen.module.css — the Summons grid (Home tab).
- * Source: .planning/UI-DESIGN-SYSTEM.md §Screens → Summons; mockup ui.jsx Home.
- */
+/* HomeScreen.module.css — the Home party wall (Party redesign §4.2).
+ * Full-height flex panels, one per companion slot (MAX_COMPANION_SLOTS).
+ * Hover/focus expands a panel and reveals the lastline + action row; empty
+ * slots are dormant panels with the gathering-pixels mark.
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §4.2; mockup .panels/.panel. */
 
 .root {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  /* Padding moved onto .header (top + sides) and .grid (sides + bottom) so the
-   * header pins at the top while only .grid scrolls. */
+  height: 100%;
 }
 
-.header {
+.panels {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  /* The 26px design gap to the grid is split 16px here + 10px grid padding-top
-   * so the scroll container gets headroom (see .grid) — net spacing unchanged. */
-  margin-bottom: 16px;
-  /* Shared page top margin (matches World / Settings / Playtime). */
-  padding: var(--space-lg) var(--space-2xl) 0;
-  flex-shrink: 0;
-  /* Sit BELOW the cards in stacking order: a hover-lifted top-row card paints
-   * over this pinned header instead of being covered by it. */
-  position: relative;
-  z-index: 0;
 }
 
-.title,
-.greeting {
+.panel {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid var(--border);
+  padding: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: flex 0.34s var(--ease);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.panel:last-child {
+  border-right: 0;
+}
+
+/* Hover choreography: the hovered/focused panel grows, siblings shrink. */
+.panels:hover .panel,
+.panels:focus-within .panel {
+  flex: 0.84;
+}
+
+.panels .panel:hover,
+.panels .panel:focus-within {
+  flex: 1.65;
+}
+
+/* ── Art ─────────────────────────────────────────────────────────────── */
+.art {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.5s var(--ease), filter 0.4s var(--ease);
+  filter: saturate(0.72) brightness(0.88);
+}
+
+.panel:hover .art,
+.panel:focus-within .art {
+  transform: scale(1.045);
+  filter: none;
+}
+
+/* Cloud-only placeholder slots: stay muted (no color-up), no zoom. */
+.panelMuted .art,
+.panelMuted:hover .art,
+.panelMuted:focus-within .art {
+  transform: none;
+  filter: saturate(0.4) brightness(0.78);
+}
+
+.panelScrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 22%, transparent) 0%,
+    transparent 28%,
+    transparent 48%,
+    color-mix(in srgb, var(--bg) 88%, transparent) 88%
+  );
+}
+
+/* ── Info block ──────────────────────────────────────────────────────── */
+.info {
+  position: relative;
+  padding: 0 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.name {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 32px;
-  line-height: 0.9;
+  font-size: 30px;
+  line-height: 1.05;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mono micro-line for the cloud-only placeholder state. */
+.cloudNote {
+  font-family: var(--mono);
+  font-size: 10.5px;
   letter-spacing: 0.04em;
-  color: var(--heading);
-  margin: 0;
+  color: var(--muted);
 }
 
-/* Greeting can run long ("Welcome back, …") — let it wrap gracefully. */
-.greeting {
-  max-width: 60%;
+/* Per-slot open-prepare failure — small red mono line inside the panel. */
+.errLine {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--red-strong);
 }
 
-/* The user's name within the greeting renders in the periwinkle accent. */
-.greetingName {
-  color: var(--accent);
+/* ── Hover reveal: lastline + actions ────────────────────────────────── */
+.more {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.3s var(--ease), opacity 0.25s var(--ease) 0.05s;
+}
+
+.panel:hover .more,
+.panel:focus-within .more {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.moreInner {
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lastline {
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-style: italic;
+  padding-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lastline b {
+  color: var(--text);
+  font-style: normal;
+  font-weight: 600;
 }
 
 .actions {
   display: flex;
-  gap: 14px;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-/* LAN status pill (mockup .link-pill). */
-.lanPill {
-  height: 38px;
-  background: rgba(127, 127, 127, 0.03);
-  border: 1px solid var(--border-strong);
-  padding: 0 13px;
-  display: inline-flex;
-  align-items: center;
   gap: 8px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: border-color 0.2s ease, color 0.2s ease;
+  padding-bottom: 2px;
 }
 
-.lanPill:hover {
-  border-color: var(--accent);
-  color: var(--text);
+/* ── Dormant (empty) slot ────────────────────────────────────────────── */
+.dormant {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg2) 50%, transparent),
+    color-mix(in srgb, var(--bg) 90%, transparent)
+  );
 }
 
-.lanDot {
-  width: 7px;
-  height: 7px;
+/* Per-slot starfield (design lab "Vigil sky"): each wall position keeps its
+ * own faint constellation over a scatter of small stars at three brightness
+ * tiers. sky0 Libra · sky1 Virgo · sky2 Aquarius · sky3 Scorpius. The whole
+ * sky brightens while the panel is hovered/focused. */
+.dormantSky {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+  transition: filter 0.3s var(--ease);
+}
+
+.dormant:hover .dormantSky,
+.dormant:focus-within .dormantSky {
+  filter: brightness(1.9);
+}
+
+.sky0 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 340'%3E%3Cg fill='none' stroke='rgba(127,176,255,.045)'%3E%3Cpath d='M85 120L130 78L182 110L85 120M85 120L96 202M182 110L192 212L176 242'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.17)'%3E%3Ccircle cx='85' cy='120' r='1.2'/%3E%3Ccircle cx='130' cy='78' r='1.3'/%3E%3Ccircle cx='182' cy='110' r='1.2'/%3E%3Ccircle cx='96' cy='202' r='1.0'/%3E%3Ccircle cx='192' cy='212' r='1.0'/%3E%3Ccircle cx='176' cy='242' r='0.9'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.11)'%3E%3Ccircle cx='132' cy='34' r='1.0'/%3E%3Ccircle cx='41' cy='225' r='0.7'/%3E%3Ccircle cx='47' cy='322' r='1.0'/%3E%3Ccircle cx='98' cy='198' r='0.8'/%3E%3Ccircle cx='154' cy='95' r='0.9'/%3E%3Ccircle cx='234' cy='323' r='0.7'/%3E%3Ccircle cx='120' cy='178' r='0.7'/%3E%3Ccircle cx='166' cy='163' r='0.7'/%3E%3Ccircle cx='223' cy='154' r='0.9'/%3E%3Ccircle cx='172' cy='28' r='0.9'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.07)'%3E%3Ccircle cx='44' cy='79' r='0.7'/%3E%3Ccircle cx='144' cy='266' r='0.5'/%3E%3Ccircle cx='230' cy='225' r='0.7'/%3E%3Ccircle cx='236' cy='172' r='0.7'/%3E%3Ccircle cx='13' cy='234' r='0.6'/%3E%3Ccircle cx='143' cy='14' r='0.6'/%3E%3Ccircle cx='164' cy='226' r='0.6'/%3E%3Ccircle cx='16' cy='303' r='0.6'/%3E%3Ccircle cx='113' cy='50' r='0.7'/%3E%3Ccircle cx='31' cy='32' r='0.7'/%3E%3Ccircle cx='121' cy='330' r='0.6'/%3E%3Ccircle cx='69' cy='159' r='0.7'/%3E%3Ccircle cx='217' cy='279' r='0.5'/%3E%3Ccircle cx='191' cy='109' r='0.6'/%3E%3Ccircle cx='87' cy='96' r='0.7'/%3E%3Ccircle cx='70' cy='187' r='0.7'/%3E%3Ccircle cx='210' cy='333' r='0.8'/%3E%3Ccircle cx='103' cy='282' r='0.6'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.04)'%3E%3Ccircle cx='25' cy='137' r='0.4'/%3E%3Ccircle cx='222' cy='167' r='0.4'/%3E%3Ccircle cx='111' cy='221' r='0.4'/%3E%3Ccircle cx='9' cy='18' r='0.3'/%3E%3Ccircle cx='47' cy='88' r='0.4'/%3E%3Ccircle cx='55' cy='156' r='0.5'/%3E%3Ccircle cx='52' cy='75' r='0.4'/%3E%3Ccircle cx='45' cy='200' r='0.3'/%3E%3Ccircle cx='136' cy='149' r='0.4'/%3E%3Ccircle cx='19' cy='280' r='0.3'/%3E%3Ccircle cx='183' cy='99' r='0.4'/%3E%3Ccircle cx='150' cy='216' r='0.4'/%3E%3Ccircle cx='217' cy='9' r='0.5'/%3E%3Ccircle cx='117' cy='266' r='0.3'/%3E%3Ccircle cx='29' cy='132' r='0.5'/%3E%3Ccircle cx='126' cy='116' r='0.5'/%3E%3Ccircle cx='41' cy='142' r='0.4'/%3E%3Ccircle cx='28' cy='242' r='0.3'/%3E%3Ccircle cx='161' cy='222' r='0.4'/%3E%3Ccircle cx='94' cy='327' r='0.5'/%3E%3Ccircle cx='21' cy='314' r='0.4'/%3E%3Ccircle cx='119' cy='177' r='0.5'/%3E%3Ccircle cx='213' cy='110' r='0.5'/%3E%3Ccircle cx='8' cy='173' r='0.3'/%3E%3Ccircle cx='80' cy='33' r='0.4'/%3E%3Ccircle cx='176' cy='95' r='0.3'/%3E%3C/g%3E%3C/svg%3E"); }
+.sky1 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 340'%3E%3Cg fill='none' stroke='rgba(127,176,255,.045)'%3E%3Cpath d='M68 76L104 110L130 150L160 114L200 86M130 150L150 214L166 264M160 114L210 190'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.17)'%3E%3Ccircle cx='68' cy='76' r='1.0'/%3E%3Ccircle cx='104' cy='110' r='1.0'/%3E%3Ccircle cx='130' cy='150' r='1.2'/%3E%3Ccircle cx='160' cy='114' r='1.0'/%3E%3Ccircle cx='200' cy='86' r='1.1'/%3E%3Ccircle cx='150' cy='214' r='0.9'/%3E%3Ccircle cx='166' cy='264' r='1.5'/%3E%3Ccircle cx='210' cy='190' r='0.9'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.11)'%3E%3Ccircle cx='94' cy='249' r='0.9'/%3E%3Ccircle cx='202' cy='207' r='0.8'/%3E%3Ccircle cx='90' cy='110' r='1.0'/%3E%3Ccircle cx='249' cy='126' r='1.0'/%3E%3Ccircle cx='252' cy='159' r='0.9'/%3E%3Ccircle cx='248' cy='169' r='0.9'/%3E%3Ccircle cx='211' cy='12' r='0.9'/%3E%3Ccircle cx='24' cy='239' r='0.8'/%3E%3Ccircle cx='59' cy='102' r='0.9'/%3E%3Ccircle cx='34' cy='316' r='0.9'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.07)'%3E%3Ccircle cx='67' cy='141' r='0.8'/%3E%3Ccircle cx='38' cy='229' r='0.8'/%3E%3Ccircle cx='63' cy='108' r='0.6'/%3E%3Ccircle cx='86' cy='114' r='0.7'/%3E%3Ccircle cx='236' cy='311' r='0.7'/%3E%3Ccircle cx='137' cy='64' r='0.7'/%3E%3Ccircle cx='94' cy='171' r='0.6'/%3E%3Ccircle cx='33' cy='260' r='0.5'/%3E%3Ccircle cx='36' cy='42' r='0.6'/%3E%3Ccircle cx='200' cy='30' r='0.8'/%3E%3Ccircle cx='38' cy='167' r='0.7'/%3E%3Ccircle cx='148' cy='141' r='0.7'/%3E%3Ccircle cx='50' cy='307' r='0.8'/%3E%3Ccircle cx='24' cy='171' r='0.6'/%3E%3Ccircle cx='86' cy='280' r='0.5'/%3E%3Ccircle cx='172' cy='287' r='0.8'/%3E%3Ccircle cx='242' cy='280' r='0.7'/%3E%3Ccircle cx='179' cy='71' r='0.7'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.04)'%3E%3Ccircle cx='218' cy='53' r='0.3'/%3E%3Ccircle cx='69' cy='197' r='0.4'/%3E%3Ccircle cx='21' cy='56' r='0.4'/%3E%3Ccircle cx='84' cy='266' r='0.5'/%3E%3Ccircle cx='45' cy='195' r='0.3'/%3E%3Ccircle cx='116' cy='40' r='0.5'/%3E%3Ccircle cx='79' cy='249' r='0.5'/%3E%3Ccircle cx='198' cy='182' r='0.3'/%3E%3Ccircle cx='120' cy='31' r='0.4'/%3E%3Ccircle cx='39' cy='286' r='0.4'/%3E%3Ccircle cx='248' cy='289' r='0.3'/%3E%3Ccircle cx='155' cy='323' r='0.4'/%3E%3Ccircle cx='253' cy='71' r='0.4'/%3E%3Ccircle cx='164' cy='298' r='0.4'/%3E%3Ccircle cx='155' cy='284' r='0.3'/%3E%3Ccircle cx='104' cy='75' r='0.3'/%3E%3Ccircle cx='63' cy='156' r='0.4'/%3E%3Ccircle cx='49' cy='209' r='0.4'/%3E%3Ccircle cx='75' cy='128' r='0.5'/%3E%3Ccircle cx='246' cy='91' r='0.5'/%3E%3Ccircle cx='112' cy='193' r='0.4'/%3E%3Ccircle cx='58' cy='287' r='0.3'/%3E%3Ccircle cx='117' cy='308' r='0.5'/%3E%3Ccircle cx='219' cy='130' r='0.4'/%3E%3Ccircle cx='240' cy='130' r='0.5'/%3E%3Ccircle cx='136' cy='9' r='0.4'/%3E%3C/g%3E%3C/svg%3E"); }
+.sky2 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 340'%3E%3Cg fill='none' stroke='rgba(127,176,255,.045)'%3E%3Cpath d='M50 142L94 112L148 96L184 112M184 112L200 90L216 114L184 112M184 112L170 200L196 236L162 272'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.17)'%3E%3Ccircle cx='50' cy='142' r='1.0'/%3E%3Ccircle cx='94' cy='112' r='1.1'/%3E%3Ccircle cx='148' cy='96' r='1.2'/%3E%3Ccircle cx='184' cy='112' r='1.1'/%3E%3Ccircle cx='200' cy='90' r='0.9'/%3E%3Ccircle cx='216' cy='114' r='0.9'/%3E%3Ccircle cx='170' cy='200' r='0.9'/%3E%3Ccircle cx='196' cy='236' r='0.9'/%3E%3Ccircle cx='162' cy='272' r='1.0'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.11)'%3E%3Ccircle cx='90' cy='192' r='1.0'/%3E%3Ccircle cx='230' cy='273' r='0.8'/%3E%3Ccircle cx='117' cy='236' r='0.9'/%3E%3Ccircle cx='80' cy='333' r='0.8'/%3E%3Ccircle cx='225' cy='34' r='0.8'/%3E%3Ccircle cx='171' cy='157' r='0.7'/%3E%3Ccircle cx='124' cy='74' r='0.9'/%3E%3Ccircle cx='186' cy='296' r='0.8'/%3E%3Ccircle cx='80' cy='160' r='0.8'/%3E%3Ccircle cx='128' cy='127' r='0.8'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.07)'%3E%3Ccircle cx='191' cy='40' r='0.7'/%3E%3Ccircle cx='72' cy='329' r='0.7'/%3E%3Ccircle cx='105' cy='323' r='0.6'/%3E%3Ccircle cx='140' cy='164' r='0.6'/%3E%3Ccircle cx='212' cy='148' r='0.7'/%3E%3Ccircle cx='253' cy='31' r='0.8'/%3E%3Ccircle cx='166' cy='137' r='0.6'/%3E%3Ccircle cx='91' cy='209' r='0.7'/%3E%3Ccircle cx='191' cy='192' r='0.6'/%3E%3Ccircle cx='45' cy='211' r='0.7'/%3E%3Ccircle cx='37' cy='56' r='0.5'/%3E%3Ccircle cx='61' cy='27' r='0.7'/%3E%3Ccircle cx='30' cy='84' r='0.6'/%3E%3Ccircle cx='226' cy='10' r='0.6'/%3E%3Ccircle cx='106' cy='334' r='0.7'/%3E%3Ccircle cx='94' cy='86' r='0.6'/%3E%3Ccircle cx='35' cy='183' r='0.6'/%3E%3Ccircle cx='40' cy='237' r='0.5'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.04)'%3E%3Ccircle cx='196' cy='211' r='0.4'/%3E%3Ccircle cx='233' cy='88' r='0.3'/%3E%3Ccircle cx='154' cy='132' r='0.4'/%3E%3Ccircle cx='222' cy='102' r='0.4'/%3E%3Ccircle cx='116' cy='235' r='0.5'/%3E%3Ccircle cx='161' cy='227' r='0.4'/%3E%3Ccircle cx='210' cy='39' r='0.4'/%3E%3Ccircle cx='40' cy='237' r='0.4'/%3E%3Ccircle cx='66' cy='324' r='0.3'/%3E%3Ccircle cx='110' cy='95' r='0.4'/%3E%3Ccircle cx='191' cy='149' r='0.4'/%3E%3Ccircle cx='190' cy='308' r='0.4'/%3E%3Ccircle cx='42' cy='328' r='0.4'/%3E%3Ccircle cx='28' cy='135' r='0.5'/%3E%3Ccircle cx='150' cy='56' r='0.4'/%3E%3Ccircle cx='116' cy='43' r='0.5'/%3E%3Ccircle cx='248' cy='326' r='0.5'/%3E%3Ccircle cx='212' cy='42' r='0.5'/%3E%3Ccircle cx='192' cy='323' r='0.4'/%3E%3Ccircle cx='47' cy='35' r='0.5'/%3E%3Ccircle cx='82' cy='121' r='0.4'/%3E%3Ccircle cx='107' cy='43' r='0.4'/%3E%3Ccircle cx='107' cy='35' r='0.4'/%3E%3Ccircle cx='229' cy='181' r='0.3'/%3E%3Ccircle cx='123' cy='115' r='0.4'/%3E%3Ccircle cx='231' cy='329' r='0.5'/%3E%3C/g%3E%3C/svg%3E"); }
+.sky3 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 340'%3E%3Cg fill='none' stroke='rgba(127,176,255,.045)'%3E%3Cpath d='M92 64L106 94L86 118M106 94L126 134L141 157L151 182L154 212L144 240L131 262L139 292L163 306L185 300L201 283L208 262'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.17)'%3E%3Ccircle cx='92' cy='64' r='1.0'/%3E%3Ccircle cx='86' cy='118' r='0.9'/%3E%3Ccircle cx='106' cy='94' r='1.0'/%3E%3Ccircle cx='126' cy='134' r='1.0'/%3E%3Ccircle cx='141' cy='157' r='1.5'/%3E%3Ccircle cx='151' cy='182' r='0.9'/%3E%3Ccircle cx='154' cy='212' r='1.0'/%3E%3Ccircle cx='144' cy='240' r='0.9'/%3E%3Ccircle cx='131' cy='262' r='1.0'/%3E%3Ccircle cx='139' cy='292' r='0.9'/%3E%3Ccircle cx='163' cy='306' r='1.0'/%3E%3Ccircle cx='185' cy='300' r='0.9'/%3E%3Ccircle cx='201' cy='283' r='0.9'/%3E%3Ccircle cx='208' cy='262' r='1.1'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.11)'%3E%3Ccircle cx='168' cy='154' r='0.9'/%3E%3Ccircle cx='235' cy='248' r='0.8'/%3E%3Ccircle cx='207' cy='49' r='0.7'/%3E%3Ccircle cx='183' cy='14' r='0.7'/%3E%3Ccircle cx='59' cy='9' r='0.8'/%3E%3Ccircle cx='173' cy='250' r='0.8'/%3E%3Ccircle cx='109' cy='9' r='0.9'/%3E%3Ccircle cx='56' cy='90' r='0.9'/%3E%3Ccircle cx='150' cy='90' r='1.0'/%3E%3Ccircle cx='129' cy='253' r='1.0'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.07)'%3E%3Ccircle cx='79' cy='253' r='0.7'/%3E%3Ccircle cx='52' cy='149' r='0.6'/%3E%3Ccircle cx='154' cy='159' r='0.7'/%3E%3Ccircle cx='43' cy='309' r='0.5'/%3E%3Ccircle cx='119' cy='179' r='0.6'/%3E%3Ccircle cx='128' cy='168' r='0.7'/%3E%3Ccircle cx='152' cy='276' r='0.7'/%3E%3Ccircle cx='121' cy='132' r='0.6'/%3E%3Ccircle cx='246' cy='182' r='0.6'/%3E%3Ccircle cx='29' cy='22' r='0.7'/%3E%3Ccircle cx='220' cy='29' r='0.6'/%3E%3Ccircle cx='236' cy='58' r='0.7'/%3E%3Ccircle cx='15' cy='42' r='0.8'/%3E%3Ccircle cx='190' cy='60' r='0.5'/%3E%3Ccircle cx='108' cy='249' r='0.7'/%3E%3Ccircle cx='201' cy='210' r='0.7'/%3E%3Ccircle cx='206' cy='224' r='0.6'/%3E%3Ccircle cx='247' cy='173' r='0.5'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.04)'%3E%3Ccircle cx='250' cy='190' r='0.5'/%3E%3Ccircle cx='14' cy='11' r='0.4'/%3E%3Ccircle cx='36' cy='197' r='0.3'/%3E%3Ccircle cx='141' cy='118' r='0.4'/%3E%3Ccircle cx='110' cy='155' r='0.4'/%3E%3Ccircle cx='155' cy='166' r='0.3'/%3E%3Ccircle cx='130' cy='216' r='0.3'/%3E%3Ccircle cx='51' cy='223' r='0.4'/%3E%3Ccircle cx='159' cy='63' r='0.3'/%3E%3Ccircle cx='36' cy='228' r='0.4'/%3E%3Ccircle cx='77' cy='141' r='0.4'/%3E%3Ccircle cx='190' cy='27' r='0.5'/%3E%3Ccircle cx='59' cy='333' r='0.4'/%3E%3Ccircle cx='110' cy='268' r='0.3'/%3E%3Ccircle cx='250' cy='124' r='0.5'/%3E%3Ccircle cx='17' cy='201' r='0.3'/%3E%3Ccircle cx='166' cy='208' r='0.4'/%3E%3Ccircle cx='192' cy='101' r='0.4'/%3E%3Ccircle cx='228' cy='11' r='0.4'/%3E%3Ccircle cx='44' cy='101' r='0.4'/%3E%3Ccircle cx='44' cy='90' r='0.4'/%3E%3Ccircle cx='191' cy='236' r='0.4'/%3E%3Ccircle cx='134' cy='86' r='0.4'/%3E%3Ccircle cx='170' cy='44' r='0.3'/%3E%3Ccircle cx='59' cy='121' r='0.3'/%3E%3Ccircle cx='163' cy='74' r='0.4'/%3E%3C/g%3E%3C/svg%3E"); }
+
+/* Breathing halo behind the gathering mark — brightens as the figure forms
+ * (same 8s period as the GatherPixels cycle; delay set inline per slot).
+ * 260705: radius widened (200px → 320px) with a slightly dimmer core and a
+ * longer falloff so the glow stays faint and gradual at the larger size. */
+.dormantHalo {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 320px;
+  height: 320px;
   border-radius: 50%;
-  display: inline-block;
-  box-shadow: 0 0 8px currentColor;
+  background: radial-gradient(50% 50% at 50% 50%, rgb(var(--acc) / 0.06), transparent 78%);
+  animation: halo-breathe 8s var(--ease) infinite;
+  pointer-events: none;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 6px;
-  align-items: start;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  /* Top padding gives headroom for the card hover-lift (translateY(-7px) + the
-   * accent ring/glow). Without it overflow:auto clips the lifted top row, so the
-   * selector effect looked cut off under the pinned header. */
-  padding: 10px var(--space-2xl) var(--space-2xl);
-  /* Keep the scroll resting position flush under the header despite the pad. */
-  scroll-padding-top: 10px;
-  /* Hide the scrollbar (still scrolls) — matches the IconRail treatment. */
-  scrollbar-width: none;
+@keyframes halo-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translateY(-14px) scale(0.92);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-14px) scale(1.05);
+  }
 }
 
-.grid::-webkit-scrollbar {
-  display: none;
-  width: 0;
-}
-
-/* ── Slot grid (260703 procgen) — the Home page's fixed companion slots ────
- * A single non-scrolling row of exactly MAX_COMPANION_SLOTS (4) equal columns
- * that fills the viewport height under the pinned header. Each card (filled or
- * empty) stretches to the bottom of the window via its 'slot' variant. */
-.slotGrid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  align-items: stretch;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  /* Headroom for the card hover-lift (translateY(-7px) + accent ring) so it
-   * isn't clipped by the row's own overflow:hidden. */
-  padding: 10px var(--space-2xl) var(--space-2xl);
-}
-
-/* Each slot is a positioned box so the per-card open-error overlay anchors to
- * it and the card can stretch to full height. */
-.slot {
-  position: relative;
-  min-height: 0;
+.center {
+  position: absolute;
+  inset: 0;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  color: color-mix(in srgb, var(--accent) 50%, transparent);
+  transition: color 0.25s var(--ease);
 }
 
-.slot > * {
-  flex: 1;
-  min-height: 0;
+.dormant:hover .center,
+.dormant:focus-within .center {
+  color: var(--accent);
+}
+
+.dormantMark {
+  opacity: 0.45;
+  transition: opacity 0.25s var(--ease);
+}
+
+.dormant:hover .dormantMark,
+.dormant:focus-within .dormantMark {
+  opacity: 1;
+}
+
+/* Letter-spacing 0.12em retained deliberately from the mockup .awaken. */
+.awakenLabel {
+  font-family: var(--display);
+  font-size: 19px;
+  letter-spacing: 0.12em;
+  color: currentColor;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.25s var(--ease), transform 0.25s var(--ease);
+}
+
+.dormant:hover .awakenLabel,
+.dormant:focus-within .awakenLabel {
+  opacity: 1;
+  transform: none;
+}
+
+@media (max-width: 900px) {
+  .name {
+    font-size: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .art,
+  .more,
+  .center,
+  .dormantMark,
+  .awakenLabel {
+    transition: none;
+  }
+
+  .dormantHalo {
+    animation: none;
+    opacity: 0.7;
+    transform: translateY(-14px);
+  }
 }

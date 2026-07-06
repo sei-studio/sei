@@ -33,6 +33,7 @@ import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import type { UserConfig } from '@shared/characterSchema';
+import styles from './OnboardingScreen.module.css';
 
 export interface OnboardingScreenProps {
   isReonboard: boolean;
@@ -134,7 +135,11 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         added_world_ids: [],
         // 260703 procgen: questionnaire answers start empty; the first-sign-in
         // questionnaire (cloud users) fills these via prefs:save.
-        user_profile: { companion_age_range: null, art_style: null, completed_at: null },
+        user_profile: { companion_age_range: null, art_style: null, companion_dynamics: null, completed_at: null },
+        // 260706: no relationship dynamics granted to a cast yet.
+        dynamics_granted: [],
+        // Sticky chat side-panel visibility: default shown.
+        chat_panel_hidden: false,
         // First-login marker stays false here so the Home screen shows the
         // one-time "Welcome to Sei" greeting after onboarding completes; it
         // flips true there on first render.
@@ -170,8 +175,26 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         }
       }
       if (!isReonboard) {
-        // Fresh onboarding → ask what they want to do first. The activity picker
-        // routes to skin-setup only if they choose Minecraft; choosing Chat skips
+        // Fresh onboarding, signed-in: the companion questionnaire runs HERE,
+        // inside the onboarding ritual (260706 — it used to ambush after the
+        // user had already landed on Home). mode 'missing' asks only the
+        // unanswered questions, so a re-install whose cloud prefs are complete
+        // skips straight through, and one whose prefs predate a newer question
+        // answers just the gap. Fail-open to the activity picker — the Home
+        // and Awaken gates re-ask if this read failed.
+        if (signedIn) {
+          try {
+            const prefs = await sei.prefsGet();
+            if (prefs.missing.length > 0) {
+              navigate({ kind: 'profile-questions', next: 'activity-picker', mode: 'missing' });
+              return;
+            }
+          } catch {
+            /* fall through to the activity picker */
+          }
+        }
+        // Ask what they want to do first. The activity picker routes to
+        // skin-setup only if they choose Minecraft; choosing Chat skips
         // straight to home (and clears skin_setup_pending).
         navigate({ kind: 'activity-picker' });
       } else {
@@ -221,14 +244,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
           aria-label="Name"
         />
         {signedIn && error ? (
-          <div
-            style={{
-              marginTop: 12,
-              color: 'var(--red)',
-              fontFamily: 'var(--mono)',
-              fontSize: 13,
-            }}
-          >
+          <div className={styles.error} role="alert">
             {error}
           </div>
         ) : null}
@@ -299,14 +315,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         aria-invalid={!!error}
       />
       {error ? (
-        <div
-          style={{
-            marginTop: 12,
-            color: 'var(--red)',
-            fontFamily: 'var(--mono)',
-            fontSize: 13,
-          }}
-        >
+        <div className={styles.error} role="alert">
           {error}
         </div>
       ) : null}

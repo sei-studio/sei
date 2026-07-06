@@ -19,11 +19,11 @@
   gap: 18px;
 }
 
+/* Mono micro-label (see .u-lbl). Sentence case; no uppercase transform. */
 .eyebrow {
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 

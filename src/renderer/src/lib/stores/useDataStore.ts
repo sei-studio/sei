@@ -14,7 +14,7 @@
 
 import { create } from 'zustand';
 import type { Character } from '@shared/characterSchema';
-import type { BotStatus, LanState, LogEntry, LogBatch } from '@shared/ipc';
+import type { BotStatus, BotActionPush, LanState, LogEntry, LogBatch } from '@shared/ipc';
 import { sei } from '../ipcClient';
 import { useUiStore } from './useUiStore';
 
@@ -30,6 +30,12 @@ interface DataState {
    * running" reads `Object.values(summons)`.
    */
   summons: Record<string, BotStatus>;
+  /**
+   * Current world action per summoned character (Party redesign §2): the last
+   * `bot:action` push, mapped to a verb line by lib/actionVerb. Cleared when
+   * the push carries name:null or the session leaves 'online'/'connecting'.
+   */
+  actions: Record<string, { name: string | null; args?: Record<string, unknown>; ts: number }>;
   logs: LogEntry[];
   /** Cumulative count of dropped lines (Pitfall-7 backpressure sentinel). */
   dropped: number;
@@ -53,6 +59,8 @@ interface DataState {
   setLan: (state: LanState) => void;
   /** Route a single status push into the per-character map (idle clears the key). */
   setStatus: (status: BotStatus) => void;
+  /** Route a bot:action push into the per-character action map. */
+  setAction: (push: BotActionPush) => void;
 
   appendLogBatch: (batch: LogBatch) => void;
   clearLogs: () => void;
@@ -63,6 +71,7 @@ export const useDataStore = create<DataState>((set) => ({
   recentlyDeletedIds: new Set<string>(),
   lan: { kind: 'closed' },
   summons: {},
+  actions: {},
   logs: [],
   dropped: 0,
 
@@ -115,7 +124,22 @@ export const useDataStore = create<DataState>((set) => ({
       // `summons[id]` reads undefined (not summoned). Everything else upserts.
       if (status.kind === 'idle') delete next[status.characterId];
       else next[status.characterId] = status;
+      // A session leaving the live states can't have a current action.
+      if (status.kind === 'idle' || status.kind === 'error') {
+        const nextActions = { ...s.actions };
+        delete nextActions[status.characterId];
+        return { summons: next, actions: nextActions };
+      }
       return { summons: next };
+    }),
+
+  setAction: (push) =>
+    set((s) => {
+      if (!push.characterId) return {};
+      const next = { ...s.actions };
+      if (push.name === null) delete next[push.characterId];
+      else next[push.characterId] = { name: push.name, args: push.args, ts: push.ts };
+      return { actions: next };
     }),
 
   appendLogBatch: (batch) =>
@@ -202,11 +226,16 @@ function wireIpc(): () => void {
   const offVisionCapability = sei.onVisionCapability((cap) => {
     useUiStore.getState().setVisionCapable(cap.visionCapable === true);
   });
+  // Current-action pushes (Party redesign §2). Optional-call: a not-yet-
+  // reloaded preload without onBotAction just skips the feature.
+  const offAction =
+    sei.onBotAction?.((push) => useDataStore.getState().setAction(push)) ?? (() => {});
   return () => {
     offLan();
     offStatus();
     offLog();
     offVisionCapability();
+    offAction();
   };
 }
 

@@ -1,0 +1,43 @@
+/* ModalShell.module.css — the one scrim + panel in the app.
+ * Mockup: .scrim rgba(4,7,15,.72) + .play-modal (bg2, border-strong, 20px). */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 15, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fade 160ms var(--ease);
+}
+
+.panel {
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: fade-up 280ms var(--ease-pop);
+}
+
+.title {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--text);
+  margin: 0;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}

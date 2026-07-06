@@ -25,6 +25,8 @@ import {
   type CreditsHardStopEvent,
   type LanState,
   type BotStatus,
+  type ChatPreview,
+  type ChatMessage,
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
@@ -834,10 +836,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // The chat LLM call runs entirely in main (mirrors personaExpansion) — no
   // forked bot. `chat:send` may run the launch tool, which consults the live
   // LAN state and summons the bot when a world is open.
+  // Full transcript, not a window: chat history is never trimmed in the app
+  // (260705). The model's context is bounded separately by continuity
+  // (rolling summary + recent window) — this read is UI-only.
   ipcMain.handle(IpcChannel.chat.history, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
-    const { readRecent } = await import('./chat/chatService');
-    return await readRecent(id, 50);
+    const { readAll } = await import('./chat/chatStore');
+    return await readAll(id);
   });
 
   ipcMain.handle(IpcChannel.chat.send, async (_event, argsRaw: unknown) => {
@@ -936,6 +941,40 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
     const { voicePreviewTts } = await import('./voice/tts');
     return await voicePreviewTts(args.voiceId);
+  });
+
+  // First-meeting greeting (thoughts consumer #1). The renderer calls this when
+  // it loads an empty transcript; main decides eligibility (unique companion,
+  // empty transcript, never chatted) and returns any greeting replies. A fresh
+  // world-detection pass first so the greeting's prompt reflects live LAN truth,
+  // same as chat:send.
+  ipcMain.handle(IpcChannel.chat.opened, async (_event, idArg: unknown): Promise<ChatMessage[]> => {
+    const id = IdSchema.parse(idArg);
+    const { sendFirstMeetingTurn } = await import('./chat/chatService');
+    try { await deps.refreshLanState?.(); } catch { /* greeting proceeds on cache */ }
+    return await sendFirstMeetingTurn(id, { getLanState: deps.getLanState });
+  });
+
+  ipcMain.handle(IpcChannel.chat.previews, async (): Promise<Record<string, ChatPreview>> => {
+    // Roster last-line previews (Party redesign §2). Enumerate the library and
+    // read each character's last chat line. Per-character failures are skipped
+    // so one unreadable transcript never sinks the whole call; characters with
+    // no messages are omitted from the map (renderer treats a missing key as
+    // "no preview yet").
+    const { readLast } = await import('./chat/chatStore');
+    const chars = await listCharacters();
+    const out: Record<string, ChatPreview> = {};
+    await Promise.all(
+      chars.map(async (c) => {
+        try {
+          const last = await readLast(c.id);
+          if (last) out[c.id] = { role: last.role, text: last.text, ts: last.ts };
+        } catch {
+          /* per-character read failure — skip this id, never throw the batch */
+        }
+      }),
+    );
+    return out;
   });
 
   ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {
@@ -1277,22 +1316,51 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     requestId: z.string().min(1),
     gender: z.enum(['male', 'female', 'other']),
   });
-  ipcMain.handle(IpcChannel.gen.start, async (_event, argsRaw: unknown): Promise<GenerateUniqueResult> => {
+  // SINGLE-FLIGHT: React StrictMode (dev) double-invokes the casting screen's
+  // mount effect, firing two gen:start calls milliseconds apart — each ran a
+  // full pipeline and saved a DUPLICATE companion. A second call now joins the
+  // in-flight run and shares its result. Progress is re-tagged to the latest
+  // requestId because StrictMode keeps the SECOND mount alive: it subscribes
+  // under its own id and would otherwise see a frozen bar. The guard is set
+  // synchronously (before any await) so near-simultaneous calls can't race
+  // past the check.
+  let genInflight: {
+    promise: Promise<GenerateUniqueResult>;
+    requestIdRef: { current: string };
+  } | null = null;
+  ipcMain.handle(IpcChannel.gen.start, (_event, argsRaw: unknown): Promise<GenerateUniqueResult> => {
     const args = GenerateUniqueSchema.parse(argsRaw);
-    const { generateUnique } = await import('./uniqueGeneration');
-    try {
-      return await generateUnique(args, {
-        emit: (stage, status, message) =>
-          deps.sendGenProgress({ requestId: args.requestId, stage, status, message }),
-      });
-    } catch (err) {
-      // Backstop: generateUnique is written to never throw for expected
-      // failures, but an unexpected throw must still resolve the union rather
-      // than reject the IPC call.
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[sei] gen:start unexpected throw: ${message}`);
-      return { ok: false, code: 'generation_failed', message };
+    if (genInflight) {
+      genInflight.requestIdRef.current = args.requestId;
+      return genInflight.promise;
     }
+    const requestIdRef = { current: args.requestId };
+    const promise = (async (): Promise<GenerateUniqueResult> => {
+      try {
+        const { generateUnique } = await import('./uniqueGeneration');
+        return await generateUnique(args, {
+          emit: (stage, status, message) => {
+            // Stage errors are non-fatal for portrait/skin and the renderer
+            // only shows a summary line — log the detail here or it's lost.
+            if (status === 'error') {
+              console.warn(`[sei] gen:${stage} error: ${message ?? 'unknown'}`);
+            }
+            deps.sendGenProgress({ requestId: requestIdRef.current, stage, status, message });
+          },
+        });
+      } catch (err) {
+        // Backstop: generateUnique is written to never throw for expected
+        // failures, but an unexpected throw must still resolve the union
+        // rather than reject the IPC call.
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[sei] gen:start unexpected throw: ${message}`);
+        return { ok: false, code: 'generation_failed', message };
+      } finally {
+        genInflight = null;
+      }
+    })();
+    genInflight = { promise, requestIdRef };
+    return promise;
   });
 
   // prefs:get — local config.user_profile merged with the cloud user_preferences
@@ -1304,9 +1372,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
     const { getClient } = await import('./auth/supabaseClient');
     const session = (await getClient().auth.getSession()).data.session;
+    const { missingPrefQuestions } = await import('../shared/characterSchema');
     if (!session?.user?.id || !session.access_token) {
       // Signed out — no cloud row, questionnaire never forced.
-      return { profile: localProfile, needed: false };
+      return { profile: localProfile, needed: false, missing: missingPrefQuestions(localProfile) };
     }
 
     // Best-effort cloud read of the user_preferences row (user_id PK,
@@ -1331,29 +1400,40 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { profile, cloudIsNewer, hasCompleted } = resolvePrefs(localProfile, cloudProfile);
 
     // Merge the newer cloud copy back into local config so a re-install / second
-    // device skips the questionnaire without a round-trip next time.
+    // device skips the questionnaire without a round-trip next time. Via
+    // updateConfig (read-modify-write under the file lock): `cfg` was read
+    // before the cloud round-trip above and may be stale by now (TOCTOU).
     if (cloudIsNewer) {
       try {
-        await saveConfig({ ...cfg, user_profile: profile });
+        const { updateConfig } = await import('./configStore');
+        await updateConfig((cur) => ({ ...cur, user_profile: profile }));
       } catch (err) {
         console.warn(`[sei] prefs:get config write-back failed: ${(err as Error).message}`);
       }
     }
 
-    return { profile, needed: !hasCompleted };
+    return { profile, needed: !hasCompleted, missing: missingPrefQuestions(profile) };
   });
 
-  // prefs:save — validate, stamp completed_at when absent, write to config, and
-  // best-effort upsert the cloud user_preferences row. Non-fatal on cloud error
-  // (a later prefs:save retries — no queue needed).
-  ipcMain.handle(IpcChannel.prefs.save, async (_event, profileArg: unknown): Promise<void> => {
-    const profile = UserPreferencesSchema.parse(profileArg);
-    const stamped: import('../shared/characterSchema').UserPreferences = {
-      ...profile,
-      completed_at: profile.completed_at ?? new Date().toISOString(),
-    };
-    const cfg = await loadConfig();
-    await saveConfig({ ...cfg, user_profile: stamped });
+  // prefs:save — 260706: accepts a PARTIAL patch (only the answers the user
+  // was just asked). The merge over stored answers happens inside
+  // configStore.updateConfig, so the base is the freshly-locked config —
+  // never a renderer snapshot (TOCTOU: a retake must only update the fields
+  // it carries, and must not clobber a concurrent writer's other fields).
+  // completed_at is stamped on every save so the resolvePrefs device-vs-cloud
+  // recency comparison adopts the latest answers. Cloud upsert stays
+  // best-effort (a later prefs:save retries — no queue needed).
+  ipcMain.handle(IpcChannel.prefs.save, async (_event, patchArg: unknown): Promise<void> => {
+    const { UserPreferencesPatchSchema } = await import('../shared/characterSchema');
+    const patch = UserPreferencesPatchSchema.parse(patchArg);
+    const { mergePrefsPatch } = await import('./uniqueGeneration');
+    const { updateConfig } = await import('./configStore');
+    const now = new Date().toISOString();
+    const next = await updateConfig((cur) => ({
+      ...cur,
+      user_profile: mergePrefsPatch(cur.user_profile, patch, now),
+    }));
+    const stamped = next.user_profile;
 
     try {
       const { getClient } = await import('./auth/supabaseClient');
@@ -1630,7 +1710,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // routes through the portrait file pipeline).
         let message = raw;
         if (raw.startsWith('CLOUD_SYNC_REFUSED_DATA_URL')) {
-          message = "This character's portrait needs to be re-saved before it can sync — open the character to update it.";
+          message = "This character's portrait needs to be re-saved before it can sync. Open the character to update it.";
         } else if (raw.startsWith('CLOUD_SYNC_REFUSED_DEFAULT')) {
           message = 'Default characters cannot be uploaded.';
         }
@@ -1818,6 +1898,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
           if (authorName) return `by ${authorName}`;
           return ownerStr ? `by user-${ownerStr.slice(0, 4)}` : 'by anonymous';
         })(),
+        // search_public_characters returns `select *`, so the 260703 public_id
+        // column rides along; older rows without one show no tag.
+        publicId: typeof row.public_id === 'string' ? row.public_id : null,
         portraitUrl,
         skinUrl,
         updatedAt: typeof row.updated_at === 'string'

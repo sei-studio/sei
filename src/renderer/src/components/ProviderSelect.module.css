@@ -31,8 +31,7 @@
   font-family: var(--mono);
   font-weight: 500;
   font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
@@ -56,7 +55,7 @@
 .compact .trigger {
   min-height: 34px;
   font-size: 10px;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.04em;
 }
 
 .label {
@@ -104,8 +103,7 @@
   font-family: var(--mono);
   font-weight: 500;
   font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-2);
   cursor: pointer;
 }

@@ -27,6 +27,7 @@ import {
   type CreditsStatus,
   type CreditsHardStopEvent,
   type ChatMessagePush,
+  type BotActionPush,
   type GenProgressEvent,
 } from '../shared/ipc';
 
@@ -79,6 +80,8 @@ const api: RendererApi = {
   chatHistory: (characterId) => ipcRenderer.invoke(IpcChannel.chat.history, characterId),
   chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),
   chatClear: (characterId) => ipcRenderer.invoke(IpcChannel.chat.clear, characterId),
+  chatOpened: (characterId) => ipcRenderer.invoke(IpcChannel.chat.opened, characterId),
+  chatPreviews: () => ipcRenderer.invoke(IpcChannel.chat.previews),
   onChatMessage(cb: (push: ChatMessagePush) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: ChatMessagePush) => cb(push);
     ipcRenderer.on(IpcChannel.chat.message, handler);
@@ -193,6 +196,11 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.bot.status, handler);
   },
   getBotStatuses: () => ipcRenderer.invoke(IpcChannel.bot.getStatuses),
+  onBotAction(cb: (push: BotActionPush) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, push: BotActionPush) => cb(push);
+    ipcRenderer.on(IpcChannel.bot.action, handler);
+    return () => ipcRenderer.off(IpcChannel.bot.action, handler);
+  },
   onVisionCapability(cb: (cap: VisionCapability) => void) {
     const handler = (_e: Electron.IpcRendererEvent, cap: VisionCapability) => cb(cap);
     ipcRenderer.on(IpcChannel.vision.capability, handler);

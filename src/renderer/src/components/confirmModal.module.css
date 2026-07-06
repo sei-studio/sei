@@ -1,0 +1,26 @@
+/* confirmModal.module.css — shared body/status text for the confirm-style
+ * dialogs that render through ModalShell (Delete, ResetMemory, Unbind, SignOut,
+ * ResetAll, SwitchBackend, SkinSetupPrompt, ImportLocalProfile). The scrim,
+ * panel, title, footer and animation all come from ModalShell; only the body
+ * paragraph register lives here so those modals stay self-contained without
+ * reaching into a sibling modal's stylesheet. */
+
+.body {
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.emphasis {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.status {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text-2);
+  margin: 0;
+}

@@ -188,6 +188,21 @@ export type Character = z.infer<typeof CharacterSchema>;
  * (own-only RLS) so a re-install / second device skips the questionnaire.
  * All fields nullable: null = not answered yet.
  */
+/**
+ * 260705: relationship dynamics — what the user is looking for in a companion.
+ * Keys mirror soulcaster's DYNAMICS table (src/tables.js there); each biases
+ * the personality roll and the sheet's `player_dynamic` for one cast.
+ */
+export const COMPANION_DYNAMICS = [
+  'partner-in-crime',
+  'caretaker',
+  'protege',
+  'chill-friend',
+  'challenger',
+] as const;
+export const CompanionDynamicSchema = z.enum(COMPANION_DYNAMICS);
+export type CompanionDynamic = z.infer<typeof CompanionDynamicSchema>;
+
 export const UserPreferencesSchema = z.object({
   /** Preferred companion age band (companion's age, not the user's). */
   companion_age_range: z
@@ -196,10 +211,54 @@ export const UserPreferencesSchema = z.object({
     .default(null),
   /** Preferred art style for generated portraits. */
   art_style: z.enum(['chibi', 'anime', 'celshaded', 'cartoon', '3d']).nullable().default(null),
+  /**
+   * 260705: RANKED relationship dynamics from the questionnaire ("rank what
+   * you're looking for"). Array order IS the ranking: the user's first unique
+   * cast uses [0], the second [1], and so on (see resolveDynamic in
+   * src/main/uniqueGeneration.ts). Partial rankings are fine — casts past the
+   * end of the list free-roll. `[]` = the user explicitly chose "Surprise me";
+   * null = never asked (profiles completed before this question existed).
+   */
+  companion_dynamics: z.array(CompanionDynamicSchema).nullable().default(null),
   /** ISO timestamp when the questionnaire was completed; null = pending. */
   completed_at: z.string().nullable().default(null),
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
+
+/**
+ * 260706: partial questionnaire update — what prefs:save accepts. Only the
+ * ANSWER fields are settable (completed_at is stamped main-side on every
+ * save, so device-vs-cloud recency comparisons in resolvePrefs stay honest).
+ * Omitted keys leave the stored answer untouched; the merge happens in main
+ * against a fresh config read (TOCTOU-safe), never against a renderer
+ * snapshot.
+ */
+export const UserPreferencesPatchSchema = UserPreferencesSchema.pick({
+  companion_age_range: true,
+  art_style: true,
+  companion_dynamics: true,
+}).partial();
+export type UserPreferencesPatch = z.infer<typeof UserPreferencesPatchSchema>;
+
+/**
+ * The individually answerable questionnaire questions, in ASK ORDER (the
+ * ProfileQuestionsScreen renders its steps in this order). `null` means
+ * unanswered — note companion_dynamics uses `[]` for an explicit "Surprise
+ * me", which counts as answered.
+ */
+export const PREF_QUESTIONS = ['companion_age_range', 'companion_dynamics', 'art_style'] as const;
+export type PrefQuestion = (typeof PREF_QUESTIONS)[number];
+
+/**
+ * Which questions the given profile has NOT answered yet. Drives the
+ * "ask only what's missing" flows: a questionnaire completed before a new
+ * question shipped (or abandoned partway) re-asks just the gaps — at
+ * onboarding, and again when the user taps "Meet my companion".
+ */
+export function missingPrefQuestions(profile: UserPreferences | null | undefined): PrefQuestion[] {
+  if (!profile) return [...PREF_QUESTIONS];
+  return PREF_QUESTIONS.filter((q) => profile[q] == null);
+}
 
 /**
  * The in-game Minecraft username a summoned bot connects under: the per-persona
@@ -360,6 +419,12 @@ export const UserConfigSchema = z.object({
    */
   call_captions: z.boolean().optional().default(false),
   /**
+   * 260705: the chat presence side panel is OPEN by default; closing it is a
+   * sticky preference that survives companion switches and app restarts
+   * (hydrated into useUiStore.chatPanelHidden like realistic_typing).
+   */
+  chat_panel_hidden: z.boolean().optional().default(false),
+  /**
    * Onboarding skin-setup gate. Set true when the user finishes the name/API
    * onboarding step, cleared when they finish OR skip the dedicated skin-setup
    * page. While true, the app routes to `{ kind: 'skin-setup' }` instead of home
@@ -454,8 +519,19 @@ export const UserConfigSchema = z.object({
   user_profile: UserPreferencesSchema.optional().default({
     companion_age_range: null,
     art_style: null,
+    companion_dynamics: null,
     completed_at: null,
   }),
+  /**
+   * 260706: relationship dynamics already granted to a unique cast on this
+   * device. Each RANKED preference is granted at most once, top pick first
+   * (resolveDynamic in src/main/uniqueGeneration.ts); once the list is
+   * exhausted — or was never ranked — casts roll a random dynamic, which is
+   * NOT recorded here. Appended under the config file lock after a cast
+   * saves (configStore.updateConfig). Device-local by design: deliberately
+   * not mirrored to the cloud prefs row.
+   */
+  dynamics_granted: z.array(CompanionDynamicSchema).default([]),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

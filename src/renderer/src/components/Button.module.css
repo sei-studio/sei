@@ -1,11 +1,11 @@
-/* Button.module.css — terminal button system.
+/* Button.module.css — Party button system.
  *
- * Mockup language (ui.jsx .btn-new / .btn-sec): mono, uppercase, tracked.
- * Filled actions use the accent; secondaries are bordered and light up to the
- * accent on hover. `accent` carries the signature notched clip-path corner
- * (the CTA shape); `primary` is the same fill, square. D-28 sharp throughout.
+ * Mockup language (sei-roster-concept .btn): Rajdhani semibold, regular case,
+ * bordered secondaries that light to the accent, accent-filled primaries.
+ * The old mono/uppercase/tracked language and the notched clip-path are
+ * retired. D-28 sharp throughout.
  *
- * Source: .planning/UI-DESIGN-SYSTEM.md §Buttons.
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §1.
  */
 
 .button {
@@ -14,15 +14,12 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: var(--sans);
+  font-weight: 600;
   border: 1px solid transparent;
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease, color 160ms ease,
-    filter 160ms ease, box-shadow 160ms ease;
+    box-shadow 160ms ease;
   outline: none;
   white-space: nowrap;
 }
@@ -35,27 +32,22 @@
 .button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-  filter: none;
 }
 
-/* ── Sizes ───────────────────────────────────────────────────────────── */
+/* ── Sizes (padding-driven, no fixed heights) ────────────────────────── */
 .sm {
-  height: 32px;
-  padding: 0 13px;
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  padding: 5px 12px;
+  font-size: 12px;
   gap: 6px;
 }
 .md {
-  height: 38px;
-  padding: 0 16px;
+  padding: 7px 14px;
+  font-size: 13px;
   gap: 8px;
 }
 .lg {
-  height: 46px;
-  padding: 0 24px;
-  font-size: 12px;
-  letter-spacing: 0.18em;
+  padding: 10px 24px;
+  font-size: 14px;
   gap: 10px;
 }
 
@@ -63,51 +55,36 @@
   width: 100%;
 }
 
-/* ── Kind: primary — accent fill, square ─────────────────────────────── */
-.primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: transparent;
-  font-weight: 700;
-}
-.primary:hover:not(:disabled) {
-  filter: brightness(1.12);
-}
-
-/* ── Kind: accent — accent fill + notched CTA corner ─────────────────── */
+/* ── Kind: primary / accent — accent fill (accent kept as alias) ─────── */
+.primary,
 .accent {
   background: var(--accent);
   color: var(--accent-text);
-  border-color: transparent;
-  font-weight: 700;
-  clip-path: polygon(
-    8px 0,
-    100% 0,
-    100% calc(100% - 8px),
-    calc(100% - 8px) 100%,
-    0 100%,
-    0 8px
-  );
+  border-color: var(--accent);
+  font-weight: 600;
 }
+.primary:hover:not(:disabled),
 .accent:hover:not(:disabled) {
-  filter: brightness(1.12);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 /* ── Kind: ghost — bordered, lights up to accent ─────────────────────── */
 .ghost {
-  background: rgba(127, 127, 127, 0.03);
-  color: var(--text);
+  background: none;
+  color: var(--text-2);
   border-color: var(--border-strong);
 }
 .ghost:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
+  background: var(--accent-soft);
 }
 /* Selected state for toggle/segmented ghost buttons (aria-pressed). */
 .ghost[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-  border-color: var(--accent-strong);
-  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ── Kind: quiet — borderless, muted ─────────────────────────────────── */
@@ -120,9 +97,9 @@
   color: var(--accent);
 }
 
-/* ── Kind: danger — bordered red (mockup .btn-sec.danger) ─────────────── */
+/* ── Kind: danger — bordered, red affordance at rest, full red on hover ── */
 .danger {
-  background: rgba(127, 127, 127, 0.03);
+  background: none;
   color: var(--red-strong);
   border-color: color-mix(in srgb, var(--red) 40%, transparent);
 }

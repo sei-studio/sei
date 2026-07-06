@@ -18,6 +18,13 @@ import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
 import { buildSystemBlocks, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL } from './chatPrompts';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import * as chatStore from './chatStore';
+import {
+  drainThoughts,
+  pushThought,
+  renderThoughtNote,
+  THOUGHT_FIRST_MEETING,
+  THOUGHT_JOINING_GAME,
+} from './thoughts';
 
 export interface ChatDeps {
   getLanState: () => LanState;
@@ -76,10 +83,16 @@ async function readMemoryTail(characterId: string): Promise<string> {
  * enter in a chat. No blank line → one message. Empty chunks are dropped; a reply
  * with no content collapses to a single "…" so the turn is never message-less.
  */
-export function splitReply(text: string): string[] {
+export function splitReply(text: string, punctuation: 'casual' | 'deliberate' = 'casual'): string[] {
   const parts = text
     .split(/\n\s*\n+/)
     .map((s) => s.trim())
+    // 260705: casual texters (the default) drop a single trailing period per
+    // bubble — how people actually text. ONLY a lone period: an ellipsis
+    // ("hm...") carries tone and is kept, and ? / ! always stay. 'deliberate'
+    // characters (character.metadata.punctuation) keep their full stops.
+    // Mirrors splitChatMessages in src/bot/brain/orchestrator.js.
+    .map((s) => (punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')))
     .filter(Boolean);
   return parts.length ? parts : ['…'];
 }
@@ -155,6 +168,28 @@ export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assi
 }
 
 /**
+ * Fold a bracketed model-facing note into the messages array without breaking
+ * Anthropic's strict role alternation. If the transcript already ends on a user
+ * turn (a play row, or the player typing while something ran), append the note to
+ * that turn's string content; otherwise the last turn is assistant (or the array
+ * is empty), so push the note as a fresh user message. Shared by the three note
+ * sites: the launch-failed turn, the drained-thought fold in a normal turn, and
+ * the first-meeting turn. A blank note is a no-op. Exported for testing.
+ */
+export function foldUserNote(
+  messages: Array<{ role: 'user' | 'assistant'; content: unknown }>,
+  note: string,
+): void {
+  if (!note) return;
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'user' && typeof last.content === 'string') {
+    last.content = `${last.content}\n${note}`;
+  } else {
+    messages.push({ role: 'user', content: note });
+  }
+}
+
+/**
  * Author's proactiveness dial (0-2). Missing / non-integer / out-of-range →
  * reactive (1). MIRROR: src/bot/index.js (~line 538) clamps
  * character.metadata.proactiveness identically; the bot ships as raw ESM in a
@@ -163,6 +198,16 @@ export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assi
  */
 function clampProactiveness(raw: unknown): number {
   return typeof raw === 'number' && Number.isInteger(raw) ? Math.min(Math.max(0, raw), 2) : 1;
+}
+
+/**
+ * Texting punctuation register off character.metadata.punctuation (260705).
+ * Only the exact 'deliberate' value opts out of the casual trailing-period
+ * strip; anything else (missing, junk) reads as 'casual'. MIRROR of the read
+ * in src/bot/index.js (the bot cannot import from src/main) — keep in sync.
+ */
+function clampPunctuation(raw: unknown): 'casual' | 'deliberate' {
+  return raw === 'deliberate' ? 'deliberate' : 'casual';
 }
 
 /**
@@ -193,11 +238,15 @@ async function prepareChatTurn(
   // Same source + clamp the bot uses (character.metadata.proactiveness), so the
   // character is as forward in chat as it is in-game.
   const proactiveness = clampProactiveness(character.metadata?.proactiveness);
+  // Same source the bot uses (character.metadata.punctuation), so the character
+  // texts with the same register in-app as in-game.
+  const punctuation = clampPunctuation(character.metadata?.punctuation);
   const system = buildSystemBlocks({
     persona: character.persona,
     name: character.name,
     preferredName: config.preferred_name ?? '',
     proactiveness,
+    punctuation,
     memory,
     summary,
     openWorldDetected: opts.openWorldDetected,
@@ -205,7 +254,7 @@ async function prepareChatTurn(
     voiceCall: opts.voiceCall === true,
   });
   const messages = toMessages(history);
-  return { character, config, system, messages };
+  return { character, config, system, messages, punctuation };
 }
 
 /**
@@ -217,10 +266,11 @@ async function prepareChatTurn(
 async function persistReplies(
   characterId: string,
   replyText: string,
+  punctuation: 'casual' | 'deliberate' = 'casual',
   opts?: { voice?: boolean },
 ): Promise<ChatMessage[]> {
   const now = Date.now();
-  const replies: ChatMessage[] = splitReply(replyText).map((text, i) => ({
+  const replies: ChatMessage[] = splitReply(replyText, punctuation).map((text, i) => ({
     id: randomUUID(),
     role: 'companion',
     text,
@@ -275,6 +325,14 @@ export async function sendChatMessage(
         // standalone chat turn, so drain any fold backlog from here too —
         // otherwise a long play session could grow the window unbounded.
         void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
+        // A routed exchange is still a chat — stamp last_chatted here too, or
+        // the Home card keeps calling a companion the player talks to in-game
+        // "New". Best-effort, same as the standalone-turn stamp below.
+        try {
+          await saveCharacter({ ...character, last_chatted: new Date().toISOString() });
+        } catch (err) {
+          console.warn(`[sei] failed to stamp last_chatted for ${args.characterId}: ${(err as Error).message}`);
+        }
         return { replies: [], routed: true };
       }
     }
@@ -294,6 +352,10 @@ export async function sendChatMessage(
     });
     if (!prep) throw new Error('Character not found');
     const { system, messages } = prep;
+    // Fold any pending steering thoughts into this turn (ephemeral; drained here
+    // so they ride this prompt once and never persist). Not drained on the
+    // routed-to-bot path above: in-game routing is out of scope for thoughts.
+    foldUserNote(messages, renderThoughtNote(drainThoughts(args.characterId)));
     const { client, model } = await buildChatSdk();
 
     let launch: ChatSendResult['launch'];
@@ -370,7 +432,9 @@ export async function sendChatMessage(
       throw e;
     }
 
-    const replies = await persistReplies(args.characterId, replyText, { voice: args.voiceCall === true });
+    const replies = await persistReplies(args.characterId, replyText, prep.punctuation, {
+      voice: args.voiceCall === true,
+    });
 
     // Background compaction (260702): the reply is persisted, so if 50+
     // messages have aged past the window, fold them NOW — while the player is
@@ -445,15 +509,13 @@ export async function sendLaunchFailedTurn(
     `[System note — not the player speaking: your attempt to join the Minecraft world just failed (${shortReason}). ` +
     'You never made it in; you are NOT in the world, you are still here in chat. ' +
     'Tell the player the join failed and that you can try again — one short line, in your own voice. Do not pretend you got in.]';
-  // Anthropic requires strict role alternation; if the transcript already ends
-  // on a user turn (e.g. the player typed something while the join was dying),
-  // fold the note into it instead of appending a second user message.
-  const last = messages[messages.length - 1];
-  if (last && last.role === 'user' && typeof last.content === 'string') {
-    last.content = `${last.content}\n${note}`;
-  } else {
-    messages.push({ role: 'user', content: note });
-  }
+  // Anthropic requires strict role alternation; fold the note into a trailing
+  // user turn (e.g. the player typed something while the join was dying) rather
+  // than appending a second user message.
+  foldUserNote(messages, note);
+  // Any steering thoughts queued for this character ride this turn too, as a
+  // second user-side aside (drained so they never persist).
+  foldUserNote(messages, renderThoughtNote(drainThoughts(characterId)));
 
   const { client, model } = await buildChatSdk();
   const res = await client.messages.create(
@@ -462,7 +524,71 @@ export async function sendLaunchFailedTurn(
   );
   const replyText = textOf(res.content);
   if (!replyText) return [];
-  return persistReplies(characterId, replyText);
+  return persistReplies(characterId, replyText, prep.punctuation);
+}
+
+/**
+ * In-flight first-meeting turn per character. A second chat:opened arriving
+ * while one runs returns the same promise instead of firing a duplicate greeting.
+ */
+const firstMeetingInflight = new Map<string, Promise<ChatMessage[]>>();
+
+/**
+ * First-meeting greeting (thoughts consumer #1). When the player first opens chat
+ * with a freshly matched UNIQUE companion, the companion speaks FIRST, steered by
+ * THOUGHT_FIRST_MEETING. No-op (returns []) unless ALL hold:
+ *   - the character exists and is kind 'unique',
+ *   - the persisted transcript is EMPTY, and
+ *   - the character has never been chatted with (!last_chatted), which guards the
+ *     transcript-cleared case, where "you were just summoned" would be a lie.
+ * Single-flight per character. We do NOT stamp last_chatted (the player has not
+ * spoken yet); the greeting's own persisted reply makes the transcript non-empty,
+ * so the next open sees a non-empty transcript and the turn won't refire. No tools
+ * are offered; this turn only speaks.
+ *
+ * The renderer calls this on every empty-history open and lets main no-op; policy
+ * (kind / emptiness) lives here, never in the renderer.
+ */
+export async function sendFirstMeetingTurn(
+  characterId: string,
+  deps?: Pick<ChatDeps, 'getLanState'>,
+): Promise<ChatMessage[]> {
+  const existing = firstMeetingInflight.get(characterId);
+  if (existing) return existing;
+
+  const run = (async (): Promise<ChatMessage[]> => {
+    const character = await getCharacter(characterId);
+    if (!character) return [];
+    if (character.kind !== 'unique') return [];
+    if (character.last_chatted) return [];
+    const transcript = await chatStore.readAll(characterId);
+    if (transcript.length > 0) return [];
+
+    pushThought(characterId, THOUGHT_FIRST_MEETING);
+    const prep = await prepareChatTurn(characterId, {
+      openWorldDetected: deps?.getLanState?.().kind === 'open',
+      inGame: false,
+    });
+    if (!prep) return [];
+    const { system, messages } = prep;
+    // The transcript is empty, so messages is empty: the drained thought becomes
+    // the (only) user message, satisfying Anthropic's "first message is user".
+    foldUserNote(messages, renderThoughtNote(drainThoughts(characterId)));
+
+    const { client, model } = await buildChatSdk();
+    const res = await client.messages.create(
+      { model, max_tokens: 200, system, messages: messages as never },
+      { timeout: CHAT_TIMEOUT_MS },
+    );
+    const replyText = textOf(res.content);
+    if (!replyText) return [];
+    return persistReplies(characterId, replyText, prep.punctuation);
+  })().finally(() => {
+    firstMeetingInflight.delete(characterId);
+  });
+
+  firstMeetingInflight.set(characterId, run);
+  return run;
 }
 
 /**
@@ -508,7 +634,7 @@ export async function sendVoiceGreetingTurn(characterId: string): Promise<ChatMe
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     const replyText = textOf(res.content);
     if (!replyText) return [];
-    return await persistReplies(characterId, replyText, { voice: true });
+    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
   } catch (err) {
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.
@@ -541,9 +667,13 @@ function resolveLaunch(
   const lan = deps.getLanState();
   if (lan.kind === 'open') {
     return {
-      note:
-        'You are on your way into the player\'s Minecraft world right now — tell them you\'re hopping in. ' +
-        'Do NOT claim you have already arrived; you are still joining. Keep it to one short line.',
+      // The steering TEXT now lives in the thoughts module (the single seam a
+      // future narrator edits). This consumer delivers it as a tool_result mid-
+      // turn, so it uses the raw constant rather than the bracketed thought-note
+      // framing (which would read oddly as a launch() result); the model-facing
+      // meaning is identical: on the way in, say you're hopping in, don't claim
+      // arrival, one short line.
+      note: THOUGHT_JOINING_GAME,
       launch: { game, status: 'summoning' },
       summon: true,
     };

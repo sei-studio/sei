@@ -1,8 +1,8 @@
-/* UsageBar.module.css — 260602-hbr.
+/* UsageBar.module.css — Party redesign restyle of 260602-hbr.
  *
- * Horizontal layout: the usage-percent bar takes the remaining width, the
- * "~Xh left" estimate sits to its right. Monospace numerals on the estimate so
- * the row doesn't jitter as the value ticks. All colors via tokens (no hex).
+ * Horizontal layout: the usage-percent bar takes the remaining width, a quiet
+ * refresh button sits to its right. The standalone "~Xh left" estimate text was
+ * lifted out (it now lives in the CreditsScreen hero). All colors via tokens.
  */
 
 .root {
@@ -54,15 +54,4 @@
   transition: none;
   opacity: 1;
   transform: translate(-50%, 0);
-}
-
-.estimate {
-  flex: 0 0 auto;
-  font-family: var(--mono);
-  font-size: 14px;
-  line-height: 1.2;
-  color: var(--text-2);
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  cursor: default;
 }

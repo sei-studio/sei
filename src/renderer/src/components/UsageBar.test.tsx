@@ -9,11 +9,12 @@
  *   1. Exports a UsageBar function symbol + an ESTIMATE_TOOLTIP string that
  *      says the figure is only an estimate.
  *   2. Feeds usage_pct from the store into PercentBar (the usage % bar).
- *   3. Derives the "~Xh left" estimate from remaining_tokens via the flat
- *      tokensRemainingToPlaytime() multiplier — no tokens_per_min plumbing.
- *   4. Wires the estimate tooltip (title + aria-label) and renders {display}.
+ *   3. Party redesign: the standalone "~Xh left" estimate text is gone — no
+ *      tokensRemainingToPlaytime / vision plumbing rides the bar anymore, and
+ *      no per-user tokens_per_min plumbing reaches the component.
+ *   4. A quiet refresh affordance is wired (RefreshIcon + refresh()).
  *   5. PROXY-05: no raw token/dollar COUNTS surfaced (percent + time only).
- *   6. CSS module defines the row layout (.root / .barWrap / .estimate).
+ *   6. CSS module defines the row layout (.root / .barWrap).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -49,25 +50,21 @@ describe('UsageBar (260602-hbr usage-percent bar)', () => {
     expect(source.includes('value={usagePct}')).toBe(true);
   });
 
-  it('Test 3: derives the estimate from remaining_tokens via the flat rate (+ D-07 vision shrink)', () => {
+  it('Test 3: the estimate text + its plumbing were lifted out of the bar', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes('s.remaining_tokens')).toBe(true);
-    // The estimate is derived from remaining_tokens via tokensRemainingToPlaytime.
-    // Phase 15 (D-07): the second arg is now a `rate` that shrinks via
-    // VISION_MULTIPLIER when Looking is 'continuous' (read from vision_mode), and
-    // equals the flat DEFAULT_TOKENS_PER_MIN otherwise — no regression.
-    expect(source.includes('tokensRemainingToPlaytime(remainingTokens, rate)')).toBe(true);
-    expect(source.includes('VISION_MULTIPLIER')).toBe(true);
-    expect(source.includes('vision_mode')).toBe(true);
+    // Party redesign: the "~Xh left" estimate moved to the CreditsScreen hero,
+    // so the bar no longer pulls remaining_tokens or the vision multiplier.
+    expect(source.includes('tokensRemainingToPlaytime')).toBe(false);
+    expect(source.includes('VISION_MULTIPLIER')).toBe(false);
     // No per-user tokens_per_min plumbing reaches the component.
     expect(source.includes('tokens_per_min')).toBe(false);
   });
 
-  it('Test 4: estimate tooltip + rendered display string are wired', () => {
+  it('Test 4: a quiet refresh affordance is wired', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes('title={ESTIMATE_TOOLTIP}')).toBe(true);
+    expect(source.includes('RefreshIcon')).toBe(true);
+    expect(source.includes('s.refresh')).toBe(true);
     expect(source.includes('aria-label=')).toBe(true);
-    expect(source.includes('{display}')).toBe(true);
   });
 
   it('Test 5: bar tooltip shows $used/$total + played time (260615 owner-approved PROXY-05 exception)', () => {
@@ -86,19 +83,18 @@ describe('UsageBar (260602-hbr usage-percent bar)', () => {
     const { formatUsd, formatPlayed, usageTooltip } = await import('./UsageBar');
     expect(formatUsd(1.2)).toBe('$1.20');
     expect(formatUsd(0)).toBe('$0.00');
-    expect(formatUsd(undefined)).toBe('$—');
+    expect(formatUsd(undefined)).toBe('$–');
     expect(formatPlayed(11_820_000)).toBe('3h 17m'); // 3h17m
     expect(formatPlayed(0)).toBe('0h 0m');
     expect(formatPlayed(45 * 60_000)).toBe('0h 45m');
     expect(usageTooltip(1.2, 5, 11_820_000)).toBe('$1.20/$5.00 used, played 3h 17m');
-    expect(usageTooltip(undefined, undefined, 0)).toBe('$—/$— used, played 0h 0m');
+    expect(usageTooltip(undefined, undefined, 0)).toBe('$–/$– used, played 0h 0m');
   });
 
   it('Test 6: CSS module defines the row layout', () => {
     const css = readFileSync(CSS_PATH, 'utf-8');
     expect(css.includes('.root')).toBe(true);
     expect(css.includes('.barWrap')).toBe(true);
-    expect(css.includes('.estimate')).toBe(true);
     expect(css.includes('display: flex')).toBe(true);
   });
 

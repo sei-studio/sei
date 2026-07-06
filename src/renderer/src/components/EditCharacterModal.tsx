@@ -27,7 +27,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useChatStore } from '../lib/stores/useChatStore';
 import { Button } from './Button';
+import { ModalShell } from './ModalShell';
 import { PercentBar } from './PercentBar';
 import { TextField } from './TextField';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -284,6 +286,9 @@ export function EditCharacterModal({
     setError(null);
     try {
       await sei.resetMemory(character.id);
+      // Reset deletes the chat transcript too — drop the renderer's cached
+      // messages/preview so an open chat doesn't keep showing erased history.
+      await useChatStore.getState().clear(character.id);
       setResetDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset memory.');
@@ -311,18 +316,17 @@ export function EditCharacterModal({
 
   return (
     <>
-      <div
-        className={styles.scrim}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="edit-character-title"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) void requestClose();
-        }}
+      <ModalShell
+        title={null}
+        width={920}
+        panelClassName={styles.editPanel}
+        escClose={false}
+        scrimClose
+        onClose={() => void requestClose()}
+        aria-label="Edit companion"
       >
-        <div className={styles.modal}>
-          {/* ── Sidebar ── */}
-          <aside className={styles.sidebar}>
+        {/* ── Sidebar ── */}
+        <aside className={styles.sidebar}>
             <h2 id="edit-character-title" className={styles.title}>
               Edit companion
             </h2>
@@ -347,11 +351,11 @@ export function EditCharacterModal({
               {section === 'basic' ? (
                 <>
                   <div className={styles.field}>
-                    <label className={styles.label}>NAME</label>
+                    <label className={styles.label}>Name</label>
                     <TextField value={name} onChange={setName} aria-label="Companion name" />
                   </div>
                   <div className={styles.field}>
-                    <label className={styles.label}>DESCRIPTION</label>
+                    <label className={styles.label}>Description</label>
                     <p className={styles.paneHint}>For you and other players</p>
                     <TextField
                       value={description}
@@ -367,7 +371,7 @@ export function EditCharacterModal({
               {section === 'appearance' ? (
                 <>
                   <div className={styles.subSection}>
-                    <label className={styles.label}>CARD IMAGE</label>
+                    <label className={styles.label}>Card image</label>
                     <PortraitImagePicker
                       characterId={character.id}
                       value={portraitImage}
@@ -375,7 +379,7 @@ export function EditCharacterModal({
                     />
                   </div>
                   <div className={styles.subSection}>
-                    <label className={styles.label}>SKIN</label>
+                    <label className={styles.label}>Skin</label>
                     <SkinEditor character={character} onChanged={() => void refreshCharacter(character.id)} />
                   </div>
                   <span className={styles.appearanceNote}>Image and skin changes apply immediately.</span>
@@ -428,7 +432,7 @@ export function EditCharacterModal({
                   {personaMode === 'standard' ? (
                     <>
                       <div className={styles.field}>
-                        <label className={styles.label}>PERSONA SOURCE</label>
+                        <label className={styles.label}>Persona source</label>
                         <p className={styles.paneHint}>
                           A short description; the model expands it into the companion&apos;s voice and behavior.
                         </p>
@@ -441,7 +445,7 @@ export function EditCharacterModal({
                         />
                       </div>
                       <div className={styles.field}>
-                        <label className={styles.label}>PROACTIVENESS</label>
+                        <label className={styles.label}>Proactiveness</label>
                         <div className={styles.proactivenessPicker} role="radiogroup" aria-label="Proactiveness level">
                           {PROACTIVENESS_LEVELS.map((lvl) => (
                             <button
@@ -465,7 +469,7 @@ export function EditCharacterModal({
                     </>
                   ) : (
                     <div className={styles.field}>
-                      <label className={styles.label}>RAW PROMPT</label>
+                      <label className={styles.label}>Raw prompt</label>
                       <p className={styles.paneHint}>
                         The exact prompt sent to the model each turn. Editing here overrides the standard
                         framework (proactiveness, voice rules, and all).
@@ -491,7 +495,7 @@ export function EditCharacterModal({
               {section === 'danger' && !isDefault ? (
                 <div className={styles.dangerPane}>
                   <p className={styles.dangerHint}>
-                    Reset wipes this companion&apos;s memory of you and starts fresh. Deleting removes the
+                    Reset wipes this companion&apos;s memory of you and starts fresh. Unbinding removes the
                     companion permanently and cannot be undone.
                   </p>
                   <div className={styles.dangerRow}>
@@ -504,7 +508,7 @@ export function EditCharacterModal({
                       {resetDone ? 'Memory reset' : resetting ? 'Resetting…' : 'Reset memory'}
                     </Button>
                     <Button kind="danger" size="md" onClick={() => setConfirmingDelete(true)} disabled={busy}>
-                      Delete companion
+                      Unbind companion
                     </Button>
                   </div>
                 </div>
@@ -513,7 +517,7 @@ export function EditCharacterModal({
               {expansion ? (
                 <div className={styles.field} aria-live="polite">
                   <label className={styles.label}>
-                    EXPANDING PERSONA: {expansion.label} · {expansion.pct}%
+                    Expanding persona: {expansion.label} · {expansion.pct}%
                   </label>
                   <PercentBar
                     value={expansion.pct}
@@ -529,7 +533,7 @@ export function EditCharacterModal({
             {/* ── Pane footer (contextual actions) ── */}
             <div className={styles.footer}>
               {personaDirty && section !== 'persona' ? (
-                <span className={styles.footerHint}>Unsaved persona changes — open Persona to apply or discard.</span>
+                <span className={styles.footerHint}>Unsaved persona changes. Open Persona to apply or discard.</span>
               ) : null}
               {section === 'basic' ? (
                 <>
@@ -600,8 +604,7 @@ export function EditCharacterModal({
               ) : null}
             </div>
           </section>
-        </div>
-      </div>
+      </ModalShell>
 
       {confirmingDelete ? (
         <DeleteConfirmModal

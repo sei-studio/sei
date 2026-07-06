@@ -1,41 +1,28 @@
 /**
- * CharactersScreen — Home / World tabbed view (B4 refactor).
+ * CharactersScreen — Home / World tabbed view (Party redesign).
  *
  * Renders two co-located tab bodies:
  *
- *   - <HomeGrid />   : the user's local + cloud library. Filters down to
- *                      characters that are either (a) bundled defaults,
- *                      (b) owned by the current user, or (c) legacy local-only
- *                      (no owner). Public-but-not-mine cloud characters that
- *                      somehow ended up in the local store are excluded here —
- *                      they live on the World tab instead.
+ *   - <HomeGrid />   : the party wall (§4.2). Full-height flex panels, one per
+ *                      companion slot (MAX_COMPANION_SLOTS = 4, always all
+ *                      rendered). Filled slots show full-bleed portrait art,
+ *                      the presence line, and a hover-revealed lastline +
+ *                      [Message][Play] action row. Empty slots are dormant
+ *                      panels (gathering pixels + "Awaken") that route to the
+ *                      awaken view. Slot fill order: library characters by
+ *                      last interaction, then cloud-only placeholder rows.
  *
- *   - <WorldGrid />  : public character listing (previously called Browse).
- *                      Mounts a search field + grid backed by useBrowseStore.
- *                      Shows ROWS_PER_BATCH (4) rows at a time — row width is
- *                      measured live off the responsive grid, so "4 rows"
- *                      stays correct when the card count per row changes —
- *                      with an explicit "Load more" button at the bottom
- *                      (260704: replaced the IntersectionObserver infinite
- *                      scroll; bounds the portrait-download burst that tripped
- *                      the per-IP rate limit on the proxy).
- *
- * B4 changes vs. the prior version:
- *   1. Capability gate removed — the tab bar is always rendered. The default
- *      tab is driven by useUiStore.homeTab (set by IconRail's compass icon
- *      in B3). Tab labels are "Home" and "World".
- *   2. CharacterCard chip text now reads 'MINE' for user-owned characters
- *      and 'WORLD' for foreign-owned characters that landed in the local
- *      store via the Add-to-Mine flow.
- *   3. Home grid filtering hides foreign-owned chars (they're WORLD content).
- *   4. WorldGrid drops the H1 heading (the tab bar labels it) and BrowseCard
- *      renders without a chip (all world cards are implicitly world).
+ *   - <WorldGrid />  : public character listing. Search + sort top bar with a
+ *                      right-aligned party-slots indicator, 3:4 "scouting"
+ *                      cards (BrowseCard) with a hover Invite action, paged by
+ *                      ROWS_PER_BATCH rows behind an explicit "Load more"
+ *                      button (260704: bounds the portrait-download burst that
+ *                      tripped the per-IP rate limit on the proxy).
  *
  * Lifecycle pitfalls (unchanged):
  *   - HomeGrid's useEffect that fires sei.charsListMerged() stays INSIDE
  *     HomeGrid so it doesn't re-fire on tab switch.
- *   - useBrowseStore.refresh() is called ONCE in WorldGrid's useEffect.
- *   - LAN pill belongs ONLY in HomeGrid.
+ *   - useBrowseStore.prefetch() is called ONCE in WorldGrid's useEffect.
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -45,13 +32,20 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { useChatStore, chatPreviewFor } from '../lib/stores/useChatStore';
 import { lastInteractionAt } from '../lib/lastInteraction';
-import { CharacterCard } from '../components/CharacterCard';
-import { AddCard } from '../components/AddCard';
+import { isHomeCharacter } from '../lib/homeLibrary';
+import { presenceOf, useMinuteTick } from '../lib/presence';
+import { actionVerb } from '../lib/actionVerb';
+import { pickPalette } from '../lib/portraitPalettes';
+import { PixelPortrait } from '../components/PixelPortrait';
+import { Presence } from '../components/Presence';
+import { GatherPixels } from '../components/GatherPixels';
+import type { GatherCycle } from '../components/GatherPixels';
 import { CreationLimitModal } from '../components/CreationLimitModal';
-import { AddCompanionChooserModal } from '../components/AddCompanionChooserModal';
 import { SignInModal } from '../components/SignInModal';
 import { BrowseCard } from '../components/BrowseCard';
+import type { InviteState } from '../components/BrowseCard';
 import { Button } from '../components/Button';
 import type { Character } from '@shared/characterSchema';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
@@ -68,6 +62,19 @@ type Tab = 'home' | 'world';
  * rows. Keeps the first paint (and its portrait-download burst) bounded.
  */
 const ROWS_PER_BATCH = 4;
+
+/**
+ * Dormant-slot gathering figures by wall position (sigil-lab "four
+ * variations" set) — slot 1 plays cycle a, slot 2 b, etc., so no two empty
+ * slots gather into the same figure.
+ */
+const GATHER_CYCLES: readonly GatherCycle[] = ['a', 'b', 'c', 'd'];
+
+/**
+ * World grid wireframe rows shown while the first page is in flight — a
+ * fixed two-row block (never a partial third row).
+ */
+const SKELETON_ROWS = 2;
 
 /**
  * Phase 11 plan 19 (D-19, LIB-04) — cloud-only entry shape.
@@ -110,129 +117,72 @@ export function CharactersScreen(): React.ReactElement {
 }
 
 /**
- * HomeGrid — the user's library tab.
+ * HomeGrid — the party wall (Party redesign §4.2).
  *
- * B4 filtering rule: only show characters where
- *   (a) is_default === true, OR
- *   (b) character.owner === currentUserId, OR
- *   (c) character.owner == null (legacy local).
- * Public-but-not-mine cloud characters that somehow ended up in the local
- * store but aren't owned by the user are excluded here — they belong on the
- * World tab.
+ * All MAX_COMPANION_SLOTS panels always render: filled slots (library
+ * characters by last interaction, then cloud-only placeholders), then dormant
+ * "Awaken" panels for the remainder. Panel click / Message opens the chat
+ * (charsOpenPrepare first); Play opens the games picker; dormant panels gate
+ * on the daily creation quota then route to the awaken view.
  */
 function HomeGrid(): React.ReactElement {
   const characters = useDataStore((s) => s.characters);
   const recentlyDeletedIds = useDataStore((s) => s.recentlyDeletedIds);
+  const summons = useDataStore((s) => s.summons);
+  const actions = useDataStore((s) => s.actions);
   const navigate = useUiStore((s) => s.navigate);
   const openModal = useUiStore((s) => s.openModal);
-  const setHomeTab = useUiStore((s) => s.setHomeTab);
-  const greetingDismissed = useUiStore((s) => s.homeGreetingDismissed);
   const authState = useAuthStore((s) => s.state);
   const authKind = authState.kind;
-  const setUpgradeFraming = useAuthStore((s) => s.setUpgradeFraming);
-  const upgradeFraming = useAuthStore((s) => s.upgradeFraming);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   const [cloudOnly, setCloudOnly] = useState<Array<{ id: string; name: string }>>([]);
-  const [openPrepareError, setOpenPrepareError] = useState<string | null>(null);
-  const [preferredName, setPreferredName] = useState<string>('');
-  const [isFirstLogin, setIsFirstLogin] = useState<boolean>(false);
-  // Daily character-creation cap (MAX_CREATIONS_PER_DAY, rolling 24h).
-  // Pre-flight gate before the new-character flow so a maxed-out user gets a
-  // "come back tomorrow" modal instead of failing mid-flow. null = hidden.
+  // Daily character-creation cap (persona_daily). Pre-flight gate before the
+  // awaken view so a maxed-out user gets a "come back tomorrow" modal instead
+  // of failing mid-expansion. null = hidden.
   const [createLimit, setCreateLimit] = useState<{ resetsAt: string | null } | null>(null);
-  // 260703 procgen — the add-companion chooser (opened from an empty slot) and
-  // the sign-in prompt shown when a signed-out / local-mode user picks the
-  // flagship "unique companion" path.
-  const [chooserOpen, setChooserOpen] = useState<boolean>(false);
-  const [showSignIn, setShowSignIn] = useState<boolean>(false);
 
-  // Gate the custom-creation entry point on the daily quota. checkCreateQuota
-  // applies to every backend (260705: local rolling-24h creation log, BYOK
-  // included) and fails open on any error, so a transient hiccup never
-  // wrongly blocks creation.
-  const handleAddClick = async (): Promise<void> => {
+  // Presence decays online → idle on the shared minute ticker.
+  useMinuteTick();
+
+  // Roster lastlines: live transcript tail when loaded, else the bulk
+  // chat:previews pull (fetched once on mount; kept fresh by chat pushes).
+  const chatState = useChatStore();
+  const loadPreviews = useChatStore((s) => s.loadPreviews);
+  useEffect(() => {
+    void loadPreviews();
+  }, [loadPreviews]);
+
+  // Dormant panel → awaken view, gated on the daily creation quota.
+  // checkCreateQuota applies to every backend (local rolling-24h creation log,
+  // BYOK included) and fails open on any error, so a transient hiccup never
+  // wrongly blocks the path.
+  const handleAwaken = async (): Promise<void> => {
     const quota = await sei.checkCreateQuota();
     if (quota.blocked) {
       setCreateLimit({ resetsAt: quota.resetsAt });
       return;
     }
-    navigate({ kind: 'add-character' });
-  };
-
-  // Chooser → "Create from scratch": the existing custom wizard (quota-gated).
-  const handlePickCustom = (): void => {
-    setChooserOpen(false);
-    void handleAddClick();
-  };
-
-  // Chooser → "Invite an existing companion": switch the Home view to World.
-  const handlePickWorld = (): void => {
-    setChooserOpen(false);
-    setHomeTab('world');
-  };
-
-  // Chooser → flagship "Meet your unique companion". Cloud + signed-in only:
-  // a signed-out user OR a local-mode (BYOK) user is routed to the sign-in
-  // modal (framed for this action), same pattern as the cloud-AI upsell. When
-  // eligible, run the first-sign-in questionnaire gate if it hasn't been
-  // answered yet, then land on the per-slot gender question.
-  const handlePickUnique = async (): Promise<void> => {
-    if (authKind !== 'signed_in') {
-      setChooserOpen(false);
-      setUpgradeFraming('meet your unique companion');
-      setShowSignIn(true);
-      return;
-    }
-    let backendLocal = false;
-    try {
-      const cfg = await sei.getConfig();
-      backendLocal = (cfg.ai_backend_kind ?? 'local') !== 'cloud-proxy';
-    } catch {
-      // Fail OPEN — let the generation pipeline surface any real backend issue
-      // rather than blocking an eligible user on a transient config read.
-      backendLocal = false;
-    }
-    if (backendLocal) {
-      setChooserOpen(false);
-      setUpgradeFraming('meet your unique companion');
-      setShowSignIn(true);
-      return;
-    }
-    setChooserOpen(false);
-    try {
-      const prefs = await sei.prefsGet();
-      if (prefs.needed) {
-        navigate({ kind: 'profile-questions', next: 'unique-gender' });
-        return;
-      }
-    } catch {
-      // Fail open — proceed to the gender step; the pipeline can still run.
-    }
-    navigate({ kind: 'unique-gender' });
+    navigate({ kind: 'awaken' });
   };
 
   useEffect(() => {
+    // has_been_welcomed is the persisted first-open marker. The greeting
+    // header is gone (party wall), but the one-shot flip stays so any future
+    // first-open surface keeps working — do not delete the config plumbing.
     let cancelled = false;
     void (async () => {
       try {
         const cfg = await sei.getConfig();
         if (cancelled) return;
-        setPreferredName(cfg.preferred_name ?? '');
-        // "Welcome to Sei" shows ONLY on the user's very first login; every
-        // later app open shows "Welcome back". has_been_welcomed is the
-        // persisted one-shot marker — flip it true the first time we render
-        // the first-login greeting so subsequent opens read false→back.
-        const firstLogin = cfg.has_been_welcomed !== true;
-        setIsFirstLogin(firstLogin);
-        if (firstLogin) {
+        if (cfg.has_been_welcomed !== true) {
           try {
             await sei.saveConfig({ ...cfg, has_been_welcomed: true });
           } catch {
-            /* non-fatal: worst case the next open repeats "Welcome to Sei" */
+            /* non-fatal: worst case the next open repeats the flip */
           }
         }
       } catch {
-        /* fall through: empty name, treat as returning user */
+        /* fall through */
       }
     })();
     return () => {
@@ -267,64 +217,41 @@ function HomeGrid(): React.ReactElement {
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
 
   const handleSummon = (id: string): void => {
-    // The card's "Play" CTA opens the game picker; each tile launches through
+    // The panel's "Play" CTA opens the game picker; each tile launches through
     // the shared summonFlow (skin-setup nudge → LAN gate). Mirrors CharacterPage.
     openModal({ kind: 'games-picker', characterId: id });
   };
 
-  const handleOpen = async (id: string): Promise<void> => {
-    setOpenPrepareError(null);
-    try {
-      await sei.charsOpenPrepare(id);
-    } catch (err) {
-      console.warn(`[sei] open prepare failed for ${id}: ${(err as Error).message}`);
-      setOpenPrepareError(id);
-      return;
-    }
-    try {
-      await useDataStore.getState().refreshCharacter(id);
-    } catch {
-      // Non-fatal — ChatScreen / CharacterPage refetch via their own effects.
-    }
-    // Phase 18/19: a Home card click now opens the in-app chat (the new primary
-    // surface); CharacterPage stays reachable via the chat header's Profile button.
+  const handleOpen = (id: string): void => {
+    // Phase 18/19: a panel click opens the in-app chat (the primary surface);
+    // CharacterPage stays reachable via the chat header. Navigate FIRST so the
+    // chat opens instantly — a home card is by definition already in the local
+    // library, so charsOpenPrepare here is only a background freshness check.
+    // Firing it AFTER navigation (fire-and-forget) keeps the click from stalling
+    // on a Supabase round-trip; the chat works off the cached copy and refreshes
+    // in place. A failure is non-fatal — ChatScreen refetches via its own effect.
     navigate({ kind: 'chat', characterId: id });
+    void sei
+      .charsOpenPrepare(id)
+      .then(() => useDataStore.getState().refreshCharacter(id))
+      .catch((err) => {
+        console.warn(`[sei] open prepare failed for ${id}: ${(err as Error).message}`);
+      });
   };
 
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
   const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
 
-  /**
-   * Home filter (260703 procgen — the fixed-slot model):
-   *   - bundled defaults → now live on the World tab; hidden from Home UNLESS
-   *     the user has explicitly invited them into a slot
-   *     (UserConfig.added_default_ids). The old removed_default_ids logic no
-   *     longer drives Home.
-   *   - foreign chars (owner stamped, doesn't match current user) → hidden
-   *     UNLESS the id is in UserConfig.added_world_ids (invited from World).
-   *   - legacy null-owner chars (created before owner-stamping landed) → shown
-   *     for everyone; they're treated as the current session's local library.
-   *   - own chars (owner === currentUserId) → shown.
-   *   - signed out + owner-stamped chars → hidden (those belong to a cloud
-   *     account; don't surface them in the offline / local-mode view).
-   */
-  const homeCharacters = characters.filter((c) => {
-    if (c.is_default === true) {
-      return addedDefaultIds.has(c.id);
-    }
-    if (currentUserId) {
-      if (c.owner != null && c.owner !== currentUserId) {
-        return addedWorldIds.has(c.id);
-      }
-      return true;
-    }
-    return c.owner == null;
-  });
+  // See isHomeCharacter above. Kept as a named list: this is the same set the
+  // World tab's slots indicator counts.
+  const homeCharacters = characters.filter((c) =>
+    isHomeCharacter(c, currentUserId, addedDefaultIds, addedWorldIds),
+  );
 
-  // #7 — order the grid by last interaction (summon OR chat), matching the
+  // #7 — order the wall by last interaction (summon OR chat), matching the
   // IconRail: most-recently-active first, then created desc. A failed summon
   // never stamps last_launched (backstopped in botSupervisor) and a chat only
-  // stamps last_chatted on a successful reply, so failures don't reorder cards.
+  // stamps last_chatted on a successful reply, so failures don't reorder slots.
   const orderedCharacters = homeCharacters.slice().sort((a, b) => {
     const aLast = lastInteractionAt(a) ?? '';
     const bLast = lastInteractionAt(b) ?? '';
@@ -336,18 +263,14 @@ function HomeGrid(): React.ReactElement {
     return (b.created ?? '').localeCompare(a.created ?? '');
   });
 
-  const displayName = preferredName.trim() || 'friend';
-  const greetingLead = isFirstLogin ? 'Welcome to Sei, ' : 'Welcome back, ';
-
-  // 260703 procgen — the Home page is a fixed row of exactly
-  // MAX_COMPANION_SLOTS (4) slots. Fill order: library characters ordered by
-  // last interaction, then cloud-only placeholder rows (which count toward the
-  // 4), capped at 4. Any remaining slots render an empty "summon a companion"
-  // add tile that opens the three-way chooser.
+  // 260703 procgen — exactly MAX_COMPANION_SLOTS (4) slots. Fill order:
+  // library characters by last interaction, then cloud-only placeholder rows
+  // (which count toward the 4), capped at 4. Remaining slots render dormant.
   const cloudPlaceholders = cloudOnly
     .filter((co) => !characters.some((c) => c.id === co.id))
     .filter((co) => !recentlyDeletedIds.has(co.id))
     .map((co) => makeCloudPlaceholder(co.id, co.name));
+  const placeholderIds = new Set(cloudPlaceholders.map((p) => p.id));
   const slotCharacters = [...orderedCharacters, ...cloudPlaceholders].slice(
     0,
     MAX_COMPANION_SLOTS,
@@ -356,78 +279,157 @@ function HomeGrid(): React.ReactElement {
 
   return (
     <div className={homeStyles.root}>
-      <header className={homeStyles.header}>
-        <h2 className={homeStyles.greeting}>
-          {greetingDismissed ? (
-            'Companions'
-          ) : (
-            <>
-              {greetingLead}
-              <span className={homeStyles.greetingName}>{displayName}</span>!
-            </>
-          )}
-        </h2>
-      </header>
-      <section className={homeStyles.slotGrid}>
-        {slotCharacters.map((c) => (
-          <div key={c.id} className={homeStyles.slot}>
-            <CharacterCard
-              character={c}
-              theme={theme}
-              variant="slot"
-              onOpen={() => {
+      <section className={homeStyles.panels} aria-label="Party">
+        {slotCharacters.map((c) => {
+          const isPlaceholder = placeholderIds.has(c.id);
+          const preview = isPlaceholder ? null : chatPreviewFor(chatState, c.id);
+          // An existing transcript is proof of interaction even when the
+          // last_chatted stamp was missed (routed in-game replies, failed
+          // turns, old records): never show "New"/"Say hello" over a real
+          // conversation — fold the preview timestamp into presence instead.
+          let pres = presenceOf(c, summons[c.id]);
+          if (pres.category === 'new' && preview) {
+            pres = presenceOf(
+              { last_launched: null, last_chatted: new Date(preview.ts).toISOString() },
+              summons[c.id],
+            );
+          }
+          const isNew = pres.category === 'new';
+
+          // Lastline: live action verb while in-game, else the last chat line,
+          // else the "matched recently" note for never-touched companions.
+          let lastline: React.ReactNode = null;
+          if (!isPlaceholder) {
+            if (pres.category === 'in-game') {
+              const verb = actionVerb(actions[c.id]);
+              if (verb) lastline = verb;
+            }
+            if (lastline == null) {
+              if (preview) {
+                lastline = (
+                  <>
+                    <b>{preview.role === 'user' ? 'You' : c.name}:</b> {preview.text}
+                  </>
+                );
+              } else if (isNew) {
+                lastline = 'Matched with you recently.';
+              }
+            }
+          }
+
+          return (
+            <div
+              key={c.id}
+              className={`${homeStyles.panel} ${isPlaceholder ? homeStyles.panelMuted : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${c.name}`}
+              onClick={() => {
                 void handleOpen(c.id);
               }}
-              onSummon={() => handleSummon(c.id)}
-              onUnsummon={() => void sei.stop(c.id)}
-            />
-            {openPrepareError === c.id ? (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  bottom: 60,
-                  padding: '4px 8px',
-                  background: 'var(--red)',
-                  color: 'white',
-                  fontFamily: 'var(--mono)',
-                  fontSize: 10,
-                  letterSpacing: 1,
-                  textTransform: 'uppercase',
-                  borderRadius: 2,
-                  pointerEvents: 'none',
-                }}
-                role="alert"
-              >
-                COULDN&apos;T OPEN: OFFLINE?
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  void handleOpen(c.id);
+                }
+              }}
+            >
+              <div className={homeStyles.art} aria-hidden="true">
+                <PixelPortrait
+                  seed={c.id + c.name}
+                  palette={pickPalette(c.id + c.name, theme)}
+                  portraitImage={c.portrait_image}
+                  size={520}
+                  style={{ width: '100%', height: '100%' }}
+                />
               </div>
-            ) : null}
-          </div>
-        ))}
-        {Array.from({ length: emptyCount }).map((_, i) => (
-          <div key={`empty-slot-${i}`} className={homeStyles.slot}>
-            <AddCard
-              variant="slot"
-              label="Summon a companion"
-              onClick={() => setChooserOpen(true)}
+              <div className={homeStyles.panelScrim} aria-hidden="true" />
+              <div className={homeStyles.info}>
+                <div className={homeStyles.nameRow}>
+                  <span className={homeStyles.name}>{c.name}</span>
+                </div>
+                {isPlaceholder ? (
+                  <span className={homeStyles.cloudNote}>Stored in cloud</span>
+                ) : (
+                  <Presence category={pres.category} label={pres.label} />
+                )}
+                {!isPlaceholder ? (
+                  <div className={homeStyles.more}>
+                    <div className={homeStyles.moreInner}>
+                      {lastline != null ? (
+                        <span className={homeStyles.lastline}>{lastline}</span>
+                      ) : null}
+                      <div className={homeStyles.actions}>
+                        <Button
+                          kind="primary"
+                          size="md"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleOpen(c.id);
+                          }}
+                        >
+                          {isNew ? 'Say hello' : 'Message'}
+                        </Button>
+                        <Button
+                          kind="ghost"
+                          size="md"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSummon(c.id);
+                          }}
+                        >
+                          Play
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+        {Array.from({ length: emptyCount }).map((_, i) => {
+          // Each wall position keeps its own gathering figure (sigil-lab
+          // cycles a–d), offset 700ms per slot so they don't pulse together.
+          const slotIdx = slotCharacters.length + i;
+          return (
+          <div
+            key={`empty-slot-${i}`}
+            className={`${homeStyles.panel} ${homeStyles.dormant}`}
+            role="button"
+            tabIndex={0}
+            aria-label="Awaken a companion"
+            onClick={() => {
+              void handleAwaken();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                void handleAwaken();
+              }
+            }}
+          >
+            <div
+              className={`${homeStyles.dormantSky} ${homeStyles[`sky${slotIdx % 4}`]}`}
+              aria-hidden="true"
             />
+            <div className={homeStyles.center}>
+              <span
+                className={homeStyles.dormantHalo}
+                style={{ animationDelay: `${slotIdx * 700}ms` }}
+                aria-hidden="true"
+              />
+              <GatherPixels
+                cycle={GATHER_CYCLES[slotIdx % GATHER_CYCLES.length]}
+                stagger={slotIdx * 700}
+                className={homeStyles.dormantMark}
+              />
+              <span className={homeStyles.awakenLabel}>Awaken</span>
+            </div>
           </div>
-        ))}
+          );
+        })}
       </section>
-      {chooserOpen ? (
-        <AddCompanionChooserModal
-          onPickUnique={() => void handlePickUnique()}
-          onPickCustom={handlePickCustom}
-          onPickWorld={handlePickWorld}
-          onClose={() => setChooserOpen(false)}
-        />
-      ) : null}
-      {showSignIn ? (
-        <SignInModal
-          framingLabel={upgradeFraming}
-          onClose={() => setShowSignIn(false)}
-        />
-      ) : null}
       {createLimit ? (
         <CreationLimitModal
           resetsAt={createLimit.resetsAt}
@@ -439,12 +441,12 @@ function HomeGrid(): React.ReactElement {
 }
 
 /**
- * WorldGrid — public character listing backed by useBrowseStore.
+ * WorldGrid — public character listing backed by useBrowseStore (§4.4).
  *
- * B4 changes vs. the prior BrowseGrid:
- *   - Drops the H1 heading (the tab bar labels it).
- *   - All cards are implicitly world; BrowseCard renders without a chip.
- *   - Renamed for clarity.
+ * Top bar: search + sort on the left, party-slots indicator on the right.
+ * Cards: 3:4 scouting cards with a hover Invite action that adds directly to
+ * the library (same IPC path as CharacterPage's "Add to library" CTA); the
+ * card body still opens the character profile.
  */
 function WorldGrid(): React.ReactElement {
   const entries = useBrowseStore((s) => s.entries);
@@ -478,16 +480,33 @@ function WorldGrid(): React.ReactElement {
   }, []);
 
   // #6 — World sort. Alphabetical by default; "Newest" sorts by updatedAt desc.
-  // Client-side over the currently-loaded pages (infinite scroll appends more).
+  // Client-side over the currently-loaded pages.
   const [worldSort, setWorldSort] = useState<'alpha' | 'recent'>('alpha');
 
   const localCharacters = useDataStore((s) => s.characters);
   const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
+  const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
+  const refreshLibraryState = useLibraryStateStore((s) => s.refresh);
+  const authState = useAuthStore((s) => s.state);
+  const setUpgradeFraming = useAuthStore((s) => s.setUpgradeFraming);
+  const upgradeFraming = useAuthStore((s) => s.upgradeFraming);
+  const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
+  const [showSignIn, setShowSignIn] = useState<boolean>(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // Party-slots indicator — counts the SAME set the party wall shows (minus
+  // cloud-only placeholders, which have no local row to count here).
+  const homeCount = localCharacters.filter((c) =>
+    isHomeCharacter(c, currentUserId, addedDefaultIds, addedWorldIds),
+  ).length;
+  const slotsOpen = Math.max(0, MAX_COMPANION_SLOTS - homeCount);
+  const partyFull = slotsOpen <= 0;
+
   // Bundled defaults (sui/lyra/clawd) are surfaced as system-authored World
   // entries so the user can find them next to other public characters even
   // though they live in the local store and don't have a cloud row (D-22).
   // `inMyLibrary` flips false when the user removed the default from their
-  // library (config-tracked) so BrowseCard renders "+ Add to Mine".
+  // library (config-tracked) so BrowseCard offers Invite again.
   const defaultEntries: BrowseEntry[] = localCharacters
     .filter((c) => c.is_default === true)
     .filter((c) => {
@@ -506,6 +525,9 @@ function WorldGrid(): React.ReactElement {
           ? (c.persona.source ?? '').slice(0, 120).trimEnd() + '…'
           : (c.persona.source ?? ''),
       creatorLabel: 'by Sei',
+      // Builtins carry their vanity code in the bundled JSON (#0001-#0003),
+      // matching the cloud rows — surface it like any other World card.
+      publicId: c.public_id ?? null,
       portraitUrl: c.portrait_image,
       skinUrl: null,
       updatedAt: c.created,
@@ -513,6 +535,7 @@ function WorldGrid(): React.ReactElement {
       // user invited this default (matches the HomeGrid/IconRail filter).
       inMyLibrary: addedDefaultIds.has(c.id),
     }));
+  const defaultIds = new Set(defaultEntries.map((d) => d.id));
 
   const navigate = useUiStore((s) => s.navigate);
 
@@ -550,18 +573,51 @@ function WorldGrid(): React.ReactElement {
     });
   };
 
-  const handleOpen = async (entry: BrowseEntry): Promise<void> => {
-    try {
-      await sei.charsOpenPrepare(entry.id);
-    } catch (err) {
-      console.warn(`[sei] browse open prepare failed for ${entry.id}: ${(err as Error).message}`);
-    }
-    try {
-      await useDataStore.getState().refreshCharacter(entry.id);
-    } catch {
-      // Non-fatal.
-    }
+  const handleOpen = (entry: BrowseEntry): void => {
+    // Navigate immediately — CharacterPage self-handles a cache miss on mount
+    // (its rehydrate effect runs charsOpenPrepare + refresh when the character
+    // isn't in the local store yet), showing a wireframe skeleton while the
+    // download lands. The hover prefetch above has usually already warmed the
+    // cache by the time this fires, so the profile fills in at once.
     navigate({ kind: 'character', id: entry.id });
+  };
+
+  // "Invite" — the SAME direct add-to-library path as CharacterPage's
+  // "Add to library" CTA: charsRestoreDefault for bundled defaults (local-only,
+  // no account needed), charsAddToLibrary for foreign World characters (cloud
+  // library write → sign-in gated). Refreshes both the library-state sets and
+  // the local character list so Home + the slots indicator update in place.
+  const handleInvite = async (entry: BrowseEntry): Promise<void> => {
+    const isDefault = defaultIds.has(entry.id);
+    if (!isDefault && authState.kind !== 'signed_in') {
+      setUpgradeFraming('add this companion to your library');
+      setShowSignIn(true);
+      return;
+    }
+    setInviteError(null);
+    try {
+      if (isDefault) {
+        await sei.charsRestoreDefault(entry.id);
+      } else {
+        await sei.charsAddToLibrary(entry.id);
+      }
+      await refreshLibraryState();
+      await useDataStore.getState().loadCharacters();
+    } catch (err) {
+      // Surface the failure (e.g. the slot-limit backstop) instead of a
+      // silent no-op — the handler messages are already user-readable.
+      setInviteError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Couldn't invite this companion. Please try again.",
+      );
+    }
+  };
+
+  const inviteStateFor = (entry: BrowseEntry): InviteState => {
+    if (entry.inMyLibrary) return 'in-party';
+    if (partyFull) return 'full';
+    return 'open';
   };
 
   // Merge defaults + cloud rows into one list, then sort per the dropdown.
@@ -575,7 +631,12 @@ function WorldGrid(): React.ReactElement {
   // Cap the DISPLAY to whole rows; the store keeps its own page size. Cards
   // render → portraits download, so this cap is what bounds the network burst.
   const visibleCount = columns * visibleRows;
-  const shownEntries = worldEntries.slice(0, visibleCount);
+
+  // Cold open / new search with nothing fetched yet: hold back the bundled
+  // defaults too, so the whole grid loads as one piece of wireframe instead
+  // of three real cards next to skeletons.
+  const initialLoading = loading && entries.length === 0;
+  const shownEntries = initialLoading ? [] : worldEntries.slice(0, visibleCount);
 
   // Backfill: when the display window outruns what's loaded (initial batch on
   // a wide window, or "Load more" past the last fetched page), pull the next
@@ -588,53 +649,64 @@ function WorldGrid(): React.ReactElement {
   // server-side. Hidden while the very first page is still loading.
   const hasMoreToShow = worldEntries.length > visibleCount || !exhausted;
 
-  // Wireframe placeholders while a fetch is in flight: fill the unfilled slots
-  // of the current display window (whole 4-row window on a cold open / new
-  // search, just the tail slots on a Load-more backfill). Zero when a
-  // background fetch isn't going to change what's on screen.
-  const skeletonCount = loading ? Math.max(0, visibleCount - shownEntries.length) : 0;
+  // Wireframe placeholders while a fetch is in flight: a fixed SKELETON_ROWS
+  // block on a cold open / new search (whole rows only — never a partial
+  // trailing row), just the unfilled tail slots on a Load-more backfill
+  // (row-aligned by construction: visibleCount is a whole-row count). Zero
+  // when a background fetch isn't going to change what's on screen.
+  const skeletonCount = loading
+    ? initialLoading
+      ? columns * SKELETON_ROWS
+      : Math.max(0, visibleCount - shownEntries.length)
+    : 0;
 
   return (
     <div className={styles.browse}>
-      <header className={styles.browseHeader}>
-        <div className={styles.worldTitleRow}>
-          <h1 className={styles.browseTitle}>World</h1>
-          <span
-            className={styles.worldHelp}
-            tabIndex={0}
-            role="img"
-            aria-label="What is World?"
+      <header className={styles.worldTop}>
+        <div className={styles.search}>
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            aria-hidden="true"
           >
-            ?
-            <span className={styles.worldHelpTip} role="tooltip">
-              Browse companions made by other players.
-            </span>
-          </span>
-        </div>
-        <div className={styles.browseControls}>
+            <circle cx="9" cy="9" r="6" />
+            <path d="M13.5 13.5L18 18" />
+          </svg>
           <input
             className={styles.searchField}
             type="search"
-            placeholder="Search companions..."
+            placeholder="Search companions…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search world companions"
           />
-          <select
-            className={styles.sortSelect}
-            value={worldSort}
-            onChange={(e) => setWorldSort(e.target.value as 'alpha' | 'recent')}
-            aria-label="Sort companions"
-          >
-            <option value="alpha">A–Z</option>
-            <option value="recent">Newest</option>
-          </select>
         </div>
+        <select
+          className={styles.sortSelect}
+          value={worldSort}
+          onChange={(e) => setWorldSort(e.target.value as 'alpha' | 'recent')}
+          aria-label="Sort companions"
+        >
+          <option value="alpha">A–Z</option>
+          <option value="recent">Newest</option>
+        </select>
+        <span className={styles.slots}>
+          {partyFull ? 'Party full' : `${slotsOpen}/${MAX_COMPANION_SLOTS} slots open`}
+        </span>
       </header>
       <div className={styles.scroll}>
       {error ? (
         <div className={styles.error} role="alert">
           Couldn&apos;t load World. {error}
+        </div>
+      ) : null}
+      {inviteError ? (
+        <div className={styles.error} role="alert">
+          {inviteError}
         </div>
       ) : null}
       {entries.length === 0 && defaultEntries.length === 0 && !loading && !error ? (
@@ -644,19 +716,23 @@ function WorldGrid(): React.ReactElement {
       ) : null}
       <div className={styles.grid} ref={gridRef}>
         {shownEntries.map((entry) => (
-          <div key={entry.id} style={{ position: 'relative' }}>
-            <BrowseCard
-              entry={entry}
-              theme={theme}
-              onOpen={() => {
-                void handleOpen(entry);
-              }}
-              onPrefetch={() => handlePrefetch(entry)}
-            />
-          </div>
+          <BrowseCard
+            key={entry.id}
+            entry={entry}
+            theme={theme}
+            inviteState={inviteStateFor(entry)}
+            onInvite={() => {
+              void handleInvite(entry);
+            }}
+            onOpen={() => {
+              void handleOpen(entry);
+            }}
+            onPrefetch={() => handlePrefetch(entry)}
+          />
         ))}
         {Array.from({ length: skeletonCount }, (_, i) => (
           <div key={`skeleton-${i}`} className={styles.skeletonCard} aria-hidden>
+            <div className={styles.skeletonArt} />
             <div className={styles.skeletonName} />
             <div className={styles.skeletonMeta} />
           </div>
@@ -670,6 +746,9 @@ function WorldGrid(): React.ReactElement {
         </div>
       ) : null}
       </div>
+      {showSignIn ? (
+        <SignInModal framingLabel={upgradeFraming} onClose={() => setShowSignIn(false)} />
+      ) : null}
     </div>
   );
 }

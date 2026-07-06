@@ -202,6 +202,7 @@ function authoredFieldsChanged(onDisk: Character, bundled: Character): boolean {
     JSON.stringify(onDisk.skin) !== JSON.stringify(bundled.skin) ||
     (onDisk.username ?? null) !== (bundled.username ?? null) ||
     (onDisk.slug ?? null) !== (bundled.slug ?? null) ||
+    (onDisk.public_id ?? null) !== (bundled.public_id ?? null) ||
     (onDisk.kind ?? 'custom') !== (bundled.kind ?? 'custom') ||
     JSON.stringify(onDisk.metadata) !== JSON.stringify(bundled.metadata)
   );
@@ -242,6 +243,7 @@ export async function refreshSeededDefaults(): Promise<void> {
         skin: bundled.skin,
         username: bundled.username,
         slug: bundled.slug,
+        public_id: bundled.public_id,
         kind: bundled.kind,
         metadata: bundled.metadata,
         is_default: true,

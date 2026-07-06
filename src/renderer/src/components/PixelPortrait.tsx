@@ -181,6 +181,12 @@ interface PixelPortraitProps {
   size?: number;
   /** Optional image override path; falls back to procedural on load error. */
   portraitImage?: string | null;
+  /**
+   * Fires once the portrait override has SETTLED — loaded, failed (procedural
+   * fallback shown), or absent. Lets callers hold a wireframe until real
+   * pixels are on screen (260705 World-card skeletons). Idempotent callers only.
+   */
+  onImageSettled?: () => void;
   style?: React.CSSProperties;
   className?: string;
   'aria-label'?: string;
@@ -190,6 +196,7 @@ export function PixelPortrait({
   seed,
   size = 220,
   portraitImage,
+  onImageSettled,
   style,
   className,
   ...rest
@@ -234,6 +241,14 @@ export function PixelPortrait({
   const resolvedSrc = portraitSrc(portraitImage);
   const useImage = !!resolvedSrc && !imgFailed;
 
+  // Settle immediately when there's no image to wait for (no override, or an
+  // unresolvable ref) so a wireframe-holding caller is never stranded. The
+  // loaded/failed cases fire from the <img> handlers below.
+  useEffect(() => {
+    if (!useImage) onImageSettled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useImage]);
+
   // Clear a prior load failure when the source changes (e.g. a re-upload or
   // switching characters) so a stale error doesn't pin us to the sprite.
   useEffect(() => {
@@ -252,7 +267,11 @@ export function PixelPortrait({
           className={styles.imgOverride}
           src={resolvedSrc!}
           alt=""
-          onError={() => setImgFailed(true)}
+          onLoad={() => onImageSettled?.()}
+          onError={() => {
+            setImgFailed(true);
+            onImageSettled?.();
+          }}
         />
       ) : (
         <canvas ref={canvasRef} className={styles.canvas} />

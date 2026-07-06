@@ -243,6 +243,18 @@ periwinkle `#7FB0FF` accent. Always use tokens from
 `src/renderer/src/styles/tokens.css` — never literal hex/px — and reuse existing
 primitives (`Button`, `CharacterCard`, modal patterns) before writing new CSS.
 
+**No em dashes in user-facing text.** Any copy a user can read — UI labels,
+hints, error messages, modal bodies, tooltips, in-game bot messages, page
+titles — must not contain an em dash (`—`). Rewrite with a period, comma,
+colon, or restructure the sentence. This applies everywhere user copy lives
+(renderer, main-process error strings, `src/bot` canned messages), and to
+LLM-generated user-visible output via prompt rules + normalization
+(`postProcessSay` in the bot, the dash strip in `personaExpansion.ts` /
+`uniqueGeneration.ts`, soulcaster's "No em-dashes in your prose"). Exceptions:
+code comments, developer logs, test names, and model-facing prompt text are
+fine; an en dash is allowed as an empty-value placeholder glyph (`$–`) or a
+range (`A–Z`), never as prose punctuation.
+
 ---
 
 ## Build & release

@@ -156,6 +156,29 @@ describe('resetMemoryForCharacter (ui-A9)', () => {
     const ls = await readFile(path.join(paths.memoryDir(UUID), '.placeholder'), 'utf-8').catch(() => 'missing-but-dir-exists');
     expect(typeof ls).toBe('string');
   });
+
+  it('A9.5: deletes chat.jsonl and bridge.json — reset erases chat history too (260705)', async () => {
+    // Reset is the ONE deliberate erase: memory, goals, the chat transcript
+    // AND the continuity summary all go. (The hidden compaction mechanism, by
+    // contrast, never trims what the chat UI shows — chat:history reads the
+    // full transcript.)
+    await saveCharacter(makeChar());
+    const memDir = paths.memoryDir(UUID);
+    await writeFile(
+      path.join(memDir, 'chat.jsonl'),
+      JSON.stringify({ id: 'm1', role: 'user', text: 'hello', ts: 1 }) + '\n',
+    );
+    await writeFile(path.join(memDir, 'MEMORY.md'), 'remembered facts');
+    await writeFile(
+      path.join(memDir, 'bridge.json'),
+      JSON.stringify({ summary: 'old summary', summarizedCount: 1 }),
+    );
+
+    await resetMemoryForCharacter(UUID);
+
+    const after = await readdir(memDir);
+    expect(after).toEqual([]);
+  });
 });
 
 // 260705 — daily creation cap (MAX_CREATIONS_PER_DAY, rolling 24h local log

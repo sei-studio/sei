@@ -1,29 +1,23 @@
 /**
- * UsageBar — primary credits usage display (260602-hbr).
+ * UsageBar — the credits usage bar (Party redesign restyle of 260602-hbr).
  *
- * Replaces the "~Xh left" PlaytimePill as the hero usage affordance in
- * CreditsScreen. Renders:
- *   - a usage-percent progress bar (PercentBar fed `usage_pct` from
- *     useCreditsStore) — 0% on a fresh grant, filling to 100% as credits are
- *     spent. A subscription + Quest-pack top-up is additive on the denominator
- *     server-side, so a top-up moves the bar LEFT rather than resetting it.
- *   - a small "~Xh left" playtime estimate beside the bar, with a tooltip
- *     noting it is only an estimate.
+ * A lean primitive: a usage-percent progress bar (PercentBar fed `usage_pct`
+ * from useCreditsStore) with a quiet refresh affordance. The bar carries the
+ * "$used/$total used, played Xh Ym" hover tooltip (developer-gated dollars).
  *
- * PROXY-05: the bar surfaces a PERCENT only — no token/dollar counts. The
- * "~Xh left" string is a time estimate derived from `remaining_tokens` via the
- * flat DEFAULT_TOKENS_PER_MIN multiplier, never a raw token/dollar figure.
+ * The standalone "~Xh left" estimate text was lifted out of here in the Party
+ * redesign — it now lives inline in the CreditsScreen hero (mockup .pt-hero).
+ * The estimate helpers + ESTIMATE_TOOLTIP still export from this module so that
+ * hero (and any other consumer) can reuse them.
+ *
+ * PROXY-05: the bar surfaces a PERCENT only. The dollar figures ride the
+ * developer-gated tooltip (260615 owner-approved exception), never the markup.
  */
 
 import React, { useEffect, useState } from 'react';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { sei } from '../lib/ipcClient';
-import {
-  tokensRemainingToPlaytime,
-  DEFAULT_TOKENS_PER_MIN,
-  VISION_MULTIPLIER,
-} from '../lib/playtimeEstimate';
 import { PercentBar } from './PercentBar';
 import { Button } from './Button';
 import { RefreshIcon } from './icons';
@@ -34,7 +28,7 @@ export const ESTIMATE_TOOLTIP = 'This is an estimate; actual playtime can vary.'
 
 /** "$1.20", or "$—" when the dollar figure isn't available (local/BYOK, no session, cold-load). */
 export function formatUsd(n: number | undefined): string {
-  return typeof n === 'number' && Number.isFinite(n) ? `$${n.toFixed(2)}` : '$—';
+  return typeof n === 'number' && Number.isFinite(n) ? `$${n.toFixed(2)}` : '$–';
 }
 
 /** Cumulative playtime ms → "3h 17m". */
@@ -61,13 +55,12 @@ export function usageTooltip(
 }
 
 export interface UsageBarProps {
-  /** Bar size — 'lg' is the CreditsScreen hero; 'sm'/'md' for inline rows. */
+  /** Bar size — 'lg' is the hero; 'sm'/'md' for inline rows. */
   size?: 'sm' | 'md' | 'lg';
 }
 
 export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   const usagePct = useCreditsStore((s) => s.usage_pct);
-  const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
   const usedUsd = useCreditsStore((s) => s.used_usd);
   const totalUsd = useCreditsStore((s) => s.total_usd);
   const refresh = useCreditsStore((s) => s.refresh);
@@ -76,31 +69,18 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   // only when Settings → Show developer console is on (ui-A7 flag).
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
   // Cumulative playtime across all of this profile's characters (survives
-  // deletion — accumulated at session-end in config). Read from UserConfig.
+  // deletion — accumulated at session-end in config). Feeds the bar tooltip.
   const [totalPlaytimeMs, setTotalPlaytimeMs] = useState(0);
-  // Phase 15 (D-07): when the vision tier is passive/active the bot renders
-  // its surroundings as it plays ('continuous'), which uses more playtime — so
-  // the "~Xh left" figure shrinks via VISION_MULTIPLIER on the burn rate. Read
-  // the mode from UserConfig (the source of truth Settings writes). This is a
-  // cloud-proxy-only surface (UsageBar lives only in CreditsScreen), so D-11
-  // holds: BYO/local users never see this shrink. Re-fetched on mount so
-  // returning from Settings with the mode changed reflects the new estimate.
-  const [autoRenderOn, setAutoRenderOn] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void sei.getConfig().then((c) => {
       if (cancelled) return;
-      setAutoRenderOn((c.vision_mode ?? 'on-demand') === 'continuous');
       setTotalPlaytimeMs(c.total_playtime_ms ?? 0);
     });
     return () => {
       cancelled = true;
     };
   }, []);
-  const rate = autoRenderOn
-    ? DEFAULT_TOKENS_PER_MIN * VISION_MULTIPLIER
-    : DEFAULT_TOKENS_PER_MIN;
-  const { display } = tokensRemainingToPlaytime(remainingTokens, rate);
 
   const tooltip = usageTooltip(usedUsd, totalUsd, totalPlaytimeMs, devConsoleVisible);
 
@@ -114,15 +94,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
       >
         <PercentBar value={usagePct} size={size} label={`${Math.round(usagePct)} percent used`} />
       </div>
-      <span
-        className={styles.estimate}
-        title={ESTIMATE_TOOLTIP}
-        aria-label={`${display}. ${ESTIMATE_TOOLTIP}`}
-      >
-        {display}
-      </span>
-      {/* Manual refresh sits to the RIGHT of the estimate — immediate
-          creditsGet() on top of CreditsScreen's 60s poll (260606). */}
+      {/* Quiet refresh — immediate creditsGet() on top of any polling caller. */}
       <Button
         kind="quiet"
         size="sm"

@@ -73,7 +73,7 @@ export const LOOPBACK_PORT = 54321;
  */
 export const LOOPBACK_CALLBACK_URL = `http://127.0.0.1:${LOOPBACK_PORT}/auth/callback`;
 
-const SUCCESS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Signed in — Sei</title>
+const SUCCESS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Signed in - Sei</title>
 <style>
   body { font-family: -apple-system, system-ui, sans-serif; background: #fafafa; color: #111;
          display: flex; align-items: center; justify-content: center;
@@ -85,7 +85,7 @@ const SUCCESS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Si
   <p>You can close this tab and return to Sei.</p>
 </div></body></html>`;
 
-const RECOVERY_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Reset your password — Sei</title>
+const RECOVERY_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Reset your password - Sei</title>
 <style>
   body { font-family: -apple-system, system-ui, sans-serif; background: #fafafa; color: #111;
          display: flex; align-items: center; justify-content: center;
@@ -97,7 +97,7 @@ const RECOVERY_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>R
   <p>Return to Sei to choose a new password.</p>
 </div></body></html>`;
 
-const ERROR_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Sign-in failed — Sei</title>
+const ERROR_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Sign-in failed - Sei</title>
 <style>
   body { font-family: -apple-system, system-ui, sans-serif; background: #fafafa; color: #111;
          display: flex; align-items: center; justify-content: center;

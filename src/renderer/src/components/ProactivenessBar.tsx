@@ -48,7 +48,7 @@ export function ProactivenessBar({
           <span
             key={lvl.value}
             className={`${styles.seg} ${lvl.value <= level ? styles.on : ''}`}
-            data-tip={`${lvl.label} — ${lvl.blurb}`}
+            data-tip={`${lvl.label}: ${lvl.blurb}`}
             tabIndex={0}
             aria-label={`${lvl.label}: ${lvl.blurb}`}
           />

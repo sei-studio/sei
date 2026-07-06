@@ -15,6 +15,8 @@ declare module 'soulcaster' {
   }
   export function castSoul(args: {
     gender: string;
+    /** Relationship dynamic key (soulcaster DYNAMICS) or null to free-roll. */
+    dynamic?: string | null;
     userProfile?: unknown;
     /** ElevenLabs voice ids already used by the caller's other characters —
      * excluded from the Stage 1 voice roll so roster voices rarely collide. */
@@ -40,6 +42,8 @@ declare module 'soulcaster' {
     opts?: { takenVoiceIds?: string[]; rng?: () => number },
   ): { id: string; label: string; vibe: string };
   export function mulberry32(seed: number): () => number;
+  /** Relationship-dynamics table; keys must mirror COMPANION_DYNAMICS (characterSchema). */
+  export const DYNAMICS: Record<string, { label: string; hint: string; seed_pool: string[] }>;
 }
 
 declare module 'img2skin/src/pipeline.js' {

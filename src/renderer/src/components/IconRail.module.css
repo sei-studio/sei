@@ -108,13 +108,13 @@
   color: var(--rail-fg-strong);
 }
 
-/* Active nav gets a 2px left bar (mockup .nav.on::before). */
+/* Active nav gets a 3px left bar (mockup .rail-btn.active::before). */
 .activeBar {
   position: absolute;
-  left: -14px;
+  left: -15px;
   top: 9px;
   bottom: 9px;
-  width: 2px;
+  width: 3px;
   background: var(--rail-accent);
   display: block;
 }
@@ -134,24 +134,25 @@
   color: var(--rail-fg);
 }
 
-/* ── Character avatars ───────────────────────────────────────────────── */
+/* ── Character sockets (mockup .socket) ──────────────────────────────────
+ * 46px circular sockets holding a 40px face. Summoned = pulsing green ring;
+ * selected = accent double ring; hover lifts 1px. */
 .avatarButton {
   position: relative;
-  width: 42px;
-  height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
   background: transparent;
   border: none;
   padding: 0;
   cursor: pointer;
-  border-radius: 0; /* square character avatars (D-28 sharp) */
-  transition: transform 0.2s ease;
+  border-radius: 50%;
+  transition: transform 0.15s var(--ease);
 }
 
 .avatarButton:hover {
-  transform: scale(1.06);
+  transform: translateY(-1px);
 }
 
 .avatarButton:focus-visible {
@@ -159,15 +160,16 @@
   outline-offset: 2px;
 }
 
+/* Selected socket: accent double ring (mockup .socket.sel .face). */
 .avatarActive .avatarClip {
-  border-color: var(--rail-accent);
+  box-shadow: 0 0 0 2px var(--rail), 0 0 0 4px var(--rail-accent);
 }
 
 .avatarClip {
-  position: relative; /* anchor for the summoned glint ::after */
-  width: 38px;
-  height: 38px;
-  border-radius: 0; /* square character avatars (D-28 sharp) */
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   overflow: hidden;
   display: inline-flex;
   align-items: center;
@@ -178,42 +180,39 @@
   background: var(--surface-2);
   border: 1px solid var(--rail-border);
   filter: saturate(0.9);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
-/* ── Summoned avatar — accent frame + reflective glint ───────────────────
- * Marks which characters have a live bot in the world. The frame is an accent
- * border + soft glow; the glint reuses the deploy-button sweep, clipped by the
- * avatarClip's existing overflow:hidden. */
-.avatarSummoned .avatarClip {
-  border-color: var(--rail-accent);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
-}
-
-.avatarSummoned .avatarClip::after {
+/* Summoned socket: pulsing green ring (mockup .socket.summoned::after). */
+.avatarSummoned::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: -60%;
-  width: 45%;
-  height: 100%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-  animation: avatar-summon-glint calc(3.4s / var(--flux, 1)) ease-in-out infinite;
+  inset: 2px;
+  border-radius: 50%;
+  border: 2px solid var(--green);
+  animation: socket-pulse 2.6s var(--ease) infinite;
   pointer-events: none;
 }
 
-@keyframes avatar-summon-glint {
-  0%, 60% { left: -60%; }
-  85%, 100% { left: 130%; }
+@keyframes socket-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .avatarSummoned .avatarClip::after { animation: none; display: none; }
+  .avatarSummoned::after {
+    animation: none;
+  }
 }
 
 .avatarImg {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   object-fit: cover;
   object-position: 50% 18%;
   display: block;
@@ -230,8 +229,7 @@
   border: 1px solid var(--border-strong);
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   line-height: 1.2;
   padding: 6px 10px;
   white-space: nowrap;
@@ -240,15 +238,15 @@
   box-shadow: var(--shadow-pop);
 }
 
-/* ── Circle action buttons (+ new, compass / World) ──────────────────── */
+/* ── Dormant socket (+ new companion — mockup .socket.dormant) ───────── */
 .circleButton {
   position: relative;
-  width: 38px;
-  height: 38px;
-  border-radius: 0; /* square to match the avatars above it (D-28 sharp) */
-  border: 1px solid var(--rail-border);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgb(var(--acc) / 0.4);
   background: transparent;
-  color: var(--rail-fg);
+  color: rgb(var(--acc) / 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -259,10 +257,10 @@
 }
 
 .circleButton:hover {
-  color: var(--rail-accent);
-  border-color: var(--rail-accent);
-  background: var(--rail-hover);
-  transform: scale(1.06);
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
 }
 
 .circleButton:focus-visible {
@@ -291,47 +289,10 @@
   color: var(--rail-accent);
 }
 
-/* ── Switch-to-cloud confirm dialog ──────────────────────────────────── */
-.scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.62);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.cloudPrompt {
-  width: 380px;
-  background: var(--surface);
-  padding: var(--space-lg) 28px;
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-pop);
-  font-family: var(--sans);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.cloudPromptTitle {
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text);
-  margin: 0;
-}
-
+/* Switch-to-cloud confirm body (panel/scrim come from ModalShell). */
 .cloudPromptBody {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--text-2);
   margin: 0;
-}
-
-.cloudPromptActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-sm);
 }

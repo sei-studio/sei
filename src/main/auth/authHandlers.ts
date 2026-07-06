@@ -864,7 +864,7 @@ export async function sendPasswordReset(args: { email: string }): Promise<Passwo
       ok: false,
       code: 'oauth_only',
       provider: friendly,
-      message: `This account uses ${friendly} sign-in — it has no password to reset. Use “Continue with ${friendly}” instead.`,
+      message: `This account uses ${friendly} sign-in, so it has no password to reset. Use “Continue with ${friendly}” instead.`,
     };
   }
   // Mark BEFORE the network call so a user who clicks the emailed link very

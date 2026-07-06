@@ -1,8 +1,7 @@
-/* CharacterPage.module.css — full-bleed character detail (mockup ui.jsx .detail).
- * Portrait bleeds off the right behind a left→right scrim; a left content
- * panel carries the crumb, name, status, tabs, persona/stats, and deploy bar.
- * Source: .planning/UI-DESIGN-SYSTEM.md §Screens → Character detail.
- */
+/* CharacterPage.module.css — full-bleed character detail (Party redesign §4.6).
+ * Portrait bleeds off the right behind a left→right scrim; a left content panel
+ * carries the crumb, name + IdTag, origin chip, share row, status line,
+ * Description / Game tabs, and the deploy row. */
 
 .root {
   position: relative;
@@ -33,7 +32,7 @@
   inset: 0;
   z-index: 1;
   filter: drop-shadow(-30px 0 60px rgba(0, 0, 0, 0.5));
-  /* Portrait rises + fades in on open (mockup ui.jsx @keyframes picRise). */
+  /* Portrait rises + fades in on open. */
   animation: picRise 0.7s var(--ease) both;
 }
 
@@ -85,15 +84,15 @@
   position: relative;
   z-index: 3;
   height: 100%;
-  width: min(640px, 60%);
+  width: min(520px, 60%);
   display: flex;
   flex-direction: column;
-  padding: 22px 40px 28px;
+  gap: 12px;
+  padding: 18px 22px 24px 34px;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Content panel slides in from the right when the page opens (mockup
-     ui.jsx .detail-slide → @keyframes detailIn). Clipped by .root's
-     overflow:hidden so it never triggers a horizontal scrollbar. */
+  /* Content panel slides in from the right when the page opens. Clipped by
+     .root's overflow:hidden so it never triggers a horizontal scrollbar. */
   animation: detailIn 0.5s var(--ease) both;
 }
 
@@ -107,8 +106,7 @@
 }
 
 /* Exit = reverse of detailIn: the panel slides back out to the right (plus a
-   fade so the 46px slide doesn't pop, since the panel never fully clears the
-   viewport) as the page closes. */
+   fade) as the page closes. */
 .contentLeaving {
   animation: detailOut 0.25s var(--ease) both !important;
 }
@@ -125,26 +123,24 @@
 }
 
 .crumb {
-  margin-bottom: 6px;
-  /* Pull left by the quiet/sm button's 13px horizontal padding so the back
-     button's icon lines up with the title + content left edge (same convention
-     as SettingsScreen .backRow). */
-  margin-left: -13px;
+  /* Pull left by the quiet/sm button's horizontal padding so the back button's
+     icon lines up with the title + content left edge. */
+  margin-left: -12px;
+  align-self: flex-start;
 }
 
 .titleRow {
   display: flex;
   align-items: baseline;
   gap: var(--space-sm);
-  margin: 12px 0 4px;
+  margin-top: 2px;
 }
 
 .title {
   font-family: var(--display);
-  font-weight: 700;
-  font-size: clamp(40px, 8vh, 72px);
-  line-height: 0.84;
-  letter-spacing: 0.01em;
+  font-weight: 600;
+  font-size: 38px;
+  line-height: 1.05;
   color: var(--text);
   margin: 0;
   flex-shrink: 1;
@@ -152,58 +148,13 @@
   word-break: break-word;
 }
 
-.titleInput {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: clamp(36px, 7vh, 60px);
-  line-height: 0.9;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  padding: 2px 10px;
-  margin: 0;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 480px;
-}
-
-.titleInput:focus {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.titlePencil {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  padding: 4px;
-  color: var(--muted);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 140ms ease;
-  margin-right: auto;
-}
-
-.titlePencil:hover {
-  color: var(--accent);
-}
-
-.titlePencil:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .reportLink {
   background: transparent;
   border: 0;
   padding: 0;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
   cursor: pointer;
   transition: color 140ms ease;
@@ -215,129 +166,69 @@
   outline: none;
 }
 
-/* ── Status line (mockup d-status) — inline dot + tracked label ──────── */
-.modelRow {
-  display: inline-flex;
+/* ── Share row (Toggle + label) ──────────────────────────────────────── */
+.shareRow {
+  display: flex;
   align-items: center;
-  gap: 9px;
-  /* Generous top margin: the .title above uses line-height 0.84 on a clamp(…,
-     72px) display font, so its glyphs overflow well below the line box. 6px
-     left the "Online · Xs" status line colliding with the name's descenders;
-     14px clears the overflow at the largest title size. */
-  margin: 14px 0 2px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  gap: 10px;
+  font-size: 13px;
   color: var(--text-2);
 }
 
-.modelDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  box-shadow: 0 0 8px currentColor;
+.shareLabel {
+  font-family: var(--sans);
 }
 
-.modelLabel {
-  font-weight: 500;
+/* ── Status line (online / connecting / errored) ─────────────────────── */
+.statusRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.uptime {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--green);
+}
+
+.errDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+}
+
+.statusLabel {
+  color: var(--red-strong);
 }
 
 .tryAgain {
-  margin-left: 8px;
   appearance: none;
   background: transparent;
   border: 0;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
   color: var(--accent);
   cursor: pointer;
-  text-transform: uppercase;
 }
 
 .tryAgain:hover {
   text-decoration: underline;
 }
 
-/* ── Public/private toggle ───────────────────────────────────────────── */
-.sharedToggleRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  margin: 10px 0 2px;
-}
-
-.sharedToggle {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
-  background: rgba(127, 127, 127, 0.03);
-  border: 1px solid var(--border-strong);
-  padding: 6px 12px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease;
-}
-
-.sharedToggle:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.sharedToggle:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.sharedToggleOn {
-  border-color: var(--green);
-  color: var(--text);
-}
-
-.sharedToggleOff {
-  /* neutral */
-}
-
-.sharedDot {
-  width: 7px;
-  height: 7px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-.sharedDotOn {
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green);
-}
-
-.sharedDotOff {
-  background: var(--muted);
-}
-
-.sharedLabel {
-  font-family: var(--mono);
-}
-
-.sharedError {
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--red);
-}
-
-/* ── Tabs (mockup d-tab — underline on active) ───────────────────────── */
+/* ── Tabs (mockup .pf-tab — underline on active) ─────────────────────── */
 .tabs {
   display: flex;
-  gap: 0;
-  margin-top: 18px;
-  border-bottom: 1px solid var(--border-strong);
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-top: 4px;
 }
 
 .tab,
@@ -345,88 +236,62 @@
   appearance: none;
   background: transparent;
   border: 0;
-  position: relative;
-  padding: 11px 18px;
+  border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  padding: 8px 14px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
   color: var(--muted);
   cursor: pointer;
+  transition: color 140ms ease;
 }
 
 .tab:hover {
-  color: var(--text);
+  color: var(--text-2);
 }
 
 .tabActive {
   color: var(--text);
+  border-bottom-color: var(--accent);
 }
 
-.tabActive::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: var(--accent);
-}
-
-.tabDisabled {
-  color: var(--muted);
-  cursor: default;
-}
-
-/* ── Persona / description card + stats ──────────────────────────────── */
-.panel {
+/* ── Pane (Description / Game) ───────────────────────────────────────── */
+.pane {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md-plus);
-  margin-top: 18px;
+  gap: 14px;
+  min-height: 0;
 }
 
-.card {
-  position: relative;
-  background: rgba(127, 127, 127, 0.03);
+/* Persona / description card (mockup .persona). */
+.personaBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.persona {
+  align-self: stretch;
   border: 1px solid var(--border);
-  padding: 18px 20px;
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  padding: 13px 15px;
 }
 
-.cardExpanded {
-  border-left: 2px solid var(--accent);
-  animation: fade 220ms ease both;
-}
-
-.cardEyebrow {
+.personaHead {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: var(--space-md);
+  margin-bottom: 8px;
 }
 
-.cardBody {
-  font-family: var(--sans);
-  font-size: 16px;
-  font-weight: 400;
-  line-height: 1.5;
-  color: var(--text);
-  white-space: pre-wrap;
-}
-
-.cardEyebrowRotate,
-.cardFooterPencil {
+.rotateBtn {
   appearance: none;
+  margin-left: auto;
   background: transparent;
   border: 1px solid var(--border-strong);
-  padding: 4px;
+  padding: 3px;
   color: var(--muted);
   cursor: pointer;
   display: inline-flex;
@@ -435,276 +300,153 @@
   transition: color 140ms ease, border-color 140ms ease;
 }
 
-.cardEyebrowRotate {
-  margin-left: auto;
-}
-
-.cardEyebrowRotate:hover,
-.cardFooterPencil:hover {
+.rotateBtn:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
 
-.cardEyebrowRotate:focus-visible,
-.cardFooterPencil:focus-visible {
+.rotateBtn:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
 }
 
-.cardFooter {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-sm);
-}
-
-.cardWarn {
-  margin-bottom: var(--space-sm);
-  padding: 8px 12px;
-  border-left: 2px solid var(--warn);
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
+.personaBody {
   font-family: var(--sans);
   font-size: 14px;
-  line-height: 1.4;
-  color: var(--text);
-}
-
-.descTextarea {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  padding: 10px 12px;
-  font-family: var(--sans);
-  font-size: 16px;
   line-height: 1.5;
-  color: var(--text);
-  resize: vertical;
-  min-height: 96px;
-}
-
-.descTextarea:focus {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.descActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-xs);
-  margin-top: var(--space-sm);
-}
-
-.personaBody {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.55;
   color: var(--text-2);
   white-space: pre-wrap;
-  animation: fade 220ms ease both;
 }
 
-.logsWrap {
-  height: 360px;
-  display: flex;
-  flex-direction: column;
-}
-
+/* ── Boxed stat cells (260705: recovered dev-branch .stats layout) ────── */
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  column-gap: 5px;
-  /* Row-gap matches the panel's card→stats gap so the proactiveness row below
-     the three stat cells is spaced the same as the description→stats gap. */
-  row-gap: var(--space-md-plus);
-}
-
-/* Proactiveness spans the full row beneath the three stat cells. */
-.statWide {
-  grid-column: 1 / -1;
+  gap: 5px;
 }
 
 .stat {
-  background: rgba(127, 127, 127, 0.03);
   border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
   padding: 11px 12px;
 }
 
+/* Label typography comes from the shared u-lbl utility (same as the
+   description card's header) so the pane reads as one type family. */
 .statEyebrow {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--muted);
+  display: block;
   margin-bottom: 7px;
 }
 
+/* Matches the description card body (sans 14px), just bolder for the figure. */
 .statValue {
-  font-family: var(--display);
+  font-family: var(--sans);
   font-weight: 600;
-  font-size: 19px;
-  letter-spacing: 0.02em;
+  font-size: 14px;
   color: var(--text);
   white-space: nowrap;
 }
 
-/* ── Deploy bar (mockup .d-foot) — pinned to the bottom of the panel ─── */
-.foot {
+/* ── Game tab: proactiveness control ─────────────────────────────────── */
+.proactRow {
   display: flex;
-  align-items: stretch;
-  gap: 5px;
-  margin-top: auto;
-  padding-top: 22px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.deployBtn {
+/* ── Deploy row (mockup .deploy) — pinned to the bottom ──────────────── */
+.deploy {
+  margin-top: auto;
+  display: flex;
+  gap: 10px;
+  padding-top: 18px;
+}
+
+.deployBig {
   flex: 1;
   min-width: 0;
-  position: relative;
-  overflow: hidden;
-  letter-spacing: 0.22em;
-  height: 54px;
-}
-
-/* Travelling glint across the accent CTA (mockup .deploy::after). */
-.deployBtn::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -60%;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  animation: deploy-glint calc(3.4s / var(--flux)) ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes deploy-glint {
-  0%, 60% { left: -60%; }
-  85%, 100% { left: 130%; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .deployBtn::after {
-    display: none;
-  }
-}
-
-.gearWrap {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.gearBtn {
-  appearance: none;
-  height: 54px;
-  width: 54px;
-  border-radius: 0;
-  border: 1px solid var(--border-strong);
-  background: rgba(127, 127, 127, 0.03);
-  color: var(--muted);
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease;
 }
 
-.gearBtn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+.addError {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--red);
+  margin: 0;
 }
 
-.gearBtn:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
+/* ── Settings (gear) popup — Reset memory + Unbind ───────────────────── */
+/* Mirrors the ProviderSelect popover surface (--surface + --border-strong +
+ * --shadow-pop); opens UPWARD since the deploy row is pinned to the bottom. */
+.settingsWrap {
+  position: relative;
+  display: flex;
 }
 
-.gearMenu {
+.settingsMenu {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 8px);
-  min-width: 220px;
+  bottom: calc(100% + 4px);
+  z-index: 40;
+  min-width: 168px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-pop);
-  display: flex;
-  flex-direction: column;
-  z-index: 20;
 }
 
-.gearMenuItem {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  padding: 11px 14px;
+.settingsItem {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 11px;
+  border: none;
+  background: none;
   font-family: var(--mono);
+  font-weight: 500;
   font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text);
+  letter-spacing: 0.04em;
+  text-align: left;
+  color: var(--text-2);
   cursor: pointer;
 }
 
-.gearMenuItem:hover:not(:disabled) {
+.settingsItem:hover,
+.settingsItem:focus-visible {
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.gearMenuItem:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.settingsItemDanger {
+  color: var(--red);
 }
 
-/* ── Share-toggle confirmation modal ─────────────────────────────────── */
-.confirmScrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.62);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+.settingsItemDanger:hover,
+.settingsItemDanger:focus-visible {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
 }
 
-.confirmModal {
-  width: 420px;
-  background: var(--surface);
-  padding: var(--space-lg) 28px;
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-pop);
-  font-family: var(--sans);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
+/* ── Share-toggle confirm (rendered inside ModalShell) ───────────────── */
 .confirmTitle {
   font-family: var(--display);
-  font-size: 22px;
   font-weight: 600;
+  font-size: 18px;
   line-height: 1.2;
-  letter-spacing: 0.02em;
   color: var(--text);
   margin: 0;
 }
 
 .confirmBody {
-  font-size: 15px;
+  font-family: var(--sans);
+  font-size: 14px;
   line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
 
-.confirmActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-sm);
-  margin-top: var(--space-xs);
-}
-
-/* Outcome-state accents for the share modal title. */
 .confirmTitleOk {
   color: var(--green);
 }
@@ -725,7 +467,6 @@
   position: relative;
   width: 100%;
   height: 6px;
-  margin-top: var(--space-xs);
   background: var(--accent-soft);
   overflow: hidden;
 }
@@ -777,3 +518,72 @@
   font-size: 17px;
   color: var(--text);
 }
+
+/* ── Loading wireframe (cache-miss download / first paint) ───────────────
+ * Solid grey bars in the real page's layout slots. Grey scale mirrors the
+ * scouting-card skeleton (--bg3 art, --border/--bg3 bars). Static by design
+ * (260705) — no shimmer sweep. */
+.skelPortrait {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--bg3);
+}
+
+.skelTitle {
+  width: 200px;
+  height: 34px;
+  margin-top: 6px;
+  background: var(--bg3);
+}
+
+.skelBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 15px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+
+.skelLine {
+  height: 12px;
+  width: 100%;
+  background: var(--bg3);
+}
+
+.skelLineShort {
+  width: 55%;
+}
+
+.skelKv {
+  display: flex;
+  flex-direction: column;
+}
+
+.skelKvRow {
+  height: 12px;
+  width: 60%;
+  margin: 11px 0;
+  background: var(--bg3);
+}
+
+.skelDeploy {
+  margin-top: auto;
+  display: flex;
+  gap: 10px;
+  padding-top: 18px;
+}
+
+.skelBtn {
+  flex: 1;
+  height: 44px;
+  background: var(--bg3);
+}
+
+.skelBtnSm {
+  width: 52px;
+  height: 44px;
+  background: var(--bg3);
+}
+

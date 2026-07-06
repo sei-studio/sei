@@ -11,14 +11,16 @@
  *   - "Skip for now" → resume the deferred summon via proceedSummon, which
  *     either summons (LAN connected) or opens the LAN modal (not connected).
  *
- * Scaffold cloned from SignOutConfirmModal (scrim + centered card + footer).
+ * Esc and scrim-click both skip-and-continue (they route through proceedSummon),
+ * matching the "Skip for now" affordance.
  */
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useWizardStore } from '../lib/stores/useWizardStore';
 import { proceedSummon } from '../lib/summonFlow';
-import styles from './SignOutConfirmModal.module.css';
+import styles from './confirmModal.module.css';
 
 export interface SkinSetupPromptModalProps {
   /** Character the user was trying to summon — resumed on "skip for now". */
@@ -43,47 +45,25 @@ export function SkinSetupPromptModal({
     openWizard(false);
   };
 
-  useEffect(() => {
-    // ESC = skip-and-continue, matching the click-outside affordance below.
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') handleSkip();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // handleSkip closes over a stable characterId for the modal's lifetime.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characterId]);
-
-  const titleId = 'skin-setup-prompt-title';
-
   return (
-    <div
-      className={styles.scrim}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) handleSkip();
-      }}
+    <ModalShell
+      title="Set up your Minecraft skin first?"
+      onClose={handleSkip}
+      scrimClose
     >
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>
-          Set up your Minecraft skin first?
-        </h2>
-        <p className={styles.body}>
-          Skin setup lets your companions appear with their own look in your world.
-          It takes about a minute and you can re-run it anytime from Settings. Connect
-          without it and your companion uses a default skin.
-        </p>
-        <div className={styles.footer}>
-          <Button kind="ghost" size="md" onClick={handleSkip}>
-            Skip for now
-          </Button>
-          <Button kind="accent" size="md" onClick={handleSetup}>
-            Set up skins
-          </Button>
-        </div>
-      </div>
-    </div>
+      <p className={styles.body}>
+        Skin setup lets your companions appear with their own look in your world. It takes about a
+        minute and you can re-run it anytime from Settings. Connect without it and your companion
+        uses a default skin.
+      </p>
+      <ModalFooter>
+        <Button kind="ghost" size="md" onClick={handleSkip}>
+          Skip for now
+        </Button>
+        <Button kind="primary" size="md" onClick={handleSetup}>
+          Set up skins
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

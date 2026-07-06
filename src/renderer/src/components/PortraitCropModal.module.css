@@ -1,51 +1,13 @@
-/* PortraitCropModal.module.css — crop/preview popup.
- * Design system: scrim + --surface card, --border-strong outline, sharp
- * corners (D-28), tokens only. Mirrors the LanModal/SetupWizardModal scrim.
+/* PortraitCropModal.module.css — crop stage content only. Scrim, panel, title
+ * and footer come from ModalShell; the panel width is sized (frame + padding)
+ * so the stage/slider/footer fill the content box. Tokens only, sharp corners.
  */
 
-.wrap {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-xl);
-}
-
-.scrim {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.62);
-}
-
-.card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-lg) var(--space-xl) var(--space-lg);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-pop);
-}
-
-.title {
-  align-self: flex-start;
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--text);
-}
-
 .hint {
-  align-self: flex-start;
-  margin-top: -6px;
   font-family: var(--sans);
   font-size: 13px;
   color: var(--text-2);
+  margin: 0;
 }
 
 /* Fixed crop frame. The image is absolutely positioned inside; overflow:hidden
@@ -102,12 +64,4 @@
 .zoom:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-md);
-  width: 100%;
-  margin-top: var(--space-xs);
 }

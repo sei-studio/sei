@@ -49,7 +49,7 @@ function assertAdapter(adapter) {
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [args.logger]
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
-export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null }) {
+export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null }) {
   assertAdapter(adapter)
 
   // ── Memory layer ────────────────────────────────────────────────────
@@ -146,6 +146,8 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // Voice calls (260705) — how to honor an end_call() tool call (hang up the
     // player's call without leaving the game).
     onCallEndRequested,
+    // Party redesign §2/§5 — current world-action verb emitter (or null clear).
+    onAction,
   })
 
   // ── Build the priority queue with the orchestrator's handleDispatch ─

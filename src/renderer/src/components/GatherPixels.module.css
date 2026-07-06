@@ -1,0 +1,49 @@
+/* GatherPixels.module.css — mockup .gpx5. Cells gather, hold, disperse. */
+
+.gpx {
+  display: grid;
+  grid-template-columns: repeat(5, 11px);
+  grid-auto-rows: 11px;
+  gap: 3px;
+}
+
+.gpx.lg {
+  grid-template-columns: repeat(5, 13px);
+  grid-auto-rows: 13px;
+  gap: 4px;
+}
+
+.gpx b {
+  background: rgb(var(--acc) / 0.8);
+  opacity: 0;
+  animation: gather 5s var(--ease) both;
+}
+
+.gpx b.skin {
+  background: color-mix(in srgb, var(--text) 45%, transparent);
+}
+
+@keyframes gather {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  22% {
+    opacity: 1;
+    transform: none;
+  }
+  62% {
+    opacity: 1;
+  }
+  88%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gpx b {
+    animation: none;
+    opacity: 0.7;
+  }
+}

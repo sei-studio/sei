@@ -78,12 +78,10 @@
 .subtitle {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
+  gap: 7px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
   margin-top: calc(-1 * var(--space-sm));
   font-variant-numeric: tabular-nums;
 }
@@ -180,6 +178,11 @@
   color: var(--accent-text);
 }
 
+.controlLabel {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+}
 
 /* ── Voice-module install gate (260705) ─────────────────────────────────────
    Overlay shown before the first-ever call: consent → progress bar → dial. */

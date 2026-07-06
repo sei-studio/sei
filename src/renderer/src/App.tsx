@@ -30,6 +30,7 @@ import { OnboardingScreen } from './screens/OnboardingScreen';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { ActivityPickerScreen } from './screens/ActivityPickerScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
+import { AwakenScreen } from './screens/AwakenScreen';
 import { AddCharacterScreen } from './screens/AddCharacterScreen';
 import { ComingSoonScreen } from './screens/ComingSoonScreen';
 import { CharacterPage } from './screens/CharacterPage';
@@ -349,6 +350,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
           // Appearance & feel: call captions (default OFF).
           useUiStore.getState().setCallCaptions(cfg.call_captions === true);
+          // Sticky chat side-panel visibility (default shown).
+          useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
         } catch {
           // Fall through with empty onboardedName → onboarding (fresh profile).
         }
@@ -455,6 +458,8 @@ export function App(): React.ReactElement {
         useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
         // Appearance & feel: call captions (default OFF when absent).
         useUiStore.getState().setCallCaptions(cfg.call_captions === true);
+        // Sticky chat side-panel visibility (default shown).
+        useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
       } catch {
         // Defaults already applied (themeMode='system' from store)
       }
@@ -586,7 +591,14 @@ export function App(): React.ReactElement {
   //    sign-out clears the ref so a different account is re-checked. Gating on
   //    view.kind === 'home' means a fresh un-onboarded account (routed to
   //    onboarding first) is never interrupted mid-setup.
+  //
+  //    260706: the ref is stamped only AFTER prefsGet resolves — a transient
+  //    failure leaves it unset so the next Home render genuinely retries
+  //    (the old code stamped before the await, silently disabling the gate
+  //    for the rest of the session on one bad read). `checkingRef` stops the
+  //    in-flight check from being duplicated by a re-render meanwhile.
   const prefsCheckedForUserRef = useRef<string | null>(null);
+  const prefsCheckInFlightRef = useRef(false);
   useEffect(() => {
     if (authState.kind !== 'signed_in') {
       prefsCheckedForUserRef.current = null;
@@ -594,17 +606,19 @@ export function App(): React.ReactElement {
     }
     if (view.kind !== 'home') return;
     const uid = authState.user.id;
-    if (prefsCheckedForUserRef.current === uid) return;
-    prefsCheckedForUserRef.current = uid;
+    if (prefsCheckedForUserRef.current === uid || prefsCheckInFlightRef.current) return;
+    prefsCheckInFlightRef.current = true;
     let cancelled = false;
     void (async () => {
       try {
         const res = await sei.prefsGet();
+        prefsCheckedForUserRef.current = uid;
         if (cancelled) return;
-        if (res.needed) navigate({ kind: 'profile-questions', next: 'home' });
+        if (res.needed) navigate({ kind: 'profile-questions', next: 'home', mode: 'missing' });
       } catch {
-        // Best-effort — a transient failure just means we ask next time Home
-        // renders for this user (the ref is already set, so not this render).
+        // Best-effort — leave the ref unset so the next Home render retries.
+      } finally {
+        prefsCheckInFlightRef.current = false;
       }
     })();
     return () => {
@@ -736,6 +750,7 @@ export function App(): React.ReactElement {
                 {view.kind === 'skin-setup' && <SkinSetupScreen />}
                 {view.kind === 'activity-picker' && <ActivityPickerScreen />}
                 {view.kind === 'home' && <CharactersScreen />}
+                {view.kind === 'awaken' && <AwakenScreen />}
                 {view.kind === 'add-character' && <AddCharacterScreen />}
                 {view.kind === 'character' && <CharacterPage id={view.id} />}
                 {view.kind === 'chat' && <ChatScreen characterId={view.characterId} />}
@@ -747,7 +762,7 @@ export function App(): React.ReactElement {
                 {view.kind === 'receipt' && <ReceiptScreen />}
                 {view.kind === 'coming-soon' && <ComingSoonScreen />}
                 {view.kind === 'profile-questions' && (
-                  <ProfileQuestionsScreen next={view.next} />
+                  <ProfileQuestionsScreen next={view.next} mode={view.mode} />
                 )}
                 {view.kind === 'unique-gender' && <UniqueGenderScreen />}
                 {view.kind === 'unique-casting' && (

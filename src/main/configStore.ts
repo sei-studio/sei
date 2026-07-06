@@ -62,6 +62,34 @@ export async function saveConfig(config: UserConfig): Promise<void> {
 }
 
 /**
+ * Atomic read-modify-write of the config under the file lock: `mutate`
+ * receives the freshly-read config and returns the next one. Use this — not
+ * loadConfig() → saveConfig() — for any update that must not clobber or be
+ * clobbered by a concurrent writer (TOCTOU): a read taken before an await
+ * elsewhere can be stale by the time it is written back. Same pattern as
+ * addPlaytimeMs below. Missing config seeds from DEFAULT_CONFIG.
+ */
+export async function updateConfig(
+  mutate: (current: UserConfig) => UserConfig,
+): Promise<UserConfig> {
+  const target = paths.configPath();
+  await mkdir(path.dirname(target), { recursive: true });
+  let next: UserConfig | undefined;
+  await withFileLock(target, async () => {
+    let cfg: UserConfig;
+    try {
+      cfg = UserConfigSchema.parse(JSON.parse(await readFile(target, 'utf8')));
+    } catch (err: unknown) {
+      if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') cfg = { ...DEFAULT_CONFIG };
+      else throw err;
+    }
+    next = UserConfigSchema.parse(mutate(cfg));
+    await atomicWrite(target, JSON.stringify(next, null, 2) + '\n');
+  });
+  return next!;
+}
+
+/**
  * Fold a finished session's duration into the profile's cumulative
  * `total_playtime_ms`. Atomic read-modify-write under the same file lock as
  * saveConfig so a concurrent settings write can't clobber the increment.

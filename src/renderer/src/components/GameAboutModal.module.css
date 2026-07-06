@@ -1,98 +1,50 @@
-/* GameAboutModal — two-column game info window (Phase 18/19).
- * Borderless surfaces, sharp edges, token colors. */
+/* GameAboutModal — info sheet body (Party redesign §4.9).
+ * Scrim + panel come from ModalShell; this styles the body only. Tokens only. */
 
-.scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.62);
+.head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 110;
-  animation: fade 200ms ease both;
+  gap: var(--space-md);
 }
 
-.modal {
-  width: 640px;
-  max-width: calc(100vw - 64px);
-  max-height: calc(100vh - 64px);
+.icon {
+  width: 44px;
+  height: 44px;
+  flex: none;
   display: grid;
-  grid-template-columns: 220px 1fr;
-  background: var(--surface);
-  box-shadow: var(--shadow-pop);
-  animation: fade-up 260ms var(--ease-pop) both;
+  place-items: center;
   overflow: hidden;
-}
-
-/* ── Left: image placeholder + name + studio ── */
-.left {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--space-sm);
-  padding: var(--space-xl) var(--space-lg);
-  background: var(--surface-2);
-}
-
-.image {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   color: var(--accent);
-  background: var(--window);
-  margin-bottom: var(--space-sm);
-  overflow: hidden;
+  background: var(--bg4);
 }
 
-.imageImg {
+.iconImg {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.name {
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text);
-  margin: 0;
-}
-
 .studio {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
   color: var(--muted);
-}
-
-/* ── Right: description + how-to-set-up + actions ── */
-.right {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-xl);
-  overflow-y: auto;
 }
 
 .description {
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.55;
-  color: var(--text);
+  color: var(--text-2);
   margin: 0;
 }
 
 .setupTitle {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
-  margin: var(--space-lg) 0 var(--space-sm);
+  margin: var(--space-sm) 0 0;
 }
 
 .setupList {
@@ -102,14 +54,7 @@
   flex-direction: column;
   gap: var(--space-sm);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.45;
   color: var(--text-2);
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-sm);
-  margin-top: var(--space-xl);
 }

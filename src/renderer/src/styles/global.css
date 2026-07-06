@@ -84,12 +84,12 @@ textarea {
  * (See .planning/UI-DESIGN-SYSTEM.md §Typography + §Utility classes.)
  * ───────────────────────────────────────────────────────────────────── */
 
-/* Tracked uppercase micro-label — the workhorse caption of the terminal. */
+/* Mono micro-label — the workhorse caption (mockup .label). Regular case,
+ * quiet tracking; write labels in sentence case, the class no longer shouts. */
 .u-lbl {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
@@ -193,9 +193,8 @@ textarea {
   color: var(--text);
   border: 1px solid var(--border-strong);
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   line-height: 1;
   padding: 5px 7px;
@@ -210,6 +209,13 @@ textarea {
 [data-tip]:focus-visible::after {
   opacity: 1;
   transition-delay: 300ms;
+}
+
+/* `data-tip-instant` drops the hover delay for surfaces where the tooltip IS
+ * the information (e.g. the playtime usage bar) rather than a button hint. */
+[data-tip][data-tip-instant]:hover::after,
+[data-tip][data-tip-instant]:focus-visible::after {
+  transition-delay: 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -59,7 +59,6 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
           <h2 id="games-picker-title" className={styles.title}>
             Play together
           </h2>
-          <p className={styles.subtitle}>Pick a game to play with your companion.</p>
         </div>
         <div className={styles.grid}>
           {GAMES.map((g) => (

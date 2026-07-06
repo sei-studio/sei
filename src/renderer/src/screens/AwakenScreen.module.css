@@ -1,0 +1,214 @@
+/* AwakenScreen.module.css — mockup view-awaken (.awaken-head / .awaken-body /
+ * .matched / .side-origins), tokens only.
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §4.3. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.head {
+  padding: var(--space-md-plus) var(--space-lg) var(--space-md);
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  border-top: 1px solid var(--border);
+  min-height: 0;
+}
+
+/* ── Left hero: "Meet my companion" ──────────────────────────────────── */
+.matched {
+  flex: 1.9;
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  padding: var(--space-2xl);
+  background: none;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.2s var(--ease);
+}
+
+.matched::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    65% 55% at 50% 44%,
+    color-mix(in srgb, var(--accent) 14%, transparent),
+    transparent 70%
+  );
+}
+
+.matched:hover,
+.matched:focus-visible {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+/* Hero starfield — Leo, same recipe as the party wall's dormant-slot skies
+ * (HomeScreen.module.css .dormantSky): faint constellation over small stars
+ * at three brightness tiers, brightening while the hero is hovered/focused. */
+.matchedSky {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 460 300'%3E%3Cg fill='none' stroke='rgba(127,176,255,.045)'%3E%3Cpath d='M120 128L138 96L166 82L198 98L212 138L206 182M198 98L292 130L368 156M368 156L322 216L206 182'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.17)'%3E%3Ccircle cx='120' cy='128' r='1.0'/%3E%3Ccircle cx='138' cy='96' r='0.9'/%3E%3Ccircle cx='166' cy='82' r='1.0'/%3E%3Ccircle cx='198' cy='98' r='1.1'/%3E%3Ccircle cx='212' cy='138' r='0.9'/%3E%3Ccircle cx='206' cy='182' r='1.5'/%3E%3Ccircle cx='292' cy='130' r='0.9'/%3E%3Ccircle cx='322' cy='216' r='1.0'/%3E%3Ccircle cx='368' cy='156' r='1.2'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.11)'%3E%3Ccircle cx='17' cy='175' r='0.8'/%3E%3Ccircle cx='390' cy='205' r='1.0'/%3E%3Ccircle cx='65' cy='169' r='0.9'/%3E%3Ccircle cx='197' cy='158' r='0.9'/%3E%3Ccircle cx='360' cy='120' r='0.8'/%3E%3Ccircle cx='402' cy='258' r='0.7'/%3E%3Ccircle cx='204' cy='286' r='0.7'/%3E%3Ccircle cx='16' cy='37' r='1.0'/%3E%3Ccircle cx='234' cy='42' r='0.8'/%3E%3Ccircle cx='363' cy='155' r='1.0'/%3E%3Ccircle cx='203' cy='64' r='0.8'/%3E%3Ccircle cx='84' cy='178' r='1.0'/%3E%3Ccircle cx='414' cy='15' r='1.0'/%3E%3Ccircle cx='119' cy='175' r='0.9'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.07)'%3E%3Ccircle cx='151' cy='21' r='0.5'/%3E%3Ccircle cx='224' cy='129' r='0.7'/%3E%3Ccircle cx='85' cy='264' r='0.6'/%3E%3Ccircle cx='54' cy='126' r='0.5'/%3E%3Ccircle cx='248' cy='84' r='0.6'/%3E%3Ccircle cx='194' cy='226' r='0.7'/%3E%3Ccircle cx='311' cy='280' r='0.7'/%3E%3Ccircle cx='147' cy='125' r='0.5'/%3E%3Ccircle cx='246' cy='257' r='0.8'/%3E%3Ccircle cx='368' cy='193' r='0.7'/%3E%3Ccircle cx='243' cy='188' r='0.5'/%3E%3Ccircle cx='451' cy='259' r='0.6'/%3E%3Ccircle cx='157' cy='19' r='0.7'/%3E%3Ccircle cx='270' cy='205' r='0.7'/%3E%3Ccircle cx='401' cy='87' r='0.6'/%3E%3Ccircle cx='95' cy='138' r='0.5'/%3E%3Ccircle cx='182' cy='178' r='0.6'/%3E%3Ccircle cx='258' cy='47' r='0.5'/%3E%3Ccircle cx='321' cy='63' r='0.8'/%3E%3Ccircle cx='300' cy='52' r='0.7'/%3E%3Ccircle cx='67' cy='98' r='0.5'/%3E%3Ccircle cx='406' cy='137' r='0.8'/%3E%3Ccircle cx='25' cy='33' r='0.6'/%3E%3Ccircle cx='57' cy='177' r='0.6'/%3E%3C/g%3E%3Cg fill='rgba(127,176,255,.04)'%3E%3Ccircle cx='38' cy='285' r='0.4'/%3E%3Ccircle cx='182' cy='227' r='0.5'/%3E%3Ccircle cx='151' cy='37' r='0.5'/%3E%3Ccircle cx='380' cy='232' r='0.4'/%3E%3Ccircle cx='431' cy='260' r='0.5'/%3E%3Ccircle cx='197' cy='219' r='0.5'/%3E%3Ccircle cx='19' cy='194' r='0.5'/%3E%3Ccircle cx='268' cy='34' r='0.5'/%3E%3Ccircle cx='10' cy='273' r='0.4'/%3E%3Ccircle cx='173' cy='73' r='0.4'/%3E%3Ccircle cx='123' cy='94' r='0.5'/%3E%3Ccircle cx='408' cy='156' r='0.4'/%3E%3Ccircle cx='354' cy='122' r='0.4'/%3E%3Ccircle cx='96' cy='289' r='0.4'/%3E%3Ccircle cx='273' cy='37' r='0.3'/%3E%3Ccircle cx='79' cy='57' r='0.5'/%3E%3Ccircle cx='407' cy='235' r='0.4'/%3E%3Ccircle cx='24' cy='172' r='0.3'/%3E%3Ccircle cx='393' cy='29' r='0.3'/%3E%3Ccircle cx='331' cy='140' r='0.5'/%3E%3Ccircle cx='235' cy='218' r='0.3'/%3E%3Ccircle cx='338' cy='18' r='0.5'/%3E%3Ccircle cx='66' cy='268' r='0.4'/%3E%3Ccircle cx='20' cy='251' r='0.3'/%3E%3Ccircle cx='372' cy='152' r='0.3'/%3E%3Ccircle cx='81' cy='216' r='0.3'/%3E%3Ccircle cx='256' cy='65' r='0.3'/%3E%3Ccircle cx='88' cy='246' r='0.5'/%3E%3Ccircle cx='103' cy='277' r='0.4'/%3E%3Ccircle cx='260' cy='47' r='0.5'/%3E%3Ccircle cx='439' cy='221' r='0.4'/%3E%3Ccircle cx='143' cy='163' r='0.4'/%3E%3Ccircle cx='245' cy='223' r='0.4'/%3E%3Ccircle cx='271' cy='212' r='0.5'/%3E%3C/g%3E%3C/svg%3E");
+  transition: filter 0.3s var(--ease);
+}
+
+.matched:hover .matchedSky,
+.matched:focus-visible .matchedSky {
+  filter: brightness(1.9);
+}
+
+.mark {
+  opacity: 0.5;
+  transition: opacity 0.25s var(--ease);
+}
+
+.matched:hover .mark,
+.matched:focus-visible .mark {
+  opacity: 1;
+}
+
+.matchedTitle {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 34px;
+  line-height: 1.1;
+  color: var(--text);
+  margin: 0;
+}
+
+.matchedSub {
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 15px;
+}
+
+/* "Begin" CTA — primary button language (span: it lives inside the hero
+ * <button>, so it can't be a nested button). */
+.go {
+  margin-top: 6px;
+  padding: 10px 32px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 1px solid var(--accent);
+  transition: background 0.15s var(--ease);
+}
+
+.matched:hover .go,
+.matched:focus-visible .go {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+/* ── Right column: secondary origins ─────────────────────────────────── */
+.origins {
+  flex: 1;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.origin {
+  flex: 1;
+  text-align: left;
+  padding: var(--space-lg) 26px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+
+.origin:last-child {
+  border-bottom: 0;
+}
+
+.origin:hover,
+.origin:focus-visible {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.originTitle {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 19px;
+  margin: 0;
+  color: var(--text-2);
+  transition: color 0.15s var(--ease);
+}
+
+.origin:hover .originTitle,
+.origin:focus-visible .originTitle {
+  color: var(--text);
+}
+
+.originSub {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 13px;
+}
+
+/* 260706: "Update my preferences" — a quiet text entry to the full
+ * questionnaire retake, centered under the chooser grid. */
+.foot {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+}
+
+.prefsLink {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.prefsLink:hover {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .matched,
+  .matchedSky,
+  .mark,
+  .go,
+  .origin,
+  .originTitle {
+    transition: none;
+  }
+}

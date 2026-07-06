@@ -16,11 +16,41 @@ import type { UserProfile } from '../shared/ipc';
 
 const USER_SLOT = '_user';
 
+/**
+ * The signed-in user's 4-char public handle (profiles.handle — same generator
+ * as characters.public_id). Permanent once assigned, so cache the first
+ * successful fetch per user for the app's lifetime; best-effort null when
+ * signed out, offline, or on a pre-handle profile row.
+ */
+const handleCache = new Map<string, string | null>();
+
+async function getUserHandle(): Promise<string | null> {
+  try {
+    const { getClient } = await import('./auth/supabaseClient');
+    const session = (await getClient().auth.getSession()).data.session;
+    const userId = session?.user?.id;
+    if (!userId) return null;
+    if (handleCache.has(userId)) return handleCache.get(userId) ?? null;
+    const { data, error } = await getClient()
+      .from('profiles')
+      .select('handle')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) return null;
+    const handle = typeof data?.handle === 'string' && data.handle ? data.handle : null;
+    handleCache.set(userId, handle);
+    return handle;
+  } catch {
+    return null;
+  }
+}
+
 export async function getUserProfile(): Promise<UserProfile> {
   const cfg = await loadConfig();
   return {
     profilePicture: cfg.profile_picture ?? null,
     preferredName: cfg.preferred_name ?? '',
+    handle: await getUserHandle(),
   };
 }
 

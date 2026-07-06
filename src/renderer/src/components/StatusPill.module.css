@@ -10,11 +10,9 @@
   align-items: center;
   gap: var(--space-sm);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 /*
@@ -26,7 +24,7 @@
 .pill.size_tag {
   font-family: var(--mono);
   font-size: 10px;
-  letter-spacing: 1.2px;
+  letter-spacing: 0.04em;
   gap: 6px;
   /*
    * B5 chrome polish: pin the tag-variant pill height to match
@@ -39,7 +37,7 @@
 .pill.size_tag .label {
   font-family: var(--mono);
   font-size: 10px;
-  letter-spacing: 1.2px;
+  letter-spacing: 0.04em;
   font-weight: 600;
 }
 

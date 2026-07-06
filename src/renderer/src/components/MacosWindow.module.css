@@ -8,11 +8,10 @@
 .window {
   width: 100%;
   height: 100%;
-  /* Floor lowered from 1180 → 1024 so the smaller Windows default window
-     (1040×700, set in windowChrome.ts) doesn't clip / force a scrollbar.
-     macOS still opens at 1180 but can now be dragged narrower. */
-  min-width: 1024px;
-  min-height: 660px;
+  /* Party redesign: floor matches the BrowserWindow minimum (1000×560, set
+     in windowChrome.ts) so shrinking never clips or forces a scrollbar. */
+  min-width: 1000px;
+  min-height: 560px;
   /* Flat near-black field — no accent bloom (the previous radial used
      --accent-soft at 16%, ~3× the mockup's faint 5% glow, and read as a
      blue gradient washed over the whole window). */

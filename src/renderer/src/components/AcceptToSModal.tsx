@@ -25,6 +25,7 @@
 import React, { useEffect, useState } from 'react';
 import { sei as seiRaw } from '../lib/ipcClient';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './AcceptToSModal.module.css';
 
 // Plan 11-12 ships `sei.tosAccept` + `sei.openExternal` on `RendererApi`. This
@@ -86,52 +87,47 @@ export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.React
     void sei.openExternal('https://sei.gg/privacy.html');
   };
 
-  const titleId = 'accept-tos-title';
-
+  // BLOCKING legal gate. ESC + click-outside SUPPRESSED (escClose false, no
+  // scrimClose, no onClose) — there is no dismissal path. The dedicated
+  // keydown/preventDefault effect above also stops any other ESC handler.
   return (
-    // Click-outside SUPPRESSED — no onClick on scrim. Blocking modal.
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>
-          Review Sei&rsquo;s Terms
-        </h2>
-        <p className={styles.body}>
-          We have published a Privacy Policy and Terms of Service. Please review and accept to
-          continue.
-        </p>
-        <div className={styles.linkRow}>
-          <Button kind="ghost" size="md" onClick={openTerms} disabled={submitting}>
-            Open Terms of Service
-          </Button>
-          <Button kind="ghost" size="md" onClick={openPrivacy} disabled={submitting}>
-            Open Privacy Policy
-          </Button>
-        </div>
-        <label className={styles.checkbox}>
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={(e) => setChecked(e.target.checked)}
-            disabled={submitting}
-          />
-          <span>I have read and agree to both</span>
-        </label>
-        {error ? (
-          <p className={styles.errorText} role="alert">
-            {error}
-          </p>
-        ) : null}
-        <div className={styles.footer}>
-          <Button
-            kind="accent"
-            size="md"
-            onClick={handleSubmit}
-            disabled={!checked || submitting}
-          >
-            {submitting ? 'Accepting…' : 'Accept and continue'}
-          </Button>
-        </div>
+    <ModalShell title="Review Sei’s Terms" width={460} escClose={false}>
+      <p className={styles.body}>
+        We have published a Privacy Policy and Terms of Service. Please review and accept to
+        continue.
+      </p>
+      <div className={styles.linkRow}>
+        <Button kind="ghost" size="md" onClick={openTerms} disabled={submitting}>
+          Open Terms of Service
+        </Button>
+        <Button kind="ghost" size="md" onClick={openPrivacy} disabled={submitting}>
+          Open Privacy Policy
+        </Button>
       </div>
-    </div>
+      <label className={styles.checkbox}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => setChecked(e.target.checked)}
+          disabled={submitting}
+        />
+        <span>I have read and agree to both</span>
+      </label>
+      {error ? (
+        <p className={styles.errorText} role="alert">
+          {error}
+        </p>
+      ) : null}
+      <ModalFooter>
+        <Button
+          kind="accent"
+          size="md"
+          onClick={handleSubmit}
+          disabled={!checked || submitting}
+        >
+          {submitting ? 'Accepting…' : 'Accept and continue'}
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

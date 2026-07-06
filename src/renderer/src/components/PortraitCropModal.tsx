@@ -9,13 +9,16 @@
  * working resolution and hand it back; the picker's compressor then guarantees
  * the encoded bytes fit the portrait size budget.
  *
- * Zero dependencies — pointer events + canvas only (no crop library). Matches
- * the design system: scrim + --surface card, --border-strong outline, sharp
- * corners (D-28), Oswald title / Rajdhani hint / accent CTA.
+ * Renders through ModalShell: the panel width is sized to the crop frame (frame
+ * + panel padding) so the stage, zoom slider and footer all align. Esc and
+ * scrim-click dismiss unless the parent is busy compressing/uploading.
+ *
+ * Zero dependencies — pointer events + canvas only (no crop library).
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './PortraitCropModal.module.css';
 
 // On-screen crop frame dimensions per shape. 'card' is the portrait card aspect
@@ -27,6 +30,9 @@ const FRAME_DIMS = {
 } as const;
 const OUT_W = 600;
 const MAX_ZOOM = 4;
+// ModalShell panel padding (20px each side) — the panel width is the frame plus
+// this so the stage fills the content box exactly.
+const PANEL_PAD = 40;
 
 export interface PortraitCropModalProps {
   /** Already-decoded source image (object URL still alive). */
@@ -86,14 +92,6 @@ export function PortraitCropModal({
   useEffect(() => {
     setOffset((o) => clampOffset(o, zoom));
   }, [zoom, clampOffset]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !busy) onCancel();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel, busy]);
 
   const onPointerDown = (e: React.PointerEvent): void => {
     if (busy) return;
@@ -155,60 +153,62 @@ export function PortraitCropModal({
   const dispH = imgH * baseScale * zoom;
 
   return (
-    <div className={styles.wrap} role="dialog" aria-modal="true" aria-label="Crop image">
-      <div className={styles.scrim} onClick={() => !busy && onCancel()} />
-      <div className={styles.card}>
-        <div className={styles.title}>Crop your image</div>
-        <div className={styles.hint}>Drag to reposition. Scroll or use the slider to zoom.</div>
+    <ModalShell
+      title="Crop your image"
+      width={FRAME_W + PANEL_PAD}
+      onClose={onCancel}
+      escClose={!busy}
+      scrimClose={!busy}
+    >
+      <div className={styles.hint}>Drag to reposition. Scroll or use the slider to zoom.</div>
 
-        <div
-          className={styles.stage}
-          style={{ width: FRAME_W, height: FRAME_H }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          onWheel={onWheel}
-        >
-          <img
-            className={styles.img}
-            src={image.src}
-            alt=""
-            draggable={false}
-            style={{
-              width: dispW,
-              height: dispH,
-              left: FRAME_W / 2 + offset.x - dispW / 2,
-              top: FRAME_H / 2 + offset.y - dispH / 2,
-            }}
-          />
-          <div
-            className={shape === 'avatar' ? styles.circleOverlay : styles.frameOverlay}
-            aria-hidden="true"
-          />
-        </div>
-
-        <input
-          className={styles.zoom}
-          type="range"
-          min={1}
-          max={MAX_ZOOM}
-          step={0.01}
-          value={zoom}
-          disabled={busy}
-          onChange={(e) => setZoom(Number(e.target.value))}
-          aria-label="Zoom"
+      <div
+        className={styles.stage}
+        style={{ width: FRAME_W, height: FRAME_H }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onWheel={onWheel}
+      >
+        <img
+          className={styles.img}
+          src={image.src}
+          alt=""
+          draggable={false}
+          style={{
+            width: dispW,
+            height: dispH,
+            left: FRAME_W / 2 + offset.x - dispW / 2,
+            top: FRAME_H / 2 + offset.y - dispH / 2,
+          }}
         />
-
-        <div className={styles.actions}>
-          <Button kind="quiet" size="md" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <Button kind="accent" size="md" onClick={confirm} disabled={busy}>
-            {busy ? 'Working…' : 'Use photo'}
-          </Button>
-        </div>
+        <div
+          className={shape === 'avatar' ? styles.circleOverlay : styles.frameOverlay}
+          aria-hidden="true"
+        />
       </div>
-    </div>
+
+      <input
+        className={styles.zoom}
+        type="range"
+        min={1}
+        max={MAX_ZOOM}
+        step={0.01}
+        value={zoom}
+        disabled={busy}
+        onChange={(e) => setZoom(Number(e.target.value))}
+        aria-label="Zoom"
+      />
+
+      <ModalFooter>
+        <Button kind="quiet" size="md" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+        <Button kind="primary" size="md" onClick={confirm} disabled={busy}>
+          {busy ? 'Working…' : 'Use photo'}
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

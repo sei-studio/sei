@@ -3,7 +3,8 @@
  *
  * Opened from HardStopModal's "Use my own API key" CTA. Prompts the user to
  * pick a model provider and paste an API key, then switches the AI backend to
- * local (BYOK) mode — the focused escape hatch from cloud playtime.
+ * local (BYOK) mode — the focused escape hatch from cloud playtime. Renders on
+ * ModalShell's 'stacked' tier so it sits above the HardStopModal that opened it.
  *
  * Commit ordering (mirrors OnboardingScreen.tsx final submit): saveConfig
  * BEFORE saveApiKey BEFORE proxyConfigure('local'). The backend is only flipped
@@ -17,9 +18,10 @@
  * ai_backend_kind:'local' through saveConfig so the persisted UserConfig agrees.
  */
 
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import { ProviderSelect, type Provider } from './ProviderSelect';
 import { TextField } from './TextField';
 import styles from './ApiKeySetupModal.module.css';
@@ -50,7 +52,6 @@ export interface ApiKeySetupModalProps {
 }
 
 export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps): React.ReactElement {
-  const titleId = useId();
   const [provider, setProvider] = useState<Provider>('anthropic');
   const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -104,42 +105,39 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
   const canSave = apiKey.trim() !== '' && !saving;
 
   return (
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className={styles.modal}>
-        <h2 id={titleId} className={styles.title}>
-          Use your own API key
-        </h2>
-        <p className={styles.body}>Pick a provider and paste a key — Sei runs on your key instead of playtime.</p>
-        <ProviderSelect value={provider} onChange={setProvider} compact />
-        <div className={styles.keyField}>
-          <span className={styles.fieldLabel}>Paste your {providerLabel} API key</span>
-          <TextField
-            value={apiKey}
-            onChange={(v) => {
-              setApiKey(v);
-              setError(null);
-            }}
-            type="password"
-            monospace
-            placeholder="sk-…"
-            autoFocus
-            onEnter={() => {
-              if (canSave) void save();
-            }}
-            aria-label="API key"
-            aria-invalid={!!error}
-          />
-        </div>
-        {error ? <p className={styles.error}>{error}</p> : null}
-        <div className={styles.footer}>
-          <Button kind="accent" disabled={!canSave} onClick={() => void save()}>
-            {saving ? 'Saving…' : 'Save & switch'}
-          </Button>
-          <Button kind="ghost" className={styles.muted} disabled={saving} onClick={onCancel}>
-            Cancel
-          </Button>
-        </div>
+    <ModalShell title="Use your own API key" tier="stacked" onClose={onCancel} escClose={false}>
+      <p className={styles.body}>
+        Pick a provider and paste a key. Sei runs on your key instead of playtime.
+      </p>
+      <ProviderSelect value={provider} onChange={setProvider} compact />
+      <div className={styles.keyField}>
+        <span className={styles.fieldLabel}>Paste your {providerLabel} API key</span>
+        <TextField
+          value={apiKey}
+          onChange={(v) => {
+            setApiKey(v);
+            setError(null);
+          }}
+          type="password"
+          monospace
+          placeholder="sk-…"
+          autoFocus
+          onEnter={() => {
+            if (canSave) void save();
+          }}
+          aria-label="API key"
+          aria-invalid={!!error}
+        />
       </div>
-    </div>
+      {error ? <p className={styles.error}>{error}</p> : null}
+      <ModalFooter>
+        <Button kind="quiet" disabled={saving} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button kind="primary" disabled={!canSave} onClick={() => void save()}>
+          {saving ? 'Saving…' : 'Save & switch'}
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

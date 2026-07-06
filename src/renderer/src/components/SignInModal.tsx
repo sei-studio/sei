@@ -21,6 +21,7 @@
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { Button } from './Button';
+import { ModalShell, ModalFooter } from './ModalShell';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { TextField } from './TextField';
 import { OAuthInterstitialModal } from './OAuthInterstitialModal';
@@ -204,7 +205,6 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
     }
   };
 
-  const titleId = 'signin-modal-title';
   const titleText = mode === 'signin' ? 'Sign in to Sei' : 'Create your Sei account';
   const ctaLabel = submitting
     ? mode === 'signin'
@@ -222,23 +222,20 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   // that ships.
   if (verificationSentTo !== null) {
     return (
-      <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div className={styles.modal}>
-          <h2 id={titleId} className={styles.title}>Check your email</h2>
-          <p className={styles.framing}>
-            We sent a verification link to <strong>{verificationSentTo}</strong>. Open it on this
-            device to finish signing in.
-          </p>
-          <p className={styles.framing}>
-            You can close this window. Once you click the link, Sei signs you in automatically.
-          </p>
-          <div className={styles.footer}>
-            <Button kind="quiet" size="md" onClick={onClose}>
-              Back to Sei
-            </Button>
-          </div>
-        </div>
-      </div>
+      <ModalShell title="Check your email" width={460} escClose={!submitting} onClose={onClose}>
+        <p className={styles.framing}>
+          We sent a verification link to <strong>{verificationSentTo}</strong>. Open it on this
+          device to finish signing in.
+        </p>
+        <p className={styles.framing}>
+          You can close this window. Once you click the link, Sei signs you in automatically.
+        </p>
+        <ModalFooter>
+          <Button kind="quiet" size="md" onClick={onClose}>
+            Back to Sei
+          </Button>
+        </ModalFooter>
+      </ModalShell>
     );
   }
 
@@ -246,35 +243,29 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   // the verification panel; copy is deliberately account-existence-neutral.
   if (resetSentTo !== null) {
     return (
-      <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div className={styles.modal}>
-          <h2 id={titleId} className={styles.title}>Check your email</h2>
-          <p className={styles.framing}>
-            If an account exists for <strong>{resetSentTo}</strong>, we've sent a password reset
-            link. Open it on this device to choose a new password.
-          </p>
-          <p className={styles.framing}>
-            You can close this window. Once you click the link, Sei prompts you for a new password.
-          </p>
-          <div className={styles.footer}>
-            <Button kind="quiet" size="md" onClick={onClose}>
-              Back to Sei
-            </Button>
-          </div>
-        </div>
-      </div>
+      <ModalShell title="Check your email" width={460} escClose={!submitting} onClose={onClose}>
+        <p className={styles.framing}>
+          If an account exists for <strong>{resetSentTo}</strong>, we've sent a password reset
+          link. Open it on this device to choose a new password.
+        </p>
+        <p className={styles.framing}>
+          You can close this window. Once you click the link, Sei prompts you for a new password.
+        </p>
+        <ModalFooter>
+          <Button kind="quiet" size="md" onClick={onClose}>
+            Back to Sei
+          </Button>
+        </ModalFooter>
+      </ModalShell>
     );
   }
 
   return (
     <>
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className={styles.modal}>
+    <ModalShell title={titleText} width={460} escClose={!submitting} onClose={onClose}>
         {framingLabel ? (
           <p className={styles.framing}>Sign in to {framingLabel}</p>
         ) : null}
-
-        <h2 id={titleId} className={styles.title}>{titleText}</h2>
 
         <div className={styles.toggleRow}>
           <button
@@ -444,13 +435,12 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           label={mode === 'signup' ? 'Sign up with Google' : 'Sign in with Google'}
         />
 
-        <div className={styles.footer}>
+        <ModalFooter>
           <Button kind="quiet" size="md" onClick={onClose} disabled={submitting}>
             Back to Sei
           </Button>
-        </div>
-      </div>
-    </div>
+        </ModalFooter>
+    </ModalShell>
     {oauthInFlight ? (
       <OAuthInterstitialModal
         onResult={(res) => {

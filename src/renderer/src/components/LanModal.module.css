@@ -1,31 +1,13 @@
-.scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  animation: fade 220ms ease both;
-}
-
-.modal {
-  width: 520px;
-  background: var(--window);
-  padding: 32px;
-  box-shadow: var(--shadow-pop);
-  animation: fade-up 280ms var(--ease-pop) both;
-}
+/* Scrim + panel now come from ModalShell; this styles the body only. */
 
 .headerEyebrow {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 1.2px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--text-2);
-  margin-bottom: 12px;
 }
 
 .headerDot {
@@ -36,18 +18,18 @@
 .title {
   /* Design system §5: modal titles are Oswald display, not Rajdhani. */
   font-family: var(--display);
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 600;
   color: var(--text);
-  margin: 0 0 24px;
+  margin: 0;
   letter-spacing: 0.01em;
-  line-height: 1.05;
+  line-height: 1.1;
 }
 
 .steps {
   list-style: none;
   padding: 0;
-  margin: 0 0 24px;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -65,7 +47,7 @@
   font-family: var(--mono);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.04em;
   color: var(--accent);
   width: 22px;
   flex-shrink: 0;
@@ -85,7 +67,7 @@
   font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
-  margin-bottom: 24px;
+  margin: 0;
 }
 
 .searchDots {

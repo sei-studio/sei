@@ -1,19 +1,22 @@
 /**
- * SettingsScreen — Account / Appearance sections (inline-editable).
+ * SettingsScreen — centered "Party" settings column (§4.7).
  *
- * Account section reads from `sei.getConfig()` and `sei.hasApiKey()` on mount,
- * and persists changes inline:
- *  - preferred_name ("Name") → on-blur saveConfig (no debounce; commit
- *    only when focus leaves the field). The Minecraft-username row was
- *    retired from the GUI (260605); mc_username stays in the DB, unedited.
- *  - API key → "Update" button reveals a password TextField; Save calls
- *    sei.saveApiKey, then re-checks hasApiKey() and collapses the editor.
- *  - Provider stays read-only (only "anthropic" is valid in v1).
+ * Recomposed to the mockup rhythm: a 560px column of Oswald-headed groups,
+ * each row a [label | optional value | control] line with hairline borders,
+ * using the shared Seg / Toggle primitives. Every prior row + behavior is
+ * preserved:
+ *  - preferred_name ("Name") → on-blur saveConfig (commit on focus-leave).
+ *  - API key → inline "Set/Update" reveals a password field; Save persists,
+ *    re-checks hasApiKey(), collapses.
+ *  - Provider change wipes the stored key (prior key is a different vendor's).
+ *  - Backend Seg (Cloud / My key) opens SwitchBackendConfirmModal; selection
+ *    reverts on cancel because the Seg value is derived from ai_backend_kind,
+ *    which only changes after a confirmed proxyConfigure.
+ *  - Theme Seg persists theme_mode (dark / light / system) via saveConfig.
+ *  - Reset-all iterates the character list; resend-verification / export /
+ *    update-check state machines unchanged; all modal opens unchanged.
  *
- * Appearance section toggles light↔dark and persists `theme_mode` immediately.
- *
- * Source: 04-UI-SPEC.md §SettingsScreen + §Re-onboarding (replaced by inline
- * edit in quick task 260508-mun) + D-58.
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §1 + §4.7.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -24,7 +27,14 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { applyTheme, type ThemeMode } from '../lib/theme';
+import {
+  tokensRemainingToPlaytime,
+  DEFAULT_TOKENS_PER_MIN,
+  VISION_MULTIPLIER,
+} from '../lib/playtimeEstimate';
 import { Button } from '../components/Button';
+import { Seg } from '../components/Seg';
+import { Toggle } from '../components/Toggle';
 import { TextField } from '../components/TextField';
 import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
@@ -35,7 +45,7 @@ import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { InfoTip } from '../components/InfoTip';
-import { BackIcon, SunIcon, MoonIcon, CopyIcon } from '../components/icons';
+import { CopyIcon } from '../components/icons';
 import type { UserConfig } from '@shared/characterSchema';
 import type { WizardState } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
@@ -44,6 +54,7 @@ const API_KEY_BULLET_LEN = 24;
 
 export function SettingsScreen(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
+  const themeMode = useUiStore((s) => s.themeMode);
   const setThemeMode = useUiStore((s) => s.setThemeMode);
   // ui-A7: developer-console toggle. Default OFF; SettingsScreen owns the
   // surface that flips it. Persisted via UserConfig.dev_console_visible so
@@ -70,30 +81,25 @@ export function SettingsScreen(): React.ReactElement {
   const allCharacters = useDataStore((s) => s.characters);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
 
-  // Plan 13-20 — Cloud AI toggle (PROXY-11 BYOK escape hatch). The ACCOUNT MODE
-  // section renders exactly ONE button based on backend:
-  //   (a) ai_backend_kind === 'local'      → "Switch to managed billing"
-  //   (b) cloud-proxy                       → "Switch to your own API key"
-  // Symmetric BYOK ↔ cloud per CONTEXT D-57. Subscription cancel/manage lives
-  // on the Credits ("Mana") screen → "Manage billing" (Polar portal), not here.
+  // Cloud AI toggle (PROXY-11 BYOK escape hatch). The Backend Seg drives the
+  // ai_backend_kind between cloud-proxy and local; symmetric BYOK ↔ cloud per
+  // CONTEXT D-57. Subscription cancel/manage lives on the Playtime screen →
+  // "Manage billing" (Polar portal), not here.
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
-  // WR-05 follow-up: flipping the backend mid-bot now applies LIVE — main's
-  // proxy.configure handler calls supervisor.switchBackend(), which rebuilds
-  // the running utilityProcess's Anthropic SDK in place so the next call
-  // routes through the new backend (no stop+re-summon). The original WR-05
-  // mitigation was a "Restart your bot for the change to take effect" banner;
-  // that's no longer true, so this notice is now a positive confirmation that
-  // the swap reached the running bot.
-  //
-  // The notice self-clears on the next bot lifecycle transition (botRunning
-  // edge → false) so a stop cycle silently dismisses it.
+  // Cloud playtime estimate ("~Xh left"). Uses the same remaining_tokens source
+  // as UsageBar / playtimeEstimate; continuous vision burns faster (D-07).
+  const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
+  // WR-05 follow-up: flipping the backend mid-bot applies LIVE — main's
+  // proxy.configure handler rebuilds the running utilityProcess's Anthropic SDK
+  // in place. This notice is a positive confirmation that the swap reached the
+  // running bot; it self-clears on the next bot lifecycle transition.
   const [switchNotice, setSwitchNotice] = useState<null | 'switched-to-cloud' | 'switched-to-local'>(
     null,
   );
   // Switching cloud ⇄ local is uncommon and consequential (it changes billing
-  // and applies to a running bot immediately), so the buttons open a
-  // confirmation modal instead of toggling directly. Non-null = modal is open
-  // for that target backend.
+  // and applies to a running bot immediately), so the Seg opens a confirmation
+  // modal instead of toggling directly. Non-null = modal is open for that
+  // target backend; cancelling leaves ai_backend_kind (and the Seg) untouched.
   const [pendingSwitch, setPendingSwitch] = useState<null | 'cloud-proxy' | 'local'>(null);
   useEffect(() => {
     if (!botRunning) setSwitchNotice(null);
@@ -115,20 +121,14 @@ export function SettingsScreen(): React.ReactElement {
   // from sei.userGetProfile() on mount. PortraitImagePicker owns apply/remove
   // via the user-profile IPC overrides below.
   const [userPic, setUserPic] = useState<string | null>(null);
-  // Updates section (quick/260604-uoy). appVersion is read once via getVersion();
-  // updateStatus reflects the live updater events while the user is on this
-  // screen ("Check for updates" → checking → up-to-date / available / error).
-  // The actual update FLOW (optional changelog popup, download, restart) is
-  // owned by App.tsx's UpdatePopup — this section only triggers a check and
-  // surfaces a brief inline status line.
+  // Updates section. appVersion is read once via getVersion(); updateStatus
+  // reflects live updater events while the user is on this screen. The actual
+  // update FLOW (changelog popup, download, restart) is owned by App.tsx's
+  // UpdatePopup — this section only triggers a check + surfaces inline status.
   const [appVersion, setAppVersion] = useState<string>('');
   const [updateStatus, setUpdateStatus] = useState<
     'idle' | 'checking' | 'up-to-date' | 'available' | 'error'
   >('idle');
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => {
-    const t = document.documentElement.getAttribute('data-theme');
-    return t === 'dark' ? 'dark' : 'light';
-  });
 
   // Inline edit buffers — typing only updates these; commit happens on blur.
   const [preferredDraft, setPreferredDraft] = useState<string>('');
@@ -141,16 +141,11 @@ export function SettingsScreen(): React.ReactElement {
   const [signOutModalOpen, setSignOutModalOpen] = useState<boolean>(false);
   // WR-10: capture the account email at modal-open time so the modal can
   // remain mounted across the SIGNED_OUT transition that fires mid-flow.
-  // The 1200ms "Account scheduled for deletion. Signing you out…" state
-  // would otherwise unmount within ~50ms of auth.signOut() flipping
-  // authState.kind to 'local'.
   const [deleteAccountState, setDeleteAccountState] = useState<{ email: string } | null>(null);
-  // Plan 11-18 — re-open entry for the one-shot migration modal. Bypasses the
-  // <userData>/migration-modal-shown.json flag (Settings opens it explicitly).
+  // Plan 11-18 — re-open entry for the one-shot migration modal.
   const [migrateModalOpen, setMigrateModalOpen] = useState<boolean>(false);
-  // Plan 12-14 — DMCA Designated Agent info modal. Opened from the LEGAL panel
-  // below. Visible to BOTH signed-in and signed-out users since DMCA is a
-  // public-law surface (CONTEXT D-35a).
+  // Plan 12-14 — DMCA Designated Agent info modal. Visible to BOTH signed-in
+  // and signed-out users since DMCA is a public-law surface (CONTEXT D-35a).
   const [dmcaModalOpen, setDmcaModalOpen] = useState<boolean>(false);
   const [resendStatus, setResendStatus] = useState<
     'idle' | 'sending' | 'sent' | 'rate-limited' | 'error'
@@ -158,14 +153,13 @@ export function SettingsScreen(): React.ReactElement {
   const [exportStatus, setExportStatus] = useState<{ savedPath?: string; error?: string } | null>(
     null,
   );
-  // ITEM 5 (quick/260523-t8d): 1.5s "Copied" flash for the Account ID copy
-  // affordance. Local UI state only — no IPC.
+  // 1.5s "Copied" flash for the Account ID copy affordance. Local UI only.
   const [uuidCopied, setUuidCopied] = useState<boolean>(false);
-  // ui-A9: two-click destructive Reset-all-memories state. confirming flag
-  // arms the next click; progress carries "X of N" while iterating; done
-  // flashes a confirmation when the loop completes.
+  // ui-A9: reset-all-memories progress state.
   const [resetAllModalOpen, setResetAllModalOpen] = useState<boolean>(false);
-  const [resetAllProgress, setResetAllProgress] = useState<{ done: number; total: number } | null>(null);
+  const [resetAllProgress, setResetAllProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
   const [resetAllDone, setResetAllDone] = useState<boolean>(false);
   const [resetAllError, setResetAllError] = useState<string | null>(null);
 
@@ -211,10 +205,6 @@ export function SettingsScreen(): React.ReactElement {
       setCfg(c);
       setPreferredDraft(c.preferred_name ?? '');
       // ui-A7: seed devConsoleVisible from persisted config on Settings open.
-      // App.tsx's bootstrap effect handles the first-launch seed; this entry
-      // covers the case where Settings is the first surface to read the
-      // persisted flag (e.g. user opens Settings before LogsBar ever
-      // checks).
       if (typeof c.dev_console_visible === 'boolean') {
         setDevConsoleVisible(c.dev_console_visible);
       }
@@ -229,10 +219,10 @@ export function SettingsScreen(): React.ReactElement {
       });
   }, [setDevConsoleVisible]);
 
-  // Updates section (quick/260604-uoy): load the current version once, and
-  // subscribe to updater events while this screen is mounted so the inline
-  // status line reflects an in-flight manual check. onUpdateAvailable here just
-  // flips the status to "available" — the changelog popup is App.tsx's job.
+  // Updates section: load the current version once, and subscribe to updater
+  // events while this screen is mounted so the inline status line reflects an
+  // in-flight manual check. onUpdateAvailable here just flips the status to
+  // "available" — the changelog popup is App.tsx's job.
   useEffect(() => {
     void sei.getVersion().then(setAppVersion);
     const unsubs = [
@@ -243,14 +233,6 @@ export function SettingsScreen(): React.ReactElement {
     ];
     return () => unsubs.forEach((u) => u());
   }, []);
-
-  const UPDATE_STATUS_TEXT = {
-    idle: '',
-    checking: 'Checking…',
-    'up-to-date': "You're up to date.",
-    available: 'An update is available.',
-    error: "Couldn't check for updates. Try again later.",
-  } as const;
 
   const persistConfig = async (next: UserConfig): Promise<void> => {
     try {
@@ -296,13 +278,15 @@ export function SettingsScreen(): React.ReactElement {
     setKeyError(null);
   };
 
-  const toggleTheme = async (): Promise<void> => {
-    const next: ThemeMode = resolvedTheme === 'light' ? 'dark' : 'light';
-    setThemeMode(next);
-    applyTheme(next);
-    setResolvedTheme(next);
+  // Theme Seg: dark / light / system. Every move writes straight through —
+  // setThemeMode (App re-applies + wires the system listener), applyTheme for
+  // an immediate paint, and saveConfig persists the mode.
+  const onSelectTheme = async (mode: ThemeMode): Promise<void> => {
+    if (mode === themeMode) return;
+    setThemeMode(mode);
+    applyTheme(mode);
     if (cfg) {
-      const updated: UserConfig = { ...cfg, theme_mode: next };
+      const updated: UserConfig = { ...cfg, theme_mode: mode };
       try {
         await sei.saveConfig(updated);
         setCfg(updated);
@@ -315,19 +299,16 @@ export function SettingsScreen(): React.ReactElement {
 
   const currentProvider: Provider = (cfg?.provider ?? 'anthropic') as Provider;
 
-  // ui-A1: provider tile click changes config.provider AND clears any
-  // existing api key (the prior key is for a different vendor; reusing it
-  // would silently 401 against the new baseURL). On clear we leave the
-  // editor open so the user can paste the new vendor's key next to the
-  // newly-selected tile without an extra "Update" click.
+  // ui-A1: provider tile click changes config.provider AND clears any existing
+  // api key (the prior key is for a different vendor; reusing it would silently
+  // 401 against the new baseURL). On clear we leave the editor open so the user
+  // can paste the new vendor's key next.
   const onChangeProvider = async (next: Provider): Promise<void> => {
     if (!cfg) return;
     if (cfg.provider === next) return;
     try {
       await sei.saveConfig({ ...cfg, provider: next, provider_config: cfg.provider_config ?? {} });
       setCfg({ ...cfg, provider: next });
-      // Wipe any saved key — see comment above. saveApiKey('') clears the
-      // on-disk api_key.bin (apiKeyStore tolerates the empty string).
       try {
         await sei.saveApiKey('');
         setHasKey(false);
@@ -344,10 +325,9 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  // ui-A7: persist developer-console toggle. Mirrors theme toggle pattern —
-  // update zustand FIRST so the UI reacts immediately, then write through.
-  const onToggleDevConsole = async (): Promise<void> => {
-    const next = !devConsoleVisible;
+  // ui-A7: persist developer-console toggle. Update zustand FIRST so the UI
+  // reacts immediately, then write through (roll back on failure).
+  const onToggleDevConsole = async (next: boolean): Promise<void> => {
     setDevConsoleVisible(next);
     if (!cfg) return;
     try {
@@ -357,15 +337,13 @@ export function SettingsScreen(): React.ReactElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (dev_console_visible) failed', err);
-      // Roll back the optimistic update so UI matches persisted state.
       setDevConsoleVisible(!next);
     }
   };
 
   // Appearance & feel: persist the "Realistic typing" pacing toggle. Same
   // optimistic-then-write-through pattern as the dev-console toggle.
-  const onToggleRealisticTyping = async (): Promise<void> => {
-    const next = !realisticTyping;
+  const onToggleRealisticTyping = async (next: boolean): Promise<void> => {
     setRealisticTyping(next);
     if (!cfg) return;
     try {
@@ -397,11 +375,9 @@ export function SettingsScreen(): React.ReactElement {
   };
 
   // Write through vision_mode to UserConfig (the config is the source of truth;
-  // botSupervisor bridges it into config.vision at fork). Mirrors
-  // onToggleDevConsole's optimistic-then-rollback discipline. The setting is
-  // persistent and ALWAYS editable — it is deliberately NOT gated on a live bot
-  // session or its provider capability (changes apply at the next summon; a
-  // non-VLM provider skips pictures).
+  // botSupervisor bridges it into config.vision at fork). Mirrors the toggle
+  // optimistic-then-rollback discipline. Always editable — not gated on a live
+  // bot session (changes apply at the next summon).
   const writeVisionConfig = async (patch: Partial<UserConfig>): Promise<void> => {
     if (!cfg) return;
     const updated: UserConfig = { ...cfg, ...patch };
@@ -417,21 +393,13 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  // Mode select: every move writes straight through. Continuous (the automatic
-  // view) is no longer behind a confirm step; its extra playtime use surfaces
-  // as the shrunk "~Xh left" figure on the Playtime screen (D-07).
   const onSelectVisionMode = (mode: 'off' | 'on-demand' | 'continuous'): void => {
     if (mode === (cfg?.vision_mode ?? 'on-demand')) return;
     void writeVisionConfig({ vision_mode: mode });
   };
 
-  // ui-A9: "Reset all character memories" — iterate the current data-store
-  // characters and call chars:reset-memory for each. Includes defaults
-  // (the IPC handler itself refuses only when the bot is currently summoned
-  // to that character). After each row we refreshCharacter() so the
-  // store's last_launched / playtime_ms mirror the on-disk reset.
-  // Opens the confirm popup. The actual wipe runs in runResetAllMemories once
-  // the user confirms in the modal.
+  // ui-A9: "Reset all character memories" — open the confirm popup. The actual
+  // wipe runs in runResetAllMemories once the user confirms.
   const onResetAllMemoriesClick = (): void => {
     setResetAllError(null);
     setResetAllDone(false);
@@ -465,243 +433,352 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
+  const isCloud = aiBackendKind === 'cloud-proxy';
+  const backendSegValue: 'cloud' | 'mykey' = isCloud ? 'cloud' : 'mykey';
+  const visionMode = cfg?.vision_mode ?? 'on-demand';
+  const playtimeRate =
+    visionMode === 'continuous' ? DEFAULT_TOKENS_PER_MIN * VISION_MULTIPLIER : DEFAULT_TOKENS_PER_MIN;
+  const playtimeDisplay = tokensRemainingToPlaytime(remainingTokens, playtimeRate).display;
+
+  // Version value: "v{x}" alone, or "v{x} · <status>" after a check.
+  const versionSuffix =
+    updateStatus === 'checking'
+      ? ' · checking…'
+      : updateStatus === 'up-to-date'
+        ? ' · up to date'
+        : updateStatus === 'available'
+          ? ' · update available'
+          : updateStatus === 'error'
+            ? ' · check failed'
+            : '';
+  const versionValue = appVersion ? `v${appVersion}${versionSuffix}` : '–';
+
+  const resetAllLabel = resetAllDone
+    ? 'All memories reset'
+    : resetAllProgress
+      ? `Resetting ${resetAllProgress.done} of ${resetAllProgress.total}…`
+      : 'Reset all memories…';
+
   return (
     <div className={styles.root}>
-      <div className={styles.backRow}>
-        <Button
-          kind="quiet"
-          size="sm"
-          icon={<BackIcon size={14} />}
-          onClick={() => navigate({ kind: 'home' })}
-        >
-          Back
-        </Button>
-      </div>
-      <h1 className={styles.title}>Settings</h1>
+      <div className={styles.col}>
+        {saveError ? <div className={styles.errorRow}>{saveError}</div> : null}
 
-      {saveError ? <div className={styles.errorRow}>{saveError}</div> : null}
-
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>PROFILE</div>
-
-        {/*
-          Phase 18/19 — the user's profile picture + name on one line, no labels.
-          The circular avatar (PortraitImagePicker 'avatar' variant) reveals a
-          "Change" overlay on hover and opens the same upload/crop/compress
-          pipeline on click, targeting the current user (not a character).
-          mc_username was retired from the GUI (260605) but is still persisted.
-        */}
-        <div className={styles.profileRow} onBlur={onPreferredBlur}>
-          <PortraitImagePicker
-            variant="avatar"
-            value={userPic}
-            onChange={setUserPic}
-            applyOverride={(a) => sei.userApplyProfilePicture(a)}
-            removeOverride={() => sei.userRemoveProfilePicture()}
-          />
-          <span className={styles.profileName}>
-            <TextField
-              value={preferredDraft}
-              onChange={setPreferredDraft}
-              placeholder="Your name"
-              aria-label="Name"
+        {/* ── Profile ─────────────────────────────────────────── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>Profile</h3>
+          <div className={styles.profileRow} onBlur={onPreferredBlur}>
+            <PortraitImagePicker
+              variant="avatar"
+              value={userPic}
+              onChange={setUserPic}
+              applyOverride={(a) => sei.userApplyProfilePicture(a)}
+              removeOverride={() => sei.userRemoveProfilePicture()}
             />
-          </span>
+            <span className={styles.profileName}>
+              <TextField
+                value={preferredDraft}
+                onChange={setPreferredDraft}
+                placeholder="Your name"
+                aria-label="Name"
+              />
+            </span>
+          </div>
         </div>
 
-        {/*
-          ui-A1: Provider picker + API key row are LOCAL-only. Cloud-proxy
-          users have no BYO key — credits + billing replace these surfaces.
-          The compact ProviderSelect dropdown re-renders inline (no separate
-          picker screen / modal) so a vendor switch is one click.
-        */}
-        {aiBackendKind === 'local' ? (
-          <>
+        {/* ── Account (signed-in only) ────────────────────────── */}
+        {authState.kind === 'signed_in' ? (
+          <div className={styles.group}>
+            <h3 className={styles.groupTitle}>Account</h3>
+
             <div className={styles.row}>
-              <span className={styles.rowLabel}>Provider</span>
-              <span className={styles.rowEditor}>
+              <span className={styles.label}>Email</span>
+              <span className={styles.monoValue}>{authState.user.email}</span>
+              <Button kind="ghost" size="sm" onClick={() => setSignOutModalOpen(true)}>
+                Sign out
+              </Button>
+            </div>
+            {resendStatus !== 'idle' ? (
+              <p className={styles.helper}>{resendStatusText}</p>
+            ) : null}
+            {!authState.user.emailVerified ? (
+              <div className={styles.row}>
+                <span className={styles.label}>Verify email</span>
+                <Button
+                  kind="quiet"
+                  size="sm"
+                  onClick={() => void onResendVerification()}
+                  disabled={resendStatus === 'sending'}
+                >
+                  Resend verification
+                </Button>
+              </div>
+            ) : null}
+
+            {/* Playtime — cloud users only. Estimate from the same source as
+                UsageBar; Add routes to the Playtime (credits) screen. */}
+            {isCloud ? (
+              <div className={styles.row}>
+                <span className={styles.label}>Playtime</span>
+                <span className={styles.value}>{playtimeDisplay}</span>
+                <Button kind="primary" size="sm" onClick={() => navigate({ kind: 'credits' })}>
+                  Add
+                </Button>
+              </div>
+            ) : null}
+
+            {/* Account ID — non-secret Supabase auth UUID for support workflows. */}
+            <div className={styles.row}>
+              <span className={styles.label}>Account ID</span>
+              <span className={styles.idValue}>
+                <span className={styles.monoValue}>{authState.user.id}</span>
+                <button
+                  type="button"
+                  className={styles.copyBtn}
+                  aria-label="Copy account ID"
+                  data-tip={uuidCopied ? 'Copied' : 'Copy'}
+                  onClick={() => {
+                    void navigator.clipboard
+                      .writeText(authState.user.id)
+                      .then(() => {
+                        setUuidCopied(true);
+                        window.setTimeout(() => setUuidCopied(false), 1500);
+                      })
+                      .catch(() => {
+                        setUuidCopied(false);
+                      });
+                  }}
+                >
+                  <CopyIcon size={15} />
+                </button>
+              </span>
+            </div>
+
+            {/* 260706: full questionnaire retake (age feel / what you're
+                looking for / art style), prefilled, returning here. */}
+            <div className={styles.row}>
+              <span className={styles.label}>Companion preferences</span>
+              <Button
+                kind="ghost"
+                size="sm"
+                onClick={() => navigate({ kind: 'profile-questions', next: 'settings', mode: 'all' })}
+              >
+                Update my preferences
+              </Button>
+            </div>
+
+            <div className={styles.row}>
+              <span className={styles.label}>Migrate local companions</span>
+              <Button kind="ghost" size="sm" onClick={() => setMigrateModalOpen(true)}>
+                Migrate
+              </Button>
+            </div>
+
+            <div className={styles.row}>
+              <span className={styles.label}>Export data</span>
+              <Button kind="ghost" size="sm" onClick={() => void onExport()}>
+                Export as JSON
+              </Button>
+            </div>
+            {exportStatus?.savedPath ? (
+              <p className={styles.helper}>Saved to {exportStatus.savedPath}</p>
+            ) : null}
+            {exportStatus?.error ? (
+              <p className={`${styles.helper} ${styles.helperError}`}>{exportStatus.error}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* ── AI ──────────────────────────────────────────────── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>AI</h3>
+
+          {/* Backend switch — signed-in only (main rejects cloud-proxy for
+              signed-out callers; a signed-out user is always local). Selecting
+              the other option opens the confirm modal; the Seg value tracks
+              ai_backend_kind, so cancelling reverts the selection. */}
+          {authState.kind === 'signed_in' ? (
+            <div className={styles.row}>
+              <span className={styles.label}>
+                Backend
+                <InfoTip
+                  label="About the AI backend"
+                  text={
+                    isCloud
+                      ? 'Switching to your own API key turns off managed billing and routes Sei through the key stored on this device. Your subscription keeps renewing until you cancel it.'
+                      : 'Cloud turns off your local API key and routes Sei through our managed cloud. Switch back any time.'
+                  }
+                />
+              </span>
+              <Seg
+                aria-label="AI backend"
+                value={backendSegValue}
+                options={[
+                  { value: 'cloud', label: 'Cloud' },
+                  { value: 'mykey', label: 'My key' },
+                ]}
+                onChange={(v) => {
+                  const target = v === 'cloud' ? 'cloud-proxy' : 'local';
+                  if (target !== aiBackendKind) setPendingSwitch(target);
+                }}
+              />
+            </div>
+          ) : null}
+          {switchNotice !== null ? (
+            <p className={styles.helper} role="status">
+              {switchNotice === 'switched-to-cloud'
+                ? 'Switched. Your running bot now routes through Sei’s managed cloud.'
+                : 'Switched. Your running bot now uses your own API key.'}
+            </p>
+          ) : null}
+
+          {/* Provider + API key — local (BYOK) mode only. */}
+          {aiBackendKind === 'local' ? (
+            <>
+              <div className={styles.row}>
+                <span className={styles.label}>Provider</span>
                 <ProviderSelect
                   value={currentProvider}
                   onChange={(p) => void onChangeProvider(p)}
                   compact
                 />
-              </span>
-            </div>
-
-            <div className={styles.row}>
-              <span className={styles.rowLabel}>API key</span>
-              {editingKey ? (
-                <span className={styles.rowEditor}>
-                  <TextField
-                    value={keyDraft}
-                    onChange={setKeyDraft}
-                    type="password"
-                    placeholder="sk-…"
-                    autoFocus
-                    onEnter={() => void onSaveKey()}
-                    aria-label="API key"
-                  />
-                  <Button kind="primary" size="sm" onClick={() => void onSaveKey()}>
-                    Save
-                  </Button>
-                  <Button kind="quiet" size="sm" onClick={onCancelKey}>
-                    Cancel
-                  </Button>
-                </span>
-              ) : (
-                <span className={styles.rowEditor}>
-                  <span className={styles.rowMonoValue}>
-                    {hasKey ? '•'.repeat(API_KEY_BULLET_LEN) : 'Not set'}
+              </div>
+              <div className={styles.row}>
+                <span className={styles.label}>API key</span>
+                {editingKey ? (
+                  <span className={styles.editor}>
+                    <TextField
+                      value={keyDraft}
+                      onChange={setKeyDraft}
+                      type="password"
+                      placeholder="sk-…"
+                      autoFocus
+                      onEnter={() => void onSaveKey()}
+                      aria-label="API key"
+                    />
+                    <Button kind="primary" size="sm" onClick={() => void onSaveKey()}>
+                      Save
+                    </Button>
+                    <Button kind="quiet" size="sm" onClick={onCancelKey}>
+                      Cancel
+                    </Button>
                   </span>
-                  <Button kind="ghost" size="sm" onClick={() => setEditingKey(true)}>
-                    {hasKey ? 'Update' : 'Set'}
-                  </Button>
-                </span>
-              )}
-            </div>
-            {keyError ? <div className={styles.errorRow}>{keyError}</div> : null}
-          </>
-        ) : null}
-      </section>
+                ) : (
+                  <>
+                    <span className={styles.monoValue}>
+                      {hasKey ? '•'.repeat(API_KEY_BULLET_LEN) : 'Not set'}
+                    </span>
+                    <Button kind="ghost" size="sm" onClick={() => setEditingKey(true)}>
+                      {hasKey ? 'Update' : 'Set'}
+                    </Button>
+                  </>
+                )}
+              </div>
+              {keyError ? <div className={styles.errorRow}>{keyError}</div> : null}
+            </>
+          ) : null}
+        </div>
 
-      {/*
-        MINECRAFT SKINS SETUP — shown in BOTH cloud and local mode. Skin
-        sideloading (CustomSkinLoader on the host's MC client) is independent
-        of the AI-backend billing path, so cloud-proxy users need to be able
-        to run / re-run it too. (Previously gated to local-only, which left
-        cloud users with no way to fix a broken skin install.)
-      */}
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>MINECRAFT</div>
-        <SkinSetupRow />
-        {/*
-          Looking (vision): Off / On-demand / Continuous. Every move writes
-          straight through (no confirm step). The control is ALWAYS enabled; it
-          is a persistent setting, not a per-session one. Continuous uses more
-          playtime, which surfaces as the shrunk "~Xh left" figure on the
-          Playtime screen (D-07), never a number here. The mode-specific
-          explanation lives behind the (i) tip so the row stays compact.
-        */}
-        <div className={styles.row}>
-          <span className={styles.rowLabelGroup}>
-            <span className={styles.rowLabel}>Visual gameplay</span>
-            <InfoTip
-              label="About visual gameplay"
-              text="Companions usually play from lightweight snapshots of the world, but can pull a full render of what's around them when they need to see it — for example when building or navigating."
+        {/* ── Minecraft ───────────────────────────────────────── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>Minecraft</h3>
+          <SkinSetupRow />
+          {/* Looking (vision): Off / On-demand / Continuous. Every move writes
+              straight through. Continuous uses more playtime, surfaced as the
+              shrunk "~Xh left" on the Playtime screen (D-07), never a number
+              here. The mode explanation lives behind the (i) tip. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Visual gameplay
+              <InfoTip
+                label="About visual gameplay"
+                text="Companions usually play from lightweight snapshots of the world, but can pull a full render of what's around them when they need to see it, for example when building or navigating."
+              />
+            </span>
+            <Seg
+              aria-label="Visual gameplay mode"
+              value={visionMode}
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'on-demand', label: 'On-demand' },
+                { value: 'continuous', label: 'Continuous' },
+              ]}
+              onChange={onSelectVisionMode}
             />
-          </span>
-          <div className={styles.segmented} role="group" aria-label="Visual gameplay mode">
-            {(['off', 'on-demand', 'continuous'] as const).map((mode) => (
-              <Button
-                key={mode}
-                kind="ghost"
-                size="sm"
-                aria-pressed={(cfg?.vision_mode ?? 'on-demand') === mode}
-                onClick={() => onSelectVisionMode(mode)}
-              >
-                {mode === 'off' ? 'Off' : mode === 'on-demand' ? 'On-demand' : 'Continuous'}
-              </Button>
-            ))}
           </div>
         </div>
-      </section>
 
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>APPEARANCE &amp; FEEL</div>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Theme</span>
-          <Button
-            kind="ghost"
-            size="sm"
-            icon={resolvedTheme === 'dark' ? <SunIcon size={14} /> : <MoonIcon size={14} />}
-            onClick={toggleTheme}
-          >
-            {resolvedTheme === 'dark' ? 'Light' : 'Dark'}
-          </Button>
-        </div>
-        {/*
-          ui-A7: developer console toggle. Off by default — App.tsx gates
-          <LogsBar /> on this flag. Persisted via UserConfig so a relaunch
-          preserves the choice. Helper copy lives behind the (i) tip.
-        */}
-        <div className={styles.row}>
-          <span className={styles.rowLabelGroup}>
-            <span className={styles.rowLabel}>Show developer console</span>
-            <InfoTip
-              label="About the developer console"
-              text="Useful for debugging skin and bot issues."
+        {/* ── Appearance ──────────────────────────────────────── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>Appearance</h3>
+          <div className={styles.row}>
+            <span className={styles.label}>Theme</span>
+            <Seg
+              aria-label="Theme"
+              value={themeMode}
+              options={[
+                { value: 'dark', label: 'Dark' },
+                { value: 'light', label: 'Light' },
+                { value: 'system', label: 'System' },
+              ]}
+              onChange={(m) => void onSelectTheme(m)}
             />
-          </span>
-          <Button
-            kind="ghost"
-            size="sm"
-            aria-pressed={devConsoleVisible}
-            onClick={() => void onToggleDevConsole()}
-          >
-            {devConsoleVisible ? 'On' : 'Off'}
-          </Button>
-        </div>
-        {/*
-          Appearance & feel: "Realistic typing" pacing. On by default — the chat
-          store adds a reading pause before the typing indicator and scales it to
-          the reply length; the same pacing is bridged to the in-game bot.
-        */}
-        <div className={styles.row}>
-          <span className={styles.rowLabelGroup}>
-            <span className={styles.rowLabel}>Realistic typing</span>
-            <InfoTip
-              label="About realistic typing"
-              text="Pauses to read your message, then paces typing to a human speed, in chat and in-game. Off replies instantly."
+          </div>
+          {/* Appearance & feel: "Realistic typing" pacing. On by default. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Realistic typing
+              <InfoTip
+                label="About realistic typing"
+                text="Pauses to read your message, then paces typing to a human speed, in chat and in-game. Off replies instantly."
+              />
+            </span>
+            <Toggle
+              aria-label="Realistic typing"
+              on={realisticTyping}
+              onChange={(v) => void onToggleRealisticTyping(v)}
             />
-          </span>
-          <Button
-            kind="ghost"
-            size="sm"
-            aria-pressed={realisticTyping}
-            onClick={() => void onToggleRealisticTyping()}
-          >
-            {realisticTyping ? 'On' : 'Off'}
-          </Button>
-        </div>
-        {/* Call captions (260705): live subtitle lines on the voice-call
-            screen. Off by default — calls read as audio, not subtitles. */}
-        <div className={styles.row}>
-          <span className={styles.rowLabelGroup}>
-            <span className={styles.rowLabel}>Call captions</span>
-            <InfoTip
-              label="About call captions"
-              text="Shows live captions during voice calls — what the companion said and what Sei heard you say."
+          </div>
+          {/* ui-A7: developer console toggle. Off by default — App.tsx gates
+              <LogsBar /> on this flag. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Developer console
+              <InfoTip
+                label="About the developer console"
+                text="Useful for debugging skin and bot issues."
+              />
+            </span>
+            <Toggle
+              aria-label="Show developer console"
+              on={devConsoleVisible}
+              onChange={(v) => void onToggleDevConsole(v)}
             />
-          </span>
-          <Button
-            kind="ghost"
-            size="sm"
-            aria-pressed={callCaptions}
-            onClick={() => void onToggleCallCaptions()}
-          >
-            {callCaptions ? 'On' : 'Off'}
-          </Button>
+          </div>
+          {/* Call captions (260705): live subtitle lines on the voice-call
+              screen. Off by default. Calls read as audio, not subtitles. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Call captions
+              <InfoTip
+                label="About call captions"
+                text="Shows live captions during voice calls: what the companion said and what Sei heard you say."
+              />
+            </span>
+            <Toggle
+              aria-label="Call captions"
+              on={callCaptions}
+              onChange={() => void onToggleCallCaptions()}
+            />
+          </div>
         </div>
-      </section>
 
-      {/*
-        UPDATES (quick/260604-uoy) — current version + manual check. The check
-        funnels into the same updater flow as the startup auto-check; any
-        optional update surfaces App.tsx's changelog popup, while the inline
-        status here reflects checking / up-to-date / available / error.
-      */}
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>UPDATES</div>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Current version</span>
-          <span className={styles.rowMonoValue}>{appVersion ? `v${appVersion}` : '-'}</span>
-        </div>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Check for updates</span>
-          <span className={styles.rowEditor}>
-            {updateStatus !== 'idle' ? (
-              <span className={styles.resendStatus}>{UPDATE_STATUS_TEXT[updateStatus]}</span>
-            ) : null}
+        {/* ── About ───────────────────────────────────────────── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>About</h3>
+          <div className={styles.row}>
+            <span className={styles.label}>Version</span>
+            <span className={styles.value}>{versionValue}</span>
             <Button
               kind="ghost"
               size="sm"
@@ -713,278 +790,81 @@ export function SettingsScreen(): React.ReactElement {
             >
               Check now
             </Button>
-          </span>
-        </div>
-      </section>
-
-      {/*
-        ACCOUNT panel — signed-in only. Sits BELOW Profile / Appearance / Skins
-        (the more frequently-touched settings) and above Legal, grouping the
-        less-used account-management actions (sign out, migrate, export) plus
-        the Delete Account danger zone. Subscription cancel/manage lives on the
-        Credits ("Mana") screen → "Manage billing", not here.
-      */}
-      {authState.kind === 'signed_in' ? (
-        <section className={styles.section}>
-          <div className={styles.sectionTitle}>ACCOUNT</div>
-
-          <div className={styles.row}>
-            <span className={styles.rowLabel}>Email</span>
-            <span className={styles.rowValue}>
-              <span className={styles.monoValue}>{authState.user.email}</span>
-            </span>
           </div>
-          {!authState.user.emailVerified ? (
-            <div className={styles.row}>
-              <span className={styles.rowLabel} />
-              <span className={styles.rowEditor}>
-                {resendStatus !== 'idle' ? (
-                  <span className={styles.resendStatus}>{resendStatusText}</span>
-                ) : null}
-                <Button
-                  kind="quiet"
-                  size="md"
-                  onClick={() => void onResendVerification()}
-                  disabled={resendStatus === 'sending'}
-                >
-                  Resend verification
-                </Button>
-              </span>
-            </div>
-          ) : null}
-
-          {/*
-            ITEM 5 (quick/260523-t8d): expose the Supabase auth user UUID so
-            support / bug-report workflows can identify the account. The
-            UUID is non-secret (already appears in URLs + exports) and
-            renders in monospace for click-select + a Copy affordance for
-            convenience. Placed directly below Email and above Sign Out
-            per the plan's "above the API-key row" guidance.
-          */}
           <div className={styles.row}>
-            <span className={styles.rowLabel}>Account ID</span>
-            <span className={`${styles.rowValue} ${styles.uuidRowValue}`}>
-              <button
-                type="button"
-                className={styles.uuidCopyBtn}
-                aria-label="Copy account ID"
-                data-tip={uuidCopied ? 'Copied' : 'Copy'}
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(authState.user.id)
-                    .then(() => {
-                      setUuidCopied(true);
-                      window.setTimeout(() => setUuidCopied(false), 1500);
-                    })
-                    .catch(() => {
-                      // Clipboard API can fail (insecure context, perms
-                      // denied) — surface a brief visual cue so the user
-                      // knows to long-press / select manually.
-                      setUuidCopied(false);
-                    });
-                }}
-              >
-                <CopyIcon size={15} />
-              </button>
-              <span className={styles.monoValue}>{authState.user.id}</span>
-            </span>
-          </div>
-
-          <div className={styles.row}>
-            <span className={styles.rowLabel}>Sign Out</span>
-            <Button kind="ghost" size="md" onClick={() => setSignOutModalOpen(true)}>
-              Sign out
+            <span className={styles.label}>Terms of Service</span>
+            <Button
+              kind="ghost"
+              size="sm"
+              onClick={() => void sei.openExternal('https://sei.gg/terms.html')}
+            >
+              Open
             </Button>
           </div>
-
-          {/*
-            Plan 11-18 — re-open entry for the one-shot local→cloud migration
-            modal. Always available regardless of the shown flag — the user can
-            come back here to upload any chars they skipped previously.
-          */}
           <div className={styles.row}>
-            <span className={styles.rowLabel}>Migrate local companions</span>
-            <Button kind="ghost" size="md" onClick={() => setMigrateModalOpen(true)}>
-              Migrate local companions
+            <span className={styles.label}>Privacy Policy</span>
+            <Button
+              kind="ghost"
+              size="sm"
+              onClick={() => void sei.openExternal('https://sei.gg/privacy.html')}
+            >
+              Open
             </Button>
           </div>
-
-          <div>
-            <div className={styles.row}>
-              <span className={styles.rowLabel}>Export My Data</span>
-              <Button kind="ghost" size="md" onClick={() => void onExport()}>
-                Export as JSON
-              </Button>
-            </div>
-            {exportStatus?.savedPath ? (
-              <p className={styles.rowHelper}>Saved to {exportStatus.savedPath}</p>
-            ) : null}
-            {exportStatus?.error ? (
-              <p className={styles.rowHelper} style={{ color: 'var(--red)' }}>
-                {exportStatus.error}
-              </p>
-            ) : null}
-          </div>
-
-        </section>
-      ) : null}
-
-      {/*
-        Phase 12 plan 14 — LEGAL panel (D-35a surface (a)).
-        Rendered OUTSIDE the signed-in conditional on purpose: DMCA contact +
-        ToS + Privacy are public-law surfaces that signed-out users must be
-        able to reach. The DMCA row opens DmcaContactModal; the Terms /
-        Privacy rows hand off to sei.openExternal (sei.gg allowlist already in
-        place from Phase 11).
-      */}
-      <section className={styles.section}>
-        <div className={styles.sectionTitle}>LEGAL</div>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Report copyright infringement (DMCA)</span>
-          <Button kind="ghost" size="md" onClick={() => setDmcaModalOpen(true)}>
-            Open
-          </Button>
-        </div>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Terms of Service</span>
-          <Button
-            kind="ghost"
-            size="md"
-            onClick={() => void sei.openExternal('https://sei.gg/terms.html')}
-          >
-            Open
-          </Button>
-        </div>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Privacy Policy</span>
-          <Button
-            kind="ghost"
-            size="md"
-            onClick={() => void sei.openExternal('https://sei.gg/privacy.html')}
-          >
-            Open
-          </Button>
-        </div>
-      </section>
-
-      {/*
-        ui-A1: ACCOUNT MODE — destructive-feel zone for the BYOK ⇄ cloud-proxy
-        switch. Only signed-in users see this (the toggle moves the AI
-        backend kind, which the renderer mirrors via useCreditsStore; main
-        rejects the cloud-proxy direction for signed-out callers anyway).
-        This is only the mode switch — subscription cancel/manage lives on the
-        Credits ("Mana") screen → "Manage billing" (Polar customer portal).
-      */}
-      {authState.kind === 'signed_in' ? (
-        <section className={styles.section}>
-          <div className={`${styles.sectionTitle} ${styles.dangerLabel}`}>ACCOUNT MODE</div>
-          <div>
-            <div className={styles.row}>
-              <span className={styles.rowLabelGroup}>
-                <span className={styles.rowLabel}>
-                  {aiBackendKind === 'local'
-                    ? 'You are using your own API key'
-                    : 'You are using Sei’s managed cloud'}
-                </span>
-                <InfoTip
-                  label="About account mode"
-                  text={
-                    aiBackendKind === 'local'
-                      ? 'Managed billing turns off your local API key and routes Sei through our cloud. Switch back any time.'
-                      : 'Switching back uses the API key stored on this device. Your active subscription keeps renewing until you cancel it.'
-                  }
-                />
-              </span>
-              {aiBackendKind === 'local' ? (
-                <button
-                  type="button"
-                  className={styles.dangerBtn}
-                  onClick={() => setPendingSwitch('cloud-proxy')}
-                >
-                  Switch to managed billing
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={styles.dangerBtn}
-                  onClick={() => setPendingSwitch('local')}
-                >
-                  Switch to your own API key
-                </button>
-              )}
-            </div>
-            {switchNotice !== null && (
-              <p className={styles.rowHelper} role="status">
-                {switchNotice === 'switched-to-cloud'
-                  ? 'Switched. Your running bot now routes through Sei’s managed cloud.'
-                  : 'Switched. Your running bot now uses your own API key.'}
-              </p>
-            )}
-          </div>
-        </section>
-      ) : null}
-
-      {/*
-        DANGER zone — the destructive-zone terminus of Settings. Holds two
-        actions: "Reset all character memories" (unconditional — local-mode
-        users must be able to reset too, per the original brief) and, for
-        signed-in users only, "Delete Account" (moved here from the Account
-        panel so all destructive actions live together).
-      */}
-      <section className={styles.section}>
-        <div className={`${styles.sectionTitle} ${styles.dangerLabel}`}>DANGER</div>
-        <div>
           <div className={styles.row}>
-            <span className={`${styles.rowLabel} ${styles.dangerLabel}`}>
-              Reset all companion memories
-            </span>
-            <button
-              type="button"
-              className={styles.dangerBtn}
+            <span className={styles.label}>Report copyright infringement (DMCA)</span>
+            <Button kind="ghost" size="sm" onClick={() => setDmcaModalOpen(true)}>
+              Open
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Danger ──────────────────────────────────────────── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>Danger</h3>
+          <div className={styles.row}>
+            <span className={styles.label}>Reset all companion memories</span>
+            <Button
+              kind="danger"
+              size="sm"
               disabled={resetAllProgress !== null || allCharacters.length === 0}
               onClick={onResetAllMemoriesClick}
             >
-              {resetAllDone
-                ? 'All memories reset'
-                : resetAllProgress
-                  ? `Resetting ${resetAllProgress.done} of ${resetAllProgress.total}…`
-                  : 'Reset all memories…'}
-            </button>
+              {resetAllLabel}
+            </Button>
           </div>
-          <p className={styles.rowHelper}>
-            Wipes saved chat history and playtime for every companion on this
-            device. Persona, portrait, and skin are kept.
+          <p className={styles.helper}>
+            Wipes saved chat history and playtime for every companion on this device. Persona,
+            portrait, and skin are kept.
           </p>
           {resetAllError ? (
-            <p className={styles.rowHelper} style={{ color: 'var(--red)' }} role="alert">
+            <p className={`${styles.helper} ${styles.helperError}`} role="alert">
               {resetAllError}
             </p>
           ) : null}
+          {authState.kind === 'signed_in' ? (
+            <>
+              <div className={styles.row}>
+                <span className={styles.label}>Delete account</span>
+                <Button
+                  kind="danger"
+                  size="sm"
+                  onClick={() => {
+                    if (authState.kind === 'signed_in') {
+                      setDeleteAccountState({ email: authState.user.email });
+                    }
+                  }}
+                >
+                  Delete account…
+                </Button>
+              </div>
+              <p className={styles.helper}>
+                Permanently deletes your cloud data within 30 days. Local files stay.
+              </p>
+            </>
+          ) : null}
         </div>
-        {/* Delete Account — signed-in only; lives in the DANGER zone alongside
-            the reset action, separated by a rule. */}
-        {authState.kind === 'signed_in' ? (
-          <div className={styles.dangerSeparator}>
-            <div className={styles.row}>
-              <span className={`${styles.rowLabel} ${styles.dangerLabel}`}>Delete Account</span>
-              <button
-                type="button"
-                className={styles.dangerBtn}
-                onClick={() => {
-                  if (authState.kind === 'signed_in') {
-                    setDeleteAccountState({ email: authState.user.email });
-                  }
-                }}
-              >
-                Delete account…
-              </button>
-            </div>
-            <p className={styles.rowHelper}>
-              Permanently deletes your cloud data within 30 days. Local files stay.
-            </p>
-          </div>
-        ) : null}
-      </section>
+      </div>
 
       {signOutModalOpen ? (
         <SignOutConfirmModal
@@ -999,8 +879,8 @@ export function SettingsScreen(): React.ReactElement {
       {/*
         WR-10: gated only on the captured deleteAccountState, NOT authState.kind.
         Once the modal opens we hold the email locally so the modal can render
-        its 1200ms "Account scheduled for deletion. Signing you out…" state
-        even after supabase.auth.signOut() flips authState.kind to 'local'.
+        its 1200ms "Account scheduled for deletion. Signing you out…" state even
+        after supabase.auth.signOut() flips authState.kind to 'local'.
       */}
       {deleteAccountState ? (
         <DeleteAccountModal
@@ -1026,9 +906,7 @@ export function SettingsScreen(): React.ReactElement {
           onConfirm={runResetAllMemories}
         />
       ) : null}
-      {dmcaModalOpen ? (
-        <DmcaContactModal onClose={() => setDmcaModalOpen(false)} />
-      ) : null}
+      {dmcaModalOpen ? <DmcaContactModal onClose={() => setDmcaModalOpen(false)} /> : null}
     </div>
   );
 }
@@ -1036,20 +914,13 @@ export function SettingsScreen(): React.ReactElement {
 /**
  * SkinSetupRow — Minecraft skin setup wizard status row.
  *
- * Shows the current state of the Minecraft skin setup wizard:
- *   - green pill + count when 1+ installs are enabled
- *   - warn pill when any enabled install has version drift / missing mod
- *   - muted "Not set up yet" when getWizardState().hasRunOnce === false
- *
- * "Re-run setup" button opens SetupWizardModal in re-entry mode (Back-to-settings
- * button visible on welcome step).
+ * "Run setup" / "Re-run setup" opens SetupWizardModal in re-entry mode. The
+ * pill state (enabled-install count) refreshes whenever the wizard closes.
  */
 function SkinSetupRow(): React.ReactElement {
   const openWizard = useWizardStore((s) => s.openWizard);
-  // Re-read the persisted wizard state whenever the wizard CLOSES (open → false)
-  // so a "Re-run setup" that completes flips this pill from "Not set up yet" to
-  // the enabled-install count without reopening Settings. Without this the row
-  // only fetched once on mount and went stale after setup.
+  // Re-read the persisted wizard state whenever the wizard CLOSES so a
+  // completed "Re-run setup" flips the label without reopening Settings.
   const wizardOpen = useWizardStore((s) => s.open);
   const [state, setState] = useState<WizardState | null>(null);
 
@@ -1070,8 +941,8 @@ function SkinSetupRow(): React.ReactElement {
 
   return (
     <div className={styles.row}>
-      <span className={styles.rowLabelGroup}>
-        <span className={styles.rowLabel}>Custom skins</span>
+      <span className={styles.label}>
+        Custom skins
         <InfoTip
           label="About custom skins"
           text="Give your companion a Minecraft skin so it looks right in your world. This runs a quick one-time setup for your Minecraft install."
