@@ -35,15 +35,16 @@ export function initProfileScope(deps: {
   getMainWindowRef = deps.getMainWindow;
 }
 
-/** mkdir the active profile + seed bundled defaults (idempotent per-profile). */
+/**
+ * mkdir the active profile root. 260706: no longer seeds bundled defaults — a
+ * freshly-scoped profile (e.g. first sign-in on this machine) starts with zero
+ * local defaults, same as a fresh install. sui/lyra/clawd surface via the World
+ * tab and cache on demand from their public cloud rows; the user's own cloud
+ * characters are eagerly pulled by cacheMyCloudCharacters on the sign-in
+ * transition below.
+ */
 async function ensureProfileInitialized(): Promise<void> {
   await mkdir(paths.profileRoot(), { recursive: true });
-  try {
-    const { seedDefaultCharacters } = await import('../defaultCharacters');
-    await seedDefaultCharacters();
-  } catch (err) {
-    console.warn(`[sei] profileScope: seed defaults failed: ${(err as Error).message}`);
-  }
 }
 
 /**

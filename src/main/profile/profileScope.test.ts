@@ -2,10 +2,13 @@
  * Tests for runtime profile-scope switching (260603).
  *
  * Surface:
- *   - switchScopeForAuth re-points the data scope, stops the bot, seeds the new
- *     profile, and pushes app:scope-changed.
+ *   - switchScopeForAuth re-points the data scope, stops the bot, mkdirs the new
+ *     profile root, and pushes app:scope-changed.
  *   - No-op when the scope is unchanged (token refresh / INITIAL_SESSION).
  *   - reason is derived correctly (sign-in / sign-out / switch).
+ *
+ * 260706: scope switching no longer seeds bundled defaults (the defaults come
+ * from the World/cloud path now), so the old seed-invocation assertions are gone.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
@@ -14,13 +17,6 @@ import path from 'node:path';
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: (_k: string) => tmpdir() },
-}));
-
-// Avoid dragging in characterStore → personaExpansion → apiKeyStore: stub the
-// seeder. We only assert that it's invoked for a fresh profile.
-const seedDefaultCharactersMock = vi.fn(async () => {});
-vi.mock('../defaultCharacters', () => ({
-  seedDefaultCharacters: seedDefaultCharactersMock,
 }));
 
 import { paths, _setUserDataOverride, setActiveScope, getActiveScope } from '../paths';
@@ -42,7 +38,6 @@ beforeEach(async () => {
   tmp = await mkdtemp(path.join(tmpdir(), 'sei-scope-test-'));
   _setUserDataOverride(tmp);
   setActiveScope('local');
-  seedDefaultCharactersMock.mockClear();
   stopMock = vi.fn(async () => {});
   sendMock = vi.fn();
   const supervisor = { stop: stopMock } as unknown as Parameters<typeof initProfileScope>[0]['supervisor'];
@@ -58,12 +53,11 @@ afterEach(async () => {
 });
 
 describe('switchScopeForAuth', () => {
-  it('signs in: stops bot, re-points scope, seeds + pushes scope-changed (sign-in)', async () => {
+  it('signs in: stops bot, re-points scope, mkdirs profile + pushes scope-changed (sign-in)', async () => {
     await switchScopeForAuth(UUID_A);
 
     expect(stopMock).toHaveBeenCalledTimes(1);
     expect(getActiveScope()).toBe(UUID_A);
-    expect(seedDefaultCharactersMock).toHaveBeenCalledTimes(1);
     expect(await exists(paths.profileRoot())).toBe(true);
     expect(sendMock).toHaveBeenCalledWith(IpcChannel.app.scopeChanged, { scope: UUID_A, reason: 'sign-in' });
   });
@@ -102,13 +96,11 @@ describe('switchScopeForAuth', () => {
     await switchScopeForAuth(UUID_A);
     stopMock.mockClear();
     sendMock.mockClear();
-    seedDefaultCharactersMock.mockClear();
 
     await switchScopeForAuth(UUID_A); // same user again (token refresh)
 
     expect(stopMock).not.toHaveBeenCalled();
     expect(sendMock).not.toHaveBeenCalled();
-    expect(seedDefaultCharactersMock).not.toHaveBeenCalled();
     expect(getActiveScope()).toBe(UUID_A);
   });
 

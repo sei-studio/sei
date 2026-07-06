@@ -1,15 +1,25 @@
 /**
  * 260516-x62: Shipped default personas.
  *
- * Three characters come with the app: Sui, Lyra, Clawd. They are seeded
- * into the user's `<userData>/characters/` on first launch (and on any
- * launch where the id is not yet recorded in the `defaults-seeded.json`
- * tracker — but recorded ids are never re-seeded, so user deletions persist).
+ * Three characters come with the app: Sui, Lyra, Clawd.
  *
- * The source-of-truth JSON files live at
- * `resources/default-characters/<id>.json` and are imported here so they
- * bundle into the main-process build (no runtime filesystem read needed,
- * which would require electron-builder `extraResources` plumbing).
+ * 260706: the app no longer SEEDS local copies of these into
+ * `<userData>/characters/` on a fresh install. Every user (signed-in AND
+ * local) reaches the character database through the proxy's transparent
+ * Supabase route, where the three defaults live as system-owned public rows.
+ * A fresh install surfaces them via the World tab and caches them on demand
+ * (cacheOnDemand.ts) like any other World character, so the old local seed was
+ * stale duplication. Installs that ALREADY seeded them keep their local
+ * `is_default: true` copies untouched — `refreshSeededDefaults` (below) still
+ * re-asserts the bundle's authored fields onto those pre-seeded copies on every
+ * launch, since cache-on-demand's cloud refresh deliberately skips
+ * `is_default` rows (they are bundle-authoritative, not cloud-authoritative).
+ *
+ * The source-of-truth JSON files still live at
+ * `resources/default-characters/<id>.json` and are imported here so the bundled
+ * `DEFAULT_CHARACTERS` array (consumed by skinStore's bundled-skin fallback,
+ * skinStore's reference table, and refreshSeededDefaults) has no runtime
+ * filesystem read.
  *
  * Defaults carry `is_default: true` so the renderer can render them with a
  * subtle badge.
@@ -17,11 +27,7 @@
 import sui from '../../resources/default-characters/sui.json' with { type: 'json' };
 import lyra from '../../resources/default-characters/lyra.json' with { type: 'json' };
 import clawd from '../../resources/default-characters/clawd.json' with { type: 'json' };
-import { readFile, mkdir } from 'node:fs/promises';
 import { CharacterSchema, type Character } from '../shared/characterSchema';
-import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
-import { withFileLock } from '../bot/brain/storage/fileLock.js';
-import { paths } from './paths';
 import { getCharacter, saveCharacter } from './characterStore';
 
 const logger = {
@@ -67,9 +73,10 @@ export type DefaultCharacterSlug = keyof typeof DEFAULT_CHARACTER_UUIDS;
  * stripped by Zod parsing — it lives in the JSON for bundled-asset reverse
  * lookups like skinStore's UUID→slug path).
  *
- * `seedDefaultCharacters` below keys on these UUIDs in defaults-seeded.json.
- * Plan 11-05's slug→UUID migration rewrites any pre-existing slug-keyed
- * tracker on first run of the new build.
+ * These UUIDs match the system-owned public cloud rows for sui/lyra/clawd, so a
+ * fresh install caches the SAME id from the World tab that an older install
+ * seeded locally. Plan 11-05's slug→UUID migration (migration.ts) still rewrites
+ * any pre-existing slug-keyed `defaults-seeded.json` tracker on older installs.
  */
 // 260703 procgen: bundled defaults now live in the World tab (the renderer hides
 // them from Home unless their id is in config.added_default_ids), so they carry
@@ -80,113 +87,19 @@ export const DEFAULT_CHARACTERS: readonly Character[] = Object.freeze([
   { ...CharacterSchema.parse(clawd), id: DEFAULT_CHARACTER_UUIDS.clawd, kind: 'world' as const },
 ]);
 
-interface SeededTracker {
-  version: 1;
-  ids: string[];
-}
-
-function trackerPath(): string {
-  return paths.defaultsSeededPath();
-}
-
-async function readTracker(): Promise<SeededTracker> {
-  try {
-    const raw = await readFile(trackerPath(), 'utf8');
-    const parsed = JSON.parse(raw) as { version?: number; ids?: unknown };
-    if (parsed.version === 1 && Array.isArray(parsed.ids)) {
-      return { version: 1, ids: parsed.ids.filter(x => typeof x === 'string') as string[] };
-    }
-  } catch { /* missing or invalid — treat as empty */ }
-  return { version: 1, ids: [] };
-}
-
-async function writeTracker(t: SeededTracker): Promise<void> {
-  await mkdir(paths.profileRoot(), { recursive: true });
-  await withFileLock(trackerPath(), async () => {
-    await atomicWrite(trackerPath(), JSON.stringify(t, null, 2) + '\n');
-  });
-}
-
 /**
- * Seed any default character whose id has never been seeded before. Skips
- * defaults already present on disk OR already recorded as seeded (so user
- * deletions stay deleted). Errors per-character are non-fatal — log and
- * continue so a single bad default doesn't block boot.
- *
- * Runs after `runFirstLaunchMigration` so the migration's `is_default`
- * sui (from a legacy CLI clone) wins over the shipped default if both
- * paths fire.
- *
- * 260704: bundled defaults are opt-in World entries now (procgen's
- * `added_default_ids` model) rather than a permanent Home freebie — a
- * brand-new install/profile should start with ZERO defaults on disk, same as
- * any other "future player" World entry, instead of inheriting sui/lyra/clawd
- * files nobody asked for. "Brand-new" is detected as: the seeded tracker has
- * never recorded ANY of the three ids AND none of the three already exist on
- * disk. An install mid-upgrade (tracker already has entries) or one where a
- * default was created some other way (migration, import) is NOT fresh — it
- * falls through to the existing seed-everything loop below, unchanged. Either
- * way the tracker is written so a later relaunch never seeds retroactively.
+ * 260706: `seedDefaultCharacters` was REMOVED. Fresh installs no longer write
+ * local `is_default` copies of sui/lyra/clawd — the three defaults surface via
+ * the World tab and are cached on demand from their system-owned public cloud
+ * rows (cacheOnDemand.ts). The `defaults-seeded.json` tracker that gated the old
+ * first-launch seed is now vestigial; migration.ts still remaps a pre-existing
+ * tracker's slug ids to UUIDs for older installs, and partitionMigration.ts
+ * still carries the file across the local→profile partition, but nothing writes
+ * a fresh one. `refreshSeededDefaults` below is retained so installs that
+ * already seeded the defaults keep receiving the bundle's authored-field
+ * updates on every launch (cache-on-demand's cloud refresh skips `is_default`
+ * rows). It is a no-op on a fresh install, where no `is_default` file exists.
  */
-export async function seedDefaultCharacters(): Promise<void> {
-  const tracker = await readTracker();
-  const already = new Set(tracker.ids);
-  let mutated = false;
-
-  if (already.size === 0) {
-    let anyOnDisk = false;
-    for (const c of DEFAULT_CHARACTERS) {
-      if (await getCharacter(c.id).catch(() => null)) {
-        anyOnDisk = true;
-        break;
-      }
-    }
-    if (!anyOnDisk) {
-      const freshTracker: SeededTracker = {
-        version: 1,
-        ids: DEFAULT_CHARACTERS.map((c) => c.id),
-      };
-      try {
-        await writeTracker(freshTracker);
-        logger.info('seedDefaultCharacters: fresh install — skipping default seed, tracker marked');
-      } catch (err) {
-        logger.warn(`seedDefaultCharacters: fresh-install tracker write failed: ${(err as Error).message}`);
-      }
-      return;
-    }
-  }
-
-  for (const c of DEFAULT_CHARACTERS) {
-    if (already.has(c.id)) continue;
-    try {
-      const existing = await getCharacter(c.id).catch(() => null);
-      if (existing) {
-        // Someone (migration, prior version, user import) already created
-        // this character — don't overwrite, but mark seeded so we never
-        // touch it on future boots.
-        already.add(c.id);
-        tracker.ids.push(c.id);
-        mutated = true;
-        continue;
-      }
-      await saveCharacter({
-        ...c,
-        created: c.created || new Date().toISOString(),
-      });
-      already.add(c.id);
-      tracker.ids.push(c.id);
-      mutated = true;
-      logger.info(`seeded default character: ${c.id}`);
-    } catch (err) {
-      logger.warn(`seedDefaultCharacters: failed to seed ${c.id}: ${(err as Error).message}`);
-    }
-  }
-
-  if (mutated) {
-    try { await writeTracker(tracker); }
-    catch (err) { logger.warn(`seedDefaultCharacters: tracker write failed: ${(err as Error).message}`); }
-  }
-}
 
 /**
  * The bundle-owned, author-set fields of a default character — everything the
@@ -210,11 +123,11 @@ function authoredFieldsChanged(onDisk: Character, bundled: Character): boolean {
 
 /**
  * Re-assert the bundled source's authored fields onto already-seeded default
- * characters, on every launch.
+ * characters, on every launch. Only touches `is_default` files that a PRIOR
+ * build already wrote to disk (260706: fresh installs no longer seed any, so
+ * this is a no-op for them — their defaults come from the cloud/World path).
  *
- * `seedDefaultCharacters` only writes a default the FIRST time its id is seen;
- * the tracker then blocks re-seeding so user deletions stay deleted. The side
- * effect is that a default seeded by an OLDER build keeps its stale persona /
+ * A default seeded by an OLDER build otherwise keeps its stale persona /
  * metadata forever — e.g. v0.3.0 shipped Sui with an older persona and (before
  * the proactiveness dial existed) no `metadata.proactiveness`, so getProactiveness
  * defaulted her to Reactive even though the current bundle sets Agentic (2).

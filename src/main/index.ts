@@ -27,7 +27,7 @@ import { isCallActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initUpdater } from './updater';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration } from './migration';
-import { seedDefaultCharacters, refreshSeededDefaults } from './defaultCharacters';
+import { refreshSeededDefaults } from './defaultCharacters';
 import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
@@ -379,18 +379,17 @@ async function bootstrap(): Promise<void> {
   try { await runUuidRenameMigration(); }
   catch (err) { logger.warn(`uuid-rename migration failed: ${(err as Error).message}`); }
 
-  // 1b. Seed shipped default characters (sui/lyra/clawd). Idempotent
-  // via defaults-seeded.json so user deletions persist. Runs after the
-  // migration so a CLI-cloned `sui` wins over the shipped default if
-  // both paths fire.
-  try { await seedDefaultCharacters(); }
-  catch (err) { logger.warn(`seedDefaultCharacters failed: ${(err as Error).message}`); }
-
+  // 1b. 260706: the shipped defaults (sui/lyra/clawd) are NO LONGER seeded as
+  // local copies on a fresh install — they surface via the World tab and cache
+  // on demand from their system-owned public cloud rows. Only the refresh below
+  // remains, to keep installs that ALREADY seeded them in sync with the bundle.
+  //
   // 1b-1. Re-assert bundled authored fields (persona, metadata, skin, …) onto
   // already-seeded defaults so an older build's stale copy is refreshed — e.g.
   // Sui regaining her current persona + Agentic proactiveness on installs that
-  // first seeded her before those shipped. No-op when nothing drifted. Defaults
-  // are read-only in the UI, so this never clobbers user edits.
+  // first seeded her before those shipped. No-op when nothing drifted (and a
+  // full no-op on a fresh install, which has no is_default files). Defaults are
+  // read-only in the UI, so this never clobbers user edits.
   try { await refreshSeededDefaults(); }
   catch (err) { logger.warn(`refreshSeededDefaults failed: ${(err as Error).message}`); }
 
