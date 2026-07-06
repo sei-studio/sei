@@ -257,8 +257,10 @@ export const ConfigSchema = z.object({
   // `.max(512)` here means ConfigSchema.parse REJECTS any larger value, and the
   // downscale/JPEG-encode path (15-01/15-04) reads this cap, so no render can
   // ever exceed it. Default 256 (D-03: aggressive downscale — the model only
-  // needs general shapes, not detail). explicit_cap_per_hour is a bot-side hint
-  // only; the proxy `vision_hourly` bucket (15-02) is the authoritative cap.
+  // needs general shapes, not detail). 260705: the old explicit_cap_per_hour
+  // knob was removed along with the proxy's vision_hourly gate — explicit
+  // renders are metered by the credit ledger like any other turn (existing
+  // config.json files carrying the key still parse; Zod strips unknown keys).
   vision: z.object({
     mode: z.preprocess(
       (v) => (v === 'passive' || v === 'active' ? 'continuous' : v),
@@ -266,7 +268,6 @@ export const ConfigSchema = z.object({
     ).default('on-demand'),
     image_quality: z.number().min(0.1).max(1).default(0.4),          // "image quality" (D-03)
     resolution_px: z.number().int().min(64).max(512).default(256),   // D-03 ~256; VIS-06 ≤512 HARD CEILING
-    explicit_cap_per_hour: z.number().int().min(1).default(10),       // D-09 (proxy authoritative)
   }).default({}),
   adapter: AdapterSchema,
 })

@@ -589,7 +589,7 @@ async function bootstrapWithInit(initData) {
       worlds_json_path: `${memDir}/worlds.json`,
     },
     // Bridge the vision tier + cadence into config.vision. Every other vision
-    // field (image_quality, resolution_px ≤512 cap, explicit_cap_per_hour) is
+    // field (image_quality, resolution_px ≤512 cap) is
     // filled by the ConfigSchema vision defaults. The `.default({})` on the
     // vision block means omitting it entirely is also valid; absent init
     // fields fall to the schema defaults via the conditional spread.

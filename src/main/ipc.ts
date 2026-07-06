@@ -28,7 +28,7 @@ import {
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
-import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota } from './characterStore';
+import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
 import { libraryCharacterCount } from './uniqueGeneration';
 import { paths } from './paths';
 import { saveApiKey, hasApiKey, safeStorageBackendKind } from './apiKeyStore';
@@ -511,8 +511,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     return await getCharacter(id);
   });
-  // Pre-flight daily-creation quota check (persona_daily). Best-effort UX gate;
-  // the proxy 429 remains the hard limit. See characterStore.checkCreateQuota.
+  // Pre-flight daily-creation quota check (MAX_CREATIONS_PER_DAY, local
+  // rolling-24h log). Best-effort UX gate; the chars:save create path is the
+  // enforcing backstop. See characterStore.checkCreateQuota.
   ipcMain.handle(
     IpcChannel.chars.checkCreateQuota,
     async (): Promise<{ blocked: boolean; resetsAt: string | null }> => {
@@ -534,10 +535,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // character are always allowed (they don't add a slot). Defaults are never
     // saved through this path. This is defense-in-depth behind the renderer's
     // pre-check and the generateUnique guard.
-    {
-      const existing = await getCharacter(parsedCharacter.id).catch(() => null);
-      if (!existing && (await libraryIsFull())) {
+    //
+    // 260705: a CREATE is also subject to the daily creation cap
+    // (MAX_CREATIONS_PER_DAY, rolling 24h — checkCreateQuota). The renderer
+    // pre-checks and shows CreationLimitModal before entering the wizard;
+    // this is the backstop for the mid-flow race, and the thrown sentinel
+    // contains 'daily_limit_reached' — the string AddCharacterScreen already
+    // pattern-matches to land on the same modal.
+    const isCreate = (await getCharacter(parsedCharacter.id).catch(() => null)) === null;
+    if (isCreate) {
+      if (await libraryIsFull()) {
         throw new Error(SLOT_LIMIT_REACHED_MESSAGE);
+      }
+      const quota = await checkCreateQuota();
+      if (quota.blocked) {
+        throw new Error('character creation failed: daily_limit_reached');
       }
     }
 
@@ -590,9 +602,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // behavior preserved exactly.
       if (skipExpansion) {
         await saveCharacter(character);
+        if (isCreate) await recordCreation();
         return character;
       }
-      return await expandAndSaveCharacter({ character, onProgress });
+      const persisted = await expandAndSaveCharacter({ character, onProgress });
+      if (isCreate) await recordCreation();
+      return persisted;
     }
 
     // Phase 1 — local persist as PRIVATE first. This defuses the sync-queue
@@ -608,6 +623,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } else {
       persistedPrivate = await expandAndSaveCharacter({ character: draftPrivate, onProgress });
     }
+    // The character is on disk from here on — count the creation now, before
+    // the (long, failure-prone) moderation + cloud-sync tail.
+    if (isCreate) await recordCreation();
 
     // Phase 2 — run moderation gate. On clean, the gate's upsertCharacter
     // adapter has already written shared=true to cloud; re-sync the local

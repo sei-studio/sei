@@ -20,7 +20,7 @@
  *    surfacing a Zod stack trace.
  */
 import { readFile, mkdir, unlink, rm } from 'node:fs/promises';
-import { CharacterSchema, CharacterIndexSchema, type Character, type CharacterIndex } from '../shared/characterSchema';
+import { CharacterSchema, CharacterIndexSchema, MAX_CREATIONS_PER_DAY, type Character, type CharacterIndex } from '../shared/characterSchema';
 // allowJs:true in tsconfig.node.json lets TS resolve these .js modules at compile time.
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
@@ -274,63 +274,75 @@ export async function expandAndSaveCharacter(
   return merged;
 }
 
-// Best-effort client mirror of the proxy's persona_daily cap
-// (proxy/src/rateLimit/personaDailyGate.ts → PERSONA_DAILY_LIMIT). This MUST
-// equal the limit the DEPLOYED proxy actually enforces — currently 50 on Fly.
-// (The proxy source is moving to 20; update this in lockstep with that deploy.)
-// This drives only the PRE-FLIGHT UX gate — the proxy 429 → CreationLimitModal
-// remains the hard backstop if the value ever drifts.
-const PERSONA_DAILY_LIMIT = 50;
-const PERSONA_DAILY_WINDOW_MS = 86_400_000; // 24h, matches the proxy bucket window
+// 260705: the daily character-creation cap is a LOCAL rolling-24h log
+// (UserConfig.creation_times), not a proxy-bucket read. Rationale: the old
+// persona_daily mirror counted /free CALLS (a unique-companion creation burns
+// up to 3: sheet + validation retry + expansion) and skipped BYOK entirely.
+// The product rule is "4 CHARACTERS a day, any backend" (MAX_CREATIONS_PER_DAY
+// — we only have 4 Home slots; more is create-delete churn). The proxy's
+// persona_daily / image_daily / skin_daily buckets remain the server-side
+// abuse backstops for a tampered client.
+const CREATION_WINDOW_MS = 86_400_000; // rolling 24h
+
+/** Creation timestamps still inside the rolling window, oldest first. */
+function creationsInWindow(times: readonly string[] | undefined, now: number): number[] {
+  return (times ?? [])
+    .map((t) => new Date(t).getTime())
+    .filter((t) => Number.isFinite(t) && now - t < CREATION_WINDOW_MS)
+    .sort((a, b) => a - b);
+}
 
 /**
- * Pre-flight daily character-creation quota check (proxy persona_daily cap).
+ * Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
  * The renderer calls this BEFORE entering the new-character flow so a maxed-out
- * user gets a friendly "come back tomorrow" modal instead of hitting the
- * proxy's 429 mid-expansion.
+ * user gets a friendly "come back tomorrow" modal instead of failing mid-flow;
+ * the chars:save create path and generateUnique re-check it as the backstop.
  *
- * Reads the caller's OWN persona_daily bucket via an RLS-scoped Supabase select
- * (rate_buckets_select_own → auth.uid()), replicating the proxy's sliding-window
- * logic (an elapsed window counts as 0 used).
- *
- * Fails OPEN on any error and for BYOK users (no daily cap — they call Anthropic
- * directly), so a transient hiccup never blocks creation.
+ * Fails OPEN on any error, so a transient config-read hiccup never blocks
+ * creation.
  */
 export async function checkCreateQuota(): Promise<{
   blocked: boolean;
   resetsAt: string | null;
 }> {
   try {
-    const backendKind = await getAiBackendKind();
-    if (backendKind !== 'cloud-proxy') return { blocked: false, resetsAt: null };
-
-    const { getClient, getAuthedClient } = await import('./auth/supabaseClient');
-    const { data } = await getClient().auth.getSession();
-    const jwt = data.session?.access_token;
-    if (!jwt) return { blocked: false, resetsAt: null };
-
-    const { data: row, error } = await getAuthedClient(jwt)
-      .from('rate_buckets')
-      .select('count, window_start')
-      .eq('bucket_kind', 'persona_daily')
-      .maybeSingle();
-    if (error || !row) return { blocked: false, resetsAt: null };
-
-    const start = new Date(row.window_start as string).getTime();
-    const end = start + PERSONA_DAILY_WINDOW_MS;
-    // Window elapsed → the next call resets the bucket to 0; not blocked.
-    if (!Number.isFinite(start) || end < Date.now()) {
+    const { loadConfig } = await import('./configStore');
+    const config = await loadConfig();
+    const now = Date.now();
+    const inWindow = creationsInWindow(config.creation_times, now);
+    if (inWindow.length < MAX_CREATIONS_PER_DAY) {
       return { blocked: false, resetsAt: null };
     }
-    const used = Number(row.count ?? 0);
+    // Blocked. The next creation frees up when the OLDEST in-window entry
+    // ages past 24h.
     return {
-      blocked: used >= PERSONA_DAILY_LIMIT,
-      resetsAt: new Date(end).toISOString(),
+      blocked: true,
+      resetsAt: new Date(inWindow[0] + CREATION_WINDOW_MS).toISOString(),
     };
   } catch {
-    // Fail open — never block creation on a transient error. The proxy 429 is
-    // the hard backstop.
+    // Fail open — never block creation on a transient error.
     return { blocked: false, resetsAt: null };
+  }
+}
+
+/**
+ * Record a successful character creation in the rolling-24h log. Prunes
+ * expired entries on every write so config.json never accumulates history.
+ * Best-effort: a failed write must never fail the creation that already
+ * happened (worst case the user gets one extra creation today).
+ */
+export async function recordCreation(): Promise<void> {
+  try {
+    const { loadConfig, saveConfig } = await import('./configStore');
+    const config = await loadConfig();
+    const now = Date.now();
+    const kept = creationsInWindow(config.creation_times, now).map((t) =>
+      new Date(t).toISOString(),
+    );
+    kept.push(new Date(now).toISOString());
+    await saveConfig({ ...config, creation_times: kept });
+  } catch (err) {
+    logger.warn(`recordCreation failed: ${(err as Error).message}`);
   }
 }
 

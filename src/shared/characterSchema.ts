@@ -84,6 +84,19 @@ export type CharacterKind = z.infer<typeof CharacterKindSchema>;
 /** 260703 procgen: the Home grid is a fixed set of companion slots. */
 export const MAX_COMPANION_SLOTS = 4;
 
+/**
+ * 260705: daily character-creation cap (rolling 24h, ALL backends — BYOK
+ * included). Deliberately equals MAX_COMPANION_SLOTS: with only 4 Home slots,
+ * more than 4 creations/day is create-delete churn, and each creation burns
+ * real upstream spend (persona expansion, portrait, skin panel). Enforced
+ * locally in main (characterStore.checkCreateQuota / recordCreation — the
+ * renderer's CreationLimitModal keys off it); the proxy's persona_daily /
+ * image_daily / skin_daily buckets stay the server-side abuse backstops.
+ * The proxy's skinDailyGate (SKIN_DAILY_LIMIT) mirrors this value — update
+ * both together.
+ */
+export const MAX_CREATIONS_PER_DAY = 4;
+
 /** Server-assigned public tag: 4 chars, A-Z / 0-9 (cloud `characters.public_id`). */
 export const PUBLIC_ID_REGEX = /^[A-Z0-9]{4}$/;
 
@@ -244,6 +257,15 @@ export const UserConfigSchema = z.object({
    * many manual UserConfig literals don't all need to spell it out.
    */
   daily_limited_until: z.string().nullable().optional(),
+  /**
+   * 260705: ISO timestamps of recent character creations, pruned to the
+   * rolling 24h window on every write. Drives the MAX_CREATIONS_PER_DAY cap
+   * (characterStore.checkCreateQuota / recordCreation). Local-first so the
+   * cap covers BYOK users too (no server bucket exists for them). Optional
+   * (not defaulted) so the many manual UserConfig literals don't all need to
+   * spell it out; absent ≡ [].
+   */
+  creation_times: z.array(z.string()).optional(),
   // ui-A1: Phase 14 widened the LLM provider matrix to 13 backends — the
   // factory in src/bot/brain/llm/index.js (`SUPPORTED_PROVIDERS`) is the
   // canonical list. Anthropic remains the default for backward-compat with

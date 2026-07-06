@@ -136,9 +136,9 @@ function HomeGrid(): React.ReactElement {
   const [openPrepareError, setOpenPrepareError] = useState<string | null>(null);
   const [preferredName, setPreferredName] = useState<string>('');
   const [isFirstLogin, setIsFirstLogin] = useState<boolean>(false);
-  // Daily character-creation cap (persona_daily). Pre-flight gate before the
-  // new-character flow so a maxed-out user gets a "come back tomorrow" modal
-  // instead of failing mid-expansion. null = hidden.
+  // Daily character-creation cap (MAX_CREATIONS_PER_DAY, rolling 24h).
+  // Pre-flight gate before the new-character flow so a maxed-out user gets a
+  // "come back tomorrow" modal instead of failing mid-flow. null = hidden.
   const [createLimit, setCreateLimit] = useState<{ resetsAt: string | null } | null>(null);
   // 260703 procgen — the add-companion chooser (opened from an empty slot) and
   // the sign-in prompt shown when a signed-out / local-mode user picks the
@@ -147,7 +147,8 @@ function HomeGrid(): React.ReactElement {
   const [showSignIn, setShowSignIn] = useState<boolean>(false);
 
   // Gate the custom-creation entry point on the daily quota. checkCreateQuota
-  // fails open (blocked:false) for BYOK users and on any error, so this never
+  // applies to every backend (260705: local rolling-24h creation log, BYOK
+  // included) and fails open on any error, so a transient hiccup never
   // wrongly blocks creation.
   const handleAddClick = async (): Promise<void> => {
     const quota = await sei.checkCreateQuota();

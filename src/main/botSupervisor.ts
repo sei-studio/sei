@@ -551,7 +551,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // Bridge the user-facing Looking (vision) mode from UserConfig into the
     // bot's config.vision at fork time. The renderer never talks to the bot
     // ConfigSchema directly — main is the translator. The remaining vision
-    // knobs (cadence, image_quality, resolution_px cap, explicit_cap_per_hour)
+    // knobs (cadence, image_quality, resolution_px cap)
     // come from the bot config / orchestrator defaults.
     const visionMode = userCfg.vision_mode ?? 'on-demand';
     // Appearance & feel: bridge the "Realistic typing" toggle into the bot so

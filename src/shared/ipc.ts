@@ -786,10 +786,11 @@ export interface RendererApi {
   charsSetShared(args: { id: string; shared: boolean }): Promise<void>;
 
   /**
-   * Pre-flight daily character-creation quota check (persona_daily cap).
-   * Called before entering the new-character flow so a maxed-out user sees a
-   * "come back tomorrow" modal instead of failing mid-expansion. Best-effort —
-   * returns { blocked:false } for BYOK users and on any error.
+   * Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY,
+   * local rolling-24h log — all backends, BYOK included). Called before
+   * entering the new-character flow so a maxed-out user sees a "come back
+   * tomorrow" modal instead of failing mid-flow. Best-effort — returns
+   * { blocked:false } on any error; the chars:save create path enforces.
    */
   checkCreateQuota(): Promise<{ blocked: boolean; resetsAt: string | null }>;
 
@@ -1386,7 +1387,7 @@ export const IpcChannel = {
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
     setShared: 'chars:set-shared',
-    // Pre-flight daily character-creation quota check (persona_daily cap).
+    // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
     // Renderer calls this before entering the new-character flow.
     checkCreateQuota: 'chars:check-create-quota',
     // Phase 11 plan 17 — list the UUIDs of the signed-in user's cloud

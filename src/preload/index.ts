@@ -47,7 +47,7 @@ const api: RendererApi = {
   // Phase 11 D-16 — public/private toggle.
   charsSetShared: (args) => ipcRenderer.invoke(IpcChannel.chars.setShared, args),
 
-  // Pre-flight daily character-creation quota check (persona_daily cap).
+  // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
   checkCreateQuota: () => ipcRenderer.invoke(IpcChannel.chars.checkCreateQuota),
 
   // Phase 11 plan 17 — cloud-character id set for the LOCAL ONLY chip.
