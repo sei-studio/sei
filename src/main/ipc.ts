@@ -13,6 +13,8 @@ import {
   IpcChannel,
   ProxyConfigureArgsSchema,
   CreditsCheckoutArgsSchema,
+  FeedbackSubmitArgsSchema,
+  ReportSubmitArgsSchema,
   RecordConsentArgsSchema,
   type WizardProgressEvent,
   type ExpansionProgressEvent,
@@ -2146,6 +2148,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const parsed = RecordConsentArgsSchema.parse(argsRaw);
     const { recordSubscriptionConsent } = await import('./cloud/proxyClient');
     return recordSubscriptionConsent({ consent_version: parsed.consent_version });
+  });
+
+  // feedback:submit — 260706. Proxy POST /feedback (20/day per user; optional
+  // once-per-account reward claim). Zod-validated at the IPC trust boundary;
+  // the proxy re-validates everything server-side.
+  ipcMain.handle(IpcChannel.feedback.submit, async (_e, argsRaw: unknown) => {
+    const parsed = FeedbackSubmitArgsSchema.parse(argsRaw);
+    const { feedbackSubmit } = await import('./cloud/proxyClient');
+    return feedbackSubmit(parsed);
+  });
+
+  // feedback:report — 260706. Proxy POST /report (20/day per user).
+  ipcMain.handle(IpcChannel.feedback.report, async (_e, argsRaw: unknown) => {
+    const parsed = ReportSubmitArgsSchema.parse(argsRaw);
+    const { reportSubmit } = await import('./cloud/proxyClient');
+    return reportSubmit(parsed);
   });
 
   // Phase 11 — push sync-queue status updates to all renderer windows whenever

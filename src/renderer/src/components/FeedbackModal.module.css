@@ -1,0 +1,32 @@
+/* FeedbackModal — standing "Submit feedback" form. Form scaffolding mirrors
+ * SetNewPasswordModal; tokens only. */
+
+.framing {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 0 var(--space-md) 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.fieldLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.errorText {
+  font-size: 14px;
+  color: var(--red);
+  margin: 0;
+}

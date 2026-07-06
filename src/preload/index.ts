@@ -179,6 +179,9 @@ const api: RendererApi = {
   // quick/260525-sbo Task 3 — auto-renewal consent INSERT before checkout.
   recordSubscriptionConsent: (args) =>
     ipcRenderer.invoke(IpcChannel.subscription.recordConsent, args),
+  // 260706 — in-app feedback + companion reports.
+  feedbackSubmit: (args) => ipcRenderer.invoke(IpcChannel.feedback.submit, args),
+  reportSubmit: (args) => ipcRenderer.invoke(IpcChannel.feedback.report, args),
   onCreditsStatusUpdate(cb: (status: CreditsStatus) => void) {
     const handler = (_e: Electron.IpcRendererEvent, status: CreditsStatus): void => cb(status);
     ipcRenderer.on(IpcChannel.credits.statusUpdate, handler);

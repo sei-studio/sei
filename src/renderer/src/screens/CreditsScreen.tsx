@@ -56,11 +56,19 @@ import { BackIcon, RefreshIcon } from '../components/icons';
 import { formatPlayed } from '../components/UsageBar';
 import { sei } from '../lib/ipcClient';
 import { AutoRenewalConsentModal } from '../components/AutoRenewalConsentModal';
+import { FeedbackRewardCard } from '../components/FeedbackRewardCard';
+import { FeedbackModal } from '../components/FeedbackModal';
 import { formatRenewal } from '../lib/formatRenewal';
 import styles from './CreditsScreen.module.css';
 
 /** Estimate disclaimer shown in the footer (matches ESTIMATE_TOOLTIP spirit). */
 const ESTIMATE_DISCLAIMER = 'Estimates only. Actual playtime varies by usage.';
+
+/**
+ * 260706 — lifetime spend (used_usd) at which the one-time feedback-for-reward
+ * banner appears. By $0.50 the user has played enough to have real opinions.
+ */
+const FEEDBACK_PROMPT_USD = 0.5;
 
 /** Plain-English copy for the (rare) trial-claim failure branches. */
 function claimErrorCopy(code: string): string {
@@ -147,11 +155,17 @@ export function CreditsScreen(): React.ReactElement {
   // and seeded from historical characters, so it survives deletion (same
   // source the old UsageBar tooltip used).
   const [totalPlaytimeMs, setTotalPlaytimeMs] = useState(0);
+  // 260706 — feedback reward banner. `null` = config not read yet (render
+  // neither the banner nor the standing button, so nothing flashes).
+  const [rewardClaimed, setRewardClaimed] = useState<boolean | null>(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const usedUsd = useCreditsStore((s) => s.used_usd);
   useEffect(() => {
     let cancelled = false;
     void sei.getConfig().then((c) => {
       if (cancelled) return;
       setTotalPlaytimeMs(c.total_playtime_ms ?? 0);
+      setRewardClaimed(c.feedback_reward_claimed ?? false);
     });
     return () => {
       cancelled = true;
@@ -254,7 +268,20 @@ export function CreditsScreen(): React.ReactElement {
           >
             Back
           </Button>
+          {/* Standing feedback entry point once the one-time reward banner
+              has been used (260706). */}
+          {rewardClaimed === true ? (
+            <Button kind="quiet" size="sm" onClick={() => setShowFeedbackModal(true)}>
+              Submit feedback
+            </Button>
+          ) : null}
         </div>
+
+        {/* One-time feedback-for-reward banner: appears after $0.50 of
+            lifetime spend, retires permanently once submitted (260706). */}
+        {rewardClaimed === false && (usedUsd ?? 0) >= FEEDBACK_PROMPT_USD ? (
+          <FeedbackRewardCard onDone={() => setRewardClaimed(true)} />
+        ) : null}
 
         {/* Hero — "{pct}% used" + refresh beside it + matching usage fill (260705). */}
         <div className={styles.hero}>
@@ -430,6 +457,10 @@ export function CreditsScreen(): React.ReactElement {
           onClose={dismissCheckout}
         />
       ) : null}
+
+      {/* Standing feedback form (260706) — reachable once the reward banner
+          has been used. */}
+      {showFeedbackModal ? <FeedbackModal onClose={() => setShowFeedbackModal(false)} /> : null}
     </div>
   );
 }

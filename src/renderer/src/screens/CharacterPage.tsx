@@ -33,6 +33,7 @@ import { SkinEditor } from '../components/SkinEditor';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { ReportCompanionModal } from '../components/ReportCompanionModal';
 import { ProactivenessBar } from '../components/ProactivenessBar';
 import { getProactiveness } from '../lib/proactiveness';
 import { formatDate } from '../lib/formatDate';
@@ -145,6 +146,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // main-process slot-limit backstop) — a silent no-op reads as a broken button.
   const [addError, setAddError] = useState<string | null>(null);
   const [showSignIn, setShowSignIn] = useState<boolean>(false);
+  // 260706 — in-app report form (replaces the old mailto:dmca@sei.gg link).
+  const [showReport, setShowReport] = useState<boolean>(false);
   const [shareError, setShareError] = useState<string | null>(null);
   // The publish/unpublish modal is multi-phase: the user confirms, then the
   // modal STAYS OPEN showing progress, then a success or error-with-reason
@@ -577,18 +580,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             <button
               type="button"
               className={styles.reportLink}
-              onClick={() => {
-                const subject = `Report companion: ${character.name}`;
-                const body =
-                  `Companion ID: ${character.id}\n` +
-                  `Companion name: ${character.name}\n\n` +
-                  `Reason (CSAM / hate speech / copyright / other):\n\n` +
-                  `Details:\n\n`;
-                const href =
-                  `mailto:dmca@sei.gg?subject=${encodeURIComponent(subject)}` +
-                  `&body=${encodeURIComponent(body)}`;
-                void sei.openExternal(href);
-              }}
+              onClick={() => setShowReport(true)}
               aria-label={`Report ${character.name}`}
             >
               Report
@@ -854,6 +846,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             }}
           />
         )
+      ) : null}
+      {showReport ? (
+        <ReportCompanionModal
+          characterName={character.name}
+          characterPublicId={character.public_id ?? undefined}
+          onClose={() => setShowReport(false)}
+        />
       ) : null}
       {showSignIn ? (
         <SignInModal

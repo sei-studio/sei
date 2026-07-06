@@ -797,6 +797,29 @@ export const RecordConsentArgsSchema = z.object({
   consent_version: z.string().min(1).max(64),
 });
 
+/**
+ * 260706 — in-app feedback submission. `email` is optional; blank/omitted
+ * means the user chose to stay anonymous (the proxy then stores user_id NULL).
+ * `claimReward` marks the one-time reward-banner submission; the proxy grants
+ * a trial-sized playtime recharge at most once per account.
+ */
+export const FeedbackSubmitArgsSchema = z.object({
+  body: z.string().min(1).max(4000),
+  email: z.string().max(320).optional(),
+  claimReward: z.boolean().optional(),
+});
+
+/**
+ * 260706 — in-app companion report. `reasons` carries keys from the proxy's
+ * REPORT_REASONS allowlist (the proxy re-validates; unknown keys are a 400).
+ */
+export const ReportSubmitArgsSchema = z.object({
+  reasons: z.array(z.string().min(1).max(64)).min(1).max(8),
+  comment: z.string().max(2000).optional(),
+  characterPublicId: z.string().max(64).optional(),
+  characterName: z.string().max(120).optional(),
+});
+
 /* -------------------------------------------------------------------------- */
 /*  Preload-exposed RendererApi                                                */
 /* -------------------------------------------------------------------------- */
@@ -1207,6 +1230,27 @@ export interface RendererApi {
   recordSubscriptionConsent: (args: { consent_version: string }) => Promise<
     { ok: true } | { ok: false; code: string }
   >;
+  /**
+   * 260706 — submit in-app feedback to the proxy (POST /feedback, 20/day per
+   * user). With claimReward, the proxy also attempts the once-per-account
+   * playtime recharge: reward_granted=true on first claim, already_claimed=true
+   * when this account claimed before (the renderer retires the banner either
+   * way). Error codes: PROXY_NO_SESSION | PROXY_RATE_LIMITED | PROXY_NETWORK.
+   */
+  feedbackSubmit: (args: { body: string; email?: string; claimReward?: boolean }) => Promise<
+    | { ok: true; reward_granted: boolean; already_claimed: boolean }
+    | { ok: false; code: string }
+  >;
+  /**
+   * 260706 — report a companion (POST /report, 20/day per user). Reasons are
+   * keys from the report-reason allowlist; a comment is required with 'other'.
+   */
+  reportSubmit: (args: {
+    reasons: string[];
+    comment?: string;
+    characterPublicId?: string;
+    characterName?: string;
+  }) => Promise<{ ok: true } | { ok: false; code: string }>;
   /**
    * Subscribe to `credits:status:update` pushes. Fires after every proxied
    * Anthropic call (the proxy emits the new % via X-Sei-Remaining-Pct).
@@ -1750,6 +1794,12 @@ export const IpcChannel = {
     // quick/260525-sbo Task 3 — auto-renewal consent record.
     recordConsent: 'subscription:record-consent',
   },
+  // 260706 — in-app feedback + companion reports (proxy POST /feedback and
+  // POST /report; 20/user/day server-side, rows reviewed via the dashboard).
+  feedback: {
+    submit: 'feedback:submit',
+    report: 'feedback:report',
+  },
 } as const;
 
 export type IpcChannelName =
@@ -1768,4 +1818,5 @@ export type IpcChannelName =
   | typeof IpcChannel.proxy[keyof typeof IpcChannel.proxy]
   | typeof IpcChannel.trial[keyof typeof IpcChannel.trial]
   | typeof IpcChannel.credits[keyof typeof IpcChannel.credits]
-  | typeof IpcChannel.subscription[keyof typeof IpcChannel.subscription];
+  | typeof IpcChannel.subscription[keyof typeof IpcChannel.subscription]
+  | typeof IpcChannel.feedback[keyof typeof IpcChannel.feedback];

@@ -1,0 +1,58 @@
+/* ReportCompanionModal — reason checkboxes + details field. Checkbox idiom
+ * mirrors AcceptToSModal; form scaffolding mirrors SetNewPasswordModal.
+ * Tokens only. */
+
+.framing {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 0 var(--space-md) 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+}
+
+.reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.fieldLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.errorText {
+  font-size: 14px;
+  color: var(--red);
+  margin: 0;
+}

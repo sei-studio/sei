@@ -54,6 +54,7 @@ import {
   PROXY_DEVICE_CLAIMED,
   PROXY_NETWORK,
   PROXY_NO_PORTAL_URL,
+  PROXY_RATE_LIMITED,
   type ProxyErrorCode,
 } from './proxyErrors';
 import type { CreditsStatus, SubscriptionStatusInfo } from '../../shared/ipc';
@@ -609,6 +610,106 @@ export async function openCheckout(
   // Hand the validated URL back to the IPC handler, which opens it in the
   // system browser via shell.openExternal (260603). No window work here.
   return { ok: true, url };
+}
+
+/**
+ * 260706 — submit in-app feedback to the proxy (POST /feedback). Runs behind
+ * the proxy's feedbackDailyGate (20/day per user). With `claimReward` the
+ * proxy also attempts the once-per-account playtime recharge and reports the
+ * outcome in the body. 429 surfaces as PROXY_RATE_LIMITED so the renderer can
+ * show honest "daily limit" copy instead of a generic network error.
+ */
+export async function feedbackSubmit(args: {
+  body: string;
+  email?: string;
+  claimReward?: boolean;
+}): Promise<
+  | { ok: true; reward_granted: boolean; already_claimed: boolean }
+  | { ok: false; code: ProxyErrorCode }
+> {
+  const session = await getSessionOrNull();
+  if (!session) return { ok: false, code: PROXY_NO_SESSION };
+
+  const proxyBase = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
+  const controller = new AbortController();
+  const handle = setTimeout(() => controller.abort(), 15_000);
+  let resp: Response;
+  try {
+    resp = await fetch(`${proxyBase}/feedback`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.jwt}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        body: args.body,
+        email: args.email,
+        claimReward: args.claimReward === true,
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    clearTimeout(handle);
+    return { ok: false, code: PROXY_NETWORK };
+  }
+  clearTimeout(handle);
+  if (resp.status === 429) return { ok: false, code: PROXY_RATE_LIMITED };
+  if (!resp.ok) return { ok: false, code: PROXY_NETWORK };
+
+  try {
+    const body = (await resp.json()) as {
+      ok?: boolean;
+      reward_granted?: boolean;
+      already_claimed?: boolean;
+    };
+    if (body.ok !== true) return { ok: false, code: PROXY_NETWORK };
+    return {
+      ok: true,
+      reward_granted: body.reward_granted === true,
+      already_claimed: body.already_claimed === true,
+    };
+  } catch {
+    return { ok: false, code: PROXY_NETWORK };
+  }
+}
+
+/**
+ * 260706 — report a companion (proxy POST /report, reportDailyGate 20/day).
+ * Reasons are allowlist keys; the proxy re-validates and rejects unknowns.
+ */
+export async function reportSubmit(args: {
+  reasons: string[];
+  comment?: string;
+  characterPublicId?: string;
+  characterName?: string;
+}): Promise<{ ok: true } | { ok: false; code: ProxyErrorCode }> {
+  const session = await getSessionOrNull();
+  if (!session) return { ok: false, code: PROXY_NO_SESSION };
+
+  const proxyBase = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
+  const controller = new AbortController();
+  const handle = setTimeout(() => controller.abort(), 15_000);
+  let resp: Response;
+  try {
+    resp = await fetch(`${proxyBase}/report`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.jwt}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(args),
+      signal: controller.signal,
+    });
+  } catch {
+    clearTimeout(handle);
+    return { ok: false, code: PROXY_NETWORK };
+  }
+  clearTimeout(handle);
+  if (resp.status === 429) return { ok: false, code: PROXY_RATE_LIMITED };
+  if (!resp.ok) return { ok: false, code: PROXY_NETWORK };
+  return { ok: true };
 }
 
 /**

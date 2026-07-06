@@ -469,6 +469,14 @@ export const UserConfigSchema = z.object({
    */
   has_been_welcomed: z.boolean().optional().default(false),
   /**
+   * 260706 — local mirror of the once-per-account feedback reward. Flipped
+   * true when the proxy reports the reward granted OR already claimed, so the
+   * Playtime screen's reward banner retires and the standing "Submit feedback"
+   * button takes its place. Server-side the claim stays authoritative (partial
+   * unique index on ledger_grants), so a stale false here can never double-grant.
+   */
+  feedback_reward_claimed: z.boolean().optional().default(false),
+  /**
    * Looking (vision) mode — how the companion sees the world:
    *   'off'        — never looks; plays from world data only. No look()/explore()
    *                  pictures and no automatic views.

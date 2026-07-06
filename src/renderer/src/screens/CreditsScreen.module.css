@@ -31,8 +31,12 @@
 
 .backRow {
   /* Pull left by the quiet/sm button's horizontal padding so the icon lines up
-     with the column's content edge. */
+     with the column's content edge. Space-between hosts the standing
+     "Submit feedback" button on the right (260706). */
   margin-left: -12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 /* ── Hero: {pct}% used + flat usage bar + refresh ─────────────── */
