@@ -119,11 +119,11 @@ export function SkinSetupScreen(): React.ReactElement {
             <span className={styles.voiceTitle}>Set up voice calls too</span>
             <span className={styles.voiceHint}>
               {voiceState === 'ready'
-                ? 'Voice module installed — you can call your companion anytime.'
+                ? 'Voice module installed. You can call your companion anytime.'
                 : voiceState === 'installing'
                   ? `Downloading the voice module… ${voicePct}%`
                   : voiceState === 'failed'
-                    ? 'Download failed — you can retry from your first call.'
+                    ? 'Download failed. You can retry from your first call.'
                     : 'Downloads the voice-recognition module (~40 MB) in the background.'}
             </span>
           </span>

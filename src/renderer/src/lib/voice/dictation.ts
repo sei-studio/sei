@@ -120,7 +120,7 @@ export async function createDictation(opts: {
   const inflight = new Map<number, (text: string) => void>();
   const ready = new Promise<void>((resolve, reject) => {
     const watchdog = setTimeout(
-      () => reject(new Error('voice recognition took too long to download — check your connection and retry')),
+      () => reject(new Error('voice recognition took too long to download, check your connection and retry')),
       MODEL_LOAD_TIMEOUT_MS,
     );
     worker.onmessage = (e: MessageEvent) => {

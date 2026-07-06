@@ -168,7 +168,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           {gate === 'consent' ? (
             <>
               <p className={styles.installBody}>
-                Calling {companionName} needs the voice module — a one-time ~40 MB download that
+                Calling {companionName} needs the voice module, a one-time ~40 MB download that
                 lets Sei understand your voice. Install it now?
               </p>
               <div className={styles.installActions}>

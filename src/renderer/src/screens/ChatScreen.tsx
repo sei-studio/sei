@@ -27,7 +27,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
-import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { sei } from '../lib/ipcClient';
@@ -212,7 +211,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const userArtSrc = portraitSrc(userProfile?.profilePicture);
   // §4.5 (260705) — tint the presence panel with the portrait's main color.
   // Null (no portrait / extraction blocked) falls back to the plain surface.
-  const panelTint = useDominantColor(portraitSrc(character?.portrait_image ?? null));
+  const panelTint = useDominantColor(
+    portraitSrc(character?.portrait_image ?? null),
+    character?.cloud_updated_at ?? null,
+  );
 
   const presence = character
     ? presenceOf(character, summon)
@@ -247,9 +249,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   };
 
   const onVoiceCall = (): void => {
-    // Kick the pipeline (mic + model + call-state) and open the call view;
-    // VoiceCallScreen renders the connecting/live/error states.
-    void useVoiceStore.getState().startCall(characterId);
+    // Open the call view WITHOUT starting the pipeline: VoiceCallScreen's gate
+    // decides whether to show the install/consent modal first (mic + ~40 MB
+    // model download) and only starts the call once the module is in place and
+    // the user has consented. Starting here would set callCharacterId before
+    // the gate ran and skip that consent step.
     navigate({ kind: 'voice-call', characterId });
   };
 

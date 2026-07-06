@@ -115,7 +115,7 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
         className={`${styles.autoCard} ${value === null ? styles.selected : ''}`}
         onClick={() => onChange(null)}
       >
-        <div className={styles.rowTitle}>Auto — let Sei pick</div>
+        <div className={styles.rowTitle}>Auto: let Sei pick</div>
         <div className={styles.rowVibe}>
           A voice that fits their personality, never one another companion already uses. Recommended.
         </div>

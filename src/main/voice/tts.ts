@@ -60,8 +60,12 @@ async function fetchAudio(url: string, headers: Record<string, string>, body: un
     console.warn(`[sei/voice] tts upstream ${res.status}: ${text.slice(0, 200)}`);
     throw new Error(`VOICE_TTS_FAILED: status ${res.status}`);
   }
-  const buf = await res.arrayBuffer();
+  // Response established (headers in): the timeout was a connect / time-to-
+  // first-byte guard, NOT a whole-delivery deadline. A near-cap (up to 1000
+  // char) clip's body can take longer than TTS_TIMEOUT_MS to download; clear
+  // the timer now so reading it can't abort mid-stream.
   clearTimeout(timeout);
+  const buf = await res.arrayBuffer();
   return buf;
 }
 
@@ -161,6 +165,12 @@ export async function voiceTtsStream(
     console.warn(`[sei/voice] tts upstream ${res.status}: ${bodyText.slice(0, 200)}`);
     throw new Error(`VOICE_TTS_FAILED: status ${res.status}`);
   }
+  // Response established (headers in): the timeout guarded connect / time-to-
+  // first-byte only, NOT the whole stream. A near-cap reply can take longer
+  // than TTS_TIMEOUT_MS to fully stream; since this same AbortController also
+  // governs the body reader, leaving the timer armed would abort playback
+  // mid-sentence. Clear it here so only the pre-response fetch was protected.
+  clearTimeout(timeout);
 
   const streamId = `tts-${nextStreamSeq++}`;
   // Pump in the background; the caller gets the id NOW so it can route chunks.
@@ -179,15 +189,13 @@ export async function voiceTtsStream(
       sink({ streamId, done: true });
     } catch (err) {
       sink({ streamId, error: `VOICE_TTS_FAILED: ${(err as Error).message}` });
-    } finally {
-      clearTimeout(timeout);
     }
   })();
   return { streamId };
 }
 
 /** One canned line for the creation-flow voice picker (~60 chars — cheap). */
-const PREVIEW_LINE = "Hey! Ready when you are — grab your gear and let's head out.";
+const PREVIEW_LINE = "Hey! Ready when you are, grab your gear and let's head out.";
 
 /**
  * Voice-picker preview (260705): speak the canned line in an arbitrary

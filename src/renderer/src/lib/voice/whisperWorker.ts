@@ -43,6 +43,11 @@ async function init(): Promise<void> {
   // cache makes this instant). transformers.js fires progress_callback per
   // file with { status: 'progress', file, loaded, total }.
   const files = new Map<string, { loaded: number; total: number }>();
+  // Reported percentage is clamped monotonic: `total` grows as each new model
+  // file registers (its full size lands before its bytes do), which would let
+  // the raw ratio jump backward (e.g. 88% → 40%) and read as a stall. Never
+  // report a lower number than we already have.
+  let lastPct = 0;
   const reportProgress = (info: { status?: string; file?: string; loaded?: number; total?: number }): void => {
     if (info.status !== 'progress' || !info.file || !info.total) return;
     files.set(info.file, { loaded: info.loaded ?? 0, total: info.total });
@@ -52,7 +57,11 @@ async function init(): Promise<void> {
       loaded += f.loaded;
       total += f.total;
     }
-    if (total > 0) self.postMessage({ type: 'progress', pct: Math.round((100 * loaded) / total) });
+    if (total > 0) {
+      const pct = Math.round((100 * loaded) / total);
+      if (pct > lastPct) lastPct = pct;
+      self.postMessage({ type: 'progress', pct: lastPct });
+    }
   };
 
   // WASM on purpose, NOT webgpu: verified live (260705, Electron 37) that

@@ -77,6 +77,14 @@ let session = 0;
 let liveSince: number | null = null;
 /** TTS fetches in flight — the remote-end drain waits for these. */
 let pendingTts = 0;
+/** Companion lines that arrived while the call was still 'connecting'. main
+ * flips say() routing to the call at dial start (voiceCallSetActive(true)), so
+ * the companion can speak during the ring + mic-permission + first-run model
+ * download window — but the audio pipeline isn't up yet, so those lines would
+ * be neither spoken nor shown. Buffer them here and flush on the
+ * connecting→live edge. Capped so a stuck 'connecting' can't grow it forever. */
+let pendingCompanionLines: string[] = [];
+const MAX_PENDING_COMPANION_LINES = 12;
 /** Companion hang-up (end_call): end as soon as queued speech finishes. */
 let remoteEndAt: number | null = null;
 /** First moment the goodbye was observed fully drained (tail-delay basis). */
@@ -124,8 +132,8 @@ const MIN_RING_MS = 3000;
 function friendlyError(err: unknown): string {
   const msg = String((err as Error)?.message ?? err);
   if (/VOICE_NO_SESSION/.test(msg)) return 'Sign in to use voice calls.';
-  if (/VOICE_NO_CREDITS/.test(msg)) return "You're out of playtime — add more to keep calling.";
-  if (/VOICE_RATE_LIMITED/.test(msg)) return "You've hit today's usage cap — it resets tomorrow.";
+  if (/VOICE_NO_CREDITS/.test(msg)) return "You're out of playtime. Add more to keep calling.";
+  if (/VOICE_RATE_LIMITED/.test(msg)) return "You've hit today's usage cap. It resets tomorrow.";
   if (/VOICE_NOT_CONFIGURED/.test(msg)) return 'Voice service is not available right now.';
   if (/permission/i.test(msg)) return 'Microphone access was blocked. Allow it and try again.';
   return 'Voice call failed to start. Try again in a moment.';
@@ -204,6 +212,79 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     remoteEndTimers.push(window.setTimeout(maybeFinishRemoteEnd, REMOTE_END_MAX_WAIT_MS + 50));
   }
 
+  /** Synthesize + display one companion line on the LIVE call. Extracted so
+   * lines buffered during 'connecting' can be flushed through the same path
+   * once the pipeline is up. Assumes status === 'live' and queue is present. */
+  function speakCompanionLine(characterId: string, text: string): void {
+    const mySession = session;
+    set({ lastSpoken: text });
+    pendingTts += 1;
+
+    const surfaceTtsError = (msg: string): void => {
+      // A failed clip should not kill the call; surface out-of-allowance
+      // copy in the caption line so the silence is explained.
+      if (session !== mySession) return;
+      if (/VOICE_RATE_LIMITED/.test(msg)) {
+        set({ lastSpoken: '[voice paused, daily usage cap reached]' });
+      } else if (/VOICE_NO_CREDITS/.test(msg)) {
+        set({ lastSpoken: '[voice paused, out of playtime]' });
+      }
+    };
+    const settleTts = (): void => {
+      pendingTts = Math.max(0, pendingTts - 1);
+      maybeFinishRemoteEnd();
+    };
+
+    // Streaming path (260705): reserve the queue slot NOW (reply order is
+    // arrival order of text, not fetch completion) and play chunks as they
+    // land — first audio on the first mp3 frame. pendingTts stays held
+    // until the stream's terminal push (see onVoiceTtsChunk below).
+    const canStream =
+      typeof sei.voiceTtsStream === 'function' && typeof sei.onVoiceTtsChunk === 'function';
+    if (canStream && queue) {
+      const handle = queue.enqueueStream();
+      void sei
+        .voiceTtsStream({ characterId, text })
+        .then(({ streamId }) => {
+          if (session !== mySession) {
+            handle.fail();
+            settleTts();
+            return;
+          }
+          ttsStreams.set(streamId, handle);
+          // Flush any chunks that beat this registration (paranoia; invoke
+          // replies normally land before push events).
+          const early = ttsOrphans.get(streamId);
+          if (early) {
+            ttsOrphans.delete(streamId);
+            for (const p of early) applyTtsPush(streamId, p);
+          }
+        })
+        .catch((err) => {
+          handle.fail();
+          surfaceTtsError(String((err as Error)?.message ?? ''));
+          settleTts();
+        });
+      return;
+    }
+
+    void sei
+      .voiceTts({ characterId, text })
+      .then((buf) => {
+        if (session === mySession) queue?.enqueue(buf);
+      })
+      .catch((err) => surfaceTtsError(String((err as Error)?.message ?? '')))
+      .finally(settleTts);
+  }
+
+  /** Flush the lines buffered during 'connecting' onto the now-live call. */
+  function flushPendingCompanionLines(characterId: string): void {
+    if (pendingCompanionLines.length === 0) return;
+    const lines = pendingCompanionLines;
+    pendingCompanionLines = [];
+    for (const line of lines) speakCompanionLine(characterId, line);
+  }
+
   // Chat → voice seam: companion text lands here from BOTH reply paths, and
   // companion hang-ups from BOTH end_call paths (send() flag / main push).
   registerVoiceHooks({
@@ -211,66 +292,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     onRemoteEndCall: requestRemoteEnd,
     onCompanionText: (characterId, text) => {
       const s = get();
-      if (s.callCharacterId !== characterId || s.status !== 'live') return;
-      const mySession = session;
-      set({ lastSpoken: text });
-      pendingTts += 1;
-
-      const surfaceTtsError = (msg: string): void => {
-        // A failed clip should not kill the call; surface out-of-allowance
-        // copy in the caption line so the silence is explained.
-        if (session !== mySession) return;
-        if (/VOICE_RATE_LIMITED/.test(msg)) {
-          set({ lastSpoken: '[voice paused — daily usage cap reached]' });
-        } else if (/VOICE_NO_CREDITS/.test(msg)) {
-          set({ lastSpoken: '[voice paused — out of playtime]' });
+      if (s.callCharacterId !== characterId) return;
+      // Lines can arrive before the line opens (say() routes to the call from
+      // dial start, but TTS can't play until 'live'): buffer them and flush on
+      // the connecting→live edge so they are neither dropped nor silent.
+      if (s.status === 'connecting') {
+        if (pendingCompanionLines.length < MAX_PENDING_COMPANION_LINES) {
+          pendingCompanionLines.push(text);
         }
-      };
-      const settleTts = (): void => {
-        pendingTts = Math.max(0, pendingTts - 1);
-        maybeFinishRemoteEnd();
-      };
-
-      // Streaming path (260705): reserve the queue slot NOW (reply order is
-      // arrival order of text, not fetch completion) and play chunks as they
-      // land — first audio on the first mp3 frame. pendingTts stays held
-      // until the stream's terminal push (see onVoiceTtsChunk below).
-      const canStream =
-        typeof sei.voiceTtsStream === 'function' && typeof sei.onVoiceTtsChunk === 'function';
-      if (canStream && queue) {
-        const handle = queue.enqueueStream();
-        void sei
-          .voiceTtsStream({ characterId, text })
-          .then(({ streamId }) => {
-            if (session !== mySession) {
-              handle.fail();
-              settleTts();
-              return;
-            }
-            ttsStreams.set(streamId, handle);
-            // Flush any chunks that beat this registration (paranoia; invoke
-            // replies normally land before push events).
-            const early = ttsOrphans.get(streamId);
-            if (early) {
-              ttsOrphans.delete(streamId);
-              for (const p of early) applyTtsPush(streamId, p);
-            }
-          })
-          .catch((err) => {
-            handle.fail();
-            surfaceTtsError(String((err as Error)?.message ?? ''));
-            settleTts();
-          });
         return;
       }
-
-      void sei
-        .voiceTts({ characterId, text })
-        .then((buf) => {
-          if (session === mySession) queue?.enqueue(buf);
-        })
-        .catch((err) => surfaceTtsError(String((err as Error)?.message ?? '')))
-        .finally(settleTts);
+      if (s.status !== 'live') return;
+      speakCompanionLine(characterId, text);
     },
   });
 
@@ -337,6 +370,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const dialStart = Date.now();
       liveSince = null;
       pendingTts = 0;
+      pendingCompanionLines = [];
       remoteEndAt = null;
       remoteDrainedAt = null;
       ttsStreams.clear();
@@ -431,6 +465,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         stopAmbience = startAmbience();
       }
       set({ status: 'live', connectingDetail: null, liveAt: liveSince });
+      // Anything the companion said while we were still connecting (say() lines
+      // routed to the call during the ring/model-load window) now speaks +
+      // displays through the live pipeline.
+      flushPendingCompanionLines(characterId);
       // The line is open — ask main to have the companion speak FIRST (like
       // answering the phone). Best-effort; the call works without it.
       void sei.voiceGreet?.(characterId)?.catch(() => {});
@@ -442,6 +480,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const connectedMs = liveSince !== null ? Date.now() - liveSince : undefined;
       liveSince = null;
       pendingTts = 0;
+      pendingCompanionLines = [];
       remoteEndAt = null;
       remoteDrainedAt = null;
       for (const t of remoteEndTimers) window.clearTimeout(t);
