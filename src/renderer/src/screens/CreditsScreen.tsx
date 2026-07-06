@@ -160,6 +160,10 @@ export function CreditsScreen(): React.ReactElement {
   const [rewardClaimed, setRewardClaimed] = useState<boolean | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const usedUsd = useCreditsStore((s) => s.used_usd);
+  // Feedback surfaces are cloud-only: the proxy endpoints need a Supabase
+  // session, and the reward is a cloud-ledger grant. BYOK/local users never
+  // see the banner or the standing button.
+  const cloudMode = useCreditsStore((s) => s.ai_backend_kind) === 'cloud-proxy';
   useEffect(() => {
     let cancelled = false;
     void sei.getConfig().then((c) => {
@@ -270,7 +274,7 @@ export function CreditsScreen(): React.ReactElement {
           </Button>
           {/* Standing feedback entry point once the one-time reward banner
               has been used (260706). */}
-          {rewardClaimed === true ? (
+          {cloudMode && rewardClaimed === true ? (
             <Button kind="quiet" size="sm" onClick={() => setShowFeedbackModal(true)}>
               Submit feedback
             </Button>
@@ -279,7 +283,7 @@ export function CreditsScreen(): React.ReactElement {
 
         {/* One-time feedback-for-reward banner: appears after $0.50 of
             lifetime spend, retires permanently once submitted (260706). */}
-        {rewardClaimed === false && (usedUsd ?? 0) >= FEEDBACK_PROMPT_USD ? (
+        {cloudMode && rewardClaimed === false && (usedUsd ?? 0) >= FEEDBACK_PROMPT_USD ? (
           <FeedbackRewardCard onDone={() => setRewardClaimed(true)} />
         ) : null}
 
