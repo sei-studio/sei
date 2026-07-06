@@ -27,6 +27,10 @@ export interface QuestionShellProps {
   nextKind?: 'primary' | 'accent';
   nextDisabled?: boolean;
   backDisabled?: boolean;
+  /** Overrides the back button label (e.g. "Later" to dismiss on step 1). */
+  backLabel?: string;
+  /** Hide the back-arrow glyph (used when the back button is a "Later" dismiss). */
+  hideBackIcon?: boolean;
   /** Optional secondary action shown between Back and Next (e.g. "Skip"). */
   secondaryLabel?: string;
   onSecondary?: () => void;
@@ -50,12 +54,12 @@ export function QuestionShell(p: QuestionShellProps): React.ReactElement {
         <Button
           kind="quiet"
           size="md"
-          icon={<BackIcon size={14} />}
+          icon={p.hideBackIcon ? undefined : <BackIcon size={14} />}
           onClick={p.onBack}
           disabled={p.backDisabled}
-          aria-label="Back"
+          aria-label={p.backLabel ?? 'Back'}
         >
-          Back
+          {p.backLabel ?? 'Back'}
         </Button>
         <StepDots count={p.stepCount} current={p.currentStep} />
         {p.secondaryLabel ? (

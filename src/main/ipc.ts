@@ -1398,6 +1398,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
     const { resolvePrefs } = await import('./uniqueGeneration');
     const { profile, cloudIsNewer, hasCompleted } = resolvePrefs(localProfile, cloudProfile);
+    // `needed` drives the first-sign-in Home gate. Report it true not only when
+    // NO copy has a completed_at, but also when the effective profile still has
+    // UNFILLED answer fields — a brand-new account (empty profile), a run
+    // abandoned partway, or a profile completed before a newer question shipped
+    // all have gaps to walk the user through. Keying on completed_at alone let a
+    // partially-filled account slip past the gate (the reported flash-skip).
+    const missing = missingPrefQuestions(profile);
 
     // Merge the newer cloud copy back into local config so a re-install / second
     // device skips the questionnaire without a round-trip next time. Via
@@ -1412,7 +1419,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       }
     }
 
-    return { profile, needed: !hasCompleted, missing: missingPrefQuestions(profile) };
+    return { profile, needed: !hasCompleted || missing.length > 0, missing };
   });
 
   // prefs:save — 260706: accepts a PARTIAL patch (only the answers the user

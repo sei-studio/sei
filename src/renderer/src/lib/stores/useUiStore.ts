@@ -57,7 +57,13 @@ export type View =
   | {
       kind: 'profile-questions';
       next: 'home' | 'unique-gender' | 'activity-picker' | 'awaken' | 'settings';
-      mode: 'missing' | 'all';
+      // 'missing' asks only unanswered questions; 'all' is a full retake
+      // prefilled with current answers; 'first-fill' behaves like 'missing' for
+      // question selection but, on Finish, continues a brand-new user straight
+      // into the "meet your unique companion" flow (gender step) so their first
+      // companion gets cast instead of dropping them on an empty Home. A
+      // "Later" dismiss on the first step never triggers that continuation.
+      mode: 'missing' | 'all' | 'first-fill';
     }
   | { kind: 'unique-gender' }
   | { kind: 'unique-casting'; gender: UniqueGender }

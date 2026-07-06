@@ -443,8 +443,10 @@ export interface PrefsGetResult {
   profile: UserPreferences | null;
   /**
    * True when the signed-in user should be shown the first-sign-in
-   * questionnaire: no completed profile locally AND no cloud
-   * user_preferences row. Always false when signed out.
+   * questionnaire: either no completed profile anywhere (local or cloud) OR the
+   * effective profile still has unfilled answer fields (a brand-new account, a
+   * run abandoned partway, or a profile completed before a newer question
+   * shipped). Always false when signed out.
    */
   needed: boolean;
   /**

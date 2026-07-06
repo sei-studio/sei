@@ -72,10 +72,16 @@ const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
 
 export interface ProfileQuestionsScreenProps {
   next: 'home' | 'unique-gender' | 'activity-picker' | 'awaken' | 'settings';
-  mode: 'missing' | 'all';
+  mode: 'missing' | 'all' | 'first-fill';
+  /**
+   * Called when the user dismisses the questionnaire with "Later" on the first
+   * step (first-sign-in Home gate only). Lets the App gate record the deferral
+   * so it does not immediately re-open the questionnaire in this session.
+   */
+  onDefer?: () => void;
 }
 
-export function ProfileQuestionsScreen({ next, mode }: ProfileQuestionsScreenProps): React.ReactElement {
+export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestionsScreenProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   // Questions this run asks, resolved from the current profile on mount.
   // null = still loading the profile.
@@ -100,6 +106,18 @@ export function ProfileQuestionsScreen({ next, mode }: ProfileQuestionsScreenPro
     } else {
       navigate({ kind: 'settings' });
     }
+  };
+
+  // Where a completed run lands. 'first-fill' (a brand-new user walked through
+  // the questionnaire by the Home gate) continues straight into the unique
+  // companion flow at the gender step so their first companion gets cast,
+  // rather than dropping them on an empty Home.
+  const finish = (): void => {
+    if (mode === 'first-fill') {
+      navigate({ kind: 'unique-gender' });
+      return;
+    }
+    goTo(next);
   };
 
   // Where Back-on-the-first-step (cancel) lands. Gate flows return to a
@@ -144,7 +162,7 @@ export function ProfileQuestionsScreen({ next, mode }: ProfileQuestionsScreenPro
       }
       const asked = mode === 'all' ? [...PREF_QUESTIONS] : missing;
       if (asked.length === 0) {
-        goTo(next);
+        finish();
         return;
       }
       setQuestions(asked);
@@ -186,7 +204,7 @@ export function ProfileQuestionsScreen({ next, mode }: ProfileQuestionsScreenPro
         else patch.art_style = style;
       }
       await sei.prefsSave(patch);
-      goTo(next);
+      finish();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -199,6 +217,10 @@ export function ProfileQuestionsScreen({ next, mode }: ProfileQuestionsScreenPro
       setStep((s) => s - 1);
       return;
     }
+    // First step: the button reads "Later" and dismisses the questionnaire
+    // without saving completion. Notify the caller so the Home gate records the
+    // deferral (no re-open this session); the gate offers it again next launch.
+    onDefer?.();
     cancel();
   };
 
@@ -214,15 +236,23 @@ export function ProfileQuestionsScreen({ next, mode }: ProfileQuestionsScreenPro
     });
   };
 
+  // First step's back button dismisses ("Later") rather than navigating a step
+  // back; later steps keep the "Back" affordance.
+  const onFirstStep = step === 0;
   const shellProps = {
     eyebrow: 'Set up your companions',
     stepCount: questions.length,
     currentStep: step,
     onBack: back,
+    backLabel: onFirstStep ? 'Later' : 'Back',
+    hideBackIcon: onFirstStep,
     onNext: () => void goNext(),
     nextLabel: isLast ? (submitting ? 'Saving…' : 'Finish') : 'Continue',
     nextKind: isLast ? ('accent' as const) : undefined,
     nextDisabled: !answered(current) || submitting,
+    // Wider column so the tile groups lay out horizontally and every question
+    // page fits the default window without a scrollbar.
+    wide: true,
   };
 
   if (current === 'companion_age_range') {
@@ -254,7 +284,7 @@ export function ProfileQuestionsScreen({ next, mode }: ProfileQuestionsScreenPro
         title="What are you looking for?"
         hint="Rank what you're hoping to meet. Your first companion matches your first pick, the next one your second, and so on. You don't have to rank them all."
       >
-        <div className={styles.tiles} aria-label="Companion dynamics ranking">
+        <div className={styles.rankGrid} aria-label="Companion dynamics ranking">
           {DYNAMIC_OPTIONS.map((opt) => {
             const rank = ranking.indexOf(opt.value);
             const ranked = rank !== -1;

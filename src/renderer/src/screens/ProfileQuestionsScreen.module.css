@@ -2,9 +2,20 @@
  * Radio-tile idiom mirrors AddCharacterScreen's proactiveness step (accent
  * border + soft fill when selected). Tokens only. */
 
+/* Horizontal tile flow so the questionnaire pages fit the default window
+ * without scrolling: single-pick groups (age, art style, gender) spread across
+ * a row and wrap only when they run out of width. */
 .tiles {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+  gap: 10px;
+}
+
+/* Ranked "what are you looking for?" step — a fixed two-column grid keeps the
+ * six tiles (five dynamics + Surprise me) to three compact rows. */
+.rankGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
