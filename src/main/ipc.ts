@@ -154,6 +154,14 @@ const PlaintextSchema = z.string().min(1);
 const SLOT_LIMIT_REACHED_MESSAGE =
   `You can only have ${MAX_COMPANION_SLOTS} companions. Remove one to make room.`;
 
+/**
+ * Upper bound on how many transcript rows chat:history ships to the renderer on
+ * open. The on-disk JSONL is never trimmed; this bounds only the READ so a heavy
+ * user's chat doesn't freeze the screen. 200 comfortably covers the visible
+ * scrollback (the renderer has no "load older" path) while staying cheap to parse.
+ */
+const CHAT_HISTORY_LIMIT = 200;
+
 /** Current Home companion count ≥ the slot cap (see libraryCharacterCount). */
 async function libraryIsFull(): Promise<boolean> {
   const [cfg, chars] = await Promise.all([loadConfig(), listCharacters()]);
@@ -717,14 +725,42 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.chars.addToLibrary, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
     // 260703 procgen slot backstop — adding a World character occupies a Home
-    // slot; refuse when the library is already full UNLESS it's already counted
-    // (already in added_world_ids, or a non-default local copy already exists).
+    // slot; refuse when the library is already full UNLESS it ALREADY occupies a
+    // slot. "Already counted" must mirror the exact membership rule
+    // libraryCharacterCount uses, NOT merely "cached locally and not default":
+    // opening/hovering a World card runs charsOpenPrepare → ensureLocallyCached,
+    // which caches the foreign row on disk, so a bare `!is_default` check treats
+    // every browsed-but-not-invited character as counted and skips the backstop —
+    // letting a full 4/4 user invite a 5th and silently drop an existing one. A
+    // foreign row occupies a slot ONLY when it is actually invited
+    // (config.added_world_ids); a merely-cached row does not.
     {
       const { loadConfig: loadCfg } = await import('./configStore');
       const preCfg = await loadCfg();
-      const alreadyAdded = (preCfg.added_world_ids ?? []).includes(id);
+      const { getCurrentAuthState } = await import('./auth/authState');
+      const auth = getCurrentAuthState();
+      const currentUserId = auth.kind === 'signed_in' ? auth.user.id : null;
       const localExisting = await getCharacter(id).catch(() => null);
-      const alreadyCounted = alreadyAdded || (localExisting != null && !localExisting.is_default);
+      let alreadyCounted: boolean;
+      if (localExisting?.is_default) {
+        // Bundled default → occupies a slot only when invited to Home.
+        alreadyCounted = (preCfg.added_default_ids ?? []).includes(id);
+      } else if (
+        localExisting != null &&
+        currentUserId != null &&
+        localExisting.owner != null &&
+        localExisting.owner !== currentUserId
+      ) {
+        // Foreign-owned (World) row → counts only when explicitly invited;
+        // merely cached by browsing does NOT count.
+        alreadyCounted = (preCfg.added_world_ids ?? []).includes(id);
+      } else if (localExisting != null) {
+        // Own or legacy null-owner local char → always occupies a slot.
+        alreadyCounted = true;
+      } else {
+        // Not cached locally yet → count it only if already invited.
+        alreadyCounted = (preCfg.added_world_ids ?? []).includes(id);
+      }
       if (!alreadyCounted && (await libraryIsFull())) {
         throw new Error(SLOT_LIMIT_REACHED_MESSAGE);
       }
@@ -838,13 +874,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // The chat LLM call runs entirely in main (mirrors personaExpansion) — no
   // forked bot. `chat:send` may run the launch tool, which consults the live
   // LAN state and summons the bot when a world is open.
-  // Full transcript, not a window: chat history is never trimmed in the app
-  // (260705). The model's context is bounded separately by continuity
-  // (rolling summary + recent window) — this read is UI-only.
+  // On-disk the transcript is append-only and never trimmed (260705), but the
+  // UI hot path must NOT ship the whole file: a heavy user's chat.jsonl grows to
+  // thousands of rows (including hidden voice rows), and reading+parsing+shipping
+  // all of it froze the chat screen on open. Bound the READ to the most recent
+  // CHAT_HISTORY_LIMIT rows — the renderer has no "load older" path, so a window
+  // this deep covers every realistic scrollback while keeping the open snappy.
+  // The model's own context is bounded separately by continuity (rolling summary
+  // + recent window); this read is UI-only.
   ipcMain.handle(IpcChannel.chat.history, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
-    const { readAll } = await import('./chat/chatStore');
-    return await readAll(id);
+    const { readRecent } = await import('./chat/chatStore');
+    return await readRecent(id, CHAT_HISTORY_LIMIT);
   });
 
   ipcMain.handle(IpcChannel.chat.send, async (_event, argsRaw: unknown) => {

@@ -15,6 +15,7 @@
  *     here and showed them.)
  */
 import type { Character } from '@shared/characterSchema';
+import { countsAsHomeSlot } from '@shared/characterSchema';
 
 export function isHomeCharacter(
   c: Character,
@@ -22,14 +23,7 @@ export function isHomeCharacter(
   addedDefaultIds: Set<string>,
   addedWorldIds: Set<string>,
 ): boolean {
-  if (c.is_default === true) {
-    return addedDefaultIds.has(c.id);
-  }
-  if (currentUserId) {
-    if (c.owner != null && c.owner !== currentUserId) {
-      return addedWorldIds.has(c.id);
-    }
-    return true;
-  }
-  return c.owner == null;
+  // Delegates to the single shared rule so the Home/IconRail filter and the
+  // main-process slot counter (libraryCharacterCount) can never diverge.
+  return countsAsHomeSlot(c, { currentUserId, addedDefaultIds, addedWorldIds });
 }

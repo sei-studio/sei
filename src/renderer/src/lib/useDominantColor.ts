@@ -123,25 +123,43 @@ async function load(src: string): Promise<string | null> {
   return fromImage(src);
 }
 
-export function useDominantColor(src: string | null): string | null {
-  const [color, setColor] = useState<string | null>(src ? (cache.get(src) ?? null) : null);
+/**
+ * Extract the dominant color of a portrait, memoized for the session.
+ *
+ * `version` busts the cache when the portrait changes behind a stable URL:
+ * sei-portrait:// deliberately reuses the same uuid on a re-upload (no-store,
+ * so the <img> re-fetches fresh bytes), which means the URL alone can never
+ * signal a change. Pass a value that moves when the portrait does (e.g. the
+ * character's cloud_updated_at) so the tint re-extracts instead of serving the
+ * previous image's color until restart.
+ */
+export function useDominantColor(
+  src: string | null,
+  version?: string | number | null,
+): string | null {
+  const key = src == null ? null : `${src}::${version ?? ''}`;
+  const [color, setColor] = useState<string | null>(key ? (cache.get(key) ?? null) : null);
   useEffect(() => {
-    if (!src) {
+    if (!src || !key) {
       setColor(null);
       return;
     }
-    if (cache.has(src)) {
-      setColor(cache.get(src) ?? null);
+    if (cache.has(key)) {
+      setColor(cache.get(key) ?? null);
       return;
     }
     let cancelled = false;
     void load(src).then((c) => {
-      cache.set(src, c);
+      // Only memoize a successful extraction. A null (portrait 404 during the
+      // write-race, or a decode failure) must stay retryable — pinning it would
+      // leave the tint permanently absent for the session even after the PNG
+      // lands.
+      if (c !== null) cache.set(key, c);
       if (!cancelled) setColor(c);
     });
     return () => {
       cancelled = true;
     };
-  }, [src]);
+  }, [key]);
   return color;
 }

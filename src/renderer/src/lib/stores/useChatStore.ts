@@ -369,18 +369,21 @@ if (import.meta.hot) {
 /**
  * Roster last-line for a character: the tail of the live transcript when any
  * messages are in memory, else the bulk-fetched preview. Skips `system` rows
- * (play events) — the roster wants the last spoken line.
+ * (play events) and `voice` rows (in-call lines hidden from the chat view), so
+ * the preview never surfaces a message the opened transcript does not show.
  */
 export function chatPreviewFor(s: ChatState, characterId: string): ChatPreview | null {
   const list = s.messages[characterId];
   if (list && list.length > 0) {
     for (let i = list.length - 1; i >= 0; i--) {
-      if (list[i].role !== 'system') {
+      if (list[i].role !== 'system' && list[i].voice !== true) {
         return { role: list[i].role, text: list[i].text, ts: list[i].ts };
       }
     }
     return null;
   }
+  // The bulk preview (main-side readLast) already skips voice rows, so no
+  // further voice filter is needed here.
   const p = s.previews[characterId];
   return p && p.role !== 'system' ? p : null;
 }

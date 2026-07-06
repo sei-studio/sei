@@ -66,8 +66,11 @@ export async function readRecent(characterId: string, n: number): Promise<ChatMe
  * (chat:previews / Party redesign §2). Scans lines from the end and
  * short-circuits on the first parseable, non-legacy row — so it never
  * materializes the whole transcript into a filtered array. Legacy event-less
- * system rows are skipped (see filterLegacySystemRows). Returns null when the
- * file is missing or holds no renderable message.
+ * system rows are skipped (see filterLegacySystemRows), as are voice-call rows
+ * (voice === true), which the chat view hides — otherwise the roster preview
+ * could surface a spoken line (e.g. a garbled Whisper transcript) that never
+ * appears in the visible transcript. Returns null when the file is missing or
+ * holds no renderable message.
  */
 export async function readLast(characterId: string): Promise<ChatMessage | null> {
   let raw: string;
@@ -89,6 +92,9 @@ export async function readLast(characterId: string): Promise<ChatMessage | null>
     }
     // Skip legacy join-ack system rows (no `event`) — same rule as filterLegacySystemRows.
     if (msg.role === 'system' && msg.event === undefined) continue;
+    // Skip voice-call rows — the chat view hides them, so they must not surface
+    // as the roster "last message" preview.
+    if (msg.voice === true) continue;
     return msg;
   }
   return null;

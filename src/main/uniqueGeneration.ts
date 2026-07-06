@@ -44,7 +44,7 @@ import type {
   UserPreferences,
   UserPreferencesPatch,
 } from '../shared/characterSchema';
-import { COMPANION_DYNAMICS, MAX_COMPANION_SLOTS, PREF_QUESTIONS } from '../shared/characterSchema';
+import { COMPANION_DYNAMICS, MAX_COMPANION_SLOTS, PREF_QUESTIONS, countsAsHomeSlot } from '../shared/characterSchema';
 import { PORTRAIT_MAX_BYTES, PORTRAIT_MAX_DIM } from './portraitImageUtil';
 import { parsePngIhdr } from './skinImageUtil';
 
@@ -132,17 +132,16 @@ export function libraryCharacterCount(
   config: { added_default_ids?: string[] | null; added_world_ids?: string[] | null },
   currentUserId: string | null = null,
 ): number {
-  const addedDefaults = new Set(config.added_default_ids ?? []);
-  const addedWorld = new Set(config.added_world_ids ?? []);
+  // ONE rule, shared with the renderer's isHomeCharacter via countsAsHomeSlot
+  // (src/shared/characterSchema.ts) — the count and the visible Home grid must
+  // agree. In particular, when signed out (currentUserId null) an owner-stamped
+  // cached World row does NOT count (isHomeCharacter hides it), so browsing the
+  // World tab can never inflate the slot count against an empty-looking grid.
+  const addedDefaultIds = new Set(config.added_default_ids ?? []);
+  const addedWorldIds = new Set(config.added_world_ids ?? []);
   let n = 0;
   for (const c of characters) {
-    if (c.is_default) {
-      if (addedDefaults.has(c.id)) n += 1;
-    } else if (currentUserId && c.owner != null && c.owner !== currentUserId) {
-      if (addedWorld.has(c.id)) n += 1;
-    } else {
-      n += 1;
-    }
+    if (countsAsHomeSlot(c, { currentUserId, addedDefaultIds, addedWorldIds })) n += 1;
   }
   return n;
 }
@@ -434,7 +433,9 @@ function derivedDescription(sheet: Sheet): string {
   // reads better lowercased.
   toneClause = toneClause.charAt(0).toLowerCase() + toneClause.slice(1);
   const tone = toneClause && toneClause.length <= 40 ? `${toneClause} ` : '';
-  const desc = `${sheet.name}, a ${tone}${speciesTag(sheet)}.`;
+  // Strip em/en dashes the same way the card_line path does — an LLM-authored
+  // tone ("warm - but guarded") must not ship a dash into user-facing copy.
+  const desc = `${sheet.name}, a ${tone}${speciesTag(sheet)}.`.replace(/\s*[—–]\s*/g, ', ');
   return desc.length > 120 ? desc.slice(0, 120).trimEnd() + '…' : desc;
 }
 

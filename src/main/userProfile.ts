@@ -38,7 +38,11 @@ async function getUserHandle(): Promise<string | null> {
       .maybeSingle();
     if (error) return null;
     const handle = typeof data?.handle === 'string' && data.handle ? data.handle : null;
-    handleCache.set(userId, handle);
+    // Only cache a NON-null handle. A profiles row can exist before a handle is
+    // assigned (null here); caching that would pin every later call to null for
+    // the session, so a handle minted server-side shortly after would never
+    // surface until app restart. Leave the cache empty so a later call re-fetches.
+    if (handle) handleCache.set(userId, handle);
     return handle;
   } catch {
     return null;

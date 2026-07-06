@@ -584,14 +584,35 @@ export async function sendFirstMeetingTurn(
     // the (only) user message, satisfying Anthropic's "first message is user".
     foldUserNote(messages, renderThoughtNote(drainThoughts(characterId)));
 
-    const { client, model } = await buildChatSdk();
-    const res = await client.messages.create(
-      { model, max_tokens: 200, system, messages: messages as never },
-      { timeout: CHAT_TIMEOUT_MS },
-    );
-    const replyText = textOf(res.content);
-    if (!replyText) return [];
-    return persistReplies(characterId, replyText, prep.punctuation);
+    // Register in the per-character `inflight` slot (like sendVoiceGreetingTurn)
+    // so a user message sent while this greeting is in flight aborts/supersedes
+    // it — otherwise the two run concurrently and the reply persists first, then
+    // the cold greeting lands out of order. The firstMeetingInflight map above
+    // still dedupes duplicate chat:opened events; this guards the user-race.
+    inflight.get(characterId)?.abort();
+    const ctrl = new AbortController();
+    inflight.set(characterId, ctrl);
+    try {
+      const { client, model } = await buildChatSdk();
+      const res = await client.messages.create(
+        { model, max_tokens: 200, system, messages: messages as never },
+        { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
+      );
+      if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+      const replyText = textOf(res.content);
+      if (!replyText) return [];
+      return await persistReplies(characterId, replyText, prep.punctuation);
+    } catch (err) {
+      // Superseded by a real user message — the greeting is best-effort, so a
+      // deliberate abort is not a failure; drop it silently. Real errors still
+      // propagate to the caller.
+      if (isAbortError(err) || ctrl.signal.aborted || inflight.get(characterId) !== ctrl) {
+        return [];
+      }
+      throw err;
+    } finally {
+      if (inflight.get(characterId) === ctrl) inflight.delete(characterId);
+    }
   })().finally(() => {
     firstMeetingInflight.delete(characterId);
   });

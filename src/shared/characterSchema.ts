@@ -277,6 +277,40 @@ export function effectiveMcUsername(c: Pick<Character, 'username' | 'name'>): st
 }
 
 /**
+ * The SINGLE membership rule for "does this character occupy a Home companion
+ * slot". Shared by the renderer's Home/IconRail filter (isHomeCharacter in
+ * src/renderer/src/lib/homeLibrary.ts) AND the main-process slot counter
+ * (libraryCharacterCount in src/main/uniqueGeneration.ts) so the visible grid
+ * and the slot guard can never diverge (a divergence rejects chars:save on a
+ * visibly non-full grid, or vice versa).
+ *
+ * Rule:
+ *   - bundled defaults (is_default) → shown only when invited into a slot
+ *     (addedDefaultIds);
+ *   - signed in: own / legacy null-owner chars shown; foreign-owned chars
+ *     (owner set, !== current user) shown only when added from World
+ *     (addedWorldIds);
+ *   - signed out: only legacy null-owner chars shown — a cached copy of
+ *     someone else's public character (owner stamped) can't be a party member
+ *     because a signed-out user can't invite from World.
+ */
+export function countsAsHomeSlot(
+  c: Pick<Character, 'id' | 'is_default' | 'owner'>,
+  opts: { currentUserId: string | null; addedDefaultIds: Set<string>; addedWorldIds: Set<string> },
+): boolean {
+  if (c.is_default === true) {
+    return opts.addedDefaultIds.has(c.id);
+  }
+  if (opts.currentUserId) {
+    if (c.owner != null && c.owner !== opts.currentUserId) {
+      return opts.addedWorldIds.has(c.id);
+    }
+    return true;
+  }
+  return c.owner == null;
+}
+
+/**
  * Index manifest at `<userData>/characters/index.json`.
  * Maintains ordering across the character grid (D-09).
  */
@@ -450,6 +484,18 @@ export const UserConfigSchema = z.object({
    * by the Home grid.
    */
   added_default_ids: z.array(z.string().uuid()).optional().default([]),
+  /**
+   * One-shot idempotency marker for the added_default_ids backfill migration
+   * (src/main/migration.ts runAddedDefaultsBackfill). The Home visibility model
+   * inverted from removed_default_ids (shown unless removed) to added_default_ids
+   * (hidden unless invited); the backfill seeds added_default_ids with any
+   * locally-present is_default characters on the first boot after upgrade so a
+   * pre-existing user's already-seeded Sui/Lyra/Clawd stay on Home instead of
+   * vanishing. Fresh installs have no local is_default copies, so the backfill
+   * adds nothing and simply flips this true. `.optional().default(false)` keeps
+   * existing config.json files backward-compatible.
+   */
+  added_defaults_backfilled: z.boolean().optional().default(false),
   /**
    * Foreign-owned characters the user added to their library from the World
    * tab. HomeGrid + IconRail otherwise hide chars where owner !== currentUserId

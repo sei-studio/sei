@@ -151,6 +151,49 @@ export async function runFirstLaunchMigration(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// added_default_ids backfill — Home defaults must survive the upgrade.
+//
+// The Home visibility model inverted from removed_default_ids (a default is
+// SHOWN unless removed) to added_default_ids (a default is HIDDEN unless
+// invited into a slot). Nothing seeds added_default_ids, so a pre-existing
+// user who had Sui/Lyra/Clawd on Home (local is_default copies, never removed)
+// would see all three vanish from the party wall + IconRail after updating.
+//
+// This one-shot, idempotent backfill seeds added_default_ids with the ids of
+// any locally-present is_default characters on the first boot after upgrade so
+// previously-seeded defaults stay on Home. Idempotency + "runs once" is gated
+// by config.added_defaults_backfilled. A fresh install has no local is_default
+// copies (it gets cloud-sourced defaults), so the backfill adds nothing and
+// just flips the marker — no re-seeding.
+// ──────────────────────────────────────────────────────────────────────────
+
+export async function runAddedDefaultsBackfill(): Promise<void> {
+  const { loadConfig, updateConfig } = await import('./configStore');
+  const config = await loadConfig();
+  // One-shot gate: already backfilled → no-op.
+  if (config.added_defaults_backfilled) return;
+
+  const { listCharacters } = await import('./characterStore');
+  let localDefaultIds: string[];
+  try {
+    const chars = await listCharacters();
+    localDefaultIds = chars.filter((c) => c.is_default === true).map((c) => c.id);
+  } catch (err) {
+    // Leave the marker unset so the next boot retries rather than permanently
+    // losing the defaults on a transient read failure.
+    logger.warn(`added-defaults backfill: listCharacters failed, will retry next boot: ${(err as Error).message}`);
+    return;
+  }
+
+  await updateConfig((cur) => {
+    if (cur.added_defaults_backfilled) return cur; // re-check under the lock
+    const merged = new Set<string>([...(cur.added_default_ids ?? []), ...localDefaultIds]);
+    return { ...cur, added_default_ids: [...merged], added_defaults_backfilled: true };
+  });
+  logger.info(`added-defaults backfill: kept ${localDefaultIds.length} seeded default(s) on Home`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase 11 D-23 — Slug→UUID one-shot rename migration.
 //
 // Source: 11-RESEARCH §Pattern 6 (full step sequence) + §Pitfall 7 (boot
@@ -205,8 +248,11 @@ export async function runUuidRenameMigration(): Promise<void> {
     warn: (m: string) => console.warn(`[sei] uuid-rename: ${m}`),
   };
 
-  // Idempotency gate
+  // Idempotency gate. Already UUID-migrated (the common upgrade case): skip the
+  // rename but STILL run the added_default_ids backfill — those users need their
+  // seeded Home defaults kept, and their character ids are already UUIDs.
   if (await fileExists(paths.migrationManifestPath())) {
+    await runAddedDefaultsBackfill();
     return;
   }
 
@@ -343,4 +389,8 @@ export async function runUuidRenameMigration(): Promise<void> {
   // LAST: write the idempotency manifest
   await writeMigrationManifest({ migratedAt: new Date().toISOString(), entries: manifest });
   log.info(`completed: ${manifest.length} entries`);
+
+  // Backfill Home defaults AFTER the rename so is_default ids are UUIDs (a
+  // user jumping straight from the slug era to procgen in one update).
+  await runAddedDefaultsBackfill();
 }
