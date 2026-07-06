@@ -69,7 +69,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps): React.ReactEleme
   if (done) {
     return (
       <ModalShell title="Feedback sent" onClose={onClose} scrimClose width={440}>
-        <p className={styles.framing}>Thank you. We review all feedback within 24 hours.</p>
+        <p className={styles.framing}>Thank you. We read all comments within 24 hrs.</p>
         <ModalFooter>
           <Button kind="accent" size="md" onClick={onClose}>
             Close
@@ -81,7 +81,9 @@ export function FeedbackModal({ onClose }: FeedbackModalProps): React.ReactEleme
 
   return (
     <ModalShell title="Submit feedback" onClose={onClose} scrimClose width={440}>
-      <p className={styles.framing}>We review all feedback within 24 hours.</p>
+      <p className={styles.framing}>
+        Tell us anything you like or don&apos;t like! We read all comments within 24 hrs.
+      </p>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="feedback-email">

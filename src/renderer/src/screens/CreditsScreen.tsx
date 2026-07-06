@@ -272,13 +272,6 @@ export function CreditsScreen(): React.ReactElement {
           >
             Back
           </Button>
-          {/* Standing feedback entry point once the one-time reward banner
-              has been used (260706). */}
-          {cloudMode && rewardClaimed === true ? (
-            <Button kind="quiet" size="sm" onClick={() => setShowFeedbackModal(true)}>
-              Submit feedback
-            </Button>
-          ) : null}
         </div>
 
         {/* One-time feedback-for-reward banner: appears after $0.50 of
@@ -439,6 +432,16 @@ export function CreditsScreen(): React.ReactElement {
           <span className={styles.disc}>{ESTIMATE_DISCLAIMER}</span>
         </div>
         {manageError ? <p className={styles.manageError}>{manageError}</p> : null}
+
+        {/* Standing feedback entry point once the one-time reward banner has
+            been used (260706). Sits under Manage billing, same style. */}
+        {cloudMode && rewardClaimed === true ? (
+          <div className={styles.footFeedback}>
+            <Button kind="ghost" size="sm" onClick={() => setShowFeedbackModal(true)}>
+              Submit feedback
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {showConsentModal ? (
