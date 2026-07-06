@@ -90,6 +90,14 @@ let stopAmbience: StopFn | null = null;
  * subscription; `orphans` catches chunks that beat the id registration. */
 const ttsStreams = new Map<string, TtsStreamHandle>();
 const ttsOrphans = new Map<string, Array<{ chunk?: ArrayBuffer; done?: boolean; error?: string }>>();
+/** Module-level listener handles, torn down on HMR dispose (see module foot).
+ * Without this every dev hot-reload of this module stacked another live
+ * ipcRenderer listener from the stale instance — N reloads meant every
+ * companion line was TTS'd N times (260706 field report: Marv said the same
+ * sentence five times). */
+let unsubUiMirror: (() => void) | null = null;
+let offTtsChunk: (() => void) | null = null;
+let offCallEnded: (() => void) | null = null;
 
 function silenceDressing(): void {
   stopRing?.();
@@ -128,7 +136,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   // with a state-encoding click (down = muted, up = live) while on a call.
   // Deafen (260705) silences the call's OUTPUT — companion voice and the
   // ambience bed — without pausing playback, so undeafening rejoins live.
-  useUiStore.subscribe((s, prev) => {
+  unsubUiMirror = useUiStore.subscribe((s, prev) => {
     if (s.callMuted !== prev.callMuted) {
       dictation?.setMuted(s.callMuted);
       if (get().callCharacterId) playMuteClick(s.callMuted);
@@ -285,7 +293,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   }
 
   try {
-    sei.onVoiceTtsChunk?.((push) => {
+    offTtsChunk = sei.onVoiceTtsChunk?.((push) => {
       if (!ttsStreams.has(push.streamId)) {
         // Not registered (yet): park briefly in case the {streamId} reply is
         // still in flight; drop quietly if it never registers (ended call).
@@ -296,7 +304,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         return;
       }
       applyTtsPush(push.streamId, push);
-    });
+    }) ?? null;
   } catch {
     /* preload without streaming — buffered path covers it */
   }
@@ -304,7 +312,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   // Companion hung up from IN-GAME (end_call → main push). The idle-chat path
   // arrives via the send() result flag instead (useChatStore → voiceBridge).
   try {
-    sei.onVoiceCallEnded?.(({ characterId }) => requestRemoteEnd(characterId));
+    offCallEnded =
+      sei.onVoiceCallEnded?.(({ characterId }) => requestRemoteEnd(characterId)) ?? null;
   } catch {
     /* preload without onVoiceCallEnded — companion hang-ups just won't land */
   }
@@ -474,3 +483,23 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     },
   };
 });
+
+// Dev-only (Vite HMR): a hot reload of this module re-executes it, creating a
+// fresh store that re-registers everything above. The STALE instance must let
+// go of the world first — its ipcRenderer/useUiStore listeners would otherwise
+// keep firing forever (each reload stacked one more; every companion line got
+// spoken once per stack), and a live call's mic would keep capturing with no
+// UI attached to stop it. endCall() on the old instance tears down mic, queue,
+// tones, and tells main the call is closed; production never runs this.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    try {
+      useVoiceStore.getState().endCall();
+    } catch {
+      /* dispose must never block the reload */
+    }
+    unsubUiMirror?.();
+    offTtsChunk?.();
+    offCallEnded?.();
+  });
+}

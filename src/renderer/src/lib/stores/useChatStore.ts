@@ -47,6 +47,12 @@ interface ChatState {
  */
 const sendSeq: Record<string, number> = {};
 
+/** chat:message push unsubscribe, torn down on HMR dispose (module foot). A
+ * stale hot-reloaded instance kept its listener AND its own (empty) dedup
+ * state, so every in-game say() was re-announced to the voice bridge once per
+ * reload — Marv spoke the same line five times (260706 field report). */
+let offChatMessage: (() => void) | null = null;
+
 /** True if a rejected chatSend was our deliberate interrupt (not a real error). */
 function isChatAbort(err: unknown): boolean {
   return /CHAT_ABORTED/.test(String((err as { message?: string })?.message ?? err));
@@ -116,7 +122,7 @@ export const useChatStore = create<ChatState>((set, get) => {
   // a routed message (task 4), and "joined/left your world" system lines (task
   // 1). Append deduped by id and clear the typing indicator for that character.
   try {
-    sei.onChatMessage?.(({ characterId, message }) => {
+    offChatMessage = sei.onChatMessage?.(({ characterId, message }) => {
       let appended = false;
       set((s) => {
         const list = s.messages[characterId] ?? [];
@@ -133,7 +139,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (appended && message.role === 'companion') {
         notifyCompanionText(characterId, message.text);
       }
-    });
+    }) ?? null;
   } catch {
     /* preload without onChatMessage — routed replies just won't stream live */
   }
@@ -283,3 +289,12 @@ export const useChatStore = create<ChatState>((set, get) => {
   },
   };
 });
+
+// Dev-only (Vite HMR): drop the stale instance's chat:message listener before
+// the re-executed module registers the fresh one. Production never runs this.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    offChatMessage?.();
+    offChatMessage = null;
+  });
+}
