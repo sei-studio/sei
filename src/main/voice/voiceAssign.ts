@@ -35,6 +35,54 @@ type SheetHints = {
   personality?: { values?: unknown };
 };
 
+/**
+ * Persona prose → soulcaster personality seeds (260705). Custom / world
+ * characters have no rolled `personality_seeds`, so before this the fallback
+ * roll was personality-BLIND — a "clinically depressed monotone robot" was as
+ * likely to land a chirpy girl-next-door as a deep flat voice (the Marv bug).
+ * A cheap keyword scan over the persona maps the loudest personality signals
+ * onto the same seed vocabulary rollVoice already weights by (SEED_VOICE_TAGS
+ * in soulcaster), and a robot/android mention unlocks the robot voice rule.
+ * First two distinct matches win, mirroring the two rolled seeds.
+ */
+const PERSONA_SEED_HINTS: Array<[RegExp, string]> = [
+  [/monoton|deadpan|flat[- ]voice|emotionless|dead inside|lifeless/i, 'stoic'],
+  [/depress|gloomy|melanchol|morose|mopey|nihilis|despair/i, 'melancholic'],
+  [/brooding|grim|tormented|haunted/i, 'brooding'],
+  [/sarcas|sardonic|cynic|snark/i, 'sardonic'],
+  [/dry[- ](wit|humor)|wry/i, 'dry-witted'],
+  [/cheer|bubbly|sunny|peppy|chipper/i, 'sunny'],
+  [/energetic|hyper|excitable|bouncy/i, 'restless'],
+  [/playful|mischie|prankster|teas/i, 'mischievous'],
+  [/shy|timid|soft[- ]spoken|meek|bashful/i, 'timid'],
+  [/gentle|kind[- ]hearted|nurturing|motherly|caring/i, 'gentle'],
+  [/calm|serene|zen|tranquil|composed/i, 'serene'],
+  [/stoic|unflappable|reserved|impassive/i, 'stoic'],
+  [/blunt|gruff|grumpy|brusque|no[- ]nonsense/i, 'blunt'],
+  [/fierce|aggressive|warrior|battle|hot[- ]headed/i, 'fierce'],
+  [/scheming|cunning|villain|menac|sinister/i, 'scheming'],
+  [/proud|regal|noble|aristocrat|haughty/i, 'proud'],
+  [/meticulous|precise|methodical|perfection/i, 'meticulous'],
+  [/wise|sage|scholar|professor|mentor/i, 'aloof'],
+  [/earnest|sincere|wholesome|loyal|devoted/i, 'devoted'],
+  [/curious|inquisitive|wonder/i, 'curious'],
+];
+
+const ROBOT_RE = /\brobot|android|automaton|machine|cyborg|synthetic|\bAI\b|artificial intelligence/i;
+
+/** Derive (seeds, robot?) from persona prose. Exported for tests. */
+export function personaVoiceHints(personaText: string): {
+  seeds: string[];
+  robot: boolean;
+} {
+  const seeds: string[] = [];
+  for (const [re, seed] of PERSONA_SEED_HINTS) {
+    if (seeds.length >= 2) break;
+    if (re.test(personaText) && !seeds.includes(seed)) seeds.push(seed);
+  }
+  return { seeds, robot: ROBOT_RE.test(personaText) };
+}
+
 /** metadata.voiceId when it points at a real pool voice, else null. */
 export function assignedVoiceId(character: Character): string | null {
   const v = character.metadata?.voiceId;
@@ -80,7 +128,14 @@ export async function resolveVoiceId(character: Character): Promise<string> {
       ? sheet.gender
       : 'other';
   const age = typeof sheet.age === 'number' && Number.isFinite(sheet.age) ? sheet.age : 30;
-  const background = typeof sheet.background === 'string' ? sheet.background : 'human';
+
+  // Personality inference from the persona prose (260705, the Marv fix) —
+  // sheet-less characters still get a voice that fits who they are, and a
+  // robot persona unlocks rollVoice's robot rule.
+  const personaText = `${character.persona?.source ?? ''}\n${character.name ?? ''}`;
+  const hints = personaVoiceHints(personaText);
+  const background =
+    typeof sheet.background === 'string' ? sheet.background : hints.robot ? 'robot' : 'human';
 
   // Exclude voices the rest of the library already uses (assigned ones only —
   // resolving them recursively would just be this same roll).
@@ -95,7 +150,7 @@ export async function resolveVoiceId(character: Character): Promise<string> {
   }
 
   const voice = rollVoice(
-    { gender, age, background, personality_seeds: [] },
+    { gender, age, background, personality_seeds: hints.seeds },
     { takenVoiceIds: taken, rng: mulberry32(seedFrom(character.id)) },
   ) as { id: string };
 

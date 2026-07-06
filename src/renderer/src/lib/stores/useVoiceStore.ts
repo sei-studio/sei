@@ -28,9 +28,10 @@ import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useUiStore } from './useUiStore';
 import { useChatStore } from './useChatStore';
-import { createAudioQueue, type AudioQueue } from '../voice/audioQueue';
+import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createDictation, type Dictation } from '../voice/dictation';
 import { registerVoiceHooks } from '../voice/voiceBridge';
+import { startRingtone, startAmbience, type StopFn } from '../voice/callTones';
 
 export type CallStatus =
   | 'idle'
@@ -70,6 +71,21 @@ let pendingTts = 0;
 /** Companion hang-up (end_call): end as soon as queued speech finishes. */
 let remoteEndAt: number | null = null;
 let remoteEndTimers: number[] = [];
+/** Call dressing (260705): two-tone ring while dialing, comfort-noise bed
+ * while live. Stop fns owned here; null when silent. */
+let stopRing: StopFn | null = null;
+let stopAmbience: StopFn | null = null;
+/** Live TTS streams: streamId → queue slot. Chunk pushes multiplex over one
+ * subscription; `orphans` catches chunks that beat the id registration. */
+const ttsStreams = new Map<string, TtsStreamHandle>();
+const ttsOrphans = new Map<string, Array<{ chunk?: ArrayBuffer; done?: boolean; error?: string }>>();
+
+function silenceDressing(): void {
+  stopRing?.();
+  stopRing = null;
+  stopAmbience?.();
+  stopAmbience = null;
+}
 
 /** Companion-initiated hang-up must not clip the goodbye: the end_call signal
  * can beat the goodbye's TTS fetch, so wait at least this long before ending
@@ -142,28 +158,99 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const mySession = session;
       set({ lastSpoken: text });
       pendingTts += 1;
+
+      const surfaceTtsError = (msg: string): void => {
+        // A failed clip should not kill the call; surface out-of-allowance
+        // copy in the caption line so the silence is explained.
+        if (session !== mySession) return;
+        if (/VOICE_RATE_LIMITED/.test(msg)) {
+          set({ lastSpoken: '[voice paused — daily usage cap reached]' });
+        } else if (/VOICE_NO_CREDITS/.test(msg)) {
+          set({ lastSpoken: '[voice paused — out of playtime]' });
+        }
+      };
+      const settleTts = (): void => {
+        pendingTts = Math.max(0, pendingTts - 1);
+        maybeFinishRemoteEnd();
+      };
+
+      // Streaming path (260705): reserve the queue slot NOW (reply order is
+      // arrival order of text, not fetch completion) and play chunks as they
+      // land — first audio on the first mp3 frame. pendingTts stays held
+      // until the stream's terminal push (see onVoiceTtsChunk below).
+      const canStream =
+        typeof sei.voiceTtsStream === 'function' && typeof sei.onVoiceTtsChunk === 'function';
+      if (canStream && queue) {
+        const handle = queue.enqueueStream();
+        void sei
+          .voiceTtsStream({ characterId, text })
+          .then(({ streamId }) => {
+            if (session !== mySession) {
+              handle.fail();
+              settleTts();
+              return;
+            }
+            ttsStreams.set(streamId, handle);
+            // Flush any chunks that beat this registration (paranoia; invoke
+            // replies normally land before push events).
+            const early = ttsOrphans.get(streamId);
+            if (early) {
+              ttsOrphans.delete(streamId);
+              for (const p of early) applyTtsPush(streamId, p);
+            }
+          })
+          .catch((err) => {
+            handle.fail();
+            surfaceTtsError(String((err as Error)?.message ?? ''));
+            settleTts();
+          });
+        return;
+      }
+
       void sei
         .voiceTts({ characterId, text })
         .then((buf) => {
           if (session === mySession) queue?.enqueue(buf);
         })
-        .catch((err) => {
-          // A failed clip should not kill the call; surface out-of-allowance
-          // copy in the caption line so the silence is explained.
-          if (session !== mySession) return;
-          const msg = String((err as Error)?.message ?? '');
-          if (/VOICE_RATE_LIMITED/.test(msg)) {
-            set({ lastSpoken: '[voice paused — daily usage cap reached]' });
-          } else if (/VOICE_NO_CREDITS/.test(msg)) {
-            set({ lastSpoken: '[voice paused — out of playtime]' });
-          }
-        })
-        .finally(() => {
-          pendingTts = Math.max(0, pendingTts - 1);
-          maybeFinishRemoteEnd();
-        });
+        .catch((err) => surfaceTtsError(String((err as Error)?.message ?? '')))
+        .finally(settleTts);
     },
   });
+
+  /** Route one voice:tts-chunk push into its queue slot. Terminal pushes
+   * release the slot and the pendingTts hold. */
+  function applyTtsPush(
+    streamId: string,
+    push: { chunk?: ArrayBuffer; done?: boolean; error?: string },
+  ): void {
+    const handle = ttsStreams.get(streamId);
+    if (!handle) return;
+    if (push.chunk) handle.push(push.chunk);
+    if (push.done || push.error) {
+      ttsStreams.delete(streamId);
+      if (push.error) handle.fail();
+      else handle.end();
+      pendingTts = Math.max(0, pendingTts - 1);
+      maybeFinishRemoteEnd();
+    }
+  }
+
+  try {
+    sei.onVoiceTtsChunk?.((push) => {
+      if (!ttsStreams.has(push.streamId)) {
+        // Not registered (yet): park briefly in case the {streamId} reply is
+        // still in flight; drop quietly if it never registers (ended call).
+        if (ttsOrphans.size > 32) ttsOrphans.clear();
+        const list = ttsOrphans.get(push.streamId) ?? [];
+        list.push(push);
+        ttsOrphans.set(push.streamId, list);
+        return;
+      }
+      applyTtsPush(push.streamId, push);
+    });
+  } catch {
+    /* preload without streaming — buffered path covers it */
+  }
 
   // Companion hung up from IN-GAME (end_call → main push). The idle-chat path
   // arrives via the send() result flag instead (useChatStore → voiceBridge).
@@ -191,6 +278,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       liveSince = null;
       pendingTts = 0;
       remoteEndAt = null;
+      ttsStreams.clear();
+      ttsOrphans.clear();
       set({
         callCharacterId: characterId,
         status: 'connecting',
@@ -200,6 +289,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         error: null,
         connectingDetail: null,
       });
+
+      // Ring while dialing (260705) — stopped the moment the line opens.
+      silenceDressing();
+      stopRing = startRingtone();
 
       // Tell main immediately so an in-game bot goes quiet in chat and starts
       // routing to the call while the mic/model finish warming up.
@@ -229,11 +322,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             // session, and the reply comes back through the voice hooks above.
             void useChatStore.getState().send(s.callCharacterId, text);
           },
+          onBargeIn: () => {
+            // The player spoke over the companion (260705): cut playback and
+            // drop everything queued, immediately. The utterance that
+            // triggered this keeps capturing and lands via onUtterance.
+            if (session !== mySession) return;
+            queue?.clear();
+          },
         });
       } catch (err) {
         if (session !== mySession) return;
         queue?.stop();
         queue = null;
+        silenceDressing();
         // No connectedMs — the call never went live, so nothing is logged.
         void sei.voiceCallSetActive({ characterId, active: false }).catch(() => {});
         set({ status: 'error', error: friendlyError(err), connectingDetail: null });
@@ -248,6 +349,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       }
       dictation.setMuted(useUiStore.getState().callMuted);
       liveSince = Date.now();
+      // Line open: ring stops, the constant low comfort-noise bed starts (the
+      // TTS noise floor otherwise reads as "static only while talking").
+      silenceDressing();
+      stopAmbience = startAmbience();
       set({ status: 'live', connectingDetail: null });
       // The line is open — ask main to have the companion speak FIRST (like
       // answering the phone). Best-effort; the call works without it.
@@ -263,6 +368,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       remoteEndAt = null;
       for (const t of remoteEndTimers) window.clearTimeout(t);
       remoteEndTimers = [];
+      silenceDressing();
+      ttsStreams.clear();
+      ttsOrphans.clear();
       dictation?.stop();
       dictation = null;
       queue?.stop();

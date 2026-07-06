@@ -25,7 +25,7 @@ vi.mock('../characterStore', () => ({
   saveCharacter: mockSave,
 }));
 
-import { resolveVoiceId, assignedVoiceId } from './voiceAssign';
+import { resolveVoiceId, assignedVoiceId, personaVoiceHints } from './voiceAssign';
 
 function makeCharacter(overrides: Partial<Character> = {}): Character {
   return {
@@ -126,6 +126,56 @@ describe('resolveVoiceId', () => {
       .map((v, i) => makeCharacter({ id: `other-${i}`, metadata: { voiceId: v.id } }));
     mockList.mockResolvedValue(others);
     expect(await resolveVoiceId(c)).toBe(free.id);
+  });
+});
+
+// 260705 — the Marv fix: sheet-less characters derive voice-roll seeds (and
+// robot status) from their persona prose instead of rolling personality-blind.
+describe('personaVoiceHints', () => {
+  it('maps a dead-inside monotone robot to flat/dark seeds + robot', () => {
+    const hints = personaVoiceHints(
+      'A clinically depressed robot dragged into Minecraft against its will. Monotonous, dead inside.',
+    );
+    expect(hints.robot).toBe(true);
+    expect(hints.seeds).toContain('stoic');
+    expect(hints.seeds).toContain('melancholic');
+  });
+
+  it('maps a bubbly cheerleader to sunny seeds, no robot', () => {
+    const hints = personaVoiceHints('A bubbly, cheerful farmhand who teases everyone.');
+    expect(hints.robot).toBe(false);
+    expect(hints.seeds[0]).toBe('sunny');
+  });
+
+  it('caps at two seeds and returns none for bland personas', () => {
+    const many = personaVoiceHints(
+      'grumpy, sarcastic, gloomy, fierce, scheming — all of it at once',
+    );
+    expect(many.seeds).toHaveLength(2);
+    expect(personaVoiceHints('a person who exists').seeds).toHaveLength(0);
+  });
+
+  it('seed-weighted fallback shifts a monotone-robot persona toward deep/dry/calm voices', async () => {
+    // Not a determinism re-test — assert the ROLLED voice for a Marv-like
+    // persona carries at least one of the tags its seeds weight toward,
+    // across a spread of character ids (weights are soft, so allow the roll
+    // to disagree occasionally; a majority is the behavioral claim).
+    const wantTags = new Set(['deep', 'dry', 'calm', 'steady', 'dark', 'raspy', 'soft']);
+    let hits = 0;
+    const N = 12;
+    for (let i = 0; i < N; i++) {
+      const c = makeCharacter({
+        id: `aaaaaaa${i}-1111-4111-8111-111111111111`,
+        persona: {
+          source: 'A clinically depressed robot. Monotonous, dead inside, endlessly gloomy.',
+          expanded: 'expanded text',
+        },
+      });
+      const v = await resolveVoiceId(c);
+      const entry = VOICES.find((e) => e.id === v);
+      if (entry?.tags.some((t) => wantTags.has(t))) hits += 1;
+    }
+    expect(hits).toBeGreaterThanOrEqual(Math.ceil(N * 0.6));
   });
 });
 

@@ -13,14 +13,25 @@
  * shared with MinimizedCall.
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from '../components/PixelPortrait';
+import { Button } from '../components/Button';
+import {
+  isVoiceModelReady,
+  prefetchInProgress,
+  prefetchPct,
+  prefetchVoiceModel,
+} from '../lib/voice/modelPrefetch';
 import { MicIcon, MicOffIcon, PhoneOffIcon, UserIcon, MinimizeIcon } from '../components/icons';
 import styles from './VoiceCallScreen.module.css';
+
+/** Voice-module install gate (260705): 'ready' lets the dial effect run;
+ * 'consent' asks first (the user skipped the onboarding opt-in). */
+type InstallGate = 'checking' | 'consent' | 'installing' | 'failed' | 'ready';
 
 export interface VoiceCallScreenProps {
   characterId: string;
@@ -45,11 +56,52 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const startCall = useVoiceStore((s) => s.startCall);
   const endCall = useVoiceStore((s) => s.endCall);
 
-  // Entering this view IS the intent to be on a call (idempotent when the
-  // pipeline is already up for this character, e.g. restore-from-minimize).
+  // Voice-module gate (260705). A call physically needs the ~40 MB Whisper
+  // model; if the user skipped the onboarding opt-in, ask before downloading
+  // (popup → yes/no → progress). An already-running background download skips
+  // the question and just shows its progress.
+  const [gate, setGate] = useState<InstallGate>('checking');
+  const [installPct, setInstallPct] = useState(0);
   useEffect(() => {
+    let alive = true;
+    // A call already up for this character means the model is in place.
+    if (useVoiceStore.getState().callCharacterId === characterId) {
+      setGate('ready');
+      return;
+    }
+    void isVoiceModelReady().then((ready) => {
+      if (!alive) return;
+      if (ready) setGate('ready');
+      else if (prefetchInProgress()) {
+        setGate('installing');
+        setInstallPct(prefetchPct());
+        prefetchVoiceModel((pct) => alive && setInstallPct(pct)).then(
+          () => alive && setGate('ready'),
+          () => alive && setGate('failed'),
+        );
+      } else setGate('consent');
+    });
+    return () => {
+      alive = false;
+    };
+  }, [characterId]);
+
+  const handleInstall = (): void => {
+    setGate('installing');
+    setInstallPct(prefetchPct());
+    prefetchVoiceModel((pct) => setInstallPct(pct)).then(
+      () => setGate('ready'),
+      () => setGate('failed'),
+    );
+  };
+
+  // Entering this view IS the intent to be on a call (idempotent when the
+  // pipeline is already up for this character, e.g. restore-from-minimize) —
+  // once the voice module is in place.
+  useEffect(() => {
+    if (gate !== 'ready') return;
     if (callCharacterId !== characterId) void startCall(characterId);
-  }, [characterId, callCharacterId, startCall]);
+  }, [gate, characterId, callCharacterId, startCall]);
 
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
@@ -73,8 +125,65 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
             ? 'On call · muted'
             : 'On call · listening';
 
+  // Install gate overlay: consent question, live progress, or failure. The
+  // call UI behind it stays in its idle pose until the gate opens.
+  const installOverlay =
+    gate === 'consent' || gate === 'installing' || gate === 'failed' ? (
+      <div className={styles.installScrim} role="dialog" aria-modal="true" aria-label="Voice module setup">
+        <div className={styles.installModal}>
+          <h2 className={styles.installTitle}>
+            {gate === 'failed' ? 'Download failed' : 'Set up voice calls'}
+          </h2>
+          {gate === 'consent' ? (
+            <>
+              <p className={styles.installBody}>
+                Calling {companionName} needs the voice module — a one-time ~40 MB download that
+                lets Sei understand your voice. Install it now?
+              </p>
+              <div className={styles.installActions}>
+                <Button kind="ghost" onClick={() => navigate({ kind: 'chat', characterId })}>
+                  Not now
+                </Button>
+                <Button kind="primary" onClick={handleInstall}>
+                  Install
+                </Button>
+              </div>
+            </>
+          ) : gate === 'installing' ? (
+            <>
+              <p className={styles.installBody}>Downloading the voice module… {installPct}%</p>
+              <div
+                className={styles.installBar}
+                role="progressbar"
+                aria-valuenow={installPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div className={styles.installBarFill} style={{ width: `${installPct}%` }} />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className={styles.installBody}>
+                The voice module couldn&rsquo;t be downloaded. Check your connection and try again.
+              </p>
+              <div className={styles.installActions}>
+                <Button kind="ghost" onClick={() => navigate({ kind: 'chat', characterId })}>
+                  Back
+                </Button>
+                <Button kind="primary" onClick={handleInstall}>
+                  Retry
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    ) : null;
+
   return (
     <div className={styles.root}>
+      {installOverlay}
       {/* Minimize sits top-left. */}
       <button
         type="button"

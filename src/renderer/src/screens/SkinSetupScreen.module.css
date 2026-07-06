@@ -29,3 +29,38 @@
 .panel {
   animation: fade 220ms ease both;
 }
+
+/* Voice-calls opt-in (260705) — quiet companion card under the wizard. */
+.voiceCard {
+  margin-top: 18px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 12px 14px;
+}
+
+.voiceLabel {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.voiceCheckbox {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.voiceTitle {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.voiceHint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}

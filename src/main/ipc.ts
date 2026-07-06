@@ -888,6 +888,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await voiceTts(args);
   });
 
+  // Streaming TTS (260705): resolves {streamId} on upstream 200, then pushes
+  // ordered audio chunks on voice:tts-chunk until {done} / {error}. Pre-flight
+  // failures reject with the same VOICE_* sentinels as voice:tts.
+  ipcMain.handle(IpcChannel.voice.ttsStream, async (event, argsRaw: unknown): Promise<{ streamId: string }> => {
+    const args = z.object({ characterId: IdSchema, text: z.string().min(1).max(4000) }).parse(argsRaw);
+    const { voiceTtsStream } = await import('./voice/tts');
+    const sender = event.sender;
+    return await voiceTtsStream(args, (ev) => {
+      if (!sender.isDestroyed()) sender.send(IpcChannel.voice.ttsChunk, ev);
+    });
+  });
+
   ipcMain.handle(IpcChannel.voice.callState, async (_event, argsRaw: unknown): Promise<void> => {
     const args = z
       .object({

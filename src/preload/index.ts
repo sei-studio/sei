@@ -87,6 +87,12 @@ const api: RendererApi = {
 
   // Voice calls (260705)
   voiceTts: (args) => ipcRenderer.invoke(IpcChannel.voice.tts, args),
+  voiceTtsStream: (args) => ipcRenderer.invoke(IpcChannel.voice.ttsStream, args),
+  onVoiceTtsChunk(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.voice.ttsChunk, handler);
+    return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
+  },
   voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
   voiceGreet: (characterId) => ipcRenderer.invoke(IpcChannel.voice.greet, characterId),
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),

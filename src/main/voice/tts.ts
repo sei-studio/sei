@@ -94,6 +94,98 @@ export async function voiceTts(args: { characterId: string; text: string }): Pro
   return synthesize(text, voiceId);
 }
 
+/** Monotonic stream ids for voiceTtsStream (uniqueness within one main run). */
+let nextStreamSeq = 1;
+
+export type TtsStreamEvent =
+  | { streamId: string; chunk: ArrayBuffer }
+  | { streamId: string; done: true }
+  | { streamId: string; error: string };
+
+/**
+ * Streaming synthesis (260705). Same request as voiceTts — the proxy (and the
+ * dev path) already hit ElevenLabs' /stream endpoint; the buffering was OURS
+ * (res.arrayBuffer()). This resolves { streamId } as soon as upstream says
+ * 200 and then pumps body chunks to `sink` (ordered; terminal {done} or
+ * {error}), so the renderer can start playback on the first mp3 frame.
+ * Pre-flight failures (no session, 402/429/503, fetch error) reject the
+ * returned promise with the same sentinels as voiceTts — the renderer's
+ * existing catch copy applies unchanged.
+ */
+export async function voiceTtsStream(
+  args: { characterId: string; text: string },
+  sink: (event: TtsStreamEvent) => void,
+): Promise<{ streamId: string }> {
+  const character = await getCharacter(args.characterId);
+  if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
+  const voiceId = await resolveVoiceId(character);
+  const text = args.text.trim().slice(0, MAX_TTS_CHARS);
+  if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
+
+  const devKey = process.env.SEI_TTS_DEV_KEY;
+  const url = devKey
+    ? `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=${ELEVENLABS_OUTPUT_FORMAT}`
+    : `${PROXY_BASE_URL}/tts/speech`;
+  let headers: Record<string, string>;
+  let body: unknown;
+  if (devKey) {
+    headers = { 'xi-api-key': devKey };
+    body = { text, model_id: ELEVENLABS_TTS_MODEL };
+  } else {
+    const jwt = await getJwtOrNull();
+    if (!jwt) throw new Error('VOICE_NO_SESSION: sign in to use voice calls');
+    headers = { Authorization: `Bearer ${jwt}` };
+    body = { text, voice_id: voiceId };
+  }
+
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), TTS_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    throw new Error(`VOICE_TTS_FAILED: ${(err as Error).message}`);
+  }
+  if (!res.ok || !res.body) {
+    clearTimeout(timeout);
+    const bodyText = await res.text().catch(() => '');
+    if (res.status === 402) throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
+    if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily usage cap reached');
+    if (res.status === 503) throw new Error('VOICE_NOT_CONFIGURED: voice service unavailable');
+    console.warn(`[sei/voice] tts upstream ${res.status}: ${bodyText.slice(0, 200)}`);
+    throw new Error(`VOICE_TTS_FAILED: status ${res.status}`);
+  }
+
+  const streamId = `tts-${nextStreamSeq++}`;
+  // Pump in the background; the caller gets the id NOW so it can route chunks.
+  const reader = res.body.getReader();
+  void (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && value.byteLength > 0) {
+          // Copy out of the pooled buffer before it crosses the IPC boundary.
+          const chunk = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+          sink({ streamId, chunk });
+        }
+      }
+      sink({ streamId, done: true });
+    } catch (err) {
+      sink({ streamId, error: `VOICE_TTS_FAILED: ${(err as Error).message}` });
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+  return { streamId };
+}
+
 /** One canned line for the creation-flow voice picker (~60 chars — cheap). */
 const PREVIEW_LINE = "Hey! Ready when you are — grab your gear and let's head out.";
 

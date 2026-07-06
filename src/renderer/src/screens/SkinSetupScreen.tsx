@@ -19,11 +19,12 @@
  * cleared here) — App.tsx routes back to this page on launch while it's true.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useWizardStore } from '../lib/stores/useWizardStore';
 import { WizardStepMachine } from '../components/SetupWizardModal';
+import { isVoiceModelReady, prefetchVoiceModel } from '../lib/voice/modelPrefetch';
 import styles from './SkinSetupScreen.module.css';
 
 export function SkinSetupScreen(): React.ReactElement {
@@ -35,6 +36,30 @@ export function SkinSetupScreen(): React.ReactElement {
   const startedRef = useRef(false);
   const wasOpenRef = useRef(false);
   const finalizedRef = useRef(false);
+
+  // Voice-calls opt-in (260705): checking the box starts the ~40 MB voice-
+  // recognition module download in the background — it keeps going after this
+  // screen unmounts (module-scoped single-flight in modelPrefetch). Skipping
+  // is fine: the first call offers the install instead (VoiceCallScreen).
+  const [voiceState, setVoiceState] = useState<'idle' | 'installing' | 'ready' | 'failed'>('idle');
+  const [voicePct, setVoicePct] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    void isVoiceModelReady().then((ready) => {
+      if (alive && ready) setVoiceState('ready');
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const handleVoiceOptIn = (): void => {
+    if (voiceState === 'installing' || voiceState === 'ready') return;
+    setVoiceState('installing');
+    prefetchVoiceModel((pct) => setVoicePct(pct)).then(
+      () => setVoiceState('ready'),
+      () => setVoiceState('failed'),
+    );
+  };
 
   // Open the wizard once on mount (seeds the store to the welcome step).
   useEffect(() => {
@@ -77,6 +102,32 @@ export function SkinSetupScreen(): React.ReactElement {
         {/* The welcome step's footer carries "Set up later" (aligned with
             Begin); no separate skip row is rendered below the panel anymore. */}
         <WizardStepMachine />
+      </div>
+
+      {/* Voice-calls opt-in (260705): background voice-module download so the
+          first call connects instantly instead of pausing on a 40 MB fetch. */}
+      <div className={styles.voiceCard}>
+        <label className={styles.voiceLabel}>
+          <input
+            type="checkbox"
+            className={styles.voiceCheckbox}
+            checked={voiceState === 'installing' || voiceState === 'ready'}
+            disabled={voiceState === 'installing' || voiceState === 'ready'}
+            onChange={handleVoiceOptIn}
+          />
+          <span>
+            <span className={styles.voiceTitle}>Set up voice calls too</span>
+            <span className={styles.voiceHint}>
+              {voiceState === 'ready'
+                ? 'Voice module installed — you can call your companion anytime.'
+                : voiceState === 'installing'
+                  ? `Downloading the voice module… ${voicePct}%`
+                  : voiceState === 'failed'
+                    ? 'Download failed — you can retry from your first call.'
+                    : 'Downloads the voice-recognition module (~40 MB) in the background.'}
+            </span>
+          </span>
+        </label>
       </div>
     </div>
   );

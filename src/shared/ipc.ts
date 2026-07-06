@@ -177,6 +177,17 @@ export interface VoiceInfo {
   vibe: string;
 }
 
+/** One voice:tts-chunk push (streaming TTS, 260705). Exactly one terminal
+ * field is eventually sent per stream: done:true after the last chunk, or
+ * error (sentinel-prefixed message) on a mid-stream failure. */
+export interface VoiceTtsChunkPush {
+  streamId: string;
+  /** Encoded audio/mpeg bytes (absent on terminal pushes). */
+  chunk?: ArrayBuffer;
+  done?: boolean;
+  error?: string;
+}
+
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
 export interface ChatMessagePush {
   characterId: string;
@@ -868,6 +879,18 @@ export interface RendererApi {
    */
   voiceTts(args: { characterId: string; text: string }): Promise<ArrayBuffer>;
   /**
+   * Streaming variant (260705): main starts the same synthesis but resolves
+   * as soon as the upstream responds, with a stream id; the audio then
+   * arrives as ordered onVoiceTtsChunk pushes ({chunk}* then {done:true}, or
+   * {error} on a mid-stream failure). First audio reaches the speaker as soon
+   * as the first mp3 chunk lands instead of after the full clip downloads.
+   * Rejects with the same sentinel-prefixed messages as voiceTts when the
+   * request fails before any audio flows.
+   */
+  voiceTtsStream(args: { characterId: string; text: string }): Promise<{ streamId: string }>;
+  /** Chunks/completions for voiceTtsStream (one subscription, ids multiplex). */
+  onVoiceTtsChunk(cb: (push: VoiceTtsChunkPush) => void): Unsubscribe;
+  /**
    * Mark a voice call open (active:true) or hung up (active:false) for a
    * character. Main records it (voice/callState) so idle-chat prompts carry
    * the voice-call primer, and forwards {type:'voice-call'} into a live game
@@ -1451,6 +1474,10 @@ export const IpcChannel = {
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',
+    /** Invoke: streaming synthesis ({characterId, text} → {streamId}); audio follows on ttsChunk. */
+    ttsStream: 'voice:tts-stream',
+    /** Push (main → renderer): VoiceTtsChunkPush — ordered audio chunks for a ttsStream. */
+    ttsChunk: 'voice:tts-chunk',
     /** Invoke: open/hang-up a voice call ({characterId, active, connectedMs?}). */
     callState: 'voice:call-state',
     /** Invoke: the call went live — companion should greet first (characterId). */

@@ -5,10 +5,12 @@
  *   - Open-source + free + no native modules: Whisper runs locally in a Web
  *     Worker via transformers.js (see whisperWorker.ts); segmentation is a
  *     plain RMS-energy VAD, so the only dependency is the model itself.
- *   - Half-duplex against the companion's own voice: getUserMedia echo
- *     cancellation removes most of the TTS audio from the mic signal, and the
- *     `setHold(true)` gate (set while companion audio plays) discards the rest
- *     so the companion never transcribes itself.
+ *   - Against the companion's own voice: getUserMedia echo cancellation
+ *     removes most of the TTS audio from the mic signal. 260705 barge-in:
+ *     while companion audio plays (`setHold(true)`) the VAD keeps listening
+ *     at an ELEVATED threshold (BARGE_RMS_FLOOR/BARGE_FACTOR) — the echo
+ *     residue stays below it, real player speech clears it, opens an
+ *     utterance, and fires onBargeIn so the owner cuts playback.
  *   - Mute is renderer-side: the stream keeps running (fast unmute) but frames
  *     are discarded and any in-progress utterance is dropped.
  *
@@ -31,7 +33,9 @@ const MODEL_LOAD_TIMEOUT_MS = 180_000;
 export interface Dictation {
   /** Renderer-side mute: discard mic input without stopping the stream. */
   setMuted(muted: boolean): void;
-  /** Half-duplex hold — true while companion audio is playing. */
+  /** Half-duplex hold — true while companion audio is playing. 260705: no
+   * longer a hard discard — during hold the VAD keeps listening at an
+   * ELEVATED threshold so the player can barge in (see onBargeIn). */
   setHold(hold: boolean): void;
   /** True once the mic level shows live speech (drives the UI level dot). */
   speechActive(): boolean;
@@ -48,9 +52,21 @@ const START_FACTOR = 3; // open at noiseFloor * factor (≥ START_RMS_FLOOR)
 // the whole reply pipeline (Whisper + LLM + TTS) queues behind utterance-end
 // detection. 700 still comfortably clears intra-sentence pauses.
 const END_SILENCE_MS = 700;
+// 260705 latency: fire a PROVISIONAL Whisper pass this early into a silence
+// run. Silence frames add no words, so if the silence holds to END_SILENCE_MS
+// the provisional transcript IS the final one — Whisper's ~0.5–1s of work
+// overlaps the remaining ~450ms of end-of-utterance wait instead of starting
+// after it. If speech resumes, the provisional result is discarded.
+const EAGER_SILENCE_MS = 250;
 const MIN_UTTERANCE_MS = 350;
 const MAX_UTTERANCE_MS = 15_000;
 const PRE_ROLL_FRAMES = 2; // frames kept from before the trigger
+// Barge-in (260705): while companion audio plays (hold), speech must clear a
+// stiffer bar than normal — echo cancellation removes most of the companion's
+// own voice from the mic, and the multiplier keeps the residue from
+// self-triggering. Tuned above START_FACTOR=3 with margin.
+const BARGE_RMS_FLOOR = 0.03;
+const BARGE_FACTOR = 7;
 
 /**
  * AudioWorklet processor (issue: ScriptProcessorNode is deprecated). Batches
@@ -91,6 +107,10 @@ registerProcessor('sei-vad-capture', SeiVadCapture);
 export async function createDictation(opts: {
   onUtterance: (text: string) => void;
   onStatus: (status: DictationStatus, detail?: string) => void;
+  /** Player spoke over the companion (speech opened during hold). The owner
+   * should stop companion playback — which releases the hold — and this same
+   * utterance then flows through onUtterance as usual. */
+  onBargeIn?: () => void;
 }): Promise<Dictation> {
   opts.onStatus('loading-model');
 
@@ -183,17 +203,20 @@ export async function createDictation(opts: {
   const preRoll: Float32Array[] = [];
   let utterance: Float32Array[] = [];
 
-  function resetUtterance(): void {
-    inSpeech = false;
-    silenceMs = 0;
-    speechMs = 0;
-    utterance = [];
+  /** Provisional end-of-utterance transcription (EAGER_SILENCE_MS). Identity-
+   * free lifecycle: `cancelled` kills it when speech resumes; `wanted` marks
+   * that the utterance finalized before the transcript arrived. */
+  type Eager = { id: number; cancelled: boolean; wanted: boolean; done: boolean; text: string | null };
+  let eager: Eager | null = null;
+
+  function cancelEager(): void {
+    if (!eager) return;
+    eager.cancelled = true;
+    inflight.delete(eager.id);
+    eager = null;
   }
 
-  function flushUtterance(): void {
-    const frames = utterance;
-    resetUtterance();
-    if (speechMsOf(frames) < MIN_UTTERANCE_MS) return;
+  function postTranscribe(frames: Float32Array[], cb: (text: string) => void): number {
     const total = frames.reduce((n, f) => n + f.length, 0);
     const audio = new Float32Array(total);
     let off = 0;
@@ -202,10 +225,48 @@ export async function createDictation(opts: {
       off += f.length;
     }
     const id = nextId++;
-    inflight.set(id, (text) => {
+    inflight.set(id, cb);
+    worker.postMessage({ type: 'transcribe', id, audio }, [audio.buffer]);
+    return id;
+  }
+
+  function resetUtterance(): void {
+    inSpeech = false;
+    silenceMs = 0;
+    speechMs = 0;
+    utterance = [];
+    cancelEager();
+  }
+
+  function flushUtterance(): void {
+    const frames = utterance;
+    const pendingEager = eager;
+    eager = null; // ownership transfers below; resetUtterance must not cancel it
+    inSpeech = false;
+    silenceMs = 0;
+    speechMs = 0;
+    utterance = [];
+    if (speechMsOf(frames) < MIN_UTTERANCE_MS) {
+      if (pendingEager) {
+        pendingEager.cancelled = true;
+        inflight.delete(pendingEager.id);
+      }
+      return;
+    }
+    if (pendingEager) {
+      // The provisional pass already covers this utterance — the frames since
+      // it fired are the silence run, which adds no words. Use it instead of
+      // re-transcribing (its ~0.5–1s of Whisper work overlapped the wait).
+      if (pendingEager.done) {
+        if (pendingEager.text) opts.onUtterance(pendingEager.text);
+      } else {
+        pendingEager.wanted = true;
+      }
+      return;
+    }
+    postTranscribe(frames, (text) => {
       if (text) opts.onUtterance(text);
     });
-    worker.postMessage({ type: 'transcribe', id, audio }, [audio.buffer]);
   }
 
   function speechMsOf(frames: Float32Array[]): number {
@@ -213,10 +274,19 @@ export async function createDictation(opts: {
     return (samples / SAMPLE_RATE) * 1000;
   }
 
+  function openSpeech(frame: Float32Array, frameMs: number): void {
+    inSpeech = true;
+    speechMs = frameMs;
+    silenceMs = 0;
+    utterance = [...preRoll.map((f) => f)];
+    utterance.push(frame.slice());
+    preRoll.length = 0;
+  }
+
   captureNode.port.onmessage = (e: MessageEvent) => {
     const frame = e.data as Float32Array;
     if (!(frame instanceof Float32Array) || frame.length === 0) return;
-    if (muted || hold) {
+    if (muted) {
       if (inSpeech) resetUtterance();
       preRoll.length = 0;
       return;
@@ -226,27 +296,52 @@ export async function createDictation(opts: {
     const rms = Math.sqrt(sum / frame.length);
     const frameMs = (frame.length / SAMPLE_RATE) * 1000;
 
+    // Barge-in (260705): while the companion is audible (hold), keep listening
+    // at an ELEVATED threshold — echo cancellation strips most of the
+    // companion's own voice, the stiffer bar rejects the residue. Real player
+    // speech opens the utterance normally AND asks the owner to cut playback.
+    // No noise-floor adaptation here: the echo residue must not poison it.
+    if (hold && !inSpeech) {
+      preRoll.push(frame.slice());
+      if (preRoll.length > PRE_ROLL_FRAMES) preRoll.shift();
+      if (rms >= Math.max(BARGE_RMS_FLOOR, noiseFloor * BARGE_FACTOR)) {
+        openSpeech(frame, frameMs);
+        opts.onBargeIn?.();
+      }
+      return;
+    }
+
     if (!inSpeech) {
       // Adapt the noise floor only outside speech so talking doesn't raise it.
       noiseFloor = noiseFloor * (1 - NOISE_ADAPT) + rms * NOISE_ADAPT;
       const threshold = Math.max(START_RMS_FLOOR, noiseFloor * START_FACTOR);
       preRoll.push(frame.slice());
       if (preRoll.length > PRE_ROLL_FRAMES) preRoll.shift();
-      if (rms >= threshold) {
-        inSpeech = true;
-        speechMs = frameMs;
-        silenceMs = 0;
-        utterance = [...preRoll.map((f) => f)];
-        utterance.push(frame.slice());
-        preRoll.length = 0;
-      }
+      if (rms >= threshold) openSpeech(frame, frameMs);
       return;
     }
 
     utterance.push(frame.slice());
     speechMs += frameMs;
     const endThreshold = Math.max(START_RMS_FLOOR * 0.7, noiseFloor * 2);
-    silenceMs = rms < endThreshold ? silenceMs + frameMs : 0;
+    if (rms < endThreshold) {
+      silenceMs += frameMs;
+      // Provisional transcription: overlap Whisper with the rest of the
+      // silence wait (see EAGER_SILENCE_MS). One per silence run.
+      if (silenceMs >= EAGER_SILENCE_MS && !eager && speechMsOf(utterance) >= MIN_UTTERANCE_MS) {
+        const e: Eager = { id: 0, cancelled: false, wanted: false, done: false, text: null };
+        e.id = postTranscribe(utterance, (text) => {
+          if (e.cancelled) return;
+          e.done = true;
+          e.text = text;
+          if (e.wanted && text) opts.onUtterance(text);
+        });
+        eager = e;
+      }
+    } else {
+      silenceMs = 0;
+      cancelEager(); // speech resumed — the provisional pass is stale
+    }
     if (silenceMs >= END_SILENCE_MS || speechMs >= MAX_UTTERANCE_MS) {
       flushUtterance();
     }
@@ -266,8 +361,10 @@ export async function createDictation(opts: {
       if (m && inSpeech) resetUtterance();
     },
     setHold(h) {
+      // Hold going up mid-speech no longer kills the utterance: with barge-in
+      // the common case is the player already talking when the companion's
+      // next queued clip starts — their words must survive it.
       hold = h;
-      if (h && inSpeech) resetUtterance();
     },
     speechActive: () => inSpeech,
     stop() {

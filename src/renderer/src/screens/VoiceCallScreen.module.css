@@ -200,3 +200,61 @@
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* ── Voice-module install gate (260705) ─────────────────────────────────────
+   Overlay shown before the first-ever call: consent → progress bar → dial. */
+
+.installScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--window) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.installModal {
+  width: min(420px, calc(100% - 2 * var(--space-lg)));
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.installTitle {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.installBody {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.installActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.installBar {
+  height: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--window);
+  overflow: hidden;
+}
+
+.installBarFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms var(--ease);
+}
