@@ -1,39 +1,99 @@
-/* UniqueRevealScreen — the "meet <name>" moment. Centered column with a large
- * bracketed portrait. Tokens only. */
+/* UniqueRevealScreen — the "meet <name>" moment. Reuses CharacterPage's
+ * full-bleed layout: the portrait bleeds off the right behind a left→right
+ * scrim, and a left content panel carries the reveal copy (eyebrow, name +
+ * IdTag, intro, CTAs) instead of the profile page's crumb / tabs / stats /
+ * deploy. The layout scaffolding is copied (not imported) so the two screens
+ * stay independently editable. Tokens only. */
 
 .root {
-  display: flex;
-  flex: 1;
-  min-height: 100%;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-3xl) var(--space-2xl);
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: var(--window);
 }
 
-.center {
-  width: min(460px, 100%);
+/* ── Portrait layer (right, behind the scrim) ────────────────────────── */
+.portraitLayer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(660px, 56%);
+  z-index: 0;
+  overflow: hidden;
+}
+
+.portraitTint {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.dPic {
+  position: absolute !important;
+  inset: 0;
+  z-index: 1;
+  filter: drop-shadow(-30px 0 60px rgba(0, 0, 0, 0.5));
+  /* Portrait rises + fades in on reveal. */
+  animation: picRise 0.7s var(--ease) both;
+}
+
+@keyframes picRise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      var(--window) 4%,
+      color-mix(in srgb, var(--window) 86%, transparent) 30%,
+      color-mix(in srgb, var(--window) 36%, transparent) 56%,
+      transparent 80%
+    ),
+    linear-gradient(0deg, color-mix(in srgb, var(--window) 72%, transparent), transparent 32%);
+}
+
+/* ── Left content panel ──────────────────────────────────────────────── */
+/* Same width / padding / stacking as CharacterPage's .content, but the reveal
+   copy is centered vertically (justify-content: center) since there is no
+   crumb-at-top / deploy-at-bottom frame to fill. */
+.content {
+  position: relative;
+  z-index: 3;
+  height: 100%;
+  width: min(520px, 60%);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
+  justify-content: center;
+  align-items: flex-start;
   gap: 14px;
-  animation: revealUp 420ms var(--ease-pop) both;
+  padding: 18px 22px 24px 34px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Panel slides in from the right when the reveal opens. Clipped by .root's
+     overflow:hidden so it never triggers a horizontal scrollbar. */
+  animation: detailIn 0.5s var(--ease) both;
 }
 
-.portraitFrame {
-  position: relative;
-  width: 240px;
-  height: 240px;
-  border: 1px solid var(--border-strong);
-  background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
-  overflow: hidden;
-  box-shadow: var(--shadow-card);
-}
-
-/* Keep the corner brackets visible (not hover-gated) on the reveal. */
-.portraitFrame :global(.u-brk) {
-  opacity: 1;
-  z-index: 2;
+@keyframes detailIn {
+  from {
+    transform: translateX(46px);
+  }
+  to {
+    transform: none;
+  }
 }
 
 /* Mono micro-label (see .u-lbl). Sentence case; no uppercase transform. */
@@ -42,25 +102,26 @@
   font-size: 10.5px;
   letter-spacing: 0.04em;
   color: var(--muted);
-  margin-top: 8px;
 }
 
 .nameRow {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
   flex-wrap: wrap;
-  justify-content: center;
 }
 
 .heading {
   font-family: var(--display);
-  font-size: 38px;
+  font-size: 42px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  line-height: 1;
+  line-height: 1.05;
   color: var(--heading);
   margin: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .intro {
@@ -78,6 +139,27 @@
   margin-top: 12px;
 }
 
+/* ── Fallback states (load failure / still loading) ──────────────────── */
+/* No character yet → a plain centered column instead of the full-bleed frame. */
+.fallback {
+  display: flex;
+  flex: 1;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3xl) var(--space-2xl);
+}
+
+.fallbackCol {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  animation: revealUp 420ms var(--ease-pop) both;
+}
+
 @keyframes revealUp {
   from {
     opacity: 0;
@@ -90,7 +172,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .center {
+  .content,
+  .dPic,
+  .fallbackCol {
     animation: none;
   }
 }
