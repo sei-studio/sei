@@ -30,7 +30,7 @@ import type {
   VisionCapability,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
-import { getCharacter, saveCharacter } from './characterStore';
+import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
 import { buildLaunchContinuity } from './chat/continuity';
 import { loadConfig as loadUserConfig, saveConfig as saveUserConfig } from './configStore'; // UserConfig for bot init + daily-limit gate
@@ -288,6 +288,22 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   // fresh summon adds an entry; it no longer stops the others. The common case
   // (one bot) is just a one-entry map, so single-summon behavior is unchanged.
   const sessions = new Map<string, ActiveSession>();
+  // 260705 (issue #6): synchronous summon reservations. `_summon`'s
+  // sessions.has() guard alone spans ~10 awaits (including the network credit
+  // gate) between check and sessions.set, so two interleaved summons could
+  // both pass it and both fork — the second child's sessions.set overwrote the
+  // first's entry, the world kicked one with name_taken, its teardown deleted
+  // the entry, and the surviving child was left alive with NO map entry: an
+  // unstoppable orphan burning LLM spend until app quit. The reservation is
+  // taken before `_summon`'s first await and held until the attempt settles
+  // (the 30s watchdog guarantees it does), which overlaps sessions.set — so
+  // there is no instant where a character is neither reserved nor registered.
+  const pendingSummons = new Map<string, Promise<void>>();
+  // Effective MC username of each pending (pre-registration) summon, so the
+  // duplicate-username guard can also see attempts that haven't reached
+  // sessions.set yet (two DIFFERENT characters sharing a username, summoned
+  // together, would otherwise both fork and one gets kicked `name_taken`).
+  const pendingUsernames = new Map<string, string>();
   // Plan 10-06: latest known Supabase access_token (JWT). The jwtBridge
   // module-level closure calls updateJwt() on every TOKEN_REFRESHED / SIGNED_IN
   // / USER_UPDATED / SIGNED_OUT (T-10-06-01: only the JWT, never the refresh
@@ -323,6 +339,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   };
 
   async function _stop(characterId: string, timeoutMs: number): Promise<void> {
+    // 260705 (issue #6): a stop landing in the pre-registration window (status
+    // already "Connecting…", sessions.set not reached) used to find no session,
+    // report success — and the bot joined anyway seconds later. Wait for the
+    // pending attempt to settle (bounded by the summon watchdog) and stop the
+    // session it registered; if it failed, there is genuinely nothing to stop.
+    const pending = pendingSummons.get(characterId);
+    if (pending) await pending.catch(() => { /* failed summon == nothing to stop */ });
     const session = sessions.get(characterId);
     if (!session) {
       // No live session — but the renderer may still be showing a stale entry
@@ -381,7 +404,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
 
   /** Drain every active session in parallel (sign-out / before-quit). */
   async function _stopAll(timeoutMs: number): Promise<void> {
-    await Promise.all([...sessions.keys()].map((id) => _stop(id, timeoutMs)));
+    // Include pending (pre-registration) summons so an app shutdown mid-summon
+    // drains the child that attempt is about to register (_stop awaits the
+    // reservation) instead of leaving it to die with the parent process.
+    const ids = new Set([...sessions.keys(), ...pendingSummons.keys()]);
+    await Promise.all([...ids].map((id) => _stop(id, timeoutMs)));
   }
 
   /**
@@ -464,6 +491,15 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         throw new Error(`SUMMON_USERNAME_CONFLICT: ${username}`);
       }
     }
+    // 260705 (issue #6): also refuse when a PENDING summon (pre-registration,
+    // not yet in `sessions`) holds this username. Check-then-set is safe here —
+    // no await between them, so two attempts serialize on the event loop.
+    for (const [otherId, otherName] of pendingUsernames) {
+      if (otherId !== characterId && otherName.toLowerCase() === username.toLowerCase()) {
+        throw new Error(`SUMMON_USERNAME_CONFLICT: ${username}`);
+      }
+    }
+    pendingUsernames.set(characterId, username);
 
     // Phase 13-15 (PROXY-07, D-57): branch on AI backend kind.
     //   - 'cloud-proxy' → bot routes Anthropic traffic through the Fly.io
@@ -756,8 +792,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // still show '—' until they reach summon-ready at least once.
         void (async () => {
           try {
-            const c = await getCharacter(characterId);
-            if (c) await saveCharacter({ ...c, last_launched: new Date().toISOString() });
+            await patchCharacter(characterId, (c) => ({ ...c, last_launched: new Date().toISOString() }));
           } catch (err) {
             logger.warn(`failed to stamp last_launched for ${characterId}: ${(err as Error).message}`);
           }
@@ -955,13 +990,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         sessionMs > 0
           ? (async () => {
               try {
-                const c = await getCharacter(characterId);
-                if (c) {
-                  await saveCharacter({
-                    ...c,
-                    playtime_ms: (c.playtime_ms ?? 0) + sessionMs,
-                  });
-                }
+                await patchCharacter(characterId, (c) => ({
+                  ...c,
+                  playtime_ms: (c.playtime_ms ?? 0) + sessionMs,
+                }));
                 // Also fold into the profile-wide cumulative total so it
                 // survives this character being deleted later (the deleted
                 // character's time stays counted). Separate from the per-
@@ -1204,8 +1236,25 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }
   }
 
+  /**
+   * 260705 (issue #6): the only public entry to `_summon`. Reserves the
+   * characterId synchronously — before `_summon`'s first await — so a second
+   * summon landing anywhere in the check-to-register gap joins the in-flight
+   * attempt (same promise, same outcome) instead of forking a duplicate child.
+   */
+  function summon(characterId: string): Promise<void> {
+    const pending = pendingSummons.get(characterId);
+    if (pending) return pending;
+    const attempt = _summon(characterId).finally(() => {
+      if (pendingSummons.get(characterId) === attempt) pendingSummons.delete(characterId);
+      pendingUsernames.delete(characterId);
+    });
+    pendingSummons.set(characterId, attempt);
+    return attempt;
+  }
+
   return {
-    summon: _summon,
+    summon,
     stop: (characterId?: string) =>
       characterId ? _stop(characterId, STOP_TIMEOUT_MS) : _stopAll(STOP_TIMEOUT_MS),
     switchBackend: _switchBackend,
@@ -1214,7 +1263,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       return first.done ? null : first.value;
     },
     getActiveIds: () => [...sessions.keys()],
-    isActive: (characterId: string) => sessions.has(characterId),
+    // Pending (pre-registration) summons count as active: every isActive gate
+    // is a "refuse while the bot is running" check (delete / reset memory /
+    // skin swaps), and a character mid-summon is about to be running — letting
+    // those proceed in the fork window would race the boot's memory reads.
+    isActive: (characterId: string) => sessions.has(characterId) || pendingSummons.has(characterId),
     /**
      * Task 4 — route an in-app chat message INTO a live game session so both
      * surfaces share one conversation (same brain + prompt cache). Posts a

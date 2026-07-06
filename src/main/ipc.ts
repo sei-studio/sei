@@ -11,6 +11,7 @@ import { ipcMain, BrowserWindow, app } from 'electron';
 import { z } from 'zod';
 import {
   IpcChannel,
+  CHAT_TEXT_MAX,
   ProxyConfigureArgsSchema,
   CreditsCheckoutArgsSchema,
   FeedbackSubmitArgsSchema,
@@ -892,7 +893,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const args = z
       .object({
         characterId: IdSchema,
-        text: z.string().min(1).max(4000),
+        text: z.string().min(1).max(CHAT_TEXT_MAX),
         // Quoted-reply reference (chat #1) — was previously dropped here, so the
         // companion never saw what the user was replying to.
         replyTo: z
@@ -1020,14 +1021,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return out;
   });
 
-  ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {
-    const id = IdSchema.parse(idArg);
-    const { clear } = await import('./chat/chatStore');
-    const { clearContinuity } = await import('./chat/continuity');
-    // Clear the transcript AND the derived rolling summary/watermark, so a
-    // cleared conversation cannot re-seed a stale summary into a later summon.
-    await Promise.all([clear(id), clearContinuity(id)]);
-  });
+  // 260705: chat:clear removed — no UI ever invoked it, and the product wipe
+  // surface is Reset memory (chars:reset-memory), which clears the transcript
+  // + summary as part of the memory-dir wipe (see resetMemoryForCharacter).
 
   // ── User profile (Phase 19) ───────────────────────────────────────────────
   ipcMain.handle(IpcChannel.user.getProfile, async () => {

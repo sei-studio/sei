@@ -26,8 +26,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useDataStore } from '../lib/stores/useDataStore';
-import { useUiStore } from '../lib/stores/useUiStore';
 import { useChatStore } from '../lib/stores/useChatStore';
+import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from './Button';
 import { ModalShell } from './ModalShell';
 import { PercentBar } from './PercentBar';
@@ -286,9 +286,8 @@ export function EditCharacterModal({
     setError(null);
     try {
       await sei.resetMemory(character.id);
-      // Reset deletes the chat transcript too — drop the renderer's cached
-      // messages/preview so an open chat doesn't keep showing erased history.
-      await useChatStore.getState().clear(character.id);
+      // Chat transcript lives in the wiped memory dir — evict the cache.
+      useChatStore.getState().evictLocal(character.id);
       setResetDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset memory.');

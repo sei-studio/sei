@@ -33,11 +33,13 @@
  *   - Fabric installer Maven: https://maven.fabricmc.net/net/fabricmc/fabric-installer/<v>/fabric-installer-<v>.jar
  *   - src/main/mcInstallScan.ts (findBundledJava — bundled-JRE probe)
  *   - src/main/personaExpansion.ts (30s timeout pattern)
+ *   - src/bot/brain/storage/atomicWrite.js (atomic launcher_profiles.json write)
  */
 import { execFile as execFileCb } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { findBundledJava } from './mcInstallScan';
 import { paths } from './paths';
 import type { McInstall } from '../shared/ipc';
@@ -447,7 +449,13 @@ export async function installFabricLoader(
           }
         }
       }
-      await fs.writeFile(profilesPath, JSON.stringify(parsed, null, 2));
+      // 260705: launcher_profiles.json is the ONE file Sei writes that Sei
+      // does NOT own — a torn write here destroys every launcher profile the
+      // user has, not just Sei's, so it must go through tmp+rename like every
+      // other config write in the codebase. Output stays byte-identical to
+      // the old writeFile (no house trailing newline — Mojang's file, Sei
+      // changes atomicity only).
+      await atomicWrite(profilesPath, JSON.stringify(parsed, null, 2));
     }
   } catch (err) {
     logger.warn(`fabricInstaller: rename profile failed: ${(err as Error).message}`);

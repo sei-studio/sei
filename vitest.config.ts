@@ -34,8 +34,12 @@ export default defineConfig({
       // renderer test AND run STALE assertions in the window between a source
       // edit and the next typecheck. The `.tsx`/`.ts` source is the only copy
       // vitest should execute. (Hand-authored `.test.js` live under src/bot/**,
-      // which this glob doesn't touch.)
+      // which these globs don't touch.)
       'src/renderer/**/*.test.js',
+      // Same twin hazard for src/shared (also in tsconfig.web's include): CI
+      // runs typecheck before test, so without this the shared suite runs
+      // twice — once from the stale emitted `.js`.
+      'src/shared/**/*.test.js',
     ],
   },
 });

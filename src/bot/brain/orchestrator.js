@@ -2970,17 +2970,23 @@ function maybeWarnByteCap(loop, warned) {
     const playerMessage = (typeof data?.playerMessage === 'string') ? data.playerMessage : null
     const who = data?.who ?? null
     const action = extractPriorTask(loop)
-    // 260703: the tick turn carries the sticky greet hint too (no-op once a
-    // say() line has reached chat this session).
-    const tickEventText = withGreetingHint(NUDGES.actionTurn({
-      action,
-      stopTool: stopToolForAction(action),
-      playerLine: playerMessage,
-      who,
-      elapsedSec: playerMessage == null ? elapsedSec : null,
-      visionOff: _visionMode() === 'off',
-      proactiveness: config?.persona?.proactiveness ?? 1,
-    }))
+    // 260608-tik: the player-message variant renders through interruptTurnText,
+    // the one chokepoint for mid-action interrupt turns — it resets
+    // _spokeThisLoop (which the end_loop scratchpad salvage keys off; a say()
+    // from BEFORE the interrupt doesn't count as answering it) and carries the
+    // sticky greet hint. The extra args below are dead in that variant —
+    // actionTurn shows elapsed and runs the agentic-follow review only when
+    // playerLine == null — so only the silent monitor builds its own turn.
+    const tickEventText = playerMessage != null
+      ? interruptTurnText(loop, playerMessage, who)
+      : withGreetingHint(NUDGES.actionTurn({
+          action,
+          stopTool: stopToolForAction(action),
+          who,
+          elapsedSec,
+          visionOff: _visionMode() === 'off',
+          proactiveness: config?.persona?.proactiveness ?? 1,
+        }))
 
     // Set the iteration trigger BEFORE the haiku call so the R1-R4 gate keeps
     // the loop alive on a text-only response. A carried player message is

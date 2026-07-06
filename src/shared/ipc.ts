@@ -106,6 +106,16 @@ export type LanState =
   | { kind: 'unavailable' };
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
+/**
+ * 260705: max characters per outgoing chat message — single source of truth for
+ * the chat:send Zod gate (main) AND the composer's maxLength (renderer). The two
+ * MUST agree: an over-limit paste passes the composer, renders an optimistic
+ * bubble, then dies at the IPC gate pre-persist — the user sees the retryable
+ * "try again" failure copy for a rejection that no retry can fix, and the
+ * bubble vanishes on reload.
+ */
+export const CHAT_TEXT_MAX = 4000;
+
 /** A quoted-reply reference (the message this one is replying to). */
 export interface ChatReplyRef {
   /** Role of the quoted message's author. */
@@ -928,8 +938,6 @@ export interface RendererApi {
   chatHistory(characterId: string): Promise<ChatMessage[]>;
   /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game). */
   chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef }): Promise<ChatSendResult>;
-  /** Clear a character's chat transcript + rolling summary bridge. */
-  chatClear(characterId: string): Promise<void>;
   /**
    * Signal that the chat surface was opened for a character. Main decides whether
    * a first-meeting greeting fires (any companion kind, empty transcript, never
@@ -1584,7 +1592,6 @@ export const IpcChannel = {
   chat: {
     history: 'chat:history',
     send: 'chat:send',
-    clear: 'chat:clear',
     /** Pull: the chat surface was opened. Main decides (kind 'unique', empty
      * transcript, never chatted) whether the companion speaks first and returns
      * any greeting replies; a no-op returns []. */
