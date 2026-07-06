@@ -13,10 +13,10 @@
 //   5. Encode frames -> demo/out/sei-demo.mp4 with ffmpeg, using each frame's
 //      real swap timestamp so playback runs at true real-time speed.
 //
-// Flow:
-//   1 companions page  2 hover Marv  3 click into Marv (LOWER than centre, the
-//   card centre is the Summon button)  4 click Summon  5 click Skin tab
-//   6 rotate skin preview 360°  7 back to companions
+// Flow (Party redesign):
+//   1 party wall  2 settle on Sui (panel lift + Play reveal)  3 open Sui -> the
+//   in-app chat  4 start a voice call -> the consent gate  5 dismiss it  6 open
+//   the profile from the presence panel  7 back to the party wall
 //
 // Usage:  node demo/record.mjs
 
@@ -78,6 +78,13 @@ async function buildFixtures() {
   return chars;
 }
 
+// The three bundled defaults, so the party wall shows Sui / Lyra / Marv.
+const DEFAULT_IDS = [
+  'bbf5b66f-2f0f-4918-a953-a2cf66d5a586', // Sui
+  'e4511df2-fd20-470b-9131-f8f9968e1c01', // Lyra
+  '25770cd6-a50b-409d-a7e2-6cc2026dd673', // Marv (clawd)
+];
+
 const config = {
   mc_username: 'Shawn',
   preferred_name: 'Shawn',
@@ -90,7 +97,13 @@ const config = {
   skin_setup_pending: false,
   removed_default_ids: [],
   added_world_ids: [],
-  has_been_welcomed: false, // -> "Welcome to Sei, Shawn!" on first paint
+  // Party redesign (260706): defaults are hidden from Home unless invited into a
+  // slot (added_default_ids). Seed all three so the wall shows Sui / Lyra / Marv
+  // + one empty "Awaken" slot.
+  added_default_ids: DEFAULT_IDS,
+  added_defaults_backfilled: true,
+  feedback_reward_claimed: false,
+  has_been_welcomed: true, // skip the welcome toast so the wall reads clean
   vision_mode: 'on-demand',
   total_playtime_ms: 20_340_000,
   total_playtime_backfilled: true,
@@ -303,70 +316,47 @@ async function main() {
   };
   const center = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 
-  // ── 1. Companions page — establishing dwell ────────────────────────────────
+  // ── 1. Party wall — establishing dwell ─────────────────────────────────────
   await setCur(VP.width / 2, VP.height + 80);
-  await sleep(800);
+  await sleep(1000); // let the wall's portraits + presence rows settle
 
-  // ── 2. Hover Marv (reveals the centred Summon overlay + card lift) ─────────
-  const marvBox = await boxOf('[aria-label="Open Marv"]');
-  const marvC = center(marvBox);
-  await glide(marvC.x, marvC.y, 1.0);
-  await sleep(950); // let the hover lift + overlay fade in read
+  // ── 2. Drift across the wall, settle on Sui (panel lift + Play reveal) ──────
+  const suiBox = await boxOf('[aria-label="Open Sui"]');
+  const suiC = center(suiBox);
+  await glide(suiC.x, suiC.y, 1.2);
+  await sleep(1000); // hover lift + centred Play button fade in
 
-  // ── 3. Click into Marv — LOWER than centre (centre = Summon button) ────────
-  const openX = marvBox.x + marvBox.width * 0.5;
-  const openY = marvBox.y + marvBox.height * 0.82; // over the name/meta strip
-  await glide(openX, openY, 0.45);
+  // ── 3. Open Sui -> the in-app chat (click LOW; the centre band is Play) ─────
+  await glide(suiBox.x + suiBox.width * 0.5, suiBox.y + suiBox.height * 0.9, 0.5);
   await click();
-  await page.waitForSelector('button:has-text("Summon into Minecraft")', { timeout: 8000 });
-  await sleep(1000); // page enter slide + portrait rise
+  await page.waitForSelector('text=race you there', { timeout: 8000 });
+  await sleep(1500); // page slide + message rise + presence panel settle
 
-  // ── 4. Click Summon (Connecting… -> Online) ────────────────────────────────
-  const summon = center(await boxOf('button:has-text("Summon into Minecraft")'));
-  await glide(summon.x, summon.y, 0.8);
+  // ── 4. Start a voice call -> the consent gate (voice module, ~40 MB) ────────
+  const callBtn = center(await boxOf('[aria-label="Voice call"]'));
+  await glide(callBtn.x, callBtn.y, 0.9);
   await click();
-  await sleep(1300); // "Connecting…"
-  await page.evaluate(() => window.__demo.online(window.__demo.ids.marv));
-  await sleep(1400); // "Online · …" + deploy/card glint animation
+  await page.waitForSelector('text=Set up voice calls', { timeout: 8000 });
+  await sleep(1700); // read the consent copy
 
-  // ── 5. Click Skin tab ──────────────────────────────────────────────────────
-  const skinTab = center(await boxOf('[role="tab"]:has-text("Skin")'));
-  await glide(skinTab.x, skinTab.y, 0.8);
+  // ── 5. Dismiss the gate -> back to chat ────────────────────────────────────
+  const notNow = center(await boxOf('button:has-text("Not now")'));
+  await glide(notNow.x, notNow.y, 0.7);
   await click();
-  const skinPreview = 'canvas[aria-label*="skin" i], img[alt*="skin" i]';
-  await page.waitForSelector(skinPreview, { timeout: 10000 });
-  await sleep(900);
+  await sleep(1000);
 
-  // ── 6. Rotate the 3D skin preview 360° (press inside, drag to one side) ─────
-  const fbox = await boxOf(skinPreview);
-  const startX = fbox.x + fbox.width * 0.32;
-  const startY = fbox.y + fbox.height * 0.5;
-  await glide(startX, startY, 0.6);
-  await press(true);
-  await mouse.move(startX, startY);
-  await mouse.down();
-  await sleep(180);
-  // OrbitControls maps ~clientHeight (320 element px) of horizontal travel to
-  // ~360°. Run the VISUAL cursor tween + the real-mouse drag concurrently over
-  // the same window so the spin and the cursor stay in sync.
-  const SWEEP = 360;
-  const DUR = 2.6;
-  const tweenP = page.evaluate(([x, y, s]) => window.__tween(x, y, s, 'linear'), [startX + SWEEP, startY, DUR]);
-  const rotSteps = Math.round(DUR * 60);
-  for (let i = 1; i <= rotSteps; i++) {
-    await mouse.move(startX + (SWEEP * i) / rotSteps, startY);
-    await sleep((DUR * 1000) / rotSteps - 4);
-  }
-  await tweenP;
-  await mouse.up();
-  await press(false);
-  await sleep(500);
+  // ── 6. Open the profile from the presence panel ────────────────────────────
+  const profile = center(await boxOf('button:has-text("Profile")'));
+  await glide(profile.x, profile.y, 0.8);
+  await click();
+  await page.waitForSelector('text=Bonded', { timeout: 8000 });
+  await sleep(1600); // portrait rise + stat tiles
 
-  // ── 7. Back to companions (exit slide) ─────────────────────────────────────
-  const back = center(await boxOf('button:has-text("All companions")'));
+  // ── 7. Back to the party wall (exit slide) ─────────────────────────────────
+  const back = center(await boxOf('button:has-text("Back")'));
   await glide(back.x, back.y, 0.9);
   await click();
-  await sleep(1200);
+  await sleep(1300);
 
   // Stop capture + tear down.
   try { await cdp.send('Page.stopScreencast'); } catch {}

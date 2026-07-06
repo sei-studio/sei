@@ -46,10 +46,21 @@ async function buildFixtures() {
   return chars;
 }
 
+// The three bundled defaults, so the party wall shows Sui / Lyra / Marv.
+const DEFAULT_IDS = [
+  'bbf5b66f-2f0f-4918-a953-a2cf66d5a586', // Sui
+  'e4511df2-fd20-470b-9131-f8f9968e1c01', // Lyra
+  '25770cd6-a50b-409d-a7e2-6cc2026dd673', // Marv (clawd)
+];
+
 const config = {
   mc_username: 'Shawn', preferred_name: 'Shawn', provider: 'anthropic', provider_config: {},
   theme_mode: 'dark', linuxBasicTextWarnDismissed: false, ai_backend_kind: 'local',
   dev_console_visible: false, skin_setup_pending: false, removed_default_ids: [], added_world_ids: [],
+  // Party redesign (260706): defaults are hidden from Home unless invited into a
+  // slot (added_default_ids). Seed all three so the wall shows Sui / Lyra / Marv
+  // + one empty "Awaken" slot (MAX_COMPANION_SLOTS = 4).
+  added_default_ids: DEFAULT_IDS, added_defaults_backfilled: true, feedback_reward_claimed: false,
   has_been_welcomed: true, // skip the welcome toast for a clean still
   vision_mode: 'on-demand', total_playtime_ms: 20_340_000, total_playtime_backfilled: true,
 };
@@ -116,13 +127,40 @@ async function main() {
   await page.screenshot({ path: path.join(OUT, 'app-home.png'), omitBackground: true });
   console.log('[shots] app-home.png');
 
-  // 2 ── open Marv (click LOW on the card; centre is the Summon button) -> DETAILS
-  const box = await page.locator('[aria-label="Open Marv"]').first().boundingBox();
-  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.82);
-  await page.waitForSelector('button:has-text("Summon into Minecraft")', { timeout: 10000 });
-  await page.waitForTimeout(1100); // page-enter slide + portrait rise settle
+  // 2 ── open Sui (click LOW on the panel; the centre band is the Play button) ->
+  //       the in-app chat, the primary surface (Party redesign).
+  const box = await page.locator('[aria-label="Open Sui"]').first().boundingBox();
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.9);
+  await page.waitForSelector('text=race you there', { timeout: 10000 });
+  await page.waitForTimeout(1100); // page-enter slide + message rise settle
   await page.mouse.move(300, 6); // park cursor away so no tooltip/hover shows in the still
   await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(OUT, 'app-chat.png'), omitBackground: true });
+  console.log('[shots] app-chat.png');
+
+  // 3 ── voice calls (260705): the phone icon opens the call view; with no model
+  //       cached the consent gate asks before the ~40 MB download.
+  try {
+    await page.locator('[aria-label="Voice call"]').first().click({ timeout: 5000 });
+    await page.waitForSelector('text=Set up voice calls', { timeout: 8000 });
+    await page.waitForTimeout(700);
+    await page.mouse.move(300, 6);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(OUT, 'app-voice.png'), omitBackground: true });
+    console.log('[shots] app-voice.png');
+    // dismiss the consent gate -> back to chat
+    await page.locator('button:has-text("Not now")').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(600);
+  } catch (e) {
+    console.log('[shots] app-voice.png skipped:', e.message.split('\n')[0]);
+  }
+
+  // 4 ── open the character profile from the presence panel.
+  await page.locator('button:has-text("Profile")').first().click({ timeout: 5000 }).catch(() => {});
+  await page.waitForSelector('text=Bonded', { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(1000);
+  await page.mouse.move(300, 6);
+  await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(OUT, 'app-character.png'), omitBackground: true });
   console.log('[shots] app-character.png');
 

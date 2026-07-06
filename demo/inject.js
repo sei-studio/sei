@@ -105,6 +105,20 @@
     charsOpenPrepare: async () => {},
     refreshCharacter: async () => {},
 
+    // chat surface — a short canned exchange so the chat screen has content.
+    chatHistory: async () => {
+      const t = Date.parse('2026-07-05T20:12:00.000Z');
+      return [
+        { id: 'm1', role: 'user', text: 'hey, want to go find a village?', ts: t },
+        { id: 'm2', role: 'companion', text: "yes!! i saw smoke past the ridge, that's usually a village. race you there?", ts: t + 22_000 },
+        { id: 'm3', role: 'user', text: 'you are so on', ts: t + 40_000 },
+        { id: 'm4', role: 'companion', text: 'grab some bread first, it is a long run. i will carry the torches ✨', ts: t + 55_000 },
+      ];
+    },
+    chatOpened: async () => [],
+    chatPreviews: async () => ({}),
+    getUserProfile: async () => ({ handle: 'shawn', mc_username: 'Shawn', preferred_name: 'Shawn', profilePicture: null }),
+
     // LAN — connected so the Summon CTA goes straight to summon (no LAN modal)
     getLanState: async () => ({ kind: 'connected' }),
 
