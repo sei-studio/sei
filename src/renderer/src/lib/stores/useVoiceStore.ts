@@ -31,7 +31,13 @@ import { useChatStore } from './useChatStore';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createDictation, type Dictation } from '../voice/dictation';
 import { registerVoiceHooks } from '../voice/voiceBridge';
-import { startRingtone, startAmbience, type StopFn } from '../voice/callTones';
+import {
+  startRingtone,
+  startAmbience,
+  playHangupChime,
+  playMuteClick,
+  type StopFn,
+} from '../voice/callTones';
 
 export type CallStatus =
   | 'idle'
@@ -54,6 +60,8 @@ interface VoiceState {
   /** While connecting: model-download percentage ('43') or null (no download
    * in flight — cached model, or still acquiring the mic). */
   connectingDetail: string | null;
+  /** Epoch ms the call went live — drives the on-screen duration timer. */
+  liveAt: number | null;
 
   startCall: (characterId: string) => Promise<void>;
   endCall: () => void;
@@ -70,6 +78,8 @@ let liveSince: number | null = null;
 let pendingTts = 0;
 /** Companion hang-up (end_call): end as soon as queued speech finishes. */
 let remoteEndAt: number | null = null;
+/** First moment the goodbye was observed fully drained (tail-delay basis). */
+let remoteDrainedAt: number | null = null;
 let remoteEndTimers: number[] = [];
 /** Call dressing (260705): two-tone ring while dialing, comfort-noise bed
  * while live. Stop fns owned here; null when silent. */
@@ -91,8 +101,16 @@ function silenceDressing(): void {
  * can beat the goodbye's TTS fetch, so wait at least this long before ending
  * on an idle queue. */
 const REMOTE_END_GRACE_MS = 1800;
+/** ...and once the goodbye HAS finished, linger this long before hanging up —
+ * ending exactly on the queue-empty edge audibly clipped the last word
+ * (260705 field report: Marv), and an instant hang-up feels abrupt anyway. */
+const REMOTE_END_TAIL_MS = 700;
 /** Hard bound — a stuck TTS fetch must not leave a zombie "ended" call. */
 const REMOTE_END_MAX_WAIT_MS = 12_000;
+/** Dial theater (260705): let the ring play at least this long before the
+ * companion "picks up" — the greeting LLM call fires only after it. An
+ * instant pickup reads as fake; a couple of rings reads as a phone. */
+const MIN_RING_MS = 3000;
 
 function friendlyError(err: unknown): string {
   const msg = String((err as Error)?.message ?? err);
@@ -105,9 +123,27 @@ function friendlyError(err: unknown): string {
 }
 
 export const useVoiceStore = create<VoiceState>((set, get) => {
-  // Forward the shared mute toggle (useUiStore.callMuted) into the live mic.
+  // Forward the shared mute toggle (useUiStore.callMuted) into the live mic,
+  // with a state-encoding click (down = muted, up = live) while on a call.
+  // Deafen (260705) silences the call's OUTPUT — companion voice and the
+  // ambience bed — without pausing playback, so undeafening rejoins live.
   useUiStore.subscribe((s, prev) => {
-    if (s.callMuted !== prev.callMuted) dictation?.setMuted(s.callMuted);
+    if (s.callMuted !== prev.callMuted) {
+      dictation?.setMuted(s.callMuted);
+      if (get().callCharacterId) playMuteClick(s.callMuted);
+    }
+    if (s.callDeafened !== prev.callDeafened) {
+      queue?.setOutputMuted(s.callDeafened);
+      if (get().status === 'live') {
+        if (s.callDeafened) {
+          stopAmbience?.();
+          stopAmbience = null;
+        } else if (!stopAmbience) {
+          stopAmbience = startAmbience();
+        }
+      }
+      if (get().callCharacterId) playMuteClick(s.callDeafened);
+    }
   });
 
   /** Companion hang-up: end once nothing is left to say (or the grace/max
@@ -118,12 +154,24 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     const s = get();
     if (!s.callCharacterId) {
       remoteEndAt = null;
+      remoteDrainedAt = null;
       return;
     }
     const waited = Date.now() - remoteEndAt;
     const drained = pendingTts === 0 && !(queue?.speaking() ?? false);
-    if ((drained && waited >= REMOTE_END_GRACE_MS) || waited >= REMOTE_END_MAX_WAIT_MS) {
+    // Tail delay: hang up REMOTE_END_TAIL_MS after the goodbye finishes, not
+    // on the queue-empty edge (which audibly clipped the last word). A new
+    // clip starting resets the basis.
+    if (!drained) {
+      remoteDrainedAt = null;
+    } else if (remoteDrainedAt === null) {
+      remoteDrainedAt = Date.now();
+      remoteEndTimers.push(window.setTimeout(maybeFinishRemoteEnd, REMOTE_END_TAIL_MS + 30));
+    }
+    const tailDone = drained && remoteDrainedAt !== null && Date.now() - remoteDrainedAt >= REMOTE_END_TAIL_MS;
+    if ((tailDone && waited >= REMOTE_END_GRACE_MS) || waited >= REMOTE_END_MAX_WAIT_MS) {
       remoteEndAt = null;
+      remoteDrainedAt = null;
       const characterId = s.callCharacterId;
       get().endCall();
       // If the call screen is up it would immediately re-dial (its mount
@@ -268,6 +316,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     lastSpoken: '',
     error: null,
     connectingDetail: null,
+    liveAt: null,
 
     startCall: async (characterId) => {
       const prev = get();
@@ -275,9 +324,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       if (prev.callCharacterId) get().endCall();
 
       const mySession = ++session;
+      const dialStart = Date.now();
       liveSince = null;
       pendingTts = 0;
       remoteEndAt = null;
+      remoteDrainedAt = null;
       ttsStreams.clear();
       ttsOrphans.clear();
       set({
@@ -288,6 +339,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastSpoken: '',
         error: null,
         connectingDetail: null,
+        liveAt: null,
       });
 
       // Ring while dialing (260705) — stopped the moment the line opens.
@@ -304,6 +356,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         dictation?.setHold(speaking);
         if (!speaking) maybeFinishRemoteEnd();
       });
+      queue.setOutputMuted(useUiStore.getState().callDeafened);
 
       try {
         dictation = await createDictation({
@@ -348,12 +401,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         return;
       }
       dictation.setMuted(useUiStore.getState().callMuted);
+
+      // Let it RING (260705): the companion picks up no sooner than
+      // MIN_RING_MS after dialing — the greeting LLM turn fires after this,
+      // not during it. Mic/model warm-up usually fits inside the window.
+      const ringLeft = MIN_RING_MS - (Date.now() - dialStart);
+      if (ringLeft > 0) {
+        await new Promise((r) => window.setTimeout(r, ringLeft));
+        if (session !== mySession) return; // hung up while ringing
+      }
       liveSince = Date.now();
       // Line open: ring stops, the constant low comfort-noise bed starts (the
-      // TTS noise floor otherwise reads as "static only while talking").
+      // TTS noise floor otherwise reads as "static only while talking") —
+      // unless the user pre-deafened while it rang.
       silenceDressing();
-      stopAmbience = startAmbience();
-      set({ status: 'live', connectingDetail: null });
+      if (!useUiStore.getState().callDeafened) stopAmbience = startAmbience();
+      set({ status: 'live', connectingDetail: null, liveAt: liveSince });
       // The line is open — ask main to have the companion speak FIRST (like
       // answering the phone). Best-effort; the call works without it.
       void sei.voiceGreet?.(characterId)?.catch(() => {});
@@ -366,9 +429,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       liveSince = null;
       pendingTts = 0;
       remoteEndAt = null;
+      remoteDrainedAt = null;
       for (const t of remoteEndTimers) window.clearTimeout(t);
       remoteEndTimers = [];
       silenceDressing();
+      // Closing chime — same instrument as the ring, own AudioContext so this
+      // teardown can't clip it. Plays for player AND companion hang-ups (the
+      // remote path funnels through here).
+      if (callCharacterId) playHangupChime();
       ttsStreams.clear();
       ttsOrphans.clear();
       dictation?.stop();
@@ -394,6 +462,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastSpoken: '',
         error: null,
         connectingDetail: null,
+        liveAt: null,
       });
       // Keep the legacy UI-store call state in sync (MinimizedCall/mute).
       useUiStore.getState().endCall();

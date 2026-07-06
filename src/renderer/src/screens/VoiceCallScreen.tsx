@@ -26,8 +26,27 @@ import {
   prefetchPct,
   prefetchVoiceModel,
 } from '../lib/voice/modelPrefetch';
-import { MicIcon, MicOffIcon, PhoneOffIcon, UserIcon, MinimizeIcon } from '../components/icons';
+import {
+  MicIcon,
+  MicOffIcon,
+  HeadphonesIcon,
+  HeadphonesOffIcon,
+  PhoneOffIcon,
+  UserIcon,
+  MinimizeIcon,
+} from '../components/icons';
 import styles from './VoiceCallScreen.module.css';
+
+/** mm:ss (h:mm:ss past the hour) for the live-call duration readout. */
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
 
 /** Voice-module install gate (260705): 'ready' lets the dial effect run;
  * 'consent' asks first (the user skipped the onboarding opt-in). */
@@ -44,6 +63,8 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   // and is shared with the MinimizedCall widget (#6).
   const muted = useUiStore((s) => s.callMuted);
   const setMuted = useUiStore((s) => s.setCallMuted);
+  const deafened = useUiStore((s) => s.callDeafened);
+  const setDeafened = useUiStore((s) => s.setCallDeafened);
   const minimizeCall = useUiStore((s) => s.minimizeCall);
 
   const status = useVoiceStore((s) => s.status);
@@ -53,8 +74,18 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const error = useVoiceStore((s) => s.error);
   const connectingDetail = useVoiceStore((s) => s.connectingDetail);
   const callCharacterId = useVoiceStore((s) => s.callCharacterId);
+  const liveAt = useVoiceStore((s) => s.liveAt);
   const startCall = useVoiceStore((s) => s.startCall);
   const endCall = useVoiceStore((s) => s.endCall);
+
+  // Live-call duration readout, ticking once a second while live.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (liveAt === null) return;
+    setNowTick(Date.now());
+    const t = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [liveAt]);
 
   // Voice-module gate (260705). A call physically needs the ~40 MB Whisper
   // model; if the user skipped the onboarding opt-in, ask before downloading
@@ -112,18 +143,17 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
   const companionName = character?.name ?? 'Companion';
 
+  // Live: the call duration (00:00, ticking). Everything else keeps words.
   const subtitle =
     status === 'error'
       ? error ?? 'Call failed'
       : status === 'connecting'
         ? connectingDetail
           ? `Preparing voice recognition… ${connectingDetail}%`
-          : 'Connecting…'
-        : speaking
-          ? 'Speaking'
-          : muted
-            ? 'On call · muted'
-            : 'On call · listening';
+          : 'Calling…'
+        : liveAt !== null
+          ? formatDuration(nowTick - liveAt)
+          : '00:00';
 
   // Install gate overlay: consent question, live progress, or failure. The
   // call UI behind it stays in its idle pose until the gate opens.
@@ -200,12 +230,12 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           <PixelPortrait
             seed={character.id + character.name}
             palette={palette}
-            size={168}
+            size={232}
             portraitImage={character.portrait_image}
             style={{ width: '100%', height: '100%' }}
           />
         ) : (
-          <UserIcon size={72} />
+          <UserIcon size={96} />
         )}
       </div>
 
@@ -217,42 +247,45 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
       {/* Captions — the last line each side said, so a glance explains the audio. */}
       <div className={styles.captions} aria-live="polite">
-        {lastSpoken ? (
-          <p className={styles.captionCompanion}>{lastSpoken}</p>
-        ) : status === 'live' ? (
-          <p className={styles.captionHint}>Say something — {companionName} can hear you.</p>
-        ) : null}
+        {lastSpoken ? <p className={styles.captionCompanion}>{lastSpoken}</p> : null}
         {lastHeard ? <p className={styles.captionUser}>You: {lastHeard}</p> : null}
       </div>
 
       <div className={styles.controls}>
-        <div className={styles.control}>
-          <button
-            type="button"
-            className={`${styles.circleBtn} ${muted ? styles.circleBtnMuted : ''}`}
-            onClick={() => setMuted(!muted)}
-            aria-pressed={muted}
-            aria-label={muted ? 'Unmute' : 'Mute'}
-          >
-            {muted ? <MicOffIcon size={24} /> : <MicIcon size={24} />}
-          </button>
-          <span className={styles.controlLabel}>{muted ? 'Muted' : 'Mute'}</span>
-        </div>
+        <button
+          type="button"
+          className={`${styles.circleBtn} ${muted ? styles.circleBtnMuted : ''}`}
+          onClick={() => setMuted(!muted)}
+          aria-pressed={muted}
+          aria-label={muted ? 'Unmute' : 'Mute'}
+          title={muted ? 'Unmute' : 'Mute'}
+        >
+          {muted ? <MicOffIcon size={24} /> : <MicIcon size={24} />}
+        </button>
 
-        <div className={styles.control}>
-          <button
-            type="button"
-            className={`${styles.circleBtn} ${styles.circleBtnHangup}`}
-            onClick={() => {
-              endCall();
-              navigate({ kind: 'chat', characterId });
-            }}
-            aria-label="Hang up"
-          >
-            <PhoneOffIcon size={26} />
-          </button>
-          <span className={styles.controlLabel}>Hang up</span>
-        </div>
+        <button
+          type="button"
+          className={`${styles.circleBtn} ${deafened ? styles.circleBtnMuted : ''}`}
+          onClick={() => setDeafened(!deafened)}
+          aria-pressed={deafened}
+          aria-label={deafened ? 'Undeafen' : 'Deafen'}
+          title={deafened ? 'Undeafen' : 'Deafen'}
+        >
+          {deafened ? <HeadphonesOffIcon size={24} /> : <HeadphonesIcon size={24} />}
+        </button>
+
+        <button
+          type="button"
+          className={`${styles.circleBtn} ${styles.circleBtnHangup}`}
+          onClick={() => {
+            endCall();
+            navigate({ kind: 'chat', characterId });
+          }}
+          aria-label="Hang up"
+          title="Hang up"
+        >
+          <PhoneOffIcon size={26} />
+        </button>
       </div>
     </div>
   );

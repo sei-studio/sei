@@ -36,6 +36,9 @@ export interface AudioQueue {
   speaking(): boolean;
   /** Barge-in: stop playback and drop everything queued; queue stays usable. */
   clear(): void;
+  /** Deafen (260705): silence the output without pausing it — clips keep
+   * "playing" (order/timing preserved) so undeafening rejoins live. */
+  setOutputMuted(muted: boolean): void;
   /** Permanent teardown: stop playback, drop everything, refuse new work. */
   stop(): void;
 }
@@ -64,6 +67,7 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
    * its first bytes, when no HTMLAudioElement exists yet). */
   let busy = false;
   let stopped = false;
+  let outputMuted = false;
 
   function finishCurrent(el: HTMLAudioElement): void {
     if (current !== el) return;
@@ -75,6 +79,7 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
   function playBuffer(buf: ArrayBuffer): void {
     const url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
     const el = new Audio(url);
+    el.muted = outputMuted;
     current = el;
     currentCleanup = () => URL.revokeObjectURL(url);
     const done = (): void => finishCurrent(el);
@@ -120,6 +125,7 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
     const ms = new MediaSource();
     const url = URL.createObjectURL(ms);
     const el = new Audio(url);
+    el.muted = outputMuted;
     current = el;
     let sb: SourceBuffer | null = null;
     const backlog: ArrayBuffer[] = [...item.chunks];
@@ -280,6 +286,10 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
     clear() {
       if (stopped) return;
       haltPlayback();
+    },
+    setOutputMuted(m) {
+      outputMuted = m;
+      if (current) current.muted = m;
     },
     stop() {
       stopped = true;

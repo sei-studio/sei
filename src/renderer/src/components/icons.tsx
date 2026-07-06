@@ -520,6 +520,45 @@ export const MicOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
+/** HeadphonesIcon — voice-call deafen control (hearing state). */
+export const HeadphonesIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+    <rect x={3} y={14} width={4} height={6} rx={1.5} />
+    <rect x={17} y={14} width={4} height={6} rx={1.5} />
+  </svg>
+);
+
+/** HeadphonesOffIcon — voice-call deafen control (deafened, with slash). */
+export const HeadphonesOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 14v-2a8 8 0 0 1 13.6-5.7M20 12v2" />
+    <rect x={3} y={14} width={4} height={6} rx={1.5} />
+    <path d="M17 14h4v6h-4z" />
+    <path d="M3 3l18 18" />
+  </svg>
+);
+
 /** SendIcon — chat composer send button (paper-plane). */
 export const SendIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg
