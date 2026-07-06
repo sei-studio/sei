@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
+import { notifyCompanionText, isVoiceCallActive, requestRemoteEndCall } from '../voice/voiceBridge';
 import type { ChatMessage, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
@@ -45,6 +46,12 @@ interface ChatState {
  * reactive) — it's a guard, not rendered state.
  */
 const sendSeq: Record<string, number> = {};
+
+/** chat:message push unsubscribe, torn down on HMR dispose (module foot). A
+ * stale hot-reloaded instance kept its listener AND its own (empty) dedup
+ * state, so every in-game say() was re-announced to the voice bridge once per
+ * reload — Marv spoke the same line five times (260706 field report). */
+let offChatMessage: (() => void) | null = null;
 
 /** True if a rejected chatSend was our deliberate interrupt (not a real error). */
 function isChatAbort(err: unknown): boolean {
@@ -115,16 +122,24 @@ export const useChatStore = create<ChatState>((set, get) => {
   // a routed message (task 4), and "joined/left your world" system lines (task
   // 1). Append deduped by id and clear the typing indicator for that character.
   try {
-    sei.onChatMessage?.(({ characterId, message }) => {
+    offChatMessage = sei.onChatMessage?.(({ characterId, message }) => {
+      let appended = false;
       set((s) => {
         const list = s.messages[characterId] ?? [];
         if (list.some((m) => m.id === message.id)) return {} as Partial<ChatState>;
+        appended = true;
         return {
           messages: { ...s.messages, [characterId]: [...list, message] },
           awaiting: { ...s.awaiting, [characterId]: false },
         };
       });
-    });
+      // Voice calls (260705): a companion line that arrived over the push (an
+      // in-game bot routing say() to the call) is spoken aloud. System lines
+      // ("joined your world") stay text-only.
+      if (appended && message.role === 'companion') {
+        notifyCompanionText(characterId, message.text);
+      }
+    }) ?? null;
   } catch {
     /* preload without onChatMessage — routed replies just won't stream live */
   }
@@ -154,21 +169,30 @@ export const useChatStore = create<ChatState>((set, get) => {
     sendSeq[characterId] = token;
     const isCurrent = (): boolean => sendSeq[characterId] === token;
 
+    const inCallEarly = isVoiceCallActive(characterId);
     const userMsg: ChatMessage = {
       id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
       text,
       ts: Date.now(),
       ...(replyTo ? { replyTo } : {}),
+      // Mirror main's persisted flag so the optimistic bubble is hidden too.
+      ...(inCallEarly ? { voice: true } : {}),
     };
     // "Realistic typing" (Appearance & feel): when ON, hold the typing indicator
     // back until the companion has "read" your message (task 2), then keep it up
     // for a length-scaled stretch before each reply bubble (task 1). When OFF,
     // the indicator shows instantly and follow-up bubbles use the fixed gap.
-    const realism = useUiStore.getState().realisticTyping;
+    // Voice calls (260705): during a call the reply is heard, not read — the
+    // typing theater (reading pause, per-bubble typing delay) would just delay
+    // the audio, so pacing is disabled for the call's character.
+    const inCall = inCallEarly;
+    const realism = !inCall && useUiStore.getState().realisticTyping;
     set((s) => ({
       messages: appendMessage(s.messages, characterId, userMsg),
-      awaiting: { ...s.awaiting, [characterId]: !realism },
+      // In-call exchanges are hidden in the chat UI (ChatMessage.voice), so a
+      // typing indicator would point at bubbles that never appear — keep it off.
+      awaiting: { ...s.awaiting, [characterId]: !realism && !inCall },
     }));
     // Kick the reply off NOW so model generation overlaps the reading pause.
     const replyPromise = sei.chatSend({ characterId, text, replyTo });
@@ -207,7 +231,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // follow-ups use the fixed gap. `awaiting` stays true between chunks.
       const replies = result.replies;
       for (let i = 0; i < replies.length; i++) {
-        const waitMs = realism ? typingDelayMs(replies[i].text) : i > 0 ? REPLY_GAP_MS : 0;
+        const waitMs = inCall ? 0 : realism ? typingDelayMs(replies[i].text) : i > 0 ? REPLY_GAP_MS : 0;
         if (waitMs > 0) {
           set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
           await delay(waitMs);
@@ -215,9 +239,16 @@ export const useChatStore = create<ChatState>((set, get) => {
         }
         set((s) => ({
           messages: appendMessage(s.messages, characterId, replies[i]),
-          awaiting: { ...s.awaiting, [characterId]: i < replies.length - 1 },
+          awaiting: { ...s.awaiting, [characterId]: !inCall && i < replies.length - 1 },
         }));
+        // Voice calls (260705): speak each reply bubble as it lands. The TTS
+        // queue serializes clips, so multi-bubble replies stay in order.
+        notifyCompanionText(characterId, replies[i].text);
       }
+      // Voice calls (260705): the companion called end_call() this turn. Its
+      // goodbye replies are already queued for TTS above; the voice store ends
+      // the call once they finish playing.
+      if (result.endCall) requestRemoteEndCall(characterId);
       // #6 — main stamped last_chatted on this successful reply; refresh the
       // character so the Home grid + IconRail re-sort by last interaction.
       void useDataStore.getState().refreshCharacter(characterId);
@@ -258,3 +289,12 @@ export const useChatStore = create<ChatState>((set, get) => {
   },
   };
 });
+
+// Dev-only (Vite HMR): drop the stale instance's chat:message listener before
+// the re-executed module registers the fresh one. Production never runs this.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    offChatMessage?.();
+    offChatMessage = null;
+  });
+}

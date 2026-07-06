@@ -22,6 +22,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { sei } from '../lib/ipcClient';
@@ -82,6 +83,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   );
 
   const messages = useChatStore((s) => s.messages[characterId]) ?? EMPTY;
+  // Voice-call lines (transcribed utterances / spoken replies) are persisted
+  // for the model's continuity but hidden here — a call is represented by its
+  // "You and X called for Y" row alone. Filtered BEFORE the map so day
+  // separators and author-run detection key on the visible neighbors.
+  const visibleMessages = useMemo(() => messages.filter((m) => !m.voice), [messages]);
   const awaiting = useChatStore((s) => s.awaiting[characterId]) ?? false;
   const load = useChatStore((s) => s.load);
   const send = useChatStore((s) => s.send);
@@ -92,7 +98,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const [replyTo, setReplyTo] = useState<ChatReplyRef | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   // Transient toast for the "coming soon" phone notice.
-  const [notice, setNotice] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -237,8 +242,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             type="button"
             className={styles.iconBtn}
             onClick={() => {
-              setNotice('Voice call coming later this month!');
-              window.setTimeout(() => setNotice((n) => (n ? null : n)), 2200);
+              // Kick the pipeline (mic + model + call-state) and open the call
+              // view; VoiceCallScreen renders the connecting/live/error states.
+              void useVoiceStore.getState().startCall(characterId);
+              navigate({ kind: 'voice-call', characterId });
             }}
             aria-label="Voice call"
             data-tip="Voice call"
@@ -262,12 +269,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         className={awaiting ? `${styles.list} ${styles.listTyping}` : styles.list}
         ref={listRef}
       >
-        {messages.length === 0 && !awaiting ? (
+        {visibleMessages.length === 0 && !awaiting ? (
           <div className={styles.empty}>
             This is the beginning of your conversation with {companionName}. Say hi.
           </div>
         ) : null}
-        {messages.map((m, i) => {
+        {visibleMessages.map((m, i, arr) => {
           if (m.role === 'system') {
             if (m.event?.kind === 'play') {
               return (
@@ -279,13 +286,25 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 </div>
               );
             }
+            // Voice calls (260705): "You and X called for Y." — same Discord-
+            // style session row as play, with the handset glyph.
+            if (m.event?.kind === 'call') {
+              return (
+                <div key={m.id} className={`${styles.systemRow} ${styles.playRow}`}>
+                  <span className={styles.playIcon}>
+                    <PhoneIcon size={18} />
+                  </span>
+                  <span>{m.text}</span>
+                </div>
+              );
+            }
             return (
               <div key={m.id} className={styles.systemRow}>
                 {m.text}
               </div>
             );
           }
-          const prev = messages[i - 1];
+          const prev = arr[i - 1];
           const newDay = !prev || dayKey(prev.ts) !== dayKey(m.ts);
           // A day break — or a quoted reply — restarts an author run so the
           // avatar + header (and the quote reference above it) are shown.
@@ -380,11 +399,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         {copiedId ? (
           <div className={styles.copiedToast} aria-live="polite">
             Copied to clipboard
-          </div>
-        ) : null}
-        {notice ? (
-          <div className={styles.copiedToast} aria-live="polite">
-            {notice}
           </div>
         ) : null}
         <div className={styles.composer}>

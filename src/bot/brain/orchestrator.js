@@ -16,6 +16,7 @@ import { createChainTracker } from './chains.js'
 import { createLoop } from './loop.js'
 import {
   BASELINE_INSTRUCTIONS,
+  VOICE_CALL_PRIMER,
   PERSONALITY_TOOL_DESCRIPTIONS,
   NUDGES,
   SPEAK_REMINDER,
@@ -185,7 +186,7 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
 // → continueLoop=false → the loop ends (say is "silence" for loop purposes:
 // it speaks, but it never keeps the bot busy on its own — see the
 // `continueLoop = movementCalls.length > 0` gate in runIterations).
-const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit'])
+const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit', 'end_call'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
@@ -332,6 +333,7 @@ export async function composeSeedBlocks({
   playerMessageText = null,
   companions = [],
   frontierText = '',
+  voiceCall = false,
   logger = console,
 }) {
   const player = sessionState.playerData()
@@ -346,6 +348,15 @@ export async function composeSeedBlocks({
     // appended every loop so caching it would never hit).
     { type: 'text', name: 'seed_cuboid_grammar', text: cuboidGrammarText, cache_control: { type: 'ephemeral' } },
   ]
+  // Voice-call mode: the player has a live call open, so every say() line is
+  // spoken aloud instead of typed into chat. The primer sits at the very START
+  // of the turn (per the mode's contract — it must beat UNIVERSAL_BASELINE's
+  // 'lmao'-style text-chat allowances by position). Stable for the duration of
+  // a call, so the cache breakpoint below it keeps hitting; toggling the call
+  // costs one cache rebuild, which is the honest price of a mode flip.
+  if (voiceCall) {
+    blocks.unshift({ type: 'text', name: 'voice_call', text: `[voice call] ${VOICE_CALL_PRIMER}` })
+  }
   if (config?.memory?.memory_md_path) {
     try {
       const memoryText = await readMemoryForSeed(
@@ -527,7 +538,7 @@ export async function composeSeedBlocks({
  *   priority queue. Required when the brain runs in production; defaults
  *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, _anthropicOverride = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, _anthropicOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
   // 260618: roster of OTHER AI companion usernames in this world (multi-bot
   // sessions). Pushed from main via {type:'roster'} → brain.setCompanions →
@@ -730,7 +741,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // is not in-game), route the reply UP to the chat surface instead of
     // speaking it in-world. Still logged + recorded to convo memory for
     // continuity, just delivered over the port rather than bot.chat.
-    if (loop._triggerData?.seiChat && typeof onSeiChatReply === 'function') {
+    // Voice-call mode extends this to EVERY say() line, whatever triggered the
+    // turn: while a call is live, speech goes to the player's ear (TTS via the
+    // chat surface) and in-game chat stays silent — that's the mode's contract.
+    if ((voiceCallActive || loop._triggerData?.seiChat) && typeof onSeiChatReply === 'function') {
       try { logChatOut(line) } catch {}
       try { onSeiChatReply(line) } catch (err) { logger.warn?.(`[sei/orch] onSeiChatReply failed: ${err?.message ?? err}`) }
       try { convoMemory.recentChat.pushSelf(config.persona.name, line) } catch {}
@@ -782,6 +796,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // is dropped with a structured warn (defense-in-depth; the FSM should
   // already prevent it).
   let currentLoop = null
+  // Voice-call mode (260705): true while the player has a live voice call open
+  // with this companion. Flipped by setVoiceCall (parentPort {type:'voice-call'}
+  // → brain.setVoiceCall). Effects: every say() routes up to the call instead
+  // of in-game chat (_emitSayLine), and composeSeedBlocks prepends the
+  // VOICE_CALL_PRIMER to each turn.
+  let voiceCallActive = false
   // 260703: sticky greeting. The full FIRST CONTACT block rides only the first
   // idle tick (reason:'just_connected_first_spawn'); when that loop is preempted
   // (attack, chat) before the model replies, the greet instruction is gone and
@@ -998,6 +1018,29 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
           farewell: {
             type: 'string',
             description: 'Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving.',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      // Voice calls (260705): hang up the live voice call WITHOUT leaving the
+      // game. Registered unconditionally (a per-call tool-list flip would bust
+      // the prompt cache every call toggle); a call with no call open is a
+      // harmless error result. The primer (VOICE_CALL_PRIMER) tells the model
+      // it can end but never start calls.
+      name: 'end_call',
+      description:
+        'Hang up the live voice call with the player. Only meaningful while a voice call is open — if none is, this does nothing. ' +
+        'Use it when the conversation is clearly over or the player asks you to hang up. You stay in the game; only the call ends. ' +
+        'Put your goodbye in the `farewell` field — it is spoken into the call for you as it ends, so do NOT also call say(). ' +
+        'You cannot start calls, only end them.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          farewell: {
+            type: 'string',
+            description: 'Your goodbye line, spoken into the call as it ends. Short, in your own voice.',
           },
         },
         additionalProperties: false,
@@ -1435,7 +1478,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // the action, and a say()-only batch suspends on nothing. Its result is
   // actually pre-filled up front by emitSayCalls (so speech lands before any
   // action dispatches); the executeInlineMetadata `say` branch is a fallback.
-  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit'])
+  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit', 'end_call'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -1890,6 +1933,7 @@ function maybeWarnByteCap(loop, warned) {
           playerMessageText,
           companions,
           frontierText: progFrontierText,
+          voiceCall: voiceCallActive,
           logger,
         })
       } catch (err) {
@@ -2211,6 +2255,25 @@ function maybeWarnByteCap(loop, warned) {
       if (waitMs > 250) logger.info?.(`[sei/orch] quit deferred ${waitMs}ms so the goodbye finishes sending`)
       setTimeout(fireQuit, waitMs)
       return { result: { type: 'tool_result', tool_use_id: use.id, content: 'leaving the game', is_error: false }, terminate: true }
+    }
+    if (use.name === 'end_call') {
+      // Voice calls (260705): hang up the live call, stay in the game. The
+      // farewell rides IN the call (same rationale as quit.farewell) and is
+      // emitted through the normal say pipeline — voiceCallActive is still
+      // true here, so it routes up to the call and gets spoken. THEN the host
+      // is asked to end the call; the renderer drains the TTS queue before
+      // tearing down, so the goodbye is heard in full.
+      if (!voiceCallActive) {
+        lastActionResult = 'end_call: no call open'
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: 'no voice call is open — nothing to hang up', is_error: true }, terminate: false }
+      }
+      const farewell = String(use.input?.farewell ?? '').trim()
+      if (farewell) {
+        try { _emitSayLine(loop, farewell) } catch {}
+      }
+      lastActionResult = 'ended call'
+      try { onCallEndRequested?.() } catch (err) { logger.warn?.(`[sei/orch] onCallEndRequested failed: ${err?.message ?? err}`) }
+      return { result: { type: 'tool_result', tool_use_id: use.id, content: 'call ended — you are still in the game', is_error: false }, terminate: false }
     }
     if (use.name === 'say') {
       // Normal flow emits say() up front via emitSayCalls and pre-fills the
@@ -3901,6 +3964,13 @@ function maybeWarnByteCap(loop, warned) {
      */
     setCompanions,
     getCompanions: () => companions.slice(),
+    /**
+     * Voice-call mode (260705). Called by brain.setVoiceCall ←
+     * src/bot/index.js's parentPort {type:'voice-call'} handler when the
+     * player opens or hangs up a call. See the voiceCallActive declaration
+     * for the two effects.
+     */
+    setVoiceCall: (active) => { voiceCallActive = active === true },
     /**
      * Phase 15 (D-10/VIS-03): the active provider's vision capability. Read by
      * the brain → src/bot/index.js so it can push `vision-capability` up the

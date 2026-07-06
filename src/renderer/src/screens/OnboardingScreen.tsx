@@ -127,6 +127,8 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         dev_console_visible: false,
         // Appearance & feel: default the "Realistic typing" pacing on.
         realistic_typing: true,
+        // Appearance & feel: live call captions default off (260705).
+        call_captions: false,
         removed_default_ids: [],
         added_default_ids: [],
         added_world_ids: [],

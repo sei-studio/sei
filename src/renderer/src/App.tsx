@@ -347,6 +347,8 @@ export function App(): React.ReactElement {
           // Appearance & feel: seed the "Realistic typing" pacing toggle
           // (default ON) so useChatStore.send() reads the right value.
           useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
+          // Appearance & feel: call captions (default OFF).
+          useUiStore.getState().setCallCaptions(cfg.call_captions === true);
         } catch {
           // Fall through with empty onboardedName → onboarding (fresh profile).
         }
@@ -451,6 +453,8 @@ export function App(): React.ReactElement {
         // Appearance & feel: seed the "Realistic typing" pacing toggle before
         // first render (default ON when the field is absent).
         useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
+        // Appearance & feel: call captions (default OFF when absent).
+        useUiStore.getState().setCallCaptions(cfg.call_captions === true);
       } catch {
         // Defaults already applied (themeMode='system' from store)
       }

@@ -1,6 +1,7 @@
 /**
  * CreationLimitModal — informational notice shown when a user has hit the
- * daily character-creation cap (the proxy's persona_daily limit).
+ * daily character-creation cap (MAX_CREATIONS_PER_DAY, rolling 24h — 260705:
+ * enforced locally in main via characterStore.checkCreateQuota, all backends).
  *
  * Surfaced BEFORE the new-character flow (CharactersScreen → "New" / AddCard)
  * so a maxed-out user never enters the steps only to fail mid-expansion. Also

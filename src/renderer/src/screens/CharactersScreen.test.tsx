@@ -20,11 +20,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-// @ts-expect-error node module under renderer tsconfig
 import { readFileSync, existsSync } from 'node:fs';
-// @ts-expect-error node module under renderer tsconfig
 import { fileURLToPath } from 'node:url';
-// @ts-expect-error node module under renderer tsconfig
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

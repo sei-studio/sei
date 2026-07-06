@@ -55,6 +55,8 @@ export function SettingsScreen(): React.ReactElement {
   // typing delays.
   const realisticTyping = useUiStore((s) => s.realisticTyping);
   const setRealisticTyping = useUiStore((s) => s.setRealisticTyping);
+  const callCaptions = useUiStore((s) => s.callCaptions);
+  const setCallCaptions = useUiStore((s) => s.setCallCaptions);
   const authState = useAuthStore((s) => s.state);
   // "Is ANY bot running" — gates the live backend switch. Multi-summon: true
   // when one or more characters are connecting/online.
@@ -377,6 +379,23 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
+  // Appearance & feel: live captions on the voice-call screen (default OFF).
+  // Same optimistic-then-write-through pattern as the toggles above.
+  const onToggleCallCaptions = async (): Promise<void> => {
+    const next = !callCaptions;
+    setCallCaptions(next);
+    if (!cfg) return;
+    try {
+      const updated: UserConfig = { ...cfg, call_captions: next };
+      await sei.saveConfig(updated);
+      setCfg(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (call_captions) failed', err);
+      setCallCaptions(!next);
+    }
+  };
+
   // Write through vision_mode to UserConfig (the config is the source of truth;
   // botSupervisor bridges it into config.vision at fork). Mirrors
   // onToggleDevConsole's optimistic-then-rollback discipline. The setting is
@@ -642,6 +661,25 @@ export function SettingsScreen(): React.ReactElement {
             onClick={() => void onToggleRealisticTyping()}
           >
             {realisticTyping ? 'On' : 'Off'}
+          </Button>
+        </div>
+        {/* Call captions (260705): live subtitle lines on the voice-call
+            screen. Off by default — calls read as audio, not subtitles. */}
+        <div className={styles.row}>
+          <span className={styles.rowLabelGroup}>
+            <span className={styles.rowLabel}>Call captions</span>
+            <InfoTip
+              label="About call captions"
+              text="Shows live captions during voice calls — what the companion said and what Sei heard you say."
+            />
+          </span>
+          <Button
+            kind="ghost"
+            size="sm"
+            aria-pressed={callCaptions}
+            onClick={() => void onToggleCallCaptions()}
+          >
+            {callCaptions ? 'On' : 'Off'}
           </Button>
         </div>
       </section>

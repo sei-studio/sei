@@ -170,6 +170,10 @@ type Sheet = {
   personality: { tone: string; values: string[]; quirks: string[]; fears: string[] };
   backstory: string;
   voice_style: string;
+  /** ElevenLabs voice id from soulcaster's curated pool — stamped by castSoul
+   * (never LLM-authored). Optional: sheets generated before voices existed
+   * lack it; resolveVoiceId (voice/voiceAssign.ts) backfills those. */
+  voice_id?: string;
   appearance: Record<string, unknown>;
   image_prompt: string;
 };
@@ -374,9 +378,49 @@ async function toCompliantPortraitPng(bytes: Buffer): Promise<Buffer> {
 }
 
 /**
+ * POST the proxy's img2skin panel endpoint (260705): one Gemini image-to-image
+ * call that renders the character as front+back orthographic Minecraft
+ * pixel-art views on magenta (img2skin Branch B stage 1). The prompt is
+ * server-owned; we only send the portrait bytes. Returns the raw panel-atlas
+ * PNG. 60s wall-clock timeout via AbortController, mirrors generatePortraitPng.
+ */
+async function generatePanelAtlasPng(rawPng: Buffer, jwt: string): Promise<Buffer> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IMAGE_TIMEOUT_MS);
+  try {
+    const resp = await fetch(`${PROXY_BASE_URL}/generate/skin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ character_png_base64: rawPng.toString('base64') }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      throw new Error(`skin panel generation failed: HTTP ${resp.status}`);
+    }
+    const json = (await resp.json()) as { png_base64?: unknown };
+    const b64 = json?.png_base64;
+    if (typeof b64 !== 'string' || b64.length === 0) {
+      throw new Error('skin panel generation failed: response missing png_base64');
+    }
+    return Buffer.from(b64, 'base64');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Turn a full-body character PNG into a valid 64×64 Minecraft skin via
- * img2skin's deterministic 'fallback' branch (no API key required). Writes the
- * source + reads the skin through a scratch temp dir that is always cleaned up.
+ * img2skin. 260705: tries the real Branch-B 'panel' pipeline first — the proxy
+ * runs the one Gemini call (POST /generate/skin, skin_daily 4/day), and
+ * img2skin maps the returned panel atlas to a skin locally via `mockAtlas`
+ * (which skips its own direct-Gemini call — the client has no Google key).
+ * Any failure (proxy down, gate 429, invalid panel geometry, validation
+ * misses) falls back to the deterministic no-LLM painter branch, so every
+ * input still yields a valid skin. Writes the source + reads the skin through
+ * a scratch temp dir that is always cleaned up.
  *
  * `variant` selects the Minecraft skin model geometry — 'slim' (Alex, narrow
  * arms) vs 'classic' (Steve, wide arms). The bot serves skins via
@@ -385,13 +429,30 @@ async function toCompliantPortraitPng(bytes: Buffer): Promise<Buffer> {
  * female companions actually render as slim in-game (no schema/server change
  * needed).
  */
-async function rawPngToSkin(rawPng: Buffer, variant: 'slim' | 'classic'): Promise<Buffer> {
+async function rawPngToSkin(
+  rawPng: Buffer,
+  variant: 'slim' | 'classic',
+  jwt: string,
+): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), 'sei-skin-'));
   const src = path.join(dir, 'character.png');
   const out = path.join(dir, 'skin.png');
   try {
     await writeFile(src, rawPng);
     const { characterToSkin } = await import('img2skin/src/pipeline.js');
+    try {
+      const atlas = path.join(dir, 'panel.png');
+      await writeFile(atlas, await generatePanelAtlasPng(rawPng, jwt));
+      const res = await characterToSkin(src, out, { branch: 'panel', mockAtlas: atlas, variant });
+      if (res.valid !== true) {
+        throw new Error('panel-branch skin failed validation');
+      }
+      return await readFile(out);
+    } catch (err) {
+      console.warn(
+        `[sei] img2skin panel branch failed, using fallback painter: ${(err as Error).message}`,
+      );
+    }
     await characterToSkin(src, out, { branch: 'fallback', variant });
     return await readFile(out);
   } finally {
@@ -579,9 +640,21 @@ async function runPipeline(args: {
   emit('sheet', 'start');
   try {
     const { castSoul } = await import('soulcaster');
+    // Voice roll (260705): exclude voices the library already uses so a
+    // roster's companions rarely share a voice. Best-effort — an unreadable
+    // library just means no exclusions.
+    let takenVoiceIds: string[] = [];
+    try {
+      const { listCharacters } = await import('./characterStore');
+      const { assignedVoiceId } = await import('./voice/voiceAssign');
+      takenVoiceIds = (await listCharacters())
+        .map((c) => assignedVoiceId(c))
+        .filter((v): v is string => v !== null);
+    } catch {}
     const { sheet: cast } = await castSoul({
       gender,
       userProfile: config.user_profile ?? null,
+      takenVoiceIds,
       llm: buildSoulcasterLlm(jwt),
     });
     sheet = cast as Sheet;
@@ -623,7 +696,7 @@ async function runPipeline(args: {
     }
     emit('skin', 'start');
     try {
-      skinBytes = await rawPngToSkin(rawPng, gender === 'female' ? 'slim' : 'classic');
+      skinBytes = await rawPngToSkin(rawPng, gender === 'female' ? 'slim' : 'classic', jwt);
       emit('skin', 'done');
     } catch (err) {
       skinBytes = null;
@@ -676,7 +749,13 @@ async function runPipeline(args: {
     is_default: false,
     shared: false,
     slug: null,
-    metadata: { proactiveness: 1, soulcaster_sheet: sheet as unknown as Record<string, unknown> },
+    metadata: {
+      proactiveness: 1,
+      soulcaster_sheet: sheet as unknown as Record<string, unknown>,
+      // TTS voice for voice calls. metadata rides the cloud sync verbatim, so
+      // the assignment follows the character across devices.
+      ...(sheet.voice_id ? { voiceId: sheet.voice_id } : {}),
+    },
     created: now,
     last_launched: null,
     playtime_ms: 0,
@@ -687,7 +766,7 @@ async function runPipeline(args: {
     description,
   };
 
-  const { saveCharacter, saveCharacterRaw, getCharacter } = await import('./characterStore');
+  const { saveCharacter, saveCharacterRaw, getCharacter, recordCreation } = await import('./characterStore');
   try {
     await saveCharacter(character);
   } catch (err) {
@@ -695,6 +774,9 @@ async function runPipeline(args: {
     emit('saving', 'error', msg);
     return { ok: false, code: 'generation_failed', message: `Couldn't save the companion: ${msg}` };
   }
+  // Count the creation against the daily cap (MAX_CREATIONS_PER_DAY) now that
+  // the character exists on disk — the guard-3 pre-check reads this log.
+  await recordCreation();
 
   // Apply portrait + skin now that the character JSON exists on disk. Both are
   // best-effort — a failure here leaves the companion without art, never blocks.

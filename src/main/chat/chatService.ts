@@ -15,7 +15,7 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, saveCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
-import { buildSystemBlocks, LAUNCH_TOOL, QUIT_TOOL } from './chatPrompts';
+import { buildSystemBlocks, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL } from './chatPrompts';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import * as chatStore from './chatStore';
 
@@ -114,6 +114,12 @@ export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assi
       // the player speaking or as a still-hypothetical plan.
       role = 'user';
       content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} You were there together in the world — treat it as something you actually did, not a plan.]`;
+    } else if (m.role === 'system' && m.event?.kind === 'call') {
+      // A finished voice call is shared history the same way a play session is
+      // (260705): without it, a later turn only sees the transcript lines and
+      // may not realize they were spoken on a real call.
+      role = 'user';
+      content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} That was a real voice call you were both on — treat it as a conversation you actually had.]`;
     } else if (m.role === 'system') {
       // Other system rows (e.g. "joined your world") are UI-only; skip them so
       // they don't pollute the model's turn-taking.
@@ -172,7 +178,7 @@ function clampProactiveness(raw: unknown): number {
  */
 async function prepareChatTurn(
   characterId: string,
-  opts: { openWorldDetected: boolean; inGame: boolean },
+  opts: { openWorldDetected: boolean; inGame: boolean; voiceCall?: boolean },
 ) {
   const character = await getCharacter(characterId);
   if (!character) return null;
@@ -196,6 +202,7 @@ async function prepareChatTurn(
     summary,
     openWorldDetected: opts.openWorldDetected,
     inGame: opts.inGame,
+    voiceCall: opts.voiceCall === true,
   });
   const messages = toMessages(history);
   return { character, config, system, messages };
@@ -207,20 +214,26 @@ async function prepareChatTurn(
  * them in order (ascending ts so ordering is stable). Shared by the normal turn
  * and the launch-failed turn.
  */
-async function persistReplies(characterId: string, replyText: string): Promise<ChatMessage[]> {
+async function persistReplies(
+  characterId: string,
+  replyText: string,
+  opts?: { voice?: boolean },
+): Promise<ChatMessage[]> {
   const now = Date.now();
   const replies: ChatMessage[] = splitReply(replyText).map((text, i) => ({
     id: randomUUID(),
     role: 'companion',
     text,
     ts: now + i,
+    // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
+    ...(opts?.voice ? { voice: true } : {}),
   }));
   for (const reply of replies) await chatStore.appendMessage(characterId, reply);
   return replies;
 }
 
 export async function sendChatMessage(
-  args: { characterId: string; text: string; replyTo?: ChatMessage['replyTo'] },
+  args: { characterId: string; text: string; replyTo?: ChatMessage['replyTo']; voiceCall?: boolean },
   deps: ChatDeps,
 ): Promise<ChatSendResult> {
   // #9 — supersede any in-flight turn for this character: abort its LLM call so
@@ -242,6 +255,9 @@ export async function sendChatMessage(
       text: args.text,
       ts: Date.now(),
       ...(args.replyTo ? { replyTo: args.replyTo } : {}),
+      // Sent during a live call (a transcribed utterance, or typed mid-call —
+      // either way the exchange is spoken) → hidden in the chat UI.
+      ...(args.voiceCall === true ? { voice: true } : {}),
     };
     await chatStore.appendMessage(args.characterId, userMsg);
 
@@ -272,6 +288,9 @@ export async function sendChatMessage(
     const prep = await prepareChatTurn(args.characterId, {
       openWorldDetected: deps.getLanState().kind === 'open',
       inGame: deps.isInGame?.(args.characterId) ?? false,
+      // 260705: while a voice call is open the reply is read aloud by TTS, so
+      // the system prompt leads with the voice-call primer (spoken register).
+      voiceCall: args.voiceCall === true,
     });
     if (!prep) throw new Error('Character not found');
     const { system, messages } = prep;
@@ -284,6 +303,12 @@ export async function sendChatMessage(
     // live-session popup (SummonedWidget) appears. Set when launch() resolves to
     // an open world; fired at the end of the turn.
     let startSummon = false;
+    // Voice calls (260705) — the model called end_call(): returned to the
+    // renderer, which speaks the goodbye replies first, then hangs up.
+    let endCallRequested = false;
+    // end_call is offered only while a call is open (block 0 already flips for
+    // the primer, so this adds no extra cache churn).
+    const tools = args.voiceCall === true ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL] : [LAUNCH_TOOL, QUIT_TOOL];
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
       const res = await client.messages.create(
@@ -292,7 +317,7 @@ export async function sendChatMessage(
         // ceiling it self-conditions on the last (longest) turn and creeps up a
         // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
         // from the system prompt without truncating mid-sentence.
-        { model, max_tokens: 200, system, tools: [LAUNCH_TOOL, QUIT_TOOL], messages: messages as never },
+        { model, max_tokens: 200, system, tools, messages: messages as never },
         // #9 — abortable: a follow-up send aborts this signal.
         { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
       );
@@ -320,6 +345,14 @@ export async function sendChatMessage(
         note =
           'You have left the Minecraft world and logged off. You are back in chat only now — ' +
           'say a short goodbye if you have not already. Do not claim you are still in the game.';
+      } else if (toolUse.name === 'end_call') {
+        // Voice calls (260705) — hang up. The actual teardown is renderer-side
+        // (it must finish speaking the goodbye first), so just flag the result.
+        endCallRequested = true;
+        note =
+          'You are hanging up the call — it ends right after this turn. ' +
+          'If you have not said goodbye yet, say it now (it is still spoken aloud). ' +
+          'The player can still reach you in text chat afterward.';
       } else {
         break;
       }
@@ -337,7 +370,7 @@ export async function sendChatMessage(
       throw e;
     }
 
-    const replies = await persistReplies(args.characterId, replyText);
+    const replies = await persistReplies(args.characterId, replyText, { voice: args.voiceCall === true });
 
     // Background compaction (260702): the reply is persisted, so if 50+
     // messages have aged past the window, fold them NOW — while the player is
@@ -366,7 +399,7 @@ export async function sendChatMessage(
       console.warn(`[sei] failed to stamp last_chatted for ${args.characterId}: ${(err as Error).message}`);
     }
 
-    return { replies, launch };
+    return { replies, launch, ...(endCallRequested ? { endCall: true } : {}) };
   } catch (err) {
     // Interrupt/supersede surfaces as a typed sentinel so the renderer can tell
     // it apart from a real failure (and NOT show the "sorry" fallback).
@@ -430,6 +463,62 @@ export async function sendLaunchFailedTurn(
   const replyText = textOf(res.content);
   if (!replyText) return [];
   return persistReplies(characterId, replyText);
+}
+
+/**
+ * Voice calls (260705): the call pipeline just went LIVE and the character has
+ * no in-game session — run a short persona-voiced turn so the companion speaks
+ * FIRST (like answering the phone), instead of dead air until the player talks.
+ * Same ephemeral-system-note pattern as sendLaunchFailedTurn; the reply is
+ * persisted (it is a real thing the companion said) and returned for the
+ * caller to push, where the renderer speaks it via TTS.
+ *
+ * Registered in the same per-character `inflight` slot as sendChatMessage so a
+ * player who starts talking immediately supersedes the greeting turn instead
+ * of racing it (two replies interleaving on the call).
+ */
+export async function sendVoiceGreetingTurn(characterId: string): Promise<ChatMessage[]> {
+  inflight.get(characterId)?.abort();
+  const ctrl = new AbortController();
+  inflight.set(characterId, ctrl);
+  try {
+    const prep = await prepareChatTurn(characterId, {
+      openWorldDetected: false,
+      inGame: false,
+      voiceCall: true,
+    });
+    if (!prep) return [];
+    const { system, messages } = prep;
+    const note =
+      '[System note — not the player speaking: the player just started a voice call with you ' +
+      'and the line is live now. Greet them first, like answering the phone — one short line, ' +
+      'in your own voice. Do not mention this note.]';
+    const last = messages[messages.length - 1];
+    if (last && last.role === 'user' && typeof last.content === 'string') {
+      last.content = `${last.content}\n${note}`;
+    } else {
+      messages.push({ role: 'user', content: note });
+    }
+
+    const { client, model } = await buildChatSdk();
+    const res = await client.messages.create(
+      { model, max_tokens: 200, system, messages: messages as never },
+      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
+    );
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+    const replyText = textOf(res.content);
+    if (!replyText) return [];
+    return await persistReplies(characterId, replyText, { voice: true });
+  } catch (err) {
+    // Superseded by a real message (or a real failure) — the greeting is
+    // best-effort either way; the call works without it.
+    if (!isAbortError(err)) {
+      console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);
+    }
+    return [];
+  } finally {
+    if (inflight.get(characterId) === ctrl) inflight.delete(characterId);
+  }
 }
 
 /**

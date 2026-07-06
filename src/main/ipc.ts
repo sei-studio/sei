@@ -28,7 +28,7 @@ import {
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
-import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota } from './characterStore';
+import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
 import { libraryCharacterCount } from './uniqueGeneration';
 import { paths } from './paths';
 import { saveApiKey, hasApiKey, safeStorageBackendKind } from './apiKeyStore';
@@ -106,6 +106,19 @@ export interface IpcHandlerDeps {
   notifyLaunchFailed: (characterId: string, reason: string) => void;
   /** Task 4 — true only when the character's bot is fully spawned in-world. */
   isSessionOnline: (characterId: string) => boolean;
+  /**
+   * Voice calls (260705): a call that was actually LIVE just ended (renderer
+   * reports how long audio flowed). Posts the "You and X called for Y" system
+   * row to the transcript. Wired in index.ts to emitCallSession.
+   */
+  notifyCallEnded?: (characterId: string, connectedMs: number) => void;
+  /**
+   * Voice calls (260705): the call pipeline went live — make the companion
+   * speak first. In-game → supervisor.greetVoiceCall port event; idle → a
+   * standalone chat-brain greeting turn (replies pushed + spoken). Wired in
+   * index.ts.
+   */
+  greetVoiceCall?: (characterId: string) => void;
 }
 
 /**
@@ -498,8 +511,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     return await getCharacter(id);
   });
-  // Pre-flight daily-creation quota check (persona_daily). Best-effort UX gate;
-  // the proxy 429 remains the hard limit. See characterStore.checkCreateQuota.
+  // Pre-flight daily-creation quota check (MAX_CREATIONS_PER_DAY, local
+  // rolling-24h log). Best-effort UX gate; the chars:save create path is the
+  // enforcing backstop. See characterStore.checkCreateQuota.
   ipcMain.handle(
     IpcChannel.chars.checkCreateQuota,
     async (): Promise<{ blocked: boolean; resetsAt: string | null }> => {
@@ -521,10 +535,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // character are always allowed (they don't add a slot). Defaults are never
     // saved through this path. This is defense-in-depth behind the renderer's
     // pre-check and the generateUnique guard.
-    {
-      const existing = await getCharacter(parsedCharacter.id).catch(() => null);
-      if (!existing && (await libraryIsFull())) {
+    //
+    // 260705: a CREATE is also subject to the daily creation cap
+    // (MAX_CREATIONS_PER_DAY, rolling 24h — checkCreateQuota). The renderer
+    // pre-checks and shows CreationLimitModal before entering the wizard;
+    // this is the backstop for the mid-flow race, and the thrown sentinel
+    // contains 'daily_limit_reached' — the string AddCharacterScreen already
+    // pattern-matches to land on the same modal.
+    const isCreate = (await getCharacter(parsedCharacter.id).catch(() => null)) === null;
+    if (isCreate) {
+      if (await libraryIsFull()) {
         throw new Error(SLOT_LIMIT_REACHED_MESSAGE);
+      }
+      const quota = await checkCreateQuota();
+      if (quota.blocked) {
+        throw new Error('character creation failed: daily_limit_reached');
       }
     }
 
@@ -577,9 +602,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // behavior preserved exactly.
       if (skipExpansion) {
         await saveCharacter(character);
+        if (isCreate) await recordCreation();
         return character;
       }
-      return await expandAndSaveCharacter({ character, onProgress });
+      const persisted = await expandAndSaveCharacter({ character, onProgress });
+      if (isCreate) await recordCreation();
+      return persisted;
     }
 
     // Phase 1 — local persist as PRIVATE first. This defuses the sync-queue
@@ -595,6 +623,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } else {
       persistedPrivate = await expandAndSaveCharacter({ character: draftPrivate, onProgress });
     }
+    // The character is on disk from here on — count the creation now, before
+    // the (long, failure-prone) moderation + cloud-sync tail.
+    if (isCreate) await recordCreation();
 
     // Phase 2 — run moderation gate. On clean, the gate's upsertCharacter
     // adapter has already written shared=true to cloud; re-sync the local
@@ -822,11 +853,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       })
       .parse(argsRaw);
     const { sendChatMessage } = await import('./chat/chatService');
+    const { isCallActive } = await import('./voice/callState');
     // Fresh world-detection pass before the prompt is built (260703): the
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
     try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
     return await sendChatMessage(
-      { characterId: args.characterId, text: args.text, replyTo: args.replyTo },
+      // voiceCall (260705): while a call is open the reply is spoken aloud, so
+      // the prompt leads with the voice-call primer (spoken register).
+      { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: isCallActive(args.characterId) },
       {
         getLanState: deps.getLanState,
         summon: (id) => deps.supervisor.summon(id),
@@ -841,6 +875,67 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         },
       },
     );
+  });
+
+  // ── Voice calls (260705) ──────────────────────────────────────────────────
+  // TTS synthesis (proxy passthrough; the ElevenLabs key never reaches the
+  // renderer or the repo) + the call open/hang-up toggle. The toggle records
+  // main-side state (idle-chat prompts read it) and forwards the mode into a
+  // live game session so say() reroutes to the call.
+  ipcMain.handle(IpcChannel.voice.tts, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
+    const args = z.object({ characterId: IdSchema, text: z.string().min(1).max(4000) }).parse(argsRaw);
+    const { voiceTts } = await import('./voice/tts');
+    return await voiceTts(args);
+  });
+
+  // Streaming TTS (260705): resolves {streamId} on upstream 200, then pushes
+  // ordered audio chunks on voice:tts-chunk until {done} / {error}. Pre-flight
+  // failures reject with the same VOICE_* sentinels as voice:tts.
+  ipcMain.handle(IpcChannel.voice.ttsStream, async (event, argsRaw: unknown): Promise<{ streamId: string }> => {
+    const args = z.object({ characterId: IdSchema, text: z.string().min(1).max(4000) }).parse(argsRaw);
+    const { voiceTtsStream } = await import('./voice/tts');
+    const sender = event.sender;
+    return await voiceTtsStream(args, (ev) => {
+      if (!sender.isDestroyed()) sender.send(IpcChannel.voice.ttsChunk, ev);
+    });
+  });
+
+  ipcMain.handle(IpcChannel.voice.callState, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        active: z.boolean(),
+        // Hang-up only: how long the call was actually LIVE. Present → post
+        // the "You and X called for Y" row. Absent → the call never connected
+        // (dial error), so nothing is logged.
+        connectedMs: z.number().int().nonnegative().optional(),
+      })
+      .parse(argsRaw);
+    const { setCallActive } = await import('./voice/callState');
+    setCallActive(args.characterId, args.active);
+    deps.supervisor.setVoiceCall(args.characterId, args.active);
+    if (!args.active && typeof args.connectedMs === 'number' && args.connectedMs > 0) {
+      deps.notifyCallEnded?.(args.characterId, args.connectedMs);
+    }
+  });
+
+  // Voice calls (260705): the renderer's call pipeline just went live — ask the
+  // companion to speak first (like answering the phone).
+  ipcMain.handle(IpcChannel.voice.greet, async (_event, idArg: unknown): Promise<void> => {
+    const id = IdSchema.parse(idArg);
+    deps.greetVoiceCall?.(id);
+  });
+
+  // Voice picker (creation flow, 260705): the curated pool + per-voice preview.
+  ipcMain.handle(IpcChannel.voice.list, async () => {
+    const { listPoolVoices } = await import('./voice/voiceAssign');
+    return listPoolVoices();
+  });
+
+  ipcMain.handle(IpcChannel.voice.preview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { voicePreviewTts } = await import('./voice/tts');
+    return await voicePreviewTts(args.voiceId);
   });
 
   ipcMain.handle(IpcChannel.chat.clear, async (_event, idArg: unknown): Promise<void> => {

@@ -181,6 +181,26 @@ describe('toMessages — every row flows through the same-role merge (Finding 1)
     expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
     assertAlternates(out);
   });
+
+  it('a call row (260705) surfaces as shared history and keeps alternation', () => {
+    const call: ChatMessage = {
+      id: 'call1',
+      role: 'system',
+      text: 'You and Marv called for 4 minutes.',
+      ts: 3000,
+      event: { kind: 'call', durationMs: 4 * 60_000 },
+    };
+    const out = toMessages([
+      user('u1', 1000, 'hey'),
+      companion('c1', 2000, 'hey!'),
+      call,
+      user('u2', 4000, 'good call'),
+    ]);
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(out[2].content).toContain('called for 4 minutes');
+    expect(out[2].content).toContain('voice call');
+    assertAlternates(out);
+  });
 });
 
 /** The nth fold call's request body, as the summarizer saw it. */

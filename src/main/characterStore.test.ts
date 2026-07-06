@@ -44,8 +44,9 @@ vi.mock('./cloud/syncQueue', () => ({
 }));
 
 import { _setUserDataOverride, paths } from './paths';
-import { saveCharacter, getCharacter, resetMemoryForCharacter } from './characterStore';
-import type { Character } from '../shared/characterSchema';
+import { saveCharacter, getCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
+import { loadConfig, saveConfig } from './configStore';
+import { MAX_CREATIONS_PER_DAY, type Character } from '../shared/characterSchema';
 
 let tmp: string;
 
@@ -154,5 +155,79 @@ describe('resetMemoryForCharacter (ui-A9)', () => {
     // memory dir should be recreated.
     const ls = await readFile(path.join(paths.memoryDir(UUID), '.placeholder'), 'utf-8').catch(() => 'missing-but-dir-exists');
     expect(typeof ls).toBe('string');
+  });
+});
+
+// 260705 — daily creation cap (MAX_CREATIONS_PER_DAY, rolling 24h local log
+// in UserConfig.creation_times).
+describe('checkCreateQuota / recordCreation', () => {
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), 'sei-charstore-'));
+    _setUserDataOverride(tmp);
+  });
+
+  afterEach(async () => {
+    _setUserDataOverride(null);
+    try {
+      await rm(tmp, { recursive: true, force: true });
+    } catch {
+      await new Promise((r) => setTimeout(r, 25));
+      try { await rm(tmp, { recursive: true, force: true }); } catch { /* best-effort */ }
+    }
+  });
+
+  it('unblocked with no creation history', async () => {
+    const quota = await checkCreateQuota();
+    expect(quota).toEqual({ blocked: false, resetsAt: null });
+  });
+
+  it(`blocks after ${MAX_CREATIONS_PER_DAY} creations in the window, with resetsAt = oldest + 24h`, async () => {
+    for (let i = 0; i < MAX_CREATIONS_PER_DAY; i++) {
+      await recordCreation();
+    }
+    const quota = await checkCreateQuota();
+    expect(quota.blocked).toBe(true);
+    expect(quota.resetsAt).not.toBeNull();
+    const config = await loadConfig();
+    const oldest = new Date(config.creation_times![0]).getTime();
+    expect(new Date(quota.resetsAt!).getTime()).toBe(oldest + 86_400_000);
+  });
+
+  it(`stays unblocked at ${MAX_CREATIONS_PER_DAY - 1} creations`, async () => {
+    for (let i = 0; i < MAX_CREATIONS_PER_DAY - 1; i++) {
+      await recordCreation();
+    }
+    const quota = await checkCreateQuota();
+    expect(quota.blocked).toBe(false);
+  });
+
+  it('ignores entries older than 24h (rolling window, not calendar day)', async () => {
+    const stale = new Date(Date.now() - 86_400_000 - 60_000).toISOString();
+    const config = await loadConfig();
+    await saveConfig({
+      ...config,
+      creation_times: Array.from({ length: MAX_CREATIONS_PER_DAY }, () => stale),
+    });
+    const quota = await checkCreateQuota();
+    expect(quota.blocked).toBe(false);
+  });
+
+  it('recordCreation prunes expired entries so the log never grows unbounded', async () => {
+    const stale = new Date(Date.now() - 86_400_000 - 60_000).toISOString();
+    const config = await loadConfig();
+    await saveConfig({ ...config, creation_times: [stale, stale, stale] });
+    await recordCreation();
+    const after = await loadConfig();
+    expect(after.creation_times).toHaveLength(1);
+  });
+
+  it('tolerates garbage timestamps in the log (fails open, prunes them on write)', async () => {
+    const config = await loadConfig();
+    await saveConfig({ ...config, creation_times: ['not-a-date', ''] });
+    const quota = await checkCreateQuota();
+    expect(quota.blocked).toBe(false);
+    await recordCreation();
+    const after = await loadConfig();
+    expect(after.creation_times).toHaveLength(1);
   });
 });

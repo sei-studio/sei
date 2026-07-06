@@ -265,6 +265,11 @@ export async function start(config, hooks = {}) {
       // Task 4 — the bot called quit(): leave the game the same graceful way a
       // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
       onQuitRequested: () => { try { gracefulShutdown() } catch {} },
+      // Voice calls (260705) — the bot called end_call(): ask main to hang up
+      // the player's call (the bot stays in the game). The farewell say() was
+      // already routed up before this fires, and the renderer drains its TTS
+      // queue before tearing the call down.
+      onCallEndRequested: () => emitLifecycle({ type: 'call-end' }),
     })
     if (_stopped || !_bot) {
       // The connection dropped (or we were stopped) while startBrain awaited.
@@ -333,6 +338,22 @@ export async function start(config, hooks = {}) {
      */
     deliverSeiChat(payload) {
       try { _brain?.deliverSeiChat?.(payload) } catch {}
+    },
+    /**
+     * Voice-call mode (260705): forward the call-open/hang-up toggle from the
+     * parentPort {type:'voice-call'} handler into the live brain. No-op until
+     * the brain has started; the supervisor re-sends the current state on
+     * summon-ready so a call opened before spawn still applies.
+     */
+    setVoiceCall(active) {
+      try { _brain?.setVoiceCall?.(active) } catch {}
+    },
+    /**
+     * Voice calls (260705): the call pipeline just went live — prompt the brain
+     * to greet the player first (like the spawn greeting, but into the call).
+     */
+    deliverVoiceCallGreeting() {
+      try { _brain?.deliverVoiceCallGreeting?.() } catch {}
     },
     /**
      * 260618: update the roster of OTHER AI companions in this world. Called by
@@ -568,7 +589,7 @@ async function bootstrapWithInit(initData) {
       worlds_json_path: `${memDir}/worlds.json`,
     },
     // Bridge the vision tier + cadence into config.vision. Every other vision
-    // field (image_quality, resolution_px ≤512 cap, explicit_cap_per_hour) is
+    // field (image_quality, resolution_px ≤512 cap) is
     // filled by the ConfigSchema vision defaults. The `.default({})` on the
     // vision block means omitting it entirely is also valid; absent init
     // fields fall to the schema defaults via the conditional spread.
@@ -819,6 +840,17 @@ if (process.parentPort) {
             // it runs on the SAME session (brain + prompt cache) and replies
             // back to the chat surface (see onSeiChatReply above).
             try { _running?.deliverSeiChat?.({ from: data.from, text: data.text }) } catch {}
+          } else if (data && data.type === 'voice-call') {
+            // Voice-call mode (260705): the player opened (active:true) or hung
+            // up (active:false) a voice call with this companion. While active,
+            // say() lines route up to the chat surface (→ TTS in the renderer)
+            // and in-game chat stays silent; each turn carries the voice-call
+            // primer at the start of its prompt.
+            try { _running?.setVoiceCall?.(data.active === true) } catch {}
+          } else if (data && data.type === 'voice-call-greet') {
+            // Voice calls (260705): the renderer's call pipeline just went live
+            // — ask the brain to speak first (say() routes into the call).
+            try { _running?.deliverVoiceCallGreeting?.() } catch {}
           } else if (data && data.type === 'roster') {
             // 260618: the supervisor's roster of OTHER AI companions in this
             // world changed (a sibling bot was summoned or stopped). Apply it so

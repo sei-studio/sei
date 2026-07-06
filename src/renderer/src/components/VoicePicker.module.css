@@ -1,0 +1,138 @@
+/* VoicePicker (260705) — creation-flow voice selection. Summoning Terminal:
+   sharp edges, token colors, no literal hex. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.autoCard {
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.filters {
+  display: flex;
+  gap: 6px;
+}
+
+.filterChip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.filterActive {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.row.selected,
+.autoCard.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.playBtn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.playBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rowBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.rowTitle {
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.rowMeta {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rowVibe {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.loadingDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: voicePickerPulse 0.8s ease-in-out infinite;
+}
+
+.error {
+  font-size: 13px;
+  color: var(--red);
+}
+
+@keyframes voicePickerPulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}

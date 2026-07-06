@@ -1,4 +1,4 @@
-/* VoiceCallScreen — Discord-style call placeholder (Phase 18/19). No audio. */
+/* VoiceCallScreen — live Discord-style call view (260705). */
 
 .root {
   position: relative;
@@ -38,8 +38,8 @@
 }
 
 .avatar {
-  width: 168px;
-  height: 168px;
+  width: 232px;
+  height: 232px;
   overflow: hidden;
   border-radius: 50%;
   border: 1px solid var(--border-strong);
@@ -48,6 +48,22 @@
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-pop);
+}
+
+/* Companion audio playing — soft accent ring pulse around the avatar. */
+.avatarSpeaking {
+  border-color: var(--accent);
+  animation: speakRing 1.2s var(--ease) infinite;
+}
+
+@keyframes speakRing {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--acc), 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(var(--acc), 0.08);
+  }
 }
 
 .name {
@@ -64,11 +80,12 @@
   align-items: center;
   gap: var(--space-sm);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
   margin-top: calc(-1 * var(--space-sm));
+  font-variant-numeric: tabular-nums;
 }
 
 .subtitleDot {
@@ -89,18 +106,39 @@
   }
 }
 
+.subtitleError {
+  color: var(--red);
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+}
+
+/* Caption lines — reserve height so the layout doesn't jump when they appear. */
+.captions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-height: 44px;
+  max-width: 520px;
+}
+
+.captionCompanion {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.captionUser {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .controls {
   display: flex;
   align-items: center;
   gap: var(--space-xl);
   margin-top: var(--space-md);
-}
-
-.control {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-sm);
 }
 
 .circleBtn {
@@ -142,10 +180,61 @@
   color: var(--accent-text);
 }
 
-.controlLabel {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
+
+/* ── Voice-module install gate (260705) ─────────────────────────────────────
+   Overlay shown before the first-ever call: consent → progress bar → dial. */
+
+.installScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--window) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.installModal {
+  width: min(420px, calc(100% - 2 * var(--space-lg)));
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.installTitle {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.installBody {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.installActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.installBar {
+  height: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--window);
+  overflow: hidden;
+}
+
+.installBarFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms var(--ease);
 }

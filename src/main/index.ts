@@ -23,6 +23,7 @@ import { createMainWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
+import { isCallActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initUpdater } from './updater';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration } from './migration';
@@ -173,6 +174,42 @@ async function emitPlaySession(characterId: string, durationMs: number): Promise
     ts: Date.now(),
     event: { kind: 'play', game: 'minecraft', durationMs },
   });
+}
+
+/** Voice calls (260705): post the "You and <name> called for <duration>" row.
+ *  Fired from the voice:call-state hang-up when the renderer reports how long
+ *  the call was actually live (never for calls that failed to connect). */
+async function emitCallSession(characterId: string, durationMs: number): Promise<void> {
+  let name = 'your companion';
+  try {
+    const { getCharacter } = await import('./characterStore');
+    const c = await getCharacter(characterId);
+    if (c?.name) name = c.name;
+  } catch {
+    /* fall back to the generic name */
+  }
+  await appendChatMessage(characterId, {
+    id: randomUUID(),
+    role: 'system',
+    text: `You and ${name} called for ${formatPlayDuration(durationMs)}.`,
+    ts: Date.now(),
+    event: { kind: 'call', durationMs },
+  });
+}
+
+/** Voice calls (260705): the companion hung up (end_call) — clear main-side
+ *  call state and tell the renderer, which finishes speaking the goodbye then
+ *  tears the call down (and reports connectedMs back for the call-log row). */
+function endVoiceCallFromCompanion(characterId: string): void {
+  void (async () => {
+    try {
+      const { setCallActive } = await import('./voice/callState');
+      setCallActive(characterId, false);
+    } catch { /* state module unavailable — renderer teardown still proceeds */ }
+  })();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.voice.callEnded, { characterId });
+  }
 }
 
 // 260703: the "joined your world" system line was removed — the floating
@@ -493,6 +530,18 @@ async function bootstrap(): Promise<void> {
     }
   });
 
+  // Voice calls (260705): a call cannot survive its renderer — the mic and
+  // audio playback live there. Sweep the call flags on any main-frame
+  // navigation (incl. reload/HMR) and on renderer death, telling any live bot
+  // to resume normal in-game chat; without this a mid-call reload leaves the
+  // bot muted in minecraft chat forever.
+  const sweepVoiceCalls = (): void => {
+    for (const id of activeCallIds()) supervisor?.setVoiceCall(id, false);
+    clearAllCalls();
+  };
+  mainWindow.webContents.on('did-navigate', sweepVoiceCalls);
+  mainWindow.webContents.on('render-process-gone', sweepVoiceCalls);
+
   // 3. LAN watcher (D-21 — single instance for the whole app session)
   lanWatcherHandle = watchLan({
     onUpdate: broadcastLan,
@@ -517,6 +566,9 @@ async function bootstrap(): Promise<void> {
         role: 'companion',
         text: trimmed,
         ts: Date.now(),
+        // An in-game say() routed up while a call is open is SPOKEN — hidden
+        // in the chat UI like every other call line (ChatMessage.voice).
+        ...(isCallActive(characterId) ? { voice: true } : {}),
       });
     },
     sendLog: broadcastLog,
@@ -537,6 +589,12 @@ async function bootstrap(): Promise<void> {
       }
     },
     emitHardStop: emitCreditsHardStop,
+    // Voice calls (260705): lets summon-ready re-apply an open call to a bot
+    // that spawned mid-call (launch()-from-a-call handoff).
+    isVoiceCallActive: isCallActive,
+    // Voice calls (260705): the in-game bot called end_call() — hang up the
+    // player's call (the renderer finishes speaking the goodbye first).
+    onCallEndRequested: endVoiceCallFromCompanion,
   });
 
   // 4b. Per-profile scope switcher (260603). Re-points the local data scope
@@ -604,6 +662,27 @@ async function bootstrap(): Promise<void> {
         }
       })();
     },
+    // Voice calls (260705): a live call ended — post the "You and X called for
+    // Y" system row (renderer supplies how long audio actually flowed).
+    notifyCallEnded: (id, connectedMs) => {
+      void emitCallSession(id, connectedMs);
+    },
+    // Voice calls (260705): the call went live — companion greets first. An
+    // in-game session takes it over the port (say() routes into the call); an
+    // idle character runs a standalone greeting turn whose replies are pushed
+    // (and spoken by the renderer's TTS hook).
+    greetVoiceCall: (id) => {
+      if (onlineIds.has(id) && supervisor?.greetVoiceCall(id)) return;
+      void (async () => {
+        try {
+          const { sendVoiceGreetingTurn } = await import('./chat/chatService');
+          const replies = await sendVoiceGreetingTurn(id);
+          for (const r of replies) pushChatMessage(id, r);
+        } catch (err) {
+          console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);
+        }
+      })();
+    },
   });
 
   // 5b. Auth state broadcast (initial replay + Supabase auth-event
@@ -668,6 +747,15 @@ async function bootstrap(): Promise<void> {
     );
   }
 }
+
+// Voice calls (260705): expose SharedArrayBuffer in the renderer so the local
+// Whisper dictation (onnxruntime WASM in a worker) can run MULTI-threaded —
+// single-threaded transcription is the longest fixed cost in the voice-reply
+// loop. Chromium normally gates SAB behind cross-origin isolation (COOP/COEP
+// headers), which our file://-served renderer can't opt into; the feature
+// flag re-exposes it. Safe here: the renderer only loads our own bundled
+// content, never arbitrary web pages. Must be set before app ready.
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
 // Single-instance lock — second launch focuses existing window
 const gotLock = app.requestSingleInstanceLock();

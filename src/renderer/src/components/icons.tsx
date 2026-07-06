@@ -441,6 +441,26 @@ export const PhoneIcon: React.FC<IconProps> = ({ size = 18 }) => (
 );
 
 /**
+ * PlayIcon — voice-preview play control (VoicePicker). Filled triangle,
+ * inherits currentColor.
+ */
+export const PlayIcon: React.FC<IconProps> = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M7 4.5v15l13-7.5z" />
+  </svg>
+);
+
+/**
+ * StopIcon — voice-preview stop control (VoicePicker). Filled square,
+ * inherits currentColor.
+ */
+export const StopIcon: React.FC<IconProps> = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <rect x={6} y={6} width={12} height={12} rx={1.5} />
+  </svg>
+);
+
+/**
  * PhoneOffIcon — voice-call "hang up" control (rotated handset + slash). Filled
  * red via currentColor at the call site.
  */
@@ -496,6 +516,45 @@ export const MicOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
     <path d="M15 12.4A3 3 0 0 1 9 11" />
     <path d="M5 11a7 7 0 0 0 10.3 6.2M19 11a7 7 0 0 1-.3 2" />
     <path d="M12 18v3" />
+    <path d="M3 3l18 18" />
+  </svg>
+);
+
+/** HeadphonesIcon — voice-call deafen control (hearing state). */
+export const HeadphonesIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+    <rect x={3} y={14} width={4} height={6} rx={1.5} />
+    <rect x={17} y={14} width={4} height={6} rx={1.5} />
+  </svg>
+);
+
+/** HeadphonesOffIcon — voice-call deafen control (deafened, with slash). */
+export const HeadphonesOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 14v-2a8 8 0 0 1 13.6-5.7M20 12v2" />
+    <rect x={3} y={14} width={4} height={6} rx={1.5} />
+    <path d="M17 14h4v6h-4z" />
     <path d="M3 3l18 18" />
   </svg>
 );

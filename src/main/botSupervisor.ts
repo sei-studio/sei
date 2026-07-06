@@ -158,6 +158,21 @@ export interface BotSupervisorOptions {
    * instead of a bot that joins and does nothing.
    */
   emitHardStop: (info: CreditsHardStopEvent) => void;
+  /**
+   * Voice calls (260705): is a voice call currently open for this character?
+   * Read on summon-ready so a bot that spawns MID-call (the launch()-from-a-
+   * call handoff) immediately gets {type:'voice-call', active:true} — without
+   * this, its say() lines would land in in-game chat instead of the call.
+   * Wired to voice/callState.isCallActive; optional so tests can omit it.
+   */
+  isVoiceCallActive?: (characterId: string) => boolean;
+  /**
+   * Voice calls (260705): the in-game bot called end_call() — it wants the
+   * player's voice call hung up (it stays in the game). Main clears the call
+   * state and pushes voice:call-ended to the renderer, which drains the TTS
+   * queue (the farewell) before tearing the call down. Optional — no-ops.
+   */
+  onCallEndRequested?: (characterId: string) => void;
 }
 
 export interface BotSupervisor {
@@ -198,6 +213,23 @@ export interface BotSupervisor {
    * sources of truth agree.
    */
   switchBackend(kind: AiBackendKind): Promise<void>;
+  /**
+   * Voice calls (260705): forward the call open/hang-up toggle into a live
+   * game session ({type:'voice-call', active} on port1). While active the
+   * bot's say() lines route up to the chat surface (→ TTS) instead of in-game
+   * chat, and each turn carries the voice-call primer. Returns true when a
+   * live session took the message; false (no-op) when the character has no
+   * session — the mode is also re-applied on summon-ready via
+   * opts.isVoiceCallActive, so calling this on an idle character is fine.
+   */
+  setVoiceCall(characterId: string, active: boolean): boolean;
+  /**
+   * Voice calls (260705): the renderer's call pipeline just went live — ask a
+   * live in-game session to greet the player first ({type:'voice-call-greet'}
+   * on port1). Returns false when the character has no live session (the
+   * caller runs the standalone chat-brain greeting instead).
+   */
+  greetVoiceCall(characterId: string): boolean;
 }
 
 interface ActiveSession {
@@ -519,7 +551,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // Bridge the user-facing Looking (vision) mode from UserConfig into the
     // bot's config.vision at fork time. The renderer never talks to the bot
     // ConfigSchema directly — main is the translator. The remaining vision
-    // knobs (cadence, image_quality, resolution_px cap, explicit_cap_per_hour)
+    // knobs (cadence, image_quality, resolution_px cap)
     // come from the bot config / orchestrator defaults.
     const visionMode = userCfg.vision_mode ?? 'on-demand';
     // Appearance & feel: bridge the "Realistic typing" toggle into the bot so
@@ -678,9 +710,23 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         opts.onBotChat?.(characterId, (data as { text?: string }).text ?? '');
         return;
       }
+      // Voice calls (260705): the in-game bot called end_call() — hang up the
+      // player's call (the bot stays in the game). Not a BotStatus event.
+      if ((data as { type?: string }).type === 'call-end') {
+        opts.onCallEndRequested?.(characterId);
+        return;
+      }
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
+        // Voice calls (260705): if the player has a call open with this
+        // character (it launch()ed into the world mid-call), apply the mode
+        // now — the bot only learns it over the port.
+        try {
+          if (opts.isVoiceCallActive?.(characterId)) {
+            port1.postMessage({ type: 'voice-call', active: true });
+          }
+        } catch { /* port raced closed — the call toggle will re-send */ }
         // Stamp last_launched on successful connect — never-launched personas
         // still show '—' until they reach summon-ready at least once.
         void (async () => {
@@ -1153,6 +1199,30 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (!session) return false;
       try {
         session.port1.postMessage({ type: 'sei-chat', from: payload.from, text: payload.text });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    // Voice calls (260705): forward the open/hang-up toggle into the live
+    // session. Same port-may-be-closed tolerance as sendSeiChat.
+    setVoiceCall: (characterId: string, active: boolean): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'voice-call', active });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    // Voice calls (260705): ask a live in-game session to greet the player
+    // now that the call pipeline is live. False → caller uses the chat brain.
+    greetVoiceCall: (characterId: string): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'voice-call-greet' });
         return true;
       } catch {
         return false;

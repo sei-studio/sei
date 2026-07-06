@@ -23,11 +23,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 // node: prefix imports — vitest runs in node; declare via @ts-expect-error
 // since the renderer tsconfig.web.json doesn't ship node types.
-// @ts-expect-error node module under renderer tsconfig
 import { readFileSync } from 'node:fs';
-// @ts-expect-error node module under renderer tsconfig
 import { fileURLToPath } from 'node:url';
-// @ts-expect-error node module under renderer tsconfig
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

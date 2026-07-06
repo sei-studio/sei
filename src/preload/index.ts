@@ -47,7 +47,7 @@ const api: RendererApi = {
   // Phase 11 D-16 — public/private toggle.
   charsSetShared: (args) => ipcRenderer.invoke(IpcChannel.chars.setShared, args),
 
-  // Pre-flight daily character-creation quota check (persona_daily cap).
+  // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
   checkCreateQuota: () => ipcRenderer.invoke(IpcChannel.chars.checkCreateQuota),
 
   // Phase 11 plan 17 — cloud-character id set for the LOCAL ONLY chip.
@@ -83,6 +83,24 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, push: ChatMessagePush) => cb(push);
     ipcRenderer.on(IpcChannel.chat.message, handler);
     return () => ipcRenderer.off(IpcChannel.chat.message, handler);
+  },
+
+  // Voice calls (260705)
+  voiceTts: (args) => ipcRenderer.invoke(IpcChannel.voice.tts, args),
+  voiceTtsStream: (args) => ipcRenderer.invoke(IpcChannel.voice.ttsStream, args),
+  onVoiceTtsChunk(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.voice.ttsChunk, handler);
+    return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
+  },
+  voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
+  voiceGreet: (characterId) => ipcRenderer.invoke(IpcChannel.voice.greet, characterId),
+  voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
+  voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
+  onVoiceCallEnded(cb: (push: { characterId: string }) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, push: { characterId: string }) => cb(push);
+    ipcRenderer.on(IpcChannel.voice.callEnded, handler);
+    return () => ipcRenderer.off(IpcChannel.voice.callEnded, handler);
   },
 
   // User profile (Phase 19)

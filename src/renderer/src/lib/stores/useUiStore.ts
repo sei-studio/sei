@@ -159,6 +159,16 @@ interface UiState {
    * MinimizedCall widget. Reset to false whenever a call ends.
    */
   callMuted: boolean;
+  /**
+   * Deafen state for the active voice call (260705): silences everything the
+   * call plays (companion voice + ambience) without touching the mic. Same
+   * home as callMuted for the same reasons (survives minimize, shared
+   * surfaces). Reset to false whenever a call ends.
+   */
+  callDeafened: boolean;
+  /** Appearance & feel: live captions on the voice-call screen (persisted via
+   * UserConfig.call_captions; App.tsx hydrates). Off by default. */
+  callCaptions: boolean;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -181,6 +191,10 @@ interface UiState {
   restoreCall: () => void;
   /** #6: set the active call's mute state (shared by both call surfaces). */
   setCallMuted: (muted: boolean) => void;
+  /** 260705: set the active call's deafen state (output silence). */
+  setCallDeafened: (deafened: boolean) => void;
+  /** Appearance & feel: set the call-captions toggle. */
+  setCallCaptions: (v: boolean) => void;
   /** #6: hang up / dismiss the call (clears the widget + resets mute). */
   endCall: () => void;
 }
@@ -203,6 +217,8 @@ export const useUiStore = create<UiState>((set) => ({
   chatReturnId: null,
   minimizedCall: null,
   callMuted: false,
+  callDeafened: false,
+  callCaptions: false,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
   navigate: (view) =>
@@ -235,5 +251,7 @@ export const useUiStore = create<UiState>((set) => ({
         : {},
     ),
   setCallMuted: (muted) => set({ callMuted: muted }),
-  endCall: () => set({ minimizedCall: null, callMuted: false }),
+  setCallDeafened: (deafened) => set({ callDeafened: deafened }),
+  setCallCaptions: (v) => set({ callCaptions: v }),
+  endCall: () => set({ minimizedCall: null, callMuted: false, callDeafened: false }),
 }));

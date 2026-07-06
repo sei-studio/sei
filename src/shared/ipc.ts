@@ -116,13 +116,23 @@ export interface ChatMessage {
   /** Set when this message is a reply that quotes an earlier one (Discord-style). */
   replyTo?: ChatReplyRef;
   /**
+   * Voice calls (260705): true when this message was part of a live voice call
+   * (a transcribed utterance or a spoken companion line). Persisted — the
+   * model still reads it as conversation history — but HIDDEN in the chat UI:
+   * the transcript shows only the "You and X called for Y" row, not a wall of
+   * caption spam.
+   */
+  voice?: boolean;
+  /**
    * Set on a `system` row that records a finished play session, so the UI can
    * render it with the game icon (Discord-style "You and X played Minecraft for
    * Y"). `text` carries the human-readable line; `event` carries the structured
    * data. Also read by the chat brain (toMessages) as shared history so the
    * companion knows you actually played, not just talked about it.
+   * `call` (260705) is the same pattern for a finished voice call ("You and X
+   * called for Y"), rendered with a phone icon.
    */
-  event?: { kind: 'play'; game: string; durationMs: number };
+  event?: { kind: 'play'; game: string; durationMs: number } | { kind: 'call'; durationMs: number };
 }
 
 /** Result of a chat turn. `launch` is set when the companion called launch(). */
@@ -146,6 +156,36 @@ export interface ChatSendResult {
     /** 'summoning' → the bot is joining a LAN world; 'lan-not-open' → could not join. */
     status: 'summoning' | 'lan-not-open';
   };
+  /**
+   * Voice calls (260705): true when the companion called end_call() this turn —
+   * it wants to hang up. The renderer speaks the replies (the goodbye) first,
+   * then ends the call once the TTS queue drains.
+   */
+  endCall?: boolean;
+}
+
+/** One curated-pool voice, renderer-safe (creation-flow voice picker, 260705). */
+export interface VoiceInfo {
+  /** ElevenLabs voice id (what gets persisted as metadata.voiceId). */
+  id: string;
+  /** Human display name ("Sarah"). */
+  label: string;
+  gender: 'male' | 'female' | 'neutral' | string;
+  age: 'young' | 'adult' | 'elder' | string;
+  tags: string[];
+  /** Few-word sound description ("upbeat and cheery, young British"). */
+  vibe: string;
+}
+
+/** One voice:tts-chunk push (streaming TTS, 260705). Exactly one terminal
+ * field is eventually sent per stream: done:true after the last chunk, or
+ * error (sentinel-prefixed message) on a mid-stream failure. */
+export interface VoiceTtsChunkPush {
+  streamId: string;
+  /** Encoded audio/mpeg bytes (absent on terminal pushes). */
+  chunk?: ArrayBuffer;
+  done?: boolean;
+  error?: string;
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
@@ -757,10 +797,11 @@ export interface RendererApi {
   charsSetShared(args: { id: string; shared: boolean }): Promise<void>;
 
   /**
-   * Pre-flight daily character-creation quota check (persona_daily cap).
-   * Called before entering the new-character flow so a maxed-out user sees a
-   * "come back tomorrow" modal instead of failing mid-expansion. Best-effort —
-   * returns { blocked:false } for BYOK users and on any error.
+   * Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY,
+   * local rolling-24h log — all backends, BYOK included). Called before
+   * entering the new-character flow so a maxed-out user sees a "come back
+   * tomorrow" modal instead of failing mid-flow. Best-effort — returns
+   * { blocked:false } on any error; the chars:save create path enforces.
    */
   checkCreateQuota(): Promise<{ blocked: boolean; resetsAt: string | null }>;
 
@@ -824,6 +865,62 @@ export interface RendererApi {
    * lines. The renderer appends them to the transcript (deduped by id).
    */
   onChatMessage(cb: (push: ChatMessagePush) => void): Unsubscribe;
+
+  // --- Voice calls (260705) ---
+  /**
+   * Synthesize a companion's spoken line in its assigned ElevenLabs voice.
+   * Resolves to encoded audio bytes (audio/mpeg) for renderer playback. Main
+   * resolves the character's voice (metadata.voiceId, with a deterministic
+   * fallback assignment for pre-voice characters) and routes through the Sei
+   * proxy with the Supabase JWT — the ElevenLabs key never reaches the client.
+   * Rejects with sentinel-prefixed messages: VOICE_NO_SESSION (signed out),
+   * VOICE_RATE_LIMITED (daily voice allowance), VOICE_NOT_CONFIGURED,
+   * VOICE_TTS_FAILED.
+   */
+  voiceTts(args: { characterId: string; text: string }): Promise<ArrayBuffer>;
+  /**
+   * Streaming variant (260705): main starts the same synthesis but resolves
+   * as soon as the upstream responds, with a stream id; the audio then
+   * arrives as ordered onVoiceTtsChunk pushes ({chunk}* then {done:true}, or
+   * {error} on a mid-stream failure). First audio reaches the speaker as soon
+   * as the first mp3 chunk lands instead of after the full clip downloads.
+   * Rejects with the same sentinel-prefixed messages as voiceTts when the
+   * request fails before any audio flows.
+   */
+  voiceTtsStream(args: { characterId: string; text: string }): Promise<{ streamId: string }>;
+  /** Chunks/completions for voiceTtsStream (one subscription, ids multiplex). */
+  onVoiceTtsChunk(cb: (push: VoiceTtsChunkPush) => void): Unsubscribe;
+  /**
+   * Mark a voice call open (active:true) or hung up (active:false) for a
+   * character. Main records it (voice/callState) so idle-chat prompts carry
+   * the voice-call primer, and forwards {type:'voice-call'} into a live game
+   * session so say() reroutes to the call instead of in-game chat. The
+   * supervisor re-applies the state on summon-ready, so a companion that
+   * launch()es into the world mid-call keeps speaking to the call.
+   *
+   * `connectedMs` (hang-up only): how long the call was LIVE (audio flowing),
+   * renderer-measured. When present and >0, main posts the "You and X called
+   * for Y" system row to the chat transcript. Omitted when the call never
+   * connected (error before live) so a failed dial never logs a call.
+   */
+  voiceCallSetActive(args: { characterId: string; active: boolean; connectedMs?: number }): Promise<void>;
+  /**
+   * The call pipeline just went LIVE — ask the companion to speak first (like
+   * greeting on spawn). In-game sessions get a {type:'voice-call-greet'} port
+   * event; idle characters run a standalone chat-brain greeting turn whose
+   * replies arrive over the chat:message push (and are spoken via TTS).
+   */
+  voiceGreet(characterId: string): Promise<void>;
+  /**
+   * Subscribe to main-initiated call hang-ups: the companion called
+   * end_call() (from in-game or from the idle chat brain). The renderer
+   * finishes speaking whatever is queued (the goodbye), then ends the call.
+   */
+  onVoiceCallEnded(cb: (push: { characterId: string }) => void): Unsubscribe;
+  /** The curated voice pool (labels + vibe blurbs) for the creation picker. */
+  voiceListVoices(): Promise<VoiceInfo[]>;
+  /** Speak the canned preview line in an arbitrary pool voice (picker). */
+  voicePreview(args: { voiceId: string }): Promise<ArrayBuffer>;
 
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
@@ -1313,7 +1410,7 @@ export const IpcChannel = {
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
     setShared: 'chars:set-shared',
-    // Pre-flight daily character-creation quota check (persona_daily cap).
+    // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
     // Renderer calls this before entering the new-character flow.
     checkCreateQuota: 'chars:check-create-quota',
     // Phase 11 plan 17 — list the UUIDs of the signed-in user's cloud
@@ -1373,6 +1470,24 @@ export const IpcChannel = {
      * send() round-trip — the live game bot replying to a routed message, or a
      * deterministic "joined/left your world" system line. */
     message: 'chat:message',
+  },
+  voice: {
+    /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
+    tts: 'voice:tts',
+    /** Invoke: streaming synthesis ({characterId, text} → {streamId}); audio follows on ttsChunk. */
+    ttsStream: 'voice:tts-stream',
+    /** Push (main → renderer): VoiceTtsChunkPush — ordered audio chunks for a ttsStream. */
+    ttsChunk: 'voice:tts-chunk',
+    /** Invoke: open/hang-up a voice call ({characterId, active, connectedMs?}). */
+    callState: 'voice:call-state',
+    /** Invoke: the call went live — companion should greet first (characterId). */
+    greet: 'voice:greet',
+    /** Push (main → renderer): companion hung up via end_call() ({characterId}). */
+    callEnded: 'voice:call-ended',
+    /** Invoke: curated voice pool for the creation picker → VoiceInfo[]. */
+    list: 'voice:list',
+    /** Invoke: preview an arbitrary pool voice ({voiceId}) → ArrayBuffer. */
+    preview: 'voice:preview',
   },
   user: {
     getProfile: 'user:get-profile',

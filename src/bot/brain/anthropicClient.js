@@ -2,13 +2,15 @@ import Anthropic from '@anthropic-ai/sdk'
 import { logHaikuQuery, logHaikuResponse, logHaikuError } from './log.js'
 
 /**
- * Per-call URL path for the proxy's per-hour vision-cap route (15-02, VIS-07/D-09).
+ * Per-call URL path for the proxy's explicit-vision route (15-02, VIS-07/D-09).
  * Passed as `call({ ..., path: VISION_MESSAGES_PATH })` for EXACTLY the one LLM
  * turn that follows an explicit `visualize`, and ONLY in cloud-proxy mode — the
- * SDK joins this onto the proxy baseURL (api.sei.gg, no path component) so that
- * single request hits the `vision_hourly` gate. Single-sourced here so the
- * orchestrator imports the literal from ONE place (no string drift). BYOK/local
- * providers never set it (D-11: uncapped).
+ * SDK joins this onto the proxy baseURL (api.sei.gg, no path component).
+ * 260705: the proxy's vision_hourly cap was REMOVED (explicit renders are
+ * metered by the credit ledger like any turn); the route survives purely so
+ * vision traffic stays separately observable server-side. Single-sourced here
+ * so the orchestrator imports the literal from ONE place (no string drift).
+ * BYOK/local providers never set it (D-11).
  */
 export const VISION_MESSAGES_PATH = '/vision/v1/messages'
 
@@ -203,10 +205,9 @@ export function createAnthropicClient(config) {
           // deadline controller is always the authoritative cap.
           const remainingMs = budgetMs - (Date.now() - startedAt)
           // VIS-07/D-09: a per-call `path` (set only on the post-visualize turn
-          // in cloud mode) routes this single request to the proxy's vision-cap
-          // gate; undefined keeps the SDK default `/v1/messages`. The retry
-          // policy is untouched — a 429 from the vision gate re-hits the SAME
-          // path once via the rescue retry (accepted; the gate counts server-side).
+          // in cloud mode) routes this single request to the proxy's vision
+          // route (observability only since 260705 — no hourly cap); undefined
+          // keeps the SDK default `/v1/messages`.
           const resp = await sdk.messages.create(req, { signal: ctrl.signal, timeout: Math.max(1_000, remainingMs + 2_000), ...(path ? { path } : {}) })
           const elapsedMs = Date.now() - startedAt
           const content = resp.content ?? []
@@ -243,7 +244,7 @@ export function createAnthropicClient(config) {
           // the deployed proxy doesn't expose /vision/v1/messages (route added
           // client-side ahead of the proxy rollout). Strip the override and
           // re-hit the default /v1/messages instead of dropping the turn — the
-          // hourly vision cap is a proxy-side guard, not worth a dead reply
+          // vision route is a proxy-side observability split, not worth a dead reply
           // after a successful render. Cannot loop: `path` is cleared before
           // the continue, so this branch fires at most once per call. It is a
           // REROUTE, not a retry — it deliberately does not touch
