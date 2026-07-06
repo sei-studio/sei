@@ -87,8 +87,16 @@ describe('libraryCharacterCount', () => {
     ).toBe(3); // mine + legacy + invited; the two hovered caches don't count
   });
 
-  it('counts foreign-owned chars when signed out (no owner comparison possible)', () => {
-    const chars = [{ id: 'x', is_default: false, owner: 'someone-else' }];
+  it('excludes foreign-owned chars when signed out (mirrors Home; owner-stamped rows are hidden)', () => {
+    // Signed out you cannot invite from World, so a cached copy of someone
+    // else's public character can never be a party member — countsAsHomeSlot
+    // hides it (returns owner == null), and the count must agree with the grid
+    // or chars:save rejects on a visibly non-full Home. Only legacy null-owner
+    // rows count.
+    const chars = [
+      { id: 'foreign', is_default: false, owner: 'someone-else' },
+      { id: 'legacy', is_default: false, owner: null },
+    ];
     expect(libraryCharacterCount(chars, { added_default_ids: [] }, null)).toBe(1);
   });
 });

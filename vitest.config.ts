@@ -1,6 +1,17 @@
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Mirror the renderer build aliases (electron.vite.config.ts) so a test that
+  // actually imports a renderer module resolves its `@shared` / `@` value
+  // imports at runtime (a bare `import type` is erased, but a value import like
+  // countsAsHomeSlot is not).
+  resolve: {
+    alias: {
+      '@': path.resolve('src/renderer/src'),
+      '@shared': path.resolve('src/shared'),
+    },
+  },
   test: {
     exclude: [
       '**/node_modules/**',

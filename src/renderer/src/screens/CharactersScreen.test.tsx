@@ -85,10 +85,15 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     // The membership rule itself lives in the shared homeLibrary module
     // (260706) so IconRail applies the identical predicate.
     expect(source.includes('isHomeCharacter')).toBe(true);
+    // The membership rule itself is the single shared predicate countsAsHomeSlot
+    // (src/shared/characterSchema.ts); homeLibrary delegates to it so the Home
+    // grid and the main-process slot counter can never diverge (260706).
     const lib = readFileSync(HOME_LIB_PATH, 'utf-8');
-    expect(lib.includes('is_default === true')).toBe(true);
+    expect(lib.includes('countsAsHomeSlot')).toBe(true);
+    const schema = readFileSync(SCHEMA_PATH, 'utf-8');
+    expect(schema.includes('is_default === true')).toBe(true);
     // Strict mismatch against currentUserId hides foreign-owned chars.
-    expect(lib.includes('c.owner !== currentUserId')).toBe(true);
+    expect(schema.includes('c.owner !== opts.currentUserId')).toBe(true);
   });
 
   it('Test 6: WorldGrid keeps the search field', () => {
@@ -185,8 +190,11 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
   });
 
   it('Test 14: Home filter uses added_default_ids (defaults hidden unless invited)', () => {
+    // The rule lives in the shared countsAsHomeSlot predicate now; homeLibrary
+    // and CharactersScreen must carry no trace of the old removed_default_ids.
+    const schema = readFileSync(SCHEMA_PATH, 'utf-8');
+    expect(schema.includes('addedDefaultIds.has(c.id)')).toBe(true);
     const lib = readFileSync(HOME_LIB_PATH, 'utf-8');
-    expect(lib.includes('return addedDefaultIds.has(c.id);')).toBe(true);
     expect(lib.includes('removedDefaultIds')).toBe(false);
     const source = readFileSync(TSX_PATH, 'utf-8');
     expect(source.includes('removedDefaultIds')).toBe(false);
