@@ -261,7 +261,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
       'utf-8',
     );
     expect(characterPage.includes('charsAddToLibrary')).toBe(true);
-    expect(characterPage.includes('Add to library')).toBe(true);
+    expect(characterPage.includes('Invite to party')).toBe(true);
   });
 
   it('Test 20: World first two rows gate reveal on portrait load (group reveal)', () => {

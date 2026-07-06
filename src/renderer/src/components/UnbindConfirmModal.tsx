@@ -29,7 +29,7 @@ export function UnbindConfirmModal({
   return (
     <ModalShell title={`Unbind ${characterName}?`} onClose={onCancel}>
       <p className={styles.body}>
-        {characterName} will be released from your library. Their memories stay with them.
+        {characterName} will be released from your party. Their memories stay with them.
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel}>

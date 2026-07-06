@@ -72,7 +72,7 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
       <div className={styles.fallback}>
         <div className={styles.fallbackCol}>
           <div className={styles.heading}>Your companion is ready</div>
-          <p className={styles.intro}>They’re waiting in your library.</p>
+          <p className={styles.intro}>They’re waiting in your party.</p>
           <div className={styles.actions}>
             <Button kind="accent" size="lg" onClick={() => navigate({ kind: 'home' })}>
               Go home

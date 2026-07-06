@@ -148,7 +148,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
     // omitted). The user must hit "Maybe later" or "Done" to dismiss.
     <ModalShell title="Upload local companions?" width={460} escClose={false}>
       <p className={styles.body}>
-        These companions are saved on this machine only. Upload any to your cloud library to use
+        These companions are saved on this machine only. Upload any to your cloud party to use
         them on other devices.
       </p>
       <p className={styles.body}>Memory currently cannot be transferred to other devices.</p>
@@ -157,9 +157,9 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
 
       {phase === 'idle' && !cloudListOk && (
         <p className={styles.warnBanner}>
-          Couldn&apos;t fetch your cloud library, so we can&apos;t tell which of these are already
+          Couldn&apos;t fetch your cloud party, so we can&apos;t tell which of these are already
           synced. Uploading is safe (duplicates are ignored), but some rows may already be in your
-          cloud library.
+          cloud party.
         </p>
       )}
 

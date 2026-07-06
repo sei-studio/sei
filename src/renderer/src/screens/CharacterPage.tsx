@@ -35,6 +35,7 @@ import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ProactivenessBar } from '../components/ProactivenessBar';
 import { getProactiveness } from '../lib/proactiveness';
+import { formatDate } from '../lib/formatDate';
 import { BackIcon, GearIcon, RotateIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
 import { ERROR_COPY } from '../lib/errors';
@@ -54,19 +55,6 @@ function fmtMs(ms: number): string {
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return '-';
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return '-';
-  }
 }
 
 function fmtUptime(uptimeMs: number): string {
@@ -518,7 +506,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     // modal the share flow uses (item 5). Re-adding a bundled default is
     // local-only and needs no account, so it falls through.
     if (isWorldPreview && authState.kind !== 'signed_in') {
-      setUpgradeFraming('add this companion to your library');
+      setUpgradeFraming('invite this companion to your party');
       setShowSignIn(true);
       return;
     }
@@ -730,7 +718,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             <div className={styles.stats}>
               <div className={styles.stat}>
                 <div className={`u-lbl ${styles.statEyebrow}`}>Bonded</div>
-                <div className={styles.statValue}>{fmtDate(character.created)}</div>
+                <div className={styles.statValue}>{formatDate(character.created)}</div>
               </div>
               <div className={styles.stat}>
                 <div className={`u-lbl ${styles.statEyebrow}`}>Played</div>
@@ -738,7 +726,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               </div>
               <div className={styles.stat}>
                 <div className={`u-lbl ${styles.statEyebrow}`}>Last launch</div>
-                <div className={styles.statValue}>{fmtDate(character.last_launched)}</div>
+                <div className={styles.statValue}>{formatDate(character.last_launched)}</div>
               </div>
               {/* Reset memory moved into the deploy row's settings (gear) menu. */}
             </div>
@@ -776,7 +764,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 void onAddToLibraryClick();
               }}
             >
-              Add to library
+              Invite to party
             </Button>
           ) : (
             <>
@@ -914,8 +902,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               </h3>
               <p className={styles.confirmBody}>
                 {shareConfirm === 'going_public'
-                  ? 'Other players can find and invite it from the public library.'
-                  : 'It is no longer visible in the public library.'}
+                  ? 'Other players can find and invite it from the World tab.'
+                  : 'It is no longer visible in the World tab.'}
               </p>
               <ModalFooter>
                 <Button kind="primary" size="md" onClick={closeShareModal}>

@@ -479,7 +479,7 @@ export function AddCharacterScreen(): React.ReactElement {
     return (
       <QuestionShell
         title="Visible to other players?"
-        hint="Public companions appear in the World tab and anyone can connect them. Private stays only in your library."
+        hint="Public companions appear in the World tab and anyone can connect them. Private stays only in your party."
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
