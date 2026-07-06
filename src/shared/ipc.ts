@@ -909,7 +909,7 @@ export interface RendererApi {
   chatClear(characterId: string): Promise<void>;
   /**
    * Signal that the chat surface was opened for a character. Main decides whether
-   * a first-meeting greeting fires (unique companion, empty transcript, never
+   * a first-meeting greeting fires (any companion kind, empty transcript, never
    * chatted) and returns any greeting replies to append; returns [] otherwise.
    * Safe to call on every empty-history open — main no-ops when ineligible.
    */

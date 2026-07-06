@@ -944,7 +944,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // First-meeting greeting (thoughts consumer #1). The renderer calls this when
-  // it loads an empty transcript; main decides eligibility (unique companion,
+  // it loads an empty transcript; main decides eligibility (any companion kind,
   // empty transcript, never chatted) and returns any greeting replies. A fresh
   // world-detection pass first so the greeting's prompt reflects live LAN truth,
   // same as chat:send.

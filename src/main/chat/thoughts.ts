@@ -10,9 +10,10 @@
  * user side, then evaporate.
  *
  * Three current uses:
- *   1. First meeting. When the player first opens chat with a freshly matched
- *      unique companion, the companion speaks first (THOUGHT_FIRST_MEETING),
- *      pushed via the queue and drained in sendFirstMeetingTurn.
+ *   1. First meeting. When the player first opens chat with a freshly met
+ *      companion of ANY kind (unique / custom / world), the companion speaks
+ *      first (THOUGHT_FIRST_MEETING), pushed via the queue and drained in
+ *      sendFirstMeetingTurn.
  *   2. Joining a game. The "on my way in" steering for an open-world launch
  *      (THOUGHT_JOINING_GAME). This one lives here as the single seam, though its
  *      consumer (resolveLaunch) delivers it as a mid-turn tool_result rather than
@@ -68,8 +69,11 @@ export function renderThoughtNote(thoughts: string[]): string {
 }
 
 /**
- * First meeting. Pushed when the player first opens chat with a freshly matched
- * unique companion; the companion speaks first. The stay-in-character clause is
+ * First meeting. Pushed when the player first opens chat with a freshly met
+ * companion of any kind (unique / custom / world); the companion speaks first.
+ * Deliberately kind-agnostic: every companion is "just summoned by this human"
+ * from its own perspective, and its specific persona rides the system prompt, so
+ * this one constant serves all three. The stay-in-character clause is
  * load-bearing: a gruff companion should NOT act curious just because the note
  * suggests asking about the player.
  */

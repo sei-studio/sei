@@ -535,19 +535,26 @@ const firstMeetingInflight = new Map<string, Promise<ChatMessage[]>>();
 
 /**
  * First-meeting greeting (thoughts consumer #1). When the player first opens chat
- * with a freshly matched UNIQUE companion, the companion speaks FIRST, steered by
- * THOUGHT_FIRST_MEETING. No-op (returns []) unless ALL hold:
- *   - the character exists and is kind 'unique',
+ * with a freshly met companion, the companion speaks FIRST, steered by
+ * THOUGHT_FIRST_MEETING. Applies to ALL three companion kinds — 'unique'
+ * (system-cast), 'custom' (user-authored), and 'world' (invited from the World
+ * tab, incl. bundled defaults): each is "just summoned by this human" from its
+ * own perspective, and its persona (already folded into the system prompt by
+ * prepareChatTurn) is what makes the greeting sound like the right character, so
+ * one shared steering constant covers all three with no per-kind LLM call. No-op
+ * (returns []) unless BOTH hold:
  *   - the persisted transcript is EMPTY, and
  *   - the character has never been chatted with (!last_chatted), which guards the
  *     transcript-cleared case, where "you were just summoned" would be a lie.
  * Single-flight per character. We do NOT stamp last_chatted (the player has not
  * spoken yet); the greeting's own persisted reply makes the transcript non-empty,
- * so the next open sees a non-empty transcript and the turn won't refire. No tools
- * are offered; this turn only speaks.
+ * so the next open sees a non-empty transcript and the turn won't refire. Because
+ * eligibility is recomputed from PERSISTED state (transcript + last_chatted) on
+ * every open, a first meeting deferred to a later session still fires then. No
+ * tools are offered; this turn only speaks.
  *
  * The renderer calls this on every empty-history open and lets main no-op; policy
- * (kind / emptiness) lives here, never in the renderer.
+ * (emptiness) lives here, never in the renderer.
  */
 export async function sendFirstMeetingTurn(
   characterId: string,
@@ -559,7 +566,9 @@ export async function sendFirstMeetingTurn(
   const run = (async (): Promise<ChatMessage[]> => {
     const character = await getCharacter(characterId);
     if (!character) return [];
-    if (character.kind !== 'unique') return [];
+    // All companion kinds get the first-meeting greeting (unique / custom /
+    // world) — the kind gate that once restricted this to system-cast uniques
+    // was dropped so user-authored and World-invited companions greet too.
     if (character.last_chatted) return [];
     const transcript = await chatStore.readAll(characterId);
     if (transcript.length > 0) return [];
