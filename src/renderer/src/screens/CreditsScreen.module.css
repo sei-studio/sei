@@ -1,7 +1,7 @@
 /**
  * CreditsScreen — Playtime surface (Party redesign, mockup pt-*).
  *
- * A single centered 620px column: a percent-left hero (big Oswald % + a flat
+ * A single centered 860px column: a percent-left hero (big Oswald % + a flat
  * accent bar + a small estimate/refresh line), an "Add playtime" section of
  * three plan cards, and a footer with Manage billing + the estimate
  * disclaimer. Sharp edges, Oswald display, tokens only (no hex).
@@ -21,7 +21,7 @@
 
 .col {
   width: 100%;
-  max-width: 620px;
+  max-width: 860px;
   margin: 0 auto;
   padding: 0 26px;
   display: flex;

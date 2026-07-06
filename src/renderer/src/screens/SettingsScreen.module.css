@@ -1,5 +1,5 @@
 /* SettingsScreen.module.css — "Party" restyle.
- * Centered 560px column, Oswald group headers (sentence case), label|value|control
+ * Centered 780px column, Oswald group headers (sentence case), label|value|control
  * rows with hairline bottom borders. Seg + Toggle primitives own their own CSS.
  * Source: .planning/design/UI-REDESIGN-PARTY.md §4.7; mockup .set-col / .set-row.
  */
@@ -13,7 +13,7 @@
 }
 
 .col {
-  max-width: 560px;
+  max-width: 780px;
   margin: 0 auto;
   padding: 0 var(--space-lg);
   display: flex;
@@ -92,7 +92,7 @@
 .editor > :first-child {
   flex: 1;
   min-width: 0;
-  max-width: 280px;
+  max-width: 360px;
 }
 
 /* Supplementary lines under a row (export path, switch notice, danger blurb).
