@@ -34,6 +34,7 @@ import { registerVoiceHooks } from '../voice/voiceBridge';
 import {
   startRingtone,
   startAmbience,
+  playConnectedChime,
   playHangupChime,
   playMuteClick,
   type StopFn,
@@ -411,11 +412,15 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         if (session !== mySession) return; // hung up while ringing
       }
       liveSince = Date.now();
-      // Line open: ring stops, the constant low comfort-noise bed starts (the
-      // TTS noise floor otherwise reads as "static only while talking") —
-      // unless the user pre-deafened while it rang.
+      // Line open: ring stops, the connected chime (D→A rising) answers, and
+      // the constant low comfort-noise bed starts (the TTS noise floor
+      // otherwise reads as "static only while talking") — chime and bed skip
+      // when the user pre-deafened while it rang.
       silenceDressing();
-      if (!useUiStore.getState().callDeafened) stopAmbience = startAmbience();
+      if (!useUiStore.getState().callDeafened) {
+        playConnectedChime();
+        stopAmbience = startAmbience();
+      }
       set({ status: 'live', connectingDetail: null, liveAt: liveSince });
       // The line is open — ask main to have the companion speak FIRST (like
       // answering the phone). Best-effort; the call works without it.

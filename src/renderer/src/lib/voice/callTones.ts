@@ -1,9 +1,10 @@
 /**
  * Call audio dressing (260705) — the two synthetic sounds around a voice call.
  *
- * Ringtone: a simple two-tone "da-ding" (G5 → D5 sines with a fast decay)
- * every 1.9s while the call is dialing. Distinctive but tiny — WebAudio
- * oscillators, no asset, no loop file.
+ * Ringtone: a 4/4 bar of quarter-note sine dings — D, F#, D, rest — looping
+ * while the call is dialing (D major, 120 BPM). Pickup answers with a quick
+ * rising D→A eighth-note figure; hang-up mirrors it falling A→D. Distinctive
+ * but tiny — WebAudio oscillators, no asset, no loop file.
  *
  * Ambience: the companion's TTS carries a faint encoder noise floor, so the
  * call alternated "static while talking / dead digital silence while not".
@@ -18,7 +19,14 @@
 export type StopFn = () => void;
 
 const RING_GAIN = 0.055;
-const RING_PERIOD_MS = 1900;
+// The call's sounds live in D major (260705 spec): the ring walks D–F#–D,
+// pickup answers with D→A rising, hang-up closes with A→D falling.
+const D5 = 587.33;
+const FSHARP5 = 739.99;
+const A5 = 880;
+// 4/4 at 120 BPM: quarter = 500ms → one bar (D, F#, D, rest) = 2s loop.
+const QUARTER_MS = 500;
+const RING_PERIOD_MS = QUARTER_MS * 4;
 
 /** Schedule one soft sine "ding" — THE call instrument (ring + hang-up share
  * it so the call's sounds feel like one device). */
@@ -48,42 +56,51 @@ function oneShot(build: (ctx: AudioContext) => number): void {
   window.setTimeout(() => void ctx.close().catch(() => {}), totalMs + 150);
 }
 
-/** Hang-up chime: the ringtone's instrument, inverted and settled — D5 → G4,
- * a closing "dun-dun". Plays for BOTH hang-up paths (player button and the
- * companion's end_call), from its own context so call teardown can't clip it. */
-export function playHangupChime(): void {
+/** Connected: one quick rising eighth-note pair, D → A — the line opening. */
+export function playConnectedChime(): void {
   oneShot((ctx) => {
     const t = ctx.currentTime + 0.02;
-    ding(ctx, 587, t, 0.26); // D5
-    ding(ctx, 392, t + 0.16, 0.5); // G4
-    return 750;
+    ding(ctx, D5, t, 0.16);
+    ding(ctx, A5, t + 0.13, 0.32);
+    return 550;
   });
 }
 
-/** Mute/unmute click: a tiny noise tick plus a pitch blip — down for muted,
- * up for live again — so the state change is felt without looking. */
+/** Hang-up chime: the pickup figure mirrored — A → D falling. Plays for BOTH
+ * hang-up paths (player button and the companion's end_call), from its own
+ * context so call teardown can't clip it. */
+export function playHangupChime(): void {
+  oneShot((ctx) => {
+    const t = ctx.currentTime + 0.02;
+    ding(ctx, A5, t, 0.16);
+    ding(ctx, D5, t + 0.13, 0.36);
+    return 600;
+  });
+}
+
+/** Mute/unmute: kept simple — one short noise tick (a mechanical click),
+ * filtered darker for mute and brighter for unmute so the direction is felt
+ * without any melodic content competing with the call chimes. */
 export function playMuteClick(muted: boolean): void {
   oneShot((ctx) => {
     const t = ctx.currentTime + 0.01;
-    // 12ms noise tick (the mechanical "click").
-    const len = Math.floor(ctx.sampleRate * 0.012);
+    const len = Math.floor(ctx.sampleRate * 0.014);
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 1800;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = muted ? 900 : 2200;
+    bp.Q.value = 1.2;
     const ng = ctx.createGain();
-    ng.gain.value = 0.09;
-    src.connect(hp);
-    hp.connect(ng);
+    ng.gain.value = 0.14;
+    src.connect(bp);
+    bp.connect(ng);
     ng.connect(ctx.destination);
     src.start(t);
-    // Pitch blip under it: direction encodes the new state.
-    ding(ctx, muted ? 620 : 980, t + 0.004, 0.09, 0.05);
-    return 200;
+    return 120;
   });
 }
 
@@ -97,11 +114,13 @@ export function startRingtone(): StopFn {
   let timer: number | null = null;
   let stopped = false;
 
+  // One 4/4 bar per loop: D, F#, D, rest — quarter notes.
   const ring = (): void => {
     if (stopped) return;
     const t = ctx.currentTime + 0.02;
-    ding(ctx, 784, t, 0.28); // G5
-    ding(ctx, 587, t + 0.17, 0.42); // D5
+    ding(ctx, D5, t, 0.45);
+    ding(ctx, FSHARP5, t + QUARTER_MS / 1000, 0.45);
+    ding(ctx, D5, t + (2 * QUARTER_MS) / 1000, 0.45);
     timer = window.setTimeout(ring, RING_PERIOD_MS);
   };
   ring();
