@@ -43,6 +43,24 @@
   background: var(--accent-soft);
 }
 
+/* Art-style reference pair (female + male sample in the same KusArt style).
+ * Top-anchored cover crop keeps the faces; the tall source stays out of the
+ * layout via a fixed aspect ratio. */
+.tileArt {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tileArt img {
+  width: calc(50% - 3px);
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  object-position: top;
+  display: block;
+  min-width: 0;
+}
+
 .tileLabel {
   font-family: var(--display);
   font-weight: 600;

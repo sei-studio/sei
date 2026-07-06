@@ -25,7 +25,9 @@
  * On completion it routes to `next`; cancelling (Back on the first step)
  * returns to the flow's origin.
  *
- * Names only for the art styles for now (spec: example images come later).
+ * Art style tiles carry male+female reference images generated with the same
+ * KusArt style ids the portrait pipeline uses (src/main/uniqueGeneration.ts),
+ * so what the user picks is what generation actually produces.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -40,6 +42,16 @@ import type {
 } from '@shared/characterSchema';
 import { PREF_QUESTIONS } from '@shared/characterSchema';
 import styles from './ProfileQuestionsScreen.module.css';
+import chibiF from '../assets/art-styles/chibi-female.jpg';
+import chibiM from '../assets/art-styles/chibi-male.jpg';
+import animeF from '../assets/art-styles/anime-female.jpg';
+import animeM from '../assets/art-styles/anime-male.jpg';
+import celF from '../assets/art-styles/celshaded-female.jpg';
+import celM from '../assets/art-styles/celshaded-male.jpg';
+import cartoonF from '../assets/art-styles/cartoon-female.jpg';
+import cartoonM from '../assets/art-styles/cartoon-male.jpg';
+import threeDF from '../assets/art-styles/3d-female.jpg';
+import threeDM from '../assets/art-styles/3d-male.jpg';
 
 type AgeRange = NonNullable<UserPreferences['companion_age_range']>;
 type ArtStyle = NonNullable<UserPreferences['art_style']>;
@@ -60,12 +72,12 @@ const DYNAMIC_OPTIONS: Array<{ value: CompanionDynamic; label: string; sub: stri
   { value: 'challenger', label: 'Someone who pushes you', sub: 'Keeps you sharp, keeps you honest.' },
 ];
 
-const STYLE_OPTIONS: Array<{ value: ArtStyle; label: string; sub: string }> = [
-  { value: 'chibi', label: 'Round chibi', sub: 'Soft, cute, big-headed charm.' },
-  { value: 'anime', label: 'Anime', sub: 'Classic Japanese animation look.' },
-  { value: 'celshaded', label: 'Cel-shaded', sub: 'Bold lines, flat painterly shading.' },
-  { value: 'cartoon', label: 'Cartoon', sub: 'Western animated styling.' },
-  { value: '3d', label: '3D', sub: 'Rendered, dimensional, modern.' },
+const STYLE_OPTIONS: Array<{ value: ArtStyle; label: string; sub: string; imgs: [string, string] }> = [
+  { value: 'chibi', label: 'Round chibi', sub: 'Soft, cute, big-headed charm.', imgs: [chibiF, chibiM] },
+  { value: 'anime', label: 'Anime', sub: 'Classic Japanese animation look.', imgs: [animeF, animeM] },
+  { value: 'celshaded', label: 'Cel-shaded', sub: 'Bold lines, flat painterly shading.', imgs: [celF, celM] },
+  { value: 'cartoon', label: 'Cartoon', sub: 'Western animated styling.', imgs: [cartoonF, cartoonM] },
+  { value: '3d', label: '3D', sub: 'Rendered, dimensional, modern.', imgs: [threeDF, threeDM] },
 ];
 
 const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
@@ -363,7 +375,7 @@ function TileGroup<T extends string>({
   onChange,
 }: {
   ariaLabel: string;
-  options: Array<{ value: T; label: string; sub: string }>;
+  options: Array<{ value: T; label: string; sub: string; imgs?: [string, string] }>;
   value: T | null;
   onChange: (v: T) => void;
 }): React.ReactElement {
@@ -380,6 +392,12 @@ function TileGroup<T extends string>({
             className={`${styles.tile} ${selected ? styles.tileSelected : ''}`}
             onClick={() => onChange(opt.value)}
           >
+            {opt.imgs && (
+              <span className={styles.tileArt} aria-hidden="true">
+                <img src={opt.imgs[0]} alt="" loading="lazy" />
+                <img src={opt.imgs[1]} alt="" loading="lazy" />
+              </span>
+            )}
             <span className={styles.tileLabel}>{opt.label}</span>
             <span className={styles.tileSub}>{opt.sub}</span>
           </button>
