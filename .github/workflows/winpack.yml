@@ -1,0 +1,48 @@
+name: Win Pack Check
+
+# Fast Windows-only packaging check for iterating on the procgen sibling-dep
+# fix (img2skin/soulcaster). Reproduces the exact electron-builder step that
+# fails on Windows (asarUnpack walking node_modules) WITHOUT the slow NSIS
+# installer, code-signing, notarization, or publish. Runs on winfix/** branches.
+on:
+  push:
+    branches: ['winfix/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  winpack:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Python (distutils for headless-gl native build)
+        uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        run: npm ci
+
+      - name: Build + package (win, unpacked dir, no sign/notarize/publish)
+        env:
+          # Windows v1 ships unsigned; make sure electron-builder never tries to
+          # auto-discover a signing identity during this check.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        shell: bash
+        run: |
+          npm run build
+          npx electron-builder --win --dir --publish never
+          echo "✓ Windows packaging (--dir) completed without the img2skin ENOENT"
