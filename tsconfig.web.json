@@ -14,7 +14,13 @@
       "@/*": ["src/renderer/src/*"],
       "@shared/*": ["src/shared/*"]
     },
-    "baseUrl": "."
+    "baseUrl": ".",
+    // Typecheck only. electron-vite (esbuild/rollup) builds the renderer from
+    // source; without this `tsc --build` emits sibling .js next to every .tsx,
+    // which the Vite dev server then serves stale in place of live edits (and
+    // broke a running dev session on 260707). tsconfig.node.json redirects its
+    // emit to dist/ instead; the renderer has no such output, so it must noEmit.
+    "noEmit": true
   },
   "include": ["src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx", "src/shared/**/*.ts"]
 }
