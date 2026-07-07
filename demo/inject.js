@@ -116,6 +116,24 @@
       ];
     },
     chatOpened: async () => [],
+    // Sending a text returns ONE companion reply after a beat, so the composer
+    // demo shows a real send → typing indicator → reply. (Unmocked, chatSend
+    // resolves undefined and useChatStore shows a "couldn't reply" fallback.)
+    chatSend: async () => {
+      await new Promise((r) => setTimeout(r, 1100));
+      return {
+        replies: [
+          {
+            id: 'reply-' + Date.now(),
+            role: 'companion',
+            text: "riverside base, yes. you scout the spot, i'll haul the logs. race you to the water?",
+            ts: Date.now(),
+          },
+        ],
+        streamed: false,
+        routed: false,
+      };
+    },
     chatPreviews: async () => ({}),
     getUserProfile: async () => ({ handle: 'shawn', mc_username: 'Shawn', preferred_name: 'Shawn', profilePicture: null }),
 
@@ -126,6 +144,29 @@
     getSkinServerUrl: async () => ({ baseUrl: location.origin }),
     getWizardState: async () => ({ hasRunOnce: true }),
     wizardPromptShown: async () => ({ shown: true }),
+
+    // Voice call: the primary companion greets on connect. The store waits up to
+    // 5s for a first line before switching from "Calling…" to connected, so
+    // emitting a greeting (as a companion chat push, routed through the chat →
+    // voice seam) makes the call go live promptly. Only the primary dial greets
+    // (peerNames is passed when a companion is ADDED to a live call — skip those
+    // so a newly-invited companion just joins). The line carries voice:true so it
+    // stays hidden in the chat transcript.
+    voiceGreet: async (characterId, peerNames) => {
+      if (peerNames) return;
+      setTimeout(() => {
+        emit('chatMessage', {
+          characterId,
+          message: {
+            id: 'greet-' + Date.now(),
+            role: 'companion',
+            text: 'oh sick, a call! hey hey. what are we scheming?',
+            ts: Date.now(),
+            voice: true,
+          },
+        });
+      }, 300);
+    },
 
     // summon lifecycle — connecting now; recorder calls __demo.online() later
     summon: async (id) => {
@@ -138,6 +179,7 @@
     // push subscriptions (renderer subscribes once at mount)
     onLan: register('lan'),
     onStatus: register('status'),
+    onChatMessage: register('chatMessage'),
     onLog: register('log'),
     onVisionCapability: register('vision'),
     onAuthState: register('auth'),

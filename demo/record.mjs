@@ -15,8 +15,9 @@
 //
 // Flow (Party redesign):
 //   1 party wall  2 settle on Sui (panel lift + Play reveal)  3 open Sui -> the
-//   in-app chat  4 start a voice call -> the consent gate  5 dismiss it  6 open
-//   the profile from the presence panel  7 back to the party wall
+//   in-app chat  4 send a quick text -> Sui replies  5 tap Voice call -> the
+//   "Set up voice calls" gate  6 Install -> the call connects  7 invite Marv ->
+//   a group call  8 hang up -> back to chat
 //
 // Usage:  node demo/record.mjs
 
@@ -112,6 +113,20 @@ const config = {
   total_playtime_backfilled: true,
 };
 
+// Demo-only substitution for the two voice modules that can't run headless:
+// modelPrefetch (real 40 MB Whisper download) and dictation (real mic + worker).
+// Swapping them for the stubs in demo/stubs lets the scripted call flow go live
+// without a network download or a microphone. Production code is untouched.
+const voiceStubPlugin = {
+  name: 'demo-voice-stubs',
+  enforce: 'pre',
+  resolveId(source) {
+    if (source.endsWith('voice/modelPrefetch')) return path.join(__dirname, 'stubs/modelPrefetch.js');
+    if (source.endsWith('voice/dictation')) return path.join(__dirname, 'stubs/dictation.js');
+    return null;
+  },
+};
+
 async function main() {
   // 1 ── Vite dev server for the renderer ────────────────────────────────────
   const vite = await createViteServer({
@@ -124,7 +139,7 @@ async function main() {
         '@shared': path.join(ROOT, 'src/shared'),
       },
     },
-    plugins: [react()],
+    plugins: [voiceStubPlugin, react()],
     server: { port: PORT, strictPort: true },
     logLevel: 'warn',
     define: {
@@ -356,29 +371,51 @@ async function main() {
   await page.waitForSelector('text=race you there', { timeout: 8000 });
   await sleep(1500); // page slide + message rise + presence panel settle
 
-  // ── 4. Start a voice call -> the consent gate (voice module, ~40 MB) ────────
+  // ── 4. Send a quick text -> Sui replies ────────────────────────────────────
+  const composer = center(await boxOf('[aria-label="Message Sui"]'));
+  await glide(composer.x, composer.y, 0.8);
+  await click();
+  await sleep(250);
+  await page.keyboard.type("let's build a base by the river tonight", { delay: 42 });
+  await sleep(450);
+  const sendBtn = center(await boxOf('[aria-label="Send"]'));
+  await glide(sendBtn.x, sendBtn.y, 0.5);
+  await click();
+  // user bubble lands, the typing indicator shows, then Sui's reply rises in
+  await page.waitForSelector('text=haul the logs', { timeout: 8000 });
+  await sleep(1500); // read the reply
+
+  // ── 5. Tap Voice call -> it needs setting up first ("Set up voice calls") ───
   const callBtn = center(await boxOf('[aria-label="Voice call"]'));
   await glide(callBtn.x, callBtn.y, 0.9);
   await click();
   await page.waitForSelector('text=Set up voice calls', { timeout: 8000 });
-  await sleep(1700); // read the consent copy
+  await sleep(1700); // read the setup copy
 
-  // ── 5. Dismiss the gate -> back to chat ────────────────────────────────────
-  const notNow = center(await boxOf('button:has-text("Not now")'));
-  await glide(notNow.x, notNow.y, 0.7);
+  // ── 6. Install the voice module -> the call connects ───────────────────────
+  const install = center(await boxOf('button:has-text("Install")'));
+  await glide(install.x, install.y, 0.7);
   await click();
-  await sleep(1000);
+  // progress bar fills, the gate closes, the call rings then goes live
+  await page.waitForSelector('text=Set up voice calls', { state: 'detached', timeout: 12000 });
+  await sleep(3200); // ring -> connected; settle on the live 1:1 call (Sui + you)
 
-  // ── 6. Open the profile from the presence panel ────────────────────────────
-  const profile = center(await boxOf('button:has-text("Profile")'));
-  await glide(profile.x, profile.y, 0.8);
+  // ── 7. Invite Marv into the call ───────────────────────────────────────────
+  const addBtn = center(await boxOf('[aria-label="Add a companion to the call"]'));
+  await glide(addBtn.x, addBtn.y, 0.8);
   await click();
-  await page.waitForSelector('text=Bonded', { timeout: 8000 });
-  await sleep(1600); // portrait rise + stat tiles
+  await page.waitForSelector('text=Add to call', { timeout: 8000 });
+  await sleep(800);
+  const marvRow = center(await boxOf('button:has-text("Marv")'));
+  await glide(marvRow.x, marvRow.y, 0.6);
+  await click();
+  // Marv joins -> a three-up group call (Sui + Marv + you)
+  await page.waitForSelector('text=Group call', { timeout: 8000 });
+  await sleep(2200); // settle on the group call
 
-  // ── 7. Back to the party wall (exit slide) ─────────────────────────────────
-  const back = center(await boxOf('button:has-text("Back")'));
-  await glide(back.x, back.y, 0.9);
+  // ── 8. Hang up -> back to chat ─────────────────────────────────────────────
+  const hangup = center(await boxOf('[aria-label="Hang up"]'));
+  await glide(hangup.x, hangup.y, 0.9);
   await click();
   await sleep(1300);
 

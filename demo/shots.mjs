@@ -134,9 +134,12 @@ async function main() {
   ` });
   await page.waitForTimeout(200);
 
-  // 1 ── Companions grid -> app-home
-  await page.mouse.move(300, 6); // park the cursor on the (non-interactive) title bar — no hover states
-  await page.waitForTimeout(400);
+  // 1 ── Companions grid, Sui's panel lifted -> app-home. Hover Sui so her tile
+  //       lifts and the Message/Play actions reveal (Playwright's real mouse
+  //       leaves no visible cursor in the still, just the :hover state).
+  const suiHome = await page.locator('[aria-label="Open Sui"]').first().boundingBox();
+  await page.mouse.move(suiHome.x + suiHome.width * 0.5, suiHome.y + suiHome.height * 0.5);
+  await page.waitForTimeout(700); // hover lift + action buttons fade in
   await page.screenshot({ path: path.join(OUT, 'app-home.png'), omitBackground: true });
   console.log('[shots] app-home.png');
 
