@@ -24,8 +24,21 @@ declare module 'soulcaster' {
     llm: (a: SoulcasterLlmArgs) => Promise<string>;
     rng?: () => number;
   }): Promise<{ sheet: unknown; rolled: unknown }>;
-  export function rollFields(args?: unknown): unknown;
-  export const CharacterSheetSchema: unknown;
+  export function rollFields(args?: unknown): {
+    combat: unknown;
+    heritage: string;
+    voice: { id: string; label: string; vibe: string };
+    [k: string]: unknown;
+  };
+  /** Zod schema for the character sheet — only the `safeParse` surface the
+   *  main-process caller (castSoulViaProxy) uses is declared here. */
+  export const CharacterSheetSchema: {
+    safeParse(data: unknown):
+      | { success: true; data: Record<string, unknown> }
+      | { success: false; error: { message: string } };
+  };
+  /** Strip markdown fences + isolate the outermost JSON object from model text. */
+  export function stripFences(text: string): string;
   /** Curated ElevenLabs voice pool (voices.js). */
   export const VOICES: Array<{
     id: string;

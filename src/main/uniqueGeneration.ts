@@ -30,7 +30,6 @@ import { createRequire } from 'node:module';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import Anthropic from '@anthropic-ai/sdk';
 import type {
   GenerateUniqueInput,
   GenerateUniqueResult,
@@ -99,8 +98,9 @@ const KUSART_WIDTH = 960;
 const KUSART_HEIGHT = 1680;
 const KUSART_POLL_INTERVAL_MS = 2_000;
 
-/** Model used for the soulcaster sheet consolidation call (proxy /free route). */
-const SHEET_MODEL = 'claude-haiku-4-5';
+// The soulcaster sheet model + max_tokens are now chosen SERVER-SIDE by the
+// proxy's /free/soulcast route (see sei-proxy freeStructured.ts) — the client no
+// longer sends them. This wall-clock cap still bounds the per-call fetch.
 const SHEET_TIMEOUT_MS = 60_000;
 const IMAGE_TIMEOUT_MS = 60_000;
 /** Overall wall-clock cap for the pipeline body (after the fast guards). */
@@ -979,50 +979,139 @@ async function generatePortraitPng(prompt: string, styleId: string): Promise<Buf
   }
 }
 
+/** Minimal shape of soulcaster's Stage-1 rolled fields that this module reads.
+ *  rollFields returns much more; we only touch the gameplay-critical values we
+ *  re-stamp after validation. */
+type Rolled = {
+  combat: unknown;
+  heritage: string;
+  voice: { id: string };
+  [k: string]: unknown;
+};
+
 /**
- * Build the soulcaster `llm` sink — an Anthropic call over the proxy's /free
- * route (mirrors personaExpansion's cloud wiring). Non-streaming; returns the
- * model's raw text for soulcaster to parse + validate.
+ * Cloud soulcaster sheet call — the PROMPT lives on the proxy now.
+ *
+ * The proxy's POST /free/soulcast owns the character-sheet system + user prompt:
+ * we send the pre-rolled fields and it assembles + calls the model, so the
+ * prompt can be improved with a `fly deploy` instead of a client reship. What
+ * stays here is only what is coupled to the OUTPUT shape — the deterministic
+ * Stage-1 field roll, the Zod validation, the single retry, and the
+ * authoritative re-stamp of the rolled values the model must not drift (combat
+ * is a gameplay numeric contract, heritage a closed vocabulary, voice_id pure
+ * Stage-1 data the model never sees). This mirrors the orchestration that used
+ * to live in soulcaster's castSoul(); see soulcaster/src/index.js for the
+ * per-field rationale.
  */
-function buildSoulcasterLlm(jwt: string): (args: {
-  system: string;
-  user: string;
-  maxTokens?: number;
-}) => Promise<string> {
-  // apiKey:null → no X-Api-Key header, only Authorization: Bearer <jwt>.
-  const client = new Anthropic({
-    baseURL: `${PROXY_BASE_URL}/free`,
-    authToken: jwt,
-    apiKey: null,
-    maxRetries: 0,
-  });
-  return async ({ system, user, maxTokens }) => {
-    const resp = await client.messages.create(
-      {
-        model: SHEET_MODEL,
-        max_tokens: maxTokens ?? 4096,
-        system,
-        messages: [{ role: 'user', content: user }],
-      },
-      { timeout: SHEET_TIMEOUT_MS },
-    );
-    // Duck-type the first text block out of the response content (avoids
-    // coupling to a specific SDK content-block union export).
-    const content = (resp as { content?: unknown }).content;
-    if (Array.isArray(content)) {
-      for (const b of content) {
-        if (
-          b != null &&
-          typeof b === 'object' &&
-          (b as { type?: unknown }).type === 'text' &&
-          typeof (b as { text?: unknown }).text === 'string'
-        ) {
-          return (b as { text: string }).text;
-        }
+async function castSoulViaProxy(args: {
+  gender: UniqueGender;
+  dynamic: CompanionDynamic;
+  userProfile: unknown;
+  takenVoiceIds: string[];
+  jwt: string;
+  signal: AbortSignal;
+}): Promise<{ sheet: Sheet; rolled: Rolled }> {
+  const { rollFields, CharacterSheetSchema, stripFences } = await import('soulcaster');
+  const rolled = rollFields({
+    gender: args.gender,
+    dynamic: args.dynamic,
+    userProfile: args.userProfile,
+    takenVoiceIds: args.takenVoiceIds,
+  }) as Rolled;
+
+  let lastError = '';
+  // Attempt 1, then a single retry with the validation error appended (the
+  // proxy turns retryError into the retry suffix).
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const raw = await postSoulcast({
+      jwt: args.jwt,
+      rolled,
+      gender: args.gender,
+      userProfile: args.userProfile,
+      retryError: attempt === 0 ? null : lastError,
+      signal: args.signal,
+    });
+    const cleaned = stripFences(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (err) {
+      lastError = `not valid JSON: ${(err as Error).message}`;
+      continue;
+    }
+    const result = CharacterSheetSchema.safeParse(parsed);
+    if (!result.success) {
+      lastError = `schema validation failed: ${result.error.message}`;
+      continue;
+    }
+    // Re-stamp on the raw validated object (Record<string, unknown>) before
+    // narrowing to Sheet, which is a client-side view that omits combat/heritage.
+    const data = result.data;
+    data.combat = structuredClone(rolled.combat);
+    data.heritage = rolled.heritage;
+    data.voice_id = rolled.voice.id;
+    return { sheet: data as unknown as Sheet, rolled };
+  }
+  throw new Error(`character sheet invalid after retry: ${lastError}`);
+}
+
+/**
+ * POST the pre-rolled fields to the proxy's server-owned soulcaster route and
+ * return the model's raw text. Non-streaming. apiKey lives on the proxy — we
+ * only send the Supabase JWT (Authorization: Bearer). Wired to the pipeline's
+ * abort signal AND a per-call wall-clock timeout.
+ */
+async function postSoulcast(args: {
+  jwt: string;
+  rolled: Rolled;
+  gender: string;
+  userProfile: unknown;
+  retryError: string | null;
+  signal: AbortSignal;
+}): Promise<string> {
+  const controller = new AbortController();
+  const onAbort = (): void => controller.abort();
+  if (args.signal.aborted) controller.abort();
+  else args.signal.addEventListener('abort', onAbort, { once: true });
+  const timer = setTimeout(() => controller.abort(), SHEET_TIMEOUT_MS);
+
+  let resp: Response;
+  try {
+    resp = await fetch(`${PROXY_BASE_URL}/free/soulcast`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${args.jwt}` },
+      body: JSON.stringify({
+        rolled: args.rolled,
+        gender: args.gender,
+        userProfile: args.userProfile ?? null,
+        ...(args.retryError ? { retryError: args.retryError } : {}),
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+    args.signal.removeEventListener('abort', onAbort);
+  }
+  if (!resp.ok) {
+    throw new Error(`soulcast request failed: HTTP ${resp.status}`);
+  }
+  // Duck-type the first text block out of the raw Anthropic message JSON the
+  // proxy relays (avoids coupling to a specific SDK content-block union).
+  const json = (await resp.json()) as { content?: unknown };
+  const content = json.content;
+  if (Array.isArray(content)) {
+    for (const b of content) {
+      if (
+        b != null &&
+        typeof b === 'object' &&
+        (b as { type?: unknown }).type === 'text' &&
+        typeof (b as { text?: unknown }).text === 'string'
+      ) {
+        return (b as { text: string }).text;
       }
     }
-    return '';
-  };
+  }
+  return '';
 }
 
 /** Classify an error into a network vs. generic generation failure. */
@@ -1135,7 +1224,6 @@ async function runPipeline(args: {
   let sheet: Sheet;
   emit('sheet', 'start');
   try {
-    const { castSoul } = await import('soulcaster');
     // Voice roll (260705): exclude voices the library already uses so a
     // roster's companions rarely share a voice. Best-effort — an unreadable
     // library just means no exclusions.
@@ -1147,14 +1235,15 @@ async function runPipeline(args: {
         .map((c) => assignedVoiceId(c))
         .filter((v): v is string => v !== null);
     } catch {}
-    const { sheet: cast } = await castSoul({
+    const { sheet: cast } = await castSoulViaProxy({
       gender,
       dynamic,
       userProfile: config.user_profile ?? null,
       takenVoiceIds,
-      llm: buildSoulcasterLlm(jwt),
+      jwt,
+      signal,
     });
-    sheet = cast as Sheet;
+    sheet = cast;
     emit('sheet', 'done');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1258,7 +1347,9 @@ async function runPipeline(args: {
     const { expanded: exp } = await expandPersona({
       name: sheet.name,
       source: blurb,
-      cloudMode: { baseURL: `${PROXY_BASE_URL}/free`, authToken: jwt },
+      // /free/expand — the proxy injects the server-owned EXPANSION_SYSTEM here
+      // (the SDK POSTs to <baseURL>/v1/messages = /free/expand/v1/messages).
+      cloudMode: { baseURL: `${PROXY_BASE_URL}/free/expand`, authToken: jwt },
     });
     expanded = exp;
     emit('persona', 'done');

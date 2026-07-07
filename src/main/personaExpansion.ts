@@ -105,6 +105,15 @@ export interface ExpandPersonaInput {
   apiKey?: string;
   /** Cloud-proxy mode (Phase 13). When set, the SDK routes via baseURL + Bearer JWT. */
   cloudMode?: ExpandPersonaCloudMode;
+  /**
+   * Server-fetched system prompt (BYOK only). The proxy owns the expansion
+   * system prompt now; cloud users get it injected server-side, but BYOK calls
+   * Anthropic directly and must supply it. When set, this overrides the bundled
+   * EXPANSION_SYSTEM so local-key users pick up prompt improvements without a
+   * reship. Undefined → the bundled fallback is used. Ignored in cloud mode
+   * (the proxy overwrites `system` regardless).
+   */
+  systemPromptOverride?: string;
   signal?: AbortSignal;
   /**
    * Streaming progress sink. Invoked (throttled) as text deltas arrive so the
@@ -297,7 +306,12 @@ function extractTextDelta(event: unknown): string | null {
  * API key, incomplete response, or SDK error.
  */
 export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPersonaResult> {
-  const { name, source, priorExpanded, apiKey, cloudMode, signal, onProgress, _clientFactory } = input;
+  const { name, source, priorExpanded, apiKey, cloudMode, systemPromptOverride, signal, onProgress, _clientFactory } =
+    input;
+  // Cloud: the proxy injects the server-owned system prompt, so what we send is
+  // overwritten (we still send the bundled copy — harmless). BYOK: use the
+  // server-fetched override when present, else the bundled EXPANSION_SYSTEM.
+  const systemPrompt = cloudMode ? EXPANSION_SYSTEM : (systemPromptOverride ?? EXPANSION_SYSTEM);
 
   if (cloudMode) {
     if (!cloudMode.baseURL || !cloudMode.authToken) {
@@ -369,7 +383,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
       {
         model: EXPANSION_MODEL,
         max_tokens: EXPANSION_MAX_TOKENS,
-        system: EXPANSION_SYSTEM,
+        system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
         // Stream so we can drive a live progress bar. Cloud-proxy users stream
         // via the proxy's /free SSE passthrough; BYOK streams direct from
@@ -483,4 +497,30 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
     throw new Error(`persona expansion failed: missing sections (${missing.join(', ')})`);
   }
   return { expanded: body, proactiveness };
+}
+
+/**
+ * Fetch the server-owned expansion system prompt from the proxy's public
+ * GET /free/prompts endpoint (no auth — see the proxy's promptsRoute.ts). Used
+ * by the BYOK path so local-key users pick up prompt improvements without a
+ * client reship. Best-effort: returns null on any failure (network, non-200,
+ * malformed body, timeout) so the caller falls back to the bundled
+ * EXPANSION_SYSTEM. 8s wall-clock cap so character creation never hangs on a
+ * slow prompt fetch.
+ */
+export async function fetchServerExpansionSystem(baseURL: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const resp = await fetch(`${baseURL}/free/prompts`, { signal: controller.signal });
+    if (!resp.ok) return null;
+    const json = (await resp.json()) as { expansionSystem?: unknown };
+    return typeof json.expansionSystem === 'string' && json.expansionSystem.trim()
+      ? json.expansionSystem
+      : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }

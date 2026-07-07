@@ -25,7 +25,7 @@ import { CharacterSchema, CharacterIndexSchema, MAX_CREATIONS_PER_DAY, type Char
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
 import { paths } from './paths';
-import { expandPersona, type ExpansionProgress } from './personaExpansion';
+import { expandPersona, fetchServerExpansionSystem, type ExpansionProgress } from './personaExpansion';
 import { loadApiKey, getAiBackendKind } from './apiKeyStore';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
@@ -284,10 +284,12 @@ export async function expandAndSaveCharacter(
     if (!jwt) {
       throw new Error('persona expansion failed: signed-out user on cloud-proxy backend');
     }
-    // The proxy's /free/v1/messages route is auth'd but does NOT consume
-    // credits — character creation works for every signed-in user. Daily cap
-    // (20/user) is enforced by the persona_daily bucket on the proxy side.
-    expansionInput.cloudMode = { baseURL: `${PROXY_BASE_URL}/free`, authToken: jwt };
+    // The proxy's /free/expand route is auth'd but does NOT consume credits —
+    // character creation works for every signed-in user. Daily cap (20/user)
+    // is enforced by the persona_daily bucket on the proxy side. The proxy
+    // injects the server-owned EXPANSION_SYSTEM, so cloud users always get the
+    // latest prompt without a client reship.
+    expansionInput.cloudMode = { baseURL: `${PROXY_BASE_URL}/free/expand`, authToken: jwt };
   } else {
     // 260703 hard guard: local (BYOK) expansion uses ONLY the on-disk key —
     // never the Supabase JWT. A missing key fails with an actionable message
@@ -299,6 +301,12 @@ export async function expandAndSaveCharacter(
         'persona expansion failed: local mode is on but no API key is saved. Add one in Settings, or switch to managed billing',
       );
     }
+    // BYOK calls Anthropic directly (bypassing the proxy), so it can't get the
+    // server-injected prompt. Fetch the current server-owned system prompt so
+    // local-key users also pick up prompt improvements without a reship; on any
+    // failure expandPersona falls back to the bundled EXPANSION_SYSTEM.
+    const serverSystem = await fetchServerExpansionSystem(PROXY_BASE_URL);
+    if (serverSystem) expansionInput.systemPromptOverride = serverSystem;
   }
 
   // 260630: the expander now CHOOSES the proactiveness level (0 passive /
