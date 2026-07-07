@@ -365,6 +365,12 @@ async function refreshFromCloud(uuid: string): Promise<void> {
       name: cloud.name,
       slug: cloud.slug,
       username: cloud.username,
+      // `kind` is an author-owned classification (custom / world / unique), so
+      // it rides along with the other content fields — otherwise a cloud-side
+      // reclassification (e.g. the sui/lyra/marv defaults becoming normal
+      // `custom` public characters on 260706) never reaches an already-cached
+      // local copy, leaving CharacterPage's kind-gated viewOnly wrong.
+      kind: cloud.kind,
       shared: cloud.shared,
       persona: cloud.persona,
       description: cloud.description ?? null,

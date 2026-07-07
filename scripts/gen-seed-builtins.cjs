@@ -11,7 +11,7 @@ const fs = require('fs');
 const SYS = process.argv[2];
 if (!SYS) throw new Error('pass system owner uuid');
 
-const slugs = ['sui', 'lyra', 'clawd'];
+const slugs = ['sui', 'lyra', 'marv'];
 const chars = slugs.map(s => require('../resources/default-characters/' + s + '.json'));
 
 // Dollar-quote with a tag guaranteed not to appear in the body.

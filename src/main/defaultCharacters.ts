@@ -26,7 +26,7 @@
  */
 import sui from '../../resources/default-characters/sui.json' with { type: 'json' };
 import lyra from '../../resources/default-characters/lyra.json' with { type: 'json' };
-import clawd from '../../resources/default-characters/clawd.json' with { type: 'json' };
+import marv from '../../resources/default-characters/marv.json' with { type: 'json' };
 import { CharacterSchema, type Character } from '../shared/characterSchema';
 import { getCharacter, saveCharacter } from './characterStore';
 
@@ -54,13 +54,31 @@ const logger = {
  *   - bundledSkinPath in skinStore.ts (Plan 11-05 caller) does a reverse
  *     lookup from UUID to slug to resolve resources/skins/<slug>.png.
  */
+// The `marv` slug was historically 'clawd' (the character's old codename); the
+// key was renamed to 'marv' to match the display name + the renamed bundle files
+// (resources/default-characters/marv.json, resources/skins/marv.png). The UUID is
+// UNCHANGED and still FROZEN. migration.ts maps the historical on-disk 'clawd'
+// slug to this same UUID so older installs still migrate.
 export const DEFAULT_CHARACTER_UUIDS = {
-  sui:   'bbf5b66f-2f0f-4918-a953-a2cf66d5a586',
-  lyra:  'e4511df2-fd20-470b-9131-f8f9968e1c01',
-  clawd: '25770cd6-a50b-409d-a7e2-6cc2026dd673',
+  sui:  'bbf5b66f-2f0f-4918-a953-a2cf66d5a586',
+  lyra: 'e4511df2-fd20-470b-9131-f8f9968e1c01',
+  marv: '25770cd6-a50b-409d-a7e2-6cc2026dd673',
 } as const;
 
 export type DefaultCharacterSlug = keyof typeof DEFAULT_CHARACTER_UUIDS;
+
+/**
+ * The account that owns the three default characters' public cloud rows. On
+ * 260706 ownership was transferred off the loginless system account onto the
+ * `ouen@sei.gg` user so the defaults can be authored in-app like any owned
+ * public character (they are normal `shared` World characters — no longer
+ * bundled read-only `is_default` copies). `runDefaultsToWorldMigration`
+ * (migration.ts) stamps this owner onto any pre-existing local `is_default`
+ * copy so `countsAsHomeSlot` treats it as a foreign-owned World character for
+ * everyone except this account (for whom it is an own, editable character).
+ * FROZEN alongside DEFAULT_CHARACTER_UUIDS.
+ */
+export const DEFAULT_CHARACTERS_OWNER = '571634bd-0f6d-4835-bef2-06fd7f449a3d';
 
 /**
  * Phase 11 D-22 — DEFAULT_CHARACTERS now key on UUID via DEFAULT_CHARACTER_UUIDS.
@@ -84,7 +102,7 @@ export type DefaultCharacterSlug = keyof typeof DEFAULT_CHARACTER_UUIDS;
 export const DEFAULT_CHARACTERS: readonly Character[] = Object.freeze([
   { ...CharacterSchema.parse(sui),   id: DEFAULT_CHARACTER_UUIDS.sui,   kind: 'world' as const },
   { ...CharacterSchema.parse(lyra),  id: DEFAULT_CHARACTER_UUIDS.lyra,  kind: 'world' as const },
-  { ...CharacterSchema.parse(clawd), id: DEFAULT_CHARACTER_UUIDS.clawd, kind: 'world' as const },
+  { ...CharacterSchema.parse(marv), id: DEFAULT_CHARACTER_UUIDS.marv, kind: 'world' as const },
 ]);
 
 /**

@@ -13,7 +13,7 @@
  * Renders nothing when no call is minimized.
  */
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -41,13 +41,14 @@ export function MinimizedCall(): React.ReactElement | null {
   const muted = useUiStore((s) => s.callMuted);
   const setMuted = useUiStore((s) => s.setCallMuted);
   // Real teardown (mic + TTS queue + main call-state) lives in useVoiceStore;
-  // it also clears the UI store's minimized/mute state.
+  // it also clears the UI store's minimized/mute state. participants + speakingId
+  // are the source of truth for who is on the call (multi-companion, 260706).
   const endCall = useVoiceStore((s) => s.endCall);
   const restoreCall = useUiStore((s) => s.restoreCall);
+  const participants = useVoiceStore((s) => s.participants);
+  const speakingId = useVoiceStore((s) => s.speakingId);
 
-  const character = useDataStore((s) =>
-    minimizedCall ? s.characters.find((c) => c.id === minimizedCall.characterId) : undefined,
-  );
+  const characters = useDataStore((s) => s.characters);
 
   // Free-drag position; null = docked bottom-right via CSS (initial state).
   const [pos, setPos] = useState<Pos | null>(null);
@@ -58,14 +59,15 @@ export function MinimizedCall(): React.ReactElement | null {
 
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
-  const palette = useMemo(
-    () => pickPalette((character?.id ?? '') + (character?.name ?? ''), theme),
-    [character?.id, character?.name, theme],
-  );
 
   if (!minimizedCall) return null;
 
-  const companionName = character?.name ?? 'Companion';
+  // Prefer the live participant roster; fall back to the minimized id (e.g. a
+  // brief window before the store settles) so the widget never renders empty.
+  const ids = participants.length ? participants : [minimizedCall.characterId];
+  const firstName = characters.find((c) => c.id === ids[0])?.name ?? 'Companion';
+  const companionName =
+    ids.length > 1 ? `${firstName} +${ids.length - 1}` : firstName;
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     // Let the mute / hang-up buttons handle their own clicks.
@@ -120,25 +122,37 @@ export function MinimizedCall(): React.ReactElement | null {
       aria-label={`Return to call with ${companionName}`}
       title="Click to return to call · drag to move"
     >
-      <div className={styles.avatar}>
-        {character ? (
-          <PixelPortrait
-            seed={character.id + character.name}
-            palette={palette}
-            size={30}
-            portraitImage={character.portrait_image}
-            style={{ width: '100%', height: '100%' }}
-          />
-        ) : (
-          <UserIcon size={16} />
-        )}
+      <div className={styles.stack}>
+        {ids.map((id) => {
+          const c = characters.find((x) => x.id === id);
+          const pal = pickPalette((c?.id ?? '') + (c?.name ?? ''), theme);
+          const isSpeaking = ids.length > 1 && speakingId === id;
+          return (
+            <div
+              key={id}
+              className={isSpeaking ? `${styles.stackItem} ${styles.stackItemSpeaking}` : styles.stackItem}
+            >
+              {c ? (
+                <PixelPortrait
+                  seed={c.id + c.name}
+                  palette={pal}
+                  size={30}
+                  portraitImage={c.portrait_image}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              ) : (
+                <UserIcon size={16} />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className={styles.meta}>
         <span className={styles.name}>{companionName}</span>
         <span className={styles.status}>
           <span className={styles.statusDot} aria-hidden="true" />
-          On call
+          {ids.length > 1 ? 'Group call' : 'On call'}
         </span>
       </div>
 

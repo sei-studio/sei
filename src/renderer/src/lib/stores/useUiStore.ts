@@ -194,6 +194,11 @@ interface UiState {
   /** Appearance & feel: live captions on the voice-call screen (persisted via
    * UserConfig.call_captions; App.tsx hydrates). Off by default. */
   callCaptions: boolean;
+  /** Appearance & feel: always-on-top call overlay (bottom-right companion
+   * circles). Persisted via UserConfig.call_overlay_enabled; App.tsx hydrates.
+   * Off by default (it floats over every app). Read by the overlay pusher in
+   * App.tsx to decide whether to spawn the overlay window during a call. */
+  callOverlayEnabled: boolean;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -221,6 +226,8 @@ interface UiState {
   setCallDeafened: (deafened: boolean) => void;
   /** Appearance & feel: set the call-captions toggle. */
   setCallCaptions: (v: boolean) => void;
+  /** Appearance & feel: set the always-on-top call-overlay toggle. */
+  setCallOverlayEnabled: (v: boolean) => void;
   /** #6: hang up / dismiss the call (clears the widget + resets mute). */
   endCall: () => void;
 }
@@ -247,6 +254,7 @@ export const useUiStore = create<UiState>((set) => ({
   callMuted: false,
   callDeafened: false,
   callCaptions: false,
+  callOverlayEnabled: false,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
   navigate: (view) =>
@@ -282,5 +290,6 @@ export const useUiStore = create<UiState>((set) => ({
   setCallMuted: (muted) => set({ callMuted: muted }),
   setCallDeafened: (deafened) => set({ callDeafened: deafened }),
   setCallCaptions: (v) => set({ callCaptions: v }),
+  setCallOverlayEnabled: (v) => set({ callOverlayEnabled: v }),
   endCall: () => set({ minimizedCall: null, callMuted: false, callDeafened: false }),
 }));

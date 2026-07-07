@@ -154,11 +154,22 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     };
   }, []);
 
-  // Auto-scroll to the bottom on new messages / typing-indicator changes.
+  // Auto-scroll to the bottom on new messages / typing-indicator changes, and on
+  // entering a DM (characterId) once its transcript finishes loading. A single
+  // post-paint write can land just short of the true bottom because portraits /
+  // images grow the list after the first layout, so re-pin on the next frame —
+  // otherwise entry leaves the newest message (and the composer breathing room)
+  // below the fold until you scroll.
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, awaiting]);
+    if (!el) return;
+    const toBottom = (): void => {
+      el.scrollTop = el.scrollHeight;
+    };
+    toBottom();
+    const r = requestAnimationFrame(toBottom);
+    return () => cancelAnimationFrame(r);
+  }, [messages, awaiting, characterId, loading]);
 
   // Scrollbar auto-hide: the thumb is transparent at rest and shows only
   // while the list is actively scrolling (data-scrolling, cleared after a
@@ -189,15 +200,20 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const companionName = character?.name ?? 'Companion';
   const userName = userProfile?.preferredName?.trim() || 'You';
   // Panel kind line: the character's one-line description with the leading
-  // "<Name>, " and trailing period stripped ("A wolf-person"), replacing the
-  // generic "Companion" label. Long descriptions (hand-written customs can be
-  // paragraphs) fall back to the generic label so the panel never floods.
+  // "<Name>, " appositive and trailing period stripped ("A wolf-person"),
+  // replacing the generic "Companion" label. Long descriptions (hand-written
+  // customs can be paragraphs) fall back to the generic label so the panel
+  // never floods.
   const kindLine = useMemo(() => {
     let d = (character?.description ?? '').replace(/\s+/g, ' ').trim();
     const name = (character?.name ?? '').trim();
     if (name) {
       const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      d = d.replace(new RegExp(`^${esc},?\\s+`, 'i'), '');
+      // Only strip the leading name when it's the "<Name>, ..." appositive form
+      // (comma REQUIRED). Without the comma the name is the sentence subject
+      // ("Sui is the OG...") and stripping it drops the subject, leaving a
+      // mangled "Is the OG..." — so leave those intact.
+      d = d.replace(new RegExp(`^${esc},\\s+`, 'i'), '');
     }
     d = d.replace(/[.\s]+$/, '');
     if (!d || d.length > 80) return 'Companion';

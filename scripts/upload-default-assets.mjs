@@ -1,15 +1,16 @@
-// Admin one-shot: publish the three bundled default characters' art (sui, lyra,
-// clawd) into Supabase Storage so installs receive UPDATES to default art via
-// the cache-on-demand refresh, instead of only the app-bundled baseline.
+// Admin one-shot: publish the three bundled default characters' art AND prompt
+// (sui, lyra, marv) into Supabase so installs receive UPDATES via the
+// cache-on-demand refresh, instead of only the app-bundled baseline.
 //
-// What it does, idempotently (safe to re-run after changing the art):
-//   1. Uploads each default's portrait  -> bucket `portraits`/<SYS>/<uuid>.png
-//   2. Uploads each default's skin       -> bucket `skins`/<SYS>/<uuid>.png
-//   3. Flips the public.characters rows to point at the uploaded objects:
-//        portrait_image = '<SYS>/<uuid>.png'
-//        skin_source    = 'upload'
-//        skin_png_sha256 = <sha256 of the skin bytes>   (cache-bust)
-//        skin_applied_at = now()
+// What it does, idempotently (safe to re-run after changing the art/persona):
+//   1. Uploads each default's portrait  -> bucket `portraits`/<OWNER>/<uuid>.png
+//   2. Uploads each default's skin       -> bucket `skins`/<OWNER>/<uuid>.png
+//   3. Flips the public.characters rows to point at the uploaded objects AND
+//      re-asserts the bundle's authored PROMPT fields, so the cloud row matches
+//      resources/default-characters/<slug>.json exactly:
+//        name, slug, persona_source, persona_expanded, metadata (merged with
+//        the top-level description), portrait_image = '<OWNER>/<uuid>.png',
+//        skin_source = 'upload', skin_png_sha256 (cache-bust), skin_applied_at.
 //      The characters_set_updated_at trigger bumps updated_at, which is what
 //      makes already-installed clients notice the change on next open and
 //      re-pull the new prompt/image (see src/main/cloud/cacheOnDemand.ts).
@@ -51,10 +52,16 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY; // env ONLY — never
 if (!URL_BASE) { console.error('set SUPABASE_URL (env or .env)'); process.exit(1); }
 if (!SERVICE_KEY) { console.error('set SUPABASE_SERVICE_ROLE_KEY in the process env'); process.exit(1); }
 
-// Dedicated loginless "Sei" system owner that holds the default characters'
-// public rows (see supabase/migrations/20260605130000_seed_builtin_characters_as_public.sql).
-const SYS = '9608dffc-f46a-4783-9f71-53579c1e1dec';
-const SLUGS = ['sui', 'lyra', 'clawd'];
+// Owner of the default characters' public rows. Originally the loginless "Sei"
+// system account 9608dffc-… (see supabase/migrations/20260605130000_seed_builtin_
+// characters_as_public.sql); on 260706 ownership was transferred to the ouen@sei.gg
+// user account so the defaults can be edited in-app like any owned character.
+// This constant drives BOTH the storage folder (<OWNER>/<uuid>.png) and the row
+// filter, so it must match whatever account currently owns the rows — otherwise
+// the in-app edit channel (which uploads under the owner's folder) and this
+// script diverge. Keep it in sync with public.characters.owner for these ids.
+const OWNER = '571634bd-0f6d-4835-bef2-06fd7f449a3d';
+const SLUGS = ['sui', 'lyra', 'marv'];
 
 const sb = createClient(URL_BASE, SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -78,7 +85,7 @@ for (const slug of SLUGS) {
       readFileSync(path.join(REPO, 'resources', 'default-characters', `${slug}.json`), 'utf8'),
     );
     const uuid = meta.id;
-    const objPath = `${SYS}/${uuid}.png`;
+    const objPath = `${OWNER}/${uuid}.png`;
 
     const portraitBytes = readFileSync(path.join(REPO, 'src', 'renderer', 'public', 'img', `${slug}.png`));
     const skinBytes = readFileSync(path.join(REPO, 'resources', 'skins', `${slug}.png`));
@@ -90,18 +97,41 @@ for (const slug of SLUGS) {
     await uploadOne('skins', objPath, skinBytes);
     console.log(`  skins/${objPath} <- ${skinBytes.length} B (sha256 ${skinHash.slice(0, 12)}…)`);
 
+    // Cloud stores `description` inside metadata (the bundle carries it as a
+    // top-level field); merge it in so the published metadata is complete.
+    const mergedMeta = { ...(meta.metadata ?? {}) };
+    if (meta.description) mergedMeta.description = meta.description;
+
     const { error: upErr } = await sb
       .from('characters')
       .update({
+        // Ownership — claim the row for OWNER. We upload the art to OWNER's
+        // storage folder ABOVE (before this update), so by the time owner flips
+        // the `<owner>/<uuid>.png` bytes the whole app derives already exist.
+        // This is the safe ordering for an ownership move: copy bytes first,
+        // flip owner second, so image URLs never resolve to an empty folder.
+        owner: OWNER,
+        // Prompt / authored fields — make the cloud row match the bundle JSON.
+        name: meta.name,
+        slug: meta.slug,
+        persona_source: meta.persona.source,
+        persona_expanded: meta.persona.expanded,
+        metadata: mergedMeta,
+        // Art.
         portrait_image: objPath, // bucket-relative <owner>/<uuid>.png; client strips the prefix
         skin_source: 'upload',
         skin_png_sha256: skinHash,
         skin_applied_at: new Date().toISOString(),
       })
-      .eq('id', uuid)
-      .eq('owner', SYS);
+      // Match by the frozen default UUID only — NOT by current owner — so the
+      // script self-completes regardless of who owns the row right now (it may
+      // be the system account or a prior partial transfer).
+      .eq('id', uuid);
     if (upErr) throw new Error(`row update: ${upErr.message}`);
-    console.log(`  row flipped: skin_source=upload, portrait_image=${objPath} (updated_at bumped by trigger)`);
+    console.log(
+      `  row updated: name=${meta.name} slug=${meta.slug} persona(${meta.persona.source.length}/${meta.persona.expanded.length}) ` +
+        `skin_source=upload portrait_image=${objPath} (updated_at bumped by trigger)`,
+    );
 
     // Read-back sanity check via the public object URLs.
     for (const bucket of ['portraits', 'skins']) {

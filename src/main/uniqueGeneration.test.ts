@@ -60,7 +60,7 @@ describe('libraryCharacterCount', () => {
     const chars: MiniChar[] = [
       { id: 'sui', is_default: true },
       { id: 'lyra', is_default: true },
-      { id: 'clawd', is_default: true },
+      { id: 'marv', is_default: true },
     ];
     // Only sui is on Home → 1, even though all three exist on disk.
     expect(libraryCharacterCount(chars, { added_default_ids: ['sui'] })).toBe(1);

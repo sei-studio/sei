@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { expandPersona, EXPANSION_MODEL } from '../src/main/personaExpansion.ts'
 
 const apiKey = readFileSync(join(homedir(), '.sei-dev', 'anthropic-test-key'), 'utf8').trim()
-const SLUGS = ['sui', 'clawd', 'lyra']
+const SLUGS = ['sui', 'marv', 'lyra']
 const dir = 'resources/default-characters'
 
 console.log(`model: ${EXPANSION_MODEL}\n`)

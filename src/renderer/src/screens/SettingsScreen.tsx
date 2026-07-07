@@ -68,6 +68,8 @@ export function SettingsScreen(): React.ReactElement {
   const realisticTyping = useUiStore((s) => s.realisticTyping);
   const setRealisticTyping = useUiStore((s) => s.setRealisticTyping);
   const callCaptions = useUiStore((s) => s.callCaptions);
+  const callOverlayEnabled = useUiStore((s) => s.callOverlayEnabled);
+  const setCallOverlayEnabled = useUiStore((s) => s.setCallOverlayEnabled);
   const setCallCaptions = useUiStore((s) => s.setCallCaptions);
   const authState = useAuthStore((s) => s.state);
   // "Is ANY bot running" — gates the live backend switch. Multi-summon: true
@@ -122,6 +124,9 @@ export function SettingsScreen(): React.ReactElement {
   // from sei.userGetProfile() on mount. PortraitImagePicker owns apply/remove
   // via the user-profile IPC overrides below.
   const [userPic, setUserPic] = useState<string | null>(null);
+  // The user's 4-char public handle (profiles.handle) — shown as the Account ID
+  // instead of the long Supabase UUID. Null until the profile loads / when offline.
+  const [userHandle, setUserHandle] = useState<string | null>(null);
   // Updates section. appVersion is read once via getVersion(); updateStatus
   // reflects live updater events while the user is on this screen. The actual
   // update FLOW (changelog popup, download, restart) is owned by App.tsx's
@@ -214,7 +219,10 @@ export function SettingsScreen(): React.ReactElement {
     // Seed the user's profile picture for the chat-avatar section below.
     void sei
       .userGetProfile()
-      .then((p) => setUserPic(p.profilePicture))
+      .then((p) => {
+        setUserPic(p.profilePicture);
+        setUserHandle(p.handle);
+      })
       .catch(() => {
         /* non-fatal — section just shows the empty/NONE state */
       });
@@ -375,6 +383,23 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
+  // Appearance & feel: always-on-top call overlay (default OFF). The overlay
+  // window itself is spawned/torn down by the pusher in App.tsx off this flag.
+  const onToggleCallOverlay = async (): Promise<void> => {
+    const next = !callOverlayEnabled;
+    setCallOverlayEnabled(next);
+    if (!cfg) return;
+    try {
+      const updated: UserConfig = { ...cfg, call_overlay_enabled: next };
+      await sei.saveConfig(updated);
+      setCfg(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (call_overlay_enabled) failed', err);
+      setCallOverlayEnabled(!next);
+    }
+  };
+
   // Write through vision_mode to UserConfig (the config is the source of truth;
   // botSupervisor bridges it into config.vision at fork). Mirrors the toggle
   // optimistic-then-rollback discipline. Always editable — not gated on a live
@@ -530,11 +555,13 @@ export function SettingsScreen(): React.ReactElement {
               </div>
             ) : null}
 
-            {/* Account ID — non-secret Supabase auth UUID for support workflows. */}
+            {/* Account ID — the short 4-char public handle (profiles.handle) for
+                support workflows, not the long Supabase UUID. Falls back to the
+                UUID only until the profile loads (or if no handle is assigned). */}
             <div className={styles.row}>
               <span className={styles.label}>Account ID</span>
               <span className={styles.idValue}>
-                <span className={styles.monoValue}>{authState.user.id}</span>
+                <span className={styles.monoValue}>{userHandle ?? authState.user.id}</span>
                 <button
                   type="button"
                   className={styles.copyBtn}
@@ -542,7 +569,7 @@ export function SettingsScreen(): React.ReactElement {
                   data-tip={uuidCopied ? 'Copied' : 'Copy'}
                   onClick={() => {
                     void navigator.clipboard
-                      .writeText(authState.user.id)
+                      .writeText(userHandle ?? authState.user.id)
                       .then(() => {
                         setUuidCopied(true);
                         window.setTimeout(() => setUuidCopied(false), 1500);
@@ -772,6 +799,22 @@ export function SettingsScreen(): React.ReactElement {
               aria-label="Call captions"
               on={callCaptions}
               onChange={() => void onToggleCallCaptions()}
+            />
+          </div>
+          {/* Call overlay (260706): always-on-top companion circles pinned to the
+              bottom-right during a call, lit while speaking. Off by default. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Call overlay
+              <InfoTip
+                label="About the call overlay"
+                text="During a voice call, floats your companions' avatars on top of every app in the bottom-right corner, lit while they speak. Good for streaming."
+              />
+            </span>
+            <Toggle
+              aria-label="Call overlay"
+              on={callOverlayEnabled}
+              onChange={() => void onToggleCallOverlay()}
             />
           </div>
         </div>

@@ -44,6 +44,7 @@ import { SwitchBackendConfirmModal } from './SwitchBackendConfirmModal';
 import { sei } from '../lib/ipcClient';
 import { lastInteractionAt } from '../lib/lastInteraction';
 import { isHomeCharacter } from '../lib/homeLibrary';
+import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -325,7 +326,9 @@ export function IconRail(): React.ReactElement {
     );
   }, [characters, currentUserId, addedDefaultIds, addedWorldIds]);
 
-  // Stable sort: last interaction desc (summon OR chat; nulls last), then created desc.
+  // Stable sort: last interaction desc (summon OR chat; nulls last), then created
+  // desc — then capped at MAX_COMPANION_SLOTS so the rail mirrors the home party
+  // wall's fixed 4 slots (same set, same order), never a longer list.
   const sortedCharacters = useMemo(() => {
     const copy = homeCharacters.slice();
     copy.sort((a, b) => {
@@ -341,7 +344,7 @@ export function IconRail(): React.ReactElement {
       const bCreated = b.created ?? '';
       return bCreated.localeCompare(aCreated);
     });
-    return copy;
+    return copy.slice(0, MAX_COMPANION_SLOTS);
   }, [homeCharacters]);
 
   const handleCompassClick = (): void => {

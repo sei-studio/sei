@@ -38,6 +38,38 @@
   justify-content: center;
 }
 
+/* Multi-companion (260706): overlapping avatar stack for a group call. */
+.stack {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding-left: 2px;
+}
+
+.stackItem {
+  width: 30px;
+  height: 30px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1.5px solid var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 140ms var(--ease);
+}
+
+/* Each avatar after the first tucks under the previous one. */
+.stackItem + .stackItem {
+  margin-left: -12px;
+}
+
+/* The companion speaking right now pops forward with an accent ring. */
+.stackItemSpeaking {
+  border-color: var(--accent);
+  z-index: 1;
+}
+
 .meta {
   display: flex;
   flex-direction: column;

@@ -62,6 +62,42 @@ export interface BuildSystemArgs {
    * cached block once per call open/close, which is the honest cache price.
    */
   voiceCall?: boolean;
+  /**
+   * Multi-companion voice (260706): the OTHER companions' names on the same
+   * call. When present (and voiceCall), block 0 gains a group-call note so the
+   * model knows it is not alone on the line, that lines prefixed with a name in
+   * parentheses are another companion speaking (not the player), and that it
+   * should keep turns short and may stay silent to leave room. Empty/absent =
+   * a solo call, no note.
+   */
+  voicePeers?: string[];
+}
+
+/**
+ * Multi-companion voice (260706): the group-call awareness note, added to block
+ * 0 under the voice-call primer. Explains that other companions are on the line,
+ * how their lines are attributed (name-prefixed), and the keep-it-short /
+ * silence-is-fine turn etiquette that keeps a two-AI call from turning into a
+ * wall of overlapping monologues. Shared by the chat brain (player turns) and
+ * the cross-companion reaction turn so both frame the group identically.
+ */
+export function groupCallNote(peers: string[]): string {
+  const names =
+    peers.length === 1
+      ? peers[0]
+      : peers.length === 2
+        ? `${peers[0]} and ${peers[1]}`
+        : `${peers.slice(0, -1).join(', ')}, and ${peers[peers.length - 1]}`;
+  return (
+    `This is a GROUP voice call: on the line with you are the player and ${names} ` +
+    `(${peers.length + 1} of you companions, plus the player). ` +
+    'A line prefixed with a name in parentheses, like "(Sui, on the call): ...", is that companion talking, ' +
+    'not the player. You can talk straight back to them: banter, agree, pile on, undercut, argue. ' +
+    'Keep every turn to ONE short spoken line so the others get a word in. ' +
+    'When a back-and-forth is genuinely going somewhere, keep it alive and build on it instead of closing it off; ' +
+    'only bow out (say nothing) once a thread has actually run its course or you have nothing to add. ' +
+    'Do not force a reply to every single line.'
+  );
 }
 
 export type SystemBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
@@ -87,10 +123,12 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   // The timestamp note is stable text, so it rides in the cached block: player
   // messages arrive stamped (260703) so the model can FEEL gaps — a "hop on"
   // the next morning is not the same conversation beat as one 10s later.
+  const inGroupCall = args.voiceCall === true && (args.voicePeers?.length ?? 0) > 0;
   const blocks: SystemBlock[] = [{
     type: 'text',
     text:
       (args.voiceCall ? `[voice call] ${VOICE_CALL_PRIMER}\n\n` : '') +
+      (inGroupCall ? `[group call] ${groupCallNote(args.voicePeers as string[])}\n\n` : '') +
       `${UNIVERSAL_BASELINE}\n\n${CHAT_BASELINE}\n\n` +
       'Player messages are prefixed with the time they were sent, like "[3 Jul 10:34]". ' +
       'Use it to notice gaps — a new day or a long silence deserves acknowledgment, not mid-conversation continuity. ' +
@@ -106,7 +144,7 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   if (args.preferredName) personaParts.push(`The player's name is ${args.preferredName}.`);
   personaParts.push(renderChatProactivenessDirective(args.proactiveness));
   personaParts.push(renderPunctuationDirective(args.punctuation));
-  blocks.push({ type: 'text', text: personaParts.join('\n\n'), cache_control: { type: 'ephemeral' } });
+  blocks.push({ type: 'text', text: personaParts.join('\n\n') });
 
   if (args.memory.trim()) {
     blocks.push({
@@ -151,7 +189,46 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
           'Do not call launch. If they want to play, walk them through opening their world to LAN in your own words. ' +
           'You cannot see their screen, so describe the steps, do not quote any status text.'),
   });
+
+  // Prompt caching (260706): re-sending the full memory + summary uncached every
+  // turn was the bulk of the per-turn prefill (the "8s voice reply" latency).
+  // Two breakpoints, cheapest-to-invalidate LAST so a change only re-bills the
+  // small tail after it:
+  //   • the last STABLE block (persona, or memory/summary when present) — never
+  //     changes during a session, so persona + memory + summary is always a hit;
+  //   • the status block — its only volatile part is the minute-granular clock,
+  //     so within a minute (i.e. across the rapid turns of a live call) the WHOLE
+  //     system prompt is a cache hit; a minute rollover misses only this tail.
+  // markLastMessageCached() adds the third breakpoint (the transcript) per turn.
+  const statusIdx = blocks.length - 1;
+  const stableIdx = statusIdx - 1; // persona at minimum (blocks[1]); the last pre-status block
+  blocks[stableIdx].cache_control = { type: 'ephemeral' };
+  blocks[statusIdx].cache_control = { type: 'ephemeral' };
   return blocks;
+}
+
+/**
+ * Prompt caching (260706): mark the LAST message so the growing conversation
+ * transcript is cached prefix-incrementally. The history is append-only, so each
+ * turn's cached prefix (system + prior turns) is a prefix of the next turn's
+ * request — Anthropic serves the longest match, leaving only the new user turn
+ * (and any reply) to be processed fresh. A no-op below the model's minimum
+ * cacheable length. Content is normalized to a one-element text-block array so
+ * the breakpoint has a block to attach to.
+ */
+export function markLastMessageCached(
+  messages: Array<{ role: 'user' | 'assistant'; content: unknown }>,
+): void {
+  const last = messages[messages.length - 1];
+  if (!last) return;
+  if (typeof last.content === 'string') {
+    last.content = [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }];
+    return;
+  }
+  if (Array.isArray(last.content) && last.content.length) {
+    const tail = last.content[last.content.length - 1] as { cache_control?: unknown };
+    if (tail && typeof tail === 'object') tail.cache_control = { type: 'ephemeral' };
+  }
 }
 
 /** The single agent-initiated handoff tool. */

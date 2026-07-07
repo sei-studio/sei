@@ -1,36 +1,51 @@
 /**
- * useVoiceStore (260705) — the live voice-call session.
+ * useVoiceStore (260705, multi-companion 260706) — the live voice-call session.
  *
- * One call at a time. startCall() spins up the whole pipeline:
- *   mic → energy VAD → local Whisper (worker)  ──transcript──▶ useChatStore.send()
- *   companion reply text (send() result or chat:message push, via voiceBridge)
- *     ──voiceTts (proxy)──▶ audio queue → speakers
- * and tells main the call is open (voice:call-state), which flips the
- * voice-call primer on in prompts and reroutes an in-game bot's say() lines to
- * the call. endCall() tears all of it down and tells main — including how long
- * the call was actually live (connectedMs), which main turns into the
- * "You and X called for Y" transcript row.
+ * ONE call, but it can hold MULTIPLE companions. startCall(id) dials the first;
+ * calling again for another id ADDS them to the same live call (addParticipant).
+ * The pipeline is shared:
+ *   mic → energy VAD → local Whisper (worker)  ──transcript──▶ the DIRECTOR
+ *   companion reply text  ──voiceTts (proxy)──▶ ONE audio queue → speakers
  *
- * Once live, main is asked to make the companion GREET first (voice:greet —
- * like answering the phone), and the companion can hang up on its own via
- * end_call(): the remote-end path (voiceBridge.requestRemoteEndCall, wired to
- * both the send() result flag and the voice:call-ended push) waits for the
- * goodbye to finish playing before tearing down.
+ * TURN-TAKING (the director, below). The single audio queue already serializes
+ * all speech, so two companions physically cannot talk over each other. The
+ * director sits on top and decides WHO generates when (policy in ../voice/pfcSteer,
+ * "PFC steer"):
+ *   - a player utterance goes to one chosen responder (addressed-by-name, else a
+ *     varied pick that down-weights whoever answered last so it is not always the
+ *     same AI first) and is silently mirrored into the other companions'
+ *     transcripts so they keep context;
+ *   - after a companion speaks, another companion MAY react — a probabilistic,
+ *     depth-decaying decision, so an exchange sometimes stops at one line and
+ *     sometimes banters on for a few turns (the player can just listen);
+ *   - a player barge-in bumps the director sequence, cancelling any pending
+ *     chain, and clears the audio queue — the player always wins the floor.
+ * The chain is bounded (PFC_MAX_CHAIN) and single-flight, so it can never
+ * deadlock or run away.
  *
- * Mute lives in useUiStore (shared with the MinimizedCall widget, which
- * predates this store); we subscribe and forward it to the mic pipeline.
- * Half-duplex: while companion audio is audible the mic is held, so the
- * companion never hears itself (belt to getUserMedia echoCancellation's
- * suspenders).
+ * PER-COMPANION SPEAKING STATE. Every TTS clip is tagged with its characterId,
+ * so the queue reports WHO is speaking; `speakingId` names that companion (null
+ * when silent) and the call UIs (tasks 3-4) render each pfp lit/dimmed from it.
+ *
+ * Once live, main is asked to make the (first) companion GREET first; an added
+ * companion greets the room. Companions can hang up via end_call(): on a solo
+ * call that ends the call (after the goodbye drains); on a group call it just
+ * drops that one companion.
+ *
+ * Mute/deafen live in useUiStore (shared with the MinimizedCall widget); we
+ * subscribe and forward them. Half-duplex: while companion audio is audible the
+ * mic is held, so the companions never hear themselves.
  */
 
 import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useUiStore } from './useUiStore';
 import { useChatStore } from './useChatStore';
+import { useDataStore } from './useDataStore';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createDictation, type Dictation } from '../voice/dictation';
 import { registerVoiceHooks } from '../voice/voiceBridge';
+import { pickResponder, decideReaction, isJunkTranscript, type Participant } from '../voice/pfcSteer';
 import {
   startRingtone,
   startAmbience,
@@ -42,29 +57,46 @@ import {
 
 export type CallStatus =
   | 'idle'
-  | 'connecting' // mic permission + model load in flight
+  | 'connecting' // mic permission + model load in flight (first dial only)
   | 'live'
   | 'error';
 
 interface VoiceState {
-  /** Character the call is with; null when no call. */
+  /** Companions on the call, in join order (first = the one that was dialed).
+   * Empty when no call is open. */
+  participants: string[];
+  /** Primary participant (participants[0]); kept for the surfaces that key off a
+   * single character (VoiceCallScreen dial guard, MinimizedCall). null = no call. */
   callCharacterId: string | null;
   status: CallStatus;
-  /** Companion audio currently playing (drives the avatar pulse). */
+  /** Any companion audio currently playing (drives the minimized "on call" pulse). */
   speaking: boolean;
+  /** WHICH companion is speaking right now (null when silent). Per-companion
+   * speaking state for the call UIs: a pfp is lit when its id === speakingId. */
+  speakingId: string | null;
+  /** True while the player's own mic has live speech — lights the SAME ring on
+   * the caller's avatar that companions get while speaking. */
+  userSpeaking: boolean;
   /** Last transcribed player utterance (caption line). */
   lastHeard: string;
   /** Last companion line sent to TTS (caption line). */
   lastSpoken: string;
+  /** Which companion said `lastSpoken` (caption attribution). */
+  lastSpokenId: string | null;
   /** User-facing error copy when status === 'error'. */
   error: string | null;
-  /** While connecting: model-download percentage ('43') or null (no download
-   * in flight — cached model, or still acquiring the mic). */
+  /** While connecting: model-download percentage ('43') or null. */
   connectingDetail: string | null;
   /** Epoch ms the call went live — drives the on-screen duration timer. */
   liveAt: number | null;
 
+  /** Dial the first companion, OR add another to a call already open. */
   startCall: (characterId: string) => Promise<void>;
+  /** Add a companion to the live call (no-op if already on it). */
+  addParticipant: (characterId: string) => void;
+  /** Drop one companion from the call (ends the whole call if it was the last). */
+  removeParticipant: (characterId: string) => void;
+  /** Hang up the whole call. */
   endCall: () => void;
 }
 
@@ -73,39 +105,50 @@ let dictation: Dictation | null = null;
 let queue: AudioQueue | null = null;
 /** Session token — guards async completions from a superseded/ended call. */
 let session = 0;
-/** When the call went LIVE (audio pipeline up) — basis for connectedMs. */
-let liveSince: number | null = null;
+/** When each participant's audio went live — basis for their connectedMs row. */
+const liveSince = new Map<string, number>();
 /** TTS fetches in flight — the remote-end drain waits for these. */
 let pendingTts = 0;
-/** Companion lines that arrived while the call was still 'connecting'. main
- * flips say() routing to the call at dial start (voiceCallSetActive(true)), so
- * the companion can speak during the ring + mic-permission + first-run model
- * download window — but the audio pipeline isn't up yet, so those lines would
- * be neither spoken nor shown. Buffer them here and flush on the
- * connecting→live edge. Capped so a stuck 'connecting' can't grow it forever. */
-let pendingCompanionLines: string[] = [];
+/** Companion lines that arrived while the (first) call was still 'connecting'. */
+let pendingCompanionLines: Array<{ characterId: string; text: string }> = [];
 const MAX_PENDING_COMPANION_LINES = 12;
-/** Companion hang-up (end_call): end as soon as queued speech finishes. */
+/** Solo companion hang-up (end_call): end as soon as queued speech finishes. */
 let remoteEndAt: number | null = null;
-/** First moment the goodbye was observed fully drained (tail-delay basis). */
 let remoteDrainedAt: number | null = null;
 let remoteEndTimers: number[] = [];
-/** Call dressing (260705): two-tone ring while dialing, comfort-noise bed
- * while live. Stop fns owned here; null when silent. */
+/** Call dressing (260705): ring while dialing, comfort-noise bed while live. */
 let stopRing: StopFn | null = null;
 let stopAmbience: StopFn | null = null;
-/** Live TTS streams: streamId → queue slot. Chunk pushes multiplex over one
- * subscription; `orphans` catches chunks that beat the id registration. */
+/** Live TTS streams: streamId → queue slot. */
 const ttsStreams = new Map<string, TtsStreamHandle>();
 const ttsOrphans = new Map<string, Array<{ chunk?: ArrayBuffer; done?: boolean; error?: string }>>();
-/** Module-level listener handles, torn down on HMR dispose (see module foot).
- * Without this every dev hot-reload of this module stacked another live
- * ipcRenderer listener from the stale instance — N reloads meant every
- * companion line was TTS'd N times (260706 field report: Marv said the same
- * sentence five times). */
+/** Module-level listener handles, torn down on HMR dispose (see module foot). */
 let unsubUiMirror: (() => void) | null = null;
 let offTtsChunk: (() => void) | null = null;
 let offCallEnded: (() => void) | null = null;
+
+// ── PFC steer: turn-taking director state ────────────────────────────────────
+// The decision policy (who speaks, whether to chain, junk rejection) lives in
+// ../voice/pfcSteer; this is the mutable session state the director threads
+// through it. Search "pfc steer" to find the whole seam.
+/** Bumped by every player utterance and by teardown; a running companion chain
+ * that finds its captured value stale aborts (barge-in / supersede). */
+let directorSeq = 0;
+/** Who answered the LAST player utterance — down-weighted next time so the
+ * first-to-speak varies instead of always being the same AI. */
+let lastResponderId: string | null = null;
+/** Who reacted most recently in the current chain — down-weighted so a trio
+ * spreads the floor rather than two of them ping-ponging. */
+let lastReactorId: string | null = null;
+/** Perf: when the last player utterance was dispatched, so we can log the
+ * renderer-visible reply latency (utterance → first spoken line) to the IN-APP
+ * DevTools console. Main's [sei/chat] line only reaches the terminal; this makes
+ * the number visible without leaving the app. Cleared once the first line lands. */
+let replyClockAt: number | null = null;
+/** Small pacing gaps between chained companion turns so banter doesn't feel
+ * instant (and audio has a beat to start). */
+const CHAIN_GAP_FIRST_MS = 300;
+const CHAIN_GAP_NEXT_MS = 450;
 
 function silenceDressing(): void {
   stopRing?.();
@@ -114,20 +157,35 @@ function silenceDressing(): void {
   stopAmbience = null;
 }
 
-/** Companion-initiated hang-up must not clip the goodbye: the end_call signal
- * can beat the goodbye's TTS fetch, so wait at least this long before ending
- * on an idle queue. */
+/** Resolve a companion's display name (for prompt framing + greetings). */
+function nameOf(characterId: string): string {
+  return useDataStore.getState().characters.find((c) => c.id === characterId)?.name ?? 'Companion';
+}
+
+/** Participant ids → {id, name} pairs for the pure turn-taking helpers. */
+function asParticipants(ids: string[]): Participant[] {
+  return ids.map((id) => ({ id, name: nameOf(id) }));
+}
+
+const wait = (ms: number): Promise<void> => new Promise((r) => window.setTimeout(r, ms));
+
+/** Solo companion hang-up must not clip the goodbye (see the single-call notes). */
 const REMOTE_END_GRACE_MS = 1800;
-/** ...and once the goodbye HAS finished, linger this long before hanging up —
- * ending exactly on the queue-empty edge audibly clipped the last word
- * (260705 field report: Marv), and an instant hang-up feels abrupt anyway. */
 const REMOTE_END_TAIL_MS = 700;
-/** Hard bound — a stuck TTS fetch must not leave a zombie "ended" call. */
 const REMOTE_END_MAX_WAIT_MS = 12_000;
-/** Dial theater (260705): let the ring play at least this long before the
- * companion "picks up" — the greeting LLM call fires only after it. An
- * instant pickup reads as fake; a couple of rings reads as a phone. */
-const MIN_RING_MS = 3000;
+/** Dial theater: let the ring play at least this long before the companion picks
+ * up. 260706: 3000 → 1300. 3s of ring was the single largest fixed delay before
+ * the first word; the greeting LLM call now runs DURING the ring (see startCall),
+ * so a shorter ring lands the first word ~2s after dialing instead of ~8s. */
+const MIN_RING_MS = 1300;
+// 260706 (tasks 2/3): the call stays OUTGOING (ringing, no stopwatch) until the
+// companion's first line is actually ready — "connected" should never begin on
+// dead air. We poll for the buffered greeting up to this cap, then connect
+// anyway so a slow/empty greeting can't hang the dial forever.
+const GREETING_READY_CAP_MS = 5000;
+// Once connected, hold a beat before the first word — a real "pickup" pause, and
+// it gives the greeting's TTS first-byte a moment to land.
+const CONNECT_SPEAK_DELAY_MS = 1000;
 
 function friendlyError(err: unknown): string {
   const msg = String((err as Error)?.message ?? err);
@@ -140,14 +198,11 @@ function friendlyError(err: unknown): string {
 }
 
 export const useVoiceStore = create<VoiceState>((set, get) => {
-  // Forward the shared mute toggle (useUiStore.callMuted) into the live mic,
-  // with a state-encoding click (down = muted, up = live) while on a call.
-  // Deafen (260705) silences the call's OUTPUT — companion voice and the
-  // ambience bed — without pausing playback, so undeafening rejoins live.
+  // Forward the shared mute/deafen toggles into the live pipeline.
   unsubUiMirror = useUiStore.subscribe((s, prev) => {
     if (s.callMuted !== prev.callMuted) {
       dictation?.setMuted(s.callMuted);
-      if (get().callCharacterId) playMuteClick(s.callMuted);
+      if (get().participants.length) playMuteClick(s.callMuted);
     }
     if (s.callDeafened !== prev.callDeafened) {
       queue?.setOutputMuted(s.callDeafened);
@@ -159,13 +214,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           stopAmbience = startAmbience();
         }
       }
-      if (get().callCharacterId) playMuteClick(s.callDeafened);
+      if (get().participants.length) playMuteClick(s.callDeafened);
     }
   });
 
-  /** Companion hang-up: end once nothing is left to say (or the grace/max
-   * timers decide nothing more is coming). Checked on every TTS settle and
-   * every queue speaking→false edge. */
+  /** Solo companion hang-up: end once nothing is left to say. */
   function maybeFinishRemoteEnd(): void {
     if (remoteEndAt === null) return;
     const s = get();
@@ -176,9 +229,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     }
     const waited = Date.now() - remoteEndAt;
     const drained = pendingTts === 0 && !(queue?.speaking() ?? false);
-    // Tail delay: hang up REMOTE_END_TAIL_MS after the goodbye finishes, not
-    // on the queue-empty edge (which audibly clipped the last word). A new
-    // clip starting resets the basis.
     if (!drained) {
       remoteDrainedAt = null;
     } else if (remoteDrainedAt === null) {
@@ -191,9 +241,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       remoteDrainedAt = null;
       const characterId = s.callCharacterId;
       get().endCall();
-      // If the call screen is up it would immediately re-dial (its mount
-      // effect treats "no call for this character" as intent to start one) —
-      // route it back to chat instead. A minimized call just disappears.
       const ui = useUiStore.getState();
       if (ui.view.kind === 'voice-call' && ui.view.characterId === characterId) {
         ui.navigate({ kind: 'chat', characterId });
@@ -201,28 +248,39 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     }
   }
 
+  /** A companion asked to hang up (end_call). Solo call → drain then end the
+   * call; group call → drop just that companion once its goodbye has played. */
   function requestRemoteEnd(characterId: string): void {
     const s = get();
-    if (s.callCharacterId !== characterId) return;
+    if (!s.participants.includes(characterId)) return;
+    if (s.participants.length > 1) {
+      // Let the goodbye clip (already queued) play, then remove just this one.
+      remoteEndTimers.push(
+        window.setTimeout(() => get().removeParticipant(characterId), REMOTE_END_GRACE_MS + REMOTE_END_TAIL_MS),
+      );
+      return;
+    }
     if (remoteEndAt !== null) return;
     remoteEndAt = Date.now();
-    // Re-check after the grace window (covers "goodbye already played / never
-    // came") and at the hard bound (covers a stuck TTS fetch).
     remoteEndTimers.push(window.setTimeout(maybeFinishRemoteEnd, REMOTE_END_GRACE_MS + 50));
     remoteEndTimers.push(window.setTimeout(maybeFinishRemoteEnd, REMOTE_END_MAX_WAIT_MS + 50));
   }
 
-  /** Synthesize + display one companion line on the LIVE call. Extracted so
-   * lines buffered during 'connecting' can be flushed through the same path
-   * once the pipeline is up. Assumes status === 'live' and queue is present. */
+  /** Synthesize + display one companion line on the LIVE call, tagged with the
+   * speaker so the queue can report per-companion speaking state. */
   function speakCompanionLine(characterId: string, text: string): void {
     const mySession = session;
-    set({ lastSpoken: text });
+    if (replyClockAt !== null) {
+      console.log(
+        `[sei/voice] reply latency ${Math.round(performance.now() - replyClockAt)}ms ` +
+          `(your utterance -> first spoken line). Excludes end-silence + Whisper before it.`,
+      );
+      replyClockAt = null;
+    }
+    set({ lastSpoken: text, lastSpokenId: characterId });
     pendingTts += 1;
 
     const surfaceTtsError = (msg: string): void => {
-      // A failed clip should not kill the call; surface out-of-allowance
-      // copy in the caption line so the silence is explained.
       if (session !== mySession) return;
       if (/VOICE_RATE_LIMITED/.test(msg)) {
         set({ lastSpoken: '[voice paused, daily usage cap reached]' });
@@ -235,14 +293,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       maybeFinishRemoteEnd();
     };
 
-    // Streaming path (260705): reserve the queue slot NOW (reply order is
-    // arrival order of text, not fetch completion) and play chunks as they
-    // land — first audio on the first mp3 frame. pendingTts stays held
-    // until the stream's terminal push (see onVoiceTtsChunk below).
     const canStream =
       typeof sei.voiceTtsStream === 'function' && typeof sei.onVoiceTtsChunk === 'function';
     if (canStream && queue) {
-      const handle = queue.enqueueStream();
+      const handle = queue.enqueueStream(characterId);
       void sei
         .voiceTtsStream({ characterId, text })
         .then(({ streamId }) => {
@@ -252,8 +306,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             return;
           }
           ttsStreams.set(streamId, handle);
-          // Flush any chunks that beat this registration (paranoia; invoke
-          // replies normally land before push events).
           const early = ttsOrphans.get(streamId);
           if (early) {
             ttsOrphans.delete(streamId);
@@ -271,34 +323,139 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     void sei
       .voiceTts({ characterId, text })
       .then((buf) => {
-        if (session === mySession) queue?.enqueue(buf);
+        if (session === mySession) queue?.enqueue(buf, characterId);
       })
       .catch((err) => surfaceTtsError(String((err as Error)?.message ?? '')))
       .finally(settleTts);
   }
 
-  /** Flush the lines buffered during 'connecting' onto the now-live call. */
-  function flushPendingCompanionLines(characterId: string): void {
+  /** Flush the lines buffered during the first 'connecting' window. */
+  function flushPendingCompanionLines(): void {
     if (pendingCompanionLines.length === 0) return;
     const lines = pendingCompanionLines;
     pendingCompanionLines = [];
-    for (const line of lines) speakCompanionLine(characterId, line);
+    for (const line of lines) {
+      if (get().participants.includes(line.characterId)) speakCompanionLine(line.characterId, line.text);
+    }
   }
 
-  // Chat → voice seam: companion text lands here from BOTH reply paths, and
-  // companion hang-ups from BOTH end_call paths (send() flag / main push).
+  // ── Turn-taking director ───────────────────────────────────────────────────
+
+  /** Run one companion's turn and (bounded) let another react to it. `incoming`
+   * is either the player's utterance or the previous companion's spoken line. */
+  async function runCompanionTurn(
+    mySeq: number,
+    speakerId: string,
+    incoming: { from: 'player'; text: string } | { from: 'companion'; fromName: string; text: string },
+    depth: number,
+  ): Promise<void> {
+    if (mySeq !== directorSeq) return;
+    const parts = get().participants;
+    if (!parts.includes(speakerId)) return;
+    const peers = parts.filter((id) => id !== speakerId).map(nameOf);
+
+    let lines: string[] = [];
+    try {
+      if (incoming.from === 'player') {
+        // Same pipeline as typed chat: persists, routes to a live game session if
+        // in-world, and speaks each reply via the onCompanionText hook.
+        const res = await useChatStore.getState().send(speakerId, incoming.text, undefined, peers);
+        lines = (res?.replies ?? []).map((r) => r.text).filter(Boolean);
+      } else {
+        // Cross-companion reaction: a direct invoke that returns the lines (no
+        // push), so the director speaks them here — but only if still current.
+        const replies = await sei
+          .voiceCompanionTurn?.({ characterId: speakerId, speakerName: incoming.fromName, text: incoming.text, peers })
+          .catch(() => [] as { text: string }[]);
+        lines = (replies ?? []).map((r) => r.text).filter(Boolean);
+        if (mySeq !== directorSeq) return; // barged over while generating
+        // Don't let a companion who was dropped mid-generation (end_call, or the
+        // user removed them) still speak a queued reaction into the room — that
+        // was the "Sui kept talking in the background after she left" bug.
+        if (!get().participants.includes(speakerId)) return;
+        if (get().status === 'live') for (const l of lines) speakCompanionLine(speakerId, l);
+      }
+    } catch {
+      lines = [];
+    }
+    if (mySeq !== directorSeq) return;
+    if (lines.length === 0) return; // nothing said → nothing to react to
+
+    // Chain: PFC steer decides whether ANOTHER companion reacts (probabilistic +
+    // capped), so an exchange sometimes stops after one line and sometimes
+    // banters on for a few turns — not always both, not forever.
+    const decision = decideReaction({
+      speakerId,
+      participants: asParticipants(parts),
+      depth,
+      lastReactorId,
+      // The line just spoken — if it names a peer, that peer is forced to answer.
+      text: lines[lines.length - 1],
+    });
+    const reactorId = decision?.reactorId ?? null;
+
+    // Everyone on the call HEARS everything: mirror this turn's lines into every
+    // other companion's transcript so a bystander stays in context. The reactor
+    // is excluded — it receives the line as its own turn trigger (voiceCompanionTurn
+    // persists it), so mirroring there too would double it.
+    const speakerName = nameOf(speakerId);
+    for (const id of parts) {
+      if (id === speakerId || id === reactorId) continue;
+      for (const l of lines) {
+        void sei.voiceObserve?.({ characterId: id, from: speakerName, text: l }).catch(() => {});
+      }
+    }
+
+    if (!decision) return;
+    lastReactorId = decision.reactorId;
+    const lastLine = lines[lines.length - 1];
+    await wait(depth === 0 ? CHAIN_GAP_FIRST_MS : CHAIN_GAP_NEXT_MS);
+    if (mySeq !== directorSeq) return;
+    void runCompanionTurn(mySeq, decision.reactorId, { from: 'companion', fromName: speakerName, text: lastLine }, depth + 1);
+  }
+
+  /** A player utterance arrived (from the mic). Barge-in already cleared the
+   * audio queue; here we supersede any running chain, mirror the line to the
+   * non-responders for context, and kick off the responder's turn. */
+  function dispatchUserTurn(text: string): void {
+    const parts = get().participants;
+    if (!parts.length || get().status !== 'live') return;
+    // Reject Whisper hallucinations (echo/breath/silence → "hhhhh", "you",
+    // "[BLANK_AUDIO]") before they become a turn: otherwise they inject lines
+    // the player never said and, via supersede, delay the real reply.
+    if (isJunkTranscript(text)) return;
+    replyClockAt = performance.now(); // start the reply-latency clock (see speakCompanionLine)
+    const mySeq = ++directorSeq; // cancels any in-flight companion chain
+    lastReactorId = null; // fresh utterance: reset the chain's spread memory
+    set({ lastHeard: text });
+    if (parts.length === 1) {
+      lastResponderId = parts[0];
+      void runCompanionTurn(mySeq, parts[0], { from: 'player', text }, 0);
+      return;
+    }
+    const pick = pickResponder(text, asParticipants(parts), lastResponderId);
+    lastResponderId = pick.id;
+    const responder = pick.id;
+    // The responder hears the line through send(); mirror it into every other
+    // companion's transcript so they have the player's words for their own turn.
+    for (const id of parts) {
+      if (id !== responder) void sei.voiceObserve?.({ characterId: id, from: 'player', text }).catch(() => {});
+    }
+    void runCompanionTurn(mySeq, responder, { from: 'player', text }, 0);
+  }
+
+  // Chat → voice seam: companion text lands here from BOTH reply paths (send()
+  // result + chat:message push), and companion hang-ups from BOTH end_call paths.
   registerVoiceHooks({
-    isCallActive: (characterId) => get().callCharacterId === characterId,
+    isCallActive: (characterId) => get().participants.includes(characterId),
     onRemoteEndCall: requestRemoteEnd,
     onCompanionText: (characterId, text) => {
       const s = get();
-      if (s.callCharacterId !== characterId) return;
-      // Lines can arrive before the line opens (say() routes to the call from
-      // dial start, but TTS can't play until 'live'): buffer them and flush on
-      // the connecting→live edge so they are neither dropped nor silent.
+      if (!s.participants.includes(characterId)) return;
+      // Lines can arrive before the (first) line opens: buffer and flush on live.
       if (s.status === 'connecting') {
         if (pendingCompanionLines.length < MAX_PENDING_COMPANION_LINES) {
-          pendingCompanionLines.push(text);
+          pendingCompanionLines.push({ characterId, text });
         }
         return;
       }
@@ -307,8 +464,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     },
   });
 
-  /** Route one voice:tts-chunk push into its queue slot. Terminal pushes
-   * release the slot and the pendingTts hold. */
   function applyTtsPush(
     streamId: string,
     push: { chunk?: ArrayBuffer; done?: boolean; error?: string },
@@ -328,8 +483,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   try {
     offTtsChunk = sei.onVoiceTtsChunk?.((push) => {
       if (!ttsStreams.has(push.streamId)) {
-        // Not registered (yet): park briefly in case the {streamId} reply is
-        // still in flight; drop quietly if it never registers (ended call).
         if (ttsOrphans.size > 32) ttsOrphans.clear();
         const list = ttsOrphans.get(push.streamId) ?? [];
         list.push(push);
@@ -342,8 +495,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     /* preload without streaming — buffered path covers it */
   }
 
-  // Companion hung up from IN-GAME (end_call → main push). The idle-chat path
-  // arrives via the send() result flag instead (useChatStore → voiceBridge).
   try {
     offCallEnded =
       sei.onVoiceCallEnded?.(({ characterId }) => requestRemoteEnd(characterId)) ?? null;
@@ -352,23 +503,34 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   }
 
   return {
+    participants: [],
     callCharacterId: null,
     status: 'idle',
     speaking: false,
+    speakingId: null,
+    userSpeaking: false,
     lastHeard: '',
     lastSpoken: '',
+    lastSpokenId: null,
     error: null,
     connectingDetail: null,
     liveAt: null,
 
     startCall: async (characterId) => {
       const prev = get();
-      if (prev.callCharacterId === characterId && prev.status !== 'error') return;
-      if (prev.callCharacterId) get().endCall();
+      if (prev.participants.includes(characterId) && prev.status !== 'error') return;
+      // A call is already open (or dialing) — add to it rather than restart.
+      if (prev.participants.length > 0 && prev.status !== 'error') {
+        get().addParticipant(characterId);
+        return;
+      }
 
       const mySession = ++session;
+      directorSeq++; // fresh call: invalidate any stale chain token
+      lastResponderId = null;
+      lastReactorId = null;
       const dialStart = Date.now();
-      liveSince = null;
+      liveSince.clear();
       pendingTts = 0;
       pendingCompanionLines = [];
       remoteEndAt = null;
@@ -376,27 +538,37 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       ttsStreams.clear();
       ttsOrphans.clear();
       set({
+        participants: [characterId],
         callCharacterId: characterId,
         status: 'connecting',
         speaking: false,
+        speakingId: null,
+        userSpeaking: false,
         lastHeard: '',
         lastSpoken: '',
+        lastSpokenId: null,
         error: null,
         connectingDetail: null,
         liveAt: null,
       });
 
-      // Ring while dialing (260705) — stopped the moment the line opens.
       silenceDressing();
       stopRing = startRingtone();
 
-      // Tell main immediately so an in-game bot goes quiet in chat and starts
-      // routing to the call while the mic/model finish warming up.
       void sei.voiceCallSetActive({ characterId, active: true }).catch(() => {});
 
-      queue = createAudioQueue((speaking) => {
+      // Ask main to have the companion greet FIRST — fired NOW, before the local
+      // Whisper model boots (the await below), so the greeting's Haiku + TTS
+      // round-trip overlaps model load instead of starting after it. That model
+      // bootup is the single largest unavoidable delay; running the greeting in
+      // parallel with it is what lets the first word land right as we connect.
+      // The reply arrives via onCompanionText while status is still 'connecting'
+      // and is buffered into pendingCompanionLines, then spoken once we go live.
+      void sei.voiceGreet?.(characterId)?.catch(() => {});
+
+      queue = createAudioQueue((speaking, cid) => {
         if (session !== mySession) return;
-        set({ speaking });
+        set({ speaking, speakingId: speaking ? cid : null });
         dictation?.setHold(speaking);
         if (!speaking) maybeFinishRemoteEnd();
       });
@@ -404,8 +576,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
 
       try {
         dictation = await createDictation({
-          // First-run model download progress → "Preparing voice… N%" so the
-          // ~40MB fetch never reads as a hang (260705 field report).
           onStatus: (status, detail) => {
             if (session !== mySession) return;
             set({ connectingDetail: status === 'loading-model' && detail ? detail : null });
@@ -413,18 +583,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           onUtterance: (text) => {
             if (session !== mySession) return;
             const s = get();
-            if (s.status !== 'live' || !s.callCharacterId) return;
-            set({ lastHeard: text });
-            // Same pipeline as typed chat: persists, routes to a live game
-            // session, and the reply comes back through the voice hooks above.
-            void useChatStore.getState().send(s.callCharacterId, text);
+            if (s.status !== 'live' || !s.participants.length) return;
+            // The director handles addressing, mirroring, and the reply chain.
+            dispatchUserTurn(text);
           },
           onBargeIn: () => {
-            // The player spoke over the companion (260705): cut playback and
-            // drop everything queued, immediately. The utterance that
-            // triggered this keeps capturing and lands via onUtterance.
+            // The player spoke over the companions: cut playback + drop the queue.
+            // dispatchUserTurn (fired by the following onUtterance) bumps the
+            // director sequence, cancelling any pending companion chain too.
             if (session !== mySession) return;
             queue?.clear();
+          },
+          onSpeechActive: (active) => {
+            // Light the caller's own avatar ring while they talk (same ring the
+            // companions get). Muted → never lit, even if a frame leaks through.
+            if (session !== mySession) return;
+            set({ userSpeaking: active && !useUiStore.getState().callMuted });
           },
         });
       } catch (err) {
@@ -432,53 +606,117 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         queue?.stop();
         queue = null;
         silenceDressing();
-        // No connectedMs — the call never went live, so nothing is logged.
         void sei.voiceCallSetActive({ characterId, active: false }).catch(() => {});
-        set({ status: 'error', error: friendlyError(err), connectingDetail: null });
+        set({
+          participants: [],
+          callCharacterId: null,
+          status: 'error',
+          error: friendlyError(err),
+          connectingDetail: null,
+        });
         return;
       }
 
       if (session !== mySession) {
-        // endCall (or a newer call) won while we were loading.
         dictation.stop();
         dictation = null;
         return;
       }
       dictation.setMuted(useUiStore.getState().callMuted);
 
-      // Let it RING (260705): the companion picks up no sooner than
-      // MIN_RING_MS after dialing — the greeting LLM turn fires after this,
-      // not during it. Mic/model warm-up usually fits inside the window.
+      // Stay OUTGOING (ringing, no stopwatch) until the min ring has elapsed AND
+      // the companion's first line is buffered and ready to play — so "connected"
+      // never starts on dead air (tasks 2/3). The greeting was fired at dial time
+      // and generates during model bootup, so it is usually already waiting here;
+      // the cap only bites if it is slow or produced nothing, and connects anyway.
       const ringLeft = MIN_RING_MS - (Date.now() - dialStart);
       if (ringLeft > 0) {
-        await new Promise((r) => window.setTimeout(r, ringLeft));
-        if (session !== mySession) return; // hung up while ringing
+        await wait(ringLeft);
+        if (session !== mySession) return;
       }
-      liveSince = Date.now();
-      // Line open: ring stops, the connected chime (D→A rising) answers, and
-      // the constant low comfort-noise bed starts (the TTS noise floor
-      // otherwise reads as "static only while talking") — chime and bed skip
-      // when the user pre-deafened while it rang.
+      const greetDeadline = Date.now() + GREETING_READY_CAP_MS;
+      while (pendingCompanionLines.length === 0 && Date.now() < greetDeadline) {
+        await wait(80);
+        if (session !== mySession) return;
+      }
+
+      // Connected: the stopwatch starts HERE, the moment we are actually ready.
+      const now = Date.now();
+      liveSince.set(characterId, now);
       silenceDressing();
       if (!useUiStore.getState().callDeafened) {
         playConnectedChime();
         stopAmbience = startAmbience();
       }
-      set({ status: 'live', connectingDetail: null, liveAt: liveSince });
-      // Anything the companion said while we were still connecting (say() lines
-      // routed to the call during the ring/model-load window) now speaks +
-      // displays through the live pipeline.
-      flushPendingCompanionLines(characterId);
-      // The line is open — ask main to have the companion speak FIRST (like
-      // answering the phone). Best-effort; the call works without it.
-      void sei.voiceGreet?.(characterId)?.catch(() => {});
+      set({ status: 'live', connectingDetail: null, liveAt: now });
+
+      // A one-second beat after "connected" before the companion speaks — a real
+      // pickup pause, and a head start for the greeting's TTS first byte.
+      await wait(CONNECT_SPEAK_DELAY_MS);
+      if (session !== mySession) return;
+      flushPendingCompanionLines();
+    },
+
+    addParticipant: (characterId) => {
+      const s = get();
+      if (s.participants.includes(characterId)) return;
+      if (s.participants.length === 0) {
+        void get().startCall(characterId);
+        return;
+      }
+      const peerNames = s.participants.map(nameOf); // names already on the call
+      const joinerName = nameOf(characterId);
+      set({ participants: [...s.participants, characterId] });
+      liveSince.set(characterId, Date.now());
+      void sei.voiceCallSetActive({ characterId, active: true }).catch(() => {});
+      // Tell the companions already on the call that someone joined, so they know
+      // it is now a bigger room and act accordingly (their next turn's voicePeers
+      // will include the newcomer, but this lands the fact in their transcript now).
+      for (const id of s.participants) {
+        void sei.voiceObserve?.({ characterId: id, from: joinerName, text: 'just joined the call.' }).catch(() => {});
+      }
+      // Greet the room (once the line is actually live). A companion added while
+      // still dialing simply joins; the primary's greeting covers the opening.
+      if (s.status === 'live') void sei.voiceGreet?.(characterId, peerNames)?.catch(() => {});
+    },
+
+    removeParticipant: (characterId) => {
+      const s = get();
+      if (!s.participants.includes(characterId)) return;
+      const next = s.participants.filter((id) => id !== characterId);
+      // A membership change is a barge point: cancel any in-flight companion chain
+      // so the departing companion's queued reaction can't still fire (the
+      // "she left but kept talking in the background" bug), and so a chain that
+      // was about to hand the floor to the now-absent companion stops cleanly.
+      directorSeq++;
+      if (lastReactorId === characterId) lastReactorId = null;
+      if (lastResponderId === characterId) lastResponderId = null;
+      const since = liveSince.get(characterId);
+      liveSince.delete(characterId);
+      void sei
+        .voiceCallSetActive({
+          characterId,
+          active: false,
+          ...(since !== undefined ? { connectedMs: Date.now() - since } : {}),
+        })
+        .catch(() => {});
+      if (next.length === 0) {
+        get().endCall();
+        return;
+      }
+      set({
+        participants: next,
+        callCharacterId: next[0],
+        ...(get().speakingId === characterId ? { speaking: false, speakingId: null } : {}),
+      });
     },
 
     endCall: () => {
-      const { callCharacterId } = get();
+      const { participants } = get();
       session += 1;
-      const connectedMs = liveSince !== null ? Date.now() - liveSince : undefined;
-      liveSince = null;
+      directorSeq++; // cancel any running companion chain
+      lastResponderId = null;
+      lastReactorId = null;
       pendingTts = 0;
       pendingCompanionLines = [];
       remoteEndAt = null;
@@ -486,50 +724,46 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       for (const t of remoteEndTimers) window.clearTimeout(t);
       remoteEndTimers = [];
       silenceDressing();
-      // Closing chime — same instrument as the ring, own AudioContext so this
-      // teardown can't clip it. Plays for player AND companion hang-ups (the
-      // remote path funnels through here).
-      if (callCharacterId) playHangupChime();
+      if (participants.length) playHangupChime();
       ttsStreams.clear();
       ttsOrphans.clear();
       dictation?.stop();
       dictation = null;
       queue?.stop();
       queue = null;
-      if (callCharacterId) {
-        // connectedMs (live-time only) lets main post the "You and X called
-        // for Y" transcript row; absent when the call never connected.
+      const now = Date.now();
+      for (const id of participants) {
+        const since = liveSince.get(id);
         void sei
           .voiceCallSetActive({
-            characterId: callCharacterId,
+            characterId: id,
             active: false,
-            ...(connectedMs !== undefined ? { connectedMs } : {}),
+            ...(since !== undefined ? { connectedMs: now - since } : {}),
           })
           .catch(() => {});
       }
+      liveSince.clear();
       set({
+        participants: [],
         callCharacterId: null,
         status: 'idle',
         speaking: false,
+        speakingId: null,
+        userSpeaking: false,
         lastHeard: '',
         lastSpoken: '',
+        lastSpokenId: null,
         error: null,
         connectingDetail: null,
         liveAt: null,
       });
-      // Keep the legacy UI-store call state in sync (MinimizedCall/mute).
       useUiStore.getState().endCall();
     },
   };
 });
 
-// Dev-only (Vite HMR): a hot reload of this module re-executes it, creating a
-// fresh store that re-registers everything above. The STALE instance must let
-// go of the world first — its ipcRenderer/useUiStore listeners would otherwise
-// keep firing forever (each reload stacked one more; every companion line got
-// spoken once per stack), and a live call's mic would keep capturing with no
-// UI attached to stop it. endCall() on the old instance tears down mic, queue,
-// tones, and tells main the call is closed; production never runs this.
+// Dev-only (Vite HMR): let the STALE instance release the world before the
+// fresh module re-registers everything (see the single-call notes).
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     try {

@@ -1,7 +1,7 @@
 /**
  * skinStore.test.ts — regression tests covering:
  *   - ITEM 9 (quick/260523-t8d): UUID→slug reverse-lookup in bundledSkinPath()
- *     so the bundled default PNGs (sui/lyra/clawd) actually resolve. Pre-fix,
+ *     so the bundled default PNGs (sui/lyra/marv) actually resolve. Pre-fix,
  *     bundledSkinPath interpolated the UUID directly, yielding a path that
  *     didn't exist; this test would have caught the Phase 11 latent bug at
  *     landing time.
@@ -52,16 +52,16 @@ describe('ITEM 9: bundledSkinPath resolves slug-named PNGs by UUID', () => {
   it('resolves each default to its slug-named file (dev path)', () => {
     const sui = DEFAULT_CHARACTERS.find((c) => c.id === DEFAULT_CHARACTER_UUIDS.sui);
     const lyra = DEFAULT_CHARACTERS.find((c) => c.id === DEFAULT_CHARACTER_UUIDS.lyra);
-    const clawd = DEFAULT_CHARACTERS.find((c) => c.id === DEFAULT_CHARACTER_UUIDS.clawd);
+    const marv = DEFAULT_CHARACTERS.find((c) => c.id === DEFAULT_CHARACTER_UUIDS.marv);
     expect(sui).toBeDefined();
     expect(lyra).toBeDefined();
-    expect(clawd).toBeDefined();
+    expect(marv).toBeDefined();
     const suiPath = bundledSkinPath(sui!);
     const lyraPath = bundledSkinPath(lyra!);
-    const clawdPath = bundledSkinPath(clawd!);
+    const marvPath = bundledSkinPath(marv!);
     expect(suiPath?.endsWith(path.join('resources', 'skins', 'sui.png'))).toBe(true);
     expect(lyraPath?.endsWith(path.join('resources', 'skins', 'lyra.png'))).toBe(true);
-    expect(clawdPath?.endsWith(path.join('resources', 'skins', 'clawd.png'))).toBe(true);
+    expect(marvPath?.endsWith(path.join('resources', 'skins', 'marv.png'))).toBe(true);
   });
 
   it('falls back to UUID→slug reverse lookup when slug is null (legacy on-disk row)', () => {
@@ -86,7 +86,7 @@ describe('ITEM 9: bundledSkinPath resolves slug-named PNGs by UUID', () => {
 /**
  * ui-A8 — world-tab default-skin loading (case-insensitive + bundled fallback).
  *
- * The world (Browse) tab can surface default personas (sui/lyra/clawd) before
+ * The world (Browse) tab can surface default personas (sui/lyra/marv) before
  * seedDefaultCharacters has populated <userData>/characters/. When the user
  * clicks one of those Browse entries the renderer mounts SkinPreview3d which
  * pings `${skinServerBaseUrl}/skins/<Name>.png`. Pre-fix, readSkinPng matched
@@ -103,7 +103,7 @@ describe('ITEM 9: bundledSkinPath resolves slug-named PNGs by UUID', () => {
 describe('ui-A8: readSkinPng default-skin lookups for world tab', () => {
   const suiDefault = DEFAULT_CHARACTERS.find((c) => c.id === DEFAULT_CHARACTER_UUIDS.sui)!;
   const lyraDefault = DEFAULT_CHARACTERS.find((c) => c.id === DEFAULT_CHARACTER_UUIDS.lyra)!;
-  const clawdDefault = DEFAULT_CHARACTERS.find((c) => c.id === DEFAULT_CHARACTER_UUIDS.clawd)!;
+  const marvDefault = DEFAULT_CHARACTERS.find((c) => c.id === DEFAULT_CHARACTER_UUIDS.marv)!;
 
   it('matches the seeded default by exact username (Sui)', async () => {
     // Local store has Sui with username='Sui' (the post-seed steady state).
@@ -145,9 +145,9 @@ describe('ui-A8: readSkinPng default-skin lookups for world tab', () => {
   });
 
   it('bundled-default fallback matches by lowercase slug for all three defaults', async () => {
-    for (const def of [suiDefault, lyraDefault, clawdDefault]) {
+    for (const def of [suiDefault, lyraDefault, marvDefault]) {
       const bytes = await readSkinPng({
-        username: def.slug!,                // 'sui', 'lyra', 'clawd' (lowercase slugs)
+        username: def.slug!,                // 'sui', 'lyra', 'marv' (lowercase slugs)
         listCharacters: async () => [],
       });
       expect(bytes, `default ${def.slug} should match by lowercase slug`).not.toBeNull();
@@ -157,10 +157,10 @@ describe('ui-A8: readSkinPng default-skin lookups for world tab', () => {
   });
 
   it('bundled-default fallback matches by capitalized name for all three defaults', async () => {
-    // 'Sui' / 'Lyra' / 'Clawd' — the persona-username form the renderer
+    // 'Sui' / 'Lyra' / 'Marv' — the persona-username form the renderer
     // builds via `character.username` (which is set to the capitalized name
     // in the bundled JSON).
-    for (const def of [suiDefault, lyraDefault, clawdDefault]) {
+    for (const def of [suiDefault, lyraDefault, marvDefault]) {
       const bytes = await readSkinPng({
         username: def.username!,
         listCharacters: async () => [],

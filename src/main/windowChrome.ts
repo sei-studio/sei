@@ -63,7 +63,10 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
 
   win.once('ready-to-show', () => {
     win.show();
-    if (!app.isPackaged) {
+    // DevTools only auto-opens with the dev-tools flag (SEI_DEV_TOOLS=1, set by
+    // `npm run dev -- --tools` / `npm run dev:tools`). A plain `npm run dev`
+    // launches clean, no detached console.
+    if (!app.isPackaged && process.env.SEI_DEV_TOOLS === '1') {
       win.webContents.openDevTools({ mode: 'detach' });
     }
   });

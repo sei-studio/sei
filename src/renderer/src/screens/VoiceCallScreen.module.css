@@ -66,6 +66,175 @@
   }
 }
 
+/* ── Multi-companion cluster (260706) ───────────────────────────────────────
+   The call's avatars: every companion plus the user, side by side. A single
+   companion keeps the big centered avatar above; 2+ render as this wrapping
+   cluster so all participants are visible at once. */
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-md);
+  max-width: 740px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.tileAvatar {
+  overflow: hidden;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-pop);
+  transition: filter 220ms var(--ease), border-color 140ms var(--ease), opacity 220ms var(--ease);
+}
+
+/* This companion is speaking right now — accent ring pulse (per-companion). */
+.tileSpeaking {
+  border-color: var(--accent);
+  animation: speakRing 1.2s var(--ease) infinite;
+}
+
+/* A companion who is NOT speaking while someone else could be — dimmed so the
+   active speaker reads at a glance (Discord-style). */
+.tileIdle {
+  filter: brightness(0.55) saturate(0.85);
+  opacity: 0.85;
+}
+
+/* The user's own tile, muted mic → dimmed with the accent-soft ring. */
+.tileMutedSelf {
+  filter: brightness(0.6);
+}
+
+.tileName {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tileNameSelf {
+  color: var(--muted);
+}
+
+/* "＋" add-a-companion tile — dashed circle that opens the picker. */
+.addBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 50%;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.addBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Add-companion picker — a compact list overlay of companions not on the call. */
+.pickerScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--window) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.pickerModal {
+  width: min(360px, calc(100% - 2 * var(--space-lg)));
+  max-height: min(60vh, 440px);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  overflow: hidden;
+}
+
+.pickerTitle {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text);
+  text-align: left;
+}
+
+.pickerList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.pickerRow {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background 120ms var(--ease);
+}
+
+.pickerRow:hover {
+  background: var(--surface-3);
+}
+
+.pickerRowAvatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--window);
+}
+
+.pickerRowName {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickerEmpty {
+  margin: 0;
+  padding: var(--space-sm);
+  font-size: 13px;
+  color: var(--muted);
+  text-align: left;
+}
+
 .name {
   font-family: var(--display);
   font-size: 30px;

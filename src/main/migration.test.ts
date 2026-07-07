@@ -4,7 +4,7 @@
  *
  * Test surface:
  *   1. Idempotency — manifest existence short-circuits the migration
- *   2. Default character slug rename — sui/lyra/clawd resolve to frozen UUIDs
+ *   2. Default character slug rename — sui/lyra/marv resolve to frozen UUIDs
  *   3. User-created slug rename — fresh UUID, slug field carries old kebab name
  *   4. Portrait data URL migration — decoded to <profileRoot>/portraits/<uuid>.png
  *   5. Memory dir rename — <profileRoot>/memory/<slug>/ → <profileRoot>/memory/<uuid>/
@@ -46,8 +46,10 @@ vi.mock('electron', () => ({
 }));
 
 import { paths, _setUserDataOverride, setActiveScope } from './paths';
-import { runUuidRenameMigration } from './migration';
-import { DEFAULT_CHARACTER_UUIDS } from './defaultCharacters';
+import { runUuidRenameMigration, runDefaultsToWorldMigration } from './migration';
+import { DEFAULT_CHARACTER_UUIDS, DEFAULT_CHARACTERS_OWNER } from './defaultCharacters';
+import { loadConfig, saveConfig } from './configStore';
+import { listCharacters } from './characterStore';
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -268,5 +270,119 @@ describe('defaultsSeededPath remap after partition', () => {
     const idx = JSON.parse(await readFile(paths.indexPath(), 'utf8'));
     expect(idx.order).toEqual([DEFAULT_CHARACTER_UUIDS.sui]);
     expect(paths.indexPath()).toContain(path.join('profiles', 'local'));
+  });
+});
+
+describe('runDefaultsToWorldMigration', () => {
+  // A UUID-keyed local copy of a bundled default, in the OLD read-only model.
+  function defaultChar(id: string, name: string, slug: string): Record<string, unknown> {
+    return {
+      id,
+      slug,
+      name,
+      persona: { source: `${name} persona.`, expanded: '' },
+      is_default: true,
+      shared: false,
+      owner: null,
+      kind: 'world',
+      created: '2026-05-21T00:00:00.000Z',
+      last_launched: null,
+      playtime_ms: 0,
+      cloud_updated_at: '2026-05-21T00:00:00.000Z',
+      portrait_image: `./img/${slug}.png`,
+      skin: { source: 'bundled', mojang_username: null, png_sha256: null, applied_at: null },
+      username: name,
+    };
+  }
+
+  async function seedChar(row: Record<string, unknown>): Promise<void> {
+    await writeFile(paths.characterPath(row.id as string), JSON.stringify(row, null, 2), 'utf8');
+  }
+
+  it('self-heals a partially-converted default (is_default:false but kind:world → custom) even with the marker set', async () => {
+    // The Lyra case: an older build converted is_default/owner but not kind, and
+    // the user never opened her (so refreshFromCloud never adopted kind). The
+    // marker is already set, but the heal must still fix the kind.
+    await seedChar({
+      ...defaultChar(DEFAULT_CHARACTER_UUIDS.lyra, 'Lyra', 'lyra'),
+      is_default: false,
+      owner: DEFAULT_CHARACTERS_OWNER,
+      kind: 'world',
+      shared: true,
+    });
+    await seedIndex([DEFAULT_CHARACTER_UUIDS.lyra]);
+    await saveConfig({ ...(await loadConfig()), defaults_to_world_migrated: true });
+
+    await runDefaultsToWorldMigration();
+
+    const lyra = (await listCharacters()).find((c) => c.id === DEFAULT_CHARACTER_UUIDS.lyra)!;
+    expect(lyra.kind).toBe('custom');
+    expect(lyra.shared).toBe(true); // preserved (not force-flipped) on a repair
+  });
+
+  it('is state-idempotent: a default already in final shape is not re-forced public', async () => {
+    // A user who later made their adopted default PRIVATE must not have it
+    // flipped back to public every boot.
+    await seedChar({
+      ...defaultChar(DEFAULT_CHARACTER_UUIDS.sui, 'Sui', 'sui'),
+      is_default: false,
+      owner: DEFAULT_CHARACTERS_OWNER,
+      kind: 'custom',
+      shared: false,
+      cloud_updated_at: '2026-06-01T00:00:00.000Z',
+    });
+    await seedIndex([DEFAULT_CHARACTER_UUIDS.sui]);
+
+    await runDefaultsToWorldMigration();
+
+    const sui = (await listCharacters()).find((c) => c.id === DEFAULT_CHARACTER_UUIDS.sui)!;
+    expect(sui.shared).toBe(false); // NOT re-forced to public
+    expect(sui.cloud_updated_at).toBe('2026-06-01T00:00:00.000Z'); // watermark not busted
+  });
+
+  it('fresh install (no local defaults) just flips the marker', async () => {
+    expect((await loadConfig()).defaults_to_world_migrated).toBe(false);
+    await runDefaultsToWorldMigration();
+    expect((await loadConfig()).defaults_to_world_migrated).toBe(true);
+  });
+
+  it('converts a local is_default default into an owned/shared World character', async () => {
+    await seedChar(defaultChar(DEFAULT_CHARACTER_UUIDS.sui, 'Sui', 'sui'));
+    await seedIndex([DEFAULT_CHARACTER_UUIDS.sui]);
+
+    await runDefaultsToWorldMigration();
+
+    const sui = (await listCharacters()).find((c) => c.id === DEFAULT_CHARACTER_UUIDS.sui)!;
+    expect(sui.is_default).toBe(false);
+    expect(sui.owner).toBe(DEFAULT_CHARACTERS_OWNER);
+    expect(sui.shared).toBe(true);
+    expect(sui.kind).toBe('custom'); // reclassified so viewOnly (kind-gated) unlocks for the owner
+    expect(sui.cloud_updated_at ?? null).toBeNull(); // watermark busted → forces cloud re-pull
+    expect((await loadConfig()).defaults_to_world_migrated).toBe(true);
+  });
+
+  it('moves an INVITED default from added_default_ids → added_world_ids', async () => {
+    const suiId = DEFAULT_CHARACTER_UUIDS.sui;
+    await seedChar(defaultChar(suiId, 'Sui', 'sui'));
+    await seedIndex([suiId]);
+    await saveConfig({ ...(await loadConfig()), added_default_ids: [suiId], added_world_ids: [] });
+
+    await runDefaultsToWorldMigration();
+
+    const cfg = await loadConfig();
+    expect(cfg.added_default_ids).not.toContain(suiId);
+    expect(cfg.added_world_ids).toContain(suiId);
+  });
+
+  it('leaves a non-default user character alone', async () => {
+    const userId = '11111111-1111-4111-8111-111111111111';
+    await seedChar({ ...defaultChar(userId, 'Custom', 'custom'), is_default: false, owner: userId });
+    await seedIndex([userId]);
+
+    await runDefaultsToWorldMigration();
+
+    const custom = (await listCharacters()).find((c) => c.id === userId)!;
+    expect(custom.owner).toBe(userId); // not restamped to DEFAULT_CHARACTERS_OWNER
+    expect(custom.shared).toBe(false);
   });
 });

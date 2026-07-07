@@ -122,6 +122,28 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     expect(blocks[0].tool_use_id).toBe('tu_1');
     expect(result.launch).toEqual({ game: 'minecraft', status: 'lan-not-open' });
   });
+
+  it('does NOT run a second hop when quit rides with an already-spoken goodbye (double-goodbye guard)', async () => {
+    // The model says its goodbye AND calls quit in one response. The old code ran
+    // a second hop whose tool-note said "say goodbye if you have not already",
+    // producing a redundant second farewell. The guard stops after the first hop.
+    createSpy.mockResolvedValueOnce({
+      content: [
+        { type: 'text', text: 'aight, catch you later.' },
+        { type: 'tool_use', id: 'tu_quit', name: 'quit', input: {} },
+      ],
+    });
+    // A second resolve is staged but must never be consumed.
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'later, thanks for having me.' }] });
+
+    const d = deps();
+    const result = await sendChatMessage({ characterId: CHAR, text: 'you can head off' }, d);
+
+    expect(createSpy).toHaveBeenCalledTimes(1); // no redundant second goodbye hop
+    expect(d.leaveGame).toHaveBeenCalledTimes(1);
+    // splitReply strips the trailing period under the default casual register.
+    expect(result.replies.map((r) => r.text)).toEqual(['aight, catch you later']);
+  });
 });
 
 describe('sendChatMessage — last_chatted stamp', () => {

@@ -64,9 +64,10 @@ export type UpgradeFraming =
   | 'browse public companions'
   | 'use cloud-hosted AI'
   | 'share this companion'
-  // Item 5 — a signed-out user tapping "Add to library" on a World character
-  // gets the same sign-in modal as the share flow, framed for this action.
-  | 'add this companion to your library'
+  // Item 5 — a signed-out user tapping "Invite" on a World character gets the
+  // same sign-in modal as the share flow, framed for this action (260706: the
+  // party redesign renamed "add to library" to "invite to your party").
+  | 'invite this companion to your party'
   // 260703 procgen — the flagship "meet your unique companion" path requires a
   // cloud account (generation runs server-side). A signed-out / local-mode user
   // who picks it in the add-companion chooser gets the sign-in modal framed for

@@ -123,7 +123,10 @@ export function registerPortraitProtocol(): void {
     const uuid = file.replace(/\.png$/i, '');
     try {
       const bytes = await readPortraitWithRetry(paths.portraitPath(uuid));
-      return new Response(bytes, {
+      // Wrap the Node Buffer as a Uint8Array: lib.dom's BodyInit no longer
+      // lists Buffer, and Buffer is a Uint8Array view, so this is a zero-copy
+      // retype that keeps the response bytes identical.
+      return new Response(new Uint8Array(bytes), {
         status: 200,
         headers: {
           'Content-Type': 'image/png',

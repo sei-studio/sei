@@ -12,7 +12,9 @@
 //           file. Each save is validated (temp-import) before it overwrites the
 //           source, so a broken edit can't corrupt it. Re-summon the bot to
 //           pick up changes.
-// Wired as `npm run dev`; use `npm run dev:bare` to launch the app without it.
+// The viewer AND the app's DevTools console are OFF by default: a plain
+// `npm run dev` launches the app clean. Turn both on with the dev-tools flag:
+// `npm run dev:tools` (or `npm run dev -- --tools`, or SEI_DEV_TOOLS=1).
 //
 // How it gets its data — log + render feeds are file-based, zero IPC:
 //   LOG    tails the newest *.log across BOTH userData log dirs — the dev run
@@ -32,7 +34,10 @@
 //          friendly error.
 //
 // Flags / env:
+//   --tools                  open the viewer + the app's DevTools console
+//                            (off by default; also via SEI_DEV_TOOLS=1)
 //   --viewer-only            serve the viewer without spawning electron-vite
+//                            (implies --tools)
 //   SEI_DEV_VIEWER_PORT      preferred port (default 7077; +1 up to 10 tries)
 //   SEI_DEV_VIEWER_NO_OPEN=1 don't auto-open the browser
 //   ANTHROPIC_API_KEY        enables the prompt-tuning tab's LLM calls
@@ -48,6 +53,10 @@ import Anthropic from '@anthropic-ai/sdk'
 import { buildLibraryFields, applyEdits, ID_SEP } from './lib/promptLibraryEdit.mjs'
 
 const VIEWER_ONLY = process.argv.includes('--viewer-only')
+// Dev-tools gate: the browser viewer AND the Electron DevTools console only open
+// when this is on. Enable with `--tools` (or `--viewer-only`), or SEI_DEV_TOOLS=1.
+// A plain `npm run dev` now just launches the app — no viewer tab, no console.
+const DEV_TOOLS = VIEWER_ONLY || process.argv.includes('--tools') || process.env.SEI_DEV_TOOLS === '1'
 const BASE_PORT = Number(process.env.SEI_DEV_VIEWER_PORT) || 7077
 const TAIL_BYTES = 64 * 1024 // first paint: last 64KB of the active log
 
@@ -823,28 +832,46 @@ function openBrowser (url) {
   } catch { /* viewer still reachable manually */ }
 }
 
-await mkdir(RENDER_DIR, { recursive: true })
-// Drop the previous session's frame so a stale render is never mistaken for live.
-await unlink(RENDER_FILE).catch(() => {})
-
-const { server, port } = await listen(BASE_PORT, 10)
-const url = `http://localhost:${port}`
-console.log(`[dev-viewer] ${url}  (logs: ${LOG_DIRS.map((d) => d.dir).join(' | ')})`)
-openBrowser(url)
-
-if (VIEWER_ONLY) {
-  // Serve until killed; nothing else to manage.
-} else {
-  const child = spawn('electron-vite', ['dev', ...process.argv.slice(2).filter((a) => a !== '--viewer-only')], {
-    stdio: 'inherit',
-    shell: process.platform === 'win32', // resolve electron-vite.cmd via PATH
-    env: { ...process.env, SEI_DEV_VIEWER_DIR: RENDER_DIR },
-  })
+// Spawn `electron-vite dev`, forwarding our own flags out of the arg list and
+// merging any extra env (the render-mirror dir + the dev-tools flag).
+function spawnElectron (extraEnv) {
+  const child = spawn(
+    'electron-vite',
+    ['dev', ...process.argv.slice(2).filter((a) => a !== '--viewer-only' && a !== '--tools')],
+    {
+      stdio: 'inherit',
+      shell: process.platform === 'win32', // resolve electron-vite.cmd via PATH
+      env: { ...process.env, ...extraEnv },
+    },
+  )
   const forward = (sig) => { try { child.kill(sig) } catch { /* already gone */ } }
   process.on('SIGINT', () => forward('SIGINT'))
   process.on('SIGTERM', () => forward('SIGTERM'))
-  child.on('exit', (code, signal) => {
-    server.close()
-    process.exit(signal ? 0 : code ?? 0)
-  })
+  return child
+}
+
+if (!DEV_TOOLS) {
+  // Clean launch: no viewer server, no browser tab, no auto DevTools console.
+  const child = spawnElectron({})
+  child.on('exit', (code, signal) => process.exit(signal ? 0 : code ?? 0))
+} else {
+  await mkdir(RENDER_DIR, { recursive: true })
+  // Drop the previous session's frame so a stale render is never mistaken for live.
+  await unlink(RENDER_FILE).catch(() => {})
+
+  const { server, port } = await listen(BASE_PORT, 10)
+  const url = `http://localhost:${port}`
+  console.log(`[dev-viewer] ${url}  (logs: ${LOG_DIRS.map((d) => d.dir).join(' | ')})`)
+  openBrowser(url)
+
+  if (VIEWER_ONLY) {
+    // Serve until killed; nothing else to manage.
+  } else {
+    // SEI_DEV_TOOLS=1 tells the app (windowChrome.ts) to auto-open its console.
+    const child = spawnElectron({ SEI_DEV_VIEWER_DIR: RENDER_DIR, SEI_DEV_TOOLS: '1' })
+    child.on('exit', (code, signal) => {
+      server.close()
+      process.exit(signal ? 0 : code ?? 0)
+    })
+  }
 }

@@ -33,12 +33,27 @@ import {
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
+import { DEFAULT_CHARACTER_UUIDS } from './defaultCharacters';
 import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
 import { libraryCharacterCount } from './uniqueGeneration';
 import { paths } from './paths';
 import { saveApiKey, hasApiKey, safeStorageBackendKind } from './apiKeyStore';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
+
+// ── Moderation kill-switch ─────────────────────────────────────────────────
+// When false, publishing a shared character SKIPS the image/prompt moderation
+// gate entirely: runModerationGate marks the row clean directly instead of
+// calling the moderate-character-images / moderate-character-prompt Edge
+// Functions. Turned OFF 260707 because the prompt moderation was
+// false-positive-rejecting legitimate combat-flavored personas (e.g. the
+// bundled Sui), blocking users from publishing valid characters to World.
+// Re-enable (set true) once the proxy's moderation thresholds are tuned.
+// NOTE: client-side, so it reaches users on their next app update — it does not
+// retroactively change already-installed apps (those still moderate until they
+// update). To disable moderation for existing installs immediately you'd neuter
+// the Edge Functions in the private proxy instead.
+const MODERATION_ENABLED = false;
 
 export interface IpcHandlerDeps {
   supervisor: BotSupervisor;
@@ -112,6 +127,12 @@ export interface IpcHandlerDeps {
   /** Task 4 — true only when the character's bot is fully spawned in-world. */
   isSessionOnline: (characterId: string) => boolean;
   /**
+   * Voice streaming (260706): push ONE already-persisted companion message to the
+   * renderer (the `chat:message` channel, no re-persist). Backs the streaming
+   * voice turn's per-sentence emit. Wired in index.ts to pushChatMessage.
+   */
+  pushChatMessage?: (characterId: string, message: ChatMessage) => void;
+  /**
    * Voice calls (260705): a call that was actually LIVE just ended (renderer
    * reports how long audio flowed). Posts the "You and X called for Y" system
    * row to the transcript. Wired in index.ts to emitCallSession.
@@ -123,7 +144,7 @@ export interface IpcHandlerDeps {
    * standalone chat-brain greeting turn (replies pushed + spoken). Wired in
    * index.ts.
    */
-  greetVoiceCall?: (characterId: string) => void;
+  greetVoiceCall?: (characterId: string, peers?: string[]) => void;
 }
 
 /**
@@ -374,6 +395,42 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       } as const;
     }
     const accessToken = session.access_token;
+
+    // Moderation bypass. Two reasons to skip the image/prompt Edge Functions and
+    // mark the row clean directly:
+    //   1. MODERATION_ENABLED === false — the global kill-switch (see above).
+    //   2. First-party defaults (sui/lyra/marv) — curated dev content, always
+    //      exempt even when moderation is re-enabled. Re-running the gate on
+    //      every edit was landing moderation_status=null on these rows and
+    //      silently dropping them out of World (search_public_characters only
+    //      returns moderation_status='clean').
+    // The write is a targeted UPDATE (no Edge Function, and no full-row upsert
+    // that could clobber the uploaded portrait_image with a bundle path). It runs
+    // AFTER ensureCloudRowForModeration's portrait upload in both chars.save and
+    // chars.setShared, so it overrides the reset_moderation_on_portrait_change
+    // trigger's null. Best-effort — publishing must never be blocked by it.
+    const isFirstPartyDefault = (Object.values(DEFAULT_CHARACTER_UUIDS) as string[]).includes(characterId);
+    if (!MODERATION_ENABLED || isFirstPartyDefault) {
+      const provider = MODERATION_ENABLED ? 'first-party-exempt' : 'moderation-disabled';
+      try {
+        const { getAuthedClient } = await import('./auth/supabaseClient');
+        const { error } = await getAuthedClient(accessToken)
+          .from('characters')
+          .update({
+            shared: true,
+            moderation_status: 'clean',
+            moderation_checked_at: new Date().toISOString(),
+            moderation_provider: provider,
+          })
+          .eq('id', characterId);
+        if (error) {
+          console.warn(`[sei] moderation-bypass (${provider}) clean write failed for ${characterId}: ${error.message}`);
+        }
+      } catch (err) {
+        console.warn(`[sei] moderation-bypass (${provider}) clean write threw for ${characterId}: ${(err as Error).message}`);
+      }
+      return { ok: true, moderationProvider: provider, textProvider: provider };
+    }
 
     const [
       { publishWithModeration },
@@ -899,17 +956,24 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         replyTo: z
           .object({ role: z.enum(['user', 'companion']), text: z.string() })
           .optional(),
+        // Multi-companion voice (260706): names of the other companions on the call.
+        voicePeers: z.array(z.string()).optional(),
       })
       .parse(argsRaw);
     const { sendChatMessage } = await import('./chat/chatService');
     const { isCallActive } = await import('./voice/callState');
+    const inCall = isCallActive(args.characterId);
     // Fresh world-detection pass before the prompt is built (260703): the
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
-    try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
+    // Skipped mid-call — a live voice call cannot be opening a world, and this
+    // ran on the latency-critical path before every spoken reply (260706).
+    if (!inCall) {
+      try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
+    }
     return await sendChatMessage(
       // voiceCall (260705): while a call is open the reply is spoken aloud, so
       // the prompt leads with the voice-call primer (spoken register).
-      { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: isCallActive(args.characterId) },
+      { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: inCall, voicePeers: args.voicePeers },
       {
         getLanState: deps.getLanState,
         summon: (id) => deps.supervisor.summon(id),
@@ -922,6 +986,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         leaveGame: (id) => {
           void deps.supervisor.stop(id);
         },
+        // Voice streaming (260706): push each streamed sentence to the renderer
+        // the instant it completes, so TTS starts on sentence 1.
+        emitReply: (id, message) => deps.pushChatMessage?.(id, message),
       },
     );
   });
@@ -969,10 +1036,66 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // Voice calls (260705): the renderer's call pipeline just went live — ask the
-  // companion to speak first (like answering the phone).
-  ipcMain.handle(IpcChannel.voice.greet, async (_event, idArg: unknown): Promise<void> => {
-    const id = IdSchema.parse(idArg);
-    deps.greetVoiceCall?.(id);
+  // companion to speak first (like answering the phone). 260706: `peers` names
+  // any other companions already on the call so a joiner greets the group.
+  ipcMain.handle(IpcChannel.voice.greet, async (_event, argRaw: unknown): Promise<void> => {
+    // Back-compat: a bare characterId string OR the {characterId, peers} object.
+    const parsed =
+      typeof argRaw === 'string'
+        ? { characterId: IdSchema.parse(argRaw), peers: [] as string[] }
+        : z.object({ characterId: IdSchema, peers: z.array(z.string()).default([]) }).parse(argRaw);
+    deps.greetVoiceCall?.(parsed.characterId, parsed.peers);
+  });
+
+  // Multi-companion voice (260706): on a group call, hand one companion a line
+  // another companion just spoke so it can react in character. Returns the
+  // reaction lines (empty when it stays silent); the renderer speaks them.
+  ipcMain.handle(IpcChannel.voice.companionTurn, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        speakerName: z.string().min(1).max(80),
+        text: z.string().min(1).max(CHAT_TEXT_MAX),
+        peers: z.array(z.string()).default([]),
+      })
+      .parse(argsRaw);
+    const { sendCompanionVoiceTurn } = await import('./chat/chatService');
+    return await sendCompanionVoiceTurn(args.characterId, {
+      speakerName: args.speakerName,
+      text: args.text,
+      peers: args.peers,
+    });
+  });
+
+  // Multi-companion voice (260706): record a call line into a companion's
+  // transcript without generating a reply (context for a non-responding peer).
+  ipcMain.handle(IpcChannel.voice.observe, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        from: z.string().max(80),
+        text: z.string().min(1).max(CHAT_TEXT_MAX),
+      })
+      .parse(argsRaw);
+    const { observeVoiceLine } = await import('./chat/chatService');
+    await observeVoiceLine(args.characterId, args.from, args.text);
+  });
+
+  // Always-on-top call overlay (260706): the main window pushes the overlay's
+  // desired state; main reconciles the overlay window (spawn/position/close) and
+  // forwards the state to it. Trusted, small payload from our own renderer.
+  ipcMain.handle(IpcChannel.voice.overlaySet, async (_event, stateRaw: unknown): Promise<void> => {
+    const state = z
+      .object({
+        enabled: z.boolean(),
+        participants: z
+          .array(z.object({ id: z.string(), name: z.string(), portrait: z.string().nullable() }))
+          .max(12),
+        speakingId: z.string().nullable(),
+      })
+      .parse(stateRaw);
+    const { updateCallOverlay } = await import('./callOverlay');
+    updateCallOverlay(state);
   });
 
   // Voice picker (creation flow, 260705): the curated pool + per-voice preview.

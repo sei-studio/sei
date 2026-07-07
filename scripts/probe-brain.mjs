@@ -139,7 +139,7 @@ function loadPersona(slug) {
     proactiveness: c.metadata?.proactiveness ?? 1,
   }
 }
-const MARV = loadPersona('clawd')   // proactiveness 0 (Passive)
+const MARV = loadPersona('marv')   // proactiveness 0 (Passive)
 const SUI = loadPersona('sui')      // proactiveness 2 (Agentic)
 const LYRA = loadPersona('lyra')    // proactiveness 1 (Reactive)
 const BASE_PERSONAS = { Marv: MARV, Sui: SUI, Lyra: LYRA }

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev-viewer.mjs",
+    "dev:tools": "node scripts/dev-viewer.mjs --tools",
     "dev:bare": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",

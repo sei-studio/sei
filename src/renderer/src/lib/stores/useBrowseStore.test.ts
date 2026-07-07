@@ -29,6 +29,7 @@ import type { BrowseEntry } from '@shared/ipc';
 function entry(id: string, name = `char-${id}`): BrowseEntry {
   return {
     id,
+    publicId: null,
     name,
     personaSnippet: `${name} persona`,
     creatorLabel: 'by anonymous',

@@ -43,7 +43,7 @@ mkdirSync(OUT_DIR, { recursive: true });
 const PALETTES = {
   sui:       { body: [225, 188, 226, 255], head: [255, 215,   0, 255] }, // peach body, gold head
   mochineko: { body: [120, 100,  90, 255], head: [255, 245, 230, 255] }, // muted brown body, cream head
-  clawd:     { body: [ 80,  90, 110, 255], head: [110, 130, 150, 255] }, // slate body, lighter slate head
+  marv:     { body: [ 80,  90, 110, 255], head: [110, 130, 150, 255] }, // slate body, lighter slate head
 };
 
 // -------------------------------------------------------------------------- //

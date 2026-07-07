@@ -180,6 +180,14 @@ export interface ChatSendResult {
    * then ends the call once the TTS queue drains.
    */
   endCall?: boolean;
+  /**
+   * Voice calls (260706): the reply was STREAMED live over the `chat:message`
+   * push, one sentence at a time, so TTS could start on the first sentence while
+   * the rest generated. The renderer must NOT re-append or re-speak `replies`
+   * (the push already did, deduped by id) — it uses them only for turn-taking
+   * bookkeeping. Absent/false → the classic blocking path (renderer speaks them).
+   */
+  streamed?: boolean;
 }
 
 /** One curated-pool voice, renderer-safe (creation-flow voice picker, 260705). */
@@ -204,6 +212,24 @@ export interface VoiceTtsChunkPush {
   chunk?: ArrayBuffer;
   done?: boolean;
   error?: string;
+}
+
+/** One companion on the always-on-top call overlay (260706). */
+export interface CallOverlayParticipant {
+  id: string;
+  name: string;
+  /** The character's `portrait_image` ref, resolved overlay-side via portraitSrc. */
+  portrait: string | null;
+}
+
+/** State of the always-on-top call overlay window (main window → main → overlay).
+ * `enabled` folds together the settings toggle AND an active call: the overlay
+ * shows iff enabled and there is at least one participant. */
+export interface CallOverlayState {
+  enabled: boolean;
+  participants: CallOverlayParticipant[];
+  /** Which participant id is speaking right now (null = all idle). */
+  speakingId: string | null;
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
@@ -936,8 +962,27 @@ export interface RendererApi {
   // --- In-app chat (Phase 18/19) ---
   /** Load a character's persisted chat transcript (recent window). */
   chatHistory(characterId: string): Promise<ChatMessage[]>;
-  /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game). */
-  chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef }): Promise<ChatSendResult>;
+  /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game).
+   * `voicePeers` (multi-companion voice, 260706): names of the OTHER companions
+   * on the same call, so the reply is framed for a group call. Absent = solo. */
+  chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef; voicePeers?: string[] }): Promise<ChatSendResult>;
+  /**
+   * Multi-companion voice (260706): silently record a line spoken on the call
+   * into `characterId`'s transcript WITHOUT generating a reply, so a companion
+   * that is not the one responding still has the context when its turn comes.
+   * `from` is 'player' (recorded verbatim) or a companion name (recorded as
+   * "(Name, on the call): ..."). Voice-flagged, so hidden from the chat view.
+   */
+  voiceObserve(args: { characterId: string; from: string; text: string }): Promise<void>;
+  /**
+   * Always-on-top call overlay (260706). The main window pushes the overlay's
+   * desired state on every change (call membership, who is speaking, the
+   * settings toggle); main spawns/positions/tears down the overlay window and
+   * forwards the state to it. No-op when disabled with no participants.
+   */
+  voiceOverlaySet(state: CallOverlayState): Promise<void>;
+  /** Subscribe (overlay window only) to overlay-state pushes from main. */
+  onVoiceOverlayState(cb: (state: CallOverlayState) => void): Unsubscribe;
   /**
    * Signal that the chat surface was opened for a character. Main decides whether
    * a first-meeting greeting fires (any companion kind, empty transcript, never
@@ -1001,8 +1046,25 @@ export interface RendererApi {
    * greeting on spawn). In-game sessions get a {type:'voice-call-greet'} port
    * event; idle characters run a standalone chat-brain greeting turn whose
    * replies arrive over the chat:message push (and are spoken via TTS).
+   *
+   * `peers` (multi-companion, 260706): names of the OTHER companions already on
+   * the call. When non-empty the companion greets the group (it is joining a
+   * call in progress); empty/absent = a solo call greeting.
    */
-  voiceGreet(characterId: string): Promise<void>;
+  voiceGreet(characterId: string, peers?: string[]): Promise<void>;
+  /**
+   * Multi-companion voice (260706): hand companion `characterId` a line another
+   * companion (`speakerName`) just spoke on the call, so it can react in
+   * character. Returns the reaction lines (empty when it chose to stay silent);
+   * the renderer speaks them through the shared TTS queue. `peers` names every
+   * other companion on the call for the group-call prompt framing.
+   */
+  voiceCompanionTurn(args: {
+    characterId: string;
+    speakerName: string;
+    text: string;
+    peers: string[];
+  }): Promise<ChatMessage[]>;
   /**
    * Subscribe to main-initiated call hang-ups: the companion called
    * end_call() (from in-game or from the idle chat brain). The renderer
@@ -1614,6 +1676,14 @@ export const IpcChannel = {
     callState: 'voice:call-state',
     /** Invoke: the call went live — companion should greet first (characterId). */
     greet: 'voice:greet',
+    /** Invoke: on a group call, one companion reacts to another's spoken line. */
+    companionTurn: 'voice:companion-turn',
+    /** Invoke: record a call line into a companion's transcript without a reply. */
+    observe: 'voice:observe',
+    /** Invoke (main window → main): push the always-on-top overlay's state. */
+    overlaySet: 'voice:overlay-set',
+    /** Push (main → overlay window): the overlay's participants + speaking state. */
+    overlayState: 'voice:overlay-state',
     /** Push (main → renderer): companion hung up via end_call() ({characterId}). */
     callEnded: 'voice:call-ended',
     /** Invoke: curated voice pool for the creation picker → VoiceInfo[]. */

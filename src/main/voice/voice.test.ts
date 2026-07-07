@@ -58,6 +58,7 @@ const baseBlockArgs = {
   summary: '',
   openWorldDetected: false,
   inGame: false,
+  punctuation: 'casual' as const,
 };
 
 describe('voice-call prompt primer (idle chat)', () => {

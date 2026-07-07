@@ -19,7 +19,7 @@ import { app } from 'electron';
 import { saveCharacter } from './characterStore';
 import { paths } from './paths';
 import type { Character } from '../shared/characterSchema';
-import { DEFAULT_CHARACTER_UUIDS } from './defaultCharacters';
+import { DEFAULT_CHARACTER_UUIDS, DEFAULT_CHARACTERS_OWNER } from './defaultCharacters';
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
 
@@ -194,6 +194,120 @@ export async function runAddedDefaultsBackfill(): Promise<void> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// 260706 — Defaults → normal user-owned public World characters.
+//
+// The three shipped defaults (sui/lyra/marv) used to be read-only bundled
+// `is_default` copies, hidden from cloud sync and hard-labelled "by Sei". They
+// are now ordinary PUBLIC World characters owned by DEFAULT_CHARACTERS_OWNER
+// (the ouen@sei.gg account), authored in-app like any other shared character;
+// their cloud rows are `shared`, `moderation_status='clean'`, owner=that account.
+//
+// This one-shot, idempotent migration converts any locally-present `is_default`
+// copy left over from an older build into that new model:
+//   - is_default:false  → makes it editable-by-owner, unblocks cloud mirroring
+//                          and the cache-on-demand refresh (both skip is_default)
+//   - owner = DEFAULT_CHARACTERS_OWNER → so countsAsHomeSlot treats it as an
+//                          own char for that account and a foreign World char
+//                          for everyone else
+//   - shared:true       → keeps it discoverable / re-shareable on save
+//   - cloud_updated_at:null → forces refreshFromCloud to re-pull the authoritative
+//                          cloud persona/art on next open, normalising the local
+//                          copy (bundle → cloud)
+// and moves each id from added_default_ids → added_world_ids so a user who had
+// invited a default keeps it on Home under the new foreign-owned code path.
+//
+// Fresh installs have no local is_default copies → the migration touches nothing
+// and just flips the marker. Idempotency + "runs once" gated by
+// config.defaults_to_world_migrated. A transient listCharacters failure leaves
+// the marker unset so the next boot retries rather than stranding the defaults.
+// ──────────────────────────────────────────────────────────────────────────
+
+export async function runDefaultsToWorldMigration(): Promise<void> {
+  const { loadConfig, updateConfig } = await import('./configStore');
+  const { listCharacters, saveCharacterRaw } = await import('./characterStore');
+  const defaultIds = new Set<string>(Object.values(DEFAULT_CHARACTER_UUIDS));
+  const config = await loadConfig();
+
+  let chars;
+  try {
+    chars = await listCharacters();
+  } catch (err) {
+    // Transient read failure: bail so the next boot retries rather than
+    // permanently freezing the defaults in the old model.
+    logger.warn(
+      `defaults→world migration: listCharacters failed, will retry next boot: ${(err as Error).message}`,
+    );
+    return;
+  }
+
+  // Any frozen-default copy NOT already in the final shape (normal owned public
+  // character: is_default:false, owner=DEFAULT_CHARACTERS_OWNER, kind:'custom').
+  // Deliberately NOT gated by the one-shot marker: this heals both
+  //   (a) never-converted copies (is_default:true), and
+  //   (b) PARTIALLY-converted copies left by an older build of this migration —
+  //       e.g. is_default:false but kind still 'world' on a default the user
+  //       never opened (open triggers refreshFromCloud, which adopts kind; an
+  //       un-opened one like Lyra keeps 'world' and stays view-only).
+  // State-idempotent: a copy already in the final shape is skipped, so once
+  // healed this is a no-op and safe to run every boot.
+  const needsHeal = chars.filter(
+    (c) =>
+      defaultIds.has(c.id) &&
+      (c.is_default === true || c.kind !== 'custom' || c.owner !== DEFAULT_CHARACTERS_OWNER),
+  );
+  if (needsHeal.length) {
+    logger.info(`defaults→world migration: healing ${needsHeal.length} default(s)`);
+  }
+
+  let anyFailed = false;
+  for (const c of needsHeal) {
+    const wasDefault = c.is_default === true;
+    try {
+      await saveCharacterRaw({
+        ...c,
+        is_default: false,
+        owner: DEFAULT_CHARACTERS_OWNER,
+        // Reclassify to 'custom' so CharacterPage's kind-gated viewOnly
+        // (isNonEditableKind = kind !== 'custom') lets the owner edit them.
+        kind: 'custom',
+        // Force public ONLY on the initial is_default→World conversion; a later
+        // repair (kind/owner) must preserve whatever share state the user chose.
+        shared: wasDefault ? true : c.shared,
+        // Bust the refresh watermark on the initial conversion so
+        // refreshFromCloud adopts the authoritative cloud persona/art; a repair
+        // leaves it so we don't force a re-pull that could revert a local edit.
+        cloud_updated_at: wasDefault ? null : (c.cloud_updated_at ?? null),
+      });
+      logger.info(`defaults→world migration: healed ${c.name} (${c.id})`);
+    } catch (err) {
+      anyFailed = true;
+      logger.warn(
+        `defaults→world migration: FAILED to heal ${c.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // One-shot Home-placement move: added_default_ids → added_world_ids so an
+  // invited default keeps its Home slot under the foreign-owned World code path.
+  // Gated by the marker (runs once); the character heal above is state-idempotent
+  // and runs every boot until nothing needs healing.
+  if (!config.defaults_to_world_migrated && !anyFailed) {
+    await updateConfig((cur) => {
+      if (cur.defaults_to_world_migrated) return cur; // re-check under the lock
+      const wasInvited = (cur.added_default_ids ?? []).filter((id) => defaultIds.has(id));
+      const addedDefault = (cur.added_default_ids ?? []).filter((id) => !defaultIds.has(id));
+      const addedWorld = [...new Set([...(cur.added_world_ids ?? []), ...wasInvited])];
+      return {
+        ...cur,
+        added_default_ids: addedDefault,
+        added_world_ids: addedWorld,
+        defaults_to_world_migrated: true,
+      };
+    });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase 11 D-23 — Slug→UUID one-shot rename migration.
 //
 // Source: 11-RESEARCH §Pattern 6 (full step sequence) + §Pitfall 7 (boot
@@ -284,10 +398,14 @@ export async function runUuidRenameMigration(): Promise<void> {
       continue;
     }
 
-    // Resolve target UUID: frozen for bundled defaults, fresh randomUUID for user-created
+    // Resolve target UUID: frozen for bundled defaults, fresh randomUUID for user-created.
+    // 'clawd' is Marv's HISTORICAL slug (the bundle files were renamed clawd → marv);
+    // its UUID is unchanged, so an old slug-keyed install still migrates to the same character.
     let newId: string;
-    if (oldId === 'sui' || oldId === 'lyra' || oldId === 'clawd') {
+    if (oldId === 'sui' || oldId === 'lyra') {
       newId = DEFAULT_CHARACTER_UUIDS[oldId];
+    } else if (oldId === 'clawd') {
+      newId = DEFAULT_CHARACTER_UUIDS.marv;
     } else {
       newId = randomUUID();
     }
@@ -303,9 +421,12 @@ export async function runUuidRenameMigration(): Promise<void> {
       continue;
     }
 
-    // Rewrite id + slug + Phase 11 schema fields (D-16/D-23/D-24)
+    // Rewrite id + slug + Phase 11 schema fields (D-16/D-23/D-24). A historical
+    // 'clawd' install adopts the renamed 'marv' slug so bundled-skin resolution
+    // (resources/skins/<slug>.png) finds the renamed file; refreshSeededDefaults
+    // re-asserts it too, but doing it here keeps the migrated copy correct at once.
     charData.id = newId;
-    charData.slug = oldId;
+    charData.slug = oldId === 'clawd' ? 'marv' : oldId;
     if (charData.shared === undefined) charData.shared = true;
     if (charData.metadata === undefined) charData.metadata = {};
 
@@ -372,7 +493,8 @@ export async function runUuidRenameMigration(): Promise<void> {
       const remapped = ids.map(id => {
         const m = manifest.find(e => e.oldSlug === id);
         if (m) return m.newId;
-        if (id === 'sui' || id === 'lyra' || id === 'clawd') return DEFAULT_CHARACTER_UUIDS[id];
+        if (id === 'sui' || id === 'lyra') return DEFAULT_CHARACTER_UUIDS[id];
+        if (id === 'clawd') return DEFAULT_CHARACTER_UUIDS.marv; // historical slug → Marv
         return id;
       });
       await withFileLock(defaultsSeededPath, async () => {

@@ -47,7 +47,13 @@ interface ChatState {
    * Optimistically append the user message, await the companion reply, append
    * it, and return the full ChatSendResult so the screen can act on `.launch`.
    */
-  send: (characterId: string, text: string, replyTo?: ChatReplyRef) => Promise<ChatSendResult | null>;
+  send: (
+    characterId: string,
+    text: string,
+    replyTo?: ChatReplyRef,
+    /** Multi-companion voice (260706): names of other companions on the call. */
+    voicePeers?: string[],
+  ) => Promise<ChatSendResult | null>;
   /**
    * 260705: drop the local cache for a character so the next load() refetches.
    * Renderer-side only (no IPC) — called after Reset memory, whose memory-dir
@@ -192,10 +198,20 @@ export const useChatStore = create<ChatState>((set, get) => {
     }));
     try {
       const history = await sei.chatHistory(characterId);
-      set((s) => ({
-        messages: { ...s.messages, [characterId]: history },
-        loading: { ...s.loading, [characterId]: false },
-      }));
+      // Merge, don't replace: a chat:message push (e.g. the "You and X called
+      // for …" call-record row written on hang-up) can land in the store DURING
+      // this async read. Overwriting messages[id] with the disk snapshot used to
+      // clobber it — so a just-ended call left no visible trace in the GUI.
+      // Keep any already-stored rows the disk history doesn't yet include.
+      set((s) => {
+        const existing = s.messages[characterId] ?? [];
+        const seenIds = new Set(history.map((m) => m.id));
+        const extras = existing.filter((m) => !seenIds.has(m.id));
+        return {
+          messages: { ...s.messages, [characterId]: extras.length ? [...history, ...extras] : history },
+          loading: { ...s.loading, [characterId]: false },
+        };
+      });
       // First-meeting greeting: on an empty transcript, tell main the chat was
       // opened. Main decides eligibility (unique companion, never chatted) and
       // returns any greeting replies to append — the renderer never decides
@@ -206,15 +222,25 @@ export const useChatStore = create<ChatState>((set, get) => {
         set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
         try {
           const greeting = await sei.chatOpened(characterId);
-          set((s) => {
-            const list = s.messages[characterId] ?? [];
-            const seen = new Set(list.map((m) => m.id));
-            const next = [...list, ...greeting.filter((m) => !seen.has(m.id))];
-            return {
-              messages: { ...s.messages, [characterId]: next },
-              awaiting: { ...s.awaiting, [characterId]: false },
-            };
-          });
+          // Reveal a multi-message greeting one bubble at a time, each with its
+          // OWN typing delay — same theater send() uses — instead of dumping the
+          // whole greeting at once (a two-part hello must arrive as two texts,
+          // one after the other). Realistic-typing OFF → fixed inter-bubble gap.
+          const realism = useUiStore.getState().realisticTyping;
+          const seen = new Set((get().messages[characterId] ?? []).map((m) => m.id));
+          const fresh = greeting.filter((m) => !seen.has(m.id));
+          for (let i = 0; i < fresh.length; i++) {
+            const waitMs = realism ? typingDelayMs(fresh[i].text) : i > 0 ? REPLY_GAP_MS : 0;
+            if (waitMs > 0) {
+              set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+              await delay(waitMs);
+            }
+            set((s) => ({
+              messages: appendMessage(s.messages, characterId, fresh[i]),
+              awaiting: { ...s.awaiting, [characterId]: i < fresh.length - 1 },
+            }));
+          }
+          if (fresh.length === 0) set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         } catch {
           set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         }
@@ -227,7 +253,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     }
   },
 
-  send: async (characterId, text, replyTo) => {
+  send: async (characterId, text, replyTo, voicePeers) => {
     // #9 — claim this character's latest-send slot. A follow-up send bumps this,
     // interrupts the in-flight LLM call (main aborts it), and takes over state.
     const token = (sendSeq[characterId] ?? 0) + 1;
@@ -260,7 +286,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       awaiting: { ...s.awaiting, [characterId]: !realism && !inCall },
     }));
     // Kick the reply off NOW so model generation overlaps the reading pause.
-    const replyPromise = sei.chatSend({ characterId, text, replyTo });
+    const replyPromise = sei.chatSend({
+      characterId,
+      text,
+      replyTo,
+      ...(voicePeers && voicePeers.length ? { voicePeers } : {}),
+    });
     try {
       if (realism) {
         // Task 2 — "reading" pause before the companion starts typing, scaled to
@@ -297,7 +328,11 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Realism ON → the pre-bubble wait is proportional to that bubble's length
       // (task 1, fast-typist speed); OFF → the first bubble is instant and
       // follow-ups use the fixed gap. `awaiting` stays true between chunks.
-      const replies = result.replies;
+      // Voice streaming (260706): main already streamed each sentence live over
+      // the chat:message push (appended + spoken by onChatMessage as it arrived),
+      // so DON'T reveal or speak result.replies again — that would double every
+      // line. The reveal loop below is only for the classic blocking path.
+      const replies = result.streamed ? [] : result.replies;
       for (let i = 0; i < replies.length; i++) {
         const waitMs = inCall ? 0 : realism ? typingDelayMs(replies[i].text) : i > 0 ? REPLY_GAP_MS : 0;
         if (waitMs > 0) {

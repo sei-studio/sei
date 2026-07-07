@@ -152,6 +152,16 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // Fresh install: no playtime accumulated yet, nothing to backfill.
         total_playtime_ms: 0,
         total_playtime_backfilled: true,
+        // Live call overlay is an opt-in feature: off until enabled in Settings.
+        call_overlay_enabled: false,
+        // 260706: a fresh install has no legacy local defaults or pre-party
+        // state, so the one-time backfill/world migrations have nothing to do.
+        // Mark them done (same reasoning as total_playtime_backfilled above) so
+        // first launch skips a needless migration pass (incl. a cloud fetch).
+        added_defaults_backfilled: true,
+        defaults_to_world_migrated: true,
+        // The one-time $1 feedback reward is unclaimed on a new account.
+        feedback_reward_claimed: false,
         // First-run onboarding flows into the dedicated skin-setup step next;
         // mark it pending so a relaunch mid-setup resumes there. Re-onboarding
         // from Settings skips the skin step, so leave it cleared.

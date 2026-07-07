@@ -28,10 +28,10 @@ export interface TtsStreamHandle {
 }
 
 export interface AudioQueue {
-  /** Enqueue a complete encoded clip (audio/mpeg bytes). */
-  enqueue(buf: ArrayBuffer): void;
-  /** Reserve the next slot for a clip that will stream in. */
-  enqueueStream(): TtsStreamHandle;
+  /** Enqueue a complete encoded clip (audio/mpeg bytes) spoken by `characterId`. */
+  enqueue(buf: ArrayBuffer, characterId: string): void;
+  /** Reserve the next slot for a clip (spoken by `characterId`) that will stream in. */
+  enqueueStream(characterId: string): TtsStreamHandle;
   /** True while a clip is playing (or queued clips remain). */
   speaking(): boolean;
   /** Barge-in: stop playback and drop everything queued; queue stays usable. */
@@ -43,9 +43,11 @@ export interface AudioQueue {
   stop(): void;
 }
 
-type BufferItem = { kind: 'buffer'; buf: ArrayBuffer };
+type BufferItem = { kind: 'buffer'; buf: ArrayBuffer; characterId: string };
 type StreamItem = {
   kind: 'stream';
+  /** Which companion is speaking this clip (drives per-companion speaking state). */
+  characterId: string;
   chunks: ArrayBuffer[];
   ended: boolean;
   failed: boolean;
@@ -59,7 +61,35 @@ type Item = BufferItem | StreamItem;
 const canStreamMpeg = (): boolean =>
   typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mpeg');
 
-export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void): AudioQueue {
+/**
+ * A short run of silent MPEG-1 Layer III frames (128kbps, 44.1kHz), appended to
+ * the END of every TTS clip. Chromium's MP3 decoder needs the NEXT frame header
+ * to finalize the previous frame, so the true last frame of a clip gets dropped
+ * at end-of-stream — heard as the last word cut off abruptly. A few trailing
+ * silent frames (~100ms) give the real final frame something to lean on so it
+ * plays out in full. Each frame: sync header FF FB 90 00 then zeroed side-info +
+ * main-data (silence); length 417 bytes for these params. Built at runtime (no
+ * base64 asset); if the decoder ever rejects it, the append simply no-ops and we
+ * fall back to today's behavior.
+ */
+function buildSilenceMp3(frames = 4): ArrayBuffer {
+  const FRAME = 417;
+  const out = new Uint8Array(FRAME * frames);
+  for (let i = 0; i < frames; i++) {
+    const off = i * FRAME;
+    out[off] = 0xff;
+    out[off + 1] = 0xfb;
+    out[off + 2] = 0x90;
+    out[off + 3] = 0x00;
+    // remaining bytes stay 0 → decoded silence
+  }
+  return out.buffer;
+}
+const SILENCE_MP3 = buildSilenceMp3();
+
+export function createAudioQueue(
+  onSpeakingChange: (speaking: boolean, characterId: string | null) => void,
+): AudioQueue {
   const pending: Item[] = [];
   let current: HTMLAudioElement | null = null;
   let currentCleanup: (() => void) | null = null;
@@ -76,8 +106,9 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
     playNext();
   }
 
-  function playBuffer(buf: ArrayBuffer): void {
-    const url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
+  function playBuffer(buf: ArrayBuffer, characterId: string): void {
+    // Trailing silence so the decoder plays the real final frame (see SILENCE_MP3).
+    const url = URL.createObjectURL(new Blob([buf, SILENCE_MP3], { type: 'audio/mpeg' }));
     const el = new Audio(url);
     el.muted = outputMuted;
     current = el;
@@ -85,7 +116,7 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
     const done = (): void => finishCurrent(el);
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
-    onSpeakingChange(true);
+    onSpeakingChange(true, characterId);
     void el.play().catch(() => done());
   }
 
@@ -105,7 +136,7 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
           all.set(new Uint8Array(c), off);
           off += c.byteLength;
         }
-        playBuffer(all.buffer);
+        playBuffer(all.buffer, item.characterId);
       };
       if (item.ended || item.failed) playCollected();
       else {
@@ -117,7 +148,7 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
           item.dropped = true;
           item.onEnd = null;
         };
-        onSpeakingChange(true);
+        onSpeakingChange(true, item.characterId);
       }
       return;
     }
@@ -131,12 +162,22 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
     const backlog: ArrayBuffer[] = [...item.chunks];
     item.chunks = [];
     let srcEnded = false;
+    let silencePadded = false;
 
     const done = (): void => finishCurrent(el);
 
     const maybeFinalize = (): void => {
       if (srcEnded || !sb || sb.updating) return;
       if ((item.ended || item.failed) && backlog.length === 0 && ms.readyState === 'open') {
+        // On a clean end, append a few trailing silent frames BEFORE closing the
+        // stream so the decoder emits the true final frame instead of dropping it
+        // (the clipped-last-word symptom). One pass; skipped on a failed stream.
+        if (item.ended && !item.failed && !silencePadded) {
+          silencePadded = true;
+          backlog.push(SILENCE_MP3.slice(0));
+          pump();
+          return;
+        }
         srcEnded = true;
         try {
           ms.endOfStream();
@@ -194,7 +235,7 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
     };
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
-    onSpeakingChange(true);
+    onSpeakingChange(true, item.characterId);
     void el.play().catch(() => done());
   }
 
@@ -202,18 +243,18 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
     if (stopped) {
       current = null;
       busy = false;
-      onSpeakingChange(false);
+      onSpeakingChange(false, null);
       return;
     }
     const item = pending.shift();
     if (!item) {
       current = null;
       busy = false;
-      onSpeakingChange(false);
+      onSpeakingChange(false, null);
       return;
     }
     busy = true;
-    if (item.kind === 'buffer') playBuffer(item.buf);
+    if (item.kind === 'buffer') playBuffer(item.buf, item.characterId);
     else if (item.dropped || (item.failed && item.chunks.length === 0)) playNext();
     else playStream(item);
   }
@@ -236,18 +277,19 @@ export function createAudioQueue(onSpeakingChange: (speaking: boolean) => void):
       }
     }
     busy = false;
-    onSpeakingChange(false);
+    onSpeakingChange(false, null);
   }
 
   return {
-    enqueue(buf) {
+    enqueue(buf, characterId) {
       if (stopped) return;
-      pending.push({ kind: 'buffer', buf });
+      pending.push({ kind: 'buffer', buf, characterId });
       if (!busy) playNext();
     },
-    enqueueStream() {
+    enqueueStream(characterId) {
       const item: StreamItem = {
         kind: 'stream',
+        characterId,
         chunks: [],
         ended: false,
         failed: false,

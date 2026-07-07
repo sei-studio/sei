@@ -46,12 +46,12 @@ const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) 
 // ── Fixtures from the REAL default characters (Sui / Lyra / Marv) ────────────
 async function buildFixtures() {
   const dir = path.join(ROOT, 'resources/default-characters');
-  // clawd.json's display name is "Marv".
-  const slugs = ['sui', 'lyra', 'clawd'];
+  // marv.json's display name is "Marv".
+  const slugs = ['sui', 'lyra', 'marv'];
   const launched = {
     sui: { last: '2026-06-21T19:10:00.000Z', ms: 10_980_000 }, // 3h 3m
     lyra: { last: '2026-06-19T21:40:00.000Z', ms: 3_900_000 }, // 1h 5m
-    clawd: { last: '2026-06-20T18:30:00.000Z', ms: 5_460_000 }, // 1h 31m
+    marv: { last: '2026-06-20T18:30:00.000Z', ms: 5_460_000 }, // 1h 31m
   };
   const chars = [];
   for (const slug of slugs) {
@@ -82,7 +82,7 @@ async function buildFixtures() {
 const DEFAULT_IDS = [
   'bbf5b66f-2f0f-4918-a953-a2cf66d5a586', // Sui
   'e4511df2-fd20-470b-9131-f8f9968e1c01', // Lyra
-  '25770cd6-a50b-409d-a7e2-6cc2026dd673', // Marv (clawd)
+  '25770cd6-a50b-409d-a7e2-6cc2026dd673', // Marv (marv)
 ];
 
 const config = {
@@ -146,12 +146,12 @@ async function main() {
   const skinBytesBySlug = {
     sui: await readFile(path.join(ROOT, 'resources/skins/sui.png')),
     lyra: await readFile(path.join(ROOT, 'resources/skins/lyra.png')),
-    clawd: await readFile(path.join(ROOT, 'resources/skins/clawd.png')),
+    marv: await readFile(path.join(ROOT, 'resources/skins/marv.png')),
   };
   const skinByName = {
     sui: skinBytesBySlug.sui,
     lyra: skinBytesBySlug.lyra,
-    marv: skinBytesBySlug.clawd,
+    marv: skinBytesBySlug.marv,
   };
 
   const browser = await chromium.launch({

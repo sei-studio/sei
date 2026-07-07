@@ -34,7 +34,7 @@ import path from 'node:path';
 import type { ChatMessage } from '../../shared/ipc';
 import { paths } from '../paths';
 import { readAll } from './chatStore';
-import { buildChatSdk } from './sdk';
+import { buildChatSdk, CHAT_MODEL } from './sdk';
 
 /** Verbatim tail preserved after a fold. */
 const RECENT_WINDOW = 50;
@@ -283,10 +283,31 @@ async function foldIntoSummary(
       'an announced join can fail after the fact. Output only the updated summary text.' +
       personaBlock;
     const userText = `Existing summary:\n${bridge.summary || '(none yet)'}\n\nNew messages:\n${transcript}`;
-    const res = await client.messages.create(
-      { model: SUMMARY_MODEL, max_tokens: SUMMARY_MAX_TOKENS, system, messages: [{ role: 'user', content: userText }] },
-      { timeout: SUMMARY_TIMEOUT_MS },
-    );
+    // The fold prefers Sonnet for quality, but the cloud proxy only meters an
+    // allowlist of model ids — a build pointed at a proxy that hasn't listed
+    // SUMMARY_MODEL 400s with `invalid_model`, which would pin the watermark and
+    // silently break compaction forever. Fall back to CHAT_MODEL (Haiku, always
+    // allowlisted since the interactive chat rides it) so folds still drain. One
+    // retry, only for a model-rejection 400 — real errors (timeouts, auth) still
+    // surface to the catch below.
+    const runFold = (model: string) =>
+      client.messages.create(
+        { model, max_tokens: SUMMARY_MAX_TOKENS, system, messages: [{ role: 'user', content: userText }] },
+        { timeout: SUMMARY_TIMEOUT_MS },
+      );
+    let res: Awaited<ReturnType<typeof runFold>>;
+    try {
+      res = await runFold(SUMMARY_MODEL);
+    } catch (err) {
+      const msg = String((err as Error)?.message ?? err);
+      const modelRejected = /invalid_model|model/i.test(msg) && /\b400\b|not_found|invalid/i.test(msg);
+      if (modelRejected) {
+        console.warn(`[sei] summary model ${SUMMARY_MODEL} rejected (${msg}); folding with ${CHAT_MODEL}`);
+        res = await runFold(CHAT_MODEL);
+      } else {
+        throw err;
+      }
+    }
     const text = res.content
       .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : ''))
       .join('')

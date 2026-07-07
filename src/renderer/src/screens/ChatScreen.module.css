@@ -134,9 +134,9 @@
   min-height: 0;
   overflow-y: auto;
   /* Bottom padding leaves room for the floating composer that hovers over
-     the list (change #3) — kept just tall enough to clear the composer so the
-     latest message sits close to the message box (#6). */
-  padding: var(--space-lg) var(--space-lg) 72px;
+     the list (change #3) — clears the composer with a little breathing room so
+     the latest message doesn't crowd the message box. */
+  padding: var(--space-lg) var(--space-lg) 88px;
   display: flex;
   flex-direction: column;
   /* No inter-row gap — vertical rhythm comes from each row's own padding, so
@@ -148,7 +148,7 @@
    line, so reserve extra bottom space (defined AFTER .list so this padding-bottom
    wins) — otherwise the taller dock overlaps the most recent message (#4). */
 .listTyping {
-  padding-bottom: 100px;
+  padding-bottom: 116px;
 }
 
 /* Scrollbar hidden at rest — the thumb shows only while actively scrolling

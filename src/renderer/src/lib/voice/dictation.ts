@@ -48,10 +48,13 @@ const FRAME_SIZE = 2048; // ~128ms at 16kHz
 const START_RMS_FLOOR = 0.012; // absolute minimum to open speech
 const NOISE_ADAPT = 0.02; // EMA rate for the noise floor
 const START_FACTOR = 3; // open at noiseFloor * factor (≥ START_RMS_FLOOR)
-// 700ms (was 900): every ms here is dead air on the player's end of the call —
-// the whole reply pipeline (Whisper + LLM + TTS) queues behind utterance-end
-// detection. 700 still comfortably clears intra-sentence pauses.
-const END_SILENCE_MS = 700;
+// 450ms (was 700 → 550 → 450): every ms here is dead air on the player's end of
+// the call — the whole reply pipeline (Whisper + LLM + TTS) queues behind
+// utterance-end detection. The eager provisional Whisper pass (EAGER_SILENCE_MS)
+// already fires at 250ms and usually has the final transcript ready by here, so
+// trimming this window shaves ~100ms off perceived response time with little
+// risk of clipping a natural pause.
+const END_SILENCE_MS = 450;
 // 260705 latency: fire a PROVISIONAL Whisper pass this early into a silence
 // run. Silence frames add no words, so if the silence holds to END_SILENCE_MS
 // the provisional transcript IS the final one — Whisper's ~0.5–1s of work
@@ -64,9 +67,33 @@ const PRE_ROLL_FRAMES = 2; // frames kept from before the trigger
 // Barge-in (260705): while companion audio plays (hold), speech must clear a
 // stiffer bar than normal — echo cancellation removes most of the companion's
 // own voice from the mic, and the multiplier keeps the residue from
-// self-triggering. Tuned above START_FACTOR=3 with margin.
-const BARGE_RMS_FLOOR = 0.03;
+// self-triggering. Tuned above START_FACTOR=3 with margin. 260706: raised
+// 0.03 → 0.05 — 0.03 sat only ~3-5x post-AEC residue, low enough that a clip's
+// own loud onset transient could self-trigger a barge-in.
+// Raised again 0.05 -> 0.065 (260706): on laptop SPEAKERS (no headphones) the
+// companion's own voice leaks past AEC well above 0.05 and kept cutting itself
+// off; ~0.065 clears typical speaker-echo residue while an intentional
+// interruption (which is louder still) lands normally.
+const BARGE_RMS_FLOOR = 0.065;
 const BARGE_FACTOR = 7;
+// 260706: barge-in grace window. AEC needs time to converge on each NEW clip's
+// audio; during that window the companion's own onset echoes into the mic above
+// the barge bar and self-triggers a barge-in that cuts the clip off after a
+// split second (the "I only heard 'hey'" bug). Ignore barge-in for this long
+// after each clip starts playing (setHold(true)); genuine barge-in over a
+// longer clip still lands once the window passes.
+const BARGE_GRACE_MS = 600;
+// 260706: barge-in must be SUSTAINED, not a single frame. Playing the call out
+// loud (speakers, not headphones) leaks the companion's own voice past echo
+// cancellation; a lone loud frame of that residue used to trip a barge-in and
+// clear the queue, cutting the companion off mid-sentence (the "lines get cut
+// off" bug). Real player speech holds above the barge bar for a beat, so we
+// require this much CONTINUOUS elevated energy before it counts — brief echo
+// peaks reset the run and never fire. ~3 frames at ~128ms each.
+// Raised 320 -> 480 (260706): a longer continuous run is needed to count as a
+// barge-in, so a burst of speaker-echo residue can't trip it — only sustained
+// real speech does. ~3-4 frames at ~128ms each.
+const BARGE_CONFIRM_MS = 480;
 
 /**
  * AudioWorklet processor (issue: ScriptProcessorNode is deprecated). Batches
@@ -111,6 +138,10 @@ export async function createDictation(opts: {
    * should stop companion playback — which releases the hold — and this same
    * utterance then flows through onUtterance as usual. */
   onBargeIn?: () => void;
+  /** Fires true when the player's live mic speech opens and false when it ends —
+   * drives the "you're talking" ring on the caller's own avatar (same lit ring
+   * the companions get while speaking). Edge-emitted, so it only fires on change. */
+  onSpeechActive?: (active: boolean) => void;
 }): Promise<Dictation> {
   opts.onStatus('loading-model');
 
@@ -152,7 +183,12 @@ export async function createDictation(opts: {
         // (played by this same page) from the mic signal.
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true,
+        // autoGainControl OFF (260706): AGC dynamically boosts a quiet mic, which
+        // makes our absolute-RMS energy VAD read "hotter" (ambient noise + speaker
+        // echo cross the thresholds) and fights AEC's convergence — the "mic feels
+        // too sensitive" report. Off gives a stable signal the fixed thresholds
+        // can trust, which is the standard choice for energy-based VAD pipelines.
+        autoGainControl: false,
       },
     });
   } catch (err) {
@@ -196,12 +232,27 @@ export async function createDictation(opts: {
 
   let muted = false;
   let hold = false;
+  /** When the current companion clip started playing (setHold(true)); basis for
+   * the barge-in grace window that stops a clip's own onset from self-barging. */
+  let holdSince = 0;
+  /** Running length of continuous over-the-barge-bar energy during hold; a real
+   * barge-in only fires once this clears BARGE_CONFIRM_MS (see there). */
+  let bargeRunMs = 0;
   let noiseFloor = 0.008;
   let inSpeech = false;
   let silenceMs = 0;
   let speechMs = 0;
   const preRoll: Float32Array[] = [];
   let utterance: Float32Array[] = [];
+
+  /** Edge-emit the player's live speaking state (for the caller's own avatar
+   * ring). Deduped so it only fires on a genuine transition. */
+  let speechEmitted = false;
+  function emitSpeech(active: boolean): void {
+    if (active === speechEmitted) return;
+    speechEmitted = active;
+    opts.onSpeechActive?.(active);
+  }
 
   /** Provisional end-of-utterance transcription (EAGER_SILENCE_MS). Identity-
    * free lifecycle: `cancelled` kills it when speech resumes; `wanted` marks
@@ -236,6 +287,7 @@ export async function createDictation(opts: {
     speechMs = 0;
     utterance = [];
     cancelEager();
+    emitSpeech(false);
   }
 
   function flushUtterance(): void {
@@ -246,6 +298,7 @@ export async function createDictation(opts: {
     silenceMs = 0;
     speechMs = 0;
     utterance = [];
+    emitSpeech(false);
     if (speechMsOf(frames) < MIN_UTTERANCE_MS) {
       if (pendingEager) {
         pendingEager.cancelled = true;
@@ -281,6 +334,7 @@ export async function createDictation(opts: {
     utterance = [...preRoll.map((f) => f)];
     utterance.push(frame.slice());
     preRoll.length = 0;
+    emitSpeech(true);
   }
 
   captureNode.port.onmessage = (e: MessageEvent) => {
@@ -304,9 +358,26 @@ export async function createDictation(opts: {
     if (hold && !inSpeech) {
       preRoll.push(frame.slice());
       if (preRoll.length > PRE_ROLL_FRAMES) preRoll.shift();
-      if (rms >= Math.max(BARGE_RMS_FLOOR, noiseFloor * BARGE_FACTOR)) {
-        openSpeech(frame, frameMs);
-        opts.onBargeIn?.();
+      // Grace window: for the first BARGE_GRACE_MS of a clip, ignore threshold
+      // crossings — that early audio is almost always the clip's own onset
+      // echoing back before AEC converges, not the player barging in. After the
+      // window, a genuine barge-in over a longer clip still opens normally.
+      const overBar =
+        rms >= Math.max(BARGE_RMS_FLOOR, noiseFloor * BARGE_FACTOR) &&
+        performance.now() - holdSince >= BARGE_GRACE_MS;
+      if (overBar) {
+        // Sustained-energy gate: only a CONTINUOUS run past the bar is a real
+        // barge-in. A single echo peak from the companion's own clip (common on
+        // speakers) bumps the run but falls back below the bar next frame,
+        // resetting it — so it never cuts the clip off. Genuine speech holds.
+        bargeRunMs += frameMs;
+        if (bargeRunMs >= BARGE_CONFIRM_MS) {
+          bargeRunMs = 0;
+          openSpeech(frame, frameMs);
+          opts.onBargeIn?.();
+        }
+      } else {
+        bargeRunMs = 0;
       }
       return;
     }
@@ -363,11 +434,15 @@ export async function createDictation(opts: {
     setHold(h) {
       // Hold going up mid-speech no longer kills the utterance: with barge-in
       // the common case is the player already talking when the companion's
-      // next queued clip starts — their words must survive it.
+      // next queued clip starts — their words must survive it. Re-arm the
+      // barge-in grace window on each clip start so its onset can't self-barge.
+      if (h) holdSince = performance.now();
+      bargeRunMs = 0; // any hold transition restarts the sustained-barge count
       hold = h;
     },
     speechActive: () => inSpeech,
     stop() {
+      emitSpeech(false);
       try { captureNode.port.onmessage = null; } catch { /* torn down */ }
       try { captureNode.disconnect(); source.disconnect(); sink.disconnect(); } catch { /* torn down */ }
       void ctx.close().catch(() => {});

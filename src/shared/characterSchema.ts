@@ -453,6 +453,14 @@ export const UserConfigSchema = z.object({
    */
   call_captions: z.boolean().optional().default(false),
   /**
+   * "Call overlay" (Appearance & feel, 260706). When on, a live voice call
+   * shows an always-on-top row of companion avatars pinned to the bottom-right
+   * corner (Discord-style), each lit while that companion speaks and dimmed
+   * while idle, so a streamer can see who is talking without the Sei window
+   * focused. Off by default — it floats over every other app, so it is opt-in.
+   */
+  call_overlay_enabled: z.boolean().optional().default(false),
+  /**
    * 260705: the chat presence side panel is OPEN by default; closing it is a
    * sticky preference that survives companion switches and app restarts
    * (hydrated into useUiStore.chatPanelHidden like realistic_typing).
@@ -496,6 +504,19 @@ export const UserConfigSchema = z.object({
    * existing config.json files backward-compatible.
    */
   added_defaults_backfilled: z.boolean().optional().default(false),
+  /**
+   * One-shot idempotency marker for the defaults-to-World migration
+   * (src/main/migration.ts runDefaultsToWorldMigration). On 260706 the three
+   * shipped defaults (sui/lyra/marv) stopped being read-only bundled
+   * `is_default` copies and became normal user-owned public World characters
+   * (owner = DEFAULT_CHARACTERS_OWNER). This migration flips any pre-existing
+   * local `is_default:true` copy to a normal owned/shared character and moves
+   * its id from added_default_ids → added_world_ids so it stays on Home. Fresh
+   * installs have no local `is_default` copies, so the migration only flips
+   * this marker. `.optional().default(false)` keeps existing config.json files
+   * backward-compatible.
+   */
+  defaults_to_world_migrated: z.boolean().optional().default(false),
   /**
    * Foreign-owned characters the user added to their library from the World
    * tab. HomeGrid + IconRail otherwise hide chars where owner !== currentUserId

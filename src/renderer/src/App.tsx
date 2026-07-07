@@ -41,6 +41,7 @@ import { UniqueGenderScreen } from './screens/UniqueGenderScreen';
 import { UniqueCastingScreen } from './screens/UniqueCastingScreen';
 import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { MinimizedCall } from './components/MinimizedCall';
+import { CallOverlayPusher } from './components/CallOverlayPusher';
 import { SummonedWidget } from './components/SummonedWidget';
 import { GamesPickerModal } from './components/GamesPickerModal';
 import { GameAboutModal } from './components/GameAboutModal';
@@ -414,6 +415,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
           // Appearance & feel: call captions (default OFF).
           useUiStore.getState().setCallCaptions(cfg.call_captions === true);
+          // Appearance & feel: always-on-top call overlay (default OFF).
+          useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
           // Sticky chat side-panel visibility (default shown).
           useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
         } catch {
@@ -537,6 +540,8 @@ export function App(): React.ReactElement {
         useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
         // Appearance & feel: call captions (default OFF when absent).
         useUiStore.getState().setCallCaptions(cfg.call_captions === true);
+        // Appearance & feel: always-on-top call overlay (default OFF when absent).
+        useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
         // Sticky chat side-panel visibility (default shown).
         useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
       } catch {
@@ -869,6 +874,9 @@ export function App(): React.ReactElement {
       {/* Chat #6 — the minimized voice-call widget floats above all screens
           (renders nothing unless a call is minimized). */}
       <MinimizedCall />
+      {/* Task 4 — drives the always-on-top call overlay window (renders nothing;
+          pushes call state to main, which owns the overlay window). */}
+      <CallOverlayPusher />
       {/* Chat #7 — floating "in your world" unsummon popups for live sessions
           (renders nothing unless a bot is summoned/connecting). */}
       <SummonedWidget />

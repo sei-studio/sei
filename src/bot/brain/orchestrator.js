@@ -2306,7 +2306,9 @@ function maybeWarnByteCap(loop, warned) {
       // (postProcessSay + sei-chat routing + dedupe — a same-line say() from
       // the legacy path is suppressed as a duplicate, so nothing double-sends).
       const farewell = String(use.input?.farewell ?? '').trim()
-      if (farewell) {
+      // Only speak the farewell if the model didn't already say() a goodbye in
+      // this same response — otherwise the two lines double up (260706).
+      if (farewell && !loop._saySpokenThisIteration) {
         try { _emitSayLine(loop, farewell) } catch {}
       }
       const fireQuit = () => {
@@ -2329,7 +2331,9 @@ function maybeWarnByteCap(loop, warned) {
         return { result: { type: 'tool_result', tool_use_id: use.id, content: 'no voice call is open — nothing to hang up', is_error: true }, terminate: false }
       }
       const farewell = String(use.input?.farewell ?? '').trim()
-      if (farewell) {
+      // Only speak the farewell if the model didn't already say() a goodbye in
+      // this same response — otherwise the two lines double up (260706).
+      if (farewell && !loop._saySpokenThisIteration) {
         try { _emitSayLine(loop, farewell) } catch {}
       }
       lastActionResult = 'ended call'
@@ -3242,6 +3246,12 @@ function maybeWarnByteCap(loop, warned) {
       if (respText) emitThinkIfFull(respText)
       const sayResults = emitSayCalls(loop, toolUses)
       const saySpokenThisTurn = sayResults.size > 0
+      // Double-goodbye guard (260706): a quit()/end_call() farewell must not
+      // fire when the same response already called say() — otherwise the two
+      // goodbyes land back-to-back ("aight catch you later" + "later ouen,
+      // thanks for having me"). Stash this iteration's say flag so the terminal
+      // tool dispatch (dispatchTool) can suppress its farewell.
+      loop._saySpokenThisIteration = saySpokenThisTurn
 
       // 260514-ngj: R1-R4 interrupt-response dispatcher. Keyed off the
       // CURRENT iteration's trigger (loop._currentIterationTrigger), NOT

@@ -24,9 +24,10 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
 import { isCallActive, activeCallIds, clearAllCalls } from './voice/callState';
+import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { initUpdater } from './updater';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
-import { runFirstLaunchMigration, runUuidRenameMigration } from './migration';
+import { runFirstLaunchMigration, runUuidRenameMigration, runDefaultsToWorldMigration } from './migration';
 import { refreshSeededDefaults } from './defaultCharacters';
 import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
@@ -393,6 +394,16 @@ async function bootstrap(): Promise<void> {
   try { await refreshSeededDefaults(); }
   catch (err) { logger.warn(`refreshSeededDefaults failed: ${(err as Error).message}`); }
 
+  // 1b-1b. 260706: convert any leftover local `is_default` copies of the three
+  // shipped defaults (sui/lyra/marv) into normal owned/shared World characters
+  // (owner = DEFAULT_CHARACTERS_OWNER). Runs AFTER refreshSeededDefaults so that,
+  // on the first post-update boot, refresh re-asserts the bundle fields and this
+  // then flips is_default:false; on subsequent boots refreshSeededDefaults skips
+  // them (it only touches is_default:true files) and this is a marker-gated
+  // no-op. Idempotent via config.defaults_to_world_migrated.
+  try { await runDefaultsToWorldMigration(); }
+  catch (err) { logger.warn(`defaults→world migration failed: ${(err as Error).message}`); }
+
   // 1b-3. Cloud-default self-heal. The signed-in→cloud default is written on the
   // sign-in TRANSITION only; a session-restore launch re-points the scope at
   // boot, so that transition never re-fires and a profile stuck on the schema
@@ -538,6 +549,11 @@ async function bootstrap(): Promise<void> {
 
   mainWindow.on('closed', () => { mainWindow = null; });
 
+  // Always-on-top call overlay (260706): a second frameless window driven by the
+  // renderer's voice:overlay-set pushes. Init with the same preload + renderer
+  // target so it can load the overlay-mode bundle.
+  initCallOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
+
   // Replay latest LAN state on did-finish-load so freshly-loaded renderer is in sync.
   mainWindow.webContents.on('did-finish-load', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -553,6 +569,8 @@ async function bootstrap(): Promise<void> {
   const sweepVoiceCalls = (): void => {
     for (const id of activeCallIds()) supervisor?.setVoiceCall(id, false);
     clearAllCalls();
+    // The overlay belongs to the call the (now-gone) renderer was driving.
+    closeCallOverlay();
   };
   mainWindow.webContents.on('did-navigate', sweepVoiceCalls);
   mainWindow.webContents.on('render-process-gone', sweepVoiceCalls);
@@ -626,6 +644,9 @@ async function bootstrap(): Promise<void> {
   // 5. IPC handlers
   registerIpcHandlers({
     supervisor,
+    // Voice streaming (260706): the streaming chat turn emits each sentence here
+    // (already persisted) so it reaches the renderer — and TTS — immediately.
+    pushChatMessage,
     getSkinServerBaseUrl: () => skinServer?.baseUrl ?? null,
     // wizard:install handler forwards per-step progress events here; this
     // closure pipes them to the renderer via the wizard:progress push channel.
@@ -688,12 +709,15 @@ async function bootstrap(): Promise<void> {
     // in-game session takes it over the port (say() routes into the call); an
     // idle character runs a standalone greeting turn whose replies are pushed
     // (and spoken by the renderer's TTS hook).
-    greetVoiceCall: (id) => {
-      if (onlineIds.has(id) && supervisor?.greetVoiceCall(id)) return;
+    greetVoiceCall: (id, peers = []) => {
+      // A solo in-game session greets over the port (say() routes to the call).
+      // On a group call we always run the standalone greeting turn so the joiner
+      // can name the room — the in-game greet path has no group framing.
+      if (peers.length === 0 && onlineIds.has(id) && supervisor?.greetVoiceCall(id)) return;
       void (async () => {
         try {
           const { sendVoiceGreetingTurn } = await import('./chat/chatService');
-          const replies = await sendVoiceGreetingTurn(id);
+          const replies = await sendVoiceGreetingTurn(id, peers);
           for (const r of replies) pushChatMessage(id, r);
         } catch (err) {
           console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);

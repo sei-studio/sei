@@ -16,7 +16,7 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
-import { buildSystemBlocks, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL } from './chatPrompts';
+import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL } from './chatPrompts';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import * as chatStore from './chatStore';
 import {
@@ -46,10 +46,28 @@ export interface ChatDeps {
    * live session (supervisor.stop). A no-op when no session is live.
    */
   leaveGame?: (characterId: string) => void;
+  /**
+   * Voice calls (260706): push ONE already-persisted companion reply to the
+   * renderer immediately (the `chat:message` channel, no re-persist). Used by the
+   * streaming voice turn to emit each sentence the moment it completes, so TTS
+   * starts on sentence 1 while the rest still generates. Wired to pushChatMessage
+   * in index.ts; absent → the turn falls back to the blocking, all-at-once path.
+   */
+  emitReply?: (characterId: string, message: ChatMessage) => void;
 }
 
 const MEMORY_BUDGET_BYTES = 6000;
 const MAX_HOPS = 3;
+/**
+ * Voice calls (260706): cap the transcript sent to the model to the last N rows.
+ * Memory (MEMORY.md) + the rolling summary still carry older context, so the
+ * companion keeps continuity, but a live call sends a tiny window instead of the
+ * full 50-99 verbatim tail — the prompt (and the cache-write during dialing) is
+ * much smaller, which is the dominant per-turn latency. Typed chat is unbounded
+ * (its window is capped only by the fold watermark) since latency matters less
+ * there and richer context reads better.
+ */
+const VOICE_RECENT_CAP = 10;
 
 /**
  * In-flight chat turn per character (chat #9). A new send for the same character
@@ -108,6 +126,28 @@ export function splitReply(text: string, punctuation: 'casual' | 'deliberate' = 
     .map((s) => (punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')))
     .filter(Boolean);
   return parts.length ? parts : ['…'];
+}
+
+/**
+ * Voice streaming (260706): pull COMPLETE sentences off the front of a growing
+ * buffer so each can be spoken the moment it finishes while the model is still
+ * writing the rest. A boundary is sentence-ending punctuation (. ! ?) followed
+ * by whitespace, with the preceding char NOT a digit so "1.618" / "3.5" never
+ * split mid-number. The trailing partial stays buffered for the next delta.
+ * Exported for testing.
+ */
+export function takeSentences(buf: string): { sentences: string[]; rest: string } {
+  const sentences: string[] = [];
+  const re = /(?<!\d)[.!?]+(\s+)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(buf)) !== null) {
+    const end = m.index + m[0].length - m[1].length; // keep the punctuation, drop the trailing space
+    const s = buf.slice(last, end).trim();
+    if (s) sentences.push(s);
+    last = re.lastIndex;
+  }
+  return { sentences, rest: buf.slice(last) };
 }
 
 /** Concatenate the text blocks of an Anthropic response content array. */
@@ -236,7 +276,14 @@ function clampPunctuation(raw: unknown): 'casual' | 'deliberate' {
  */
 async function prepareChatTurn(
   characterId: string,
-  opts: { openWorldDetected: boolean; inGame: boolean; voiceCall?: boolean },
+  opts: {
+    openWorldDetected: boolean;
+    inGame: boolean;
+    voiceCall?: boolean;
+    voicePeers?: string[];
+    /** Cap the transcript to the last N rows (voice calls, see VOICE_RECENT_CAP). */
+    recentCap?: number;
+  },
 ) {
   const character = await getCharacter(characterId);
   if (!character) return null;
@@ -265,8 +312,12 @@ async function prepareChatTurn(
     openWorldDetected: opts.openWorldDetected,
     inGame: opts.inGame,
     voiceCall: opts.voiceCall === true,
+    voicePeers: opts.voicePeers,
   });
-  const messages = toMessages(history);
+  // Voice: only the last N rows go to the model (VOICE_RECENT_CAP). Slice the raw
+  // transcript BEFORE toMessages so role-merge + first-must-be-user still hold.
+  const windowed = opts.recentCap ? history.slice(-opts.recentCap) : history;
+  const messages = toMessages(windowed);
   return { character, config, system, messages, punctuation };
 }
 
@@ -296,7 +347,15 @@ async function persistReplies(
 }
 
 export async function sendChatMessage(
-  args: { characterId: string; text: string; replyTo?: ChatMessage['replyTo']; voiceCall?: boolean },
+  args: {
+    characterId: string;
+    text: string;
+    replyTo?: ChatMessage['replyTo'];
+    voiceCall?: boolean;
+    /** Multi-companion voice (260706): names of the OTHER companions on the same
+     * call, so the prompt frames the group. Absent/empty = a solo call. */
+    voicePeers?: string[];
+  },
   deps: ChatDeps,
 ): Promise<ChatSendResult> {
   // #9 — supersede any in-flight turn for this character: abort its LLM call so
@@ -362,6 +421,11 @@ export async function sendChatMessage(
       // 260705: while a voice call is open the reply is read aloud by TTS, so
       // the system prompt leads with the voice-call primer (spoken register).
       voiceCall: args.voiceCall === true,
+      // 260706: on a multi-companion call, name the other companions on the line.
+      voicePeers: args.voicePeers,
+      // 260706: a live call sends only the last few rows (memory + summary carry
+      // the rest), so the prompt stays small and the reply comes back fast.
+      recentCap: args.voiceCall === true ? VOICE_RECENT_CAP : undefined,
     });
     if (!prep) throw new Error('Character not found');
     const { system, messages } = prep;
@@ -369,7 +433,34 @@ export async function sendChatMessage(
     // so they ride this prompt once and never persist). Not drained on the
     // routed-to-bot path above: in-game routing is out of scope for thoughts.
     foldUserNote(messages, renderThoughtNote(drainThoughts(args.characterId)));
+    // Prompt caching (260706): mark the last message AFTER every foldUserNote —
+    // the transcript is then cached prefix-incrementally across the call's turns.
+    markLastMessageCached(messages);
     const { client, model } = await buildChatSdk();
+
+    // Voice calls (260706): STREAM the reply so TTS can start on sentence 1 while
+    // the model is still writing the rest, instead of waiting for the whole reply
+    // (the "8s before the companion speaks" latency). Each completed sentence is
+    // persisted (voice-flagged) and pushed to the renderer immediately via
+    // deps.emitReply; the renderer speaks it and, because we return streamed:true,
+    // does NOT re-speak the returned replies. Typed chat keeps the blocking path.
+    const isVoice = args.voiceCall === true && typeof deps.emitReply === 'function';
+    const streamedReplies: ChatMessage[] = [];
+    let streamBuf = '';
+    const emitStreamedBubble = async (raw: string): Promise<void> => {
+      for (const b of splitReply(raw, prep.punctuation)) {
+        const msg: ChatMessage = {
+          id: randomUUID(),
+          role: 'companion',
+          text: b,
+          ts: Date.now() + streamedReplies.length, // monotonic within the turn
+          voice: true,
+        };
+        streamedReplies.push(msg);
+        await chatStore.appendMessage(args.characterId, msg);
+        deps.emitReply?.(args.characterId, msg);
+      }
+    };
 
     let launch: ChatSendResult['launch'];
     let replyText = '';
@@ -381,20 +472,54 @@ export async function sendChatMessage(
     // Voice calls (260705) — the model called end_call(): returned to the
     // renderer, which speaks the goodbye replies first, then hangs up.
     let endCallRequested = false;
+    // Set when the model logged off (quit) this turn — pairs with endCallRequested
+    // for the double-goodbye guard below.
+    let quitCalled = false;
+    // Set when the model called launch this turn. A quit+launch ("log off and hop
+    // back in") must keep looping for its "hopping back in" line, so the
+    // double-goodbye break must NOT fire when a launch rode along.
+    let launchCalled = false;
     // end_call is offered only while a call is open (block 0 already flips for
     // the primer, so this adds no extra cache churn).
     const tools = args.voiceCall === true ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL] : [LAUNCH_TOOL, QUIT_TOOL];
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
-      const res = await client.messages.create(
-        // Hard cap kept low so a reply can't ratchet into paragraphs. Each turn
-        // feeds the model its own prior replies (toMessages), and with a generous
-        // ceiling it self-conditions on the last (longest) turn and creeps up a
-        // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
-        // from the system prompt without truncating mid-sentence.
-        { model, max_tokens: 200, system, tools, messages: messages as never },
-        // #9 — abortable: a follow-up send aborts this signal.
-        { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
+      // Hard cap kept low so a reply can't ratchet into paragraphs. Each turn
+      // feeds the model its own prior replies (toMessages), and with a generous
+      // ceiling it self-conditions on the last (longest) turn and creeps up a
+      // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
+      // from the system prompt without truncating mid-sentence.
+      const params = { model, max_tokens: 200, system, tools, messages: messages as never };
+      // #9 — abortable: a follow-up send aborts this signal.
+      const opts = { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal };
+      const t0 = Date.now();
+      let res: Anthropic.Messages.Message;
+      if (isVoice) {
+        const stream = client.messages.stream(params, opts);
+        for await (const ev of stream) {
+          if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
+            streamBuf += ev.delta.text;
+            const { sentences, rest } = takeSentences(streamBuf);
+            streamBuf = rest;
+            for (const s of sentences) await emitStreamedBubble(s);
+          }
+        }
+        res = await stream.finalMessage();
+        // This hop's trailing partial (a final sentence with no boundary punct,
+        // or the whole reply when the model ends without terminal punctuation).
+        if (streamBuf.trim()) await emitStreamedBubble(streamBuf);
+        streamBuf = '';
+      } else {
+        res = await client.messages.create(params, opts);
+      }
+      // Instrumentation (260706): per-hop timing + token usage, so cache hits
+      // (cacheRead > 0) and overload retries (a slow hop) are visible in the dev
+      // log the way a gameplay turn is. One compact line per LLM round-trip.
+      const u = res.usage;
+      console.log(
+        `[sei/chat] turn char=${args.characterId.slice(0, 8)} hop=${hop} voice=${isVoice} ` +
+          `${Date.now() - t0}ms in=${u?.input_tokens ?? '?'} out=${u?.output_tokens ?? '?'} ` +
+          `cacheRead=${u?.cache_read_input_tokens ?? 0} cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
       );
       const text = textOf(res.content);
       if (text) replyText = text;
@@ -412,6 +537,7 @@ export async function sendChatMessage(
       for (const toolUse of toolUses) {
         let note: string;
         if (toolUse.name === 'launch') {
+          launchCalled = true;
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
           const result = resolveLaunch(game, deps);
           launch = result.launch;
@@ -421,6 +547,7 @@ export async function sendChatMessage(
         } else if (toolUse.name === 'quit') {
           // Task 5 — leave the game from chat. End the live session (no-op when
           // none is live) and tell the model it has logged off.
+          quitCalled = true;
           deps.leaveGame?.(args.characterId);
           note =
             'You have left the Minecraft world and logged off. You are back in chat only now — ' +
@@ -441,6 +568,16 @@ export async function sendChatMessage(
         toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note });
       }
       messages.push({ role: 'user', content: toolResults });
+
+      // Double-goodbye guard (260706): the quit/end_call tool notes tell the model
+      // to "say goodbye if you have not already". If it ALREADY spoke this turn,
+      // running another hop just produces a redundant second farewell (the "double
+      // message" on hang-up / log-off). Stop here — the reply + endCall/quit side
+      // effects are already recorded. Keep looping only when nothing was said yet
+      // (the goodbye still needs to land) or a relaunch is pending (quit+launch
+      // "log off and hop back in" needs its follow-up "hopping back in" line).
+      const spokeThisTurn = isVoice ? streamedReplies.length > 0 : Boolean(replyText.trim());
+      if ((endCallRequested || quitCalled) && spokeThisTurn && !launchCalled) break;
     }
 
     // #9 — if a newer send arrived (or we were aborted) while this turn ran,
@@ -451,9 +588,14 @@ export async function sendChatMessage(
       throw e;
     }
 
-    const replies = await persistReplies(args.characterId, replyText, prep.punctuation, {
-      voice: args.voiceCall === true,
-    });
+    // Voice streaming already persisted + pushed each sentence as it completed;
+    // reuse those rows. Typed chat (and the non-streaming voice fallback) persists
+    // the whole reply here as usual.
+    const replies = isVoice
+      ? streamedReplies
+      : await persistReplies(args.characterId, replyText, prep.punctuation, {
+          voice: args.voiceCall === true,
+        });
 
     // Background compaction (260702): the reply is persisted, so if 50+
     // messages have aged past the window, fold them NOW — while the player is
@@ -485,7 +627,7 @@ export async function sendChatMessage(
       console.warn(`[sei] failed to stamp last_chatted for ${args.characterId}: ${(err as Error).message}`);
     }
 
-    return { replies, launch, ...(endCallRequested ? { endCall: true } : {}) };
+    return { replies, launch, ...(endCallRequested ? { endCall: true } : {}), ...(isVoice ? { streamed: true } : {}) };
   } catch (err) {
     // Interrupt/supersede surfaces as a typed sentinel so the renderer can tell
     // it apart from a real failure (and NOT show the "sorry" fallback).
@@ -655,7 +797,10 @@ export async function sendFirstMeetingTurn(
  * player who starts talking immediately supersedes the greeting turn instead
  * of racing it (two replies interleaving on the call).
  */
-export async function sendVoiceGreetingTurn(characterId: string): Promise<ChatMessage[]> {
+export async function sendVoiceGreetingTurn(
+  characterId: string,
+  peers: string[] = [],
+): Promise<ChatMessage[]> {
   inflight.get(characterId)?.abort();
   const ctrl = new AbortController();
   inflight.set(characterId, ctrl);
@@ -664,13 +809,20 @@ export async function sendVoiceGreetingTurn(characterId: string): Promise<ChatMe
       openWorldDetected: false,
       inGame: false,
       voiceCall: true,
+      voicePeers: peers,
+      recentCap: VOICE_RECENT_CAP,
     });
     if (!prep) return [];
     const { system, messages } = prep;
+    // Multi-companion (260706): a companion ADDED to an ongoing call greets the
+    // group (it is joining a call already in progress), not the player cold.
     const note =
-      '[System note — not the player speaking: the player just started a voice call with you ' +
-      'and the line is live now. Greet them first, like answering the phone — one short line, ' +
-      'in your own voice. Do not mention this note.]';
+      peers.length > 0
+        ? `[System note — not the player speaking: you were just added to an ongoing group voice call with the player and ${peers.join(' and ')}. ` +
+          'Announce yourself to the room in one short spoken line, in your own voice, like walking into a call already in progress. Do not mention this note.]'
+        : '[System note — not the player speaking: the player just started a voice call with you ' +
+          'and the line is live now. Greet them first, like answering the phone — one short line, ' +
+          'in your own voice. Do not mention this note.]';
     const last = messages[messages.length - 1];
     if (last && last.role === 'user' && typeof last.content === 'string') {
       last.content = `${last.content}\n${note}`;
@@ -679,8 +831,16 @@ export async function sendVoiceGreetingTurn(characterId: string): Promise<ChatMe
     }
 
     const { client, model } = await buildChatSdk();
+    // Cache PREWARM (260706): this greeting fires while the call is still
+    // dialing. Offer the SAME tools a live user turn does — tools sit at the
+    // front of the prompt-cache prefix, so a greeting with no tools warms a
+    // DIFFERENT cache than the user turn reads (the "first reply was a cacheWrite,
+    // not a cacheRead" symptom). Matching them writes the tools+system prefix
+    // here, during the ring, so the first spoken user reply is a fast cache READ.
+    markLastMessageCached(messages);
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL];
     const res = await client.messages.create(
-      { model, max_tokens: 200, system, messages: messages as never },
+      { model, max_tokens: 200, system, tools, messages: messages as never },
       { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
     );
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
@@ -692,6 +852,106 @@ export async function sendVoiceGreetingTurn(characterId: string): Promise<ChatMe
     // best-effort either way; the call works without it.
     if (!isAbortError(err)) {
       console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);
+    }
+    return [];
+  } finally {
+    if (inflight.get(characterId) === ctrl) inflight.delete(characterId);
+  }
+}
+
+/**
+ * Multi-companion voice (260706): record a line spoken on the call into
+ * `characterId`'s transcript WITHOUT running a turn, so a companion who is not
+ * the one currently responding still has the context (the player's words, or
+ * another companion's line) when its own turn comes up. Voice-flagged (hidden
+ * from the chat view). Player lines are recorded verbatim; companion lines are
+ * prefixed "(Name, on the call): ..." to match the group-call attribution.
+ */
+export async function observeVoiceLine(
+  characterId: string,
+  from: string,
+  text: string,
+): Promise<void> {
+  const isPlayer = from === 'player' || from === '';
+  const row: ChatMessage = {
+    id: randomUUID(),
+    role: 'user',
+    text: isPlayer ? text : `(${from}, on the call): ${text}`,
+    ts: Date.now(),
+    voice: true,
+  };
+  try {
+    await chatStore.appendMessage(characterId, row);
+  } catch (err) {
+    console.warn(`[sei] observeVoiceLine failed for ${characterId}: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Multi-companion voice (260706): companion `characterId` HEARD another
+ * companion (`speakerName`) say `text` on the same call, and gets a turn to
+ * react in character — or to stay silent (returns [] when the model produces no
+ * text). This is the seam the renderer's voice director uses to make two
+ * companions actually converse: after A speaks, B is handed A's line here.
+ *
+ * The heard line is persisted into B's transcript as a voice-flagged user row
+ * PREFIXED with the speaker's name in parentheses ("(Sui, on the call): ..."),
+ * matching the attribution convention the group-call prompt note describes, so
+ * later turns remember the banter and never mistake a companion for the player.
+ * B's own reply is persisted voice-flagged too (hidden from the chat view).
+ *
+ * No tools are offered: a cross-companion reaction should just talk, not launch
+ * or hang up (the player or the primary companion drives those). Registered in
+ * the same per-character `inflight` slot as sendChatMessage so a player barge-in
+ * (a new real utterance to this companion) supersedes an in-flight reaction.
+ */
+export async function sendCompanionVoiceTurn(
+  characterId: string,
+  ctx: { speakerName: string; text: string; peers: string[] },
+): Promise<ChatMessage[]> {
+  inflight.get(characterId)?.abort();
+  const ctrl = new AbortController();
+  inflight.set(characterId, ctrl);
+  try {
+    const heard: ChatMessage = {
+      id: randomUUID(),
+      role: 'user',
+      text: `(${ctx.speakerName}, on the call): ${ctx.text}`,
+      ts: Date.now(),
+      voice: true,
+    };
+    await chatStore.appendMessage(characterId, heard);
+
+    const prep = await prepareChatTurn(characterId, {
+      openWorldDetected: false,
+      inGame: false,
+      voiceCall: true,
+      voicePeers: ctx.peers,
+      recentCap: VOICE_RECENT_CAP,
+    });
+    if (!prep) return [];
+    const { system, messages } = prep;
+    const note =
+      `[System note — not the player speaking: ${ctx.speakerName} just said the line above on the call. ` +
+      'If there is a live thread worth continuing, react in your own voice in ONE short spoken line, building on it rather than closing it off. ' +
+      'Only stay silent (reply with nothing) if the exchange has genuinely run its course. Do not mention this note.]';
+    foldUserNote(messages, note);
+    // Share the same warm tools+system cache prefix as every other voice turn.
+    markLastMessageCached(messages);
+
+    const { client, model } = await buildChatSdk();
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL];
+    const res = await client.messages.create(
+      { model, max_tokens: 200, system, tools, messages: messages as never },
+      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
+    );
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+    const replyText = textOf(res.content);
+    if (!replyText) return [];
+    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
+  } catch (err) {
+    if (!isAbortError(err)) {
+      console.warn(`[sei] companion voice turn failed: ${(err as Error).message}`);
     }
     return [];
   } finally {

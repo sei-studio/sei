@@ -622,9 +622,11 @@ describe('remember() nudges (260703b)', () => {
     // The memory write actually happened — the entry is on disk.
     const md = await fs.readFile(config.memory.memory_md_path, 'utf8')
     expect(md).toContain('player wants a hello whenever I join')
-    // The say() line and the farewell both reached chat.
+    // The say() line reached chat; the quit() farewell is SUPPRESSED because a
+    // say() already spoke this turn (260706 double-goodbye guard — otherwise the
+    // two goodbyes would land back-to-back).
     expect(adapter.chat).toHaveBeenCalledWith('later, keep the base safe')
-    expect(adapter.chat).toHaveBeenCalledWith('cya nerd')
+    expect(adapter.chat).not.toHaveBeenCalledWith('cya nerd')
     // Quit still proceeds — teardown fires once the goodbye defer elapses.
     expect(onQuitRequested).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(11_000)

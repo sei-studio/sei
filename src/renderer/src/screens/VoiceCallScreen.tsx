@@ -1,10 +1,13 @@
 /**
- * VoiceCallScreen — the live Discord-style call view (260705, real audio).
+ * VoiceCallScreen — the live Discord-style call view (260705, real audio;
+ * multi-companion 260706).
  *
- * Centered large companion avatar (pulsing while the companion is speaking),
- * name, a status subtitle (connecting / listening / speaking / error), two
- * caption lines (what you last said, what the companion last said), and the
- * mute + hang-up controls. Reached via view.kind === 'voice-call'.
+ * A cluster of avatars: every companion on the call (lit while speaking, dimmed
+ * while idle from the per-companion speaking state) plus the user's own avatar
+ * beside them, and a "＋" tile to add another companion. A header title (the
+ * companion's name solo, "Group call" with 2+), a status subtitle (connecting /
+ * duration / error), optional caption lines, and the mute + hang-up controls.
+ * Reached via view.kind === 'voice-call'.
  *
  * The call session itself lives in useVoiceStore (mic → local Whisper →
  * chat pipeline → TTS queue); this screen renders it and ensures a call is
@@ -13,13 +16,19 @@
  * shared with MinimizedCall.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
+import { useAuthStore } from '../lib/stores/useAuthStore';
+import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { isHomeCharacter } from '../lib/homeLibrary';
 import { pickPalette } from '../lib/portraitPalettes';
+import { portraitSrc } from '../lib/portraitSrc';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { Button } from '../components/Button';
+import { sei } from '../lib/ipcClient';
+import type { UserProfile } from '@shared/ipc';
 import {
   isVoiceModelReady,
   prefetchInProgress,
@@ -34,6 +43,7 @@ import {
   PhoneOffIcon,
   UserIcon,
   MinimizeIcon,
+  PlusIcon,
 } from '../components/icons';
 import styles from './VoiceCallScreen.module.css';
 
@@ -58,7 +68,8 @@ export interface VoiceCallScreenProps {
 
 export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
-  const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
+  const characters = useDataStore((s) => s.characters);
+  const character = characters.find((c) => c.id === characterId);
   // Mute lives in the UI store so it survives a minimize → restore round-trip
   // and is shared with the MinimizedCall widget (#6).
   const muted = useUiStore((s) => s.callMuted);
@@ -69,15 +80,49 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const minimizeCall = useUiStore((s) => s.minimizeCall);
 
   const status = useVoiceStore((s) => s.status);
-  const speaking = useVoiceStore((s) => s.speaking);
+  const speakingId = useVoiceStore((s) => s.speakingId);
+  const userSpeaking = useVoiceStore((s) => s.userSpeaking);
   const lastHeard = useVoiceStore((s) => s.lastHeard);
   const lastSpoken = useVoiceStore((s) => s.lastSpoken);
   const error = useVoiceStore((s) => s.error);
-  const connectingDetail = useVoiceStore((s) => s.connectingDetail);
-  const callCharacterId = useVoiceStore((s) => s.callCharacterId);
+  const participants = useVoiceStore((s) => s.participants);
   const liveAt = useVoiceStore((s) => s.liveAt);
   const startCall = useVoiceStore((s) => s.startCall);
+  const addParticipant = useVoiceStore((s) => s.addParticipant);
   const endCall = useVoiceStore((s) => s.endCall);
+
+  // The user's own avatar (shown beside the companion pfps).
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void sei
+      .userGetProfile()
+      .then((p) => !cancelled && setUserProfile(p))
+      .catch(() => {
+        /* generic glyph fallback */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Add-a-companion picker (task 3): companions in the user's party (the SAME
+  // home-library rule the IconRail + Home grid use, so "who I can invite" matches
+  // the roster exactly), minus whoever is already on the call.
+  const authState = useAuthStore((s) => s.state);
+  const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
+  const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
+  const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const addable = useMemo(
+    () =>
+      characters.filter(
+        (c) =>
+          !participants.includes(c.id) &&
+          isHomeCharacter(c, currentUserId, addedDefaultIds, addedWorldIds),
+      ),
+    [characters, participants, currentUserId, addedDefaultIds, addedWorldIds],
+  );
 
   // Live-call duration readout, ticking once a second while live.
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -96,8 +141,8 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const [installPct, setInstallPct] = useState(0);
   useEffect(() => {
     let alive = true;
-    // A call already up for this character means the model is in place.
-    if (useVoiceStore.getState().callCharacterId === characterId) {
+    // A call already includes this character → the model is already in place.
+    if (useVoiceStore.getState().participants.includes(characterId)) {
       setGate('ready');
       return;
     }
@@ -129,29 +174,49 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
   // Entering this view IS the intent to be on a call (idempotent when the
   // pipeline is already up for this character, e.g. restore-from-minimize) —
-  // once the voice module is in place.
+  // once the voice module is in place. We dial this character AT MOST ONCE per
+  // mount: if they later drop from the call (their own end_call, or the call
+  // collapses), we must NOT auto re-dial them back in — that re-entered the
+  // 'connecting' state and snapped the screen back to "Calling…", and made
+  // hang-up impossible ("no way to stop, had to quit the app").
+  const dialedRef = useRef<string | null>(null);
   useEffect(() => {
     if (gate !== 'ready') return;
-    if (callCharacterId !== characterId) void startCall(characterId);
-  }, [gate, characterId, callCharacterId, startCall]);
+    // Already a member (incl. restore-from-minimize) → nothing to dial.
+    if (useVoiceStore.getState().participants.includes(characterId)) {
+      dialedRef.current = characterId;
+      return;
+    }
+    if (dialedRef.current === characterId) return; // already dialed once; don't re-dial after a drop
+    dialedRef.current = characterId;
+    // startCall() is smart: it dials a fresh call, or adds this character to a
+    // call already open (multi-companion).
+    void startCall(characterId);
+  }, [gate, characterId, startCall]);
 
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
-  const palette = useMemo(
-    () => pickPalette((character?.id ?? '') + (character?.name ?? ''), theme),
-    [character?.id, character?.name, theme],
-  );
 
   const companionName = character?.name ?? 'Companion';
+  const isGroup = participants.length > 1;
+  // Header title: the companion's name on a solo call, "Group call" with 2+.
+  const title = isGroup ? 'Group call' : companionName;
+  // Avatar size shrinks as the roster grows so every companion + the user + the
+  // "＋" tile stay on ONE row (the "＋ pushed to its own ugly second row" fix).
+  const companionCount = participants.length;
+  const avatarPx =
+    companionCount <= 1 ? 176 : companionCount === 2 ? 140 : companionCount === 3 ? 118 : companionCount === 4 ? 104 : 92;
+  const userName = userProfile?.preferredName?.trim() || 'You';
+  const userAvatarSrc = portraitSrc(userProfile?.profilePicture);
 
   // Live: the call duration (00:00, ticking). Everything else keeps words.
   const subtitle =
     status === 'error'
       ? error ?? 'Call failed'
       : status === 'connecting'
-        ? connectingDetail
-          ? `Preparing voice recognition… ${connectingDetail}%`
-          : 'Calling…'
+        ? // Outgoing state: always just "Calling…" (no "setting up 99%" — the
+          // model-load percentage flashed on every call even from cache, task 3).
+          'Calling…'
         : liveAt !== null
           ? formatDuration(nowTick - liveAt)
           : '00:00';
@@ -212,9 +277,67 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
       </div>
     ) : null;
 
+  // Add-companion picker: pick from companions not already on the call. Choosing
+  // one adds them to the live call (they greet the room and join the turn-taking).
+  const pickerOverlay = pickerOpen ? (
+    <div
+      className={styles.pickerScrim}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add a companion to the call"
+      onClick={() => setPickerOpen(false)}
+    >
+      <div className={styles.pickerModal} onClick={(e) => e.stopPropagation()}>
+        <h2 className={styles.pickerTitle}>Add to call</h2>
+        {addable.length === 0 ? (
+          <p className={styles.pickerEmpty}>Everyone is already on the call.</p>
+        ) : (
+          <div className={styles.pickerList}>
+            {addable.map((c) => {
+              const src = portraitSrc(c.portrait_image);
+              const pal = pickPalette(c.id + c.name, theme);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={styles.pickerRow}
+                  onClick={() => {
+                    addParticipant(c.id);
+                    setPickerOpen(false);
+                  }}
+                >
+                  <span className={styles.pickerRowAvatar}>
+                    {src ? (
+                      <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <PixelPortrait
+                        seed={c.id + c.name}
+                        palette={pal}
+                        size={34}
+                        portraitImage={c.portrait_image}
+                        style={{ width: '100%', height: '100%' }}
+                      />
+                    )}
+                  </span>
+                  <span className={styles.pickerRowName}>{c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className={styles.installActions}>
+          <Button kind="ghost" onClick={() => setPickerOpen(false)}>
+            Done
+          </Button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className={styles.root}>
       {installOverlay}
+      {pickerOverlay}
       {/* Minimize sits top-left. */}
       <button
         type="button"
@@ -226,21 +349,79 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         <MinimizeIcon size={20} />
       </button>
 
-      <div className={speaking ? `${styles.avatar} ${styles.avatarSpeaking}` : styles.avatar}>
-        {character ? (
-          <PixelPortrait
-            seed={character.id + character.name}
-            palette={palette}
-            size={232}
-            portraitImage={character.portrait_image}
-            style={{ width: '100%', height: '100%' }}
-          />
-        ) : (
-          <UserIcon size={96} />
-        )}
+      {/* Participant cluster (260706): every companion on the call, lit while
+          speaking and dimmed while idle (per-companion speaking state), plus the
+          user's own avatar beside them, and a "＋" tile to add another. */}
+      <div className={styles.cluster}>
+        {participants.map((id) => {
+          const c = characters.find((x) => x.id === id);
+          const isSpeaking = speakingId === id;
+          const dim = !isSpeaking && isGroup;
+          const pal = pickPalette((c?.id ?? '') + (c?.name ?? ''), theme);
+          return (
+            <div key={id} className={styles.tile}>
+              <div
+                className={`${styles.tileAvatar} ${
+                  isSpeaking ? styles.tileSpeaking : dim ? styles.tileIdle : ''
+                }`}
+                style={{ width: avatarPx, height: avatarPx }}
+              >
+                {c ? (
+                  <PixelPortrait
+                    seed={c.id + c.name}
+                    palette={pal}
+                    size={avatarPx}
+                    portraitImage={c.portrait_image}
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                ) : (
+                  <UserIcon size={Math.round(avatarPx * 0.4)} />
+                )}
+              </div>
+              {/* Always name each companion under their avatar, like the user's
+                  own tile, even on a 1:1 call. */}
+              <span className={styles.tileName}>{c?.name ?? 'Companion'}</span>
+            </div>
+          );
+        })}
+
+        {/* The user's own tile — lit with the speaking ring while they talk
+            (same ring the companions get), dimmed when their mic is muted. */}
+        <div className={styles.tile}>
+          <div
+            className={`${styles.tileAvatar} ${
+              userSpeaking && !muted ? styles.tileSpeaking : muted ? styles.tileMutedSelf : ''
+            }`}
+            style={{ width: avatarPx, height: avatarPx }}
+          >
+            {userAvatarSrc ? (
+              <img src={userAvatarSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <UserIcon size={Math.round(avatarPx * 0.4)} />
+            )}
+          </div>
+          <span className={`${styles.tileName} ${styles.tileNameSelf}`}>{userName}</span>
+        </div>
+
+        {/* Add another companion to the call. */}
+        {addable.length > 0 ? (
+          <div className={styles.tile}>
+            <button
+              type="button"
+              className={styles.addBtn}
+              style={{ width: avatarPx, height: avatarPx }}
+              onClick={() => setPickerOpen(true)}
+              aria-label="Add a companion to the call"
+              title="Add a companion"
+            >
+              <PlusIcon size={Math.round(avatarPx * 0.3)} />
+            </button>
+            <span className={styles.tileName}>Add</span>
+          </div>
+        ) : null}
       </div>
 
-      <h1 className={styles.name}>{companionName}</h1>
+      <h1 className={styles.name}>{title}</h1>
       <span className={status === 'error' ? `${styles.subtitle} ${styles.subtitleError}` : styles.subtitle}>
         {status !== 'error' ? <span className={styles.subtitleDot} aria-hidden="true" /> : null}
         {subtitle}

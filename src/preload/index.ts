@@ -27,6 +27,7 @@ import {
   type CreditsStatus,
   type CreditsHardStopEvent,
   type ChatMessagePush,
+  type CallOverlayState,
   type BotActionPush,
   type GenProgressEvent,
 } from '../shared/ipc';
@@ -96,7 +97,15 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
   },
   voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
-  voiceGreet: (characterId) => ipcRenderer.invoke(IpcChannel.voice.greet, characterId),
+  voiceGreet: (characterId, peers) => ipcRenderer.invoke(IpcChannel.voice.greet, { characterId, peers: peers ?? [] }),
+  voiceCompanionTurn: (args) => ipcRenderer.invoke(IpcChannel.voice.companionTurn, args),
+  voiceObserve: (args) => ipcRenderer.invoke(IpcChannel.voice.observe, args),
+  voiceOverlaySet: (state) => ipcRenderer.invoke(IpcChannel.voice.overlaySet, state),
+  onVoiceOverlayState(cb: (state: CallOverlayState) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, state: CallOverlayState) => cb(state);
+    ipcRenderer.on(IpcChannel.voice.overlayState, handler);
+    return () => ipcRenderer.off(IpcChannel.voice.overlayState, handler);
+  },
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   onVoiceCallEnded(cb: (push: { characterId: string }) => void) {

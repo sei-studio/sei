@@ -696,13 +696,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                       : character.description?.trim() || 'No description yet.'}
                   </div>
                 </div>
-                <Button
-                  kind="ghost"
-                  size="sm"
-                  onClick={() => openEdit(paneTab === 'persona' ? 'persona' : 'basic')}
-                >
-                  Edit
-                </Button>
+                {/* Editing moved into the deploy-row settings (gear) menu — see
+                    the "Edit" item there, shown for any character you own. */}
               </div>
             )}
 
@@ -710,7 +705,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 which framed these as cards instead of hairline kv rows). */}
             <div className={styles.stats}>
               <div className={styles.stat}>
-                <div className={`u-lbl ${styles.statEyebrow}`}>Bonded</div>
+                {/* "Bonded" only reads right once the character is in your
+                    library. For a World character you're just previewing (not
+                    invited) it's their creation date, not a bond, so label it
+                    "Created"; it flips to "Bonded" once you invite them. */}
+                <div className={`u-lbl ${styles.statEyebrow}`}>
+                  {isPreview ? 'Created' : 'Bonded'}
+                </div>
                 <div className={styles.statValue}>{formatDate(character.created)}</div>
               </div>
               <div className={styles.stat}>
@@ -783,6 +784,24 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 </Button>
                 {settingsOpen ? (
                   <div className={styles.settingsMenu} role="menu" aria-label="Companion settings">
+                    {/* Edit — only for characters the signed-in user owns
+                        (viewOnly is true for defaults you haven't adopted,
+                        foreign World invites, and non-editable kinds). Opens the
+                        full character editor; replaces the old standalone Edit
+                        button in the persona pane. */}
+                    {!viewOnly ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={styles.settingsItem}
+                        onClick={() => {
+                          setSettingsOpen(false);
+                          openEdit('basic');
+                        }}
+                      >
+                        Edit
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       role="menuitem"

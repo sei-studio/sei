@@ -82,6 +82,11 @@ describe('useChatStore.load — loading flag lifecycle', () => {
     const g = deferred<ChatMessage[]>();
     chatOpenedMock.mockReturnValue(g.promise);
     const store = await loadStore();
+    // 260706: greetings now reveal bubble-by-bubble with the same typing delays
+    // send() uses. Turn realistic typing OFF so a single-bubble greeting reveals
+    // instantly and this test asserts the awaiting lifecycle, not typing theater.
+    const { useUiStore } = await import('./useUiStore');
+    useUiStore.setState({ realisticTyping: false });
 
     void store.getState().load('c2');
     await flush();
