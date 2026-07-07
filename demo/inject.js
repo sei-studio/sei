@@ -109,10 +109,10 @@
     chatHistory: async () => {
       const t = Date.parse('2026-07-06T22:40:00.000Z');
       return [
-        { id: 'm1', role: 'user', text: 'yo you up', ts: t },
-        { id: 'm2', role: 'companion', text: "i'm a program dude, i'm always up. what's the crisis", ts: t + 18_000 },
-        { id: 'm3', role: 'user', text: 'no crisis lol. marv around?', ts: t + 34_000 },
-        { id: 'm4', role: 'companion', text: "nehehe he's off monologuing about entropy somewhere. why, you scheming", ts: t + 50_000 },
+        { id: 'm1', role: 'companion', text: "yo you're on!", ts: t },
+        { id: 'm2', role: 'user', text: 'hey', ts: t + 12_000 },
+        { id: 'm3', role: 'companion', text: 'what do you wanna do', ts: t + 26_000 },
+        { id: 'm4', role: 'companion', text: "i'm bored lol, entertain me", ts: t + 34_000 },
       ];
     },
     chatOpened: async () => [],
@@ -126,7 +126,7 @@
           {
             id: 'reply-' + Date.now(),
             role: 'companion',
-            text: 'yes finally, you keep opening empty worlds hoping i manifest instead of just calling me lol. hit it',
+            text: 'yes finally, you never call. you just open worlds hoping i show up lol',
             ts: Date.now(),
           },
         ],

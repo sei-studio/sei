@@ -39,7 +39,10 @@ async function buildFixtures() {
       persona: { source: c.persona?.source ?? '', expanded: '' },
       is_default: true, shared: false, slug: c.slug ?? slug, metadata: c.metadata ?? {},
       created: c.created ?? '2026-05-17T00:00:00.000Z',
-      last_launched: launched[slug].last, playtime_ms: launched[slug].ms,
+      last_launched: launched[slug].last,
+      // Sui reads "Online" (last interaction within 30 min); others stay "Idle".
+      last_chatted: slug === 'sui' ? new Date(Date.now() - 5 * 60 * 1000).toISOString() : null,
+      playtime_ms: launched[slug].ms,
       portrait_image: c.portrait_image ?? null,
       skin: { source: 'bundled', mojang_username: null, png_sha256: slug, applied_at: null },
       username: c.username ?? c.name, owner: null, description: c.description ?? null,
@@ -147,12 +150,35 @@ async function main() {
   //       the in-app chat, the primary surface (Party redesign).
   const box = await page.locator('[aria-label="Open Sui"]').first().boundingBox();
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.9);
-  await page.waitForSelector('text=monologuing about entropy', { timeout: 10000 });
+  await page.waitForSelector('text=entertain me', { timeout: 10000 });
   await page.waitForTimeout(1100); // page-enter slide + message rise settle
   await page.mouse.move(300, 6); // park cursor away so no tooltip/hover shows in the still
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUT, 'app-chat.png'), omitBackground: true });
   console.log('[shots] app-chat.png');
+
+  // 2b ── "Play together" game picker (the across-worlds shot): Minecraft is
+  //        live, "More coming soon" stands in for future games. Opened from the
+  //        chat header controller icon.
+  try {
+    await page.locator('[aria-label="Play together"]').first().click({ timeout: 5000 });
+    await page.waitForSelector('#games-picker-title', { timeout: 8000 });
+    await page.waitForTimeout(750); // modal enter + tile art settle
+    await page.mouse.move(300, 6);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(OUT, 'app-games.png'), omitBackground: true });
+    console.log('[shots] app-games.png');
+    // close the picker so the following shots have a clean chat behind them
+    await page.keyboard.press('Escape');
+    await page
+      .waitForSelector('#games-picker-title', { state: 'detached', timeout: 3000 })
+      .catch(async () => {
+        await page.mouse.click(30, 400).catch(() => {});
+      });
+    await page.waitForTimeout(400);
+  } catch (e) {
+    console.log('[shots] app-games.png skipped:', e.message.split('\n')[0]);
+  }
 
   // 3 ── voice calls (260705): the phone icon opens the call view; with no model
   //       cached the consent gate asks before the ~40 MB download.

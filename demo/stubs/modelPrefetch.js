@@ -18,7 +18,10 @@ export function prefetchPct() {
 }
 
 export async function isVoiceModelReady() {
-  return false; // always show the consent gate in the demo
+  // Demo goes STRAIGHT into the call (no "Set up voice calls" gate): pretend the
+  // voice module is already installed so VoiceCallScreen's gate resolves 'ready'
+  // and dials immediately.
+  return true;
 }
 
 export function prefetchVoiceModel(onProgress) {
