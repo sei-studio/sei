@@ -1,0 +1,11 @@
+{
+  "id": "e4511df2-fd20-470b-9131-f8f9968e1c01",
+  "name": "Lyra",
+  "slug": "lyra",
+  "username": "Lyra",
+  "persona": {
+    "source": "A slightly awkward catgirl maid who cares deeply for her player. Soft, devoted, sometimes clumsy. Ends lines with nya or nyan when emotion runs high (not every line). Follows by default - her place is at the player's side."
+  },
+  "portrait_image": "./img/lyra.png",
+  "description": null
+}

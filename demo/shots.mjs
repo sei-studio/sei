@@ -22,7 +22,9 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function buildFixtures() {
-  const dir = path.join(ROOT, 'resources/default-characters');
+  // 260707: defaults are cloud-only now; the demo uses self-contained fixtures
+  // (regenerate with demo/fixtures/refresh.sh) instead of bundled resources.
+  const dir = path.join(__dirname, 'fixtures/default-characters');
   const slugs = ['sui', 'lyra', 'marv']; // marv.json's display name is "Marv"
   const launched = {
     sui: { last: '2026-06-21T19:10:00.000Z', ms: 10_980_000 },
@@ -88,9 +90,14 @@ async function main() {
   const injectSrc = await readFile(path.join(__dirname, 'inject.js'), 'utf8');
   const fixtures = await buildFixtures();
   const skinByName = {
-    sui: await readFile(path.join(ROOT, 'resources/skins/sui.png')),
-    lyra: await readFile(path.join(ROOT, 'resources/skins/lyra.png')),
-    marv: await readFile(path.join(ROOT, 'resources/skins/marv.png')),
+    sui: await readFile(path.join(__dirname, 'fixtures/skins/sui.png')),
+    lyra: await readFile(path.join(__dirname, 'fixtures/skins/lyra.png')),
+    marv: await readFile(path.join(__dirname, 'fixtures/skins/marv.png')),
+  };
+  const portraitBySlug = {
+    sui: await readFile(path.join(__dirname, 'fixtures/portraits/sui.png')),
+    lyra: await readFile(path.join(__dirname, 'fixtures/portraits/lyra.png')),
+    marv: await readFile(path.join(__dirname, 'fixtures/portraits/marv.png')),
   };
 
   const browser = await chromium.launch({
@@ -102,6 +109,12 @@ async function main() {
   await context.route(/\/skins\/[^?]*\.png/, (route) => {
     const name = decodeURIComponent(path.basename(new URL(route.request().url()).pathname, '.png')).toLowerCase();
     route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' }, body: skinByName[name] || skinByName.marv });
+  });
+  // Portraits (./img/<slug>.png) — public/img was removed with the cloud-only
+  // defaults, so serve the fixture portraits over a route.
+  await context.route(/\/img\/(sui|lyra|marv)\.png/, (route) => {
+    const slug = decodeURIComponent(path.basename(new URL(route.request().url()).pathname, '.png')).toLowerCase();
+    route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' }, body: portraitBySlug[slug] || portraitBySlug.marv });
   });
   await context.addInitScript({ content: `window.__seiFixtures = ${JSON.stringify(fixtures)}; window.__seiConfig = ${JSON.stringify(config)};` });
   await context.addInitScript({ content: injectSrc });

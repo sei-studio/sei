@@ -45,7 +45,10 @@ const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) 
 
 // ── Fixtures from the REAL default characters (Sui / Lyra / Marv) ────────────
 async function buildFixtures() {
-  const dir = path.join(ROOT, 'resources/default-characters');
+  // 260707: the default characters are cloud-only (no bundled resources), so the
+  // demo reads self-contained fixtures under demo/fixtures instead. Regenerate
+  // them from the live cloud rows with demo/fixtures/refresh.sh.
+  const dir = path.join(__dirname, 'fixtures/default-characters');
   // marv.json's display name is "Marv".
   const slugs = ['sui', 'lyra', 'marv'];
   const launched = {
@@ -144,9 +147,17 @@ async function main() {
   // Bundled skins by character name (the Skin-tab preview requests
   // /skins/<username>.png; username == name for the defaults).
   const skinBytesBySlug = {
-    sui: await readFile(path.join(ROOT, 'resources/skins/sui.png')),
-    lyra: await readFile(path.join(ROOT, 'resources/skins/lyra.png')),
-    marv: await readFile(path.join(ROOT, 'resources/skins/marv.png')),
+    sui: await readFile(path.join(__dirname, 'fixtures/skins/sui.png')),
+    lyra: await readFile(path.join(__dirname, 'fixtures/skins/lyra.png')),
+    marv: await readFile(path.join(__dirname, 'fixtures/skins/marv.png')),
+  };
+  // Portraits (portrait_image = './img/<slug>.png') used to be Vite-served from
+  // public/img; those bundled files were removed with the cloud-only defaults,
+  // so serve the fixture portraits over a route instead (see context.route below).
+  const portraitBySlug = {
+    sui: await readFile(path.join(__dirname, 'fixtures/portraits/sui.png')),
+    lyra: await readFile(path.join(__dirname, 'fixtures/portraits/lyra.png')),
+    marv: await readFile(path.join(__dirname, 'fixtures/portraits/marv.png')),
   };
   const skinByName = {
     sui: skinBytesBySlug.sui,
@@ -191,6 +202,19 @@ async function main() {
       contentType: 'image/png',
       headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
       body,
+    });
+  });
+
+  // Serve the fixture portraits for `./img/<slug>.png` (public/img was removed
+  // with the cloud-only defaults). RegExp so any ?v= cache-buster still matches.
+  await context.route(/\/img\/(sui|lyra|marv)\.png/, (route) => {
+    const p = new URL(route.request().url()).pathname;
+    const slug = decodeURIComponent(path.basename(p, '.png')).toLowerCase();
+    route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
+      body: portraitBySlug[slug] || portraitBySlug.marv,
     });
   });
 
