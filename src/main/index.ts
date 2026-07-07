@@ -21,6 +21,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createMainWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
+import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
 import { isCallActive, activeCallIds, clearAllCalls } from './voice/callState';
@@ -28,7 +29,6 @@ import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { initUpdater } from './updater';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration, runDefaultsToWorldMigration } from './migration';
-import { refreshSeededDefaults } from './defaultCharacters';
 import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
@@ -258,12 +258,22 @@ function broadcastStatus(status: BotStatus): void {
   // Play-session bookkeeping: stamp first-online, and on the terminal
   // idle/error post a "played for X" row (only if the bot was actually live).
   if (status.kind === 'online') {
-    if (!playStartedAt.has(id)) playStartedAt.set(id, Date.now());
+    if (!playStartedAt.has(id)) {
+      playStartedAt.set(id, Date.now());
+      // Analytics (260707): first-online is the "bot reached the world" signal.
+      capture('character_summoned', { character_id: id });
+    }
   } else if (status.kind === 'error' || status.kind === 'idle') {
     const startedAt = playStartedAt.get(id);
     if (startedAt !== undefined) {
       playStartedAt.delete(id);
-      void emitPlaySession(id, Date.now() - startedAt);
+      const durationMs = Date.now() - startedAt;
+      void emitPlaySession(id, durationMs);
+      capture('bot_session_ended', { character_id: id, duration_ms: durationMs });
+    } else if (status.kind === 'error') {
+      // Terminal error with no live session ⇒ the summon never reached the
+      // world. Record the failure reason (an ErrorClass enum, never content).
+      capture('summon_failed', { character_id: id, reason: String((status as { error?: unknown }).error ?? 'unknown') });
     }
   }
 }
@@ -380,27 +390,19 @@ async function bootstrap(): Promise<void> {
   try { await runUuidRenameMigration(); }
   catch (err) { logger.warn(`uuid-rename migration failed: ${(err as Error).message}`); }
 
-  // 1b. 260706: the shipped defaults (sui/lyra/clawd) are NO LONGER seeded as
-  // local copies on a fresh install — they surface via the World tab and cache
-  // on demand from their system-owned public cloud rows. Only the refresh below
-  // remains, to keep installs that ALREADY seeded them in sync with the bundle.
+  // 1b. 260707: sui/lyra/marv ship NO bundle baseline. They are ordinary
+  // user-owned public World characters, delivered like any other public
+  // character (World tab + cache-on-demand from their cloud rows). Fresh
+  // installs hold no local copy at all; the only local-copy population left is
+  // pre-0.4 installs that once seeded `is_default:true` copies.
   //
-  // 1b-1. Re-assert bundled authored fields (persona, metadata, skin, …) onto
-  // already-seeded defaults so an older build's stale copy is refreshed — e.g.
-  // Sui regaining her current persona + Agentic proactiveness on installs that
-  // first seeded her before those shipped. No-op when nothing drifted (and a
-  // full no-op on a fresh install, which has no is_default files). Defaults are
-  // read-only in the UI, so this never clobbers user edits.
-  try { await refreshSeededDefaults(); }
-  catch (err) { logger.warn(`refreshSeededDefaults failed: ${(err as Error).message}`); }
-
-  // 1b-1b. 260706: convert any leftover local `is_default` copies of the three
-  // shipped defaults (sui/lyra/marv) into normal owned/shared World characters
-  // (owner = DEFAULT_CHARACTERS_OWNER). Runs AFTER refreshSeededDefaults so that,
-  // on the first post-update boot, refresh re-asserts the bundle fields and this
-  // then flips is_default:false; on subsequent boots refreshSeededDefaults skips
-  // them (it only touches is_default:true files) and this is a marker-gated
-  // no-op. Idempotent via config.defaults_to_world_migrated.
+  // 1b-1. Convert any leftover local `is_default` copy of the three into the
+  // normal owned/public World shape (is_default:false, owner =
+  // DEFAULT_CHARACTERS_OWNER, kind:'custom', cloud_updated_at:null). After the
+  // flip, cache-on-demand's refreshFromCloud pulls the authoritative persona /
+  // portrait / skin from the cloud row on next open — no bundle re-assert
+  // needed. Idempotent (state-gated heal + config.defaults_to_world_migrated);
+  // a no-op on a fresh install that has no is_default files.
   try { await runDefaultsToWorldMigration(); }
   catch (err) { logger.warn(`defaults→world migration failed: ${(err as Error).message}`); }
 
@@ -735,6 +737,17 @@ async function bootstrap(): Promise<void> {
     catch (err) { logger.warn(`auth state init failed: ${(err as Error).message}`); }
   }
 
+  // 5b-ii. Product analytics (260707). Init AFTER initAuthState so the backend
+  //         kind is settled; the app_opened event is the session-start signal.
+  //         Never throws — analytics must not block startup.
+  try {
+    const { initAnalytics, capture } = await import('./analytics');
+    await initAnalytics();
+    capture('app_opened');
+  } catch (err) {
+    logger.warn(`analytics init failed: ${(err as Error).message}`);
+  }
+
   // 5b-bis. JWT bridge (plan 10-06). Pushes session.access_token to the bot
   //          supervisor on every relevant Supabase auth event, and null on
   //          SIGNED_OUT. Runs AFTER createBotSupervisor (5b uses `supervisor`)
@@ -839,8 +852,10 @@ if (!gotLock) {
   });
 
   app.on('before-quit', async (e) => {
-    if (!supervisor && !lanWatcherHandle && !skinServer && !loopbackAuthServer) return; // already shut down
+    if (!supervisor && !lanWatcherHandle && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
     e.preventDefault();
+    // Flush buffered analytics first so queued events survive the quit.
+    try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }
     try { if (lanWatcherHandle) lanWatcherHandle.stop(); } catch { /* best-effort */ }
     // Close the skin server's TCP listener so the port is

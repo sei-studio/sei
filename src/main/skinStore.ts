@@ -7,105 +7,35 @@
  *     per-persona MC username via a SINGLE saveCharacter call (atomic
  *     two-field update — never half-applied).
  *   - removePng: unlink user-applied PNG (best-effort) and reset skin descriptor
- *     to 'bundled' for default personas / 'none' for user-created personas.
+ *     to 'none' (server falls through to Steve/Alex).
  *   - resolveSkinPng: source-of-truth lookup the HTTP server uses to translate
  *     a request URL into bytes (honors `skin.source`).
  *   - readSkinPng: pure helper from username → character lookup → resolveSkinPng.
  *
- * Bundled PNGs ship under `resources/skins/<id>.png` (sui/lyra/clawd). The
- * asarUnpack entry in electron-builder.yml exposes them at
- * `<process.resourcesPath>/app.asar.unpacked/resources/skins/` in packaged builds.
+ * 260707: NO bundled skins ship with the app. The only bytes served are the
+ * per-user cached override at <userData>/skins/<id>.png (pointed at by an
+ * 'upload'/'username' descriptor). The three former defaults (sui/lyra/marv) are
+ * ordinary public characters whose skin is downloaded from their cloud row by
+ * cache-on-demand, exactly like any other public character — no offline
+ * baseline, Steve until the cloud skin caches.
  *
  * Path-traversal safety: every caller MUST validate personaId via main/ipc.ts's
  * IdSchema (kebab-case slug regex) BEFORE calling into this module — the persona
- * id is consumed by paths.skinPngPath which builds a filesystem path component
- * via path.join. The IdSchema is the defense-in-depth gate; this module trusts
- * its input.
+ * id is consumed by paths.skinPngPath which builds a filesystem path component.
+ * The IdSchema is the defense-in-depth gate; this module trusts its input.
  *
  * Sources:
  *   - CONTEXT.md §decisions "Skin serving: local HTTP, loopback only by default"
  *   - characterStore.ts (atomic-write + index-update pattern mirrored here)
  */
 import { readFile, mkdir, unlink } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import path from 'node:path';
 import crypto from 'node:crypto';
-import { app } from 'electron';
 // allowJs:true in tsconfig.node.json lets TS resolve these .js modules.
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
 import { paths } from './paths';
 import { getCharacter, saveCharacter } from './characterStore';
-import { DEFAULT_CHARACTERS, DEFAULT_CHARACTER_UUIDS } from './defaultCharacters';
 import type { Character, Skin, SkinSource } from '../shared/characterSchema';
-
-/**
- * ROOT CAUSE (ITEM 9, quick/260523-t8d): the previous bundledSkinPath
- * interpolated the persona's UUID directly into the path — yielding
- * `resources/skins/<UUID>.png` — but the bundled PNGs on disk are SLUG-named
- * (`resources/skins/sui.png`, `lyra.png`, `clawd.png`). The Plan 11-05
- * slug→UUID migration's docblock in defaultCharacters.ts:49-50 PROMISED a
- * UUID→slug reverse lookup here, but the implementation never landed. Every
- * default's resolveSkinPng() then hit ENOENT → skin server 404 → preview +
- * in-game both fell back to Steve. See DEFAULT-SKIN-DIAGNOSIS.md for the
- * full trace.
- *
- * FIX: take the Character (not the bare UUID) so we can read
- * `character.slug` directly. Defensive fallback to `DEFAULT_CHARACTER_UUIDS`
- * reverse-lookup when slug is null/undefined (handles legacy on-disk rows
- * from older builds where the slug field was stripped).
- *
- * Packaged build: bundled PNGs live under
- *   <resourcesPath>/app.asar.unpacked/resources/skins/<slug>.png
- * The asarUnpack entry (electron-builder.yml line ~7: `resources/skins/**`)
- * exposes the binary PNGs at runtime — they would otherwise be trapped
- * inside the read-only app.asar.
- *
- * Dev: the compiled main module lives at <repo>/dist/main/skinStore.js (or
- * via electron-vite's dev pipeline), so two `..` levels reach the repo root
- * and resources/skins/.
- */
-function slugFromUuid(uuid: string): string | null {
-  for (const [slug, id] of Object.entries(DEFAULT_CHARACTER_UUIDS)) {
-    if (id === uuid) return slug;
-  }
-  return null;
-}
-
-export function bundledSkinPath(character: Pick<Character, 'id' | 'slug'>): string | null {
-  const isBundled = DEFAULT_CHARACTERS.some((c) => c.id === character.id);
-  if (!isBundled) return null;
-  const slug = character.slug ?? slugFromUuid(character.id);
-  if (!slug) return null;
-  const file = `${slug}.png`;
-  if (app.isPackaged) {
-    // 260607 (packaged skin-load fix): the bundled PNGs can sit in DIFFERENT
-    // places depending on the packaging layout —
-    //   1. <resourcesPath>/app.asar.unpacked/resources/skins/  (asarUnpack — current intent)
-    //   2. inside app.asar at <appPath>/resources/skins/        (the MAIN process can
-    //      still fs.read this via Electron's asar patch even if it was NOT unpacked)
-    //   3. <resourcesPath>/resources/skins/                     (flat extraResources copy)
-    // A single hard-coded guess that misses the actual layout fails SILENTLY
-    // (resolveSkinPng/readSkinPng swallow ENOENT → skin server 404 → in-game &
-    // preview fall back to Steve), which is exactly the "works in dev, broken in
-    // the built release" report. Probe candidates, return the first that exists,
-    // and log loudly when none do so the failure is finally diagnosable.
-    const candidates = [
-      path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'skins', file),
-      path.join(app.getAppPath(), 'resources', 'skins', file),
-      path.join(process.resourcesPath, 'resources', 'skins', file),
-    ];
-    const found = candidates.find((p) => existsSync(p));
-    if (found) return found;
-    console.warn(
-      `[sei] bundledSkinPath: bundled skin '${slug}' not found at any candidate ` +
-        `(isPackaged=true, resourcesPath=${process.resourcesPath}, appPath=${app.getAppPath()}); ` +
-        `tried: ${candidates.join(' | ')}`,
-    );
-    return candidates[0]; // primary — the caller's readFile will ENOENT + log
-  }
-  return path.join(__dirname, '..', '..', 'resources', 'skins', file);
-}
 
 /**
  * Read the PNG bytes that should be served for this persona, honoring its
@@ -115,45 +45,23 @@ export function bundledSkinPath(character: Pick<Character, 'id' | 'slug'>): stri
  */
 export async function resolveSkinPng(character: Character): Promise<Buffer | null> {
   const s = character.skin;
-  const bundledFallback = bundledSkinPath(character); // non-null only for defaults
 
-  // Cloud-override-wins: an explicit 'upload'/'username' descriptor points at a
-  // PNG cached under <userData>/skins/<id>.png. For a DEFAULT this is how it
-  // receives an UPDATED skin from cloud (cache-on-demand flips skin.source to
-  // 'upload' and downloads the bytes) — so the cached override must take
-  // precedence over the bundled baseline. If the cached file is absent
-  // (offline, cloud bytes not yet downloaded), we fall through to the bundled
-  // fallback below, preserving the offline baseline.
+  // The only skin bytes the app serves are the cached override under
+  // <userData>/skins/<id>.png, pointed at by an 'upload'/'username' descriptor.
+  // 260707: sui/lyra/marv are ordinary public characters now — cache-on-demand
+  // flips their skin.source to 'upload' and downloads the cloud bytes here, the
+  // same as any other public character. There is NO bundled baseline: when the
+  // cached file is absent (source 'none'/'bundled', or an 'upload'/'username'
+  // whose bytes have not downloaded yet), we serve nothing and the skin server
+  // 404s → CustomSkinLoader renders Steve until the cloud skin caches. This is
+  // identical to how every other public character behaves.
   if (s.source === 'upload' || s.source === 'username') {
     try {
       return await readFile(paths.skinPngPath(character.id));
     } catch {
-      /* no cached override on disk → fall through to bundled fallback */
+      /* no cached bytes on disk yet → nothing to serve */
     }
   }
-
-  // Bundled-default safety net: if this is a bundled default (sui/lyra/clawd),
-  // serve the bundled PNG. A persisted character may have drifted to
-  // `source: 'none'` or `source: 'upload'` with no on-disk PNG (an aborted
-  // apply, a manual edit, a legacy migration, or a cloud override whose bytes
-  // failed to download) — defaults always have a bundled baseline to fall back
-  // on. This was a real foot-gun: the skin server would return 404 for
-  // /skins/Sui.png and the 3D preview would silently fall back to Steve.
-  if (bundledFallback) {
-    try {
-      return await readFile(bundledFallback);
-    } catch (err) {
-      // 260607: was a silent swallow — a packaged ENOENT here IS the "skin
-      // works in dev, Steve in the built release" bug. Log the attempted path
-      // so it surfaces in logs instead of vanishing into a 404.
-      console.warn(
-        `[sei] resolveSkinPng: bundled read failed for ${character.id} at ${bundledFallback}: ` +
-          `${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`,
-      );
-    }
-  }
-  // Non-default 'none'/'bundled', or an 'upload'/'username' with no cached
-  // bytes and no bundled baseline → nothing to serve.
   return null;
 }
 
@@ -258,13 +166,13 @@ export async function applyPng(args: {
 }
 
 /**
- * Reset a persona's skin. Defaults revert to 'bundled', user-created revert to
- * 'none'. The username is NOT touched — the user can clear it independently
- * via the skin editor's username field.
+ * Reset a persona's skin to 'none' (server falls through to Steve/Alex). The
+ * username is NOT touched — the user can clear it independently via the skin
+ * editor's username field.
  *
  * The on-disk PNG under <userData>/skins/<id>.png is unlinked best-effort; if
- * the user never applied one (source was 'bundled' or 'none' all along), the
- * unlink hits ENOENT which we swallow.
+ * the user never applied one (source was 'none' all along), the unlink hits
+ * ENOENT which we swallow.
  */
 export async function removePng(personaId: string): Promise<Skin> {
   const character = await getCharacter(personaId);
@@ -274,9 +182,8 @@ export async function removePng(personaId: string): Promise<Skin> {
   } catch {
     /* ignore ENOENT — best-effort cleanup */
   }
-  const isBundled = DEFAULT_CHARACTERS.some((c) => c.id === personaId);
   const newSkin: Skin = {
-    source: isBundled ? 'bundled' : 'none',
+    source: 'none',
     mojang_username: null,
     png_sha256: null,
     applied_at: new Date().toISOString(),
@@ -292,23 +199,14 @@ export async function removePng(personaId: string): Promise<Skin> {
  * Username match strategy (loose, on purpose):
  *   1. Case-insensitive match on `character.username` (the per-persona field)
  *   2. Case-insensitive sanitized-name fallback (`sanitizeMcName(character.name)`)
- *      so a renderer that hasn't wired character.username yet still gets correct
- *      bundled-skin behavior on first launch — mirrors src/bot/index.js's
+ *      so a renderer that hasn't wired character.username yet still resolves the
+ *      right character on first launch — mirrors src/bot/index.js's
  *      sanitizeMcName.
- *   3. **Bundled-default fallback (ui-A8)**: when no local character matches, fall
- *      through to the bundled defaults shipped under `resources/skins/<slug>.png`.
- *      We match against the default's slug, name, and per-persona username — all
- *      case-insensitively. This covers two real scenarios:
- *        (a) the renderer's SkinPreview3d for a default opened from the world
- *            (Browse) tab BEFORE seedDefaultCharacters has run on this machine
- *            (fresh install, first launch race) — without the fallback the
- *            preview shows the Steve silhouette;
- *        (b) any CustomSkinLoader / external consumer that requests the lower-
- *            case slug variant (`/skins/sui.png`) instead of the seeded
- *            persona-username (`/skins/Sui.png`).
- *      The fallback returns the EXACT bundled bytes for the matching slug; no
- *      user-applied PNG state is touched. Bundled defaults are read-only at the
- *      user level (D-22), so serving them by slug on a cache miss is safe.
+ *
+ * 260707: no bundled-default fallback. sui/lyra/marv are ordinary public
+ * characters; when one isn't cached locally yet, this returns null and the skin
+ * server 404s → Steve, identical to any other public character whose cloud skin
+ * has not downloaded.
  */
 export async function readSkinPng(args: {
   username: string;
@@ -327,36 +225,5 @@ export async function readSkinPng(args: {
       sanitize(c.name).toLowerCase() === wantLower,
   );
   if (match) return await resolveSkinPng(match);
-
-  // ── Bundled-default fallback (ui-A8) ───────────────────────────────────
-  //
-  // No local character matched. If the request maps to a known default
-  // (by slug, name, or username — all case-insensitive), read the bundled
-  // PNG directly. The default's slug is the source of truth for the on-disk
-  // file (`resources/skins/<slug>.png`); we build a synthetic
-  // `Pick<Character, 'id'|'slug'>` so bundledSkinPath can do its UUID→slug
-  // resolution unchanged.
-  for (const def of DEFAULT_CHARACTERS) {
-    const defSlug = (def.slug ?? '').toLowerCase();
-    const defUsername = (def.username ?? '').toLowerCase();
-    const defName = sanitize(def.name).toLowerCase();
-    if (defSlug === wantLower || defUsername === wantLower || defName === wantLower) {
-      const p = bundledSkinPath({ id: def.id, slug: def.slug });
-      if (!p) continue;
-      try {
-        return await readFile(p);
-      } catch (err) {
-        // 260607: log instead of silently swallowing — a packaged ENOENT here
-        // is the "Steve in the built release" bug. asarUnpack SHOULD cover
-        // resources/skins/**, but if the layout differs this warn is the only
-        // trace; bundledSkinPath() already probed candidates before returning p.
-        console.warn(
-          `[sei] readSkinPng: bundled read failed for ${def.slug} at ${p}: ` +
-            `${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`,
-        );
-        continue;
-      }
-    }
-  }
   return null;
 }

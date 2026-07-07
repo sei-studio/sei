@@ -118,29 +118,23 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
     } catch (err) {
       console.warn(`[sei] profileScope: cloud name backfill failed: ${(err as Error).message}`);
     }
-    // (a2) Heal legacy pre-0.4.0 default seeds in THIS profile. The boot-time
-    //      defaults heal (src/main/index.ts steps 1b/1b-1b: refreshSeededDefaults
-    //      + runDefaultsToWorldMigration) runs ONCE against the boot scope. On a
-    //      session-restore launch getSession() is empty that early, so the boot
-    //      scope resolves to 'local' and only the local profile is healed; the
-    //      signed-in profile (scoped here, AFTER the auth event re-points it) is
-    //      never converted. Such a profile keeps its old is_default:true copies
-    //      of Sui/Marv/Lyra, which stay hidden on Home (the is_default filter
-    //      needs added_default_ids), keep the renamed-away ./img/clawd.png
-    //      portrait, and show no public id in World. Re-run the same two passes
-    //      here so an upgrading cloud user's defaults convert on sign-in. Order
-    //      mirrors boot: refreshSeededDefaults re-asserts the bundle's authored
-    //      fields (portrait → marv.png, public_id, slug) onto is_default copies,
-    //      then runDefaultsToWorldMigration flips them to owned World characters
-    //      (is_default:false, owner=DEFAULT_CHARACTERS_OWNER, kind:custom). Both
-    //      are idempotent/state-gated no-ops once healed and on a fresh profile
+    // (a2) Heal legacy pre-0.4 default seeds in THIS profile. The boot-time
+    //      defaults→World migration (src/main/index.ts step 1b-1) runs ONCE
+    //      against the boot scope. On a session-restore launch getSession() is
+    //      empty that early, so the boot scope resolves to 'local' and only the
+    //      local profile is converted; the signed-in profile (scoped here, AFTER
+    //      the auth event re-points it) is never touched. Such a profile keeps
+    //      its old is_default:true copies of Sui/Marv/Lyra, which stay hidden on
+    //      Home (the is_default filter needs added_default_ids) and show no
+    //      public id in World. Re-run the conversion here so an upgrading cloud
+    //      user's copies flip to the owned/public World shape on sign-in; the
+    //      cacheMyCloudCharacters pull below (and refreshFromCloud on next open)
+    //      then pull the authoritative persona/portrait/skin from the cloud row.
+    //      Idempotent/state-gated: a no-op once healed and on a fresh profile
     //      with no local defaults. Runs BEFORE cacheMyCloudCharacters so the
-    //      cloud pull below refreshes the now-owned rows instead of skipping them
-    //      as is_default.
+    //      cloud pull sees the now-owned (no longer is_default) rows.
     try {
-      const { refreshSeededDefaults } = await import('../defaultCharacters');
       const { runDefaultsToWorldMigration } = await import('../migration');
-      await refreshSeededDefaults();
       await runDefaultsToWorldMigration();
     } catch (err) {
       console.warn(`[sei] profileScope: default-seed heal failed: ${(err as Error).message}`);

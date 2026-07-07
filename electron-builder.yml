@@ -79,10 +79,9 @@ asarUnpack:
   # via utilityProcess.fork) can resolve its deps (zod, mineflayer, etc.) —
   # Node ESM resolution from an unpacked file cannot cross back into the asar.
   - "node_modules/**/*"
-  # Phase 9 (09-01): bundled default skin PNGs must survive packaging so the
-  # local skin HTTP server (Plan 03) can resolve `source: 'bundled'` personas
-  # via fs.readFile under process.resourcesPath in the packaged build.
-  - "resources/skins/**/*"
+  # 260707: the bundled default skins under resources/skins were removed — the
+  # three former defaults (sui/lyra/marv) are ordinary cloud characters now, so
+  # there is no offline skin baseline to unpack.
 
 mac:
   category: public.app-category.games
