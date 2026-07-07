@@ -14,7 +14,11 @@
  * spinning up a real Supabase fixture.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { _setUserDataOverride, paths } from '../paths';
 import type { Character } from '../../shared/characterSchema';
 
 // ---- Mock supabase client ------------------------------------------------
@@ -326,6 +330,66 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
     const { uploadPortrait } = await import('./cloudCharacterClient');
     await uploadPortrait(CHAR_ID, Buffer.from([0]), 'webp', 'jwt-token');
     expect(state.storageUploads[0].contentType).toBe('image/webp');
+  });
+
+  it('re-uploads on every call when the JWT has no parseable owner (dedup off)', async () => {
+    // The other tests in this block pass the fake 'jwt-token' (no `sub`), so the
+    // dedup is bypassed and behavior matches the pre-dedup client — asserted here.
+    const { uploadPortrait } = await import('./cloudCharacterClient');
+    await uploadPortrait(CHAR_ID, Buffer.from([7]), 'png', 'jwt-token');
+    await uploadPortrait(CHAR_ID, Buffer.from([7]), 'png', 'jwt-token');
+    expect(state.storageUploads).toHaveLength(2);
+  });
+
+  describe('skips no-op re-uploads of byte-identical assets', () => {
+    const OWNER_A = '22222222-2222-4222-8222-222222222222';
+    const OWNER_B = '33333333-3333-4333-8333-333333333333';
+    // A real-shaped JWT (header.payload.sig) whose payload carries `sub` — this
+    // is what lets the client key the dedup by owner. Not verified, just decoded.
+    const jwtWithSub = (sub: string): string => {
+      const seg = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+      return `${seg({ alg: 'ES256', typ: 'JWT' })}.${seg({ sub })}.sig`;
+    };
+
+    let tmp: string;
+    beforeEach(async () => {
+      tmp = await mkdtemp(path.join(tmpdir(), 'sei-upload-'));
+      _setUserDataOverride(tmp);
+      // The marker sidecar lives next to the local asset — ensure the dir exists.
+      await mkdir(path.dirname(paths.portraitPath(CHAR_ID)), { recursive: true });
+    });
+    afterEach(async () => {
+      _setUserDataOverride(null);
+      await rm(tmp, { recursive: true, force: true });
+    });
+
+    it('uploads once, then skips an identical re-upload for the same owner', async () => {
+      const { uploadPortrait } = await import('./cloudCharacterClient');
+      const jwt = jwtWithSub(OWNER_A);
+      await uploadPortrait(CHAR_ID, Buffer.from([1, 2, 3, 4]), 'png', jwt);
+      expect(state.storageUploads).toHaveLength(1);
+      expect(state.edgeCalls).toHaveLength(1);
+      // Same bytes → no sign, no PUT.
+      await uploadPortrait(CHAR_ID, Buffer.from([1, 2, 3, 4]), 'png', jwt);
+      expect(state.storageUploads).toHaveLength(1);
+      expect(state.edgeCalls).toHaveLength(1);
+    });
+
+    it('re-uploads when the bytes actually change', async () => {
+      const { uploadPortrait } = await import('./cloudCharacterClient');
+      const jwt = jwtWithSub(OWNER_A);
+      await uploadPortrait(CHAR_ID, Buffer.from([1]), 'png', jwt);
+      await uploadPortrait(CHAR_ID, Buffer.from([2]), 'png', jwt);
+      expect(state.storageUploads).toHaveLength(2);
+    });
+
+    it('re-uploads identical bytes when the owner changes (Storage path moved)', async () => {
+      const { uploadPortrait } = await import('./cloudCharacterClient');
+      const bytes = Buffer.from([9, 9, 9]);
+      await uploadPortrait(CHAR_ID, bytes, 'png', jwtWithSub(OWNER_A));
+      await uploadPortrait(CHAR_ID, bytes, 'png', jwtWithSub(OWNER_B));
+      expect(state.storageUploads).toHaveLength(2);
+    });
   });
 
   it('throws CLOUD_STORAGE_UPLOAD_FAILED when the Edge sign call fails', async () => {

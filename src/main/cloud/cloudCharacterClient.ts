@@ -25,9 +25,12 @@
  * from cloudErrors.ts so the renderer ERROR_COPY map can route by prefix.
  */
 
+import { createHash } from 'node:crypto';
+import { readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getClient } from '../auth/supabaseClient';
 import { callEdgeFunction } from '../auth/edgeFunctionClient';
+import { paths } from '../paths';
 import type { Character } from '../../shared/characterSchema';
 import {
   CLOUD_SYNC_REFUSED_DEFAULT,
@@ -374,6 +377,67 @@ export async function downloadCharacter(uuid: string): Promise<Character | null>
  * longer a client input. Revert to a direct `.storage.upload()` once storage-api
  * verifies asymmetric JWTs.
  */
+/**
+ * Skip a no-op re-upload. The renderer re-uploads the portrait/skin on EVERY
+ * character save (even a name/persona-only edit), which overwrites the Storage
+ * object with byte-identical content. That produces a `storage.objects` UPDATE
+ * with an unchanged eTag — pure churn, and historically it re-fired the
+ * `reset_moderation_on_portrait_change` trigger and nulled the character out of
+ * World (260707: Marv). We remember the (owner, md5) of the last successful
+ * upload in a sidecar next to the local asset and skip when both still match.
+ *
+ * Owner is part of the key on purpose: a change of owner moves the Storage path
+ * (`<owner>/<uuid>.png`), so the bytes MUST be re-uploaded to the new path even
+ * though they're unchanged — keying on owner forces that.
+ */
+function assetMarkerPath(kind: 'portrait' | 'skin', characterId: string): string {
+  const base = kind === 'portrait' ? paths.portraitPath(characterId) : paths.skinPngPath(characterId);
+  return `${base}.uploaded.json`;
+}
+
+/** Extract the owner uuid (`sub` claim) from a JWT without verifying it — the
+ *  server derives the real path from the verified token; this is only a cache
+ *  key. Returns null on any parse failure so the caller falls back to uploading. */
+function ownerFromJwt(jwt: string): string | null {
+  try {
+    const payload = jwt.split('.')[1];
+    if (!payload) return null;
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return typeof claims?.sub === 'string' ? claims.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readUploadMarker(
+  kind: 'portrait' | 'skin',
+  characterId: string,
+): Promise<{ owner: string; md5: string } | null> {
+  try {
+    const raw = await fsReadFile(assetMarkerPath(kind, characterId), 'utf8');
+    const m = JSON.parse(raw);
+    if (typeof m?.owner === 'string' && typeof m?.md5 === 'string') return m;
+  } catch {
+    /* missing/corrupt marker → treat as "never uploaded" and re-upload */
+  }
+  return null;
+}
+
+async function writeUploadMarker(
+  kind: 'portrait' | 'skin',
+  characterId: string,
+  owner: string,
+  md5: string,
+): Promise<void> {
+  try {
+    await fsWriteFile(assetMarkerPath(kind, characterId), JSON.stringify({ owner, md5 }));
+  } catch (err) {
+    // The marker is a pure optimization — if we can't persist it, the next save
+    // just re-uploads. Never fail the upload over a marker write.
+    console.warn(`[sei] uploadCharacterAsset: could not write upload marker: ${(err as Error).message}`);
+  }
+}
+
 async function uploadCharacterAsset(
   kind: 'portrait' | 'skin',
   characterId: string,
@@ -381,6 +445,17 @@ async function uploadCharacterAsset(
   contentType: string,
   jwt: string,
 ): Promise<void> {
+  const md5 = createHash('md5').update(bytes).digest('hex');
+  const owner = ownerFromJwt(jwt);
+  if (owner) {
+    const marker = await readUploadMarker(kind, characterId);
+    if (marker && marker.owner === owner && marker.md5 === md5) {
+      // Byte-identical to the last successful upload for this owner — the object
+      // is already in Storage; skip the sign + PUT entirely.
+      return;
+    }
+  }
+
   const resp = await callEdgeFunction('sign-character-asset-upload', {
     jwt,
     body: { characterId, kind },
@@ -399,6 +474,9 @@ async function uploadCharacterAsset(
     .from(signed.bucket)
     .uploadToSignedUrl(signed.path, signed.token, bytes, { contentType, upsert: true });
   if (error) throw new Error(`${CLOUD_STORAGE_UPLOAD_FAILED}: ${signed.bucket} ${error.message}`);
+
+  // Record what we just uploaded so an identical re-save skips the round-trip.
+  if (owner) await writeUploadMarker(kind, characterId, owner, md5);
 }
 
 export async function uploadSkin(characterId: string, bytes: Buffer, jwt: string): Promise<void> {
