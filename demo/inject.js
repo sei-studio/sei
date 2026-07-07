@@ -107,12 +107,12 @@
 
     // chat surface — a short canned exchange so the chat screen has content.
     chatHistory: async () => {
-      const t = Date.parse('2026-07-05T20:12:00.000Z');
+      const t = Date.parse('2026-07-06T22:40:00.000Z');
       return [
-        { id: 'm1', role: 'user', text: 'hey, want to go find a village?', ts: t },
-        { id: 'm2', role: 'companion', text: "yes!! i saw smoke past the ridge, that's usually a village. race you there?", ts: t + 22_000 },
-        { id: 'm3', role: 'user', text: 'you are so on', ts: t + 40_000 },
-        { id: 'm4', role: 'companion', text: 'grab some bread first, it is a long run. i will carry the torches ✨', ts: t + 55_000 },
+        { id: 'm1', role: 'user', text: 'yo you up', ts: t },
+        { id: 'm2', role: 'companion', text: "i'm a program dude, i'm always up. what's the crisis", ts: t + 18_000 },
+        { id: 'm3', role: 'user', text: 'no crisis lol. marv around?', ts: t + 34_000 },
+        { id: 'm4', role: 'companion', text: "nehehe he's off monologuing about entropy somewhere. why, you scheming", ts: t + 50_000 },
       ];
     },
     chatOpened: async () => [],
@@ -120,13 +120,13 @@
     // demo shows a real send → typing indicator → reply. (Unmocked, chatSend
     // resolves undefined and useChatStore shows a "couldn't reply" fallback.)
     chatSend: async () => {
-      await new Promise((r) => setTimeout(r, 1100));
+      await new Promise((r) => setTimeout(r, 700));
       return {
         replies: [
           {
             id: 'reply-' + Date.now(),
             role: 'companion',
-            text: "riverside base, yes. you scout the spot, i'll haul the logs. race you to the water?",
+            text: 'yes finally, you keep opening empty worlds hoping i manifest instead of just calling me lol. hit it',
             ts: Date.now(),
           },
         ],
@@ -160,7 +160,7 @@
           message: {
             id: 'greet-' + Date.now(),
             role: 'companion',
-            text: 'oh sick, a call! hey hey. what are we scheming?',
+            text: "yooo you actually called. ok what're we doing",
             ts: Date.now(),
             voice: true,
           },

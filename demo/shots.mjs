@@ -147,7 +147,7 @@ async function main() {
   //       the in-app chat, the primary surface (Party redesign).
   const box = await page.locator('[aria-label="Open Sui"]').first().boundingBox();
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.9);
-  await page.waitForSelector('text=race you there', { timeout: 10000 });
+  await page.waitForSelector('text=monologuing about entropy', { timeout: 10000 });
   await page.waitForTimeout(1100); // page-enter slide + message rise settle
   await page.mouse.move(300, 6); // park cursor away so no tooltip/hover shows in the still
   await page.waitForTimeout(500);

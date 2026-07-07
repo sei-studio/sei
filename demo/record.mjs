@@ -109,6 +109,7 @@ const config = {
   feedback_reward_claimed: false,
   has_been_welcomed: true, // skip the welcome toast so the wall reads clean
   vision_mode: 'on-demand',
+  realistic_typing: false, // snappy reply for the demo (no reading/typing pauses)
   total_playtime_ms: 20_340_000,
   total_playtime_backfilled: true,
 };
@@ -355,69 +356,69 @@ async function main() {
   };
   const center = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 
-  // ── 1. Party wall — establishing dwell ─────────────────────────────────────
+  // ── 1. Party wall — brief establishing beat ────────────────────────────────
   await setCur(VP.width / 2, VP.height + 80);
-  await sleep(1000); // let the wall's portraits + presence rows settle
+  await sleep(600); // let the wall's portraits + presence rows settle
 
   // ── 2. Drift across the wall, settle on Sui (panel lift + Play reveal) ──────
   const suiBox = await boxOf('[aria-label="Open Sui"]');
   const suiC = center(suiBox);
-  await glide(suiC.x, suiC.y, 1.2);
-  await sleep(1000); // hover lift + centred Play button fade in
+  await glide(suiC.x, suiC.y, 0.85);
+  await sleep(550); // hover lift + centred Play button fade in
 
   // ── 3. Open Sui -> the in-app chat (click LOW; the centre band is Play) ─────
-  await glide(suiBox.x + suiBox.width * 0.5, suiBox.y + suiBox.height * 0.9, 0.5);
+  await glide(suiBox.x + suiBox.width * 0.5, suiBox.y + suiBox.height * 0.9, 0.42);
   await click();
-  await page.waitForSelector('text=race you there', { timeout: 8000 });
-  await sleep(1500); // page slide + message rise + presence panel settle
+  await page.waitForSelector('text=monologuing about entropy', { timeout: 8000 });
+  await sleep(800); // page slide + message rise + presence panel settle
 
   // ── 4. Send a quick text -> Sui replies ────────────────────────────────────
   const composer = center(await boxOf('[aria-label="Message Sui"]'));
-  await glide(composer.x, composer.y, 0.8);
+  await glide(composer.x, composer.y, 0.6);
   await click();
+  await sleep(150);
+  await page.keyboard.type('hop on a call?', { delay: 34 });
   await sleep(250);
-  await page.keyboard.type("let's build a base by the river tonight", { delay: 42 });
-  await sleep(450);
   const sendBtn = center(await boxOf('[aria-label="Send"]'));
-  await glide(sendBtn.x, sendBtn.y, 0.5);
+  await glide(sendBtn.x, sendBtn.y, 0.4);
   await click();
-  // user bubble lands, the typing indicator shows, then Sui's reply rises in
-  await page.waitForSelector('text=haul the logs', { timeout: 8000 });
-  await sleep(1500); // read the reply
+  // user bubble lands, the typing indicator flashes, then Sui's reply rises in
+  await page.waitForSelector('text=hoping i manifest', { timeout: 8000 });
+  await sleep(900); // read the reply
 
   // ── 5. Tap Voice call -> it needs setting up first ("Set up voice calls") ───
   const callBtn = center(await boxOf('[aria-label="Voice call"]'));
-  await glide(callBtn.x, callBtn.y, 0.9);
+  await glide(callBtn.x, callBtn.y, 0.7);
   await click();
   await page.waitForSelector('text=Set up voice calls', { timeout: 8000 });
-  await sleep(1700); // read the setup copy
+  await sleep(1200); // read the setup copy
 
   // ── 6. Install the voice module -> the call connects ───────────────────────
   const install = center(await boxOf('button:has-text("Install")'));
-  await glide(install.x, install.y, 0.7);
+  await glide(install.x, install.y, 0.55);
   await click();
   // progress bar fills, the gate closes, the call rings then goes live
   await page.waitForSelector('text=Set up voice calls', { state: 'detached', timeout: 12000 });
-  await sleep(3200); // ring -> connected; settle on the live 1:1 call (Sui + you)
+  await sleep(2100); // ring -> connected; settle on the live 1:1 call (Sui + you)
 
   // ── 7. Invite Marv into the call ───────────────────────────────────────────
   const addBtn = center(await boxOf('[aria-label="Add a companion to the call"]'));
-  await glide(addBtn.x, addBtn.y, 0.8);
+  await glide(addBtn.x, addBtn.y, 0.6);
   await click();
   await page.waitForSelector('text=Add to call', { timeout: 8000 });
-  await sleep(800);
+  await sleep(500);
   const marvRow = center(await boxOf('button:has-text("Marv")'));
-  await glide(marvRow.x, marvRow.y, 0.6);
+  await glide(marvRow.x, marvRow.y, 0.5);
   await click();
   // Marv joins -> a three-up group call (Sui + Marv + you)
   await page.waitForSelector('text=Group call', { timeout: 8000 });
-  await sleep(2200); // settle on the group call
+  await sleep(1500); // settle on the group call
 
   // ── 8. Hang up -> back to chat ─────────────────────────────────────────────
   const hangup = center(await boxOf('[aria-label="Hang up"]'));
-  await glide(hangup.x, hangup.y, 0.9);
+  await glide(hangup.x, hangup.y, 0.7);
   await click();
-  await sleep(1300);
+  await sleep(1000);
 
   // Stop capture + tear down.
   try { await cdp.send('Page.stopScreencast'); } catch {}
