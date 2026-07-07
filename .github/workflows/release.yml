@@ -128,7 +128,12 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Publish whatever platform artifacts DID build, even if a sibling leg
+    # failed. The procgen deps (img2skin=file:../skin-gen, soulcaster=
+    # file:../soulcaster) aren't resolvable in a single-repo CI checkout, so the
+    # Windows leg currently fails while macOS builds+notarizes fine. `always()`
+    # lets the draft ship the good mac assets now; Windows is a known follow-up.
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v8
