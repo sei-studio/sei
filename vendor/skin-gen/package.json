@@ -1,0 +1,27 @@
+{
+  "name": "img2skin",
+  "version": "1.0.0",
+  "description": "Turn any character image into a valid Minecraft skin using Nano Banana Pro plus deterministic post-processing",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/mock-test.js && node tests/panel-roundtrip.js && node tests/fallback-test.js",
+    "validate": "node src/validate.js"
+  },
+  "keywords": [
+    "minecraft",
+    "skin",
+    "generator",
+    "gemini",
+    "nano-banana",
+    "image-to-skin"
+  ],
+  "author": "Sei Studio",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sei-studio/img2skin.git"
+  },
+  "dependencies": {
+    "sharp": "^0.35.3"
+  }
+}

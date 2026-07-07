@@ -17,6 +17,9 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/out/**',
+      // Vendored sibling packages (procgen: soulcaster, img2skin) ship their
+      // own test suites (node:test), validated in their own repos, not here.
+      'vendor/**',
       // electron-builder output: app.asar.unpacked contains a full copy of
       // src/bot/** (asarUnpack), so vitest would re-run every bot test from
       // the stale packaged snapshot.

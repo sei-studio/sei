@@ -1,0 +1,6 @@
+node_modules
+.env*
+out/
+.DS_Store
+references/monadical/
+references/nick088/
