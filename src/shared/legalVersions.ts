@@ -16,5 +16,9 @@
 // 260602-uv9: TOS bumped to re-prompt users after the no-refund §8 rewrite in
 // ../sei-website/terms.html (all sales final). PRIVACY_VERSION unchanged —
 // privacy.html was not touched.
+// 260707: PRIVACY bumped to re-prompt users after adding PostHog product
+// analytics — privacy.html §1 ("Product analytics"), §3 (PostHog subprocessor
+// row), §4, and §10 updated + Effective Date moved to 2026-07-07. TOS_VERSION
+// unchanged — terms.html was not touched.
 export const TOS_VERSION = '2026-06-03';
-export const PRIVACY_VERSION = '2026-05-25';
+export const PRIVACY_VERSION = '2026-07-07';

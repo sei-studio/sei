@@ -67,6 +67,10 @@ export function SettingsScreen(): React.ReactElement {
   // typing delays.
   const realisticTyping = useUiStore((s) => s.realisticTyping);
   const setRealisticTyping = useUiStore((s) => s.setRealisticTyping);
+  // 260707: product-analytics opt-out. The toggle shows analytics ENABLED,
+  // so its `on` state is the inverse of the opt-out flag.
+  const analyticsOptOut = useUiStore((s) => s.analyticsOptOut);
+  const setAnalyticsOptOut = useUiStore((s) => s.setAnalyticsOptOut);
   const callCaptions = useUiStore((s) => s.callCaptions);
   const callOverlayEnabled = useUiStore((s) => s.callOverlayEnabled);
   const setCallOverlayEnabled = useUiStore((s) => s.setCallOverlayEnabled);
@@ -363,6 +367,22 @@ export function SettingsScreen(): React.ReactElement {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (realistic_typing) failed', err);
       setRealisticTyping(!next);
+    }
+  };
+
+  // 260707: persist the analytics opt-out via its dedicated IPC (which also
+  // applies it to the live analytics client), NOT saveConfig — so it never
+  // clobbers a concurrent config write. `enabled` is the toggle state
+  // (analytics ON); opt-out is the inverse.
+  const onToggleAnalytics = async (enabled: boolean): Promise<void> => {
+    setAnalyticsOptOut(!enabled);
+    try {
+      await sei.setAnalyticsOptOut(!enabled);
+      if (cfg) setCfg({ ...cfg, analytics_opt_out: !enabled });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] setAnalyticsOptOut failed', err);
+      setAnalyticsOptOut(enabled); // rollback
     }
   };
 
@@ -783,6 +803,22 @@ export function SettingsScreen(): React.ReactElement {
               aria-label="Show developer console"
               on={devConsoleVisible}
               onChange={(v) => void onToggleDevConsole(v)}
+            />
+          </div>
+          {/* 260707: product-analytics opt-out. On by default; toggling off
+              stops all analytics immediately. See privacy.html. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Usage analytics
+              <InfoTip
+                label="About usage analytics"
+                text="Shares anonymous usage data (feature counts, versions, errors) to help improve Sei. Never your chats, characters, or personal info. Turn off any time."
+              />
+            </span>
+            <Toggle
+              aria-label="Usage analytics"
+              on={!analyticsOptOut}
+              onChange={(v) => void onToggleAnalytics(v)}
             />
           </div>
           {/* Call captions (260705): live subtitle lines on the voice-call

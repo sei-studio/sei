@@ -607,6 +607,30 @@ export const UserConfigSchema = z.object({
    * not mirrored to the cloud prefs row.
    */
   dynamics_granted: z.array(CompanionDynamicSchema).default([]),
+  /**
+   * 260707 analytics: opt-OUT flag for PostHog product analytics. Default false
+   * (analytics ON) per the opt-out consent model disclosed in privacy.html.
+   * The Settings "Usage analytics" toggle flips this; src/main/analytics.ts
+   * reads it as the consent gate — when true, capture() is a hard no-op and no
+   * events leave the machine. `.optional().default(false)` keeps existing
+   * config.json files (which lack the field) analytics-on, matching the
+   * disclosed default. Optional and NOT defaulted (absent ≡ false everywhere it
+   * is read: `analytics_opt_out === true`) so the many manual UserConfig
+   * literals don't all need to spell it out — same convention as
+   * daily_limited_until / creation_times above.
+   */
+  analytics_opt_out: z.boolean().optional(),
+  /**
+   * 260707 analytics: stable, per-profile anonymous install identifier used as
+   * the PostHog `distinctId` for local (never-signed-in) users. A random UUID
+   * minted lazily on first analytics init (configStore.updateConfig) and never
+   * derived from any PII (no email, no Minecraft username). Signed-in cloud
+   * users are additionally identified by their Supabase user id (see
+   * analytics.identifyUser); this id is what ties their pre-sign-in activity to
+   * the account via alias(). Profile-scoped because config.json lives under the
+   * active profile root, so each account on one machine gets its own id.
+   */
+  analytics_install_id: z.string().uuid().optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

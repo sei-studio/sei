@@ -5,7 +5,8 @@
  * left-to-right scrim; a left content panel carries a quiet back crumb, an
  * Oswald name + IdTag, the public/private share row (own chars),
  * the live status line, Description / Game tabs, and a bottom deploy row
- * (Play/Disconnect + a settings gear menu holding Reset memory and Unbind).
+ * (Play/Disconnect + a settings gear: it opens the editor directly for owned
+ * customs, and drops a Reset memory / Unbind menu for view-only companions).
  * All prior functionality is preserved — persona /
  * description display + rotate, share toggle + multi-phase confirm, edit,
  * add/remove-from-library, report, cache-on-demand, reset memory, and the model
@@ -696,8 +697,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                       : character.description?.trim() || 'No description yet.'}
                   </div>
                 </div>
-                {/* Editing moved into the deploy-row settings (gear) menu — see
-                    the "Edit" item there, shown for any character you own. */}
+                {/* Editing lives on the deploy-row gear — for a character you
+                    own it opens the editor directly. */}
               </div>
             )}
 
@@ -772,60 +773,65 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 {isActive ? 'Disconnect' : isConnecting ? 'Connecting…' : 'Play'}
               </Button>
               <div className={styles.settingsWrap} ref={settingsRef}>
-                <Button
-                  kind="ghost"
-                  size="lg"
-                  aria-haspopup="menu"
-                  aria-expanded={settingsOpen}
-                  aria-label="Companion settings"
-                  onClick={() => setSettingsOpen((o) => !o)}
-                >
-                  <GearIcon size={18} />
-                </Button>
-                {settingsOpen ? (
-                  <div className={styles.settingsMenu} role="menu" aria-label="Companion settings">
-                    {/* Edit — only for characters the signed-in user owns
-                        (viewOnly is true for defaults you haven't adopted,
-                        foreign World invites, and non-editable kinds). Opens the
-                        full character editor; replaces the old standalone Edit
-                        button in the persona pane. */}
-                    {!viewOnly ? (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className={styles.settingsItem}
-                        onClick={() => {
-                          setSettingsOpen(false);
-                          openEdit('basic');
-                        }}
+                {!viewOnly ? (
+                  // Owned custom character: the gear goes STRAIGHT to the editor.
+                  // Reset memory and Unbind both live inside Edit, so a dropdown
+                  // that just repeats them is redundant. (viewOnly is true for
+                  // defaults you haven't adopted, foreign World invites, and
+                  // non-editable kinds — those keep the menu below since they
+                  // have no editor.)
+                  <Button
+                    kind="ghost"
+                    size="lg"
+                    aria-label="Edit companion"
+                    onClick={() => openEdit('basic')}
+                  >
+                    <GearIcon size={18} />
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      kind="ghost"
+                      size="lg"
+                      aria-haspopup="menu"
+                      aria-expanded={settingsOpen}
+                      aria-label="Companion settings"
+                      onClick={() => setSettingsOpen((o) => !o)}
+                    >
+                      <GearIcon size={18} />
+                    </Button>
+                    {settingsOpen ? (
+                      <div
+                        className={styles.settingsMenu}
+                        role="menu"
+                        aria-label="Companion settings"
                       >
-                        Edit
-                      </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={styles.settingsItem}
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            onResetMemoryClick();
+                          }}
+                        >
+                          Reset memory
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={`${styles.settingsItem} ${styles.settingsItemDanger}`}
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            setReleaseConfirmOpen(true);
+                          }}
+                        >
+                          Unbind
+                        </button>
+                      </div>
                     ) : null}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={styles.settingsItem}
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        onResetMemoryClick();
-                      }}
-                    >
-                      Reset memory
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={`${styles.settingsItem} ${styles.settingsItemDanger}`}
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        setReleaseConfirmOpen(true);
-                      }}
-                    >
-                      Unbind
-                    </button>
-                  </div>
-                ) : null}
+                  </>
+                )}
               </div>
             </>
           )}

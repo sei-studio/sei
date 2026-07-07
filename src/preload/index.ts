@@ -77,6 +77,11 @@ const api: RendererApi = {
   saveApiKey: (plaintext) => ipcRenderer.invoke(IpcChannel.config.saveApiKey, plaintext),
   hasApiKey: () => ipcRenderer.invoke(IpcChannel.config.hasApiKey),
 
+  // Product analytics (260707) — track is fire-and-forget (send, not invoke).
+  track: (event, props) => ipcRenderer.send(IpcChannel.analytics.track, { event, props }),
+  getAnalyticsOptOut: () => ipcRenderer.invoke(IpcChannel.analytics.getOptOut),
+  setAnalyticsOptOut: (optOut) => ipcRenderer.invoke(IpcChannel.analytics.setOptOut, optOut),
+
   // In-app chat (Phase 18/19)
   chatHistory: (characterId) => ipcRenderer.invoke(IpcChannel.chat.history, characterId),
   chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),

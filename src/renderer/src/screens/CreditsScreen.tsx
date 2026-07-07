@@ -164,6 +164,12 @@ export function CreditsScreen(): React.ReactElement {
   // session, and the reward is a cloud-ledger grant. BYOK/local users never
   // see the banner or the standing button.
   const cloudMode = useCreditsStore((s) => s.ai_backend_kind) === 'cloud-proxy';
+  // Analytics (260707): pricing/credits surface viewed — top of the
+  // monetization funnel (pairs with checkout_opened downstream).
+  useEffect(() => {
+    sei.track('pricing_viewed');
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void sei.getConfig().then((c) => {

@@ -229,6 +229,9 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
   // would otherwise treat as a no-op.
   if (currentState.kind === 'signed_in') {
     const userId = currentState.user.id;
+    // Analytics (260707): attribute this restored session to the account so
+    // events (incl. app_opened, fired just after init) carry the user id.
+    void import('../analytics').then((a) => a.identifyUser(userId)).catch(() => {});
     // 260606 — proactively validate the persisted session against the server.
     // If the account was deleted/revoked, this auto-signs-out so the user can't
     // get trapped on a blocking gate (e.g. the ToS modal). Fire-and-forget so
@@ -243,6 +246,16 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
         await reconcileLocalOwnershipOnSignIn(userId);
       } catch (err) {
         console.warn(`[sei] cold-start reconcile failed: ${(err as Error).message}`);
+      }
+      // Auto-remoderate-on-reset: restore any of this user's shared characters
+      // whose moderation_status was reset to null. Fire-and-forget (may call
+      // moderation Edge Functions when enabled) and a no-op while moderation is
+      // off. Never blocks launch.
+      try {
+        const { remoderateResetSharedCharactersOnSignIn } = await import('../ipc');
+        void remoderateResetSharedCharactersOnSignIn(userId);
+      } catch (err) {
+        console.warn(`[sei] cold-start remoderate-on-reset failed: ${(err as Error).message}`);
       }
     })();
   }
@@ -314,6 +327,15 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
           } catch (err) {
             console.warn(`[sei] sign-in reconcile failed: ${(err as Error).message}`);
           }
+          // Auto-remoderate-on-reset: restore any shared characters whose
+          // moderation_status was reset to null. Fire-and-forget, no-op while
+          // moderation is off. Never blocks the sign-in transition.
+          try {
+            const { remoderateResetSharedCharactersOnSignIn } = await import('../ipc');
+            void remoderateResetSharedCharactersOnSignIn(nextUserId);
+          } catch (err) {
+            console.warn(`[sei] sign-in remoderate-on-reset failed: ${(err as Error).message}`);
+          }
           // Item 7: backfill the public profiles row from the account's local
           // preferred_name on sign-in, so users who onboarded before the
           // profiles table existed still show "by <name>" on Browse. Best-effort.
@@ -328,6 +350,21 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
           } catch (err) {
             console.warn(`[sei] sign-in profile backfill failed: ${(err as Error).message}`);
           }
+          // Analytics (260707): identify the account (aliases the prior
+          // anonymous install id into it) and mark a genuine sign-in.
+          try {
+            const { identifyUser, capture } = await import('../analytics');
+            identifyUser(nextUserId);
+            capture('signed_in');
+          } catch { /* best-effort */ }
+        } else {
+          // Sign-out transition: mark it, then detach from the account so
+          // subsequent events revert to the anonymous install id.
+          try {
+            const { capture, resetUser } = await import('../analytics');
+            capture('signed_out');
+            resetUser();
+          } catch { /* best-effort */ }
         }
       })();
     }

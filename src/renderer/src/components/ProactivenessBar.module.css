@@ -1,6 +1,8 @@
 /* ProactivenessBar.module.css — segmented proactiveness meter.
  * Follows the StepDots idiom (flat segments, --accent fill, sharp edges to
- * match the Summoning Terminal look). */
+ * match the Summoning Terminal look). The per-segment tooltip is NOT a CSS
+ * pseudo-element anymore: it's a portal bubble (.tip) positioned from JS — see
+ * ProactivenessBar.tsx for why (the detail panel's overflow clips ::after). */
 
 .root {
   display: inline-flex;
@@ -20,10 +22,6 @@
   display: flex;
   gap: 3px;
   align-items: center;
-  /* Positioning context for the segment tooltips: the bubble anchors to the
-     WHOLE track (not the hovered 20px segment), so it spans the bar's width
-     and can never poke past the content panel's overflow-x clip. */
-  position: relative;
 }
 
 .block .track {
@@ -32,8 +30,6 @@
 }
 
 .seg {
-  /* NOT position:relative — the tooltip pseudo-elements must resolve against
-     .track (see above) so the bubble gets the full bar width. */
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   transition: background 240ms var(--ease), border-color 240ms var(--ease);
@@ -87,20 +83,19 @@
   color: var(--accent);
 }
 
-/* ── Per-segment instant tooltip (one sentence on what to expect in game) ──
-   Mirrors the IconRail / UsageBar floating-tooltip idiom: a CSS ::after fed
-   from data-tip, shown on hover/focus with no native-title delay. The bubble
-   is anchored to the TRACK (left:0/right:0 against the positioned .track),
-   not the hovered segment: a segment-centered fixed-width bubble used to
-   cross the content panel's overflow-x:hidden edge and get its text clipped
-   mid-line. Full-track width always fits the panel, so the copy always fits
-   the box. */
-.seg::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  right: 0;
+/* ── Portal tooltip (one sentence on what to expect in game) ──────────────
+   Rendered to <body> with position:fixed (see ProactivenessBar.tsx). `left`
+   and `top` are set inline to the hovered segment's viewport center / top; the
+   transform lifts the bubble fully ABOVE that point and horizontally centers
+   it. Fixed + body-level means the detail panel's overflow can neither clip it
+   nor stack the Play button over it, and `width: max-content` + `max-width`
+   size the box to its copy so text never spills out. */
+.tip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  z-index: 9999;
+  width: max-content;
+  max-width: 260px;
   padding: 8px 11px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
@@ -110,17 +105,9 @@
   font-weight: 400;
   line-height: 1.4;
   letter-spacing: normal;
-  text-transform: none;
   text-align: left;
   color: var(--text);
   white-space: normal;
   overflow-wrap: break-word;
-  opacity: 0;
   pointer-events: none;
-  z-index: 50;
-}
-
-.seg:hover::after,
-.seg:focus-visible::after {
-  opacity: 1;
 }

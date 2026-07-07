@@ -136,6 +136,13 @@ interface UiState {
    */
   realisticTyping: boolean;
   /**
+   * 260707 — product-analytics opt-OUT flag (PostHog). Default false
+   * (analytics on) per the disclosed opt-out model. Persisted via
+   * UserConfig.analytics_opt_out and hydrated at App.tsx bootstrap; the
+   * Settings "Usage analytics" toggle flips it (main persists + applies).
+   */
+  analyticsOptOut: boolean;
+  /**
    * 260705 — the chat presence side panel is open by default; hiding it is a
    * sticky preference across companions and app restarts. Persisted via
    * UserConfig.chat_panel_hidden and hydrated here at App.tsx bootstrap (same
@@ -211,6 +218,7 @@ interface UiState {
   setDevConsoleVisible: (v: boolean) => void;
   /** Appearance & feel: set the "Realistic typing" pacing toggle. */
   setRealisticTyping: (v: boolean) => void;
+  setAnalyticsOptOut: (v: boolean) => void;
   setChatPanelHidden: (v: boolean) => void;
   /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
   setVisionCapable: (v: boolean) => void;
@@ -243,6 +251,8 @@ export const useUiStore = create<UiState>((set) => ({
   // Appearance & feel: default ON, matching UserConfig.realistic_typing's
   // default. App.tsx re-hydrates this from persisted config before first render.
   realisticTyping: true,
+  // Analytics on by default (opt-out); App.tsx re-hydrates from UserConfig.
+  analyticsOptOut: false,
   // Panel open by default; App.tsx re-hydrates from UserConfig.chat_panel_hidden.
   chatPanelHidden: false,
   // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
@@ -269,6 +279,7 @@ export const useUiStore = create<UiState>((set) => ({
     set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),
   setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
   setRealisticTyping: (v) => set({ realisticTyping: v }),
+  setAnalyticsOptOut: (v) => set({ analyticsOptOut: v }),
   setChatPanelHidden: (v) => set({ chatPanelHidden: v }),
   setVisionCapable: (v) => set({ visionCapable: v }),
   setChatReturnId: (id) => set({ chatReturnId: id }),

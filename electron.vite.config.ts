@@ -46,6 +46,17 @@ export default defineConfig(({ mode }) => {
       ...(env.KUSART_BASE_URL
         ? { 'process.env.KUSART_BASE_URL': JSON.stringify(env.KUSART_BASE_URL) }
         : {}),
+      // PostHog product analytics (src/main/analytics.ts). The phc_ project key
+      // is public/write-only (safe to embed); the real default is baked into
+      // analytics.ts, so this override is only for pointing a build at a
+      // different project/host. Same defined-only-when-set rule as above so an
+      // unset key leaves the runtime lookup live → baked default.
+      ...(env.POSTHOG_KEY
+        ? { 'process.env.POSTHOG_KEY': JSON.stringify(env.POSTHOG_KEY) }
+        : {}),
+      ...(env.POSTHOG_HOST
+        ? { 'process.env.POSTHOG_HOST': JSON.stringify(env.POSTHOG_HOST) }
+        : {}),
     },
   },
   preload: {

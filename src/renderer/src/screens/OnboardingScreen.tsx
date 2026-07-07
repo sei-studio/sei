@@ -203,6 +203,9 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
             /* fall through to the activity picker */
           }
         }
+        // Analytics (260707): onboarding finished (fresh profile completing
+        // the name/setup flow), the activation entry point.
+        sei.track('onboarding_completed');
         // Ask what they want to do first. The activity picker routes to
         // skin-setup only if they choose Minecraft; choosing Chat skips
         // straight to home (and clears skin_setup_pending).

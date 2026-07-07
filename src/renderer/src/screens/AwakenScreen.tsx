@@ -106,6 +106,8 @@ export function AwakenScreen(): React.ReactElement {
   };
 
   const handleWorld = (): void => {
+    // Analytics (260707): the World (public-character discovery) tab was opened.
+    sei.track('world_browsed');
     setHomeTab('world');
     navigate({ kind: 'home' });
   };

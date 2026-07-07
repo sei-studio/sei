@@ -38,6 +38,7 @@ import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, de
 import { libraryCharacterCount } from './uniqueGeneration';
 import { paths } from './paths';
 import { saveApiKey, hasApiKey, safeStorageBackendKind } from './apiKeyStore';
+import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
 
@@ -54,6 +55,40 @@ import type { BotSupervisor } from './botSupervisor';
 // update). To disable moderation for existing installs immediately you'd neuter
 // the Edge Functions in the private proxy instead.
 const MODERATION_ENABLED = false;
+
+// ── Auto-remoderate-on-reset (260707) ──────────────────────────────────────
+// When moderation is ENABLED, the reset_moderation_on_portrait_change DB
+// trigger nulls moderation_status whenever a shared character's portrait bytes
+// change. The user-initiated share/save paths re-run the gate immediately, but
+// a background portrait re-upload (sync queue), an owner-change storage
+// relocation, or a fresh-device first-save can null a shared character WITHOUT
+// a following moderation pass — leaving it stuck out of World
+// (search_public_characters requires moderation_status='clean').
+//
+// This sweep re-runs the gate for the signed-in user's OWN shared characters
+// whose moderation_status is null, restoring them to World once they pass. It
+// is invoked from authState on sign-in (fire-and-forget).
+//
+// Dormant under the all-green exemption: while MODERATION_ENABLED === false the
+// reset trigger writes 'clean' (never null), so the sweep query below matches
+// zero rows and this is a complete no-op. Even if a null row somehow existed,
+// runModerationGate honors the kill-switch and writes 'clean' (it never calls
+// the Edge Functions and never flags), so this can never hide an all-green or
+// first-party-exempt character.
+//
+// Wired as a module-level delegate assigned by registerIpcHandlers so the sweep
+// can reuse the in-closure runModerationGate as the single moderation entry
+// point (rather than duplicating its adapter wiring).
+let _runResetRemoderationSweep: ((userId: string) => Promise<void>) | null = null;
+
+/**
+ * Re-moderate the signed-in user's shared characters whose moderation_status was
+ * reset to null (see the note above). Best-effort and non-blocking; a no-op
+ * until registerIpcHandlers has wired the delegate and while moderation is off.
+ */
+export function remoderateResetSharedCharactersOnSignIn(userId: string): Promise<void> {
+  return _runResetRemoderationSweep?.(userId) ?? Promise.resolve();
+}
 
 export interface IpcHandlerDeps {
   supervisor: BotSupervisor;
@@ -540,6 +575,60 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     });
   }
 
+  // Auto-remoderate-on-reset delegate (see module-level note near
+  // MODERATION_ENABLED). Assigned once here so the exported entry point can
+  // reuse runModerationGate. registerIpcHandlers runs at app init, before any
+  // sign-in event fires, so the delegate is always set before it's called.
+  _runResetRemoderationSweep = async (userId: string): Promise<void> => {
+    const MAX_RESET_SWEEP = 25;
+    try {
+      const { isCloudWriteAllowed } = await import('./auth/authState');
+      if (!(await isCloudWriteAllowed())) return;
+
+      const { getClient, getAuthedClient } = await import('./auth/supabaseClient');
+      const {
+        data: { session },
+      } = await getClient().auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) return;
+
+      // Only the caller's OWN shared rows whose moderation was reset to null.
+      // RLS + owner=userId keep this scoped to the signed-in user; the null
+      // filter is what makes this dormant while moderation is disabled.
+      const { data, error } = await getAuthedClient(accessToken)
+        .from('characters')
+        .select('id')
+        .eq('owner', userId)
+        .eq('shared', true)
+        .is('moderation_status', null)
+        .limit(MAX_RESET_SWEEP);
+      if (error) {
+        console.warn(`[sei] remoderate-on-reset: query failed: ${error.message}`);
+        return;
+      }
+      const ids = (data ?? []).map((r) => (r as { id: string }).id);
+      if (ids.length === 0) return; // no reset rows — dormant under all-green
+
+      console.log(
+        `[sei] remoderate-on-reset: re-running gate for ${ids.length} reset shared character(s)`,
+      );
+      for (const id of ids) {
+        try {
+          const res = await runModerationGate(id);
+          console.log(
+            `[sei] remoderate-on-reset: ${id} → ${
+              res.ok ? `restored (${res.moderationProvider})` : `left hidden (${res.code})`
+            }`,
+          );
+        } catch (err) {
+          console.warn(`[sei] remoderate-on-reset: ${id} failed: ${(err as Error).message}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[sei] remoderate-on-reset: sweep threw: ${(err as Error).message}`);
+    }
+  };
+
   // Bot supervision
   ipcMain.handle(IpcChannel.bot.summon, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
@@ -666,6 +755,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // moderation pipeline BEFORE the cloud upsert. Defaults (D-22) can never
     // be shared, so willShare implicitly excludes them.
     const willShare = character.shared === true && !character.is_default;
+
+    // Analytics (260707): a create (not an edit). `source` distinguishes a
+    // wizard/prompt-expander companion from an advanced full-custom one
+    // (skipExpansion). No persona/name content is sent.
+    if (isCreate) {
+      trackAnalytics('character_created', {
+        source: skipExpansion ? 'custom' : 'expander',
+        shared: willShare,
+      });
+    }
 
     if (!willShare) {
       // Fast path — private save (or default-with-shared=false). Existing
@@ -1206,6 +1305,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // transition is gated by the moderation pipeline.
     if (args.shared === false) {
       await saveCharacter({ ...char, shared: false });
+      trackAnalytics('character_unshared', { character_id: char.id });
       return;
     }
 
@@ -1232,6 +1332,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     const { saveCharacterRaw } = await import('./characterStore');
     await saveCharacterRaw({ ...char, shared: true });
+    trackAnalytics('character_shared', { character_id: char.id });
   });
 
   // Phase 11 plan 17 — list the UUIDs of the signed-in user's cloud characters.
@@ -1465,6 +1566,31 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.config.hasApiKey, async (): Promise<boolean> => {
     return await hasApiKey();
+  });
+
+  // === Product analytics (260707) ===
+  // Fire-and-forget renderer→main event. Zod-gated at the trust boundary like
+  // every inbound arg; capture() itself is a no-op under opt-out / no key. Props
+  // are scalar-only — the analytics module further sanitizes so no free-form
+  // content can ride along.
+  const TrackArgsSchema = z.object({
+    event: z.string().min(1).max(80),
+    props: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  });
+  ipcMain.on(IpcChannel.analytics.track, (_event, raw: unknown) => {
+    try {
+      const { event, props } = TrackArgsSchema.parse(raw);
+      trackAnalytics(event, props);
+    } catch {
+      /* malformed track payload — drop silently, analytics must never disrupt */
+    }
+  });
+  ipcMain.handle(IpcChannel.analytics.getOptOut, async (): Promise<boolean> => {
+    return await getAnalyticsOptOut();
+  });
+  ipcMain.handle(IpcChannel.analytics.setOptOut, async (_event, optOutArg: unknown): Promise<void> => {
+    const { optOut } = z.object({ optOut: z.boolean() }).parse({ optOut: optOutArg });
+    await setAnalyticsOptOut(optOut);
   });
 
   // === 260703 procgen — unique-companion generation + questionnaire prefs ===
@@ -2204,6 +2330,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const parsed = ProxyConfigureArgsSchema.parse(argsRaw);
     const { setAiBackendKind } = await import('./apiKeyStore');
     await setAiBackendKind(parsed.kind);
+    // Analytics (260707): keep the cached backend kind current so every event's
+    // `backend` prop is accurate, and record the explicit switch.
+    try {
+      const { setAnalyticsBackendKind } = await import('./analytics');
+      setAnalyticsBackendKind(parsed.kind);
+    } catch { /* best-effort */ }
+    trackAnalytics('backend_selected', { backend: parsed.kind });
     // WR-05 follow-up: apply the new routing to the RUNNING bot immediately so
     // the swap doesn't wait for a manual stop+re-summon. No-op when idle (the
     // next summon reads ai_backend_kind fresh). switchBackend surfaces its own
@@ -2262,6 +2395,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // push (no success-detection wiring needed).
   ipcMain.handle(IpcChannel.credits.openCheckout, async (_e, argsRaw: unknown) => {
     const parsed = CreditsCheckoutArgsSchema.parse(argsRaw);
+    trackAnalytics('checkout_opened', { kind: String(parsed.kind) });
     const { openCheckout } = await import('./cloud/proxyClient');
     const res = await openCheckout(parsed.kind);
     if (!res.ok) return res;
@@ -2316,14 +2450,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.feedback.submit, async (_e, argsRaw: unknown) => {
     const parsed = FeedbackSubmitArgsSchema.parse(argsRaw);
     const { feedbackSubmit } = await import('./cloud/proxyClient');
-    return feedbackSubmit(parsed);
+    const res = await feedbackSubmit(parsed);
+    trackAnalytics('feedback_submitted');
+    return res;
   });
 
   // feedback:report — 260706. Proxy POST /report (20/day per user).
   ipcMain.handle(IpcChannel.feedback.report, async (_e, argsRaw: unknown) => {
     const parsed = ReportSubmitArgsSchema.parse(argsRaw);
     const { reportSubmit } = await import('./cloud/proxyClient');
-    return reportSubmit(parsed);
+    const res = await reportSubmit(parsed);
+    trackAnalytics('report_submitted');
+    return res;
   });
 
   // Phase 11 — push sync-queue status updates to all renderer windows whenever

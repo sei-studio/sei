@@ -67,6 +67,11 @@ export function EditCharacterModal({
   const [personaSource, setPersonaSource] = useState<string>(character.persona.source ?? '');
   const [personaExpanded, setPersonaExpanded] = useState<string>(character.persona.expanded ?? '');
   const [proactiveness, setProactiveness] = useState<number>(getProactiveness(character));
+  // Which step the pointer/focus is previewing, so the help line below the
+  // picker can show that level's blurb without a native `title` tooltip (which
+  // renders unstyled BELOW the cursor and clips its text). Falls back to the
+  // selected level when nothing is hovered.
+  const [proactivenessHover, setProactivenessHover] = useState<number | null>(null);
 
   // ── Baselines (last persisted values) — drive the dirty flags. Updated
   //    after each successful persist; NOT reset by prop changes. ──────────
@@ -452,9 +457,12 @@ export function EditCharacterModal({
                               type="button"
                               role="radio"
                               aria-checked={proactiveness === lvl.value}
-                              title={lvl.blurb}
                               className={`${styles.proactivenessStep} ${proactiveness === lvl.value ? styles.proactivenessStepOn : ''}`}
                               onClick={() => setProactiveness(lvl.value)}
+                              onMouseEnter={() => setProactivenessHover(lvl.value)}
+                              onMouseLeave={() => setProactivenessHover(null)}
+                              onFocus={() => setProactivenessHover(lvl.value)}
+                              onBlur={() => setProactivenessHover(null)}
                               disabled={busy}
                             >
                               {lvl.label}
@@ -462,7 +470,7 @@ export function EditCharacterModal({
                           ))}
                         </div>
                         <span className={styles.proactivenessHelp}>
-                          {PROACTIVENESS_LEVELS[proactiveness]?.blurb}
+                          {PROACTIVENESS_LEVELS[proactivenessHover ?? proactiveness]?.blurb}
                         </span>
                       </div>
                     </>

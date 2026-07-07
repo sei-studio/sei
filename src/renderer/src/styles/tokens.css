@@ -168,18 +168,18 @@
      Navy ramp swapped in for the original near-blacks. To REVERT, restore each
      value from the trailing comment (the /* was: … *​/ originals) and delete
      this block header. */
-  --bg: #070c17;        /* very dark blue */
-  --bg2: #0c1426;       /* very dark blue */
-  --bg3: #142138;       /* very dark blue */
-  --bg4: #1d2c49;       /* very dark blue */
+  --bg: #04070f;        /* very dark blue (darkened) */
+  --bg2: #080f1d;       /* very dark blue (darkened) */
+  --bg3: #101a2e;       /* very dark blue (darkened) */
+  --bg4: #18263f;       /* very dark blue (darkened) */
 
   /* App surface is a single very-dark-blue --bg; there is no lighter "window"
      tone. Surfaces step up slightly so cards/inputs read against the field. */
-  --window: #070c17;    /* very dark blue */
-  --desktop: #04070f;   /* deepest — the field the window floats on */
-  --surface: #0c1426;   /* very dark blue */
-  --surface-2: #142138; /* very dark blue */
-  --rail: #070d1a;      /* very dark blue */
+  --window: #04070f;    /* very dark blue (darkened) */
+  --desktop: #02040a;   /* deepest — the field the window floats on (darkened) */
+  --surface: #080f1d;   /* very dark blue (darkened) */
+  --surface-2: #101a2e; /* very dark blue (darkened) */
+  --rail: #04070f;      /* very dark blue (darkened) */
   --rail-active: rgba(255, 255, 255, 0.045);
   /* Rounded content-corner backdrop — matches the chrome; the panel's own
      rounded border (App.tsx main) is what defines the corner. */

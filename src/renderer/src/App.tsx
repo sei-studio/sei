@@ -419,6 +419,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
           // Sticky chat side-panel visibility (default shown).
           useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
+          // Product analytics opt-out (default OFF = analytics on).
+          useUiStore.getState().setAnalyticsOptOut(cfg.analytics_opt_out === true);
         } catch {
           // Fall through with empty onboardedName → onboarding (fresh profile).
         }

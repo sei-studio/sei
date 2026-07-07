@@ -959,6 +959,19 @@ export interface RendererApi {
   saveApiKey(plaintext: string): Promise<void>;
   hasApiKey(): Promise<boolean>;
 
+  // --- Product analytics (260707) ---
+  /**
+   * Fire-and-forget product-analytics event. No-op in main when the user has
+   * opted out or no ingestion key is baked in. Props must be scalar
+   * (string/number/boolean/null) — main sanitizes and drops anything else, so
+   * NEVER pass chat/persona text or other free-form content.
+   */
+  track(event: string, props?: Record<string, string | number | boolean | null>): void;
+  /** Read the persisted analytics opt-out flag (Settings toggle state). */
+  getAnalyticsOptOut(): Promise<boolean>;
+  /** Persist the analytics opt-out flag; takes effect immediately. */
+  setAnalyticsOptOut(optOut: boolean): Promise<void>;
+
   // --- In-app chat (Phase 18/19) ---
   /** Load a character's persisted chat transcript (recent window). */
   chatHistory(characterId: string): Promise<ChatMessage[]>;
@@ -1638,6 +1651,14 @@ export const IpcChannel = {
     save: 'config:save',
     saveApiKey: 'config:save-api-key',
     hasApiKey: 'config:has-api-key',
+  },
+  // 260707 — PostHog product analytics. `track` is fire-and-forget one-way
+  // (renderer → main via ipcRenderer.send); getOptOut/setOptOut are the
+  // request/response pair backing the Settings "Usage analytics" toggle.
+  analytics: {
+    track: 'analytics:track',
+    getOptOut: 'analytics:get-opt-out',
+    setOptOut: 'analytics:set-opt-out',
   },
   // 260703 procgen — unique-companion generation pipeline + user-profile
   // questionnaire (see GenerateUniqueInput / GenProgressEvent / PrefsGetResult).
