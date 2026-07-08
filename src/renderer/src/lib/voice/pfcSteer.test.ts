@@ -11,7 +11,6 @@ import {
   pickResponder,
   decideReaction,
   isJunkTranscript,
-  reactionChance,
   PFC_MAX_CHAIN,
   type Participant,
 } from './pfcSteer';
@@ -67,19 +66,18 @@ describe('decideReaction', () => {
     expect(d?.reactorId).toBe('marv');
   });
 
-  it('sometimes stops after one turn (organic), sometimes continues', () => {
-    // rnd above the depth-0 chance (0.6) → no reaction (only one AI spoke).
-    expect(
-      decideReaction({ speakerId: 'sui', participants: duo, depth: 0, lastReactorId: null, rnd: seq(0.99) }),
-    ).toBeNull();
-    // rnd below it → a reaction chains.
-    expect(
-      decideReaction({ speakerId: 'sui', participants: duo, depth: 0, lastReactorId: null, rnd: seq(0.1, 0) }),
-    ).not.toBeNull();
+  it('always hands the floor to a peer below the cap (no random stop)', () => {
+    // No matter the roll, an under-cap duo turn continues to the other companion;
+    // the banter ends only when a turn produces no line (handled by the director),
+    // never by a dice roll here.
+    for (const r of [0.01, 0.5, 0.99]) {
+      const d = decideReaction({ speakerId: 'sui', participants: duo, depth: 0, lastReactorId: null, rnd: seq(r) });
+      expect(d?.reactorId).toBe('marv');
+    }
   });
 
-  it('is hard-capped no matter how the dice fall', () => {
-    // At the cap boundary, even a certain-continue roll returns null.
+  it('is hard-capped as a runaway guard', () => {
+    // At the cap boundary the chain stops regardless of the roll.
     expect(
       decideReaction({
         speakerId: 'sui',
@@ -91,14 +89,7 @@ describe('decideReaction', () => {
     ).toBeNull();
   });
 
-  it('taper is monotonically non-increasing', () => {
-    for (let d = 1; d < PFC_MAX_CHAIN + 2; d++) {
-      expect(reactionChance(d)).toBeLessThanOrEqual(reactionChance(d - 1));
-    }
-    expect(reactionChance(PFC_MAX_CHAIN + 5)).toBe(0);
-  });
-
-  it('forces a name-addressed peer to react, bypassing the probabilistic stop', () => {
+  it('forces a name-addressed peer to react', () => {
     // Sui just said "yo marv, explain that" — even a roll that would normally
     // stop the chain (0.99 >= 0.6) must still hand the floor to Marv.
     const d = decideReaction({
@@ -128,10 +119,16 @@ describe('decideReaction', () => {
 
   it('never forces the speaker to answer themselves via their own name', () => {
     // Sui says her own name — she is filtered out of `others`, so no self-turn;
-    // falls through to the normal probabilistic path (0.99 stops it).
-    expect(
-      decideReaction({ speakerId: 'sui', participants: duo, depth: 0, lastReactorId: null, text: 'i am sui', rnd: seq(0.99) }),
-    ).toBeNull();
+    // the floor still passes to the other companion (Marv), never back to Sui.
+    const d = decideReaction({
+      speakerId: 'sui',
+      participants: duo,
+      depth: 0,
+      lastReactorId: null,
+      text: 'i am sui',
+      rnd: seq(0.99),
+    });
+    expect(d?.reactorId).toBe('marv');
   });
 
   it('still respects the hard cap for a name-addressed reaction', () => {
@@ -150,8 +147,8 @@ describe('decideReaction', () => {
   it('spreads reactions across the others in a trio (down-weights last reactor)', () => {
     const trio = [SUI, MARV, LYRA];
     // Speaker Sui, others = [Marv, Lyra], Marv was the last reactor (weight 0.35).
-    // rnd=0.5 of total 1.35 skips Marv's 0.35 slice and lands on Lyra.
-    const d = decideReaction({ speakerId: 'sui', participants: trio, depth: 0, lastReactorId: 'marv', rnd: seq(0.1, 0.5) });
+    // rnd=0.5 of total 1.35 (=0.675) skips Marv's 0.35 slice and lands on Lyra.
+    const d = decideReaction({ speakerId: 'sui', participants: trio, depth: 0, lastReactorId: 'marv', rnd: seq(0.5) });
     expect(d?.reactorId).toBe('lyra');
   });
 });

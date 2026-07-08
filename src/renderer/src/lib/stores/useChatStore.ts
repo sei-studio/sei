@@ -16,7 +16,13 @@ import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
-import { notifyCompanionText, isVoiceCallActive, requestRemoteEndCall } from '../voice/voiceBridge';
+import {
+  notifyCompanionText,
+  notifyPlayerText,
+  isVoiceCallActive,
+  requestRemoteEndCall,
+  voiceCallPeers,
+} from '../voice/voiceBridge';
 import type { ChatMessage, ChatPreview, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
@@ -261,6 +267,19 @@ export const useChatStore = create<ChatState>((set, get) => {
     const isCurrent = (): boolean => sendSeq[characterId] === token;
 
     const inCallEarly = isVoiceCallActive(characterId);
+    // A message TYPED to a companion who is on the live call still has to reach
+    // the voice director: it mirrors the text to the other companions and
+    // captures the reply so their reactions chain, same as a mic utterance.
+    // The director's own sends pass voicePeers, so this only fires for surfaces
+    // that bypass it. Must run BEFORE chatSend below — streamed reply lines
+    // start arriving while the send is still in flight.
+    if (inCallEarly && !(voicePeers && voicePeers.length)) notifyPlayerText(characterId, text);
+    // A typed mid-call send reaches here WITHOUT voicePeers (the composer knows
+    // nothing about the call); the reply must still be framed as a group turn —
+    // the other companions on the call — or the model answers with solo-call
+    // framing. Director sends pass their own voicePeers, which win.
+    const effectivePeers =
+      voicePeers && voicePeers.length ? voicePeers : inCallEarly ? voiceCallPeers(characterId) : [];
     const userMsg: ChatMessage = {
       id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
@@ -290,7 +309,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       characterId,
       text,
       replyTo,
-      ...(voicePeers && voicePeers.length ? { voicePeers } : {}),
+      ...(effectivePeers.length ? { voicePeers: effectivePeers } : {}),
     });
     try {
       if (realism) {

@@ -386,11 +386,19 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         })}
 
         {/* The user's own tile — lit with the speaking ring while they talk
-            (same ring the companions get), dimmed when their mic is muted. */}
+            (same ring the companions get), dimmed when their mic is muted, and
+            dimmed while idle in a group call exactly like the companions (so the
+            speaker always stands out, whoever it is). */}
         <div className={styles.tile}>
           <div
             className={`${styles.tileAvatar} ${
-              userSpeaking && !muted ? styles.tileSpeaking : muted ? styles.tileMutedSelf : ''
+              userSpeaking && !muted
+                ? styles.tileSpeaking
+                : muted
+                  ? styles.tileMutedSelf
+                  : isGroup
+                    ? styles.tileIdle
+                    : ''
             }`}
             style={{ width: avatarPx, height: avatarPx }}
           >

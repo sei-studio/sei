@@ -104,6 +104,7 @@ const api: RendererApi = {
   voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
   voiceGreet: (characterId, peers) => ipcRenderer.invoke(IpcChannel.voice.greet, { characterId, peers: peers ?? [] }),
   voiceCompanionTurn: (args) => ipcRenderer.invoke(IpcChannel.voice.companionTurn, args),
+  voiceIdleNudge: (args) => ipcRenderer.invoke(IpcChannel.voice.idleNudge, args),
   voiceObserve: (args) => ipcRenderer.invoke(IpcChannel.voice.observe, args),
   voiceOverlaySet: (state) => ipcRenderer.invoke(IpcChannel.voice.overlaySet, state),
   onVoiceOverlayState(cb: (state: CallOverlayState) => void) {
@@ -111,6 +112,7 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.voice.overlayState, handler);
     return () => ipcRenderer.off(IpcChannel.voice.overlayState, handler);
   },
+  voiceOverlayGetState: () => ipcRenderer.invoke(IpcChannel.voice.overlayGet),
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   onVoiceCallEnded(cb: (push: { characterId: string }) => void) {

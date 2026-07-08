@@ -1132,6 +1132,33 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!args.active && typeof args.connectedMs === 'number' && args.connectedMs > 0) {
       deps.notifyCallEnded?.(args.characterId, args.connectedMs);
     }
+    // Presence (260707): a call is a real interaction, so stamp last_chatted at
+    // BOTH edges. Game sessions and text chat already drive the "online" dot;
+    // a call previously only did when the player happened to speak a turn (that
+    // path reuses sendChatMessage) — a greeting-only or listen-only call left
+    // the character looking idle. Best-effort, like the chat-turn stamp.
+    try {
+      const { patchCharacter } = await import('./characterStore');
+      await patchCharacter(args.characterId, (c) => ({ ...c, last_chatted: new Date().toISOString() }));
+    } catch (err) {
+      console.warn(`[sei] failed to stamp last_chatted on call state: ${(err as Error).message}`);
+    }
+  });
+
+  // Idle conversation starter (260707): the renderer's call-idle timer asks one
+  // companion to break a long quiet stretch (or stay silent via "(silence)").
+  // Passes { messages, endCall } through as-is: endCall means the model hung up
+  // on the nudge, and the renderer speaks `messages` then ends the call.
+  ipcMain.handle(IpcChannel.voice.idleNudge, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        quietSeconds: z.number().nonnegative().max(3600),
+        peers: z.array(z.string()).default([]),
+      })
+      .parse(argsRaw);
+    const { sendVoiceIdleTurn } = await import('./chat/chatService');
+    return await sendVoiceIdleTurn(args.characterId, args.quietSeconds, args.peers);
   });
 
   // Voice calls (260705): the renderer's call pipeline just went live — ask the
@@ -1156,6 +1183,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         speakerName: z.string().min(1).max(80),
         text: z.string().min(1).max(CHAT_TEXT_MAX),
         peers: z.array(z.string()).default([]),
+        depth: z.number().int().nonnegative().default(0),
       })
       .parse(argsRaw);
     const { sendCompanionVoiceTurn } = await import('./chat/chatService');
@@ -1163,6 +1191,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       speakerName: args.speakerName,
       text: args.text,
       peers: args.peers,
+      depth: args.depth,
     });
   });
 
@@ -1195,6 +1224,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .parse(stateRaw);
     const { updateCallOverlay } = await import('./callOverlay');
     updateCallOverlay(state);
+  });
+
+  // Overlay window pulls the current state on mount — the seed push can race
+  // its subscription (see getCallOverlayState).
+  ipcMain.handle(IpcChannel.voice.overlayGet, async () => {
+    const { getCallOverlayState } = await import('./callOverlay');
+    return getCallOverlayState();
   });
 
   // Voice picker (creation flow, 260705): the curated pool + per-voice preview.

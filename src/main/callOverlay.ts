@@ -28,14 +28,36 @@ let overlayWin: BrowserWindow | null = null;
 let lastState: CallOverlayState | null = null;
 
 // Layout (kept in sync with CallOverlay.module.css). A circle per companion.
-const AVATAR = 60;
+const AVATAR = 76;
 const GAP = 10;
 const PAD_X = 14;
-const HEIGHT = 88;
+const HEIGHT = 108;
 const MARGIN = 22; // gap from the screen edges
+
+/** Participant count the window is currently sized/positioned for. Position is
+ * only recomputed when this changes (or the window is (re)created), never on the
+ * per-speaking-change state pushes — see updateCallOverlay. */
+let lastCount = 0;
+/** Debounce handle for display-metrics-driven repositioning. */
+let repositionTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function initCallOverlay(config: OverlayConfig): void {
   cfg = config;
+  // Reposition to the settled bottom-right when the display layout changes.
+  // A Minecraft fullscreen transition fires several `display-metrics-changed`
+  // events with TRANSIENT work areas (menu bar / dock animating in and out);
+  // repositioning on each one made the overlay visibly slide to an intermediate
+  // spot and back (the "moves to bottom center then returns" report). Debounce
+  // so we reposition exactly once, to the final work area.
+  screen.on('display-metrics-changed', () => {
+    if (repositionTimer) clearTimeout(repositionTimer);
+    repositionTimer = setTimeout(() => {
+      repositionTimer = null;
+      if (overlayWin && !overlayWin.isDestroyed() && lastState) {
+        overlayWin.setBounds(desiredBounds(lastState.participants.length));
+      }
+    }, 600);
+  });
 }
 
 /** Bottom-right bounds sized to `count` avatars on the primary display. */
@@ -135,14 +157,24 @@ function ensureWindow(): BrowserWindow | null {
   }
 
   // Show without stealing focus once loaded, and seed it with the latest state.
-  win.once('ready-to-show', () => {
-    if (win.isDestroyed()) return;
+  // `ready-to-show` is known to never fire for some transparent windows
+  // (electron#29036 and friends) — when it silently skipped, the overlay window
+  // existed but was never shown (the "call popup doesn't show sometimes"
+  // report). Reveal on whichever of ready-to-show / did-finish-load lands
+  // first, with a wall-clock backstop in case neither ever does.
+  let revealed = false;
+  const reveal = (): void => {
+    if (revealed || win.isDestroyed()) return;
+    revealed = true;
     pushState();
     win.showInactive();
     // showInactive on an all-workspaces panel can itself trigger the demotion;
     // re-assert foreground once more after the window is actually on screen.
     keepAppForeground();
-  });
+  };
+  win.once('ready-to-show', reveal);
+  win.webContents.once('did-finish-load', reveal);
+  setTimeout(reveal, 1500);
   win.on('closed', () => {
     if (overlayWin === win) overlayWin = null;
   });
@@ -163,16 +195,44 @@ export function updateCallOverlay(state: CallOverlayState): void {
     closeCallOverlay();
     return;
   }
+  const existed = !!overlayWin && !overlayWin.isDestroyed();
   const win = ensureWindow();
   if (!win) return;
-  win.setBounds(desiredBounds(state.participants.length));
+  const count = state.participants.length;
+  // Only (re)position when the window is new or the avatar count changed. This
+  // push fires on every speaking-state change; running setBounds each time made
+  // the overlay jump during a Minecraft fullscreen transition (a speaking update
+  // landing while macOS reported a transient work area moved the window, then the
+  // next update moved it back). Otherwise it stays fixed bottom-right; genuine
+  // display changes are handled by the debounced listener in initCallOverlay.
+  if (!existed || count !== lastCount) {
+    win.setBounds(desiredBounds(count));
+    lastCount = count;
+  }
   // If the page is already loaded, forward now; otherwise ready-to-show does it.
   if (!win.webContents.isLoading()) pushState();
+}
+
+/**
+ * Current overlay state, for the overlay renderer to PULL on mount. The seed
+ * push (`pushState` at reveal) races the overlay page's React effect that
+ * subscribes to `voice:overlay-state` — when the push landed first, the
+ * subscriber missed it and the window stayed empty until the next
+ * speaking-state change. The overlay pulls this right after subscribing, so a
+ * lost seed can no longer leave it blank.
+ */
+export function getCallOverlayState(): CallOverlayState | null {
+  return lastState;
 }
 
 /** Tear down the overlay window (call end, toggle off, renderer death, quit). */
 export function closeCallOverlay(): void {
   lastState = null;
+  lastCount = 0;
+  if (repositionTimer) {
+    clearTimeout(repositionTimer);
+    repositionTimer = null;
+  }
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.destroy();
   overlayWin = null;
 }

@@ -16,7 +16,7 @@
  *   - RESEARCH §Pitfall 5 (everything behind app.whenReady)
  *   - CONTEXT D-15, D-21, D-32, project constraints
  */
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createMainWindow } from './windowChrome';
@@ -24,7 +24,7 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
-import { isCallActive, activeCallIds, clearAllCalls } from './voice/callState';
+import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { initUpdater } from './updater';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
@@ -540,6 +540,39 @@ async function bootstrap(): Promise<void> {
     }
   }
 
+  // 1c. Microphone permission (voice calls, 260707). Electron's default
+  //     permission handler DENIES `media` requests in a packaged app, so
+  //     getUserMedia in the renderer would reject before macOS TCC is ever
+  //     consulted. Grant mic (and the check) for our own renderer content, and
+  //     on macOS proactively trigger the OS prompt so the "allow microphone"
+  //     dialog appears at a sane time rather than mid-call. Pairs with the
+  //     NSMicrophoneUsageDescription + audio-input entitlement in the packaged
+  //     build (see electron-builder.yml / build/entitlements.mac.plist).
+  //     `clipboard-sanitized-write` must stay in the allowlist: installing these
+  //     handlers replaces Electron's grant-all default, so without it every
+  //     navigator.clipboard.writeText (all copy buttons) rejects with
+  //     NotAllowedError. Clipboard *read* stays denied.
+  {
+    const allowMedia = (permission: string): boolean =>
+      permission === 'media' ||
+      permission === 'audioCapture' ||
+      permission === 'microphone' ||
+      permission === 'clipboard-sanitized-write';
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
+      cb(allowMedia(permission));
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
+    if (process.platform === 'darwin') {
+      try {
+        if (systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
+          void systemPreferences.askForMediaAccess('microphone').catch(() => {});
+        }
+      } catch {
+        /* older Electron / non-mac path — getUserMedia still prompts on first use */
+      }
+    }
+  }
+
   // 2. Create main window
   //    Attach the sei-portrait:// request handler first so the renderer can
   //    resolve <img src="sei-portrait://…"> the moment it loads.
@@ -601,9 +634,12 @@ async function bootstrap(): Promise<void> {
         role: 'companion',
         text: trimmed,
         ts: Date.now(),
-        // An in-game say() routed up while a call is open is SPOKEN — hidden
-        // in the chat UI like every other call line (ChatMessage.voice).
-        ...(isCallActive(characterId) ? { voice: true } : {}),
+        // An in-game say() routed up while a call is open (or in the brief grace
+        // after hang-up) is a call line: SPOKEN and hidden from the chat thread
+        // like every other call line (ChatMessage.voice). The grace stops a reply
+        // the bot began mid-call but finished a beat after hang-up from leaking
+        // into the DM (the "she answered in DM after the call ended" report).
+        ...(wasCallRecentlyActive(characterId) ? { voice: true } : {}),
       });
     },
     // Party redesign §2/§5 — the live bot's current world action (verb line).

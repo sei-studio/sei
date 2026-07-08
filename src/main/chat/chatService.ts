@@ -16,7 +16,9 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
-import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL } from './chatPrompts';
+import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
+import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
+import { isCallActive } from '../voice/callState';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import * as chatStore from './chatStore';
 import {
@@ -104,6 +106,25 @@ async function readMemoryTail(characterId: string): Promise<string> {
     return raw.length <= MEMORY_BUDGET_BYTES ? raw : raw.slice(-MEMORY_BUDGET_BYTES);
   } catch {
     return '';
+  }
+}
+
+/**
+ * Honor remember() calls in a SINGLE-SHOT voice turn (greeting, companion
+ * reaction) — those turns offer the tool for the shared cache prefix but run no
+ * tool loop, so without this the write would be silently dropped. Best-effort;
+ * a failed append never breaks the spoken reply.
+ */
+async function honorRememberCalls(characterId: string, content: Anthropic.Messages.ContentBlock[]): Promise<void> {
+  for (const b of content) {
+    if (b.type !== 'tool_use' || b.name !== 'remember') continue;
+    const text = String((b.input as { text?: string })?.text ?? '').trim();
+    if (!text) continue;
+    try {
+      await appendMemory(path.join(paths.memoryDir(characterId), 'MEMORY.md'), text);
+    } catch (err) {
+      console.warn(`[sei] voice remember() append failed: ${(err as Error).message}`);
+    }
   }
 }
 
@@ -327,6 +348,31 @@ async function prepareChatTurn(
  * them in order (ascending ts so ordering is stable). Shared by the normal turn
  * and the launch-failed turn.
  */
+/**
+ * Silence-by-convention (260707): models cannot produce an empty reply, but
+ * they reliably WRITE a placeholder — "(silence)", "(staying silent)",
+ * "[says nothing]" — when told quiet is fine. That is the official silence
+ * mechanism on the VOICE-CALL surface only: the call prompts instruct "reply
+ * with exactly (silence)", and every voice reply path parses it out, so the
+ * line is never persisted or spoken and the turn simply ends with no reply
+ * (which also lets a group banter chain rest). Typed text chat never prompts
+ * the convention, so there a "*stays silent*" is a real in-character beat and
+ * must pass through untouched. Only bracketed/asterisked forms match: a bare
+ * in-character "silence!" is a real line and passes through.
+ * Models embellish the marker with a trailing clause — real captured examples:
+ * "(staying silent, letting it rest)", "(saying nothing, the thread has
+ * landed)", "(nothing)" — so after a silence keyword the rest of the aside is
+ * allowed (anything up to the closing bracket), and bare "(nothing)" matches
+ * too. A line with content AFTER the closing bracket is real and passes.
+ * Mirrors the say()-side backstop in src/bot/brain/orchestrator.js
+ * (postProcessSay) — keep the two patterns in sync.
+ */
+const SILENCE_FILLER_RE =
+  /^\s*[([*]+\s*(?:nothing|(?:silence|silent|stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response)\b[^)\]]*)\s*[)\]*.!]*\s*$/i;
+export function isSilenceFiller(text: string): boolean {
+  return SILENCE_FILLER_RE.test(text);
+}
+
 async function persistReplies(
   characterId: string,
   replyText: string,
@@ -334,7 +380,12 @@ async function persistReplies(
   opts?: { voice?: boolean },
 ): Promise<ChatMessage[]> {
   const now = Date.now();
-  const replies: ChatMessage[] = splitReply(replyText, punctuation).map((text, i) => ({
+  // Silence-filler drop is voice-only (see SILENCE_FILLER_RE): typed chat never
+  // prompts the "(silence)" convention, so a filler-shaped line there is a real
+  // reply and persisting it beats silently losing the turn.
+  const parts = splitReply(replyText, punctuation);
+  const replies: ChatMessage[] = (opts?.voice ? parts.filter((text) => !isSilenceFiller(text)) : parts)
+    .map((text, i) => ({
     id: randomUUID(),
     role: 'companion',
     text,
@@ -449,6 +500,9 @@ export async function sendChatMessage(
     let streamBuf = '';
     const emitStreamedBubble = async (raw: string): Promise<void> => {
       for (const b of splitReply(raw, prep.punctuation)) {
+        // Only ever called on the isVoice path, so the silence-filler drop here
+        // stays voice-scoped (matching persistReplies). Keep it that way.
+        if (isSilenceFiller(b)) continue;
         const msg: ChatMessage = {
           id: randomUUID(),
           role: 'companion',
@@ -479,9 +533,10 @@ export async function sendChatMessage(
     // back in") must keep looping for its "hopping back in" line, so the
     // double-goodbye break must NOT fire when a launch rode along.
     let launchCalled = false;
-    // end_call is offered only while a call is open (block 0 already flips for
-    // the primer, so this adds no extra cache churn).
-    const tools = args.voiceCall === true ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL] : [LAUNCH_TOOL, QUIT_TOOL];
+    // end_call + remember are offered only while a call is open (block 0
+    // already flips for the primer, so this adds no extra cache churn).
+    const tools =
+      args.voiceCall === true ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL] : [LAUNCH_TOOL, QUIT_TOOL];
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
       // Hard cap kept low so a reply can't ratchet into paragraphs. Each turn
@@ -544,7 +599,7 @@ export async function sendChatMessage(
           // Defer the real join — don't fire summon mid-loop (task 2).
           if (result.summon) startSummon = true;
           note = result.note;
-        } else if (toolUse.name === 'quit') {
+        } else if (toolUse.name === 'quit_game') {
           // Task 5 — leave the game from chat. End the live session (no-op when
           // none is live) and tell the model it has logged off.
           quitCalled = true;
@@ -560,6 +615,23 @@ export async function sendChatMessage(
             'You are hanging up the call — it ends right after this turn. ' +
             'If you have not said goodbye yet, say it now (it is still spoken aloud). ' +
             'The player can still reach you in text chat afterward.';
+        } else if (toolUse.name === 'remember') {
+          // Voice calls (260707) — same MEMORY.md the game brain writes, so what
+          // the player shares on a call carries into future sessions everywhere.
+          // Best-effort like honorRememberCalls: a failed write (disk full,
+          // permissions) must never abort the turn — the reply still lands.
+          const memText = String((toolUse.input as { text?: string })?.text ?? '').trim();
+          if (memText) {
+            try {
+              await appendMemory(path.join(paths.memoryDir(args.characterId), 'MEMORY.md'), memText);
+              note = 'Saved to your memory. Continue your reply; do not mention saving it.';
+            } catch (err) {
+              console.warn(`[sei] chat remember() append failed: ${(err as Error).message}`);
+              note = 'The memory could not be saved. Continue your reply; do not mention it.';
+            }
+          } else {
+            note = 'Nothing was saved; the text was empty.';
+          }
         } else {
           // Unreachable with the closed tool set, but an unanswered tool_use
           // would poison the next hop — answer it rather than break mid-turn.
@@ -590,7 +662,10 @@ export async function sendChatMessage(
 
     // Voice streaming already persisted + pushed each sentence as it completed;
     // reuse those rows. Typed chat (and the non-streaming voice fallback) persists
-    // the whole reply here as usual.
+    // the whole reply here as usual. On a VOICE turn a "(silence)" reply persists
+    // NOTHING: the voice-scoped filler filter inside persistReplies removes it
+    // before the "…" fallback could ever apply (splitReply already returned a
+    // non-empty part). Typed chat keeps such lines — they are real replies there.
     const replies = isVoice
       ? streamedReplies
       : await persistReplies(args.characterId, replyText, prep.punctuation, {
@@ -821,8 +896,10 @@ export async function sendVoiceGreetingTurn(
         ? `[System note — not the player speaking: you were just added to an ongoing group voice call with the player and ${peers.join(' and ')}. ` +
           'Announce yourself to the room in one short spoken line, in your own voice, like walking into a call already in progress. Do not mention this note.]'
         : '[System note — not the player speaking: the player just started a voice call with you ' +
-          'and the line is live now. Greet them first, like answering the phone — one short line, ' +
-          'in your own voice. Do not mention this note.]';
+          'and the line is live now. Greet them first, like answering the phone: one short line, ' +
+          'in your own voice. They often call with no particular reason, just to hang out, so do not ' +
+          'ask why they called or what is up. You can bring up something you remember about them, ' +
+          'or just say hi. Do not mention this note.]';
     const last = messages[messages.length - 1];
     if (last && last.role === 'user' && typeof last.content === 'string') {
       last.content = `${last.content}\n${note}`;
@@ -838,12 +915,13 @@ export async function sendVoiceGreetingTurn(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
     const res = await client.messages.create(
       { model, max_tokens: 200, system, tools, messages: messages as never },
       { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
     );
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+    await honorRememberCalls(characterId, res.content);
     const replyText = textOf(res.content);
     if (!replyText) return [];
     return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
@@ -907,7 +985,7 @@ export async function observeVoiceLine(
  */
 export async function sendCompanionVoiceTurn(
   characterId: string,
-  ctx: { speakerName: string; text: string; peers: string[] },
+  ctx: { speakerName: string; text: string; peers: string[]; depth?: number },
 ): Promise<ChatMessage[]> {
   inflight.get(characterId)?.abort();
   const ctrl = new AbortController();
@@ -931,21 +1009,31 @@ export async function sendCompanionVoiceTurn(
     });
     if (!prep) return [];
     const { system, messages } = prep;
+    // As banter runs long, nudge toward a NATURAL wind-down so an ongoing
+    // exchange tapers off on its own (a companion letting it rest ends the chain)
+    // instead of running until the director's hard cap. Kicks in a few turns in.
+    const windDown =
+      (ctx.depth ?? 0) >= 4
+        ? ' This back-and-forth has gone on a while, so let it breathe: only add another line if you genuinely have something new, otherwise let it rest by replying with exactly (silence).'
+        : '';
     const note =
       `[System note — not the player speaking: ${ctx.speakerName} just said the line above on the call. ` +
       'If there is a live thread worth continuing, react in your own voice in ONE short spoken line, building on it rather than closing it off. ' +
-      'Only stay silent (reply with nothing) if the exchange has genuinely run its course. Do not mention this note.]';
+      'If the exchange has genuinely run its course, reply with exactly (silence) and nothing else; it is never spoken, it just ends your turn quietly.' +
+      windDown +
+      ' Do not mention this note.]';
     foldUserNote(messages, note);
     // Share the same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
 
     const { client, model } = await buildChatSdk();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
     const res = await client.messages.create(
       { model, max_tokens: 200, system, tools, messages: messages as never },
       { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
     );
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+    await honorRememberCalls(characterId, res.content);
     const replyText = textOf(res.content);
     if (!replyText) return [];
     return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
@@ -954,6 +1042,79 @@ export async function sendCompanionVoiceTurn(
       console.warn(`[sei] companion voice turn failed: ${(err as Error).message}`);
     }
     return [];
+  } finally {
+    if (inflight.get(characterId) === ctrl) inflight.delete(characterId);
+  }
+}
+
+/**
+ * Idle conversation starter (260707). The renderer's call-idle timer fires this
+ * when a live call has been quiet for a stretch: `characterId` gets a nudge to
+ * start a topic, or to stay quiet by replying (silence). Unlike every other turn, this
+ * must NOT preempt a real one — if anything is already in flight for this
+ * character (the player just spoke, a greeting is generating), the conversation
+ * is not actually idle, so the nudge is skipped instead of aborting it. Once
+ * running it sits in the same `inflight` slot, so a real player message
+ * supersedes IT, and the renderer additionally drops the reply if the player
+ * spoke while it generated.
+ *
+ * Returns `{ messages, endCall }`: the spoken lines, plus `endCall: true` when
+ * the model hung up this turn (end_call). The renderer speaks `messages` (the
+ * goodbye) first, then runs its companion-hang-up path.
+ */
+export async function sendVoiceIdleTurn(
+  characterId: string,
+  quietSeconds: number,
+  peers: string[] = [],
+): Promise<{ messages: ChatMessage[]; endCall?: boolean }> {
+  // The nudge can race a hang-up (the renderer timer fires as the call ends).
+  // Without this guard the turn still runs a full paid LLM round-trip and
+  // persists a voice-flagged line that is never spoken anywhere.
+  if (!isCallActive(characterId)) return { messages: [] };
+  if (inflight.has(characterId)) return { messages: [] };
+  const ctrl = new AbortController();
+  inflight.set(characterId, ctrl);
+  try {
+    const prep = await prepareChatTurn(characterId, {
+      openWorldDetected: false,
+      inGame: false,
+      voiceCall: true,
+      voicePeers: peers,
+      recentCap: VOICE_RECENT_CAP,
+    });
+    if (!prep) return { messages: [] };
+    const { system, messages } = prep;
+    const note =
+      `[System note — not the player speaking: the conversation has been quiet for about ${Math.max(1, Math.round(quietSeconds))} seconds. ` +
+      'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
+      'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
+      'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
+    foldUserNote(messages, note);
+    // Same warm tools+system cache prefix as every other voice turn.
+    markLastMessageCached(messages);
+    const { client, model } = await buildChatSdk();
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
+    const res = await client.messages.create(
+      { model, max_tokens: 200, system, tools, messages: messages as never },
+      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
+    );
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
+    await honorRememberCalls(characterId, res.content);
+    // No tool loop runs here, so honor end_call by flagging it for the caller:
+    // "well, I'll let you go, bye" must actually hang up, not just be spoken
+    // while later nudges keep firing. launch()/quit_game() calls stay
+    // deliberately unhonored on an idle nudge (the tool list itself is kept
+    // identical for prompt-cache warmth, not because every tool is live here).
+    const endCall = res.content.some((b) => b.type === 'tool_use' && b.name === 'end_call');
+    const replyText = textOf(res.content);
+    if (!replyText) return { messages: [], ...(endCall ? { endCall: true } : {}) };
+    const spoken = await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
+    return { messages: spoken, ...(endCall ? { endCall: true } : {}) };
+  } catch (err) {
+    if (!isAbortError(err)) {
+      console.warn(`[sei] voice idle turn failed: ${(err as Error).message}`);
+    }
+    return { messages: [] };
   } finally {
     if (inflight.get(characterId) === ctrl) inflight.delete(characterId);
   }

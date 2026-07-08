@@ -127,7 +127,11 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   const blocks: SystemBlock[] = [{
     type: 'text',
     text:
-      (args.voiceCall ? `[voice call] ${VOICE_CALL_PRIMER}\n\n` : '') +
+      (args.voiceCall
+        ? `[voice call] ${VOICE_CALL_PRIMER} ` +
+          // Chat-surface only (the game brain stays quiet by not calling say()).
+          'You do not have to answer every line: if the last thing said does not need a reply from you, reply with exactly (silence) and nothing else. It is never shown or spoken; it just ends your turn quietly.\n\n'
+        : '') +
       (inGroupCall ? `[group call] ${groupCallNote(args.voicePeers as string[])}\n\n` : '') +
       `${UNIVERSAL_BASELINE}\n\n${CHAT_BASELINE}\n\n` +
       'Player messages are prefixed with the time they were sent, like "[3 Jul 10:34]". ' +
@@ -250,7 +254,7 @@ export const LAUNCH_TOOL = {
 };
 
 /**
- * Task 5 — leave the game from chat. The companion can already call quit()
+ * Task 5 — leave the game from chat. The companion can already call quit_game()
  * in-world (orchestrator); this gives the same capability from the chat surface,
  * so telling it "you can log off now" in chat ends the live session. Wired to
  * supervisor.stop via ChatDeps.leaveGame; a no-op when no session is live.
@@ -266,7 +270,7 @@ export const END_CALL_TOOL = {
   description:
     'Hang up the live voice call with the player. ' +
     'Use it when the conversation is clearly over or the player asks you to hang up. ' +
-    'Say a short goodbye in the same turn — it is spoken aloud before the call ends. ' +
+    'Say a short goodbye in the same turn; it is spoken aloud before the call ends. ' +
     'You cannot start calls, only end them; after hanging up you can still be reached in text chat.',
   input_schema: {
     type: 'object' as const,
@@ -276,11 +280,11 @@ export const END_CALL_TOOL = {
 };
 
 export const QUIT_TOOL = {
-  name: 'quit',
+  name: 'quit_game',
   description:
     'Leave the Minecraft world and log off, ending your current play session. ' +
     'ONLY call this if you are currently in the player\'s world and they ask you to stop playing, leave, or log off. ' +
-    'Do NOT call it if you are not in a world right now, and not just to pause — you have no world to leave then. ' +
+    'Do NOT call it if you are not in a world right now, and not just to pause; you have no world to leave then. ' +
     'Say goodbye in the same turn before calling it. You can still be reached here in chat afterward.',
   input_schema: {
     type: 'object' as const,
@@ -288,3 +292,34 @@ export const QUIT_TOOL = {
     required: [] as string[],
   },
 };
+
+/**
+ * Voice calls (260707) — the chat surface's counterpart to the game brain's
+ * remember(): appends one line to the same per-character MEMORY.md, so things
+ * the player shares on a call survive into future sessions and into the game.
+ * Offered on voice turns only, and on the greeting/companion turns too (every
+ * voice call site must offer the same tool list or the shared prompt-cache
+ * prefix stops hitting).
+ */
+export const REMEMBER_TOOL = {
+  name: 'remember',
+  description:
+    'Save one line to your long-term memory. It loads at the start of every future session, in chat and in the game. ' +
+    'Call it the moment the player tells you something real about themselves, a preference, or a lasting rule, or when something shifts how you read them. ' +
+    'Write one short subjective line in your own voice. Call it alongside your normal reply; the player does not see it.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      text: { type: 'string' as const, description: 'The line to write to memory, in your own voice.' },
+    },
+    required: ['text'],
+  },
+};
+
+// Silence on voice calls (260707): there is deliberately NO silence tool.
+// Models cannot produce an empty reply, but they DO reliably write literal
+// filler like "(silence)" or "(staying silent)" when told quiet is fine — so
+// that convention is embraced instead of fought: the prompts instruct "reply
+// with exactly (silence)", and isSilenceFiller in chatService parses it out —
+// the line is never persisted or spoken, the turn ends, and a group banter
+// chain rests (no line for the next companion to react to).

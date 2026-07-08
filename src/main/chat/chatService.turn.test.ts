@@ -13,10 +13,10 @@
  *     the cloud). Mirrors the last_launched stamp in botSupervisor.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { _setUserDataOverride } from '../paths';
+import { _setUserDataOverride, paths } from '../paths';
 
 const { createSpy, getCharacterSpy, patchCharacterSpy } = vi.hoisted(() => ({
   createSpy: vi.fn(),
@@ -36,7 +36,8 @@ vi.mock('../configStore', () => ({
 }));
 
 import type { ChatDeps } from './chatService';
-import { sendChatMessage, cancelInflightTurn, CHAT_ABORTED } from './chatService';
+import { sendChatMessage, sendVoiceIdleTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
+import { setCallActive } from '../voice/callState';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
 let dir: string;
@@ -73,6 +74,9 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   _setUserDataOverride(null);
+  // callState is module-level; clear it so a test that opened a call never
+  // leaks the flag into the next one.
+  setCallActive(CHAR, false);
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -82,7 +86,7 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
       .mockResolvedValueOnce({
         content: [
           { type: 'text', text: 'logging off — back when you reopen.' },
-          { type: 'tool_use', id: 'tu_quit', name: 'quit', input: {} },
+          { type: 'tool_use', id: 'tu_quit', name: 'quit_game', input: {} },
           { type: 'tool_use', id: 'tu_launch', name: 'launch', input: { game: 'minecraft' } },
         ],
       })
@@ -130,7 +134,7 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     createSpy.mockResolvedValueOnce({
       content: [
         { type: 'text', text: 'aight, catch you later.' },
-        { type: 'tool_use', id: 'tu_quit', name: 'quit', input: {} },
+        { type: 'tool_use', id: 'tu_quit', name: 'quit_game', input: {} },
       ],
     });
     // A second resolve is staged but must never be consumed.
@@ -143,6 +147,127 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     expect(d.leaveGame).toHaveBeenCalledTimes(1);
     // splitReply strips the trailing period under the default casual register.
     expect(result.replies.map((r) => r.text)).toEqual(['aight, catch you later']);
+  });
+
+  it('remember() on a voice turn appends to MEMORY.md and answers the tool_use', async () => {
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'oh a big exam, noted.' },
+          { type: 'tool_use', id: 'tu_rem', name: 'remember', input: { text: 'player has a big exam on friday' } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'good luck friday.' }] });
+
+    const result = await sendChatMessage(
+      { characterId: CHAR, text: 'i have a big exam friday', voiceCall: true },
+      deps(),
+    );
+
+    const mem = await readFile(path.join(paths.memoryDir(CHAR), 'MEMORY.md'), 'utf8');
+    expect(mem).toContain('player has a big exam on friday');
+    // The tool_use was answered (second hop ran) and the reply survived.
+    const secondReq = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const blocks = secondReq.messages[secondReq.messages.length - 1].content as Array<{ type: string; tool_use_id: string }>;
+    expect(blocks.map((b) => b.tool_use_id)).toEqual(['tu_rem']);
+    expect(result.replies.length).toBeGreaterThan(0);
+  });
+});
+
+describe('silence-by-convention + idle nudge (260707)', () => {
+  it('a "(silence)" reply ends the turn with no reply persisted', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '(silence)' }] });
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'brb grabbing water', voiceCall: true }, deps());
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(result.replies).toEqual([]);
+  });
+
+  it('"(staying silent)" and friends are parsed out too', async () => {
+    // Includes the embellished forms captured from a real Sui/Marv transcript
+    // (260707): trailing clause after the keyword, and bare "(nothing)".
+    for (const filler of [
+      '(staying silent)',
+      '[stays quiet]',
+      '*remains silent*',
+      '(says nothing)',
+      '(staying silent, letting it rest)',
+      '(saying nothing, the thread has landed)',
+      '(nothing)',
+    ]) {
+      createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: filler }] });
+      const result = await sendChatMessage({ characterId: CHAR, text: 'ok', voiceCall: true }, deps());
+      expect(result.replies, filler).toEqual([]);
+    }
+  });
+
+  it('typed chat keeps a filler-shaped roleplay beat (the drop is voice-only)', async () => {
+    // No voiceCall flag: the "(silence)" convention is never prompted in text
+    // chat, so an in-character "*stays silent*" is a real reply and must land
+    // as a bubble instead of being silently discarded.
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '*stays silent*' }] });
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'say nothing then' }, deps());
+
+    expect(result.replies.map((r) => r.text)).toEqual(['*stays silent*']);
+  });
+
+  it('the idle nudge never preempts an in-flight turn', async () => {
+    setCallActive(CHAR, true);
+    let release: (v: unknown) => void = () => {};
+    createSpy.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+
+    const pending = sendChatMessage({ characterId: CHAR, text: 'hey', voiceCall: true }, deps());
+    // Wait for the real turn to actually reach the LLM (holds the inflight slot).
+    await vi.waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
+
+    const nudge = await sendVoiceIdleTurn(CHAR, 30, []);
+    expect(nudge).toEqual({ messages: [] }); // skipped — a real turn is running
+    expect(createSpy).toHaveBeenCalledTimes(1); // the nudge never called the LLM
+
+    release({ content: [{ type: 'text', text: 'yo.' }] });
+    const result = await pending;
+    expect(result.replies.length).toBeGreaterThan(0); // the real turn was untouched
+  });
+
+  it('the idle nudge bails without an LLM call when no call is active (hang-up race)', async () => {
+    // No setCallActive: the renderer timer fired just after hang-up. The nudge
+    // must not run a paid turn or persist an unheard voice line.
+    const nudge = await sendVoiceIdleTurn(CHAR, 30, []);
+
+    expect(nudge).toEqual({ messages: [] });
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('idle nudge honors a "(silence)" reply: nothing persisted or returned', async () => {
+    setCallActive(CHAR, true);
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '(silence)' }] });
+
+    const result = await sendVoiceIdleTurn(CHAR, 42, []);
+
+    expect(result).toEqual({ messages: [] });
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    // The quiet-duration hint reached the model.
+    const req = createSpy.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
+    expect(JSON.stringify(req.messages)).toContain('quiet for about 42 seconds');
+  });
+
+  it('idle nudge surfaces end_call: the goodbye is returned AND endCall is flagged', async () => {
+    setCallActive(CHAR, true);
+    createSpy.mockResolvedValueOnce({
+      content: [
+        { type: 'text', text: "well, i'll let you go!" },
+        { type: 'tool_use', id: 'tu_end', name: 'end_call', input: {} },
+      ],
+    });
+
+    const result = await sendVoiceIdleTurn(CHAR, 90, []);
+
+    expect(result.endCall).toBe(true);
+    // The spoken goodbye still comes back so the renderer can speak it first.
+    expect(result.messages.map((m) => m.text)).toEqual(["well, i'll let you go!"]);
+    expect(createSpy).toHaveBeenCalledTimes(1); // no tool loop on a nudge
   });
 });
 

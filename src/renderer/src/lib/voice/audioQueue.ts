@@ -28,10 +28,16 @@ export interface TtsStreamHandle {
 }
 
 export interface AudioQueue {
-  /** Enqueue a complete encoded clip (audio/mpeg bytes) spoken by `characterId`. */
-  enqueue(buf: ArrayBuffer, characterId: string): void;
-  /** Reserve the next slot for a clip (spoken by `characterId`) that will stream in. */
-  enqueueStream(characterId: string): TtsStreamHandle;
+  /** Enqueue a complete encoded clip (audio/mpeg bytes) spoken by `characterId`.
+   * `text` is the line being spoken, reported back via onSpeakingChange when this
+   * clip reaches the playhead so captions track the audio (not the enqueue order).
+   * `rate` (default 1) plays the clip with preservesPitch OFF, so >1 raises both
+   * pitch and pace — the per-character voice-pitch knob (ElevenLabs has no pitch
+   * parameter, so the shift happens here at playback). */
+  enqueue(buf: ArrayBuffer, characterId: string, text?: string, rate?: number): void;
+  /** Reserve the next slot for a clip (spoken by `characterId`) that will stream in.
+   * `text` is the line being spoken, `rate` the pitch/pace shift (see enqueue). */
+  enqueueStream(characterId: string, text?: string, rate?: number): TtsStreamHandle;
   /** True while a clip is playing (or queued clips remain). */
   speaking(): boolean;
   /** Barge-in: stop playback and drop everything queued; queue stays usable. */
@@ -43,11 +49,15 @@ export interface AudioQueue {
   stop(): void;
 }
 
-type BufferItem = { kind: 'buffer'; buf: ArrayBuffer; characterId: string };
+type BufferItem = { kind: 'buffer'; buf: ArrayBuffer; characterId: string; text?: string; rate: number };
 type StreamItem = {
   kind: 'stream';
   /** Which companion is speaking this clip (drives per-companion speaking state). */
   characterId: string;
+  /** The line being spoken — surfaced to captions when this clip starts playing. */
+  text?: string;
+  /** Pitch/pace shift applied at playback (preservesPitch off; 1 = as recorded). */
+  rate: number;
   chunks: ArrayBuffer[];
   ended: boolean;
   failed: boolean;
@@ -88,7 +98,7 @@ function buildSilenceMp3(frames = 4): ArrayBuffer {
 const SILENCE_MP3 = buildSilenceMp3();
 
 export function createAudioQueue(
-  onSpeakingChange: (speaking: boolean, characterId: string | null) => void,
+  onSpeakingChange: (speaking: boolean, characterId: string | null, text?: string) => void,
 ): AudioQueue {
   const pending: Item[] = [];
   let current: HTMLAudioElement | null = null;
@@ -106,17 +116,27 @@ export function createAudioQueue(
     playNext();
   }
 
-  function playBuffer(buf: ArrayBuffer, characterId: string): void {
+  /** Apply the clip's pitch/pace shift. preservesPitch OFF makes playbackRate a
+   * true pitch shift (rate 1.25 ≈ +4 semitones and 25% faster) — the "clearly
+   * AI" voice knob; ElevenLabs itself has no pitch parameter. */
+  function applyRate(el: HTMLAudioElement, rate: number): void {
+    if (rate === 1) return;
+    el.preservesPitch = false;
+    el.playbackRate = rate;
+  }
+
+  function playBuffer(buf: ArrayBuffer, characterId: string, rate: number, text?: string): void {
     // Trailing silence so the decoder plays the real final frame (see SILENCE_MP3).
     const url = URL.createObjectURL(new Blob([buf, SILENCE_MP3], { type: 'audio/mpeg' }));
     const el = new Audio(url);
     el.muted = outputMuted;
+    applyRate(el, rate);
     current = el;
     currentCleanup = () => URL.revokeObjectURL(url);
     const done = (): void => finishCurrent(el);
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
-    onSpeakingChange(true, characterId);
+    onSpeakingChange(true, characterId, text);
     void el.play().catch(() => done());
   }
 
@@ -136,7 +156,7 @@ export function createAudioQueue(
           all.set(new Uint8Array(c), off);
           off += c.byteLength;
         }
-        playBuffer(all.buffer, item.characterId);
+        playBuffer(all.buffer, item.characterId, item.rate, item.text);
       };
       if (item.ended || item.failed) playCollected();
       else {
@@ -148,7 +168,7 @@ export function createAudioQueue(
           item.dropped = true;
           item.onEnd = null;
         };
-        onSpeakingChange(true, item.characterId);
+        onSpeakingChange(true, item.characterId, item.text);
       }
       return;
     }
@@ -157,6 +177,7 @@ export function createAudioQueue(
     const url = URL.createObjectURL(ms);
     const el = new Audio(url);
     el.muted = outputMuted;
+    applyRate(el, item.rate);
     current = el;
     let sb: SourceBuffer | null = null;
     const backlog: ArrayBuffer[] = [...item.chunks];
@@ -235,7 +256,7 @@ export function createAudioQueue(
     };
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
-    onSpeakingChange(true, item.characterId);
+    onSpeakingChange(true, item.characterId, item.text);
     void el.play().catch(() => done());
   }
 
@@ -254,7 +275,7 @@ export function createAudioQueue(
       return;
     }
     busy = true;
-    if (item.kind === 'buffer') playBuffer(item.buf, item.characterId);
+    if (item.kind === 'buffer') playBuffer(item.buf, item.characterId, item.rate, item.text);
     else if (item.dropped || (item.failed && item.chunks.length === 0)) playNext();
     else playStream(item);
   }
@@ -281,15 +302,17 @@ export function createAudioQueue(
   }
 
   return {
-    enqueue(buf, characterId) {
+    enqueue(buf, characterId, text, rate = 1) {
       if (stopped) return;
-      pending.push({ kind: 'buffer', buf, characterId });
+      pending.push({ kind: 'buffer', buf, characterId, text, rate });
       if (!busy) playNext();
     },
-    enqueueStream(characterId) {
+    enqueueStream(characterId, text, rate = 1) {
       const item: StreamItem = {
         kind: 'stream',
         characterId,
+        text,
+        rate,
         chunks: [],
         ended: false,
         failed: false,

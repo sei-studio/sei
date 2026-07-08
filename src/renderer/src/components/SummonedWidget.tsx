@@ -17,6 +17,7 @@
 import React, { useRef, useState } from 'react';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { sei } from '../lib/ipcClient';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from './PixelPortrait';
@@ -45,10 +46,18 @@ export function SummonedWidget(): React.ReactElement | null {
   const summons = useDataStore((s) => s.summons);
   const characters = useDataStore((s) => s.characters);
   const navigate = useUiStore((s) => s.navigate);
-  const callActive = useUiStore((s) => !!s.minimizedCall);
   // When a character's profile page is open, its own deploy bar is the connect/
   // disconnect control — so hide that character's floating card (it's redundant).
   const view = useUiStore((s) => s.view);
+  // Lift the dock when the MinimizedCall widget occupies the corner. Mirrors
+  // that widget's own derived visibility (260707: call state, not the losable
+  // minimizedCall flag).
+  const callParticipants = useVoiceStore((s) => s.participants);
+  const callStatus = useVoiceStore((s) => s.status);
+  const callActive =
+    callParticipants.length > 0 &&
+    (callStatus === 'live' || callStatus === 'connecting') &&
+    view.kind !== 'voice-call';
   const hiddenId = view.kind === 'character' ? view.id : null;
 
   // Free-drag position; null = docked bottom-right via inline/CSS default.

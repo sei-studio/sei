@@ -997,6 +997,12 @@ export interface RendererApi {
   /** Subscribe (overlay window only) to overlay-state pushes from main. */
   onVoiceOverlayState(cb: (state: CallOverlayState) => void): Unsubscribe;
   /**
+   * Pull the current overlay state (overlay window only, on mount). The seed
+   * push can land before the overlay page subscribes; pulling right after
+   * subscribing closes that race so the overlay never stays blank.
+   */
+  voiceOverlayGetState(): Promise<CallOverlayState | null>;
+  /**
    * Signal that the chat surface was opened for a character. Main decides whether
    * a first-meeting greeting fires (any companion kind, empty transcript, never
    * chatted) and returns any greeting replies to append; returns [] otherwise.
@@ -1077,7 +1083,25 @@ export interface RendererApi {
     speakerName: string;
     text: string;
     peers: string[];
+    /** How many companion turns deep this reaction is (0 = first reaction to the
+     * player's responder). Lets the turn nudge itself toward a natural wind-down
+     * as an exchange runs long, so ongoing banter still ends by tapering off
+     * rather than being cut at a hard cap. */
+    depth?: number;
   }): Promise<ChatMessage[]>;
+  /**
+   * Idle conversation starter (260707): the live call has been quiet for about
+   * `quietSeconds` — give `characterId` a chance to start a topic. Returns the
+   * spoken lines in `messages`; empty when it chose silence, when the call had
+   * already ended, or when a real turn was in flight (the nudge never preempts
+   * one). `endCall: true` means the model hung up on this nudge: speak
+   * `messages` (the goodbye) first, then run the companion-hang-up path.
+   */
+  voiceIdleNudge(args: {
+    characterId: string;
+    quietSeconds: number;
+    peers: string[];
+  }): Promise<{ messages: ChatMessage[]; endCall?: boolean }>;
   /**
    * Subscribe to main-initiated call hang-ups: the companion called
    * end_call() (from in-game or from the idle chat brain). The renderer
@@ -1699,12 +1723,16 @@ export const IpcChannel = {
     greet: 'voice:greet',
     /** Invoke: on a group call, one companion reacts to another's spoken line. */
     companionTurn: 'voice:companion-turn',
+    /** Invoke: the call has been quiet a while — one companion may start a topic. */
+    idleNudge: 'voice:idle-nudge',
     /** Invoke: record a call line into a companion's transcript without a reply. */
     observe: 'voice:observe',
     /** Invoke (main window → main): push the always-on-top overlay's state. */
     overlaySet: 'voice:overlay-set',
     /** Push (main → overlay window): the overlay's participants + speaking state. */
     overlayState: 'voice:overlay-state',
+    /** Invoke (overlay window → main): pull the current overlay state on mount. */
+    overlayGet: 'voice:overlay-get',
     /** Push (main → renderer): companion hung up via end_call() ({characterId}). */
     callEnded: 'voice:call-ended',
     /** Invoke: curated voice pool for the creation picker → VoiceInfo[]. */

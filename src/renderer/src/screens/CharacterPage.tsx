@@ -843,6 +843,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           character={character}
           initialSection={editSection}
           onClose={onEditClose}
+          notice={
+            needsDescription
+              ? `Going public needs a description. Add one, then close this window to continue publishing ${character.name}.`
+              : undefined
+          }
         />
       ) : null}
       {resetConfirmOpen ? (

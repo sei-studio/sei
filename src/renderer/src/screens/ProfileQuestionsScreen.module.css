@@ -49,7 +49,6 @@
 .tileArt {
   display: flex;
   gap: 6px;
-  margin-bottom: 6px;
 }
 
 .tileArt img {
@@ -59,6 +58,18 @@
   object-position: top;
   display: block;
   min-width: 0;
+}
+
+/* Image-only variant (the art-style step): the sample pair is the whole tile,
+ * so drop the text, shrink the chrome to a thin frame, and let the cards run
+ * larger than the text tiles. */
+.tilesImageOnly {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.tileImageOnly {
+  padding: 6px;
+  gap: 0;
 }
 
 .tileLabel {

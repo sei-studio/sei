@@ -18,6 +18,21 @@ interface VoiceHooks {
    * the voice:call-ended push). Finish speaking what's queued, then end.
    */
   onRemoteEndCall(characterId: string): void;
+  /**
+   * The player sent a message to an on-call companion through a surface the
+   * voice director doesn't own (typed into the chat composer mid-call). On a
+   * group call the director mirrors it to the other companions and captures the
+   * reply so the banter chain still runs; otherwise a typed message is a
+   * conversation only its addressee ever hears.
+   */
+  onPlayerText(characterId: string, text: string): void;
+  /**
+   * Names of the OTHER companions on the live call with this character ([]
+   * when solo or no call). A typed mid-call send must frame the reply as a
+   * group turn (chatSend voicePeers) exactly like the director's own sends,
+   * or the model answers as if alone on the line.
+   */
+  voicePeersFor(characterId: string): string[];
 }
 
 let hooks: VoiceHooks | null = null;
@@ -47,5 +62,21 @@ export function requestRemoteEndCall(characterId: string): void {
     hooks?.onRemoteEndCall(characterId);
   } catch {
     /* voice layer must never break chat */
+  }
+}
+
+export function notifyPlayerText(characterId: string, text: string): void {
+  try {
+    hooks?.onPlayerText(characterId, text);
+  } catch {
+    /* voice layer must never break chat */
+  }
+}
+
+export function voiceCallPeers(characterId: string): string[] {
+  try {
+    return hooks?.voicePeersFor(characterId) ?? [];
+  } catch {
+    return [];
   }
 }

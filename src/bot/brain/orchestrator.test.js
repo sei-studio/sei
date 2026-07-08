@@ -584,7 +584,7 @@ describe('remember() nudges (260703b)', () => {
     await orch.handleDispatch('sei:chat_received', chat('gtg, cya'))
     const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
     expect(turn).toContain('ENDING THE SESSION')
-    expect(turn).toContain('remember, say, and quit can all be called together')
+    expect(turn).toContain('remember, say, and quit_game can all be called together')
   })
 
   it('a player-message turn carries the preference-capture nudge', async () => {
@@ -608,7 +608,7 @@ describe('remember() nudges (260703b)', () => {
     const provider = makeProvider([
       { text: '', toolUses: [
         { id: 's1', name: 'say', input: { text: 'later, keep the base safe' } },
-        { id: 'q1', name: 'quit', input: { farewell: 'cya nerd' } },
+        { id: 'q1', name: 'quit_game', input: { farewell: 'cya nerd' } },
         { id: 'r1', name: 'remember', input: { text: 'player wants a hello whenever I join' } },
       ] },
     ])
@@ -717,7 +717,7 @@ describe('sticky greeting hint (260703b)', () => {
     const { adapter } = makeAdapter()
     const provider = makeProvider([
       // Call 1 — a chat turn before anything was ever said: hint must ride.
-      { text: '', toolUses: [{ id: 'q1', name: 'quit', input: { farewell: 'fine cya then' } }] },
+      { text: '', toolUses: [{ id: 'q1', name: 'quit_game', input: { farewell: 'fine cya then' } }] },
     ])
     const orch = createOrchestrator({
       adapter, config: makeConfig(), reenqueue: () => {}, onQuitRequested: () => {}, _anthropicOverride: provider,

@@ -367,6 +367,9 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
 /**
  * TileGroup — a vertical radio-tile group matching the AddCharacterScreen
  * proactiveness step idiom (accent border + soft fill when selected).
+ *
+ * Options with `imgs` (the art-style step) render as image-only tiles: the
+ * sample pair IS the choice, so the label/sub live only in the aria-label.
  */
 function TileGroup<T extends string>({
   ariaLabel,
@@ -379,8 +382,13 @@ function TileGroup<T extends string>({
   value: T | null;
   onChange: (v: T) => void;
 }): React.ReactElement {
+  const imageOnly = options.some((opt) => opt.imgs);
   return (
-    <div role="radiogroup" aria-label={ariaLabel} className={styles.tiles}>
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className={imageOnly ? `${styles.tiles} ${styles.tilesImageOnly}` : styles.tiles}
+    >
       {options.map((opt) => {
         const selected = value === opt.value;
         return (
@@ -389,17 +397,21 @@ function TileGroup<T extends string>({
             type="button"
             role="radio"
             aria-checked={selected}
-            className={`${styles.tile} ${selected ? styles.tileSelected : ''}`}
+            aria-label={opt.imgs ? `${opt.label}. ${opt.sub}` : undefined}
+            className={`${styles.tile} ${opt.imgs ? styles.tileImageOnly : ''} ${selected ? styles.tileSelected : ''}`}
             onClick={() => onChange(opt.value)}
           >
-            {opt.imgs && (
+            {opt.imgs ? (
               <span className={styles.tileArt} aria-hidden="true">
                 <img src={opt.imgs[0]} alt="" loading="lazy" />
                 <img src={opt.imgs[1]} alt="" loading="lazy" />
               </span>
+            ) : (
+              <>
+                <span className={styles.tileLabel}>{opt.label}</span>
+                <span className={styles.tileSub}>{opt.sub}</span>
+              </>
             )}
-            <span className={styles.tileLabel}>{opt.label}</span>
-            <span className={styles.tileSub}>{opt.sub}</span>
           </button>
         );
       })}

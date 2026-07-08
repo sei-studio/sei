@@ -186,6 +186,19 @@ describe('assignedVoiceId', () => {
     expect(assignedVoiceId(makeCharacter({ metadata: { voiceId: 42 as unknown as string } }))).toBeNull();
     expect(assignedVoiceId(makeCharacter({ metadata: { voiceId: VOICES[3].id } }))).toBe(VOICES[3].id);
   });
+
+  // 260707 pool trim: ids removed from the assignment pool stay valid for
+  // characters that already persisted them — the voice must never re-roll.
+  it('keeps a legacy (pre-trim) voice id instead of re-rolling', async () => {
+    mockSave.mockClear();
+    const legacy = 'EXAVITQu4vr4xnSDxMaL'; // Sarah, cut from the pool 260707
+    expect(VOICES.some((v) => v.id === legacy)).toBe(false);
+    const c = makeCharacter({ metadata: { voiceId: legacy } });
+    expect(assignedVoiceId(c)).toBe(legacy);
+    expect(await resolveVoiceId(c)).toBe(legacy);
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(assignedVoiceId(makeCharacter({ metadata: { voiceId: 'not-a-voice-anywhere' } }))).toBeNull();
+  });
 });
 
 describe('callState', () => {

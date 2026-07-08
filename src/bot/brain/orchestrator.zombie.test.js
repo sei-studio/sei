@@ -226,7 +226,7 @@ describe('260611 zombie-loop regression', () => {
     const FAREWELL = 'Goodbye my friend. It has been wonderful adventuring with you today. I will miss our chats and our builds. See you around sometime soon.'
 
     const provider = makeProvider([
-      { text: '', toolUses: [{ id: 'q1', name: 'quit', input: { farewell: FAREWELL } }] },
+      { text: '', toolUses: [{ id: 'q1', name: 'quit_game', input: { farewell: FAREWELL } }] },
     ])
     const onQuitRequested = vi.fn()
     const adapter = makeAdapter()

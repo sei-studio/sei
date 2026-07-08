@@ -17,6 +17,8 @@
  */
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
+import { ttsSpeedFor, voicePitchRate } from '../../shared/voicePitch';
+import { toSpokenRegister } from './spokenRegister';
 import { resolveVoiceId, isPoolVoiceId } from './voiceAssign';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
@@ -69,14 +71,20 @@ async function fetchAudio(url: string, headers: Record<string, string>, body: un
   return buf;
 }
 
-/** Route a (text, voiceId) pair to the dev key or the proxy. */
-async function synthesize(text: string, voiceId: string): Promise<ArrayBuffer> {
+/**
+ * Route a (text, voiceId) pair to the dev key or the proxy. `speed` (< 1 for
+ * pitched-up characters) slows the synthesis so the renderer's pitched
+ * playback lands at normal pace — see shared/voicePitch.ts. The proxy relays
+ * it as voice_settings.speed; an older deployed proxy strips the field
+ * (speech then runs fast until the proxy ships, never an error).
+ */
+async function synthesize(text: string, voiceId: string, speed?: number): Promise<ArrayBuffer> {
   const devKey = process.env.SEI_TTS_DEV_KEY;
   if (devKey) {
     return fetchAudio(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
       { 'xi-api-key': devKey },
-      { text, model_id: ELEVENLABS_TTS_MODEL },
+      { text, model_id: ELEVENLABS_TTS_MODEL, ...(speed !== undefined ? { voice_settings: { speed } } : {}) },
     );
   }
   const jwt = await getJwtOrNull();
@@ -84,7 +92,7 @@ async function synthesize(text: string, voiceId: string): Promise<ArrayBuffer> {
   return fetchAudio(
     `${PROXY_BASE_URL}/tts/speech`,
     { Authorization: `Bearer ${jwt}` },
-    { text, voice_id: voiceId },
+    { text, voice_id: voiceId, ...(speed !== undefined ? { speed } : {}) },
   );
 }
 
@@ -93,9 +101,11 @@ export async function voiceTts(args: { characterId: string; text: string }): Pro
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
   const voiceId = await resolveVoiceId(character);
-  const text = args.text.trim().slice(0, MAX_TTS_CHARS);
+  // Spoken register BEFORE the cap: chat lines mirrored into the call carry
+  // shorthand ("lmao", "rn") that TTS would read literally.
+  const text = toSpokenRegister(args.text).slice(0, MAX_TTS_CHARS);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
-  return synthesize(text, voiceId);
+  return synthesize(text, voiceId, ttsSpeedFor(voicePitchRate(character)));
 }
 
 /** Monotonic stream ids for voiceTtsStream (uniqueness within one main run). */
@@ -123,8 +133,11 @@ export async function voiceTtsStream(
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
   const voiceId = await resolveVoiceId(character);
-  const text = args.text.trim().slice(0, MAX_TTS_CHARS);
+  // Spoken register BEFORE the cap (see voiceTts).
+  const text = toSpokenRegister(args.text).slice(0, MAX_TTS_CHARS);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
+  // Pace compensation for pitched playback (see synthesize / shared/voicePitch.ts).
+  const speed = ttsSpeedFor(voicePitchRate(character));
 
   const devKey = process.env.SEI_TTS_DEV_KEY;
   const url = devKey
@@ -134,12 +147,12 @@ export async function voiceTtsStream(
   let body: unknown;
   if (devKey) {
     headers = { 'xi-api-key': devKey };
-    body = { text, model_id: ELEVENLABS_TTS_MODEL };
+    body = { text, model_id: ELEVENLABS_TTS_MODEL, ...(speed !== undefined ? { voice_settings: { speed } } : {}) };
   } else {
     const jwt = await getJwtOrNull();
     if (!jwt) throw new Error('VOICE_NO_SESSION: sign in to use voice calls');
     headers = { Authorization: `Bearer ${jwt}` };
-    body = { text, voice_id: voiceId };
+    body = { text, voice_id: voiceId, ...(speed !== undefined ? { speed } : {}) };
   }
 
   const ctrl = new AbortController();

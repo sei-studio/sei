@@ -49,6 +49,12 @@ export interface EditCharacterModalProps {
   onSaved?: (updated: Character) => void;
   /** Which sidebar section to open on mount. Defaults to 'basic'. */
   initialSection?: EditSection;
+  /**
+   * One-line banner above the content pane explaining WHY the editor opened
+   * (e.g. the share toggle needs a description before publishing). Absent for
+   * a normal edit.
+   */
+  notice?: string;
 }
 
 export function EditCharacterModal({
@@ -56,6 +62,7 @@ export function EditCharacterModal({
   onClose,
   onSaved,
   initialSection = 'basic',
+  notice,
 }: EditCharacterModalProps): React.ReactElement {
   const [section, setSection] = useState<EditSection | 'danger'>(initialSection);
   const [personaMode, setPersonaMode] = useState<PersonaMode>('standard');
@@ -352,6 +359,7 @@ export function EditCharacterModal({
           {/* ── Content pane ── */}
           <section className={styles.pane}>
             <div className={styles.paneScroll}>
+              {notice ? <p className={styles.notice}>{notice}</p> : null}
               {section === 'basic' ? (
                 <>
                   <div className={styles.field}>

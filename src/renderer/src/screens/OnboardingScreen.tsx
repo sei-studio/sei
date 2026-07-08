@@ -154,6 +154,8 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         total_playtime_backfilled: true,
         // Live call overlay is an opt-in feature: off until enabled in Settings.
         call_overlay_enabled: false,
+        // Conversation starters (quiet calls): on by default.
+        call_convo_starters: true,
         // 260706: a fresh install has no legacy local defaults or pre-party
         // state, so the one-time backfill/world migrations have nothing to do.
         // Mark them done (same reasoning as total_playtime_backfilled above) so

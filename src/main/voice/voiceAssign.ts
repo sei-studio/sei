@@ -18,6 +18,65 @@ import { listCharacters, saveCharacter } from '../characterStore';
 
 const VOICE_IDS = new Set((VOICES as Array<{ id: string }>).map((v) => v.id));
 
+/**
+ * Voice ids removed from the assignment pool on 260707, when the soulcaster
+ * table was curated down to use_case 'characters_animation' (64 → 25; the full
+ * entries live in vendor/soulcaster/src/voices.js git history). They are still
+ * valid on the ElevenLabs account — the cut was for NEW assignments only — so
+ * existing characters keep them and their voice never silently changes:
+ * without this set, assignedVoiceId would reject the persisted id and
+ * resolveVoiceId would re-roll, persist, and cloud-sync a different voice.
+ * New assignments never draw from here; rollVoice only sees VOICES.
+ */
+const LEGACY_VOICE_IDS = new Set([
+  // female / young
+  'EXAVITQu4vr4xnSDxMaL', // Sarah
+  'FGY2WhTYpPnrIDTdsKH5', // Laura
+  'cgSgspJ2msm6clMCkdW9', // Jessica
+  'tpS5zOAgWUiQMhzYbG2h', // Sapphire
+  'm0MqfGOWTAfVVEaz4KxX', // Alexandra
+  'MJqcNjMbvfGUxatGjPcI', // Daisy
+  'Y0G5nEDw2qHnUHGmtoM9', // Boo
+  // female / adult
+  'Xb7hH8MSUJpSbSDYk0k2', // Alice
+  'XrExE9yKIg1WjnnlVkGX', // Matilda
+  'hpp4J3VqNfWAUOO0d1Us', // Bella
+  'pFZP5JQG7iQjIQuC4Bku', // Lily
+  'FF59babHL8N8gfTgtBMT', // Jodi
+  'DIS307HFaAvJZzq496qM', // Cecilia
+  'vHMylH8q68M5Wk9WkVr1', // Claudia
+  'u6a6bRv82Zfi9NzoIqvt', // Lia
+  // female / elder
+  'xIzR6egd3S3LJZbVW0c1', // Margaret
+  '2qQJWjw5XdG80GreshqG', // Eleanor
+  'wGcFBfKz5yUQqhqr0mVy', // Maria
+  // male / young
+  'IKne3meq5aSn9XLyUdCD', // Charlie
+  'TX3LPaxmHKxFdv7VOQHJ', // Liam
+  'bIHbv24MWmeRgasZH58o', // Will
+  // male / adult
+  'CwhRBWXzGAHq8TQ4Fs17', // Roger
+  'JBFqnCBsd6RMkjVDRZzb', // George
+  'cjVigY5qzO86Huf0OWal', // Eric
+  'iP95p4xoKVk53GoZ742B', // Chris
+  'nPczCjzI2devNBz1zQrb', // Brian
+  'onwK4e9ZLuTAKqWW03F9', // Daniel
+  'pNInz6obpgDQGcFmaJgB', // Adam
+  'enzbGixeo55iqn1QxbbC', // Jon
+  'pCL8Ua4MoAGISUaDmw69', // Miller
+  // male / elder
+  'pqHfZKP75CvOlQylNhV4', // Bill
+  'PerZoH0r6nxBZXCoIPpv', // Michael
+  'UzI1NsMEV3ni5JRkRSls', // Alistair
+  'RcEmXcISaHUgHOU4uNTz', // Hansi
+  // neutral
+  'SAz9YHcvj6GT2YYXdXww', // River
+  'M563YhMmA0S8vEYwkgYa', // Sammy
+  'JGzTGubAVbbgG0SsLIlg', // Riley
+  'Z9VxF84ucVtzvKlmYFhh', // Ramona
+  'YKlogvnVogI4aFHoGIEw', // Aaron
+]);
+
 /** FNV-1a over the character id — a stable 32-bit seed for the fallback roll. */
 function seedFrom(id: string): number {
   let h = 0x811c9dc5;
@@ -83,15 +142,19 @@ export function personaVoiceHints(personaText: string): {
   return { seeds, robot: ROBOT_RE.test(personaText) };
 }
 
-/** metadata.voiceId when it points at a real pool voice, else null. */
+/** metadata.voiceId when it points at a pool (or legacy) voice, else null. */
 export function assignedVoiceId(character: Character): string | null {
   const v = character.metadata?.voiceId;
-  return typeof v === 'string' && VOICE_IDS.has(v) ? v : null;
+  return typeof v === 'string' && (VOICE_IDS.has(v) || LEGACY_VOICE_IDS.has(v)) ? v : null;
 }
 
-/** True when `id` is a curated-pool voice (defense at the IPC boundary). */
+/**
+ * True when `id` is a curated-pool or legacy voice (defense at the IPC
+ * boundary — still a closed allowlist, never an arbitrary id). Legacy ids
+ * must pass so previewing an existing companion's voice keeps working.
+ */
 export function isPoolVoiceId(id: string): boolean {
-  return VOICE_IDS.has(id);
+  return VOICE_IDS.has(id) || LEGACY_VOICE_IDS.has(id);
 }
 
 /**

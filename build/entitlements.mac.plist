@@ -16,6 +16,15 @@
   <key>com.apple.security.network.server</key>
   <true/>
 
+  <!-- Microphone (voice calls, 260707). Under the hardened runtime, macOS
+       refuses getUserMedia audio capture without this entitlement even when the
+       user has granted the TCC permission — the packaged/notarized app then
+       silently fails to capture (works only in `npm run dev`, a different TCC
+       identity). Pairs with NSMicrophoneUsageDescription in
+       electron-builder.yml `mac.extendInfo` (the TCC prompt string). -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
   <!-- REMOVED 2026-06-21: com.apple.developer.networking.multicast.
        This is a RESTRICTED ("com.apple.developer.*") entitlement. macOS AMFI
        only honors it when the .app carries a matching embedded provisioning

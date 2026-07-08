@@ -461,6 +461,14 @@ export const UserConfigSchema = z.object({
    */
   call_overlay_enabled: z.boolean().optional().default(false),
   /**
+   * "Conversation starters" (260707). When on (the default), a live voice call
+   * that has gone quiet for a while (5-60s, resampled each stretch) nudges a
+   * companion to bring up a topic on its own — the call equivalent of the
+   * in-game idle tick. The companion may also choose to stay silent. Off = the
+   * companions only speak when spoken to.
+   */
+  call_convo_starters: z.boolean().optional().default(true),
+  /**
    * 260705: the chat presence side panel is OPEN by default; closing it is a
    * sticky preference that survives companion switches and app restarts
    * (hydrated into useUiStore.chatPanelHidden like realistic_typing).

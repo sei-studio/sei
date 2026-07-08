@@ -94,6 +94,12 @@ export function startSurvival(bot, config) {
   if (typeof bot._seiSurvivalDispose === 'function') { try { bot._seiSurvivalDispose() } catch (_) {} }
 
   const TH = resolveSurvivalThresholds(mc)
+  // 260707: the hardcoded critical-HP auto-retreat is OFF by default. In live
+  // play the walking flee lost footraces to night mobs, took the bot off drops,
+  // and its movement mutex blocked better LLM survival calls. Disengaging is
+  // now the model's decision (the attacked prompt offers explore/goTo/follow);
+  // the drowning swim-up below stays fully automatic.
+  const RETREAT_ENABLED = mc.critical_retreat_enabled === true
 
   let _disposed = false
 
@@ -385,7 +391,7 @@ export function startSurvival(bot, config) {
       return
     }
 
-    updateRetreat(pos, typeof bot.health === 'number' ? bot.health : 20)
+    if (RETREAT_ENABLED) updateRetreat(pos, typeof bot.health === 'number' ? bot.health : 20)
   }
 
   function dispose() {

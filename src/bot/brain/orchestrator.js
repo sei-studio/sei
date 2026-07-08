@@ -61,7 +61,21 @@ function smartCase(text) {
 }
 
 export function postProcessSay(s) {
-  const normalized = String(s ?? '')
+  const raw = String(s ?? '')
+  // "(silence)" filler backstop (260707): told that silence is fine, models
+  // sometimes SAY the placeholder instead of staying quiet. A line that is
+  // nothing but a bracketed/asterisked silence marker is dropped entirely;
+  // a bare in-character "silence!" is a real line and passes through.
+  // Models embellish the marker with a trailing clause — real captured
+  // examples: "(staying silent, letting it rest)", "(saying nothing, the
+  // thread has landed)", "(nothing)" — so after a silence keyword the rest of
+  // the aside is allowed (anything up to the closing bracket), and bare
+  // "(nothing)" matches too.
+  // Mirrors isSilenceFiller in src/main/chat/chatService.ts — keep in sync.
+  if (/^\s*[([*]+\s*(?:nothing|(?:silence|silent|stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response)\b[^)\]]*)\s*[)\]*.!]*\s*$/i.test(raw)) {
+    return ''
+  }
+  const normalized = raw
     // Deterministic punctuation backstop, independent of model compliance:
     // normalize em/en-dashes to a plain hyphen (regular hyphens are kept) and
     // strip asterisks, so fancy dashes and *stage directions* never reach chat.
@@ -199,16 +213,16 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
 // → continueLoop=false → the loop ends (say is "silence" for loop purposes:
 // it speaks, but it never keeps the bot busy on its own — see the
 // `continueLoop = movementCalls.length > 0` gate in runIterations).
-const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit', 'end_call'])
+const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit_game', 'end_call'])
 // Party redesign §2/§5: tool names that must NOT surface as a world-action verb
 // (the `onAction` presence hook). These are brain/personality tools with no
 // in-world motion — say (chat), remember/forget/end_loop (memory + loop
-// control), setGoal/clearGoal (goal bookkeeping), quit (session end), end_call
-// (hang up a voice call). Everything else that reaches startLongRunner (follow,
-// goto, gather, dig, build, …) is a real world action and DOES emit. Kept
-// separate from PERSONALITY_NAMES so follow/unfollow still surface a verb even
-// though they're personality-tagged.
-const ACTION_VERB_SKIP = new Set(['say', 'remember', 'forget', 'end_loop', 'setGoal', 'clearGoal', 'quit', 'end_call'])
+// control), setGoal/clearGoal (goal bookkeeping), quit_game (session end),
+// end_call (hang up a voice call). Everything else that reaches startLongRunner
+// (follow, goto, gather, dig, build, …) is a real world action and DOES emit.
+// Kept separate from PERSONALITY_NAMES so follow/unfollow still surface a verb
+// even though they're personality-tagged.
+const ACTION_VERB_SKIP = new Set(['say', 'remember', 'forget', 'end_loop', 'setGoal', 'clearGoal', 'quit_game', 'end_call'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
@@ -850,7 +864,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // → brain.setVoiceCall). Effects: every say() routes up to the call instead
   // of in-game chat (_emitSayLine), and composeSeedBlocks prepends the
   // VOICE_CALL_PRIMER to each turn.
-  let voiceCallActive = false
+  // 260707: seeded from init (config._seiVoiceCallActive) when the bot spawns
+  // INTO an open call, so it is already true on the first-spawn tick — that tick
+  // then skips the cold FIRST CONTACT greeting (which would double the standalone
+  // launch reply) with no race against the post-spawn {type:'voice-call'} message.
+  let voiceCallActive = config?._seiVoiceCallActive === true
   // 260703: sticky greeting. The full FIRST CONTACT block rides only the first
   // idle tick (reason:'just_connected_first_spawn'); when that loop is preempted
   // (attack, chat) before the model replies, the greet instruction is gone and
@@ -862,8 +880,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // when the full FIRST CONTACT block is already present so the first idle tick
   // never double-injects.
   let greetedPlayer = false
+  // 260707b: while a voice call is live the conversation is ALREADY going — the
+  // launch reply (or call greeting) covered the arrival, so forcing a greet here
+  // produced a second, overlapping greeting spoken into the call (the FIRST
+  // CONTACT block is gated the same way below).
   function withGreetingHint(text) {
-    if (greetedPlayer) return text
+    if (greetedPlayer || voiceCallActive) return text
     const t = String(text ?? '')
     if (t.includes('FIRST CONTACT')) return t
     return `${t}\n\n${GREETING_HINT}`
@@ -1048,14 +1070,15 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // disconnects from the world); the player can still chat with it from Sei.
       // Use only when the player clearly wants you to stop playing / log off —
       // NOT for pausing an action (that's end_loop). Say a goodbye first.
-      name: 'quit',
+      name: 'quit_game',
       description:
         'Leave the Minecraft game and disconnect from the world, ending this play session. ' +
-        'Use only when the player wants you to stop playing or log off — not to pause a task (use end_loop for that). ' +
+        'Use only when the player wants you to stop playing or log off, not to pause a task (use end_loop for that). ' +
         'You are playing in the player\'s LAN world, so you cannot stay on if they leave: if the player says they want to leave or stop playing, that means you will need to quit too and continue next time. ' +
-        'Put your goodbye in the `farewell` field — it is spoken to chat for you as you leave, so do NOT also call say(). ' +
-        'Calling quit means you ARE leaving: the farewell must read as a goodbye, never "no" or "I\'m staying". ' +
-        'If you intend to stay, do not call quit. You can still be reached in Sei chat afterward.',
+        'Put your goodbye in the `farewell` field. It is spoken to chat for you as you leave, so do NOT also call say(). ' +
+        'Calling quit_game means you ARE leaving: the farewell must read as a goodbye, never "no" or "I\'m staying". ' +
+        'If you intend to stay, do not call quit_game. You can still be reached in Sei chat afterward. ' +
+        'Leaving the game does NOT hang up a live voice call: if you are on a call and the player wants you out of the game but still talking (for example "let\'s just chat"), call quit_game and keep the conversation going on the call.',
       input_schema: {
         type: 'object',
         properties: {
@@ -1080,9 +1103,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // it can end but never start calls.
       name: 'end_call',
       description:
-        'Hang up the live voice call with the player. Only meaningful while a voice call is open — if none is, this does nothing. ' +
+        'Hang up the live voice call with the player. Only meaningful while a voice call is open; if none is, this does nothing. ' +
         'Use it when the conversation is clearly over or the player asks you to hang up. You stay in the game; only the call ends. ' +
-        'Put your goodbye in the `farewell` field — it is spoken into the call for you as it ends, so do NOT also call say(). ' +
+        'If the player wants you to stop playing while you talk, call quit_game() instead; the call keeps going after you leave the game. ' +
+        'Put your goodbye in the `farewell` field. It is spoken into the call for you as it ends, so do NOT also call say(). ' +
         'You cannot start calls, only end them.',
       input_schema: {
         type: 'object',
@@ -1530,7 +1554,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // the action, and a say()-only batch suspends on nothing. Its result is
   // actually pre-filled up front by emitSayCalls (so speech lands before any
   // action dispatches); the executeInlineMetadata `say` branch is a fallback.
-  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit', 'end_call'])
+  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit_game', 'end_call'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -1965,7 +1989,15 @@ function maybeWarnByteCap(loop, warned) {
     // (lookAround) and only greets on a SECOND round-trip — the player meets
     // ~20s of silence on join. Force ONE short in-character greeting on this
     // very first tick so the first thing they see lands on turn 1, in voice.
-    if (data?.reason === 'just_connected_first_spawn') {
+    // Voice-call handoff (260707): when the bot spawns INTO an open voice call
+    // (the player launch()ed it mid-call, or summoned it while on the line), the
+    // call already carried a greeting — the standalone launch reply that answered
+    // the player, or the call-greeting turn. Firing FIRST CONTACT here too made
+    // the companion answer twice: once via that reply (voice chat) and once via
+    // this forced spawn greeting routed up into the call (say()), each a separate
+    // generation with slightly different wording. Skip it while on a call; the
+    // bot picks up mid-conversation instead of greeting cold.
+    if (data?.reason === 'just_connected_first_spawn' && !voiceCallActive) {
       eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in Minecraft (say("yo how'd the interview go?") beats say("back in business")). This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`
     }
     // 260618: refresh the progression view before composing the seed — latch
@@ -2277,7 +2309,7 @@ function maybeWarnByteCap(loop, warned) {
       lastActionResult = 'loop ended'
       return { result: { type: 'tool_result', tool_use_id: use.id, content: 'loop ended', is_error: false }, terminate: true }
     }
-    if (use.name === 'quit') {
+    if (use.name === 'quit_game') {
       // Task 4 — leave the game. Terminate this loop like end_loop, and ask the
       // host to gracefully shut the session down (drain → disconnect → exit; the
       // supervisor reaps it and the renderer's summon widget clears). A goodbye

@@ -73,7 +73,9 @@ export function SettingsScreen(): React.ReactElement {
   const setAnalyticsOptOut = useUiStore((s) => s.setAnalyticsOptOut);
   const callCaptions = useUiStore((s) => s.callCaptions);
   const callOverlayEnabled = useUiStore((s) => s.callOverlayEnabled);
+  const convoStartersEnabled = useUiStore((s) => s.convoStartersEnabled);
   const setCallOverlayEnabled = useUiStore((s) => s.setCallOverlayEnabled);
+  const setConvoStartersEnabled = useUiStore((s) => s.setConvoStartersEnabled);
   const setCallCaptions = useUiStore((s) => s.setCallCaptions);
   const authState = useAuthStore((s) => s.state);
   // "Is ANY bot running" — gates the live backend switch. Multi-summon: true
@@ -417,6 +419,23 @@ export function SettingsScreen(): React.ReactElement {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (call_overlay_enabled) failed', err);
       setCallOverlayEnabled(!next);
+    }
+  };
+
+  // Conversation starters (260707, default ON): during a quiet stretch on a
+  // live call, a companion may bring up a topic on its own.
+  const onToggleConvoStarters = async (): Promise<void> => {
+    const next = !convoStartersEnabled;
+    setConvoStartersEnabled(next);
+    if (!cfg) return;
+    try {
+      const updated: UserConfig = { ...cfg, call_convo_starters: next };
+      await sei.saveConfig(updated);
+      setCfg(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (call_convo_starters) failed', err);
+      setConvoStartersEnabled(!next);
     }
   };
 
@@ -851,6 +870,22 @@ export function SettingsScreen(): React.ReactElement {
               aria-label="Call overlay"
               on={callOverlayEnabled}
               onChange={() => void onToggleCallOverlay()}
+            />
+          </div>
+          {/* Conversation starters (260707): on a quiet call, a companion may
+              bring up a topic on its own. On by default. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Conversation starters
+              <InfoTip
+                label="About conversation starters"
+                text="When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak."
+              />
+            </span>
+            <Toggle
+              aria-label="Conversation starters"
+              on={convoStartersEnabled}
+              onChange={() => void onToggleConvoStarters()}
             />
           </div>
         </div>

@@ -206,6 +206,10 @@ interface UiState {
    * Off by default (it floats over every app). Read by the overlay pusher in
    * App.tsx to decide whether to spawn the overlay window during a call. */
   callOverlayEnabled: boolean;
+  /** Conversation starters (260707): a quiet stretch on a live call nudges a
+   * companion to bring up a topic on its own. Persisted via
+   * UserConfig.call_convo_starters; App.tsx hydrates. ON by default. */
+  convoStartersEnabled: boolean;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -236,6 +240,8 @@ interface UiState {
   setCallCaptions: (v: boolean) => void;
   /** Appearance & feel: set the always-on-top call-overlay toggle. */
   setCallOverlayEnabled: (v: boolean) => void;
+  /** Set the conversation-starters toggle (quiet calls, companion starts a topic). */
+  setConvoStartersEnabled: (v: boolean) => void;
   /** #6: hang up / dismiss the call (clears the widget + resets mute). */
   endCall: () => void;
 }
@@ -265,6 +271,7 @@ export const useUiStore = create<UiState>((set) => ({
   callDeafened: false,
   callCaptions: false,
   callOverlayEnabled: false,
+  convoStartersEnabled: true,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
   navigate: (view) =>
@@ -302,5 +309,6 @@ export const useUiStore = create<UiState>((set) => ({
   setCallDeafened: (deafened) => set({ callDeafened: deafened }),
   setCallCaptions: (v) => set({ callCaptions: v }),
   setCallOverlayEnabled: (v) => set({ callOverlayEnabled: v }),
+  setConvoStartersEnabled: (v) => set({ convoStartersEnabled: v }),
   endCall: () => set({ minimizedCall: null, callMuted: false, callDeafened: false }),
 }));

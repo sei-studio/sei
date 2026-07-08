@@ -60,10 +60,14 @@ const KUSART_BASE_URL = process.env.KUSART_BASE_URL ?? 'https://api.kusa.pics';
 const KUSART_API_KEY = process.env.KUSART_API_KEY ?? '';
 
 /**
- * KusArt B2B `style_id` per user art_style preference. The numeric ids were
- * verified against the public style library (kusart.com/library/styles, each
- * style's detail page embeds its `styleId`) on 260706 — the id is the style's
- * 1-based position in that catalog:
+ * KusArt B2B `style_id` per user art_style preference, split by companion
+ * gender. The ids are the "Style N" labels in the generator's style picker
+ * (kusart.com/image-generator > Choose Style) — verified there on 260707. Note
+ * the picker label is the ONLY reliable id source: the library page order
+ * matches it merely by coincidence for the low ids (Soft-Realistic Male
+ * Portrait is 25th in the library but Style 30 in the picker).
+ *
+ * Female/other map (the library's default, female-trained styles):
  *
  *   art_style  | style_id | KusArt style name          | look
  *   -----------|----------|----------------------------|-------------------------------
@@ -74,9 +78,21 @@ const KUSART_API_KEY = process.env.KUSART_API_KEY ?? '';
  *   3d         |   18     | VRChat Style               | 3D-meets-anime render (closest to a 3D figure)
  *   (null)     |   15     | -> anime                   | no preference falls back to the anime default
  *
- * The library is anime-first: there is no true photoreal-3D or Pixar-western
- * style, so `3d`→VRChat and `cartoon`→Rough Outline Cartoon are the nearest
- * matches, not exact genre hits. Revisit if KusArt adds dedicated styles.
+ * Male map (from the picker's "Male Only" category — 8 styles total, picked
+ * 260707; the female-trained styles above render male prompts poorly):
+ *
+ *   art_style  | style_id | KusArt style name          | look
+ *   -----------|----------|----------------------------|-------------------------------
+ *   chibi      |    9     | Chibi Dot Eyes             | no male chibi exists; chibi is gender-neutral enough
+ *   anime      |   13     | Male-focus                 | the catalog's designated male-anime style
+ *   celshaded  |  211     | Dynamic Shonen Painterly   | bold linework, bright flat-leaning color
+ *   cartoon    |   59     | Manhwa Sleek               | crisp webtoon inking (no western-cartoon male style exists)
+ *   3d         |   30     | Soft-Realistic Male Portrait | soft-realistic dimensional render (3.8M uses)
+ *
+ * Runners-up if a slot needs retuning: 208 Soft-Hue Masculine (softer anime),
+ * 209 Atmospheric Bishonen, 210 Soft-Line Masculine (mature semi-real), 51
+ * Grit Realism (weathered older men). The "3D Models" category has no male
+ * style at all. Revisit if KusArt adds dedicated styles.
  */
 const KUSART_STYLE_BY_ART_STYLE: Record<NonNullable<UserPreferences['art_style']>, string> = {
   chibi: '9',
@@ -85,11 +101,29 @@ const KUSART_STYLE_BY_ART_STYLE: Record<NonNullable<UserPreferences['art_style']
   cartoon: '19',
   '3d': '18',
 };
+const KUSART_MALE_STYLE_BY_ART_STYLE: Record<NonNullable<UserPreferences['art_style']>, string> = {
+  chibi: '9',
+  anime: '13',
+  celshaded: '211',
+  cartoon: '59',
+  '3d': '30',
+};
 /** Style used when the user has no art_style preference (null / never asked). */
 const KUSART_STYLE_DEFAULT = '15';
+const KUSART_MALE_STYLE_DEFAULT = '13';
 
-/** Map the user's art_style preference to a KusArt style_id (anime fallback). */
-function resolveKusartStyleId(artStyle: UserPreferences['art_style'] | null | undefined): string {
+/**
+ * Map the user's art_style preference to a KusArt style_id (anime fallback).
+ * Male companions get the male-trained map; female and 'other' use the
+ * default (female-trained) map, matching pre-260707 behavior.
+ */
+function resolveKusartStyleId(
+  artStyle: UserPreferences['art_style'] | null | undefined,
+  gender: UniqueGender
+): string {
+  if (gender === 'male') {
+    return artStyle ? KUSART_MALE_STYLE_BY_ART_STYLE[artStyle] : KUSART_MALE_STYLE_DEFAULT;
+  }
   return artStyle ? KUSART_STYLE_BY_ART_STYLE[artStyle] : KUSART_STYLE_DEFAULT;
 }
 
@@ -1075,9 +1109,9 @@ async function postSoulcast(args: {
   else args.signal.addEventListener('abort', onAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), SHEET_TIMEOUT_MS);
 
-  let resp: Response;
+  let json: { content?: unknown };
   try {
-    resp = await fetch(`${PROXY_BASE_URL}/free/soulcast`, {
+    const resp = await fetch(`${PROXY_BASE_URL}/free/soulcast`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${args.jwt}` },
       body: JSON.stringify({
@@ -1088,16 +1122,21 @@ async function postSoulcast(args: {
       }),
       signal: controller.signal,
     });
+    if (!resp.ok) {
+      throw new Error(`soulcast request failed: HTTP ${resp.status}`);
+    }
+    // fetch resolves once HEADERS arrive; the body read below is still network
+    // I/O governed by controller.signal (undici aborts the stream mid-read), so
+    // the timer and pipeline abort listener must stay attached until json()
+    // settles — a proxy that sends headers then stalls would otherwise hang
+    // generation forever with no way to cancel.
+    // Duck-type the first text block out of the raw Anthropic message JSON the
+    // proxy relays (avoids coupling to a specific SDK content-block union).
+    json = (await resp.json()) as { content?: unknown };
   } finally {
     clearTimeout(timer);
     args.signal.removeEventListener('abort', onAbort);
   }
-  if (!resp.ok) {
-    throw new Error(`soulcast request failed: HTTP ${resp.status}`);
-  }
-  // Duck-type the first text block out of the raw Anthropic message JSON the
-  // proxy relays (avoids coupling to a specific SDK content-block union).
-  const json = (await resp.json()) as { content?: unknown };
   const content = json.content;
   if (Array.isArray(content)) {
     for (const b of content) {
@@ -1254,8 +1293,9 @@ async function runPipeline(args: {
   const blurb = buildPersonaBlurb(sheet);
   const description = buildDescription(sheet);
   // Art style comes from the KusArt style_id (chosen from the user's onboarding
-  // art_style preference), never from style text in the prompt.
-  const styleId = resolveKusartStyleId(config.user_profile?.art_style);
+  // art_style preference plus the companion's gender), never from style text in
+  // the prompt.
+  const styleId = resolveKusartStyleId(config.user_profile?.art_style, gender);
   // The fixed suffix is A/B-tested (260705): "one character" suppresses
   // multi-figure compositions, and "reference sheet" phrasing must NEVER be
   // used (it triggers multi-view turnaround grids). Framing wording is aimed

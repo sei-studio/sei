@@ -34,6 +34,42 @@ describe('postProcessSay — normalize only (no content filter)', () => {
     expect(postProcessSay('x'.repeat(400)).length).toBe(256)
   })
 
+  // 260707: the ONE exception to "no content filter" — a line that is nothing
+  // but a bracketed/asterisked silence placeholder is the model acting out an
+  // instruction ("silence is fine") instead of staying quiet, and it was being
+  // spoken aloud on calls. Dropped entirely; real lines still pass.
+  it('drops bracketed "(silence)"-style filler entirely', () => {
+    expect(postProcessSay('(silence)')).toBe('')
+    expect(postProcessSay('[silence]')).toBe('')
+    expect(postProcessSay('*stays silent*')).toBe('')
+    expect(postProcessSay('(staying silent)')).toBe('')
+    expect(postProcessSay('(remains quiet)')).toBe('')
+    expect(postProcessSay('(says nothing)')).toBe('')
+    expect(postProcessSay('( no reply )')).toBe('')
+  })
+
+  // Real lines captured from a Sui/Marv game transcript (260707): the model
+  // embellishes the marker with a trailing clause, or shortens it to
+  // "(nothing)". These leaked past the first, stricter pattern.
+  it('drops embellished silence markers from the real transcript', () => {
+    expect(postProcessSay('(staying silent, letting it rest)')).toBe('')
+    expect(postProcessSay('(saying nothing, the thread has landed)')).toBe('')
+    expect(postProcessSay('(nothing)')).toBe('')
+    expect(postProcessSay('(silence, just watching the furnace)')).toBe('')
+  })
+
+  it('keeps in-character lines that merely mention silence', () => {
+    expect(postProcessSay('silence!')).toBe('silence!')
+    expect(postProcessSay('the silence here is creepy')).toBe('the silence here is creepy')
+    expect(postProcessSay('(sigh) fine, silence it is')).toBe('(sigh) fine, silence it is')
+    // Content after the closing bracket = a real line, not a marker.
+    expect(postProcessSay('(silence) okay fine, one more thing')).toBe(
+      '(silence) okay fine, one more thing',
+    )
+    // "nothing" with a tail is a real aside, only the bare form is a marker.
+    expect(postProcessSay('(nothing but bones down here)')).toBe('(nothing but bones down here)')
+  })
+
   it('passes content through unchanged — nothing is banned', () => {
     // Lines the old filter used to drop now ship (lowercased).
     for (const line of [

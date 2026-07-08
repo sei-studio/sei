@@ -417,6 +417,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setCallCaptions(cfg.call_captions === true);
           // Appearance & feel: always-on-top call overlay (default OFF).
           useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
+          // Conversation starters on quiet calls (default ON).
+          useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
           // Sticky chat side-panel visibility (default shown).
           useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
           // Product analytics opt-out (default OFF = analytics on).
@@ -544,6 +546,8 @@ export function App(): React.ReactElement {
         useUiStore.getState().setCallCaptions(cfg.call_captions === true);
         // Appearance & feel: always-on-top call overlay (default OFF when absent).
         useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
+        // Conversation starters on quiet calls (default ON when absent).
+        useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
         // Sticky chat side-panel visibility (default shown).
         useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
       } catch {

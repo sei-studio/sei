@@ -11,11 +11,14 @@
  *      Addressed-by-name wins; otherwise a VARIED pick (the last responder is
  *      down-weighted, not banned) so it is not always the same AI jumping in
  *      first, without a rigid clockwork rotation either.
- *   2. decideReaction — after a companion speaks, whether ANOTHER companion
- *      reacts, and which one. Probabilistic and depth-decaying under a hard cap,
- *      so an exchange sometimes stops after a single line, sometimes banters
- *      back and forth for a few turns, but never runs away or ping-pongs forever
- *      (the player can sit back and listen without it going infinite).
+ *   2. decideReaction — after a companion speaks, which OTHER companion takes
+ *      the next turn. With two+ companions the banter is meant to be ongoing —
+ *      they keep the conversation (and play) going between themselves — so there
+ *      is NO random "stop" roll. The exchange ends NATURALLY: a companion whose
+ *      turn has nothing left to add returns no line, and the director stops the
+ *      chain there (a real lull, not a dice roll). A hard cap (PFC_MAX_CHAIN)
+ *      remains only as a runaway guard. The player can cut in at any time — a
+ *      barge-in supersedes the chain (see the director in useVoiceStore).
  *   3. isJunkTranscript — reject Whisper hallucinations (echo/breath/silence
  *      transcribed as "hhhhh", "you", "[BLANK_AUDIO]") before they ever become a
  *      player turn.
@@ -36,24 +39,17 @@ export interface ReactionDecision {
   reactorId: string;
 }
 
-/** Hard cap on how many companion turns a single player utterance may cascade
- * into (the A→B→A… chain). The floor beneath the probabilistic taper below. */
-export const PFC_MAX_CHAIN = 5;
-
-/** Chance that a FURTHER companion jumps in, indexed by how many companion turns
- * have already been spoken this utterance (0 = right after the first responder).
- * Decays so banter tapers into silence organically instead of always dying at
- * one turn or running forever. Length ties into PFC_MAX_CHAIN (0 beyond it). */
-const REACTION_CHANCE = [0.6, 0.5, 0.38, 0.25, 0.12];
+/** Runaway guard on how many companion turns a single trigger may cascade into
+ * (the A→B→A… chain). This is NOT how banter normally ends — a natural lull
+ * (a companion turn that produces no line) ends it first, usually well before
+ * this. It is generous so an ongoing two-bot conversation is not cut short, but
+ * bounded so a pair that never runs dry can't loop forever. */
+export const PFC_MAX_CHAIN = 16;
 
 /** How strongly the immediately-previous speaker is down-weighted when picking
  * the next one (1 = no bias, 0 = never repeat). Kept > 0 so a repeat is still
  * possible — natural conversation is not a strict round-robin. */
 const REPEAT_WEIGHT = 0.35;
-
-export function reactionChance(turnsSoFar: number): number {
-  return REACTION_CHANCE[turnsSoFar] ?? 0;
-}
 
 /** Word-boundary-ish name match: the player said a companion's name, so address
  * them. Case-insensitive; ignores 1-char names (too collision-prone). */
@@ -104,17 +100,16 @@ export function pickResponder(
 
 /**
  * After `speakerId` spoke (at chain depth `depth`, 0 = the first responder),
- * decide whether ANOTHER companion reacts and which one. Returns null when the
- * exchange should stop — solo call, hard cap reached, or the probabilistic taper
- * says "let it rest". The reactor is a varied pick among the OTHER companions
- * (never the speaker), down-weighting the last reactor so a trio spreads rather
- * than two of them ping-ponging.
+ * decide which OTHER companion takes the next turn. Returns null only when the
+ * chain genuinely cannot continue — a solo call (no one else to react) or the
+ * runaway cap. Otherwise it ALWAYS hands the floor to a peer: banter between two
+ * companions is meant to keep going, and it ends naturally when that peer's turn
+ * produces no line (the director stops there), not by a random roll here.
  *
- * `text` is the line the speaker just said: when it addresses a specific peer by
- * name ("yo yancy, explain that"), that peer is FORCED as the reactor, bypassing
- * the probabilistic taper — a direct question must never be met with silence
- * (the "I asked them to talk to each other and Yancy never replied" bug). The
- * hard cap still applies so even name-addressed banter can't run forever.
+ * The reactor is a varied pick among the OTHER companions (never the speaker),
+ * down-weighting the last reactor so a trio spreads rather than two of them
+ * ping-ponging. When the speaker's line addresses a specific peer by name ("yo
+ * yancy, explain that"), that peer is forced as the reactor.
  */
 export function decideReaction(args: {
   speakerId: string;
@@ -128,13 +123,12 @@ export function decideReaction(args: {
   const rnd = args.rnd ?? Math.random;
   const others = participants.filter((p) => p.id !== speakerId);
   if (others.length === 0) return null; // solo call never chains
-  if (depth + 1 >= PFC_MAX_CHAIN) return null; // hard cap (also bounds name-addressed chains)
+  if (depth + 1 >= PFC_MAX_CHAIN) return null; // runaway guard (also bounds name-addressed chains)
   // A companion named a specific peer — hand them the floor deterministically.
   if (text) {
     const named = addressedBy(text, others);
     if (named) return { reactorId: named.id };
   }
-  if (rnd() >= reactionChance(depth)) return null; // organic stop
   return { reactorId: weightedPick(others, lastReactorId, rnd).id };
 }
 

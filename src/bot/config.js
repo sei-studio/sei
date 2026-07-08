@@ -80,6 +80,10 @@ const MinecraftAdapterSchema = z.object({
   // Critical-HP retreat (health is 0-20). Force-flee the nearest hostile when
   // health <= enter AND a hostile is within the enter radius; keep fleeing until
   // health > exit OR no hostile remains within the (larger) exit radius.
+  // 260707: DISABLED by default — the walking flee lost to night mobs and its
+  // movement mutex blocked the model's own survival calls; disengaging is now
+  // an LLM decision (explore/goTo/follow, offered in the attacked prompt).
+  critical_retreat_enabled: z.boolean().default(false),
   critical_hp_enter: z.number().min(0).default(6),
   critical_hp_exit: z.number().min(0).default(10),
   critical_hostile_enter_blocks: z.number().min(0).default(8),

@@ -28,7 +28,7 @@ import { SESSION_END_CLAUSE } from './promptLibrary.js'
 // locks both the shared const and its presence in NUDGES.playerInterruptHint.
 describe('SESSION_END_CLAUSE — session-end vs task-stop disambiguation (260703)', () => {
   it('names quit, the farewell field, and concrete leaving phrases', () => {
-    expect(SESSION_END_CLAUSE).toContain('quit')
+    expect(SESSION_END_CLAUSE).toContain('quit_game')
     expect(SESSION_END_CLAUSE).toContain('farewell')
     expect(SESSION_END_CLAUSE).toContain('ENDING THE SESSION')
     expect(SESSION_END_CLAUSE).toMatch(/"bye"/)
@@ -45,7 +45,7 @@ describe('SESSION_END_CLAUSE — session-end vs task-stop disambiguation (260703
   it('nudges a same-turn remember() alongside quit at session end', () => {
     expect(SESSION_END_CLAUSE).toContain('remember()')
     expect(SESSION_END_CLAUSE).toContain('in the same turn')
-    expect(SESSION_END_CLAUSE).toContain('remember, say, and quit can all be called together')
+    expect(SESSION_END_CLAUSE).toContain('remember, say, and quit_game can all be called together')
   })
 })
 

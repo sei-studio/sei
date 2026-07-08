@@ -1,16 +1,24 @@
 /**
  * MinimizedCall — the floating "call in progress" widget (chat change #6).
  *
- * When the voice call is minimized (useUiStore.minimizeCall), the call keeps
- * "running" as a thin, draggable rectangle pinned to the bottom-right corner:
- * companion portrait + name + a mute toggle + a hang-up button. It is rendered
- * once at the App shell level so it survives navigation between screens.
+ * Shown whenever a call session EXISTS (useVoiceStore participants, dialing or
+ * live) and the full voice-call view is not on screen: companion portrait +
+ * name + a mute toggle + a hang-up button, as a thin draggable rectangle pinned
+ * to the bottom-right corner. Rendered once at the App shell level so it
+ * survives navigation between screens.
+ *
+ * 260707: visibility is DERIVED from the call state, not from the
+ * useUiStore.minimizedCall flag. The flag is only set by the call screen's
+ * explicit minimize button, but many paths navigate away from the voice-call
+ * view without it (the sidebar, a character card, the summon flow's
+ * post-connect navigate) — each of those stranded a LIVE call with no hang-up
+ * control anywhere in the app (the always-on-top overlay still showed, because
+ * it reads the voice store directly). Deriving from the source of truth makes
+ * that state unrepresentable.
  *
  * Dragging moves the window (pointer-captured, clamped to the viewport). A plain
  * click on the body (no drag) restores the full-screen voice-call view. Mute is
  * shared with VoiceCallScreen via the store; hang-up ends the call.
- *
- * Renders nothing when no call is minimized.
  */
 
 import React, { useRef, useState } from 'react';
@@ -37,15 +45,16 @@ const BOTTOM_RESERVED = 116;
 const EDGE_GAP = 8;
 
 export function MinimizedCall(): React.ReactElement | null {
-  const minimizedCall = useUiStore((s) => s.minimizedCall);
+  const view = useUiStore((s) => s.view);
   const muted = useUiStore((s) => s.callMuted);
   const setMuted = useUiStore((s) => s.setCallMuted);
+  const navigate = useUiStore((s) => s.navigate);
   // Real teardown (mic + TTS queue + main call-state) lives in useVoiceStore;
   // it also clears the UI store's minimized/mute state. participants + speakingId
   // are the source of truth for who is on the call (multi-companion, 260706).
   const endCall = useVoiceStore((s) => s.endCall);
-  const restoreCall = useUiStore((s) => s.restoreCall);
   const participants = useVoiceStore((s) => s.participants);
+  const status = useVoiceStore((s) => s.status);
   const speakingId = useVoiceStore((s) => s.speakingId);
 
   const characters = useDataStore((s) => s.characters);
@@ -60,11 +69,13 @@ export function MinimizedCall(): React.ReactElement | null {
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
 
-  if (!minimizedCall) return null;
+  // A call session exists while it is dialing or live (both can be hung up);
+  // 'error' and 'idle' have nothing to control. Hidden while the full call
+  // screen is the current view — that screen has its own controls.
+  const callExists = participants.length > 0 && (status === 'live' || status === 'connecting');
+  if (!callExists || view.kind === 'voice-call') return null;
 
-  // Prefer the live participant roster; fall back to the minimized id (e.g. a
-  // brief window before the store settles) so the widget never renders empty.
-  const ids = participants.length ? participants : [minimizedCall.characterId];
+  const ids = participants;
   const firstName = characters.find((c) => c.id === ids[0])?.name ?? 'Companion';
   const companionName =
     ids.length > 1 ? `${firstName} +${ids.length - 1}` : firstName;
@@ -105,8 +116,11 @@ export function MinimizedCall(): React.ReactElement | null {
     const d = drag.current;
     drag.current = null;
     ref.current?.releasePointerCapture(e.pointerId);
-    // A click without a drag restores the full call.
-    if (d && !d.moved) restoreCall();
+    // A click without a drag restores the full call view. Navigate directly
+    // (not useUiStore.restoreCall) — that helper is a no-op when the minimized
+    // flag was never set, which is exactly the stranded case this widget now
+    // covers.
+    if (d && !d.moved) navigate({ kind: 'voice-call', characterId: ids[0] });
   };
 
   return (

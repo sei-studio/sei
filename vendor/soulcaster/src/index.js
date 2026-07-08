@@ -247,14 +247,17 @@ export function rollVoice({ gender, age, background, personality_seeds }, { take
     if (remaining.length) pool = remaining;
   }
 
-  const entries = pool
+  let entries = pool
     .map((v) => {
       // Age proximity: exact band strongly preferred, adjacent allowed,
-      // young<->elder effectively excluded (tiny epsilon keeps the pool
-      // non-empty in degenerate cases, e.g. every same-band voice taken).
+      // young<->elder excluded outright. (This was a 0.01 epsilon to keep the
+      // pool non-empty in degenerate cases; with the 260707 characters-only
+      // trim the pool is small enough that the epsilon actually rolled — a
+      // 70-year-old could land a young voice — so the degenerate case is now
+      // handled by the explicit uniform fallback below instead.)
       let weight;
       if (v.age === band) weight = 6;
-      else if ((v.age === 'young' && band === 'elder') || (v.age === 'elder' && band === 'young')) weight = 0.01;
+      else if ((v.age === 'young' && band === 'elder') || (v.age === 'elder' && band === 'young')) weight = 0;
       else weight = 1.5;
 
       // Neutral voices are a spice for gendered characters, the core pool for
@@ -274,6 +277,12 @@ export function rollVoice({ gender, age, background, personality_seeds }, { take
       return { value: v, weight };
     })
     .filter((e) => e.weight > 0);
+
+  // Degenerate case (a gender whose only voices sit in the far age band):
+  // fall back to a uniform draw over the gender-filtered pool rather than
+  // throwing. Never hit with the current table; here so a future trim can't
+  // crash character generation.
+  if (!entries.length) entries = pool.map((v) => ({ value: v, weight: 1 }));
 
   const voice = pickWeighted(entries, rng);
   return { id: voice.id, label: voice.label, vibe: voice.vibe };

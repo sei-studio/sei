@@ -950,6 +950,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // the bot's prompt so it knows what you were just talking about. null
               // when there is no prior chat. See chat/continuity.ts.
               continuity,
+              // Voice calls (260707): true when this bot is spawning INTO an open
+              // call (launch()ed or summoned mid-call). Shipped in the init
+              // handshake — not the post-spawn {type:'voice-call'} message — so
+              // voiceCallActive is set BEFORE the first-spawn tick runs and the
+              // bot skips its cold FIRST CONTACT greeting (which would otherwise
+              // double the standalone launch reply). Deterministic; no race.
+              voiceCallActive: opts.isVoiceCallActive?.(characterId) ?? false,
             },
             [port2],
           );

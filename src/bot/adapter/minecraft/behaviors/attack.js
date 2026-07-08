@@ -83,7 +83,7 @@ export async function attackEntityAction(args, bot, config) {
   // Refuse Players unless PvP mode is ON (bot._seiPvp, toggled by the setPvp
   // tool). When OFF this keeps the original refusal + message; when ON the
   // player is a legal target so the companion can spar (Task 2a).
-  if ((entity.type === 'player' || entity.username) && !bot._seiPvp) return 'cannot attack player'
+  if ((entity.type === 'player' || entity.username) && !bot._seiPvp) return 'cannot attack player — PvP spar mode is off; if they asked to fight/spar, call setPvp({enabled:true}) first, then attack'
 
   // Refuse item-class entities. Dropped items, xp
   // orbs, and global entities (lightning) cannot die — the dispatch wastes
@@ -176,6 +176,9 @@ export async function attackEntityAction(args, bot, config) {
       }
     }
 
+    // A spar against a player is a running exchange, not a completed task: frame
+    // the result so the model keeps fighting instead of narrating an ending.
+    if (isPlayerTarget) return `attacked ${name} ${hits}× — they're still standing and the spar is still ON; keep it going (attack again, reposition, trash-talk) until they say stop`
     return `attacked ${name} ${hits}× (target still alive)`
   } finally {
     // Release the sprint + pursuit goal we installed. NEVER yank a creeper-flee's

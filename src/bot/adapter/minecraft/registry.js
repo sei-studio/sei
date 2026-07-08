@@ -18,7 +18,6 @@ import { digAction } from './behaviors/dig.js'
 import { exploreAction } from './behaviors/explore.js'
 import { buildAction } from './behaviors/build.js'
 import { shelterAction } from './behaviors/shelter.js'
-import { digInAction } from './behaviors/digIn.js'
 import { placeBlockAction } from './behaviors/place.js'
 import { equipAction } from './behaviors/equip.js'
 import { craftAction } from './behaviors/craft.js'
@@ -191,7 +190,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
           : "can't fly up — build up with scaffold/build, or dig up to break through the ceiling"
       }
       if (args?.orientation === 'down') {
-        return 'can\'t drop straight down with explore — use dig to tunnel down, or digIn to hole up'
+        return 'can\'t drop straight down with explore — use dig to tunnel down'
       }
       return exploreAction(args, bot, config, { vision: visionEnabled })
     }
@@ -283,15 +282,9 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   })
   registry.register('shelter', ShelterSchema, shelterAction)
 
-  // `digIn`: a FAST panic shelter, much cheaper than shelter(). Digs 2 blocks
-  // straight down and caps the top (when the ground below is safe), or walls up a
-  // 1x1 cell from inventory solids when it can't dig. No args needed; `variant`
-  // ('auto'|'hole'|'hut') can force one. For low-HP / night-swarm survival.
-  registry.register(
-    'digIn',
-    z.object({ variant: z.enum(['auto', 'hole', 'hut']).optional() }),
-    digInAction,
-  )
+  // digIn (panic shelter) is deliberately NOT registered: the tool is disabled
+  // and hidden from prompts (260707). behaviors/digIn.js is kept for potential
+  // re-enable; shelter() remains the only build-a-refuge tool.
 
   registry.register(
     'equip',
@@ -339,7 +332,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // the last opponent the instant sparring is turned off (Task 2).
       if (!bot._seiPvp) bot._seiPvpOpponent = null
       return bot._seiPvp
-        ? 'PvP mode ON — sparring enabled; you can attack the player and hit back. Turn it off when they ask to stop.'
+        ? 'PvP mode ON — sparring enabled; you can attack the player and hit back. Keep sparring until THEY say stop or one of you drops — never concede a fight that is still going, and only turn this off when they ask to stop.'
         : 'PvP mode OFF — you will no longer attack or hit the player back.'
     }
   )

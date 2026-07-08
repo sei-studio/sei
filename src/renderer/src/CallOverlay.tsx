@@ -20,8 +20,17 @@ export function CallOverlay(): React.ReactElement | null {
   const [state, setState] = useState<CallOverlayState | null>(null);
 
   useEffect(() => {
-    // Seed nothing; main pushes the current state on window-ready and on change.
     const off = sei.onVoiceOverlayState?.((s) => setState(s));
+    // Main seeds the state with a push at window-reveal, but that push can land
+    // BEFORE this subscription exists (React effects run after first paint) —
+    // when it did, the overlay stayed blank until the next speaking change. Pull
+    // the current state too; a push that already arrived wins (it is newer).
+    void sei
+      .voiceOverlayGetState?.()
+      .then((s) => {
+        if (s) setState((prev) => prev ?? s);
+      })
+      .catch(() => {});
     return () => off?.();
   }, []);
 
@@ -47,7 +56,7 @@ export function CallOverlay(): React.ReactElement | null {
               <PixelPortrait
                 seed={p.id + p.name}
                 palette={palette}
-                size={60}
+                size={76}
                 portraitImage={p.portrait ?? undefined}
               />
             )}

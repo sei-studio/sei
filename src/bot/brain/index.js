@@ -283,8 +283,8 @@ export async function start({ config, adapter, logger = console, onTerminalError
       if (!raw) return
       const who = String(from || 'The player')
       const framed =
-        `${who} messaged you through Sei chat — they are NOT in the game with you right now. ` +
-        `They said: "${raw}". Reply to them in chat. If you would rather stop playing to talk, call quit().`
+        `${who} messaged you through Sei chat. They are NOT in the game with you right now. ` +
+        `They said: "${raw}". Reply to them in chat. If you would rather stop playing to talk, call quit_game().`
       try { orchestrator.recordIncomingChat?.(who, raw) } catch {}
       try {
         queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {

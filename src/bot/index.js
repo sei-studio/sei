@@ -473,6 +473,11 @@ async function bootstrapWithInit(initData) {
     // carries the app conversation into the world. null when there is no prior
     // chat. Stashed on config as _seiContinuity and injected by the orchestrator.
     continuity,           // { summary: string, recent: {role,text}[] } | null
+    // Voice calls (260707): true when spawning INTO an open call. Seeds the
+    // orchestrator's voiceCallActive from the start so say() routes to the call
+    // and the cold FIRST CONTACT greeting is skipped on the first tick (no race
+    // with the post-spawn {type:'voice-call'} message). See orchestrator.js.
+    voiceCallActive: initVoiceCallActive,   // boolean | undefined
   } = initData
 
   // Build a config shape that satisfies ConfigSchema.parse (see
@@ -641,6 +646,14 @@ async function bootstrapWithInit(initData) {
   try {
     config._seiContinuity =
       continuity && typeof continuity === 'object' ? continuity : null
+  } catch {}
+
+  // Voice calls (260707): stash whether this bot is spawning into an open call
+  // so the orchestrator seeds voiceCallActive true from its first tick (say()
+  // routes to the call; the cold FIRST CONTACT greeting is skipped). Read in
+  // createOrchestrator. Best-effort.
+  try {
+    config._seiVoiceCallActive = initVoiceCallActive === true
   } catch {}
 
   emitLifecycle({ type: 'init-ack' })

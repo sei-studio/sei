@@ -136,6 +136,11 @@ mac:
   # build/entitlements.mac.plist.
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
+    # Voice calls (260707): the TCC prompt string macOS shows the first time Sei
+    # captures the mic. WITHOUT it (and the com.apple.security.device.audio-input
+    # entitlement in build/entitlements.mac.plist) getUserMedia silently fails in
+    # the packaged/notarized build even after the user allows the mic.
+    NSMicrophoneUsageDescription: "Sei uses your microphone so you can talk to your characters on a voice call."
 
 # dmg target dropped 2026-06-21 (see mac.target note above) — config kept,
 # commented, for easy re-enable once the 32k-texture-file DMG sizing is solved.
