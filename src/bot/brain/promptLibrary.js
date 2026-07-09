@@ -175,7 +175,7 @@ build and dig take TWO ABSOLUTE CORNERS {from:{x,y,z}, to:{x,y,z}}. Every shape 
 
 - hollow room shell: hollow:true gives the 4 vertical wall faces only; add floor + ceiling with two flat single-Y cuboids.
 
-Volume cap: 256 cells per call. Build SKIPS occupied cells. Dig silently skips air cells. If a cell is above reach, build internally jumps and scaffolds under itself.
+Volume cap: 256 cells per call. Build SKIPS occupied cells. Dig silently skips air cells. If a cell is out of reach, build walks to it on its own, and jumps and scaffolds under itself when the cell is above.
 `.trim()
 
 // 3e. Per-action tool descriptions (delivered as the tool-call schemas).
@@ -217,7 +217,7 @@ export const ACTION_DESCRIPTIONS = {
     'Craft `{item, count?}` from the snapshot\'s `craftable:` list; consumes materials, and 3x3 recipes need a crafting_table within reach.',
 
   build:
-    'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Scaffolds up automatically when out of reach. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING: build sits on top of terrain — set `from.y = bot.y + 1` so the structure rises out of the ground. Building at your own y inside terrain produces an invisible all-skipped result.',
+    'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Walks and scaffolds automatically to reach far cells. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING: build sits on top of terrain — set `from.y = bot.y + 1` so the structure rises out of the ground. Building at your own y inside terrain produces an invisible all-skipped result.',
 
   openFurnace:
     'Open a furnace (also blast_furnace/smoker) to smelt: `{block:"furnace"}` for the nearest, or aim with a target/coords. Must be within reach. Then smeltInput + addFuel to load it, wait, and takeSmelted to collect.',
@@ -242,7 +242,7 @@ export const ACTION_DESCRIPTIONS = {
 
   // Only present when the active provider supports vision (D-10). Keep it short.
   look:
-    'Render a picture of your surroundings - rarely needed, act from the snapshot. `look({around:true})` covers all four directions; `{orientation:...}` or `{angle:0-360}` looks one way. The picture lasts only this turn (remember() anything you want to keep) and is low-res, so do not invent fine detail.',
+    'Render a picture of your surroundings - rarely needed, act from the snapshot. `look({around:true})` covers all four directions; `{orientation:...}` or `{angle:0-360}` looks one way; `{orientation:"up"}` or `{orientation:"down"}` tilts the view. The picture lasts only this turn (remember() anything you want to keep) and is low-res, so do not invent fine detail.',
 }
 
 // explore()'s description with the picture promise removed (Looking off).

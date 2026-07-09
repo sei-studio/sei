@@ -43,7 +43,7 @@ export const CANT_SEE_COPY = "I can't see clearly right now"
  * ground-truth entity list contradicted. Tell it to read the picture loosely and
  * defer to the snapshot for what is actually there.
  */
-export const VISION_GROUNDING = 'The picture is low resolution and rough, so read it loosely: name only the broad things you can clearly make out (terrain shape, water, trees, structures, your own builds) and do not invent specific mob types, animal colors, counts, or fine detail from it. For which mobs or animals are actually nearby, trust the nearby-entities list in your snapshot, which is accurate, over the picture.'
+export const VISION_GROUNDING = 'The picture is low resolution and rough, so read it loosely: name only the broad things you can clearly make out (terrain shape, water, trees, structures, your own builds) and do not invent specific mob types, animal colors, counts, or fine detail from it. For which mobs or animals are actually nearby, trust the nearby-entities list in your snapshot, which is accurate, over the picture. If the player asked you to read or identify something specific and you cannot clearly make it out, do not guess: tell them you cannot see it well because your vision is blurry and low resolution.'
 
 /** Cap on the pre-render head turn — facing is best-effort, never a stall. */
 export const FACE_TIMEOUT_MS = 800
@@ -73,6 +73,16 @@ export const ORIENTATION_DEG = Object.freeze({
   left: 270,
 })
 
+// Vertical orientations tilt the head instead of turning it (260709 — the
+// model asked for look({orientation:"down"}) when told to check the bottom of
+// a build, and the old yaw-only grammar rejected it). 60° keeps the near
+// ground / sky in frame without rendering mostly feet. mineflayer pitch is
+// positive-down.
+export const ORIENTATION_PITCH = Object.freeze({
+  up: -Math.PI / 3,
+  down: Math.PI / 3,
+})
+
 /** Parse {orientation}|{angle} into a yaw offset in radians, or null if neither
  * was supplied (caller treats null as "don't turn — current facing"). */
 export function orientationToYawOffset(args) {
@@ -93,8 +103,9 @@ export function yawToUnit(yaw) {
   return [-Math.sin(yaw), -Math.cos(yaw)]
 }
 
-/** Best-effort head turn to an absolute yaw; capped so it never stalls. */
-export async function faceYaw(bot, yaw) {
+/** Best-effort head turn to an absolute yaw (+ optional pitch, positive-down);
+ * capped so it never stalls. */
+export async function faceYaw(bot, yaw, pitch = 0) {
   if (typeof bot?.look !== 'function' || !Number.isFinite(yaw)) return
   let timer = null
   // Hold the gaze controller (behaviors/gaze.js) off the head while we aim
@@ -103,7 +114,7 @@ export async function faceYaw(bot, yaw) {
   if (bot) bot._seiGazeHold = (bot._seiGazeHold ?? 0) + 1
   try {
     await Promise.race([
-      Promise.resolve().then(() => bot.look(yaw, 0, true)).catch(() => { /* best-effort */ }),
+      Promise.resolve().then(() => bot.look(yaw, Number.isFinite(pitch) ? pitch : 0, true)).catch(() => { /* best-effort */ }),
       new Promise((resolve) => { timer = setTimeout(resolve, FACE_TIMEOUT_MS) }),
     ])
   } finally {
@@ -274,9 +285,11 @@ export async function visualizeAction(args, bot, config) {
   // Idle/passive cadence renders never pass a direction (they document the
   // bot's own current view) and never turn the head.
   if (args?.idle !== true) {
+    const pitchKey = typeof args?.orientation === 'string' ? args.orientation.toLowerCase() : null
+    const pitch = pitchKey != null && pitchKey in ORIENTATION_PITCH ? ORIENTATION_PITCH[pitchKey] : 0
     const offset = orientationToYawOffset(args)
-    if (offset != null) {
-      await faceYaw(bot, (bot?.entity?.yaw ?? 0) + offset)
+    if (offset != null || pitch !== 0) {
+      await faceYaw(bot, (bot?.entity?.yaw ?? 0) + (offset ?? 0), pitch)
       if (signal?.aborted) return 'aborted'
     }
   }

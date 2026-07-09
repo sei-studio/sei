@@ -171,3 +171,63 @@ describe('gatherAction — multi-component (260708)', () => {
     expect(r).toBe('no oak_log in loaded chunks')
   })
 })
+
+describe('gatherAction — end-of-gather drop sweep (260709)', () => {
+  const noSleep = async () => {}
+
+  function withDrops(bot, drops) {
+    bot.entities = {}
+    for (const [id, x, y, z] of drops) {
+      bot.entities[id] = { id, name: 'item', position: new Vec3(x, y, z), isValid: true }
+    }
+  }
+
+  it('walks to leftover drops near the bot after mining', async () => {
+    const { bot, blocks } = makeWorld([[2, 64, 0, 'oak_log']])
+    withDrops(bot, [[101, 5, 64, 2], [102, -3, 64, -4]])
+    const walked = []
+    const goTo = vi.fn(async (b, x, y, z, range) => {
+      // Record only the sweep walks (range 0); collect the drop on arrival.
+      if (range === 0) {
+        walked.push(`${x},${y},${z}`)
+        for (const e of Object.values(bot.entities)) {
+          if (Math.floor(e.position.x) === x && Math.floor(e.position.z) === z) e.isValid = false
+        }
+      }
+      return 'reached'
+    })
+    const digAction = vi.fn(async ({ x, y, z }) => { blocks.delete(`${x},${y},${z}`); return 'dug oak_log' })
+    const r = await gatherAction({ name: 'oak_log', count: 1 }, bot, {}, { goTo, digAction, sleep: noSleep })
+    expect(r).toBe('gathered 1/1 oak_log')
+    expect(walked).toEqual(['-3,64,-4', '5,64,2']) // closest first (5.0m before 5.4m)
+  })
+
+  it('skips canopy drops (more than 2 above the bot) and never climbs', async () => {
+    const { bot, blocks } = makeWorld([[2, 64, 0, 'oak_log']])
+    withDrops(bot, [[101, 3, 69, 1]]) // resting on leaves, 5 above the bot
+    const goTo = vi.fn(async () => 'reached')
+    const digAction = vi.fn(async ({ x, y, z }) => { blocks.delete(`${x},${y},${z}`); return 'dug oak_log' })
+    await gatherAction({ name: 'oak_log', count: 1 }, bot, {}, { goTo, digAction, sleep: noSleep })
+    // No range-0 sweep walk was issued for the canopy drop.
+    expect(goTo.mock.calls.filter(c => c[4] === 0)).toHaveLength(0)
+  })
+
+  it('attempts an uncollectable drop only once (no retry stall)', async () => {
+    const { bot, blocks } = makeWorld([[2, 64, 0, 'oak_log']])
+    withDrops(bot, [[101, 5, 64, 2]]) // never collected: walk times out
+    const goTo = vi.fn(async (b, x, y, z, range) => (range === 0 ? 'timeout' : 'reached'))
+    const digAction = vi.fn(async ({ x, y, z }) => { blocks.delete(`${x},${y},${z}`); return 'dug oak_log' })
+    const r = await gatherAction({ name: 'oak_log', count: 1 }, bot, {}, { goTo, digAction, sleep: noSleep })
+    expect(r).toBe('gathered 1/1 oak_log')
+    expect(goTo.mock.calls.filter(c => c[4] === 0)).toHaveLength(1)
+  })
+
+  it('does not sweep when nothing was dug', async () => {
+    const { bot, blocks } = makeWorld([[2, 64, 0, 'oak_log']])
+    withDrops(bot, [[101, 5, 64, 2]])
+    const goTo = vi.fn(async () => 'reached')
+    const digAction = vi.fn(async () => 'timeout') // all digs fail
+    await gatherAction({ name: 'oak_log', count: 1 }, bot, {}, { goTo, digAction, sleep: noSleep })
+    expect(goTo.mock.calls.filter(c => c[4] === 0)).toHaveLength(0)
+  })
+})

@@ -448,11 +448,14 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   // or {angle} (0..360° clockwise) turns the head before rendering; {around:true}
   // returns four labelled frames (forward/right/behind/left). No args = current
   // view. Degrades gracefully if the area isn't loaded.
+  // 260709: up/down tilt the head instead of turning it — the live session had
+  // the player ask "pay attention to the bottom", the model called
+  // look({orientation:"down"}), and the schema hard-rejected it.
   if (visionEnabled) {
     registry.register(
       'look',
       z.object({
-        orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right']).optional(),
+        orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right', 'up', 'down']).optional(),
         angle: z.number().min(0).max(360).optional(),
         around: z.boolean().optional(),
       }),

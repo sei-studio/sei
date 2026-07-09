@@ -6,10 +6,12 @@
 
 import { Vec3 } from 'vec3'
 import { placeBlockAction } from './place.js'
+import { goTo } from './pathfind.js'
 import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 4000 // per-cell, inherited via placeBlockAction
-export const ITERATION_ORDER = 'Y-asc → X-asc → Z-asc' // D-07 documented constant
+export const ITERATION_ORDER = 'Y-asc → X-asc → Z-asc (hollow layers: perimeter walk)' // D-07 documented constant
+export const WALK_TIMEOUT_MS = 6000 // walk-closer step per out-of-reach cell (best-effort)
 const REACH = 4.5
 const JUMP_PLACE_WINDOW_MS = 800 // airborne budget to land the scaffold place
 const LANDING_MAX_MS = 800       // max wait to settle on the new block
@@ -36,13 +38,28 @@ export function enumerateBuildCells(from, to, hollow) {
   const minZ = Math.min(from.z, to.z), maxZ = Math.max(from.z, to.z)
   const cells = []
   for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
-      for (let z = minZ; z <= maxZ; z++) {
-        if (hollow) {
-          const isWall = (x === minX || x === maxX || z === minZ || z === maxZ)
-          if (!isWall) continue
-        }
+    if (hollow) {
+      // Perimeter-walk order (260709): emit each layer's wall cells as one
+      // trip around the rectangle instead of X→Z scan order. The scan order
+      // alternated between opposite walls, so the builder faced a far-side
+      // cell every other step; walking the ring keeps consecutive cells
+      // adjacent and the walk-closer step below cheap.
+      const seen = new Set()
+      const push = (x, z) => {
+        const k = `${x},${z}`
+        if (seen.has(k)) return
+        seen.add(k)
         cells.push({ x, y, z })
+      }
+      for (let z = minZ; z <= maxZ; z++) push(minX, z)
+      for (let x = minX + 1; x <= maxX; x++) push(x, maxZ)
+      for (let z = maxZ - 1; z >= minZ; z--) push(maxX, z)
+      for (let x = maxX - 1; x >= minX + 1; x--) push(x, minZ)
+    } else {
+      for (let x = minX; x <= maxX; x++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          cells.push({ x, y, z })
+        }
       }
     }
   }
@@ -75,7 +92,12 @@ export function pickReferenceFace(bot, c) {
 export function withinReach(bot, c) {
   const p = bot.entity?.position
   if (!p) return false
-  const dx = p.x - c.x, dy = p.y - c.y, dz = p.z - c.z
+  // Eye-anchored to the cell CENTER (260709) — the server measures placement
+  // reach from the eyes, and the old feet-to-corner distance under-reported
+  // reach by ~1.5 blocks upward. A 5-high wall is placeable from the ground
+  // standing beside it; the feet-based check sent those cells to scaffolding.
+  const eyeY = p.y + (Number.isFinite(bot.entity?.eyeHeight) ? bot.entity.eyeHeight : 1.62)
+  const dx = p.x - (c.x + 0.5), dy = eyeY - (c.y + 0.5), dz = p.z - (c.z + 0.5)
   return Math.sqrt(dx * dx + dy * dy + dz * dz) <= REACH
 }
 
@@ -172,9 +194,10 @@ export async function scaffoldUp(bot, blockName, targetY, config) {
  * @param {object} bot
  * @param {{signal?:AbortSignal, onProgress?:(p:{placed:number,skipped:number,total:number,currentY:number})=>void}} [config]
  */
-export async function buildAction(args, bot, config) {
+export async function buildAction(args, bot, config, deps = {}) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
+  const walk = deps.goTo ?? goTo
 
   const invCount = () => bot.inventory.items().filter(i => i.name === args.block).reduce((n, i) => n + i.count, 0)
   if (invCount() === 0) return `no ${args.block} in inventory`
@@ -186,27 +209,53 @@ export async function buildAction(args, bot, config) {
   // so explicitly — the old path returned "0 placed" with no hint that the real
   // problem was too few blocks (the log: a 84-cell wall attempted with 4 dirt).
   const needed = cells.reduce((n, c) => n + (isOccupied(bot, c) ? 0 : 1), 0)
-  let placed = 0, skipped = 0
+  let placed = 0, skippedSolid = 0, skippedFail = 0
+  const skipped = () => skippedSolid + skippedFail
 
   for (const c of cells) {
     if (signal?.aborted) return `aborted after ${placed} placed of ${total} cells`
 
     if (isOccupied(bot, c)) {
-      skipped++
-      config?.onProgress?.({ placed, skipped, total, currentY: c.y })
+      skippedSolid++
+      config?.onProgress?.({ placed, skipped: skipped(), total, currentY: c.y })
       continue
     }
 
     if (!withinReach(bot, c)) {
-      const r = await scaffoldUp(bot, args.block, c.y, config)
-      if (r === 'aborted') return `aborted after ${placed} placed of ${total} cells`
-      if (r !== 'ok') return `build halted: ${r} (placed ${placed}/${total})`
+      // 260709: WALK before scaffolding. scaffoldUp only pillars straight up
+      // at the bot's current column — it never closes horizontal distance, so
+      // a far-wall cell used to fall through to a placeBlock that burned its
+      // 4s timeout and counted as a silent skip. The live symptom: a 4-wall
+      // hollow build finished as the two walls near the bot's corner (49
+      // placed, 71 skipped) while the far walls were never touched. Walk to
+      // the cell's column first (best-effort, at the bot's own height so the
+      // goal stays on walkable ground), then scaffold only if it is still
+      // above reach.
+      const p = bot.entity?.position
+      const horiz = p ? Math.hypot(p.x - (c.x + 0.5), p.z - (c.z + 0.5)) : 0
+      if (horiz > REACH - 1) {
+        await walk(bot, c.x, Math.floor(p?.y ?? c.y), c.z, 2, WALK_TIMEOUT_MS, signal)
+        if (signal?.aborted) return `aborted after ${placed} placed of ${total} cells`
+      }
+      if (!withinReach(bot, c) && c.y > (bot.entity?.position?.y ?? c.y)) {
+        const r = await scaffoldUp(bot, args.block, c.y, config)
+        if (r === 'aborted') return `aborted after ${placed} placed of ${total} cells`
+        if (r !== 'ok') return `build halted: ${r} (placed ${placed}/${total})`
+      }
+      if (!withinReach(bot, c)) {
+        // Still out of reach after walking (and scaffolding, when the cell is
+        // above) — skip WITHOUT attempting the place. The doomed placeBlock
+        // used to cost its full timeout per far cell.
+        skippedFail++
+        config?.onProgress?.({ placed, skipped: skipped(), total, currentY: c.y })
+        continue
+      }
     }
 
     const ref = pickReferenceFace(bot, c)
     if (!ref) {
-      skipped++
-      config?.onProgress?.({ placed, skipped, total, currentY: c.y })
+      skippedFail++
+      config?.onProgress?.({ placed, skipped: skipped(), total, currentY: c.y })
       continue
     }
 
@@ -223,9 +272,9 @@ export async function buildAction(args, bot, config) {
     if (typeof r === 'string' && r.startsWith('placed ')) placed++
     // Other failure strings (no inventory, cannot place, timeout) — count as
     // skipped per mineVein discipline: aggregate failure surfaces via K<N.
-    else skipped++
+    else skippedFail++
 
-    config?.onProgress?.({ placed, skipped, total, currentY: c.y })
+    config?.onProgress?.({ placed, skipped: skipped(), total, currentY: c.y })
   }
 
   // Ran out of material before finishing (this also catches scaffolding
@@ -241,8 +290,14 @@ export async function buildAction(args, bot, config) {
   // previously read "built 0 placed, N skipped" as progress and kept
   // "extending" a bridge that never grew. Make the no-op explicit so it
   // changes coordinates instead of repeating the same call.
-  if (placed === 0 && total > 0) {
+  if (placed === 0 && total > 0 && skippedFail === 0) {
     return `built NOTHING: all ${total} cells were already occupied — you are placing into solid blocks (or at your own feet level). Pick a clear span and set from.y = your y + 1.`
   }
-  return `built ${placed} placed, ${skipped} skipped, of ${total} cells`
+  // Skip-reason honesty (260709): the bare "N skipped" read as done — the
+  // model rationalized 71 missing wall cells as "uneven terrain" and moved
+  // on. Name what is missing and tell it the fix is another build call.
+  if (skippedFail > 0) {
+    return `built ${placed} placed, ${skippedFail} cells FAILED (could not reach or place them), ${skippedSolid} were already solid, of ${total}. The build is incomplete: those ${skippedFail} cells are still missing. Walk near the unbuilt part and call build again on that span to finish it.`
+  }
+  return `built ${placed} placed, ${skippedSolid} skipped (already solid), of ${total} cells`
 }

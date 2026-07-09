@@ -46,6 +46,51 @@ const NEIGHBOR_OFFSETS = [
 ]
 const BATCH_CAP = 64
 
+// End-of-gather drop sweep bounds (260709). Radius covers the trees just
+// mined; the walk budget per drop is short because a resting item is almost
+// always on open ground a few blocks away.
+const SWEEP_RADIUS = 12
+const SWEEP_MAX = 8
+const SWEEP_WALK_MS = 3000
+const SWEEP_SETTLE_MS = 250
+
+function isItemEntity(e) {
+  return !!e && (e.name === 'item' || e.objectType === 'Item' || e.displayName === 'Item')
+}
+
+/**
+ * Walk to nearby dropped items so mineflayer's auto-pickup collects them.
+ * The per-dig pickup walk (dig.js) catches the common case, but drops that
+ * bounce off the trunk, land somewhere else, or spawn later from decaying
+ * leaves (saplings, sticks, apples) were left behind — the live symptom was
+ * a "finished" gather leaving a trail of items on the ground. Best-effort
+ * and bounded: closest-first, each drop attempted once, drops well above
+ * the bot (canopy) are skipped so the pathfinder never climbs for them.
+ */
+async function sweepDrops(bot, goTo, signal, sleep = (ms) => new Promise(r => setTimeout(r, ms))) {
+  const attempted = new Set()
+  for (let i = 0; i < SWEEP_MAX; i++) {
+    if (signal?.aborted) return
+    const here = bot.entity?.position
+    if (!here) return
+    let best = null, bestD = Infinity
+    for (const e of Object.values(bot.entities ?? {})) {
+      if (!isItemEntity(e) || !e.position || e.isValid === false) continue
+      if (attempted.has(e.id ?? e)) continue
+      if (e.position.y > here.y + 2) continue // canopy drop — never climb for one item
+      const d = e.position.distanceTo(here)
+      if (d <= SWEEP_RADIUS && d < bestD) { bestD = d; best = e }
+    }
+    if (!best) return
+    attempted.add(best.id ?? best)
+    await goTo(bot, Math.floor(best.position.x), Math.floor(best.position.y), Math.floor(best.position.z), 0, SWEEP_WALK_MS, signal)
+    if (signal?.aborted) return
+    // Give the collect a beat to register before rescanning, so a stack the
+    // walk just absorbed doesn't get re-picked as the next target.
+    await sleep(SWEEP_SETTLE_MS)
+  }
+}
+
 /**
  * Gather a batch of one block type from a name or coordinate anchor.
  *
@@ -57,7 +102,7 @@ const BATCH_CAP = 64
  * @param {{ name?:string, x?:number, y?:number, z?:number, maxDistance?:number, count?:number }} args
  * @param {import('mineflayer').Bot} bot
  * @param {{ signal?: AbortSignal, pathfinder_timeout_ms?: number, onProgress?: (p:{dug:number,total:number})=>void }} [config]
- * @param {{ goTo?: typeof realGoTo, digAction?: typeof realDigAction }} [_deps]
+ * @param {{ goTo?: typeof realGoTo, digAction?: typeof realDigAction, sleep?: (ms:number)=>Promise<void> }} [_deps]
  *        Optional dependency injection — used by unit tests to stub the
  *        per-block side effects. Defaults fall through to the real imports
  *        so the registry call site `(args, bot, config)` is unaffected.
@@ -290,6 +335,13 @@ export async function gatherAction(args, bot, config, _deps) {
 
     const r = await mineComponent(positions, blockName, progress)
     if (r === 'aborted') return `aborted after ${progress.dug}/${want} ${blockName}`
+  }
+
+  // Collect what the digs dropped before reporting done (skipped when nothing
+  // was dug — no drops of ours to chase, and a failed gather should not stall).
+  if (progress.dug > 0) {
+    await sweepDrops(bot, goTo, signal, _deps?.sleep)
+    if (signal?.aborted) return `aborted after ${progress.dug}/${want} ${blockName}`
   }
 
   let note = ''

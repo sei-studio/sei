@@ -200,3 +200,34 @@ describe('visualizeAction — directional / relative facing (260617)', () => {
     expect(typeof res).toBe('string')
   })
 })
+
+describe('visualizeAction — vertical orientations (260709)', () => {
+  it('look({orientation:"down"}) tilts the head down without turning', async () => {
+    renderPovMock.mockResolvedValue(okJpeg())
+    const look = vi.fn(async () => {})
+    const bot = makeBot({ entity: { position: { x: 0, y: 64, z: 0 }, yaw: 0.5, pitch: 0 }, look })
+
+    const res = await visualizeAction({ orientation: 'down' }, bot, config)
+    expect(Object.keys(res)).toEqual(['text', 'image'])
+    // Yaw unchanged (no yaw offset for a vertical orientation), pitch positive-down.
+    expect(look).toHaveBeenCalledWith(0.5, Math.PI / 3, true)
+  })
+
+  it('look({orientation:"up"}) tilts the head up', async () => {
+    renderPovMock.mockResolvedValue(okJpeg())
+    const look = vi.fn(async () => {})
+    const bot = makeBot({ entity: { position: { x: 0, y: 64, z: 0 }, yaw: 0, pitch: 0 }, look })
+
+    await visualizeAction({ orientation: 'up' }, bot, config)
+    expect(look).toHaveBeenCalledWith(0, -Math.PI / 3, true)
+  })
+})
+
+describe('vision grounding — blurry-vision honesty (260709)', () => {
+  it('the result text licenses admitting it cannot make something out', async () => {
+    renderPovMock.mockResolvedValue(okJpeg())
+    const res = await visualizeAction({}, makeBot(), config)
+    expect(res.text).toContain('cannot see it well')
+    expect(res.text).toContain('blurry')
+  })
+})

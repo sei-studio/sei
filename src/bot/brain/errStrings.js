@@ -24,3 +24,21 @@ export function truncate(s, max = 80) {
 export function reason(err) {
   return truncate(firstLine(err?.message ?? err), 80)
 }
+
+/**
+ * One-line, model-readable rendering of an error for tool results. ZodErrors
+ * (schema validation on tool args) render as `field: message` pairs — the raw
+ * `.message` on a ZodError is the multi-line JSON issue dump, which the model
+ * was previously shown verbatim (260709: craft count 92 produced a 12-line
+ * JSON blob where "count: Number must be less than or equal to 64" says it
+ * all). Non-Zod errors fall back to the first line of the message.
+ */
+export function errLine(err) {
+  const issues = err?.issues ?? err?.errors
+  if (Array.isArray(issues) && issues.length && issues.every(i => i && typeof i.message === 'string')) {
+    return issues
+      .map(i => (Array.isArray(i.path) && i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message))
+      .join('; ')
+  }
+  return firstLine(err?.message ?? err) || 'unknown'
+}

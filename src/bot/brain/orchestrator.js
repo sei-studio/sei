@@ -34,6 +34,7 @@ import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker } from './inflight.js'
 import { createConvoMemory } from './convoMemory.js'
 import { logChatOut, logActionResult } from './log.js'
+import { errLine } from './errStrings.js'
 import { createMemoryLog, readMemoryForSeed } from './memory/memoryLog.js'
 import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
@@ -2622,8 +2623,10 @@ function maybeWarnByteCap(loop, warned) {
       .catch(err => {
         const aborted = runner.abortController.signal.aborted ||
                         (err && (err.name === 'AbortError'))
-        const result = aborted ? `aborted: ${use.name}` : `error: ${err?.message ?? 'unknown'}`
-        try { logActionResult(use.name, `error: ${err?.message ?? 'unknown'}`) } catch {}
+        // errLine flattens ZodErrors (arg validation) to `field: message` —
+        // the raw .message is a multi-line JSON issue dump. (260709)
+        const result = aborted ? `aborted: ${use.name}` : `error: ${errLine(err)}`
+        try { logActionResult(use.name, `error: ${errLine(err)}`) } catch {}
         const tickClaimed = !!inflightEntry._tickClaimed
         // 260516-0yw: clear the 10s action-tick BEFORE detaching the in-flight.
         clearActionTick(loop.inFlight)
