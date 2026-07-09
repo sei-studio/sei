@@ -93,6 +93,11 @@ export function groupCallNote(peers: string[]): string {
     `(${peers.length + 1} of you companions, plus the player). ` +
     'A line prefixed with a name in parentheses, like "(Sui, on the call): ...", is that companion talking, ' +
     'not the player. You can talk straight back to them: banter, agree, pile on, undercut, argue. ' +
+    'Speak only as yourself: never write a line for another companion or for the player, and never copy the ' +
+    'name-in-parentheses format into your own reply. ' +
+    'Everyone on the call hears everything, so when the player asks something of the whole group, answer for ' +
+    'yourself; when a line is clearly meant for one of the others alone and you have nothing to add, reply with ' +
+    'exactly (silence). ' +
     'Keep every turn to ONE short spoken line so the others get a word in. ' +
     'When a back-and-forth is genuinely going somewhere, keep it alive and build on it instead of closing it off; ' +
     'only bow out (say nothing) once a thread has actually run its course or you have nothing to add. ' +

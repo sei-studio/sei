@@ -17,7 +17,7 @@ import {
 } from './prompts.js'
 // SESSION_END_CLAUSE is not (yet) re-exported through the prompts.js barrel —
 // pull it straight from the source of truth.
-import { SESSION_END_CLAUSE } from './promptLibrary.js'
+import { SESSION_END_CLAUSE, MEMORY_GOAL_CUE } from './promptLibrary.js'
 
 // 260703: live-session bug — the player said "lets call it here for now" / "cya"
 // / "bye" and the bot kept saying goodbye lines without ever calling quit, so it
@@ -117,5 +117,49 @@ describe('renderHeartbeat — goal + frontier only (no directive)', () => {
     const hb = renderHeartbeat(2, '- [t] go for diamonds', 'stone tools · iron')
     expect(hb).not.toContain('stone tools · iron')
     expect(hb).toContain('go for diamonds')
+  })
+})
+
+// 260708: memory/goal capture cue (Lyra post-mortem). The player set an
+// explicit session goal out loud; the bot agreed verbally and recorded
+// nothing, so the plan was gone two loops later. The cue is ONE shared const
+// (no drift) present in every variant that delivers a player message,
+// including BOTH mid-action actionTurn variants — the mid-follow interrupt is
+// exactly where "we're building a house, remember that" landed and died.
+describe('MEMORY_GOAL_CUE — memory/goal capture (260708)', () => {
+  it('cues remember() for keepsakes and setGoal for multi-step objectives, with no trigger-phrase matching', () => {
+    expect(MEMORY_GOAL_CUE).toContain('record it with remember() in the same turn')
+    expect(MEMORY_GOAL_CUE).toContain('keep something in mind')
+    expect(MEMORY_GOAL_CUE).toContain('record it with setGoal in the same turn')
+    expect(MEMORY_GOAL_CUE).toContain('Nothing you say out loud is stored anywhere')
+  })
+
+  it('is reused verbatim in both playerInterruptHint variants', () => {
+    expect(NUDGES.playerInterruptHint).toContain(MEMORY_GOAL_CUE)
+    expect(NUDGES.playerInterruptHintGroupVoice).toContain(MEMORY_GOAL_CUE)
+  })
+
+  it('rides the not-mid-action player-message variants too (a stated goal often arrives on a fresh loop)', () => {
+    const solo = NUDGES.actionTurn({ action: null, stopTool: 'end_loop', playerLine: 'our goal today is a house', who: 'Steve' })
+    expect(solo).toContain(MEMORY_GOAL_CUE)
+    const group = NUDGES.actionTurn({ action: null, stopTool: 'end_loop', playerLine: 'our goal today is a house', who: 'Steve', voice: true, peers: ['Sui'] })
+    expect(group).toContain(MEMORY_GOAL_CUE)
+  })
+
+  it('rides both mid-action player-message variants of actionTurn', () => {
+    const solo = NUDGES.actionTurn({
+      action: 'follow Steve', stopTool: 'unfollow', playerLine: 'we are building a house, ok?', who: 'Steve',
+    })
+    expect(solo).toContain(MEMORY_GOAL_CUE)
+    const group = NUDGES.actionTurn({
+      action: 'follow Steve', stopTool: 'unfollow', playerLine: 'we are building a house, ok?', who: 'Steve',
+      voice: true, peers: ['Sui'],
+    })
+    expect(group).toContain(MEMORY_GOAL_CUE)
+  })
+
+  it('does not leak into the silent-monitor tick (no player message, no cue)', () => {
+    const silent = NUDGES.actionTurn({ action: 'gather oak_log', stopTool: 'end_loop', elapsedSec: 12 })
+    expect(silent).not.toContain('setGoal in the same turn')
   })
 })

@@ -220,11 +220,12 @@ export function composeSnapshot(bot, opts = {}) {
     for (const { entity: e } of ents.entries) {
       const tag = `#${n++}`
       let label = e.username ?? e.name ?? `entity-${e.id}`
-      // Decode dropped-item entities to `item(<name>)` so the LLM can see what
-      // it's looking at (e.g. an unpicked-up dirt drop from a recent dig).
+      // Decode dropped-item entities to `item(<name> xN)` so the LLM can see
+      // what it's looking at (a cooked-beef gift from the player vs its own
+      // dirt drop) and walk to the right one — walking onto it picks it up.
       if (label === 'item' || label === 'item_stack') {
-        const itemName = droppedItemName(e)
-        if (itemName) label = `item(${itemName})`
+        const it = droppedItemName(e)
+        if (it) label = `item(${it.name}${it.count > 1 ? ` x${it.count}` : ''})`
       }
       // 260618: mark fellow AI companions so the model treats them as teammates
       // (coordinate / direct) and never mistakes one for the human player.

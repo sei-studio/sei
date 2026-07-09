@@ -6,12 +6,12 @@
  * audio queue, barge-in, superseding); this module only answers decisions and
  * holds no mutable state of its own.
  *
- * Three jobs:
- *   1. pickResponder — when the player speaks, which ONE companion answers.
- *      Addressed-by-name wins; otherwise a VARIED pick (the last responder is
- *      down-weighted, not banned) so it is not always the same AI jumping in
- *      first, without a rigid clockwork rotation either.
- *   2. decideReaction — after a companion speaks, which OTHER companion takes
+ * Two jobs (a third, pickResponder — route each player utterance to ONE chosen
+ * companion — was retired 260708: the player's line is now broadcast to every
+ * participant, each deciding for itself whether to answer; the single-responder
+ * pick starved the others of a turn and, on "both of you..." lines, had the
+ * picked one fabricating the other's reply):
+ *   1. decideReaction — after a companion speaks, which OTHER companion takes
  *      the next turn. With two+ companions the banter is meant to be ongoing —
  *      they keep the conversation (and play) going between themselves — so there
  *      is NO random "stop" roll. The exchange ends NATURALLY: a companion whose
@@ -19,7 +19,7 @@
  *      chain there (a real lull, not a dice roll). A hard cap (PFC_MAX_CHAIN)
  *      remains only as a runaway guard. The player can cut in at any time — a
  *      barge-in supersedes the chain (see the director in useVoiceStore).
- *   3. isJunkTranscript — reject Whisper hallucinations (echo/breath/silence
+ *   2. isJunkTranscript — reject Whisper hallucinations (echo/breath/silence
  *      transcribed as "hhhhh", "you", "[BLANK_AUDIO]") before they ever become a
  *      player turn.
  */
@@ -27,11 +27,6 @@
 export interface Participant {
   id: string;
   name: string;
-}
-
-export interface ResponderPick {
-  /** The chosen companion's id. */
-  id: string;
 }
 
 export interface ReactionDecision {
@@ -77,25 +72,6 @@ function weightedPick(
     if (r < 0) return list[i];
   }
   return list[list.length - 1];
-}
-
-/**
- * Choose who answers a player utterance. If the player named a companion, that
- * companion answers; otherwise pick a varied responder, down-weighting the last
- * one so the "who speaks first" alternates without a rigid rotation. With one
- * participant it just returns them.
- */
-export function pickResponder(
-  text: string,
-  participants: Participant[],
-  lastResponderId: string | null,
-  rnd: () => number = Math.random,
-): ResponderPick {
-  if (participants.length === 0) return { id: '' };
-  if (participants.length === 1) return { id: participants[0].id };
-  const addressed = addressedBy(text, participants);
-  if (addressed) return { id: addressed.id };
-  return { id: weightedPick(participants, lastResponderId, rnd).id };
 }
 
 /**

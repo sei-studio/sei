@@ -54,7 +54,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
     listActions: () => registry.list(),
     getActionSchema: (name) => registry.schema(name),
     getActionDescription: (name) => describeAction(name, config?.vision?.mode) ?? registry.description?.(name) ?? '',
-    executeAction: (name, args, ctx = {}) => {
+    executeAction: async (name, args, ctx = {}) => {
       // Action handlers receive (args, bot, config). Brain context (signal)
       // is folded into the config-shaped 4th argument so existing handlers
       // don't need to change.
@@ -67,7 +67,20 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
         if (execConfig.pathfinder_timeout_ms == null) execConfig.pathfinder_timeout_ms = mc.pathfinder_timeout_ms
         if (execConfig.follow_range == null) execConfig.follow_range = mc.follow_range
       }
-      return registry.execute(name, args, bot, execConfig)
+      // 260709: while a world action executes, the head belongs to the action
+      // (faceBlock + mineflayer's own dig/place looks), not to the cosmetic
+      // owner-gaze — gaze.js checks this counter and stands down, otherwise
+      // its 4 Hz lookAt(player) yanks the head back mid-dig and the bot
+      // punches trees while staring at the player. A counter (not a flag)
+      // because a preempting dispatch can overlap the tail of an aborting one.
+      // follow's persistent trailing runs OUTSIDE execute (background tick),
+      // so follow keeps its gaze pitch-tracking.
+      bot._seiActionActive = (bot._seiActionActive ?? 0) + 1
+      try {
+        return await registry.execute(name, args, bot, execConfig)
+      } finally {
+        bot._seiActionActive = Math.max(0, (bot._seiActionActive ?? 1) - 1)
+      }
     },
 
     // ─── World perception + prompt blocks ──────────────────────────────

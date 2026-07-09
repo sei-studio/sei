@@ -1,6 +1,7 @@
 // src/behaviors/sleep.js — sleep in a bed (D-22, Pitfall 4)
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { reason } from '../../../brain/errStrings.js'
+import { faceBlock } from './face.js'
 
 export const DEFAULT_TIMEOUT_MS = 12000
 
@@ -20,6 +21,11 @@ export async function sleepAction(args, bot, config) {
   if (!isBed) return `target is not a bed (${block.name ?? 'unknown'})`
 
   const timeoutMs = args.timeout_ms ?? config?.sleep_timeout_ms ?? DEFAULT_TIMEOUT_MS
+
+  // Face the bed first — bot.sleep never looks, so the avatar used to climb
+  // in while staring wherever it last walked (260708).
+  await faceBlock(bot, block.position)
+  if (signal?.aborted) return 'aborted'
 
   const op = bot.sleep(block)
     .then(() => 'sleeping')

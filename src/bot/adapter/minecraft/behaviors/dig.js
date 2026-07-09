@@ -133,8 +133,23 @@ export async function digAction(args, bot, config) {
     .then(async () => {
       // Walk onto the drop so mineflayer's auto-pickup fires. Best-effort:
       // bounded timeout, ignore result (if blocked, we still dug successfully).
+      //
+      // 260709: walk to where the drop LANDS, not to the block's original
+      // coords. Items fall — a trunk log dug 3 blocks up drops to the ground,
+      // but pathing to the old mid-air coordinate made the pathfinder CLIMB
+      // (scaffold up the tree, burn the timeout, end up on the canopy). That
+      // was the live tree-hopping bug: after each high log the bot stood on
+      // top of a tree, and the "nearest remaining log" from up there was the
+      // next tree over. Scan down to the first solid block below the drop
+      // (bounded) and walk to the air cell above it.
       try {
-        const r = await goTo(bot, dropPos.x, dropPos.y, dropPos.z, 0, PICKUP_TIMEOUT_MS)
+        let ly = dropPos.y
+        for (let i = 0; i < 12; i++) {
+          const below = bot.blockAt?.(new Vec3(dropPos.x, ly - 1, dropPos.z))
+          if (!below || !/^(air|cave_air|void_air|water)$/.test(below.name)) break
+          ly--
+        }
+        const r = await goTo(bot, dropPos.x, ly, dropPos.z, 0, PICKUP_TIMEOUT_MS)
         if (r !== 'reached') pickupNote = ' (pickup walk did not reach)'
       } catch {}
       return `dug ${blockName}${pickupNote}`

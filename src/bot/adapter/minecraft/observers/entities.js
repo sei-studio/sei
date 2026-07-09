@@ -3,30 +3,39 @@
 import { hasClearLineOfSight } from './lineOfSight.js'
 
 /**
- * Resolve the concrete item name for a dropped-item entity. Mineflayer parses
- * the item slot into `entity.metadata` keyed by metadata index; the value is
- * either a parsed Item instance (modern protocol with mcDataHasEntityMetadata)
- * or a raw slot object on older versions. We scan values for the first one
- * whose `.name` looks like a real MC id (anything other than the generic
- * 'item' / 'item_stack' label that's already on the entity itself).
+ * Resolve the concrete item name (and stack count) for a dropped-item entity.
+ *
+ * 260708: primary path is prismarine-entity's own `entity.getDroppedItem()`,
+ * which knows the version-specific metadata index and parses the raw network
+ * slot into an Item with `.name`/`.count`. The old hand-rolled metadata scan
+ * below never fired on 1.21.x (the raw slot is `{itemId, itemCount}` with no
+ * `.name`, so every dropped item rendered as an anonymous `item` — the bot
+ * could not tell a cooked-beef gift from its own dirt drop). The scan is kept
+ * only as a legacy fallback for entities without getDroppedItem.
  *
  * Returns `null` if the entity isn't a dropped item or the metadata hasn't
  * arrived yet — caller falls back to the generic 'item' label.
  *
  * @param {object} entity
- * @returns {string|null}
+ * @returns {{ name: string, count: number }|null}
  */
 export function droppedItemName(entity) {
   if (!entity) return null
   const generic = entity.name === 'item' || entity.name === 'item_stack'
   if (!generic) return null
+  try {
+    const it = entity.getDroppedItem?.()
+    if (it && typeof it.name === 'string' && it.name) {
+      return { name: it.name, count: Number.isFinite(it.count) && it.count > 0 ? it.count : 1 }
+    }
+  } catch { /* metadata not arrived / unsupported version — fall through */ }
   const meta = entity.metadata
   if (!meta) return null
   const values = Array.isArray(meta) ? meta : Object.values(meta)
   for (const v of values) {
     if (!v || typeof v !== 'object') continue
     if (typeof v.name === 'string' && v.name && v.name !== 'item' && v.name !== 'item_stack') {
-      return v.name
+      return { name: v.name, count: Number.isFinite(v.count) && v.count > 0 ? v.count : 1 }
     }
   }
   return null

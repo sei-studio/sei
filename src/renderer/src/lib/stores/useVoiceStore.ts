@@ -11,10 +11,11 @@
  * all speech, so two companions physically cannot talk over each other. The
  * director sits on top and decides WHO generates when (policy in ../voice/pfcSteer,
  * "PFC steer"):
- *   - a player utterance goes to one chosen responder (addressed-by-name, else a
- *     varied pick that down-weights whoever answered last so it is not always the
- *     same AI first) and is silently mirrored into the other companions'
- *     transcripts so they keep context;
+ *   - a player utterance is broadcast to EVERY participant (260708): each gets a
+ *     real turn and decides for itself whether the line is its to answer (the
+ *     group-call prompt sanctions "(silence)"), so nobody is left with a
+ *     transcript row and no voice — the old single-responder pick starved the
+ *     others of launch() and had the picked one fabricating their lines;
  *   - after a companion speaks, another companion MAY react — a probabilistic,
  *     depth-decaying decision, so an exchange sometimes stops at one line and
  *     sometimes banters on for a few turns (the player can just listen);
@@ -46,7 +47,7 @@ import { voicePitchRate } from '@shared/voicePitch';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createDictation, type Dictation } from '../voice/dictation';
 import { registerVoiceHooks } from '../voice/voiceBridge';
-import { pickResponder, decideReaction, isJunkTranscript, type Participant } from '../voice/pfcSteer';
+import { decideReaction, isJunkTranscript, type Participant } from '../voice/pfcSteer';
 import {
   startRingtone,
   startAmbience,
@@ -137,9 +138,6 @@ let offCallEnded: (() => void) | null = null;
 /** Bumped by every player utterance and by teardown; a running companion chain
  * that finds its captured value stale aborts (barge-in / supersede). */
 let directorSeq = 0;
-/** Who answered the LAST player utterance — down-weighted next time so the
- * first-to-speak varies instead of always being the same AI. */
-let lastResponderId: string | null = null;
 /** Who reacted most recently in the current chain — down-weighted so a trio
  * spreads the floor rather than two of them ping-ponging. */
 let lastReactorId: string | null = null;
@@ -168,6 +166,14 @@ const CHAIN_GAP_NEXT_MS = 450;
 // if the player spoke while it generated (director sequence check).
 const IDLE_NUDGE_MIN_MS = 5_000;
 const IDLE_NUDGE_MAX_MS = 60_000;
+// Proactiveness-keyed pacing (260708): when an AGENTIC character (proactiveness
+// dial 2) is on the call, quiet stretches are shorter — it is the one expected
+// to keep the conversation going (its nudge prompt in main also drops the
+// silence option), so the call never sits dead for a minute waiting on the
+// default window. Turning the character's dial down restores the laid-back
+// cadence; the "Conversation starters" toggle still gates all of it.
+const PROACTIVE_NUDGE_MIN_MS = 6_000;
+const PROACTIVE_NUDGE_MAX_MS = 18_000;
 const IDLE_TICK_MS = 1_000;
 /** When the conversation last was busy — the quiet stretch is measured from here. */
 let idleQuietSince = 0;
@@ -185,8 +191,18 @@ let companionTurnsInFlight = 0;
  * activity resets it. */
 let idleQuietStreak = 0;
 const IDLE_BACKOFF_CAP = 8;
-function sampleIdleTarget(): number {
-  return IDLE_NUDGE_MIN_MS + Math.random() * (IDLE_NUDGE_MAX_MS - IDLE_NUDGE_MIN_MS);
+function sampleIdleTarget(level = 1): number {
+  const min = level >= 2 ? PROACTIVE_NUDGE_MIN_MS : IDLE_NUDGE_MIN_MS;
+  const max = level >= 2 ? PROACTIVE_NUDGE_MAX_MS : IDLE_NUDGE_MAX_MS;
+  return min + Math.random() * (max - min);
+}
+
+/** The proactiveness dial (0-2) of a call participant — same source + clamp as
+ * main and the bot (character.metadata.proactiveness, junk → 1). */
+function proactivenessOf(characterId: string): number {
+  const p = useDataStore.getState().characters.find((c) => c.id === characterId)?.metadata
+    ?.proactiveness;
+  return typeof p === 'number' && Number.isInteger(p) && p >= 0 && p <= 2 ? p : 1;
 }
 
 /** Spoken-turn capture. A companion's spoken lines almost always arrive ASYNC
@@ -212,6 +228,10 @@ const CAPTURE_QUIET_MS = 900;
  * if nothing lands by then the turn produced nothing, so the chain just rests
  * (finalizing with no lines is a harmless no-op). */
 const CAPTURE_FIRST_LINE_MS = 22_000;
+/** Once a NOT-in-game responder's send() has fully resolved with no spoken
+ * line, its empty capture is released after this short grace instead of the
+ * full first-line window (see the silent-turn release in runCompanionTurnInner). */
+const CAPTURE_SILENT_RELEASE_MS = 1200;
 function clearTurnCapture(): void {
   if (!turnCapture) return;
   window.clearTimeout(turnCapture.timer);
@@ -442,6 +462,24 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   function speakAndCapture(characterId: string, text: string, originSeq: number): void {
     speakCompanionLine(characterId, text);
     const current = originSeq === directorSeq;
+    // Floor-steal (260708): an armed capture whose speaker has produced NOTHING
+    // yet is a pending floor, not a held one. A real spoken line from someone
+    // ELSE takes it: without this, a responder that chose silence held the
+    // floor for the full CAPTURE_FIRST_LINE_MS (22s), and any line landing in
+    // that window — a join greeting, an in-world say() — was mirrored but never
+    // chained, so the room audibly heard it and nobody reacted (Sui greeted the
+    // call, Marv's empty reply-capture ate the chain, Marv "said nothing").
+    // A capture that already has lines keeps the floor; the newcomer's line
+    // stays a mirrored interjection as before.
+    if (
+      current &&
+      turnCapture &&
+      turnCapture.seq === directorSeq &&
+      turnCapture.speakerId !== characterId &&
+      turnCapture.lines.length === 0
+    ) {
+      clearTurnCapture();
+    }
     if (current && !turnCapture && get().participants.length > 1) {
       armTurnCapture(directorSeq, characterId, 0);
     }
@@ -499,9 +537,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // Who takes the floor next. No random stop: with two+ companions the banter
     // keeps going until one has nothing to add (its own turn returns no line),
     // and the player can cut in at any time (barge-in supersedes this chain).
+    // 260708: in-game companions are excluded from the reactor pool. They hear
+    // every mirrored line inside their game session (main routes voiceObserve
+    // into the live session as record-only context, waking on a by-name
+    // request) and drive their own reactions there; handing them a standalone
+    // chat turn here as well double-drove them with a brain that has no world
+    // state. All reactors in-game → the chain rests and the game brains carry
+    // the conversation.
+    const chainSummons = useDataStore.getState().summons;
+    const reactorPool = parts.filter((id) => {
+      if (id === speakerId) return true; // decideReaction excludes the speaker itself
+      const k = chainSummons[id]?.kind;
+      return k !== 'online' && k !== 'connecting';
+    });
     const decision = decideReaction({
       speakerId,
-      participants: asParticipants(parts),
+      participants: asParticipants(reactorPool),
       depth,
       lastReactorId,
       // The line just spoken — if it names a peer, that peer is forced to answer.
@@ -555,6 +606,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     speakerId: string,
     incoming: { from: 'player'; text: string } | { from: 'companion'; fromName: string; text: string },
     depth: number,
+    opts?: { capture?: boolean },
   ): Promise<void> {
     if (mySeq !== directorSeq) return;
     const parts = get().participants;
@@ -565,7 +617,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // path arms no capture, so this counter is its only busy signal).
     companionTurnsInFlight += 1;
     try {
-      await runCompanionTurnInner(mySeq, speakerId, incoming, depth, peers);
+      await runCompanionTurnInner(mySeq, speakerId, incoming, depth, peers, opts?.capture !== false);
     } finally {
       companionTurnsInFlight = Math.max(0, companionTurnsInFlight - 1);
     }
@@ -577,6 +629,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     incoming: { from: 'player'; text: string } | { from: 'companion'; fromName: string; text: string },
     depth: number,
     peers: string[],
+    capture: boolean = true,
   ): Promise<void> {
     let lines: string[] = [];
     try {
@@ -588,9 +641,33 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // in flight — streamed sentences, the blocking reveal loop, an in-world
         // routed reply — and the chain fires from the capture once the responder
         // falls quiet. Chaining from send()'s returned replies instead would
-        // race the stream and double-drive the chain.
-        armTurnCapture(mySeq, speakerId, depth);
+        // race the stream and double-drive the chain. (260708: a multi-bot
+        // in-game broadcast passes capture=false — the single capture slot
+        // cannot track parallel responders, and replies still speak + mirror
+        // through onCompanionText → speakAndCapture.)
+        if (capture) armTurnCapture(mySeq, speakerId, depth);
         await useChatStore.getState().send(speakerId, incoming.text, undefined, peers);
+        // Silent-turn floor release (260708). For a NOT-in-game responder,
+        // send() resolving means the whole turn is done — every streamed
+        // sentence was already pushed — so a capture still empty here is a
+        // turn that chose silence. Shorten its timer from the 22s
+        // first-line window (which exists for in-game routed replies that
+        // arrive long after send() returns) to a short IPC grace, so the
+        // floor and the idle-starter clock free up as soon as the quiet is
+        // real. A straggler line landing inside the grace still feeds the
+        // capture and re-arms the normal quiet window.
+        const k = useDataStore.getState().summons[speakerId]?.kind;
+        if (
+          k !== 'online' &&
+          k !== 'connecting' &&
+          turnCapture &&
+          turnCapture.seq === mySeq &&
+          turnCapture.speakerId === speakerId &&
+          turnCapture.lines.length === 0
+        ) {
+          window.clearTimeout(turnCapture.timer);
+          turnCapture.timer = window.setTimeout(() => finalizeTurnCapture(), CAPTURE_SILENT_RELEASE_MS);
+        }
         return;
       } else {
         // Cross-companion reaction: a direct invoke that returns the lines (no
@@ -612,6 +689,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     await chainFromLines(mySeq, speakerId, lines, depth);
   }
 
+  /** The pacing level for the idle starter: the HIGHEST proactiveness dial
+   * among the call's nudge-eligible (not-in-game) participants — one agentic
+   * companion on the line is enough to keep it moving. No eligible off-game
+   * participant → default pacing (the nudge will skip anyway). */
+  function callIdleLevel(): number {
+    const summons = useDataStore.getState().summons;
+    const off = get().participants.filter((id) => {
+      const k = summons[id]?.kind;
+      return k !== 'online' && k !== 'connecting';
+    });
+    return off.length ? Math.max(...off.map(proactivenessOf)) : 1;
+  }
+
   /** One tick of the idle-starter clock (module-level notes at the constants).
    * Chained setTimeout guarded by the session token, so the chain dies with the
    * call and two calls can never double-tick. */
@@ -630,7 +720,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // it a fresh randomly-sampled target ("x is sampled every turn"). Real
       // conversation (not the nudge machinery itself) also clears the backoff.
       idleQuietSince = Date.now();
-      idleTargetMs = sampleIdleTarget();
+      idleTargetMs = sampleIdleTarget(callIdleLevel());
       if (busyConversation) idleQuietStreak = 0;
     } else if (
       useUiStore.getState().convoStartersEnabled &&
@@ -664,7 +754,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     let spoke = false;
     try {
       if (!eligible.length) return;
-      const speakerId = eligible[Math.floor(Math.random() * eligible.length)];
+      // The most proactive companion is the one who starts topics (260708): an
+      // agentic character on the call is expected to carry the conversation, so
+      // it gets the nudge over a laid-back peer; ties keep the random spread.
+      const top = Math.max(...eligible.map(proactivenessOf));
+      const pool = eligible.filter((id) => proactivenessOf(id) === top);
+      const speakerId = pool[Math.floor(Math.random() * pool.length)];
       const peers = s.participants.filter((id) => id !== speakerId).map(nameOf);
       const quietSeconds = Math.round((Date.now() - idleQuietSince) / 1000);
       const result = await sei
@@ -689,7 +784,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // (silence, skip, failure) grows the backoff; a spoken line resets it.
       idleQuietStreak = spoke ? 0 : idleQuietStreak + 1;
       idleQuietSince = Date.now();
-      idleTargetMs = sampleIdleTarget();
+      idleTargetMs = sampleIdleTarget(callIdleLevel());
     }
   }
 
@@ -708,20 +803,29 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     clearTurnCapture(); // a fresh utterance supersedes any pending turn capture
     lastReactorId = null; // fresh utterance: reset the chain's spread memory
     set({ lastHeard: text });
-    if (parts.length === 1) {
-      lastResponderId = parts[0];
-      void runCompanionTurn(mySeq, parts[0], { from: 'player', text }, 0);
-      return;
-    }
-    const pick = pickResponder(text, asParticipants(parts), lastResponderId);
-    lastResponderId = pick.id;
-    const responder = pick.id;
-    // The responder hears the line through send(); mirror it into every other
-    // companion's transcript so they have the player's words for their own turn.
+    // 260708: EVERY participant gets a real turn for every player utterance —
+    // in-game or not. In-game recipients route to their game brain, which
+    // carries the group-addressing guidance and decides for itself whether the
+    // line is its to answer (this replaced pickResponder for play-while-calling
+    // sessions, where STT-mangled names — "Marv" heard as "My bar", "Sui" as
+    // "sweet"/"soy" — routed commands to the wrong bot). Off-game recipients
+    // run the standalone voice turn, which honors launch() against live LAN
+    // state and may yield via "(silence)". Later the same day the director's
+    // single-responder flow was dropped for pure-call groups too: routing
+    // "both of you join my world" to ONE companion left the other with a
+    // transcript row and no turn — it could neither answer nor launch, and the
+    // picked one (told the other "spoke" only through the transcript) filled
+    // the gap by fabricating a line in the other's voice. The group-call
+    // prompt gives every recipient the yield guidance, so a line meant for one
+    // companion alone still gets one answer, not N. send() persists the player
+    // row before routing, so no separate observe mirror is needed.
     for (const id of parts) {
-      if (id !== responder) void sei.voiceObserve?.({ characterId: id, from: 'player', text }).catch(() => {});
+      // No director-side turn capture on a multi-recipient broadcast: the
+      // capture slot is single and the replies stream back through
+      // onCompanionText, which speaks and mirrors them regardless (the first
+      // responder to actually produce a line takes the floor there).
+      void runCompanionTurn(mySeq, id, { from: 'player', text }, 0, { capture: parts.length === 1 });
     }
-    void runCompanionTurn(mySeq, responder, { from: 'player', text }, 0);
   }
 
   // Chat → voice seam: companion text lands here from BOTH reply paths (send()
@@ -760,7 +864,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const mySeq = ++directorSeq; // the player takes the floor: cancel running banter
       clearTurnCapture();
       lastReactorId = null;
-      lastResponderId = characterId;
       set({ lastHeard: text });
       for (const id of s.participants) {
         if (id !== characterId) {
@@ -841,7 +944,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       directorSeq++; // fresh call: invalidate any stale chain token
       clearTurnCapture();
       speakerOriginSeq.clear();
-      lastResponderId = null;
       lastReactorId = null;
       const dialStart = Date.now();
       liveSince.clear();
@@ -984,7 +1086,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // greeting about to play immediately resets it anyway) and ticks for the
       // life of the call — the session guard kills the chain at hang-up.
       idleQuietSince = now;
-      idleTargetMs = sampleIdleTarget();
+      idleTargetMs = sampleIdleTarget(callIdleLevel());
       idleQuietStreak = 0;
       window.setTimeout(() => idleTick(mySession), IDLE_TICK_MS);
 
@@ -1037,7 +1139,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       clearTurnCapture();
       speakerOriginSeq.delete(characterId);
       if (lastReactorId === characterId) lastReactorId = null;
-      if (lastResponderId === characterId) lastResponderId = null;
       const since = liveSince.get(characterId);
       liveSince.delete(characterId);
       void sei
@@ -1064,7 +1165,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       directorSeq++; // cancel any running companion chain (bump + clear travel together)
       clearTurnCapture();
       speakerOriginSeq.clear();
-      lastResponderId = null;
       lastReactorId = null;
       pendingTts = 0;
       pendingCompanionLines = [];

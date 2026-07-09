@@ -22,6 +22,7 @@ export {
   PUNCTUATION_DIRECTIVES,
   SEED_HEADERS,
   NUDGES,
+  MEMORY_GOAL_CUE,
   // Render functions (interpolate runtime values into the prompt text).
   renderPersona,
   renderProactivenessDirective,
@@ -29,6 +30,8 @@ export {
   renderCore,
   renderHeartbeat,
   renderCompanions,
+  voiceGroupGuidance,
+  teammateVoiceGuidance,
 } from './promptLibrary.js'
 
 // 260615: per-tier idle-tick cadence (ms). NOT prompt text — these are the FSM

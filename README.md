@@ -27,10 +27,13 @@ Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI 
 
 </div>
 
-## Current Capabilities (v0.3)
+## Current Capabilities (v0.4)
 
 - Summon a Minecraft AI companion into a LAN world as a real second player, no additional account needed
 - Characters chat, build, gather, fight, follow, and act on their own
+- In-app chat: text companions outside the game, and they reach out to you too
+- Voice calls: talk with companions out loud, solo or in group calls, in and out of game
+- Companion matching: answer a short profile and get matched with unique, generated companions
 - Per-character persistent memory across sessions
 - Custom Minecraft skins via Fabric + CustomSkinLoader
 - Real in-game vision on demand
@@ -40,11 +43,9 @@ Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI 
 
 ## Upcoming
 
-**v0.4**
+**v0.5**
 
-- In-app chat: text companions outside games
-- Modded Minecraft compatibility: support for modpacks like Pixelmon
-- Voice AI: converse with character verbally
+- Minigame compatibility: play chess, GeoGuessr, and other minigames with companions
 
 **v1.0**
 

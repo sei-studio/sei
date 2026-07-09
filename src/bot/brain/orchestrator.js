@@ -27,6 +27,8 @@ import {
   renderPunctuationDirective,
   renderCore,
   renderCompanions,
+  voiceGroupGuidance,
+  teammateVoiceGuidance,
 } from './prompts.js'
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker } from './inflight.js'
@@ -805,7 +807,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // obeys the character's punctuation register too (previously the whole
       // line shipped as one bubble with its periods intact). Sent in order,
       // no stagger — the chat panel renders arrival order.
-      for (const msg of splitChatMessages(line, config.persona?.punctuation)) {
+      //
+      // 260709: NOT on a live voice call. There each message becomes its own
+      // TTS stream, and ElevenLabs synthesizes every fragment cold — the
+      // prosody resets at each boundary and the player hears a cut between
+      // sentences. One whole line = one streamed clip = continuous speech,
+      // and since TTS is chunk-streamed, time-to-first-audio is unchanged.
+      const msgs = voiceCallActive ? [line] : splitChatMessages(line, config.persona?.punctuation)
+      for (const msg of msgs) {
         try { logChatOut(msg) } catch {}
         try { onSeiChatReply(msg) } catch (err) { logger.warn?.(`[sei/orch] onSeiChatReply failed: ${err?.message ?? err}`) }
         try { convoMemory.recentChat.pushSelf(config.persona.name, msg) } catch {}
@@ -1512,13 +1521,20 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // variant, repairAfterAbort, and the fold fallbacks) renders through this so
   // they read identically. The action is still considered live, so the framing
   // matches the silent action-tick monitor — it just carries the player's words.
-  function interruptTurnText(loop, chatText, who = null) {
+  function interruptTurnText(loop, chatText, who = null, teammate = false) {
     const action = extractPriorTask(loop)
     // 260703: a fresh player line resets the per-loop "have I spoken since
     // the player's latest message" flag — the silence backstop (scratchpad
     // salvage at end_loop) keys off it, and a say() from BEFORE this
     // interrupt doesn't count as answering it.
-    if (chatText && String(chatText).trim()) loop._spokeThisLoop = false
+    if (chatText && String(chatText).trim()) {
+      loop._spokeThisLoop = false
+      // 260708 (thought-leak fix): mid-call with a roster (or on a teammate's
+      // call line), this line takes yield-allowed framing, so a silent end is
+      // deliberate — flag the loop so the scratchpad salvage never speaks the
+      // yield reasoning.
+      loop._groupVoiceLine = voiceCallActive && (companions.length > 0 || teammate === true)
+    }
     // 260703: mid-loop interrupt turns carry the sticky greet hint too (no-op
     // once a say() line has reached chat this session).
     return withGreetingHint(NUDGES.actionTurn({
@@ -1527,6 +1543,13 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       playerLine: chatText ?? '',
       who: who ?? null,
       visionOff: _visionMode() === 'off',
+      // 260708: while a call is live, player lines are voice and (with a
+      // roster) take the group-addressing framing instead of mandatory-reply.
+      // A teammate's call line takes the teammate variant (answer or end
+      // silently; the running action keeps going by default).
+      voice: voiceCallActive,
+      peers: companions,
+      fromTeammate: teammate === true,
     }))
   }
 
@@ -1558,6 +1581,18 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
+
+  // 260708: the subset of INLINE_METADATA that is a pure memory/goal write with
+  // no loop-control or ordering semantics. These are HOISTED at batch-split
+  // time (executed before the first world tool dispatches) so they can never
+  // land on loop._pendingToolUses — where three paths silently discarded them:
+  // the action_tick reclaim ("deferred: not started"), a P0/P1 preempt, and
+  // drainPendingToolsOnTeardown's world-tools-only filter. Live failure: Lyra
+  // called follow(...) + remember(...) in one turn, the follow suspended, a
+  // player line preempted the loop, and the remember never reached MEMORY.md.
+  // say/end_loop/quit_game/end_call stay strictly ordered — they carry
+  // loop-control semantics the model sequenced deliberately.
+  const MEMORY_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal'])
 
   // The progress-flavored detection includes `gather` (in addition to
   // build + cuboid dig). Same onProgress channel as cuboid — no parallel
@@ -1771,8 +1806,17 @@ function maybeWarnByteCap(loop, warned) {
     // Single-flight branch: while a Loop is active, player-chat preempts
     // (interrupt path) and sei:attacked aborts (re-fired by finally as a
     // fresh dispatch — 260505-twx). Anything else is dropped.
+    // 260708: a teammate's voice-call line (observe wake, playerSpoke:false +
+    // voice:true) takes the SAME interrupt path — it used to fall through to
+    // the drop below, so a busy bot never heard the call. It rides as a
+    // teammate-flagged interrupt: the action keeps running (handleActionTick,
+    // no abort) and the framing lets the model answer or end silently.
+    const isTeammateVoiceChat =
+      !isPlayerChat &&
+      (event === 'player_chat' || event === 'sei:chat_received') &&
+      data?.playerSpoke === false && data?.voice === true
     if (currentLoop !== null) {
-      if (isPlayerChat) {
+      if (isPlayerChat || isTeammateVoiceChat) {
         // 260611: a terminal loop still sitting in currentLoop is a zombie
         // (its teardown raced/dropped — see the action_complete terminal
         // guard above). Don't preserve into it; finish the teardown and
@@ -1806,7 +1850,7 @@ function maybeWarnByteCap(loop, warned) {
         // race where a call started between enqueue and here, or there is no
         // in_flight to monitor (transient between-action window).
         if (currentLoop.inFlight && !currentLoop._llmCallInFlight && !currentLoop.isTerminal) {
-          await handleActionTick(currentLoop, { playerMessage: String(chatText), who })
+          await handleActionTick(currentLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat })
           return
         }
         // 260611: ACCUMULATE, don't overwrite — mirrors handlePreempt's
@@ -1819,6 +1863,10 @@ function maybeWarnByteCap(loop, warned) {
           pendingInterrupt = {
             chatText: prevText ? `${prevText}\n${String(chatText)}` : String(chatText),
             who,
+            // 260708: only an all-teammate batch keeps the teammate framing —
+            // if any accumulated part came from the player, the player's
+            // mandatory-reply framing wins.
+            teammate: (prevText ? pendingInterrupt?.teammate === true : true) && isTeammateVoiceChat,
           }
         }
         if (currentLoop.inFlight) {
@@ -1846,9 +1894,28 @@ function maybeWarnByteCap(loop, warned) {
         // before this attack arrived, FORWARD the chat text into the next
         // loop. The priority queue runs P0 before P1, so the attack opens a
         // fresh loop first; the chat then arrives as a normal P1 dispatch.
-        const preservedInterrupt = pendingInterrupt
+        let preservedInterrupt = pendingInterrupt
           ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player' }
           : null
+        // 260708: a chat-TRIGGERED loop that has not completed a single
+        // iteration is itself an undelivered player message — the attack
+        // teardown used to discard it (the trigger was only ever in
+        // pendingInterrupt when it arrived MID-loop), so a player line whose
+        // reply-in-progress got preempted by a hit was never answered at all.
+        // Preserve the trigger the same way, with its routing flags.
+        if (!preservedInterrupt) {
+          const trig = currentLoop._triggerData
+          const trigIsChat = classifyChatEvent(currentLoop._triggerEvent, trig).isPlayerChat
+          const trigText = String(trig?.text ?? trig?.message ?? '').trim()
+          if (trigIsChat && trig?.playerSpoke === true && !currentLoop._respondedOnce && trigText) {
+            preservedInterrupt = {
+              chatText: trigText,
+              who: trig.username ?? 'player',
+              seiChat: trig.seiChat === true,
+              voice: trig.voice === true,
+            }
+          }
+        }
         pendingAttack = { event, data, preservedInterrupt }
         pendingInterrupt = null  // explicit: attack-wins-with-preservation
         const dyingLoop = currentLoop
@@ -1960,7 +2027,6 @@ function maybeWarnByteCap(loop, warned) {
         : ''
       const isP1Event = event === 'player_chat' || event === 'sei:chat_received'
       if (isP1Event) {
-        eventAddendum += NUDGES.playerInterruptHint
         // 260616 (#2): surface the player's actual words as a dedicated
         // player_message block placed LAST in the turn (composeSeedBlocks), so
         // the model reads them right before replying — instead of a machine
@@ -1972,12 +2038,36 @@ function maybeWarnByteCap(loop, warned) {
         // instead of coordinating with the teammate who actually gave the order.
         const fromTeammate = data?.playerSpoke === false
         const speakerName = String(data?.username ?? '').trim()
+        // 260708: a live voice-call line with other companions present takes
+        // the group-addressing framing: everyone heard it, decide for yourself
+        // whether it is yours, silence yields it to the teammate. A solo-call
+        // or typed line keeps the mandatory reply.
+        const isVoiceLine = data?.voice === true || (voiceCallActive && data?.seiChat === true)
+        const groupVoice = !fromTeammate && isVoiceLine && companions.length > 0
+        // 260708: a teammate's line heard on the call (the observe-wake path —
+        // the bot now wakes on EVERY call line, not just named ones). Answer
+        // or end silently is the model's call; mid-action keep-going stays the
+        // default via the actionTurn variant.
+        const teammateVoice = fromTeammate && isVoiceLine
+        // 260708 (thought-leak fix): on a group call, silence is a sanctioned
+        // outcome, so the seed hint must not demand a reply — and the loop is
+        // flagged so the end_loop scratchpad salvage never speaks a deliberate
+        // yield's private reasoning. Teammate voice wakes count too: their
+        // scratchpad must never reach the call either.
+        loop._groupVoiceLine = isVoiceLine && (companions.length > 0 || fromTeammate)
+        eventAddendum += (groupVoice || teammateVoice) ? NUDGES.playerInterruptHintGroupVoice : NUDGES.playerInterruptHint
         const opener = (fromTeammate && speakerName)
-          ? `your teammate ${speakerName} just spoke to you`
-          : 'the player just spoke to you'
-        playerMessageText = `${opener}. respond to THIS, not to the scene around you:\n"${String(data?.text ?? '').trim()}"\n` +
-          'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
-          'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them.'
+          ? (isVoiceLine
+            ? `your teammate ${speakerName} just said this on the voice call`
+            : `your teammate ${speakerName} just spoke to you`)
+          : isVoiceLine ? 'the player just said this on the voice call' : 'the player just spoke to you'
+        playerMessageText = `${opener}${teammateVoice ? ':' : '. respond to THIS, not to the scene around you:'}\n"${String(data?.text ?? '').trim()}"\n` +
+          (groupVoice
+            ? voiceGroupGuidance(companions).trim() + ' Your text output is a private scratchpad the player can NEVER see; a reply that exists only in your text is silence to them; only say() reaches them.'
+            : teammateVoice
+            ? teammateVoiceGuidance(speakerName || 'your teammate').trim()
+            : 'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
+              'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them.')
         eventText = `Event: ${event}${eventAddendum}`
       } else {
         eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
@@ -2032,15 +2122,20 @@ function maybeWarnByteCap(loop, warned) {
       if (seedBlocks) {
         loop.appendUserTurn(seedBlocks, { seed: true })
       } else {
+        // 260708: carry the player's actual words in the fallback too — a
+        // compose failure used to drop the player_message block entirely,
+        // leaving the turn with an Event: label and no quoted message.
         loop.appendUserTurn([
           { type: 'text', name: 'snapshot', text: snapshotText() },
           { type: 'text', name: 'event',    text: eventText },
+          ...(playerMessageText ? [{ type: 'text', name: 'player_message', text: playerMessageText }] : []),
         ])
       }
     } else {
       loop.appendUserTurn([
         { type: 'text', name: 'snapshot', text: snapshotText() },
         { type: 'text', name: 'event',    text: eventText },
+        ...(playerMessageText ? [{ type: 'text', name: 'player_message', text: playerMessageText }] : []),
       ])
     }
 
@@ -2115,10 +2210,11 @@ function maybeWarnByteCap(loop, warned) {
    * keeps the "one haiku per logical turn" invariant (we add ZERO haiku calls)
    * while still honoring the turn the model already decided on.
    *
-   * Only world-acting tools are drained. Inline metadata
-   * (say/remember/forget/setGoal/clearGoal/end_loop/quit) is loop-local
-   * bookkeeping — say() already emitted up front, and the rest dies with the
-   * loop with no player-visible effect worth reviving.
+   * Only world-acting tools are drained. Inline metadata never needs the
+   * drain: say() is emitted up front, memory/goal writes (MEMORY_METADATA)
+   * are hoisted at batch-split time so they execute before anything can
+   * suspend (260708 — a queued remember() used to die here), and
+   * end_loop/quit/end_call are loop-control for a loop that no longer exists.
    *
    * Reason-agnostic on purpose: the same drain is correct whether the teardown
    * came from an error/timeout/terminal death (the incident's now-also-prevented
@@ -2265,6 +2361,10 @@ function maybeWarnByteCap(loop, warned) {
             text: pa.preservedInterrupt.chatText,
             message: pa.preservedInterrupt.chatText,
             playerSpoke: true,
+            // 260708: keep the routing flags of a preserved chat-loop trigger,
+            // so its late reply still goes to the call / chat surface.
+            ...(pa.preservedInterrupt.seiChat === true ? { seiChat: true } : {}),
+            ...(pa.preservedInterrupt.voice === true ? { voice: true } : {}),
           }, 1 /* Priority.P1_CHAT */)
           logger.info?.(`[sei/orch] preserved interrupt re-enqueued: ${pa.preservedInterrupt.chatText.slice(0, 64)}`)
         } catch (err) {
@@ -2691,7 +2791,7 @@ function maybeWarnByteCap(loop, warned) {
     let extraEventText = null
     if (pendingInterrupt && data.aborted) {
       // 260608-tik: unified mid-action interrupt framing (Change 2).
-      extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who)
+      extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true)
       pendingInterrupt = null
       logger.info?.(`[sei/orch] action_complete + PLAYER INTERRUPT folded into loop=${loop.id}`)
       // 260514-ngj: the next iteration is driven by a PLAYER INTERRUPT —
@@ -3005,6 +3105,10 @@ function maybeWarnByteCap(loop, warned) {
     // switch (R2), or stop (end_loop/unfollow, R3).
     const playerMessage = (typeof data?.playerMessage === 'string') ? data.playerMessage : null
     const who = data?.who ?? null
+    // 260708: a teammate's call line rides the same machinery (observe wake);
+    // its framing allows silence and the redrive below must not relabel it as
+    // the player speaking.
+    const teammate = data?.teammate === true
     const action = extractPriorTask(loop)
     // 260608-tik: the player-message variant renders through interruptTurnText,
     // the one chokepoint for mid-action interrupt turns — it resets
@@ -3014,7 +3118,7 @@ function maybeWarnByteCap(loop, warned) {
     // actionTurn shows elapsed and runs the agentic-follow review only when
     // playerLine == null — so only the silent monitor builds its own turn.
     const tickEventText = playerMessage != null
-      ? interruptTurnText(loop, playerMessage, who)
+      ? interruptTurnText(loop, playerMessage, who, teammate)
       : withGreetingHint(NUDGES.actionTurn({
           action,
           stopTool: stopToolForAction(action),
@@ -3149,7 +3253,13 @@ function maybeWarnByteCap(loop, warned) {
       if (playerMessage != null) {
         maybeScheduleRateLimitRedrive(loop, err, {
           event: 'sei:chat_received',
-          data: { username: who ?? '', text: playerMessage, message: playerMessage, playerSpoke: true },
+          data: {
+            username: who ?? '',
+            text: playerMessage,
+            message: playerMessage,
+            playerSpoke: !teammate,
+            ...(teammate ? { voice: true } : {}),
+          },
         })
       }
       terminateLoop(loop, `error: ${err && err.message}`)
@@ -3210,6 +3320,16 @@ function maybeWarnByteCap(loop, warned) {
             replaceAbortController(loop)
             continue
           }
+          // 260708: a wall-clock budget timeout is not a preempt — nothing else
+          // is waiting to run. Dropping the turn here silently ate player
+          // commands (a 12s slow call on "fight each other" left the bot mute
+          // and the command unexecuted, with no retry anywhere upstream).
+          // Retry the same call once; a second timeout drops as before.
+          if (err.isTimeout === true && !signal.aborted && (loop._timeoutRetries ?? 0) < 1) {
+            loop._timeoutRetries = (loop._timeoutRetries ?? 0) + 1
+            logger.warn?.(`[sei/orch] LLM call timed out — retrying once (loop=${loop.id})`)
+            continue
+          }
           // The FSM preempt hook (handlePreempt) aborted this in-flight LLM
           // call purely to UNBLOCK the dispatch thread for a queued P0 event —
           // there's no player message to fold here. Unwind cleanly: leave the
@@ -3257,6 +3377,9 @@ function maybeWarnByteCap(loop, warned) {
 
       // Append assistant turn raw (preserves tool_use blocks 1:1)
       loop.appendAssistant(buildAssistantContent(resp))
+      // 260708: the trigger has now been seen and answered by at least one
+      // model response — an attack teardown no longer needs to preserve it.
+      loop._respondedOnce = true
 
       // Track responses-received so the first-turn-say predicate doesn't have
       // to deal with the seed-vs-non-seed iterationCount divergence (seed
@@ -3349,7 +3472,13 @@ function maybeWarnByteCap(loop, warned) {
         const e = loop._currentIterationTrigger ?? loop._triggerEvent
         return e === 'player_chat' || e === 'sei:chat_received'
       })()
-      if (_p1Trigger && !loop._spokeThisLoop && respText && toolUses.some(u => u.name === 'end_loop')) {
+      // 260708 (thought-leak fix): NOT on a group-voice line. There the prompt
+      // sanctions ending silently when the line belongs to a teammate, and the
+      // scratchpad holds the yield reasoning ("that's for Marv, I stay
+      // silent") — salvaging it reads the bot's private thoughts over TTS to
+      // the whole call (live failure, session 2026-07-08T17-58). Solo calls
+      // and typed chat keep the backstop: there a reply is mandatory.
+      if (_p1Trigger && !loop._groupVoiceLine && !loop._spokeThisLoop && respText && toolUses.some(u => u.name === 'end_loop')) {
         logger.info?.(`[sei/orch] salvaging scratchpad as reply — player message was about to end unspoken (loop=${loop.id})`)
         try { _emitSayLine(loop, respText) } catch {}
       }
@@ -3539,6 +3668,25 @@ function maybeWarnByteCap(loop, warned) {
       }
 
       try {
+        // 260708: memory/goal pre-pass — execute remember/forget/setGoal/
+        // clearGoal for the WHOLE batch before anything can suspend. They are
+        // order-independent metadata writes; hoisting them means the ordered
+        // loop below finds their slots filled, so they never enter the
+        // _pendingToolUses queue and can never be dropped by an action_tick
+        // reclaim, a preempt, or the teardown drain (see MEMORY_METADATA).
+        for (let i = 0; i < toolUses.length; i++) {
+          const u = toolUses[i]
+          if (signal.aborted) throw makeAbortError()
+          if (results[i] || !MEMORY_METADATA.has(u.name)) continue
+          try {
+            const r = await executeInlineMetadata(loop, u)
+            results[i] = r.result
+          } catch (err) {
+            lastActionResult = `${u.name} error`
+            logger.warn(`[sei/orch] ${u.name} failed: ${err.message}`)
+            results[i] = { type: 'tool_result', tool_use_id: u.id, content: `error: ${err.message}`, is_error: true }
+          }
+        }
         for (let i = 0; i < toolUses.length; i++) {
           const u = toolUses[i]
           if (signal.aborted) throw makeAbortError()
@@ -3814,7 +3962,7 @@ function maybeWarnByteCap(loop, warned) {
     // 260608-tik: unified mid-action interrupt framing (Change 2). The action
     // kept running across the aborted Haiku call, so this reads like a tick that
     // carries the player's words.
-    const eventTextWithHint = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who)
+    const eventTextWithHint = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who, pendingInterrupt?.teammate === true)
 
     if (aborted.length > 0) {
       loop.appendToolResults(aborted, { snapshot: snapshotText(), eventText: eventTextWithHint })
@@ -3998,6 +4146,10 @@ function maybeWarnByteCap(loop, warned) {
       pendingInterrupt = {
         chatText: prevText ? `${prevText}\n${String(chatText)}` : String(chatText),
         who: data?.username ?? data?.who ?? '',
+        // The FSM preempt hook only fires for playerSpoke:true events, so this
+        // is always a player line — but derive it rather than assume, and let
+        // any player part of an accumulated batch win over teammate framing.
+        teammate: (prevText ? pendingInterrupt?.teammate === true : true) && data?.playerSpoke === false,
       }
       try { loop.abortController.abort() } catch {}
       return true

@@ -280,22 +280,66 @@ export function createAudioQueue(
     else playStream(item);
   }
 
-  function haltPlayback(): void {
-    for (const item of pending) {
-      if (item.kind === 'stream') item.dropped = true;
-    }
-    pending.length = 0;
-    if (current) {
-      const el = current;
-      current = null;
-      currentCleanup?.();
-      currentCleanup = null;
+  /**
+   * Barge-in fade (260708): a hard el.pause() cut mid-word sounds like a glitch,
+   * not like someone stopping talking. On clear() the interrupted clip instead
+   * ramps volume to 0 over this window, then tears down — long enough to read
+   * as a natural trail-off, short enough that the companion is effectively
+   * silent the moment the player speaks. Queue state flips IMMEDIATELY (the
+   * fading element is already detached), so a reply enqueued during the fade
+   * starts on time and every other behavior (speaking state, half-duplex hold,
+   * remote-end drain) sees the same instant-stop the hard cut gave.
+   */
+  const BARGE_FADE_MS = 140;
+  const FADE_STEP_MS = 16;
+
+  function fadeThenTeardown(el: HTMLAudioElement, cleanup: (() => void) | null, ms: number): void {
+    const teardown = (): void => {
       try {
         el.pause();
         el.src = '';
       } catch {
         /* already torn down */
       }
+      cleanup?.();
+    };
+    // Deafened or already silent → nothing audible to fade.
+    if (ms <= 0 || el.muted || el.volume <= 0 || el.paused) {
+      teardown();
+      return;
+    }
+    const v0 = el.volume;
+    const t0 = performance.now();
+    const step = (): void => {
+      const k = (performance.now() - t0) / ms;
+      if (k >= 1) {
+        teardown();
+        return;
+      }
+      try {
+        el.volume = v0 * (1 - k);
+      } catch {
+        teardown();
+        return;
+      }
+      setTimeout(step, FADE_STEP_MS);
+    };
+    step();
+  }
+
+  function haltPlayback(fadeMs = 0): void {
+    for (const item of pending) {
+      if (item.kind === 'stream') item.dropped = true;
+    }
+    pending.length = 0;
+    if (current) {
+      const el = current;
+      const cleanup = currentCleanup;
+      current = null;
+      currentCleanup = null;
+      // cleanup (stream handler detach / URL revoke) runs AFTER the fade — a
+      // MediaSource clip revoked mid-fade would cut instead of trailing off.
+      fadeThenTeardown(el, cleanup, fadeMs);
     }
     busy = false;
     onSpeakingChange(false, null);
@@ -350,7 +394,9 @@ export function createAudioQueue(
     },
     clear() {
       if (stopped) return;
-      haltPlayback();
+      // Barge-in: the short fade reads as a human stopping mid-sentence
+      // instead of an audio glitch (see fadeThenTeardown).
+      haltPlayback(BARGE_FADE_MS);
     },
     setOutputMuted(m) {
       outputMuted = m;
@@ -358,7 +404,9 @@ export function createAudioQueue(
     },
     stop() {
       stopped = true;
-      haltPlayback();
+      // End-of-call teardown stays a hard cut: nothing may keep playing after
+      // the call object is gone (HMR / hang-up chime timing rely on this).
+      haltPlayback(0);
     },
   };
 }

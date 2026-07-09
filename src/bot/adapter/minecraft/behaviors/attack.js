@@ -73,6 +73,26 @@ async function pursueUntilInReach(bot, entityId, reach, deadline, signal) {
   }
 }
 
+// 260708: a mob that survives the whole batch while the bot swings a stick is
+// invisible ineffectiveness — the model happily reports "i'm fighting" while
+// doing ~1 damage (Lyra fought a zombie and a skeleton with a stick, at 4hp,
+// while the player died twice). When the target is still alive and the held
+// item is not a real weapon, say so, and point at the better move: equip the
+// weapon already in the inventory if there is one, otherwise craft one.
+const WEAPON_RE = /sword|_axe|trident|mace/
+export function weakWeaponNote(bot) {
+  const held = bot.heldItem?.name ?? null
+  if (held && WEAPON_RE.test(held)) return ''
+  let owned = null
+  try {
+    owned = (bot.inventory?.items?.() ?? []).find(it => it?.name && WEAPON_RE.test(it.name))?.name ?? null
+  } catch { /* inventory unavailable — keep the generic note */ }
+  const fix = owned
+    ? `equip your ${owned}`
+    : 'craft a weapon when you get the chance'
+  return `; you're fighting with ${held ?? 'bare hands'}, which is slow: ${fix}`
+}
+
 export async function attackEntityAction(args, bot, config) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
@@ -179,7 +199,7 @@ export async function attackEntityAction(args, bot, config) {
     // A spar against a player is a running exchange, not a completed task: frame
     // the result so the model keeps fighting instead of narrating an ending.
     if (isPlayerTarget) return `attacked ${name} ${hits}× — they're still standing and the spar is still ON; keep it going (attack again, reposition, trash-talk) until they say stop`
-    return `attacked ${name} ${hits}× (target still alive)`
+    return `attacked ${name} ${hits}× (target still alive)${weakWeaponNote(bot)}`
   } finally {
     // Release the sprint + pursuit goal we installed. NEVER yank a creeper-flee's
     // goal (bot._seiReflexActive) OR a survival takeover's flee goal

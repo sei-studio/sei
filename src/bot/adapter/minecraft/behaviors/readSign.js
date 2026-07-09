@@ -8,6 +8,7 @@
 // result to MAX_SIGN_CHARS. This bounds the injection + oversized-content
 // surface at the source. Read-only: no world mutation.
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
+import { faceBlock } from './face.js'
 
 export const MAX_SIGN_CHARS = 200
 
@@ -30,6 +31,11 @@ export async function readSignAction(args, bot, config) {
 
   const target = await resolveBlock(args, bot)
   if (!target) return isStaleHandle(args) ? 'stale target' : 'no sign there'
+
+  // Face the sign while reading it — pure protocol read, but a bot that
+  // recites a sign it never glanced at reads as a bug on camera (260708).
+  await faceBlock(bot, target.position)
+  if (signal?.aborted) return 'aborted'
 
   // Must be a sign block exposing a text accessor; otherwise nothing to read.
   const name = target.name ?? ''

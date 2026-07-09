@@ -29,6 +29,40 @@ const REQUIRED_ADAPTER_MEMBERS = [
   'botUsername', 'getKnownPlayers',
 ]
 
+/**
+ * 260708: per-speaker debounce for observed call lines. A companion's spoken
+ * turn arrives as SEPARATE mirrored lines (the renderer splits replies into
+ * sentences), and waking the brain once per sentence would fire three P1
+ * turns for one utterance. Lines from the same speaker within `debounceMs`
+ * coalesce into ONE wake carrying the joined text; a line from a different
+ * speaker flushes the pending wake first so ordering holds. Exported for
+ * testing.
+ */
+export function createObserveWakeCoalescer(fire, debounceMs = 700) {
+  let pending = null
+  const flush = () => {
+    const p = pending
+    pending = null
+    if (!p) return
+    clearTimeout(p.timer)
+    try { fire(p.from, p.lines.join(' ')) } catch {}
+  }
+  return {
+    push(from, line) {
+      if (pending && pending.from !== from) flush()
+      if (!pending) pending = { from, lines: [], timer: null }
+      pending.lines.push(line)
+      clearTimeout(pending.timer)
+      pending.timer = setTimeout(flush, debounceMs)
+    },
+    dispose() {
+      if (!pending) return
+      clearTimeout(pending.timer)
+      pending = null
+    },
+  }
+}
+
 function assertAdapter(adapter) {
   if (!adapter || typeof adapter !== 'object') {
     throw new Error('brain.start: adapter must be an object')
@@ -86,6 +120,28 @@ export async function start({ config, adapter, logger = console, onTerminalError
   // Defer creating the queue until after the orchestrator exists so the
   // dispatcher can route to handleDispatch.
   let queue = null
+  // 260708: the last REAL hit taken (attackerKind !== 'reflex'), so a death
+  // that follows within the window can name its cause in the death prompt.
+  let _lastAttack = null
+  const DEATH_CAUSE_WINDOW_MS = 30_000
+  // 260708: coalesced wake for observed call lines (see observeSeiChat below).
+  // playerSpoke:false → never preempts an in-flight LLM call; voice:true →
+  // the turn takes the teammate-voice framing (reply or end silently).
+  const _observeWake = createObserveWakeCoalescer((from, joined) => {
+    try {
+      queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
+        username: from,
+        message: joined,
+        text: joined,
+        addressed: true,
+        playerSpoke: false,
+        seiChat: true,
+        voice: true,
+      })
+    } catch (err) {
+      logger.warn?.(`[sei/brain] observe wake enqueue failed: ${err.message}`)
+    }
+  })
   const reenqueue = (event, data, priority = null) => {
     if (!queue) return
     let p = priority
@@ -206,6 +262,19 @@ export async function start({ config, adapter, logger = console, onTerminalError
       })
     },
     onAttacked: (evt) => {
+      // 260708: remember the last REAL hit (not a reflex warning — the bot was
+      // not hit there) so a death that follows can name its cause. Without
+      // this, sei:death carries only the position and the model has no idea
+      // what killed it — live failure: Sui died mid-PvP-spar with Marv and
+      // said "i have literally no idea what just happened".
+      if (evt?.attackerKind !== 'reflex') {
+        _lastAttack = {
+          label: evt?.attackerLabel ?? 'something',
+          kind: evt?.attackerKind ?? 'mob',
+          pvp: evt?.pvp === true,
+          at: Date.now(),
+        }
+      }
       // Tier by attackerKind: a reflex (proactive threat warning — the bot was
       // NOT hit) is conversation-tier (P1_CHAT) so it never preempts/aborts a
       // player-chat reply; a real attack (player/mob) stays safety-tier
@@ -224,7 +293,21 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // (onSpawn is greeting-guarded and only enqueues on the FIRST spawn), so
       // there's no double-fire / race. evt.pos is the death location (may be
       // null if the entity position was unreadable).
-      queue.enqueue(Priority.P1_CHAT, 'sei:death', { pos: evt?.pos ?? null })
+      // 260708: attach the last real hit when it was recent — the death prompt
+      // renders it as the cause (deathAddendum in adapter/minecraft/prompts.js).
+      const sinceMs = _lastAttack ? Date.now() - _lastAttack.at : Infinity
+      const lastAttack = sinceMs <= DEATH_CAUSE_WINDOW_MS
+        ? {
+            label: _lastAttack.label,
+            kind: _lastAttack.kind,
+            pvp: _lastAttack.pvp,
+            secondsBefore: Math.max(1, Math.round(sinceMs / 1000)),
+          }
+        : null
+      queue.enqueue(Priority.P1_CHAT, 'sei:death', {
+        pos: evt?.pos ?? null,
+        ...(lastAttack ? { lastAttack } : {}),
+      })
     },
     onSpawn: () => {
       // D-57: deferred player-presence check after spawn settles.
@@ -278,14 +361,38 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // in-game) as a priority chat event on THIS session, framed so the bot knows
     // it's out-of-band and that quit() leaves the game. Its reply routes back to
     // the chat surface via onSeiChatReply (see orchestrator._emitSayLine).
-    deliverSeiChat({ from, text } = {}) {
+    deliverSeiChat({ from, text, voice } = {}) {
       const raw = String(text ?? '').trim()
       if (!raw) return
       const who = String(from || 'The player')
+      try { orchestrator.recordIncomingChat?.(who, raw) } catch {}
+      // 260708: a live voice-call utterance while the bot is in-game is NOT an
+      // out-of-band text message, and the old framing ("NOT in the game with
+      // you right now") was factually wrong on every line of a play-while-
+      // calling session — the model burned reasoning reconciling it with a
+      // snapshot showing the player 3 blocks away. Voice lines carry the RAW
+      // words plus voice:true; the orchestrator's voice-aware turn framing
+      // (playerMessageText / NUDGES.actionTurn) supplies the addressing
+      // guidance instead of a wrapper baked into the message text.
+      if (voice === true) {
+        try {
+          queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
+            username: who,
+            message: raw,
+            text: raw,
+            addressed: true,
+            playerSpoke: true,
+            seiChat: true,
+            voice: true,
+          })
+        } catch (err) {
+          logger.warn?.(`[sei/brain] deliverSeiChat enqueue failed: ${err.message}`)
+        }
+        return
+      }
       const framed =
         `${who} messaged you through Sei chat. They are NOT in the game with you right now. ` +
         `They said: "${raw}". Reply to them in chat. If you would rather stop playing to talk, call quit_game().`
-      try { orchestrator.recordIncomingChat?.(who, raw) } catch {}
       try {
         queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
           username: who,
@@ -298,6 +405,30 @@ export async function start({ config, adapter, logger = console, onTerminalError
       } catch (err) {
         logger.warn?.(`[sei/brain] deliverSeiChat enqueue failed: ${err.message}`)
       }
+    },
+    /**
+     * 260708: a line someone ELSE spoke on the group voice call (a sibling
+     * companion, or the player when this bot was not the routed recipient).
+     * Recorded into chat history, and for COMPANION lines the bot wakes on
+     * EVERY line — the turn framing (teammate voice guidance) lets the model
+     * choose to answer or end silently, and mid-action the default is to keep
+     * going. The old name-gate is gone (the user wants the bot responsive to
+     * the whole call, deciding for itself). Player lines stay record-only:
+     * the player's utterances already reach this brain as direct turns
+     * (deliverSeiChat), so waking here too would fire twice per message.
+     * Multi-sentence companion turns coalesce into one wake (see
+     * createObserveWakeCoalescer).
+     */
+    observeSeiChat({ from, text } = {}) {
+      const raw = String(text ?? '').trim()
+      if (!raw) return
+      const isPlayer = from === 'player' || !from
+      const who = isPlayer
+        ? String(config.player_display_name || 'The player')
+        : String(from)
+      try { orchestrator.recordIncomingChat?.(who, raw) } catch {}
+      if (isPlayer) return
+      _observeWake.push(who, raw)
     },
     /**
      * Voice calls (260705): the player just opened a voice call and the audio
@@ -324,6 +455,9 @@ export async function start({ config, adapter, logger = console, onTerminalError
       }
     },
     async stop() {
+      // Drop any pending observed-line wake so its timer can't fire into a
+      // disposed queue.
+      try { _observeWake.dispose() } catch {}
       // Order matters. dispose() FIRST flips the FSM's `disposed` flag (so the
       // sei:action_complete that an action-abort fires is dropped, not
       // re-dispatched) and aborts any in-flight DISPATCH (a parked LLM call).

@@ -4,9 +4,10 @@
  * Mounted (only) in the dedicated overlay BrowserWindow, which loads the
  * renderer bundle with `?overlay=1` (see main.tsx). It never mounts the full
  * App: it just subscribes to the main-process `voice:overlay-state` push and
- * renders one circle per companion on the call, lit while that companion speaks
- * and darkened while idle. The window is transparent + click-through, so this is
- * pure display, no controls.
+ * renders one circle per call member — every companion plus the player (260707,
+ * always last, same treatment) — lit while that member speaks and darkened while
+ * idle. The window is transparent + click-through, so this is pure display, no
+ * controls.
  */
 import React, { useEffect, useState } from 'react';
 import type { CallOverlayState } from '@shared/ipc';
@@ -39,7 +40,7 @@ export function CallOverlay(): React.ReactElement | null {
   return (
     <div className={styles.row}>
       {state.participants.map((p) => {
-        const speaking = state.speakingId === p.id;
+        const speaking = p.speaking;
         const src = portraitSrc(p.portrait);
         // Overlay floats over arbitrary apps; the dark procedural fallback reads
         // fine on any backdrop, so a fixed dark palette is right here.

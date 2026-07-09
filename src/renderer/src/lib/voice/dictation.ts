@@ -93,7 +93,15 @@ const BARGE_GRACE_MS = 600;
 // Raised 320 -> 480 (260706): a longer continuous run is needed to count as a
 // barge-in, so a burst of speaker-echo residue can't trip it — only sustained
 // real speech does. ~3-4 frames at ~128ms each.
-const BARGE_CONFIRM_MS = 480;
+// Lowered 480 -> 300 (260708, "interrupt faster"): frames land every ~128ms,
+// so the confirm quantizes to whole frames — 480 fired on the 4th consecutive
+// over-bar frame (~512ms of the player talking over the companion), 300 fires
+// on the 3rd (~384ms). The single-frame echo peaks the sustained-run gate
+// exists for still reset the run and never reach 3 frames; the residual risk
+// (a 3-frame speaker-echo burst) is also softer now that a barge-in FADES the
+// clip out (audioQueue clear) instead of hard-cutting it. If speaker users
+// report self-interruptions again, this is the knob to raise (4 frames = 400+).
+const BARGE_CONFIRM_MS = 300;
 
 /**
  * AudioWorklet processor (issue: ScriptProcessorNode is deprecated). Batches

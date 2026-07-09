@@ -36,7 +36,7 @@ vi.mock('../configStore', () => ({
 }));
 
 import type { ChatDeps } from './chatService';
-import { sendChatMessage, sendVoiceIdleTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
+import { sendChatMessage, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
@@ -268,6 +268,154 @@ describe('silence-by-convention + idle nudge (260707)', () => {
     // The spoken goodbye still comes back so the renderer can speak it first.
     expect(result.messages.map((m) => m.text)).toEqual(["well, i'll let you go!"]);
     expect(createSpy).toHaveBeenCalledTimes(1); // no tool loop on a nudge
+  });
+});
+
+// 260708: while one companion was in the player's world, a call-only companion
+// was told "no world open" (openWorldDetected hardcoded false) and its launch()
+// calls were dropped (single-shot turns run no tool loop) — it could only join
+// once the in-game sibling disconnected. These pin the fix: live LAN truth in
+// the prompt, and launch() honored via the caller's onLaunch.
+describe('call-only companion: world truth + single-shot launch honor (260708)', () => {
+  it('companion reaction turn tells the model the world IS open and honors launch()', async () => {
+    createSpy.mockResolvedValueOnce({
+      content: [
+        { type: 'text', text: 'hopping in.' },
+        { type: 'tool_use', id: 'tu_l', name: 'launch', input: { game: 'minecraft' } },
+      ],
+    });
+    const onLaunch = vi.fn();
+
+    const replies = await sendCompanionVoiceTurn(CHAR, {
+      speakerName: 'Sui',
+      text: 'get in here marv',
+      peers: ['Sui'],
+      openWorldDetected: true,
+      onLaunch,
+    });
+
+    expect(onLaunch).toHaveBeenCalledTimes(1);
+    expect(replies.map((r) => r.text)).toEqual(['hopping in']);
+    const req = createSpy.mock.calls[0][0] as { system: unknown };
+    expect(JSON.stringify(req.system)).toContain('an open Minecraft world is detected');
+    expect(JSON.stringify(req.system)).not.toContain('no open Minecraft world is detected');
+  });
+
+  it('companion reaction turn without a launch() call never fires onLaunch', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'lol true' }] });
+    const onLaunch = vi.fn();
+
+    await sendCompanionVoiceTurn(CHAR, {
+      speakerName: 'Sui',
+      text: 'this game is chaos',
+      peers: ['Sui'],
+      openWorldDetected: true,
+      onLaunch,
+    });
+
+    expect(onLaunch).not.toHaveBeenCalled();
+  });
+
+  it('companion reaction turn defaults to world-closed framing when no state is passed', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'yeah' }] });
+
+    await sendCompanionVoiceTurn(CHAR, { speakerName: 'Sui', text: 'hm', peers: ['Sui'] });
+
+    const req = createSpy.mock.calls[0][0] as { system: unknown };
+    expect(JSON.stringify(req.system)).toContain('no open Minecraft world is detected');
+  });
+
+  it('idle nudge honors launch() through opts.onLaunch', async () => {
+    setCallActive(CHAR, true);
+    createSpy.mockResolvedValueOnce({
+      content: [
+        { type: 'text', text: "i'm gonna hop into the world." },
+        { type: 'tool_use', id: 'tu_l', name: 'launch', input: { game: 'minecraft' } },
+      ],
+    });
+    const onLaunch = vi.fn();
+
+    const result = await sendVoiceIdleTurn(CHAR, 60, ['Sui'], { openWorldDetected: true, onLaunch });
+
+    expect(onLaunch).toHaveBeenCalledTimes(1);
+    expect(result.messages.length).toBe(1);
+    const req = createSpy.mock.calls[0][0] as { system: unknown };
+    expect(JSON.stringify(req.system)).toContain('an open Minecraft world is detected');
+  });
+});
+
+// 260708: on a group call a model sometimes ECHOES the transcript's attribution
+// convention and writes a line FOR the other companion inside its own reply
+// (live capture: Marv's reply opened with "(Sui, on the call): oh let's go..."
+// — spoken in Marv's voice, and a ghost Sui line entered the transcript). The
+// prefix is injected only on heard lines, so a reply part carrying it is always
+// fabricated dialogue and is dropped on the voice paths.
+describe('peer-impersonation drop (260708)', () => {
+  it('a voice reply line written in a peer\'s voice is dropped; the real line lands', async () => {
+    createSpy.mockResolvedValueOnce({
+      content: [{ type: 'text', text: "(Sui, on the call): let's gooo\nalright, heading in" }],
+    });
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'you two ready?', voiceCall: true }, deps());
+
+    expect(result.replies.map((r) => r.text)).toEqual(['alright, heading in']);
+  });
+
+  it('a reaction turn consisting ONLY of a fabricated peer line returns nothing', async () => {
+    createSpy.mockResolvedValueOnce({
+      content: [{ type: 'text', text: '(Sui, on the call): i would never say that' }],
+    });
+
+    const replies = await sendCompanionVoiceTurn(CHAR, {
+      speakerName: 'Sui',
+      text: 'marv tell them',
+      peers: ['Sui'],
+    });
+
+    expect(replies).toEqual([]);
+  });
+
+  it('typed chat keeps such a line (the drop is voice-only)', async () => {
+    createSpy.mockResolvedValueOnce({
+      content: [{ type: 'text', text: '(Sui, on the call): hey' }],
+    });
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'what did sui say?' }, deps());
+
+    expect(result.replies.map((r) => r.text)).toEqual(['(Sui, on the call): hey']);
+  });
+});
+
+// 260708 (demo directive): an agentic character (proactiveness 2) must always
+// have something to say on an idle call — its nudge note asks for a topic
+// outright and offers NO silence option, so quiet stretches reliably become
+// conversation. Lower dials keep the original take-it-or-leave-it note.
+describe('idle nudge — proactiveness-keyed note (260708)', () => {
+  it('proactiveness 2 gets the keep-alive note with no silence option', async () => {
+    character.metadata = { proactiveness: 2 };
+    setCallActive(CHAR, true);
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok so weird thought.' }] });
+
+    const result = await sendVoiceIdleTurn(CHAR, 12, ['Marv']);
+
+    expect(result.messages.length).toBe(1);
+    const req = createSpy.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
+    const body = JSON.stringify(req.messages);
+    expect(body).toContain('Keep the call alive');
+    expect(body).toContain('rope the other companions');
+    expect(body).not.toContain('reply with exactly (silence)');
+  });
+
+  it('default proactiveness keeps the original note with silence sanctioned', async () => {
+    setCallActive(CHAR, true);
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '(silence)' }] });
+
+    await sendVoiceIdleTurn(CHAR, 12, []);
+
+    const req = createSpy.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
+    const body = JSON.stringify(req.messages);
+    expect(body).toContain('reply with exactly (silence)');
+    expect(body).not.toContain('Keep the call alive');
   });
 });
 

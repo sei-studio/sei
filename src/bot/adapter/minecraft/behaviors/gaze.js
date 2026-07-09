@@ -137,6 +137,12 @@ export function startGaze(bot, config) {
     if (bot._seiOffensiveTarget != null) return
     if (bot._seiSurvivalActive) return
     if (bot._seiCriticalRetreat) return
+    // 260709: a world action is executing (adapter executeAction counter) —
+    // the action owns the head (faceBlock, dig's own look). Without this the
+    // idle branch below re-aims at the owner every 250ms between swings, so a
+    // gathering bot visibly punches blocks while staring at the player.
+    // follow's trailing runs outside executeAction, so follow gaze survives.
+    if ((bot._seiActionActive ?? 0) > 0) return
 
     const me = bot.entity
     if (!me?.position) return

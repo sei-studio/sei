@@ -350,6 +350,21 @@ export async function start(config, hooks = {}) {
       try { _brain?.deliverSeiChat?.(payload) } catch {}
     },
     /**
+     * 260708: forward an observed group-call line (a sibling companion's
+     * spoken line, or a player line routed to another bot) from the parentPort
+     * {type:'sei-chat-observe'} handler into the live brain. Same missing-
+     * passthrough trap as deliverSeiChat above: the brain method existed all
+     * along, but without this forwarder `_running?.observeSeiChat?.()`
+     * silently no-op'd — two in-game companions on a call were deaf to each
+     * other's lines while their standalone transcripts recorded everything
+     * (the ledger write and this mirror live on different sides of the port).
+     * See src/bot/portForwarders.test.js, which pins every port-dispatched
+     * method to a forwarder here.
+     */
+    observeSeiChat(payload) {
+      try { _brain?.observeSeiChat?.(payload) } catch {}
+    },
+    /**
      * Voice-call mode (260705): forward the call-open/hang-up toggle from the
      * parentPort {type:'voice-call'} handler into the live brain. No-op until
      * the brain has started; the supervisor re-sends the current state on
@@ -868,7 +883,13 @@ if (process.parentPort) {
             // in-game. Inject it into the brain as an out-of-band chat event so
             // it runs on the SAME session (brain + prompt cache) and replies
             // back to the chat surface (see onSeiChatReply above).
-            try { _running?.deliverSeiChat?.({ from: data.from, text: data.text }) } catch {}
+            try { _running?.deliverSeiChat?.({ from: data.from, text: data.text, voice: data.voice === true }) } catch {}
+          } else if (data && data.type === 'sei-chat-observe') {
+            // 260708: a group-call line this bot HEARD but is not the routed
+            // recipient of (a sibling companion spoke, or the player line went
+            // to another bot). Recorded as context; wakes only on a by-name
+            // companion request (see brain observeSeiChat).
+            try { _running?.observeSeiChat?.({ from: data.from, text: data.text }) } catch {}
           } else if (data && data.type === 'voice-call') {
             // Voice-call mode (260705): the player opened (active:true) or hung
             // up (active:false) a voice call with this companion. While active,

@@ -1158,7 +1158,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       })
       .parse(argsRaw);
     const { sendVoiceIdleTurn } = await import('./chat/chatService');
-    return await sendVoiceIdleTurn(args.characterId, args.quietSeconds, args.peers);
+    // 260708: hand the turn live LAN truth + a launch honor (see the
+    // voice.companionTurn handler below for the full story).
+    const idleWorldOpen = deps.getLanState().kind === 'open';
+    return await sendVoiceIdleTurn(args.characterId, args.quietSeconds, args.peers, {
+      openWorldDetected: idleWorldOpen,
+      onLaunch: idleWorldOpen
+        ? () => {
+            void deps.supervisor.summon(args.characterId).catch((e) => {
+              deps.notifyLaunchFailed(args.characterId, (e as Error)?.message ?? 'unknown error');
+            });
+          }
+        : undefined,
+    });
   });
 
   // Voice calls (260705): the renderer's call pipeline just went live — ask the
@@ -1187,11 +1199,26 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       })
       .parse(argsRaw);
     const { sendCompanionVoiceTurn } = await import('./chat/chatService');
+    // 260708: this turn used to hardcode "no world open" — so while one
+    // companion was IN the player's world, a call-only companion reacting on
+    // the call was told no world existed (and repeated the open-to-LAN
+    // instructions), and any launch() it called was silently dropped (this is
+    // a single-shot turn with no tool loop). Pass live LAN truth and honor
+    // launch() the way chat:send does, gated on the world actually being open.
+    const reactWorldOpen = deps.getLanState().kind === 'open';
     return await sendCompanionVoiceTurn(args.characterId, {
       speakerName: args.speakerName,
       text: args.text,
       peers: args.peers,
       depth: args.depth,
+      openWorldDetected: reactWorldOpen,
+      onLaunch: reactWorldOpen
+        ? () => {
+            void deps.supervisor.summon(args.characterId).catch((e) => {
+              deps.notifyLaunchFailed(args.characterId, (e as Error)?.message ?? 'unknown error');
+            });
+          }
+        : undefined,
     });
   });
 
@@ -1207,6 +1234,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .parse(argsRaw);
     const { observeVoiceLine } = await import('./chat/chatService');
     await observeVoiceLine(args.characterId, args.from, args.text);
+    // 260708: an in-game companion's brain never saw call lines it was not the
+    // routed recipient of (the standalone transcript above is only read by the
+    // standalone chat brain), leaving in-game siblings deaf to each other on a
+    // group call. Mirror the line into the live session as record-only context.
+    if (deps.isSessionOnline(args.characterId)) {
+      deps.supervisor.observeSeiChat(args.characterId, { from: args.from, text: args.text });
+    }
   });
 
   // Always-on-top call overlay (260706): the main window pushes the overlay's
@@ -1217,9 +1251,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .object({
         enabled: z.boolean(),
         participants: z
-          .array(z.object({ id: z.string(), name: z.string(), portrait: z.string().nullable() }))
+          .array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              portrait: z.string().nullable(),
+              speaking: z.boolean(),
+            }),
+          )
           .max(12),
-        speakingId: z.string().nullable(),
       })
       .parse(stateRaw);
     const { updateCallOverlay } = await import('./callOverlay');

@@ -69,4 +69,34 @@ describe('sei:death prompt framing (eventAddendum)', () => {
     const t = eventAddendum('sei:idle', { quietMs: 5000 })
     expect(t).toContain('IDLE TICK')
   })
+
+  // 260708: sei:death now carries the last real hit (src/bot/brain/index.js
+  // attaches `lastAttack` when one landed within 30s) so the model knows WHAT
+  // killed it — live failure: Sui died mid-PvP-spar with Marv and said "i have
+  // literally no idea what just happened".
+  it('names the killer on a PvP death', () => {
+    const t = eventAddendum('sei:death', {
+      pos: { x: -22, y: 66, z: -45 },
+      lastAttack: { label: 'Marv', kind: 'player', pvp: true, secondsBefore: 2 },
+    })
+    expect(t).toContain('Marv killed you in your PvP spar')
+    expect(t).toContain('2s before you died')
+    expect(t).toContain('You DIED')
+    expect(t).toContain('-22,66,-45')
+  })
+
+  it('names the last attacker on a mob death', () => {
+    const t = eventAddendum('sei:death', {
+      pos: null,
+      lastAttack: { label: 'zombie', kind: 'mob', pvp: false, secondsBefore: 5 },
+    })
+    expect(t).toContain('The last thing that hit you was zombie')
+    expect(t).toContain('almost certainly what killed you')
+  })
+
+  it('renders no cause when no recent hit is attached (fall/burn/unknown)', () => {
+    const t = eventAddendum('sei:death', { pos: null })
+    expect(t).not.toContain('killed you')
+    expect(t).toContain('You DIED')
+  })
 })

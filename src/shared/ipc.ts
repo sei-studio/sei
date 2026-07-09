@@ -214,12 +214,18 @@ export interface VoiceTtsChunkPush {
   error?: string;
 }
 
-/** One companion on the always-on-top call overlay (260706). */
+/** One circle on the always-on-top call overlay (260706): a companion, or the
+ * player themselves (id 'player', 260707 — same treatment as the AIs). */
 export interface CallOverlayParticipant {
   id: string;
   name: string;
-  /** The character's `portrait_image` ref, resolved overlay-side via portraitSrc. */
+  /** The character's `portrait_image` ref (or the player's `profile_picture`),
+   * resolved overlay-side via portraitSrc. */
   portrait: string | null;
+  /** Lit with the speaking ring right now. Per-participant (not a single
+   * speaking id) so the player's ring lights independently of a companion's
+   * TTS, exactly like the tiles on the call screen. */
+  speaking: boolean;
 }
 
 /** State of the always-on-top call overlay window (main window → main → overlay).
@@ -228,8 +234,6 @@ export interface CallOverlayParticipant {
 export interface CallOverlayState {
   enabled: boolean;
   participants: CallOverlayParticipant[];
-  /** Which participant id is speaking right now (null = all idle). */
-  speakingId: string | null;
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */

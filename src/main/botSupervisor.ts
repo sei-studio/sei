@@ -205,7 +205,12 @@ export interface BotSupervisor {
    * brain + prompt cache). Returns false if no session is live (caller falls
    * back to the standalone chat brain).
    */
-  sendSeiChat(characterId: string, payload: { from: string; text: string }): boolean;
+  sendSeiChat(characterId: string, payload: { from: string; text: string; voice?: boolean }): boolean;
+  /**
+   * 260708: record-only mirror of a group-call line into a live session's chat
+   * history (context, no reply turn). Returns false if no session is live.
+   */
+  observeSeiChat(characterId: string, payload: { from: string; text: string }): boolean;
   /** For app.before-quit cleanup. Drains ALL active sessions with the stop timeout. */
   shutdown(): Promise<void>;
   /**
@@ -1282,11 +1287,34 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
      * event and replies back over the `type:'chat'` lifecycle. Returns false
      * (caller falls back to the standalone chat brain) if no session is live.
      */
-    sendSeiChat: (characterId: string, payload: { from: string; text: string }): boolean => {
+    sendSeiChat: (characterId: string, payload: { from: string; text: string; voice?: boolean }): boolean => {
       const session = sessions.get(characterId);
       if (!session) return false;
       try {
-        session.port1.postMessage({ type: 'sei-chat', from: payload.from, text: payload.text });
+        session.port1.postMessage({
+          type: 'sei-chat',
+          from: payload.from,
+          text: payload.text,
+          // 260708: a live voice-call utterance, not an out-of-band app text.
+          // The bot frames it as in-game speech instead of "Sei chat".
+          voice: payload.voice === true,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    /**
+     * 260708: record-only mirror of a group-call line into a live session's
+     * chat history (a sibling companion's spoken line, or a player line routed
+     * to another bot). The bot records it without waking, except a companion
+     * line that names this bot (directed request). False → no live session.
+     */
+    observeSeiChat: (characterId: string, payload: { from: string; text: string }): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'sei-chat-observe', from: payload.from, text: payload.text });
         return true;
       } catch {
         return false;

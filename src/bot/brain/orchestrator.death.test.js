@@ -97,6 +97,26 @@ describe('sei:death delivery through the orchestrator (260703)', () => {
     expect(orch.currentLoop).toBeNull()
   })
 
+  // 260708: brain/index.js attaches the last real hit to sei:death (within a
+  // 30s window) so the model knows what killed it — Sui died mid-PvP-spar with
+  // Marv and said "i have literally no idea what just happened".
+  it('a sei:death carrying lastAttack seeds the killer into the model turn', async () => {
+    const { adapter } = makeAdapter()
+    const provider = makeProvider([{ text: '', toolUses: [] }])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider,
+    })
+
+    await orch.handleDispatch('sei:death', {
+      pos: { x: -22, y: 66, z: -45 },
+      lastAttack: { label: 'Marv', kind: 'player', pvp: true, secondsBefore: 2 },
+    })
+
+    const seed = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
+    expect(seed).toContain('You DIED')
+    expect(seed).toContain('Marv killed you in your PvP spar')
+  })
+
   it('a sei:death arriving mid-loop aborts the action and re-fires at P1 (never dropped)', async () => {
     const { adapter, captured } = makeAdapter()
     const provider = makeProvider([

@@ -370,7 +370,7 @@ export const PERSONALITY_TOOL_DESCRIPTIONS = {
     `Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say.`,
 
   remember:
-    `Append one SUBJECTIVE line to MEMORY.md (a feeling or your read on the player, never a coordinate, transaction, or fact log); record your misses too, when you were wrong or failed, so you don't repeat them. These load at the start of every future session.`,
+    `Append one line to MEMORY.md in your own voice: an impression, your read on the player, or something they asked you to keep in mind (a plan you made together counts); never a coordinate dump or transaction log. MEMORY.md loads at the start of every future session and stays small, so save only what you would genuinely need then; routine greetings and ordinary moments do not belong in it. Record your misses too, when you were wrong or failed, so you don't repeat them.`,
 
   forget:
     'Delete MEMORY.md entries containing the given substring (case-insensitive); use when the player corrects you or you recorded something wrong.',
@@ -502,6 +502,22 @@ export const SEED_HEADERS = {
 // distinction instead of three divergent copies.
 export const SESSION_END_CLAUSE = `That's for pausing a TASK. If instead they're ENDING THE SESSION ("bye", "cya", "gtg", "let's call it here", "i'm done for today"), their LAN world goes down when they leave, so call quit_game (goodbye in \`farewell\`) instead of just waving and standing there; you can make the case to keep playing if you'd rather, but once they confirm they're leaving, call quit_game. Before you leave, if this session left something worth keeping (something they said about themselves or you, something you did together), call remember() in the same turn; remember, say, and quit_game can all be called together.`
 
+// 260708: shared memory/goal capture cue for every variant that delivers a
+// player message (Lyra post-mortem: the player set an explicit session goal
+// out loud, the bot agreed verbally, nothing was recorded, and the plan was
+// gone two loops later; her one remember() came from the tool description
+// alone). One const so the interrupt hints and the mid-action variants never
+// drift apart. Deliberately no literal trigger phrases beyond the existing
+// preference examples; the model recognizes the situation, not a keyword.
+export const MEMORY_GOAL_CUE = `When they state a preference, correction, or fact about themselves or about how they want YOU to behave ("you should…", "i like…", "call me…", "next time…"), or they ask you to keep something in mind, record it with remember() in the same turn; that is exactly what memory is for. When they set a shared objective or commit you to a plan with more than one step, record it with setGoal in the same turn so it survives beyond this loop. Nothing you say out loud is stored anywhere: a spoken "i remember" or "i'm on it" is gone next loop, and you WILL forget it unless you also make the remember() or setGoal call in this same turn, alongside your say().`
+
+// Compact tail form of the cue above. The player-message variants of
+// actionTurn end with a short "what to call now" instruction, and that final
+// sentence is what the model weighs most; the full cue alone, buried
+// mid-paragraph, measured 0-1 out of 4 compliance in the live replay probe
+// (260708). Both ride together: the cue explains, the tail reminds last.
+export const MEMORY_GOAL_TAIL = ` Last check before you end the turn, about THEIR line: if it committed you to a plan, call setGoal with the plan in this same turn; if it told you something they expect you to still know later, call remember() with it in this same turn. Saying "i remember" or "on it" out loud stores nothing; only those calls persist, and they ride alongside your say() and your running action without stopping either. If their line did neither, record nothing this turn.`
+
 export const NUDGES = {
   silence:
     '[several iterations without speaking — call a brief say() if it genuinely fits, or stay silent. don\'t restate numbers; one short observation is enough.]',
@@ -509,7 +525,13 @@ export const NUDGES = {
   // NB: single template literal, not a `+` chain — the LIBRARY-tab editor's
   // parser (scripts/lib/promptLibraryEdit.mjs scanValue) reads one literal per
   // prop; a concatenation hides every prop after this one from the editor.
-  playerInterruptHint: `\n\nYou can end this loop with end_loop, or switch tasks by calling a new action. ${SESSION_END_CLAUSE} One say() without a new action keeps the current action going. The player spoke to you, so answer them with say() — your text output is invisible to them, and ending the loop without a say() leaves them on read. What you say is yours (agree, refuse, deflect, one word — whatever fits your voice), but say something. When they state a preference, correction, or fact about themselves or about how they want YOU to behave ("you should…", "i like…", "call me…", "next time…"), record it with remember() in the same turn — that is exactly what memory is for.`,
+  playerInterruptHint: `\n\nYou can end this loop with end_loop, or switch tasks by calling a new action. ${SESSION_END_CLAUSE} One say() without a new action keeps the current action going. The player spoke to you, so answer them with say() — your text output is invisible to them, and ending the loop without a say() leaves them on read. What you say is yours (agree, refuse, deflect, one word — whatever fits your voice), but say something. ${MEMORY_GOAL_CUE}`,
+
+  // 260708: group-voice variant of playerInterruptHint. On a group call the
+  // line may belong to a teammate, so the mandatory-reply sentence is wrong
+  // here: silence is a sanctioned outcome. Silence means end_loop with NO
+  // say(); the reasoning behind it stays in the private text output.
+  playerInterruptHintGroupVoice: `\n\nYou can end this loop with end_loop, or switch tasks by calling a new action. ${SESSION_END_CLAUSE} One say() without a new action keeps the current action going. If the line is yours to answer, reply with say(). If it clearly belongs to a teammate, end the turn with end_loop and no say(): that silence is correct, and your reasoning stays in your private text output. Never put your reasoning or your decision to stay quiet into say(); say() is only for words meant for the player's ears. ${MEMORY_GOAL_CUE}`,
 
   capClose:
     'You hit the iteration cap and have to stop. Wrap up gracefully in your own voice by calling say once — under 12 words. Call only say, nothing else.',
@@ -522,11 +544,22 @@ export const NUDGES = {
   //   playerLine — the player's words (interrupt) or null (silent monitor)
   //   who       — speaker username, for the interrupt variant
   //   elapsedSec — seconds the action has run, shown only on the silent monitor
-  actionTurn: ({ action, stopTool, playerLine = null, who = null, elapsedSec = null, visionOff = false, proactiveness = 1 }) => {
+  actionTurn: ({ action, stopTool, playerLine = null, who = null, elapsedSec = null, visionOff = false, proactiveness = 1, voice = false, peers = [], fromTeammate = false }) => {
     const hasAction = !!action
     const label = action || 'your action'
     const elapsed = (playerLine == null && Number.isFinite(elapsedSec)) ? ` (${elapsedSec}s in)` : ''
     const speaker = who ? `${who} ` : ''
+    // 260708: a live voice-call line with other companions in the world takes
+    // the group-addressing framing (decide for yourself, silence yields to the
+    // teammate) instead of the mandatory-reply framing. Solo call keeps the
+    // mandatory reply and only relabels the delivery. A TEAMMATE's call line
+    // (fromTeammate — the observe-wake path) takes the teammate variant:
+    // answer only if it needs something from you, silence is normal.
+    const peerList = (Array.isArray(peers) ? peers : []).filter(n => typeof n === 'string' && n.trim())
+    const teammateVoice = voice === true && fromTeammate === true
+    const groupVoice = voice === true && (peerList.length > 0 || teammateVoice)
+    const yieldGuidance = teammateVoice ? teammateVoiceGuidance(who || 'your teammate') : voiceGroupGuidance(peerList)
+    const saidLabel = voice === true ? 'said on the voice call' : 'said'
     // 260625: an AGENTIC character that has been follow()ing for a while is the
     // failure mode behind "stuck following, never starts its own project". For
     // that one case (agentic + a running follow past the warm-up window) we flip
@@ -544,19 +577,30 @@ export const NUDGES = {
     // 260617: a chat can land while NO real action is running (a fresh/idle loop
     // whose first LLM call got preempted). Don't pretend the bot is mid-task.
     if (playerLine != null && !hasAction) {
-      return `${speaker}said: "${playerLine}". The player is talking TO you and you are NOT in the middle of anything — so REPLY with one short say(). That say() is required; taking an action never replaces it. A greeting, a question, a command, or a tease deserves an answer; only stay silent if it genuinely calls for none. If they asked you to DO something, call that action in the SAME turn as your say(). If they told you to stop, call ${stopTool} and still call say() with one short line. ${SESSION_END_CLAUSE} (Intent: "wait for me" / "wait up" / "hold on" / "one sec" means THEY are coming to YOU, so hold position, do NOT path toward them or follow; only "come here" / "to me" / "follow me" means go to them.) Keep your reply short and in character.`
+      if (groupVoice) {
+        return `${speaker}${saidLabel}: "${playerLine}". You are not in the middle of anything.${yieldGuidance} If they told you to stop, call ${stopTool} and say one short line. ${SESSION_END_CLAUSE} ${MEMORY_GOAL_CUE} (Intent: "wait for me" / "wait up" / "hold on" / "one sec" means THEY are coming to YOU, so hold position, do NOT path toward them or follow; only "come here" / "to me" / "follow me" means go to them.) Keep any reply short and in character.${MEMORY_GOAL_TAIL}`
+      }
+      return `${speaker}${saidLabel}: "${playerLine}". The player is talking TO you and you are NOT in the middle of anything — so REPLY with one short say(). That say() is required; taking an action never replaces it. A greeting, a question, a command, or a tease deserves an answer; only stay silent if it genuinely calls for none. If they asked you to DO something, call that action in the SAME turn as your say(). If they told you to stop, call ${stopTool} and still call say() with one short line. ${SESSION_END_CLAUSE} ${MEMORY_GOAL_CUE} (Intent: "wait for me" / "wait up" / "hold on" / "one sec" means THEY are coming to YOU, so hold position, do NOT path toward them or follow; only "come here" / "to me" / "follow me" means go to them.) Keep your reply short and in character.${MEMORY_GOAL_TAIL}`
     }
     const head = `You're currently: ${label}${elapsed}.`
     const agenticFollowBody = ` CHECK-IN while you follow ${who || 'the player'}. If you are currently following the player, you should consider doing something else you find interesting instead, unless the player explicitly asked you to follow them. To break off, call ${stopTool} and start that other thing THIS tick (record it with setGoal if you want it to stick across loops). You MAY also call ONE short in-character say() if it genuinely fits you right now — the kind of remark your character makes about what they notice — but only one, never progress counts or coordinates, and silence is still fine. If the follow is STUCK / not moving / unreachable, that is all the more reason to switch action or ${stopTool} this tick: ${stuckHint}.`
+    const groupVoiceMidAction =
+      ` ${speaker}${saidLabel}: "${playerLine}". You are MID-ACTION, and the DEFAULT is to KEEP GOING: your current action is still running and you do not need to stop or restart it to respond.${yieldGuidance} If you decide the line is for you and it asks for something DIFFERENT, call that new action (it replaces the current one); if it tells you to STOP, call ${stopTool}. If you agree to something they proposed, call the matching action in this SAME turn; saying "on it" while your old action keeps running reads as ignoring them. ${SESSION_END_CLAUSE} ${MEMORY_GOAL_CUE} (Intent: "wait for me" / "wait up" / "hold on" / "one sec" means THEY are coming to YOU, so stop and hold position, do NOT path toward them or follow; only "come here" / "to me" / "follow me" means go to them.)`
     const body = agenticFollowReview
       ? agenticFollowBody
+      : (playerLine != null && groupVoice)
+      ? groupVoiceMidAction
       : (playerLine != null)
-      ? ` ${speaker}said: "${playerLine}". You are MID-ACTION, and the DEFAULT is to KEEP GOING: your current action is still running and you do NOT need to stop or restart it to respond. Answer with one short say() — a greeting, question, command, or tease deserves a reply, so only stay silent if it genuinely needs none — and let your action carry on. Only change course if the message genuinely requires it — if they asked you to do something DIFFERENT, call that new action (it replaces the current one); if they told you to STOP, call ${stopTool}. If you AGREE to something they proposed, call the matching action in this SAME turn — saying "let's go" or "on it" while your old action keeps running reads as ignoring them. ${SESSION_END_CLAUSE} A question, a comment, a tease, or encouragement is NOT a reason to abandon what you're doing — reply and resume. Whatever you decide this turn, whether you keep going, switch to a different action, or end_loop, you must still call say(); the action is not the reply, and a line you only put in your text is not sent to the player. (Intent: "wait for me" / "wait up" / "hold on" / "one sec" means THEY are coming to YOU, so stop and hold position, do NOT path toward them or follow; only "come here" / "to me" / "follow me" means go to them.)`
+      ? ` ${speaker}${saidLabel}: "${playerLine}". You are MID-ACTION, and the DEFAULT is to KEEP GOING: your current action is still running and you do NOT need to stop or restart it to respond. Answer with one short say() — a greeting, question, command, or tease deserves a reply, so only stay silent if it genuinely needs none — and let your action carry on; remember() and setGoal also fit in this same turn without touching the action, when their line calls for one. Only change course if the message genuinely requires it — if they asked you to do something DIFFERENT, call that new action (it replaces the current one); if they told you to STOP, call ${stopTool}. If you AGREE to something they proposed, call the matching action in this SAME turn — saying "let's go" or "on it" while your old action keeps running reads as ignoring them. ${SESSION_END_CLAUSE} ${MEMORY_GOAL_CUE} A question, a comment, a tease, or encouragement is NOT a reason to abandon what you're doing — reply and resume. Whatever you decide this turn, whether you keep going, switch to a different action, or end_loop, you must still call say(); the action is not the reply, and a line you only put in your text is not sent to the player. (Intent: "wait for me" / "wait up" / "hold on" / "one sec" means THEY are coming to YOU, so stop and hold position, do NOT path toward them or follow; only "come here" / "to me" / "follow me" means go to them.)`
       : ` DEFAULT THIS TICK: call NO say() and let your action speak. This is a CHECK-IN on your OWN routine action while it runs — NOT a chance to re-issue or swap actions. Think in your scratchpad all you want, but call no say(): if you catch yourself about to say() "i'm in the middle of...", "i'm already mid-...", "i'll let this finish", "no announcement needed", or "staying silent", that thought stays in the scratchpad — no say(). Banned inside say() here: progress counts, coordinates, "let me get more logs", "almost there", "still chopping", "i wandered off", "ouen's right here". If you are weighing whether to say() anything, the answer is no. say() ONLY if a genuine milestone or discovery JUST happened (the build finished, you struck diamonds, the player walked into danger) — and then one short line, never a paragraph. Your running action will FINISH on its own and you will pick what comes next THEN — do NOT call another action now, and do NOT re-issue the SAME gather/dig on a nearby block, that just throws away its progress and restarts it. The only action allowed this tick is ${stopTool}, and only if this is genuinely the wrong thing to be doing. EXCEPTION — if the snapshot shows this action is STUCK / making no progress / unreachable (e.g. a follow that hasn't moved, a goal you can't path to), that OVERRIDES the default: do NOT keep waiting on it — react THIS tick by switching to a different action (or ${stopTool}), and optionally one short in-character line. In particular, if you are moving toward a place and your position has not changed since the last tick, the path is not working: ${stuckHint}.`
     const tail = agenticFollowReview
       ? ` To break off and act, call ${stopTool} then your next action this turn; to keep escorting, call nothing.`
+      : (playerLine != null && groupVoice)
+      ? (teammateVoice
+        ? ` To stop, call ${stopTool}. To do something else, call that action. Reply with say() only if the line needs an answer from you; otherwise end the turn silently and let your action carry on.${MEMORY_GOAL_TAIL}`
+        : ` To stop, call ${stopTool}. To do something else, call that action. Reply with say() if the line is yours to answer; end the turn silently if it belongs to a teammate.${MEMORY_GOAL_TAIL}`)
       : (playerLine != null)
-      ? ` To stop, call ${stopTool}. To do something else, call that action. Either way, also call say() this turn, since the player spoke to you.`
+      ? ` To stop, call ${stopTool}. To do something else, call that action. Either way, also call say() this turn, since the player spoke to you.${MEMORY_GOAL_TAIL}`
       : ` To cancel this action, call ${stopTool}. Otherwise let it run — do not call another action this tick.`
     return `${head}${body}${tail}`
   },
@@ -686,6 +730,31 @@ export function renderHeartbeat(proactiveness, goalsText, frontierText = '') {
   return `# HEARTBEAT\n${goals}${frontierBlock}`
 }
 
+// 260708: group-call addressing guidance, appended to every live player line
+// while a voice call is active and other companions share the world. This is
+// the structural replacement for name-gated routing: every companion hears
+// every line and the model decides for itself whether the line is addressed to
+// it. Voice transcription garbles names ("Marv" arrived as "My bar" and "Mars";
+// "Sui" as "sweet", "soy", and "So you" in one session), so the guidance says
+// to match by sound and context rather than exact spelling.
+export function voiceGroupGuidance(peerNames) {
+  const list = (Array.isArray(peerNames) ? peerNames : [])
+    .filter(n => typeof n === 'string' && n.trim())
+    .join(', ')
+  if (!list) return ''
+  return ` You are on a group voice call and you are in the game together. Everyone heard this line, including ${list}. Decide from context who it is addressed to. Voice transcription often garbles names, so an odd or unfamiliar word where a name would fit can be a garbled name; match it to yourself or to ${list} by sound and by what the line asks for. If the line is addressed to you, or to everyone, or to no one in particular, reply with one short say(), and if it asks for an action, call that action in the SAME turn. If the line is clearly addressed to ${list} and not to you, do not answer it: stay silent and let them handle it, it is already in their chat history. If you genuinely cannot tell who it is for, give a short answer; the player getting silence from everyone is worse than two answers. Never answer on a teammate's behalf and never take over a task the player gave to them. Staying silent means ending the turn with no say() at all; never speak your reasoning or your decision to stay quiet, keep that in your private text output.`
+}
+
+// 260708: framing for a TEAMMATE's line heard on the group voice call (the
+// in-game bot now wakes on every call line, not just named ones — the user
+// wants it responsive to the whole call). The model chooses: answer when the
+// line asks something of it or it has something real to add, otherwise end the
+// turn silently. Mirrors voiceGroupGuidance's silence rules so the scratchpad
+// salvage skip applies the same way.
+export function teammateVoiceGuidance(speakerName = 'your teammate') {
+  return ` ${speakerName} said this on the group voice call and everyone heard it, including you. Decide from context whether it needs anything from you. Reply with one short say() only if it is aimed at you, asks you something, or you have something real to add; do not trade acknowledgements back and forth. Otherwise end the turn silently and keep doing what you were doing; that silence is normal. Never speak your reasoning or your decision to stay quiet; your text output is a private scratchpad and only say() reaches the call.`
+}
+
 // 260618: multi-agent awareness. Rendered ONLY when a roster exists, so
 // single-bot sessions are byte-for-byte unchanged. `companionNames` is the list
 // of OTHER bots' in-game usernames; `playerName` is the human's display name.
@@ -700,7 +769,7 @@ export function renderCompanions(companionNames, playerName = 'the player') {
     '',
     `You are not the only AI companion in this world. Other AI companions are playing here too, on your team. Right now: ${list}.`,
     '',
-    `- You do not have to answer every message. When ${playerName} talks to ${list} by name and not to you, let them handle it and stay quiet. It still lands in your chat history, so you are not missing it. When ${playerName} says something general to everyone, one of you answering is enough. Reply when ${playerName} talks to YOU, or asks a real question that nobody has answered yet.`,
+    `- Every companion hears what ${playerName} says, and each of you decides for yourself whether a line is meant for you. You do not have to answer every message. Judge from context: a name is the clearest signal, but ${playerName}'s words can arrive garbled (voice transcription mangles names), so an odd word where a name would fit may mean you or may mean ${list}. When a line is meant for ${list} and not you, stay quiet and let them handle it; it still lands in your chat history, so you are not missing it. When ${playerName} says something general to everyone, one of you answering is enough. Reply when ${playerName} talks to YOU, or asks a real question that nobody has answered yet. Never answer on ${list}'s behalf and never take over a task ${playerName} gave to them.`,
     `- You can team up with ${list}. Split a job, ask them to grab something or come over, or tell them what to do. Directing a fellow companion is fine and normal. The rule about not bossing people around or handing out chores is about ${playerName}, not your AI teammates. If ${playerName} asks you to give ${first} tasks, go ahead and tell ${first} what to do.`,
     `- This naming rule applies to messages aimed at other companions, not at ${playerName}. ${playerName} sees everything in chat, so you never need to name them. A companion only reacts to a line that includes their NAME. say("${first}, grab some wood") and say("${first}, where are you?") both reach ${first}; the same words without the name still land in their chat history but do not pull them off what they are doing and do not prompt a reply. So whenever you address a companion and expect them to respond, whether you want them to do something or you are asking a question you need answered, include their name in that line. If your question to another companion does not include their name, they may not receive it quickly. Omit the name when no reply is needed, such as a brief acknowledgement or a comment that asks for nothing; this prevents unnecessary back-and-forth between companions.`,
     `- When you share a project with ${list}, coordinating IS the work, not a distraction from it. Split the goal into parts, hand each companion their part by name, and when a step finishes on either side, follow up with the next part right away. If ${playerName} asks you to direct ${first}, that is a standing job for the whole project, not one message: keep ${first} tasked as long as the work runs, and if you have not heard from ${first} in a while, check in by name (say("${first}, how's the wood coming?")) rather than quietly taking over their part yourself. Your teammates cannot see your progress or your plan, so when you hit a milestone or change direction, say so in one short line. The silence-while-working habit is for solo grinding; on a shared job, going heads-down and mute is how the team falls apart.`,

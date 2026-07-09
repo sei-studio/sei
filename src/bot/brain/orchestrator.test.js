@@ -754,3 +754,41 @@ describe('player_message block — scratchpad contract (260703b)', () => {
     expect(turn).toContain('only say() reaches them')
   })
 })
+
+// ──────────── memory-tool hoist at batch split (260708) ────────────
+//
+// Live-session bug (Lyra post-mortem): the model called follow(...) +
+// remember(...) in ONE turn. follow suspended the loop via startLongRunner and
+// the remember was stashed on loop._pendingToolUses — where an action_tick
+// reclaim, a P0/P1 preempt, or drainPendingToolsOnTeardown (world-tools-only
+// filter) silently discarded it. The memory sha never changed all session.
+// The fix hoists MEMORY_METADATA (remember/forget/setGoal/clearGoal) at
+// batch-split time: they execute BEFORE the first world tool dispatches, so
+// they can never be stranded on the pending queue.
+
+describe('memory-tool hoist at batch split (260708)', () => {
+  it('a remember() batched AFTER a suspending world tool lands on disk before the action settles', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const config = makeConfig()
+    const { adapter, captured } = makeAdapter()
+    const provider = makeProvider([
+      // remember deliberately AFTER follow — the failing order from the live
+      // session. follow's promise never resolves, so if the remember were
+      // queued behind it, it would never run in this test at all.
+      { text: '', toolUses: [
+        { id: 'f1', name: 'follow', input: { player: 'Steve' } },
+        { id: 'r1', name: 'remember', input: { text: 'sei wants a house for the two of us' } },
+      ] },
+    ])
+    const orch = createOrchestrator({
+      adapter, config, reenqueue: () => {}, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('remember: house for us'))
+
+    // The loop is suspended on the never-settling follow, yet the memory write
+    // has ALREADY happened — it did not wait for action_complete.
+    expect(captured.executed).toContain('follow')
+    const md = await fs.readFile(config.memory.memory_md_path, 'utf8')
+    expect(md).toContain('sei wants a house for the two of us')
+  })
+})

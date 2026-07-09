@@ -1,19 +1,14 @@
 /**
  * PFC steer decision tests (260706) — the "who speaks when" core of the multi-
- * companion voice director. Locks in: a player utterance goes to exactly one
- * companion (addressed-by-name when named, else a varied but bounded pick), the
- * companion chain is probabilistic + capped (so it neither always dies at one
- * turn nor runs forever), and Whisper junk never becomes a turn. Randomness is
- * injected so the varied picks are deterministic here.
+ * companion voice director. Locks in: the companion chain always hands the
+ * floor to a peer under the runaway cap (banter ends on a natural lull, not a
+ * dice roll), name-addressed lines force that peer, and Whisper junk never
+ * becomes a turn. Randomness is injected so the varied picks are deterministic
+ * here. (pickResponder was retired 260708 — player utterances broadcast to
+ * every participant now, see useVoiceStore.dispatchUserTurn.)
  */
 import { describe, it, expect } from 'vitest';
-import {
-  pickResponder,
-  decideReaction,
-  isJunkTranscript,
-  PFC_MAX_CHAIN,
-  type Participant,
-} from './pfcSteer';
+import { decideReaction, isJunkTranscript, PFC_MAX_CHAIN, type Participant } from './pfcSteer';
 
 const SUI = { id: 'sui', name: 'Sui' };
 const MARV = { id: 'marv', name: 'Marv' };
@@ -25,36 +20,6 @@ const seq = (...vals: number[]) => {
   let i = 0;
   return () => vals[Math.min(i++, vals.length - 1)];
 };
-
-describe('pickResponder', () => {
-  it('returns the sole participant on a solo call', () => {
-    expect(pickResponder('hey there', [SUI], null).id).toBe('sui');
-  });
-
-  it('addresses a companion named in the utterance', () => {
-    expect(pickResponder('marv, are you okay?', duo, null, seq(0)).id).toBe('marv');
-    expect(pickResponder('what do you think Sui', duo, null, seq(0.99)).id).toBe('sui');
-  });
-
-  it('is case-insensitive and ignores surrounding punctuation', () => {
-    expect(pickResponder('MARV!!! help', duo, null, seq(0)).id).toBe('marv');
-    expect(pickResponder('...sui?', duo, null, seq(0)).id).toBe('sui');
-  });
-
-  it('does not match a name embedded inside another word', () => {
-    // "marvelous" must not address Marv: with no name match it falls to the
-    // weighted pick. rnd=0 lands on the first candidate (Sui).
-    expect(pickResponder('that plan is marvelous', duo, null, seq(0)).id).toBe('sui');
-  });
-
-  it('down-weights the last responder so the first speaker varies', () => {
-    // With Sui down-weighted (weight 0.35) and Marv at 1.0, total = 1.35.
-    // rnd just over Sui's slice (0.35/1.35 ≈ 0.26) must land on Marv.
-    expect(pickResponder('go on', duo, 'sui', seq(0.5)).id).toBe('marv');
-    // A repeat is still POSSIBLE (not banned): a tiny rnd lands back on Sui.
-    expect(pickResponder('go on', duo, 'sui', seq(0.01)).id).toBe('sui');
-  });
-});
 
 describe('decideReaction', () => {
   it('never chains on a solo call', () => {

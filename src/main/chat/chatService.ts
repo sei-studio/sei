@@ -39,7 +39,7 @@ export interface ChatDeps {
    * cache). Returns false if no session took it, so the caller can fall back to
    * the standalone chat brain.
    */
-  routeToBot?: (characterId: string, payload: { from: string; text: string }) => boolean;
+  routeToBot?: (characterId: string, payload: { from: string; text: string; voice?: boolean }) => boolean;
   /** The (non-blocking) join kicked off by launch() failed — report it to the
    * player in the companion's own voice (index.ts sendLaunchFailedTurn). */
   onLaunchFailed?: (characterId: string, reason: string) => void;
@@ -373,6 +373,29 @@ export function isSilenceFiller(text: string): boolean {
   return SILENCE_FILLER_RE.test(text);
 }
 
+/**
+ * Peer-impersonation drop (260708). On a group call the transcript attributes
+ * other companions' lines as "(Name, on the call): ...", and a model
+ * occasionally ECHOES the convention — writing a fabricated line for the OTHER
+ * companion inside its own reply (live capture: Marv's streamed reply opened
+ * with "(Sui, on the call): oh let's go..." spoken in Marv's TTS voice, and a
+ * ghost Sui line landed in the transcript she never said). The prefix is ours,
+ * injected only on heard lines — a companion's own reply never legitimately
+ * starts with it — so any reply part carrying it is fabricated dialogue and is
+ * dropped before it is persisted or spoken. Voice paths only, next to the
+ * silence-filler drop. Line-level, not part-level: splitReply splits on BLANK
+ * lines, so a fabricated line and a real one can share a part — only the
+ * impersonated lines are removed, and a part left empty is dropped.
+ */
+const PEER_IMPERSONATION_RE = /^\s*\(\s*[^()\n]{1,60},\s*on the call\s*\)\s*:/i;
+export function stripPeerImpersonation(text: string): string {
+  return text
+    .split('\n')
+    .filter((l) => !PEER_IMPERSONATION_RE.test(l))
+    .join('\n')
+    .trim();
+}
+
 async function persistReplies(
   characterId: string,
   replyText: string,
@@ -384,7 +407,9 @@ async function persistReplies(
   // prompts the "(silence)" convention, so a filler-shaped line there is a real
   // reply and persisting it beats silently losing the turn.
   const parts = splitReply(replyText, punctuation);
-  const replies: ChatMessage[] = (opts?.voice ? parts.filter((text) => !isSilenceFiller(text)) : parts)
+  const replies: ChatMessage[] = (opts?.voice
+    ? parts.map(stripPeerImpersonation).filter((text) => text && !isSilenceFiller(text))
+    : parts)
     .map((text, i) => ({
     id: randomUUID(),
     role: 'companion',
@@ -443,7 +468,11 @@ export async function sendChatMessage(
     // the session vanished between the check and the post.
     if (deps.isInGame?.(args.characterId) && deps.routeToBot) {
       const from = (config.preferred_name ?? '').trim() || 'The player';
-      if (deps.routeToBot(args.characterId, { from, text: args.text })) {
+      // 260708: a mid-call utterance reaching an in-game bot is live speech,
+      // not an out-of-band app text. The voice flag switches the bot-side
+      // framing (deliverSeiChat) from the "Sei chat / NOT in the game" wrapper
+      // to in-game voice delivery.
+      if (deps.routeToBot(args.characterId, { from, text: args.text, voice: args.voiceCall === true })) {
         // In-game chatter appends to the transcript without ever running a
         // standalone chat turn, so drain any fold backlog from here too —
         // otherwise a long play session could grow the window unbounded.
@@ -499,10 +528,12 @@ export async function sendChatMessage(
     const streamedReplies: ChatMessage[] = [];
     let streamBuf = '';
     const emitStreamedBubble = async (raw: string): Promise<void> => {
-      for (const b of splitReply(raw, prep.punctuation)) {
-        // Only ever called on the isVoice path, so the silence-filler drop here
-        // stays voice-scoped (matching persistReplies). Keep it that way.
-        if (isSilenceFiller(b)) continue;
+      for (const raw_b of splitReply(raw, prep.punctuation)) {
+        // Only ever called on the isVoice path, so the silence-filler and
+        // peer-impersonation drops here stay voice-scoped (matching
+        // persistReplies). Keep it that way.
+        const b = stripPeerImpersonation(raw_b);
+        if (!b || isSilenceFiller(b)) continue;
         const msg: ChatMessage = {
           id: randomUUID(),
           role: 'companion',
@@ -985,7 +1016,21 @@ export async function observeVoiceLine(
  */
 export async function sendCompanionVoiceTurn(
   characterId: string,
-  ctx: { speakerName: string; text: string; peers: string[]; depth?: number },
+  ctx: {
+    speakerName: string;
+    text: string;
+    peers: string[];
+    depth?: number;
+    /** 260708: live LAN truth. This turn used to hardcode `false`, so a
+     * call-only companion whose sibling was already IN the world was told no
+     * world existed — and repeated the "open to LAN" instructions to a player
+     * standing in their open world. */
+    openWorldDetected?: boolean;
+    /** 260708: honor a launch() call from this single-shot turn (no tool loop
+     * runs here, so without this the model says "hopping in" and nothing
+     * happens — the join only worked once the in-game sibling disconnected). */
+    onLaunch?: () => void;
+  },
 ): Promise<ChatMessage[]> {
   inflight.get(characterId)?.abort();
   const ctrl = new AbortController();
@@ -1001,7 +1046,7 @@ export async function sendCompanionVoiceTurn(
     await chatStore.appendMessage(characterId, heard);
 
     const prep = await prepareChatTurn(characterId, {
-      openWorldDetected: false,
+      openWorldDetected: ctx.openWorldDetected === true,
       inGame: false,
       voiceCall: true,
       voicePeers: ctx.peers,
@@ -1034,6 +1079,11 @@ export async function sendCompanionVoiceTurn(
     );
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
+    // 260708: honor launch() the same single-shot way remember() is honored —
+    // the caller (ipc) gates it on a live open world and fires the summon.
+    if (ctx.onLaunch && res.content.some((b) => b.type === 'tool_use' && b.name === 'launch')) {
+      try { ctx.onLaunch(); } catch { /* best-effort — the reply still lands */ }
+    }
     const replyText = textOf(res.content);
     if (!replyText) return [];
     return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
@@ -1066,6 +1116,10 @@ export async function sendVoiceIdleTurn(
   characterId: string,
   quietSeconds: number,
   peers: string[] = [],
+  /** 260708: live LAN truth + single-shot launch honor (see
+   * sendCompanionVoiceTurn) — an idle nudge that says "i'll hop in" must
+   * actually join instead of hanging. */
+  opts: { openWorldDetected?: boolean; onLaunch?: () => void } = {},
 ): Promise<{ messages: ChatMessage[]; endCall?: boolean }> {
   // The nudge can race a hang-up (the renderer timer fires as the call ends).
   // Without this guard the turn still runs a full paid LLM round-trip and
@@ -1076,7 +1130,7 @@ export async function sendVoiceIdleTurn(
   inflight.set(characterId, ctrl);
   try {
     const prep = await prepareChatTurn(characterId, {
-      openWorldDetected: false,
+      openWorldDetected: opts.openWorldDetected === true,
       inGame: false,
       voiceCall: true,
       voicePeers: peers,
@@ -1084,11 +1138,24 @@ export async function sendVoiceIdleTurn(
     });
     if (!prep) return { messages: [] };
     const { system, messages } = prep;
-    const note =
-      `[System note — not the player speaking: the conversation has been quiet for about ${Math.max(1, Math.round(quietSeconds))} seconds. ` +
-      'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
-      'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
-      'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
+    // Proactiveness-keyed nudge (260708): an agentic character (dial 2) is the
+    // one who keeps a call alive — its nudge asks for a topic outright and
+    // offers no silence option, so a quiet stretch reliably becomes
+    // conversation (the same dial that makes it self-directed in-game). Lower
+    // dials keep the original take-it-or-leave-it note with silence sanctioned.
+    const proactive = clampProactiveness(prep.character.metadata?.proactiveness) >= 2;
+    const quiet = Math.max(1, Math.round(quietSeconds));
+    const note = proactive
+      ? `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
+        'Keep the call alive: say something in one short spoken line. Anything real works: a thought on your mind, ' +
+        'something you remember about the player, something from earlier in this call, a question you actually want answered, ' +
+        (peers.length ? 'something to rope the other companions on the call into, ' : '') +
+        'or a new topic entirely. Pick whichever thread feels most alive and pull it. ' +
+        'Do not greet them again and do not ask if they are still there. Do not mention this note.]'
+      : `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
+        'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
+        'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
+        'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
     foldUserNote(messages, note);
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
@@ -1102,9 +1169,13 @@ export async function sendVoiceIdleTurn(
     await honorRememberCalls(characterId, res.content);
     // No tool loop runs here, so honor end_call by flagging it for the caller:
     // "well, I'll let you go, bye" must actually hang up, not just be spoken
-    // while later nudges keep firing. launch()/quit_game() calls stay
-    // deliberately unhonored on an idle nudge (the tool list itself is kept
-    // identical for prompt-cache warmth, not because every tool is live here).
+    // while later nudges keep firing. 260708: launch() is now honored too (via
+    // opts.onLaunch, gated on a live open world by the caller) — a nudge turn
+    // that says "i'll hop in" used to just hang. quit_game() stays unhonored
+    // (the tool list is kept identical for prompt-cache warmth).
+    if (opts.onLaunch && res.content.some((b) => b.type === 'tool_use' && b.name === 'launch')) {
+      try { opts.onLaunch(); } catch { /* best-effort — the reply still lands */ }
+    }
     const endCall = res.content.some((b) => b.type === 'tool_use' && b.name === 'end_call');
     const replyText = textOf(res.content);
     if (!replyText) return { messages: [], ...(endCall ? { endCall: true } : {}) };

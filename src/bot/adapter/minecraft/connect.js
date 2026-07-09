@@ -22,6 +22,7 @@ import { startCombat } from './behaviors/combat.js'
 import { startReflex } from './behaviors/reflex.js'
 import { startGaze } from './behaviors/gaze.js'
 import { startSurvival } from './behaviors/survival.js'
+import { installFaceOnDig } from './behaviors/face.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -257,6 +258,9 @@ export function createBotInstance({
       _spawned = true
       _clearConnectTimer()
       safeStart('loadPlugin(pathfinder)', () => bot.loadPlugin(pathfinder))
+      // Face-what-you-break (260708): wrap bot.dig AFTER the pathfinder loads
+      // so its path-clearing digs (instant head-snap) get the visible turn too.
+      safeStart('installFaceOnDig', () => installFaceOnDig(bot))
       safeStart('startPosHealer', () => startPosHealer(bot))
       safeStart('startAutoEat', () => startAutoEat(bot))
       safeStart('startCombat', () => startCombat(bot, config))
