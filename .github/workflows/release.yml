@@ -102,7 +102,14 @@ jobs:
             echo "::error::SUPABASE_ANON_KEY was set but not baked into dist/main — define injection failed."
             exit 1
           fi
-          echo "✓ cloud config baked in ($host + anon key present in dist/main)"
+          # KusArt portrait generation moved behind the proxy (260709) — the
+          # client must NOT contain a KusArt key. Inverse gate: fail if one
+          # ever leaks into the bundle again.
+          if grep -rqE "ak_[0-9a-f]{64}" dist/main; then
+            echo "::error::A KusArt-shaped API key (ak_...) is baked into dist/main — the key must live only in the proxy's Fly secrets."
+            exit 1
+          fi
+          echo "✓ cloud config baked in ($host + anon key in dist/main, no KusArt key)"
 
       - name: Collect release assets (installers + auto-update feed)
         # CRITICAL: electron-updater needs the *.yml feed files, the macOS *.zip
