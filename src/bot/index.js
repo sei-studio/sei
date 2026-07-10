@@ -161,39 +161,93 @@ export async function start(config, hooks = {}) {
         _bot = null
         clearTimeout(_reconnectTimer)
 
-        // POST-SPAWN drop: the bot was in the world and the socket closed. On a
-        // localhost LAN that almost always means the player closed the world /
-        // quit Minecraft. The previous code reconnected here, but two bugs made
-        // that path actively harmful:
-        //   1. The `_reconnectAttempts = 0` reset below was gated on
-        //      `_readyFired`, so the counter was wiped to 0 on EVERY post-spawn
-        //      drop and then bumped to 1 — it never exceeded the cap. The bot
-        //      reconnected FOREVER (the field log showed a perpetual
-        //      "attempt 1/3"), so it never surfaced a terminal error and the
-        //      supervisor never learned the session ended → the GUI stayed
-        //      "online" until the user force-stopped it.
-        //   2. The brain from the dead session was never stopped. Its
-        //      orchestrator loop kept running on a detached adapter — firing
-        //      idle-tick Anthropic calls and emitting [chat->] lines the player
-        //      never saw (phantom chat into a closed socket).
-        // Treat a post-spawn drop as terminal instead: surface a LAN_NOT_OPEN
-        // error and shut the process down cleanly (onConnectError →
-        // gracefulShutdown stops the brain, quits the bot, and exits). The user
-        // re-summons from the GUI in one click.
+        // POST-SPAWN drop: the bot was in the world and the socket closed.
+        // Historically this was ALWAYS terminal ("the player closed the
+        // world"), because the old unconditional reconnect had two bugs:
+        //   1. The `_reconnectAttempts = 0` reset was gated on `_readyFired`,
+        //      so the counter was wiped on EVERY post-spawn drop and the bot
+        //      reconnected FOREVER into a genuinely closed world.
+        //   2. The brain from the dead session was never stopped — its
+        //      orchestrator loop kept firing idle-tick Anthropic calls into a
+        //      detached adapter (phantom chat into a closed socket).
+        // 260710: always-terminal overcorrected. Server KICKS with the world
+        // still open are real — live case: a chat-signing rejection
+        // (multiplayer.disconnect.chat_validation_failed, an nmp 1.66.0
+        // chat-checksum bug on 1.21.11) killed the session and told the user
+        // to "re-open" a world that was open the whole time. Disambiguate by
+        // STATUS-PINGING the LAN port:
+        //   - ping answers  → the world is up; this was a kick. Stop the dead
+        //     session's brain (fixes historical bug 2), then bounded rejoin.
+        //     The attempt counter is deliberately NOT reset on reconnect
+        //     spawns (fixes historical bug 1), so a kick loop still gives up
+        //     after MAX_RECONNECT_ATTEMPTS for the whole session.
+        //   - ping dead → the player really closed the world; terminal
+        //     LAN_NOT_OPEN exactly as before.
         if (_readyFired) {
-          _stopped = true
-          logger.info(
-            `[sei] Lost connection to the LAN world (${humanizedReason}) — stopping. ` +
-            `Re-open the world to LAN and click Summon again.`,
-          )
-          try {
-            onConnectError(new Error(
-              `LAN_NOT_OPEN: Lost connection to the LAN world (${humanizedReason}). ` +
-              `Re-open the world to LAN in Minecraft and click Summon again.`,
-            ))
-          } catch (cbErr) {
-            logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
-          }
+          const deadBrain = _brain
+          _brain = null
+          void (async () => {
+            try { await deadBrain?.stop() } catch (err) {
+              logger.warn(`brain stop after disconnect threw: ${err && err.message}`)
+            }
+            if (_stopped) return
+            let worldStillOpen = false
+            try {
+              await resolveServerVersion({
+                host: mc.host, port: mc.port, timeoutMs: 1500,
+                logger: { info: () => {} }, // quiet — this is a liveness probe, not version resolution
+              })
+              worldStillOpen = true
+            } catch { /* closed, unreachable, or version weirdness → terminal path */ }
+            if (_stopped) return
+
+            if (worldStillOpen) {
+              _reconnectAttempts += 1
+              if (_reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+                logger.info(
+                  `[sei] Kicked from the world but it is still open (${humanizedReason}) — ` +
+                  `rejoining in ${mc.reconnect_delay_ms}ms ` +
+                  `(attempt ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}).`,
+                )
+                _reconnectTimer = setTimeout(() => {
+                  if (_stopped) return
+                  logger.info('Attempting to rejoin...')
+                  bringUp().catch(err => logger.error(`Rejoin failed: ${err.message}`))
+                }, mc.reconnect_delay_ms)
+                return
+              }
+              // Kick loop — the server keeps ejecting us. Give up with an
+              // honest message (NOT "re-open your world": it IS open).
+              _stopped = true
+              logger.error(
+                `[sei] Kicked ${MAX_RECONNECT_ATTEMPTS} times by a world that is still open ` +
+                `(${humanizedReason}) — giving up.`,
+              )
+              try {
+                onConnectError(new Error(
+                  `LAN_NOT_OPEN: The world kept kicking Sei (${humanizedReason}). ` +
+                  `Try summoning again in a moment.`,
+                ))
+              } catch (cbErr) {
+                logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
+              }
+              return
+            }
+
+            _stopped = true
+            logger.info(
+              `[sei] Lost connection to the LAN world (${humanizedReason}) — stopping. ` +
+              `Re-open the world to LAN and click Summon again.`,
+            )
+            try {
+              onConnectError(new Error(
+                `LAN_NOT_OPEN: Lost connection to the LAN world (${humanizedReason}). ` +
+                `Re-open the world to LAN in Minecraft and click Summon again.`,
+              ))
+            } catch (cbErr) {
+              logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
+            }
+          })()
           return
         }
 
@@ -479,6 +533,11 @@ async function bootstrapWithInit(initData) {
     // supervisor from UserConfig.realistic_typing. Maps into
     // config.realistic_typing below. undefined (older main / CLI) → default true.
     realisticTyping,      // boolean | undefined
+    // 260709: conversation language, bridged by the supervisor from
+    // UserConfig.chat_language. Maps into config.chat_language below (drives
+    // the # LANGUAGE directive in the cached system prefix). undefined (older
+    // main / CLI standalone) → ConfigSchema default 'en'.
+    chatLanguage,         // 'en'|'zh'|'ja'|'ko'|'fr'|'es' | undefined
     // 260618: in-game usernames of the OTHER AI companions summoned into this
     // same world (multi-bot sessions). Seeds the roster so the bot knows its
     // teammates from the first tick; the supervisor re-broadcasts on every
@@ -570,6 +629,12 @@ async function bootstrapWithInit(initData) {
     // Appearance & feel: mirror the in-app "Realistic typing" toggle. Default
     // true when the supervisor didn't ship it (older main / CLI standalone).
     realistic_typing: realisticTyping !== false,
+    // 260709: conversation language. Only spread a KNOWN code so junk from an
+    // older/foreign supervisor falls to the ConfigSchema default ('en')
+    // instead of failing the whole parse.
+    ...(['en', 'zh', 'ja', 'ko', 'fr', 'es'].includes(chatLanguage)
+      ? { chat_language: chatLanguage }
+      : {}),
     player_username: playerName,
     player_display_name: playerDisplayName,
     // World label for the memory registry / section headers. Trim to null when

@@ -48,6 +48,7 @@ import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { InfoTip } from '../components/InfoTip';
 import { CopyIcon } from '../components/icons';
 import type { UserConfig } from '@shared/characterSchema';
+import { CHAT_LANGUAGES, clampChatLanguage, type ChatLanguage } from '@shared/chatLanguage';
 import type { WizardState } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
 
@@ -313,6 +314,25 @@ export function SettingsScreen(): React.ReactElement {
   };
 
   const currentProvider: Provider = (cfg?.provider ?? 'anthropic') as Provider;
+
+  // 260709: conversation language. Chat and voice calls pick the change up on
+  // the next message/call; a companion already summoned in-game keeps its
+  // session language until the next summon (same fork-time bridging as
+  // vision_mode). Optimistic-then-rollback like the toggles above.
+  const chatLanguage: ChatLanguage = clampChatLanguage(cfg?.chat_language);
+  const onSelectLanguage = async (next: ChatLanguage): Promise<void> => {
+    if (!cfg || next === chatLanguage) return;
+    const updated: UserConfig = { ...cfg, chat_language: next };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (chat_language) failed', err);
+      setCfg(cfg);
+      setSaveError('Failed to save. Try again.');
+    }
+  };
 
   // ui-A1: provider tile click changes config.provider AND clears any existing
   // api key (the prior key is for a different vendor; reusing it would silently
@@ -661,6 +681,25 @@ export function SettingsScreen(): React.ReactElement {
         {/* ── AI ──────────────────────────────────────────────── */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>AI</h3>
+
+          {/* Conversation language (260709): what companions speak in chat, on
+              calls, and in game. Not the app UI language. Chat and calls apply
+              it immediately; an in-game companion picks it up at next summon. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Chat language
+              <InfoTip
+                label="About chat language"
+                text="The language your companions speak and understand, in chat, on voice calls, and in game. The app itself stays in English. A companion already in your world switches on its next summon."
+              />
+            </span>
+            <Seg
+              aria-label="Chat language"
+              value={chatLanguage}
+              options={CHAT_LANGUAGES.map((l) => ({ value: l.code, label: l.native }))}
+              onChange={(v) => void onSelectLanguage(v)}
+            />
+          </div>
 
           {/* Backend switch — signed-in only (main rejects cloud-proxy for
               signed-out callers; a signed-out user is always local). Selecting

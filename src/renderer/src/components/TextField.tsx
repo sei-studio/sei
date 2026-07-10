@@ -53,6 +53,10 @@ export function TextField({
   }, [autoFocus, multiline]);
 
   const onKey = (e: React.KeyboardEvent) => {
+    // IME guard (260709): the Enter that confirms a CJK composition candidate
+    // must not fire onEnter (it would submit onboarding/settings forms while
+    // typing a name). Mirrors the chat composer's guard in ChatScreen.tsx.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (!multiline && e.key === 'Enter' && onEnter) {
       e.preventDefault();
       onEnter();

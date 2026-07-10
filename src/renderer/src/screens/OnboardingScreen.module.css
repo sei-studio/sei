@@ -7,3 +7,56 @@
   font-family: var(--mono);
   font-size: 13px;
 }
+
+/* Conversation-language step (260709): a 2-column grid of radio tiles, the
+ * same accent-border + soft-fill selection idiom as the questionnaire tiles. */
+
+.langGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.langTile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  background: none;
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+
+.langTile:hover {
+  border-color: var(--accent);
+}
+
+.langTile:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.langTileSelected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.langNative {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.langTileSelected .langNative {
+  color: var(--accent);
+}
+
+.langLabel {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}

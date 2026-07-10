@@ -41,12 +41,13 @@
 
 .search {
   width: 280px;
+  height: 38px;
   display: flex;
   align-items: center;
   gap: 8px;
   background: var(--bg2);
   border: 1px solid var(--border-strong);
-  padding: 9px 12px;
+  padding: 0 12px;
   color: var(--muted);
   transition: border-color 0.2s ease;
 }
@@ -74,7 +75,8 @@
 .sortSelect {
   -webkit-appearance: none;
   appearance: none;
-  padding: 9px 28px 9px 12px;
+  height: 38px;
+  padding: 0 28px 0 12px;
   border: 1px solid var(--border-strong);
   background: var(--bg2);
   color: var(--text);
@@ -126,10 +128,12 @@
   width: 0;
 }
 
+/* Fixed 6-up mosaic, cards butting edge-to-edge (260709 — was responsive
+ * auto-fill with 14px gaps). */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0;
   align-items: start;
 }
 
@@ -155,31 +159,37 @@
 }
 
 /* Wireframe placeholder card shown in unfilled grid slots while a World page
- * is fetching. Mirrors the scouting card chrome: 3:4 art block + name/meta
- * bars below. Static by design (260705) — no shimmer sweep. */
+ * is fetching. Mirrors the scouting card chrome: full-bleed 3:4 art with
+ * name/meta bars overlaid at the bottom (v0.3 overlay style, 260709). Static
+ * by design (260705) — no shimmer sweep. */
 .skeletonCard {
+  position: relative;
+  aspect-ratio: 3 / 4;
   background: var(--bg2);
-  border: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
 }
 
 .skeletonArt {
-  aspect-ratio: 3 / 4;
+  position: absolute;
+  inset: 0;
   background: var(--bg3);
 }
 
 .skeletonName,
 .skeletonMeta {
-  background: var(--border);
-  margin: 8px 12px 0;
+  position: absolute;
+  left: 12px;
   height: 12px;
   width: 60%;
+  background: var(--border);
+}
+
+.skeletonName {
+  bottom: 30px;
 }
 
 .skeletonMeta {
+  bottom: 13px;
   height: 8px;
   width: 40%;
-  margin-bottom: 12px;
 }
 

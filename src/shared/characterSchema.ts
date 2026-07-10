@@ -392,6 +392,18 @@ export const UserConfigSchema = z.object({
    */
   provider_config: z.record(z.unknown()).optional().default({}),
   theme_mode: z.enum(['system', 'light', 'dark']).default('system'), // D-33
+  /**
+   * 260709: CONVERSATION language — what the companion speaks and understands
+   * in chat, on voice calls, and in game. NOT an app/UI locale (UI strings
+   * stay English). Picked during onboarding, changeable in Settings. Optional
+   * and NOT defaulted (absent ≡ 'en' everywhere it is read, via
+   * clampChatLanguage in src/shared/chatLanguage.ts) so the many manual
+   * UserConfig literals don't all need to spell it out — same convention as
+   * analytics_opt_out / daily_limited_until. Keep the enum in sync with
+   * CHAT_LANGUAGES (src/shared/chatLanguage.ts) and CHAT_LANGUAGE_NAMES
+   * (src/bot/brain/promptLibrary.js — the bot can't import this module).
+   */
+  chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
   /** Plan 07: Linux basic_text safeStorage warning Banner dismissal (Pitfall A2). */
   linuxBasicTextWarnDismissed: z.boolean().default(false),
   /**

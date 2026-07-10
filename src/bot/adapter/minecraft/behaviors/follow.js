@@ -66,10 +66,12 @@ function resolveTargetEntity() {
  * and clearing on it made every message cancel the follow (churn). The 1s
  * background tick below keeps trailing as long as `_target` is set, so the bot
  * stays on the owner while the model answers a chat. `_target` is cleared ONLY
- * by `unfollow` or by an explicit relocate (`goTo`, which calls
- * setFollowTarget(null)); incidental actions (dig/gather/build) leave it set so
- * the bot resumes trailing once they finish. follow.js itself does not consume
- * the signal — the registry handler owns the long-running lifecycle.
+ * by `unfollow` or by an explicit relocate (`goTo` and `explore`, which call
+ * setFollowTarget(null) — explore added 260710 after a live run where the
+ * follow tick yanked the bot straight back from every explore hop); incidental
+ * actions (dig/gather/build) leave it set so the bot resumes trailing once
+ * they finish. follow.js itself does not consume the signal — the registry
+ * handler owns the long-running lifecycle.
  */
 export function startFollow(bot, config) {
   _bot = bot

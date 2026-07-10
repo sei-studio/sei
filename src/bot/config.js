@@ -117,6 +117,14 @@ export const ConfigSchema = z.object({
   // same pacing as the in-app chat. Default true; the CLI/standalone path
   // inherits it when config.json omits the field.
   realistic_typing: z.boolean().default(true),
+  // 260709: conversation language (bridged from UserConfig.chat_language by
+  // botSupervisor → init payload → bot/index.js). Selects the # LANGUAGE
+  // directive appended to the cached system prefix (promptLibrary.js
+  // renderLanguageDirective) so say() lines land in the player's language.
+  // 'en' renders nothing — existing sessions are byte-for-byte unchanged.
+  // Keep the enum in sync with CHAT_LANGUAGES in src/shared/chatLanguage.ts
+  // (this process cannot import that TS module).
+  chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).default('en'),
   player_username: z.string(),
   // LAN world MOTD (level name) from discovery, used as a human label for the
   // world registry / MEMORY.md section headers. Optional — falls back to spawn

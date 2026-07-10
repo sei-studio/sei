@@ -118,8 +118,13 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         // Pre-select: prefer the persisted sei_enabled set (CONTEXT idempotency —
         // re-runs preserve the user's prior choice). If nothing was previously
         // enabled (first-run path), select ALL so the user can just click Continue.
-        const selected = new Set(installs.filter((i) => i.sei_enabled).map((i) => i.id));
-        if (selected.size === 0) installs.forEach((i) => selected.add(i.id));
+        // Limited installs (Lunar) are NEVER selectable: their row checkbox is
+        // disabled, so a preselected Lunar could not be deselected, rode along
+        // into runWizardInstall, and came back as a bogus "Setup complete"
+        // (260709 Windows report) — nothing is ever installed for Lunar.
+        const selectable = installs.filter((i) => i.compatibility === 'full');
+        const selected = new Set(selectable.filter((i) => i.sei_enabled).map((i) => i.id));
+        if (selected.size === 0) selectable.forEach((i) => selected.add(i.id));
         set({ installs, selectedIds: selected, step: 'pick' });
       } catch (err) {
         // A detection FAILURE must not land on 'pick' (STEP 2/4) — that screen
@@ -161,9 +166,15 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         set({ progress: m });
       });
       try {
+        // Defensive re-filter against limited installs (Lunar): the picker can't
+        // select them anymore (runDetection filters), but a stale persisted
+        // selection from an older build could still carry one.
+        const fullIds = new Set(
+          get().installs.filter((i) => i.compatibility === 'full').map((i) => i.id),
+        );
         const { results } = await sei.runWizardInstall({
           sessionId,
-          installIds: Array.from(get().selectedIds),
+          installIds: Array.from(get().selectedIds).filter((id) => fullIds.has(id)),
           skinServerBaseUrl: baseUrl,
         });
         const anyFailed = results.some((r) => !r.ok);

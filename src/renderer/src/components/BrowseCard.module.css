@@ -1,21 +1,28 @@
-/* BrowseCard.module.css — World scouting card (mockup .wcard/.wart/.wmeta).
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.4. */
+/* BrowseCard.module.css — World scouting card, v0.3 overlay style (260709).
+ * Full-bleed 3:4 portrait with the name + creator overlaid on a bottom dark
+ * gradient (no solid meta section below the art). Cards butt edge-to-edge in
+ * the World grid (gap 0), so hover feedback is the v0.3 portrait zoom rather
+ * than a lift that would split the seams. */
 
 .card {
   position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
   text-align: left;
-  border: 1px solid var(--border);
   background: var(--bg2);
   cursor: pointer;
-  transition: transform 0.15s var(--ease), border-color 0.15s var(--ease);
-  display: flex;
-  flex-direction: column;
+}
+
+.card:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
 }
 
 /* Portrait still streaming: hide the real content (it keeps layout AND the
  * <img> keeps loading) under a static wireframe overlay matching the World
  * grid's skeleton cards (260705). */
 .loading .art,
+.loading .gradient,
 .loading .meta {
   visibility: hidden;
 }
@@ -23,43 +30,70 @@
 .skel {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
   pointer-events: none;
 }
 
 .skelArt {
-  aspect-ratio: 3 / 4;
+  position: absolute;
+  inset: 0;
   background: var(--bg3);
 }
 
 .skelName,
 .skelBy {
-  background: var(--border);
-  margin: 8px 12px 0;
+  position: absolute;
+  left: 12px;
   height: 12px;
   width: 60%;
+  background: var(--border);
+}
+
+.skelName {
+  bottom: 30px;
 }
 
 .skelBy {
+  bottom: 13px;
   height: 8px;
   width: 40%;
 }
 
-.card:hover,
-.card:focus-visible {
-  transform: translateY(-2px);
-  border-color: var(--border-strong);
-}
-
 .art {
-  aspect-ratio: 3 / 4;
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
 }
 
+/* v0.3 hover: zoom + brighten the portrait in place (PixelPortrait's root
+ * div), clipped by .art. */
+.art > div {
+  transition: transform 0.45s var(--ease), filter 0.45s ease;
+}
+
+.card:hover .art > div,
+.card:focus-visible .art > div {
+  transform: scale(1.05);
+  filter: saturate(1.12) brightness(1.04);
+}
+
+/* Bottom scrim so the overlaid name/creator stay legible over any portrait —
+ * the v0.3 .gradient treatment, dark in both themes. */
+.gradient {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 55%;
+  background: linear-gradient(180deg, transparent, rgba(6, 6, 8, 0.85));
+  pointer-events: none;
+}
+
 .meta {
-  padding: 9px 12px 11px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 12px 11px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -71,20 +105,24 @@
   align-items: baseline;
   gap: 7px;
   min-width: 0;
+  /* IdTag colors itself with --muted-2, which is too dim over the dark
+   * gradient — lighten it locally (card overlay only). */
+  --muted-2: rgba(255, 255, 255, 0.7);
 }
 
 .name {
   font-family: var(--display);
   font-weight: 600;
   font-size: 16px;
-  color: var(--text);
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .by {
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.72);
   font-family: var(--sans);
   font-size: 12px;
   white-space: nowrap;
@@ -93,7 +131,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card {
+  .art > div {
     transition: none;
   }
 }

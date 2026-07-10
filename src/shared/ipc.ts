@@ -101,9 +101,49 @@ export interface VisionCapability {
  *   - 'unavailable' → the OS port-listing tool itself failed (can't tell).
  */
 export type LanState =
-  | { kind: 'open'; port: number; motd: string; lastSeenAt: number }
+  | { kind: 'open'; port: number; motd: string; lastSeenAt: number; host?: LanHost }
   | { kind: 'closed' }
   | { kind: 'unavailable' };
+
+/**
+ * Best-effort classification of the Minecraft client hosting the open LAN
+ * world (260709). Sei only speaks the vanilla protocol, so a modded or Lunar
+ * host warrants a pre-summon disclaimer:
+ *   - Forge/NeoForge/Fabric: client-side mods (minimaps etc.) are fine, but
+ *     content mods make the integrated server refuse vanilla clients.
+ *   - Lunar: joins fine, but Lunar loads no third-party mods, so the
+ *     CustomSkinLoader pipeline can't show the companion's skin there.
+ * Sources: the status-ping JSON (`forgeData` 1.13+ / `modinfo` 1.12-) and the
+ * host java process command line (loader main-class / install-path markers).
+ * 'unknown' means detection failed, NOT vanilla — no disclaimer is shown.
+ */
+export type LanHostClient = 'vanilla' | 'fabric' | 'forge' | 'neoforge' | 'lunar' | 'unknown';
+
+export interface LanHost {
+  client: LanHostClient;
+  /**
+   * Mod count from the Forge/NeoForge status-ping metadata. null = no such
+   * metadata (vanilla/Fabric/Lunar pings don't carry it); 0 = metadata present
+   * but the list was empty/unparseable (still a Forge-family server).
+   */
+  forgeModCount: number | null;
+}
+
+/** Which pre-summon disclaimer (if any) a detected host warrants. */
+export type LanHostWarning = 'modded' | 'lunar';
+
+/**
+ * Pure decision: does this host classification warrant a pre-summon
+ * disclaimer? Shared so the renderer gate and tests agree on the mapping.
+ */
+export function lanHostWarning(host: LanHost | undefined): LanHostWarning | null {
+  if (!host) return null;
+  if (host.client === 'lunar') return 'lunar';
+  if (host.client === 'fabric' || host.client === 'forge' || host.client === 'neoforge') return 'modded';
+  // Cmdline classification failed but the ping itself carried Forge metadata.
+  if (host.forgeModCount != null) return 'modded';
+  return null;
+}
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
 /**

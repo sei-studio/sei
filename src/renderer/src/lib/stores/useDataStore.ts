@@ -195,6 +195,18 @@ function wireIpc(): () => void {
     if (status.kind === 'idle' && status.characterId) {
       void useDataStore.getState().refreshCharacter(status.characterId);
     }
+    // 260709 — unsupported world version gets a popup, not just a model-row
+    // status: the Play flow otherwise fails with no visible feedback. Opened
+    // here (the single onStatus subscription) so every summon entry point is
+    // covered. Status pushes fire on transitions only, so one failed summon
+    // opens exactly one popup.
+    if (status.kind === 'error' && status.error === 'UNSUPPORTED_MC_VERSION') {
+      useUiStore.getState().openModal({
+        kind: 'unsupported-version',
+        characterId: status.characterId,
+        message: status.message,
+      });
+    }
     useDataStore.getState().setStatus(status);
   });
   // Seed the summons map once the listener is attached (260703). Status pushes

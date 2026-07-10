@@ -27,6 +27,8 @@ export {
   renderPersona,
   renderProactivenessDirective,
   renderPunctuationDirective,
+  renderLanguageDirective,
+  CHAT_LANGUAGE_NAMES,
   renderCore,
   renderHeartbeat,
   renderCompanions,

@@ -11,7 +11,7 @@
 
 import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
-import type { UniqueGender } from '@shared/ipc';
+import type { LanHost, LanHostWarning, UniqueGender } from '@shared/ipc';
 
 export type View =
   | { kind: 'loading' }
@@ -86,6 +86,22 @@ export type Modal =
   // collides with an already-summoned one (the world would kick the second
   // with `name_taken`). Carries both names + the shared username for the copy.
   | { kind: 'summon-conflict'; attemptedName: string; conflictName: string; username: string }
+  // 260709 — pre-summon compatibility disclaimer. Shown once per session per
+  // warning kind when the detected LAN host is modded (Forge/NeoForge/Fabric)
+  // or Lunar Client. Never blocks: "Summon anyway" resumes the summon.
+  | {
+      kind: 'lan-host-warning';
+      characterId: string;
+      warning: LanHostWarning;
+      host: LanHost;
+      fromChat: boolean;
+    }
+  // 260709 — the world runs a Minecraft version outside what Sei's networking
+  // stack supports. Opened centrally from the onStatus subscription
+  // (useDataStore.wireIpc) so EVERY summon entry point surfaces it: the Play
+  // flow previously failed silently (the error only reached the character
+  // page's model row). `message` is the already-humanized bot error text.
+  | { kind: 'unsupported-version'; characterId: string; message: string }
   // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games
   // (games-picker) and a per-game About sheet with a Summon button (game-about).
   | { kind: 'games-picker'; characterId: string }

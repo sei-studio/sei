@@ -25,6 +25,7 @@ import {
   renderHeartbeat,
   renderProactivenessDirective,
   renderPunctuationDirective,
+  renderLanguageDirective,
   renderCore,
   renderCompanions,
   voiceGroupGuidance,
@@ -75,7 +76,11 @@ export function postProcessSay(s) {
   // the aside is allowed (anything up to the closing bracket), and bare
   // "(nothing)" matches too.
   // Mirrors isSilenceFiller in src/main/chat/chatService.ts — keep in sync.
-  if (/^\s*[([*]+\s*(?:nothing|(?:silence|silent|stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response)\b[^)\]]*)\s*[)\]*.!]*\s*$/i.test(raw)) {
+  // 260709 (conversation language): also accepts the common localized marker
+  // forms (silencio/silencieux via silen[a-z]* with a short lead-in for
+  // "reste silencieux", nada/rien, and the CJK terms, which need the lead-in
+  // shape because \b cannot bound CJK) — see chatService.ts.
+  if (/^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response|nada|rien)\b|[^)\]]{0,12}(?:silen[a-z]*|沉默|无言|沈黙|無言|침묵|조용))[^)\]]*)\s*[)\]*.!]*\s*$/i.test(raw)) {
     return ''
   }
   const normalized = raw
@@ -1184,6 +1189,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // 260705: texting punctuation — static per character, appended (never
         // inserted) for the same cache-key index-stability reason as above.
         renderPunctuationDirective(config.persona?.punctuation),
+        // 260709: conversation language (UserConfig.chat_language, bridged by
+        // botSupervisor at fork). '' for English — spread so no empty block is
+        // ever appended and existing sessions keep the exact same cache key.
+        ...(renderLanguageDirective(config.chat_language)
+          ? [renderLanguageDirective(config.chat_language)]
+          : []),
       ],
       combinedToolsFor()
     )

@@ -20,7 +20,9 @@ import {
   renderPersona,
   renderChatProactivenessDirective,
   renderPunctuationDirective,
+  renderLanguageDirective,
 } from '../../bot/brain/promptLibrary.js';
+import type { ChatLanguage } from '../../shared/chatLanguage';
 
 export interface BuildSystemArgs {
   persona: Persona;
@@ -71,6 +73,13 @@ export interface BuildSystemArgs {
    * a solo call, no note.
    */
   voicePeers?: string[];
+  /**
+   * 260709: conversation language (UserConfig.chat_language, clamped by the
+   * caller). Non-English adds the shared # LANGUAGE directive to block 0 so
+   * replies land in the player's language on this surface and on calls.
+   * 'en' adds nothing — existing prompts stay byte-for-byte identical.
+   */
+  language?: ChatLanguage;
 }
 
 /**
@@ -129,6 +138,11 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   // messages arrive stamped (260703) so the model can FEEL gaps — a "hop on"
   // the next morning is not the same conversation beat as one 10s later.
   const inGroupCall = args.voiceCall === true && (args.voicePeers?.length ?? 0) > 0;
+  // 260709: conversation-language directive — '' for English (no change), a
+  // # LANGUAGE block otherwise. Static per config, so it rides the cached
+  // block 0 like the timestamp note; changing the Settings language misses
+  // the cache once, which is the honest price.
+  const languageDirective = renderLanguageDirective(args.language ?? 'en');
   const blocks: SystemBlock[] = [{
     type: 'text',
     text:
@@ -139,6 +153,7 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
         : '') +
       (inGroupCall ? `[group call] ${groupCallNote(args.voicePeers as string[])}\n\n` : '') +
       `${UNIVERSAL_BASELINE}\n\n${CHAT_BASELINE}\n\n` +
+      (languageDirective ? `${languageDirective}\n\n` : '') +
       'Player messages are prefixed with the time they were sent, like "[3 Jul 10:34]". ' +
       'Use it to notice gaps — a new day or a long silence deserves acknowledgment, not mid-conversation continuity. ' +
       'Never copy the format: your own replies must not contain timestamps.',
@@ -201,16 +216,24 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
 
   // Prompt caching (260706): re-sending the full memory + summary uncached every
   // turn was the bulk of the per-turn prefill (the "8s voice reply" latency).
-  // Two breakpoints, cheapest-to-invalidate LAST so a change only re-bills the
+  // Breakpoints, cheapest-to-invalidate LAST so a change only re-bills the
   // small tail after it:
-  //   • the last STABLE block (persona, or memory/summary when present) — never
-  //     changes during a session, so persona + memory + summary is always a hit;
+  //   • the persona block (260709) — baseline + persona is the big static
+  //     prefix. Without its own breakpoint, ANY memory append or background
+  //     summary fold (foldIfDue) re-billed the WHOLE prefix (live capture:
+  //     cacheRead=0 cacheWrite=4571 on a mid-session turn); with it, that
+  //     churn re-bills only the memory/summary tail.
+  //   • the last STABLE block (memory/summary when present) — unchanged during
+  //     a session unless the companion remembers or the summary folds;
   //   • the status block — its only volatile part is the minute-granular clock,
   //     so within a minute (i.e. across the rapid turns of a live call) the WHOLE
   //     system prompt is a cache hit; a minute rollover misses only this tail.
-  // markLastMessageCached() adds the third breakpoint (the transcript) per turn.
+  // markLastMessageCached() adds the fourth breakpoint (the transcript) per
+  // turn — exactly Anthropic's 4-breakpoint budget (3 when persona IS the
+  // stable block, i.e. no memory or summary yet).
   const statusIdx = blocks.length - 1;
   const stableIdx = statusIdx - 1; // persona at minimum (blocks[1]); the last pre-status block
+  blocks[1].cache_control = { type: 'ephemeral' };
   blocks[stableIdx].cache_control = { type: 'ephemeral' };
   blocks[statusIdx].cache_control = { type: 'ephemeral' };
   return blocks;

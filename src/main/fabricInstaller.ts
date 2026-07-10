@@ -36,7 +36,8 @@
  *   - src/bot/brain/storage/atomicWrite.js (atomic launcher_profiles.json write)
  */
 import { execFile as execFileCb } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { promises as fs, constants as fsConstants, type Dirent } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
@@ -148,21 +149,149 @@ async function fetchBytesWithTimeout(
  * installed a JRE for them when they first ran the vanilla profile.
  */
 export async function findJavaExecutable(mcInstall: McInstall): Promise<string | null> {
-  // 1) Bundled JRE under <mcDir>/runtime/java-runtime-gamma/<platform-tag>/
+  // 1) Bundled JRE under the known launcher runtime roots (gameDir, plus the
+  //    Store-launcher and legacy-launcher locations on Windows).
   const bundled = await findBundledJava(mcInstall);
   if (bundled) {
     logger.info(`fabricInstaller: found bundled Java at ${bundled}`);
     return bundled;
   }
   // 2) System PATH fallback. `java -version` writes its banner to STDERR
-  //    but exits 0 on success. Failing spawn (ENOENT) → catch → return null.
+  //    but exits 0 on success. Failing spawn (ENOENT) → catch → keep probing.
   try {
     await execFile('java', ['-version'], { timeout: 5_000 });
     logger.info('fabricInstaller: found `java` on system PATH');
     return 'java';
   } catch {
-    return null;
+    /* fall through to the install-location probes */
   }
+  // 3) JAVA_HOME. Set by most JDK installers; unlike PATH edits it is read
+  //    fresh here, but note BOTH env probes share the Windows staleness
+  //    caveat: a process's environment is frozen at launch, so a Java
+  //    installed while Sei is running may still be invisible until restart.
+  //    That's what probe 4 is for.
+  const javaHome = process.env.JAVA_HOME;
+  if (javaHome) {
+    const exe = await firstRunnable(javaHomeBinCandidates(javaHome));
+    if (exe) {
+      logger.info(`fabricInstaller: found Java via JAVA_HOME at ${exe}`);
+      return exe;
+    }
+  }
+  // 4) Windows vendor install dirs (260709). A user who just installed Java
+  //    has it on the on-disk standard paths even though this process's stale
+  //    PATH can't see it ("installed Java, re-ran setup, still Java not
+  //    found"). Scan the big vendor roots for jdk*/jre* subdirs, newest name
+  //    first.
+  if (process.platform === 'win32') {
+    const exe = await findWindowsVendorJava();
+    if (exe) {
+      logger.info(`fabricInstaller: found installed Java at ${exe}`);
+      return exe;
+    }
+  }
+  // 5) Lunar Client's own bundled Zulu JREs (260709). A Lunar-only player has
+  //    never run the vanilla launcher (no <mcDir>/runtime) and has no system
+  //    Java, but Lunar always ships a JRE under ~/.lunarclient/jre. The Fabric
+  //    installer is a plain Java 8+ jar, so any of Lunar's JREs can run it.
+  const lunar = await findLunarJava();
+  if (lunar) {
+    logger.info(`fabricInstaller: found Lunar Client bundled Java at ${lunar}`);
+    return lunar;
+  }
+  return null;
+}
+
+/**
+ * Bounded search for a java executable under Lunar Client's JRE directory.
+ * Layout varies by platform and Lunar version (e.g.
+ * `<hash>/zulu17...win_x64/bin/javaw.exe` on Windows,
+ * `<hash>/zulu17.../zulu-17.jre/Contents/Home/bin/java` on macOS), so walk
+ * a few levels looking for a `bin/java(w)` rather than hardcoding one shape.
+ */
+async function findLunarJava(): Promise<string | null> {
+  const root = path.join(os.homedir(), '.lunarclient', 'jre');
+  const budget = { dirsLeft: 200 };
+  return searchForJavaBin(root, 6, budget);
+}
+
+async function searchForJavaBin(
+  dir: string,
+  depth: number,
+  budget: { dirsLeft: number },
+): Promise<string | null> {
+  if (depth < 0 || budget.dirsLeft <= 0) return null;
+  budget.dirsLeft -= 1;
+  const direct = await firstRunnable(javaHomeBinCandidates(dir));
+  if (direct) return direct;
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return null; // dir absent/unreadable — normal for non-Lunar machines
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name === 'bin' || entry.name.startsWith('.')) continue;
+    const found = await searchForJavaBin(path.join(dir, entry.name), depth - 1, budget);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Candidate java executables under a JDK/JRE home dir, preferred first. */
+function javaHomeBinCandidates(home: string): string[] {
+  if (process.platform === 'win32') {
+    // javaw.exe preferred: no console window flash (see findBundledJava).
+    return [path.join(home, 'bin', 'javaw.exe'), path.join(home, 'bin', 'java.exe')];
+  }
+  return [path.join(home, 'bin', 'java')];
+}
+
+/** First candidate that exists and is executable, or null. */
+async function firstRunnable(candidates: string[]): Promise<string | null> {
+  for (const c of candidates) {
+    try {
+      await fs.access(c, fsConstants.X_OK);
+      return c;
+    } catch {
+      /* next */
+    }
+  }
+  return null;
+}
+
+/**
+ * Probe the standard Windows JDK vendor roots for an installed Java:
+ * Oracle (`Program Files\Java`), Eclipse Adoptium/Temurin, and Microsoft
+ * OpenJDK. Within each root, subdirs named jdk... or jre... are tried
+ * newest-name-first (version-prefixed names sort correctly enough for
+ * "pick the newest").
+ */
+async function findWindowsVendorJava(): Promise<string | null> {
+  const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files';
+  const roots = [
+    path.join(programFiles, 'Java'),
+    path.join(programFiles, 'Eclipse Adoptium'),
+    path.join(programFiles, 'Microsoft'),
+  ];
+  for (const root of roots) {
+    let entries: string[];
+    try {
+      entries = await fs.readdir(root);
+    } catch {
+      continue; // vendor root absent — normal
+    }
+    const jdks = entries
+      .filter((e) => /^(jdk|jre)/i.test(e))
+      .sort()
+      .reverse();
+    for (const dir of jdks) {
+      const exe = await firstRunnable(javaHomeBinCandidates(path.join(root, dir)));
+      if (exe) return exe;
+    }
+  }
+  return null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -270,7 +399,7 @@ export async function installFabricLoader(
   const javaPath = await findJavaExecutable(mcInstall);
   if (!javaPath) {
     throw new Error(
-      'FABRIC_INSTALL_FAILED: Java not found. Launch Minecraft once (vanilla profile) to install its bundled Java runtime, then re-run the wizard.',
+      'FABRIC_INSTALL_FAILED: Java not found. Launch Minecraft once (vanilla profile) so it installs its bundled Java runtime, then re-run setup. If you installed Java yourself, restart Sei first so it can see the new install',
     );
   }
 

@@ -298,11 +298,23 @@ const CONNECT_SPEAK_DELAY_MS = 1000;
 
 function friendlyError(err: unknown): string {
   const msg = String((err as Error)?.message ?? err);
+  // getUserMedia failures arrive as DOMExceptions whose `message` is often
+  // empty — the `name` is the reliable signal (NotAllowedError / NotFoundError).
+  const name = (err as { name?: string })?.name ?? '';
   if (/VOICE_NO_SESSION/.test(msg)) return 'Sign in to use voice calls.';
   if (/VOICE_NO_CREDITS/.test(msg)) return "You're out of playtime. Add more to keep calling.";
   if (/VOICE_RATE_LIMITED/.test(msg)) return "You've hit today's usage cap. It resets tomorrow.";
   if (/VOICE_NOT_CONFIGURED/.test(msg)) return 'Voice service is not available right now.';
-  if (/permission/i.test(msg)) return 'Microphone access was blocked. Allow it and try again.';
+  if (name === 'NotFoundError' || /device not found/i.test(msg)) {
+    return 'No microphone was found. Connect one and try again.';
+  }
+  if (name === 'NotAllowedError' || /permission/i.test(msg)) {
+    // Windows has no per-app prompt for desktop apps: access is silently
+    // blocked by the OS privacy toggle, so name the exact switch (260709).
+    return sei.platform === 'win32'
+      ? 'Microphone access is blocked by Windows. In Settings, open Privacy & security > Microphone, turn on microphone access and "Let desktop apps access your microphone", then try again.'
+      : 'Microphone access was blocked. Allow it and try again.';
+  }
   return 'Voice call failed to start. Try again in a moment.';
 }
 
@@ -999,8 +1011,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       });
       queue.setOutputMuted(useUiStore.getState().callDeafened);
 
+      // 260709: conversation language — picks the Whisper model (English-only
+      // tiny.en vs multilingual base) and pins the decode language. Read at
+      // call start so a Settings change applies from the next call. Best-effort:
+      // a failed config read falls back to English rather than blocking the dial.
+      const chatLanguage = await sei
+        .getConfig()
+        .then((c) => c.chat_language ?? 'en')
+        .catch(() => 'en' as const);
+      if (session !== mySession) return;
+
       try {
         dictation = await createDictation({
+          language: chatLanguage,
           onStatus: (status, detail) => {
             if (session !== mySession) return;
             set({ connectingDetail: status === 'loading-model' && detail ? detail : null });

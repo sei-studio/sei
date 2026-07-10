@@ -17,7 +17,9 @@
  */
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
+import { loadConfig } from '../configStore';
 import { ttsSpeedFor, voicePitchRate } from '../../shared/voicePitch';
+import { clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
 import { toSpokenRegister } from './spokenRegister';
 import { resolveVoiceId, isPoolVoiceId } from './voiceAssign';
 
@@ -27,6 +29,31 @@ const ELEVENLABS_OUTPUT_FORMAT = 'mp3_44100_128';
 const TTS_TIMEOUT_MS = 30_000;
 /** Proxy-side request cap (ttsDailyGate); clip rather than 400 on long replies. */
 const MAX_TTS_CHARS = 1000;
+
+/**
+ * 260709: conversation language for TTS. Non-English pins ElevenLabs'
+ * `language_code` (eleven_flash_v2_5 is multilingual; auto-detect is flaky on
+ * the short one-liners a live call produces, so pinning wins). 'en' sends
+ * nothing — request bodies stay byte-identical to before. Read fresh per
+ * synthesis so a Settings change applies to the very next spoken line.
+ */
+async function ttsLanguage(): Promise<ChatLanguage> {
+  try {
+    return clampChatLanguage((await loadConfig()).chat_language);
+  } catch {
+    return 'en';
+  }
+}
+
+/**
+ * Chat-register → spoken-register shorthand expansion is an ENGLISH word list
+ * ("lmao" → "haha"); on any other conversation language it must not touch the
+ * text (a \b-bounded English token can still shadow a real word in French or
+ * Spanish). Pure pass-through for non-English.
+ */
+function spokenTextFor(text: string, language: ChatLanguage): string {
+  return language === 'en' ? toSpokenRegister(text) : text.trim();
+}
 
 async function getJwtOrNull(): Promise<string | null> {
   try {
@@ -78,13 +105,22 @@ async function fetchAudio(url: string, headers: Record<string, string>, body: un
  * it as voice_settings.speed; an older deployed proxy strips the field
  * (speech then runs fast until the proxy ships, never an error).
  */
-async function synthesize(text: string, voiceId: string, speed?: number): Promise<ArrayBuffer> {
+async function synthesize(
+  text: string,
+  voiceId: string,
+  speed?: number,
+  language: ChatLanguage = 'en',
+): Promise<ArrayBuffer> {
+  // Non-English pins the synthesis language (see ttsLanguage). An older
+  // deployed proxy strips the unknown field — speech still auto-detects, never
+  // an error — same forward-compat stance as `speed`.
+  const langField = language !== 'en' ? { language_code: language } : {};
   const devKey = process.env.SEI_TTS_DEV_KEY;
   if (devKey) {
     return fetchAudio(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
       { 'xi-api-key': devKey },
-      { text, model_id: ELEVENLABS_TTS_MODEL, ...(speed !== undefined ? { voice_settings: { speed } } : {}) },
+      { text, model_id: ELEVENLABS_TTS_MODEL, ...langField, ...(speed !== undefined ? { voice_settings: { speed } } : {}) },
     );
   }
   const jwt = await getJwtOrNull();
@@ -92,7 +128,7 @@ async function synthesize(text: string, voiceId: string, speed?: number): Promis
   return fetchAudio(
     `${PROXY_BASE_URL}/tts/speech`,
     { Authorization: `Bearer ${jwt}` },
-    { text, voice_id: voiceId, ...(speed !== undefined ? { speed } : {}) },
+    { text, voice_id: voiceId, ...langField, ...(speed !== undefined ? { speed } : {}) },
   );
 }
 
@@ -101,11 +137,13 @@ export async function voiceTts(args: { characterId: string; text: string }): Pro
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
   const voiceId = await resolveVoiceId(character);
+  const language = await ttsLanguage();
   // Spoken register BEFORE the cap: chat lines mirrored into the call carry
-  // shorthand ("lmao", "rn") that TTS would read literally.
-  const text = toSpokenRegister(args.text).slice(0, MAX_TTS_CHARS);
+  // shorthand ("lmao", "rn") that TTS would read literally. English only —
+  // see spokenTextFor.
+  const text = spokenTextFor(args.text, language).slice(0, MAX_TTS_CHARS);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
-  return synthesize(text, voiceId, ttsSpeedFor(voicePitchRate(character)));
+  return synthesize(text, voiceId, ttsSpeedFor(voicePitchRate(character)), language);
 }
 
 /** Monotonic stream ids for voiceTtsStream (uniqueness within one main run). */
@@ -133,11 +171,14 @@ export async function voiceTtsStream(
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
   const voiceId = await resolveVoiceId(character);
-  // Spoken register BEFORE the cap (see voiceTts).
-  const text = toSpokenRegister(args.text).slice(0, MAX_TTS_CHARS);
+  const language = await ttsLanguage();
+  // Spoken register BEFORE the cap (see voiceTts). English only.
+  const text = spokenTextFor(args.text, language).slice(0, MAX_TTS_CHARS);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
   // Pace compensation for pitched playback (see synthesize / shared/voicePitch.ts).
   const speed = ttsSpeedFor(voicePitchRate(character));
+  // Language pin for non-English (see synthesize — same forward-compat stance).
+  const langField = language !== 'en' ? { language_code: language } : {};
 
   const devKey = process.env.SEI_TTS_DEV_KEY;
   const url = devKey
@@ -147,12 +188,12 @@ export async function voiceTtsStream(
   let body: unknown;
   if (devKey) {
     headers = { 'xi-api-key': devKey };
-    body = { text, model_id: ELEVENLABS_TTS_MODEL, ...(speed !== undefined ? { voice_settings: { speed } } : {}) };
+    body = { text, model_id: ELEVENLABS_TTS_MODEL, ...langField, ...(speed !== undefined ? { voice_settings: { speed } } : {}) };
   } else {
     const jwt = await getJwtOrNull();
     if (!jwt) throw new Error('VOICE_NO_SESSION: sign in to use voice calls');
     headers = { Authorization: `Bearer ${jwt}` };
-    body = { text, voice_id: voiceId, ...(speed !== undefined ? { speed } : {}) };
+    body = { text, voice_id: voiceId, ...langField, ...(speed !== undefined ? { speed } : {}) };
   }
 
   const ctrl = new AbortController();
@@ -207,8 +248,19 @@ export async function voiceTtsStream(
   return { streamId };
 }
 
-/** One canned line for the creation-flow voice picker (~60 chars — cheap). */
-const PREVIEW_LINE = "Hey! Ready when you are, grab your gear and let's head out.";
+/**
+ * One canned line for the creation-flow voice picker (~60 chars — cheap).
+ * 260709: localized per conversation language so the preview demonstrates the
+ * voice the way the user will actually hear it.
+ */
+const PREVIEW_LINES: Record<ChatLanguage, string> = {
+  en: "Hey! Ready when you are, grab your gear and let's head out.",
+  zh: '嘿！我准备好了，拿上装备咱们就出发吧。',
+  ja: 'ねえ！準備できたよ。荷物を持って出かけよう。',
+  ko: '안녕! 난 준비됐어. 장비 챙겨서 같이 출발하자.',
+  fr: 'Salut ! Quand tu veux, prends tes affaires et on y va.',
+  es: '¡Hola! Cuando quieras salimos, agarra tus cosas y vamos.',
+};
 
 /**
  * Voice-picker preview (260705): speak the canned line in an arbitrary
@@ -217,5 +269,6 @@ const PREVIEW_LINE = "Hey! Ready when you are, grab your gear and let's head out
  */
 export async function voicePreviewTts(voiceId: string): Promise<ArrayBuffer> {
   if (!isPoolVoiceId(voiceId)) throw new Error('VOICE_TTS_FAILED: unknown voice');
-  return synthesize(PREVIEW_LINE, voiceId);
+  const language = await ttsLanguage();
+  return synthesize(PREVIEW_LINES[language] ?? PREVIEW_LINES.en, voiceId, undefined, language);
 }

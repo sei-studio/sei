@@ -253,6 +253,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    // IME guard (260709): while composing with a CJK input method, Enter
+    // CONFIRMS the candidate word, it does not send. isComposing covers
+    // Chromium's composition state; keyCode 229 catches the engines that
+    // deliver the confirming keydown with isComposing already false.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       doSend();

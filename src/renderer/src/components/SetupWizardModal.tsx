@@ -348,8 +348,10 @@ function OneFailedStep(): React.ReactElement {
       }
     >
       <p>
-        {failedName} hit an error: {failedMessage}. The other installs are ready.
-        You can re-run setup for this one later from Settings.
+        {/* Strip any trailing period from the message — the sentence adds its
+            own, and "wizard.. The other" read as a typo (260709 report). */}
+        {failedName} hit an error: {(failedMessage ?? '').replace(/\.+$/, '')}. The other installs
+        are ready. You can re-run setup for this one later from Settings.
       </p>
       <InstallProgressList
         installs={reordered}

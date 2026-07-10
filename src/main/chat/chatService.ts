@@ -20,6 +20,7 @@ import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_C
 import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
 import { isCallActive } from '../voice/callState';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
+import { clampChatLanguage } from '../../shared/chatLanguage';
 import * as chatStore from './chatStore';
 import {
   drainThoughts,
@@ -159,11 +160,16 @@ export function splitReply(text: string, punctuation: 'casual' | 'deliberate' = 
  */
 export function takeSentences(buf: string): { sentences: string[]; rest: string } {
   const sentences: string[] = [];
-  const re = /(?<!\d)[.!?]+(\s+)/g;
+  // Western boundaries require trailing whitespace (and the digit guard keeps
+  // "1.618" whole). CJK sentences end with 。！？ and NO space after — without
+  // their own branch (260709) a Chinese reply never split, so the whole
+  // generation had to finish before the first bubble/TTS clip.
+  const re = /(?<!\d)[.!?]+\s+|[。！？]+\s*/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(buf)) !== null) {
-    const end = m.index + m[0].length - m[1].length; // keep the punctuation, drop the trailing space
+    const trailingWs = /\s*$/.exec(m[0])![0].length; // keep the punctuation, drop any trailing space
+    const end = m.index + m[0].length - trailingWs;
     const s = buf.slice(last, end).trim();
     if (s) sentences.push(s);
     last = re.lastIndex;
@@ -334,6 +340,9 @@ async function prepareChatTurn(
     inGame: opts.inGame,
     voiceCall: opts.voiceCall === true,
     voicePeers: opts.voicePeers,
+    // 260709: conversation language — read per turn (loadConfig above), so a
+    // Settings change applies from the very next message with no restart.
+    language: clampChatLanguage(config.chat_language),
   });
   // Voice: only the last N rows go to the model (VOICE_RECENT_CAP). Slice the raw
   // transcript BEFORE toMessages so role-merge + first-must-be-user still hold.
@@ -366,9 +375,18 @@ async function prepareChatTurn(
  * too. A line with content AFTER the closing bracket is real and passes.
  * Mirrors the say()-side backstop in src/bot/brain/orchestrator.js
  * (postProcessSay) — keep the two patterns in sync.
+ *
+ * 260709 (conversation language): the # LANGUAGE directive tells the model to
+ * keep the marker as the literal English "(silence)", but under a "speak
+ * Japanese" instruction it sometimes localizes it anyway, so the pattern also
+ * accepts the common localized forms: silen[a-z]* covers silence / silent /
+ * silencio / silencieux..., nada / rien are the "(nothing)" equivalents, and
+ * the silen-stem and CJK keywords (沉默 / 无言 zh, 沈黙 / 無言 ja, 침묵 / 조용 ko)
+ * allow a short lead-in ("reste silencieux", 保持沉默, 계속 침묵) — CJK also
+ * needs this shape because \b never matches between two non-word chars.
  */
 const SILENCE_FILLER_RE =
-  /^\s*[([*]+\s*(?:nothing|(?:silence|silent|stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response)\b[^)\]]*)\s*[)\]*.!]*\s*$/i;
+  /^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response|nada|rien)\b|[^)\]]{0,12}(?:silen[a-z]*|沉默|无言|沈黙|無言|침묵|조용))[^)\]]*)\s*[)\]*.!]*\s*$/i;
 export function isSilenceFiller(text: string): boolean {
   return SILENCE_FILLER_RE.test(text);
 }
@@ -523,23 +541,31 @@ export async function sendChatMessage(
     // (the "8s before the companion speaks" latency). Each completed sentence is
     // persisted (voice-flagged) and pushed to the renderer immediately via
     // deps.emitReply; the renderer speaks it and, because we return streamed:true,
-    // does NOT re-speak the returned replies. Typed chat keeps the blocking path.
+    // does NOT re-speak the returned replies.
+    // Typed chat NEVER streams (settled 260709 after two live trials): the
+    // casual texting register writes punctuation-less lines separated by blank
+    // lines, so sentence streaming finds no boundaries — the reply still
+    // arrived all at once, then splitReply dumped it as an unpaced wall of
+    // bubbles. Typed chat keeps the blocking path in BOTH realistic-typing
+    // modes; its latency floor is the model round trip.
     const isVoice = args.voiceCall === true && typeof deps.emitReply === 'function';
+    const isStreaming = isVoice;
     const streamedReplies: ChatMessage[] = [];
     let streamBuf = '';
     const emitStreamedBubble = async (raw: string): Promise<void> => {
       for (const raw_b of splitReply(raw, prep.punctuation)) {
-        // Only ever called on the isVoice path, so the silence-filler and
-        // peer-impersonation drops here stay voice-scoped (matching
-        // persistReplies). Keep it that way.
-        const b = stripPeerImpersonation(raw_b);
-        if (!b || isSilenceFiller(b)) continue;
+        // The silence-filler and peer-impersonation drops stay VOICE-scoped
+        // (matching persistReplies): typed chat never prompts the "(silence)"
+        // convention, so a filler-shaped line there is a real reply.
+        const b = isVoice ? stripPeerImpersonation(raw_b) : raw_b;
+        if (!b || (isVoice && isSilenceFiller(b))) continue;
         const msg: ChatMessage = {
           id: randomUUID(),
           role: 'companion',
           text: b,
           ts: Date.now() + streamedReplies.length, // monotonic within the turn
-          voice: true,
+          // Spoken on a live call → hidden in the chat UI; typed bubbles show.
+          ...(args.voiceCall === true ? { voice: true } : {}),
         };
         streamedReplies.push(msg);
         await chatStore.appendMessage(args.characterId, msg);
@@ -580,7 +606,7 @@ export async function sendChatMessage(
       const opts = { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal };
       const t0 = Date.now();
       let res: Anthropic.Messages.Message;
-      if (isVoice) {
+      if (isStreaming) {
         const stream = client.messages.stream(params, opts);
         for await (const ev of stream) {
           if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
@@ -679,7 +705,7 @@ export async function sendChatMessage(
       // effects are already recorded. Keep looping only when nothing was said yet
       // (the goodbye still needs to land) or a relaunch is pending (quit+launch
       // "log off and hop back in" needs its follow-up "hopping back in" line).
-      const spokeThisTurn = isVoice ? streamedReplies.length > 0 : Boolean(replyText.trim());
+      const spokeThisTurn = isStreaming ? streamedReplies.length > 0 : Boolean(replyText.trim());
       if ((endCallRequested || quitCalled) && spokeThisTurn && !launchCalled) break;
     }
 
@@ -697,7 +723,7 @@ export async function sendChatMessage(
     // NOTHING: the voice-scoped filler filter inside persistReplies removes it
     // before the "…" fallback could ever apply (splitReply already returned a
     // non-empty part). Typed chat keeps such lines — they are real replies there.
-    const replies = isVoice
+    const replies = isStreaming
       ? streamedReplies
       : await persistReplies(args.characterId, replyText, prep.punctuation, {
           voice: args.voiceCall === true,
@@ -733,7 +759,7 @@ export async function sendChatMessage(
       console.warn(`[sei] failed to stamp last_chatted for ${args.characterId}: ${(err as Error).message}`);
     }
 
-    return { replies, launch, ...(endCallRequested ? { endCall: true } : {}), ...(isVoice ? { streamed: true } : {}) };
+    return { replies, launch, ...(endCallRequested ? { endCall: true } : {}), ...(isStreaming ? { streamed: true } : {}) };
   } catch (err) {
     // Interrupt/supersede surfaces as a typed sentinel so the renderer can tell
     // it apart from a real failure (and NOT show the "sorry" fallback).

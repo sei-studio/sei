@@ -53,7 +53,27 @@ export function humanizeReason(reason) {
   if (!reason) return 'Unknown reason'
   const text = extractReasonText(reason)
   const r = text.toLowerCase()
-  if (r.includes('econnrefused') || r.includes('connect')) return 'Could not reach server. Make sure a LAN world is open'
+  // Modded-server rejections FIRST (260709): Forge kicks vanilla clients with
+  // "Incompatible FML modded server" / FML handshake text; Fabric's registry
+  // sync kicks with "requires ... Fabric" wording. Both can contain 'connect'
+  // ("Please install Forge to connect"), so this must precede that check.
+  if (r.includes('fml') || (r.includes('fabric') && (r.includes('mod') || r.includes('require')))) {
+    return 'This world has server-side mods that Sei cannot join. Worlds with only client-side mods, like minimaps, work fine'
+  }
+  // Chat-signing rejection (260710): the server refused one of OUR chat
+  // packets (seen live as multiplayer.disconnect.chat_validation_failed on
+  // 1.21.11 — an nmp chat-checksum bug, fixed by the 1.66.2 bump). Name it
+  // rather than letting the generic branches mangle it.
+  if (r.includes('chat_validation_failed') || r.includes('out_of_order_chat')) {
+    return 'Kicked over a chat protocol hiccup. Rejoining usually works'
+  }
+  // NOTE: every vanilla kick key starts with "multiplayer.disconnect.", which
+  // CONTAINS "connect" — the bare substring check used to mislabel all kicks
+  // as "Could not reach server" (260710 chat_validation_failed report). Strip
+  // that prefix before the connectivity match so only real reachability text
+  // ("connect ETIMEDOUT", "Connection refused") lands here.
+  const rNoKickPrefix = r.replace(/multiplayer\.disconnect\.?/g, '')
+  if (r.includes('econnrefused') || rNoKickPrefix.includes('connect')) return 'Could not reach server. Make sure a LAN world is open'
   if (r.includes('timeout')) return 'Connection timed out. The server may be unreachable'
   if (r.includes('kicked')) return `Kicked: ${text}`
   if (r.includes('invalid session') || r.includes('auth')) return 'Authentication failed. Check auth mode'

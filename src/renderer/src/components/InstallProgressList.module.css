@@ -47,10 +47,20 @@
   word-break: break-all;
 }
 
+/* The stage slot MUST be allowed to shrink and wrap. It used to be
+ * flex-shrink: 0, which sized the slot at the max-content width of its pill.
+ * A long one-line failure message (e.g. FABRIC_INSTALL_FAILED's full
+ * "Java not found..." copy) then blew the row out past the modal and crushed
+ * .text (flex: 1, min-width: 0) to near-zero width, so the install path
+ * wrapped character-by-character straight down the page (260709 Windows
+ * report). max-width bounds the message column; the pill's own
+ * overflow-wrap: anywhere does the wrapping. .inFlight's min-width keeps the
+ * progress-bar case at its designed 200px. */
 .stage {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
   margin-left: auto;
-  min-width: 220px;
   display: flex;
   justify-content: flex-end;
 }

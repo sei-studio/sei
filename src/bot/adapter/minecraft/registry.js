@@ -184,6 +184,8 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // LLM couldn't even ask to escape vertically (live drowning run). Accept
       // them now but intercept before exploreAction (which is yaw-only, horizontal):
       // vertical isn't an explore hop, so return actionable guidance instead.
+      // These early returns don't move the bot, so they deliberately do NOT
+      // touch the follow target.
       if (args?.orientation === 'up') {
         return bot?.entity?.isInWater
           ? "you're in water — swimming up is automatic; stay put or dig up to break out"
@@ -192,6 +194,13 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       if (args?.orientation === 'down') {
         return 'can\'t drop straight down with explore — use dig to tunnel down'
       }
+      // 260710: like goTo, explore is an explicit "leave where you are" relocate
+      // — it ends follow mode. Without this, the 1s follow tick (follow.js)
+      // re-installs GoalFollow the moment the hop lands and yanks the bot
+      // straight back to the owner, so an explore-while-following walked out
+      // and back with nothing gained (live cow-hunt run: explored 13 blocks,
+      // snapshot still showed follow_target and pos back beside the player).
+      setFollowTarget(null)
       return exploreAction(args, bot, config, { vision: visionEnabled })
     }
   )

@@ -34,6 +34,21 @@ describe('takeSentences', () => {
     expect(r.sentences).toEqual([]);
     expect(r.rest).toBe('still going with no end');
   });
+
+  // 260709 (conversation language): CJK sentences end with 。！？ and no
+  // trailing space. Without these boundaries a Chinese reply never split, so
+  // the whole generation finished before the first bubble / TTS clip.
+  it('splits on CJK terminators with no trailing whitespace', () => {
+    const r = takeSentences('你好呀。今天想干嘛？我们去挖矿吧！还是');
+    expect(r.sentences).toEqual(['你好呀。', '今天想干嘛？', '我们去挖矿吧！']);
+    expect(r.rest).toBe('还是');
+  });
+
+  it('still buffers an unterminated CJK tail', () => {
+    const r = takeSentences('我们先去砍树');
+    expect(r.sentences).toEqual([]);
+    expect(r.rest).toBe('我们先去砍树');
+  });
 });
 
 describe('markLastMessageCached', () => {

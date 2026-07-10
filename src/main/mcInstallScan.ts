@@ -565,8 +565,62 @@ const BUNDLED_JRE_COMPONENTS = [
 export async function findBundledJava(mcInstall: McInstall): Promise<string | null> {
   const arch = process.arch; // 'x64' | 'arm64' on mac/win; 'x64' on Linux
   const mcDir = mcInstall.path;
-  const runtimeBase = path.join(mcDir, 'runtime');
 
+  // Candidate runtime ROOTS, most specific first. `<mcDir>/runtime` is the
+  // documented layout, but on Windows two real launcher variants install the
+  // JRE OUTSIDE the game dir (260709 report: "Minecraft clearly works" yet the
+  // gameDir probe found nothing):
+  //   - Microsoft Store / Xbox-app launcher →
+  //     %LOCALAPPDATA%\Packages\Microsoft.4297127D64EC6_8wekyb3d8bbwe\LocalCache\Local\runtime
+  //   - Legacy Win32 launcher → %ProgramFiles(x86)%\Minecraft Launcher\runtime
+  const runtimeBases: string[] = [path.join(mcDir, 'runtime')];
+  if (process.platform === 'win32') {
+    const localAppData =
+      process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
+    runtimeBases.push(
+      path.join(
+        localAppData,
+        'Packages',
+        'Microsoft.4297127D64EC6_8wekyb3d8bbwe',
+        'LocalCache',
+        'Local',
+        'runtime',
+      ),
+      path.join(
+        process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)',
+        'Minecraft Launcher',
+        'runtime',
+      ),
+      // CurseForge app keeps a full Minecraft install (incl. runtime) under
+      // its own dir — present even when the vanilla launcher was never run.
+      path.join(os.homedir(), 'curseforge', 'minecraft', 'Install', 'runtime'),
+    );
+  } else if (process.platform === 'darwin') {
+    runtimeBases.push(
+      path.join(
+        os.homedir(),
+        'Library',
+        'Application Support',
+        'curseforge',
+        'minecraft',
+        'Install',
+        'runtime',
+      ),
+    );
+  }
+
+  for (const runtimeBase of runtimeBases) {
+    const found = await findJavaUnderRuntimeBase(runtimeBase, arch);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Probe one runtime root for any bundled JRE component (newest-first). */
+async function findJavaUnderRuntimeBase(
+  runtimeBase: string,
+  arch: string,
+): Promise<string | null> {
   // Walk components newest-first and return the first runnable exe found.
   for (const component of BUNDLED_JRE_COMPONENTS) {
     const componentRoot = path.join(runtimeBase, component);

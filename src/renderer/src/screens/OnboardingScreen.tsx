@@ -3,8 +3,9 @@
  *
  * Steps:
  *  0. Name.
- *  1. Provider tiles.
- *  2. API key.
+ *  1. Conversation language (260709 — what the companions speak, not the UI).
+ *  2. Provider tiles.
+ *  3. API key.
  *
  * The Minecraft-username step was retired from the GUI (260605); mc_username
  * stays in UserConfig/DB but is no longer collected. Onboarding completion is
@@ -33,6 +34,7 @@ import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import type { UserConfig } from '@shared/characterSchema';
+import { CHAT_LANGUAGES, clampChatLanguage, type ChatLanguage } from '@shared/chatLanguage';
 import styles from './OnboardingScreen.module.css';
 
 export interface OnboardingScreenProps {
@@ -45,15 +47,16 @@ export interface OnboardingScreenProps {
 }
 
 export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingScreenProps): React.ReactElement {
-  // D-03: signed-in users skip Provider tiles + API-key entry, leaving the
-  // single Name step. Local users get Name → Provider → API key.
-  const STEPS = signedIn ? 1 : 3;
+  // D-03: signed-in users skip Provider tiles + API-key entry, leaving
+  // Name → Language. Local users get Name → Language → Provider → API key.
+  const STEPS = signedIn ? 2 : 4;
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const themeMode = useUiStore((s) => s.themeMode);
   const [step, setStep] = useState(0);
   const [mc, setMc] = useState('');
   const [pref, setPref] = useState('');
+  const [lang, setLang] = useState<ChatLanguage>('en');
   const [provider, setProvider] = useState<Provider>('anthropic');
   const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +71,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         if (cancelled) return;
         setMc(cfg.mc_username ?? '');
         setPref(cfg.preferred_name ?? '');
+        setLang(clampChatLanguage(cfg.chat_language));
         setProvider((cfg.provider ?? 'anthropic') as Provider);
         // apiKey deliberately NOT pre-filled — UI-SPEC re-onboarding rule.
       })
@@ -109,6 +113,9 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       await sei.saveConfig({
         mc_username: mc.trim(),
         preferred_name: pref.trim(),
+        // 260709: conversation language picked on the Language step — what the
+        // companions speak in chat, on calls, and in game (not the app UI).
+        chat_language: lang,
         // Phase 18/19 — UserConfig now carries the user's chat profile picture;
         // a fresh onboard has none yet (set later in Settings).
         profile_picture: null,
@@ -230,15 +237,17 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   };
 
   const validate = (): boolean => {
-    if (step === 0) return pref.trim() !== '' && !(signedIn && submitting);
-    if (step === 1) return true;
-    if (step === 2) return apiKey.trim() !== '' && !submitting;
+    if (step === 0) return pref.trim() !== '';
+    // Language step: a default is always selected; only block re-submits while
+    // the signed-in final submit is in flight.
+    if (step === 1) return !(signedIn && submitting);
+    if (step === 2) return true;
+    if (step === 3) return apiKey.trim() !== '' && !submitting;
     return false;
   };
 
   // ── Step 0 — Name ───────────────────────────────────────────────────────
   if (step === 0) {
-    // For signedIn, this is the only/final step — show Finish + accent CTA.
     return (
       <QuestionShell
         title="What should they call you?"
@@ -247,8 +256,6 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         onBack={isReonboard || !signedIn ? back : undefined}
         backDisabled={signedIn && !isReonboard}
         onNext={next}
-        nextLabel={signedIn ? 'Finish' : undefined}
-        nextKind={signedIn ? 'accent' : undefined}
         nextDisabled={!validate()}
       >
         <TextField
@@ -258,6 +265,42 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
           onEnter={next}
           aria-label="Name"
         />
+      </QuestionShell>
+    );
+  }
+
+  // ── Step 1 — Conversation language ──────────────────────────────────────
+  // For signedIn this is the final step — show Finish + accent CTA. The pick
+  // is the CONVERSATION language (what companions speak in chat, on calls,
+  // and in game), never the app UI language.
+  if (step === 1) {
+    return (
+      <QuestionShell
+        title="What language should your companions speak?"
+        hint="They chat, talk on calls, and play in this language. You can change it any time in Settings. The app itself stays in English."
+        stepCount={STEPS}
+        currentStep={step}
+        onBack={back}
+        onNext={next}
+        nextLabel={signedIn ? 'Finish' : undefined}
+        nextKind={signedIn ? 'accent' : undefined}
+        nextDisabled={!validate()}
+      >
+        <div className={styles.langGrid} role="radiogroup" aria-label="Conversation language">
+          {CHAT_LANGUAGES.map((l) => (
+            <button
+              key={l.code}
+              type="button"
+              role="radio"
+              aria-checked={lang === l.code}
+              className={[styles.langTile, lang === l.code ? styles.langTileSelected : ''].filter(Boolean).join(' ')}
+              onClick={() => setLang(l.code)}
+            >
+              <span className={styles.langNative}>{l.native}</span>
+              {l.label !== l.native ? <span className={styles.langLabel}>{l.label}</span> : null}
+            </button>
+          ))}
+        </div>
         {signedIn && error ? (
           <div className={styles.error} role="alert">
             {error}
@@ -267,8 +310,8 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
     );
   }
 
-  // ── Step 1 — Provider tiles ─────────────────────────────────────────────
-  if (step === 1) {
+  // ── Step 2 — Provider tiles ─────────────────────────────────────────────
+  if (step === 2) {
     return (
       <QuestionShell
         title="Which model provider?"
@@ -282,7 +325,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
     );
   }
 
-  // ── Step 2 — API key ────────────────────────────────────────────────────
+  // ── Step 3 — API key ────────────────────────────────────────────────────
   // ui-A1: dynamic provider label — title shifts with the selected tile so
   // a user who picked Mistral on step 1 reads "Paste your Mistral API key."
   // not the legacy "Local" fallback.

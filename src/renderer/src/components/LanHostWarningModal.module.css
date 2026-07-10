@@ -1,0 +1,17 @@
+/* LanHostWarningModal.module.css — pre-summon compatibility disclaimer body.
+ * Scrim + panel + title come from ModalShell; this styles the copy only
+ * (mirrors SummonConflictModal.module.css). */
+
+.body {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+}

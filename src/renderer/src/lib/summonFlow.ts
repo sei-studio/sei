@@ -24,8 +24,50 @@
 
 import { sei } from './ipcClient';
 import { effectiveMcUsername } from '@shared/characterSchema';
+import { lanHostWarning, type LanHost, type LanHostWarning } from '@shared/ipc';
 import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
+
+/**
+ * 260709 — pre-summon host-compatibility disclaimer bookkeeping. Session-scoped
+ * on purpose: the disclaimer is a heads-up, not a gate, so once the user has
+ * seen (and summoned past) it for a given warning kind we stay quiet until the
+ * next app launch. Not persisted — a modded world is worth one reminder per
+ * session, zero per click.
+ */
+const acknowledgedHostWarnings = new Set<LanHostWarning>();
+
+/** Called by the disclaimer's "Summon anyway" so this session stops asking. */
+export function acknowledgeHostWarning(kind: LanHostWarning): void {
+  acknowledgedHostWarnings.add(kind);
+}
+
+/**
+ * The summon itself + post-summon navigation. Shared by the direct path and
+ * the disclaimer modal's "Summon anyway" resume.
+ */
+export function launchSummon(id: string, fromChat: boolean): void {
+  void sei.summon(id).catch(() => {
+    // Errors surface via onStatus → BotStatus.error; the model row owns display.
+  });
+  useUiStore.getState().navigate(fromChat ? { kind: 'chat', characterId: id } : { kind: 'character', id });
+}
+
+/**
+ * Summon behind the host-compatibility disclaimer. If the detected host
+ * warrants a warning the user has not yet acknowledged this session, open the
+ * disclaimer modal (which resumes via launchSummon on "Summon anyway");
+ * otherwise summon straight away. Used by both the direct summon path
+ * (proceedSummon) and the LanModal auto-resume, so neither can skip the gate.
+ */
+export function summonWithHostGate(id: string, fromChat: boolean, host: LanHost | undefined): void {
+  const warning = lanHostWarning(host);
+  if (warning && host && !acknowledgedHostWarnings.has(warning)) {
+    useUiStore.getState().openModal({ kind: 'lan-host-warning', characterId: id, warning, host, fromChat });
+    return;
+  }
+  launchSummon(id, fromChat);
+}
 
 /**
  * Multi-summon guard. Two bots cannot share an in-game username — the world
@@ -81,10 +123,11 @@ export async function proceedSummon(id: string): Promise<void> {
   const view = ui.view;
   const fromChat = view.kind === 'chat' && view.characterId === id;
   if (lan.kind === 'open') {
-    void sei.summon(id).catch(() => {
-      // Errors surface via onStatus → BotStatus.error; the model row owns display.
-    });
-    ui.navigate(fromChat ? { kind: 'chat', characterId: id } : { kind: 'character', id });
+    // 260709 — compatibility disclaimer: a modded (Forge/NeoForge/Fabric) or
+    // Lunar host gets a one-time heads-up before the first summon of the
+    // session. The modal's "Summon anyway" acknowledges and resumes via
+    // launchSummon; Cancel simply drops the attempt.
+    summonWithHostGate(id, fromChat, lan.host);
     return;
   }
   ui.setPendingSummon(id);

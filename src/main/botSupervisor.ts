@@ -30,6 +30,7 @@ import type {
   VisionCapability,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
+import { clampChatLanguage } from '../shared/chatLanguage';
 import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
 import { buildLaunchContinuity } from './chat/continuity';
@@ -616,6 +617,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // in-game replies get the same reading/typing pacing as the in-app chat.
     // Default ON (matches UserConfig.realistic_typing) when the field is absent.
     const realisticTyping = userCfg.realistic_typing !== false;
+    // 260709: bridge the conversation language into the bot's # LANGUAGE
+    // directive. Fork-time like vision_mode — a Settings change applies at the
+    // next summon (the chat surface re-reads it per turn).
+    const chatLanguage = clampChatLanguage(userCfg.chat_language);
     if (!preferred_name) {
       const status: BotStatus = {
         kind: 'error',
@@ -930,6 +935,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // Appearance & feel: the "Realistic typing" toggle. The bot's
               // bootstrapWithInit reads this into config.realistic_typing.
               realisticTyping,
+              // 260709: conversation language (UserConfig.chat_language). The
+              // bot's bootstrapWithInit reads this into config.chat_language.
+              chatLanguage,
               // 260618 (multi-agent): the OTHER AI companions already in this world,
               // so the new bot knows its teammates from its first tick. The new
               // session is already in `sessions` (added before this spawn handler),

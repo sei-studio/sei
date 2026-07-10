@@ -16,6 +16,7 @@ import { execFile } from 'node:child_process';
 export interface ListeningPort {
   port: number;
   command: string; // best-effort owning-process name ('' when unknown)
+  pid: number | null; // best-effort owning-process id (null when unknown)
 }
 
 function run(cmd: string, args: string[], timeoutMs = 4000): Promise<string> {
@@ -28,13 +29,16 @@ function run(cmd: string, args: string[], timeoutMs = 4000): Promise<string> {
   });
 }
 
-function parseLsof(out: string): ListeningPort[] {
-  const ports = new Map<number, string>();
+export function parseLsof(out: string): ListeningPort[] {
+  const ports = new Map<number, { command: string; pid: number | null }>();
   for (const line of out.split('\n')) {
     if (!line || line.startsWith('COMMAND')) continue;
     const parts = line.trim().split(/\s+/);
     if (parts.length < 9) continue;
     const command = parts[0];
+    // PID column (col 2). Best-effort — a non-numeric token degrades to null.
+    const pidNum = Number(parts[1]);
+    const pid = Number.isInteger(pidNum) && pidNum > 0 ? pidNum : null;
     // NAME column: `*:61871`, `127.0.0.1:54321`, `[::1]:25565`, `localhost:8080`.
     const name = parts[8];
     const m = name.match(/:(\d+)$/);
@@ -42,13 +46,15 @@ function parseLsof(out: string): ListeningPort[] {
     const port = Number(m[1]);
     if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
     // Keep the first command seen for a port (prefer a named owner over '').
-    if (!ports.has(port) || (ports.get(port) === '' && command)) ports.set(port, command);
+    if (!ports.has(port) || (ports.get(port)?.command === '' && command)) {
+      ports.set(port, { command, pid });
+    }
   }
-  return [...ports.entries()].map(([port, command]) => ({ port, command }));
+  return [...ports.entries()].map(([port, v]) => ({ port, command: v.command, pid: v.pid }));
 }
 
-function parseNetstat(out: string): ListeningPort[] {
-  const ports = new Set<number>();
+export function parseNetstat(out: string): ListeningPort[] {
+  const ports = new Map<number, number | null>();
   for (const line of out.split('\n')) {
     if (!/LISTENING/i.test(line)) continue;
     const parts = line.trim().split(/\s+/);
@@ -58,9 +64,12 @@ function parseNetstat(out: string): ListeningPort[] {
     const m = local.match(/:(\d+)$/);
     if (!m) continue;
     const port = Number(m[1]);
-    if (Number.isInteger(port) && port >= 1 && port <= 65535) ports.add(port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
+    const pidNum = Number(parts[parts.length - 1]);
+    const pid = Number.isInteger(pidNum) && pidNum > 0 ? pidNum : null;
+    if (!ports.has(port) || ports.get(port) == null) ports.set(port, pid);
   }
-  return [...ports].map((port) => ({ port, command: '' }));
+  return [...ports.entries()].map(([port, pid]) => ({ port, command: '', pid }));
 }
 
 /**

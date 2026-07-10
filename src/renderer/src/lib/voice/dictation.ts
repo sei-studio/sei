@@ -150,6 +150,10 @@ export async function createDictation(opts: {
    * drives the "you're talking" ring on the caller's own avatar (same lit ring
    * the companions get while speaking). Edge-emitted, so it only fires on change. */
   onSpeechActive?: (active: boolean) => void;
+  /** 260709: conversation language (UserConfig.chat_language). 'en'/absent
+   * keeps the English-only whisper-tiny.en; any other code loads the
+   * multilingual model with that decode language pinned (whisperWorker.ts). */
+  language?: string;
 }): Promise<Dictation> {
   opts.onStatus('loading-model');
 
@@ -180,7 +184,7 @@ export async function createDictation(opts: {
       }
     };
   });
-  worker.postMessage({ type: 'init' });
+  worker.postMessage({ type: 'init', language: opts.language ?? 'en' });
 
   let stream: MediaStream;
   try {

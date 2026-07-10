@@ -1,10 +1,11 @@
 /**
- * BrowseCard — World scouting card (Party redesign §4.4, mockup .wcard).
+ * BrowseCard — World scouting card (v0.3 overlay style, 260709).
  *
- * 3:4 art block (portrait cover via PixelPortrait's image override, procedural
- * sprite fallback), then a meta row below: name (Oswald 16px) + "by {creator}"
- * line. The whole card body opens the character profile, where the "Add to
- * library" CTA lives — there is no in-card invite action anymore.
+ * Full-bleed 3:4 portrait (cover via PixelPortrait's image override,
+ * procedural sprite fallback) with the name (Oswald 16px) + "by {creator}"
+ * line overlaid on a bottom dark gradient — no solid meta section. The whole
+ * card body opens the character profile, where the "Add to library" CTA
+ * lives — there is no in-card invite action anymore.
  *
  * Lean-component contract (CONTEXT D-31c): does NOT subscribe to auth/sync/
  * cloud stores.
@@ -85,6 +86,7 @@ export function BrowseCard({
           style={{ width: '100%', height: '100%' }}
         />
       </div>
+      <div className={styles.gradient} aria-hidden="true" />
       <div className={styles.meta}>
         <div className={styles.nameRow}>
           <span className={styles.name}>{entry.name}</span>

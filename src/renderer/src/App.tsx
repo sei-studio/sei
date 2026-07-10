@@ -51,6 +51,8 @@ import { ReceiptScreen } from './screens/ReceiptScreen';
 import { LanModal } from './components/LanModal';
 import { SkinSetupPromptModal } from './components/SkinSetupPromptModal';
 import { SummonConflictModal } from './components/SummonConflictModal';
+import { LanHostWarningModal } from './components/LanHostWarningModal';
+import { UnsupportedVersionModal } from './components/UnsupportedVersionModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
 import { UpdatePopup, type UpdatePopupState } from './components/UpdatePopup';
@@ -896,6 +898,20 @@ export function App(): React.ReactElement {
           conflictName={modal.conflictName}
           username={modal.username}
         />
+      ) : null}
+      {/* 260709 — pre-summon disclaimer when the LAN host is modded or Lunar. */}
+      {modal?.kind === 'lan-host-warning' ? (
+        <LanHostWarningModal
+          characterId={modal.characterId}
+          warning={modal.warning}
+          host={modal.host}
+          fromChat={modal.fromChat}
+        />
+      ) : null}
+      {/* 260709 — the world runs an unsupported Minecraft version; the Play
+          flow previously failed with no visible feedback. */}
+      {modal?.kind === 'unsupported-version' ? (
+        <UnsupportedVersionModal characterId={modal.characterId} message={modal.message} />
       ) : null}
       {/* Phase 18/19 — chat "Play together" surfaces: the game picker grid and
           the per-game About sheet (which carries the Summon CTA). */}

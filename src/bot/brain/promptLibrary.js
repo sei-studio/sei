@@ -641,6 +641,31 @@ export function renderPunctuationDirective(punctuation) {
   return `# TEXTING\n${PUNCTUATION_DIRECTIVES[key]}`
 }
 
+// 260709: conversation-language directive. The user picks a conversation
+// language at onboarding (UserConfig.chat_language); both surfaces render the
+// SAME directive into their cached system prefix — the chat brain via
+// chatPrompts.ts buildSystemBlocks, the game brain via the orchestrator's
+// rebuildPersonalitySystem — so the being speaks one language everywhere.
+// English returns '' (no block at all), keeping existing sessions
+// byte-for-byte unchanged. Keep the code list in sync with CHAT_LANGUAGES in
+// src/shared/chatLanguage.ts (the bot cannot import that TS module).
+export const CHAT_LANGUAGE_NAMES = {
+  zh: 'Chinese',
+  ja: 'Japanese',
+  ko: 'Korean',
+  fr: 'French',
+  es: 'Spanish',
+}
+
+export function renderLanguageDirective(language) {
+  const name = CHAT_LANGUAGE_NAMES[language]
+  if (!name) return ''
+  return `# LANGUAGE
+The player's language is ${name}. Everything you say to the player is in ${name}: chat messages, spoken lines on voice calls, and say() lines in the game. Write it the way a native speaker actually chats, with natural everyday phrasing, not like a translation from English. If the player writes to you in a different language, answer in the language they used.
+
+Only your words to the player change language. Your instructions, tool results, and tool names stay in English, and you keep calling tools exactly as documented. Protocol markers stay in English too: when an instruction tells you to reply with exactly (silence), output the literal text (silence), never a translation of it. Your private notes through remember() and setGoal() can be in ${name} or English, whichever comes naturally.`
+}
+
 // 260618: the proactiveness directive is STATIC for a session — selected once by
 // the author's dial — so it lives in the cached system prefix, NOT the per-loop
 // heartbeat. Wrapped with a header so it reads as its own section.

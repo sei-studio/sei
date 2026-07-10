@@ -570,6 +570,25 @@ async function bootstrap(): Promise<void> {
       } catch {
         /* older Electron / non-mac path — getUserMedia still prompts on first use */
       }
+    } else if (process.platform === 'win32') {
+      // 260709 — Windows never shows a per-app mic prompt for desktop apps:
+      // getUserMedia either works silently or fails because the OS privacy
+      // toggle ("Let desktop apps access your microphone") is off. There is
+      // no askForMediaAccess on Windows, so we can only read the status and
+      // leave a loud diagnostic; the renderer's call-error copy tells the
+      // user which Settings page fixes it.
+      try {
+        const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+        if (micStatus !== 'granted') {
+          logger.warn(
+            `microphone access status: ${micStatus}. Voice calls will fail until ` +
+              `"Let desktop apps access your microphone" is enabled in Windows ` +
+              `Settings (Privacy & security > Microphone).`,
+          );
+        }
+      } catch {
+        /* older Electron — getMediaAccessStatus unavailable; nothing to log */
+      }
     }
   }
 

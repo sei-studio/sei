@@ -304,8 +304,10 @@ function HomeGrid(): React.ReactElement {
           }
           const isNew = pres.category === 'new';
 
-          // Lastline: live action verb while in-game, else the last chat line,
-          // else the "matched recently" note for never-touched companions.
+          // Lastline: live action verb while in-game, else the last chat line
+          // or activity row (a "You and X called/played for Y" system event
+          // renders as plain text, no speaker prefix), else the "matched
+          // recently" note for never-touched companions.
           let lastline: React.ReactNode = null;
           if (!isPlaceholder) {
             if (pres.category === 'in-game') {
@@ -314,11 +316,14 @@ function HomeGrid(): React.ReactElement {
             }
             if (lastline == null) {
               if (preview) {
-                lastline = (
-                  <>
-                    <b>{preview.role === 'user' ? 'You' : c.name}:</b> {preview.text}
-                  </>
-                );
+                lastline =
+                  preview.role === 'system' ? (
+                    preview.text
+                  ) : (
+                    <>
+                      <b>{preview.role === 'user' ? 'You' : c.name}:</b> {preview.text}
+                    </>
+                  );
               } else if (isNew) {
                 lastline = 'Matched with you recently.';
               }
@@ -467,8 +472,8 @@ function WorldGrid(): React.ReactElement {
   const prefetch = useBrowseStore((s) => s.prefetch);
 
   // Paged display (260704): show ROWS_PER_BATCH rows per "Load more" click.
-  // Cards-per-row is responsive (grid auto-fill), so the column count is
-  // measured off the rendered grid rather than hardcoded.
+  // The column count is measured off the rendered grid rather than hardcoded
+  // so it tracks the CSS (fixed 6-up as of 260709) without a duplicate const.
   const gridRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(1);
   const [visibleRows, setVisibleRows] = useState(ROWS_PER_BATCH);

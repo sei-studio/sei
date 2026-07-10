@@ -426,22 +426,25 @@ if (import.meta.hot) {
 
 /**
  * Roster last-line for a character: the tail of the live transcript when any
- * messages are in memory, else the bulk-fetched preview. Skips `system` rows
- * (play events) and `voice` rows (in-call lines hidden from the chat view), so
- * the preview never surfaces a message the opened transcript does not show.
+ * messages are in memory, else the bulk-fetched preview. Skips `voice` rows
+ * (in-call caption lines hidden from the chat view) and legacy event-less
+ * `system` rows, so the preview never surfaces a message the opened transcript
+ * does not show. System rows WITH an event ("You and X called/played for Y")
+ * DO surface (260709) — a finished call or play session is the latest
+ * activity, and hiding it left the card stuck on an older chat line.
  */
 export function chatPreviewFor(s: ChatState, characterId: string): ChatPreview | null {
   const list = s.messages[characterId];
   if (list && list.length > 0) {
     for (let i = list.length - 1; i >= 0; i--) {
-      if (list[i].role !== 'system' && list[i].voice !== true) {
-        return { role: list[i].role, text: list[i].text, ts: list[i].ts };
-      }
+      const m = list[i];
+      if (m.voice === true) continue;
+      if (m.role === 'system' && m.event === undefined) continue;
+      return { role: m.role, text: m.text, ts: m.ts };
     }
     return null;
   }
-  // The bulk preview (main-side readLast) already skips voice rows, so no
-  // further voice filter is needed here.
-  const p = s.previews[characterId];
-  return p && p.role !== 'system' ? p : null;
+  // The bulk preview (main-side readLast) already skips voice rows and legacy
+  // event-less system rows, so no further filter is needed here.
+  return s.previews[characterId] ?? null;
 }

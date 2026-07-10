@@ -30,7 +30,8 @@
  *     tool itself fails (re-evaluated each poll, not sticky). These describe
  *     world DETECTION, not whether a companion has joined.
  */
-import type { LanState } from '../shared/ipc';
+import type { LanHost, LanState } from '../shared/ipc';
+import { classifyHostClient } from './hostClient';
 import { listeningPorts, type ListeningPort } from './listeningPorts';
 import { mcPing, type McStatus } from './mcPing';
 
@@ -45,12 +46,19 @@ export interface WatchLanOptions {
   staleMs?: number;
 }
 
-/** First candidate that answers the Minecraft status ping, or null. Resolves as
- *  soon as one succeeds (Promise.any) — it does not wait out slow non-MC ports. */
-async function firstMcWorld(ports: ListeningPort[]): Promise<McStatus | null> {
+/** First candidate that answers the Minecraft status ping (with its owning
+ *  pid), or null. Resolves as soon as one succeeds (Promise.any) — it does not
+ *  wait out slow non-MC ports. */
+async function firstMcWorld(
+  ports: ListeningPort[],
+): Promise<{ status: McStatus; pid: number | null } | null> {
   if (ports.length === 0) return null;
   try {
-    return await Promise.any(ports.map((p) => mcPing(p.port, '127.0.0.1', PING_TIMEOUT_MS)));
+    return await Promise.any(
+      ports.map((p) =>
+        mcPing(p.port, '127.0.0.1', PING_TIMEOUT_MS).then((status) => ({ status, pid: p.pid })),
+      ),
+    );
   } catch {
     return null; // AggregateError — none spoke Minecraft
   }
@@ -82,6 +90,23 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
   let timer: NodeJS.Timeout | null = null;
   let lastEmitted: LanState | null = null;
   let missStreak = 0;
+  // Host-client classification cache, keyed `${pid}:${port}`. The cmdline read
+  // spawns a subprocess, so it must run once per world session, not per 2s
+  // poll. A world close/reopen changes the port (random per session), so a
+  // stale entry can't be re-keyed. Bounded as a leak guard.
+  const hostCache = new Map<string, LanHost['client']>();
+  const HOST_CACHE_MAX = 32;
+
+  const hostFor = async (world: { status: McStatus; pid: number | null }): Promise<LanHost> => {
+    const key = `${world.pid ?? '?'}:${world.status.port}`;
+    let client = hostCache.get(key);
+    if (client === undefined) {
+      client = await classifyHostClient(world.pid);
+      if (hostCache.size >= HOST_CACHE_MAX) hostCache.clear();
+      hostCache.set(key, client);
+    }
+    return { client, forgeModCount: world.status.forgeModCount };
+  };
 
   const emit = (next: LanState): void => {
     const changed =
@@ -89,7 +114,9 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
       lastEmitted.kind !== next.kind ||
       (next.kind === 'open' &&
         lastEmitted.kind === 'open' &&
-        (next.port !== lastEmitted.port || next.motd !== lastEmitted.motd));
+        (next.port !== lastEmitted.port ||
+          next.motd !== lastEmitted.motd ||
+          next.host?.client !== lastEmitted.host?.client));
     if (changed) {
       lastEmitted = next;
       onUpdate(next);
@@ -124,9 +151,14 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
     const java = ports.filter((p) => /java/i.test(p.command));
     const rest = ports.filter((p) => !/java/i.test(p.command));
     const world = (await firstMcWorld(java)) ?? (await firstMcWorld(rest));
-    return world
-      ? { kind: 'open', port: world.port, motd: world.motd, lastSeenAt: Date.now() }
-      : { kind: 'closed' };
+    if (!world) return { kind: 'closed' };
+    return {
+      kind: 'open',
+      port: world.status.port,
+      motd: world.status.motd,
+      lastSeenAt: Date.now(),
+      host: await hostFor(world),
+    };
   };
 
   const poll = async (): Promise<void> => {

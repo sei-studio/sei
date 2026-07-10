@@ -22,9 +22,9 @@
  */
 
 import React, { useEffect } from 'react';
-import { sei } from '../lib/ipcClient';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { summonWithHostGate } from '../lib/summonFlow';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './LanModal.module.css';
@@ -61,7 +61,6 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
   const setPendingSummon = useUiStore((s) => s.setPendingSummon);
   const returnToChat = useUiStore((s) => s.pendingSummonReturnToChat);
   const setPendingSummonReturnToChat = useUiStore((s) => s.setPendingSummonReturnToChat);
-  const navigate = useUiStore((s) => s.navigate);
 
   // ── Auto-resume on connected (D-56) ────────────────────────────────────
   useEffect(() => {
@@ -76,11 +75,11 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
     setPendingSummon(null);
     setPendingSummonReturnToChat(false);
     closeModal();
-    sei.summon(id).catch(() => {
-      // Errors surface via onStatus → BotStatus.error; the model row owns display.
-    });
-    // Task 6 — a chat-launched summon returns to that chat, not the profile.
-    navigate(toChat ? { kind: 'chat', characterId: id } : { kind: 'character', id });
+    // 260709 — same host-compatibility gate as the direct summon path: a
+    // modded or Lunar host shows the disclaimer modal (replacing this one)
+    // instead of summoning straight away. launchSummon inside the gate owns
+    // the summon call AND the chat-vs-profile navigation (Task 6).
+    summonWithHostGate(id, toChat, lan.host);
   }, [
     mode,
     lan,
@@ -89,7 +88,6 @@ export function LanModal({ mode }: LanModalProps): React.ReactElement {
     closeModal,
     setPendingSummon,
     setPendingSummonReturnToChat,
-    navigate,
   ]);
 
   // ── Dismiss (D-24): in searching mode, closing also clears the pending summon.

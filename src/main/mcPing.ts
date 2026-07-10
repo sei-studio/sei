@@ -20,6 +20,27 @@ export interface McStatus {
   motd: string;
   versionName: string;
   protocol: number | null;
+  /**
+   * Mod count from Forge/NeoForge ping metadata (`forgeData.mods` on 1.13+,
+   * `modinfo.modList` on 1.12-). null when the ping carries no such metadata
+   * (vanilla, Fabric, Lunar); 0 when the metadata is present but the mod list
+   * is empty or unparseable (still a Forge-family server).
+   */
+  forgeModCount: number | null;
+}
+
+/**
+ * Extract the Forge/NeoForge mod count from a parsed status-response object.
+ * Exported for tests.
+ */
+export function forgeModCountFromStatus(parsed: unknown): number | null {
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const p = parsed as { forgeData?: unknown; modinfo?: unknown };
+  const mods = (p.forgeData as { mods?: unknown } | undefined)?.mods;
+  if (Array.isArray(mods)) return mods.length;
+  const modList = (p.modinfo as { modList?: unknown } | undefined)?.modList;
+  if (Array.isArray(modList)) return modList.length;
+  return p.forgeData != null || p.modinfo != null ? 0 : null;
 }
 
 function writeVarInt(value: number): Buffer {
@@ -133,6 +154,7 @@ export function mcPing(port: number, host = '127.0.0.1', timeoutMs = 800): Promi
           motd: motdToText(parsed.description),
           versionName: parsed.version?.name ?? '',
           protocol: typeof parsed.version?.protocol === 'number' ? parsed.version.protocol : null,
+          forgeModCount: forgeModCountFromStatus(parsed),
         });
       } catch (e) {
         finish(e as Error);

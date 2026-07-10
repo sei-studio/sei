@@ -28,7 +28,7 @@ interface StageRender {
   label: string;
   pct: number | null;
   /** Terminal: render a StatusPill instead of a stage label. */
-  terminal: 'done' | 'failed' | 'cancelled' | null;
+  terminal: 'done' | 'failed' | 'cancelled' | 'skipped' | null;
   /** Secondary text under a terminal pill (e.g. failure message). */
   terminalSecondary?: string;
 }
@@ -101,6 +101,18 @@ export function InstallProgressList({
         // event was racing the final resolve.
         const result = results.find((r) => r.installId === install.id);
         let render = describeStage(ev);
+        // 260709 — Lunar rows can only reach this list through a stale
+        // selection (the picker no longer selects limited installs). Nothing
+        // is ever installed for Lunar, so never let main's defensive ok:true
+        // read as "Setup complete": report it as skipped, honestly.
+        if (install.kind === 'lunar') {
+          render = {
+            label: 'Skipped',
+            pct: null,
+            terminal: 'skipped',
+            terminalSecondary: 'Lunar Client needs no setup. Skin mods are not supported.',
+          };
+        }
         if (result && !render.terminal) {
           if (result.ok) {
             render = { label: 'Setup complete', pct: null, terminal: 'done' };
@@ -132,6 +144,8 @@ export function InstallProgressList({
                 />
               ) : render.terminal === 'cancelled' ? (
                 <StatusPill tone="muted" label="Cancelled" />
+              ) : render.terminal === 'skipped' ? (
+                <StatusPill tone="warn" label="Skipped" secondary={render.terminalSecondary} />
               ) : (
                 <div className={styles.inFlight}>
                   <div className={styles.stageLabel}>{render.label}</div>
