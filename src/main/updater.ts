@@ -44,11 +44,11 @@ const FORCED_RESTART_DELAY_MS = 3500;
 /**
  * Background re-check cadence (260710). The startup check alone meant a
  * long-running app never noticed a release — v0.4.4 sat invisible to every
- * open 0.4.3 instance until users happened to relaunch. Every 4h keeps the
- * GitHub feed traffic negligible while bounding how stale a running app can
- * get.
+ * open 0.4.3 instance until users happened to relaunch. Hourly bounds how
+ * stale a running app can get; the check itself is one ~1KB GitHub feed GET
+ * (latest.yml), so the cost is negligible.
  */
-const PERIODIC_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 /** Parsed, validated version.json policy fields used by the updater. */
 interface VersionPolicy {
@@ -280,13 +280,14 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
   const policy = await fetchVersionPolicy();
   const changelog = policy?.changelog ?? undefined;
   const downloadUrl = policy?.downloadUrl ?? 'https://sei.gg/';
-  let apply = policy?.apply ?? 'on-restart';
-  // A background discovery must never force-restart: apply:"now" is meant for
-  // the launch check (the app just booted, nothing to lose). Mid-session a
-  // forced quitAndInstall would kill a live game or call, so soften to
-  // on-restart — still a silent download, still installs on the next quit,
-  // and the dismissable "restart now" popup offers the immediate path.
-  if (fromBackground && apply === 'now') apply = 'on-restart';
+  // apply is the operator's severity lever (version.json):
+  //   - "on-restart" (the DEFAULT for normal releases): silent download,
+  //     dismissable "restart now / later" popup, installs on next quit.
+  //   - "now" (CRITICAL releases only): forced restart after the download —
+  //     including apps that discover it via the hourly background check, i.e.
+  //     mid-session. Reserve it for updates worth interrupting a live game or
+  //     call for; everything else ships as on-restart.
+  const apply = policy?.apply ?? 'on-restart';
 
   if (level === 'optional') {
     mandatoryApply = null;
@@ -476,9 +477,10 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
 
   // Flow A' — background re-check so a long-running app self-notices a
   // release (see PERIODIC_CHECK_INTERVAL_MS). Same event pipeline as the
-  // startup check, with two background-only softenings in
-  // handleUpdateAvailable: no repeat handling of an already-seen version, and
-  // apply:"now" demoted to on-restart so nothing force-restarts mid-session.
+  // startup check, with two background-only softenings: an already-seen
+  // version is not re-handled every interval, and checking/not-available
+  // stay silent. apply is NOT softened — "now" means critical, and critical
+  // means running apps restart too (see handleUpdateAvailable).
   setInterval(() => {
     backgroundCheck = true;
     au
