@@ -11,7 +11,7 @@
  *   - downloaded-on-restart → mandatory patch finished downloading; dismissable
  *     "Update ready — restart to apply" with [Later] / [Restart now] so the
  *     download bar can't hang at 100% (applies on next quit regardless).
- *   - forced → non-dismissable "Critical update — restarting…" (apply:'now'
+ *   - forced → non-dismissable "Applying the update — restarting…" (apply:'now'
  *     mandatory path; main restarts automatically after a short delay).
  *   - whats-new → post-update changelog with [Got it].
  *
@@ -172,8 +172,8 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps)
       break;
 
     case 'forced':
-      title = 'Critical update';
-      body = <p className={styles.body}>Critical update. Restarting…</p>;
+      title = 'Update ready';
+      body = <p className={styles.body}>Applying the update. Sei will restart in a moment…</p>;
       break;
 
     case 'whats-new':
