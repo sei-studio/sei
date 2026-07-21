@@ -68,6 +68,15 @@ export type BotStatus =
        * session is gone or was never live).
        */
       transient?: true;
+      /**
+       * 260720 crash popup: set ONLY by the supervisor's exit handler when a
+       * LIVE session (past summon-ready) died spontaneously — nonzero exit
+       * code with no stop requested. Pre-summon failures, structured
+       * lifecycle errors, and user-initiated stops never carry it. The
+       * renderer uses it to open the "Connection lost" crash popup for error
+       * classes that have no dedicated surface.
+       */
+      midSession?: true;
     };
 
 /**

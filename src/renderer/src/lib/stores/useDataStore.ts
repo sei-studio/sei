@@ -216,6 +216,23 @@ function wireIpc(): () => void {
         characterId: status.characterId,
       });
     }
+    // 260720 — crash popup: a LIVE session died unexpectedly (the supervisor
+    // marks the terminal error with midSession; only a nonzero exit with no
+    // stop requested ever carries it, so user stops, app quit, clean session
+    // ends, and every pre-summon failure are all excluded by construction).
+    // Classes with a dedicated popup above keep their own surface; everything
+    // else was previously a silent vanish.
+    if (
+      status.kind === 'error' &&
+      status.midSession === true &&
+      status.error !== 'LAN_NOT_OPEN' &&
+      status.error !== 'UNSUPPORTED_MC_VERSION'
+    ) {
+      useUiStore.getState().openModal({
+        kind: 'bot-crash',
+        characterId: status.characterId,
+      });
+    }
     useDataStore.getState().setStatus(status);
   });
   // Seed the summons map once the listener is attached (260703). Status pushes

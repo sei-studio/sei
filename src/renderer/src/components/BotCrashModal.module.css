@@ -1,0 +1,10 @@
+/* BotCrashModal.module.css — unexpected mid-session bot death popup.
+ * Scrim + panel + title come from ModalShell; body copy mirrors
+ * LanNotOpenModal. */
+
+.body {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+}

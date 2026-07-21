@@ -97,7 +97,10 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   if (/unsupported_mc_version|unsupported.*version|version.*not.*support|incompatible.*version/i.test(lower)) {
     return { class: 'UNSUPPORTED_MC_VERSION', copy: ERROR_COPY.UNSUPPORTED_MC_VERSION };
   }
-  if (/lan|multicast|no minecraft lan|open to lan/i.test(lower)) {
+  // Word-bounded \blan\b (mirrors main's classifyChildError, 260720): a bare
+  // /lan/ matched incidental substrings like "userland" in a node deprecation
+  // warning and mislabeled unrelated crashes as LAN_NOT_OPEN.
+  if (/\blan\b|multicast|no minecraft lan|open to lan|econnreset|connection reset|kicked/i.test(lower)) {
     return { class: 'LAN_NOT_OPEN', copy: ERROR_COPY.LAN_NOT_OPEN };
   }
   if (/timeout|did not signal ready/i.test(lower)) {

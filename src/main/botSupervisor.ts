@@ -75,7 +75,12 @@ function classifyChildError(err: unknown): ErrorClass {
   if (/invalid.*api.*key|401|unauthorized|x-api-key|authentication_error/i.test(lower)) return 'INVALID_API_KEY';
   if (/429|rate.?limit|throttl/i.test(lower)) return 'RATE_LIMITED';
   if (/enotfound|enetunreach|getaddrinfo|fetch failed/i.test(lower)) return 'NETWORK_OFFLINE';
-  if (/econnrefused|could not reach|no minecraft lan|lan/i.test(lower)) return 'LAN_NOT_OPEN';
+  // LAN_NOT_OPEN requires actual connection-loss evidence: refused/reset
+  // sockets, a kick, or the LAN watcher's own vocabulary. The old pattern had
+  // a bare /lan/ that matched incidental substrings ("userland" in a node
+  // deprecation warning), smearing message-less crashes into LAN_NOT_OPEN —
+  // hence the word boundary (260720).
+  if (/econnrefused|econnreset|connection reset|socket closed|kicked|could not reach|no minecraft lan|\blan\b/i.test(lower)) return 'LAN_NOT_OPEN';
   if (/eaddrnotavail|multicast/i.test(lower)) return 'LAN_UNAVAILABLE';
   if (/timeout|did not signal ready/i.test(lower)) return 'BOT_START_TIMEOUT';
   return 'BOT_CRASH';
@@ -837,17 +842,22 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (summonResolved) return;
       summonResolved = true;
       const err: ErrorClass = 'BOT_START_TIMEOUT';
+      // Derived from the actual constant so the diagnostic never lies about
+      // how long the watchdog actually waited.
+      const timeoutMessage =
+        `Bot did not signal summon-ready within ${SUMMON_TIMEOUT_MS / 1000}s of the summon attempt ` +
+        '(no summon-ready and no terminal lifecycle error from the child).';
       reporter.fire({
         phase: 'ready_timeout',
         errorClass: err,
-        errorMessage: 'Bot did not signal ready within 30s.',
+        errorMessage: timeoutMessage,
         stderrTail: tails.stderr,
         stdoutTail: tails.stdout,
       });
       opts.sendStatus({
         kind: 'error',
         error: err,
-        message: 'Bot did not signal ready within 30s.',
+        message: `Bot did not signal ready within ${SUMMON_TIMEOUT_MS / 1000}s.`,
         characterId,
       });
       summonReject(new Error(err));
@@ -927,10 +937,14 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         clearTimeout(summonTimer);
         // Diagnostics (260720): a structured pre-ready lifecycle error means
         // the child ran but could not reach the world — the 'connect' phase.
+        // A message-less lifecycle error still gets explanatory text, never a
+        // bare enum.
         reporter.fire({
           phase: 'connect',
           errorClass: String(data.error),
-          errorMessage: String(data.message ?? ''),
+          errorMessage:
+            String(data.message ?? '') ||
+            `Bot reported a ${String(data.error)} lifecycle error before summon-ready with no message text.`,
           stderrTail: tails.stderr,
           stdoutTail: tails.stdout,
         });
@@ -1195,15 +1209,52 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // once-guard is untouched on the success path, so this is the first
         // and only fire for the attempt.
         if (session.stopRequested !== true && code != null && code !== 0) {
-          const tail = tails.stderr || tails.stdout;
+          const tail = (tails.stderr || tails.stdout).trim();
+          // Honest classification (260720): only keep a specific class when
+          // the child's output carries actual evidence for it (classifier
+          // matched a real pattern). A tail with nothing classifiable — or no
+          // tail at all — is NOT connection loss; it is an opaque process
+          // death (SIGKILL, OOM killer, antivirus), so it stays BOT_CRASH
+          // with a synthesized explanation. Electron's UtilityProcess 'exit'
+          // event exposes only `code` (no signal), but on POSIX a
+          // signal-killed child reports the signal number as the code, so
+          // name the common ones.
+          const classified: ErrorClass = tail ? classifyChildError(tail) : 'BOT_CRASH';
+          let errorClass: ErrorClass;
+          let message: string;
+          if (classified === 'BOT_CRASH') {
+            errorClass = 'BOT_CRASH';
+            const signalNames: Record<number, string> = {
+              6: 'SIGABRT', 9: 'SIGKILL', 11: 'SIGSEGV', 15: 'SIGTERM',
+            };
+            const signalNote =
+              process.platform !== 'win32' && signalNames[code]
+                ? `, likely ${signalNames[code]}` : '';
+            message =
+              `Bot process exited unexpectedly (code ${code}${signalNote}) with ` +
+              (tail ? 'no recognizable error output. ' : 'no error output. ') +
+              'This usually means something outside Sei ended the process: ' +
+              'antivirus, out of memory, or a manual kill.';
+          } else {
+            errorClass = classified;
+            message = `Bot exited mid-session (code ${code}).\n${tail.slice(-1024)}`;
+          }
           reporter.fire({
             phase: 'mid_session',
-            errorClass: classifyChildError(tail || `exit code ${code}`),
-            errorMessage: `Bot exited mid-session (code=${code})`,
+            errorClass,
+            errorMessage: message,
             exitCode: code,
             stderrTail: tails.stderr,
             stdoutTail: tails.stdout,
           });
+          // Crash popup (260720): tell the renderer the LIVE session died —
+          // before this, a mid-session death emitted only 'idle' and the GUI
+          // showed nothing. `midSession: true` is the popup trigger; classes
+          // with a dedicated surface (LAN_NOT_OPEN, UNSUPPORTED_MC_VERSION)
+          // route to their own modals renderer-side. The terminal error also
+          // closes the play-session bookkeeping in broadcastStatus; the idle
+          // push below still clears the widget.
+          opts.sendStatus({ kind: 'error', error: errorClass, message, characterId, midSession: true });
         }
         opts.sendStatus({ kind: 'idle', characterId });
       }
@@ -1419,11 +1470,26 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // Diagnostics backstop (260720): any throw whose site did not report
         // (all the pre-gate refusals, plus stragglers like a store read or
         // fork throw) is a pre-fork failure. Once-guarded, so a site-specific
-        // fire above always wins.
+        // fire above always wins. Several pre-gate refusals throw a BARE
+        // sentinel token (their message IS the enum); expand those to an
+        // actual cause description so error_message never just repeats
+        // error_class. Token-prefixed throws (LOCAL_NO_API_KEY: ...,
+        // SUMMON_USERNAME_CONFLICT: <name>) already carry their cause.
+        const BARE_TOKEN_DETAIL: Record<string, string> = {
+          LAN_NOT_OPEN:
+            'LAN_NOT_OPEN: refused before fork, no open LAN world was detected at summon time.',
+          CLOUD_CREDITS_DEPLETED:
+            'CLOUD_CREDITS_DEPLETED: refused before fork, the cloud credit balance is below the playable minimum.',
+          DAILY_LIMIT_REACHED:
+            'DAILY_LIMIT_REACHED: refused before fork, the daily play limit window is still active.',
+          PREFERRED_NAME_MISSING:
+            'PREFERRED_NAME_MISSING: refused before fork, preferred_name is missing from config (onboarding incomplete).',
+        };
+        const raw = errText(err);
         reporter.fire({
           phase: 'pre_gate',
           errorClass: diagErrorClass(err),
-          errorMessage: errText(err),
+          errorMessage: BARE_TOKEN_DETAIL[raw] ?? raw,
         });
         throw err;
       })

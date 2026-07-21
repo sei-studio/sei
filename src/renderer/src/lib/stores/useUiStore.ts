@@ -107,6 +107,11 @@ export type Modal =
   // subscription like unsupported-version, so every summon entry point gets
   // the step-by-step "open to LAN" guidance instead of a one-line status.
   | { kind: 'lan-not-open'; characterId: string }
+  // 260720 — a LIVE bot session died unexpectedly (BotStatus error with
+  // midSession, e.g. the child was killed or crashed) with no dedicated
+  // surface for its error class. Opened centrally from the onStatus
+  // subscription; before this, a mid-session death showed nothing at all.
+  | { kind: 'bot-crash'; characterId: string }
   // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games
   // (games-picker) and a per-game About sheet with a Summon button (game-about).
   | { kind: 'games-picker'; characterId: string }
