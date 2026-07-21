@@ -411,18 +411,23 @@ export function IconRail(): React.ReactElement {
               setHover={setHoverTip}
             />
           ))}
-          <button
-            type="button"
-            className={`${styles.circleButton} ${view.kind === 'awaken' || view.kind === 'add-character' ? styles.circleActive : ''}`}
-            onClick={() => navigate({ kind: 'awaken' })}
-            aria-label="Awaken a companion"
-            onMouseEnter={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
-            onMouseLeave={() => setHoverTip(null)}
-            onFocus={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
-            onBlur={() => setHoverTip(null)}
-          >
-            <PlusIcon size={18} />
-          </button>
+          {/* Hidden while the party is full: chars:save rejects a 5th companion,
+              so offering the entry point would only lead to that error. Reappears
+              reactively when a slot opens up. */}
+          {homeCharacters.length < MAX_COMPANION_SLOTS && (
+            <button
+              type="button"
+              className={`${styles.circleButton} ${view.kind === 'awaken' || view.kind === 'add-character' ? styles.circleActive : ''}`}
+              onClick={() => navigate({ kind: 'awaken' })}
+              aria-label="Awaken a companion"
+              onMouseEnter={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
+              onMouseLeave={() => setHoverTip(null)}
+              onFocus={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
+              onBlur={() => setHoverTip(null)}
+            >
+              <PlusIcon size={18} />
+            </button>
+          )}
         </div>
 
         <div className={styles.spacer} />
