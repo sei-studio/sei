@@ -215,6 +215,23 @@ describe('toMessages — every row flows through the same-role merge (Finding 1)
     assertAlternates(out);
   });
 
+  it('a transcript opening on companion turns keeps them behind a marker user turn (first-meeting greeting)', () => {
+    // First meeting: the companion greeted (two bubbles), the player replied.
+    // The greeting must SURVIVE as an assistant turn — the old shift-off left
+    // the model with only "the latter :)" and it asked what it was replying to.
+    const out = toMessages([
+      companion('c1', 1000, "yo what's up, i'm sui"),
+      companion('c2', 2000, 'you here to play or just checking if i am real'),
+      user('u1', 3000, 'the latter :)'),
+    ]);
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(out[0].content).toBe('[Session transcript begins here.]');
+    expect(out[1].content).toContain("i'm sui");
+    expect(out[1].content).toContain('checking if i am real');
+    expect(out[2].content).toContain('the latter');
+    assertAlternates(out);
+  });
+
   it('a call row (260705) surfaces as shared history and keeps alternation', () => {
     const call: ChatMessage = {
       id: 'call1',

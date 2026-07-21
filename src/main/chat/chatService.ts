@@ -242,8 +242,18 @@ export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assi
       out.push({ role, content });
     }
   }
-  // Anthropic requires the first message to be from the user.
-  while (out.length && out[0].role !== 'user') out.shift();
+  // Anthropic requires the first message to be from the user. Never satisfy
+  // that by DROPPING a leading assistant turn: after a first-meeting greeting
+  // the transcript is [companion..., user reply], so the shifted-off assistant
+  // turn was the ENTIRE conversation — the model got the player's "the latter
+  // :)" with no antecedent and asked what it was replying to (260721 live
+  // capture). Seat a neutral marker user turn instead; it makes no claim about
+  // who spoke first or whether this is the conversation's absolute start, so
+  // it is also safe for mid-conversation windows (voice recentCap, fold
+  // watermark) that happen to open on an assistant row.
+  if (out.length && out[0].role !== 'user') {
+    out.unshift({ role: 'user', content: '[Session transcript begins here.]' });
+  }
   return out;
 }
 
