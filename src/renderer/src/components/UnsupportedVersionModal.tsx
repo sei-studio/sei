@@ -97,6 +97,10 @@ export function UnsupportedVersionModal({
         ))}
       </ol>
       <p className={styles.hint}>
+        Alternatively, run the skin setup in Sei settings. It installs our modded Fabric version of
+        Minecraft, which is supported and shows character skins.
+      </p>
+      <p className={styles.hint}>
         Minecraft may not open worlds saved on a newer version. If your world will not open, create
         a new world on the supported version and play there.
       </p>
