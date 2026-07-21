@@ -53,6 +53,7 @@ import { SkinSetupPromptModal } from './components/SkinSetupPromptModal';
 import { SummonConflictModal } from './components/SummonConflictModal';
 import { LanHostWarningModal } from './components/LanHostWarningModal';
 import { UnsupportedVersionModal } from './components/UnsupportedVersionModal';
+import { LanNotOpenModal } from './components/LanNotOpenModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
 import { UpdatePopup, type UpdatePopupState } from './components/UpdatePopup';
@@ -919,6 +920,8 @@ export function App(): React.ReactElement {
       {modal?.kind === 'unsupported-version' ? (
         <UnsupportedVersionModal characterId={modal.characterId} message={modal.message} />
       ) : null}
+      {/* 260720 — a summon died with LAN_NOT_OPEN; numbered open-to-LAN steps. */}
+      {modal?.kind === 'lan-not-open' ? <LanNotOpenModal characterId={modal.characterId} /> : null}
       {/* Phase 18/19 — chat "Play together" surfaces: the game picker grid and
           the per-game About sheet (which carries the Summon CTA). */}
       {modal?.kind === 'games-picker' ? (

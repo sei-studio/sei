@@ -207,6 +207,15 @@ function wireIpc(): () => void {
         message: status.message,
       });
     }
+    // 260720 — LAN_NOT_OPEN failures get the same treatment: prod data shows
+    // users hitting this repeatedly and churning, so the failure opens a popup
+    // with numbered "open to LAN" steps instead of only the model-row line.
+    if (status.kind === 'error' && status.error === 'LAN_NOT_OPEN') {
+      useUiStore.getState().openModal({
+        kind: 'lan-not-open',
+        characterId: status.characterId,
+      });
+    }
     useDataStore.getState().setStatus(status);
   });
   // Seed the summons map once the listener is attached (260703). Status pushes

@@ -102,6 +102,11 @@ export type Modal =
   // flow previously failed silently (the error only reached the character
   // page's model row). `message` is the already-humanized bot error text.
   | { kind: 'unsupported-version'; characterId: string; message: string }
+  // 260720 — a summon died with LAN_NOT_OPEN (world closed, kicked, or the
+  // pre-gate raced a closing world). Opened centrally from the onStatus
+  // subscription like unsupported-version, so every summon entry point gets
+  // the step-by-step "open to LAN" guidance instead of a one-line status.
+  | { kind: 'lan-not-open'; characterId: string }
   // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games
   // (games-picker) and a per-game About sheet with a Summon button (game-about).
   | { kind: 'games-picker'; characterId: string }

@@ -184,9 +184,27 @@ export function redact(text: string): string {
 // ── Assembly ────────────────────────────────────────────────────────────────
 
 /**
+ * User-environment failure classes (founder decision, 260720): these are the
+ * user's world setup, not Sei crashes — LAN_NOT_OPEN means no world was open
+ * to LAN, UNSUPPORTED_MC_VERSION means the world runs a version outside our
+ * networking stack. The summon_failed event still fires for funnel counting,
+ * but WITHOUT the heavy text payload (error_message + stderr/stdout tails):
+ * the tails carry nothing diagnosable for these classes, and the cheap enum
+ * context (class, phase, MC version/protocol, backend, duration) is all a
+ * dashboard needs.
+ */
+export const USER_ENV_ERROR_CLASSES: ReadonlySet<string> = new Set([
+  'LAN_NOT_OPEN',
+  'UNSUPPORTED_MC_VERSION',
+]);
+
+/**
  * Assemble the redacted PostHog property payload for a failed summon. Pure
  * given its inputs; the caller (index.ts onSummonFailure wiring) supplies the
  * live LAN state, signed-in flag, and app.isPackaged.
+ *
+ * For USER_ENV_ERROR_CLASSES the heavy text fields (error_message,
+ * stderr_tail, stdout_tail) are omitted entirely — cheap enum context only.
  *
  * Ship with `captureDiagnostic('summon_failed', ...)` — plain capture() would
  * truncate the tails to 200 chars.
@@ -196,14 +214,10 @@ export function buildSummonDiagnostic(
   ctx: SummonDiagnosticContext,
 ): Record<string, unknown> {
   const lanOpen = ctx.lan?.kind === 'open' ? ctx.lan : null;
-  return {
+  const diag: Record<string, unknown> = {
     error_class: info.errorClass,
-    error_message: redact(info.errorMessage ?? '').slice(0, ERROR_MESSAGE_CAP),
     summon_phase: info.phase,
     exit_code: info.exitCode ?? null,
-    // Keep the END of each tail — the crash is at the bottom.
-    stderr_tail: redact(info.stderrTail ?? '').slice(-TAIL_CAP),
-    stdout_tail: redact(info.stdoutTail ?? '').slice(-TAIL_CAP),
     duration_ms: info.durationMs,
     backend: info.backend ?? null,
     signed_in: ctx.signedIn,
@@ -217,6 +231,13 @@ export function buildSummonDiagnostic(
     electron_version: process.versions.electron ?? null,
     node_version: process.versions.node ?? null,
   };
+  if (!USER_ENV_ERROR_CLASSES.has(info.errorClass)) {
+    diag.error_message = redact(info.errorMessage ?? '').slice(0, ERROR_MESSAGE_CAP);
+    // Keep the END of each tail — the crash is at the bottom.
+    diag.stderr_tail = redact(info.stderrTail ?? '').slice(-TAIL_CAP);
+    diag.stdout_tail = redact(info.stdoutTail ?? '').slice(-TAIL_CAP);
+  }
+  return diag;
 }
 
 // ── Log pruning (startup hygiene) ───────────────────────────────────────────

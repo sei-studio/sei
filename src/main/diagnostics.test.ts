@@ -164,11 +164,11 @@ describe('buildSummonDiagnostic', () => {
 
   it('assembles the full payload with MC context from an open LAN state', () => {
     const diag = buildSummonDiagnostic(
-      baseInfo({ phase: 'connect', errorClass: 'UNSUPPORTED_MC_VERSION', errorMessage: 'nope' }),
+      baseInfo({ phase: 'connect', errorClass: 'BOT_CRASH', errorMessage: 'nope' }),
       { lan: openLan, signedIn: true, packaged: true },
     );
     expect(diag).toMatchObject({
-      error_class: 'UNSUPPORTED_MC_VERSION',
+      error_class: 'BOT_CRASH',
       error_message: 'nope',
       summon_phase: 'connect',
       exit_code: 1,
@@ -230,6 +230,64 @@ describe('buildSummonDiagnostic', () => {
       { lan: null, signedIn: false, packaged: false },
     );
     expect(diag.exit_code).toBeNull();
+  });
+});
+
+describe('buildSummonDiagnostic — user-environment slimming', () => {
+  const openLan: LanState = {
+    kind: 'open',
+    port: 55555,
+    motd: 'My World',
+    lastSeenAt: 1,
+    host: { client: 'vanilla', forgeModCount: null },
+    versionName: '1.22.1',
+    protocol: 900,
+  };
+
+  for (const errorClass of ['LAN_NOT_OPEN', 'UNSUPPORTED_MC_VERSION']) {
+    it(`${errorClass}: omits error_message and tails, keeps the cheap enum context`, () => {
+      const diag = buildSummonDiagnostic(
+        baseInfo({
+          phase: 'connect',
+          errorClass,
+          errorMessage: 'heavy human-readable text that must not ship',
+          stderrTail: 'stderr noise from the child process',
+          stdoutTail: 'stdout noise from the child process',
+        }),
+        { lan: openLan, signedIn: true, packaged: true },
+      );
+      // Heavy text payload absent entirely (not just empty).
+      expect('error_message' in diag).toBe(false);
+      expect('stderr_tail' in diag).toBe(false);
+      expect('stdout_tail' in diag).toBe(false);
+      // Cheap context intact for funnel counting.
+      expect(diag).toMatchObject({
+        error_class: errorClass,
+        summon_phase: 'connect',
+        duration_ms: 1234,
+        backend: 'local',
+        mc_version: '1.22.1',
+        mc_protocol: 900,
+        host_client: 'vanilla',
+        packaged: true,
+      });
+      expect(diag.node_version).toBe(process.versions.node);
+    });
+  }
+
+  it('BOT_CRASH still ships error_message and both tails', () => {
+    const diag = buildSummonDiagnostic(
+      baseInfo({
+        errorClass: 'BOT_CRASH',
+        errorMessage: 'crash detail',
+        stderrTail: 'stderr crash line',
+        stdoutTail: 'stdout crash line',
+      }),
+      { lan: null, signedIn: false, packaged: false },
+    );
+    expect(diag.error_message).toBe('crash detail');
+    expect(diag.stderr_tail).toBe('stderr crash line');
+    expect(diag.stdout_tail).toBe('stdout crash line');
   });
 });
 

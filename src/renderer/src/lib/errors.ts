@@ -21,7 +21,7 @@ import type { ErrorClass } from '@shared/errorClasses';
  */
 export const ERROR_COPY: Record<ErrorClass, string> = {
   BOT_START_TIMEOUT: "Couldn't start the bot in 30s. Make sure your LAN world is still open and try again.",
-  LAN_NOT_OPEN: "We can't see an open LAN world. Press ESC in Minecraft and choose Open to LAN.",
+  LAN_NOT_OPEN: "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.",
   INVALID_API_KEY: "Your Anthropic API key was rejected. Open Settings → re-run onboarding to paste a fresh key.",
   RATE_LIMITED: "Anthropic is throttling requests. Wait a minute and try again.",
   NETWORK_OFFLINE: "No internet connection. Reconnect and try again.",
@@ -30,7 +30,10 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   KEYCHAIN_LOCKED: "Couldn't read your saved API key from the system keychain. Re-run onboarding to re-save it.",
   KEYCHAIN_FALLBACK_PLAINTEXT: "Your system has no secret store. Sei will save your API key but it won't be hardware-protected.",
   NATIVE_MODULE_MISMATCH: "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.",
-  UNSUPPORTED_MC_VERSION: "This world's Minecraft version isn't supported yet. Switch your world to a supported Java version (1.20.x or 1.21.x) and press Summon again.",
+  // No hardcoded version range here: the real range comes from
+  // minecraft-protocol.supportedVersions in the bot's error text (surfaced by
+  // UnsupportedVersionModal), and a stale hardcode would lie to users.
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Summon again.",
   // Skin pipeline + setup-wizard errors. Do NOT rephrase — the UI checker
   // matches these strings byte-for-byte against the spec.
   MOD_DOWNLOAD_FAILED: "Couldn't download CustomSkinLoader. Check your connection and try the setup again.",
