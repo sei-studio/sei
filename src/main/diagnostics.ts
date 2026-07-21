@@ -192,6 +192,16 @@ export function redact(text: string): string {
  * the tails carry nothing diagnosable for these classes, and the cheap enum
  * context (class, phase, MC version/protocol, backend, duration) is all a
  * dashboard needs.
+ *
+ * Phase refinement (260720): the slim treatment for LAN_NOT_OPEN applies ONLY
+ * at phase 'pre_gate' — the supervisor refused before forking because no world
+ * was detected, which really is just the user's environment. When a summon got
+ * PAST the gate (a world WAS detected) and then died with LAN_NOT_OPEN at
+ * 'fork' / 'connect' / 'ready_timeout' / 'mid_session', the world was
+ * announced but unjoinable — the suspected-Windows-firewall pattern we most
+ * need tails for — so the full payload ships. UNSUPPORTED_MC_VERSION stays
+ * slim at every phase: the version mismatch is fully described by the cheap
+ * enum context regardless of where it surfaced.
  */
 export const USER_ENV_ERROR_CLASSES: ReadonlySet<string> = new Set([
   'LAN_NOT_OPEN',
@@ -199,12 +209,23 @@ export const USER_ENV_ERROR_CLASSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Should the heavy text payload (error_message + tails) be omitted for this
+ * failure? See USER_ENV_ERROR_CLASSES for the rationale table.
+ */
+export function omitsHeavyText(errorClass: string, phase: SummonPhase): boolean {
+  if (errorClass === 'UNSUPPORTED_MC_VERSION') return true;
+  if (errorClass === 'LAN_NOT_OPEN') return phase === 'pre_gate';
+  return false;
+}
+
+/**
  * Assemble the redacted PostHog property payload for a failed summon. Pure
  * given its inputs; the caller (index.ts onSummonFailure wiring) supplies the
  * live LAN state, signed-in flag, and app.isPackaged.
  *
- * For USER_ENV_ERROR_CLASSES the heavy text fields (error_message,
- * stderr_tail, stdout_tail) are omitted entirely — cheap enum context only.
+ * When omitsHeavyText(errorClass, phase) holds, the heavy text fields
+ * (error_message, stderr_tail, stdout_tail) are omitted entirely — cheap enum
+ * context only.
  *
  * Ship with `captureDiagnostic('summon_failed', ...)` — plain capture() would
  * truncate the tails to 200 chars.
@@ -231,7 +252,7 @@ export function buildSummonDiagnostic(
     electron_version: process.versions.electron ?? null,
     node_version: process.versions.node ?? null,
   };
-  if (!USER_ENV_ERROR_CLASSES.has(info.errorClass)) {
+  if (!omitsHeavyText(info.errorClass, info.phase)) {
     diag.error_message = redact(info.errorMessage ?? '').slice(0, ERROR_MESSAGE_CAP);
     // Keep the END of each tail — the crash is at the bottom.
     diag.stderr_tail = redact(info.stderrTail ?? '').slice(-TAIL_CAP);

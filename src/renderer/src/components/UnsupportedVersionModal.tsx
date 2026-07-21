@@ -9,16 +9,33 @@
  *
  * The body renders the bot's already-humanized error text (with the
  * `UNSUPPORTED_MC_VERSION:` prefix stripped), which names the world's version
- * and the supported range. Dismiss-only; the user resolves it by opening a
- * world on a supported version. Modeled on SummonConflictModal.
+ * and the supported range, followed by numbered launcher steps (mirroring
+ * LanNotOpenModal) for switching the world to a supported version.
+ * Dismiss-only; the user resolves it by opening a world on a supported
+ * version. Modeled on SummonConflictModal.
  */
 
 import React from 'react';
+// Dependency-free CJS data module — the same table the bot's networking stack
+// (minecraft-protocol) enforces, so the stated ceiling can never drift from
+// what Sei actually joins. Deep import on purpose: the package root pulls the
+// full protocol stack, which must never enter the renderer.
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import styles from './UnsupportedVersionModal.module.css';
+
+/** Highest Minecraft Java version Sei's networking stack can join. */
+const LATEST_SUPPORTED: string = supportedVersions[supportedVersions.length - 1];
+
+const STEPS: readonly string[] = [
+  'Open the Minecraft launcher and go to the Installations tab.',
+  `Create or select an installation on ${LATEST_SUPPORTED} or another supported version.`,
+  'Open your world from that installation.',
+  'Return to Sei and try the summon again.',
+];
 
 export interface UnsupportedVersionModalProps {
   characterId: string;
@@ -30,16 +47,20 @@ export interface UnsupportedVersionModalProps {
  * The bot's message names the world's version AND the supported range (built
  * from minecraft-protocol.supportedVersions in the bot adapter). When it is
  * missing, fall back to the LAN watcher's detected version so the popup still
- * states which version was seen; the supported range is not cleanly available
- * on the renderer side, so the fallback stays honest and names none.
+ * states which version was seen, plus the ceiling from the same version table.
  */
 function humanBody(message: string, detectedVersion: string | null): string {
-  const stripped = message.replace(/^\s*UNSUPPORTED_MC_VERSION:\s*/, '').trim();
+  const stripped = message
+    .replace(/^\s*UNSUPPORTED_MC_VERSION:\s*/, '')
+    // The bot's message ends with its own one-line instruction (connect.js);
+    // the numbered steps below replace it, so drop it when present.
+    .replace(/Switch your world to a supported version and click Summon again\.\s*$/, '')
+    .trim();
   if (stripped.length > 0) return stripped;
   if (detectedVersion) {
-    return `This world is running Minecraft ${detectedVersion}, which is not supported yet. Open a world on a supported version and try again.`;
+    return `This world is running Minecraft ${detectedVersion}, which is not supported yet. Sei supports Java versions up to ${LATEST_SUPPORTED}.`;
   }
-  return 'This world runs a Minecraft version that is not supported yet. Open a world on a supported version and try again.';
+  return `This world runs a Minecraft version that is not supported yet. Sei supports Java versions up to ${LATEST_SUPPORTED}.`;
 }
 
 export function UnsupportedVersionModal({
@@ -64,11 +85,20 @@ export function UnsupportedVersionModal({
       aria-label="Minecraft version not supported"
     >
       <p className={styles.body}>
-        <strong>{name}</strong> couldn&apos;t join. {humanBody(message, detectedVersion)}
+        <strong>{name}</strong> couldn&apos;t join. {humanBody(message, detectedVersion)} To switch
+        to a supported version:
       </p>
+      <ol className={styles.steps}>
+        {STEPS.map((step, i) => (
+          <li key={i} className={styles.step}>
+            <span className={styles.stepNumber}>{String(i + 1).padStart(2, '0')}</span>
+            <span className={styles.stepBody}>{step}</span>
+          </li>
+        ))}
+      </ol>
       <p className={styles.hint}>
-        Tip: in the Minecraft launcher you can create an Installation pinned to
-        an older version, then open your world from it.
+        Minecraft may not open worlds saved on a newer version. If your world will not open, create
+        a new world on the supported version and play there.
       </p>
       <ModalFooter>
         <Button kind="accent" size="md" onClick={closeModal}>

@@ -233,7 +233,7 @@ describe('buildSummonDiagnostic', () => {
   });
 });
 
-describe('buildSummonDiagnostic — user-environment slimming', () => {
+describe('buildSummonDiagnostic — phase-aware user-environment slimming', () => {
   const openLan: LanState = {
     kind: 'open',
     port: 55555,
@@ -244,38 +244,95 @@ describe('buildSummonDiagnostic — user-environment slimming', () => {
     protocol: 900,
   };
 
-  for (const errorClass of ['LAN_NOT_OPEN', 'UNSUPPORTED_MC_VERSION']) {
-    it(`${errorClass}: omits error_message and tails, keeps the cheap enum context`, () => {
+  const heavyInfo = (over: Partial<SummonFailureInfo>): SummonFailureInfo =>
+    baseInfo({
+      errorMessage: 'heavy human-readable text',
+      stderrTail: 'stderr noise from the child process',
+      stdoutTail: 'stdout noise from the child process',
+      ...over,
+    });
+
+  const expectSlim = (diag: Record<string, unknown>): void => {
+    // Heavy text payload absent entirely (not just empty).
+    expect('error_message' in diag).toBe(false);
+    expect('stderr_tail' in diag).toBe(false);
+    expect('stdout_tail' in diag).toBe(false);
+  };
+
+  const expectFull = (diag: Record<string, unknown>): void => {
+    expect(diag.error_message).toBe('heavy human-readable text');
+    expect(diag.stderr_tail).toBe('stderr noise from the child process');
+    expect(diag.stdout_tail).toBe('stdout noise from the child process');
+  };
+
+  it('LAN_NOT_OPEN at pre_gate (no world detected) is slim, cheap context intact', () => {
+    const diag = buildSummonDiagnostic(
+      heavyInfo({ phase: 'pre_gate', errorClass: 'LAN_NOT_OPEN' }),
+      { lan: { kind: 'closed' }, signedIn: true, packaged: true },
+    );
+    expectSlim(diag);
+    // Cheap context intact for funnel counting.
+    expect(diag).toMatchObject({
+      error_class: 'LAN_NOT_OPEN',
+      summon_phase: 'pre_gate',
+      duration_ms: 1234,
+      backend: 'local',
+      packaged: true,
+    });
+    expect(diag.node_version).toBe(process.versions.node);
+  });
+
+  it('LAN_NOT_OPEN at connect (world announced but unjoinable) ships the full payload', () => {
+    const diag = buildSummonDiagnostic(
+      heavyInfo({ phase: 'connect', errorClass: 'LAN_NOT_OPEN' }),
+      { lan: openLan, signedIn: true, packaged: true },
+    );
+    expectFull(diag);
+    expect(diag.mc_version).toBe('1.22.1');
+  });
+
+  it('LAN_NOT_OPEN at mid_session ships the full payload', () => {
+    const diag = buildSummonDiagnostic(
+      heavyInfo({ phase: 'mid_session', errorClass: 'LAN_NOT_OPEN' }),
+      { lan: openLan, signedIn: true, packaged: true },
+    );
+    expectFull(diag);
+  });
+
+  for (const phase of ['fork', 'ready_timeout'] as const) {
+    it(`LAN_NOT_OPEN at ${phase} ships the full payload`, () => {
       const diag = buildSummonDiagnostic(
-        baseInfo({
-          phase: 'connect',
-          errorClass,
-          errorMessage: 'heavy human-readable text that must not ship',
-          stderrTail: 'stderr noise from the child process',
-          stdoutTail: 'stdout noise from the child process',
-        }),
+        heavyInfo({ phase, errorClass: 'LAN_NOT_OPEN' }),
         { lan: openLan, signedIn: true, packaged: true },
       );
-      // Heavy text payload absent entirely (not just empty).
-      expect('error_message' in diag).toBe(false);
-      expect('stderr_tail' in diag).toBe(false);
-      expect('stdout_tail' in diag).toBe(false);
-      // Cheap context intact for funnel counting.
-      expect(diag).toMatchObject({
-        error_class: errorClass,
-        summon_phase: 'connect',
-        duration_ms: 1234,
-        backend: 'local',
-        mc_version: '1.22.1',
-        mc_protocol: 900,
-        host_client: 'vanilla',
-        packaged: true,
-      });
-      expect(diag.node_version).toBe(process.versions.node);
+      expectFull(diag);
     });
   }
 
-  it('BOT_CRASH still ships error_message and both tails', () => {
+  it('UNSUPPORTED_MC_VERSION at connect stays slim (slim at every phase)', () => {
+    const diag = buildSummonDiagnostic(
+      heavyInfo({ phase: 'connect', errorClass: 'UNSUPPORTED_MC_VERSION' }),
+      { lan: openLan, signedIn: true, packaged: true },
+    );
+    expectSlim(diag);
+    expect(diag).toMatchObject({
+      error_class: 'UNSUPPORTED_MC_VERSION',
+      summon_phase: 'connect',
+      mc_version: '1.22.1',
+      mc_protocol: 900,
+      host_client: 'vanilla',
+    });
+  });
+
+  it('UNSUPPORTED_MC_VERSION at pre_gate stays slim', () => {
+    const diag = buildSummonDiagnostic(
+      heavyInfo({ phase: 'pre_gate', errorClass: 'UNSUPPORTED_MC_VERSION' }),
+      { lan: openLan, signedIn: false, packaged: false },
+    );
+    expectSlim(diag);
+  });
+
+  it('BOT_CRASH ships error_message and both tails', () => {
     const diag = buildSummonDiagnostic(
       baseInfo({
         errorClass: 'BOT_CRASH',
