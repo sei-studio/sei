@@ -115,6 +115,7 @@ const api: RendererApi = {
   voiceOverlayGetState: () => ipcRenderer.invoke(IpcChannel.voice.overlayGet),
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
+  voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),
   onVoiceCallEnded(cb: (push: { characterId: string }) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: { characterId: string }) => cb(push);
     ipcRenderer.on(IpcChannel.voice.callEnded, handler);

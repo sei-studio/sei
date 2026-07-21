@@ -1,35 +1,41 @@
 /**
- * VoicePicker (260705) — choose the companion's speaking voice during creation.
+ * VoicePicker (260705, reworked 260720) — choose the companion's speaking
+ * voice during creation and in Edit companion.
  *
- * "Auto" (default, recommended) leaves metadata.voiceId unset: the runtime
- * assigns a deterministic, roster-deduped pick from the same curated pool on
- * first use (src/main/voice/voiceAssign.ts). Picking a voice pins it.
+ * Three selection states (see lib/voicePicker.ts):
+ *   - Auto (default): metadata.voiceId stays unset; the runtime assigns a
+ *     deterministic, roster-deduped pick from the curated pool on first use.
+ *   - No voice: metadata.voiceId = 'none'; the companion is silent on calls.
+ *   - A pinned pool voice, chosen from sections grouped by gender.
  *
- * Previews synthesize one short canned line per voice (voice:preview) and are
- * cached for the component's lifetime, so re-listening is free. One clip plays
- * at a time.
+ * Samples: each voice row plays the canned sample line through the normal TTS
+ * path; main caches the audio on disk (userData, keyed by voiceId + text
+ * hash) so repeat plays are free, and this component keeps a session Map so
+ * repeats never even cross IPC. One sample plays at a time; starting a second
+ * stops the first. When TTS is unavailable (signed out, no dev key) the play
+ * controls disable with a quiet hint and selection keeps working.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import type { VoiceInfo } from '@shared/ipc';
+import { groupVoices, reduceSelection, isUnlistedVoice, NO_VOICE_ID } from '../lib/voicePicker';
 import { PlayIcon, StopIcon } from './icons';
 import styles from './VoicePicker.module.css';
 
 export interface VoicePickerProps {
-  /** Selected pool voice id, or null for Auto. */
+  /** Selected pool voice id, NO_VOICE_ID ('none') for silent, or null for Auto. */
   value: string | null;
   onChange: (voiceId: string | null) => void;
 }
 
-type GenderFilter = 'all' | 'female' | 'male' | 'neutral';
-
 export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactElement {
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
-  const [filter, setFilter] = useState<GenderFilter>('all');
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** null = probing; false disables sample playback with the quiet hint. */
+  const [samplesAvailable, setSamplesAvailable] = useState<boolean | null>(null);
 
   // Non-reactive playback internals.
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -48,6 +54,20 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
       .catch(() => {
         if (aliveRef.current) setError('Could not load the voice list.');
       });
+    // Probe sample availability; a failed or missing probe leaves samples
+    // enabled and the first play surfaces the real state reactively.
+    try {
+      void sei
+        .voicePreviewAvailable()
+        .then((ok) => {
+          if (aliveRef.current) setSamplesAvailable(ok);
+        })
+        .catch(() => {
+          if (aliveRef.current) setSamplesAvailable(true);
+        });
+    } catch {
+      setSamplesAvailable(true); // stale preload without the probe — stay permissive
+    }
     return () => {
       aliveRef.current = false;
       stopPlayback();
@@ -69,11 +89,12 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
     setPlayingId(null);
   }
 
-  async function togglePreview(voiceId: string): Promise<void> {
+  async function toggleSample(voiceId: string): Promise<void> {
     if (playingId === voiceId) {
       stopPlayback();
       return;
     }
+    // One sample at a time: starting a new one stops whatever is playing.
     stopPlayback();
     setError(null);
     try {
@@ -96,23 +117,61 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
       );
       setPlayingId(voiceId);
       void el.play().catch(() => stopPlayback());
-    } catch {
-      if (aliveRef.current) setError('Preview unavailable right now.');
+    } catch (err) {
+      if (!aliveRef.current) return;
+      if (/VOICE_NO_SESSION/.test(String((err as Error)?.message ?? ''))) {
+        setSamplesAvailable(false);
+      } else {
+        setError('Sample unavailable right now.');
+      }
     } finally {
       if (aliveRef.current) setLoadingId(null);
     }
   }
 
-  const filtered = filter === 'all' ? voices : voices.filter((v) => v.gender === filter);
+  const samplesOff = samplesAvailable === false;
+
+  function renderRow(id: string, title: React.ReactNode, vibe: string, label: string): React.ReactElement {
+    const selected = value === id;
+    return (
+      <div key={id} className={`${styles.row} ${selected ? styles.selected : ''}`}>
+        <button
+          type="button"
+          className={styles.playBtn}
+          aria-label={playingId === id ? `Stop ${label} sample` : `Play ${label} sample`}
+          disabled={samplesOff || (loadingId !== null && loadingId !== id)}
+          onClick={() => void toggleSample(id)}
+        >
+          {loadingId === id ? (
+            <span className={styles.loadingDot} aria-hidden="true" />
+          ) : playingId === id ? (
+            <StopIcon size={14} />
+          ) : (
+            <PlayIcon size={14} />
+          )}
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={selected}
+          className={styles.rowBody}
+          onClick={() => onChange(reduceSelection(value, id))}
+        >
+          <div className={styles.rowTitle}>{title}</div>
+          <div className={styles.rowVibe}>{vibe}</div>
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} role="radiogroup" aria-label="Voice">
       {/* Auto — the recommended default. */}
       <button
         type="button"
         role="radio"
         aria-checked={value === null}
-        className={`${styles.autoCard} ${value === null ? styles.selected : ''}`}
+        className={`${styles.optionCard} ${value === null ? styles.selected : ''}`}
         onClick={() => onChange(null)}
       >
         <div className={styles.rowTitle}>Auto: let Sei pick</div>
@@ -121,60 +180,50 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
         </div>
       </button>
 
-      <div className={styles.filters} role="tablist" aria-label="Voice filter">
-        {(['all', 'female', 'male', 'neutral'] as const).map((g) => (
-          <button
-            key={g}
-            type="button"
-            role="tab"
-            aria-selected={filter === g}
-            className={`${styles.filterChip} ${filter === g ? styles.filterActive : ''}`}
-            onClick={() => setFilter(g)}
-          >
-            {g === 'all' ? 'All' : g[0].toUpperCase() + g.slice(1)}
-          </button>
-        ))}
-      </div>
+      {/* No voice — a silent companion. */}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={value === NO_VOICE_ID}
+        className={`${styles.optionCard} ${value === NO_VOICE_ID ? styles.selected : ''}`}
+        onClick={() => onChange(reduceSelection(value, NO_VOICE_ID))}
+      >
+        <div className={styles.rowTitle}>No voice</div>
+        <div className={styles.rowVibe}>
+          A silent companion. They chat by text and stay quiet on voice calls.
+        </div>
+      </button>
 
-      <div className={styles.list} role="radiogroup" aria-label="Voice">
-        {filtered.map((v) => {
-          const selected = value === v.id;
-          return (
-            <div key={v.id} className={`${styles.row} ${selected ? styles.selected : ''}`}>
-              <button
-                type="button"
-                className={styles.playBtn}
-                aria-label={playingId === v.id ? `Stop ${v.label} preview` : `Preview ${v.label}`}
-                disabled={loadingId !== null && loadingId !== v.id}
-                onClick={() => void togglePreview(v.id)}
-              >
-                {loadingId === v.id ? (
-                  <span className={styles.loadingDot} aria-hidden="true" />
-                ) : playingId === v.id ? (
-                  <StopIcon size={14} />
-                ) : (
-                  <PlayIcon size={14} />
-                )}
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                className={styles.rowBody}
-                onClick={() => onChange(selected ? null : v.id)}
-              >
-                <div className={styles.rowTitle}>
+      {samplesOff ? (
+        <div className={styles.hint}>Sign in to play voice samples. Picking a voice still works.</div>
+      ) : null}
+
+      <div className={styles.list}>
+        {/* A voice assigned before the current pool curation: keep it visible
+            and selected instead of silently dropping it (Edit companion). */}
+        {isUnlistedVoice(value, voices) && value ? (
+          <section className={styles.group}>
+            <h3 className={styles.groupTitle}>Current voice</h3>
+            {renderRow(value, 'Current voice', 'Assigned from an earlier voice pool.', 'current voice')}
+          </section>
+        ) : null}
+
+        {groupVoices(voices).map((g) => (
+          <section key={g.key} className={styles.group}>
+            <h3 className={styles.groupTitle}>{g.title}</h3>
+            {g.voices.map((v) =>
+              renderRow(
+                v.id,
+                <>
                   {v.label}
-                  <span className={styles.rowMeta}>
-                    {v.age}
-                    {v.gender === 'neutral' ? ' · neutral' : ''}
-                  </span>
-                </div>
-                <div className={styles.rowVibe}>{v.vibe}</div>
-              </button>
-            </div>
-          );
-        })}
+                  <span className={styles.rowMeta}>{v.age}</span>
+                </>,
+                v.vibe,
+                v.label,
+              ),
+            )}
+          </section>
+        ))}
       </div>
 
       {error ? <div className={styles.error}>{error}</div> : null}

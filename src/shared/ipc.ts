@@ -1172,6 +1172,12 @@ export interface RendererApi {
   voiceListVoices(): Promise<VoiceInfo[]>;
   /** Speak the canned preview line in an arbitrary pool voice (picker). */
   voicePreview(args: { voiceId: string }): Promise<ArrayBuffer>;
+  /**
+   * Whether voice samples can synthesize right now (signed-in session or a dev
+   * TTS key). The picker disables sample playback with a quiet hint when
+   * false; voice selection itself always works (260720).
+   */
+  voicePreviewAvailable(): Promise<boolean>;
 
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
@@ -1799,6 +1805,8 @@ export const IpcChannel = {
     list: 'voice:list',
     /** Invoke: preview an arbitrary pool voice ({voiceId}) → ArrayBuffer. */
     preview: 'voice:preview',
+    /** Invoke: can voice samples synthesize right now? → boolean (260720). */
+    previewAvailable: 'voice:preview-available',
   },
   user: {
     getProfile: 'user:get-profile',

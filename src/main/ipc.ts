@@ -1285,6 +1285,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await voicePreviewTts(args.voiceId);
   });
 
+  // Sample availability (260720): the picker disables play controls with a
+  // quiet hint when TTS cannot run (signed out, no dev key). Never throws.
+  ipcMain.handle(IpcChannel.voice.previewAvailable, async (): Promise<boolean> => {
+    try {
+      const { voicePreviewAvailable } = await import('./voice/tts');
+      return await voicePreviewAvailable();
+    } catch {
+      return false;
+    }
+  });
+
   // First-meeting greeting (thoughts consumer #1). The renderer calls this when
   // it loads an empty transcript; main decides eligibility (any companion kind,
   // empty transcript, never chatted) and returns any greeting replies. A fresh

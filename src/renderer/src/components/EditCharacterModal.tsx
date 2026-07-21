@@ -9,6 +9,9 @@
  *  - APPEARANCE — card image upload + skin selection/preview. (Skin editing
  *                 moved here from the character page's Skin tab, which is now
  *                 read-only.) Both apply immediately (no modal Save).
+ *  - VOICE      — the same VoicePicker as the creation flow (Auto / No voice /
+ *                 a pinned pool voice, with playable samples). Applies
+ *                 immediately; persists character.metadata.voiceId (260720).
  *  - PERSONA    — two modes:
  *      • Standard: persona SOURCE + PROACTIVENESS + a Regenerate button.
  *        Changing either marks the persona dirty; to leave you must Regenerate
@@ -36,11 +39,12 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ResetMemoryConfirmModal } from './ResetMemoryConfirmModal';
 import { PortraitImagePicker } from './PortraitImagePicker';
 import { SkinEditor } from './SkinEditor';
+import { VoicePicker } from './VoicePicker';
 import { PROACTIVENESS_LEVELS, getProactiveness } from '../lib/proactiveness';
 import type { Character } from '@shared/characterSchema';
 import styles from './EditCharacterModal.module.css';
 
-export type EditSection = 'basic' | 'appearance' | 'persona';
+export type EditSection = 'basic' | 'appearance' | 'voice' | 'persona';
 type PersonaMode = 'standard' | 'advanced';
 
 export interface EditCharacterModalProps {
@@ -79,6 +83,11 @@ export function EditCharacterModal({
   // renders unstyled BELOW the cursor and clips its text). Falls back to the
   // selected level when nothing is hovered.
   const [proactivenessHover, setProactivenessHover] = useState<number | null>(null);
+  // Voice (260720): null = Auto (metadata.voiceId unset), 'none' = silent,
+  // any other string = pinned pool voice. Same shape unique-cast writes.
+  const [voiceId, setVoiceId] = useState<string | null>(
+    typeof character.metadata?.voiceId === 'string' ? (character.metadata.voiceId as string) : null,
+  );
 
   // ── Baselines (last persisted values) — drive the dirty flags. Updated
   //    after each successful persist; NOT reset by prop changes. ──────────
@@ -183,6 +192,23 @@ export function EditCharacterModal({
       onSaved?.(persisted);
     } catch (err) {
       setError((err as Error)?.message ?? 'Failed to save image.');
+    }
+  };
+
+  /** Voice changes apply immediately, like appearance (260720). Auto (null)
+   *  removes the metadata key so the runtime auto-assignment applies again. */
+  const persistVoice = async (next: string | null): Promise<void> => {
+    setVoiceId(next);
+    setError(null);
+    try {
+      const metadata = { ...(character.metadata ?? {}) };
+      if (next === null) delete metadata.voiceId;
+      else metadata.voiceId = next;
+      const persisted = await sei.saveCharacter({ ...character, metadata }, { skipExpansion: true });
+      await refreshCharacter(character.id);
+      onSaved?.(persisted);
+    } catch (err) {
+      setError((err as Error)?.message ?? 'Failed to save voice.');
     }
   };
 
@@ -321,6 +347,7 @@ export function EditCharacterModal({
   const NAV: { key: EditSection | 'danger'; label: string }[] = [
     { key: 'basic', label: 'Basic' },
     { key: 'appearance', label: 'Appearance' },
+    { key: 'voice', label: 'Voice' },
     { key: 'persona', label: 'Persona' },
     ...(!isDefault ? [{ key: 'danger' as const, label: 'Danger' }] : []),
   ];
@@ -396,6 +423,16 @@ export function EditCharacterModal({
                   </div>
                   <span className={styles.appearanceNote}>Image and skin changes apply immediately.</span>
                 </>
+              ) : null}
+
+              {section === 'voice' ? (
+                <div className={styles.subSection}>
+                  <label className={styles.label}>Voice</label>
+                  <p className={styles.paneHint}>
+                    How they sound on voice calls. Changes apply immediately.
+                  </p>
+                  <VoicePicker value={voiceId} onChange={(v) => void persistVoice(v)} />
+                </div>
               ) : null}
 
               {section === 'persona' ? (
@@ -562,7 +599,7 @@ export function EditCharacterModal({
                 </>
               ) : null}
 
-              {section === 'appearance' || section === 'danger' ? (
+              {section === 'appearance' || section === 'voice' || section === 'danger' ? (
                 <Button kind="primary" size="md" onClick={() => void requestClose()} disabled={!canClose}>
                   Done
                 </Button>

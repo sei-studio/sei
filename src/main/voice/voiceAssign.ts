@@ -14,6 +14,7 @@
  */
 import { rollVoice, mulberry32, VOICES } from 'soulcaster';
 import type { Character } from '../../shared/characterSchema';
+import { NO_VOICE_ID } from '../../shared/voiceIds';
 import { listCharacters, saveCharacter } from '../characterStore';
 
 const VOICE_IDS = new Set((VOICES as Array<{ id: string }>).map((v) => v.id));
@@ -182,6 +183,12 @@ export function listPoolVoices(): Array<{
  * deterministic pick next time).
  */
 export async function resolveVoiceId(character: Character): Promise<string> {
+  // Explicit "no voice" pick (260720): never roll a fallback over it — doing
+  // so would persist a voice onto a companion the user made silent. Callers
+  // gate on the sentinel before resolving; this throw is the backstop.
+  if (character.metadata?.voiceId === NO_VOICE_ID) {
+    throw new Error('VOICE_DISABLED: this companion has no voice');
+  }
   const assigned = assignedVoiceId(character);
   if (assigned) return assigned;
 

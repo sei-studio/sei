@@ -66,7 +66,8 @@ export function AddCharacterScreen(): React.ReactElement {
   const [proactiveness, setProactiveness] = useState<number>(PROACTIVENESS_DEFAULT);
   const [portraitImage, setPortraitImage] = useState<string | null>(null);
   // Voice (step 5): null = Auto — leave metadata.voiceId unset so the runtime
-  // assigns a deterministic, roster-deduped pick on first use.
+  // assigns a deterministic, roster-deduped pick on first use. 'none' = an
+  // explicit silent companion; any other string pins that pool voice.
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<'public' | 'private' | null>(null);
   const [description, setDescription] = useState('');
@@ -206,8 +207,9 @@ export function AddCharacterScreen(): React.ReactElement {
       const next: Character = {
         ...latest,
         description: desc,
-        // Voice (step 5): an explicit pick pins metadata.voiceId; Auto leaves
-        // it unset for the deterministic runtime assignment.
+        // Voice (step 5): an explicit pick pins metadata.voiceId ('none' =
+        // silent companion); Auto leaves it unset for the deterministic
+        // runtime assignment.
         metadata: { ...latest.metadata, ...(voiceId ? { voiceId } : {}) },
       };
       const saved = await sei.saveCharacter(next, { skipExpansion: true });
@@ -460,7 +462,7 @@ export function AddCharacterScreen(): React.ReactElement {
       <QuestionShell
         eyebrow="How they sound on voice calls"
         title="Pick their voice?"
-        hint="Auto picks one that fits their personality. Tap play to preview; you can change this later."
+        hint="Auto picks one that fits their personality. Tap play to hear a sample; you can change this later."
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}

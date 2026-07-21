@@ -1,5 +1,6 @@
-/* VoicePicker (260705) — creation-flow voice selection. Summoning Terminal:
-   sharp edges, token colors, no literal hex. */
+/* VoicePicker (260705, reworked 260720) — voice selection with grouped
+   gender sections + playable samples. Summoning Terminal: sharp corners,
+   token colors only, Oswald group headings, no uppercase transforms. */
 
 .root {
   display: flex;
@@ -8,59 +9,59 @@
   min-width: 0;
 }
 
-.autoCard {
+.optionCard {
   text-align: left;
   padding: 12px 14px;
-  border-radius: 10px;
-  border: 1.5px solid var(--border);
+  border-radius: 0;
+  border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text);
   cursor: pointer;
   font: inherit;
 }
 
-.filters {
-  display: flex;
-  gap: 6px;
-}
-
-.filterChip {
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.filterActive {
+.optionCard:hover {
   border-color: var(--accent);
-  color: var(--text);
-  background: var(--accent-soft);
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 14px;
   max-height: 320px;
   overflow-y: auto;
   padding-right: 4px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.groupTitle {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text);
 }
 
 .row {
   display: flex;
   align-items: stretch;
   gap: 8px;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: 0;
   padding: 8px 10px;
 }
 
+.row:hover {
+  border-color: var(--accent);
+}
+
 .row.selected,
-.autoCard.selected {
+.optionCard.selected {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -73,11 +74,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 0;
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--accent);
   cursor: pointer;
+}
+
+.playBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .playBtn:disabled {
@@ -97,18 +103,25 @@
   font: inherit;
 }
 
+.playBtn:focus-visible,
+.rowBody:focus-visible,
+.optionCard:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .rowTitle {
-  font-weight: 700;
+  font-weight: 600;
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
 
 .rowMeta {
-  font-size: 11px;
+  font-family: var(--mono);
+  font-size: 10.5px;
   font-weight: 400;
   color: var(--muted);
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -117,6 +130,13 @@
   color: var(--muted);
   line-height: 1.35;
   margin-top: 2px;
+}
+
+.hint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 
 .loadingDot {
@@ -135,4 +155,11 @@
 @keyframes voicePickerPulse {
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingDot {
+    animation: none;
+    opacity: 1;
+  }
 }

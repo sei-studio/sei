@@ -22,6 +22,8 @@ import { ttsSpeedFor, voicePitchRate } from '../../shared/voicePitch';
 import { clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
 import { toSpokenRegister } from './spokenRegister';
 import { resolveVoiceId, isPoolVoiceId } from './voiceAssign';
+import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previewCache';
+import { NO_VOICE_ID } from '../../shared/voiceIds';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 const ELEVENLABS_TTS_MODEL = 'eleven_flash_v2_5';
@@ -136,6 +138,12 @@ async function synthesize(
 export async function voiceTts(args: { characterId: string; text: string }): Promise<ArrayBuffer> {
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
+  // Explicit "no voice" pick (260720): a silent companion never synthesizes.
+  // The renderer's TTS catch paths swallow this sentinel quietly (text still
+  // lands in transcripts; no audio plays).
+  if (character.metadata?.voiceId === NO_VOICE_ID) {
+    throw new Error('VOICE_DISABLED: this companion has no voice');
+  }
   const voiceId = await resolveVoiceId(character);
   const language = await ttsLanguage();
   // Spoken register BEFORE the cap: chat lines mirrored into the call carry
@@ -170,6 +178,10 @@ export async function voiceTtsStream(
 ): Promise<{ streamId: string }> {
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
+  // Silent companion (see voiceTts) — reject before any network work.
+  if (character.metadata?.voiceId === NO_VOICE_ID) {
+    throw new Error('VOICE_DISABLED: this companion has no voice');
+  }
   const voiceId = await resolveVoiceId(character);
   const language = await ttsLanguage();
   // Spoken register BEFORE the cap (see voiceTts). English only.
@@ -249,26 +261,45 @@ export async function voiceTtsStream(
 }
 
 /**
- * One canned line for the creation-flow voice picker (~60 chars — cheap).
- * 260709: localized per conversation language so the preview demonstrates the
- * voice the way the user will actually hear it.
+ * The voice-picker sample line (260720). English is the exact spec line for
+ * the picker ("Hi, this is what I sound like."); the other conversation
+ * languages carry the same sentence (260709 localization: the sample should
+ * demonstrate the voice the way the user will actually hear it).
  */
 const PREVIEW_LINES: Record<ChatLanguage, string> = {
-  en: "Hey! Ready when you are, grab your gear and let's head out.",
-  zh: '嘿！我准备好了，拿上装备咱们就出发吧。',
-  ja: 'ねえ！準備できたよ。荷物を持って出かけよう。',
-  ko: '안녕! 난 준비됐어. 장비 챙겨서 같이 출발하자.',
-  fr: 'Salut ! Quand tu veux, prends tes affaires et on y va.',
-  es: '¡Hola! Cuando quieras salimos, agarra tus cosas y vamos.',
+  en: 'Hi, this is what I sound like.',
+  zh: '嗨，这就是我的声音。',
+  ja: 'やあ、これが私の声だよ。',
+  ko: '안녕, 이게 내 목소리야.',
+  fr: 'Salut, voici ma voix.',
+  es: 'Hola, así es como sueno.',
 };
 
 /**
- * Voice-picker preview (260705): speak the canned line in an arbitrary
- * curated-pool voice — no character needed (the picker runs before the voice
- * is committed). Pool membership is enforced here AND by the proxy allowlist.
+ * Voice-picker sample (260705; disk-cached 260720): speak the sample line in
+ * an arbitrary curated-pool voice — no character needed (the picker runs
+ * before the voice is committed). Pool membership is enforced here AND by the
+ * proxy allowlist. Each (voice, line) pair synthesizes at most once per
+ * machine — repeat plays are served from the userData cache for free.
  */
 export async function voicePreviewTts(voiceId: string): Promise<ArrayBuffer> {
   if (!isPoolVoiceId(voiceId)) throw new Error('VOICE_TTS_FAILED: unknown voice');
   const language = await ttsLanguage();
-  return synthesize(PREVIEW_LINES[language] ?? PREVIEW_LINES.en, voiceId, undefined, language);
+  const line = PREVIEW_LINES[language] ?? PREVIEW_LINES.en;
+  const key = previewCacheKey(voiceId, line);
+  const cached = await readCachedPreview(key);
+  if (cached) return cached;
+  const buf = await synthesize(line, voiceId, undefined, language);
+  await writeCachedPreview(key, buf);
+  return buf;
+}
+
+/**
+ * Whether voice samples can synthesize right now (260720): a dev TTS key or a
+ * signed-in session. The picker uses this to disable sample playback with a
+ * quiet hint (selection still works) instead of failing on first click.
+ */
+export async function voicePreviewAvailable(): Promise<boolean> {
+  if (process.env.SEI_TTS_DEV_KEY) return true;
+  return (await getJwtOrNull()) !== null;
 }
