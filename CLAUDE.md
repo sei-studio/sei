@@ -249,8 +249,10 @@ titles — must not contain an em dash (`—`). Rewrite with a period, comma,
 colon, or restructure the sentence. This applies everywhere user copy lives
 (renderer, main-process error strings, `src/bot` canned messages), and to
 LLM-generated user-visible output via prompt rules + normalization
-(`postProcessSay` in the bot, the dash strip in `personaExpansion.ts` /
-`uniqueGeneration.ts`, soulcaster's "No em-dashes in your prose"). Exceptions:
+(in the bot a dash is a message BREAK in `splitChatMessages`, and the unsplit
+voice-call line normalizes it to a hyphen — both in `orchestrator.js`; plus
+the dash strip in `personaExpansion.ts` / `uniqueGeneration.ts`, soulcaster's
+"No em-dashes in your prose"). Exceptions:
 code comments, developer logs, test names, and model-facing prompt text are
 fine; an en dash is allowed as an empty-value placeholder glyph (`$–`) or a
 range (`A–Z`), never as prose punctuation.

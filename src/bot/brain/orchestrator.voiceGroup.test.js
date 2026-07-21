@@ -490,3 +490,51 @@ describe('260709 continuous voice — one say() line = one TTS message', () => {
     expect(spoken.length).toBeGreaterThan(1)
   })
 })
+
+// Issue #4: postProcessSay used to rewrite em/en-dashes to '-' BEFORE
+// splitChatMessages ran, so the documented dash message-break could never fire
+// in the live path. Dashes now survive postProcessSay; the split consumes them
+// as breaks on text surfaces, and the unsplit voice line normalizes them to a
+// plain hyphen (no fancy dash may reach a user surface either way).
+describe('issue #4 — dash message-break fires in the live say() path', () => {
+  const DASHED = 'gonna build a base — walls, roof, the works'
+
+  it('typed sei-chat splits on the dash into two messages', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 's1', name: 'say', input: { text: DASHED } }] },
+    ])
+    const spoken = []
+    const orch = createOrchestrator({
+      adapter: makeAdapter(),
+      config: makeConfig(),
+      reenqueue: () => {},
+      onSeiChatReply: (msg) => spoken.push(msg),
+      _anthropicOverride: provider,
+    })
+    const typed = { ...voiceChat('what next?'), voice: false }
+    await orch.handleDispatch('sei:chat_received', typed)
+
+    expect(spoken).toEqual(['gonna build a base', 'walls, roof, the works'])
+  })
+
+  it('a live voice call ships ONE line with the dash normalized to a hyphen', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 's1', name: 'say', input: { text: DASHED } }] },
+    ])
+    const spoken = []
+    const orch = createOrchestrator({
+      adapter: makeAdapter(),
+      config: makeConfig(),
+      reenqueue: () => {},
+      onSeiChatReply: (msg) => spoken.push(msg),
+      _anthropicOverride: provider,
+    })
+    orch.setVoiceCall(true)
+
+    await orch.handleDispatch('sei:chat_received', voiceChat('what next?'))
+
+    expect(spoken).toEqual(['gonna build a base - walls, roof, the works'])
+  })
+})

@@ -86,6 +86,18 @@ describe('postProcessSay — normalize only (no content filter)', () => {
   it('keeps a parenthetical aside (no longer dropped)', () => {
     expect(postProcessSay('(took forever.)')).toBe('(took forever.)')
   })
+
+  // Issue #4: postProcessSay used to rewrite em/en-dashes to '-', which made
+  // the dash message-break in splitChatMessages dead code in the live path
+  // (_emitSayLine runs postProcessSay FIRST). Dashes now pass through so the
+  // split can consume them; this pins the live-path composition.
+  it('leaves em/en-dashes intact so the downstream dash split can fire', () => {
+    const line = postProcessSay('gonna build a base — walls, roof, the works')
+    expect(line).toBe('gonna build a base — walls, roof, the works')
+    expect(splitChatMessages(line)).toEqual(['gonna build a base', 'walls, roof, the works'])
+    expect(splitChatMessages(postProcessSay('ok listen – you dig down')))
+      .toEqual(['ok listen', 'you dig down'])
+  })
 })
 
 describe('splitChatMessages — texting-style split (no content filter)', () => {

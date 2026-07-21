@@ -85,17 +85,21 @@ export function postProcessSay(s) {
   }
   const normalized = raw
     // Deterministic punctuation backstop, independent of model compliance:
-    // normalize em/en-dashes to a plain hyphen (regular hyphens are kept) and
-    // strip asterisks, so fancy dashes and *stage directions* never reach chat.
-    // Brackets and parens are left untouched.
-    .replace(/[—–]/g, '-')
+    // strip asterisks so *stage directions* never reach chat. Brackets and
+    // parens are left untouched. Em/en-dashes are deliberately NOT touched
+    // here (issue #4): normalizing them to '-' at this stage made the
+    // documented dash message-break in splitChatMessages dead code, because
+    // this runs first in _emitSayLine. The dash backstop now lives at the two
+    // emit points instead — splitChatMessages turns a dash into a message
+    // BREAK (so it never ships), and the voice-call single-line path
+    // normalizes it to a plain hyphen.
     .replace(/\*/g, '')
     .replace(/\s+/g, ' ')
     .trim()
   if (!normalized) return ''
   // Normalize only: collapse whitespace, smart-case (keep ALL-CAPS words as
   // emphasis, lowercase the rest), hard 256 length cap. Content is otherwise
-  // preserved — only dashes/asterisks above are normalized.
+  // preserved — only the asterisk strip above removes characters.
   return smartCase(normalized).slice(0, 256)
 }
 
@@ -819,7 +823,13 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // prosody resets at each boundary and the player hears a cut between
       // sentences. One whole line = one streamed clip = continuous speech,
       // and since TTS is chunk-streamed, time-to-first-audio is unchanged.
-      const msgs = voiceCallActive ? [line] : splitChatMessages(line, config.persona?.punctuation)
+      // The unsplit voice line normalizes em/en-dashes to a plain hyphen —
+      // everywhere else splitChatMessages consumes them as message breaks
+      // (postProcessSay no longer rewrites them; see issue #4), and this is
+      // the one path a dash could otherwise survive to a user surface.
+      const msgs = voiceCallActive
+        ? [line.replace(/[—–]/g, '-')]
+        : splitChatMessages(line, config.persona?.punctuation)
       for (const msg of msgs) {
         try { logChatOut(msg) } catch {}
         try { onSeiChatReply(msg) } catch (err) { logger.warn?.(`[sei/orch] onSeiChatReply failed: ${err?.message ?? err}`) }
