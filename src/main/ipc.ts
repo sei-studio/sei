@@ -2434,13 +2434,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.proxy.configure, async (_e, argsRaw: unknown) => {
     const parsed = ProxyConfigureArgsSchema.parse(argsRaw);
     const { setAiBackendKind } = await import('./apiKeyStore');
+    // setAiBackendKind notifies onAiBackendKindChanged, which keeps analytics'
+    // cached backend kind current (every writer does; see apiKeyStore).
     await setAiBackendKind(parsed.kind);
-    // Analytics (260707): keep the cached backend kind current so every event's
-    // `backend` prop is accurate, and record the explicit switch.
-    try {
-      const { setAnalyticsBackendKind } = await import('./analytics');
-      setAnalyticsBackendKind(parsed.kind);
-    } catch { /* best-effort */ }
     trackAnalytics('backend_selected', { backend: parsed.kind });
     // WR-05 follow-up: apply the new routing to the RUNNING bot immediately so
     // the swap doesn't wait for a manual stop+re-summon. No-op when idle (the

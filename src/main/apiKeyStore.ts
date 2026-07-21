@@ -127,6 +127,35 @@ export async function setAiBackendKind(
 ): Promise<void> {
   const cfg = await loadConfig();
   await saveConfig({ ...cfg, ai_backend_kind: kind, ai_backend_kind_source: source });
+  notifyAiBackendKindChanged(kind);
+}
+
+/**
+ * Change notification for `ai_backend_kind`. Every writer in this module fires
+ * it after persisting, so an in-memory mirror of the backend kind (analytics'
+ * per-event `backend` stamp) can never go stale no matter WHICH path flips the
+ * config. Born from a live mislabel (260721): applyCloudDefaultForSignIn wrote
+ * 'cloud-proxy' on first sign-in but only ipc proxy:configure updated the
+ * analytics cache, so a new cloud user's whole first session was stamped
+ * backend:'local'.
+ */
+type AiBackendKindListener = (kind: AiBackendKind) => void;
+const aiBackendKindListeners: AiBackendKindListener[] = [];
+export function onAiBackendKindChanged(listener: AiBackendKindListener): void {
+  aiBackendKindListeners.push(listener);
+}
+/** Test-only: drop all registered listeners (they are module-global). */
+export function _resetAiBackendKindListenersForTests(): void {
+  aiBackendKindListeners.length = 0;
+}
+function notifyAiBackendKindChanged(kind: AiBackendKind): void {
+  for (const listener of aiBackendKindListeners) {
+    try {
+      listener(kind);
+    } catch {
+      /* a listener failure must never break a config write */
+    }
+  }
 }
 
 /**
@@ -149,6 +178,7 @@ export async function applyCloudDefaultForSignIn(): Promise<void> {
   if ((cfg.ai_backend_kind ?? 'local') === 'local' && (await hasApiKey())) return; // legacy BYOK
   if (cfg.ai_backend_kind === 'cloud-proxy') return; // already there — no write
   await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' });
+  notifyAiBackendKindChanged('cloud-proxy');
 }
 
 /**
@@ -182,4 +212,5 @@ export async function ensureCloudDefaultForSignedIn(): Promise<void> {
   if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — never override it
   if (await hasApiKey()) return; // a real BYOK choice — never override it
   await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' });
+  notifyAiBackendKindChanged('cloud-proxy');
 }

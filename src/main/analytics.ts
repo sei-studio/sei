@@ -23,7 +23,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { PostHog } from 'posthog-node';
 import { loadConfig, updateConfig } from './configStore';
-import { getAiBackendKind } from './apiKeyStore';
+import { getAiBackendKind, onAiBackendKindChanged } from './apiKeyStore';
 
 const logger = {
   info: (m: string) => console.log(`[sei] ${m}`),
@@ -83,6 +83,12 @@ export async function initAnalytics(): Promise<void> {
   } catch (err) {
     logger.warn(`analytics: config init failed: ${(err as Error).message}`);
   }
+  // Subscribe BEFORE the initial read so a config write that lands between
+  // the two can't be missed; apiKeyStore fires this for every ai_backend_kind
+  // writer (explicit switch, sign-in cloud default, boot self-heal).
+  onAiBackendKindChanged((kind) => {
+    backendKind = kind;
+  });
   try {
     backendKind = await getAiBackendKind();
   } catch {
@@ -249,11 +255,6 @@ export function identifyUser(userId: string): void {
 /** Detach from the signed-in account (sign-out) — revert to anonymous id. */
 export function resetUser(): void {
   signedInUserId = null;
-}
-
-/** Keep the cached backend kind in sync when the user switches local↔cloud. */
-export function setAnalyticsBackendKind(kind: 'local' | 'cloud-proxy'): void {
-  backendKind = kind;
 }
 
 /** Read the persisted opt-out flag (source of truth for the Settings toggle). */

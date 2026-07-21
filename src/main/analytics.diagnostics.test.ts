@@ -29,6 +29,7 @@ vi.mock('./configStore', () => ({
 }));
 vi.mock('./apiKeyStore', () => ({
   getAiBackendKind: vi.fn(async () => 'local'),
+  onAiBackendKindChanged: vi.fn(),
 }));
 
 import {
