@@ -1,0 +1,4 @@
+{
+  "comment": "The stockfish WASM loader is a CommonJS script; without this marker it would inherit the package root's type:module and fail to load via require().",
+  "type": "commonjs"
+}

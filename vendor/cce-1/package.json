@@ -1,0 +1,20 @@
+{
+  "name": "cce-1",
+  "version": "0.1.0",
+  "description": "Character Chess Engine: skill-conditioned move generation with LLM personality selection, Elo 400 to 2000",
+  "type": "module",
+  "main": "src/index.js",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sei-studio/cce-1"
+  },
+  "scripts": {
+    "test": "node --test --test-force-exit \"tests/**/*.test.js\"",
+    "calibrate": "node scripts/calibrate.mjs"
+  },
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "onnxruntime-node": "^1.23.0"
+  }
+}

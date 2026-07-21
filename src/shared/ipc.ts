@@ -26,6 +26,24 @@ import type {
 } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
 export type { ErrorClass } from './errorClasses';
+import type { ChessGameState, ChessDownloadProgress } from './chessIpc';
+export type { ChessGameState, ChessDownloadProgress } from './chessIpc';
+import type { C4GameState } from './connect4Ipc';
+export type { C4GameState } from './connect4Ipc';
+import type { TQGameState, TQMode } from './twentyqIpc';
+export type { TQGameState, TQMode } from './twentyqIpc';
+import type {
+  WatchSessionState,
+  WatchSource,
+  WatchPreviewPush,
+  WatchPermissionStatus,
+} from './watchIpc';
+export type {
+  WatchSessionState,
+  WatchSource,
+  WatchPreviewPush,
+  WatchPermissionStatus,
+} from './watchIpc';
 
 /* -------------------------------------------------------------------------- */
 /*  Lifecycle / status / log domain types                                     */
@@ -1082,6 +1100,76 @@ export interface RendererApi {
    */
   onChatMessage(cb: (push: ChatMessagePush) => void): Unsubscribe;
 
+  // --- Chess minigame (260710) --- see src/shared/chessIpc.ts for the state
+  // model + reveal/interrupt protocol. All methods are character-scoped (one
+  // game per character at a time).
+  /** Start (or resume) a game. Rejects with CHESS_ERR_MC_ACTIVE while summoned. */
+  chessStart(characterId: string, opts?: { playerColor?: 'w' | 'b' | 'random' }): Promise<ChessGameState>;
+  chessGetState(characterId: string): Promise<ChessGameState | null>;
+  /** Player move in UCI. ok:false = rejected (not your turn / illegal). */
+  chessMove(characterId: string, uci: string): Promise<{ ok: boolean; error?: string; state: ChessGameState }>;
+  chessResign(characterId: string): Promise<ChessGameState>;
+  chessOfferDraw(characterId: string): Promise<ChessGameState>;
+  chessRespondDraw(characterId: string, accept: boolean): Promise<ChessGameState>;
+  chessRematch(characterId: string): Promise<ChessGameState>;
+  /** Close the game (panel dismissed). Unfinished games end 'abandoned'. */
+  chessEnd(characterId: string): Promise<void>;
+  /** The pending AI move finished presenting (text printed / TTS drained). */
+  chessAckReveal(characterId: string, uci: string): Promise<ChessGameState>;
+  /** Full-state pushes on every game change (AI thinking, moves, offers, end). */
+  onChessState(cb: (state: ChessGameState) => void): Unsubscribe;
+  /** First-run engine model download progress (status 'preparing'). */
+  onChessDownload(cb: (p: ChessDownloadProgress) => void): Unsubscribe;
+
+  // --- Connect 4 minigame (260720) --- see src/shared/connect4Ipc.ts for the
+  // state model + reveal protocol (a clone of the chess one, minus draw offers
+  // and the model download). All methods are character-scoped.
+  /** Start (or resume) a game. Rejects with C4_ERR_MC_ACTIVE while summoned. */
+  connect4Start(characterId: string, opts?: { playerColor?: 'r' | 'y' | 'random' }): Promise<C4GameState>;
+  connect4GetState(characterId: string): Promise<C4GameState | null>;
+  /** Player drop into a column (0-6). ok:false = rejected (not your turn / full). */
+  connect4Move(characterId: string, col: number): Promise<{ ok: boolean; error?: string; state: C4GameState }>;
+  connect4Resign(characterId: string): Promise<C4GameState>;
+  connect4Rematch(characterId: string): Promise<C4GameState>;
+  /** Close the game (panel dismissed). Unfinished games end 'abandoned'. */
+  connect4End(characterId: string): Promise<void>;
+  /** The pending AI move finished presenting (text printed / TTS drained). */
+  connect4AckReveal(characterId: string, col: number): Promise<C4GameState>;
+  /** Full-state pushes on every game change (AI thinking, moves, end). */
+  onConnect4State(cb: (state: C4GameState) => void): Unsubscribe;
+
+  // --- 20 Questions minigame (260720) --- see src/shared/twentyqIpc.ts for
+  // the state model (pure conversation; no board, no reveal protocol). All
+  // methods are character-scoped.
+  /** Start (or resume) a session. Rejects with TQ_ERR_MC_ACTIVE while summoned. */
+  twentyqStart(characterId: string, opts?: { mode?: TQMode }): Promise<TQGameState>;
+  twentyqGetState(characterId: string): Promise<TQGameState | null>;
+  /** Start the next round after one ends (same mode; the score carries over). */
+  twentyqNewRound(characterId: string): Promise<TQGameState>;
+  /** Close the session (panel dismissed). A live round ends 'abandoned'. */
+  twentyqEnd(characterId: string): Promise<void>;
+  /** Full-state pushes on every session change (slots, guesses, round ends). */
+  onTwentyQState(cb: (state: TQGameState) => void): Unsubscribe;
+
+  // --- Screen share / watch activity (260720) --- see src/shared/watchIpc.ts
+  // for the session model + consent flow. All session methods are
+  // character-scoped (one session per character at a time).
+  /** Enumerate capturable windows/screens with live thumbnail previews. */
+  watchListSources(): Promise<WatchSource[]>;
+  /** Start watching the picked source. Rejects with WATCH_ERR_* sentinels. */
+  watchStart(characterId: string, sourceId: string): Promise<WatchSessionState>;
+  /** End the session (posts the transcript row + memory line when long enough). */
+  watchStop(characterId: string): Promise<void>;
+  watchGetState(characterId: string): Promise<WatchSessionState | null>;
+  /** macOS Screen Recording permission state ('granted' off-macOS). */
+  watchPermissionStatus(): Promise<WatchPermissionStatus>;
+  /** Deep-link to the macOS Screen Recording privacy pane. */
+  watchOpenPermissionSettings(): Promise<void>;
+  /** Full-state pushes on every session change (start, blank, end). */
+  onWatchState(cb: (state: WatchSessionState) => void): Unsubscribe;
+  /** Live source snapshot for the aside preview (~every 3s while active). */
+  onWatchPreview(cb: (p: WatchPreviewPush) => void): Unsubscribe;
+
   // --- Voice calls (260705) ---
   /**
    * Synthesize a companion's spoken line in its assigned ElevenLabs voice.
@@ -1769,6 +1857,64 @@ export const IpcChannel = {
     message: 'chat:message',
     /** Pull: last chat line per character for roster previews (ChatPreview). */
     previews: 'chat:previews',
+  },
+  // Chess minigame (260710) — request/response pairs are character-scoped;
+  // `state` and `download` are pushes (main → renderer). Protocol details in
+  // src/shared/chessIpc.ts.
+  chess: {
+    start: 'chess:start',
+    getState: 'chess:get-state',
+    move: 'chess:move',
+    resign: 'chess:resign',
+    offerDraw: 'chess:offer-draw',
+    respondDraw: 'chess:respond-draw',
+    rematch: 'chess:rematch',
+    end: 'chess:end',
+    ackReveal: 'chess:ack-reveal',
+    /** Push: full ChessGameState on every change. */
+    state: 'chess:state',
+    /** Push: ChessDownloadProgress during the one-time model download. */
+    download: 'chess:download',
+  },
+  // Connect 4 minigame (260720) — request/response pairs are character-scoped;
+  // `state` is a push (main → renderer). Protocol details in
+  // src/shared/connect4Ipc.ts.
+  connect4: {
+    start: 'connect4:start',
+    getState: 'connect4:get-state',
+    move: 'connect4:move',
+    resign: 'connect4:resign',
+    rematch: 'connect4:rematch',
+    end: 'connect4:end',
+    ackReveal: 'connect4:ack-reveal',
+    /** Push: full C4GameState on every change. */
+    state: 'connect4:state',
+  },
+  // 20 Questions minigame (260720) — request/response pairs are
+  // character-scoped; `state` is a push (main → renderer). Protocol details in
+  // src/shared/twentyqIpc.ts.
+  twentyq: {
+    start: 'twentyq:start',
+    getState: 'twentyq:get-state',
+    newRound: 'twentyq:new-round',
+    end: 'twentyq:end',
+    /** Push: full TQGameState on every change. */
+    state: 'twentyq:state',
+  },
+  // Screen share / watch activity (260720) — request/response pairs are
+  // character-scoped; `state` and `preview` are pushes (main → renderer).
+  // Protocol details in src/shared/watchIpc.ts.
+  watch: {
+    listSources: 'watch:list-sources',
+    start: 'watch:start',
+    stop: 'watch:stop',
+    getState: 'watch:get-state',
+    permissionStatus: 'watch:permission-status',
+    openPermissionSettings: 'watch:open-permission-settings',
+    /** Push: full WatchSessionState on every change. */
+    state: 'watch:state',
+    /** Push: WatchPreviewPush snapshot of the shared source (~every 3s). */
+    preview: 'watch:preview',
   },
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */

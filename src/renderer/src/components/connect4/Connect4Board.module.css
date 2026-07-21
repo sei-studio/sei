@@ -1,0 +1,112 @@
+/* Connect4Board — 7x6 drop grid (Summoning Terminal: sharp edges, periwinkle
+ * accent, token colors only). The falling-disc animation distance is set per
+ * cell via --fall-cells (number of rows the disc travels, board rows + 1
+ * above the frame). Keep the fall duration in sync with REVEAL_ANIM_MS in
+ * useConnect4Store.ts. */
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0;
+  width: 100%;
+  aspect-ratio: 7 / 6;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  padding: var(--space-xs);
+  box-sizing: border-box;
+}
+
+.col {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  cursor: default;
+}
+
+.colPlayable {
+  cursor: pointer;
+}
+
+.colPlayable:hover,
+.colPlayable:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.cell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* The empty socket ring, drawn on every cell. */
+.cell::before {
+  content: '';
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.disc {
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+/* Player-red / companion-yellow disc fills. Literal disc colors are game
+ * pieces (like the chess piece glyphs), not UI copy; everything structural
+ * uses tokens. */
+.discR {
+  background: radial-gradient(circle at 34% 30%, #ff8a75, #d94f3a 70%);
+  border: 1px solid var(--red-strong);
+}
+
+.discY {
+  background: radial-gradient(circle at 34% 30%, #ffe08a, #d99a2a 70%);
+  border: 1px solid #a8751c;
+}
+
+.ghost {
+  opacity: 0.35;
+}
+
+.discLast {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.discWin {
+  box-shadow: 0 0 0 2px var(--accent-strong), 0 0 12px var(--accent);
+}
+
+/* Falling entry: from --fall-cells cells above down to rest. 480ms matches
+ * REVEAL_ANIM_MS in useConnect4Store.ts. */
+.discFall {
+  animation: c4fall 480ms cubic-bezier(0.55, 0, 0.85, 0.6);
+}
+
+@keyframes c4fall {
+  from {
+    /* The disc is 76% of its cell (inset 12%), so one CELL of travel is
+     * about 132% of the disc's own height. */
+    transform: translateY(calc(var(--fall-cells, 6) * -132%));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .discFall {
+    animation: none;
+  }
+}

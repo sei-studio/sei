@@ -343,3 +343,17 @@
   font-size: 12px;
   color: var(--muted);
 }
+
+/* ── Games: chess profile (260710) ───────────────────────────────────── */
+.chessModeRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.chessEloSlider {
+  width: 100%;
+  max-width: 360px;
+  accent-color: var(--accent);
+  margin: 6px 0 4px;
+}

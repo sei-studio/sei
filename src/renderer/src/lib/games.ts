@@ -43,6 +43,74 @@ export const GAMES: GameDef[] = [
     blurb: (name) => `Summon ${name} into your LAN world to play and build together.`,
   },
   {
+    id: 'chess',
+    name: 'Chess',
+    available: true,
+    image: './img/game-chess.svg',
+    studio: 'Sei Studio',
+    description: (name) =>
+      `A classic game of chess against ${name}, right inside your chat. ` +
+      `${name} thinks about every move, reacts to yours, and keeps the conversation ` +
+      `going while you play. Untimed, so take as long as you like.`,
+    setup: [
+      'Pick who plays white, or leave it to chance.',
+      'Make your moves right on the board. No timer, no pressure.',
+      'Your companion talks while you play. Chat back anytime.',
+    ],
+    blurb: (name) => `Challenge ${name} to a friendly game of chess.`,
+  },
+  {
+    id: 'connect4',
+    name: 'Connect 4',
+    available: true,
+    image: './img/game-connect4.svg',
+    studio: 'Sei Studio',
+    description: (name) =>
+      `Drop discs and race ${name} to four in a row, right inside your chat. ` +
+      `${name} watches every column, talks while you play, and does not always ` +
+      `see the trap coming. Untimed, so take as long as you like.`,
+    setup: [
+      'Pick who drops first, or leave it to chance.',
+      'Click a column to drop your disc. No timer, no pressure.',
+      'Your companion talks while you play. Chat back anytime.',
+    ],
+    blurb: (name) => `Race ${name} to four in a row.`,
+  },
+  {
+    id: 'twentyq',
+    name: '20 Questions',
+    available: true,
+    image: './img/game-twentyq.svg',
+    studio: 'Sei Studio',
+    description: (name) =>
+      `The classic guessing game, played right in your chat. Think of something and ` +
+      `${name} gets 20 yes/no questions to work it out, or flip it and dig the secret ` +
+      `out of ${name} instead. Rounds are quick and the score carries across them.`,
+    setup: [
+      'Pick who thinks of something, you or your companion.',
+      'Ask and answer in chat. The panel tracks questions, guesses, and score.',
+      'Play as many rounds as you like.',
+    ],
+    blurb: (name) => `${name} gets 20 questions to read your mind.`,
+  },
+  {
+    id: 'watch',
+    name: 'Screen share',
+    available: true,
+    image: './img/game-watch.svg',
+    studio: 'Sei Studio',
+    description: (name) =>
+      `${name} watches your screen while you play something else and reacts in the chat, ` +
+      `like a friend on the couch. You pick exactly which window ${name} can see, ` +
+      `and you can stop sharing at any time with one click.`,
+    setup: [
+      'Open the game or app you want to share.',
+      'Pick the window from the list. Only that window is shared.',
+      'Click Start watching. A Watching pill with a Stop button stays visible the whole time.',
+    ],
+    blurb: (name) => `${name} watches your screen and reacts while you play.`,
+  },
+  {
     id: 'more',
     name: 'More coming soon!',
     available: false,

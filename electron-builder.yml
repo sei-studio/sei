@@ -63,6 +63,11 @@ files:
   # source maps + node_modules trim
   - "!**/*.map"
   - "!**/node_modules/*/{test,tests,__tests__,*.md,*.markdown,LICENSE*,license*}"
+  # 260710 chess: onnxruntime-node ships prebuilds for EVERY platform (~208MB
+  # total). Each per-OS section below excludes the two foreign OS trees
+  # (static globs — no ${os} macro in `files`, so per-OS overrides carry it).
+  # The maia ONNX model itself is NOT bundled (46MB, downloaded on first chess
+  # launch — see src/main/chess/modelStore.ts).
 
 # Stable filenames so https://github.com/sei-studio/sei/releases/latest/download/<name>
 # resolves correctly from sei.gg regardless of version bump.
@@ -134,6 +139,10 @@ mac:
   # beacon — the world is detected by `npm run dev` but shows "not connected" in
   # the packaged build. Works together with the multicast entitlement in
   # build/entitlements.mac.plist.
+  # 260710 chess: drop the linux + windows onnxruntime prebuilds from mac builds
+  # (~76MB saved; both mac arches stay because arm64+x64 build in one job).
+  files:
+    - "!node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
     # Voice calls (260707): the TCC prompt string macOS shows the first time Sei
@@ -159,6 +168,11 @@ win:
   target:
     - target: nsis
       arch: [x64]
+  # 260710 chess: drop mac + linux onnxruntime prebuilds (and win arm64) from
+  # the x64-only windows build (~170MB saved).
+  files:
+    - "!node_modules/onnxruntime-node/bin/napi-v3/{darwin,linux}/**"
+    - "!node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
   # NO signtoolOptions / NO azureSignOptions per RESEARCH §Resolved Q2 (ship unsigned v1).
   # SmartScreen "unknown publisher" warning is accepted UX for v1; documented in plan 11 release notes.
 

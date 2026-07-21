@@ -1,0 +1,94 @@
+/* WatchIndicator — the persistent "Watching" pill in the chat screen while a
+ * screen-share session is active. Token colors only, sharp edges. */
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  align-self: center;
+  margin: var(--space-xs) auto 0;
+  border: 1px solid var(--accent);
+  background: var(--surface-2);
+  max-width: min(92%, 460px);
+  flex-shrink: 0;
+}
+
+.body {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 4px var(--space-sm);
+  cursor: pointer;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: watchIndPulse 2s ease-in-out infinite;
+}
+
+@keyframes watchIndPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+}
+
+.label {
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timer {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.stopBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--red);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px var(--space-sm);
+  cursor: pointer;
+  transition: background 120ms var(--ease);
+}
+
+.stopBtn:hover {
+  background: var(--bg3);
+}

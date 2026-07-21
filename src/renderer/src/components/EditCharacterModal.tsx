@@ -40,7 +40,7 @@ import { PROACTIVENESS_LEVELS, getProactiveness } from '../lib/proactiveness';
 import type { Character } from '@shared/characterSchema';
 import styles from './EditCharacterModal.module.css';
 
-export type EditSection = 'basic' | 'appearance' | 'persona';
+export type EditSection = 'basic' | 'appearance' | 'persona' | 'games';
 type PersonaMode = 'standard' | 'advanced';
 
 export interface EditCharacterModalProps {
@@ -79,6 +79,24 @@ export function EditCharacterModal({
   // renders unstyled BELOW the cursor and clips its text). Falls back to the
   // selected level when nothing is hovered.
   const [proactivenessHover, setProactivenessHover] = useState<number | null>(null);
+
+  // ── Games: chess profile (260710). Auto-derived from the persona on the
+  //    first game unless the user customizes it here (source 'user'). ─────
+  const storedChess = (character.metadata?.chess ?? null) as {
+    elo?: number;
+    styleNote?: string;
+    source?: string;
+  } | null;
+  const [chessCustom, setChessCustom] = useState<boolean>(!!storedChess);
+  const [chessElo, setChessElo] = useState<number>(
+    typeof storedChess?.elo === 'number' ? storedChess.elo : 900,
+  );
+  const [chessStyle, setChessStyle] = useState<string>(storedChess?.styleNote ?? '');
+  const [savedChess, setSavedChess] = useState<string>(
+    JSON.stringify({ c: !!storedChess, e: storedChess?.elo ?? 900, s: storedChess?.styleNote ?? '' }),
+  );
+  const [savingChess, setSavingChess] = useState<boolean>(false);
+  const [chessSaved, setChessSaved] = useState<boolean>(false);
 
   // ── Baselines (last persisted values) — drive the dirty flags. Updated
   //    after each successful persist; NOT reset by prop changes. ──────────
@@ -171,6 +189,33 @@ export function EditCharacterModal({
       return false;
     } finally {
       setSavingBasic(false);
+    }
+  };
+
+  const chessDirty =
+    JSON.stringify({ c: chessCustom, e: chessElo, s: chessStyle }) !== savedChess;
+
+  /** Games-section save: write (or clear) metadata.chess. */
+  const persistChess = async (): Promise<void> => {
+    setSavingChess(true);
+    setError(null);
+    try {
+      const metadata = { ...(character.metadata ?? {}) } as Record<string, unknown>;
+      if (chessCustom) {
+        metadata.chess = { elo: chessElo, styleNote: chessStyle.trim(), source: 'user' };
+      } else {
+        delete metadata.chess; // back to auto: re-derived on the next game
+      }
+      const persisted = await sei.saveCharacter({ ...character, metadata }, { skipExpansion: true });
+      await refreshCharacter(character.id);
+      setSavedChess(JSON.stringify({ c: chessCustom, e: chessElo, s: chessStyle }));
+      setChessSaved(true);
+      window.setTimeout(() => setChessSaved(false), 1500);
+      onSaved?.(persisted);
+    } catch (err) {
+      setError((err as Error)?.message ?? 'Failed to save.');
+    } finally {
+      setSavingChess(false);
     }
   };
 
@@ -322,6 +367,7 @@ export function EditCharacterModal({
     { key: 'basic', label: 'Basic' },
     { key: 'appearance', label: 'Appearance' },
     { key: 'persona', label: 'Persona' },
+    { key: 'games', label: 'Games' },
     ...(!isDefault ? [{ key: 'danger' as const, label: 'Danger' }] : []),
   ];
 
@@ -507,6 +553,71 @@ export function EditCharacterModal({
                 </>
               ) : null}
 
+              {section === 'games' ? (
+                <>
+                  <div className={styles.field}>
+                    <label className={styles.label}>Chess</label>
+                    <p className={styles.paneHint}>
+                      How {character.name} plays in the chess minigame. Left on auto, strength and
+                      style are decided from the persona the first time you play.
+                    </p>
+                    <div className={styles.chessModeRow} role="radiogroup" aria-label="Chess profile mode">
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={!chessCustom}
+                        className={!chessCustom ? `${styles.modeTab} ${styles.modeTabActive}` : styles.modeTab}
+                        onClick={() => setChessCustom(false)}
+                      >
+                        Auto
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={chessCustom}
+                        className={chessCustom ? `${styles.modeTab} ${styles.modeTabActive}` : styles.modeTab}
+                        onClick={() => setChessCustom(true)}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                  </div>
+                  {chessCustom ? (
+                    <>
+                      <div className={styles.field}>
+                        <label className={styles.label} htmlFor="chess-elo">
+                          Strength: Elo {chessElo}
+                        </label>
+                        <input
+                          id="chess-elo"
+                          className={styles.chessEloSlider}
+                          type="range"
+                          min={400}
+                          max={2000}
+                          step={50}
+                          value={chessElo}
+                          onChange={(e) => setChessElo(Number(e.currentTarget.value))}
+                        />
+                        <span className={styles.paneHint}>
+                          400 barely knows the rules; 900 casual; 1400 club player; 2000 fierce.
+                        </span>
+                      </div>
+                      <div className={styles.field}>
+                        <label className={styles.label}>Play style</label>
+                        <TextField
+                          value={chessStyle}
+                          onChange={setChessStyle}
+                          multiline
+                          rows={3}
+                          placeholder="Aggressive, loves flashy sacrifices, sulks when losing..."
+                          aria-label="Chess play style"
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+
               {section === 'danger' && !isDefault ? (
                 <div className={styles.dangerPane}>
                   <p className={styles.dangerHint}>
@@ -566,6 +677,23 @@ export function EditCharacterModal({
                 <Button kind="primary" size="md" onClick={() => void requestClose()} disabled={!canClose}>
                   Done
                 </Button>
+              ) : null}
+
+              {section === 'games' ? (
+                <>
+                  {chessSaved ? <span className={styles.savedTag}>Saved</span> : null}
+                  <Button kind="quiet" size="md" onClick={() => void requestClose()} disabled={!canClose}>
+                    Close
+                  </Button>
+                  <Button
+                    kind="primary"
+                    size="md"
+                    onClick={() => void persistChess()}
+                    disabled={!chessDirty || busy || savingChess}
+                  >
+                    {savingChess ? 'Saving…' : 'Save'}
+                  </Button>
+                </>
               ) : null}
 
               {section === 'persona' ? (

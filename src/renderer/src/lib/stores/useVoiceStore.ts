@@ -1234,6 +1234,17 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   };
 });
 
+/**
+ * Chess reveal gating (260710): whether the call's speech pipeline is fully
+ * drained — no TTS fetch in flight AND nothing playing. Same predicate the
+ * solo hang-up drain uses (maybeFinishRemoteEnd). Module-level because
+ * pendingTts / queue are non-reactive session internals; poll it (the chess
+ * useAiMoveReveal hook does) rather than subscribing.
+ */
+export function voiceTtsDrained(): boolean {
+  return pendingTts === 0 && !(queue?.speaking() ?? false);
+}
+
 // Dev-only (Vite HMR): let the STALE instance release the world before the
 // fresh module re-registers everything (see the single-call notes).
 if (import.meta.hot) {

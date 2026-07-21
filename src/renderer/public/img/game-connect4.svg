@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 320" preserveAspectRatio="xMidYMid slice">
+  <!-- Connect 4 tile art: periwinkle-on-dark, Summoning Terminal look
+       (matches game-chess.svg). -->
+  <defs>
+    <linearGradient id="c4bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101a2e"/>
+      <stop offset="1" stop-color="#04070f"/>
+    </linearGradient>
+    <radialGradient id="c4disc" cx="0.34" cy="0.3" r="0.9">
+      <stop offset="0" stop-color="#b8d3ff"/>
+      <stop offset="1" stop-color="#7fb0ff"/>
+    </radialGradient>
+  </defs>
+  <rect width="560" height="320" fill="url(#c4bg)"/>
+
+  <!-- Board frame, drawn in soft perspective like the chess slab -->
+  <g transform="translate(96 60) skewX(-6)">
+    <rect x="0" y="0" width="392" height="232" fill="#0a1424" stroke="#7fb0ff" stroke-opacity="0.35" stroke-width="2"/>
+    <!-- 7x4 visible sockets -->
+    <g>
+      <g fill="none" stroke="#7fb0ff" stroke-opacity="0.22" stroke-width="2">
+        <circle cx="28" cy="30" r="18"/><circle cx="84" cy="30" r="18"/><circle cx="140" cy="30" r="18"/><circle cx="196" cy="30" r="18"/><circle cx="252" cy="30" r="18"/><circle cx="308" cy="30" r="18"/><circle cx="364" cy="30" r="18"/>
+        <circle cx="28" cy="88" r="18"/><circle cx="84" cy="88" r="18"/><circle cx="196" cy="88" r="18"/><circle cx="252" cy="88" r="18"/><circle cx="364" cy="88" r="18"/>
+        <circle cx="28" cy="146" r="18"/><circle cx="140" cy="146" r="18"/><circle cx="252" cy="146" r="18"/><circle cx="308" cy="146" r="18"/>
+        <circle cx="84" cy="204" r="18"/><circle cx="196" cy="204" r="18"/><circle cx="364" cy="204" r="18"/>
+      </g>
+      <!-- Filled discs: a bright diagonal four sweeping up-right -->
+      <g fill="url(#c4disc)">
+        <circle cx="140" cy="204" r="18"/>
+        <circle cx="196" cy="146" r="18"/>
+        <circle cx="252" cy="88" r="18"/>
+        <circle cx="308" cy="88" r="18" fill-opacity="0.35"/>
+      </g>
+      <!-- Dim opposing discs -->
+      <g fill="#7fb0ff" fill-opacity="0.14">
+        <circle cx="28" cy="204" r="18"/>
+        <circle cx="308" cy="204" r="18"/>
+        <circle cx="252" cy="204" r="18"/>
+        <circle cx="84" cy="146" r="18"/>
+        <circle cx="364" cy="146" r="18"/>
+        <circle cx="140" cy="88" r="18"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- A disc mid-drop above the board -->
+  <circle cx="404" cy="28" r="18" transform="skewX(-2)" fill="url(#c4disc)"/>
+
+  <!-- Soft glow accent -->
+  <circle cx="430" cy="80" r="90" fill="#7fb0ff" opacity="0.06"/>
+</svg>

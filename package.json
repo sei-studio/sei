@@ -26,6 +26,8 @@
     "@anthropic-ai/sdk": "^0.91.1",
     "@huggingface/transformers": "^3.8.1",
     "@supabase/supabase-js": "^2.106.0",
+    "cce-1": "file:./vendor/cce-1",
+    "chess.js": "^1.4.0",
     "electron-updater": "^6.8.3",
     "img2skin": "file:./vendor/skin-gen",
     "mineflayer": "^4.23.0",

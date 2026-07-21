@@ -93,6 +93,79 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.chat.message, handler);
   },
 
+  // Chess minigame (260710)
+  chessStart: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.chess.start, { characterId, playerColor: opts?.playerColor }),
+  chessGetState: (characterId) => ipcRenderer.invoke(IpcChannel.chess.getState, characterId),
+  chessMove: (characterId, uci) => ipcRenderer.invoke(IpcChannel.chess.move, { characterId, uci }),
+  chessResign: (characterId) => ipcRenderer.invoke(IpcChannel.chess.resign, characterId),
+  chessOfferDraw: (characterId) => ipcRenderer.invoke(IpcChannel.chess.offerDraw, characterId),
+  chessRespondDraw: (characterId, accept) =>
+    ipcRenderer.invoke(IpcChannel.chess.respondDraw, { characterId, accept }),
+  chessRematch: (characterId) => ipcRenderer.invoke(IpcChannel.chess.rematch, characterId),
+  chessEnd: (characterId) => ipcRenderer.invoke(IpcChannel.chess.end, characterId),
+  chessAckReveal: (characterId, uci) =>
+    ipcRenderer.invoke(IpcChannel.chess.ackReveal, { characterId, uci }),
+  onChessState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
+    ipcRenderer.on(IpcChannel.chess.state, handler);
+    return () => ipcRenderer.off(IpcChannel.chess.state, handler);
+  },
+  onChessDownload(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
+    ipcRenderer.on(IpcChannel.chess.download, handler);
+    return () => ipcRenderer.off(IpcChannel.chess.download, handler);
+  },
+
+  // Connect 4 minigame (260720)
+  connect4Start: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.connect4.start, { characterId, playerColor: opts?.playerColor }),
+  connect4GetState: (characterId) => ipcRenderer.invoke(IpcChannel.connect4.getState, characterId),
+  connect4Move: (characterId, col) =>
+    ipcRenderer.invoke(IpcChannel.connect4.move, { characterId, col }),
+  connect4Resign: (characterId) => ipcRenderer.invoke(IpcChannel.connect4.resign, characterId),
+  connect4Rematch: (characterId) => ipcRenderer.invoke(IpcChannel.connect4.rematch, characterId),
+  connect4End: (characterId) => ipcRenderer.invoke(IpcChannel.connect4.end, characterId),
+  connect4AckReveal: (characterId, col) =>
+    ipcRenderer.invoke(IpcChannel.connect4.ackReveal, { characterId, col }),
+  onConnect4State(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
+    ipcRenderer.on(IpcChannel.connect4.state, handler);
+    return () => ipcRenderer.off(IpcChannel.connect4.state, handler);
+  },
+
+  // 20 Questions minigame (260720)
+  twentyqStart: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.twentyq.start, { characterId, mode: opts?.mode }),
+  twentyqGetState: (characterId) => ipcRenderer.invoke(IpcChannel.twentyq.getState, characterId),
+  twentyqNewRound: (characterId) => ipcRenderer.invoke(IpcChannel.twentyq.newRound, characterId),
+  twentyqEnd: (characterId) => ipcRenderer.invoke(IpcChannel.twentyq.end, characterId),
+  onTwentyQState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
+    ipcRenderer.on(IpcChannel.twentyq.state, handler);
+    return () => ipcRenderer.off(IpcChannel.twentyq.state, handler);
+  },
+
+  // Screen share / watch activity (260720)
+  watchListSources: () => ipcRenderer.invoke(IpcChannel.watch.listSources),
+  watchStart: (characterId, sourceId) =>
+    ipcRenderer.invoke(IpcChannel.watch.start, { characterId, sourceId }),
+  watchStop: (characterId) => ipcRenderer.invoke(IpcChannel.watch.stop, characterId),
+  watchGetState: (characterId) => ipcRenderer.invoke(IpcChannel.watch.getState, characterId),
+  watchPermissionStatus: () => ipcRenderer.invoke(IpcChannel.watch.permissionStatus),
+  watchOpenPermissionSettings: () =>
+    ipcRenderer.invoke(IpcChannel.watch.openPermissionSettings),
+  onWatchState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
+    ipcRenderer.on(IpcChannel.watch.state, handler);
+    return () => ipcRenderer.off(IpcChannel.watch.state, handler);
+  },
+  onWatchPreview(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
+    ipcRenderer.on(IpcChannel.watch.preview, handler);
+    return () => ipcRenderer.off(IpcChannel.watch.preview, handler);
+  },
+
   // Voice calls (260705)
   voiceTts: (args) => ipcRenderer.invoke(IpcChannel.voice.tts, args),
   voiceTtsStream: (args) => ipcRenderer.invoke(IpcChannel.voice.ttsStream, args),

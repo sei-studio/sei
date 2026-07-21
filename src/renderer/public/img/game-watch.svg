@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 320" preserveAspectRatio="xMidYMid slice">
+  <!-- Screen share tile art: periwinkle-on-dark, Summoning Terminal look
+       (matches game-chess.svg / game-connect4.svg). A shared window being
+       watched, with a couch-partner eye motif. -->
+  <defs>
+    <linearGradient id="wbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101a2e"/>
+      <stop offset="1" stop-color="#04070f"/>
+    </linearGradient>
+    <linearGradient id="wglass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16233c"/>
+      <stop offset="1" stop-color="#0a1424"/>
+    </linearGradient>
+    <radialGradient id="wiris" cx="0.4" cy="0.35" r="0.9">
+      <stop offset="0" stop-color="#b8d3ff"/>
+      <stop offset="1" stop-color="#7fb0ff"/>
+    </radialGradient>
+  </defs>
+  <rect width="560" height="320" fill="url(#wbg)"/>
+
+  <!-- The shared window, drawn in soft perspective like the board slabs -->
+  <g transform="translate(84 58) skewX(-6)">
+    <rect x="0" y="0" width="360" height="220" fill="url(#wglass)" stroke="#7fb0ff" stroke-opacity="0.35" stroke-width="2"/>
+    <!-- Title bar with traffic dots -->
+    <rect x="0" y="0" width="360" height="26" fill="#0a1424" stroke="#7fb0ff" stroke-opacity="0.22" stroke-width="2"/>
+    <circle cx="16" cy="13" r="4" fill="#7fb0ff" fill-opacity="0.45"/>
+    <circle cx="30" cy="13" r="4" fill="#7fb0ff" fill-opacity="0.28"/>
+    <circle cx="44" cy="13" r="4" fill="#7fb0ff" fill-opacity="0.16"/>
+    <!-- Abstract gameplay inside the window: terrain line + HUD blocks -->
+    <path d="M12 190 L64 150 L108 168 L160 118 L216 140 L262 96 L310 122 L348 100"
+          fill="none" stroke="#7fb0ff" stroke-opacity="0.5" stroke-width="3"/>
+    <rect x="14" y="40" width="64" height="10" fill="#7fb0ff" fill-opacity="0.3"/>
+    <rect x="14" y="56" width="40" height="10" fill="#7fb0ff" fill-opacity="0.16"/>
+    <rect x="300" y="40" width="46" height="26" fill="none" stroke="#7fb0ff" stroke-opacity="0.3" stroke-width="2"/>
+    <!-- A moment worth reacting to -->
+    <circle cx="262" cy="96" r="10" fill="none" stroke="#7fb0ff" stroke-opacity="0.7" stroke-width="2"/>
+    <circle cx="262" cy="96" r="19" fill="none" stroke="#7fb0ff" stroke-opacity="0.3" stroke-width="2"/>
+  </g>
+
+  <!-- The watcher: an eye badge overlapping the window's corner -->
+  <g transform="translate(430 208)">
+    <path d="M-58 0 Q0 -44 58 0 Q0 44 -58 0 Z" fill="#0a1424" stroke="#7fb0ff" stroke-opacity="0.55" stroke-width="2.5"/>
+    <circle cx="0" cy="0" r="19" fill="url(#wiris)"/>
+    <circle cx="0" cy="0" r="8" fill="#04070f"/>
+    <circle cx="6" cy="-6" r="4" fill="#b8d3ff"/>
+  </g>
+
+  <!-- Chat reaction bubble rising from the couch -->
+  <g transform="translate(468 96)">
+    <rect x="-40" y="-18" width="80" height="34" fill="#0a1424" stroke="#7fb0ff" stroke-opacity="0.4" stroke-width="2"/>
+    <path d="M-14 16 L-6 30 L-2 16 Z" fill="#0a1424" stroke="#7fb0ff" stroke-opacity="0.4" stroke-width="2"/>
+    <rect x="-28" y="-7" width="34" height="6" fill="#7fb0ff" fill-opacity="0.55"/>
+    <rect x="10" y="-7" width="14" height="6" fill="#7fb0ff" fill-opacity="0.3"/>
+  </g>
+
+  <!-- Soft glow accent -->
+  <circle cx="430" cy="210" r="90" fill="#7fb0ff" opacity="0.06"/>
+</svg>

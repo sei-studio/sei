@@ -29,6 +29,15 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
+import { useChessStore, isChessOpen } from '../lib/stores/useChessStore';
+import { ChessPanel } from '../components/chess/ChessPanel';
+import { useConnect4Store, isConnect4Open } from '../lib/stores/useConnect4Store';
+import { Connect4Panel } from '../components/connect4/Connect4Panel';
+import { useTwentyQStore, isTwentyQOpen } from '../lib/stores/useTwentyQStore';
+import { TwentyQPanel } from '../components/twentyq/TwentyQPanel';
+import { useWatchStore, isWatchOpen } from '../lib/stores/useWatchStore';
+import { WatchPanel } from '../components/watch/WatchPanel';
+import { WatchIndicator } from '../components/watch/WatchIndicator';
 import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -338,8 +347,24 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   const showingUser = panelCard === 'user';
 
+  // Chess (260710) / Connect 4 (260720): the game aside is open whenever this
+  // character has a game (or a pre-game setup card was requested). While open
+  // it compresses the chat into a narrow column and force-collapses the
+  // presence panel (CSS). One aside, one game at a time; chess wins a tie.
+  const chessOpen = useChessStore((s) => isChessOpen(s, characterId));
+  const connect4Open = useConnect4Store((s) => isConnect4Open(s, characterId));
+  // 20 Questions (260720): same aside slot, status-card panel.
+  const twentyqOpen = useTwentyQStore((s) => isTwentyQOpen(s, characterId));
+  // Screen share (260720): the watch surface reuses the same aside slot.
+  const watchOpen = useWatchStore((s) => isWatchOpen(s, characterId));
+  const gameOpen = chessOpen || connect4Open || twentyqOpen || watchOpen;
+
   return (
-    <div className={`${styles.root} ${panelOpen ? styles.presOpen : ''}`}>
+    <div
+      className={`${styles.root} ${panelOpen ? styles.presOpen : ''} ${
+        gameOpen ? styles.chessOpen : ''
+      }`}
+    >
       <div className={styles.chatCol}>
         {/* ── Header ── */}
         <header className={styles.header}>
@@ -391,6 +416,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             </button>
           </div>
         </header>
+
+        {/* ── Screen share (260720): persistent "Watching" pill + one-click
+            Stop, visible whenever a session is active (consent requirement,
+            independent of the panel). ── */}
+        <WatchIndicator characterId={characterId} />
 
         {/* ── Message list ── */}
         <div
@@ -639,6 +669,27 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             ) : null}
           </div>
         </div>
+      </aside>
+
+      {/* ── Game panel (260710 chess, 260720 connect4): slides in from the
+          right, compressing the chat into a narrow left column while a game
+          is set up / played. The .chessAside class hosts either game. ── */}
+      <aside
+        className={styles.chessAside}
+        aria-label={
+          chessOpen ? 'Chess' : connect4Open ? 'Connect 4' : twentyqOpen ? '20 Questions' : 'Screen share'
+        }
+        aria-hidden={!gameOpen}
+      >
+        {chessOpen ? (
+          <ChessPanel characterId={characterId} />
+        ) : connect4Open ? (
+          <Connect4Panel characterId={characterId} />
+        ) : twentyqOpen ? (
+          <TwentyQPanel characterId={characterId} />
+        ) : watchOpen ? (
+          <WatchPanel characterId={characterId} />
+        ) : null}
       </aside>
     </div>
   );

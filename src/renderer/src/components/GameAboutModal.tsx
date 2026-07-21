@@ -12,6 +12,10 @@
 import React from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { useChessStore } from '../lib/stores/useChessStore';
+import { useConnect4Store } from '../lib/stores/useConnect4Store';
+import { useTwentyQStore } from '../lib/stores/useTwentyQStore';
+import { useWatchStore } from '../lib/stores/useWatchStore';
 import { attemptSummon } from '../lib/summonFlow';
 import { findGame } from '../lib/games';
 import { Button } from './Button';
@@ -33,6 +37,36 @@ export function GameAboutModal({ characterId, gameId }: GameAboutModalProps): Re
   const description = game?.description(companionName) ?? '';
 
   const onPlay = (): void => {
+    // Chess and Connect 4 play inside the chat screen (no summon): open that
+    // chat and slide the game panel in; its pre-game card handles the seat
+    // pick + start. SDK note: fold into GameDef launch metadata with the
+    // GamesPickerModal twin of this branch.
+    if (gameId === 'chess') {
+      closeModal();
+      useUiStore.getState().navigate({ kind: 'chat', characterId });
+      useChessStore.getState().openPanel(characterId);
+      return;
+    }
+    if (gameId === 'connect4') {
+      closeModal();
+      useUiStore.getState().navigate({ kind: 'chat', characterId });
+      useConnect4Store.getState().openPanel(characterId);
+      return;
+    }
+    // 20 Questions (260720): in-chat panel, mode pick inside.
+    if (gameId === 'twentyq') {
+      closeModal();
+      useUiStore.getState().navigate({ kind: 'chat', characterId });
+      useTwentyQStore.getState().openPanel(characterId);
+      return;
+    }
+    // Screen share (260720): in-chat panel, consent picker inside.
+    if (gameId === 'watch') {
+      closeModal();
+      useUiStore.getState().navigate({ kind: 'chat', characterId });
+      useWatchStore.getState().openPanel(characterId);
+      return;
+    }
     // Canonical path: username-conflict guard, one-time skin-setup nudge, and
     // the LAN "open your world" modal if not connected.
     void attemptSummon(characterId);

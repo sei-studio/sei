@@ -15,6 +15,10 @@
 
 import React, { useEffect } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useChessStore } from '../lib/stores/useChessStore';
+import { useConnect4Store } from '../lib/stores/useConnect4Store';
+import { useTwentyQStore } from '../lib/stores/useTwentyQStore';
+import { useWatchStore } from '../lib/stores/useWatchStore';
 import { attemptSummon } from '../lib/summonFlow';
 import { GAMES, type GameDef } from '../lib/games';
 import { MCBlock, GamepadIcon, InfoIcon } from './icons';
@@ -38,6 +42,39 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
 
   const onPlay = (g: GameDef): void => {
     if (!g.available) return;
+    // Chess and Connect 4 play inside the chat screen (no summon): open that
+    // chat and slide the game panel in; the panel's pre-game card runs the
+    // seat pick + start (and the Minecraft-session disconnect confirm if
+    // needed). SDK note: these branches should become launch metadata on
+    // GameDef (launch: 'panel' | 'summon') when a third in-app game lands.
+    if (g.id === 'chess') {
+      closeModal();
+      useUiStore.getState().navigate({ kind: 'chat', characterId });
+      useChessStore.getState().openPanel(characterId);
+      return;
+    }
+    if (g.id === 'connect4') {
+      closeModal();
+      useUiStore.getState().navigate({ kind: 'chat', characterId });
+      useConnect4Store.getState().openPanel(characterId);
+      return;
+    }
+    // 20 Questions (260720): also an in-chat panel; its pre-game card runs
+    // the mode pick + start.
+    if (g.id === 'twentyq') {
+      closeModal();
+      useUiStore.getState().navigate({ kind: 'chat', characterId });
+      useTwentyQStore.getState().openPanel(characterId);
+      return;
+    }
+    // Screen share (260720): also an in-chat panel; its consent picker runs
+    // the source choice + explicit start (never auto-starts).
+    if (g.id === 'watch') {
+      closeModal();
+      useUiStore.getState().navigate({ kind: 'chat', characterId });
+      useWatchStore.getState().openPanel(characterId);
+      return;
+    }
     // Launch right away — attemptSummon runs the skin-setup nudge then the LAN
     // gate (opening the "open your world" modal if not connected).
     void attemptSummon(characterId);

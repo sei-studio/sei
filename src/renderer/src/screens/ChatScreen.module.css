@@ -743,8 +743,47 @@
   border-top: 1px solid var(--border);
 }
 
+/* ── Chess panel aside (260710) ─────────────────────────────────────────── */
+/* The reverse of the presence panel: a LARGE square-ish surface that slides in
+ * from the right and takes the majority of the screen, compressing the chat
+ * into a narrow left column. Width animates like .presPanel. */
+.chessAside {
+  width: 0;
+  flex: none;
+  min-width: 0;
+  border-left: 1px solid transparent;
+  background: var(--bg2);
+  min-height: 0;
+  overflow: hidden;
+  transition: width 300ms var(--ease), border-color 300ms var(--ease);
+}
+
+.chessOpen .chessAside {
+  /* Majority of the window, but never squeeze the chat below a readable
+   * ~320px column (the board inside sizes itself to the available height). */
+  width: min(62%, calc(100% - 320px));
+  border-left-color: var(--border);
+}
+
+/* While chess is open the chat column keeps a readable floor... */
+.chessOpen .chatCol {
+  min-width: 320px;
+}
+
+/* ...and the presence panel is force-collapsed (defined after
+ * `.presOpen .presPanel` on purpose: equal specificity, later rule wins). */
+.chessOpen .presPanel {
+  width: 0;
+  border-left-color: transparent;
+  overflow: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .presPanel {
+    transition: none;
+  }
+
+  .chessAside {
     transition: none;
   }
 }

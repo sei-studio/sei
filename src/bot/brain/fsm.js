@@ -89,8 +89,10 @@ export function attackedPriority(data) {
  *   bot ignoring the player. Returns true if the orchestrator fully CLAIMED the
  *   event (folded it into the running loop); then enqueue() skips queuing to
  *   avoid double-handling.
- * @param {number} [opts.idleFallbackMs=60000]  Idle timer fires after this many ms
- *   of inactivity, enqueueing a P3 'sei:idle' event.
+ * @param {number|(() => number)} [opts.idleFallbackMs=60000]  Idle timer fires
+ *   after this many ms of inactivity, enqueueing a P3 'sei:idle' event. Pass a
+ *   function to sample a fresh delay on every re-arm (variable idle cadence,
+ *   e.g. the chess adapter's 25-90s draw with a silent-streak backoff).
  * @param {{warn?:Function,info?:Function,error?:Function,debug?:Function}} [opts.logger]
  * @returns {{ enqueue: Function, resetIdleTimer: Function, dispose: Function }}
  */
@@ -117,9 +119,10 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   function resetIdleTimer() {
     clearTimeout(idleTimer)
     if (disposed) return
+    const delay = typeof idleFallbackMs === 'function' ? idleFallbackMs() : idleFallbackMs
     idleTimer = setTimeout(() => {
       enqueue(Priority.P3_IDLE, 'sei:idle', { quietMs: Date.now() - lastActivityAt })
-    }, idleFallbackMs)
+    }, delay)
   }
 
   function enqueue(priority, event, data) {

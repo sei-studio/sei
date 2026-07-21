@@ -726,6 +726,27 @@ async function bootstrap(): Promise<void> {
     initProfileScope({ supervisor, getMainWindow: () => mainWindow });
   }
 
+  // Chess minigame (260710): module-state deps for src/main/chess/chessService.
+  // Mutually exclusive with Minecraft (isSummoned gate); state + download
+  // progress push straight to the main window.
+  {
+    const { initChessService } = await import('./chess/chessService');
+    initChessService({
+      pushState: (state) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IpcChannel.chess.state, state);
+        }
+      },
+      pushDownload: (p) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IpcChannel.chess.download, p);
+        }
+      },
+      pushChatMessage,
+      isSummoned: (id) => supervisor?.isActive(id) ?? false,
+    });
+  }
+
   // 5. IPC handlers
   registerIpcHandlers({
     supervisor,
@@ -954,6 +975,11 @@ if (!gotLock) {
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }
+    // Chess: abort any in-flight AI turn + release the ONNX/stockfish engine.
+    try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
+    // Screen share: stop capture polls + end sessions (posts the transcript
+    // row for a long-enough session) so quitting never leaves one dangling.
+    try { await (await import('./watch/watchService')).shutdownWatch(); } catch { /* best-effort */ }
     try { if (lanWatcherHandle) lanWatcherHandle.stop(); } catch { /* best-effort */ }
     // Close the skin server's TCP listener so the port is
     // freed promptly. server.close drains in-flight requests before resolving.
