@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { classifyCmdline } from './hostClient';
 import { forgeModCountFromStatus } from './mcPing';
-import { parseLsof, parseNetstat } from './listeningPorts';
+import { parseLsof, parseNetstat, parseTasklist } from './listeningPorts';
 import { lanHostWarning, type LanHost } from '../shared/ipc';
 
 const host = (client: LanHost['client'], forgeModCount: number | null = null): LanHost => ({
@@ -122,5 +122,52 @@ describe('listeningPorts pid extraction', () => {
   it('parseNetstat reads the trailing PID', () => {
     const out = ['  TCP    0.0.0.0:52345    0.0.0.0:0    LISTENING    9876'].join('\n');
     expect(parseNetstat(out)).toEqual([{ port: 52345, command: '', pid: 9876 }]);
+  });
+
+  // Issue #5: modern Java binds "Open to LAN" as a dual-stack socket that
+  // netstat reports only in the IPv6 table, and localized Windows translates
+  // the state word — so the parser must read `[::]` rows and must not depend
+  // on the literal LISTENING string.
+  it('parseNetstat reads dual-stack (IPv6) listener rows', () => {
+    const out = ['  TCP    [::]:52345    [::]:0    LISTENING    9876'].join('\n');
+    expect(parseNetstat(out)).toEqual([{ port: 52345, command: '', pid: 9876 }]);
+  });
+
+  it('parseNetstat is locale-proof: listening state detected by foreign port 0', () => {
+    const out = [
+      '',
+      'Aktive Verbindungen',
+      '',
+      '  Proto  Lokale Adresse         Remoteadresse          Status           PID',
+      '  TCP    0.0.0.0:135            0.0.0.0:0              ABHÖREN          1044',
+      '  TCP    [::]:52345             [::]:0                 ABHÖREN          9876',
+      '  TCP    192.168.1.5:52001      52.1.2.3:443           HERGESTELLT      4321',
+      '  UDP    0.0.0.0:5353           *:*                                     2222',
+    ].join('\n');
+    expect(parseNetstat(out)).toEqual([
+      { port: 135, command: '', pid: 1044 },
+      { port: 52345, command: '', pid: 9876 },
+    ]);
+  });
+
+  it('parseNetstat dedupes a port listed on both stacks', () => {
+    const out = [
+      '  TCP    0.0.0.0:52345    0.0.0.0:0    LISTENING    9876',
+      '  TCP    [::]:52345       [::]:0       LISTENING    9876',
+    ].join('\n');
+    expect(parseNetstat(out)).toEqual([{ port: 52345, command: '', pid: 9876 }]);
+  });
+
+  it('parseTasklist maps pid to image name from csv rows', () => {
+    const out = [
+      '"System Idle Process","0","Services","0","8 K"',
+      '"javaw.exe","41234","Console","1","1,204,556 K"',
+      '"svchost.exe","1044","Services","0","12,332 K"',
+      'INFO: not a csv row',
+    ].join('\n');
+    const names = parseTasklist(out);
+    expect(names.get(41234)).toBe('javaw.exe');
+    expect(names.get(1044)).toBe('svchost.exe');
+    expect(names.has(0)).toBe(false);
   });
 });
