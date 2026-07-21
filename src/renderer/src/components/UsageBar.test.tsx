@@ -47,7 +47,10 @@ describe('UsageBar (260602-hbr usage-percent bar)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     expect(source.includes("from './PercentBar'")).toBe(true);
     expect(source.includes('s.usage_pct')).toBe(true);
-    expect(source.includes('value={usagePct}')).toBe(true);
+    // A failed snapshot must not present the placeholder zeros as account
+    // truth (260710): the bar empties and the copy says to try again.
+    expect(source.includes('value={snapshotFailed ? 0 : usagePct}')).toBe(true);
+    expect(source.includes('s.snapshotFailed')).toBe(true);
   });
 
   it('Test 3: the estimate text + its plumbing were lifted out of the bar', () => {

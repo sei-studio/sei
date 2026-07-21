@@ -290,6 +290,14 @@ interface CreditsState {
   initialized: boolean;
   loading: boolean;
   /**
+   * True when the last snapshot attempt (seed or refresh) failed and no push
+   * has replaced it: the numbers in the store are the INITIAL zeros, not
+   * account truth. Credits surfaces must render a "couldn't check, try again"
+   * state instead of presenting 0% as fact. Cleared by any successful seed,
+   * refresh, or status push.
+   */
+  snapshotFailed: boolean;
+  /**
    * Push-seq race guard counter. Bumped on every onCreditsStatusUpdate push.
    * `init()` captures the pre-await value; if any push lands during the
    * await, the seed's `set()` is skipped (push state is strictly newer).
@@ -378,6 +386,7 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   hardStopActive: false,
   hardStopReason: null,
   rateLimitedUntil: null,
+  snapshotFailed: false,
   checkoutStatus: 'idle',
   checkoutKind: null,
   initialized: false,
@@ -426,6 +435,7 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         // quick/260525-sbo Task 8: pass through raw LS status for the
         // SettingsScreen contextual banner.
         subscription_status_raw: status.subscription_status_raw ?? null,
+        snapshotFailed: false,
         pushSeq: s.pushSeq + 1,
       }));
       // quick/260525-sbo Task 6: detect non-unlimited → unlimited transition
@@ -499,6 +509,7 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
           trial_claimed: status.trial_claimed,
           ai_backend_kind: status.ai_backend_kind,
           subscription_status_raw: status.subscription_status_raw ?? null,
+          snapshotFailed: false,
           initialized: true,
           loading: false,
         });
@@ -526,11 +537,14 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
       // seed it from the local config, which doesn't need the ledger.
       const kind = await readBackendKindFromConfig();
       if (loadEpoch !== epochBefore) return; // superseded by a newer scope
-      set({
+      set((s) => ({
         initialized: true,
         loading: false,
+        // The zeros in the store are placeholders, not account truth. Only a
+        // push that already landed (pushSeq moved) makes them real data.
+        snapshotFailed: s.pushSeq === seqBefore,
         ...(kind !== null ? { ai_backend_kind: kind } : {}),
-      });
+      }));
     }
   },
 
@@ -552,6 +566,7 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         trial_claimed: status.trial_claimed,
         ai_backend_kind: status.ai_backend_kind,
         subscription_status_raw: status.subscription_status_raw ?? null,
+        snapshotFailed: false,
         loading: false,
       });
     } catch {
@@ -559,7 +574,11 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
       // not leave a stale/incorrect mode on the ACCOUNT MODE surface.
       const kind = await readBackendKindFromConfig();
       if (loadEpoch !== epochBefore) return; // superseded by a scope transition
-      set({ loading: false, ...(kind !== null ? { ai_backend_kind: kind } : {}) });
+      set({
+        loading: false,
+        snapshotFailed: true,
+        ...(kind !== null ? { ai_backend_kind: kind } : {}),
+      });
     }
   },
 

@@ -108,6 +108,9 @@ export function CreditsScreen(): React.ReactElement {
   // The hero reads usage_pct (number + bar fill).
   const usagePct = useCreditsStore((s) => s.usage_pct);
   const loading = useCreditsStore((s) => s.loading);
+  // Last snapshot fetch failed and nothing fresher landed: the store's zeros
+  // are placeholders, so the hero must not present "0% used" as account truth.
+  const snapshotFailed = useCreditsStore((s) => s.snapshotFailed);
   const plan = useCreditsStore((s) => s.plan);
   const renewsAt = useCreditsStore((s) => s.renews_at);
   const endsAt = useCreditsStore((s) => s.ends_at);
@@ -290,7 +293,15 @@ export function CreditsScreen(): React.ReactElement {
         <div className={styles.hero}>
           <div className={styles.heroTop}>
             <div className={styles.heroBig}>
-              {usedPct}%<small>used</small>
+              {snapshotFailed ? (
+                <>
+                  –%<small>used</small>
+                </>
+              ) : (
+                <>
+                  {usedPct}%<small>used</small>
+                </>
+              )}
             </div>
             {/* Immediate creditsGet() on top of the 60s poll (260606). */}
             <Button
@@ -310,9 +321,15 @@ export function CreditsScreen(): React.ReactElement {
             aria-label={playedTip}
             tabIndex={0}
           >
-            <i style={{ width: `${usedPct}%` }} />
+            <i style={{ width: snapshotFailed ? '0%' : `${usedPct}%` }} />
           </div>
-          {heroSub ? <p className={styles.heroSub}>{heroSub}</p> : null}
+          {snapshotFailed ? (
+            <p className={styles.heroSub}>
+              Couldn't check your account right now. Refresh to try again.
+            </p>
+          ) : heroSub ? (
+            <p className={styles.heroSub}>{heroSub}</p>
+          ) : null}
         </div>
 
         {/* Add playtime — three plan cards: Encounter / Quest / Party (mockup .plans). */}

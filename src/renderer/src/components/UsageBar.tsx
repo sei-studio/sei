@@ -65,6 +65,9 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   const totalUsd = useCreditsStore((s) => s.total_usd);
   const refresh = useCreditsStore((s) => s.refresh);
   const loading = useCreditsStore((s) => s.loading);
+  // Last snapshot fetch failed and nothing fresher landed: the store's zeros
+  // are placeholders, so don't present "0 percent used" as account truth.
+  const snapshotFailed = useCreditsStore((s) => s.snapshotFailed);
   // The "$used/$total used" figures are developer-only. Off by default; shown
   // only when Settings → Show developer console is on (ui-A7 flag).
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
@@ -82,7 +85,9 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
     };
   }, []);
 
-  const tooltip = usageTooltip(usedUsd, totalUsd, totalPlaytimeMs, devConsoleVisible);
+  const tooltip = snapshotFailed
+    ? "Couldn't check your account right now. Refresh to try again."
+    : usageTooltip(usedUsd, totalUsd, totalPlaytimeMs, devConsoleVisible);
 
   return (
     <div className={styles.root}>
@@ -92,7 +97,11 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
         aria-label={tooltip}
         tabIndex={0}
       >
-        <PercentBar value={usagePct} size={size} label={`${Math.round(usagePct)} percent used`} />
+        <PercentBar
+          value={snapshotFailed ? 0 : usagePct}
+          size={size}
+          label={snapshotFailed ? 'usage unavailable' : `${Math.round(usagePct)} percent used`}
+        />
       </div>
       {/* Quiet refresh — immediate creditsGet() on top of any polling caller. */}
       <Button
