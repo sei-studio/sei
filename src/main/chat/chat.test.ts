@@ -74,6 +74,17 @@ describe('chatStore', () => {
     expect(await chatStore.readAll('44444444-4444-4444-8444-444444444444')).toEqual([]);
   });
 
+  it('readBefore pages backwards from an id cursor (infinite scrollback)', async () => {
+    await seed(10);
+    // Page of 3 immediately before m7 → m4..m6.
+    expect((await chatStore.readBefore(CHAR, 'm7', 3)).map((m) => m.id)).toEqual(['m4', 'm5', 'm6']);
+    // Short page at the top: only m0..m2 exist before m3.
+    expect((await chatStore.readBefore(CHAR, 'm3', 5)).map((m) => m.id)).toEqual(['m0', 'm1', 'm2']);
+    // Cursor at the very first row, or unknown → [] (top reached / reset).
+    expect(await chatStore.readBefore(CHAR, 'm0', 5)).toEqual([]);
+    expect(await chatStore.readBefore(CHAR, 'nope', 5)).toEqual([]);
+  });
+
   it('readAll drops legacy event-less system rows (pre-260703 join acks) but keeps everything else', async () => {
     const legacyJoin: ChatMessage = { id: 'l1', role: 'system', text: 'Marv joined your world', ts: 1000 };
     const legacyFail: ChatMessage = {

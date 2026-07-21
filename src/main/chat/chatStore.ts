@@ -62,6 +62,25 @@ export async function readRecent(characterId: string, n: number): Promise<ChatMe
 }
 
 /**
+ * Page of up to `n` rows immediately BEFORE the row with id `beforeId`
+ * (infinite scrollback: the renderer walks backwards page by page from its
+ * oldest loaded row). The cursor is an id, not an offset, so it stays stable
+ * while new messages append to the file. Returns [] when `beforeId` is the
+ * first row or is not found (transcript reset between pages) — the renderer
+ * reads a short page as "top of history reached".
+ */
+export async function readBefore(
+  characterId: string,
+  beforeId: string,
+  n: number,
+): Promise<ChatMessage[]> {
+  const all = await readAll(characterId);
+  const idx = all.findIndex((m) => m.id === beforeId);
+  if (idx <= 0) return [];
+  return all.slice(Math.max(0, idx - n), idx);
+}
+
+/**
  * Cheap read of the LAST renderable chat message for roster previews
  * (chat:previews / Party redesign §2). Scans lines from the end and
  * short-circuits on the first parseable, non-legacy row — so it never

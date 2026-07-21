@@ -84,6 +84,8 @@ const api: RendererApi = {
 
   // In-app chat (Phase 18/19)
   chatHistory: (characterId) => ipcRenderer.invoke(IpcChannel.chat.history, characterId),
+  chatHistoryBefore: (characterId, beforeId) =>
+    ipcRenderer.invoke(IpcChannel.chat.historyBefore, { characterId, beforeId }),
   chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),
   chatOpened: (characterId) => ipcRenderer.invoke(IpcChannel.chat.opened, characterId),
   chatPreviews: () => ipcRenderer.invoke(IpcChannel.chat.previews),

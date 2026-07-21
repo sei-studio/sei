@@ -12,6 +12,7 @@ import { z } from 'zod';
 import {
   IpcChannel,
   CHAT_TEXT_MAX,
+  CHAT_HISTORY_PAGE,
   ProxyConfigureArgsSchema,
   CreditsCheckoutArgsSchema,
   FeedbackSubmitArgsSchema,
@@ -211,13 +212,6 @@ const PlaintextSchema = z.string().min(1);
 const SLOT_LIMIT_REACHED_MESSAGE =
   `You can only have ${MAX_COMPANION_SLOTS} companions. Remove one to make room.`;
 
-/**
- * Upper bound on how many transcript rows chat:history ships to the renderer on
- * open. The on-disk JSONL is never trimmed; this bounds only the READ so a heavy
- * user's chat doesn't freeze the screen. 200 comfortably covers the visible
- * scrollback (the renderer has no "load older" path) while staying cheap to parse.
- */
-const CHAT_HISTORY_LIMIT = 200;
 
 /** Current Home companion count ≥ the slot cap (see libraryCharacterCount). */
 async function libraryIsFull(): Promise<boolean> {
@@ -1034,15 +1028,29 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // On-disk the transcript is append-only and never trimmed (260705), but the
   // UI hot path must NOT ship the whole file: a heavy user's chat.jsonl grows to
   // thousands of rows (including hidden voice rows), and reading+parsing+shipping
-  // all of it froze the chat screen on open. Bound the READ to the most recent
-  // CHAT_HISTORY_LIMIT rows — the renderer has no "load older" path, so a window
-  // this deep covers every realistic scrollback while keeping the open snappy.
-  // The model's own context is bounded separately by continuity (rolling summary
-  // + recent window); this read is UI-only.
+  // all of it froze the chat screen on open. The open ships only the most recent
+  // CHAT_HISTORY_PAGE rows; the FULL transcript stays reachable via
+  // chat:history-before, which the renderer calls page by page as the user
+  // scrolls toward the top (infinite scrollback, 260721). The model's own
+  // context is bounded separately by continuity (rolling summary + recent
+  // window); these reads are UI-only.
   ipcMain.handle(IpcChannel.chat.history, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
     const { readRecent } = await import('./chat/chatStore');
-    return await readRecent(id, CHAT_HISTORY_LIMIT);
+    return await readRecent(id, CHAT_HISTORY_PAGE);
+  });
+
+  ipcMain.handle(IpcChannel.chat.historyBefore, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        // Cursor: the id of the renderer's oldest loaded row. Free-form (ids are
+        // main-minted or legacy), just bounded so junk can't ship a novel.
+        beforeId: z.string().min(1).max(256),
+      })
+      .parse(argsRaw);
+    const { readBefore } = await import('./chat/chatStore');
+    return await readBefore(args.characterId, args.beforeId, CHAT_HISTORY_PAGE);
   });
 
   ipcMain.handle(IpcChannel.chat.send, async (_event, argsRaw: unknown) => {

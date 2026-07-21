@@ -25,7 +25,7 @@
  * Source: .planning/design/UI-REDESIGN-PARTY.md §4.5.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
@@ -84,6 +84,13 @@ function dayKey(ts: number): number {
   const d = new Date(ts);
   return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
 }
+
+/**
+ * Scrolling within this many px of the list top pulls the next older transcript
+ * page (infinite scrollback, 260721). Generous so the fetch starts before the
+ * user actually hits the hard top.
+ */
+const LOAD_OLDER_THRESHOLD_PX = 120;
 
 export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
@@ -154,15 +161,51 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     };
   }, []);
 
+  // Infinite scrollback (260721): scrolling near the top pulls the next older
+  // transcript page. The anchor snapshot (scrollHeight + scrollTop at request
+  // time, tagged with the character it belongs to) lets the layout effect below
+  // keep the viewport pinned to the same message after the prepend, instead of
+  // the browser keeping scrollTop and visually teleporting to the new oldest row.
+  const prependAnchorRef = useRef<{ id: string; h: number; t: number } | null>(null);
+  const maybeLoadOlder = (): void => {
+    const el = listRef.current;
+    if (!el || loading) return;
+    if (el.scrollTop > LOAD_OLDER_THRESHOLD_PX) return;
+    const st = useChatStore.getState();
+    if (!st.hasOlder[characterId] || st.loadingOlder[characterId]) return;
+    prependAnchorRef.current = { id: characterId, h: el.scrollHeight, t: el.scrollTop };
+    void st.loadOlder(characterId).finally(() => {
+      // A page with no fresh rows never re-renders the list, so the layout
+      // effect never consumes the anchor — drop it after paint, or the NEXT
+      // message (a send) would anchor-restore instead of pinning to bottom.
+      requestAnimationFrame(() => {
+        prependAnchorRef.current = null;
+      });
+    });
+  };
+
   // Auto-scroll to the bottom on new messages / typing-indicator changes, and on
   // entering a DM (characterId) once its transcript finishes loading. A single
   // post-paint write can land just short of the true bottom because portraits /
   // images grow the list after the first layout, so re-pin on the next frame —
   // otherwise entry leaves the newest message (and the composer breathing room)
-  // below the fold until you scroll.
-  useEffect(() => {
+  // below the fold until you scroll. Layout effect (not useEffect) so the
+  // scrollback anchor restore lands before paint — no flash of wrong position.
+  useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
+    const anchor = prependAnchorRef.current;
+    if (anchor && anchor.id === characterId) {
+      // Older page landed above the viewport: keep the same message on screen.
+      prependAnchorRef.current = null;
+      el.scrollTop = el.scrollHeight - anchor.h + anchor.t;
+      // A page of only hidden rows (e.g. voice-call captions) adds no visible
+      // height, so the viewport is still at the top and no scroll event will
+      // fire — keep draining until visible content (or the true top) arrives.
+      maybeLoadOlder();
+      return;
+    }
+    prependAnchorRef.current = null;
     const toBottom = (): void => {
       el.scrollTop = el.scrollHeight;
     };
@@ -183,6 +226,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     scrollFadeTimer.current = window.setTimeout(() => {
       delete el.dataset.scrolling;
     }, 700);
+    // Near the top → pull the next older transcript page (guards inside).
+    maybeLoadOlder();
   };
   useEffect(
     () => () => {

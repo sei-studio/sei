@@ -181,6 +181,15 @@ export function lanHostWarning(host: LanHost | undefined): LanHostWarning | null
  */
 export const CHAT_TEXT_MAX = 4000;
 
+/**
+ * Page size for chat transcript reads, shared by main (chat:history /
+ * chat:history-before handlers) and the renderer (useChatStore's "has older
+ * pages" inference: a full page means there may be more, a short page means the
+ * top of the transcript was reached). The on-disk JSONL is never trimmed; the
+ * whole history is reachable by paging, this only bounds one read.
+ */
+export const CHAT_HISTORY_PAGE = 200;
+
 /** A quoted-reply reference (the message this one is replying to). */
 export interface ChatReplyRef {
   /** Role of the quoted message's author. */
@@ -1042,8 +1051,14 @@ export interface RendererApi {
   setAnalyticsOptOut(optOut: boolean): Promise<void>;
 
   // --- In-app chat (Phase 18/19) ---
-  /** Load a character's persisted chat transcript (recent window). */
+  /** Load a character's persisted chat transcript (most recent CHAT_HISTORY_PAGE rows). */
   chatHistory(characterId: string): Promise<ChatMessage[]>;
+  /**
+   * Load the page of up to CHAT_HISTORY_PAGE transcript rows immediately BEFORE
+   * the message with id `beforeId` (infinite scrollback). Returns [] when
+   * `beforeId` is the oldest row or is not found (e.g. transcript was reset).
+   */
+  chatHistoryBefore(characterId: string, beforeId: string): Promise<ChatMessage[]>;
   /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game).
    * `voicePeers` (multi-companion voice, 260706): names of the OTHER companions
    * on the same call, so the reply is framed for a group call. Absent = solo. */
@@ -1773,6 +1788,8 @@ export const IpcChannel = {
   },
   chat: {
     history: 'chat:history',
+    /** Pull: the page of rows before a given message id (infinite scrollback). */
+    historyBefore: 'chat:history-before',
     send: 'chat:send',
     /** Pull: the chat surface was opened. Main decides (kind 'unique', empty
      * transcript, never chatted) whether the companion speaks first and returns

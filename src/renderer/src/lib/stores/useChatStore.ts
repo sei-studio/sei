@@ -23,6 +23,7 @@ import {
   requestRemoteEndCall,
   voiceCallPeers,
 } from '../voice/voiceBridge';
+import { CHAT_HISTORY_PAGE } from '@shared/ipc';
 import type { ChatMessage, ChatPreview, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
@@ -39,6 +40,14 @@ interface ChatState {
    */
   loading: Record<string, boolean>;
   /**
+   * characterId → older transcript pages may exist on disk (infinite
+   * scrollback, 260721). Inferred from page fill: a full CHAT_HISTORY_PAGE read
+   * means there may be more above it, a short page means the top was reached.
+   */
+  hasOlder: Record<string, boolean>;
+  /** characterId → an older-page fetch is in flight (re-entry guard). */
+  loadingOlder: Record<string, boolean>;
+  /**
    * characterId → last persisted chat line (Party redesign §2), fetched in one
    * bulk chat:previews pull for the roster. Read through
    * {@link chatPreviewFor}, which prefers the live transcript when loaded.
@@ -47,6 +56,12 @@ interface ChatState {
 
   /** Fetch the persisted transcript once. No-op if already loaded. */
   load: (characterId: string) => Promise<void>;
+  /**
+   * Prepend the page of transcript rows above the oldest loaded one (called by
+   * ChatScreen when the user scrolls to the top). No-op while a page is already
+   * in flight or when the top of the history was reached.
+   */
+  loadOlder: (characterId: string) => Promise<void>;
   /** Bulk-fetch roster last-line previews (idempotent per call; cheap). */
   loadPreviews: () => Promise<void>;
   /**
@@ -180,6 +195,8 @@ export const useChatStore = create<ChatState>((set, get) => {
   awaiting: {},
   loaded: {},
   loading: {},
+  hasOlder: {},
+  loadingOlder: {},
   previews: {},
 
   loadPreviews: async () => {
@@ -216,6 +233,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         return {
           messages: { ...s.messages, [characterId]: extras.length ? [...history, ...extras] : history },
           loading: { ...s.loading, [characterId]: false },
+          // A full page means the disk may hold older rows above it.
+          hasOlder: { ...s.hasOlder, [characterId]: history.length >= CHAT_HISTORY_PAGE },
         };
       });
       // First-meeting greeting: on an empty transcript, tell main the chat was
@@ -256,6 +275,35 @@ export const useChatStore = create<ChatState>((set, get) => {
         loaded: { ...s.loaded, [characterId]: false },
         loading: { ...s.loading, [characterId]: false },
       }));
+    }
+  },
+
+  loadOlder: async (characterId) => {
+    const s = get();
+    if (!s.hasOlder[characterId] || s.loadingOlder[characterId]) return;
+    // Cursor: the oldest loaded row. It came from a disk read (load/loadOlder),
+    // so its id exists in the JSONL; optimistic local- rows only ever append.
+    const oldest = (s.messages[characterId] ?? [])[0];
+    if (!oldest || !sei.chatHistoryBefore) return;
+    set((st) => ({ loadingOlder: { ...st.loadingOlder, [characterId]: true } }));
+    try {
+      const page = await sei.chatHistoryBefore(characterId, oldest.id);
+      set((st) => {
+        const cur = st.messages[characterId] ?? [];
+        const seen = new Set(cur.map((m) => m.id));
+        const fresh = page.filter((m) => !seen.has(m.id));
+        return {
+          messages: fresh.length
+            ? { ...st.messages, [characterId]: [...fresh, ...cur] }
+            : st.messages,
+          // A short page means the top of the transcript was reached.
+          hasOlder: { ...st.hasOlder, [characterId]: page.length >= CHAT_HISTORY_PAGE },
+          loadingOlder: { ...st.loadingOlder, [characterId]: false },
+        };
+      });
+    } catch {
+      // Keep hasOlder as-is so a later scroll can retry.
+      set((st) => ({ loadingOlder: { ...st.loadingOlder, [characterId]: false } }));
     }
   },
 
@@ -410,6 +458,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       messages: { ...s.messages, [characterId]: [] },
       awaiting: { ...s.awaiting, [characterId]: false },
       loaded: { ...s.loaded, [characterId]: false },
+      hasOlder: { ...s.hasOlder, [characterId]: false },
+      loadingOlder: { ...s.loadingOlder, [characterId]: false },
     }));
   },
   };
