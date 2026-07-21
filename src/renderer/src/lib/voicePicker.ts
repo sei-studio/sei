@@ -11,6 +11,7 @@
  */
 import type { VoiceInfo } from '@shared/ipc';
 import { NO_VOICE_ID } from '@shared/voiceIds';
+import { CHAT_LANGUAGE_CODES } from '@shared/chatLanguage';
 
 export { NO_VOICE_ID };
 
@@ -66,4 +67,17 @@ export function isUnlistedVoice(selection: VoiceSelection, voices: VoiceInfo[]):
   return (
     selection !== null && selection !== NO_VOICE_ID && !voices.some((v) => v.id === selection)
   );
+}
+
+/**
+ * Bundled-sample asset path (260720). Every curated-pool voice ships a
+ * pre-generated sample mp3 per conversation language under
+ * renderer/public/voice-previews/, so the picker plays samples instantly with
+ * no network, no sign-in, and no TTS spend. Relative './...' matches how other
+ * public assets are referenced (see lib/games.ts image paths). A language the
+ * bundle does not cover falls back to the English sample.
+ */
+export function assetPathFor(voiceId: string, lang: string): string {
+  const supported = (CHAT_LANGUAGE_CODES as string[]).includes(lang) ? lang : 'en';
+  return `./voice-previews/${voiceId}-${supported}.mp3`;
 }

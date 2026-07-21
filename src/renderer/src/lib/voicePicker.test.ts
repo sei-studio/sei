@@ -3,7 +3,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { VoiceInfo } from '@shared/ipc';
-import { groupVoices, reduceSelection, isUnlistedVoice, NO_VOICE_ID } from './voicePicker';
+import {
+  groupVoices,
+  reduceSelection,
+  isUnlistedVoice,
+  assetPathFor,
+  NO_VOICE_ID,
+} from './voicePicker';
 
 function v(id: string, gender: string): VoiceInfo {
   return { id, label: id, gender, age: 'adult', tags: [], vibe: 'test voice' };
@@ -66,5 +72,26 @@ describe('isUnlistedVoice', () => {
     expect(isUnlistedVoice(null, pool)).toBe(false);
     expect(isUnlistedVoice(NO_VOICE_ID, pool)).toBe(false);
     expect(isUnlistedVoice('f1', pool)).toBe(false);
+  });
+});
+
+describe('assetPathFor', () => {
+  it('builds the bundled sample path for a supported language', () => {
+    expect(assetPathFor('FNhoq0qHG3T8YOWzBtd6', 'en')).toBe(
+      './voice-previews/FNhoq0qHG3T8YOWzBtd6-en.mp3',
+    );
+    expect(assetPathFor('abc123', 'ja')).toBe('./voice-previews/abc123-ja.mp3');
+  });
+
+  it('covers every conversation language', () => {
+    for (const lang of ['en', 'zh', 'ja', 'ko', 'fr', 'es']) {
+      expect(assetPathFor('v1', lang)).toBe(`./voice-previews/v1-${lang}.mp3`);
+    }
+  });
+
+  it('falls back to English for an unsupported or junk language', () => {
+    expect(assetPathFor('v1', 'de')).toBe('./voice-previews/v1-en.mp3');
+    expect(assetPathFor('v1', '')).toBe('./voice-previews/v1-en.mp3');
+    expect(assetPathFor('v1', 'EN')).toBe('./voice-previews/v1-en.mp3');
   });
 });

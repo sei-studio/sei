@@ -8,18 +8,20 @@
  *   - No voice: metadata.voiceId = 'none'; the companion is silent on calls.
  *   - A pinned pool voice, chosen from sections grouped by gender.
  *
- * Samples: each voice row plays the canned sample line through the normal TTS
- * path; main caches the audio on disk (userData, keyed by voiceId + text
- * hash) so repeat plays are free, and this component keeps a session Map so
- * repeats never even cross IPC. One sample plays at a time; starting a second
- * stops the first. When TTS is unavailable (signed out, no dev key) the play
- * controls disable with a quiet hint and selection keeps working.
+ * Samples (260720, bundled-first): every curated-pool voice ships a
+ * pre-generated sample mp3 per conversation language in the renderer's public
+ * assets (voice-previews/), so pool rows play instantly, offline, with no
+ * sign-in. The live TTS path (main-side disk cache + session Map here)
+ * remains ONLY as the fallback for voice ids without a bundled file, i.e. the
+ * legacy "Current voice" row. One sample plays at a time; starting a second
+ * stops the first. When TTS is unavailable (signed out, no dev key) only that
+ * legacy row disables with a quiet hint; bundled samples keep playing.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import type { VoiceInfo } from '@shared/ipc';
-import { groupVoices, reduceSelection, isUnlistedVoice, NO_VOICE_ID } from '../lib/voicePicker';
+import { groupVoices, reduceSelection, isUnlistedVoice, assetPathFor, NO_VOICE_ID } from '../lib/voicePicker';
 import { PlayIcon, StopIcon } from './icons';
 import styles from './VoicePicker.module.css';
 
@@ -41,6 +43,8 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const cacheRef = useRef<Map<string, ArrayBuffer>>(new Map());
   const aliveRef = useRef(true);
+  /** Conversation language for bundled samples; 'en' until the config loads. */
+  const langRef = useRef('en');
 
   useEffect(() => {
     // Re-arm on every (re)mount — StrictMode dev runs mount → cleanup → mount
@@ -54,8 +58,19 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
       .catch(() => {
         if (aliveRef.current) setError('Could not load the voice list.');
       });
-    // Probe sample availability; a failed or missing probe leaves samples
-    // enabled and the first play surfaces the real state reactively.
+    // Conversation language, for picking the bundled sample file. Best-effort:
+    // a failed read leaves English, which always exists.
+    void sei
+      .getConfig()
+      .then((c) => {
+        langRef.current = c.chat_language ?? 'en';
+      })
+      .catch(() => {
+        /* keep 'en' */
+      });
+    // Probe sample availability (legacy TTS fallback rows only); a failed or
+    // missing probe leaves samples enabled and the first play surfaces the
+    // real state reactively.
     try {
       void sei
         .voicePreviewAvailable()
@@ -98,14 +113,21 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
     stopPlayback();
     setError(null);
     try {
-      let buf = cacheRef.current.get(voiceId);
-      if (!buf) {
-        setLoadingId(voiceId);
-        buf = await sei.voicePreview({ voiceId });
-        cacheRef.current.set(voiceId, buf);
+      let url: string;
+      if (voices.some((v) => v.id === voiceId)) {
+        // Pool voice: bundled sample asset — instant, offline, no sign-in.
+        url = assetPathFor(voiceId, langRef.current);
+      } else {
+        // Legacy voice with no bundled file: live TTS preview (cached).
+        let buf = cacheRef.current.get(voiceId);
+        if (!buf) {
+          setLoadingId(voiceId);
+          buf = await sei.voicePreview({ voiceId });
+          cacheRef.current.set(voiceId, buf);
+        }
+        if (!aliveRef.current) return;
+        url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
       }
-      if (!aliveRef.current) return;
-      const url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
       const el = new Audio(url);
       audioRef.current = el;
       el.addEventListener(
@@ -131,7 +153,13 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
 
   const samplesOff = samplesAvailable === false;
 
-  function renderRow(id: string, title: React.ReactNode, vibe: string, label: string): React.ReactElement {
+  function renderRow(
+    id: string,
+    title: React.ReactNode,
+    vibe: string,
+    label: string,
+    bundled = true,
+  ): React.ReactElement {
     const selected = value === id;
     return (
       <div key={id} className={`${styles.row} ${selected ? styles.selected : ''}`}>
@@ -139,7 +167,7 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
           type="button"
           className={styles.playBtn}
           aria-label={playingId === id ? `Stop ${label} sample` : `Play ${label} sample`}
-          disabled={samplesOff || (loadingId !== null && loadingId !== id)}
+          disabled={(samplesOff && !bundled) || (loadingId !== null && loadingId !== id)}
           onClick={() => void toggleSample(id)}
         >
           {loadingId === id ? (
@@ -194,8 +222,10 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
         </div>
       </button>
 
-      {samplesOff ? (
-        <div className={styles.hint}>Sign in to play voice samples. Picking a voice still works.</div>
+      {samplesOff && isUnlistedVoice(value, voices) ? (
+        <div className={styles.hint}>
+          Sign in to play the current voice sample. Picking a voice still works.
+        </div>
       ) : null}
 
       <div className={styles.list}>
@@ -204,7 +234,13 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
         {isUnlistedVoice(value, voices) && value ? (
           <section className={styles.group}>
             <h3 className={styles.groupTitle}>Current voice</h3>
-            {renderRow(value, 'Current voice', 'Assigned from an earlier voice pool.', 'current voice')}
+            {renderRow(
+              value,
+              'Current voice',
+              'Assigned from an earlier voice pool.',
+              'current voice',
+              false,
+            )}
           </section>
         ) : null}
 
