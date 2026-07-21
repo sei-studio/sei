@@ -37,6 +37,7 @@ import { buildLaunchContinuity } from './chat/continuity';
 import { loadConfig as loadUserConfig, saveConfig as saveUserConfig } from './configStore'; // UserConfig for bot init + daily-limit gate
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
+import type { SummonFailureInfo, SummonPhase } from './diagnostics';
 
 const SUMMON_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -85,6 +86,27 @@ const logger = {
   warn: (m: string) => console.warn(`[sei] ${m}`),
   error: (m: string) => console.error(`[sei] ${m}`),
 };
+
+/** Best-effort error → message string (mirrors the inline pattern used below). */
+function errText(err: unknown): string {
+  return (err && typeof err === 'object' && 'message' in err)
+    ? String((err as { message: unknown }).message)
+    : String(err);
+}
+
+/**
+ * 260720 diagnostics: error-class string for the failed-summon diagnostic.
+ * Pre-gate refusals throw sentinel-token errors ('CLOUD_CREDITS_DEPLETED',
+ * 'DAILY_LIMIT_REACHED', 'SUMMON_USERNAME_CONFLICT: name', 'LOCAL_NO_API_KEY:
+ * ...', 'LAN_NOT_OPEN', 'PREFERRED_NAME_MISSING') — the leading UPPER_SNAKE
+ * token IS the class, and squeezing it through classifyChildError would smear
+ * most of them into BOT_CRASH. Anything else falls back to classifyChildError.
+ */
+function diagErrorClass(err: unknown): string {
+  const m = errText(err).match(/^([A-Z][A-Z0-9_]{2,})(?::|\s|$)/);
+  if (m) return m[1];
+  return classifyChildError(err);
+}
 
 function botEntryPath(): string {
   // Pitfall 1: asar-internal path crashes utilityProcess.fork.
@@ -188,6 +210,18 @@ export interface BotSupervisorOptions {
    * queue (the farewell) before tearing the call down. Optional — no-ops.
    */
   onCallEndRequested?: (characterId: string) => void;
+  /**
+   * P0 failed-summon diagnostics (260720): invoked at most ONCE per summon
+   * attempt, at its terminal failure site — pre-gate refusal ('pre_gate'),
+   * child spawn error or exit-before-ready ('fork'), structured pre-ready
+   * lifecycle error ('connect'), the 30s watchdog ('ready_timeout') — plus
+   * once for a mid-session crash exit ('mid_session': nonzero code with no
+   * stop requested). The payload carries the RAW stderr/stdout tails and
+   * error message; the consumer (index.ts) redacts via
+   * diagnostics.buildSummonDiagnostic before anything leaves the machine.
+   * Optional — undefined no-ops; a throwing callback is swallowed.
+   */
+  onSummonFailure?: (info: SummonFailureInfo) => void;
 }
 
 export interface BotSupervisor {
@@ -287,6 +321,13 @@ interface ActiveSession {
    * of 401s triggers at most one refreshSession() call.
    */
   lastJwtReqAt?: number;
+  /**
+   * 260720 diagnostics: set by _stop before it posts {type:'stop'}, so the
+   * exit handler can tell a requested drain (clean stop / kill escalation)
+   * from a spontaneous mid-session crash — only the latter fires the
+   * mid_session onSummonFailure diagnostic.
+   */
+  stopRequested?: boolean;
 }
 
 export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
@@ -361,6 +402,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       opts.sendStatus({ kind: 'idle', characterId });
       return;
     }
+    // Diagnostics (260720): mark the drain as requested BEFORE anything can
+    // make the child exit, so the exit handler never mistakes this stop (or
+    // its kill escalation) for a mid-session crash.
+    session.stopRequested = true;
     // BL-01: kill the JWT rotation pump BEFORE port1.close() so a pending
     // tick (in the middle of a refreshSession await) cannot postMessage
     // onto a disposed port. setupJwtRotation re-checks `running` between
@@ -476,7 +521,55 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }
   }
 
-  async function _summon(characterId: string): Promise<void> {
+  /**
+   * 260720 diagnostics: per-attempt once-only failure reporter. Owns the
+   * attempt clock and the fired-guard so exactly one onSummonFailure lands per
+   * attempt no matter how many failure paths race (timer vs exit vs lifecycle
+   * error). Lives past a SUCCESSFUL summon too: the exit handler reuses it for
+   * the mid_session crash diagnostic (the guard is still unfired then).
+   */
+  interface FailureReporter {
+    /** Set once the backend kind is read, so even pre-fork failures carry it. */
+    backend: AiBackendKind | null;
+    fire(partial: {
+      phase: SummonPhase;
+      errorClass: string;
+      errorMessage: string;
+      exitCode?: number | null;
+      stderrTail?: string;
+      stdoutTail?: string;
+    }): void;
+  }
+
+  function createFailureReporter(characterId: string): FailureReporter {
+    const startedAtMs = Date.now();
+    let fired = false;
+    const reporter: FailureReporter = {
+      backend: null,
+      fire(partial) {
+        if (fired) return;
+        fired = true;
+        try {
+          opts.onSummonFailure?.({
+            characterId,
+            phase: partial.phase,
+            errorClass: partial.errorClass,
+            errorMessage: partial.errorMessage,
+            exitCode: partial.exitCode ?? null,
+            stderrTail: partial.stderrTail ?? '',
+            stdoutTail: partial.stdoutTail ?? '',
+            durationMs: Date.now() - startedAtMs,
+            backend: reporter.backend,
+          });
+        } catch {
+          /* diagnostics must never break summon/exit handling */
+        }
+      },
+    };
+    return reporter;
+  }
+
+  async function _summon(characterId: string, reporter: FailureReporter): Promise<void> {
     // Multi-summon: do NOT stop the other bots. Re-summoning an already-running
     // character is a no-op (the UI shows "unsummon" for live characters, so the
     // only way here is a double-fire) — never fork a duplicate child for it.
@@ -514,6 +607,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     //   - 'local' (BYOK)  → legacy path; loadApiKey() from safeStorage.
     // The kind read defaults to 'local' for existing users (apiKeyStore.ts).
     const aiBackendKind = await getAiBackendKind();
+    reporter.backend = aiBackendKind; // diagnostics: stamp even on pre-fork failures
     let apiKey: string = '';
     let cloudMode: { baseURL: string; authToken: string } | undefined;
     if (aiBackendKind === 'cloud-proxy') {
@@ -702,14 +796,17 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     };
     sessions.set(characterId, session);
 
-    // stdout/stderr line-split → router. We also keep the last ~4KB of
+    // stdout/stderr line-split → router. We also keep the last ~16KB of
     // stderr/stdout so the exit-before-ready handler can attach the actual
     // crash trace to the BotStatus.message field (260508-mun: previously
     // the renderer only saw "Bot exited before summon-ready (code=1)" with
-    // no signal about which require()/throw blew up).
+    // no signal about which require()/throw blew up). 260720: raised 4KB→16KB
+    // so the failed-summon diagnostic (onSummonFailure) keeps enough context
+    // to survive redaction + the analytics 8KB per-field cap with the actual
+    // crash still in frame.
     const buffers = { stdout: '', stderr: '' };
     const tails = { stdout: '', stderr: '' };
-    const TAIL_MAX = 4096;
+    const TAIL_MAX = 16_384;
     const sink = (chunk: Buffer, key: 'stdout' | 'stderr') => {
       const chunkText = chunk.toString('utf-8');
       // Mirror to the Electron-main terminal so a developer running
@@ -740,6 +837,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (summonResolved) return;
       summonResolved = true;
       const err: ErrorClass = 'BOT_START_TIMEOUT';
+      reporter.fire({
+        phase: 'ready_timeout',
+        errorClass: err,
+        errorMessage: 'Bot did not signal ready within 30s.',
+        stderrTail: tails.stderr,
+        stdoutTail: tails.stdout,
+      });
       opts.sendStatus({
         kind: 'error',
         error: err,
@@ -821,6 +925,15 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (data.type === 'error' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
+        // Diagnostics (260720): a structured pre-ready lifecycle error means
+        // the child ran but could not reach the world — the 'connect' phase.
+        reporter.fire({
+          phase: 'connect',
+          errorClass: String(data.error),
+          errorMessage: String(data.message ?? ''),
+          stderrTail: tails.stderr,
+          stdoutTail: tails.stdout,
+        });
         summonReject(new Error(`${data.error}: ${data.message}`));
       }
       // Out-of-playtime popup (260616): a CLOUD_CREDITS_DEPLETED lifecycle error
@@ -994,6 +1107,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           summonResolved = true;
           clearTimeout(summonTimer);
           const ec = classifyChildError(err);
+          reporter.fire({
+            phase: 'fork',
+            errorClass: ec,
+            errorMessage: err.message,
+            stderrTail: tails.stderr,
+            stdoutTail: tails.stdout,
+          });
           opts.sendStatus({ kind: 'error', error: ec, message: err.message, characterId });
           summonReject(err);
         }
@@ -1046,6 +1166,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // eslint-disable-next-line no-console
         console.error(`[sei] ${baseMessage}\n--- bot stderr tail ---\n${stderrTail || '(empty)'}\n--- bot stdout tail ---\n${stdoutTail || '(empty)'}`);
         const ec = classifyChildError(message);
+        // Diagnostics (260720): the child forked but died before summon-ready —
+        // the 'fork' phase, with the actual exit code and full tails attached.
+        reporter.fire({
+          phase: 'fork',
+          errorClass: ec,
+          errorMessage: message,
+          exitCode: code ?? null,
+          stderrTail: tails.stderr,
+          stdoutTail: tails.stdout,
+        });
         opts.sendStatus({ kind: 'error', error: ec, message, characterId });
         summonReject(new Error(message));
       } else {
@@ -1057,6 +1187,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // floating widget keeps a stale "Disconnect" button. Push `idle` so the
         // widget clears. (A clean `_stop` also emits idle after `exited`
         // resolves; a duplicate idle is harmless — the delete is idempotent.)
+        //
+        // Diagnostics (260720): a nonzero exit with no stop requested is a
+        // mid-session CRASH — report it with the tails. A code-0 exit (player
+        // closed the world, clean self-shutdown) is a normal session end, not
+        // a failure; those stay diagnostic-silent. Note the summon reporter's
+        // once-guard is untouched on the success path, so this is the first
+        // and only fire for the attempt.
+        if (session.stopRequested !== true && code != null && code !== 0) {
+          const tail = tails.stderr || tails.stdout;
+          reporter.fire({
+            phase: 'mid_session',
+            errorClass: classifyChildError(tail || `exit code ${code}`),
+            errorMessage: `Bot exited mid-session (code=${code})`,
+            exitCode: code,
+            stderrTail: tails.stderr,
+            stdoutTail: tails.stdout,
+          });
+        }
         opts.sendStatus({ kind: 'idle', characterId });
       }
       // Resolve `exited` only AFTER the playtime write lands. _stop awaits
@@ -1265,10 +1413,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   function summon(characterId: string): Promise<void> {
     const pending = pendingSummons.get(characterId);
     if (pending) return pending;
-    const attempt = _summon(characterId).finally(() => {
-      if (pendingSummons.get(characterId) === attempt) pendingSummons.delete(characterId);
-      pendingUsernames.delete(characterId);
-    });
+    const reporter = createFailureReporter(characterId);
+    const attempt = _summon(characterId, reporter)
+      .catch((err: unknown) => {
+        // Diagnostics backstop (260720): any throw whose site did not report
+        // (all the pre-gate refusals, plus stragglers like a store read or
+        // fork throw) is a pre-fork failure. Once-guarded, so a site-specific
+        // fire above always wins.
+        reporter.fire({
+          phase: 'pre_gate',
+          errorClass: diagErrorClass(err),
+          errorMessage: errText(err),
+        });
+        throw err;
+      })
+      .finally(() => {
+        if (pendingSummons.get(characterId) === attempt) pendingSummons.delete(characterId);
+        pendingUsernames.delete(characterId);
+      });
     pendingSummons.set(characterId, attempt);
     return attempt;
   }

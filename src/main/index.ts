@@ -270,11 +270,12 @@ function broadcastStatus(status: BotStatus): void {
       const durationMs = Date.now() - startedAt;
       void emitPlaySession(id, durationMs);
       capture('bot_session_ended', { character_id: id, duration_ms: durationMs });
-    } else if (status.kind === 'error') {
-      // Terminal error with no live session ⇒ the summon never reached the
-      // world. Record the failure reason (an ErrorClass enum, never content).
-      capture('summon_failed', { character_id: id, reason: String((status as { error?: unknown }).error ?? 'unknown') });
     }
+    // 260720: the thin summon_failed capture that used to live here (terminal
+    // error with no live session → character_id + reason) moved to the
+    // supervisor's onSummonFailure wiring (see createBotSupervisor below),
+    // which ships the same event name enriched with phase, exit code, and
+    // redacted diagnostics. Capturing here too would double-count.
   }
 }
 
@@ -687,6 +688,33 @@ async function bootstrap(): Promise<void> {
     // Voice calls (260705): the in-game bot called end_call() — hang up the
     // player's call (the renderer finishes speaking the goodbye first).
     onCallEndRequested: endVoiceCallFromCompanion,
+    // P0 failed-summon diagnostics (260720): ship a REDACTED diagnostic to
+    // PostHog at each terminal summon failure. Replaces the old thin
+    // summon_failed capture in broadcastStatus — same event name for dashboard
+    // continuity (`reason` kept as a legacy alias of error_class), now with
+    // phase, exit code, redacted stderr/stdout tails, and MC/world context.
+    // Note summon_phase == 'mid_session' rows are post-summon crashes; filter
+    // them out of summon-failure-rate insights.
+    onSummonFailure: (info) => {
+      void (async () => {
+        try {
+          const { buildSummonDiagnostic } = await import('./diagnostics');
+          const { captureDiagnostic, isSignedInAnalytics } = await import('./analytics');
+          const diag = buildSummonDiagnostic(info, {
+            lan: latestLanState,
+            signedIn: isSignedInAnalytics(),
+            packaged: app.isPackaged,
+          });
+          captureDiagnostic('summon_failed', {
+            character_id: info.characterId,
+            reason: info.errorClass,
+            ...diag,
+          });
+        } catch (err) {
+          logger.warn(`summon diagnostic capture failed: ${(err as Error).message}`);
+        }
+      })();
+    },
   });
 
   // 4b. Per-profile scope switcher (260603). Re-points the local data scope
@@ -802,6 +830,20 @@ async function bootstrap(): Promise<void> {
   } catch (err) {
     logger.warn(`analytics init failed: ${(err as Error).message}`);
   }
+
+  // 5b-iii. Log hygiene (260720): prune <userData>/logs to the newest 20 files
+  //         / 50MB total. The dir was unbounded (one file per bot session, no
+  //         rotation). Fire-and-forget; must never block or fail startup.
+  void (async () => {
+    try {
+      const { pruneLogsDir } = await import('./diagnostics');
+      const { paths } = await import('./paths');
+      const { deleted } = await pruneLogsDir(paths.logsDir());
+      if (deleted > 0) logger.info(`log prune: removed ${deleted} old bot log file(s)`);
+    } catch (err) {
+      logger.warn(`log prune failed: ${(err as Error).message}`);
+    }
+  })();
 
   // 5b-bis. JWT bridge (plan 10-06). Pushes session.access_token to the bot
   //          supervisor on every relevant Supabase auth event, and null on

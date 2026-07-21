@@ -169,6 +169,63 @@ export function capture(event: string, props?: Record<string, unknown>): void {
 }
 
 /**
+ * Diagnostic long-text allowlist (260720): the ONLY keys allowed past
+ * sanitize()'s 200-char truncation, and only via captureDiagnostic(). Callers
+ * MUST pre-redact these fields (diagnostics.redact strips home paths, API
+ * keys, JWTs, and chat/prompt log content) — this layer only enforces length.
+ */
+const DIAG_LONG_TEXT_KEYS: readonly string[] = ['stderr_tail', 'stdout_tail', 'error_message'];
+const DIAG_LONG_TEXT_CAP = 8192;
+
+/**
+ * sanitize() plus the diagnostic long-text allowlist. Exported for tests.
+ * `*_tail` keys keep the END of the string (the crash is at the bottom);
+ * everything else keeps the head. All other keys get standard sanitize()
+ * treatment (snake_case scalars only, 200-char strings, objects dropped).
+ */
+export function sanitizeDiagnostic(props?: Record<string, unknown>): Record<string, unknown> {
+  const out = sanitize(props);
+  if (!props) return out;
+  for (const k of DIAG_LONG_TEXT_KEYS) {
+    const v = props[k];
+    if (typeof v === 'string') {
+      out[k] = k.endsWith('_tail') ? v.slice(-DIAG_LONG_TEXT_CAP) : v.slice(0, DIAG_LONG_TEXT_CAP);
+    }
+  }
+  return out;
+}
+
+/**
+ * Capture a diagnostic event carrying pre-redacted long text (failed-summon
+ * stderr/stdout tails + error message, 260720). Identical opt-out and
+ * missing-key gating to capture(); the only difference is the allowlisted
+ * per-field 8KB cap above. Never throws.
+ */
+export function captureDiagnostic(event: string, props?: Record<string, unknown>): void {
+  if (!client || optedOut) return;
+  const id = distinctId();
+  if (!id) return;
+  try {
+    client.capture({
+      distinctId: id,
+      event,
+      properties: { ...commonProps(), ...sanitizeDiagnostic(props) },
+    });
+  } catch (err) {
+    logger.warn(`analytics: captureDiagnostic(${event}) failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * True while events are attributed to a signed-in account (260720): the
+ * failed-summon diagnostic stamps this as `signed_in` so cloud-auth failure
+ * modes (expired JWT and friends) separate from anonymous/BYOK ones.
+ */
+export function isSignedInAnalytics(): boolean {
+  return signedInUserId !== null;
+}
+
+/**
  * Attach subsequent events to a signed-in cloud account. Aliases the
  * pre-sign-in anonymous install id into the account so its activity is not
  * orphaned, then identifies. Idempotent-ish (PostHog dedupes aliases).

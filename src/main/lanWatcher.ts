@@ -158,6 +158,10 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
       motd: world.status.motd,
       lastSeenAt: Date.now(),
       host: await hostFor(world),
+      // 260720 diagnostics: carry the ping's MC version + protocol through so
+      // main can stamp mc_version / mc_protocol onto failed-summon diagnostics.
+      versionName: world.status.versionName,
+      protocol: world.status.protocol,
     };
   };
 

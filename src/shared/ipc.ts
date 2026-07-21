@@ -101,7 +101,23 @@ export interface VisionCapability {
  *   - 'unavailable' → the OS port-listing tool itself failed (can't tell).
  */
 export type LanState =
-  | { kind: 'open'; port: number; motd: string; lastSeenAt: number; host?: LanHost }
+  | {
+      kind: 'open';
+      port: number;
+      motd: string;
+      lastSeenAt: number;
+      host?: LanHost;
+      /**
+       * 260720 diagnostics: MC version name from the status ping (e.g.
+       * "1.21.4"; modded servers report loader-flavored strings). Optional and
+       * additive — older cached states and test fixtures omit it. Stamped
+       * onto the failed-summon diagnostic as mc_version.
+       */
+      versionName?: string;
+      /** 260720 diagnostics: MC protocol number from the status ping (null when
+       *  the ping carried none). Stamped as mc_protocol. */
+      protocol?: number | null;
+    }
   | { kind: 'closed' }
   | { kind: 'unavailable' };
 
