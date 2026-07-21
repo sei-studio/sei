@@ -20,5 +20,12 @@
 // analytics — privacy.html §1 ("Product analytics"), §3 (PostHog subprocessor
 // row), §4, and §10 updated + Effective Date moved to 2026-07-07. TOS_VERSION
 // unchanged — terms.html was not touched.
+// 260720: PRIVACY bumped after adding crash-diagnostics collection (redacted
+// failed-summon stderr/stdout tails via captureDiagnostic) to privacy.html +
+// Effective Date moved to 2026-07-20. Accepting this version also re-baselines
+// analytics consent: the tos:accept handler clears analytics_opt_out in the
+// active profile's config (reenableAnalyticsOnConsent in src/main/analytics.ts);
+// the Settings "Usage analytics" toggle remains the ongoing opt-out.
+// TOS_VERSION unchanged — terms.html was not touched.
 export const TOS_VERSION = '2026-06-03';
-export const PRIVACY_VERSION = '2026-07-07';
+export const PRIVACY_VERSION = '2026-07-20';

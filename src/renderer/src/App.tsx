@@ -552,6 +552,12 @@ export function App(): React.ReactElement {
         useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
         // Sticky chat side-panel visibility (default shown).
         useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
+        // Product analytics opt-out (default OFF = analytics on). Without this
+        // seed the store's `false` default made the Settings toggle show ON
+        // even when the profile's config.json had analytics_opt_out: true
+        // (the scope-changed handler hydrated it, the initial bootstrap
+        // didn't) — fix 260720.
+        useUiStore.getState().setAnalyticsOptOut(cfg.analytics_opt_out === true);
       } catch {
         // Defaults already applied (themeMode='system' from store)
       }
@@ -954,7 +960,15 @@ export function App(): React.ReactElement {
         tosAccepted → true and this conditional unmounts.
       */}
       {authState.kind === 'signed_in' && tosAccepted === false ? (
-        <AcceptToSModal onAccepted={() => { void refreshTosStatus(); }} />
+        <AcceptToSModal
+          onAccepted={() => {
+            // Mirror main's privacy re-consent (tos:accept clears
+            // analytics_opt_out) so the Settings toggle shows ON without a
+            // reload — fix 260720.
+            useUiStore.getState().setAnalyticsOptOut(false);
+            void refreshTosStatus();
+          }}
+        />
       ) : null}
       {/*
         260610 — offline-retry notice. Mounts when the ToS status check was

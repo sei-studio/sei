@@ -1939,6 +1939,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // a confusing "syncing pending" delay after acceptance.
       const { invalidateTosCache } = await import('./auth/authState');
       invalidateTosCache();
+      // Privacy re-consent (260720): accepting the current Privacy version
+      // (which discloses analytics + crash diagnostics) re-baselines analytics
+      // consent — clear any prior opt-out in this profile's config. Only runs
+      // here, on an explicit acceptance click; a normal launch never reaches
+      // this handler. Best-effort: a config-write failure must not fail the
+      // legal acceptance itself.
+      try {
+        const { reenableAnalyticsOnConsent } = await import('./analytics');
+        await reenableAnalyticsOnConsent();
+      } catch { /* non-fatal — the Settings toggle remains available */ }
       return { ok: true };
     } catch (err) {
       return { ok: false, message: (err as Error).message };

@@ -277,6 +277,20 @@ export async function setAnalyticsOptOut(optOut: boolean): Promise<void> {
   }
 }
 
+/**
+ * Privacy re-consent (260720): the user just ACCEPTED the current Terms +
+ * Privacy versions (AcceptToSModal → tos:accept). The current privacy.html
+ * discloses product analytics + crash diagnostics, so an explicit acceptance
+ * re-baselines consent: clear any prior opt-out in the same profile-scoped
+ * config.json that capture() reads. The Settings "Usage analytics" toggle
+ * remains the ongoing opt-out after this point. Must be called ONLY from an
+ * actual acceptance event (the tos:accept IPC handler after recordAcceptance
+ * succeeds), never at launch. Never throws.
+ */
+export async function reenableAnalyticsOnConsent(): Promise<void> {
+  await setAnalyticsOptOut(false);
+}
+
 /** True while a live client exists (used to keep before-quit teardown alive to flush). */
 export function isAnalyticsActive(): boolean {
   return client !== null;
