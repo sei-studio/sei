@@ -49,7 +49,7 @@ vi.mock('./cloud/syncQueue', () => ({
 }));
 
 import { _setUserDataOverride, paths } from './paths';
-import { saveCharacter, getCharacter, patchCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
+import { saveCharacter, getCharacter, patchCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation, listCharacters } from './characterStore';
 import { loadConfig, saveConfig } from './configStore';
 import { MAX_CREATIONS_PER_DAY, type Character } from '../shared/characterSchema';
 
@@ -301,5 +301,51 @@ describe('patchCharacter (260705)', () => {
 
     const final = await getCharacter(UUID);
     expect(final?.playtime_ms).toBe(20);
+  });
+});
+
+describe('listCharacters index self-heal (260721)', () => {
+  const UUID2 = '550e8400-e29b-41d4-a716-446655440100';
+  // NB: paths are profile-scoped — go through paths.*, not tmp/characters.
+  const indexPath = () => paths.indexPath();
+
+  it('H.1: re-indexes an on-disk character file whose index entry was lost', async () => {
+    await saveCharacter(makeChar());
+    await saveCharacter({ ...makeChar(), id: UUID2, name: 'Dropped' });
+    // Simulate the lost-membership state: index rewritten without UUID2 while
+    // its JSON survives on disk.
+    await writeFile(indexPath(), JSON.stringify({ version: 1, order: [UUID] }, null, 2) + '\n');
+
+    const out = await listCharacters();
+    expect(out.map((c) => c.id).sort()).toEqual([UUID, UUID2].sort());
+
+    const idx = JSON.parse(await readFile(indexPath(), 'utf8')) as { order: string[] };
+    expect(idx.order).toContain(UUID2);
+  });
+
+  it('H.2: a corrupt index.json no longer loses the library — membership rebuilt from disk', async () => {
+    await saveCharacter(makeChar());
+    await saveCharacter({ ...makeChar(), id: UUID2, name: 'Second' });
+    await writeFile(indexPath(), 'not json{{{');
+
+    const out = await listCharacters();
+    expect(out.map((c) => c.id).sort()).toEqual([UUID, UUID2].sort());
+
+    const idx = JSON.parse(await readFile(indexPath(), 'utf8')) as { order: string[] };
+    expect(idx.order.sort()).toEqual([UUID, UUID2].sort());
+  });
+
+  it('H.3: an unparseable stray json is left on disk and NOT indexed', async () => {
+    await saveCharacter(makeChar());
+    const strayId = '550e8400-e29b-41d4-a716-446655440101';
+    await writeFile(path.join(paths.charactersDir(), `${strayId}.json`), '{"broken":');
+
+    const out = await listCharacters();
+    expect(out.map((c) => c.id)).toEqual([UUID]);
+
+    const idx = JSON.parse(await readFile(indexPath(), 'utf8')) as { order: string[] };
+    expect(idx.order).not.toContain(strayId);
+    // File untouched — quarantine, not deletion.
+    expect(await readFile(path.join(paths.charactersDir(), `${strayId}.json`), 'utf8')).toBe('{"broken":');
   });
 });

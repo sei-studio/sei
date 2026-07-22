@@ -19,7 +19,7 @@
  *    `persona: { source, expanded }`, throw a clear message instead of
  *    surfacing a Zod stack trace.
  */
-import { readFile, mkdir, unlink, rm } from 'node:fs/promises';
+import { readFile, readdir, mkdir, unlink, rm } from 'node:fs/promises';
 import { CharacterSchema, CharacterIndexSchema, MAX_CREATIONS_PER_DAY, type Character, type CharacterIndex } from '../shared/characterSchema';
 // allowJs:true in tsconfig.node.json lets TS resolve these .js modules at compile time.
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
@@ -45,7 +45,16 @@ async function readJson<T>(p: string): Promise<T | null> {
 }
 
 async function loadIndex(): Promise<CharacterIndex> {
-  const data = await readJson<unknown>(paths.indexPath());
+  // Any unreadable index (bad JSON as well as bad shape) degrades to empty
+  // rather than throwing — listCharacters' disk-reconcile pass then rebuilds
+  // membership from the surviving <id>.json files, so a corrupt index is a
+  // recoverable blip instead of a silently emptied library.
+  let data: unknown;
+  try { data = await readJson<unknown>(paths.indexPath()); }
+  catch (err) {
+    logger.warn(`characters/index.json unreadable; treating as empty: ${(err as Error).message}`);
+    return CharacterIndexSchema.parse({});
+  }
   if (!data) return CharacterIndexSchema.parse({});
   try { return CharacterIndexSchema.parse(data); }
   catch (err) {
@@ -95,6 +104,51 @@ export async function listCharacters(): Promise<Character[]> {
       fresh.order = next;
       await writeIndex(fresh);
     }
+  }
+
+  // 260721 self-heal: an index entry can be lost while the character file
+  // survives (loadIndex treats a corrupt index.json as empty, and the next
+  // save rewrites it with only the saved id). Nothing else repairs
+  // membership — ensureLocallyCached's cache-hit path only re-appends via a
+  // save, which never fires while the cloud row is unchanged — so a dropped
+  // entry made the character permanently invisible to chars.list AND the
+  // skin server (previews + in-game skin render as Steve). Rebuild
+  // membership from disk: any parseable <id>.json in charactersDir that is
+  // not in the index is re-appended. The local copy is served as-is; the
+  // normal cache-on-demand open path still refreshes it from cloud when the
+  // row is newer.
+  try {
+    const entries = await readdir(paths.charactersDir());
+    const known = new Set(idx.order.filter((id) => !legacyToPurge.includes(id)));
+    const strays = entries
+      .filter((f) => f.endsWith('.json') && f !== 'index.json')
+      .map((f) => f.slice(0, -'.json'.length))
+      .filter((id) => !known.has(id));
+    const healed: string[] = [];
+    for (const id of strays) {
+      try {
+        const c = await getCharacter(id);
+        if (c) {
+          out.push(c);
+          healed.push(id);
+        }
+      } catch {
+        // Unparseable stray (legacy shape, torn write) — leave it on disk,
+        // don't index it.
+      }
+    }
+    if (healed.length > 0) {
+      const fresh = await loadIndex();
+      const present = new Set(fresh.order);
+      const toAdd = healed.filter((id) => !present.has(id));
+      if (toAdd.length > 0) {
+        fresh.order = [...fresh.order, ...toAdd];
+        await writeIndex(fresh);
+      }
+      logger.warn(`characters/index.json was missing ${healed.length} on-disk character(s); re-indexed: ${healed.join(', ')}`);
+    }
+  } catch {
+    // charactersDir missing (first run) — nothing to heal.
   }
   return out;
 }
