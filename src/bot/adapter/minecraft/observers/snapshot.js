@@ -118,7 +118,13 @@ export function composeSnapshot(bot, opts = {}) {
   if (worldTag) lines.push(`world: ${worldTag}`)
   // Position / biome / time
   lines.push(`pos: ${w.pos.x},${w.pos.y},${w.pos.z}`)
-  lines.push(`biome: ${w.biome}  surroundings: ${w.surroundings}  time: ${w.time.isDay ? 'day' : 'night'} (${w.time.timeOfDay})`)
+  // Light levels are 0-15; sky is exposure to open sky (does not drop at
+  // night), block is torches/lava. Lets the model answer "why is it dark"
+  // from data instead of arguing with the player about the time of day.
+  const light = w.light && (w.light.sky != null || w.light.block != null)
+    ? `  light: sky ${w.light.sky ?? '?'} block ${w.light.block ?? '?'}`
+    : ''
+  lines.push(`biome: ${w.biome}  surroundings: ${w.surroundings}${light}  time: ${w.time.isDay ? 'day' : 'night'} (${w.time.timeOfDay})`)
   // Real-world clock + session age (260703). The model has no sense of elapsed
   // time and guessed session length wrong ("probably 8-9 mins" on a 7-minute
   // session) — give it the wall clock and minutes-since-join so "how long have
