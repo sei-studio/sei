@@ -27,7 +27,7 @@
  *   - src/main/updatePolicy.ts (pure level/apply derivation)
  *   - src/main/updateStateStore.ts (device-global pending/lastSeen persistence)
  */
-import { app, net, type BrowserWindow } from 'electron';
+import { app, net, powerMonitor, type BrowserWindow } from 'electron';
 import { IpcChannel, type WhatsNewEvent } from '../shared/ipc';
 import { deriveLevel, normalizeApply, shouldShowWhatsNew, type ApplyTiming } from './updatePolicy';
 import { loadUpdateState, saveUpdateState } from './updateStateStore';
@@ -44,11 +44,24 @@ const FORCED_RESTART_DELAY_MS = 3500;
 /**
  * Background re-check cadence (260710). The startup check alone meant a
  * long-running app never noticed a release — v0.4.4 sat invisible to every
- * open 0.4.3 instance until users happened to relaunch. Hourly bounds how
- * stale a running app can get; the check itself is one ~1KB GitHub feed GET
- * (latest.yml), so the cost is negligible.
+ * open 0.4.3 instance until users happened to relaunch.
+ *
+ * Responsiveness now comes from EVENTS, not the clock (260722): a check fires
+ * when the user returns to the app (window focus) or the machine wakes / the
+ * screen unlocks — the moments a stale app is most likely and the user is right
+ * there to act on it. The periodic timer below is just a backstop for a session
+ * left continuously in the foreground. Every automatic check funnels through
+ * maybeBackgroundCheck(), which enforces MIN_BACKGROUND_GAP_MS between checks so
+ * focus-thrashing or a wake+unlock burst can't spam the feed. Each check is one
+ * ~1KB GitHub feed GET (latest.yml), so the cost is negligible either way.
  */
-const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const PERIODIC_CHECK_INTERVAL_MS = 30 * 60 * 1000;
+/**
+ * Floor between two automatic (event- or timer-driven) checks. Bounds the feed
+ * traffic from event triggers to at most one hit per this window, regardless of
+ * how many focus/resume/unlock events fire.
+ */
+const MIN_BACKGROUND_GAP_MS = 20 * 60 * 1000;
 
 /** Parsed, validated version.json policy fields used by the updater. */
 interface VersionPolicy {
@@ -91,12 +104,34 @@ let mandatoryApply: ApplyTiming | null = null;
  */
 let backgroundCheck = false;
 /**
+ * True while a manual "Check for updates" (Settings) is in flight. A manual
+ * check always WINS over a concurrent background one: its checking/available/
+ * not-available feedback is surfaced and version dedup is bypassed, even if it
+ * overlaps a background check that set `backgroundCheck`. See isBackgroundDiscovery.
+ */
+let manualCheckInFlight = false;
+/**
+ * Whether a discovery from the in-flight check should be treated as background
+ * (silent checking/not-available + per-run version dedup). Only when a
+ * background check is running AND no manual check is in flight — a manual check
+ * overrides, so the Settings flow always resolves to a terminal status.
+ */
+function isBackgroundDiscovery(): boolean {
+  return backgroundCheck && !manualCheckInFlight;
+}
+/**
  * Versions already handled by handleUpdateAvailable this run. A background
  * re-check must not re-open the optional popup or re-download a mandatory
  * update every interval; manual checks bypass this so the Settings flow
  * always resolves to a terminal status event.
  */
 const handledVersions = new Set<string>();
+/** Wall-clock (ms) of the last automatic check's start — drives the throttle. */
+let lastBackgroundCheckAt = 0;
+/** True while an automatic check is in flight, so overlapping triggers dedup. */
+let backgroundCheckInFlight = false;
+/** True once the event-trigger listeners are attached (attach exactly once). */
+let eventsWired = false;
 
 /* -------------------------------------------------------------------------- */
 /*  version.json fetch (ported from updateChecker.ts)                          */
@@ -209,14 +244,14 @@ function ensureAutoUpdater(): AutoUpdater | null {
 
   // checking/not-available are FEEDBACK for the manual Settings button (and
   // the startup check) — a background re-check stays invisible unless it
-  // actually finds something, so the Settings status label doesn't flip on
-  // its own every few hours.
+  // actually finds something, so the Settings status label never flips on its
+  // own when a focus/wake/timer check runs.
   autoUpdater.on('checking-for-update', () => {
-    if (!backgroundCheck) send(IpcChannel.app.updateChecking);
+    if (!isBackgroundDiscovery()) send(IpcChannel.app.updateChecking);
   });
 
   autoUpdater.on('update-not-available', () => {
-    if (!backgroundCheck) send(IpcChannel.app.updateNotAvailable);
+    if (!isBackgroundDiscovery()) send(IpcChannel.app.updateNotAvailable);
   });
 
   autoUpdater.on('update-available', (info: unknown) => {
@@ -257,9 +292,10 @@ function ensureAutoUpdater(): AutoUpdater | null {
  *     the actual install timing is decided in handleUpdateDownloaded.
  */
 async function handleUpdateAvailable(info: unknown): Promise<void> {
-  // Captured before the first await — the finally that clears the flag runs
-  // only after the whole check settles.
-  const fromBackground = backgroundCheck;
+  // Captured before the first await — the event fires inside checkForUpdates(),
+  // so a manual check that overlaps a background one is still in flight here and
+  // correctly forces foreground treatment (feedback + no dedup).
+  const fromBackground = isBackgroundDiscovery();
   const au = autoUpdater;
   if (!au) return;
   const latestVersion =
@@ -284,7 +320,7 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
   //   - "on-restart" (the DEFAULT for normal releases): silent download,
   //     dismissable "restart now / later" popup, installs on next quit.
   //   - "now" (CRITICAL releases only): forced restart after the download —
-  //     including apps that discover it via the hourly background check, i.e.
+  //     including apps that discover it via a background check, i.e.
   //     mid-session. Reserve it for updates worth interrupting a live game or
   //     call for; everything else ships as on-restart.
   const apply = policy?.apply ?? 'on-restart';
@@ -454,6 +490,35 @@ async function runWhatsNewCheck(): Promise<void> {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Fire a background update check unless one ran within MIN_BACKGROUND_GAP_MS or
+ * is still in flight. Shared by the periodic timer and every event trigger, so
+ * the throttle and the background-only softenings (silent checking/
+ * not-available, per-run version dedup in handleUpdateAvailable) apply
+ * uniformly. No-op in dev / on load failure (no autoUpdater).
+ */
+function maybeBackgroundCheck(reason: string): void {
+  const au = autoUpdater;
+  if (!au) return;
+  if (backgroundCheckInFlight || manualCheckInFlight) return;
+  const now = Date.now();
+  if (now - lastBackgroundCheckAt < MIN_BACKGROUND_GAP_MS) return;
+  lastBackgroundCheckAt = now;
+  backgroundCheckInFlight = true;
+  backgroundCheck = true;
+  logger.info(`updater: background re-check (${reason})`);
+  au
+    .checkForUpdates()
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(`updater: background checkForUpdates failed (${message})`);
+    })
+    .finally(() => {
+      backgroundCheck = false;
+      backgroundCheckInFlight = false;
+    });
+}
+
+/**
  * Initialize the updater. Wires autoUpdater (packaged only), runs the launch
  * what's-new check, then kicks off the startup auto-check (Flow A). Safe to
  * call in dev — it just logs "disabled in dev" and runs nothing that touches
@@ -469,30 +534,33 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
   const au = ensureAutoUpdater();
   if (!au) return; // dev or load failure — nothing else to do.
 
-  // Flow A — startup auto-check.
+  // Flow A — startup auto-check. Seed the throttle so the window's own
+  // launch-time focus event doesn't immediately fire a redundant second check.
+  lastBackgroundCheckAt = Date.now();
   au.checkForUpdates().catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     logger.warn(`updater: startup checkForUpdates failed (${message})`);
   });
 
-  // Flow A' — background re-check so a long-running app self-notices a
-  // release (see PERIODIC_CHECK_INTERVAL_MS). Same event pipeline as the
-  // startup check, with two background-only softenings: an already-seen
-  // version is not re-handled every interval, and checking/not-available
-  // stay silent. apply is NOT softened — "now" means critical, and critical
-  // means running apps restart too (see handleUpdateAvailable).
-  setInterval(() => {
-    backgroundCheck = true;
-    au
-      .checkForUpdates()
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.warn(`updater: background checkForUpdates failed (${message})`);
-      })
-      .finally(() => {
-        backgroundCheck = false;
-      });
-  }, PERIODIC_CHECK_INTERVAL_MS);
+  // Flow A' — self-notice a release without a relaunch. Responsiveness is
+  // event-driven (see maybeBackgroundCheck); the periodic timer is only a
+  // backstop for a session left continuously in the foreground. All triggers
+  // share the same throttle + background-only softenings: an already-seen
+  // version is not re-handled, and checking/not-available stay silent. apply is
+  // NOT softened — "now" means critical, so running apps restart too (see
+  // handleUpdateAvailable).
+  setInterval(() => maybeBackgroundCheck('periodic'), PERIODIC_CHECK_INTERVAL_MS);
+
+  if (!eventsWired) {
+    eventsWired = true;
+    // The user just returned to the app — the most likely moment to act on an
+    // update, after any length of time away.
+    app.on('browser-window-focus', () => maybeBackgroundCheck('window-focus'));
+    // The machine woke or the screen unlocked — likely a long gap since the
+    // last check. powerMonitor is main-process only and safe post-ready.
+    powerMonitor.on('resume', () => maybeBackgroundCheck('resume'));
+    powerMonitor.on('unlock-screen', () => maybeBackgroundCheck('unlock-screen'));
+  }
 }
 
 /**
@@ -506,6 +574,12 @@ export async function checkForUpdatesManual(): Promise<void> {
     send(IpcChannel.app.updateNotAvailable);
     return;
   }
+  // Take priority over any in-flight background check for the duration (see
+  // isBackgroundDiscovery), so the Settings flow always gets its feedback. Also
+  // count as a check for the throttle, so a focus/wake event right after a
+  // manual check doesn't fire a redundant background one.
+  manualCheckInFlight = true;
+  lastBackgroundCheckAt = Date.now();
   send(IpcChannel.app.updateChecking);
   try {
     await au.checkForUpdates();
@@ -513,6 +587,8 @@ export async function checkForUpdatesManual(): Promise<void> {
     const message = (err as Error).message;
     logger.warn(`updater: manual checkForUpdates failed (${message})`);
     send(IpcChannel.app.updateError, message);
+  } finally {
+    manualCheckInFlight = false;
   }
 }
 
