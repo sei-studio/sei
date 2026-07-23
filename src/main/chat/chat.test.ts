@@ -147,6 +147,16 @@ describe('splitReply — blank line → separate messages (task 8)', () => {
     expect(splitReply('just one line here')).toEqual(['just one line here']);
   });
 
+  // 260722: ANY newline splits, not just blank lines — a model that writes one
+  // thought per line (texting style) lands as separate bubbles, not a wall.
+  it('splits on a single newline too (one line → one bubble)', () => {
+    expect(splitReply('first thought\nsecond thought\nthird')).toEqual([
+      'first thought',
+      'second thought',
+      'third',
+    ]);
+  });
+
   it('collapses whitespace-only replies to a single placeholder', () => {
     expect(splitReply('   \n\n  ')).toEqual(['…']);
   });

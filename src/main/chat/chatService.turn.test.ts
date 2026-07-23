@@ -465,3 +465,35 @@ describe('cancelInflightTurn (260705 — reset-memory interrupt)', () => {
     expect(patchCharacterSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('transcript stop sequences (260722 — TTS prompt leak)', () => {
+  // Live capture: a voice-call reply turn continued the transcript past its own
+  // lines (a fabricated "Human: ..." player turn plus an invented direction)
+  // and the continuation was persisted and spoken by TTS. The structural guard
+  // is request-level stop_sequences on EVERY turn runner that persists or
+  // speaks reply text: generation ends the moment the model starts writing the
+  // other side's line-start markers, so the leak text is never produced.
+  it('sendChatMessage requests carry TRANSCRIPT_STOP_SEQUENCES', async () => {
+    createSpy.mockResolvedValue({ content: [{ type: 'text', text: 'hey' }], usage: {} });
+    await sendChatMessage({ characterId: CHAR, text: 'hi' }, deps());
+    expect(createSpy).toHaveBeenCalled();
+    for (const call of createSpy.mock.calls) {
+      const req = call[0] as { stop_sequences?: string[] };
+      expect(req.stop_sequences).toEqual(
+        expect.arrayContaining(['\nHuman:', '\nAssistant:', '\nPlayer:']),
+      );
+    }
+  });
+
+  it('voice idle nudges and companion turns carry them too (spoken paths)', async () => {
+    setCallActive(CHAR, true);
+    createSpy.mockResolvedValue({ content: [{ type: 'text', text: 'yo' }], usage: {} });
+    await sendVoiceIdleTurn(CHAR, 30, []);
+    await sendCompanionVoiceTurn(CHAR, { speakerName: 'Sui', text: 'hey marv', peers: ['Sui'], depth: 0 });
+    expect(createSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const call of createSpy.mock.calls) {
+      const req = call[0] as { stop_sequences?: string[] };
+      expect(req.stop_sequences).toEqual(expect.arrayContaining(['\nHuman:', '\nPlayer:']));
+    }
+  });
+});
