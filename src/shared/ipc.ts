@@ -1531,6 +1531,13 @@ export interface RendererApi {
   getWhatsNew(): Promise<WhatsNewEvent | null>;
   /** Manually trigger an update check (Settings "Check for updates"). */
   checkForUpdates(): Promise<void>;
+  /**
+   * Switch the update channel (Settings "Advanced updates" toggle). `advanced`
+   * true tracks beta (pre-releases included); false tracks stable only. The
+   * renderer persists `advanced_updates` in config; this applies it to the live
+   * updater and, when enabling, re-checks so a waiting beta surfaces at once.
+   */
+  setUpdateChannel(advanced: boolean): Promise<void>;
   /** Consent to download an available optional update (popup "Update now"). */
   downloadUpdate(): Promise<void>;
   /** Quit and install a downloaded update (optional flow, after "restarting…"). */
@@ -1853,6 +1860,7 @@ export const IpcChannel = {
     whatsNew: 'app:whats-new',                     // post-update changelog
     // Invoke (renderer → main):
     updateCheck: 'app:update-check',               // manual "Check for updates"
+    updateSetChannel: 'app:update-set-channel',    // advanced-updates toggle (stable vs beta)
     updateDownload: 'app:update-download',         // optional-accept download
     updateInstall: 'app:update-install',           // quitAndInstall
     whatsNewGet: 'app:whats-new-get',               // pull pending post-update changelog (race-proof)

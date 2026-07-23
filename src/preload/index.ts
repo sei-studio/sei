@@ -296,6 +296,8 @@ const api: RendererApi = {
   },
   getWhatsNew: () => ipcRenderer.invoke(IpcChannel.app.whatsNewGet),
   checkForUpdates: () => ipcRenderer.invoke(IpcChannel.app.updateCheck),
+  setUpdateChannel: (advanced: boolean) =>
+    ipcRenderer.invoke(IpcChannel.app.updateSetChannel, advanced),
   downloadUpdate: () => ipcRenderer.invoke(IpcChannel.app.updateDownload),
   installUpdate: () => ipcRenderer.invoke(IpcChannel.app.updateInstall),
   getVersion: () => ipcRenderer.invoke(IpcChannel.app.version),

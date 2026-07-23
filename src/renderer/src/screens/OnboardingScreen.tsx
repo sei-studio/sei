@@ -133,6 +133,9 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // ACCOUNT MODE switch (proxy:configure) stamps 'user'.
         ai_backend_kind_source: 'default',
         dev_console_visible: false,
+        // A fresh onboard tracks the stable update channel (advanced updates
+        // are opt-in from Settings).
+        advanced_updates: false,
         // Appearance & feel: default the "Realistic typing" pacing on.
         realistic_typing: true,
         // Appearance & feel: live call captions default off (260705).

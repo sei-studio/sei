@@ -80,12 +80,24 @@ let wired = false;
 type AutoUpdater = {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  /** When true, GitHub pre-releases are eligible (the beta channel). */
+  allowPrerelease: boolean;
   checkForUpdates: () => Promise<unknown>;
   downloadUpdate: () => Promise<unknown>;
   quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void;
   on: (event: string, listener: (...args: unknown[]) => void) => void;
 };
 let autoUpdater: AutoUpdater | null = null;
+
+/**
+ * The current update channel, mirrored onto `autoUpdater.allowPrerelease`.
+ * false (default) = stable only — a normal user is NEVER offered a pre-release.
+ * true = beta — any newer release, including GitHub pre-releases, is eligible.
+ * Seeded from `config.advanced_updates` in initUpdater and flipped live by
+ * setUpdateChannel when the Settings toggle changes; ensureAutoUpdater applies
+ * it to the SDK instance on first wiring so the startup check honors it.
+ */
+let allowPrerelease = false;
 
 /**
  * The apply timing for the in-flight mandatory download, captured at
@@ -241,6 +253,9 @@ function ensureAutoUpdater(): AutoUpdater | null {
   // updates on the next quit by default (mandatory on-restart timing).
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  // Channel: stable-only unless the user opted into advanced updates. Seeded
+  // from config by initUpdater before this runs; setUpdateChannel flips it live.
+  autoUpdater.allowPrerelease = allowPrerelease;
 
   // checking/not-available are FEEDBACK for the manual Settings button (and
   // the startup check) — a background re-check stays invisible unless it
@@ -537,10 +552,25 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
   // Flow A — startup auto-check. Seed the throttle so the window's own
   // launch-time focus event doesn't immediately fire a redundant second check.
   lastBackgroundCheckAt = Date.now();
-  au.checkForUpdates().catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.warn(`updater: startup checkForUpdates failed (${message})`);
-  });
+  // Seed the channel from persisted config BEFORE the startup check, so an
+  // advanced-updates user checks the beta feed from the first check on. Config
+  // load is async and best-effort: on any failure we keep the safe stable
+  // default (a normal user must never be silently moved onto a beta). The
+  // lazy import keeps configStore out of updater's cold-start graph.
+  void (async () => {
+    try {
+      const { loadConfig } = await import('./configStore');
+      const cfg = await loadConfig();
+      allowPrerelease = cfg.advanced_updates === true;
+      au.allowPrerelease = allowPrerelease;
+    } catch (err) {
+      logger.warn(`updater: advanced-updates config read failed (${(err as Error).message})`);
+    }
+    au.checkForUpdates().catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(`updater: startup checkForUpdates failed (${message})`);
+    });
+  })();
 
   // Flow A' — self-notice a release without a relaunch. Responsiveness is
   // event-driven (see maybeBackgroundCheck); the periodic timer is only a
@@ -590,6 +620,36 @@ export async function checkForUpdatesManual(): Promise<void> {
   } finally {
     manualCheckInFlight = false;
   }
+}
+
+/**
+ * Switch the update channel (Settings "Advanced updates" toggle). The renderer
+ * persists `advanced_updates` in config; this applies the choice to the live
+ * updater so it takes effect without a re-launch.
+ *
+ *   - `advanced` true  → beta channel: `allowPrerelease = true`, so any newer
+ *     release (including GitHub pre-releases) is offered. A check fires now so a
+ *     waiting beta surfaces immediately instead of at the next focus/timer tick.
+ *   - `advanced` false → stable only: `allowPrerelease = false`. No check is
+ *     fired — the user simply stops being offered pre-releases; a build already
+ *     installed is not downgraded (electron-updater's default), so they hold
+ *     until stable catches up.
+ *
+ * No-op beyond recording the flag in dev / on load failure (no autoUpdater).
+ */
+export function setUpdateChannel(advanced: boolean): void {
+  allowPrerelease = advanced;
+  const au = ensureAutoUpdater();
+  if (!au) {
+    logger.info(`updater: channel = ${advanced ? 'beta' : 'stable'} (no autoUpdater — dev/load failure)`);
+    return;
+  }
+  au.allowPrerelease = advanced;
+  logger.info(`updater: channel = ${advanced ? 'beta (pre-releases included)' : 'stable only'}`);
+  // Enabling may reveal a waiting beta. Route through the manual path so the
+  // Settings status line gets its checking/available/not-available feedback,
+  // and so a background check running concurrently doesn't suppress it.
+  if (advanced) void checkForUpdatesManual();
 }
 
 /**

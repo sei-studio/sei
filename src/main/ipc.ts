@@ -2376,6 +2376,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await checkForUpdatesManual();
   });
 
+  ipcMain.handle(
+    IpcChannel.app.updateSetChannel,
+    async (_e, advanced: unknown): Promise<void> => {
+      const { setUpdateChannel } = await import('./updater');
+      setUpdateChannel(advanced === true);
+    },
+  );
+
   ipcMain.handle(IpcChannel.app.updateDownload, async (): Promise<void> => {
     const { downloadAcceptedUpdate } = await import('./updater');
     await downloadAcceptedUpdate();

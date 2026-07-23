@@ -142,6 +142,10 @@ export function SettingsScreen(): React.ReactElement {
   const [updateStatus, setUpdateStatus] = useState<
     'idle' | 'checking' | 'up-to-date' | 'available' | 'error'
   >('idle');
+  // "Advanced updates" channel. Off = stable only (the default); on = beta
+  // (pre-releases included). Seeded from config on open; persisted + pushed to
+  // the live updater on toggle. Local state, since only this screen reads it.
+  const [advancedUpdates, setAdvancedUpdates] = useState<boolean>(false);
 
   // Inline edit buffers — typing only updates these; commit happens on blur.
   const [preferredDraft, setPreferredDraft] = useState<string>('');
@@ -221,6 +225,8 @@ export function SettingsScreen(): React.ReactElement {
       if (typeof c.dev_console_visible === 'boolean') {
         setDevConsoleVisible(c.dev_console_visible);
       }
+      // Seed the advanced-updates channel toggle from persisted config.
+      setAdvancedUpdates(c.advanced_updates === true);
     });
     void sei.hasApiKey().then((b) => setHasKey(b));
     // Seed the user's profile picture for the chat-avatar section below.
@@ -373,6 +379,25 @@ export function SettingsScreen(): React.ReactElement {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (dev_console_visible) failed', err);
       setDevConsoleVisible(!next);
+    }
+  };
+
+  // About: persist the "Advanced updates" channel toggle, then push it to the
+  // live updater so it takes effect without a re-launch. Optimistic-then-
+  // write-through, same as the dev-console toggle; setUpdateChannel(true) also
+  // re-checks so a waiting beta surfaces right away.
+  const onToggleAdvancedUpdates = async (next: boolean): Promise<void> => {
+    setAdvancedUpdates(next);
+    if (!cfg) return;
+    try {
+      const updated: UserConfig = { ...cfg, advanced_updates: next };
+      await sei.saveConfig(updated);
+      setCfg(updated);
+      await sei.setUpdateChannel(next);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (advanced_updates) failed', err);
+      setAdvancedUpdates(!next);
     }
   };
 
@@ -946,6 +971,22 @@ export function SettingsScreen(): React.ReactElement {
             >
               Check now
             </Button>
+          </div>
+          {/* Advanced updates: opt into the beta channel. Off by default so a
+              normal user is never moved onto a pre-release build. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Advanced updates
+              <InfoTip
+                label="About advanced updates"
+                text="Get beta releases early, before they roll out to everyone. Betas are less tested and may have rough edges. Leave this off for the stable version."
+              />
+            </span>
+            <Toggle
+              aria-label="Advanced updates"
+              on={advancedUpdates}
+              onChange={(v) => void onToggleAdvancedUpdates(v)}
+            />
           </div>
           <div className={styles.row}>
             <span className={styles.label}>Terms of Service</span>

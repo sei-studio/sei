@@ -133,4 +133,15 @@ describe('UserConfigSchema — vision_mode', () => {
     });
     expect(parsed.vision_mode).toBe('on-demand');
   });
+
+  it('defaults advanced_updates to false — a normal user is never on the beta channel', () => {
+    // Safety-critical: an absent field (fresh install or any pre-existing
+    // config.json) must resolve to the STABLE channel, never beta.
+    expect(UserConfigSchema.parse({}).advanced_updates).toBe(false);
+    expect(
+      UserConfigSchema.parse({ mc_username: 'Steve', provider: 'anthropic' }).advanced_updates,
+    ).toBe(false);
+    // And it round-trips when explicitly opted in.
+    expect(UserConfigSchema.parse({ advanced_updates: true }).advanced_updates).toBe(true);
+  });
 });

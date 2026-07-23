@@ -447,6 +447,16 @@ export const UserConfigSchema = z.object({
    */
   dev_console_visible: z.boolean().optional().default(false),
   /**
+   * "Advanced updates" (About). When on, this install tracks the beta channel:
+   * the updater sets `autoUpdater.allowPrerelease = true` and offers ANY newer
+   * release, including GitHub pre-releases. Off (the default) tracks stable
+   * only, so a normal user is NEVER moved onto a beta build. Every release ships
+   * as a pre-release first (advanced users get it), then is promoted to a full
+   * release (everyone gets it). `.optional().default(false)` keeps existing
+   * config.json files (which lack the field) on the safe stable channel.
+   */
+  advanced_updates: z.boolean().optional().default(false),
+  /**
    * "Realistic typing" (Appearance & feel). When on, the companion pauses to
    * "read" your message before the typing indicator appears (scaled to your
    * message length at a fast-reader speed), then keeps the indicator up for a
