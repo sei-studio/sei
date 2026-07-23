@@ -41,17 +41,26 @@
   white-space: nowrap;
   text-align: center;
   pointer-events: none;
+  /* display:none at rest — an invisible (opacity:0) absolute box still counts
+     toward ancestors' scrollable overflow, so a wide nowrap tooltip hanging
+     off the bar could grow a phantom scrollbar even while hidden. Same fix as
+     the global [data-tip] tooltips (allow-discrete keeps the fade-out). */
+  display: none;
   opacity: 0;
   transform: translate(-50%, 2px);
-  transition: opacity 120ms var(--ease), transform 120ms var(--ease);
+  transition:
+    opacity 120ms var(--ease),
+    transform 120ms var(--ease),
+    display 120ms allow-discrete;
   z-index: 9999;
   box-shadow: var(--shadow-pop);
 }
 
 .barWrap:hover::after,
 .barWrap:focus-visible::after {
-  /* Instant reveal on hover (fade-out still animates via the base rule). */
-  transition: none;
+  display: flex;
   opacity: 1;
   transform: translate(-50%, 0);
+  /* Instant reveal on hover (fade-out still animates via the base rule). */
+  transition: none;
 }

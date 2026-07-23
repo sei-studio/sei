@@ -198,17 +198,33 @@ textarea {
   white-space: nowrap;
   line-height: 1;
   padding: 5px 7px;
+  /* display:none at rest — an invisible (opacity:0) tooltip box still counts
+   * toward ancestors' scrollable overflow, so tooltips hanging off elements
+   * near a pane edge (e.g. the chat header's right-side icon buttons) grew a
+   * phantom horizontal scrollbar on the <main> scroll container whenever the
+   * chat presence panel was collapsed. `allow-discrete` keeps the fade-out
+   * (display flips to none only after the opacity transition ends) and
+   * @starting-style below keeps the fade-in. */
+  display: none;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms var(--ease);
+  transition: opacity 120ms var(--ease), display 120ms allow-discrete;
   transition-delay: 0s;
   z-index: 200;
 }
 
 [data-tip]:hover::after,
 [data-tip]:focus-visible::after {
+  display: block;
   opacity: 1;
   transition-delay: 300ms;
+}
+
+@starting-style {
+  [data-tip]:hover::after,
+  [data-tip]:focus-visible::after {
+    opacity: 0;
+  }
 }
 
 /* `data-tip-instant` drops the hover delay for surfaces where the tooltip IS
@@ -216,6 +232,32 @@ textarea {
 [data-tip][data-tip-instant]:hover::after,
 [data-tip][data-tip-instant]:focus-visible::after {
   transition-delay: 0s;
+}
+
+/* Edge clamps: a SHOWN tooltip is a real box, so one centered under a button
+ * near a pane edge pokes past it and hands the nearest scroll container a
+ * phantom scrollbar while hovered (the chat header's right-side buttons were
+ * the repro: "Voice call" is wider than the 34px phone button). Elements near
+ * an edge declare it and the tooltip aligns to that edge of the trigger
+ * instead of centering, so it can only grow inward. */
+[data-tip][data-tip-edge='right']::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+[data-tip][data-tip-edge='left']::after {
+  left: 0;
+  right: auto;
+  transform: none;
+}
+
+/* `data-tip-up` flips the tooltip ABOVE the element for triggers along the
+ * bottom of a pane, where the default below-placement would hang past the
+ * bottom edge (bottom-docked controls, the chess HUD row). */
+[data-tip][data-tip-up]::after {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 @media (prefers-reduced-motion: reduce) {
