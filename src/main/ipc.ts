@@ -15,6 +15,7 @@ import {
   CHAT_HISTORY_PAGE,
   ProxyConfigureArgsSchema,
   CreditsCheckoutArgsSchema,
+  CreditsChangePlanArgsSchema,
   FeedbackSubmitArgsSchema,
   ReportSubmitArgsSchema,
   RecordConsentArgsSchema,
@@ -2460,32 +2461,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return { ok: true as const };
   });
 
-  // trial:claim — Plan 13-13 wired path. Calls the `trial-claim` Edge Function
-  // via proxyClient (lazy-imported). Takes no arguments — the trial is bound to
-  // the account UUID (derived server-side from the session JWT), not the
-  // Minecraft username. Translates the PROXY_* sentinel codes back into the
-  // lowercase RendererApi contract codes ('already_claimed' | 'device_claimed' |
-  // 'no_session' | 'network') so the renderer ERROR_COPY map only deals with one
-  // vocabulary. 'device_claimed' is the per-device anti-abuse gate (this machine
-  // already used its one trial, possibly under another account).
-  ipcMain.handle(IpcChannel.trial.claim, async () => {
-    const { trialClaim } = await import('./cloud/proxyClient');
-    const res = await trialClaim();
-    if (res.ok) return res;
-    const mapped: 'already_claimed' | 'device_claimed' | 'no_session' | 'network' =
-      res.code === 'PROXY_ALREADY_CLAIMED'
-        ? 'already_claimed'
-        : res.code === 'PROXY_DEVICE_CLAIMED'
-          ? 'device_claimed'
-          : res.code === 'PROXY_NO_SESSION'
-            ? 'no_session'
-            : 'network';
-    return { ok: false as const, code: mapped };
-  });
-
-  // credits:get — Plan 13-13 wired path. proxyClient.creditsGet reads
-  // ledger_balance + subscription_status + ledger_grants + apiKeyStore in
-  // parallel and computes remaining_pct via BigInt math (D-41 5% step).
+  // credits:get — proxyClient.creditsGet reads the `my_plan` view (plan, weekly
+  // usage_pct, over_limit, resets_at, the extra-credits bucket, billing dates)
+  // alongside the local apiKeyStore backend kind.
   ipcMain.handle(IpcChannel.credits.get, async (): Promise<CreditsStatus> => {
     const { creditsGet } = await import('./cloud/proxyClient');
     return creditsGet();
@@ -2524,6 +2502,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // renderer's useCreditsStore.openCheckout is Promise<void> and ignores the
     // body, so dropping the URL here is fine — it stays in the main process).
     return { ok: true as const };
+  });
+
+  // credits:change-plan — 260724. Upgrade or downgrade an EXISTING subscription
+  // (a Polar subscription update, not a fresh checkout). The proxy owns the
+  // product mapping and the upgrade usage-reset (guarded by max_tier_rank).
+  ipcMain.handle(IpcChannel.credits.changePlan, async (_e, argsRaw: unknown) => {
+    const parsed = CreditsChangePlanArgsSchema.parse(argsRaw);
+    trackAnalytics('plan_changed', { tier: String(parsed.tier) });
+    const { changePlan } = await import('./cloud/proxyClient');
+    return changePlan(parsed.tier);
   });
 
   // subscription:status — Plan 13-13 wired path. Reads subscription_status

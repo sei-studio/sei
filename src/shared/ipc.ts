@@ -768,89 +768,56 @@ export type PublishModerationCode = (typeof PUBLISH_MODERATION_CODES)[number];
 /* -------------------------------------------------------------------------- */
 
 /**
- * Step size for the remaining-pct UI bar (CONTEXT D-41).
+ * Subscription tier (260724 weekly-subscription model).
  *
- * The proxy server emits `X-Sei-Remaining-Pct` rounded to the nearest 5%, and
- * the renderer pins the % bar to the same step so successive responses don't
- * visually jitter. Exposed as a const so future grid / progress components
- * (PricingIcon hover, CreditsScreen bar) line up by reference rather than a
- * magic number.
+ * Every account is on `free` unless an active subscription says otherwise.
+ * Ranked free < quest < party; the rank guard for upgrade resets lives
+ * server-side (`usage_periods.max_tier_rank`).
  */
-export const REMAINING_PCT_ROUND_STEP = 5;
+export type PlanTier = 'free' | 'quest' | 'party';
 
 /**
- * Renderer-facing credits status snapshot. Read on demand via `creditsGet()`
- * and pushed via `credits:status:update` after every proxied Anthropic
- * response (which carries `X-Sei-Remaining-Pct`).
+ * Renderer-facing plan + usage snapshot. Read on demand via `creditsGet()`
+ * (which reads the `my_plan` view) and pushed via `credits:status:update`
+ * after every proxied Anthropic response.
  *
- *   - `remaining_pct`     — 0..100, rounded to REMAINING_PCT_ROUND_STEP.
- *   - `plan`              — drives copy in CreditsScreen + HardStopModal.
- *                            'depleted' is the hard-stop state.
- *   - `renews_at`         — ISO date when an active subscription renews;
- *                            null for pack / trial / no-plan users.
- *   - `trial_claimed`     — true once this account has a kind='trial'
- *                            ledger_grants row (the trial is bound to the
- *                            account UUID; one claim per account).
- *   - `ai_backend_kind`   — mirrors `apiKeyStore.getAiBackendKind()`; the
- *                            credits UI hides itself when this is 'local'.
+ * A "credit" is a display unit only: 1 credit = 5,000 µ$ = $0.005. The backend
+ * meters micro-dollars throughout; credits exist so the UI never shows money.
+ *
+ *   - `usage_pct`           — weekly ALLOWANCE consumption, 0..100, clamped.
+ *                              100 renders red.
+ *   - `over_limit`          — allowance exhausted AND no extra credits left.
+ *                              Drives the hard stop and the summon gate.
+ *   - `resets_at`           — ISO timestamp the weekly allowance rolls over.
+ *                              Derived from the account's signup day; a usage
+ *                              reset never moves it.
+ *   - `extra_credits_*`     — the non-expiring top up bucket, in credits.
+ *                              Both 0 when the account never topped up.
+ *   - `ai_backend_kind`     — mirrors `apiKeyStore.getAiBackendKind()`; the
+ *                              plan UI hides itself when this is 'local'.
  */
 export interface CreditsStatus {
-  remaining_pct: number;
-  /**
-   * 260602-hbr — usage as a percent of total available credits:
-   * `used / available × 100`, where `available = SUM(ledger_grants)` and
-   * `used = available − balance`. Starts at 0% on a fresh grant and grows to
-   * 100% as credits are consumed. Topping up (subscription + one or more Quest
-   * packs) is additive on `available`, so the bar moves left on a top-up.
-   * Percent only — PROXY-05 keeps raw token/dollar units server-side.
-   * Optional during rollout; the renderer treats `undefined` as 0%.
-   */
-  usage_pct?: number;
-  plan: 'trial' | 'pack' | 'unlimited' | 'depleted';
+  plan: PlanTier;
+  /** 0..100, weekly allowance only, clamped. 100 renders red. */
+  usage_pct: number;
+  /** Allowance exhausted AND no extra credits left. Drives the hard stop. */
+  over_limit: boolean;
+  /** ISO timestamp the weekly allowance rolls over. */
+  resets_at: string;
+  /** Top up bucket, in credits (not µ$). Both 0 when never topped up. */
+  extra_credits_used: number;
+  extra_credits_total: number;
+  /** Billing, subscribers only. */
   renews_at: string | null;
   /**
    * ISO date a subscription will END. Set only when the subscription has been
    * cancelled but is still inside its paid period ("to be cancelled") — the
-   * user keeps full access until this date. null for auto-renewing subscribers
-   * (use `renews_at`) and non-subscribers. When set alongside plan='unlimited',
-   * the renderer shows "Subscription will end {ends_at}" + a Resume CTA instead
-   * of the renewal line + "Subscribed".
+   * user keeps the tier until this date. null for auto-renewing subscribers
+   * and non-subscribers.
    */
   ends_at: string | null;
-  trial_claimed: boolean;
+  subscription_status_raw: 'active' | 'cancelled' | 'expired' | 'past_due' | null;
   ai_backend_kind: 'local' | 'cloud-proxy';
-  // ITEM 4 (quick/260523-t8d): backend-supplied tokens count so the UI can
-  // compute a "~Xh left" playtime string. 260602-hbr: the personalized
-  // rolling-24h `tokens_per_min` was dropped — the renderer now applies a flat
-  // `DEFAULT_TOKENS_PER_MIN` multiplier to this value. Optional during rollout.
-  remaining_tokens?: number;        // server-computed: ledger_balance_micro / MICRO_PER_TOKEN_BLENDED
-  /**
-   * Lifetime spend in USD and total granted credits in USD (`used / available`,
-   * the dollar form of `usage_pct`). main computes these in creditsGet from the
-   * same ledger micros it already reads (µ$ ÷ 1e6), so they are real numbers in
-   * cloud mode. NOTE: this deliberately extends past the PROXY-05 "percent only"
-   * line at the owner's request — the UsageBar tooltip shows "$used/$total".
-   * Optional: undefined for local/BYOK, no session, or a cold-load before the
-   * first creditsGet.
-   */
-  used_usd?: number;
-  total_usd?: number;
-  /**
-   * quick/260525-sbo Task 8 — raw subscription status mirrored
-   * from `subscription_status.status` via the my_subscription view. Drives
-   * contextual banners in SettingsScreen (past-due, paused) and lets future
-   * UI distinguish 'cancelled' vs 'expired' vs 'refunded'. Optional during
-   * rollout — falls back to null when the user has never subscribed OR when
-   * the subRow query returned no data.
-   */
-  subscription_status_raw?:
-    | 'active'
-    | 'cancelled'
-    | 'expired'
-    | 'past_due'
-    | 'refunded'
-    | 'paused'
-    | null;
 }
 
 /**
@@ -872,11 +839,13 @@ export interface SubscriptionStatusInfo {
 }
 
 /**
- * Push payload for `credits:hard-stop`. Fires when the proxy returns 402
- * (ledger empty) or `remaining_pct` hits 0, OR when the per-user rate-bucket
- * trips (D-51). The renderer surfaces the HardStopModal off this event;
- * `retry_after_seconds` is set only for the rate-limited branch and is the
- * `Retry-After` header value in seconds.
+ * Push payload for `credits:hard-stop`. Fires when the proxy returns 402: the
+ * weekly allowance is spent AND no extra credits remain (`over_limit`). The
+ * renderer surfaces the HardStopModal off this event.
+ *
+ * `reason` is retained for logging fidelity; the modal renders a single state
+ * either way (260724 — the daily-dollar rate bucket that produced
+ * 'rate_limited' is gone; a 429 can still arrive from the IP gates).
  */
 export interface CreditsHardStopEvent {
   reason: 'depleted' | 'rate_limited';
@@ -884,21 +853,31 @@ export interface CreditsHardStopEvent {
 }
 
 /**
- * Zod-validated argument shapes for the new Phase 13 IPC channels. Validation
+ * Zod-validated argument shapes for the billing IPC channels. Validation
  * lives at the main-process trust boundary (every ipcMain.handle runs
  * `.parse(args)` before dispatch) — see PATTERNS §"Zod validation at every
  * external boundary".
- *
- * Note: `trial:claim` takes NO arguments — the trial is bound to the account
- * UUID (derived server-side from the session JWT), not the Minecraft username
- * (migration 20260603000000 dropped the mc_username-keyed `trial_claims`
- * table). So there is no TrialClaimArgsSchema.
  */
 export const ProxyConfigureArgsSchema = z.object({
   kind: z.enum(['local', 'cloud-proxy']),
 });
+/**
+ * 260724: the four Polar products. `quest` / `party` are the monthly
+ * subscriptions; `topup_small` / `topup_large` are one-time extra-credit
+ * packages. Grant amounts live in the proxy's `topup_config` table, never in
+ * client code.
+ */
 export const CreditsCheckoutArgsSchema = z.object({
-  kind: z.enum(['pack', 'subscription']),
+  kind: z.enum(['quest', 'party', 'topup_small', 'topup_large']),
+});
+/**
+ * 260724: change the tier of an EXISTING subscription (a Polar subscription
+ * update, not a fresh checkout). Upgrades additionally reset weekly usage
+ * server-side, guarded by `max_tier_rank` so a downgrade/re-upgrade round trip
+ * inside one window grants no second reset.
+ */
+export const CreditsChangePlanArgsSchema = z.object({
+  tier: z.enum(['free', 'quest', 'party']),
 });
 /**
  * quick/260525-sbo Task 3 — auto-renewal consent gate.
@@ -914,8 +893,9 @@ export const RecordConsentArgsSchema = z.object({
 /**
  * 260706 — in-app feedback submission. `email` is optional; blank/omitted
  * means the user chose to stay anonymous (the proxy then stores user_id NULL).
- * `claimReward` marks the one-time reward-banner submission; the proxy grants
- * a trial-sized playtime recharge at most once per account.
+ * `claimReward` marks the one-time reward submission; the proxy resets the
+ * account's weekly usage at most once per account (260724 — it used to be a
+ * credit grant).
  */
 export const FeedbackSubmitArgsSchema = z.object({
   body: z.string().min(1).max(4000),
@@ -1376,33 +1356,28 @@ export interface RendererApi {
     kind: 'local' | 'cloud-proxy',
   ) => Promise<{ ok: true } | { ok: false; code: string }>;
   /**
-   * Claim the one-time free trial credits for the signed-in account. The trial
-   * is bound to the account UUID (derived server-side from the session JWT);
-   * the one-trial-per-account cap is enforced by the `trial-claim` Edge
-   * Function via the `ledger_grants_trial_per_user_uidx` partial UNIQUE index.
-   * Takes no arguments — the username plays no role.
-   */
-  trialClaim: () => Promise<
-    | { ok: true; credits_micro: number }
-    // 'device_claimed' — this machine already used its one free trial (the
-    // per-device anti-abuse gate), possibly under a different account; distinct
-    // from 'already_claimed' (THIS account already claimed) so the UI can say so.
-    | { ok: false; code: 'already_claimed' | 'device_claimed' | 'no_session' | 'network' }
-  >;
-  /**
-   * One-shot snapshot of the user's credits status. Refreshed on the
-   * `credits:status:update` push channel after every proxied Anthropic call.
-   * Returns the {plan:'trial', remaining_pct:100, trial_claimed:false}
-   * placeholder until Wave 3 wires the proxy client.
+   * One-shot snapshot of the user's plan + weekly usage, read from the proxy's
+   * `my_plan` view. Refreshed on the `credits:status:update` push channel after
+   * every proxied Anthropic call.
    */
   creditsGet: () => Promise<CreditsStatus>;
   /**
-   * Open the Polar checkout for the requested product. The proxy mints the
-   * checkout session server-side (user_id in metadata) and returns the hosted
-   * URL, which is dispatched via shell.openExternal after an allowlist check.
+   * Open the Polar checkout for the requested product: a new subscription
+   * ('quest' / 'party') or a one-time extra-credits package ('topup_small' /
+   * 'topup_large'). The proxy mints the checkout session server-side (user_id
+   * in metadata) and returns the hosted URL, which is dispatched via
+   * shell.openExternal after an allowlist check.
    */
   creditsOpenCheckout: (
-    kind: 'pack' | 'subscription',
+    kind: 'quest' | 'party' | 'topup_small' | 'topup_large',
+  ) => Promise<{ ok: true } | { ok: false; code: string }>;
+  /**
+   * Change the tier of an EXISTING subscription (Polar subscription update, not
+   * a fresh checkout). Use `creditsOpenCheckout` when the account has no active
+   * subscription yet, and the customer portal to cancel outright.
+   */
+  creditsChangePlan: (
+    tier: PlanTier,
   ) => Promise<{ ok: true } | { ok: false; code: string }>;
   /** Read the user's subscription state (active/cancelled/expired/past_due/none). */
   subscriptionStatus: () => Promise<SubscriptionStatusInfo>;
@@ -1430,12 +1405,12 @@ export interface RendererApi {
   /**
    * 260706 — submit in-app feedback to the proxy (POST /feedback, 20/day per
    * user). With claimReward, the proxy also attempts the once-per-account
-   * playtime recharge: reward_granted=true on first claim, already_claimed=true
+   * weekly-usage reset: usage_reset=true on first claim, already_claimed=true
    * when this account claimed before (the renderer retires the banner either
    * way). Error codes: PROXY_NO_SESSION | PROXY_RATE_LIMITED | PROXY_NETWORK.
    */
   feedbackSubmit: (args: { body: string; email?: string; claimReward?: boolean }) => Promise<
-    | { ok: true; reward_granted: boolean; already_claimed: boolean }
+    | { ok: true; usage_reset: boolean; already_claimed: boolean }
     | { ok: false; code: string }
   >;
   /**
@@ -1455,8 +1430,8 @@ export interface RendererApi {
    */
   onCreditsStatusUpdate: (cb: (status: CreditsStatus) => void) => Unsubscribe;
   /**
-   * Subscribe to `credits:hard-stop` pushes. Fires on 402 from the proxy or
-   * when remaining_pct hits 0, OR when the rate-bucket trips (D-51).
+   * Subscribe to `credits:hard-stop` pushes. Fires on 402 from the proxy, i.e.
+   * the weekly allowance is spent and no extra credits remain.
    * Returns the unsubscribe fn.
    */
   onCreditsHardStop: (cb: (info: CreditsHardStopEvent) => void) => Unsubscribe;
@@ -1988,31 +1963,28 @@ export const IpcChannel = {
   //   proxy:configure        — persist aiBackendKind ('local' | 'cloud-proxy').
   //                             Wave 3: refuses 'cloud-proxy' for signed-out
   //                             users.
-  //   trial:claim            — claim the one-time free trial. Wave 3 calls
-  //                             the `trial-claim` Edge Function which
-  //                             enforces UNIQUE(mc_username) (D-42).
-  //   credits:get            — snapshot of CreditsStatus. Refreshed by the
-  //                             credits:status:update push channel below.
+  //   credits:get            — snapshot of CreditsStatus (the `my_plan` view).
+  //                             Refreshed by the credits:status:update push
+  //                             channel below.
   //   credits:openCheckout   — open the Polar checkout (proxy-minted session)
   //                             for the requested product.
+  //   credits:change-plan    — 260724: change the tier of an EXISTING
+  //                             subscription (Polar subscription update).
   //   subscription:status    — read SubscriptionStatusInfo from
   //                             `subscription_status` table (D-46/47).
   //   subscription:cancel    — open the Polar customer portal
   //                             so the user can cancel.
   //   credits:status:update  — PUSH (main → renderer). Fires after every
-  //                             proxied Anthropic response carrying a new
-  //                             X-Sei-Remaining-Pct header (D-41).
-  //   credits:hard-stop      — PUSH (main → renderer). Fires on 402 or
-  //                             0% remaining or per-user rate-bucket trip.
+  //                             proxied Anthropic response.
+  //   credits:hard-stop      — PUSH (main → renderer). Fires on 402, i.e. the
+  //                             weekly allowance is spent and no extras remain.
   proxy: {
     configure: 'proxy:configure',
-  },
-  trial: {
-    claim: 'trial:claim',
   },
   credits: {
     get: 'credits:get',
     openCheckout: 'credits:openCheckout',
+    changePlan: 'credits:change-plan',
     statusUpdate: 'credits:status:update',
     hardStop: 'credits:hard-stop',
   },
@@ -2044,7 +2016,6 @@ export type IpcChannelName =
   | typeof IpcChannel.migration[keyof typeof IpcChannel.migration]
   | typeof IpcChannel.browse[keyof typeof IpcChannel.browse]
   | typeof IpcChannel.proxy[keyof typeof IpcChannel.proxy]
-  | typeof IpcChannel.trial[keyof typeof IpcChannel.trial]
   | typeof IpcChannel.credits[keyof typeof IpcChannel.credits]
   | typeof IpcChannel.subscription[keyof typeof IpcChannel.subscription]
   | typeof IpcChannel.feedback[keyof typeof IpcChannel.feedback];

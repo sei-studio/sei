@@ -187,11 +187,11 @@ const api: RendererApi = {
   // --- Browse + moderation (Phase 12) ---
   browseList: (args) => ipcRenderer.invoke(IpcChannel.browse.list, args),
 
-  // --- Proxy + billing + credits (Phase 13, stub contract) ---
+  // --- Proxy + billing + plan ---
   proxyConfigure: (kind) => ipcRenderer.invoke(IpcChannel.proxy.configure, { kind }),
-  trialClaim: () => ipcRenderer.invoke(IpcChannel.trial.claim),
   creditsGet: () => ipcRenderer.invoke(IpcChannel.credits.get),
   creditsOpenCheckout: (kind) => ipcRenderer.invoke(IpcChannel.credits.openCheckout, { kind }),
+  creditsChangePlan: (tier) => ipcRenderer.invoke(IpcChannel.credits.changePlan, { tier }),
   subscriptionStatus: () => ipcRenderer.invoke(IpcChannel.subscription.status),
   subscriptionCancel: () => ipcRenderer.invoke(IpcChannel.subscription.cancel),
   // quick/260525-sbo Task 3 — auto-renewal consent INSERT before checkout.
