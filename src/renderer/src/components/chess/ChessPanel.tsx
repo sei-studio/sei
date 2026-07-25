@@ -2,12 +2,33 @@
  * ChessPanel — the chess surface that slides into the chat screen (260710).
  *
  * States, in order of precedence:
- *   - no game yet (panel opened from the games picker) → pre-game setup card:
- *     color choice (White / Black / Random) + Start;
- *   - status 'preparing' → one-time engine download progress;
- *   - status 'active' → live board + move list + controls (resign with inline
- *     confirm, offer draw, flip) + draw-offer banner;
- *   - status 'ended' → compact result banner with Rematch + Close.
+ *   - launch screen (no game yet, engine download, or Rematch clicked after a
+ *     finished game): minimal content over a dark board photo
+ *     (./img/chess-launch.png with a plain dark fallback behind it):
+ *     "Chess" title, the inline White / Random / Black side picker, and one
+ *     primary button ("Launch", or "Start" on the rematch pass);
+ *   - status 'active' / 'ended' → the 3D board fills the whole panel edge to
+ *     edge and everything else floats over it as a de-boxed HUD:
+ *       top-left      icon-only controls (flip, offer draw, resign; tooltips
+ *                     via data-tip, resign confirm appears inline in the row)
+ *                     stacked above the opponent-side captured strip;
+ *       top-center    turn label + dim Elo tag (rendered inside ChessBoard3D;
+ *                     the label doubles as the thinking indicator);
+ *       top-right     move list (scroll + history scrub) and Back to live;
+ *       bottom-left   player-side captured strip, lifted clear of the
+ *                     hover-revealed GameSurface bottom chrome strip
+ *                     (var(--game-chrome-h, 56px));
+ *       bottom-center draw-offer banner / "offer sent" note, same chrome
+ *                     clearance;
+ *       center        result + Rematch when the game ends (the board stays
+ *                     interactive for scrubbing; closing is the unified
+ *                     GameSurface "x"), promotion picker (in ChessBoard3D).
+ *     Passive labels are pointer-events: none so they never block the board.
+ *
+ * Rematch flow (260721): the result overlay's Rematch button flips a local
+ * `rematchScreen` flag back to the launch layout (same background and side
+ * picker, button labeled "Start"); Start goes through the store's new-game
+ * action (start), which replaces the ended session in main.
  *
  * The AI move reveal is paced by useAiMoveReveal (commentary first, then the
  * piece slides). Starting while the companion is summoned in Minecraft rejects
@@ -18,15 +39,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useChessStore, boardUiFor } from '../../lib/stores/useChessStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
+import { requestGameLaunch } from '../../lib/gameLaunch';
 import { sei } from '../../lib/ipcClient';
-import { pickPalette } from '../../lib/portraitPalettes';
-import { PixelPortrait } from '../PixelPortrait';
 import { Button } from '../Button';
-import { Seg } from '../Seg';
 import { PercentBar } from '../PercentBar';
 import { ModalShell, ModalFooter } from '../ModalShell';
-import { RotateIcon } from '../icons';
-import { ChessBoard } from './ChessBoard';
+import { FlipIcon, DrawIcon, FlagIcon } from '../icons';
+import { ChessBoard3D } from './ChessBoard3D';
 import { useAiMoveReveal } from './useAiMoveReveal';
 import { capturedMaterial } from './chessUtil';
 import { Piece } from './pieces';
@@ -39,7 +58,14 @@ export interface ChessPanelProps {
 
 type ColorChoice = 'w' | 'b' | 'random';
 
-/** Plain-language result copy (no em dashes in user-visible text). */
+const SIDE_OPTIONS: Array<{ value: ColorChoice; label: string }> = [
+  { value: 'w', label: 'White' },
+  { value: 'random', label: 'Random' },
+  { value: 'b', label: 'Black' },
+];
+
+/** Plain-language result copy (no em dashes in user-visible text). Shared
+ * with ChessReplayPanel (the replay's result banner uses the same copy). */
 function resultCopy(result: ChessResult, game: ChessGameState, name: string): {
   title: string;
   detail: string;
@@ -80,8 +106,6 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
   const resign = useChessStore((s) => s.resign);
   const offerDraw = useChessStore((s) => s.offerDraw);
   const respondDraw = useChessStore((s) => s.respondDraw);
-  const rematch = useChessStore((s) => s.rematch);
-  const end = useChessStore((s) => s.end);
   const setUi = useChessStore((s) => s.setUi);
   const hydrate = useChessStore((s) => s.hydrate);
 
@@ -92,6 +116,8 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
   const [startErr, setStartErr] = useState<string | null>(null);
   const [mcConflict, setMcConflict] = useState(false);
   const [confirmResign, setConfirmResign] = useState(false);
+  /** Rematch clicked on a finished game: show the launch layout again. */
+  const [rematchScreen, setRematchScreen] = useState(false);
 
   useAiMoveReveal(characterId);
 
@@ -105,14 +131,15 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
     setStartErr(null);
     setMcConflict(false);
     setConfirmResign(false);
+    setRematchScreen(false);
   }, [characterId]);
 
-  const theme: 'light' | 'dark' =
-    (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
-  const palette = useMemo(
-    () => pickPalette((character?.id ?? '') + (character?.name ?? ''), theme),
-    [character?.id, character?.name, theme],
-  );
+  // A fresh game went live (Start pressed on the rematch screen, or any other
+  // path): leave the rematch pass of the launch layout.
+  const gameStatus = game?.status ?? null;
+  useEffect(() => {
+    if (gameStatus === 'active') setRematchScreen(false);
+  }, [gameStatus]);
 
   const doStart = async (choice: ColorChoice): Promise<void> => {
     setStartErr(null);
@@ -159,164 +186,247 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
     [game],
   );
 
-  const statusLine = ((): React.ReactElement | null => {
-    if (!game) return null;
-    if (game.status === 'preparing') return <span className={styles.statusMuted}>Warming up</span>;
-    if (game.status === 'ended') return <span className={styles.statusMuted}>Game over</span>;
-    if (game.aiThinking) return <span className={styles.thinking}>thinking…</span>;
-    if (game.turn === game.playerColor) return <span className={styles.statusYou}>Your move</span>;
-    return <span className={styles.statusMuted}>Waiting</span>;
-  })();
+  // The strip near the top belongs to the opponent side, the bottom one to the
+  // player, matching how the board is oriented by default.
+  const capturedStrips = useMemo(() => {
+    if (!game || !captured) return null;
+    const byWhite = {
+      pieces: captured.b.map((t) => `b${t}`),
+      diff: captured.diff > 0 ? `+${captured.diff}` : null,
+      label: 'Captured by white',
+    };
+    const byBlack = {
+      pieces: captured.w.map((t) => `w${t}`),
+      diff: captured.diff < 0 ? `+${-captured.diff}` : null,
+      label: 'Captured by black',
+    };
+    return game.playerColor === 'w'
+      ? { top: byBlack, bottom: byWhite }
+      : { top: byWhite, bottom: byBlack };
+  }, [game, captured]);
 
   const downloadFailed = download?.pct === -1;
+  const preparing = !!game && game.status === 'preparing';
+  // Launch layout: pre-game, engine warm-up, or the rematch pass. The board
+  // (and its scene) unmounts underneath it; ChessBoard3D disposes cleanly.
+  const showLaunch = !game || preparing || (game.status === 'ended' && rematchScreen);
 
   return (
     <div className={styles.panel} aria-label={`Chess with ${name}`}>
-      {/* ── Header ── */}
-      <header className={styles.head}>
-        <div className={styles.headAvatar}>
-          {character ? (
-            <PixelPortrait
-              seed={character.id + character.name}
-              palette={palette}
-              size={26}
-              portraitImage={character.portrait_image}
-              style={{ width: '100%', height: '100%' }}
-            />
-          ) : null}
-        </div>
-        <span className={styles.headName}>{name}</span>
-        {game ? <span className={styles.headElo}>Elo ~{game.aiElo}</span> : null}
-        <span className={styles.headStatus}>{statusLine}</span>
-        {!game || game.status !== 'active' ? (
-          <button
-            type="button"
-            className={styles.closeBtn}
-            onClick={() => void end(characterId)}
-            aria-label="Close chess"
-            title="Close chess"
-          >
-            ×
-          </button>
-        ) : null}
-      </header>
-
-      {/* ── Body ── */}
-      {!game ? (
-        <div className={styles.centerCard}>
-          <h3 className={styles.cardTitle}>Play chess with {name}</h3>
-          <p className={styles.cardHint}>
-            An untimed game. {name} will talk while you play, and you can chat back anytime.
-          </p>
-          <div className={styles.colorRow}>
-            <Seg<ColorChoice>
-              options={[
-                { value: 'w', label: 'White' },
-                { value: 'random', label: 'Random' },
-                { value: 'b', label: 'Black' },
-              ]}
-              value={colorChoice}
-              onChange={setColorChoice}
-              aria-label="Your color"
-              disabled={starting}
-            />
-          </div>
-          {startErr ? <p className={styles.errorText}>{startErr}</p> : null}
-          <div className={styles.cardActions}>
-            <Button kind="quiet" size="md" onClick={() => void end(characterId)}>
-              Not now
-            </Button>
-            <Button kind="accent" size="md" disabled={starting} onClick={() => void doStart(colorChoice)}>
-              {starting ? 'Starting…' : 'Start game'}
-            </Button>
-          </div>
-        </div>
-      ) : game.status === 'preparing' ? (
-        <div className={styles.centerCard}>
-          <h3 className={styles.cardTitle}>Getting ready</h3>
-          <p className={styles.cardHint}>Setting up the chess brain (one-time download).</p>
-          {downloadFailed ? (
-            <>
-              <p className={styles.errorText}>
-                {download?.error ?? 'The download failed. Check your connection and try again.'}
-              </p>
-              <div className={styles.cardActions}>
-                <Button kind="quiet" size="md" onClick={() => void end(characterId)}>
-                  Cancel
-                </Button>
-                <Button kind="accent" size="md" onClick={() => void doStart(colorChoice)}>
-                  Try again
-                </Button>
-              </div>
-            </>
-          ) : (
-            <div className={styles.progressWrap}>
-              <PercentBar
-                value={Math.max(0, download?.pct ?? 0)}
-                label="Chess engine download progress"
-                size="md"
-              />
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className={styles.main}>
-          <div className={styles.boardArea}>
-            <div className={styles.boardBox}>
-              <ChessBoard characterId={characterId} />
-            </div>
-          </div>
-
-          <div className={styles.side}>
-            {/* Captured material (pieces each side has taken). */}
-            {captured && (captured.w.length || captured.b.length) ? (
-              <div className={styles.capturedRows}>
-                <CapturedRow
-                  pieces={captured.b.map((t) => `b${t}`)}
-                  diff={captured.diff > 0 ? `+${captured.diff}` : null}
-                  label="Captured by white"
-                />
-                <CapturedRow
-                  pieces={captured.w.map((t) => `w${t}`)}
-                  diff={captured.diff < 0 ? `+${-captured.diff}` : null}
-                  label="Captured by black"
-                />
-              </div>
-            ) : null}
-
-            {/* Move list */}
-            <div className={styles.moves} ref={listRef}>
-              {game.history.length === 0 ? (
-                <div className={styles.movesEmpty}>No moves yet</div>
+      {showLaunch ? (
+        /* ── Launch screen: content over the dark board photo ── */
+        <div className={styles.launch}>
+          <img
+            className={styles.launchBg}
+            src="./img/chess-launch.png"
+            alt=""
+            draggable={false}
+            onError={(e) => {
+              // Missing asset: the plain dark backdrop behind it carries the look.
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+          <div className={styles.launchScrim} />
+          {/* 260721: no local close control; the GameSurface bottom-right "x"
+              is the one dismiss/end affordance for every game surface. */}
+          <div className={styles.launchContent}>
+            <h3 className={styles.launchTitle}>Chess</h3>
+            {preparing ? (
+              downloadFailed ? (
+                <>
+                  <p className={styles.launchError}>
+                    {download?.error ?? 'The download failed. Check your connection and try again.'}
+                  </p>
+                  <Button kind="accent" size="md" onClick={() => void doStart(colorChoice)}>
+                    Try again
+                  </Button>
+                </>
               ) : (
-                pairs(game.history.length).map(([wi, bi], n) => (
-                  <div key={n} className={styles.moveRow}>
-                    <span className={styles.moveNum}>{n + 1}.</span>
-                    <MoveCell
-                      san={game.history[wi]?.san}
-                      active={ui.viewPly === wi}
-                      onClick={() => setUi(characterId, { viewPly: wi, selected: null })}
-                    />
-                    <MoveCell
-                      san={bi < game.history.length ? game.history[bi]?.san : undefined}
-                      active={ui.viewPly === bi}
-                      onClick={() => setUi(characterId, { viewPly: bi, selected: null })}
+                <>
+                  <p className={styles.launchHint}>Setting up the chess brain (one-time download).</p>
+                  <div className={styles.progressWrap}>
+                    <PercentBar
+                      value={Math.max(0, download?.pct ?? 0)}
+                      label="Chess engine download progress"
+                      size="md"
                     />
                   </div>
-                ))
-              )}
-            </div>
-            {ui.viewPly !== null ? (
-              <button
-                type="button"
-                className={styles.backToLive}
-                onClick={() => setUi(characterId, { viewPly: null })}
-              >
-                Back to live
-              </button>
+                </>
+              )
+            ) : (
+              <>
+                <div className={styles.sideRow} role="radiogroup" aria-label="Your side">
+                  {SIDE_OPTIONS.map((opt, i) => (
+                    <React.Fragment key={opt.value}>
+                      {i > 0 ? (
+                        <span className={styles.sideSep} aria-hidden="true">
+                          /
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={colorChoice === opt.value}
+                        className={
+                          colorChoice === opt.value
+                            ? `${styles.sideBtn} ${styles.sideBtnActive}`
+                            : styles.sideBtn
+                        }
+                        disabled={starting}
+                        onClick={() => setColorChoice(opt.value)}
+                      >
+                        {opt.label}
+                      </button>
+                    </React.Fragment>
+                  ))}
+                </div>
+                {startErr ? <p className={styles.launchError}>{startErr}</p> : null}
+                <Button
+                  kind="accent"
+                  size="md"
+                  disabled={starting}
+                  onClick={() =>
+                    // 260721: the shared cross-launch gate — another live game
+                    // (screen share, a summoned bot) confirms before this one
+                    // starts; otherwise it launches directly.
+                    requestGameLaunch(characterId, { id: 'chess', name: 'Chess' }, () =>
+                      void doStart(colorChoice),
+                    )
+                  }
+                >
+                  {starting ? 'Starting…' : rematchScreen ? 'Start' : 'Launch'}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : game ? (
+        /* ── Board states: full-bleed 3D scene + floating HUD ── */
+        <div className={styles.stage}>
+          <div className={styles.boardFill}>
+            <ChessBoard3D characterId={characterId} companionName={name} />
+          </div>
+
+          <div className={styles.hud}>
+            {/* Top-left: icon controls (active games only) stacked above the
+                opponent captures. Tooltips clamp to the left edge so they can
+                only grow inward (data-tip-edge="left"). */}
+            {game.status === 'active' || (capturedStrips && capturedStrips.top.pieces.length > 0) ? (
+              <div className={styles.hudTopLeft}>
+                {game.status === 'active' ? (
+                  <div className={styles.hudControls} role="group" aria-label="Game controls">
+                    <button
+                      type="button"
+                      className={styles.ctrlBtn}
+                      onClick={() => setUi(characterId, { flip: !(ui.flip ?? false) })}
+                      aria-label="Flip board"
+                      data-tip="Flip board"
+                      data-tip-edge="left"
+                    >
+                      <FlipIcon size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.ctrlBtn}
+                      disabled={game.drawOffer !== null}
+                      onClick={() => void offerDraw(characterId)}
+                      aria-label="Offer draw"
+                      data-tip="Offer draw"
+                      data-tip-edge="left"
+                    >
+                      <DrawIcon size={16} />
+                    </button>
+                    {confirmResign ? (
+                      <span className={styles.resignConfirm}>
+                        <span className={styles.resignLabel}>Resign?</span>
+                        <Button
+                          kind="danger"
+                          size="sm"
+                          onClick={() => {
+                            setConfirmResign(false);
+                            void resign(characterId);
+                          }}
+                        >
+                          Yes
+                        </Button>
+                        <Button kind="quiet" size="sm" onClick={() => setConfirmResign(false)}>
+                          No
+                        </Button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`${styles.ctrlBtn} ${styles.ctrlDanger}`}
+                        onClick={() => setConfirmResign(true)}
+                        aria-label="Resign"
+                        data-tip="Resign"
+                        data-tip-edge="left"
+                      >
+                        <FlagIcon size={16} />
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+                {capturedStrips && capturedStrips.top.pieces.length > 0 ? (
+                  <div className={styles.capturedStrip}>
+                    <CapturedRow
+                      pieces={capturedStrips.top.pieces}
+                      diff={capturedStrips.top.diff}
+                      label={capturedStrips.top.label}
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : null}
 
-            {/* Draw offer banner */}
+            {/* Player captures, bottom-left. */}
+            {capturedStrips && capturedStrips.bottom.pieces.length ? (
+              <div className={styles.hudBottomLeft}>
+                <div className={styles.capturedStrip}>
+                  <CapturedRow
+                    pieces={capturedStrips.bottom.pieces}
+                    diff={capturedStrips.bottom.diff}
+                    label={capturedStrips.bottom.label}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {/* Move list, top-right. */}
+            <div className={styles.hudTopRight}>
+              <div className={styles.moves} ref={listRef}>
+                {game.history.length === 0 ? (
+                  <div className={styles.movesEmpty}>No moves yet</div>
+                ) : (
+                  pairs(game.history.length).map(([wi, bi], n) => (
+                    <div key={n} className={styles.moveRow}>
+                      <span className={styles.moveNum}>{n + 1}.</span>
+                      <MoveCell
+                        san={game.history[wi]?.san}
+                        active={ui.viewPly === wi}
+                        onClick={() => setUi(characterId, { viewPly: wi, selected: null })}
+                      />
+                      <MoveCell
+                        san={bi < game.history.length ? game.history[bi]?.san : undefined}
+                        active={ui.viewPly === bi}
+                        onClick={() => setUi(characterId, { viewPly: bi, selected: null })}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+              {ui.viewPly !== null ? (
+                <button
+                  type="button"
+                  className={styles.backToLive}
+                  onClick={() => setUi(characterId, { viewPly: null })}
+                >
+                  Back to live
+                </button>
+              ) : null}
+            </div>
+
+            {/* Draw offer, bottom-center. */}
             {game.status === 'active' && game.drawOffer === 'ai' ? (
               <div className={styles.offerBanner}>
                 <span>{name} offers a draw</span>
@@ -334,75 +444,23 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
               <div className={styles.offerNote}>Draw offer sent</div>
             ) : null}
 
-            {/* Result banner */}
+            {/* Result, centered. The wrapper is passive (board scrubbing keeps
+                working); only the action row takes the pointer. Rematch flips
+                back to the launch layout where Start begins the next game;
+                closing goes through the unified GameSurface "x" (260721). */}
             {game.status === 'ended' && game.result ? (
-              <ResultBanner result={game.result} game={game} name={name} />
-            ) : null}
-
-            {/* Controls */}
-            <div className={styles.controls}>
-              <button
-                type="button"
-                className={styles.ctrlBtn}
-                onClick={() => setUi(characterId, { flip: !(ui.flip ?? false) })}
-                aria-label="Flip board"
-                data-tip="Flip board"
-              >
-                <RotateIcon size={14} />
-                <span>Flip</span>
-              </button>
-              {game.status === 'active' ? (
-                <>
-                  <button
-                    type="button"
-                    className={styles.ctrlBtn}
-                    disabled={game.drawOffer !== null}
-                    onClick={() => void offerDraw(characterId)}
-                  >
-                    Offer draw
-                  </button>
-                  {confirmResign ? (
-                    <span className={styles.resignConfirm}>
-                      <span className={styles.resignLabel}>Resign?</span>
-                      <Button
-                        kind="danger"
-                        size="sm"
-                        onClick={() => {
-                          setConfirmResign(false);
-                          void resign(characterId);
-                        }}
-                      >
-                        Yes
-                      </Button>
-                      <Button kind="quiet" size="sm" onClick={() => setConfirmResign(false)}>
-                        No
-                      </Button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className={`${styles.ctrlBtn} ${styles.ctrlDanger}`}
-                      onClick={() => setConfirmResign(true)}
-                    >
-                      Resign
-                    </button>
-                  )}
-                </>
-              ) : null}
-              {game.status === 'ended' ? (
-                <>
-                  <Button kind="accent" size="sm" onClick={() => void rematch(characterId)}>
+              <div className={styles.hudResult}>
+                <ResultBanner result={game.result} game={game} name={name} />
+                <div className={styles.resultActions}>
+                  <Button kind="accent" size="md" onClick={() => setRematchScreen(true)}>
                     Rematch
                   </Button>
-                  <Button kind="quiet" size="sm" onClick={() => void end(characterId)}>
-                    Close
-                  </Button>
-                </>
-              ) : null}
-            </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* ── Minecraft-session conflict confirm ── */}
       {mcConflict ? (
@@ -431,13 +489,13 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
 }
 
 /** Half-move index pairs for the numbered move list. */
-function pairs(len: number): Array<[number, number]> {
+export function pairs(len: number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   for (let i = 0; i < len; i += 2) out.push([i, i + 1]);
   return out;
 }
 
-function MoveCell({
+export function MoveCell({
   san,
   active,
   onClick,
@@ -458,7 +516,7 @@ function MoveCell({
   );
 }
 
-function CapturedRow({
+export function CapturedRow({
   pieces,
   diff,
   label,
@@ -479,7 +537,7 @@ function CapturedRow({
   );
 }
 
-function ResultBanner({
+export function ResultBanner({
   result,
   game,
   name,

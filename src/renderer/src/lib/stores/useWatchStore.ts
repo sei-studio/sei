@@ -76,7 +76,7 @@ interface WatchStoreState {
   openPermissionSettings: () => void;
 }
 
-/** Push unsubscribers, torn down on HMR dispose (useConnect4Store pattern). */
+/** Push unsubscribers, torn down on HMR dispose (useChessStore pattern). */
 let offState: (() => void) | null = null;
 let offPreview: (() => void) | null = null;
 

@@ -20,7 +20,8 @@
  */
 
 import { create } from 'zustand';
-import type { ChessDownloadProgress, ChessGameState } from '@shared/chessIpc';
+import type { ChessDownloadProgress, ChessGameState, ChessReplayData } from '@shared/chessIpc';
+import { replayHistory, START_FEN } from '../../components/chess/chessUtil';
 
 /**
  * Narrow local view of the chess members on window.sei — matches the doc
@@ -112,6 +113,16 @@ interface ChessStoreState {
   rematch: (characterId: string) => Promise<void>;
   /** Close the panel. Ends any game in main (unfinished → 'abandoned'). */
   end: (characterId: string) => Promise<void>;
+  /**
+   * Open a replay of a finished game (the clickable "You and X played chess"
+   * transcript row). Purely local: the recorded moves become a synthetic
+   * 'ended' ChessGameState under replayKeyFor(characterId), which ChessBoard3D
+   * renders view-only exactly like a live board after game over. Main is never
+   * involved and any live game under the real characterId is untouched.
+   */
+  openReplay: (characterId: string, replay: ChessReplayData) => void;
+  /** Close the replay view (drops the synthetic state). */
+  closeReplay: (characterId: string) => void;
   /** Apply the pending AI move visually, then ack it to main after the slide. */
   reveal: (characterId: string, uci: string) => void;
   /** Patch board-local UI state. */
@@ -136,10 +147,29 @@ export function isChessOpen(s: ChessStoreState, characterId: string): boolean {
   return s.panelIntent[characterId] === true || !!s.games[characterId];
 }
 
+/** Store key holding a character's replay board (never a real character id). */
+export function replayKeyFor(characterId: string): string {
+  return `replay:${characterId}`;
+}
+
+/** A finished-game replay is open for this character's chat. */
+export function isChessReplayOpen(s: ChessStoreState, characterId: string): boolean {
+  return !!s.games[replayKeyFor(characterId)];
+}
+
 export const useChessStore = create<ChessStoreState>((set, get) => {
   const applyState = (state: ChessGameState): void => {
     set((s) => {
       const prev = s.games[state.characterId];
+      // Unified end "x" (260721): end() clears the local game + intent first,
+      // then main's endChess records the abandonment and pushes one final
+      // 'ended' snapshot. Applying it would resurrect the dismissed panel just
+      // to show the result screen, so drop ended-state pushes when neither a
+      // local game nor open intent exists. In-game endings (checkmate, resign,
+      // draw) still land: their local game is present when the push arrives.
+      if (state.status === 'ended' && !prev && s.panelIntent[state.characterId] !== true) {
+        return s;
+      }
       const prevRevealed = s.revealed[state.characterId] ?? null;
       // Keep the local reveal overlay ONLY while main still reports the same
       // pending move. Commit and rollback both drop pendingAiMove; a fresh
@@ -290,6 +320,38 @@ export const useChessStore = create<ChessStoreState>((set, get) => {
       } catch {
         /* already gone in main */
       }
+    },
+
+    openReplay: (characterId, replay) => {
+      const key = replayKeyFor(characterId);
+      const history = replayHistory(replay.moves);
+      const fen = history.length ? history[history.length - 1].fen : START_FEN;
+      const game: ChessGameState = {
+        gameId: key,
+        characterId: key,
+        status: 'ended',
+        fen,
+        history,
+        playerColor: replay.playerColor,
+        turn: fen.split(' ')[1] === 'b' ? 'b' : 'w',
+        aiThinking: false,
+        pendingAiMove: null,
+        drawOffer: null,
+        result: replay.result,
+        aiElo: replay.aiElo,
+      };
+      set((s) => ({
+        games: { ...s.games, [key]: game },
+        ui: { ...s.ui, [key]: { ...DEFAULT_UI } },
+      }));
+    },
+
+    closeReplay: (characterId) => {
+      const key = replayKeyFor(characterId);
+      set((s) => ({
+        games: { ...s.games, [key]: null },
+        ui: { ...s.ui, [key]: { ...DEFAULT_UI } },
+      }));
     },
 
     reveal: (characterId, uci) => {

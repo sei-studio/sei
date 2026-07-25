@@ -1,0 +1,46 @@
+/* McDashMinimap — pixelated top-down map. Deliberate Minecraft-style
+ * exception to the app design tokens (see McDashboardPanel.module.css). */
+
+.wrap {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  background: #14141c;
+  /* Classic MC inset slot bevel: dark top/left, light bottom/right (the
+   * vanilla GUI slot colors, so the map reads as inset into the gray
+   * dialog). */
+  border-top: 3px solid #373737;
+  border-left: 3px solid #373737;
+  border-bottom: 3px solid #ffffff;
+  border-right: 3px solid #ffffff;
+  box-sizing: border-box;
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.arrow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.6));
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9a9aa8;
+  font-size: 11px;
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  text-shadow: 1px 1px 0 #000;
+}

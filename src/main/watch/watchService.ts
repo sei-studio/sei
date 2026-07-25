@@ -2,7 +2,7 @@
  * Screen-share ("watch") activity service (main process): the character
  * watches the player's screen and reacts like a duo partner on the couch.
  *
- * Follows the chess/connect4 session shape (one session per character on the
+ * Follows the chess session shape (one session per character on the
  * game-agnostic FSM core from src/bot/brain/fsm.js), with a capture loop in
  * place of a board:
  *   P1  sei:chat_received  player message(s); consecutive sends coalesce into
@@ -26,9 +26,9 @@
  * are never written to disk.
  *
  * Mutual exclusion: a watch session cannot start while the character is
- * summoned in Minecraft or has an open chess/Connect 4 game; conversely a
+ * summoned in Minecraft or has an open chess game; conversely a
  * summon or a board-game start ends the watch session (guards live in
- * src/main/ipc.ts, mirroring the connect4 summon-side guard).
+ * src/main/ipc.ts, mirroring the summon-side guard).
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -52,7 +52,13 @@ import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildSystemBlocks, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
-import { splitReply, toMessages, CHAT_ABORTED } from '../chat/chatService';
+import {
+  splitReply,
+  toMessages,
+  CHAT_ABORTED,
+  isSilenceFiller,
+  TRANSCRIPT_STOP_SEQUENCES,
+} from '../chat/chatService';
 import * as chatStore from '../chat/chatStore';
 import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
 import { createPriorityQueue, Priority } from '../../bot/brain/fsm.js';
@@ -79,7 +85,7 @@ export interface WatchDeps {
   pushChatMessage: (characterId: string, message: ChatMessage) => void;
   /** True when the character has a live Minecraft session (mutually exclusive). */
   isSummoned: (characterId: string) => boolean;
-  /** True when the character has an open chess/Connect 4 game (mutually exclusive). */
+  /** True when the character has an open chess game (mutually exclusive). */
   isGameActive: (characterId: string) => boolean;
   /**
    * Cloud credit pre-flight, same contract as the summon gate: true = refuse
@@ -497,7 +503,11 @@ async function dispatchChat(s: Session): Promise<void> {
       console.warn(`[sei/watch] chat reply failed: ${describeErr(err)}`);
     }
   }
-  for (const e of entries) e.resolve({ replies });
+  // streamed: true — every reply line was already persisted AND pushed live
+  // over the chat:message push inside runWatchLlmTurn. Without the flag the
+  // renderer's reveal loop re-appends result.replies on top of the pushed
+  // copies, so every gameplay reply rendered twice (260721).
+  for (const e of entries) e.resolve({ replies, streamed: true });
 }
 
 async function dispatchIdle(s: Session): Promise<void> {
@@ -841,8 +851,17 @@ async function runWatchLlmTurn(s: Session, opts: TurnOpts): Promise<ChatMessage[
 
   const punctuation = character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual';
   const spoken: ChatMessage[] = [];
-  const bufferLine = (part: string): void => {
-    if (!part) return;
+  const bufferLine = (raw: string): void => {
+    // Silence sentinel drop (260721): the frame/idle prompts sanction saying
+    // nothing, and models act that out by WRITING "(silence)"-style fillers
+    // (as a say() line or a filler-shaped reply) instead of staying quiet.
+    // A sentinel line is no message at all: not buffered, not persisted, not
+    // pushed. Checked on the RAW text BEFORE normalizeSayLine, which strips
+    // asterisks and would turn "*stays silent*" into a real-looking line.
+    // Same choke point covers say() lines and chat-reply text.
+    if (isSilenceFiller(raw)) return;
+    const part = normalizeSayLine(raw);
+    if (!part || isSilenceFiller(part)) return;
     spoken.push({
       id: randomUUID(),
       role: 'companion',
@@ -857,8 +876,18 @@ async function runWatchLlmTurn(s: Session, opts: TurnOpts): Promise<ChatMessage[
     let sayCount = 0;
 
     for (let hop = 0; hop < WATCH_MAX_HOPS && !stale(); hop++) {
+      // stop_sequences (260722): reply-turn text is spoken verbatim, so the
+      // model may not continue the transcript past its own turn (see the
+      // chess voice-call leak note on TRANSCRIPT_STOP_SEQUENCES).
       const res = await client.messages.create(
-        { model, max_tokens: 300, system, tools, messages: messages as never },
+        {
+          model,
+          max_tokens: 300,
+          system,
+          tools,
+          stop_sequences: TRANSCRIPT_STOP_SEQUENCES,
+          messages: messages as never,
+        },
         { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
       );
       const u = res.usage;
@@ -876,7 +905,7 @@ async function runWatchLlmTurn(s: Session, opts: TurnOpts): Promise<ChatMessage[
       // Reply turns: the text IS the reply (normal chat contract). Frame/idle
       // turns: text is a private scratchpad; only say() speaks.
       if (isReply && text) {
-        for (const part of splitReply(text, punctuation)) bufferLine(normalizeSayLine(part));
+        for (const part of splitReply(text, punctuation)) bufferLine(part);
       }
 
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
@@ -887,7 +916,11 @@ async function runWatchLlmTurn(s: Session, opts: TurnOpts): Promise<ChatMessage[
       for (const tu of toolUses) {
         let note: string;
         if (tu.name === 'say' && !isReply) {
-          const line = normalizeSayLine(String((tu.input as { text?: string })?.text ?? ''));
+          const rawSay = String((tu.input as { text?: string })?.text ?? '');
+          // A say() whose whole text is the silence sentinel is the model
+          // acting out "silence is fine": treat it as not speaking at all
+          // (no line, no say budget consumed).
+          const line = isSilenceFiller(rawSay) ? '' : normalizeSayLine(rawSay);
           if (!line) {
             note = 'Nothing said; the line was empty.';
           } else if (spoken.length === 0 && !unpromptedSayAllowed(s.lastUnpromptedSayAt, Date.now())) {

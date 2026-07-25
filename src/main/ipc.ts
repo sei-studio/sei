@@ -293,53 +293,16 @@ const ApplySkinArgsSchema = z.object({
 });
 
 export function registerIpcHandlers(deps: IpcHandlerDeps): void {
-  // ── Connect 4 minigame (260720) ───────────────────────────────────────────
-  // Module-state deps for src/main/connect4/connect4Service. Chess wires its
-  // twin of this in main/index.ts; connect4 rides IPC registration instead so
-  // adding a game needs no index.ts edit (see
-  // .planning/quick/connect4-reuse-notes.md). State pushes broadcast to every
-  // window (there is one main window).
-  void (async () => {
-    const { initConnect4Service } = await import('./connect4/connect4Service');
-    initConnect4Service({
-      pushState: (state) => {
-        for (const win of BrowserWindow.getAllWindows()) {
-          if (!win.isDestroyed()) win.webContents.send(IpcChannel.connect4.state, state);
-        }
-      },
-      pushChatMessage: (id, message) => deps.pushChatMessage?.(id, message),
-      isSummoned: (id) => deps.supervisor.isActive(id),
-    });
-  })();
-
-  // ── 20 Questions minigame (260720) ────────────────────────────────────────
-  // Module-state deps for src/main/twentyq/twentyqService, wired here like
-  // connect4 (no index.ts edit). Pure conversation game; the panel is only a
-  // status card, so state pushes are small.
-  void (async () => {
-    const { initTwentyQService } = await import('./twentyq/twentyqService');
-    initTwentyQService({
-      pushState: (state) => {
-        for (const win of BrowserWindow.getAllWindows()) {
-          if (!win.isDestroyed()) win.webContents.send(IpcChannel.twentyq.state, state);
-        }
-      },
-      pushChatMessage: (id, message) => deps.pushChatMessage?.(id, message),
-      isSummoned: (id) => deps.supervisor.isActive(id),
-    });
-  })();
-
   // ── Screen share / watch activity (260720) ────────────────────────────────
-  // Module-state deps for src/main/watch/watchService, wired here like
-  // connect4 (no index.ts edit). Mutually exclusive with a Minecraft summon
-  // AND with an open chess/Connect 4 game; the reverse guards live on the
-  // summon and game-start handlers below.
+  // Module-state deps for src/main/watch/watchService, wired at IPC
+  // registration so adding an activity needs no index.ts edit (chess wires its
+  // twin of this in main/index.ts). Mutually exclusive with a Minecraft summon
+  // AND with an open chess game; the reverse guards live on the summon and
+  // game-start handlers below.
   void (async () => {
-    const [{ initWatchService }, chess, c4, tq] = await Promise.all([
+    const [{ initWatchService }, chess] = await Promise.all([
       import('./watch/watchService'),
       import('./chess/chessService'),
-      import('./connect4/connect4Service'),
-      import('./twentyq/twentyqService'),
     ]);
     initWatchService({
       pushState: (state) => {
@@ -354,9 +317,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       },
       pushChatMessage: (id, message) => deps.pushChatMessage?.(id, message),
       isSummoned: (id) => deps.supervisor.isActive(id),
-      // 20 Questions (260720) counts as a game here too, additively.
-      isGameActive: (id) =>
-        chess.isChessActive(id) || c4.isConnect4Active(id) || tq.isTwentyQActive(id),
+      isGameActive: (id) => chess.isChessActive(id),
       // Cloud credit pre-flight: same fail-open gate the summon path uses
       // (self-guards for BYOK / signed-out / errors → false).
       creditsDepleted: async () => {
@@ -710,23 +671,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // Bot supervision
   ipcMain.handle(IpcChannel.bot.summon, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
-    // Connect 4 (260720): a board game and a Minecraft summon are mutually
-    // exclusive per character, both directions. connect4Start refuses while
-    // summoned; here a summon closes any open board (ends 'abandoned', the
-    // panel shows the closed state). Chess predates this guard and relies on
-    // its renderer-side disconnect confirm only.
-    {
-      const c4 = await import('./connect4/connect4Service');
-      if (c4.isConnect4Active(id)) await c4.endConnect4(id);
-    }
-    // 20 Questions (260720): same summon-side guard — a live session ends
-    // (round 'abandoned') before the character joins a world.
-    {
-      const tq = await import('./twentyq/twentyqService');
-      if (tq.isTwentyQActive(id)) await tq.endTwentyQ(id);
-    }
-    // Screen share (260720): same summon-side guard — a live watch session
-    // ends ('superseded') before the character joins a world.
+    // Screen share (260720): an activity and a Minecraft summon are mutually
+    // exclusive per character, both directions. watchStart refuses while
+    // summoned; here a summon ends any live watch session ('superseded')
+    // before the character joins a world. Chess predates this guard and
+    // relies on its renderer-side disconnect confirm only.
     {
       const watch = await import('./watch/watchService');
       if (watch.isWatchActive(id)) await watch.endWatchForTakeover(id);
@@ -1177,21 +1126,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         if (handled) return handled;
       }
     }
-    // Connect 4 (260720): same takeover as chess — while a game is open, chat
-    // rides the connect4 session queue (the reply knows the board). Returns
-    // null when no active game, falling through as usual.
-    {
-      const c4 = await import('./connect4/connect4Service');
-      if (c4.isConnect4Active(args.characterId)) {
-        const handled = await c4.handlePlayerChat({
-          characterId: args.characterId,
-          text: args.text,
-          replyTo: args.replyTo,
-          voiceCall: inCall,
-        });
-        if (handled) return handled;
-      }
-    }
     // Screen share (260720): while a watch session is open, chat rides the
     // watch session queue (the reply sees the live screen). Returns null when
     // no active session, falling through as usual.
@@ -1199,22 +1133,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const watch = await import('./watch/watchService');
       if (watch.isWatchActive(args.characterId)) {
         const handled = await watch.handlePlayerChat({
-          characterId: args.characterId,
-          text: args.text,
-          replyTo: args.replyTo,
-          voiceCall: inCall,
-        });
-        if (handled) return handled;
-      }
-    }
-    // 20 Questions (260720): same takeover — while a session is open, chat
-    // rides the twentyq session queue (every reply IS a game turn: asks,
-    // guesses, answers, reveals). Returns null when no active session,
-    // falling through as usual.
-    {
-      const tq = await import('./twentyq/twentyqService');
-      if (tq.isTwentyQActive(args.characterId)) {
-        const handled = await tq.handlePlayerChat({
           characterId: args.characterId,
           text: args.text,
           replyTo: args.replyTo,
@@ -1317,95 +1235,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await chess.ackReveal(args.characterId, args.uci);
   });
 
-  // ── Connect 4 minigame (260720) ───────────────────────────────────────────
-  // Thin wrappers over src/main/connect4/connect4Service (module state
-  // initialized at the top of registerIpcHandlers). All character-scoped.
-  ipcMain.handle(IpcChannel.connect4.start, async (_event, argsRaw: unknown) => {
-    const args = z
-      .object({
-        characterId: IdSchema,
-        playerColor: z.enum(['r', 'y', 'random']).optional(),
-      })
-      .parse(argsRaw);
-    // Screen share (260720): a board game takes over a live watch session
-    // (see the chess:start twin of this guard).
-    {
-      const watch = await import('./watch/watchService');
-      if (watch.isWatchActive(args.characterId)) await watch.endWatchForTakeover(args.characterId);
-    }
-    const c4 = await import('./connect4/connect4Service');
-    return await c4.startConnect4(args.characterId, { playerColor: args.playerColor });
-  });
-  ipcMain.handle(IpcChannel.connect4.getState, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const c4 = await import('./connect4/connect4Service');
-    return c4.getConnect4State(id);
-  });
-  ipcMain.handle(IpcChannel.connect4.move, async (_event, argsRaw: unknown) => {
-    const args = z
-      .object({ characterId: IdSchema, col: z.number().int().min(0).max(6) })
-      .parse(argsRaw);
-    const c4 = await import('./connect4/connect4Service');
-    return await c4.playerMove(args.characterId, args.col);
-  });
-  ipcMain.handle(IpcChannel.connect4.resign, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const c4 = await import('./connect4/connect4Service');
-    return await c4.resign(id);
-  });
-  ipcMain.handle(IpcChannel.connect4.rematch, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const c4 = await import('./connect4/connect4Service');
-    return await c4.rematch(id);
-  });
-  ipcMain.handle(IpcChannel.connect4.end, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const c4 = await import('./connect4/connect4Service');
-    await c4.endConnect4(id);
-  });
-  ipcMain.handle(IpcChannel.connect4.ackReveal, async (_event, argsRaw: unknown) => {
-    const args = z
-      .object({ characterId: IdSchema, col: z.number().int().min(0).max(6) })
-      .parse(argsRaw);
-    const c4 = await import('./connect4/connect4Service');
-    return await c4.ackReveal(args.characterId, args.col);
-  });
-
-  // ── 20 Questions minigame (260720) ────────────────────────────────────────
-  // Thin wrappers over src/main/twentyq/twentyqService (module state
-  // initialized at the top of registerIpcHandlers). All character-scoped.
-  ipcMain.handle(IpcChannel.twentyq.start, async (_event, argsRaw: unknown) => {
-    const args = z
-      .object({
-        characterId: IdSchema,
-        mode: z.enum(['guesser', 'keeper']).optional(),
-      })
-      .parse(argsRaw);
-    // Screen share (260720): a game takes over a live watch session (see the
-    // chess:start twin of this guard).
-    {
-      const watch = await import('./watch/watchService');
-      if (watch.isWatchActive(args.characterId)) await watch.endWatchForTakeover(args.characterId);
-    }
-    const tq = await import('./twentyq/twentyqService');
-    return await tq.startTwentyQ(args.characterId, { mode: args.mode });
-  });
-  ipcMain.handle(IpcChannel.twentyq.getState, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const tq = await import('./twentyq/twentyqService');
-    return tq.getTwentyQState(id);
-  });
-  ipcMain.handle(IpcChannel.twentyq.newRound, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const tq = await import('./twentyq/twentyqService');
-    return await tq.newRoundTwentyQ(id);
-  });
-  ipcMain.handle(IpcChannel.twentyq.end, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const tq = await import('./twentyq/twentyqService');
-    await tq.endTwentyQ(id);
-  });
-
   // ── Screen share / watch activity (260720) ───────────────────────────────
   // Thin wrappers over src/main/watch/watchService (module state initialized
   // at the top of registerIpcHandlers) + the capture/permission helpers in
@@ -1442,6 +1271,23 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.watch.openPermissionSettings, async () => {
     const { openPermissionSettings } = await import('./watch/capture');
     await openPermissionSettings();
+  });
+
+  // ── Minecraft dashboard (260721) ──────────────────────────────────────────
+  // Thin wrappers over src/main/mcDashboard/mcDashboardService (module state
+  // initialized in main/index.ts) + the supervisor's watch-flag port message.
+  ipcMain.handle(IpcChannel.mcdash.get, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    // No live session → null, even if a stale cache entry survived teardown.
+    if (!deps.supervisor.isActive(id)) return null;
+    const { getMcDashboardSnapshot } = await import('./mcDashboard/mcDashboardService');
+    return getMcDashboardSnapshot(id);
+  });
+  ipcMain.handle(IpcChannel.mcdash.setWatching, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, watching: z.boolean() }).parse(argsRaw);
+    // No-op (false) when the character has no live session — the tile only
+    // renders while summoned, but a stop can race the unmount cleanup call.
+    deps.supervisor.setDashboardWatch(args.characterId, args.watching);
   });
 
   // ── Voice calls (260705) ──────────────────────────────────────────────────
@@ -2736,6 +2582,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.window.isMaximized, async (event): Promise<boolean> => {
     return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+  });
+  // Game-surface fullscreen button (260721). Returns the state the window is
+  // ENTERING (setFullScreen is async on macOS, so re-reading isFullScreen()
+  // immediately after would report the stale value).
+  ipcMain.handle(IpcChannel.window.fullscreenToggle, async (event): Promise<boolean> => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return false;
+    const next = !win.isFullScreen();
+    win.setFullScreen(next);
+    return next;
+  });
+  ipcMain.handle(IpcChannel.window.isFullscreen, async (event): Promise<boolean> => {
+    return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
   });
 
   // === Phase 13 — Proxy + billing + credits (PROXY-11 + D-57) ===

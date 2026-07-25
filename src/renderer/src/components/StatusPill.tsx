@@ -1,7 +1,7 @@
 /**
  * StatusPill — 8px-square dot + uppercase label primitive with optional mono secondary caption.
  *
- * Extracted from the inline patterns in LanModal.headerEyebrow +
+ * Extracted from the inline patterns in the retired LanModal's headerEyebrow +
  * CharacterPage.modelRow to a shared primitive consumed by SkinEditor empty-
  * states, "Default skin" badge adjacency, MC-install rows, and the wizard
  * "Setup complete" panel.

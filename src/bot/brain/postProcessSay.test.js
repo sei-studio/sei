@@ -48,6 +48,20 @@ describe('postProcessSay — normalize only (no content filter)', () => {
     expect(postProcessSay('( no reply )')).toBe('')
   })
 
+  // 260721: a chess idle tick leaked a literal "(silence)" into chat — the
+  // pattern moved to the shared src/bot/brain/silenceFiller.js (one detector
+  // for the bot, chat voice paths, chess, watch) and gained the case /
+  // trailing-punctuation variants plus "(no comment)" (the chess move prompt
+  // says "many moves deserve no comment at all" and the model echoes it).
+  it('drops case and trailing-punctuation variants (shared silenceFiller)', () => {
+    expect(postProcessSay('(Silence)')).toBe('')
+    expect(postProcessSay('(SILENCE)')).toBe('')
+    expect(postProcessSay('(Silence).')).toBe('')
+    expect(postProcessSay('(silence)!')).toBe('')
+    expect(postProcessSay('  (silence)  ')).toBe('')
+    expect(postProcessSay('(no comment)')).toBe('')
+  })
+
   // Real lines captured from a Sui/Marv game transcript (260707): the model
   // embellishes the marker with a trailing clause, or shortens it to
   // "(nothing)". These leaked past the first, stricter pattern.

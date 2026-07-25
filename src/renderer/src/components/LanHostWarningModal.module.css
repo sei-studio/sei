@@ -15,3 +15,23 @@
   color: var(--muted);
   margin: 0;
 }
+
+/* "Don't show this again" — same shape as AcceptToSModal.module.css .checkbox. */
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}

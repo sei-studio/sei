@@ -117,35 +117,6 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.chess.download, handler);
   },
 
-  // Connect 4 minigame (260720)
-  connect4Start: (characterId, opts) =>
-    ipcRenderer.invoke(IpcChannel.connect4.start, { characterId, playerColor: opts?.playerColor }),
-  connect4GetState: (characterId) => ipcRenderer.invoke(IpcChannel.connect4.getState, characterId),
-  connect4Move: (characterId, col) =>
-    ipcRenderer.invoke(IpcChannel.connect4.move, { characterId, col }),
-  connect4Resign: (characterId) => ipcRenderer.invoke(IpcChannel.connect4.resign, characterId),
-  connect4Rematch: (characterId) => ipcRenderer.invoke(IpcChannel.connect4.rematch, characterId),
-  connect4End: (characterId) => ipcRenderer.invoke(IpcChannel.connect4.end, characterId),
-  connect4AckReveal: (characterId, col) =>
-    ipcRenderer.invoke(IpcChannel.connect4.ackReveal, { characterId, col }),
-  onConnect4State(cb) {
-    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
-    ipcRenderer.on(IpcChannel.connect4.state, handler);
-    return () => ipcRenderer.off(IpcChannel.connect4.state, handler);
-  },
-
-  // 20 Questions minigame (260720)
-  twentyqStart: (characterId, opts) =>
-    ipcRenderer.invoke(IpcChannel.twentyq.start, { characterId, mode: opts?.mode }),
-  twentyqGetState: (characterId) => ipcRenderer.invoke(IpcChannel.twentyq.getState, characterId),
-  twentyqNewRound: (characterId) => ipcRenderer.invoke(IpcChannel.twentyq.newRound, characterId),
-  twentyqEnd: (characterId) => ipcRenderer.invoke(IpcChannel.twentyq.end, characterId),
-  onTwentyQState(cb) {
-    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
-    ipcRenderer.on(IpcChannel.twentyq.state, handler);
-    return () => ipcRenderer.off(IpcChannel.twentyq.state, handler);
-  },
-
   // Screen share / watch activity (260720)
   watchListSources: () => ipcRenderer.invoke(IpcChannel.watch.listSources),
   watchStart: (characterId, sourceId) =>
@@ -164,6 +135,16 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
     ipcRenderer.on(IpcChannel.watch.preview, handler);
     return () => ipcRenderer.off(IpcChannel.watch.preview, handler);
+  },
+
+  // Minecraft dashboard (260721)
+  mcDashboardGet: (characterId) => ipcRenderer.invoke(IpcChannel.mcdash.get, characterId),
+  mcDashboardSetWatching: (characterId, watching) =>
+    ipcRenderer.invoke(IpcChannel.mcdash.setWatching, { characterId, watching }),
+  onMcDashboardSnapshot(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.mcdash.snapshot, handler);
+    return () => ipcRenderer.off(IpcChannel.mcdash.snapshot, handler);
   },
 
   // Voice calls (260705)
@@ -376,6 +357,8 @@ const api: RendererApi = {
   windowMaximizeToggle: () => ipcRenderer.invoke(IpcChannel.window.maximizeToggle),
   windowClose: () => ipcRenderer.invoke(IpcChannel.window.close),
   windowIsMaximized: () => ipcRenderer.invoke(IpcChannel.window.isMaximized),
+  windowFullscreenToggle: () => ipcRenderer.invoke(IpcChannel.window.fullscreenToggle),
+  windowIsFullscreen: () => ipcRenderer.invoke(IpcChannel.window.isFullscreen),
   onWindowMaximizedChanged(cb: (isMaximized: boolean) => void) {
     const handler = (_e: Electron.IpcRendererEvent, isMaximized: boolean) => cb(isMaximized);
     ipcRenderer.on(IpcChannel.window.maximizedChanged, handler);

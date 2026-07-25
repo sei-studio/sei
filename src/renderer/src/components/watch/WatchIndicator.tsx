@@ -4,7 +4,7 @@
  * Shown in the chat screen whenever the character has an ACTIVE screen-share
  * session, whether or not the watch panel itself is open, so the player can
  * always see that capture is running and stop it with one click (the consent
- * requirement; same always-visible principle as MinimizedCall for calls).
+ * requirement; same always-visible principle as the CallMiniBar for calls).
  */
 
 import React, { useEffect, useState } from 'react';

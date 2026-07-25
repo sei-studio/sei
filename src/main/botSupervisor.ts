@@ -165,6 +165,13 @@ export interface BotSupervisorOptions {
     args: Record<string, unknown> | undefined,
     ts: number,
   ) => void;
+  /**
+   * Minecraft dashboard (260721): the live bot posted a telemetry snapshot
+   * ({type:'dashboard'} port message, ~every 2s while the renderer watches).
+   * The payload is forwarded RAW; the consumer (mcDashboardService) validates
+   * before it crosses to the renderer. Optional — undefined no-ops.
+   */
+  onDashboard?: (characterId: string, snapshot: unknown) => void;
   /** Forward to renderer via webContents.send('bot:log:batch', batch). Batched. */
   sendLog: (batch: LogBatch) => void;
   /**
@@ -284,6 +291,13 @@ export interface BotSupervisor {
    * caller runs the standalone chat-brain greeting instead).
    */
   greetVoiceCall(characterId: string): boolean;
+  /**
+   * Minecraft dashboard (260721): forward the renderer's visibility hint into
+   * a live session ({type:'dashboard-watch', active} on port1). While active
+   * the bot samples the minimap and emits telemetry snapshots; inactive stops
+   * the sampling. Returns false (no-op) when the character has no session.
+   */
+  setDashboardWatch(characterId: string, active: boolean): boolean;
 }
 
 interface ActiveSession {
@@ -889,6 +903,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // lifecycleToStatus.
       if (data.type === 'action') {
         opts.onBotAction?.(characterId, data.name ?? null, data.args, Date.now());
+        return;
+      }
+      // Minecraft dashboard (260721): telemetry snapshot from the live bot.
+      // Forwarded raw; mcDashboardService validates before the renderer sees
+      // it. Not a BotStatus event — return before lifecycleToStatus.
+      if ((data as { type?: string }).type === 'dashboard') {
+        opts.onDashboard?.(characterId, (data as { snapshot?: unknown }).snapshot);
         return;
       }
       if (data.type === 'summon-ready' && !summonResolved) {
@@ -1509,6 +1530,18 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (!session) return false;
       try {
         session.port1.postMessage({ type: 'voice-call-greet' });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    // Minecraft dashboard (260721): renderer visibility hint → live session.
+    // Same port-may-be-closed tolerance as sendSeiChat.
+    setDashboardWatch: (characterId: string, active: boolean): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'dashboard-watch', active });
         return true;
       } catch {
         return false;

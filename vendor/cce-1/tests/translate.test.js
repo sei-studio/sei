@@ -31,13 +31,27 @@ test('checkmate is tagged and described', () => {
   assert.match(d.sentence, /checkmate/);
 });
 
-test('rollout line renders sentences and a material verdict', () => {
+test('rollout line renders sentences and asserts NO material verdict', () => {
   // 1.e4 d5 2.exd5: white ends a pawn up in the imagined line.
   const d = describeCandidate(START, 'e2e4', ['d7d5', 'e4d5']);
   assert.ok(d.line);
   assert.deepEqual(d.line.sans, ['e4', 'd5', 'exd5']);
   assert.match(d.line.sentence, /^You imagine: /);
-  assert.match(d.line.sentence, /1 point of material ahead/);
+  assert.match(d.line.sentence, /take the pawn on d5/);
+  // 260724: the line must NOT end with a material claim. It comes from ONE
+  // Elo-conditioned rollout, so any score attached to it is a confident guess
+  // the consuming LLM will then maximize — which is how style selection turned
+  // into (bad) strength selection. See the note in describeCandidate.
+  assert.doesNotMatch(d.line.sentence, /material/);
+  assert.doesNotMatch(d.line.sentence, /point of material|points of material/);
+});
+
+test('a rollout ending in mate still says so', () => {
+  // Scholar's mate finish: the one verdict a player of any strength notices.
+  const c = new Chess();
+  for (const m of ['e4', 'e5', 'Bc4', 'Nc6', 'Qh5', 'Nf6']) c.move(m);
+  const d = describeCandidate(c.fen(), 'h5f7', []);
+  assert.match(d.sentence, /checkmate/);
 });
 
 test('hanging piece is called out', () => {

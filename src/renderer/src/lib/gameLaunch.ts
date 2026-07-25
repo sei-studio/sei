@@ -1,0 +1,165 @@
+/**
+ * gameLaunch — the ONE cross-launch gate for every game entry point (260721).
+ *
+ * Launching a game while ANOTHER game is active for the same companion must
+ * always go through the same confirm popup ("X is still running. End it and
+ * start Y?"), whether the launch comes from the games picker tile or from a
+ * surface's own Launch/Start button. This module owns:
+ *
+ *   - activeGameFor()      which game (chess / screen share / Minecraft) is
+ *                          live for a character, mirroring the IconRail
+ *                          activity-badge definition;
+ *   - endActiveGame()      each game's normal end path (chess writes its
+ *                          unfinished history row via the store's end());
+ *   - openGame()           the picker's open-a-surface routing (navigate to
+ *                          chat + mount the right panel), clearing any other
+ *                          surface's stale open-intent so the aside swaps;
+ *   - requestGameLaunch()  the gate: runs the launch directly when nothing
+ *                          else is active, otherwise parks the launch thunk
+ *                          and opens the cross-launch confirm modal
+ *                          (CrossLaunchConfirmModal calls back into
+ *                          confirmCrossLaunch / cancelCrossLaunch).
+ *
+ * The pending launch is a module-level thunk (not modal payload) so the
+ * useUiStore Modal union stays plain data.
+ */
+
+import { useUiStore } from './stores/useUiStore';
+import { useDataStore } from './stores/useDataStore';
+import { useChessStore } from './stores/useChessStore';
+import { useWatchStore } from './stores/useWatchStore';
+import { useMcDashboardStore } from './stores/useMcDashboardStore';
+import { attemptSummon } from './summonFlow';
+import { sei } from './ipcClient';
+
+/** The three launchable games (the picker's 'more' tile is never active). */
+export type LaunchGameId = 'chess' | 'watch' | 'minecraft';
+
+export interface ActiveGameInfo {
+  id: LaunchGameId;
+  /** User-facing name for the confirm copy ("Chess", "Screen share", ...). */
+  name: string;
+}
+
+/**
+ * Which game is currently ACTIVE for this character, if any. Matches the
+ * IconRail badge semantics: a not-ended chess game (preparing or active), an
+ * active watch session, or a live/connecting Minecraft summon. Open panels
+ * without a session (chess launch card, watch picker) do not count.
+ */
+export function activeGameFor(characterId: string): ActiveGameInfo | null {
+  const chess = useChessStore.getState().games[characterId];
+  if (chess && chess.status !== 'ended') return { id: 'chess', name: 'Chess' };
+  const watch = useWatchStore.getState().sessions[characterId];
+  if (watch && watch.status === 'active') return { id: 'watch', name: 'Screen share' };
+  const summon = useDataStore.getState().summons[characterId]?.kind;
+  if (summon === 'online' || summon === 'connecting') {
+    return { id: 'minecraft', name: 'Minecraft' };
+  }
+  return null;
+}
+
+/**
+ * End a game through its normal end path, so side effects (chess's
+ * unfinished-game history row, the watch session teardown, the bot stop)
+ * all still happen.
+ */
+export async function endActiveGame(characterId: string, id: LaunchGameId): Promise<void> {
+  if (id === 'chess') {
+    await useChessStore.getState().end(characterId);
+    return;
+  }
+  if (id === 'watch') {
+    await useWatchStore.getState().stop(characterId);
+    useWatchStore.getState().closePanel(characterId);
+    return;
+  }
+  // Minecraft: same instant-disconnect path the chat panel uses.
+  useDataStore.getState().setStatus({ kind: 'idle', characterId });
+  useMcDashboardStore.getState().setLaunch(characterId, false);
+  try {
+    await sei.stop(characterId);
+  } catch {
+    /* already stopped */
+  }
+}
+
+/**
+ * Open a game's surface in the chat game area (the picker tile action).
+ * Clears the OTHER surfaces' open-intent first so the single aside swaps to
+ * the requested game instead of staying on a stale panel (chess has top
+ * precedence in ChatScreen's ordering). Never clears a LIVE session — the
+ * cross-launch confirm has already ended it by the time this runs.
+ */
+export function openGame(characterId: string, gameId: LaunchGameId): void {
+  useUiStore.getState().navigate({ kind: 'chat', characterId });
+  const chess = useChessStore.getState();
+  const watch = useWatchStore.getState();
+  const dash = useMcDashboardStore.getState();
+
+  if (gameId !== 'chess') {
+    // Drop a gameless chess panel (launch card) or a finished game's result
+    // screen; an ACTIVE game never reaches here un-ended.
+    const g = chess.games[characterId];
+    if (!g || g.status === 'ended') void chess.end(characterId);
+  }
+  if (gameId !== 'watch') watch.closePanel(characterId);
+  if (gameId !== 'minecraft') dash.setLaunch(characterId, false);
+
+  if (gameId === 'chess') {
+    chess.openPanel(characterId);
+  } else if (gameId === 'watch') {
+    watch.openPanel(characterId);
+  } else if (useDataStore.getState().summons[characterId]?.kind !== 'online') {
+    // Minecraft with a live bot needs no flag: the dashboard is always open
+    // while the bot is online (no hide/minimize). Offline, open the launch
+    // panel.
+    dash.setLaunch(characterId, true);
+  }
+}
+
+/** The launch parked while the cross-launch confirm is up. */
+let pendingLaunch: (() => void) | null = null;
+
+/**
+ * Gate a game launch on the cross-launch confirm. Runs `launch` directly when
+ * no OTHER game is active for this character (re-launching the same game is
+ * always direct); otherwise parks it and opens the confirm modal.
+ */
+export function requestGameLaunch(
+  characterId: string,
+  to: ActiveGameInfo,
+  launch: () => void,
+): void {
+  const active = activeGameFor(characterId);
+  if (!active || active.id === to.id) {
+    launch();
+    return;
+  }
+  pendingLaunch = launch;
+  useUiStore.getState().openModal({
+    kind: 'cross-launch',
+    characterId,
+    fromId: active.id,
+    fromName: active.name,
+    toName: to.name,
+  });
+}
+
+/** Confirm: end the previous game via its normal path, then run the launch. */
+export async function confirmCrossLaunch(
+  characterId: string,
+  fromId: LaunchGameId,
+): Promise<void> {
+  const launch = pendingLaunch;
+  pendingLaunch = null;
+  await endActiveGame(characterId, fromId);
+  useUiStore.getState().closeModal();
+  launch?.();
+}
+
+/** Cancel: drop the parked launch and close the confirm. */
+export function cancelCrossLaunch(): void {
+  pendingLaunch = null;
+  useUiStore.getState().closeModal();
+}

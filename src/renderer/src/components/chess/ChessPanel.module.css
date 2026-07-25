@@ -1,6 +1,18 @@
 /* ChessPanel — chess surface inside the chat screen (Summoning Terminal).
- * Sharp edges, periwinkle accent, token colors only. The aside that slides
- * this panel in lives in ChatScreen.module.css; this file styles the inside. */
+ * Sharp edges, periwinkle accent, token colors only for chrome. Two looks:
+ *
+ *   Launch screen — minimal content (title, side picker, one button) over a
+ *   dark photo of the 3D board (./img/chess-launch.png) under a scrim; a
+ *   plain dark backdrop carries the look if the photo is missing.
+ *
+ *   Board — full-bleed 3D canvas with a DE-BOXED floating HUD: labels are
+ *   plain text with a soft shadow directly over the scene (no chips), only
+ *   the scrollable move list keeps a translucent backing for legibility.
+ *   Passive labels are pointer-events: none so they never block the board.
+ *
+ * The 3D table and the launch photo are always dark wood regardless of app
+ * theme, so text sitting directly on them uses fixed light art colors (same
+ * exemption as the scene palette in three/ChessScene.ts), not theme tokens. */
 
 .panel {
   height: 100%;
@@ -10,152 +22,190 @@
   background: var(--bg2);
 }
 
-/* ── Header ─────────────────────────────────────────────────────────────── */
-.head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+/* Over-scene ink (art colors, see header note). */
+.hud,
+.launch {
+  --scene-ink: rgba(242, 234, 217, 0.92);
+  --scene-ink-soft: rgba(242, 234, 217, 0.62);
+  --scene-text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
 }
 
-.headAvatar {
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
+/* Translucent backing for interactive HUD clusters that need it (move list,
+ * confirm row, draw banner). Borderless: the tint alone separates them. */
+.hudChrome {
+  background: color-mix(in srgb, var(--window) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+/* ── Launch screen (pre-game, engine download, rematch pass) ────────────── */
+.launch {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  border-radius: 50%;
-  background: var(--surface-2);
+  /* Art color: matches the 3D scene background so a missing photo still
+   * reads as the same dark table-room. */
+  background: #17100b;
 }
 
-.headName {
-  font-family: var(--display);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.launchBg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
 }
 
-.headElo {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  border: 1px solid var(--border-strong);
-  padding: 1px var(--space-xs);
-  flex-shrink: 0;
-}
-
-.headStatus {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-family: var(--sans);
-  font-size: 13px;
-}
-
-.statusMuted {
-  color: var(--muted);
-}
-
-.statusYou {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-/* "thinking…" shimmer — a light band sweeping across the label. */
-.thinking {
+.launchScrim {
+  position: absolute;
+  inset: 0;
+  /* Art scrim over the photo; heavier at the center-bottom where copy sits. */
   background: linear-gradient(
-    90deg,
-    var(--muted) 20%,
-    var(--accent-strong) 50%,
-    var(--muted) 80%
+    180deg,
+    rgba(10, 7, 4, 0.45) 0%,
+    rgba(10, 7, 4, 0.55) 55%,
+    rgba(10, 7, 4, 0.7) 100%
   );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: chessShimmer 1.6s linear infinite;
 }
 
-@keyframes chessShimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
+.launchContent {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  text-align: center;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .thinking {
-    animation: none;
-    color: var(--muted);
-    background: none;
-  }
+.launchTitle {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--scene-ink);
+  text-shadow: var(--scene-text-shadow);
 }
 
-.closeBtn {
+.launchHint {
+  margin: 0;
+  max-width: 320px;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.launchError {
+  margin: 0;
+  max-width: 320px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--red);
+  text-shadow: var(--scene-text-shadow);
+}
+
+/* Side picker: three inline text choices separated by slashes, no boxes. */
+.sideRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.sideSep {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.sideBtn {
   -webkit-appearance: none;
   appearance: none;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
   border: none;
   background: transparent;
-  color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
+  padding: 2px var(--space-xs);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
   cursor: pointer;
   transition: color 120ms var(--ease);
 }
 
-.closeBtn:hover {
-  color: var(--red);
+.sideBtn:hover:not(:disabled) {
+  color: var(--scene-ink);
 }
 
-/* ── Main: board + side column ──────────────────────────────────────────── */
-.main {
+.sideBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sideBtnActive,
+.sideBtnActive:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.progressWrap {
+  width: min(280px, 80%);
+}
+
+/* ── Board stage: canvas fills the panel, HUD floats above ──────────────── */
+.stage {
+  position: relative;
   flex: 1;
   min-height: 0;
-  display: flex;
-  gap: var(--space-md);
-  padding: var(--space-md);
 }
 
-/* Size container so the board can be "as big as fits" via cqh units. */
-.boardArea {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  container-type: size;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.boardFill {
+  position: absolute;
+  inset: 0;
 }
 
-.boardBox {
-  width: min(100%, 100cqh);
+/* One passive layer; interactive HUD children opt back in. */
+.hud {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
 
-.side {
-  width: 210px;
-  flex-shrink: 0;
-  min-height: 0;
+/* ── Top-left stack: icon controls above the opponent captured strip ────── */
+.hudTopLeft {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  max-width: 44%;
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  align-items: flex-start;
+  gap: var(--space-xs);
 }
 
-/* ── Captured material ──────────────────────────────────────────────────── */
-.capturedRows {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex-shrink: 0;
+/* Player captured strip, bottom-left. Lifted clear of the hover-revealed
+ * GameSurface bottom chrome strip; the var is set by GameSurface, the
+ * fallback keeps both sides in sync. */
+.hudBottomLeft {
+  position: absolute;
+  bottom: calc(var(--game-chrome-h, 56px) + var(--space-sm));
+  left: var(--space-sm);
+  max-width: 50%;
+}
+
+.capturedStrip {
+  padding: 0;
 }
 
 .capturedRow {
@@ -169,27 +219,40 @@
   height: 16px;
   margin-right: -4px;
   display: inline-flex;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
 }
 
 .capturedDiff {
   margin-left: var(--space-sm);
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--muted);
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
 }
 
-/* ── Move list ──────────────────────────────────────────────────────────── */
+/* ── Move list, top-right (interactive: keeps a translucent backing) ────── */
+.hudTopRight {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  width: 148px;
+  max-height: 46%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  pointer-events: auto;
+}
+
 .moves {
+  composes: hudChrome;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  background: var(--bg2);
   padding: var(--space-xs) 0;
 }
 
 .movesEmpty {
-  padding: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
   text-align: center;
   font-family: var(--sans);
   font-size: 12.5px;
@@ -198,7 +261,7 @@
 
 .moveRow {
   display: grid;
-  grid-template-columns: 32px 1fr 1fr;
+  grid-template-columns: 28px 1fr 1fr;
   align-items: stretch;
 }
 
@@ -245,7 +308,7 @@
   -webkit-appearance: none;
   appearance: none;
   flex-shrink: 0;
-  border: 1px solid var(--accent);
+  border: none;
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-family: var(--mono);
@@ -253,7 +316,7 @@
   letter-spacing: 0.06em;
   padding: 4px var(--space-sm);
   cursor: pointer;
-  transition: background 120ms var(--ease);
+  transition: background 120ms var(--ease), color 120ms var(--ease);
 }
 
 .backToLive:hover {
@@ -261,78 +324,15 @@
   color: var(--accent-text);
 }
 
-/* ── Draw offer ─────────────────────────────────────────────────────────── */
-.offerBanner {
-  flex-shrink: 0;
-  border: 1px solid var(--border-strong);
-  background: var(--surface-2);
-  padding: var(--space-sm);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--text);
-}
-
-.offerActions {
-  display: flex;
-  gap: var(--space-sm);
-}
-
-.offerNote {
-  flex-shrink: 0;
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted);
-  padding: 2px 0;
-}
-
-/* ── Result banner ──────────────────────────────────────────────────────── */
-.result {
-  flex-shrink: 0;
-  border: 1px solid var(--border-strong);
-  border-left-width: 3px;
-  background: var(--surface-2);
-  padding: var(--space-sm) var(--space-md);
-}
-
-.resultWin {
-  border-left-color: var(--green);
-}
-
-.resultLoss {
-  border-left-color: var(--red);
-}
-
-.resultDraw {
-  border-left-color: var(--accent);
-}
-
-.resultTitle {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text);
-}
-
-.resultDetail {
-  font-family: var(--sans);
-  font-size: 12.5px;
-  color: var(--text-2);
-  margin-top: 2px;
-}
-
-/* ── Controls ───────────────────────────────────────────────────────────── */
-.controls {
-  flex-shrink: 0;
+/* ── Controls: icon-only row inside the top-left stack ──────────────────── */
+/* Translucent glyph buttons over the scene (de-boxed HUD); labels live in
+ * data-tip tooltips + aria-labels. The resign confirm row appears inline. */
+.hudControls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  padding-top: var(--space-sm);
-  border-top: 1px solid var(--border);
+  gap: var(--space-xs);
+  white-space: nowrap;
+  pointer-events: auto;
 }
 
 .ctrlBtn {
@@ -340,21 +340,22 @@
   appearance: none;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border: 1px solid var(--border-strong);
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
   background: transparent;
-  color: var(--text-2);
-  font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px var(--space-sm);
+  color: var(--scene-ink-soft);
+  /* SVG strokes ignore text-shadow; drop-shadow keeps the glyph legible over
+   * bright board squares. */
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
   cursor: pointer;
-  transition: color 120ms var(--ease), border-color 120ms var(--ease);
+  transition: color 120ms var(--ease);
 }
 
 .ctrlBtn:hover:not(:disabled) {
   color: var(--accent);
-  border-color: var(--accent);
 }
 
 .ctrlBtn:disabled {
@@ -364,13 +365,14 @@
 
 .ctrlDanger:hover:not(:disabled) {
   color: var(--red);
-  border-color: var(--red);
 }
 
 .resignConfirm {
+  composes: hudChrome;
   display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
+  padding: 2px var(--space-sm);
 }
 
 .resignLabel {
@@ -380,58 +382,92 @@
   color: var(--red);
 }
 
-/* ── Pre-game / preparing cards ─────────────────────────────────────────── */
-.centerCard {
-  flex: 1;
-  min-height: 0;
+/* ── Draw offer, bottom-center (kept clear of the GameSurface chrome) ───── */
+.offerBanner {
+  composes: hudChrome;
+  position: absolute;
+  bottom: calc(var(--game-chrome-h, 56px) + var(--space-2xl));
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: var(--space-md);
-  padding: var(--space-lg);
-  text-align: center;
-}
-
-.cardTitle {
-  margin: 0;
-  font-family: var(--display);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--heading);
-}
-
-.cardHint {
-  margin: 0;
-  max-width: 320px;
+  padding: var(--space-sm) var(--space-md);
   font-family: var(--sans);
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--muted);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
 }
 
-.colorRow {
-  display: flex;
-  justify-content: center;
-}
-
-.cardActions {
+.offerActions {
   display: flex;
   gap: var(--space-sm);
 }
 
-.progressWrap {
-  width: min(280px, 80%);
+.offerNote {
+  position: absolute;
+  bottom: calc(var(--game-chrome-h, 56px) + var(--space-2xl));
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+  white-space: nowrap;
 }
 
-.errorText {
-  margin: 0;
-  max-width: 320px;
-  font-family: var(--sans);
-  font-size: 12.5px;
-  line-height: 1.45;
+/* ── Result, centered (text over the scene; only the buttons take input) ── */
+.hudResult {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(320px, 86%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.result {
+  text-align: center;
+}
+
+.resultTitle {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--scene-ink);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+}
+
+.resultWin .resultTitle {
+  color: var(--green);
+}
+
+.resultLoss .resultTitle {
   color: var(--red);
+}
+
+.resultDraw .resultTitle {
+  color: var(--accent);
+}
+
+.resultDetail {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--scene-ink);
+  text-shadow: var(--scene-text-shadow);
+  margin-top: 2px;
+}
+
+.resultActions {
+  display: flex;
+  gap: var(--space-sm);
+  pointer-events: auto;
 }
 
 .modalBody {

@@ -75,6 +75,21 @@ export interface ChessGameState {
   aiElo: number;
 }
 
+/**
+ * Replay payload embedded in the finished-game transcript row
+ * (ChatMessage.event.chess, see src/shared/ipc.ts). Moves are stored WITHOUT
+ * per-ply FENs to keep the persisted transcript small; the renderer replays
+ * them from the standard start position (chessUtil.replayHistory) to rebuild
+ * the scrubbable ChessMoveRecord list.
+ */
+export interface ChessReplayData {
+  moves: Array<{ san: string; uci: string }>;
+  playerColor: ChessColor;
+  result: ChessResult;
+  /** Elo label shown on the replay board (character's strength at game time). */
+  aiElo: number;
+}
+
 export interface ChessDownloadProgress {
   characterId: string;
   /** 0-100; -1 = failed (message in `error`). */

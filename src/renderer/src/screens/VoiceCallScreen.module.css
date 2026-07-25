@@ -1,40 +1,25 @@
 /* VoiceCallScreen — live Discord-style call view (260705). */
 
+/* 260721: the shared ChatTopBar sits on top; only .stage is the call surface. */
 .root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--window);
+}
+
+.stage {
   position: relative;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  min-height: 0;
   gap: var(--space-lg);
   padding: var(--space-2xl);
-  background: var(--window);
   text-align: center;
-}
-
-/* Minimize "＿" — top-left, borderless quiet button (→ accent on hover). */
-.minimizeBtn {
-  -webkit-appearance: none;
-  appearance: none;
-  position: absolute;
-  top: var(--space-md);
-  left: var(--space-md);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: color 140ms var(--ease);
-}
-
-.minimizeBtn:hover {
-  color: var(--accent);
 }
 
 .avatar {
@@ -301,50 +286,13 @@
   color: var(--muted);
 }
 
+/* The pill buttons themselves live in call/CallControls.module.css
+ * (shared with GameSurface's in-game call cluster); this wrapper only spaces the
+ * row off the name/captions. */
 .controls {
   display: flex;
   align-items: center;
-  gap: var(--space-xl);
   margin-top: var(--space-md);
-}
-
-.circleBtn {
-  -webkit-appearance: none;
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: var(--surface-2);
-  color: var(--text);
-  cursor: pointer;
-  transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
-}
-
-.circleBtn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.circleBtnMuted {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.circleBtnHangup {
-  background: var(--red);
-  border-color: var(--red);
-  color: var(--accent-text);
-}
-
-.circleBtnHangup:hover {
-  background: var(--red-strong);
-  border-color: var(--red-strong);
-  color: var(--accent-text);
 }
 
 .controlLabel {

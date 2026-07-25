@@ -407,6 +407,23 @@ export const UserConfigSchema = z.object({
   /** Plan 07: Linux basic_text safeStorage warning Banner dismissal (Pitfall A2). */
   linuxBasicTextWarnDismissed: z.boolean().default(false),
   /**
+   * 260721 — pre-summon host disclaimers, "Don't show this again" persistence
+   * (LanHostWarningModal). Two independent flags because the two warnings say
+   * different things:
+   *   - hide_vanilla_host_warning → the vanilla-host heads-up (world runs
+   *     vanilla MC without Sei's Fabric skin setup, companion gets a default
+   *     Minecraft skin).
+   *   - hide_modded_host_warning  → the modded-host heads-up (Forge/NeoForge/
+   *     Quilt, or Fabric with mods besides Sei's skin mod; content mods can
+   *     refuse the vanilla-protocol join).
+   * Set only when the user ticks the checkbox AND confirms "Summon anyway".
+   * Optional and NOT defaulted (absent ≡ false; readers check `=== true`) so
+   * the many manual UserConfig literals don't all need to spell it out, same
+   * convention as daily_limited_until / creation_times.
+   */
+  hide_vanilla_host_warning: z.boolean().optional(),
+  hide_modded_host_warning: z.boolean().optional(),
+  /**
    * Phase 13 — Plan 13-02 (PROXY-11, D-57). Which AI backend is active:
    *   - 'local'       → BYOK; bot calls Anthropic directly with the user's
    *                     on-disk api-key.bin. NO credits UI surfaces in the

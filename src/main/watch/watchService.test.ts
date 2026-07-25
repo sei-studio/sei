@@ -159,7 +159,7 @@ describe('watch session lifecycle', () => {
     await expect(startWatch(CHAR, SOURCE)).rejects.toThrow(/WATCH_MC_SESSION_ACTIVE/);
   });
 
-  it('refuses to start while a chess/connect4 game is open', async () => {
+  it('refuses to start while a chess game is open', async () => {
     gameActive = true;
     await expect(startWatch(CHAR, SOURCE)).rejects.toThrow(/WATCH_GAME_ACTIVE/);
   });
@@ -230,6 +230,35 @@ describe('watch session lifecycle', () => {
     expect(chatPushed).toHaveLength(0);
   });
 
+  it('a say() whose text is the "(silence)" sentinel is dropped: nothing pushed', async () => {
+    // Sibling of the chess idle-tick leak (260721): told silence is fine, the
+    // model WRITES the placeholder instead of calling no tools. The sentinel
+    // is no message at all: no push, no history row, and the asterisked form
+    // must be caught BEFORE normalizeSayLine strips the asterisks.
+    createSpy.mockImplementation(sayMock('*stays silent*'));
+    await startWatch(CHAR, SOURCE);
+    await waitFor(() => (createSpy.mock.calls.length > 0 ? true : undefined));
+    await new Promise((r) => setTimeout(r, 150));
+    // Companion rows only: a straggling async "Screen share" SYSTEM transcript
+    // row from the previous test's teardown can land here (pre-existing).
+    expect(chatPushed.filter((m) => m.role === 'companion')).toHaveLength(0);
+  });
+
+  it('a "(silence)" chat reply during a watch persists nothing', async () => {
+    createSpy.mockImplementation(async (params: { system?: { text: string }[] }) => {
+      const sys = (params.system ?? []).map((b) => b.text).join('\n');
+      if (sys.includes('is talking to you while playing')) {
+        return { content: [{ type: 'text', text: '(silence)' }], usage: {} };
+      }
+      return { content: [], usage: {} };
+    });
+    await startWatch(CHAR, SOURCE);
+    const res = await handlePlayerChat({ characterId: CHAR, text: 'nothing to add?' });
+    expect(res).not.toBeNull();
+    expect(res!.replies).toEqual([]);
+    expect(chatPushed.filter((m) => m.role === 'companion')).toHaveLength(0);
+  });
+
   it('unchanged frames never reach the LLM (the gate holds after the first send)', async () => {
     createSpy.mockImplementation(sayMock('one line'));
     await startWatch(CHAR, SOURCE); // frame value 200 → opening look
@@ -274,12 +303,16 @@ describe('watch session lifecycle', () => {
   it('the 20s unprompted-say cooldown drops a too-soon second line', async () => {
     createSpy.mockImplementation(sayMock('line'));
     await startWatch(CHAR, SOURCE);
-    await waitFor(() => (chatPushed.length === 1 ? true : undefined));
+    // Count companion rows only: a previous test's teardown posts its "Screen
+    // share" SYSTEM transcript row fire-and-forget, and it can straggle into
+    // this test's chatPushed between polls.
+    const companionRows = (): ChatMessage[] => chatPushed.filter((m) => m.role === 'companion');
+    await waitFor(() => (companionRows().length === 1 ? true : undefined));
     // Second changed frame arrives well inside the 20s window.
     nextFrame = () => frameOf(20);
     await waitFor(() => (getWatchState(CHAR)!.framesSent >= 2 ? true : undefined));
     await new Promise((r) => setTimeout(r, 150));
-    expect(chatPushed).toHaveLength(1); // the second say was suppressed
+    expect(companionRows()).toHaveLength(1); // the second say was suppressed
   });
 
   it('player chat rides the session queue and gets a normal text reply', async () => {

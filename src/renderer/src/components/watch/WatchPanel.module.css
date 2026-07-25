@@ -1,6 +1,6 @@
 /* WatchPanel — screen-share surface inside the chat screen (Summoning
  * Terminal). Sharp edges, periwinkle accent, token colors only. Shell cloned
- * from Connect4Panel.module.css; the aside that slides this panel in lives in
+ * from ChessPanel.module.css; the aside that slides this panel in lives in
  * ChatScreen.module.css. */
 
 .panel {
@@ -12,12 +12,13 @@
 }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
+/* No underline hairline (260721 minimalism pass) — the title + status read
+ * as a quiet caption over the panel surface. */
 .head {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -75,25 +76,6 @@
   .liveDot {
     animation: none;
   }
-}
-
-.closeBtn {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 120ms var(--ease);
-}
-
-.closeBtn:hover {
-  color: var(--red);
 }
 
 /* ── Center cards (permission walkthrough) ──────────────────────────────── */

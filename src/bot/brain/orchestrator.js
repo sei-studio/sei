@@ -37,6 +37,7 @@ import { createConvoMemory } from './convoMemory.js'
 import { logChatOut, logActionResult } from './log.js'
 import { errLine } from './errStrings.js'
 import { createMemoryLog, readMemoryForSeed } from './memory/memoryLog.js'
+import { isSilenceFiller } from './silenceFiller.js'
 import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
@@ -70,17 +71,10 @@ export function postProcessSay(s) {
   // sometimes SAY the placeholder instead of staying quiet. A line that is
   // nothing but a bracketed/asterisked silence marker is dropped entirely;
   // a bare in-character "silence!" is a real line and passes through.
-  // Models embellish the marker with a trailing clause — real captured
-  // examples: "(staying silent, letting it rest)", "(saying nothing, the
-  // thread has landed)", "(nothing)" — so after a silence keyword the rest of
-  // the aside is allowed (anything up to the closing bracket), and bare
-  // "(nothing)" matches too.
-  // Mirrors isSilenceFiller in src/main/chat/chatService.ts — keep in sync.
-  // 260709 (conversation language): also accepts the common localized marker
-  // forms (silencio/silencieux via silen[a-z]* with a short lead-in for
-  // "reste silencieux", nada/rien, and the CJK terms, which need the lead-in
-  // shape because \b cannot bound CJK) — see chatService.ts.
-  if (/^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response|nada|rien)\b|[^)\]]{0,12}(?:silen[a-z]*|沉默|无言|沈黙|無言|침묵|조용))[^)\]]*)\s*[)\]*.!]*\s*$/i.test(raw)) {
+  // The detector (variants, localized forms, shape rules) is the shared
+  // ./silenceFiller.js — one pattern for the bot AND every main-process
+  // consumer (chat voice paths, chess, watch).
+  if (isSilenceFiller(raw)) {
     return ''
   }
   const normalized = raw

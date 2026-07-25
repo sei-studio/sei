@@ -14,8 +14,9 @@
  *      cloud and local mode, so this is not gated on ai_backend_kind.
  *
  *   2. LAN gate — if connected, summon immediately; otherwise stash the
- *      pending id and open the LAN "open your world" modal, which auto-resumes
- *      the summon when LAN flips to connected (LanModal, D-56).
+ *      pending id and open the Minecraft setup window on its "Connecting to
+ *      world" tab in searching mode, which auto-resumes the summon when LAN
+ *      flips to connected (McSetupModal, D-56).
  *
  * Centralised here (rather than duplicated per screen) so the gate order and
  * the show-once bookkeeping live in one place. `proceedSummon` is exported so
@@ -58,13 +59,33 @@ export function launchSummon(id: string, fromChat: boolean): void {
  * warrants a warning the user has not yet acknowledged this session, open the
  * disclaimer modal (which resumes via launchSummon on "Summon anyway");
  * otherwise summon straight away. Used by both the direct summon path
- * (proceedSummon) and the LanModal auto-resume, so neither can skip the gate.
+ * (proceedSummon) and the McSetupModal auto-resume, so neither can skip the gate.
+ *
+ * 260721: the vanilla and modded warnings carry a persisted "Don't show this
+ * again" (config.hide_vanilla_host_warning / hide_modded_host_warning); a
+ * suppressed warning summons straight away. The config read is best-effort:
+ * if it fails we fall back to showing the warning (it never blocks anything,
+ * so over-showing is the safe failure).
  */
-export function summonWithHostGate(id: string, fromChat: boolean, host: LanHost | undefined): void {
+export async function summonWithHostGate(
+  id: string,
+  fromChat: boolean,
+  host: LanHost | undefined,
+): Promise<void> {
   const warning = lanHostWarning(host);
   if (warning && host && !acknowledgedHostWarnings.has(warning)) {
-    useUiStore.getState().openModal({ kind: 'lan-host-warning', characterId: id, warning, host, fromChat });
-    return;
+    let suppressed = false;
+    if (warning === 'vanilla' || warning === 'modded') {
+      const cfg = await sei.getConfig().catch(() => null);
+      suppressed =
+        warning === 'vanilla'
+          ? cfg?.hide_vanilla_host_warning === true
+          : cfg?.hide_modded_host_warning === true;
+    }
+    if (!suppressed) {
+      useUiStore.getState().openModal({ kind: 'lan-host-warning', characterId: id, warning, host, fromChat });
+      return;
+    }
   }
   launchSummon(id, fromChat);
 }
@@ -109,10 +130,10 @@ export async function proceedSummon(id: string): Promise<void> {
   // poll damps open→closed transitions (OPEN_MISS_TOLERANCE), so a world that
   // actually closed can keep reporting 'open' in the store for up to ~4s — long
   // enough that a summon click would fire sei.summon(id) into a dead port and
-  // surface a connection error instead of the "open your world" LAN modal. The
-  // fresh check reads live ground truth; fall back to the store snapshot if the
-  // IPC fails. (A false 'closed' here self-heals: the LanModal auto-resumes the
-  // pending summon when the next poll flips back to open.) checkNow also
+  // surface a connection error instead of the "open your world" setup window.
+  // The fresh check reads live ground truth; fall back to the store snapshot if
+  // the IPC fails. (A false 'closed' here self-heals: McSetupModal auto-resumes
+  // the pending summon when the next poll flips back to open.) checkNow also
   // refreshes main's cached LAN state, so the port the actual summon reads is
   // fresh too.
   const lan = await sei.lanCheckNow().catch(() => useDataStore.getState().lan);
@@ -123,17 +144,19 @@ export async function proceedSummon(id: string): Promise<void> {
   const view = ui.view;
   const fromChat = view.kind === 'chat' && view.characterId === id;
   if (lan.kind === 'open') {
-    // 260709 — compatibility disclaimer: a modded (Forge/NeoForge/Fabric) or
+    // 260709 — compatibility disclaimer: a vanilla (no skin mod), modded, or
     // Lunar host gets a one-time heads-up before the first summon of the
     // session. The modal's "Summon anyway" acknowledges and resumes via
     // launchSummon; Cancel simply drops the attempt.
-    summonWithHostGate(id, fromChat, lan.host);
+    await summonWithHostGate(id, fromChat, lan.host);
     return;
   }
   ui.setPendingSummon(id);
-  // Remember the origin so the LanModal auto-resume lands back in chat too.
+  // Remember the origin so the McSetupModal auto-resume lands back in chat too.
   ui.setPendingSummonReturnToChat(fromChat);
-  ui.openModal({ kind: 'lan', mode: 'searching' });
+  // Launch-blocked path: the Minecraft setup window, "Connecting to world"
+  // tab, WITH the searching animation (the only path that shows it).
+  ui.openModal({ kind: 'mc-setup', tab: 'world', searching: true });
 }
 
 /**

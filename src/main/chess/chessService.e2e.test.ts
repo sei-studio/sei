@@ -59,6 +59,45 @@ const CHAR = '77777777-7777-4777-8777-777777777777';
 let dir: string;
 let pushed: ChessGameState[];
 
+/**
+ * The per-game session log (chessLog) closes asynchronously and endChess only
+ * fires it off, so a write can still be in flight when the temp dir is removed
+ * — an ENOTEMPTY that has nothing to do with the code under test. Retry briefly.
+ */
+async function rmTemp(target: string): Promise<void> {
+  for (let i = 0; ; i++) {
+    try {
+      await rm(target, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (i >= 20) throw err;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+}
+
+interface PromptParams {
+  system?: { text: string }[];
+  messages?: unknown[];
+  tools?: Array<{ name: string }>;
+}
+
+/** The whole prompt: cached system blocks PLUS the volatile messages tail. */
+function promptText(params: PromptParams): string {
+  const sys = (params.system ?? []).map((b) => b.text).join('\n');
+  const msgs = (params.messages ?? [])
+    .map((m) => {
+      const content = (m as { content?: unknown }).content;
+      if (typeof content === 'string') return content;
+      if (Array.isArray(content)) {
+        return content.map((b) => (b as { text?: string }).text ?? '').join('\n');
+      }
+      return '';
+    })
+    .join('\n');
+  return `${sys}\n${msgs}`;
+}
+
 async function waitFor<T>(fn: () => T | undefined, ms = 60_000): Promise<T> {
   const t0 = Date.now();
   for (;;) {
@@ -97,11 +136,11 @@ describe.skipIf(!hasModel)('chess e2e with the real CCE engine', () => {
     // play it, with one line of table talk.
     createSpy.mockReset();
     createSpy.mockImplementation(
-      async (params: { tools?: { name: string }[]; system?: { text: string }[] }) => {
-        if (params.tools?.some((t) => t.name === 'play')) {
-          const block = (params.system ?? []).map((b) => b.text).join('\n');
+      async (params: PromptParams) => {
+        const block = promptText(params);
+        if (block.includes('The moves you are considering')) {
           const m = block.match(/^1\. (\S+):/m);
-          if (!m) throw new Error('no candidates found in chess block');
+          if (!m) throw new Error('no candidates found in chess turn block');
           return {
             content: [
               { type: 'text', text: 'hehe watch this' },
@@ -119,7 +158,7 @@ describe.skipIf(!hasModel)('chess e2e with the real CCE engine', () => {
     await endChess(CHAR);
     await shutdownChess();
     _setUserDataOverride(null);
-    await rm(dir, { recursive: true, force: true });
+    await rmTemp(dir);
   });
 
   it('plays four full plies against the real engine', { timeout: 120_000 }, async () => {
@@ -142,10 +181,11 @@ describe.skipIf(!hasModel)('chess e2e with the real CCE engine', () => {
     const final = pushed[pushed.length - 1];
     expect(final.history).toHaveLength(4);
     expect(final.status).toBe('active');
-    // The chess block fed to the LLM carried real translated candidates.
-    const block = (createSpy.mock.calls.at(-1)?.[0].system as { text: string }[])
-      .map((b) => b.text)
-      .join('\n');
+    // The turn block fed to the LLM carried real translated candidates. It
+    // lives in the messages tail now, not in `system` — see the cache-ordering
+    // note in chessService (anything volatile in `system` sits above every
+    // message in the cache prefix and makes the whole transcript uncacheable).
+    const block = promptText(createSpy.mock.calls.at(-1)?.[0] as PromptParams);
     expect(block).toMatch(/The moves you are considering/);
     expect(block).toMatch(/winning chances|cannot tell who is winning/);
   });

@@ -67,6 +67,15 @@ describe('classifyCmdline', () => {
     expect(classifyCmdline('   ')).toBe('unknown');
     expect(classifyCmdline('node server.js')).toBe('unknown');
   });
+
+  it('detects Quilt, and prefers it over its bundled Fabric internals', () => {
+    expect(
+      classifyCmdline('java -cp quilt-loader-0.26.0.jar org.quiltmc.loader.impl.launch.knot.KnotClient'),
+    ).toBe('quilt');
+    expect(
+      classifyCmdline('java -cp quilt-loader.jar:net.fabricmc.fabric-api.jar org.quiltmc.loader...'),
+    ).toBe('quilt');
+  });
 });
 
 describe('forgeModCountFromStatus', () => {
@@ -88,11 +97,40 @@ describe('forgeModCountFromStatus', () => {
   });
 });
 
-describe('lanHostWarning', () => {
-  it('maps loaders to the modded disclaimer', () => {
+describe('lanHostWarning (three-way classification, 260721)', () => {
+  const fabric = (seiSkinMod: boolean, otherModCount: number | null): LanHost => ({
+    client: 'fabric',
+    forgeModCount: null,
+    seiSkinMod,
+    otherModCount,
+  });
+
+  it('maps foreign loaders to the modded disclaimer', () => {
     expect(lanHostWarning(host('forge'))).toBe('modded');
     expect(lanHostWarning(host('neoforge'))).toBe('modded');
-    expect(lanHostWarning(host('fabric'))).toBe('modded');
+    expect(lanHostWarning(host('quilt'))).toBe('modded');
+  });
+
+  it('case 1: a vanilla host gets the vanilla (default skin) disclaimer', () => {
+    expect(lanHostWarning(host('vanilla'))).toBe('vanilla');
+  });
+
+  it('case 2: Fabric with only Sei\'s skin mod is silent (our own setup)', () => {
+    expect(lanHostWarning(fabric(true, 0))).toBe(null);
+  });
+
+  it('case 3: Fabric with mods besides Sei\'s skin mod warns as modded', () => {
+    expect(lanHostWarning(fabric(true, 3))).toBe('modded');
+    expect(lanHostWarning(fabric(false, 1))).toBe('modded');
+  });
+
+  it('Fabric with no other-mod evidence stays silent (benefit of the doubt)', () => {
+    // Mods dir unresolvable/unreadable → null evidence.
+    expect(lanHostWarning(fabric(false, null))).toBe(null);
+    // Fabric with a readable but empty/absent mods dir → zero mods.
+    expect(lanHostWarning(fabric(false, 0))).toBe(null);
+    // Pre-260721 cached states without the new fields.
+    expect(lanHostWarning(host('fabric'))).toBe(null);
   });
 
   it('maps Lunar to the lunar disclaimer', () => {
@@ -103,8 +141,7 @@ describe('lanHostWarning', () => {
     expect(lanHostWarning(host('unknown', 4))).toBe('modded');
   });
 
-  it('stays silent for vanilla, unknown, and missing hosts', () => {
-    expect(lanHostWarning(host('vanilla'))).toBe(null);
+  it('stays silent for unknown and missing hosts', () => {
     expect(lanHostWarning(host('unknown'))).toBe(null);
     expect(lanHostWarning(undefined)).toBe(null);
   });

@@ -191,9 +191,9 @@ Player chat (P1) preempts any non-P0 work mid-action. Adapter wiring lives in
 > boundaries" — misleading. The *write* is LLM-driven; the *compaction* is
 > mechanical (byte threshold).
 
-The bot has **two entry paths** (`src/bot/index.js`): forked by Electron (waits
-for an `init` message over the port) or run standalone via the `sei` CLI
-(`src/bot/cli/index.js`, discovers LAN + reads `./config.json`).
+The bot has **one entry path** (`src/bot/index.js`): forked by Electron, it
+waits for an `init` message over the port. (The standalone `sei` CLI was
+removed 260722.)
 
 ---
 
@@ -273,12 +273,11 @@ src/
     src/lib/stores/     Zustand stores (useAuthStore, useCreditsStore, ...)
     src/styles/tokens.css   design tokens (see below)
   bot/                  LLM brain + mineflayer (utilityProcess)
-    index.js            bot entry (forked or CLI)
+    index.js            bot entry (forked by Electron main)
     config.js           Zod config schema (iteration_cap, compaction, providers)
     registry.js         generic action registry
     brain/              orchestrator, fsm, llm/ providers, memory, prompts, anthropicClient
     adapter/minecraft/  mineflayer adapter: connect, behaviors, observers, registry
-    cli/                standalone `sei` CLI
   shared/               cross-process contracts
     ipc.ts              IPC channel + payload contracts
     characterSchema.ts  character Zod schema

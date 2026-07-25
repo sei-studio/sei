@@ -1,6 +1,6 @@
 /**
  * WatchPanel — the screen-share surface that slides into the chat screen
- * (260720). Follows the Connect4Panel shell (header / center card / live
+ * (260720). Follows the ChessPanel shell (header / center card / live
  * surface), with a consent-first flow instead of a board:
  *
  * States, in order of precedence:
@@ -25,6 +25,7 @@ import {
   type WatchSource,
 } from '@shared/watchIpc';
 import { Button } from '../Button';
+import { requestGameLaunch } from '../../lib/gameLaunch';
 import { RefreshIcon, StopIcon } from '../icons';
 import styles from './WatchPanel.module.css';
 
@@ -127,15 +128,7 @@ export function WatchPanel({ characterId }: WatchPanelProps): React.ReactElement
         ) : (
           <span className={styles.headMuted}>Not sharing</span>
         )}
-        <button
-          type="button"
-          className={styles.closeBtn}
-          onClick={() => closePanel(characterId)}
-          aria-label="Close screen share panel"
-          title="Close panel"
-        >
-          ×
-        </button>
+        {/* 260721: closing/ending moved to the unified GameSurface "x". */}
       </header>
 
       {/* ── Body ── */}
@@ -258,7 +251,15 @@ export function WatchPanel({ characterId }: WatchPanelProps): React.ReactElement
               kind="accent"
               size="md"
               disabled={!selectedId || starting}
-              onClick={() => selectedId && void doStart(selectedId)}
+              onClick={() => {
+                // 260721: shared cross-launch gate — another live game (a
+                // chess game, a summoned bot) confirms before this starts.
+                if (!selectedId) return;
+                const sourceId = selectedId;
+                requestGameLaunch(characterId, { id: 'watch', name: 'Screen share' }, () =>
+                  void doStart(sourceId),
+                );
+              }}
             >
               {starting ? 'Starting…' : 'Start watching'}
             </Button>

@@ -22,15 +22,6 @@ const PIECE_NAMES = {
 
 const PIECE_POINTS = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
-function describePoints(points) {
-  if (points === 0) return 'material stays even';
-  const abs = Math.abs(points);
-  const noun = abs === 1 ? 'point' : 'points';
-  return points > 0
-    ? `you come out ${abs} ${noun} of material ahead`
-    : `you end up ${abs} ${noun} of material behind`;
-}
-
 /**
  * Squares of `color` pieces attacked by the piece now sitting on `square`.
  */
@@ -153,10 +144,27 @@ export function describeCandidate(fen, candidateUci, rolloutUcis = []) {
   }
 
   // Imagined continuation.
+  //
+  // 260724: this line NO LONGER states a material outcome. It used to end with
+  // describePoints(net) — "you come out 6 points of material ahead" — asserted
+  // as fact from a SINGLE rollout whose opponent reply was sampled from Maia at
+  // the persona's own Elo. It was wrong often and expensively: in a live 850
+  // game the model was told Nxe3 came out "6 points ahead" (the sampled reply
+  // missed the bishop capture that wins the queen) and played it, and told
+  // Bc5 left it "1 point behind" versus fxe6 at "4 points behind" and played
+  // Bc5, which loses on the spot. Measured over the moves where the game was
+  // still live, choosing on those numbers gave up ~60% MORE win probability
+  // than blindly taking the first candidate.
+  //
+  // The architecture already fixes strength upstream (Elo-conditioned Maia +
+  // blunder/blinder); the LLM is only supposed to express STYLE. A confident
+  // fake number turned a style choice into a strength choice. So the line now
+  // describes what she pictures happening and stops there — no score, nothing
+  // to maximize. Checkmate stays, because a mate at the end of a line is
+  // something a player of any strength would actually notice.
   let line = null;
   if (rolloutUcis.length > 0 && !chess.isGameOver()) {
     let mine = false; // rollout starts with the opponent's reply
-    let net = 0;
     const sans = [first.san];
     const parts = [];
     for (const uci of rolloutUcis) {
@@ -164,21 +172,18 @@ export function describeCandidate(fen, candidateUci, rolloutUcis = []) {
       const ply = describePly(chess, uci, mine);
       sans.push(ply.san);
       parts.push(ply.sentence);
-      net += mine ? ply.points : -ply.points;
       tags.push(...ply.tags.map((t) => `line:${t}`));
       mine = !mine;
     }
-    // Include the candidate's own capture in the running material picture.
-    net += first.points;
     if (parts.length > 0) {
-      const outcome = chess.isCheckmate()
+      const mate = chess.isCheckmate()
         ? tagsEndInMyMate(parts.length)
-          ? 'ending in checkmate in your favor'
-          : 'ending in you getting checkmated'
-        : describePoints(net);
+          ? '; ending in checkmate in your favor'
+          : '; ending in you getting checkmated'
+        : '';
       line = {
         sans,
-        sentence: `You imagine: ${parts.join('; ')}; ${outcome}.`,
+        sentence: `You imagine: ${parts.join('; ')}${mate}.`,
       };
     }
   }

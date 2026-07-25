@@ -8,12 +8,15 @@
  */
 
 import { Chess, type Square } from 'chess.js';
-import type { ChessColor } from '@shared/chessIpc';
+import type { ChessColor, ChessMoveRecord } from '@shared/chessIpc';
 
 export type { Square };
 
 export const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
 export const RANKS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
+
+/** Standard initial position (replay boards start here). */
+export const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 /** Split a UCI string into chess.js move-object parts. */
 export function uciParts(uci: string): { from: Square; to: Square; promotion?: string } {
@@ -33,6 +36,27 @@ export function fenAfterUci(fen: string, uci: string): string {
   } catch {
     return fen;
   }
+}
+
+/**
+ * Rebuild the scrubbable move list of a finished game from its recorded
+ * SAN/UCI moves (ChessReplayData): each record gets the FEN AFTER that move,
+ * starting from the standard initial position. A move that fails to apply
+ * (corrupt record) truncates the list there so the board never shows a
+ * position that did not come from the game.
+ */
+export function replayHistory(moves: Array<{ san: string; uci: string }>): ChessMoveRecord[] {
+  const out: ChessMoveRecord[] = [];
+  const c = new Chess();
+  for (const m of moves) {
+    try {
+      c.move(uciParts(m.uci));
+    } catch {
+      break;
+    }
+    out.push({ san: m.san, uci: m.uci, fen: c.fen() });
+  }
+  return out;
 }
 
 export interface LegalTarget {

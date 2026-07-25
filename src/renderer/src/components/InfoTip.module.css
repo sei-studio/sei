@@ -53,13 +53,27 @@
   padding: 8px 12px;
   white-space: normal;
   pointer-events: none;
+  /* display:none at rest — a hidden (opacity:0) absolute box still counts
+     toward ancestors' scrollable overflow (the phantom-scrollbar tooltip bug
+     class); allow-discrete keeps the fade-out. */
+  display: none;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition:
+    opacity 120ms ease,
+    display 120ms allow-discrete;
   z-index: 50;
   box-shadow: var(--shadow-pop);
 }
 
 .dot:hover + .tip,
 .dot:focus-visible + .tip {
+  display: block;
   opacity: 1;
+}
+
+@starting-style {
+  .dot:hover + .tip,
+  .dot:focus-visible + .tip {
+    opacity: 0;
+  }
 }

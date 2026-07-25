@@ -10,9 +10,41 @@ import {
   rowOf,
   squareAt,
   capturedMaterial,
+  replayHistory,
+  START_FEN,
 } from './chessUtil';
 
 const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+describe('replayHistory', () => {
+  it('rebuilds per-ply FENs from recorded moves (fool\'s mate)', () => {
+    const records = replayHistory([
+      { san: 'f3', uci: 'f2f3' },
+      { san: 'e5', uci: 'e7e5' },
+      { san: 'g4', uci: 'g2g4' },
+      { san: 'Qh4#', uci: 'd8h4' },
+    ]);
+    expect(records).toHaveLength(4);
+    expect(records[0].fen).toBe(fenAfterUci(START_FEN, 'f2f3'));
+    expect(records[3].san).toBe('Qh4#');
+    // Final position is checkmate: the white king is in check.
+    expect(checkedKingSquare(records[3].fen)).toBe('e1');
+  });
+
+  it('truncates at the first move that fails to apply', () => {
+    const records = replayHistory([
+      { san: 'e4', uci: 'e2e4' },
+      { san: '??', uci: 'e2e5' }, // illegal from this position
+      { san: 'Nf3', uci: 'g1f3' },
+    ]);
+    expect(records).toHaveLength(1);
+    expect(records[0].san).toBe('e4');
+  });
+
+  it('returns an empty list for no moves', () => {
+    expect(replayHistory([])).toEqual([]);
+  });
+});
 
 describe('fenAfterUci', () => {
   it('applies a legal move', () => {

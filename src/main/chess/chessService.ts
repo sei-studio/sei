@@ -37,7 +37,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import { Chess } from 'chess.js';
-import type { ChatMessage, ChatSendResult } from '../../shared/ipc';
+import type { ChatMessage, ChatSendResult, LogBatch } from '../../shared/ipc';
 import type {
   ChessColor,
   ChessDownloadProgress,
@@ -52,7 +52,14 @@ import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildSystemBlocks, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
-import { splitReply, toMessages, CHAT_ABORTED } from '../chat/chatService';
+import {
+  splitReply,
+  toMessages,
+  foldUserNote,
+  CHAT_ABORTED,
+  isSilenceFiller,
+  TRANSCRIPT_STOP_SEQUENCES,
+} from '../chat/chatService';
 import * as chatStore from '../chat/chatStore';
 import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
 import { createPriorityQueue, Priority } from '../../bot/brain/fsm.js';
@@ -60,6 +67,7 @@ import { isCallActive } from '../voice/callState';
 import { clampChatLanguage } from '../../shared/chatLanguage';
 import { ensureModel, modelReady } from './modelStore';
 import { getOrCreateChessProfile, type ChessProfile } from './chessProfile';
+import { createChessLog, NULL_CHESS_LOG, type ChessLog } from './chessLog';
 
 // ── deps + module state ──────────────────────────────────────────────────────
 
@@ -69,6 +77,11 @@ export interface ChessDeps {
   pushChatMessage: (characterId: string, message: ChatMessage) => void;
   /** True when the character has a live Minecraft session (mutually exclusive). */
   isSummoned: (characterId: string) => boolean;
+  /**
+   * Batched log delivery into the in-app developer console (same channel the
+   * Minecraft bot logs ride). Optional: tests run without it.
+   */
+  pushLog?: (batch: LogBatch) => void;
 }
 
 interface CandidateOut {
@@ -141,6 +154,46 @@ interface Session {
   lastActivityAt: number;
   /** Kind of the LLM turn currently running (onPreempt aborts 'idle' only). */
   inFlightKind: TurnKind | null;
+  /** Per-game session log (file + in-app developer console). Never null. */
+  log: ChessLog;
+  /**
+   * 260724 continuity: append-only game record, one line per committed ply,
+   * merged into the LLM thread by timestamp alongside the chat transcript. This
+   * is what makes a game ONE continuous conversation instead of a 2-ply keyhole:
+   * at move 25 she can see all 24 prior moves, her own candidates each round,
+   * and every word either of you said.
+   *
+   * Never persisted (the renderer's transcript stays chat-only) and rendered
+   * deterministically, so turn N's array is a strict prefix-extension of turn
+   * N-1's — which is exactly what prefix-incremental prompt caching needs.
+   */
+  gameLog: Array<{ ts: number; text: string }>;
+  /**
+   * SANs of the candidate set for the move currently being decided, folded into
+   * the gameLog line when it commits ("you were considering ..., and played X").
+   */
+  consideredSans: string[];
+  /**
+   * Last macro band from the engine ("Material is even ... between 10% and 85%").
+   * Kept so chat and idle turns can be told where she thinks she stands without
+   * paying for a fresh Maia + Stockfish pass. One ply stale at worst, which suits
+   * a character who cannot reliably tell whether she is winning.
+   */
+  lastMacro: string;
+  /**
+   * When the AI started thinking about the current move (the player's move
+   * landed / warm-up concluded it moves first). The prethink sampler subtracts
+   * the decide latency already elapsed from this, so the TOTAL apparent think
+   * time stays inside prethinkCapMs. Null while it is not deciding.
+   */
+  thinkingSince: number | null;
+  /**
+   * Any chat rows (either side) landed during this game. An abandoned 0-move
+   * game that never spoke leaves no transcript row; one that DID speak must
+   * leave the "left unfinished" row, or later plain-chat turns read the stale
+   * table talk as a live game.
+   */
+  spoke: boolean;
 }
 
 /**
@@ -150,7 +203,13 @@ interface Session {
  * last utterance) lives renderer-side in useAiMoveReveal's settle window.
  */
 export const CHESS_TIMING = {
-  prethinkFloorMs: 300,
+  /** Instant answers are allowed (260722: the floor read as lag, not thought). */
+  prethinkFloorMs: 0,
+  /**
+   * Hard ceiling on the APPARENT think time (decide latency + sampled delay).
+   * The sampler subtracts the time the LLM/engine already took from this
+   * budget, so the player never waits more than ~10s after their move.
+   */
   prethinkCapMs: 10_000,
   /** Obvious move (recapture / dominant Maia top-1): floor + rand * this. */
   obviousExtraMs: 900,
@@ -242,6 +301,7 @@ export async function startChess(
   }
   const existing = sessions.get(characterId);
   if (existing && existing.status !== 'ended') return snapshot(existing);
+  if (existing) void existing.log.close().catch(() => {});
 
   const pick = opts?.playerColor ?? 'w';
   const playerColor: ChessColor =
@@ -271,7 +331,20 @@ export async function startChess(
     idleStreak: 0,
     lastActivityAt: Date.now(),
     inFlightKind: null,
+    log: NULL_CHESS_LOG,
+    gameLog: [],
+    consideredSans: [],
+    lastMacro: '',
+    thinkingSince: null,
+    spoke: false,
   };
+  try {
+    s.log = await createChessLog(characterId, d.pushLog ?? (() => {}));
+  } catch { /* logging is never load-bearing */ }
+  s.log.line(
+    `game start id=${s.gameId.slice(0, 8)} character=${characterId.slice(0, 8)} ` +
+      `player=${colorName(playerColor)} ai=${colorName(playerColor === 'w' ? 'b' : 'w')} elo=${profile.elo}`,
+  );
   s.queue = createPriorityQueue({
     idleFallbackMs: () => sampleIdleDelayMs(s),
     onDispatch: (event: string, data: unknown, signal: AbortSignal) =>
@@ -333,6 +406,8 @@ export async function playerMove(
     return { ok: false, error: 'illegal move', state: snapshot(s) };
   }
   s.history.push({ san, uci, fen: s.chess.fen() });
+  recordPly(s, false);
+  s.log.line(`player move ${san} (${uci}) fen=${s.chess.fen()}`);
   s.candidateCache = null;
   s.lastActivityAt = Date.now();
   s.idleStreak = 0;
@@ -387,6 +462,7 @@ export async function respondDraw(characterId: string, accept: boolean): Promise
 export async function rematch(characterId: string): Promise<ChessGameState> {
   const old = sessions.get(characterId);
   if (!old || old.status !== 'ended') throw new Error('no finished game to rematch');
+  void old.log.close().catch(() => {});
   sessions.delete(characterId);
   return startChess(characterId, {
     playerColor: old.playerColor === 'w' ? 'b' : 'w',
@@ -399,6 +475,7 @@ export async function endChess(characterId: string): Promise<void> {
   if (s.status !== 'ended') {
     endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
   }
+  void s.log.close().catch(() => {});
   sessions.delete(characterId);
 }
 
@@ -454,6 +531,8 @@ export async function handlePlayerChat(args: {
   await chatStore.appendMessage(s.characterId, userMsg);
   s.lastActivityAt = Date.now();
   s.idleStreak = 0;
+  s.spoke = true;
+  s.log.line(`player chat${args.voiceCall ? ' (voice)' : ''}: ${truncateForLog(args.text)}`);
 
   return await new Promise<ChatSendResult>((resolve) => {
     s.chatBuffer.push({ voiceCall: args.voiceCall === true, resolve });
@@ -469,6 +548,38 @@ export async function handlePlayerChat(args: {
 
 function characterId(args: { characterId: string }): string {
   return args.characterId;
+}
+
+/** Log payload clamp: chat/LLM text lines stay readable, never unbounded. */
+function truncateForLog(text: string, max = 500): string {
+  return text.length <= max ? text : `${text.slice(0, max)}… [+${text.length - max} chars]`;
+}
+
+/**
+ * Append the just-committed ply to the append-only game record (see
+ * Session.gameLog). Call immediately after history.push, from BOTH sides.
+ *
+ * For our own move the line also carries the candidate set we chose from, so a
+ * later turn can honestly answer "why didn't you take with the other knight" —
+ * the alternatives are otherwise gone the moment the turn ends.
+ */
+function recordPly(s: Session, mine: boolean): void {
+  const i = s.history.length - 1;
+  const rec = s.history[i];
+  if (!rec) return;
+  const prevFen = i === 0 ? undefined : s.history[i - 1].fen;
+  const moveNo = Math.floor(i / 2) + 1;
+  const what = describePly(prevFen, rec, mine);
+  let text: string;
+  if (mine) {
+    const others = s.consideredSans.filter((san) => san !== rec.san);
+    const considered = others.length ? ` (you were also considering ${others.join(', ')})` : '';
+    text = `(game) Move ${moveNo}: you played ${what}${considered}.`;
+    s.consideredSans = [];
+  } else {
+    text = `(game) Move ${moveNo}: they played ${what}.`;
+  }
+  s.gameLog.push({ ts: Date.now(), text });
 }
 
 // ── internals ────────────────────────────────────────────────────────────────
@@ -487,6 +598,7 @@ function enqueueYourMove(s: Session): void {
   // AI's turn (the warm-up block resolves asynchronously); one decision only.
   if (s.aiThinking || s.hold) return;
   s.aiThinking = true;
+  s.thinkingSince = Date.now();
   push(s);
   s.queue?.enqueue(Priority.P2_MOVEMENT, 'sei:your_move', {});
 }
@@ -528,6 +640,7 @@ async function dispatchYourMove(s: Session): Promise<void> {
       if (s.status !== 'active') return;
       if ((err as Error).message === CHAT_ABORTED) return;
       console.error(`[sei/chess] AI turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
+      s.log.line(`move turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
       if (attempt === 0 && isConnectionError(err)) {
         await new Promise((r) => setTimeout(r, 1500));
         if (s.status !== 'active') return;
@@ -557,7 +670,11 @@ async function dispatchChat(s: Session, nudge: boolean): Promise<void> {
       console.warn(`[sei/chess] chat reply failed: ${describeErr(err)}`);
     }
   }
-  for (const e of entries) e.resolve({ replies });
+  // streamed: true — every reply line was already persisted AND pushed live
+  // over the chat:message push inside runChessLlmTurn (speak()). Without the
+  // flag the renderer's reveal loop re-appends result.replies on top of the
+  // pushed copies, so every gameplay reply rendered twice (260721).
+  for (const e of entries) e.resolve({ replies, streamed: true });
 
   // Conversation cap: chat can delay the queued move only so far, unless the
   // character itself chose to hold (wait() disarms the cap on purpose).
@@ -610,15 +727,21 @@ function sampleIdleDelayMs(s: Session): number {
  */
 function samplePrethinkMs(s: Session): number {
   const T = CHESS_TIMING;
+  // The player has been waiting since the AI started deciding (engine +
+  // LLM latency IS think time from their side of the table). Whatever is
+  // left of the prethink budget bounds the sampled delay: total apparent
+  // thinking never exceeds prethinkCapMs, and zero (instant) is fine.
+  const elapsed = s.thinkingSince == null ? 0 : Date.now() - s.thinkingSince;
+  const budget = Math.max(0, T.prethinkCapMs - elapsed);
   const t = s.candidateCache?.out.think;
   if (isRecapture(s) || (t?.top1P ?? 0) > 0.7) {
-    return T.prethinkFloorMs + Math.random() * T.obviousExtraMs;
+    return Math.min(budget, T.prethinkFloorMs + Math.random() * T.obviousExtraMs);
   }
   const closeness = t?.evalGapCp == null ? 0.5 : 1 - Math.min(t.evalGapCp / 200, 1);
   const difficulty = 0.6 * (t?.entropy ?? 0.5) + 0.4 * closeness;
   const median = 1000 + 6000 * difficulty;
   const sampled = median * Math.exp(0.5 * gaussian());
-  return Math.min(T.prethinkCapMs, Math.max(T.prethinkFloorMs, sampled));
+  return Math.min(budget, Math.max(T.prethinkFloorMs, sampled));
 }
 
 function gaussian(): number {
@@ -648,6 +771,10 @@ function beginHold(s: Session, move: { uci: string; san: string }, commentary: C
     capTimer: null,
   };
   const prethinkMs = samplePrethinkMs(s);
+  s.log.line(
+    `decided ${move.san} (${move.uci}) prethink=${Math.round(prethinkMs)}ms ` +
+      `decideLatency=${s.thinkingSince == null ? '?' : Date.now() - s.thinkingSince}ms commentaryLines=${commentary.length}`,
+  );
   s.hold.prethinkTimer = setTimeout(() => {
     if (s.hold) s.hold.prethinkTimer = null;
     void presentHold(s);
@@ -682,15 +809,18 @@ async function presentHold(s: Session): Promise<void> {
     await chatStore.appendMessage(s.characterId, msg);
     d.pushChatMessage(s.characterId, msg);
     s.lastActivityAt = Date.now();
+    s.spoke = true;
   }
   if (s.status !== 'active' || !s.hold || s.hold.held) return;
   s.pendingAiMove = s.hold.move;
+  s.log.line(`presented ${s.hold.move.san} (pendingAiMove published, ${lines.length} commentary line(s))`);
   push(s);
 }
 
 /** Cap fired (or reply cycles ran out): land the move now, mid-conversation. */
 async function forceCommit(s: Session): Promise<void> {
   if (s.status !== 'active' || !s.hold) return;
+  s.log.line(`force-commit ${s.hold.move.san} (reply-cycle or wall-clock cap)`);
   if (!s.hold.presented) await presentHold(s);
   if (s.status !== 'active' || !s.hold) return;
   s.pendingAiMove = s.hold.move;
@@ -718,10 +848,13 @@ function commitAiMove(s: Session): void {
     return;
   }
   s.history.push({ san: move.san, uci: move.uci, fen: s.chess.fen() });
+  recordPly(s, true);
+  s.log.line(`ai move ${move.san} (${move.uci}) committed fen=${s.chess.fen()}`);
   clearHoldTimers(s);
   s.hold = null;
   s.pendingAiMove = null;
   s.aiThinking = false;
+  s.thinkingSince = null;
   s.candidateCache = null;
   s.lastActivityAt = Date.now();
   s.idleStreak = 0;
@@ -770,19 +903,48 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
   push(s);
 
   const durationMs = Date.now() - s.startedAt;
-  // Transcript event ("You and X played Chess") — same shape the Minecraft
-  // sessions append, rendered with the gamepad icon.
-  if (result.reason !== 'abandoned' || s.history.length > 0) {
-    const ev: ChatMessage = {
-      id: randomUUID(),
-      role: 'system',
-      text: '',
-      ts: Date.now(),
-      event: { kind: 'play', game: 'Chess', durationMs },
-    } as ChatMessage;
-    void chatStore.appendMessage(s.characterId, ev).then(() => {
-      requireDeps().pushChatMessage(s.characterId, ev);
-    }).catch(() => {});
+  s.log.line(
+    `game over: ${result.winner === null ? 'draw' : `${colorName(result.winner)} wins`} ` +
+      `(${result.reason}) plies=${s.history.length} durationMs=${durationMs}`,
+  );
+  // Transcript event ("You and X played chess. You won in N moves.") — same
+  // shape the Minecraft/watch sessions append, rendered with the gamepad icon.
+  // Abandoned games leave no row ONLY when nothing happened at all (no moves
+  // AND no chat): if any table talk landed in the transcript, the closing row
+  // must land too, or a later plain-chat turn reads the stale game talk as a
+  // live game and resumes it ("the board's still waiting").
+  if (result.reason !== 'abandoned' || s.history.length > 0 || s.spoke) {
+    const plyCount = s.history.length;
+    void (async () => {
+      let name = 'your companion';
+      try {
+        const c = await getCharacter(s.characterId);
+        if (c?.name) name = c.name;
+      } catch { /* generic name */ }
+      // Replay payload: SAN/UCI only (the renderer rebuilds per-ply FENs from
+      // the start position), so a long game stays a few hundred bytes in the
+      // persisted transcript. Zero-move games have nothing to scrub through.
+      const chess =
+        s.history.length > 0
+          ? {
+              moves: s.history.map((h) => ({ san: h.san, uci: h.uci })),
+              playerColor: s.playerColor,
+              result,
+              aiElo: s.profile.elo,
+            }
+          : undefined;
+      const ev: ChatMessage = {
+        id: randomUUID(),
+        role: 'system',
+        text: chessSummaryText(name, s.playerColor, result, plyCount, durationMs),
+        ts: Date.now(),
+        event: { kind: 'play', game: 'Chess', durationMs, ...(chess ? { chess } : {}) },
+      } as ChatMessage;
+      try {
+        await chatStore.appendMessage(s.characterId, ev);
+        requireDeps().pushChatMessage(s.characterId, ev);
+      } catch { /* best-effort */ }
+    })();
   }
 
   if (!opts?.silent) {
@@ -811,6 +973,47 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
   }
 }
 
+/**
+ * Human-readable transcript line for a finished game (the play-row text; the
+ * watch service's session summary is the copy twin). User copy: plain,
+ * factual, no em dashes.
+ */
+export function chessSummaryText(
+  name: string,
+  playerColor: ChessColor,
+  result: ChessResult,
+  plyCount: number,
+  durationMs: number,
+): string {
+  if (result.reason === 'abandoned') {
+    return `You and ${name} left a chess game unfinished.`;
+  }
+  const moves = Math.ceil(plyCount / 2);
+  const inMoves = moves > 0 ? ` in ${moves} move${moves === 1 ? '' : 's'}` : '';
+  const afterMoves = moves > 0 ? ` after ${moves} move${moves === 1 ? '' : 's'}` : '';
+  // Sub-minute games skip the duration (a move count says it better).
+  const opener =
+    durationMs >= 60_000
+      ? `You and ${name} played chess for ${formatChessDuration(durationMs)}.`
+      : `You and ${name} played chess.`;
+  if (result.winner === null) {
+    return `${opener} The game ended in a draw${afterMoves}.`;
+  }
+  return result.winner === playerColor
+    ? `${opener} You won${inMoves}.`
+    : `${opener} ${name} won${inMoves}.`;
+}
+
+/** Human phrase for a game length (mirrors the watch play-row phrasing). */
+function formatChessDuration(ms: number): string {
+  if (ms < 3_600_000) {
+    const m = Math.max(1, Math.round(ms / 60_000));
+    return `${m} minute${m === 1 ? '' : 's'}`;
+  }
+  const h = Math.max(1, Math.round(ms / 3_600_000));
+  return `${h} hour${h === 1 ? '' : 's'}`;
+}
+
 /** Log-friendly error description including status and the cause chain. */
 function describeErr(err: unknown): string {
   const e = err as Error & { status?: number; cause?: Error & { code?: string; cause?: Error & { code?: string } } };
@@ -834,6 +1037,9 @@ async function candidatesFor(s: Session): Promise<CandidateOut> {
   const engine = await getEngine();
   const out = await engine.candidateSet(fen, { elo: s.profile.elo });
   s.candidateCache = { fen, out };
+  // Remembered until the move commits, then folded into the gameLog line.
+  s.consideredSans = out.candidates.map((c) => c.san);
+  s.lastMacro = out.macro.text;
   return out;
 }
 
@@ -842,6 +1048,7 @@ async function fallbackPlay(s: Session): Promise<void> {
   if (s.status !== 'active') return;
   const pick = candidates[0];
   if (!pick) throw new Error('no candidates');
+  s.log.line(`fallback: playing first candidate ${pick.san} (no valid play() from the model)`);
   beginHold(s, { uci: pick.uci, san: pick.san }, []);
 }
 
@@ -850,9 +1057,12 @@ async function fallbackPlay(s: Session): Promise<void> {
 const PLAY_TOOL = {
   name: 'play',
   description:
-    'Play your chess move. Give the move in standard notation (SAN like "Nf3", "exd5", "O-O", or a from-to square pair like "e2e4"). ' +
+    'Play your chess move, or revise a move you already queued this turn. ' +
+    'Give the move in standard notation (SAN like "Nf3", "exd5", "O-O", or a from-to square pair like "e2e4"). ' +
     'Pick from the candidate moves you are considering; you may try a different legal move if your character truly would, ' +
     'but your candidates already reflect how well you see the board. If the move is illegal you will be told and must try again. ' +
+    'When a move is already queued, calling this with a different move changes your decision, and calling it with the same move ' +
+    'releases one you were holding back. The game state above says which situation you are in. ' +
     'If you want to say any table talk, say it BEFORE calling this, in the same turn; staying silent is also fine.',
   input_schema: {
     type: 'object' as const,
@@ -863,20 +1073,12 @@ const PLAY_TOOL = {
   },
 };
 
-/** The hold-turn variant: same tool name, revision semantics. */
-const PLAY_UPDATE_TOOL = {
-  name: 'play',
-  description:
-    'Update your queued chess move, or release a held one. You already decided a move this turn; call this with a different legal move to change your decision, ' +
-    'or with the same move to let a held move finally land. SAN like "Nf3" or a square pair like "g1f3".',
-  input_schema: PLAY_TOOL.input_schema,
-};
-
 const WAIT_TOOL = {
   name: 'wait',
   description:
-    'Hold your queued move back instead of letting it land, for example because the player asked you to wait. ' +
-    'Nothing will play until you call play() again in a later turn; new messages and quiet moments will remind you.',
+    'Hold your queued move back instead of letting it land, for example because the player asked for a moment. ' +
+    'While you hold, the game is PAUSED on your turn: the player CANNOT move or act on the board until you call play() again in a later turn. ' +
+    'Use it for a short pause in the conversation, never to let the player act first (they cannot). New messages and quiet moments will remind you.',
   input_schema: { type: 'object' as const, properties: {}, required: [] },
 };
 
@@ -897,8 +1099,53 @@ const FORFEIT_TOOL = {
   input_schema: { type: 'object' as const, properties: {}, required: [] },
 };
 
+/**
+ * ONE tool array for every turn kind, deliberately.
+ *
+ * `tools` is the FIRST element of Anthropic's cache prefix (tools → system →
+ * messages), so any change to it invalidates the entire cached prompt — system
+ * and transcript included. Handing move turns one array and chat/idle/game-over
+ * turns another meant the prefix flipped on nearly every turn: a live 15-minute
+ * game logged cacheRead=0 on ~half its requests, every one of them re-billing
+ * the whole persona + memory + transcript at the cache-WRITE rate.
+ *
+ * Which tools are actually legal right now is a per-turn fact, so it belongs in
+ * the turn block (prose, in the uncached tail) and in the tool_result notes —
+ * not in the tool list. An out-of-context call costs one hop and is answered
+ * with a correction; a churning tool array cost several thousand tokens a turn.
+ */
+const CHESS_TOOLS = [
+  PLAY_TOOL,
+  WAIT_TOOL,
+  PROPOSE_DRAW_TOOL,
+  FORFEIT_TOOL,
+  REMEMBER_TOOL,
+] as Anthropic.Messages.Tool[];
+
 const CHESS_MAX_HOPS = 5;
 const TURN_TIMEOUT_MS = 90_000;
+
+/**
+ * A square name or a notation move anywhere in a spoken line.
+ *
+ * Matches, bounded so it never fires inside an ordinary word:
+ *   - a bare square, "e4" / "h7";
+ *   - SAN with any prefix/disambiguation/capture/promotion/check decoration,
+ *     "Nf3", "exd5", "Qxd5+", "Rae1", "e8=Q#";
+ *   - castling, "O-O" / "O-O-O" and the 0-0 spelling.
+ * The bare-square alternative is what does most of the work: every SAN move
+ * ends in a destination square, so "Nf3" is caught by its own "f3" tail.
+ *
+ * False positives are possible in casual texting ("b4" for "before") and are
+ * accepted: the cost is one dropped bubble, and she has plenty else to say.
+ * Exported for testing.
+ */
+const CHESS_COORD_RE =
+  /(?<![A-Za-z0-9])(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[KQRBN])?[+#]?|[O0]-[O0](?:-[O0])?)(?![A-Za-z0-9])/;
+
+export function hasChessCoordinates(text: string): boolean {
+  return CHESS_COORD_RE.test(text);
+}
 
 function colorName(c: ChessColor): string {
   return c === 'w' ? 'White' : 'Black';
@@ -950,7 +1197,67 @@ function describeRecentPlies(s: Session, n: number): Array<{ mine: boolean; text
   return out;
 }
 
-async function buildChessBlock(
+/**
+ * The STATIC half of the chess prompt: who is playing, the table-talk contract,
+ * the chess personality. Identical for every turn of a game, so it rides in the
+ * CACHED system blocks (buildSystemBlocks' extraStable) instead of being
+ * re-billed 40+ times a game.
+ *
+ * 260724 rewrite. The old contract banned "no piece-to-square descriptions",
+ * "no plans", "no analysis" on top of the notation ban, which left mood as the
+ * only compliant output — and produced exactly that: 21 of 24 move turns in a
+ * live game opened with a contentless "ok" / "alright" / "okay okay". Chess talk
+ * is the point of the feature; the ONLY thing that actually has to go is
+ * coordinates, because square names read as robotic out loud. So: encourage the
+ * chess talk, ban the coordinates, and hold the line on length.
+ */
+function chessContractBlock(s: Session, playerName: string): string {
+  const aiColor: ChessColor = s.playerColor === 'w' ? 'b' : 'w';
+  const lines: string[] = [];
+  lines.push('# CHESS GAME');
+  lines.push(
+    `You are playing a casual, untimed chess game against ${playerName} inside the Sei app. ` +
+      `You are ${colorName(aiColor)}; they are ${colorName(s.playerColor)}. ` +
+      'Every plain-text line you write is SPOKEN OUT LOUD at the board, exactly as written.',
+  );
+  lines.push(
+    'TALK ABOUT THE CHESS. Real chess talk is wanted, not filler. React to what they just played, ' +
+      'say what you are worried about or going for, call the position how you see it, needle them, complain, gloat, ' +
+      'ask how a rule works if you genuinely do not know. Pieces, threats, trades, attacks, king safety, who is ahead: ' +
+      'all fair game, in ordinary spoken words. "your knight has been annoying me all game", "i think i\'m getting squeezed", ' +
+      '"you really just gave me that rook", "this is going badly for me and i know it".',
+  );
+  lines.push(
+    'NEVER SAY COORDINATES OR NOTATION. This is the one hard rule. No square names and no move notation, ever: ' +
+      'not "e4", not "Nf3", not "exd5", not "O-O", not "the pawn on d5". People say these out loud only in a chess club, ' +
+      'and you are not in one. Point at pieces the way a person does instead: "your bishop", "that knight you just moved", ' +
+      '"the pawn in front of your king", "the rook in the corner". A line containing a square or a notation move is ' +
+      'THROWN AWAY and never reaches them, so the thought is simply lost. Say it in words.',
+  );
+  lines.push(
+    'KEEP IT SHORT. One line, the length of a text message. A second line only if it genuinely earns its place. ' +
+      'Never open with "ok", "okay", "alright", "well", "lmao ok", or any variant, and never narrate that you are thinking ' +
+      '("let me think", "lemme just", "here goes", "alright let\'s see"). If you have nothing specific to say about the ' +
+      'position or about them, say NOTHING at all. Silence at a chess board is normal and common; a comment on every ' +
+      'single move is not.',
+  );
+  lines.push(
+    'Do not announce the move you are about to play or are holding: the board shows it by itself, and a real player ' +
+      'does not narrate their own moves. Do not write analysis or notes to self ("I am reading the board state", ' +
+      '"I calculate..."). If you would not say it out loud across the table, do not write it. ' +
+      `Write ONLY your own lines: never dialogue or moves for ${playerName}, never "Human:" / "Player:" lines, ` +
+      'never bracketed stage directions like "(it is your turn to move)". The app narrates the game and prompts each turn.',
+  );
+  if (s.profile.styleNote) lines.push(`Your chess personality: ${s.profile.styleNote}`);
+  return lines.join('\n\n');
+}
+
+/**
+ * The VOLATILE half: what is true on the board right now, and what this turn is
+ * for. Appended as the LAST user message (after the cache breakpoint), never to
+ * the system array — see BuildSystemArgs.extraStable for why that matters.
+ */
+async function buildChessTurnBlock(
   s: Session,
   kind: TurnKind,
   playerName: string,
@@ -958,14 +1265,6 @@ async function buildChessBlock(
 ): Promise<string> {
   const aiColor: ChessColor = s.playerColor === 'w' ? 'b' : 'w';
   const lines: string[] = [];
-  lines.push('# CHESS GAME');
-  lines.push(
-    `You are playing a casual, untimed chess game against ${playerName} inside the Sei app. ` +
-      `You are ${colorName(aiColor)}; they are ${colorName(s.playerColor)}. ` +
-      'The chat beside the board is your table talk: stay fully in character, keep lines short like your usual texting, ' +
-      'and never dump raw move lists or coordinates into chat. Refer to moves naturally (the knight, that pawn grab).',
-  );
-  if (s.profile.styleNote) lines.push(`Your chess personality: ${s.profile.styleNote}`);
 
   if (kind === 'game-over' && s.result) {
     const r = s.result;
@@ -976,13 +1275,19 @@ async function buildChessBlock(
           ? `You just WON (${r.reason === 'resign' ? `${playerName} resigned` : r.reason}).`
           : `You just LOST (${r.reason === 'forfeit' ? 'you resigned' : r.reason}).`;
     lines.push(outcome);
-    lines.push('React to the result in one or two short lines, in character. No tools this turn.');
+    lines.push(
+      'React to the result in ONE short line, two at the very most, in character. ' +
+        'Say something about how the game actually went, not a generic sign-off. No tools this turn.',
+    );
     return lines.join('\n\n');
   }
 
   // Ground truth about what just happened on the board. Translated sentences,
   // never raw notation: the model must not have to parse SAN to know what the
   // player did (that is how commentary starts hallucinating moves).
+  //
+  // The FULL game is already above as "(game) Move N: ..." lines in the thread,
+  // so this is only the immediate delta — what changed since it last looked up.
   const moveNo = Math.floor(s.history.length / 2) + 1;
   if (s.history.length === 0) {
     lines.push('Move 1. No moves have been played yet.');
@@ -993,20 +1298,29 @@ async function buildChessBlock(
     );
     lines.push(`Move ${moveNo}.\n${recentLines.join('\n')}`);
   }
+  // How the game feels to HER, on every turn kind — not just when she is moving.
+  // This band is deliberately wide (cce-1 bandHalfWidth at her Elo): she cannot
+  // actually tell how she is doing, and that uncertainty is what her confidence
+  // is built on. It has to be present on chat and idle turns too, or she talks
+  // about the game with no sense of whether she is winning it.
+  if (kind !== 'move' && s.lastMacro) {
+    lines.push(`Where you think you stand: ${s.lastMacro}`);
+  }
 
   const holdLines = (): void => {
     if (!s.hold) return;
     if (s.hold.held) {
       lines.push(
-        `You decided on ${s.hold.move.san} this turn but you are HOLDING it back (you called wait()). ` +
-          'It will not land until you call play() again, with the same move or a different one. ' +
-          'Call play() when you are ready; keep waiting by simply not calling it.',
+        `Game state: it is YOUR turn, and you are HOLDING your move back (you called wait()). Your chosen move (${s.hold.move.san}) has NOT been played; nothing is on the board yet. ` +
+          `While you hold, the game is PAUSED: ${playerName} CANNOT move, respond on the board, or do anything at all until your move lands. Holding never lets them act first; chess does not work that way. ` +
+          `If ${playerName} asks you to move, says it is your turn, or wants the game to continue, call play() NOW (same move or a different one). ` +
+          'Keep waiting only if the pause itself is still what they want. Never tell them to play or to move: they cannot until you do. Do not say your held move in chat.',
       );
     } else {
       lines.push(
-        `You have already decided your move this turn: ${s.hold.move.san}. It lands on the board shortly after this conversation goes quiet. ` +
+        `Game state: it is YOUR turn and your move is already chosen (${s.hold.move.san}). It has not appeared on the board yet, but it lands BY ITSELF moments after this conversation goes quiet; you do not need to do anything. ` +
           'To change your decision, call play() again with your new move. ' +
-          `If ${playerName} asks you to hold on, or you want to keep it back for now, call wait().`,
+          `If ${playerName} asks you to hold on, or you want to keep it back for now, call wait(). Do not announce the move in chat; the board will show it.`,
       );
     }
   };
@@ -1018,8 +1332,8 @@ async function buildChessBlock(
       else {
         lines.push(
           playersTurn
-            ? `It is ${playerName}'s move; you are waiting. Reply to their message.`
-            : 'It is YOUR move, but first just reply to their message; you will pick your move right after.',
+            ? `Game state: it is ${playerName}'s move. Your last move is already on the board and nothing of yours is pending or held. Reply to their message.`
+            : 'Game state: it is YOUR move, but first just reply to their message; you will pick your move right after.',
         );
       }
     } else {
@@ -1032,8 +1346,9 @@ async function buildChessBlock(
       );
       if (s.hold) holdLines();
       lines.push(
-        'A message is OPTIONAL here. If you have one short in-character line genuinely worth saying (a needle, an observation, a mood), say it. ' +
-          'Otherwise reply with nothing at all: silence at a chess board is normal.',
+        'A message is OPTIONAL here, and most of the time the right answer is none. Say something only if you have ONE ' +
+          'specific line worth saying out loud right now: something about the position, something about them, a needle, ' +
+          'a real mood. If it would be filler, reply with nothing at all.',
       );
     }
     if (s.drawOffer === 'player') {
@@ -1049,6 +1364,8 @@ async function buildChessBlock(
   const { macro, candidates } = await candidatesFor(s);
   lines.push(
     `It is YOUR move. ${s.chess.isCheck() ? 'You are in check. ' : ''}${macro.text} ` +
+      'That range is genuinely how much you can tell: you are not able to work out whether you are winning, ' +
+      'so let it set how confident you sound rather than quoting it. ' +
       'When you talk about material, say ahead or behind; never name specific pieces as captured unless they appear in the lines above.',
   );
   const candText = candidates
@@ -1059,7 +1376,12 @@ async function buildChessBlock(
     })
     .join('\n');
   lines.push(
-    'The moves you are considering (these reflect how well you personally see the board right now):\n' + candText,
+    'The moves you are considering, and roughly how each one plays out in your head:\n' +
+      candText +
+      '\n\nThese are HUNCHES, not calculations, and the lines you imagine are how YOU picture it going, ' +
+      'not what will actually happen. There is no score attached to any of them and you cannot work out which is best. ' +
+      'Pick the one that feels most like you: the exciting one, the greedy one, the safe one, whatever fits your mood ' +
+      'and how the game has been going. Do not try to reason out the strongest move; you are not able to.',
   );
   if (s.drawOffer === 'player') {
     lines.push(
@@ -1071,10 +1393,34 @@ async function buildChessBlock(
     s.drawDeclinedNote = false;
   }
   lines.push(
-    'Table talk is OPTIONAL this turn. If their last move or your reply deserves one short in-character line, say it as plain text BEFORE calling play(). ' +
-      'Many moves deserve no comment at all; in that case just call play() with your move and nothing else.',
+    'Table talk is OPTIONAL this turn and most moves deserve none: just call play() and say nothing. ' +
+      'Speak only if THEIR last move or the state of the game gives you something specific to say, and then it is ONE ' +
+      'short line as plain text BEFORE calling play(). ' +
+      'Never reveal or describe the move you are about to play: the board announces it for you.',
   );
   return lines.join('\n\n');
+}
+
+/**
+ * One continuous conversation for the whole game: the persisted chat transcript
+ * and the append-only game record (Session.gameLog), merged by timestamp.
+ *
+ * Both inputs only ever grow at the end and both carry real wall-clock stamps,
+ * so the merged array is append-only too — turn N's rendering of rows 1..k is
+ * byte-identical to turn N-1's. That is the property prefix-incremental prompt
+ * caching needs, and it is why nothing here may be rewritten retroactively.
+ *
+ * Game rows ride as `user` turns (the same shape toMessages already gives play
+ * rows), so consecutive game lines and player messages fold into one turn.
+ */
+function buildGameThread(s: Session, history: ChatMessage[]): ChatMessage[] {
+  if (s.gameLog.length === 0) return history;
+  const rows: ChatMessage[] = [
+    ...history,
+    ...s.gameLog.map((g) => ({ id: `ply-${g.ts}`, role: 'user' as const, text: g.text, ts: g.ts })),
+  ];
+  // Stable sort: on an exact tie the chat line keeps its place before the ply.
+  return rows.sort((a, b) => a.ts - b.ts);
 }
 
 async function readMemoryTail(id: string): Promise<string> {
@@ -1124,29 +1470,41 @@ async function runChessLlmTurn(
     inGame: false,
     voiceCall: opts.voiceCall,
     language: clampChatLanguage(config.chat_language),
+    // STATIC for the whole game, so it rides inside the cached region. The
+    // volatile per-turn view goes in the messages tail below, never here.
+    extraStable: chessContractBlock(s, playerName),
   } as Parameters<typeof buildSystemBlocks>[0]);
-  // Appended AFTER the cache-marked persona/status blocks, so the stable
-  // prefix stays cached while the per-move chess view re-bills (it is small).
-  system.push({ type: 'text', text: await buildChessBlock(s, opts.kind, playerName, quietSec) });
+  const turnBlock = await buildChessTurnBlock(s, opts.kind, playerName, quietSec);
 
-  const messages = toMessages(history.slice(-30));
-  if (opts.kind === 'move') {
-    messages.push({
-      role: 'user',
-      content: `(game) It is your move, ${character.name}.`,
-    });
-  } else if (opts.kind === 'game-over') {
-    messages.push({ role: 'user', content: '(game) The game just ended. Say your piece.' });
-  } else if (opts.kind === 'idle') {
-    messages.push({
-      role: 'user',
-      content: '(game) (the table is quiet; say something only if it is worth saying)',
-    });
-  }
-  if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
-    messages.push({ role: 'user', content: '(game) (go on)' });
-  }
-  markLastMessageCached(messages);
+  // Per-turn session log: the compact context that was sent, every hop's
+  // output and tool traffic, what was spoken vs suppressed, and timing. One
+  // multi-line [chess:turn] event per LLM turn in file + dev console.
+  const turnT0 = Date.now();
+  const turnLog: string[] = [
+    `kind=${opts.kind} voiceCall=${opts.voiceCall} historyMsgs=${history.length} plies=${s.gameLog.length}`,
+    '--- chess turn block sent ---',
+    turnBlock,
+    '--- turn ---',
+  ];
+
+  // 260724: the whole game as one conversation. No slice() — the transcript and
+  // the move record both ride in full, so at move 25 she can still see move 3,
+  // what she was considering at the time, and everything either of you said.
+  // The growth is ~110 tokens a ply and it is all cache reads; the previous
+  // 30-message keyhole was both blinder AND more expensive (see below).
+  const messages = toMessages(buildGameThread(s, history));
+
+  // Cache breakpoint at the end of the STABLE prefix, then the volatile turn
+  // block folded on after it. Order matters and is the whole point:
+  //   tools (fixed) → system (fixed + persona/memory/summary) → thread ...★... turn block
+  // Everything up to ★ is byte-identical to last turn, so it is a cache READ.
+  // The turn block changes every turn, so it must sit AFTER the mark; when the
+  // thread already ends on a user turn the block folds into it (Anthropic wants
+  // alternating roles) and the mark moves one turn back, which costs only that
+  // trailing user turn.
+  const endsOnUser = messages.length > 0 && messages[messages.length - 1].role === 'user';
+  markLastMessageCached(endsOnUser ? messages.slice(0, -1) : messages);
+  foldUserNote(messages, turnBlock);
 
   const ctrl = new AbortController();
   s.turnCtrl = ctrl;
@@ -1154,26 +1512,45 @@ async function runChessLlmTurn(
   const stale = (): boolean => s.turnSeq !== seq || ctrl.signal.aborted;
   const timeout = setTimeout(() => ctrl.abort(), TURN_TIMEOUT_MS);
 
-  const holdToolset = (): Anthropic.Messages.Tool[] => {
-    const t: Anthropic.Messages.Tool[] = [REMEMBER_TOOL as Anthropic.Messages.Tool];
-    if (s.hold) t.push(PLAY_UPDATE_TOOL as Anthropic.Messages.Tool, WAIT_TOOL as Anthropic.Messages.Tool);
-    if (s.drawOffer === 'player') t.push(PROPOSE_DRAW_TOOL as Anthropic.Messages.Tool);
-    return t;
-  };
-  const tools: Anthropic.Messages.Tool[] =
-    opts.kind === 'move'
-      ? ([PLAY_TOOL, PROPOSE_DRAW_TOOL, FORFEIT_TOOL, REMEMBER_TOOL] as Anthropic.Messages.Tool[])
-      : opts.kind === 'game-over'
-        ? []
-        : holdToolset();
+  // Fixed for every turn kind — see CHESS_TOOLS. Which ones are legal right now
+  // is stated in the turn block instead, where it costs nothing to vary.
+  const tools = CHESS_TOOLS;
 
   // Move-turn table talk presents only after the prethink delay; everything
   // else speaks immediately.
   const deferSpeech = opts.kind === 'move';
+  // Backstop for the "keep it short" contract: a turn may not spill more than a
+  // couple of bubbles no matter what the model does. A live game-over turn wrote
+  // five lines against a prompt asking for one or two.
+  const maxParts = opts.kind === 'chat-reply' ? 3 : 2;
   const spoken: ChatMessage[] = [];
   const speak = async (text: string): Promise<void> => {
     for (const part of splitReply(text, character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual')) {
+      // Silence sentinel drop (260721): the idle/move prompts sanction saying
+      // nothing, and models act that out by WRITING "(silence)"-style fillers
+      // instead of staying quiet (a live chess idle tick persisted a literal
+      // "(silence)" chat row). A sentinel part is no message at all: not
+      // persisted, not pushed. Applies to every turn kind; unlike typed plain
+      // chat, the game prompts sanction silence throughout the session.
       if (!part) continue;
+      if (isSilenceFiller(part)) {
+        turnLog.push(`suppressed (silence sentinel): ${truncateForLog(part, 120)}`);
+        continue;
+      }
+      // Coordinates are the one hard ban in the table-talk contract, and prose
+      // alone does not hold it: a live game had her say a bare "c6" out loud on
+      // move 1 and the player had to correct her in-game. Squares and notation
+      // read as robotic aloud, so a line carrying them is dropped rather than
+      // mangled — everything else about the chess is encouraged.
+      if (hasChessCoordinates(part)) {
+        turnLog.push(`suppressed (coordinates in spoken line): ${truncateForLog(part, 120)}`);
+        continue;
+      }
+      if (spoken.length >= maxParts) {
+        turnLog.push(`suppressed (over ${maxParts}-line cap): ${truncateForLog(part, 120)}`);
+        continue;
+      }
+      turnLog.push(`say${deferSpeech ? ' (buffered until present)' : ''}: ${truncateForLog(part)}`);
       const msg: ChatMessage = {
         id: randomUUID(),
         role: 'companion',
@@ -1186,6 +1563,7 @@ async function runChessLlmTurn(
       await chatStore.appendMessage(s.characterId, msg);
       d.pushChatMessage(s.characterId, msg);
       s.lastActivityAt = Date.now();
+      s.spoke = true;
     }
   };
 
@@ -1198,14 +1576,33 @@ async function runChessLlmTurn(
     let played = false;
 
     for (let hop = 0; hop < CHESS_MAX_HOPS && !stale(); hop++) {
+      // stop_sequences (260722): the model may not continue the transcript
+      // past its own turn. A live voice-call game had a chat-reply turn keep
+      // writing — a fabricated player line ("Human: ... *plays Nc6*") plus an
+      // invented "(it is your turn)" direction — and speak() faithfully
+      // persisted and TTS'd all of it. Cutting generation at the other side's
+      // line-start markers means the leak text is never produced at all.
       const res = await client.messages.create(
-        { model, max_tokens: 300, system, tools, messages: messages as never },
+        {
+          model,
+          // Short by construction, not just by instruction: with a generous
+          // ceiling the model self-conditions on its own longest prior turn and
+          // creeps up a line each round (same failure the chat path caps at 200).
+          max_tokens: 160,
+          system,
+          tools,
+          stop_sequences: TRANSCRIPT_STOP_SEQUENCES,
+          messages: messages as never,
+        },
         { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
       );
       const u = res.usage;
       console.log(
         `[sei/chess] turn char=${s.characterId.slice(0, 8)} kind=${opts.kind} hop=${hop} ` +
           `in=${u?.input_tokens ?? '?'} out=${u?.output_tokens ?? '?'} cacheRead=${u?.cache_read_input_tokens ?? 0}`,
+      );
+      turnLog.push(
+        `hop=${hop} in=${u?.input_tokens ?? '?'} out=${u?.output_tokens ?? '?'} cacheRead=${u?.cache_read_input_tokens ?? 0}`,
       );
       if (stale()) break;
 
@@ -1233,7 +1630,7 @@ async function runChessLlmTurn(
           } else {
             played = true;
             beginHold(s, picked, []); // commentary attached after the loop
-            note = `You play ${picked.san}. It will land on the board in a moment; do not call play() again this turn.`;
+            note = `You play ${picked.san}. It will land on the board in a moment; do not call play() again this turn, and do not announce the move in chat.`;
           }
         } else if (tu.name === 'play' && opts.kind !== 'move' && s.hold) {
           const raw = String((tu.input as { move?: string })?.move ?? '').trim();
@@ -1258,10 +1655,10 @@ async function runChessLlmTurn(
               s.hold.decidedAt = Date.now();
               armCapTimer(s);
               presentAfterTurn = true;
-              note = `You will play ${picked.san}. It lands once this exchange goes quiet.`;
+              note = `You will play ${picked.san}. It lands once this exchange goes quiet. Do not announce the move in chat.`;
             } else {
               note = changed
-                ? `Your queued move is now ${picked.san}.`
+                ? `Your queued move is now ${picked.san}. Do not announce it in chat.`
                 : `Your queued move stays ${picked.san}.`;
             }
           }
@@ -1314,6 +1711,8 @@ async function runChessLlmTurn(
         } else {
           note = `The tool "${tu.name}" is not available right now.`;
         }
+        turnLog.push(`tool: ${tu.name}(${truncateForLog(JSON.stringify(tu.input ?? {}), 200)})`);
+        turnLog.push(`  -> ${truncateForLog(note, 300)}`);
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: note });
       }
       messages.push({ role: 'user', content: results });
@@ -1346,14 +1745,18 @@ async function runChessLlmTurn(
     return spoken;
   } catch (err) {
     if (ctrl.signal.aborted || s.turnSeq !== seq) {
+      turnLog.push('aborted (superseded or timed out)');
       const e = new Error(CHAT_ABORTED);
       e.name = 'AbortError';
       throw e;
     }
+    turnLog.push(`error: ${describeErr(err)}`);
     throw err;
   } finally {
     clearTimeout(timeout);
     if (s.turnCtrl === ctrl) s.turnCtrl = null;
+    turnLog.push(`total=${Date.now() - turnT0}ms spokenParts=${spoken.length}`);
+    s.log.block('turn', turnLog.join('\n'));
   }
 }
 
@@ -1384,11 +1787,20 @@ function tryParseMove(s: Session, raw: string): { uci: string; san: string } | n
 /** Everything down; called from app shutdown. */
 export async function shutdownChess(): Promise<void> {
   for (const s of sessions.values()) {
-    try { s.turnCtrl?.abort(); } catch { /* already down */ }
-    clearHoldTimers(s);
-    flushChatBuffer(s);
-    s.queue?.dispose();
-    s.queue = null;
+    if (s.status !== 'ended') {
+      // App closing mid-game: end it as abandoned (silent = no memory line,
+      // no reaction turn) so the transcript still records the unfinished
+      // game, same as shutdownWatch. Best-effort: the append races app exit.
+      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
+    } else {
+      // Already ended; a game-over reaction turn may still be in flight.
+      try { s.turnCtrl?.abort(); } catch { /* already down */ }
+      clearHoldTimers(s);
+      flushChatBuffer(s);
+      s.queue?.dispose();
+      s.queue = null;
+    }
+    void s.log.close().catch(() => {});
   }
   sessions.clear();
   if (enginePromise) {

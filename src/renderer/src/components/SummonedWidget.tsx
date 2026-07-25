@@ -8,16 +8,15 @@
  * shell level so it persists across navigation. Renders nothing when no bot is
  * live.
  *
- * Like the minimized voice call, the stack is DRAGGABLE and pinned above the
- * chat composer dock so it never sits on the message box; when a voice call is
- * also minimized, the default dock is offset up so the two popups don't overlap.
- * A plain click on a card (no drag) opens that companion's profile page.
+ * The stack is DRAGGABLE and pinned above the chat composer dock so it never
+ * sits on the message box. A plain click on a card (no drag) opens that
+ * companion's profile page. (260721: the call clearance offset went away with
+ * the MinimizedCall corner tile — the call bar is bottom-center now.)
  */
 
 import React, { useRef, useState } from 'react';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useUiStore } from '../lib/stores/useUiStore';
-import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { sei } from '../lib/ipcClient';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from './PixelPortrait';
@@ -34,8 +33,6 @@ import styles from './SummonedWidget.module.css';
  */
 const BOTTOM_RESERVED = 72;
 const EDGE_GAP = 8;
-/** Extra lift for the default dock when the minimized call already sits there. */
-const CALL_CLEARANCE = 56;
 
 interface Pos {
   left: number;
@@ -49,15 +46,6 @@ export function SummonedWidget(): React.ReactElement | null {
   // When a character's profile page is open, its own deploy bar is the connect/
   // disconnect control — so hide that character's floating card (it's redundant).
   const view = useUiStore((s) => s.view);
-  // Lift the dock when the MinimizedCall widget occupies the corner. Mirrors
-  // that widget's own derived visibility (260707: call state, not the losable
-  // minimizedCall flag).
-  const callParticipants = useVoiceStore((s) => s.participants);
-  const callStatus = useVoiceStore((s) => s.status);
-  const callActive =
-    callParticipants.length > 0 &&
-    (callStatus === 'live' || callStatus === 'connecting') &&
-    view.kind !== 'voice-call';
   const hiddenId = view.kind === 'character' ? view.id : null;
 
   // Free-drag position; null = docked bottom-right via inline/CSS default.
@@ -120,15 +108,11 @@ export function SummonedWidget(): React.ReactElement | null {
     if (d && !d.moved && d.cid) navigate({ kind: 'character', id: d.cid });
   };
 
-  const defaultStyle: React.CSSProperties | undefined = callActive
-    ? { bottom: BOTTOM_RESERVED + CALL_CLEARANCE }
-    : undefined;
-
   return (
     <div
       ref={ref}
       className={styles.stack}
-      style={pos ? { left: pos.left, top: pos.top, right: 'auto', bottom: 'auto' } : defaultStyle}
+      style={pos ? { left: pos.left, top: pos.top, right: 'auto', bottom: 'auto' } : undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

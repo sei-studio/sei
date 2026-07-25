@@ -26,12 +26,8 @@ import type {
 } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
 export type { ErrorClass } from './errorClasses';
-import type { ChessGameState, ChessDownloadProgress } from './chessIpc';
-export type { ChessGameState, ChessDownloadProgress } from './chessIpc';
-import type { C4GameState } from './connect4Ipc';
-export type { C4GameState } from './connect4Ipc';
-import type { TQGameState, TQMode } from './twentyqIpc';
-export type { TQGameState, TQMode } from './twentyqIpc';
+import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
+export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 import type {
   WatchSessionState,
   WatchSource,
@@ -44,6 +40,13 @@ export type {
   WatchPreviewPush,
   WatchPermissionStatus,
 } from './watchIpc';
+import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
+export type {
+  McDashboardSnapshot,
+  McDashboardSnapshotPush,
+  McDashItem,
+  McDashMap,
+} from './mcDashboardIpc';
 
 /* -------------------------------------------------------------------------- */
 /*  Lifecycle / status / log domain types                                     */
@@ -151,7 +154,14 @@ export type LanState =
  * host java process command line (loader main-class / install-path markers).
  * 'unknown' means detection failed, NOT vanilla — no disclaimer is shown.
  */
-export type LanHostClient = 'vanilla' | 'fabric' | 'forge' | 'neoforge' | 'lunar' | 'unknown';
+export type LanHostClient =
+  | 'vanilla'
+  | 'fabric'
+  | 'forge'
+  | 'neoforge'
+  | 'quilt'
+  | 'lunar'
+  | 'unknown';
 
 export interface LanHost {
   client: LanHostClient;
@@ -161,19 +171,57 @@ export interface LanHost {
    * but the list was empty/unparseable (still a Forge-family server).
    */
   forgeModCount: number | null;
+  /**
+   * 260721 — Sei ships its OWN Fabric setup (the skin-setup wizard installs
+   * Fabric Loader + the CustomSkinLoader jar into an isolated gameDir), so a
+   * Fabric host is usually OUR OWN doing and must not trigger the modded
+   * disclaimer. Main resolves the host java process's `--gameDir` from its
+   * command line and scans `<gameDir>/mods/`:
+   *   - seiSkinMod    → a CustomSkinLoader jar (the one mod Sei installs) is
+   *                     present in the host's mods dir.
+   *   - otherModCount → number of OTHER mod jars in that dir; null = the
+   *                     mods dir could not be resolved/read (no evidence
+   *                     either way). See src/main/hostSetup.ts.
+   * Both optional so older cached states / fixtures stay valid.
+   */
+  seiSkinMod?: boolean;
+  otherModCount?: number | null;
 }
 
 /** Which pre-summon disclaimer (if any) a detected host warrants. */
-export type LanHostWarning = 'modded' | 'lunar';
+export type LanHostWarning = 'vanilla' | 'modded' | 'lunar';
 
 /**
  * Pure decision: does this host classification warrant a pre-summon
  * disclaimer? Shared so the renderer gate and tests agree on the mapping.
+ *
+ * Three-way classification (260721):
+ *   - 'vanilla' → host runs plain vanilla Minecraft, i.e. WITHOUT Sei's
+ *     Fabric skin setup: the companion joins fine but renders with a default
+ *     Minecraft skin (CustomSkinLoader never runs).
+ *   - 'modded'  → Forge/NeoForge/Quilt, or Fabric with mod jars BESIDES Sei's
+ *     skin mod: content mods can make the world refuse the vanilla-protocol
+ *     join.
+ *   - null      → silence. Notably: Fabric with only Sei's skin mod installed
+ *     is OUR OWN skin setup, not "modded Minecraft" (the pre-260721 bug
+ *     warned users about the very setup our wizard told them to install).
+ *     Fabric with NO other-mod evidence (mods dir unreadable/absent) is also
+ *     silent: most Sei users got Fabric FROM our wizard, so absent contrary
+ *     evidence we assume it is ours.
  */
 export function lanHostWarning(host: LanHost | undefined): LanHostWarning | null {
   if (!host) return null;
   if (host.client === 'lunar') return 'lunar';
-  if (host.client === 'fabric' || host.client === 'forge' || host.client === 'neoforge') return 'modded';
+  if (host.client === 'vanilla') return 'vanilla';
+  if (host.client === 'forge' || host.client === 'neoforge' || host.client === 'quilt') {
+    return 'modded';
+  }
+  if (host.client === 'fabric') {
+    // Fabric is Sei's own loader. Warn only on positive evidence of mods
+    // beyond our skin mod; otherwise stay silent (see doc comment above).
+    if (host.otherModCount != null && host.otherModCount > 0) return 'modded';
+    return null;
+  }
   // Cmdline classification failed but the ping itself carried Forge metadata.
   if (host.forgeModCount != null) return 'modded';
   return null;
@@ -223,8 +271,12 @@ export interface ChatMessage {
    * companion knows you actually played, not just talked about it.
    * `call` (260705) is the same pattern for a finished voice call ("You and X
    * called for Y"), rendered with a phone icon.
+   * A chess row additionally carries `chess` (the recorded moves + result), so
+   * the row is clickable and opens a board replay of that game.
    */
-  event?: { kind: 'play'; game: string; durationMs: number } | { kind: 'call'; durationMs: number };
+  event?:
+    | { kind: 'play'; game: string; durationMs: number; chess?: ChessReplayData }
+    | { kind: 'call'; durationMs: number };
 }
 
 /** Result of a chat turn. `launch` is set when the companion called launch(). */
@@ -1121,36 +1173,6 @@ export interface RendererApi {
   /** First-run engine model download progress (status 'preparing'). */
   onChessDownload(cb: (p: ChessDownloadProgress) => void): Unsubscribe;
 
-  // --- Connect 4 minigame (260720) --- see src/shared/connect4Ipc.ts for the
-  // state model + reveal protocol (a clone of the chess one, minus draw offers
-  // and the model download). All methods are character-scoped.
-  /** Start (or resume) a game. Rejects with C4_ERR_MC_ACTIVE while summoned. */
-  connect4Start(characterId: string, opts?: { playerColor?: 'r' | 'y' | 'random' }): Promise<C4GameState>;
-  connect4GetState(characterId: string): Promise<C4GameState | null>;
-  /** Player drop into a column (0-6). ok:false = rejected (not your turn / full). */
-  connect4Move(characterId: string, col: number): Promise<{ ok: boolean; error?: string; state: C4GameState }>;
-  connect4Resign(characterId: string): Promise<C4GameState>;
-  connect4Rematch(characterId: string): Promise<C4GameState>;
-  /** Close the game (panel dismissed). Unfinished games end 'abandoned'. */
-  connect4End(characterId: string): Promise<void>;
-  /** The pending AI move finished presenting (text printed / TTS drained). */
-  connect4AckReveal(characterId: string, col: number): Promise<C4GameState>;
-  /** Full-state pushes on every game change (AI thinking, moves, end). */
-  onConnect4State(cb: (state: C4GameState) => void): Unsubscribe;
-
-  // --- 20 Questions minigame (260720) --- see src/shared/twentyqIpc.ts for
-  // the state model (pure conversation; no board, no reveal protocol). All
-  // methods are character-scoped.
-  /** Start (or resume) a session. Rejects with TQ_ERR_MC_ACTIVE while summoned. */
-  twentyqStart(characterId: string, opts?: { mode?: TQMode }): Promise<TQGameState>;
-  twentyqGetState(characterId: string): Promise<TQGameState | null>;
-  /** Start the next round after one ends (same mode; the score carries over). */
-  twentyqNewRound(characterId: string): Promise<TQGameState>;
-  /** Close the session (panel dismissed). A live round ends 'abandoned'. */
-  twentyqEnd(characterId: string): Promise<void>;
-  /** Full-state pushes on every session change (slots, guesses, round ends). */
-  onTwentyQState(cb: (state: TQGameState) => void): Unsubscribe;
-
   // --- Screen share / watch activity (260720) --- see src/shared/watchIpc.ts
   // for the session model + consent flow. All session methods are
   // character-scoped (one session per character at a time).
@@ -1169,6 +1191,15 @@ export interface RendererApi {
   onWatchState(cb: (state: WatchSessionState) => void): Unsubscribe;
   /** Live source snapshot for the aside preview (~every 3s while active). */
   onWatchPreview(cb: (p: WatchPreviewPush) => void): Unsubscribe;
+
+  // --- Minecraft dashboard (260721) --- see src/shared/mcDashboardIpc.ts for
+  // the snapshot model. Character-scoped; live only while summoned.
+  /** Latest telemetry snapshot, or null when there is no live session. */
+  mcDashboardGet(characterId: string): Promise<McDashboardSnapshot | null>;
+  /** Visibility hint: the bot samples the minimap only while true. */
+  mcDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
+  /** Telemetry pushes (~every 2s while watching, plus on action change). */
+  onMcDashboardSnapshot(cb: (s: McDashboardSnapshotPush) => void): Unsubscribe;
 
   // --- Voice calls (260705) ---
   /**
@@ -1616,6 +1647,14 @@ export interface RendererApi {
   /** Fires on every maximize/unmaximize so the icon can swap live. */
   onWindowMaximizedChanged(cb: (isMaximized: boolean) => void): Unsubscribe;
   /**
+   * Toggle OS fullscreen for the app window (game-surface fullscreen button,
+   * 260721). Resolves with the state the window is entering, so the caller can
+   * swap its enter/exit icon without a second round-trip.
+   */
+  windowFullscreenToggle(): Promise<boolean>;
+  /** Current fullscreen state — seeds the fullscreen button icon on mount. */
+  windowIsFullscreen(): Promise<boolean>;
+  /**
    * Fires when the active account profile scope changes at runtime (sign-in,
    * sign-out, or account swap) once main has torn down the old bot, switched
    * the data scope, and initialized the new profile. The renderer re-bootstraps
@@ -1876,31 +1915,6 @@ export const IpcChannel = {
     /** Push: ChessDownloadProgress during the one-time model download. */
     download: 'chess:download',
   },
-  // Connect 4 minigame (260720) — request/response pairs are character-scoped;
-  // `state` is a push (main → renderer). Protocol details in
-  // src/shared/connect4Ipc.ts.
-  connect4: {
-    start: 'connect4:start',
-    getState: 'connect4:get-state',
-    move: 'connect4:move',
-    resign: 'connect4:resign',
-    rematch: 'connect4:rematch',
-    end: 'connect4:end',
-    ackReveal: 'connect4:ack-reveal',
-    /** Push: full C4GameState on every change. */
-    state: 'connect4:state',
-  },
-  // 20 Questions minigame (260720) — request/response pairs are
-  // character-scoped; `state` is a push (main → renderer). Protocol details in
-  // src/shared/twentyqIpc.ts.
-  twentyq: {
-    start: 'twentyq:start',
-    getState: 'twentyq:get-state',
-    newRound: 'twentyq:new-round',
-    end: 'twentyq:end',
-    /** Push: full TQGameState on every change. */
-    state: 'twentyq:state',
-  },
   // Screen share / watch activity (260720) — request/response pairs are
   // character-scoped; `state` and `preview` are pushes (main → renderer).
   // Protocol details in src/shared/watchIpc.ts.
@@ -1915,6 +1929,14 @@ export const IpcChannel = {
     state: 'watch:state',
     /** Push: WatchPreviewPush snapshot of the shared source (~every 3s). */
     preview: 'watch:preview',
+  },
+  // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
+  // Protocol details in src/shared/mcDashboardIpc.ts.
+  mcdash: {
+    get: 'mcdash:get',
+    setWatching: 'mcdash:set-watching',
+    /** Push: McDashboardSnapshotPush (~every 2s while watching). */
+    snapshot: 'mcdash:snapshot',
   },
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
@@ -1990,6 +2012,8 @@ export const IpcChannel = {
     close: 'window:close',
     isMaximized: 'window:is-maximized',
     maximizedChanged: 'window:maximized-changed', // push: main → renderer
+    fullscreenToggle: 'window:fullscreen-toggle', // game-surface fullscreen button
+    isFullscreen: 'window:is-fullscreen',
   },
   // Skin pipeline.
   skin: {

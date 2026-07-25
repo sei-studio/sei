@@ -95,7 +95,7 @@ export const WATCH_ERR_CREDITS = 'WATCH_CREDITS_DEPLETED';
  *     Security > Screen Recording when permission was never asked.
  *   watchStart(characterId: string, sourceId: string): Promise<WatchSessionState>
  *     Start watching the picked source. Rejects with WATCH_ERR_MC_ACTIVE
- *     while summoned, WATCH_ERR_GAME_ACTIVE while a chess/Connect 4 game is
+ *     while summoned, WATCH_ERR_GAME_ACTIVE while a chess game is
  *     open, WATCH_ERR_SOURCE_GONE when the source vanished between the pick
  *     and the start, and WATCH_ERR_CREDITS when the cloud ledger is empty.
  *   watchStop(characterId: string): Promise<void>

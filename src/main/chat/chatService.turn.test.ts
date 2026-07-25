@@ -195,6 +195,11 @@ describe('silence-by-convention + idle nudge (260707)', () => {
       '(staying silent, letting it rest)',
       '(saying nothing, the thread has landed)',
       '(nothing)',
+      // 260721 (shared silenceFiller.js): case + trailing punctuation, and the
+      // "(no comment)" form the game prompts invite.
+      '(Silence).',
+      '(SILENCE)',
+      '(no comment)',
     ]) {
       createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: filler }] });
       const result = await sendChatMessage({ characterId: CHAR, text: 'ok', voiceCall: true }, deps());
@@ -463,5 +468,38 @@ describe('cancelInflightTurn (260705 — reset-memory interrupt)', () => {
     const rows = await readAll(CHAR);
     expect(rows.filter((m) => m.role === 'companion')).toHaveLength(0);
     expect(patchCharacterSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('transcript stop sequences (260722 — chess voice-call TTS prompt leak)', () => {
+  // Live capture: during a voice-call chess game a reply turn continued the
+  // transcript past its own lines (a fabricated "Human: ..." player turn plus
+  // an invented "(it is your turn)" direction) and the continuation was
+  // persisted and spoken by TTS. The structural guard is request-level
+  // stop_sequences on EVERY turn runner that persists or speaks reply text:
+  // generation ends the moment the model starts writing the other side's
+  // line-start markers, so the leak text is never produced. No output scrub.
+  it('sendChatMessage requests carry TRANSCRIPT_STOP_SEQUENCES', async () => {
+    createSpy.mockResolvedValue({ content: [{ type: 'text', text: 'hey' }], usage: {} });
+    await sendChatMessage({ characterId: CHAR, text: 'hi' }, deps());
+    expect(createSpy).toHaveBeenCalled();
+    for (const call of createSpy.mock.calls) {
+      const req = call[0] as { stop_sequences?: string[] };
+      expect(req.stop_sequences).toEqual(
+        expect.arrayContaining(['\nHuman:', '\nAssistant:', '\nPlayer:', '\n(game)']),
+      );
+    }
+  });
+
+  it('voice idle nudges and companion turns carry them too (spoken paths)', async () => {
+    setCallActive(CHAR, true);
+    createSpy.mockResolvedValue({ content: [{ type: 'text', text: 'yo' }], usage: {} });
+    await sendVoiceIdleTurn(CHAR, 30, []);
+    await sendCompanionVoiceTurn(CHAR, { speakerName: 'Sui', text: 'hey marv', peers: ['Sui'], depth: 0 });
+    expect(createSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const call of createSpy.mock.calls) {
+      const req = call[0] as { stop_sequences?: string[] };
+      expect(req.stop_sequences).toEqual(expect.arrayContaining(['\nHuman:', '\nPlayer:']));
+    }
   });
 });

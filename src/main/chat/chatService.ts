@@ -18,6 +18,7 @@ import { getCharacter, patchCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
 import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
 import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
+import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isCallActive } from '../voice/callState';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import { clampChatLanguage } from '../../shared/chatLanguage';
@@ -130,15 +131,18 @@ async function honorRememberCalls(characterId: string, content: Anthropic.Messag
 }
 
 /**
- * Split a reply into the separate chat messages the UI should send. A blank line
- * (paragraph break) is the split point, so a model that writes two thoughts with
- * an empty line between them lands as two messages — the way a person double-taps
- * enter in a chat. No blank line → one message. Empty chunks are dropped; a reply
- * with no content collapses to a single "…" so the turn is never message-less.
+ * Split a reply into the separate chat messages the UI should send. ANY newline
+ * run is a split point (260722: was blank-lines-only, which shipped chess/watch
+ * replies written as one-thought-per-line as a single wall of text — models
+ * prompted to "keep lines short like texting" separate thoughts with single
+ * newlines). One line → one bubble, unifying the texting style with the bot's
+ * in-game splitChatMessages. Purely visual: voice TTS streams off the raw reply
+ * by sentence, not off these bubbles. Empty chunks are dropped; a reply with no
+ * content collapses to a single "…" so the turn is never message-less.
  */
 export function splitReply(text: string, punctuation: 'casual' | 'deliberate' = 'casual'): string[] {
   const parts = text
-    .split(/\n\s*\n+/)
+    .split(/\n+/)
     .map((s) => s.trim())
     // 260705: casual texters (the default) drop a single trailing period per
     // bubble — how people actually text. ONLY a lone period: an ellipsis
@@ -176,6 +180,31 @@ export function takeSentences(buf: string): { sentences: string[]; rest: string 
   }
   return { sentences, rest: buf.slice(last) };
 }
+
+/**
+ * Transcript-continuation stop (260722). Live capture: during a voice-call
+ * chess game, Lyra's chat-reply turn kept generating past her own lines — a
+ * fabricated player turn ("Human: [22 Jul 11:32] *plays Nc6*") followed by an
+ * invented game direction ("(Lyra, it is now your turn to move...)") — and the
+ * whole continuation was persisted as voice rows and SPOKEN by TTS, because
+ * every turn runner treats the model's text output as the companion's speech.
+ * Each marker here is a line-start token only the OTHER side of the transcript
+ * ever writes (the pretraining Human/Assistant convention, the summarizer's
+ * Player label, our "(game)"/"(watch)" nudge prefixes), so generation ends the
+ * instant the model starts writing somebody else's turn: the fabricated text
+ * never exists to persist or speak. This is API-level plumbing
+ * (stop_sequences), not an output scrub — nothing legitimate is removed, the
+ * turn simply cannot cross its own boundary. Every main-process turn runner
+ * that persists or speaks reply text must pass these (chat, voice greetings/
+ * nudges/companion turns, chess, watch).
+ */
+export const TRANSCRIPT_STOP_SEQUENCES = [
+  '\nHuman:',
+  '\nAssistant:',
+  '\nPlayer:',
+  '\n(game)',
+  '\n(watch)',
+];
 
 /** Concatenate the text blocks of an Anthropic response content array. */
 function textOf(content: Array<{ type: string }>): string {
@@ -361,35 +390,20 @@ async function prepareChatTurn(
  * Silence-by-convention (260707): models cannot produce an empty reply, but
  * they reliably WRITE a placeholder — "(silence)", "(staying silent)",
  * "[says nothing]" — when told quiet is fine. That is the official silence
- * mechanism on the VOICE-CALL surface only: the call prompts instruct "reply
- * with exactly (silence)", and every voice reply path parses it out, so the
- * line is never persisted or spoken and the turn simply ends with no reply
+ * mechanism on the chat surface for VOICE CALLS only: the call prompts
+ * instruct "reply with exactly (silence)", and every voice reply path parses
+ * it out, so
+ * the line is never persisted or spoken and the turn simply ends with no reply
  * (which also lets a group banter chain rest). Typed text chat never prompts
  * the convention, so there a "*stays silent*" is a real in-character beat and
- * must pass through untouched. Only bracketed/asterisked forms match: a bare
- * in-character "silence!" is a real line and passes through.
- * Models embellish the marker with a trailing clause — real captured examples:
- * "(staying silent, letting it rest)", "(saying nothing, the thread has
- * landed)", "(nothing)" — so after a silence keyword the rest of the aside is
- * allowed (anything up to the closing bracket), and bare "(nothing)" matches
- * too. A line with content AFTER the closing bracket is real and passes.
- * Mirrors the say()-side backstop in src/bot/brain/orchestrator.js
- * (postProcessSay) — keep the two patterns in sync.
- *
- * 260709 (conversation language): the # LANGUAGE directive tells the model to
- * keep the marker as the literal English "(silence)", but under a "speak
- * Japanese" instruction it sometimes localizes it anyway, so the pattern also
- * accepts the common localized forms: silen[a-z]* covers silence / silent /
- * silencio / silencieux..., nada / rien are the "(nothing)" equivalents, and
- * the silen-stem and CJK keywords (沉默 / 无言 zh, 沈黙 / 無言 ja, 침묵 / 조용 ko)
- * allow a short lead-in ("reste silencieux", 保持沉默, 계속 침묵) — CJK also
- * needs this shape because \b never matches between two non-word chars.
+ * must pass through untouched (the game services apply the drop on ALL their
+ * turns instead, because their prompts sanction silence throughout).
+ * The detector itself — variants, embellished/localized forms, shape rules —
+ * is the shared src/bot/brain/silenceFiller.js, also used by the bot's
+ * postProcessSay and the chess/watch turn runners; re-exported here for
+ * main-process consumers.
  */
-const SILENCE_FILLER_RE =
-  /^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response|nada|rien)\b|[^)\]]{0,12}(?:silen[a-z]*|沉默|无言|沈黙|無言|침묵|조용))[^)\]]*)\s*[)\]*.!]*\s*$/i;
-export function isSilenceFiller(text: string): boolean {
-  return SILENCE_FILLER_RE.test(text);
-}
+export { isSilenceFiller };
 
 /**
  * Peer-impersonation drop (260708). On a group call the transcript attributes
@@ -401,8 +415,8 @@ export function isSilenceFiller(text: string): boolean {
  * injected only on heard lines — a companion's own reply never legitimately
  * starts with it — so any reply part carrying it is fabricated dialogue and is
  * dropped before it is persisted or spoken. Voice paths only, next to the
- * silence-filler drop. Line-level, not part-level: splitReply splits on BLANK
- * lines, so a fabricated line and a real one can share a part — only the
+ * silence-filler drop. Line-level: run before splitReply so a fabricated line
+ * and a real one sharing a chunk are separated correctly — only the
  * impersonated lines are removed, and a part left empty is dropped.
  */
 const PEER_IMPERSONATION_RE = /^\s*\(\s*[^()\n]{1,60},\s*on the call\s*\)\s*:/i;
@@ -601,7 +615,14 @@ export async function sendChatMessage(
       // ceiling it self-conditions on the last (longest) turn and creeps up a
       // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
       // from the system prompt without truncating mid-sentence.
-      const params = { model, max_tokens: 200, system, tools, messages: messages as never };
+      const params = {
+        model,
+        max_tokens: 200,
+        system,
+        tools,
+        stop_sequences: TRANSCRIPT_STOP_SEQUENCES,
+        messages: messages as never,
+      };
       // #9 — abortable: a follow-up send aborts this signal.
       const opts = { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal };
       const t0 = Date.now();
@@ -815,7 +836,7 @@ export async function sendLaunchFailedTurn(
 
   const { client, model } = await buildChatSdk();
   const res = await client.messages.create(
-    { model, max_tokens: 200, system, messages: messages as never },
+    { model, max_tokens: 200, system, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
     { timeout: CHAT_TIMEOUT_MS },
   );
   const replyText = textOf(res.content);
@@ -891,7 +912,7 @@ export async function sendFirstMeetingTurn(
     try {
       const { client, model } = await buildChatSdk();
       const res = await client.messages.create(
-        { model, max_tokens: 200, system, messages: messages as never },
+        { model, max_tokens: 200, system, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
         { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
       );
       if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
@@ -974,7 +995,7 @@ export async function sendVoiceGreetingTurn(
     markLastMessageCached(messages);
     const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
     const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, messages: messages as never },
+      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
       { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
     );
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
@@ -1100,7 +1121,7 @@ export async function sendCompanionVoiceTurn(
     const { client, model } = await buildChatSdk();
     const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
     const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, messages: messages as never },
+      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
       { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
     );
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
@@ -1188,7 +1209,7 @@ export async function sendVoiceIdleTurn(
     const { client, model } = await buildChatSdk();
     const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
     const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, messages: messages as never },
+      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
       { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
     );
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };

@@ -9,6 +9,9 @@
  *   3. Thin divider
  *   4. Scrollable 40px circular character sockets sorted by last_launched desc,
  *      then created desc. Active when view.kind==='character' && id matches.
+ *      Each socket carries a top-right activity badge when the character is
+ *      on a voice call (phone) or in a live game session (controller) — see
+ *      avatarActivityBadge below.
  *   5. Round + button — navigates to add-character
  *   6. Flex spacer
  *   7. Credits/Cloud icon — StarIcon (4-point) in BOTH states for consistent
@@ -31,6 +34,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import styles from './IconRail.module.css';
 import {
   CompassIcon,
+  GamepadIcon,
+  PhoneIcon,
   RosterIcon,
   PlusIcon,
   SettingsIcon,
@@ -51,6 +56,9 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
+import { useVoiceStore } from '../lib/stores/useVoiceStore';
+import { useChessStore } from '../lib/stores/useChessStore';
+import { useWatchStore } from '../lib/stores/useWatchStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
 import {
@@ -143,6 +151,57 @@ function RailButton({
 }
 
 /**
+ * Presence-style activity badge on a rail avatar: which live activity (if
+ * any) the character is engaged in right now.
+ *
+ *   'call' — the character is a participant on the open voice call
+ *            (status 'live', or 'connecting' while the first dial is in
+ *            flight).
+ *   'game' — the character has an active game session: a chess game that
+ *            has not ended (both 'preparing' engine warm-up and 'active'
+ *            count; the session exists from the player's point of view),
+ *            an active screen-share watch session, or an online Minecraft
+ *            bot session.
+ *   null   — no live activity, no badge.
+ *
+ * A call wins over a game when both are somehow live for the same
+ * character. Pure function of the store slices so it can be unit tested
+ * without mounting the rail (see IconRail.activityBadge.test.ts).
+ */
+export type AvatarActivityBadge = 'call' | 'game' | null;
+
+export interface ActivityBadgeStores {
+  /** useVoiceStore.status ('idle' | 'connecting' | 'live' | 'error'). */
+  callStatus: string;
+  /** useVoiceStore.participants — companions on the open call. */
+  callParticipants: readonly string[];
+  /** useChessStore.games — characterId → last game snapshot (or null). */
+  chessGames: Readonly<Record<string, { status: string } | null | undefined>>;
+  /** useWatchStore.sessions — characterId → last session snapshot (or null). */
+  watchSessions: Readonly<Record<string, { status: string } | null | undefined>>;
+  /** useDataStore.summons — characterId → bot status (absent = not summoned).
+   * The authoritative "online MC bot session" signal; the mc dashboard
+   * store's snapshots are telemetry keyed off this same session. */
+  summons: Readonly<Record<string, { kind: string } | undefined>>;
+}
+
+export function avatarActivityBadge(
+  characterId: string,
+  s: ActivityBadgeStores,
+): AvatarActivityBadge {
+  const onCall =
+    (s.callStatus === 'live' || s.callStatus === 'connecting') &&
+    s.callParticipants.includes(characterId);
+  if (onCall) return 'call';
+  const chess = s.chessGames[characterId];
+  const chessLive = chess != null && chess.status !== 'ended';
+  const watch = s.watchSessions[characterId];
+  const watchLive = watch != null && watch.status === 'active';
+  const mcOnline = s.summons[characterId]?.kind === 'online';
+  return chessLive || watchLive || mcOnline ? 'game' : null;
+}
+
+/**
  * Single avatar in the scrollable character cluster. Uses the character's
  * portrait_image when present (rendered as a circular <img>), otherwise
  * a 40px PixelPortrait inside a circular clip.
@@ -154,6 +213,8 @@ interface AvatarButtonProps {
   active: boolean;
   /** This character has a live (or connecting) bot session — frame + glint. */
   summoned: boolean;
+  /** Live activity badge on the avatar's top-right corner (null = none). */
+  activity: AvatarActivityBadge;
   onClick: () => void;
   theme: 'light' | 'dark';
   setHover: SetHover;
@@ -165,6 +226,7 @@ function AvatarButton({
   portraitImage,
   active,
   summoned,
+  activity,
   onClick,
   theme,
   setHover,
@@ -180,12 +242,19 @@ function AvatarButton({
   ]
     .filter(Boolean)
     .join(' ');
+  // Screen readers get the live activity as a suffix on the avatar's name.
+  const ariaLabel =
+    activity === 'call'
+      ? `${characterName}, on a call`
+      : activity === 'game'
+        ? `${characterName}, playing a game`
+        : characterName;
   return (
     <button
       type="button"
       className={cls}
       onClick={onClick}
-      aria-label={characterName}
+      aria-label={ariaLabel}
       onMouseEnter={(e) => attachHover(e.currentTarget, characterName, setHover)}
       onMouseLeave={() => setHover(null)}
       onFocus={(e) => attachHover(e.currentTarget, characterName, setHover)}
@@ -217,6 +286,15 @@ function AvatarButton({
           />
         )}
       </span>
+      {/* Activity badge — sits OUTSIDE .avatarClip so the circular crop
+          doesn't shave it; the panel-colored ring separates it from the
+          avatar art. aria-hidden: the activity is already in the button's
+          aria-label suffix. */}
+      {activity ? (
+        <span className={styles.activityBadge} aria-hidden="true">
+          {activity === 'call' ? <PhoneIcon size={8} /> : <GamepadIcon size={9} />}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -228,6 +306,11 @@ export function IconRail(): React.ReactElement {
   const characters = useDataStore((s) => s.characters);
   // Per-character summoned state (multi-summon) — drives the avatar frame+glint.
   const summons = useDataStore((s) => s.summons);
+  // Live-activity badge inputs (read-only slices; see avatarActivityBadge).
+  const callStatus = useVoiceStore((s) => s.status);
+  const callParticipants = useVoiceStore((s) => s.participants);
+  const chessGames = useChessStore((s) => s.games);
+  const watchSessions = useWatchStore((s) => s.sessions);
   const authState = useAuthStore((s) => s.state);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
@@ -404,6 +487,13 @@ export function IconRail(): React.ReactElement {
                   view.characterId === c.id)
               }
               summoned={summons[c.id]?.kind === 'online' || summons[c.id]?.kind === 'connecting'}
+              activity={avatarActivityBadge(c.id, {
+                callStatus,
+                callParticipants,
+                chessGames,
+                watchSessions,
+                summons,
+              })}
               // Phase 18/19: the rail avatar opens the in-app chat (the new
               // primary surface), not the read-only character profile.
               onClick={() => navigate({ kind: 'chat', characterId: c.id })}

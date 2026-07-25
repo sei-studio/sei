@@ -3,23 +3,21 @@
  *
  * Opened from the chat header's Games button, the CharacterCard "Play" CTA, and
  * the CharacterPage "Play together" deploy button. Clicking an available game
- * tile launches it immediately through the shared summonFlow (skin-setup nudge →
- * LAN gate; a not-connected launch surfaces the LAN "open your world" modal —
- * the instruction to connect). Each available tile carries a top-right (i)
- * button that opens the two-column info window (game-about) instead of playing.
- * "More games" is a single dimmed coming-soon placeholder. Scrim-click / ESC
- * closes.
+ * tile opens that game's surface: chess and screen share slide their panel into
+ * the chat aside; Minecraft opens its launch panel there too (the launch panel
+ * owns the summon flow). Each available tile carries a bottom-right (i)
+ * affordance that shows a hover-only info popup (title, art, brief description;
+ * nothing clickable). "More games" is a single dimmed coming-soon placeholder.
+ * Scrim-click / ESC closes (ESC hides the popup first when one is showing).
  *
  * Source: .planning/design/app-chat-and-memory.md §5 (GamesPickerModal) + R7.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
-import { useChessStore } from '../lib/stores/useChessStore';
-import { useConnect4Store } from '../lib/stores/useConnect4Store';
-import { useTwentyQStore } from '../lib/stores/useTwentyQStore';
-import { useWatchStore } from '../lib/stores/useWatchStore';
+import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon } from '../lib/summonFlow';
+import { openGame, requestGameLaunch, type LaunchGameId } from '../lib/gameLaunch';
 import { GAMES, type GameDef } from '../lib/games';
 import { MCBlock, GamepadIcon, InfoIcon } from './icons';
 import styles from './GamesPickerModal.module.css';
@@ -28,13 +26,71 @@ export interface GamesPickerModalProps {
   characterId: string;
 }
 
+/** Hover popup metrics — width fixed for placement math; height is estimated
+ * generously for the vertical clamp (the card is shorter in practice). */
+const POPUP_W = 250;
+const POPUP_EST_H = 260;
+const POPUP_GAP = 10;
+const POPUP_DELAY_MS = 250;
+
+interface InfoPopup {
+  game: GameDef;
+  x: number;
+  y: number;
+}
+
 export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.ReactElement {
   const openModal = useUiStore((s) => s.openModal);
   const closeModal = useUiStore((s) => s.closeModal);
+  const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
+  const companionName = character?.name ?? 'your companion';
+
+  // ── Hover-only info popup ─────────────────────────────────────────────
+  const [popup, setPopup] = useState<InfoPopup | null>(null);
+  const popupRef = useRef<InfoPopup | null>(null);
+  popupRef.current = popup;
+  const showTimer = useRef<number | null>(null);
+
+  const cancelShow = (): void => {
+    if (showTimer.current !== null) {
+      window.clearTimeout(showTimer.current);
+      showTimer.current = null;
+    }
+  };
+
+  const hideInfo = (): void => {
+    cancelShow();
+    setPopup(null);
+  };
+
+  /** Schedule the popup after a short hover delay, anchored to the tile.
+   * Renders as a sibling of the modal panel (position: fixed) so the modal's
+   * overflow never clips it; placement prefers the tile's right side and flips
+   * left when that would leave the viewport. */
+  const scheduleInfo = (g: GameDef, affordance: HTMLElement): void => {
+    const tile = affordance.parentElement ?? affordance;
+    const rect = tile.getBoundingClientRect();
+    cancelShow();
+    showTimer.current = window.setTimeout(() => {
+      showTimer.current = null;
+      let x = rect.right + POPUP_GAP;
+      if (x + POPUP_W > window.innerWidth - 12) x = rect.left - POPUP_W - POPUP_GAP;
+      const y = Math.max(12, Math.min(rect.top, window.innerHeight - POPUP_EST_H));
+      setPopup({ game: g, x, y });
+    }, POPUP_DELAY_MS);
+  };
+
+  useEffect(() => cancelShow, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') closeModal();
+      if (e.key !== 'Escape') return;
+      // ESC dismisses the info popup first; a second ESC closes the picker.
+      if (popupRef.current) {
+        setPopup(null);
+        return;
+      }
+      closeModal();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -42,41 +98,18 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
 
   const onPlay = (g: GameDef): void => {
     if (!g.available) return;
-    // Chess and Connect 4 play inside the chat screen (no summon): open that
-    // chat and slide the game panel in; the panel's pre-game card runs the
-    // seat pick + start (and the Minecraft-session disconnect confirm if
-    // needed). SDK note: these branches should become launch metadata on
-    // GameDef (launch: 'panel' | 'summon') when a third in-app game lands.
-    if (g.id === 'chess') {
+    // 260721: every tile routes through the SHARED launch gate
+    // (lib/gameLaunch). With another game active for this companion it shows
+    // the cross-launch confirm first; otherwise openGame mounts the picked
+    // surface in the chat's game area (chess card / watch picker / Minecraft
+    // launch panel, or the live dashboard when the bot is already online).
+    if (g.id === 'chess' || g.id === 'watch' || g.id === 'minecraft') {
+      const id = g.id as LaunchGameId;
       closeModal();
-      useUiStore.getState().navigate({ kind: 'chat', characterId });
-      useChessStore.getState().openPanel(characterId);
+      requestGameLaunch(characterId, { id, name: g.name }, () => openGame(characterId, id));
       return;
     }
-    if (g.id === 'connect4') {
-      closeModal();
-      useUiStore.getState().navigate({ kind: 'chat', characterId });
-      useConnect4Store.getState().openPanel(characterId);
-      return;
-    }
-    // 20 Questions (260720): also an in-chat panel; its pre-game card runs
-    // the mode pick + start.
-    if (g.id === 'twentyq') {
-      closeModal();
-      useUiStore.getState().navigate({ kind: 'chat', characterId });
-      useTwentyQStore.getState().openPanel(characterId);
-      return;
-    }
-    // Screen share (260720): also an in-chat panel; its consent picker runs
-    // the source choice + explicit start (never auto-starts).
-    if (g.id === 'watch') {
-      closeModal();
-      useUiStore.getState().navigate({ kind: 'chat', characterId });
-      useWatchStore.getState().openPanel(characterId);
-      return;
-    }
-    // Launch right away — attemptSummon runs the skin-setup nudge then the LAN
-    // gate (opening the "open your world" modal if not connected).
+    // Fallback for any future summon-launched game.
     void attemptSummon(characterId);
     closeModal();
   };
@@ -105,6 +138,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
                 g.image ? styles.tileImage : ''
               }`}
               style={g.image ? { backgroundImage: `url(${g.image})` } : undefined}
+              onMouseLeave={hideInfo}
             >
               <button
                 type="button"
@@ -121,23 +155,40 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
                 <span className={styles.tileName}>{g.name}</span>
               </button>
               {g.available ? (
-                <button
-                  type="button"
-                  className={styles.infoBtn}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openModal({ kind: 'game-about', characterId, gameId: g.id });
-                  }}
+                <span
+                  className={styles.infoHint}
+                  tabIndex={0}
                   aria-label={`About ${g.name}`}
-                  title={`About ${g.name}`}
+                  onMouseEnter={(e) => scheduleInfo(g, e.currentTarget)}
+                  onMouseLeave={hideInfo}
+                  onFocus={(e) => scheduleInfo(g, e.currentTarget)}
+                  onBlur={hideInfo}
                 >
                   <InfoIcon size={16} />
-                </button>
+                </span>
               ) : null}
             </div>
           ))}
         </div>
       </div>
+      {popup ? (
+        <div
+          className={styles.infoPop}
+          style={{ left: popup.x, top: popup.y, width: POPUP_W }}
+          aria-hidden="true"
+        >
+          {popup.game.image ? (
+            <div
+              className={styles.infoPopArt}
+              style={{ backgroundImage: `url(${popup.game.image})` }}
+            />
+          ) : null}
+          <div className={styles.infoPopBody}>
+            <span className={styles.infoPopTitle}>{popup.game.name}</span>
+            <p className={styles.infoPopText}>{popup.game.description(companionName)}</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

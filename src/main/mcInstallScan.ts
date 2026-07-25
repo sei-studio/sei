@@ -35,7 +35,7 @@
  *   - Hotspot audit: all paths via path.join
  *   - Mojang launcher docs §"Java runtime directory layout" (the
  *     `runtime/java-runtime-gamma/<platform-tag>/...` structure probed)
- *   - src/bot/cli/index.js L309-321 (platform-branched home-dir pattern)
+ *   - the removed bot CLI (platform-branched home-dir pattern, 260722)
  */
 import crypto from 'node:crypto';
 import { promises as fs, constants as fsConstants } from 'node:fs';

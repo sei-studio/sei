@@ -80,6 +80,19 @@ export interface BuildSystemArgs {
    * 'en' adds nothing — existing prompts stay byte-for-byte identical.
    */
   language?: ChatLanguage;
+  /**
+   * 260724: a STATIC surface contract (the chess table-talk rules, the watch
+   * viewing rules) that holds for a whole session. Inserted after memory/summary
+   * and BEFORE the volatile status block, so it lands inside the cached region
+   * and carries the "last stable block" breakpoint.
+   *
+   * Surfaces used to push their contract onto the END of the returned array
+   * instead. That is above every message in the cache prefix (tools → system →
+   * messages), so a per-turn block there made the whole transcript uncacheable:
+   * markLastMessageCached() wrote it every turn and could never read it back.
+   * Anything volatile belongs in the messages tail, not here.
+   */
+  extraStable?: string;
 }
 
 /**
@@ -184,6 +197,11 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
       type: 'text',
       text: 'Summary of your earlier conversation with the player:\n\n' + args.summary.trim(),
     });
+  }
+  // Static per-surface contract (chess table talk, ...). Stable for the whole
+  // session, so it sits here — inside the cached region, below the status tail.
+  if (args.extraStable?.trim()) {
+    blocks.push({ type: 'text', text: args.extraStable.trim() });
   }
 
   // Per-turn status (uncached — it flips as the player opens/closes their world

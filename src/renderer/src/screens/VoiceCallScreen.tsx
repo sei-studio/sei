@@ -2,18 +2,22 @@
  * VoiceCallScreen — the live Discord-style call view (260705, real audio;
  * multi-companion 260706).
  *
- * A cluster of avatars: every companion on the call (lit while speaking, dimmed
- * while idle from the per-companion speaking state) plus the user's own avatar
- * beside them, and a "＋" tile to add another companion. A header title (the
- * companion's name solo, "Group call" with 2+), a status subtitle (connecting /
- * duration / error), optional caption lines, and the mute + hang-up controls.
- * Reached via view.kind === 'voice-call'.
+ * 260721: the standard ChatTopBar stays on top (back chevron, avatar, name,
+ * tag, controller + phone buttons — identical to the chat header); only the
+ * CONTENT area is the call surface. A cluster of avatars: every companion on
+ * the call (lit while speaking, dimmed while idle from the per-companion
+ * speaking state) plus the user's own avatar beside them, and a "＋" tile to
+ * add another companion. A title (the companion's name solo, "Group call"
+ * with 2+), a status subtitle (connecting / duration / error), optional
+ * caption lines, and the shared CallControls (mute / deafen / hang up — the
+ * same pills GameSurface's in-game call cluster uses). Reached via
+ * view.kind === 'voice-call'.
  *
  * The call session itself lives in useVoiceStore (mic → local Whisper →
  * chat pipeline → TTS queue); this screen renders it and ensures a call is
- * started for the viewed character (idempotent — restore from the minimized
- * widget re-enters without restarting the pipeline). Mute stays in useUiStore,
- * shared with MinimizedCall.
+ * started for the viewed character (idempotent — returning from the mini bar
+ * re-enters without restarting the pipeline). Mute stays in useUiStore,
+ * shared with the mini bar.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -35,16 +39,9 @@ import {
   prefetchPct,
   prefetchVoiceModel,
 } from '../lib/voice/modelPrefetch';
-import {
-  MicIcon,
-  MicOffIcon,
-  HeadphonesIcon,
-  HeadphonesOffIcon,
-  PhoneOffIcon,
-  UserIcon,
-  MinimizeIcon,
-  PlusIcon,
-} from '../components/icons';
+import { UserIcon, PlusIcon } from '../components/icons';
+import { ChatTopBar } from '../components/ChatTopBar';
+import { CallControls } from '../components/call/CallControls';
 import styles from './VoiceCallScreen.module.css';
 
 /** mm:ss (h:mm:ss past the hour) for the live-call duration readout. */
@@ -70,14 +67,10 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const navigate = useUiStore((s) => s.navigate);
   const characters = useDataStore((s) => s.characters);
   const character = characters.find((c) => c.id === characterId);
-  // Mute lives in the UI store so it survives a minimize → restore round-trip
-  // and is shared with the MinimizedCall widget (#6).
+  // Mute lives in the UI store so it is shared with GameSurface's in-game
+  // call cluster (the user tile below dims while muted).
   const muted = useUiStore((s) => s.callMuted);
-  const setMuted = useUiStore((s) => s.setCallMuted);
-  const deafened = useUiStore((s) => s.callDeafened);
-  const setDeafened = useUiStore((s) => s.setCallDeafened);
   const captionsOn = useUiStore((s) => s.callCaptions);
-  const minimizeCall = useUiStore((s) => s.minimizeCall);
 
   const status = useVoiceStore((s) => s.status);
   const speakingId = useVoiceStore((s) => s.speakingId);
@@ -89,7 +82,6 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const liveAt = useVoiceStore((s) => s.liveAt);
   const startCall = useVoiceStore((s) => s.startCall);
   const addParticipant = useVoiceStore((s) => s.addParticipant);
-  const endCall = useVoiceStore((s) => s.endCall);
 
   // The user's own avatar (shown beside the companion pfps).
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -336,20 +328,16 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
   return (
     <div className={styles.root}>
-      {installOverlay}
-      {pickerOverlay}
-      {/* Minimize sits top-left. */}
-      <button
-        type="button"
-        className={styles.minimizeBtn}
-        onClick={() => minimizeCall(characterId)}
-        aria-label="Minimize call"
-        title="Minimize"
-      >
-        <MinimizeIcon size={20} />
-      </button>
+      {/* ── Top bar: the standard chat header stays during calls (260721);
+          back / phone return to the chat, the controller opens the games
+          picker mid-call. ── */}
+      <ChatTopBar characterId={characterId} />
 
-      {/* Participant cluster (260706): every companion on the call, lit while
+      <div className={styles.stage}>
+        {installOverlay}
+        {pickerOverlay}
+
+        {/* Participant cluster (260706): every companion on the call, lit while
           speaking and dimmed while idle (per-companion speaking state), plus the
           user's own avatar beside them, and a "＋" tile to add another. */}
       <div className={styles.cluster}>
@@ -445,41 +433,11 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         </div>
       ) : null}
 
+      {/* Shared mute / deafen / hang-up pills (also used, smaller, by
+          GameSurface's in-game call cluster). */}
       <div className={styles.controls}>
-        <button
-          type="button"
-          className={`${styles.circleBtn} ${muted ? styles.circleBtnMuted : ''}`}
-          onClick={() => setMuted(!muted)}
-          aria-pressed={muted}
-          aria-label={muted ? 'Unmute' : 'Mute'}
-          title={muted ? 'Unmute' : 'Mute'}
-        >
-          {muted ? <MicOffIcon size={24} /> : <MicIcon size={24} />}
-        </button>
-
-        <button
-          type="button"
-          className={`${styles.circleBtn} ${deafened ? styles.circleBtnMuted : ''}`}
-          onClick={() => setDeafened(!deafened)}
-          aria-pressed={deafened}
-          aria-label={deafened ? 'Undeafen' : 'Deafen'}
-          title={deafened ? 'Undeafen' : 'Deafen'}
-        >
-          {deafened ? <HeadphonesOffIcon size={24} /> : <HeadphonesIcon size={24} />}
-        </button>
-
-        <button
-          type="button"
-          className={`${styles.circleBtn} ${styles.circleBtnHangup}`}
-          onClick={() => {
-            endCall();
-            navigate({ kind: 'chat', characterId });
-          }}
-          aria-label="Hang up"
-          title="Hang up"
-        >
-          <PhoneOffIcon size={26} />
-        </button>
+        <CallControls onHangUp={() => navigate({ kind: 'chat', characterId })} />
+      </div>
       </div>
     </div>
   );

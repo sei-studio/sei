@@ -33,6 +33,11 @@ import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { maybeOfferMoveToApplications, cleanupRelocationLeftover } from './relocate';
+import {
+  initMcDashboardService,
+  publishMcDashboardSnapshot,
+  clearMcDashboard,
+} from './mcDashboard/mcDashboardService';
 import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
@@ -251,6 +256,9 @@ function broadcastStatus(status: BotStatus): void {
   // upserts (renderer keeps showing the error over the still-live session).
   if (status.kind === 'idle') currentStatuses.delete(id);
   else currentStatuses.set(id, status);
+  // Minecraft dashboard (260721): the session is gone — drop the cached
+  // telemetry so a later summon never hydrates a stale snapshot.
+  if (status.kind === 'idle') clearMcDashboard(id);
   if (transientError) return;
   // Track online-ness for chat routing (only route to a spawned bot).
   if (status.kind === 'online') onlineIds.add(id);
@@ -664,6 +672,9 @@ async function bootstrap(): Promise<void> {
     },
     // Party redesign §2/§5 — the live bot's current world action (verb line).
     onBotAction: broadcastAction,
+    // Minecraft dashboard (260721) — telemetry snapshots from the live bot.
+    // The service validates (Zod), caches the latest, and pushes mcdash:snapshot.
+    onDashboard: publishMcDashboardSnapshot,
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift
@@ -744,8 +755,20 @@ async function bootstrap(): Promise<void> {
       },
       pushChatMessage,
       isSummoned: (id) => supervisor?.isActive(id) ?? false,
+      // Chess session logs ride the same batched channel as bot logs, so the
+      // in-app developer console (LogsBar) shows [chess] lines live.
+      pushLog: broadcastLog,
     });
   }
+
+  // Minecraft dashboard (260721): push deps for src/main/mcDashboard.
+  initMcDashboardService({
+    pushSnapshot: (s) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IpcChannel.mcdash.snapshot, s);
+      }
+    },
+  });
 
   // 5. IPC handlers
   registerIpcHandlers({

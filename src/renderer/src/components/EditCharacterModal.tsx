@@ -20,7 +20,7 @@
  *      Switching Advanced → Standard regenerates from source (discarding manual
  *      edits), because Standard assumes expanded == expansion(source, tier).
  *
- * Pattern lifted from LanModal/DeleteConfirmModal for backdrop + ESC handling.
+ * Pattern lifted from DeleteConfirmModal for backdrop + ESC handling.
  */
 
 import React, { useEffect, useRef, useState } from 'react';

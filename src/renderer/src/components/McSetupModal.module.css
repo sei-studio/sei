@@ -1,0 +1,129 @@
+/* McSetupModal — Minecraft setup window body (scrim + panel come from
+ * ModalShell). Flat: a bare text tab row, the step list, no boxes. */
+
+.tabs {
+  display: flex;
+  gap: var(--space-lg);
+}
+
+.tab {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 120ms var(--ease);
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tabActive {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.step {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.stepNumber {
+  /* Design system §3: tracked uppercase mono micro-label. */
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.stepBody {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.searching {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.searchDots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Three accent dots pulsing in a left-to-right wave = "actively searching".
+   Circular (design system: the only curves are circular status dots), staggered
+   via :nth-child so the sequence reads even when React strips inline styles. */
+.searchDots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: block;
+  animation: lanSearchPulse 1000ms ease-in-out infinite;
+}
+
+.searchDots span:nth-child(2) {
+  animation-delay: 200ms;
+}
+
+.searchDots span:nth-child(3) {
+  animation-delay: 400ms;
+}
+
+@keyframes lanSearchPulse {
+  0%,
+  100% {
+    transform: scale(0.55);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .searchDots span {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
+.skinBody {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}

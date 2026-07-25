@@ -1,12 +1,15 @@
 /**
  * ChatScreen — Discord-style in-app chat with a companion (Phase 18/19).
  *
- * Layout: a compact header (back button + avatar + a name TOGGLE that opens the
- * presence side panel + Play / Voice icon buttons), a scrollable NO-BUBBLE
- * message list (avatar + author header + text, grouped by consecutive author,
- * split by per-day separators), a "<name> is typing…" line while a reply is in
- * flight, and a floating boxed composer (send button appears once the draft is
- * non-empty).
+ * Layout (260721 top/bottom split): the shared ChatTopBar, then a column with
+ * the GAME AREA ON TOP (chess / screen share / Minecraft launch + dashboard,
+ * inside the shared GameSurface chrome) and the chat BELOW: a scrollable
+ * NO-BUBBLE message list (avatar + author header + text, grouped by
+ * consecutive author, split by per-day separators), a "<name> is typing…"
+ * line while a reply is in flight, and a floating boxed composer (send button
+ * appears once the draft is non-empty). GameSurface's bottom-left "V" expands
+ * the game down over the chat; its bottom-right "x" is the unified end
+ * control.
  *
  * Party redesign (§4.5): the header name toggles a collapsible 260px presence
  * side panel (portrait art + kind + Presence line + live action verb + an action
@@ -29,16 +32,19 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
-import { useChessStore, isChessOpen } from '../lib/stores/useChessStore';
+import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/useChessStore';
 import { ChessPanel } from '../components/chess/ChessPanel';
-import { useConnect4Store, isConnect4Open } from '../lib/stores/useConnect4Store';
-import { Connect4Panel } from '../components/connect4/Connect4Panel';
-import { useTwentyQStore, isTwentyQOpen } from '../lib/stores/useTwentyQStore';
-import { TwentyQPanel } from '../components/twentyq/TwentyQPanel';
-import { useWatchStore, isWatchOpen } from '../lib/stores/useWatchStore';
+import { ChessReplayPanel } from '../components/chess/ChessReplayPanel';
+import { useWatchStore, isWatchOpen, isWatchActive } from '../lib/stores/useWatchStore';
 import { WatchPanel } from '../components/watch/WatchPanel';
 import { WatchIndicator } from '../components/watch/WatchIndicator';
+import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
+import { McDashboardPanel } from '../components/mcdash/McDashboardPanel';
+import { McLaunchPanel } from '../components/mcdash/McLaunchPanel';
+import { GameSurface } from '../components/GameSurface';
+import { ChatTopBar } from '../components/ChatTopBar';
 import { sei } from '../lib/ipcClient';
+import { startOrOpenCall } from '../lib/callLaunch';
 import { portraitSrc } from '../lib/portraitSrc';
 import { pickPalette } from '../lib/portraitPalettes';
 import { useDominantColor } from '../lib/useDominantColor';
@@ -52,7 +58,6 @@ import {
   UserIcon,
   PhoneIcon,
   SendIcon,
-  BackIcon,
   CopyIcon,
   ReplyIcon,
 } from '../components/icons';
@@ -69,6 +74,17 @@ export interface ChatScreenProps {
 type PanelCard = 'companion' | 'user';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/* Drag-resize bounds for the game/chat split (260721): the game area never
+ * shrinks below a playable band and the chat keeps composer + a few lines. */
+const SPLIT_MIN_GAME_PX = 180;
+const SPLIT_MIN_CHAT_PX = 220;
+/** ArrowUp/ArrowDown nudge on the (focusable) split handle. */
+const SPLIT_KEY_STEP_PX = 24;
+
+function clampSplitPx(px: number, total: number): number {
+  return Math.min(Math.max(px, SPLIT_MIN_GAME_PX), Math.max(SPLIT_MIN_GAME_PX, total - SPLIT_MIN_CHAT_PX));
+}
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
@@ -279,12 +295,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   };
 
   const onVoiceCall = (): void => {
-    // Open the call view WITHOUT starting the pipeline: VoiceCallScreen's gate
-    // decides whether to show the install/consent modal first (mic + ~40 MB
-    // model download) and only starts the call once the module is in place and
-    // the user has consented. Starting here would set callCharacterId before
-    // the gate ran and skip that consent step.
-    navigate({ kind: 'voice-call', characterId });
+    // With a game surface open the call starts IN PLACE (this screen stays;
+    // GameSurface's bottom chrome row carries the compact call cluster);
+    // otherwise it opens the fullscreen call view. Consent is preserved either
+    // way: the helper falls back to VoiceCallScreen (whose gate owns the
+    // install/consent modal) whenever the voice module is not installed yet.
+    startOrOpenCall(characterId);
   };
 
   const onDisconnect = (): void => {
@@ -330,6 +346,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         onClick={() => onCopy(m)}
         aria-label="Copy message"
         data-tip={copiedId === m.id ? 'Copied' : 'Copy'}
+        data-tip-edge="right"
       >
         <CopyIcon size={15} />
       </button>
@@ -339,6 +356,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         onClick={() => onReply(m)}
         aria-label="Reply"
         data-tip="Reply"
+        data-tip-edge="right"
       >
         <ReplyIcon size={15} />
       </button>
@@ -347,80 +365,255 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   const showingUser = panelCard === 'user';
 
-  // Chess (260710) / Connect 4 (260720): the game aside is open whenever this
-  // character has a game (or a pre-game setup card was requested). While open
-  // it compresses the chat into a narrow column and force-collapses the
-  // presence panel (CSS). One aside, one game at a time; chess wins a tie.
+  // Chess (260710): the game area is open whenever this character has a game
+  // (or a pre-game setup card was requested). While open it takes the top of
+  // the screen and force-collapses the presence panel (CSS). One area, one
+  // game at a time; chess wins a tie.
   const chessOpen = useChessStore((s) => isChessOpen(s, characterId));
-  const connect4Open = useConnect4Store((s) => isConnect4Open(s, characterId));
-  // 20 Questions (260720): same aside slot, status-card panel.
-  const twentyqOpen = useTwentyQStore((s) => isTwentyQOpen(s, characterId));
-  // Screen share (260720): the watch surface reuses the same aside slot.
+  const chessGame = useChessStore((s) => s.games[characterId] ?? null);
+  // Chess replay (260724): a clicked "You and X played chess" transcript row
+  // opens the recorded game in this same slot. Purely local view state; it
+  // covers (and never disturbs) any live surface below it in the priority.
+  const chessReplayOpen = useChessStore((s) => isChessReplayOpen(s, characterId));
+  // Screen share (260720): the watch surface reuses the same game slot.
   const watchOpen = useWatchStore((s) => isWatchOpen(s, characterId));
-  const gameOpen = chessOpen || connect4Open || twentyqOpen || watchOpen;
+  const watchActive = useWatchStore((s) => isWatchActive(s, characterId));
+  // Minecraft dashboard (260721): shown in this same slot whenever the bot
+  // is online (open or closed, nothing in between). The snapshot clears when
+  // the bot leaves.
+  const mcOnline = summon?.kind === 'online';
+  const mcDashReset = useMcDashboardStore((s) => s.reset);
+  const mcDashOpen = mcOnline;
+  useEffect(() => {
+    if (!mcOnline) mcDashReset(characterId);
+  }, [mcOnline, characterId, mcDashReset]);
+  // Minecraft launch panel (260721): opened by the games picker's Minecraft
+  // tile while the bot is offline; it owns the Launch button. Once the bot
+  // comes online it hands the same game slot off to the live dashboard.
+  const mcLaunch = useMcDashboardStore((s) => s.launch[characterId] === true);
+  const mcSetLaunch = useMcDashboardStore((s) => s.setLaunch);
+  const mcLaunchOpen = mcLaunch && !mcOnline;
+  useEffect(() => {
+    if (mcOnline && mcLaunch) mcSetLaunch(characterId, false);
+  }, [mcOnline, mcLaunch, characterId, mcSetLaunch]);
+  const gameOpen = chessReplayOpen || chessOpen || watchOpen || mcDashOpen || mcLaunchOpen;
+
+  // Unified end control (260721): every surface ends from GameSurface's
+  // bottom-right "x", through its existing end path. `confirmGameEnd` gates
+  // the "This will end the game." popup on a LIVE session; surfaces without
+  // one (launch cards, pickers, a finished chess game) dismiss directly.
+  const onGameEnd = (): void => {
+    if (chessReplayOpen) {
+      // A replay is only ever a local view; dismiss it, nothing to end.
+      useChessStore.getState().closeReplay(characterId);
+      return;
+    }
+    if (chessOpen) {
+      // Ends any game in main (an unfinished one is recorded as abandoned).
+      void useChessStore.getState().end(characterId);
+      return;
+    }
+    if (watchOpen) {
+      const watch = useWatchStore.getState();
+      if (isWatchActive(watch, characterId)) void watch.stop(characterId);
+      watch.closePanel(characterId);
+      return;
+    }
+    if (mcDashOpen || summon?.kind === 'connecting') {
+      // Same instant-disconnect path as the presence panel button; the
+      // !mcOnline effect above clears the dashboard state afterwards.
+      useDataStore.getState().setStatus({ kind: 'idle', characterId });
+      void sei.stop(characterId);
+    }
+    mcSetLaunch(characterId, false);
+  };
+  const confirmGameEnd = chessReplayOpen
+    ? false
+    : chessOpen
+    ? chessGame?.status === 'active'
+    : watchOpen
+      ? watchActive
+      : mcDashOpen
+        ? true
+        : summon?.kind === 'connecting';
+
+  // Expand-over-chat (260721): the GameSurface bottom-left "V" grows the game
+  // area to the full content height, hiding the chat below it. Session-only
+  // state, never persisted. Reset when the game closes or the DM switches, so
+  // chat always comes back and a reopened game starts on the split.
+  const [gameExpanded, setGameExpanded] = useState(false);
+  // Drag-resize (260721): a hairline grab strip on the game/chat boundary.
+  // The dragged size is a session-local percentage of the main column (null =
+  // the default CSS split); dragging while expanded exits expanded mode into
+  // the dragged size, and double-click resets to the default split. The
+  // height transition is disabled while dragging (no animation fighting).
+  const [gameSplit, setGameSplit] = useState<number | null>(null);
+  const [splitDragging, setSplitDragging] = useState(false);
+  const chatHidden = gameOpen && gameExpanded;
+  useEffect(() => {
+    if (!gameOpen) setGameExpanded(false);
+  }, [gameOpen]);
+  useEffect(() => {
+    setGameExpanded(false);
+    setGameSplit(null);
+  }, [characterId]);
+
+  const mainColRef = useRef<HTMLDivElement | null>(null);
+  const gameAreaRef = useRef<HTMLElement | null>(null);
+  const splitDrag = useRef<{ startY: number; startH: number; total: number } | null>(null);
+
+  const onSplitPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const col = mainColRef.current;
+    const area = gameAreaRef.current;
+    if (!col || !area) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    splitDrag.current = {
+      startY: e.clientY,
+      startH: area.getBoundingClientRect().height,
+      total: col.getBoundingClientRect().height,
+    };
+    setSplitDragging(true);
+  };
+  const onSplitPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const d = splitDrag.current;
+    if (!d || d.total <= 0) return;
+    const px = clampSplitPx(d.startH + (e.clientY - d.startY), d.total);
+    if (gameExpanded) setGameExpanded(false);
+    setGameSplit((px / d.total) * 100);
+  };
+  const onSplitPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (!splitDrag.current) return;
+    splitDrag.current = null;
+    setSplitDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* capture already released */
+    }
+  };
+  const onSplitReset = (): void => {
+    setGameExpanded(false);
+    setGameSplit(null);
+  };
+  const onSplitKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    const col = mainColRef.current;
+    const area = gameAreaRef.current;
+    if (!col || !area) return;
+    e.preventDefault();
+    const total = col.getBoundingClientRect().height;
+    if (total <= 0) return;
+    const cur = area.getBoundingClientRect().height;
+    const px = clampSplitPx(cur + (e.key === 'ArrowDown' ? SPLIT_KEY_STEP_PX : -SPLIT_KEY_STEP_PX), total);
+    if (gameExpanded) setGameExpanded(false);
+    setGameSplit((px / total) * 100);
+  };
+  // Dragged split, clamped so a later window resize can't starve either side.
+  // Applied only on the open, non-expanded split: the class rules keep owning
+  // the closed (0) and expanded (100%) heights.
+  const gameAreaStyle: React.CSSProperties | undefined =
+    gameOpen && !gameExpanded && gameSplit !== null
+      ? {
+          height: `clamp(${SPLIT_MIN_GAME_PX}px, ${gameSplit}%, calc(100% - ${SPLIT_MIN_CHAT_PX}px))`,
+        }
+      : undefined;
+  // Unread dot: a companion (or system) line that lands WHILE chat is hidden
+  // lights a red dot on the toggle; showing chat again clears it. Derived from
+  // the store's message list length, so pushed and awaited replies both count;
+  // the user's own sends and hidden voice rows do not.
+  const [gameUnread, setGameUnread] = useState(false);
+  const seenCountRef = useRef(0);
+  useEffect(() => {
+    const prev = seenCountRef.current;
+    seenCountRef.current = messages.length;
+    if (!chatHidden || messages.length <= prev) return;
+    if (messages.slice(prev).some((m) => m.role !== 'user' && !m.voice)) setGameUnread(true);
+  }, [messages, chatHidden]);
+  useEffect(() => {
+    if (!chatHidden) setGameUnread(false);
+  }, [chatHidden]);
 
   return (
     <div
       className={`${styles.root} ${panelOpen ? styles.presOpen : ''} ${
-        gameOpen ? styles.chessOpen : ''
-      }`}
+        gameOpen ? styles.gameOpen : ''
+      } ${chatHidden ? styles.gameExpanded : ''} ${splitDragging ? styles.splitDragging : ''}`}
     >
-      <div className={styles.chatCol}>
-        {/* ── Header ── */}
-        <header className={styles.header}>
-          <button
-            type="button"
-            className={styles.backBtn}
-            onClick={() => navigate({ kind: 'home' })}
-            aria-label="Back"
-            data-tip="Back"
-          >
-            <BackIcon size={20} />
-          </button>
-          <div className={styles.headerAvatar}>
-            {character ? (
-              <CompanionAvatar character={character} theme={theme} size={22} />
-            ) : (
-              <UserIcon size={14} />
-            )}
-          </div>
-          {/* 260705: the header name opens the full profile page (the side
-              panel is reachable via message author names + open by default). */}
-          <button
-            type="button"
-            className={styles.nameToggle}
-            onClick={onProfile}
-            aria-label={`Open ${companionName}'s profile`}
-          >
-            <span className={styles.headerName}>{companionName}</span>
-            {character?.public_id ? <IdTag id={character.public_id} size="sm" /> : null}
-          </button>
-          <div className={styles.headerActions}>
-            <button
-              type="button"
-              className={styles.iconBtn}
-              onClick={() => openModal({ kind: 'games-picker', characterId })}
-              aria-label="Play together"
-              data-tip="Play together"
-            >
-              <GamepadIcon size={18} />
-            </button>
-            <button
-              type="button"
-              className={styles.iconBtn}
-              onClick={onVoiceCall}
-              aria-label="Voice call"
-              data-tip="Voice call"
-            >
-              <PhoneIcon size={18} />
-            </button>
-          </div>
-        </header>
+      {/* ── Top bar: identical structure across chat, games and calls
+          (260721) — the shared ChatTopBar. ── */}
+      <ChatTopBar characterId={characterId} />
 
-        {/* ── Screen share (260720): persistent "Watching" pill + one-click
-            Stop, visible whenever a session is active (consent requirement,
-            independent of the panel). ── */}
-        <WatchIndicator characterId={characterId} />
+      <div className={styles.content}>
+        <div className={styles.mainCol} ref={mainColRef}>
+          {/* ── Screen share (260720): persistent "Watching" pill + one-click
+              Stop, visible whenever a session is active (consent requirement,
+              independent of the panel). ── */}
+          <WatchIndicator characterId={characterId} />
+
+          {/* ── Game area (260721): the game surface rides ON TOP of the
+              chat. GameSurface's bottom-left "V" expands it down over the
+              chat; its bottom-right "x" is the unified end control. ── */}
+          <section
+            className={styles.gameArea}
+            ref={gameAreaRef}
+            style={gameAreaStyle}
+            aria-label={
+              chessReplayOpen
+                ? 'Chess replay'
+                : chessOpen
+                ? 'Chess'
+                : watchOpen
+                  ? 'Screen share'
+                  : mcDashOpen
+                    ? 'Minecraft dashboard'
+                    : 'Minecraft'
+            }
+            aria-hidden={!gameOpen}
+          >
+            {gameOpen ? (
+              <GameSurface
+                expanded={gameExpanded}
+                unread={gameUnread}
+                onToggle={() => setGameExpanded((v) => !v)}
+                onEnd={onGameEnd}
+                confirmEnd={confirmGameEnd}
+              >
+                {chessReplayOpen ? (
+                  <ChessReplayPanel characterId={characterId} />
+                ) : chessOpen ? (
+                  <ChessPanel characterId={characterId} />
+                ) : watchOpen ? (
+                  <WatchPanel characterId={characterId} />
+                ) : mcDashOpen ? (
+                  <McDashboardPanel characterId={characterId} />
+                ) : (
+                  <McLaunchPanel characterId={characterId} />
+                )}
+              </GameSurface>
+            ) : null}
+          </section>
+
+          {/* Zero-height boundary strip between game and chat: a ~6px hit
+              area straddles it (cursor row-resize), a hairline lights on
+              hover/drag. Double-click resets to the default split. */}
+          {gameOpen ? (
+            <div
+              className={styles.splitHandle}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize game area"
+              tabIndex={0}
+              onPointerDown={onSplitPointerDown}
+              onPointerMove={onSplitPointerMove}
+              onPointerUp={onSplitPointerUp}
+              onPointerCancel={onSplitPointerUp}
+              onDoubleClick={onSplitReset}
+              onKeyDown={onSplitKeyDown}
+            />
+          ) : null}
+
+          <div className={styles.chatCol} aria-hidden={chatHidden}>
 
         {/* ── Message list ── */}
         <div
@@ -437,6 +630,25 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           {loading ? null : visibleMessages.map((m, i, arr) => {
             if (m.role === 'system') {
               if (m.event?.kind === 'play') {
+                // A chess row that carries the recorded game opens its replay
+                // in the game area (260724). Rows without moves stay plain.
+                const replay = m.event.chess;
+                if (replay && replay.moves.length > 0) {
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`${styles.systemRow} ${styles.playRow} ${styles.playRowClickable}`}
+                      onClick={() => useChessStore.getState().openReplay(characterId, replay)}
+                    >
+                      <span className={styles.playIcon}>
+                        <GamepadIcon size={18} />
+                      </span>
+                      <span>{m.text}</span>
+                      <span className={styles.replayHint}>Watch replay</span>
+                    </button>
+                  );
+                }
                 return (
                   <div key={m.id} className={`${styles.systemRow} ${styles.playRow}`}>
                     <span className={styles.playIcon}>
@@ -592,10 +804,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             ) : null}
           </div>
         </div>
-      </div>
 
-      {/* ── Presence side panel (§4.5) ── */}
-      <aside
+          </div>
+        </div>
+
+        {/* ── Presence side panel (§4.5) ── */}
+        <aside
         className={styles.presPanel}
         style={
           !showingUser && panelTint
@@ -629,6 +843,18 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               </span>
             )}
             <span className={styles.presFade} aria-hidden="true" />
+            {/* Close "x" pinned to the panel's top-right corner. Same path as
+                clicking an author name again: hides the panel and persists the
+                preference (setPanelOpen -> chat_panel_hidden). */}
+            <button
+              type="button"
+              className={styles.presClose}
+              onClick={() => setPanelOpen(false)}
+              aria-label="Close profile"
+              title="Close profile"
+            >
+              ×
+            </button>
           </div>
           <div className={styles.presBody}>
             <div className={styles.presNameRow}>
@@ -670,27 +896,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           </div>
         </div>
       </aside>
-
-      {/* ── Game panel (260710 chess, 260720 connect4): slides in from the
-          right, compressing the chat into a narrow left column while a game
-          is set up / played. The .chessAside class hosts either game. ── */}
-      <aside
-        className={styles.chessAside}
-        aria-label={
-          chessOpen ? 'Chess' : connect4Open ? 'Connect 4' : twentyqOpen ? '20 Questions' : 'Screen share'
-        }
-        aria-hidden={!gameOpen}
-      >
-        {chessOpen ? (
-          <ChessPanel characterId={characterId} />
-        ) : connect4Open ? (
-          <Connect4Panel characterId={characterId} />
-        ) : twentyqOpen ? (
-          <TwentyQPanel characterId={characterId} />
-        ) : watchOpen ? (
-          <WatchPanel characterId={characterId} />
-        ) : null}
-      </aside>
+      </div>
     </div>
   );
 }
