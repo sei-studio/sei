@@ -410,11 +410,12 @@ export function CreditsScreen(): React.ReactElement {
           tier={consentFor.tier}
           mode={consentFor.mode}
           onClose={() => setConsentFor(null)}
-          // Consent recorded and the purchase started → start the watch. On the
-          // checkout path the browser is already open, so don't re-open it.
-          onProceed={() =>
-            void beginPurchase(consentFor.tier, { alreadyOpened: consentFor.mode === 'checkout' })
-          }
+          // Consent recorded and the purchase already started (the browser
+          // checkout, or the in-place subscription update) → WATCH only.
+          // alreadyOpened is always true here: re-entering beginPurchase's own
+          // checkout path would open a second browser tab, and for a tier
+          // change there is no checkout to open at all.
+          onProceed={() => void beginPurchase(consentFor.tier, { alreadyOpened: true })}
         />
       ) : null}
 
