@@ -28,18 +28,6 @@ import type { ErrorClass } from './errorClasses';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
-import type {
-  WatchSessionState,
-  WatchSource,
-  WatchPreviewPush,
-  WatchPermissionStatus,
-} from './watchIpc';
-export type {
-  WatchSessionState,
-  WatchSource,
-  WatchPreviewPush,
-  WatchPermissionStatus,
-} from './watchIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 export type {
   McDashboardSnapshot,
@@ -1173,25 +1161,6 @@ export interface RendererApi {
   /** First-run engine model download progress (status 'preparing'). */
   onChessDownload(cb: (p: ChessDownloadProgress) => void): Unsubscribe;
 
-  // --- Screen share / watch activity (260720) --- see src/shared/watchIpc.ts
-  // for the session model + consent flow. All session methods are
-  // character-scoped (one session per character at a time).
-  /** Enumerate capturable windows/screens with live thumbnail previews. */
-  watchListSources(): Promise<WatchSource[]>;
-  /** Start watching the picked source. Rejects with WATCH_ERR_* sentinels. */
-  watchStart(characterId: string, sourceId: string): Promise<WatchSessionState>;
-  /** End the session (posts the transcript row + memory line when long enough). */
-  watchStop(characterId: string): Promise<void>;
-  watchGetState(characterId: string): Promise<WatchSessionState | null>;
-  /** macOS Screen Recording permission state ('granted' off-macOS). */
-  watchPermissionStatus(): Promise<WatchPermissionStatus>;
-  /** Deep-link to the macOS Screen Recording privacy pane. */
-  watchOpenPermissionSettings(): Promise<void>;
-  /** Full-state pushes on every session change (start, blank, end). */
-  onWatchState(cb: (state: WatchSessionState) => void): Unsubscribe;
-  /** Live source snapshot for the aside preview (~every 3s while active). */
-  onWatchPreview(cb: (p: WatchPreviewPush) => void): Unsubscribe;
-
   // --- Minecraft dashboard (260721) --- see src/shared/mcDashboardIpc.ts for
   // the snapshot model. Character-scoped; live only while summoned.
   /** Latest telemetry snapshot, or null when there is no live session. */
@@ -1914,21 +1883,6 @@ export const IpcChannel = {
     state: 'chess:state',
     /** Push: ChessDownloadProgress during the one-time model download. */
     download: 'chess:download',
-  },
-  // Screen share / watch activity (260720) — request/response pairs are
-  // character-scoped; `state` and `preview` are pushes (main → renderer).
-  // Protocol details in src/shared/watchIpc.ts.
-  watch: {
-    listSources: 'watch:list-sources',
-    start: 'watch:start',
-    stop: 'watch:stop',
-    getState: 'watch:get-state',
-    permissionStatus: 'watch:permission-status',
-    openPermissionSettings: 'watch:open-permission-settings',
-    /** Push: full WatchSessionState on every change. */
-    state: 'watch:state',
-    /** Push: WatchPreviewPush snapshot of the shared source (~every 3s). */
-    preview: 'watch:preview',
   },
   // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
   // Protocol details in src/shared/mcDashboardIpc.ts.

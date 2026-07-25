@@ -116,7 +116,7 @@ export type Modal =
   | {
       kind: 'cross-launch';
       characterId: string;
-      fromId: 'chess' | 'watch' | 'minecraft';
+      fromId: 'chess' | 'minecraft';
       fromName: string;
       toName: string;
     };

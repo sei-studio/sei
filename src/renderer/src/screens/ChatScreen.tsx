@@ -35,9 +35,6 @@ import { useChatStore } from '../lib/stores/useChatStore';
 import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/useChessStore';
 import { ChessPanel } from '../components/chess/ChessPanel';
 import { ChessReplayPanel } from '../components/chess/ChessReplayPanel';
-import { useWatchStore, isWatchOpen, isWatchActive } from '../lib/stores/useWatchStore';
-import { WatchPanel } from '../components/watch/WatchPanel';
-import { WatchIndicator } from '../components/watch/WatchIndicator';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
 import { McDashboardPanel } from '../components/mcdash/McDashboardPanel';
 import { McLaunchPanel } from '../components/mcdash/McLaunchPanel';
@@ -375,9 +372,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // opens the recorded game in this same slot. Purely local view state; it
   // covers (and never disturbs) any live surface below it in the priority.
   const chessReplayOpen = useChessStore((s) => isChessReplayOpen(s, characterId));
-  // Screen share (260720): the watch surface reuses the same game slot.
-  const watchOpen = useWatchStore((s) => isWatchOpen(s, characterId));
-  const watchActive = useWatchStore((s) => isWatchActive(s, characterId));
   // Minecraft dashboard (260721): shown in this same slot whenever the bot
   // is online (open or closed, nothing in between). The snapshot clears when
   // the bot leaves.
@@ -396,7 +390,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   useEffect(() => {
     if (mcOnline && mcLaunch) mcSetLaunch(characterId, false);
   }, [mcOnline, mcLaunch, characterId, mcSetLaunch]);
-  const gameOpen = chessReplayOpen || chessOpen || watchOpen || mcDashOpen || mcLaunchOpen;
+  const gameOpen = chessReplayOpen || chessOpen || mcDashOpen || mcLaunchOpen;
 
   // Unified end control (260721): every surface ends from GameSurface's
   // bottom-right "x", through its existing end path. `confirmGameEnd` gates
@@ -413,12 +407,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       void useChessStore.getState().end(characterId);
       return;
     }
-    if (watchOpen) {
-      const watch = useWatchStore.getState();
-      if (isWatchActive(watch, characterId)) void watch.stop(characterId);
-      watch.closePanel(characterId);
-      return;
-    }
     if (mcDashOpen || summon?.kind === 'connecting') {
       // Same instant-disconnect path as the presence panel button; the
       // !mcOnline effect above clears the dashboard state afterwards.
@@ -431,11 +419,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     ? false
     : chessOpen
     ? chessGame?.status === 'active'
-    : watchOpen
-      ? watchActive
-      : mcDashOpen
-        ? true
-        : summon?.kind === 'connecting';
+    : mcDashOpen
+      ? true
+      : summon?.kind === 'connecting';
 
   // Expand-over-chat (260721): the GameSurface bottom-left "V" grows the game
   // area to the full content height, hiding the chat below it. Session-only
@@ -546,11 +532,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
       <div className={styles.content}>
         <div className={styles.mainCol} ref={mainColRef}>
-          {/* ── Screen share (260720): persistent "Watching" pill + one-click
-              Stop, visible whenever a session is active (consent requirement,
-              independent of the panel). ── */}
-          <WatchIndicator characterId={characterId} />
-
           {/* ── Game area (260721): the game surface rides ON TOP of the
               chat. GameSurface's bottom-left "V" expands it down over the
               chat; its bottom-right "x" is the unified end control. ── */}
@@ -563,11 +544,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 ? 'Chess replay'
                 : chessOpen
                 ? 'Chess'
-                : watchOpen
-                  ? 'Screen share'
-                  : mcDashOpen
-                    ? 'Minecraft dashboard'
-                    : 'Minecraft'
+                : mcDashOpen
+                  ? 'Minecraft dashboard'
+                  : 'Minecraft'
             }
             aria-hidden={!gameOpen}
           >
@@ -583,8 +562,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                   <ChessReplayPanel characterId={characterId} />
                 ) : chessOpen ? (
                   <ChessPanel characterId={characterId} />
-                ) : watchOpen ? (
-                  <WatchPanel characterId={characterId} />
                 ) : mcDashOpen ? (
                   <McDashboardPanel characterId={characterId} />
                 ) : (

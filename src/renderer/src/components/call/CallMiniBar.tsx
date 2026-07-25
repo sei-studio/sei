@@ -20,7 +20,6 @@ import { useUiStore } from '../../lib/stores/useUiStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { useChessStore, isChessOpen } from '../../lib/stores/useChessStore';
-import { useWatchStore, isWatchOpen } from '../../lib/stores/useWatchStore';
 import { useMcDashboardStore } from '../../lib/stores/useMcDashboardStore';
 
 export function CallMiniBar(): null {
@@ -30,19 +29,18 @@ export function CallMiniBar(): null {
   const status = useVoiceStore((s) => s.status);
   const summons = useDataStore((s) => s.summons);
   const chessState = useChessStore((s) => s);
-  const watchState = useWatchStore((s) => s);
   const mcDashState = useMcDashboardStore((s) => s);
 
   const callExists = participants.length > 0 && (status === 'live' || status === 'connecting');
   const awayFromCall = callExists && view.kind !== 'voice-call';
 
   // Any OPEN game surface among the call's participants (chess panel or a
-  // game, the watch panel or an active session, the Minecraft dashboard or
-  // launch panel). Surface-open (not game-live) on purpose: a resigned chess
-  // game still shows its result screen, and the call should only reclaim the
-  // screen once the surface is actually gone (the unified end "x").
+  // game, the Minecraft dashboard or launch panel). Surface-open (not
+  // game-live) on purpose: a resigned chess game still shows its result
+  // screen, and the call should only reclaim the screen once the surface is
+  // actually gone (the unified end "x").
   const gameActive = participants.some((id) => {
-    if (isChessOpen(chessState, id) || isWatchOpen(watchState, id)) return true;
+    if (isChessOpen(chessState, id)) return true;
     const online = summons[id]?.kind === 'online';
     // The Minecraft dashboard is always open while the bot is online (no
     // hide/minimize, 260721); offline, the launch panel counts while open.

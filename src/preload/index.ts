@@ -117,26 +117,6 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.chess.download, handler);
   },
 
-  // Screen share / watch activity (260720)
-  watchListSources: () => ipcRenderer.invoke(IpcChannel.watch.listSources),
-  watchStart: (characterId, sourceId) =>
-    ipcRenderer.invoke(IpcChannel.watch.start, { characterId, sourceId }),
-  watchStop: (characterId) => ipcRenderer.invoke(IpcChannel.watch.stop, characterId),
-  watchGetState: (characterId) => ipcRenderer.invoke(IpcChannel.watch.getState, characterId),
-  watchPermissionStatus: () => ipcRenderer.invoke(IpcChannel.watch.permissionStatus),
-  watchOpenPermissionSettings: () =>
-    ipcRenderer.invoke(IpcChannel.watch.openPermissionSettings),
-  onWatchState(cb) {
-    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
-    ipcRenderer.on(IpcChannel.watch.state, handler);
-    return () => ipcRenderer.off(IpcChannel.watch.state, handler);
-  },
-  onWatchPreview(cb) {
-    const handler = (_e: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
-    ipcRenderer.on(IpcChannel.watch.preview, handler);
-    return () => ipcRenderer.off(IpcChannel.watch.preview, handler);
-  },
-
   // Minecraft dashboard (260721)
   mcDashboardGet: (characterId) => ipcRenderer.invoke(IpcChannel.mcdash.get, characterId),
   mcDashboardSetWatching: (characterId, watching) =>

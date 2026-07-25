@@ -293,45 +293,6 @@ const ApplySkinArgsSchema = z.object({
 });
 
 export function registerIpcHandlers(deps: IpcHandlerDeps): void {
-  // ── Screen share / watch activity (260720) ────────────────────────────────
-  // Module-state deps for src/main/watch/watchService, wired at IPC
-  // registration so adding an activity needs no index.ts edit (chess wires its
-  // twin of this in main/index.ts). Mutually exclusive with a Minecraft summon
-  // AND with an open chess game; the reverse guards live on the summon and
-  // game-start handlers below.
-  void (async () => {
-    const [{ initWatchService }, chess] = await Promise.all([
-      import('./watch/watchService'),
-      import('./chess/chessService'),
-    ]);
-    initWatchService({
-      pushState: (state) => {
-        for (const win of BrowserWindow.getAllWindows()) {
-          if (!win.isDestroyed()) win.webContents.send(IpcChannel.watch.state, state);
-        }
-      },
-      pushPreview: (p) => {
-        for (const win of BrowserWindow.getAllWindows()) {
-          if (!win.isDestroyed()) win.webContents.send(IpcChannel.watch.preview, p);
-        }
-      },
-      pushChatMessage: (id, message) => deps.pushChatMessage?.(id, message),
-      isSummoned: (id) => deps.supervisor.isActive(id),
-      isGameActive: (id) => chess.isChessActive(id),
-      // Cloud credit pre-flight: same fail-open gate the summon path uses
-      // (self-guards for BYOK / signed-out / errors → false).
-      creditsDepleted: async () => {
-        try {
-          const { cloudCreditsDepleted } = await import('./cloud/proxyClient');
-          return await cloudCreditsDepleted();
-        } catch {
-          return false;
-        }
-      },
-      onCreditsDepleted: () => emitCreditsHardStop({ reason: 'depleted' }),
-    });
-  })();
-
   /**
    * Ensure the cloud row + portrait Storage object exist for `characterId`
    * BEFORE the moderation gate runs. Without this, the moderation Edge
@@ -671,15 +632,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // Bot supervision
   ipcMain.handle(IpcChannel.bot.summon, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
-    // Screen share (260720): an activity and a Minecraft summon are mutually
-    // exclusive per character, both directions. watchStart refuses while
-    // summoned; here a summon ends any live watch session ('superseded')
-    // before the character joins a world. Chess predates this guard and
-    // relies on its renderer-side disconnect confirm only.
-    {
-      const watch = await import('./watch/watchService');
-      if (watch.isWatchActive(id)) await watch.endWatchForTakeover(id);
-    }
     await deps.supervisor.summon(id);
   });
   ipcMain.handle(IpcChannel.bot.stop, async (_event, idArg: unknown) => {
@@ -1126,21 +1078,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         if (handled) return handled;
       }
     }
-    // Screen share (260720): while a watch session is open, chat rides the
-    // watch session queue (the reply sees the live screen). Returns null when
-    // no active session, falling through as usual.
-    {
-      const watch = await import('./watch/watchService');
-      if (watch.isWatchActive(args.characterId)) {
-        const handled = await watch.handlePlayerChat({
-          characterId: args.characterId,
-          text: args.text,
-          replyTo: args.replyTo,
-          voiceCall: inCall,
-        });
-        if (handled) return handled;
-      }
-    }
     // Fresh world-detection pass before the prompt is built (260703): the
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
     // Skipped mid-call — a live voice call cannot be opening a world, and this
@@ -1181,14 +1118,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         playerColor: z.enum(['w', 'b', 'random']).optional(),
       })
       .parse(argsRaw);
-    // Screen share (260720): a board game takes over a live watch session
-    // (same direction as the summon-side guard; watchStart refuses the other
-    // way). Guarded here, not in chessService, so the game modules stay
-    // watch-agnostic.
-    {
-      const watch = await import('./watch/watchService');
-      if (watch.isWatchActive(args.characterId)) await watch.endWatchForTakeover(args.characterId);
-    }
     const chess = await import('./chess/chessService');
     return await chess.startChess(args.characterId, { playerColor: args.playerColor });
   });
@@ -1233,44 +1162,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const args = z.object({ characterId: IdSchema, uci: z.string().min(4).max(5) }).parse(argsRaw);
     const chess = await import('./chess/chessService');
     return await chess.ackReveal(args.characterId, args.uci);
-  });
-
-  // ── Screen share / watch activity (260720) ───────────────────────────────
-  // Thin wrappers over src/main/watch/watchService (module state initialized
-  // at the top of registerIpcHandlers) + the capture/permission helpers in
-  // src/main/watch/capture.ts. Session methods are character-scoped.
-  ipcMain.handle(IpcChannel.watch.listSources, async () => {
-    const { listSources } = await import('./watch/capture');
-    return await listSources();
-  });
-  ipcMain.handle(IpcChannel.watch.start, async (_event, argsRaw: unknown) => {
-    const args = z
-      .object({
-        characterId: IdSchema,
-        // desktopCapturer ids look like "window:123:0" / "screen:1:0".
-        sourceId: z.string().min(1).max(128).regex(/^(window|screen):[\w:-]+$/),
-      })
-      .parse(argsRaw);
-    const watch = await import('./watch/watchService');
-    return await watch.startWatch(args.characterId, args.sourceId);
-  });
-  ipcMain.handle(IpcChannel.watch.stop, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const watch = await import('./watch/watchService');
-    await watch.stopWatch(id);
-  });
-  ipcMain.handle(IpcChannel.watch.getState, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    const watch = await import('./watch/watchService');
-    return watch.getWatchState(id);
-  });
-  ipcMain.handle(IpcChannel.watch.permissionStatus, async () => {
-    const { permissionStatus } = await import('./watch/capture');
-    return permissionStatus();
-  });
-  ipcMain.handle(IpcChannel.watch.openPermissionSettings, async () => {
-    const { openPermissionSettings } = await import('./watch/capture');
-    await openPermissionSettings();
   });
 
   // ── Minecraft dashboard (260721) ──────────────────────────────────────────

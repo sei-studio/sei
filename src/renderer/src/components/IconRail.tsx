@@ -58,7 +58,6 @@ import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useChessStore } from '../lib/stores/useChessStore';
-import { useWatchStore } from '../lib/stores/useWatchStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
 import {
@@ -177,8 +176,6 @@ export interface ActivityBadgeStores {
   callParticipants: readonly string[];
   /** useChessStore.games — characterId → last game snapshot (or null). */
   chessGames: Readonly<Record<string, { status: string } | null | undefined>>;
-  /** useWatchStore.sessions — characterId → last session snapshot (or null). */
-  watchSessions: Readonly<Record<string, { status: string } | null | undefined>>;
   /** useDataStore.summons — characterId → bot status (absent = not summoned).
    * The authoritative "online MC bot session" signal; the mc dashboard
    * store's snapshots are telemetry keyed off this same session. */
@@ -195,10 +192,8 @@ export function avatarActivityBadge(
   if (onCall) return 'call';
   const chess = s.chessGames[characterId];
   const chessLive = chess != null && chess.status !== 'ended';
-  const watch = s.watchSessions[characterId];
-  const watchLive = watch != null && watch.status === 'active';
   const mcOnline = s.summons[characterId]?.kind === 'online';
-  return chessLive || watchLive || mcOnline ? 'game' : null;
+  return chessLive || mcOnline ? 'game' : null;
 }
 
 /**
@@ -310,7 +305,6 @@ export function IconRail(): React.ReactElement {
   const callStatus = useVoiceStore((s) => s.status);
   const callParticipants = useVoiceStore((s) => s.participants);
   const chessGames = useChessStore((s) => s.games);
-  const watchSessions = useWatchStore((s) => s.sessions);
   const authState = useAuthStore((s) => s.state);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
@@ -491,7 +485,6 @@ export function IconRail(): React.ReactElement {
                 callStatus,
                 callParticipants,
                 chessGames,
-                watchSessions,
                 summons,
               })}
               // Phase 18/19: the rail avatar opens the in-app chat (the new

@@ -6,13 +6,13 @@
  * start Y?"), whether the launch comes from the games picker tile or from a
  * surface's own Launch/Start button. This module owns:
  *
- *   - activeGameFor()      which game (chess / screen share / Minecraft) is
- *                          live for a character, mirroring the IconRail
- *                          activity-badge definition;
+ *   - activeGameFor()      which game (chess / Minecraft) is live for a
+ *                          character, mirroring the IconRail activity-badge
+ *                          definition;
  *   - endActiveGame()      each game's normal end path (chess writes its
  *                          unfinished history row via the store's end());
  *   - openGame()           the picker's open-a-surface routing (navigate to
- *                          chat + mount the right panel), clearing any other
+ *                          chat + mount the right panel), clearing the other
  *                          surface's stale open-intent so the aside swaps;
  *   - requestGameLaunch()  the gate: runs the launch directly when nothing
  *                          else is active, otherwise parks the launch thunk
@@ -27,31 +27,28 @@
 import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore } from './stores/useChessStore';
-import { useWatchStore } from './stores/useWatchStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
 import { attemptSummon } from './summonFlow';
 import { sei } from './ipcClient';
 
-/** The three launchable games (the picker's 'more' tile is never active). */
-export type LaunchGameId = 'chess' | 'watch' | 'minecraft';
+/** The launchable games (the picker's coming-soon tiles are never active). */
+export type LaunchGameId = 'chess' | 'minecraft';
 
 export interface ActiveGameInfo {
   id: LaunchGameId;
-  /** User-facing name for the confirm copy ("Chess", "Screen share", ...). */
+  /** User-facing name for the confirm copy ("Chess", "Minecraft"). */
   name: string;
 }
 
 /**
  * Which game is currently ACTIVE for this character, if any. Matches the
- * IconRail badge semantics: a not-ended chess game (preparing or active), an
- * active watch session, or a live/connecting Minecraft summon. Open panels
- * without a session (chess launch card, watch picker) do not count.
+ * IconRail badge semantics: a not-ended chess game (preparing or active) or a
+ * live/connecting Minecraft summon. Open panels without a session (chess
+ * launch card) do not count.
  */
 export function activeGameFor(characterId: string): ActiveGameInfo | null {
   const chess = useChessStore.getState().games[characterId];
   if (chess && chess.status !== 'ended') return { id: 'chess', name: 'Chess' };
-  const watch = useWatchStore.getState().sessions[characterId];
-  if (watch && watch.status === 'active') return { id: 'watch', name: 'Screen share' };
   const summon = useDataStore.getState().summons[characterId]?.kind;
   if (summon === 'online' || summon === 'connecting') {
     return { id: 'minecraft', name: 'Minecraft' };
@@ -61,17 +58,11 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
 
 /**
  * End a game through its normal end path, so side effects (chess's
- * unfinished-game history row, the watch session teardown, the bot stop)
- * all still happen.
+ * unfinished-game history row, the bot stop) all still happen.
  */
 export async function endActiveGame(characterId: string, id: LaunchGameId): Promise<void> {
   if (id === 'chess') {
     await useChessStore.getState().end(characterId);
-    return;
-  }
-  if (id === 'watch') {
-    await useWatchStore.getState().stop(characterId);
-    useWatchStore.getState().closePanel(characterId);
     return;
   }
   // Minecraft: same instant-disconnect path the chat panel uses.
@@ -94,7 +85,6 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
 export function openGame(characterId: string, gameId: LaunchGameId): void {
   useUiStore.getState().navigate({ kind: 'chat', characterId });
   const chess = useChessStore.getState();
-  const watch = useWatchStore.getState();
   const dash = useMcDashboardStore.getState();
 
   if (gameId !== 'chess') {
@@ -103,13 +93,10 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
     const g = chess.games[characterId];
     if (!g || g.status === 'ended') void chess.end(characterId);
   }
-  if (gameId !== 'watch') watch.closePanel(characterId);
   if (gameId !== 'minecraft') dash.setLaunch(characterId, false);
 
   if (gameId === 'chess') {
     chess.openPanel(characterId);
-  } else if (gameId === 'watch') {
-    watch.openPanel(characterId);
   } else if (useDataStore.getState().summons[characterId]?.kind !== 'online') {
     // Minecraft with a live bot needs no flag: the dashboard is always open
     // while the bot is online (no hide/minimize). Offline, open the launch

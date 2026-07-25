@@ -1000,9 +1000,6 @@ if (!gotLock) {
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }
     // Chess: abort any in-flight AI turn + release the ONNX/stockfish engine.
     try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
-    // Screen share: stop capture polls + end sessions (posts the transcript
-    // row for a long-enough session) so quitting never leaves one dangling.
-    try { await (await import('./watch/watchService')).shutdownWatch(); } catch { /* best-effort */ }
     try { if (lanWatcherHandle) lanWatcherHandle.stop(); } catch { /* best-effort */ }
     // Close the skin server's TCP listener so the port is
     // freed promptly. server.close drains in-flight requests before resolving.

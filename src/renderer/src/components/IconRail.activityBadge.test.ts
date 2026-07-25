@@ -10,9 +10,9 @@
  *   1. avatarActivityBadge returns null when no activity is live.
  *   2. 'call' when the character is a participant on a live call, and on a
  *      connecting first dial; NOT for a non-participant, NOT when idle/error.
- *   3. 'game' for a not-ended chess game ('preparing' or 'active'), an
- *      active watch session, or an online MC bot session; ended/null
- *      snapshots and a merely-connecting summon do NOT count.
+ *   3. 'game' for a not-ended chess game ('preparing' or 'active') or an
+ *      online MC bot session; ended/null snapshots and a merely-connecting
+ *      summon do NOT count.
  *   4. Call wins over game when both are live for the same character.
  *   5. Source renders the badge span with PhoneIcon/GamepadIcon and the
  *      accessible label suffixes ", on a call" / ", playing a game".
@@ -42,7 +42,6 @@ type BadgeFn = (
     callStatus: string;
     callParticipants: readonly string[];
     chessGames: Readonly<Record<string, { status: string } | null | undefined>>;
-    watchSessions: Readonly<Record<string, { status: string } | null | undefined>>;
     summons: Readonly<Record<string, { kind: string } | undefined>>;
   },
 ) => 'call' | 'game' | null;
@@ -57,7 +56,6 @@ const quiet = {
   callStatus: 'idle',
   callParticipants: [] as string[],
   chessGames: {},
-  watchSessions: {},
   summons: {},
 };
 
@@ -81,17 +79,13 @@ describe('avatarActivityBadge (pure helper)', () => {
     expect(badge('a', { ...live, callStatus: 'error' })).toBe(null);
   });
 
-  it('Test 3: chess (not ended), active watch, or online summon → game', async () => {
+  it('Test 3: chess (not ended) or online summon → game', async () => {
     const badge = await loadBadgeFn();
     expect(badge('a', { ...quiet, chessGames: { a: { status: 'active' } } })).toBe('game');
     // Engine warm-up: the game session exists from the player's POV.
     expect(badge('a', { ...quiet, chessGames: { a: { status: 'preparing' } } })).toBe('game');
     expect(badge('a', { ...quiet, chessGames: { a: { status: 'ended' } } })).toBe(null);
     expect(badge('a', { ...quiet, chessGames: { a: null } })).toBe(null);
-
-    expect(badge('a', { ...quiet, watchSessions: { a: { status: 'active' } } })).toBe('game');
-    expect(badge('a', { ...quiet, watchSessions: { a: { status: 'preparing' } } })).toBe(null);
-    expect(badge('a', { ...quiet, watchSessions: { a: { status: 'ended' } } })).toBe(null);
 
     expect(badge('a', { ...quiet, summons: { a: { kind: 'online' } } })).toBe('game');
     expect(badge('a', { ...quiet, summons: { a: { kind: 'connecting' } } })).toBe(null);
@@ -106,7 +100,6 @@ describe('avatarActivityBadge (pure helper)', () => {
       callStatus: 'live',
       callParticipants: ['a'],
       chessGames: { a: { status: 'active' } },
-      watchSessions: { a: { status: 'active' } },
       summons: { a: { kind: 'online' } },
     };
     expect(badge('a', both)).toBe('call');
@@ -119,10 +112,9 @@ describe('avatarActivityBadge (pure helper)', () => {
     expect(source.includes('GamepadIcon')).toBe(true);
     expect(source.includes(', on a call')).toBe(true);
     expect(source.includes(', playing a game')).toBe(true);
-    // Badge state feeds from the voice, chess, watch, and summon slices.
+    // Badge state feeds from the voice, chess, and summon slices.
     expect(source.includes('useVoiceStore')).toBe(true);
     expect(source.includes('useChessStore')).toBe(true);
-    expect(source.includes('useWatchStore')).toBe(true);
   });
 
   it('Test 6: CSS module defines the 14px badge with the rail-colored ring', () => {

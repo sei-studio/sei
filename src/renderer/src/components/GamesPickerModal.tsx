@@ -3,11 +3,12 @@
  *
  * Opened from the chat header's Games button, the CharacterCard "Play" CTA, and
  * the CharacterPage "Play together" deploy button. Clicking an available game
- * tile opens that game's surface: chess and screen share slide their panel into
- * the chat aside; Minecraft opens its launch panel there too (the launch panel
- * owns the summon flow). Each available tile carries a bottom-right (i)
- * affordance that shows a hover-only info popup (title, art, brief description;
- * nothing clickable). "More games" is a single dimmed coming-soon placeholder.
+ * tile opens that game's surface: chess slides its panel into the chat aside;
+ * Minecraft opens its launch panel there too (the launch panel owns the summon
+ * flow). Each available tile carries a bottom-right (i) affordance that shows a
+ * hover-only info popup (title, art, brief description; nothing clickable).
+ * Coming-soon tiles are dimmed placeholders; the "Suggest a game" tile opens
+ * the feedback form (same submit path as the Playtime screen's form).
  * Scrim-click / ESC closes (ESC hides the popup first when one is showing).
  *
  * Source: .planning/design/app-chat-and-memory.md §5 (GamesPickerModal) + R7.
@@ -19,7 +20,8 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon } from '../lib/summonFlow';
 import { openGame, requestGameLaunch, type LaunchGameId } from '../lib/gameLaunch';
 import { GAMES, type GameDef } from '../lib/games';
-import { MCBlock, GamepadIcon, InfoIcon } from './icons';
+import { MCBlock, GamepadIcon, InfoIcon, PlusIcon } from './icons';
+import { FeedbackModal } from './FeedbackModal';
 import styles from './GamesPickerModal.module.css';
 
 export interface GamesPickerModalProps {
@@ -50,6 +52,12 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
   const popupRef = useRef<InfoPopup | null>(null);
   popupRef.current = popup;
   const showTimer = useRef<number | null>(null);
+
+  // "Suggest a game" (260725): the feedback form rides on top of the picker;
+  // its submit path is the same proxy feedback table as the Playtime form.
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const suggestOpenRef = useRef(false);
+  suggestOpenRef.current = suggestOpen;
 
   const cancelShow = (): void => {
     if (showTimer.current !== null) {
@@ -85,6 +93,8 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
+      // The open feedback form owns ESC (ModalShell closes itself).
+      if (suggestOpenRef.current) return;
       // ESC dismisses the info popup first; a second ESC closes the picker.
       if (popupRef.current) {
         setPopup(null);
@@ -98,12 +108,17 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
 
   const onPlay = (g: GameDef): void => {
     if (!g.available) return;
+    if (g.id === 'suggest') {
+      hideInfo();
+      setSuggestOpen(true);
+      return;
+    }
     // 260721: every tile routes through the SHARED launch gate
     // (lib/gameLaunch). With another game active for this companion it shows
     // the cross-launch confirm first; otherwise openGame mounts the picked
-    // surface in the chat's game area (chess card / watch picker / Minecraft
-    // launch panel, or the live dashboard when the bot is already online).
-    if (g.id === 'chess' || g.id === 'watch' || g.id === 'minecraft') {
+    // surface in the chat's game area (chess card / Minecraft launch panel,
+    // or the live dashboard when the bot is already online).
+    if (g.id === 'chess' || g.id === 'minecraft') {
       const id = g.id as LaunchGameId;
       closeModal();
       requestGameLaunch(characterId, { id, name: g.name }, () => openGame(characterId, id));
@@ -149,10 +164,17 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
               >
                 {g.image ? null : (
                   <span className={styles.tileIcon}>
-                    {g.id === 'minecraft' ? <MCBlock size={40} /> : <GamepadIcon size={30} />}
+                    {g.id === 'minecraft' ? (
+                      <MCBlock size={40} />
+                    ) : g.id === 'suggest' ? (
+                      <PlusIcon size={30} />
+                    ) : (
+                      <GamepadIcon size={30} />
+                    )}
                   </span>
                 )}
                 <span className={styles.tileName}>{g.name}</span>
+                {g.soon ? <span className={styles.tileSoon}>Coming soon</span> : null}
               </button>
               {g.available ? (
                 <span
@@ -188,6 +210,14 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
             <p className={styles.infoPopText}>{popup.game.description(companionName)}</p>
           </div>
         </div>
+      ) : null}
+      {suggestOpen ? (
+        <FeedbackModal
+          title="Suggest a game"
+          framing="What do you want to play together? Tell us and we will build the best ideas."
+          placeholder="What game should we add?"
+          onClose={() => setSuggestOpen(false)}
+        />
       ) : null}
     </div>
   );

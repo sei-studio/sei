@@ -203,7 +203,6 @@ export const TRANSCRIPT_STOP_SEQUENCES = [
   '\nAssistant:',
   '\nPlayer:',
   '\n(game)',
-  '\n(watch)',
 ];
 
 /** Concatenate the text blocks of an Anthropic response content array. */

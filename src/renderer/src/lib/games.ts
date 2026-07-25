@@ -1,7 +1,8 @@
 /**
  * Games catalog (Phase 18/19) — the tiles shown in the chat "Play together"
- * picker. Minecraft is live; a single "More games" placeholder stands in for
- * everything still coming.
+ * picker. Minecraft and chess are live; the coming-soon tiles preview what is
+ * next, and the "Suggest a game" tile opens the feedback form (same submit
+ * path as the Playtime screen's form).
  *
  * `description` is the body of the hover info popup on each picker tile
  * (companion-name aware, 1-2 sentences). Setup instructions live with each
@@ -12,6 +13,8 @@ export interface GameDef {
   id: string;
   name: string;
   available: boolean;
+  /** Coming-soon placeholder: dimmed, unclickable, "Coming soon" caption. */
+  soon?: boolean;
   /** Optional tile background art (renderer-relative path served from public/). */
   image?: string;
   /** Brief description for the hover info popup (companion-name aware). */
@@ -38,19 +41,34 @@ export const GAMES: GameDef[] = [
       `Untimed, so take as long as you like.`,
   },
   {
-    id: 'watch',
-    name: 'Screen share',
-    available: true,
-    image: './img/game-watch.svg',
+    id: 'movie',
+    name: 'Watch a movie',
+    available: false,
+    soon: true,
     description: (name) =>
-      `${name} watches your screen while you play something else and reacts in the chat, ` +
-      `like a friend on the couch. You pick which window ${name} can see.`,
+      `Movie night with ${name}: watch something together and talk about it as it plays.`,
   },
   {
-    id: 'more',
-    name: 'More coming soon!',
+    id: 'focus',
+    name: 'Focus together',
     available: false,
+    soon: true,
+    description: (name) =>
+      `A quiet co-working session. ${name} keeps you company while you get things done.`,
+  },
+  {
+    id: 'backseat',
+    name: 'Backseat my game',
+    available: false,
+    soon: true,
+    description: (name) =>
+      `${name} watches you play any game and reacts like a friend on the couch.`,
+  },
+  {
+    id: 'suggest',
+    name: 'Suggest a game',
+    available: true,
     description: () =>
-      'More ways to play together are on the way. New games will show up here as they land.',
+      'Tell us what you want to play together. Suggestions go straight to the team.',
   },
 ];
