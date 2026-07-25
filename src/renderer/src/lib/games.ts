@@ -1,27 +1,24 @@
 /**
  * Games catalog (Phase 18/19) — the tiles shown in the chat "Play together"
- * picker and the per-game info window. Minecraft is live; a single "More games"
- * placeholder stands in for everything still coming. Shared so GamesPickerModal
- * and GameAboutModal (the info window) stay in sync.
+ * picker. Minecraft and chess are live; the coming-soon tiles preview what is
+ * next, and the "Suggest a game" tile opens the feedback form (same submit
+ * path as the Playtime screen's form).
  *
- * `blurb` is a function of the companion name for compact contexts; `description`
- * and `setup` back the two-column info window opened by a tile's (i) button.
+ * `description` is the body of the hover info popup on each picker tile
+ * (companion-name aware, 1-2 sentences). Setup instructions live with each
+ * game's own surface (e.g. the Minecraft setup window), not here.
  */
 
 export interface GameDef {
   id: string;
   name: string;
   available: boolean;
+  /** Coming-soon placeholder: dimmed, unclickable, "Coming soon" caption. */
+  soon?: boolean;
   /** Optional tile background art (renderer-relative path served from public/). */
   image?: string;
-  /** Studio / maker, shown under the name in the info window. */
-  studio: string;
-  /** Longer description for the info window (companion-name aware). */
+  /** Brief description for the hover info popup (companion-name aware). */
   description: (companionName: string) => string;
-  /** Ordered "how to set up" steps for the info window. */
-  setup: string[];
-  /** Short one-liner for compact contexts, given the companion's display name. */
-  blurb: (companionName: string) => string;
 }
 
 export const GAMES: GameDef[] = [
@@ -30,30 +27,51 @@ export const GAMES: GameDef[] = [
     name: 'Minecraft',
     available: true,
     image: './img/game-minecraft.webp',
-    studio: 'Mojang Studios',
     description: (name) =>
       `${name} joins your Minecraft world as a real player, walking beside you, ` +
-      `mining, building, and talking as you explore together over your LAN.`,
-    setup: [
-      'Open Minecraft: Java Edition and load a single-player world.',
-      'Pause and choose "Open to LAN", then "Start LAN World".',
-      'Set up your companion\'s Minecraft skin when Sei prompts you.',
-      'Click Minecraft here and your companion joins your open world.',
-    ],
-    blurb: (name) => `Summon ${name} into your LAN world to play and build together.`,
+      `mining, building, and talking as you explore together.`,
   },
   {
-    id: 'more',
-    name: 'More coming soon!',
+    id: 'chess',
+    name: 'Chess',
+    available: true,
+    image: './img/chess-launch.png',
+    description: (name) =>
+      `A classic game of chess against ${name}, right inside your chat. ` +
+      `Untimed, so take as long as you like.`,
+  },
+  {
+    id: 'movie',
+    name: 'Watch Together',
     available: false,
-    studio: '',
+    soon: true,
+    image: './img/game-movie.jpg',
+    description: (name) =>
+      `Movie night with ${name}: watch something together and talk about it as it plays.`,
+  },
+  {
+    id: 'focus',
+    name: 'Focus',
+    available: false,
+    soon: true,
+    image: './img/game-focus.jpg',
+    description: (name) =>
+      `A quiet co-working session. ${name} keeps you company while you get things done.`,
+  },
+  {
+    id: 'backseat',
+    name: 'Backseat',
+    available: false,
+    soon: true,
+    image: './img/game-backseat.svg',
+    description: (name) =>
+      `${name} watches you play any game and reacts like a friend on the couch.`,
+  },
+  {
+    id: 'suggest',
+    name: 'Suggest a game',
+    available: true,
     description: () =>
-      'More ways to play together are on the way. New games will show up here as they land.',
-    setup: [],
-    blurb: () => 'More games are coming soon.',
+      'Tell us what you want to play together. Suggestions go straight to the team.',
   },
 ];
-
-export function findGame(gameId: string): GameDef | undefined {
-  return GAMES.find((g) => g.id === gameId);
-}

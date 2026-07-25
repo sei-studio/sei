@@ -1,0 +1,143 @@
+/* ChessBoard3D — chrome around the 3D chess viewport (Summoning Terminal).
+ * The scene inside the canvas is an art asset (wood, felt, glows) and paints
+ * its own colors; everything HTML here uses design tokens. */
+
+/* Full-bleed: the panel owns the edges now, so no border or min-height here. */
+.viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg2);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.viewport canvas {
+  display: block;
+}
+
+/* ── Turn indicator ──────────────────────────────────────────────────────── */
+/* De-boxed (260721): plain text over the scene. The 3D table is always dark
+ * wood, so like the scene's own palette these are fixed light art colors (not
+ * theme tokens); the shadow keeps them legible on the lighter wood streaks. */
+.topCenter {
+  position: absolute;
+  top: var(--space-sm);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.turnChip {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: rgba(242, 234, 217, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+.eloTag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  color: rgba(242, 234, 217, 0.5);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+/* "{Name} is thinking…" shimmer — a light band sweeping across the label. */
+.thinking {
+  background: linear-gradient(
+    90deg,
+    rgba(242, 234, 217, 0.55) 20%,
+    var(--accent) 50%,
+    rgba(242, 234, 217, 0.55) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: chessShimmer 1.6s linear infinite;
+}
+
+@keyframes chessShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking {
+    animation: none;
+    color: rgba(242, 234, 217, 0.62);
+    background: none;
+  }
+}
+
+/* ── Promotion picker ────────────────────────────────────────────────────── */
+.promoScrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--window) 55%, transparent);
+  z-index: 8;
+}
+
+.promoCard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+}
+
+.promoTitle {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+}
+
+.promoRow {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.promoBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 52px;
+  height: 52px;
+  padding: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  background: var(--bg2);
+  cursor: pointer;
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+}
+
+.promoBtn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}

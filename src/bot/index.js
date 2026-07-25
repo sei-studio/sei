@@ -1,27 +1,21 @@
-// src/bot/index.js — bot entry, dual-mode.
+// src/bot/index.js — bot entry (forked by Electron main).
 //
-// Two startup paths:
-//   1. Forked by Electron main (process.parentPort exists)
-//      → wait for {type:'init', character, apiKey, lanPort, userDataDir,
-//        mc_username, preferred_name} message over MessagePort, build a
-//        ConfigSchema-conformant config, and start the bot. Lifecycle events
-//        (BotLifecycle vocabulary, src/shared/ipc.ts D-19) are posted back
-//        on the same port AND mirrored to stdout for the rolling log file.
-//   2. Run directly by CLI (`node src/bot/index.js`) — process.parentPort
-//      is undefined → existing behavior preserved: discover LAN, loadConfig
-//      from ./config.json, start the bot.
+// Startup: wait for {type:'init', character, apiKey, lanPort, userDataDir,
+// mc_username, preferred_name} message over MessagePort, build a
+// ConfigSchema-conformant config, and start the bot. Lifecycle events
+// (BotLifecycle vocabulary, src/shared/ipc.ts D-19) are posted back on the
+// same port AND mirrored to stdout for the rolling log file.
+// (260722: the standalone `sei` CLI path was removed; the bot only runs as a
+// utilityProcess now, so it never calls discoverLanPort — main hands the
+// cached LAN port over per CONTEXT D-25 / Pitfall 6.)
 //
 // Sources:
 //   - RESEARCH §Pattern 1 (bot side) — parentPort message flow
 //   - CONTEXT D-15 (mineflayer ONLY in utilityProcess), D-18 (config over
 //     MessagePortMain), D-19 (lifecycle vocabulary), D-25 (bot does NOT
 //     re-discover LAN during summon — main hands the cached port over)
-//   - Pitfall 6 (bot must NOT call discoverLanPort during summon) — the
-//     legacy CLI bootstrap is gated behind `!process.parentPort` so the
-//     Electron path never reaches the discovery call.
 
-import { loadConfig, ConfigSchema } from './config.js'
-import { discoverLanPort } from './adapter/minecraft/lanDiscovery.js'  // CLI path only
+import { ConfigSchema } from './config.js'
 import { createBotInstance, resolveServerVersion } from './adapter/minecraft/connect.js'
 
 // The Electron path hands the bot `version: 'auto'`. start() resolves that to an
@@ -33,6 +27,7 @@ import { createBotInstance, resolveServerVersion } from './adapter/minecraft/con
 // it produced protocol kicks. Ping-then-pass-explicit gets both: auto-match
 // without the handshake-detect failure mode.
 import { createMinecraftAdapter } from './adapter/minecraft/index.js'
+import { createDashboardTelemetry } from './adapter/minecraft/dashboard/telemetry.js'
 import { start as startBrain } from './brain/index.js'
 
 const logger = {
@@ -42,10 +37,8 @@ const logger = {
 }
 
 // ─── Core start() — config-in, {stop}-out ─────────────────────────────────
-// Refactored from the prior CLI-internal helper so both startup paths share
-// one entrypoint: the CLI builds `config` via loadConfig+discoverLanPort, the
-// Electron path receives `config` over MessagePort. Behavior is identical
-// from this function down — connect, attach adapter, start brain.
+// The Electron path receives `config` over MessagePort; from here down it is
+// connect, attach adapter, start brain.
 //
 // 260508-nkk: an optional `hooks` arg lets callers receive (a) `onReady()`
 // when mineflayer's actual `'spawn'` event fires (NOT just when bringUp
@@ -55,12 +48,16 @@ const logger = {
 // to emit `summon-ready` / `error` lifecycle messages that reflect the bot's
 // actual world state rather than just "brain initialized."
 export async function start(config, hooks = {}) {
-  const { onReady = () => {}, onConnectError = () => {}, onTerminalError = null, onAuthExpired = null } = hooks
+  const { onReady = () => {}, onConnectError = () => {}, onTerminalError = null, onAuthExpired = null, onDashboard = null } = hooks
   const mc = config.adapter.minecraft
 
   let _brain = null
   let _bot = null
   let _adapter = null
+  // Minecraft dashboard (260721): telemetry loop, one per mineflayer instance
+  // (recreated on reconnect). The renderer's watching flag outlives instances.
+  let _dash = null
+  let _dashWatching = false
   let _stopped = false
   let _reconnectTimer = null
   // 260508-nkk: only forward the FIRST spawn → onReady; subsequent
@@ -158,6 +155,10 @@ export async function start(config, hooks = {}) {
         // adapter still has dangling listeners on a dead mineflayer instance.
         try { _adapter?.detach?.() } catch {}
         _adapter = null
+        // Dashboard telemetry is bound to the dead instance — a reconnect
+        // creates a fresh one (bringUp) with the same watching flag.
+        try { _dash?.stop() } catch {}
+        _dash = null
         _bot = null
         clearTimeout(_reconnectTimer)
 
@@ -305,6 +306,14 @@ export async function start(config, hooks = {}) {
     // at all — the filter can only remove tools, not add them (15-VERIFICATION
     // gap, VIS-02).
     _adapter = createMinecraftAdapter({ bot: _bot, config, visionEnabled: true })
+    // Minecraft dashboard (260721): telemetry for THIS mineflayer instance.
+    // Emits nothing until the renderer flags itself watching (setDashboardWatch
+    // below); the flag is re-applied across reconnects.
+    if (typeof onDashboard === 'function') {
+      try { _dash?.stop() } catch {}
+      _dash = createDashboardTelemetry({ bot: _bot, emit: onDashboard, logger })
+      if (_dashWatching) _dash.setWatching(true)
+    }
     // Keep the brain local until we've confirmed the connection survived the
     // startBrain await. onEnd (a fast-failing reconnect, or the user closing
     // the world) can fire DURING this await — it nulls _bot and _adapter. If
@@ -322,6 +331,9 @@ export async function start(config, hooks = {}) {
       // Same emit path as onSeiChatReply; emitLifecycle guards the port (a CLI
       // run has no port and just logs). Non-throwing.
       onAction: (payload) => {
+        // Minecraft dashboard (260721): the telemetry loop translates the
+        // current tool into the activity line and emits on change.
+        try { _dash?.setAction(payload?.name ?? null, payload?.args) } catch {}
         try {
           emitLifecycle({ type: 'action', name: payload?.name ?? null, args: payload?.args })
         } catch {}
@@ -368,6 +380,8 @@ export async function start(config, hooks = {}) {
     async stop() {
       _stopped = true
       clearTimeout(_reconnectTimer)
+      try { _dash?.stop() } catch {}
+      _dash = null
       if (_brain) {
         try { await _brain.stop() } catch {}
       }
@@ -468,6 +482,17 @@ export async function start(config, hooks = {}) {
      */
     visionCapable() {
       try { return _brain?.visionCapable?.() === true } catch { return false }
+    },
+    /**
+     * Minecraft dashboard (260721): the renderer's visibility flag, forwarded
+     * from the parentPort {type:'dashboard-watch'} handler. NOT a brain
+     * passthrough — telemetry lives on the adapter side of the seam
+     * (portForwarders.test.js exempts it). The flag is remembered so a
+     * reconnect's fresh telemetry instance resumes in the same state.
+     */
+    setDashboardWatch(active) {
+      _dashWatching = active === true
+      try { _dash?.setWatching(_dashWatching) } catch {}
     },
   }
 }
@@ -782,6 +807,12 @@ async function bootstrapWithInit(initData) {
       },
       // 260618: reactive JWT recovery — bot → main "send me a fresh token".
       onAuthExpired: requestJwtRefresh,
+      // Minecraft dashboard (260721): telemetry snapshots go straight up the
+      // port. Deliberately NOT emitLifecycle — its stdout mirror would spam
+      // the rolling log with a ~1.5KB base64 minimap every 2s.
+      onDashboard: (snapshot) => {
+        try { initPort?.postMessage({ type: 'dashboard', snapshot }) } catch {}
+      },
       onConnectError: (err) => {
         const message = String((err && err.message) || err)
         emitLifecycle({
@@ -962,6 +993,12 @@ if (process.parentPort) {
             // and in-game chat stays silent; each turn carries the voice-call
             // primer at the start of its prompt.
             try { _running?.setVoiceCall?.(data.active === true) } catch {}
+          } else if (data && data.type === 'dashboard-watch') {
+            // Minecraft dashboard (260721): the renderer's dashboard surface
+            // went visible (active:true) or hidden (active:false). While
+            // visible the telemetry loop samples the minimap and posts
+            // {type:'dashboard'} snapshots back up this port.
+            try { _running?.setDashboardWatch?.(data.active === true) } catch {}
           } else if (data && data.type === 'voice-call-greet') {
             // Voice calls (260705): the renderer's call pipeline just went live
             // — ask the brain to speak first (say() routes into the call).
@@ -1044,23 +1081,6 @@ if (process.parentPort) {
   })
 }
 
-// ─── CLI path (existing behavior, gated behind !parentPort) ──────────────
-// Pitfall 6: `discoverLanPort` is reachable ONLY when this guard holds —
-// never when summoned by Electron main (which posts the cached lanPort
-// over MessagePort per CONTEXT D-25).
-if (!process.parentPort) {
-  // Pitfall 6 lexical guard: `discoverLanPort` is reachable ONLY here.
-  // The Electron path (`if (process.parentPort)` above) never falls through.
-  if (import.meta.url === `file://${process.argv[1]}`) {
-    ;(async () => {
-      logger.info('Searching for an open LAN world...')
-      const { port, motd } = await discoverLanPort({ timeoutMs: 5000 })
-      logger.info(`Found LAN world "${motd}" on port ${port}`)
-      const config = loadConfig('./config.json', { port, motd })
-      await start(config)
-    })().catch((err) => {
-      console.error(`[sei] Startup failed: ${err.message}`)
-      process.exit(1)
-    })
-  }
-}
+// (260722: the standalone CLI path that lived here — discoverLanPort +
+// loadConfig('./config.json') behind a !process.parentPort guard — was
+// removed. The bot only starts as an Electron utilityProcess.)

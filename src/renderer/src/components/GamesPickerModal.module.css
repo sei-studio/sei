@@ -53,7 +53,7 @@
   overflow-y: auto;
 }
 
-/* Tile = borderless surface card; the (i) button overlays its top-right. */
+/* Tile = borderless surface card; the (i) hint overlays its bottom-right. */
 .tile {
   position: relative;
   background: var(--surface-2);
@@ -85,8 +85,12 @@
   );
 }
 
-.tileImage:not(.tileLocked):hover {
+.tileImage:hover {
   filter: brightness(1.08);
+}
+
+.tileImage.tileLocked:hover {
+  opacity: 1;
 }
 
 /* Name pinned bottom-left over the scrim, white regardless of theme. */
@@ -148,10 +152,35 @@
   letter-spacing: 0.01em;
 }
 
-/* Top-right (i) — borderless quiet icon button (→ accent on hover). */
-.infoBtn {
-  -webkit-appearance: none;
-  appearance: none;
+/* Coming-soon image tiles keep their art readable under the lock dim. */
+.tileImage.tileLocked {
+  opacity: 0.82;
+}
+
+/* "SOON" tag on placeholder tiles: same corner box as the (i) affordance
+ * (26px tall, space-sm insets) so its bottom and left line up with the
+ * tooltip across tiles. Rides above the image scrim. */
+.soonTag {
+  position: absolute;
+  bottom: var(--space-sm);
+  left: calc(100% - 26px - var(--space-sm));
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  z-index: 1;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Bottom-right (i) — hover-only info affordance (not clickable; it anchors
+ * the hover popup below). Quiet, borderless, → accent on hover. */
+.infoHint {
   position: absolute;
   bottom: var(--space-sm);
   right: var(--space-sm);
@@ -160,24 +189,82 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border: none;
-  background: transparent;
   color: var(--muted);
-  cursor: pointer;
+  cursor: default;
   transition: color 120ms var(--ease);
 }
 
-.infoBtn:hover {
+.infoHint:hover,
+.infoHint:focus-visible {
   color: var(--accent);
 }
 
 /* Over art, the (i) sits above the scrim and reads white. */
-.tileImage .infoBtn {
+.tileImage .infoHint {
   z-index: 2;
   color: rgba(255, 255, 255, 0.85);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
-.tileImage .infoBtn:hover {
+.tileImage .infoHint:hover,
+.tileImage .infoHint:focus-visible {
   color: #fff;
+}
+
+/* ── Hover info popup ──────────────────────────────────────────────────────
+ * A sibling of .modal inside the fixed scrim, so the modal's overflow never
+ * clips it. Purely informational: no pointer events, fades in, and the fade
+ * is dropped under prefers-reduced-motion. */
+.infoPop {
+  position: fixed;
+  z-index: 101;
+  pointer-events: none;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  animation: infoPopFade 140ms var(--ease) both;
+}
+
+.infoPopArt {
+  height: 110px;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.infoPopBody {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.infoPopTitle {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.infoPopText {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+@keyframes infoPopFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infoPop {
+    animation: none;
+  }
 }

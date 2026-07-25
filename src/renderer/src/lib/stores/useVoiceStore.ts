@@ -33,7 +33,7 @@
  * call that ends the call (after the goodbye drains); on a group call it just
  * drops that one companion.
  *
- * Mute/deafen live in useUiStore (shared with the MinimizedCall widget); we
+ * Mute/deafen live in useUiStore (shared with the CallMiniBar); we
  * subscribe and forward them. Half-duplex: while companion audio is audible the
  * mic is held, so the companions never hear themselves.
  */
@@ -68,7 +68,7 @@ interface VoiceState {
    * Empty when no call is open. */
   participants: string[];
   /** Primary participant (participants[0]); kept for the surfaces that key off a
-   * single character (VoiceCallScreen dial guard, MinimizedCall). null = no call. */
+   * single character (VoiceCallScreen dial guard, CallMiniBar). null = no call. */
   callCharacterId: string | null;
   status: CallStatus;
   /** Any companion audio currently playing (drives the minimized "on call" pulse). */
@@ -1233,6 +1233,17 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     },
   };
 });
+
+/**
+ * Chess reveal gating (260710): whether the call's speech pipeline is fully
+ * drained — no TTS fetch in flight AND nothing playing. Same predicate the
+ * solo hang-up drain uses (maybeFinishRemoteEnd). Module-level because
+ * pendingTts / queue are non-reactive session internals; poll it (the chess
+ * useAiMoveReveal hook does) rather than subscribing.
+ */
+export function voiceTtsDrained(): boolean {
+  return pendingTts === 0 && !(queue?.speaking() ?? false);
+}
 
 // Dev-only (Vite HMR): let the STALE instance release the world before the
 // fresh module re-registers everything (see the single-call notes).

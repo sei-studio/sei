@@ -1,0 +1,70 @@
+/* CallControls — mute / deafen / hang-up PILLS, shared by the fullscreen
+ * call view (lg) and the docked call section (sm). 260721 redesign: Discord-ish
+ * rounded-rectangle pills in a tight row — filled shapes, larger hit areas, no
+ * thin outline circles. Colors via tokens; neutral fills are text-tinted
+ * color-mix so they read on both themes. */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.controlsSm {
+  gap: var(--space-xs);
+}
+
+.pillBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+
+.pillBtnSm {
+  width: 48px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.pillBtn:hover {
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+/* Toggled ON (muted / deafened): inverted fill so the state reads instantly
+ * (Discord's lit toggle), same in both themes. */
+.pillBtnToggled {
+  background: var(--text);
+  color: var(--window);
+}
+
+.pillBtnToggled:hover {
+  background: var(--text);
+  color: var(--window);
+  opacity: 0.88;
+}
+
+/* The distinct red hang-up pill, slightly wider than the toggles. */
+.pillBtnHangup {
+  width: 76px;
+  background: var(--red);
+  color: var(--accent-text);
+}
+
+.pillBtnSm.pillBtnHangup {
+  width: 58px;
+}
+
+.pillBtnHangup:hover {
+  background: var(--red-strong);
+  color: var(--accent-text);
+}

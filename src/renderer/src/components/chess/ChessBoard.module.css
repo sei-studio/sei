@@ -1,0 +1,249 @@
+/* ChessBoard — board surface, highlights, pieces, arrows (Summoning Terminal).
+ * Token colors only; the piece SVGs themselves are art assets (see pieces.tsx).
+ * Geometry is all percentages so the board stays crisp at any size. */
+
+.board {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+  /* The light-square tone; dark squares wash accent-soft over it. */
+  background: var(--surface-2);
+}
+
+.squares {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+}
+
+.sqLight,
+.sqDark {
+  position: relative;
+}
+
+.sqLight {
+  background: transparent;
+}
+
+/* Periwinkle-washed dark squares: white + soft accent in light theme, deep
+ * navy + soft accent in dark. Reads as the app's own "light blue" board. */
+.sqDark {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 200px var(--accent-soft);
+}
+
+/* ── Coordinates (top-left ranks, bottom-right files, lichess-style) ─────── */
+.coordRank,
+.coordFile {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: clamp(7px, 1.2vw, 10px);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.coordRank {
+  top: 2px;
+  left: 3px;
+}
+
+.coordFile {
+  bottom: 1px;
+  right: 3px;
+}
+
+/* ── Overlay layers ──────────────────────────────────────────────────────── */
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.layer > * {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+}
+
+.lastMove {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 200px var(--accent-soft);
+}
+
+.selected {
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+
+.dragOver {
+  box-shadow: inset 0 0 0 4px var(--accent);
+  opacity: 0.55;
+}
+
+/* Checked king: soft red radial burn under the piece. */
+.check {
+  background: radial-gradient(
+    circle at center,
+    var(--red) 0%,
+    color-mix(in srgb, var(--red) 55%, transparent) 42%,
+    transparent 72%
+  );
+  opacity: 0.7;
+}
+
+/* Legal-move hints: dot on empty squares, ring on captures. */
+.moveDot::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30%;
+  height: 30%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.captureRing::after {
+  content: '';
+  position: absolute;
+  inset: 4%;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  opacity: 0.65;
+}
+
+/* ── Pieces ──────────────────────────────────────────────────────────────── */
+.piece {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5%;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.piece svg {
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+}
+
+/* Dark theme: give the black pieces a faint light halo so they never sink
+ * into the navy dark squares. */
+:global([data-theme='dark']) .pieceBlack svg {
+  filter: drop-shadow(0 0 1px rgba(233, 231, 225, 0.45)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
+}
+
+.pieceHidden {
+  opacity: 0;
+}
+
+/* One-shot slide from the origin square (offsets set inline as --slide-x/y). */
+.pieceSlide {
+  animation: chessSlide 320ms var(--ease) both;
+  z-index: 3;
+}
+
+@keyframes chessSlide {
+  from {
+    transform: translate(var(--slide-x, 0), var(--slide-y, 0));
+  }
+  to {
+    transform: translate(0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pieceSlide {
+    animation: none;
+  }
+}
+
+/* Cursor-following copy of the dragged piece. */
+.ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12.5%;
+  height: 12.5%;
+  padding: 1.5%;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 6;
+  will-change: transform;
+  opacity: 0.9;
+}
+
+.ghostHidden {
+  display: none;
+}
+
+/* ── Planning arrows + circles ───────────────────────────────────────────── */
+.arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.arrowLine {
+  stroke: var(--accent);
+  stroke-width: 0.18;
+  stroke-linecap: round;
+  opacity: 0.6;
+}
+
+.arrowHead {
+  fill: var(--accent);
+  opacity: 0.6;
+}
+
+.circleMark {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.07;
+  opacity: 0.7;
+}
+
+/* ── Promotion picker ────────────────────────────────────────────────────── */
+.promoScrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--window) 62%, transparent);
+  z-index: 8;
+}
+
+.promoBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  padding: 4%;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+  z-index: 9;
+  transition: background 120ms var(--ease);
+}
+
+.promoBtn:hover {
+  background: var(--accent-soft);
+}

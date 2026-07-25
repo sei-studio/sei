@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 320" preserveAspectRatio="xMidYMid slice">
+  <!-- Chess tile art: periwinkle-on-dark, Summoning Terminal look. -->
+  <defs>
+    <linearGradient id="bgw" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101a2e"/>
+      <stop offset="1" stop-color="#04070f"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7fb0ff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#7fb0ff" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <rect width="560" height="320" fill="url(#bgw)"/>
+
+  <!-- Receding board plane -->
+  <g opacity="0.9">
+    <!-- 8x4 visible board slab, drawn in soft perspective -->
+    <g transform="translate(60 118) skewX(-14)">
+      <g>
+        <rect x="0" y="0" width="480" height="176" fill="#0a1424" stroke="#7fb0ff" stroke-opacity="0.35" stroke-width="2"/>
+        <!-- dark squares -->
+        <g fill="url(#fade)">
+          <rect x="60" y="0" width="60" height="44"/>
+          <rect x="180" y="0" width="60" height="44"/>
+          <rect x="300" y="0" width="60" height="44"/>
+          <rect x="420" y="0" width="60" height="44"/>
+          <rect x="0" y="44" width="60" height="44"/>
+          <rect x="120" y="44" width="60" height="44"/>
+          <rect x="240" y="44" width="60" height="44"/>
+          <rect x="360" y="44" width="60" height="44"/>
+          <rect x="60" y="88" width="60" height="44"/>
+          <rect x="180" y="88" width="60" height="44"/>
+          <rect x="300" y="88" width="60" height="44"/>
+          <rect x="420" y="88" width="60" height="44"/>
+          <rect x="0" y="132" width="60" height="44"/>
+          <rect x="120" y="132" width="60" height="44"/>
+          <rect x="240" y="132" width="60" height="44"/>
+          <rect x="360" y="132" width="60" height="44"/>
+        </g>
+        <!-- grid hairlines -->
+        <g stroke="#7fb0ff" stroke-opacity="0.18" stroke-width="1">
+          <path d="M60 0v176M120 0v176M180 0v176M240 0v176M300 0v176M360 0v176M420 0v176"/>
+          <path d="M0 44h480M0 88h480M0 132h480"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Knight silhouette (cburnett outline, scaled) -->
+  <g transform="translate(292 34) scale(4.6)">
+    <g fill="#101a2e" stroke="#7fb0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/>
+      <path d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.042-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4.003 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-.994-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-1.992 2.5-3c1 0 1 3 1 3"/>
+    </g>
+    <path d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0z" fill="#7fb0ff"/>
+  </g>
+
+  <!-- Pawn silhouette -->
+  <g transform="translate(150 96) scale(3.1)">
+    <path d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z" fill="#7fb0ff" fill-opacity="0.9" stroke="#7fb0ff" stroke-width="1.5"/>
+  </g>
+
+  <!-- Soft glow accent -->
+  <circle cx="420" cy="70" r="90" fill="#7fb0ff" opacity="0.06"/>
+</svg>

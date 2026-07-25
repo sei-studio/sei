@@ -2,7 +2,7 @@
  * SetupWizardModal — first-launch / re-runnable Minecraft skin setup wizard.
  *
  * Top-level shell + step machine for the wizard. Renders a scrim + centered
- * 680×520 modal over the existing desktop wallpaper (matches LanModal scrim
+ * 680×520 modal over the existing desktop wallpaper (matches the shared scrim
  * alpha), traps focus inside the modal, dismisses on ESC, and crossfades
  * between steps with a 200ms opacity tween (motion-safe).
  *

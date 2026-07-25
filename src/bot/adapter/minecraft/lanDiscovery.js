@@ -1,6 +1,6 @@
 // src/bot/adapter/minecraft/lanDiscovery.js
 //
-// One-shot LAN discovery used by the CLI (src/bot/cli/index.js cmdStart) and
+// One-shot LAN discovery (260722: former CLI user removed) and
 // the CLI bot bootstrap path in src/bot/index.js (when process.parentPort is
 // undefined). The Electron main process uses src/main/lanWatcher.ts (a
 // long-lived watcher); the bot child does NOT call discoverLanPort during

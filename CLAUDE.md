@@ -191,11 +191,61 @@ Player chat (P1) preempts any non-P0 work mid-action. Adapter wiring lives in
 > boundaries" — misleading. The *write* is LLM-driven; the *compaction* is
 > mechanical (byte threshold).
 
-The bot has **two entry paths** (`src/bot/index.js`): forked by Electron (waits
-for an `init` message over the port) or run standalone via the `sei` CLI
-(`src/bot/cli/index.js`, discovers LAN + reads `./config.json`).
+The bot has **one entry path** (`src/bot/index.js`): forked by Electron, it
+waits for an `init` message over the port. (The standalone `sei` CLI was
+removed 260722.)
 
 ---
+
+## Chess minigame (260710)
+
+An in-app untimed chess game against the character, launched from the "Play
+together" tiles. **Mutually exclusive with a Minecraft summon** per character.
+
+- **Engine:** `vendor/cce-1` (public repo `sei-studio/cce-1`, AGPL-3.0) — the
+  Character Chess Engine: Maia-3 ONNX (Elo-conditioned human move
+  distributions, via onnxruntime-node) + tempered Gumbel-top-4 sampling +
+  blunder/blinder layers + Stockfish WASM (bundled, 7 MB) + plain-language
+  translation. The engine fixes STRENGTH; the LLM picks among 4 candidates and
+  can only express STYLE. The 21 MB Maia model (`maia3-5m.onnx`, our own ONNX
+  export of the official AGPL-3.0 Maia3-5M checkpoint from CSSLab/maia3, via
+  cce-1 `scripts/export-maia3.py`) is NOT bundled — it downloads on first
+  chess launch (`src/main/chess/modelStore.ts`, cce-1 GitHub release asset,
+  cached in userData; dev machines use `~/.sei-dev/cce/`).
+- **Service:** `src/main/chess/chessService.ts` owns the authoritative board
+  (chess.js) + the LLM turn runner (chat-brain path, tools `play` /
+  `propose_draw` / `forfeit`; illegal moves get a retry tool_result). Since
+  260714 turns ride the game-agnostic FSM core (`src/bot/brain/fsm.js`, one
+  queue per session): P1 player chat (consecutive sends coalesce into ONE
+  reply turn), P2 `your_move` (the decision — atomic, never aborted or
+  re-run), P3 idle ticks (sampled 25–90s with silent-streak backoff; the
+  prompt says a line is optional and silence is normal). The decided move
+  enters a presentation HOLD: a sampled prethink think-delay (cce-1 `think`
+  signals: Maia policy entropy + candidate eval closeness → log-normal, so
+  most moves answer fast with occasional tanks) before commentary +
+  `pendingAiMove` present, then the renderer's 2s-quiet postthink gate
+  (`useAiMoveReveal` settle window) before the ack commits. A player chat
+  during the hold NEVER rolls the move back: the reply turn is told the
+  queued move and can revise it (`play()` again, free — same cached
+  candidates) or hold it back (`wait()`: pendingAiMove retracts, only player
+  messages/idle ticks wake it, cap disarmed). A hard cap (4 reply cycles or
+  45s, `CHESS_TIMING`) force-commits so chat spam cannot stall the game.
+  Move prompts carry translated last-two-ply delta sentences + move number,
+  never raw SAN history (the commentary-hallucination fix); table talk is
+  optional (a silent `play()` ends the turn). Protocol contract:
+  `src/shared/chessIpc.ts`.
+- **Chat routing:** while a game is open, `chat:send` is handled by
+  `handlePlayerChat` in the chess service (game-aware replies, queued at P1
+  on the session FSM), not the standalone chat brain.
+- **Profile:** per-character strength/style at `character.metadata.chess`
+  (`{elo 400-2000, styleNote, source auto|user}`) — auto-derived from the
+  persona by a one-off LLM call on first game
+  (`src/main/chess/chessProfile.ts`), user-editable in Edit companion → Games.
+- **UI:** `src/renderer/src/components/chess/` (board, panel, reveal-gating
+  hook) + `useChessStore`; the board opens as a right-side panel inside
+  ChatScreen, compressing chat to a narrow column.
+- **Packaging:** onnxruntime-node ships all-platform prebuilds; per-OS `files`
+  excludes in `electron-builder.yml` drop the foreign ones.
 
 ## Directory map
 
@@ -223,12 +273,11 @@ src/
     src/lib/stores/     Zustand stores (useAuthStore, useCreditsStore, ...)
     src/styles/tokens.css   design tokens (see below)
   bot/                  LLM brain + mineflayer (utilityProcess)
-    index.js            bot entry (forked or CLI)
+    index.js            bot entry (forked by Electron main)
     config.js           Zod config schema (iteration_cap, compaction, providers)
     registry.js         generic action registry
     brain/              orchestrator, fsm, llm/ providers, memory, prompts, anthropicClient
     adapter/minecraft/  mineflayer adapter: connect, behaviors, observers, registry
-    cli/                standalone `sei` CLI
   shared/               cross-process contracts
     ipc.ts              IPC channel + payload contracts
     characterSchema.ts  character Zod schema

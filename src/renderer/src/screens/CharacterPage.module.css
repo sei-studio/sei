@@ -1,7 +1,9 @@
-/* CharacterPage.module.css — full-bleed character detail (Party redesign §4.6).
- * Portrait bleeds off the right behind a left→right scrim; a left content panel
- * carries the crumb, name + IdTag, origin chip, share row, status line,
- * Description / Game tabs, and the deploy row. */
+/* CharacterPage.module.css — full-bleed character detail (Party redesign §4.6;
+ * 260721 static-info revision). Portrait bleeds off the right behind a
+ * left→right scrim; a left content panel carries the crumb, name + IdTag,
+ * Description / Game tabs (description card, stat boxes, share box), and the
+ * Chat + Play deploy row. Box-to-box vertical spacing is one token
+ * (--space-md) everywhere. */
 
 .root {
   position: relative;
@@ -87,7 +89,7 @@
   width: min(520px, 60%);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-md);
   padding: 18px 22px 24px 34px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -166,63 +168,6 @@
   outline: none;
 }
 
-/* ── Share row (Toggle + label) ──────────────────────────────────────── */
-.shareRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--text-2);
-}
-
-.shareLabel {
-  font-family: var(--sans);
-}
-
-/* ── Status line (online / connecting / errored) ─────────────────────── */
-.statusRow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.uptime {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--green);
-}
-
-.errDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--red);
-  box-shadow: 0 0 8px var(--red);
-}
-
-.statusLabel {
-  color: var(--red-strong);
-}
-
-.tryAgain {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent);
-  cursor: pointer;
-}
-
-.tryAgain:hover {
-  text-decoration: underline;
-}
-
 /* ── Tabs (mockup .pf-tab — underline on active) ─────────────────────── */
 .tabs {
   display: flex;
@@ -257,10 +202,12 @@
 }
 
 /* ── Pane (Description / Game) ───────────────────────────────────────── */
+/* One token gap between every box on the page (description card → stat
+   boxes → share box). */
 .pane {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-md);
   min-height: 0;
 }
 
@@ -322,7 +269,7 @@
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
+  gap: var(--space-md);
 }
 
 .stat {
@@ -345,6 +292,23 @@
   font-size: 14px;
   color: var(--text);
   white-space: nowrap;
+}
+
+/* ── Share box (Toggle + label) — same surface as a stat cell, sits under
+   the stat boxes on the Description tab. ──────────────────────────────── */
+.shareBox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  padding: 11px 12px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.shareLabel {
+  font-family: var(--sans);
 }
 
 /* ── Game tab: proactiveness control ─────────────────────────────────── */

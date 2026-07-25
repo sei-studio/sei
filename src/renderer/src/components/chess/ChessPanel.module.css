@@ -1,0 +1,479 @@
+/* ChessPanel — chess surface inside the chat screen (Summoning Terminal).
+ * Sharp edges, periwinkle accent, token colors only for chrome. Two looks:
+ *
+ *   Launch screen — minimal content (title, side picker, one button) over a
+ *   dark photo of the 3D board (./img/chess-launch.png) under a scrim; a
+ *   plain dark backdrop carries the look if the photo is missing.
+ *
+ *   Board — full-bleed 3D canvas with a DE-BOXED floating HUD: labels are
+ *   plain text with a soft shadow directly over the scene (no chips), only
+ *   the scrollable move list keeps a translucent backing for legibility.
+ *   Passive labels are pointer-events: none so they never block the board.
+ *
+ * The 3D table and the launch photo are always dark wood regardless of app
+ * theme, so text sitting directly on them uses fixed light art colors (same
+ * exemption as the scene palette in three/ChessScene.ts), not theme tokens. */
+
+.panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+}
+
+/* Over-scene ink (art colors, see header note). */
+.hud,
+.launch {
+  --scene-ink: rgba(242, 234, 217, 0.92);
+  --scene-ink-soft: rgba(242, 234, 217, 0.62);
+  --scene-text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+/* Translucent backing for interactive HUD clusters that need it (move list,
+ * confirm row, draw banner). Borderless: the tint alone separates them. */
+.hudChrome {
+  background: color-mix(in srgb, var(--window) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+/* ── Launch screen (pre-game, engine download, rematch pass) ────────────── */
+.launch {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  /* Art color: matches the 3D scene background so a missing photo still
+   * reads as the same dark table-room. */
+  background: #17100b;
+}
+
+.launchBg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.launchScrim {
+  position: absolute;
+  inset: 0;
+  /* Art scrim over the photo; heavier at the center-bottom where copy sits. */
+  background: linear-gradient(
+    180deg,
+    rgba(10, 7, 4, 0.45) 0%,
+    rgba(10, 7, 4, 0.55) 55%,
+    rgba(10, 7, 4, 0.7) 100%
+  );
+}
+
+.launchContent {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  text-align: center;
+}
+
+.launchTitle {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--scene-ink);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.launchHint {
+  margin: 0;
+  max-width: 320px;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.launchError {
+  margin: 0;
+  max-width: 320px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--red);
+  text-shadow: var(--scene-text-shadow);
+}
+
+/* Side picker: three inline text choices separated by slashes, no boxes. */
+.sideRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.sideSep {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.sideBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 2px var(--space-xs);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.sideBtn:hover:not(:disabled) {
+  color: var(--scene-ink);
+}
+
+.sideBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sideBtnActive,
+.sideBtnActive:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.progressWrap {
+  width: min(280px, 80%);
+}
+
+/* ── Board stage: canvas fills the panel, HUD floats above ──────────────── */
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.boardFill {
+  position: absolute;
+  inset: 0;
+}
+
+/* One passive layer; interactive HUD children opt back in. */
+.hud {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ── Top-left stack: icon controls above the opponent captured strip ────── */
+.hudTopLeft {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  max-width: 44%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+}
+
+/* Player captured strip, bottom-left. Lifted clear of the hover-revealed
+ * GameSurface bottom chrome strip; the var is set by GameSurface, the
+ * fallback keeps both sides in sync. */
+.hudBottomLeft {
+  position: absolute;
+  bottom: calc(var(--game-chrome-h, 56px) + var(--space-sm));
+  left: var(--space-sm);
+  max-width: 50%;
+}
+
+.capturedStrip {
+  padding: 0;
+}
+
+.capturedRow {
+  display: flex;
+  align-items: center;
+  min-height: 16px;
+}
+
+.capturedPiece {
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+  display: inline-flex;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+}
+
+.capturedDiff {
+  margin-left: var(--space-sm);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+}
+
+/* ── Move list, top-right (interactive: keeps a translucent backing) ────── */
+.hudTopRight {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  width: 148px;
+  max-height: 46%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  pointer-events: auto;
+}
+
+.moves {
+  composes: hudChrome;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-xs) 0;
+}
+
+.movesEmpty {
+  padding: var(--space-sm) var(--space-md);
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.moveRow {
+  display: grid;
+  grid-template-columns: 28px 1fr 1fr;
+  align-items: stretch;
+}
+
+.moveNum {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted-2);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: var(--space-sm);
+}
+
+.moveCell {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 3px var(--space-sm);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 100ms var(--ease), color 100ms var(--ease);
+}
+
+.moveCell:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.moveCellActive {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.moveCellEmpty {
+  display: block;
+}
+
+.backToLive {
+  -webkit-appearance: none;
+  appearance: none;
+  flex-shrink: 0;
+  border: none;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 4px var(--space-sm);
+  cursor: pointer;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+
+.backToLive:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* ── Controls: icon-only row inside the top-left stack ──────────────────── */
+/* Translucent glyph buttons over the scene (de-boxed HUD); labels live in
+ * data-tip tooltips + aria-labels. The resign confirm row appears inline. */
+.hudControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.ctrlBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--scene-ink-soft);
+  /* SVG strokes ignore text-shadow; drop-shadow keeps the glyph legible over
+   * bright board squares. */
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.ctrlBtn:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.ctrlBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ctrlDanger:hover:not(:disabled) {
+  color: var(--red);
+}
+
+.resignConfirm {
+  composes: hudChrome;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 2px var(--space-sm);
+}
+
+.resignLabel {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--red);
+}
+
+/* ── Draw offer, bottom-center (kept clear of the GameSurface chrome) ───── */
+.offerBanner {
+  composes: hudChrome;
+  position: absolute;
+  bottom: calc(var(--game-chrome-h, 56px) + var(--space-2xl));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+}
+
+.offerActions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.offerNote {
+  position: absolute;
+  bottom: calc(var(--game-chrome-h, 56px) + var(--space-2xl));
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+  white-space: nowrap;
+}
+
+/* ── Result, centered (text over the scene; only the buttons take input) ── */
+.hudResult {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(320px, 86%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.result {
+  text-align: center;
+}
+
+.resultTitle {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--scene-ink);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+}
+
+.resultWin .resultTitle {
+  color: var(--green);
+}
+
+.resultLoss .resultTitle {
+  color: var(--red);
+}
+
+.resultDraw .resultTitle {
+  color: var(--accent);
+}
+
+.resultDetail {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--scene-ink);
+  text-shadow: var(--scene-text-shadow);
+  margin-top: 2px;
+}
+
+.resultActions {
+  display: flex;
+  gap: var(--space-sm);
+  pointer-events: auto;
+}
+
+.modalBody {
+  margin: 0 0 var(--space-md);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+}

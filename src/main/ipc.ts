@@ -1071,6 +1071,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { sendChatMessage } = await import('./chat/chatService');
     const { isCallActive } = await import('./voice/callState');
     const inCall = isCallActive(args.characterId);
+    // Chess (260710): while a game is open, chat goes through the chess turn
+    // runner instead — the reply knows the board, and a message during the
+    // character's turn interrupts it (the turn reruns with an [interrupted]
+    // memo). Returns null when no active game, falling through as usual.
+    {
+      const chess = await import('./chess/chessService');
+      if (chess.isChessActive(args.characterId)) {
+        const handled = await chess.handlePlayerChat({
+          characterId: args.characterId,
+          text: args.text,
+          replyTo: args.replyTo,
+          voiceCall: inCall,
+        });
+        if (handled) return handled;
+      }
+    }
     // Fresh world-detection pass before the prompt is built (260703): the
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
     // Skipped mid-call — a live voice call cannot be opening a world, and this
@@ -1099,6 +1115,79 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         emitReply: (id, message) => deps.pushChatMessage?.(id, message),
       },
     );
+  });
+
+  // ── Chess minigame (260710) ──────────────────────────────────────────────
+  // Thin wrappers over src/main/chess/chessService (module state initialized
+  // from index.ts via initChessService). All character-scoped.
+  ipcMain.handle(IpcChannel.chess.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        playerColor: z.enum(['w', 'b', 'random']).optional(),
+      })
+      .parse(argsRaw);
+    const chess = await import('./chess/chessService');
+    return await chess.startChess(args.characterId, { playerColor: args.playerColor });
+  });
+  ipcMain.handle(IpcChannel.chess.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const chess = await import('./chess/chessService');
+    return chess.getChessState(id);
+  });
+  ipcMain.handle(IpcChannel.chess.move, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, uci: z.string().min(4).max(5) })
+      .parse(argsRaw);
+    const chess = await import('./chess/chessService');
+    return await chess.playerMove(args.characterId, args.uci);
+  });
+  ipcMain.handle(IpcChannel.chess.resign, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const chess = await import('./chess/chessService');
+    return await chess.resign(id);
+  });
+  ipcMain.handle(IpcChannel.chess.offerDraw, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const chess = await import('./chess/chessService');
+    return await chess.offerDraw(id);
+  });
+  ipcMain.handle(IpcChannel.chess.respondDraw, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, accept: z.boolean() }).parse(argsRaw);
+    const chess = await import('./chess/chessService');
+    return await chess.respondDraw(args.characterId, args.accept);
+  });
+  ipcMain.handle(IpcChannel.chess.rematch, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const chess = await import('./chess/chessService');
+    return await chess.rematch(id);
+  });
+  ipcMain.handle(IpcChannel.chess.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const chess = await import('./chess/chessService');
+    await chess.endChess(id);
+  });
+  ipcMain.handle(IpcChannel.chess.ackReveal, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, uci: z.string().min(4).max(5) }).parse(argsRaw);
+    const chess = await import('./chess/chessService');
+    return await chess.ackReveal(args.characterId, args.uci);
+  });
+
+  // ── Minecraft dashboard (260721) ──────────────────────────────────────────
+  // Thin wrappers over src/main/mcDashboard/mcDashboardService (module state
+  // initialized in main/index.ts) + the supervisor's watch-flag port message.
+  ipcMain.handle(IpcChannel.mcdash.get, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    // No live session → null, even if a stale cache entry survived teardown.
+    if (!deps.supervisor.isActive(id)) return null;
+    const { getMcDashboardSnapshot } = await import('./mcDashboard/mcDashboardService');
+    return getMcDashboardSnapshot(id);
+  });
+  ipcMain.handle(IpcChannel.mcdash.setWatching, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, watching: z.boolean() }).parse(argsRaw);
+    // No-op (false) when the character has no live session — the tile only
+    // renders while summoned, but a stop can race the unmount cleanup call.
+    deps.supervisor.setDashboardWatch(args.characterId, args.watching);
   });
 
   // ── Voice calls (260705) ──────────────────────────────────────────────────
@@ -2422,6 +2511,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.window.isMaximized, async (event): Promise<boolean> => {
     return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+  });
+  // Game-surface fullscreen button (260721). Returns the state the window is
+  // ENTERING (setFullScreen is async on macOS, so re-reading isFullScreen()
+  // immediately after would report the stale value).
+  ipcMain.handle(IpcChannel.window.fullscreenToggle, async (event): Promise<boolean> => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return false;
+    const next = !win.isFullScreen();
+    win.setFullScreen(next);
+    return next;
+  });
+  ipcMain.handle(IpcChannel.window.isFullscreen, async (event): Promise<boolean> => {
+    return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
   });
 
   // === Phase 13 — Proxy + billing + credits (PROXY-11 + D-57) ===

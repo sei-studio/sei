@@ -15,7 +15,8 @@
  *     reads its full command line.
  *   - The command line carries unambiguous loader markers: Fabric's
  *     `net.fabricmc.loader` main class, Forge's `cpw.mods.bootstraplauncher`,
- *     NeoForge's `neoforge` artifacts, Lunar's `.lunarclient` install paths.
+ *     NeoForge's `neoforge` artifacts, Quilt's `org.quiltmc` classes, Lunar's
+ *     `.lunarclient` install paths.
  *   - Deliberately NO bare 'forge' marker: CurseForge instance paths contain
  *     "curseforge" even when the instance itself is vanilla.
  *
@@ -46,6 +47,9 @@ export function classifyCmdline(cmdline: string): LanHostClient {
     return 'lunar';
   }
   if (c.includes('neoforge')) return 'neoforge';
+  // Quilt before Fabric: Quilt Loader bundles Fabric compatibility layers, so
+  // a Quilt process's classpath usually carries net.fabricmc markers too.
+  if (c.includes('org.quiltmc') || c.includes('quilt-loader')) return 'quilt';
   if (c.includes('net.fabricmc') || c.includes('fabric-loader')) return 'fabric';
   if (
     c.includes('cpw.mods.bootstraplauncher') ||
@@ -75,11 +79,13 @@ function run(cmd: string, args: string[]): Promise<string> {
   });
 }
 
-/** Read a process's full command line, or '' when unavailable. */
-async function cmdlineForPid(pid: number): Promise<string> {
+/** Read a process's full command line, or '' when unavailable. Exported so
+ *  lanWatcher can read it ONCE and feed both the client classifier and the
+ *  Sei-skin-setup inspector (hostSetup.ts) without a second subprocess. */
+export async function cmdlineForPid(pid: number | null): Promise<string> {
   // Defense in depth: pid is parsed from lsof/netstat as a positive integer,
   // but it lands in a subprocess argument, so re-validate here.
-  if (!Number.isInteger(pid) || pid <= 0) return '';
+  if (pid == null || !Number.isInteger(pid) || pid <= 0) return '';
   try {
     if (process.platform === 'win32') {
       return await run('powershell.exe', [

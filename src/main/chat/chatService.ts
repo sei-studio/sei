@@ -18,6 +18,7 @@ import { getCharacter, patchCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
 import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
 import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
+import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isCallActive } from '../voice/callState';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import { clampChatLanguage } from '../../shared/chatLanguage';
@@ -181,19 +182,28 @@ export function takeSentences(buf: string): { sentences: string[]; rest: string 
 }
 
 /**
- * Transcript-continuation stop (260722). Live capture: a voice-call reply turn
- * kept generating past the companion's own lines — a fabricated player turn
- * ("Human: [22 Jul 11:32] *...*") followed by an invented direction — and the
- * whole continuation was persisted as voice rows and SPOKEN by TTS, because a
- * turn runner treats the model's text output as the companion's speech. Each
- * marker here is a line-start token only the OTHER side of the transcript ever
- * writes (the pretraining Human/Assistant convention, the summarizer's Player
- * label), so generation ends the instant the model starts writing somebody
- * else's turn: the fabricated text never exists to persist or speak. This is
- * API-level plumbing (stop_sequences), not an output scrub — nothing legitimate
- * is removed. Every turn that persists or speaks reply text must pass these.
+ * Transcript-continuation stop (260722). Live capture: during a voice-call
+ * chess game, Lyra's chat-reply turn kept generating past her own lines — a
+ * fabricated player turn ("Human: [22 Jul 11:32] *plays Nc6*") followed by an
+ * invented game direction ("(Lyra, it is now your turn to move...)") — and the
+ * whole continuation was persisted as voice rows and SPOKEN by TTS, because
+ * every turn runner treats the model's text output as the companion's speech.
+ * Each marker here is a line-start token only the OTHER side of the transcript
+ * ever writes (the pretraining Human/Assistant convention, the summarizer's
+ * Player label, our "(game)"/"(watch)" nudge prefixes), so generation ends the
+ * instant the model starts writing somebody else's turn: the fabricated text
+ * never exists to persist or speak. This is API-level plumbing
+ * (stop_sequences), not an output scrub — nothing legitimate is removed, the
+ * turn simply cannot cross its own boundary. Every main-process turn runner
+ * that persists or speaks reply text must pass these (chat, voice greetings/
+ * nudges/companion turns, chess, watch).
  */
-export const TRANSCRIPT_STOP_SEQUENCES = ['\nHuman:', '\nAssistant:', '\nPlayer:'];
+export const TRANSCRIPT_STOP_SEQUENCES = [
+  '\nHuman:',
+  '\nAssistant:',
+  '\nPlayer:',
+  '\n(game)',
+];
 
 /** Concatenate the text blocks of an Anthropic response content array. */
 function textOf(content: Array<{ type: string }>): string {
@@ -389,35 +399,20 @@ async function prepareChatTurn(
  * Silence-by-convention (260707): models cannot produce an empty reply, but
  * they reliably WRITE a placeholder — "(silence)", "(staying silent)",
  * "[says nothing]" — when told quiet is fine. That is the official silence
- * mechanism on the VOICE-CALL surface only: the call prompts instruct "reply
- * with exactly (silence)", and every voice reply path parses it out, so the
- * line is never persisted or spoken and the turn simply ends with no reply
+ * mechanism on the chat surface for VOICE CALLS only: the call prompts
+ * instruct "reply with exactly (silence)", and every voice reply path parses
+ * it out, so
+ * the line is never persisted or spoken and the turn simply ends with no reply
  * (which also lets a group banter chain rest). Typed text chat never prompts
  * the convention, so there a "*stays silent*" is a real in-character beat and
- * must pass through untouched. Only bracketed/asterisked forms match: a bare
- * in-character "silence!" is a real line and passes through.
- * Models embellish the marker with a trailing clause — real captured examples:
- * "(staying silent, letting it rest)", "(saying nothing, the thread has
- * landed)", "(nothing)" — so after a silence keyword the rest of the aside is
- * allowed (anything up to the closing bracket), and bare "(nothing)" matches
- * too. A line with content AFTER the closing bracket is real and passes.
- * Mirrors the say()-side backstop in src/bot/brain/orchestrator.js
- * (postProcessSay) — keep the two patterns in sync.
- *
- * 260709 (conversation language): the # LANGUAGE directive tells the model to
- * keep the marker as the literal English "(silence)", but under a "speak
- * Japanese" instruction it sometimes localizes it anyway, so the pattern also
- * accepts the common localized forms: silen[a-z]* covers silence / silent /
- * silencio / silencieux..., nada / rien are the "(nothing)" equivalents, and
- * the silen-stem and CJK keywords (沉默 / 无言 zh, 沈黙 / 無言 ja, 침묵 / 조용 ko)
- * allow a short lead-in ("reste silencieux", 保持沉默, 계속 침묵) — CJK also
- * needs this shape because \b never matches between two non-word chars.
+ * must pass through untouched (the game services apply the drop on ALL their
+ * turns instead, because their prompts sanction silence throughout).
+ * The detector itself — variants, embellished/localized forms, shape rules —
+ * is the shared src/bot/brain/silenceFiller.js, also used by the bot's
+ * postProcessSay and the chess/watch turn runners; re-exported here for
+ * main-process consumers.
  */
-const SILENCE_FILLER_RE =
-  /^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+reply|no\s+response|nada|rien)\b|[^)\]]{0,12}(?:silen[a-z]*|沉默|无言|沈黙|無言|침묵|조용))[^)\]]*)\s*[)\]*.!]*\s*$/i;
-export function isSilenceFiller(text: string): boolean {
-  return SILENCE_FILLER_RE.test(text);
-}
+export { isSilenceFiller };
 
 /**
  * Peer-impersonation drop (260708). On a group call the transcript attributes

@@ -12,8 +12,8 @@
  *       - has key → home
  *  5. Hold the loading screen for ≥ LOADING_FLOOR_MS (1.6s) so the boot pulse
  *     animation reads (UI-SPEC §Animation Tokens).
- *  6. Render the modal layer (LanModal) above the main view. The live-session
- *     surface is the floating SummonedWidget, not a transient toast.
+ *  6. Render the modal layer (McSetupModal etc.) above the main view. The
+ *     live-session surface is the floating SummonedWidget, not a transient toast.
  *
  * Source: CONTEXT.md D-15/D-17/D-33/D-35, UI-SPEC.md §Animation Tokens
  *         (LoadingScreen 1.6s floor) + §Interaction Contracts → Theme toggle.
@@ -40,15 +40,15 @@ import { ProfileQuestionsScreen } from './screens/ProfileQuestionsScreen';
 import { UniqueGenderScreen } from './screens/UniqueGenderScreen';
 import { UniqueCastingScreen } from './screens/UniqueCastingScreen';
 import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
-import { MinimizedCall } from './components/MinimizedCall';
+import { CallMiniBar } from './components/call/CallMiniBar';
 import { CallOverlayPusher } from './components/CallOverlayPusher';
+import { CrossLaunchConfirmModal } from './components/CrossLaunchConfirmModal';
 import { SummonedWidget } from './components/SummonedWidget';
 import { GamesPickerModal } from './components/GamesPickerModal';
-import { GameAboutModal } from './components/GameAboutModal';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { CreditsScreen } from './screens/CreditsScreen';
 import { ReceiptScreen } from './screens/ReceiptScreen';
-import { LanModal } from './components/LanModal';
+import { McSetupModal } from './components/McSetupModal';
 import { SkinSetupPromptModal } from './components/SkinSetupPromptModal';
 import { SummonConflictModal } from './components/SummonConflictModal';
 import { LanHostWarningModal } from './components/LanHostWarningModal';
@@ -870,6 +870,12 @@ export function App(): React.ReactElement {
                   <UniqueRevealScreen characterId={view.characterId} />
                 )}
               </main>
+              {/* 260722 — the app-level call watchdog (renders nothing): the
+                  auto-return-to-fullscreen-call behavior when the last game
+                  surface closes. In-game call controls live in GameSurface's
+                  chrome row; elsewhere the icon-rail badge is the ambient
+                  call indicator. */}
+              <CallMiniBar />
               {/*
                 LogsBar — quick task 260508-mun item 5. Hidden during
                 onboarding and auth-choice (pre-app surfaces).
@@ -887,16 +893,15 @@ export function App(): React.ReactElement {
           </div>
         </div>
       </MacosWindow>
-      {/* Chat #6 — the minimized voice-call widget floats above all screens
-          (renders nothing unless a call is minimized). */}
-      <MinimizedCall />
       {/* Task 4 — drives the always-on-top call overlay window (renders nothing;
           pushes call state to main, which owns the overlay window). */}
       <CallOverlayPusher />
       {/* Chat #7 — floating "in your world" unsummon popups for live sessions
           (renders nothing unless a bot is summoned/connecting). */}
       <SummonedWidget />
-      {modal?.kind === 'lan' ? <LanModal mode={modal.mode} /> : null}
+      {modal?.kind === 'mc-setup' ? (
+        <McSetupModal tab={modal.tab} searching={modal.searching} />
+      ) : null}
       {modal?.kind === 'skin-setup-prompt' ? (
         <SkinSetupPromptModal characterId={modal.characterId} />
       ) : null}
@@ -924,13 +929,20 @@ export function App(): React.ReactElement {
       {/* 260720 — a summon died with LAN_NOT_OPEN; numbered open-to-LAN steps. */}
       {modal?.kind === 'lan-not-open' ? <LanNotOpenModal characterId={modal.characterId} /> : null}
       {modal?.kind === 'bot-crash' ? <BotCrashModal characterId={modal.characterId} /> : null}
-      {/* Phase 18/19 — chat "Play together" surfaces: the game picker grid and
-          the per-game About sheet (which carries the Summon CTA). */}
+      {/* Phase 18/19 — chat "Play together" surface: the game picker grid
+          (per-game info is a hover popup inside it). */}
       {modal?.kind === 'games-picker' ? (
         <GamesPickerModal characterId={modal.characterId} />
       ) : null}
-      {modal?.kind === 'game-about' ? (
-        <GameAboutModal characterId={modal.characterId} gameId={modal.gameId} />
+      {/* 260721 — launching a game while another one is active: confirm ends
+          the previous session via its normal end path, then proceeds. */}
+      {modal?.kind === 'cross-launch' ? (
+        <CrossLaunchConfirmModal
+          characterId={modal.characterId}
+          fromId={modal.fromId}
+          fromName={modal.fromName}
+          toName={modal.toName}
+        />
       ) : null}
       {/* The skin-setup onboarding page renders the wizard inline (via
           WizardStepMachine), so suppress the global modal there to avoid a

@@ -210,6 +210,29 @@
   }
 }
 
+/* ── Activity badge (call / game presence on the avatar's top-right) ────
+ * 14px circular badge overlapping the socket's top-right corner. The
+ * 2px rail-colored ring separates it from the avatar art underneath
+ * (same trick as .badge on nav buttons, scaled up to hold a glyph).
+ * Background/glyph use the rail accent pair so it stays legible on both
+ * themes without new colors. */
+.activityBadge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--rail-accent);
+  color: var(--rail);
+  border: 2px solid var(--rail);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .avatarImg {
   width: 40px;
   height: 40px;

@@ -99,6 +99,16 @@ const sendSeq: Record<string, number> = {};
  * reload — Marv spoke the same line five times (260706 field report). */
 let offChatMessage: (() => void) | null = null;
 
+/**
+ * Per-character serial reveal queue for chat:message pushes, so a burst of
+ * bubbles arrives one at a time at the simulated typing speed instead of all in
+ * one tick. Module-level (a guard, not rendered state), keyed by characterId so
+ * two companions never block each other.
+ */
+const pushQueue: Record<string, Promise<void>> = {};
+/** Bubbles queued but not yet revealed, per character. Drives `awaiting`. */
+const pushPending: Record<string, number> = {};
+
 /** True if a rejected chatSend was our deliberate interrupt (not a real error). */
 function isChatAbort(err: unknown): boolean {
   return /CHAT_ABORTED/.test(String((err as { message?: string })?.message ?? err));
@@ -165,10 +175,27 @@ function appendMessage(
 
 export const useChatStore = create<ChatState>((set, get) => {
   // Subscribe once to main → renderer chat pushes: the live game bot replying to
-  // a routed message (task 4), and "joined/left your world" system lines (task
-  // 1). Append deduped by id and clear the typing indicator for that character.
+  // a routed message (task 4), chess/watch table talk, and "joined/left your
+  // world" system lines (task 1). Append deduped by id.
+  //
+  // 260724 — PACED. Every surface that speaks over this push (the chess service
+  // and the in-game bot) emits its bubbles in a tight loop with no delay, so a
+  // five-line reply used to land in the store within one tick and render as a
+  // wall of text: "Realistic typing" only ever applied to send()'s own reveal
+  // loop and the greeting loop, both of which this path bypasses entirely.
+  // Bubbles now queue per character and reveal at the SAME simulated typing
+  // speed send() uses (typingDelayMs / REPLY_GAP_MS), with `awaiting` held up
+  // across the burst so the typing indicator sits between them.
+  //
+  // Holding `awaiting` also fixes the chess reveal gate for free: useAiMoveReveal
+  // polls it, so its 2s quiet window now starts after the LAST bubble instead of
+  // the first.
   try {
-    offChatMessage = sei.onChatMessage?.(({ characterId, message }) => {
+    /**
+     * Reveal one queued push. Returns false when it was a duplicate id (the
+     * blocking send() path may already have appended the same row).
+     */
+    const revealPushed = (characterId: string, message: ChatMessage): boolean => {
       let appended = false;
       set((s) => {
         const list = s.messages[characterId] ?? [];
@@ -176,15 +203,43 @@ export const useChatStore = create<ChatState>((set, get) => {
         appended = true;
         return {
           messages: { ...s.messages, [characterId]: [...list, message] },
-          awaiting: { ...s.awaiting, [characterId]: false },
+          // Stay "typing" while more of this burst is still queued behind us.
+          awaiting: { ...s.awaiting, [characterId]: (pushPending[characterId] ?? 0) > 0 },
         };
       });
-      // Voice calls (260705): a companion line that arrived over the push (an
-      // in-game bot routing say() to the call) is spoken aloud. System lines
-      // ("joined your world") stay text-only.
-      if (appended && message.role === 'companion') {
-        notifyCompanionText(characterId, message.text);
+      return appended;
+    };
+
+    offChatMessage = sei.onChatMessage?.(({ characterId, message }) => {
+      // System rows ("joined your world", play/call records) are UI facts, not
+      // someone typing: they land at once and never sit behind the queue.
+      if (message.role !== 'companion') {
+        revealPushed(characterId, message);
+        return;
       }
+      const first = (pushPending[characterId] ?? 0) === 0;
+      pushPending[characterId] = (pushPending[characterId] ?? 0) + 1;
+      set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+      pushQueue[characterId] = (pushQueue[characterId] ?? Promise.resolve())
+        .then(async () => {
+          // On a live call the bubbles are hidden and TTS does the pacing, so
+          // any delay here would just stall the voice — mirrors send()'s inCall
+          // branch. Otherwise: realistic typing scales the wait to the line's
+          // length, and the plain mode keeps a fixed inter-bubble gap.
+          const inCall = isVoiceCallActive(characterId);
+          const realism = useUiStore.getState().realisticTyping;
+          const waitMs = inCall ? 0 : realism ? typingDelayMs(message.text) : first ? 0 : REPLY_GAP_MS;
+          if (waitMs > 0) await delay(waitMs);
+          pushPending[characterId] = Math.max(0, (pushPending[characterId] ?? 1) - 1);
+          // Voice calls (260705): a companion line that arrived over the push
+          // (an in-game bot routing say() to the call) is spoken aloud, at the
+          // moment it reveals so speech and bubbles stay in step.
+          if (revealPushed(characterId, message)) notifyCompanionText(characterId, message.text);
+        })
+        .catch(() => {
+          pushPending[characterId] = Math.max(0, (pushPending[characterId] ?? 1) - 1);
+          set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+        });
     }) ?? null;
   } catch {
     /* preload without onChatMessage — routed replies just won't stream live */

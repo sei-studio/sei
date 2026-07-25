@@ -31,7 +31,8 @@
  *     world DETECTION, not whether a companion has joined.
  */
 import type { LanHost, LanState } from '../shared/ipc';
-import { classifyHostClient } from './hostClient';
+import { classifyCmdline, cmdlineForPid } from './hostClient';
+import { inspectHostMods } from './hostSetup';
 import { listeningPorts, type ListeningPort } from './listeningPorts';
 import { mcPing, type McStatus } from './mcPing';
 
@@ -93,19 +94,31 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
   // Host-client classification cache, keyed `${pid}:${port}`. The cmdline read
   // spawns a subprocess, so it must run once per world session, not per 2s
   // poll. A world close/reopen changes the port (random per session), so a
-  // stale entry can't be re-keyed. Bounded as a leak guard.
-  const hostCache = new Map<string, LanHost['client']>();
+  // stale entry can't be re-keyed. Bounded as a leak guard. 260721: the cache
+  // now carries the whole classification (client + Sei-skin-setup mods scan),
+  // since a process's loaded mods are fixed at launch. forgeModCount is
+  // deliberately NOT cached — it rides each poll's ping.
+  const hostCache = new Map<string, Omit<LanHost, 'forgeModCount'>>();
   const HOST_CACHE_MAX = 32;
 
   const hostFor = async (world: { status: McStatus; pid: number | null }): Promise<LanHost> => {
     const key = `${world.pid ?? '?'}:${world.status.port}`;
-    let client = hostCache.get(key);
-    if (client === undefined) {
-      client = await classifyHostClient(world.pid);
+    let cached = hostCache.get(key);
+    if (cached === undefined) {
+      const cmdline = await cmdlineForPid(world.pid);
+      const client = classifyCmdline(cmdline);
+      // Fabric is (usually) Sei's own skin setup — scan the host's mods dir
+      // so lanHostWarning() can tell our setup apart from a genuinely modded
+      // world. Other loaders warn regardless, so skip the scan there.
+      const mods =
+        client === 'fabric'
+          ? await inspectHostMods(cmdline)
+          : { seiSkinMod: false, otherModCount: null };
+      cached = { client, seiSkinMod: mods.seiSkinMod, otherModCount: mods.otherModCount };
       if (hostCache.size >= HOST_CACHE_MAX) hostCache.clear();
-      hostCache.set(key, client);
+      hostCache.set(key, cached);
     }
-    return { client, forgeModCount: world.status.forgeModCount };
+    return { ...cached, forgeModCount: world.status.forgeModCount };
   };
 
   const emit = (next: LanState): void => {

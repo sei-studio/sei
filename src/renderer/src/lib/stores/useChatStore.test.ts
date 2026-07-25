@@ -35,6 +35,8 @@ function msg(id: string): ChatMessage {
 
 let chatHistoryMock: ReturnType<typeof vi.fn>;
 let chatOpenedMock: ReturnType<typeof vi.fn>;
+/** The chat:message push handler the store registers at module load. */
+let pushHandler: (e: { characterId: string; message: ChatMessage }) => void;
 
 beforeEach(() => {
   vi.resetModules();
@@ -42,9 +44,13 @@ beforeEach(() => {
   chatOpenedMock = vi.fn();
   // onChatMessage is subscribed at store-module load; give it a no-op so the
   // module init doesn't throw. chatOpened is optional per test.
+  pushHandler = () => {};
   (globalThis as unknown as { window: unknown }).window = {
     sei: {
-      onChatMessage: () => {},
+      onChatMessage: (fn: typeof pushHandler) => {
+        pushHandler = fn;
+        return () => {};
+      },
       chatHistory: chatHistoryMock,
       chatOpened: chatOpenedMock,
     },
@@ -121,5 +127,96 @@ describe('useChatStore.load — loading flag lifecycle', () => {
     void store.getState().load('c4');
     expect(store.getState().loading['c4']).toBe(false);
     expect(chatHistoryMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Paced arrival for chat:message pushes (260724).
+ *
+ * Every surface that speaks over this push — the chess service, the in-game bot
+ * — emits its bubbles in a tight loop with no delay. Before this, the push
+ * handler appended each one the instant it arrived, so a multi-line reply
+ * rendered as a single wall of text no matter what "Realistic typing" said:
+ * the typing theater only ever ran inside send()'s own reveal loop, which this
+ * path never touches.
+ */
+describe('useChatStore — paced arrival for pushed bubbles', () => {
+  function companion(id: string, text: string): ChatMessage {
+    return { id, role: 'companion', text, ts: 0 };
+  }
+
+  it('reveals a burst one bubble at a time, holding the typing indicator between them', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = await loadStore();
+      // Three lines pushed in ONE tick, exactly as chessService.speak() emits them.
+      // Short lines so each wait is the typingDelayMs FLOOR (500ms) exactly.
+      pushHandler({ characterId: 'c1', message: companion('a', 'yo') });
+      pushHandler({ characterId: 'c1', message: companion('b', 'hm') });
+      pushHandler({ characterId: 'c1', message: companion('c', 'gg') });
+
+      // Nothing has landed yet: bubble 1 is still "being typed".
+      expect(store.getState().messages['c1'] ?? []).toHaveLength(0);
+      expect(store.getState().awaiting['c1']).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(600);
+      expect(store.getState().messages['c1']).toHaveLength(1);
+      expect(store.getState().awaiting['c1']).toBe(true); // two still queued
+
+      await vi.advanceTimersByTimeAsync(600);
+      expect(store.getState().messages['c1']).toHaveLength(2);
+      expect(store.getState().awaiting['c1']).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(600);
+      expect(store.getState().messages['c1'].map((m) => m.id)).toEqual(['a', 'b', 'c']);
+      // Burst drained: the indicator drops, which is also what releases the
+      // chess reveal gate (useAiMoveReveal polls `awaiting`).
+      expect(store.getState().awaiting['c1']).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('scales the wait to the length of each line (the simulated typing speed)', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = await loadStore();
+      // ~120 chars at TYPING_CPS 16.67 ≈ 7.2s, clamped to the 5s ceiling.
+      pushHandler({ characterId: 'c1', message: companion('long', 'x'.repeat(120)) });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.getState().messages['c1'] ?? []).toHaveLength(0); // still typing
+      await vi.advanceTimersByTimeAsync(4200);
+      expect(store.getState().messages['c1']).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lands system rows immediately: they are UI facts, not someone typing', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = await loadStore();
+      pushHandler({
+        characterId: 'c1',
+        message: { id: 'sys', role: 'system', text: 'Marv joined your world.', ts: 0 },
+      });
+      expect(store.getState().messages['c1']).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('paces each character independently', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = await loadStore();
+      pushHandler({ characterId: 'c1', message: companion('a', 'hi') });
+      pushHandler({ characterId: 'c2', message: companion('b', 'hi') });
+      await vi.advanceTimersByTimeAsync(600);
+      expect(store.getState().messages['c1']).toHaveLength(1);
+      expect(store.getState().messages['c2']).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

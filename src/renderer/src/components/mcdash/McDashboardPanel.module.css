@@ -1,0 +1,266 @@
+/* McDashboardPanel — vanilla Minecraft inventory styling (260721).
+ *
+ * DELIBERATE EXCEPTION to the app design tokens (per spec): this one panel
+ * reproduces the Java Edition inventory screen look. Light-gray #c6c6c6
+ * dialog windows with the classic pixel bevels (white top/left, #555555
+ * bottom/right, black rounded outline) over a darkened backdrop; dark inset
+ * slots (#8b8b8b face, #373737 / #ffffff bevels) holding real item textures
+ * rendered pixelated (served at runtime from the local skin server's
+ * /mcassets route — no Mojang files in the repo or bundle); dark-gray GUI
+ * text without shadow, white item counts with the 1px dark shadow. Scope
+ * stays inside the mcdash components. */
+
+.panel {
+  --mc-font: 'Press Start 2P', 'Silkscreen', 'Courier New', monospace;
+  /* Vanilla GUI palette. */
+  --mc-dialog: #c6c6c6;
+  --mc-dialog-light: #ffffff;
+  --mc-dialog-dark: #555555;
+  --mc-outline: #101010;
+  --mc-slot: #8b8b8b;
+  --mc-slot-dark: #373737;
+  --mc-slot-light: #ffffff;
+  --mc-gui-text: #404040;
+  --mc-gui-muted: #6a6a6a;
+
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* Darkened game-ish backdrop behind the gray dialogs (the in-game
+   * inventory dims the world behind it the same way). */
+  background: rgba(16, 16, 20, 0.82);
+  color: var(--mc-gui-text);
+  font-family: var(--mc-font);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ── Header: a slim vanilla-gray title strip. ── */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--mc-dialog);
+  border-bottom: 2px solid var(--mc-outline);
+  box-shadow: inset 0 -2px 0 var(--mc-dialog-dark), inset 0 2px 0 var(--mc-dialog-light);
+  flex: none;
+}
+
+.headTitle {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--mc-gui-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Body: the dialogs float over the dark backdrop. ── */
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px;
+  overflow: auto;
+}
+
+/* The classic light-gray GUI window: black rounded pixel outline, white
+ * top/left inner bevel, #555 bottom/right inner bevel, #c6c6c6 face. */
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  padding: 10px;
+  background: var(--mc-dialog);
+  border: 3px solid var(--mc-outline);
+  border-radius: 5px;
+  box-shadow:
+    inset 3px 3px 0 var(--mc-dialog-light),
+    inset -3px -3px 0 var(--mc-dialog-dark);
+}
+
+/* ── Top row: armor column | avatar window | vitals + off-hand. ── */
+.topRow {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.armorCol {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: none;
+}
+
+/* The dark player-model window beside the armor slots, like the real
+ * inventory screen. */
+.avatarWindow {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  background: linear-gradient(#141414, #2e2e2e);
+  border-top: 2px solid var(--mc-slot-dark);
+  border-left: 2px solid var(--mc-slot-dark);
+  border-bottom: 2px solid var(--mc-slot-light);
+  border-right: 2px solid var(--mc-slot-light);
+  overflow: hidden;
+}
+
+.avatarCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.avatarFallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sideCol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0 0 4px;
+}
+
+.sideSpacer {
+  flex: 1;
+}
+
+.offhandRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.vitalRow {
+  display: flex;
+  gap: 1px;
+}
+
+.vitalIcon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* ── Inventory ── */
+.invTitle {
+  font-size: 9px;
+  color: var(--mc-gui-text);
+  margin-top: 2px;
+}
+
+.invGrid {
+  display: grid;
+  grid-template-columns: repeat(9, 36px);
+  gap: 0;
+}
+
+/* Hotbar as its own row, set slightly apart like the real screen. */
+.hotbarRow {
+  display: flex;
+  gap: 0;
+  margin-top: 6px;
+  width: fit-content;
+}
+
+/* Vanilla inset slot: #8b8b8b face, dark top/left, white bottom/right. */
+.slot {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  box-sizing: border-box;
+  background: var(--mc-slot);
+  border-top: 2px solid var(--mc-slot-dark);
+  border-left: 2px solid var(--mc-slot-dark);
+  border-bottom: 2px solid var(--mc-slot-light);
+  border-right: 2px solid var(--mc-slot-light);
+  overflow: hidden;
+}
+
+.slotHeld {
+  outline: 2px solid #ffffff;
+  outline-offset: 0;
+  z-index: 1;
+}
+
+/* Real 16x16 item texture scaled up, hard pixels. */
+.slotIcon {
+  position: absolute;
+  inset: 0;
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Text fallback when no texture is available for the item. */
+.slotLabel {
+  position: absolute;
+  inset: 2px;
+  font-size: 7px;
+  line-height: 1.15;
+  color: #2b2b2b;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+/* Count badge: white with the classic 1px dark shadow, bottom-right. */
+.slotCount {
+  position: absolute;
+  right: 1px;
+  bottom: 0;
+  font-size: 10px;
+  color: #ffffff;
+  text-shadow: 1px 1px 0 #3f3f3f;
+  z-index: 1;
+}
+
+.slotHint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 6px;
+  color: #6f6f6f;
+  text-align: center;
+}
+
+/* ── Map dialog contents ── */
+.activity {
+  font-size: 11px;
+  color: var(--mc-gui-text);
+}
+
+.posLine {
+  font-size: 9px;
+  color: var(--mc-gui-muted);
+}
+
+.dim {
+  color: #55516b;
+}
+
+.waiting {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #cfcfd6;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.75);
+}

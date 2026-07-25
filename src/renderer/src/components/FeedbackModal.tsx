@@ -32,9 +32,21 @@ function submitErrorCopy(code: string): string {
 export interface FeedbackModalProps {
   /** Closes the modal. Caller controls mount/unmount. */
   onClose: () => void;
+  /** Optional copy overrides (e.g. the games picker's "Suggest a game").
+   * The submit path is identical regardless. Empty framing hides the line. */
+  title?: string;
+  framing?: string;
+  fieldLabel?: string;
+  placeholder?: string;
 }
 
-export function FeedbackModal({ onClose }: FeedbackModalProps): React.ReactElement {
+export function FeedbackModal({
+  onClose,
+  title = 'Submit feedback',
+  framing = "Tell us anything you like or don't like! We read all comments within 24 hrs.",
+  fieldLabel = 'Feedback',
+  placeholder = 'What should we improve?',
+}: FeedbackModalProps): React.ReactElement {
   const [email, setEmail] = useState('');
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -80,10 +92,8 @@ export function FeedbackModal({ onClose }: FeedbackModalProps): React.ReactEleme
   }
 
   return (
-    <ModalShell title="Submit feedback" onClose={onClose} scrimClose width={440}>
-      <p className={styles.framing}>
-        Tell us anything you like or don&apos;t like! We read all comments within 24 hrs.
-      </p>
+    <ModalShell title={title} onClose={onClose} scrimClose width={440}>
+      {framing ? <p className={styles.framing}>{framing}</p> : null}
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="feedback-email">
@@ -98,7 +108,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps): React.ReactEleme
         </div>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="feedback-body">
-            Feedback
+            {fieldLabel}
           </label>
           <TextField
             value={body}
@@ -106,8 +116,8 @@ export function FeedbackModal({ onClose }: FeedbackModalProps): React.ReactEleme
             multiline
             rows={5}
             autoFocus
-            placeholder="What should we improve?"
-            aria-label="Feedback"
+            placeholder={placeholder}
+            aria-label={fieldLabel}
           />
         </div>
         {error ? (

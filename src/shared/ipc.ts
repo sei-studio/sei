@@ -26,6 +26,15 @@ import type {
 } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
 export type { ErrorClass } from './errorClasses';
+import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
+export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
+import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
+export type {
+  McDashboardSnapshot,
+  McDashboardSnapshotPush,
+  McDashItem,
+  McDashMap,
+} from './mcDashboardIpc';
 
 /* -------------------------------------------------------------------------- */
 /*  Lifecycle / status / log domain types                                     */
@@ -142,7 +151,14 @@ export type LanState =
  * host java process command line (loader main-class / install-path markers).
  * 'unknown' means detection failed, NOT vanilla — no disclaimer is shown.
  */
-export type LanHostClient = 'vanilla' | 'fabric' | 'forge' | 'neoforge' | 'lunar' | 'unknown';
+export type LanHostClient =
+  | 'vanilla'
+  | 'fabric'
+  | 'forge'
+  | 'neoforge'
+  | 'quilt'
+  | 'lunar'
+  | 'unknown';
 
 export interface LanHost {
   client: LanHostClient;
@@ -152,19 +168,57 @@ export interface LanHost {
    * but the list was empty/unparseable (still a Forge-family server).
    */
   forgeModCount: number | null;
+  /**
+   * 260721 — Sei ships its OWN Fabric setup (the skin-setup wizard installs
+   * Fabric Loader + the CustomSkinLoader jar into an isolated gameDir), so a
+   * Fabric host is usually OUR OWN doing and must not trigger the modded
+   * disclaimer. Main resolves the host java process's `--gameDir` from its
+   * command line and scans `<gameDir>/mods/`:
+   *   - seiSkinMod    → a CustomSkinLoader jar (the one mod Sei installs) is
+   *                     present in the host's mods dir.
+   *   - otherModCount → number of OTHER mod jars in that dir; null = the
+   *                     mods dir could not be resolved/read (no evidence
+   *                     either way). See src/main/hostSetup.ts.
+   * Both optional so older cached states / fixtures stay valid.
+   */
+  seiSkinMod?: boolean;
+  otherModCount?: number | null;
 }
 
 /** Which pre-summon disclaimer (if any) a detected host warrants. */
-export type LanHostWarning = 'modded' | 'lunar';
+export type LanHostWarning = 'vanilla' | 'modded' | 'lunar';
 
 /**
  * Pure decision: does this host classification warrant a pre-summon
  * disclaimer? Shared so the renderer gate and tests agree on the mapping.
+ *
+ * Three-way classification (260721):
+ *   - 'vanilla' → host runs plain vanilla Minecraft, i.e. WITHOUT Sei's
+ *     Fabric skin setup: the companion joins fine but renders with a default
+ *     Minecraft skin (CustomSkinLoader never runs).
+ *   - 'modded'  → Forge/NeoForge/Quilt, or Fabric with mod jars BESIDES Sei's
+ *     skin mod: content mods can make the world refuse the vanilla-protocol
+ *     join.
+ *   - null      → silence. Notably: Fabric with only Sei's skin mod installed
+ *     is OUR OWN skin setup, not "modded Minecraft" (the pre-260721 bug
+ *     warned users about the very setup our wizard told them to install).
+ *     Fabric with NO other-mod evidence (mods dir unreadable/absent) is also
+ *     silent: most Sei users got Fabric FROM our wizard, so absent contrary
+ *     evidence we assume it is ours.
  */
 export function lanHostWarning(host: LanHost | undefined): LanHostWarning | null {
   if (!host) return null;
   if (host.client === 'lunar') return 'lunar';
-  if (host.client === 'fabric' || host.client === 'forge' || host.client === 'neoforge') return 'modded';
+  if (host.client === 'vanilla') return 'vanilla';
+  if (host.client === 'forge' || host.client === 'neoforge' || host.client === 'quilt') {
+    return 'modded';
+  }
+  if (host.client === 'fabric') {
+    // Fabric is Sei's own loader. Warn only on positive evidence of mods
+    // beyond our skin mod; otherwise stay silent (see doc comment above).
+    if (host.otherModCount != null && host.otherModCount > 0) return 'modded';
+    return null;
+  }
   // Cmdline classification failed but the ping itself carried Forge metadata.
   if (host.forgeModCount != null) return 'modded';
   return null;
@@ -223,8 +277,12 @@ export interface ChatMessage {
    * companion knows you actually played, not just talked about it.
    * `call` (260705) is the same pattern for a finished voice call ("You and X
    * called for Y"), rendered with a phone icon.
+   * A chess row additionally carries `chess` (the recorded moves + result), so
+   * the row is clickable and opens a board replay of that game.
    */
-  event?: { kind: 'play'; game: string; durationMs: number } | { kind: 'call'; durationMs: number };
+  event?:
+    | { kind: 'play'; game: string; durationMs: number; chess?: ChessReplayData }
+    | { kind: 'call'; durationMs: number };
 }
 
 /** Result of a chat turn. `launch` is set when the companion called launch(). */
@@ -1086,6 +1144,36 @@ export interface RendererApi {
    */
   onChatMessage(cb: (push: ChatMessagePush) => void): Unsubscribe;
 
+  // --- Chess minigame (260710) --- see src/shared/chessIpc.ts for the state
+  // model + reveal/interrupt protocol. All methods are character-scoped (one
+  // game per character at a time).
+  /** Start (or resume) a game. Rejects with CHESS_ERR_MC_ACTIVE while summoned. */
+  chessStart(characterId: string, opts?: { playerColor?: 'w' | 'b' | 'random' }): Promise<ChessGameState>;
+  chessGetState(characterId: string): Promise<ChessGameState | null>;
+  /** Player move in UCI. ok:false = rejected (not your turn / illegal). */
+  chessMove(characterId: string, uci: string): Promise<{ ok: boolean; error?: string; state: ChessGameState }>;
+  chessResign(characterId: string): Promise<ChessGameState>;
+  chessOfferDraw(characterId: string): Promise<ChessGameState>;
+  chessRespondDraw(characterId: string, accept: boolean): Promise<ChessGameState>;
+  chessRematch(characterId: string): Promise<ChessGameState>;
+  /** Close the game (panel dismissed). Unfinished games end 'abandoned'. */
+  chessEnd(characterId: string): Promise<void>;
+  /** The pending AI move finished presenting (text printed / TTS drained). */
+  chessAckReveal(characterId: string, uci: string): Promise<ChessGameState>;
+  /** Full-state pushes on every game change (AI thinking, moves, offers, end). */
+  onChessState(cb: (state: ChessGameState) => void): Unsubscribe;
+  /** First-run engine model download progress (status 'preparing'). */
+  onChessDownload(cb: (p: ChessDownloadProgress) => void): Unsubscribe;
+
+  // --- Minecraft dashboard (260721) --- see src/shared/mcDashboardIpc.ts for
+  // the snapshot model. Character-scoped; live only while summoned.
+  /** Latest telemetry snapshot, or null when there is no live session. */
+  mcDashboardGet(characterId: string): Promise<McDashboardSnapshot | null>;
+  /** Visibility hint: the bot samples the minimap only while true. */
+  mcDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
+  /** Telemetry pushes (~every 2s while watching, plus on action change). */
+  onMcDashboardSnapshot(cb: (s: McDashboardSnapshotPush) => void): Unsubscribe;
+
   // --- Voice calls (260705) ---
   /**
    * Synthesize a companion's spoken line in its assigned ElevenLabs voice.
@@ -1540,6 +1628,14 @@ export interface RendererApi {
   /** Fires on every maximize/unmaximize so the icon can swap live. */
   onWindowMaximizedChanged(cb: (isMaximized: boolean) => void): Unsubscribe;
   /**
+   * Toggle OS fullscreen for the app window (game-surface fullscreen button,
+   * 260721). Resolves with the state the window is entering, so the caller can
+   * swap its enter/exit icon without a second round-trip.
+   */
+  windowFullscreenToggle(): Promise<boolean>;
+  /** Current fullscreen state — seeds the fullscreen button icon on mount. */
+  windowIsFullscreen(): Promise<boolean>;
+  /**
    * Fires when the active account profile scope changes at runtime (sign-in,
    * sign-out, or account swap) once main has torn down the old bot, switched
    * the data scope, and initialized the new profile. The renderer re-bootstraps
@@ -1784,6 +1880,32 @@ export const IpcChannel = {
     /** Pull: last chat line per character for roster previews (ChatPreview). */
     previews: 'chat:previews',
   },
+  // Chess minigame (260710) — request/response pairs are character-scoped;
+  // `state` and `download` are pushes (main → renderer). Protocol details in
+  // src/shared/chessIpc.ts.
+  chess: {
+    start: 'chess:start',
+    getState: 'chess:get-state',
+    move: 'chess:move',
+    resign: 'chess:resign',
+    offerDraw: 'chess:offer-draw',
+    respondDraw: 'chess:respond-draw',
+    rematch: 'chess:rematch',
+    end: 'chess:end',
+    ackReveal: 'chess:ack-reveal',
+    /** Push: full ChessGameState on every change. */
+    state: 'chess:state',
+    /** Push: ChessDownloadProgress during the one-time model download. */
+    download: 'chess:download',
+  },
+  // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
+  // Protocol details in src/shared/mcDashboardIpc.ts.
+  mcdash: {
+    get: 'mcdash:get',
+    setWatching: 'mcdash:set-watching',
+    /** Push: McDashboardSnapshotPush (~every 2s while watching). */
+    snapshot: 'mcdash:snapshot',
+  },
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',
@@ -1861,6 +1983,8 @@ export const IpcChannel = {
     close: 'window:close',
     isMaximized: 'window:is-maximized',
     maximizedChanged: 'window:maximized-changed', // push: main → renderer
+    fullscreenToggle: 'window:fullscreen-toggle', // game-surface fullscreen button
+    isFullscreen: 'window:is-fullscreen',
   },
   // Skin pipeline.
   skin: {

@@ -1,0 +1,112 @@
+/* ChatTopBar — the shared companion header (chat + call surfaces).
+ * "Summoning Terminal": flat, no underline hairline (260721 minimalism pass);
+ * the surfaces below carry their own contrast. Tokens only. */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  flex-shrink: 0;
+  background: var(--window);
+}
+
+/* Back "<" — far left of the header. */
+.backBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 140ms var(--ease);
+}
+
+.backBtn:hover {
+  color: var(--accent);
+}
+
+/* Avatar matches the name's cap height, not a big circle. */
+.headerAvatar {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The name is a button that opens the full profile page. Rendered as plain
+ * text (button reset), lights to accent on hover. Baseline alignment keeps
+ * the IdTag on the name's baseline instead of floating at the flex center. */
+.nameToggle {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  min-width: 0;
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nameToggle:hover .headerName {
+  color: var(--accent);
+}
+
+.headerName {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 140ms var(--ease);
+}
+
+.headerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+/* Naked icon buttons — no bordered square box. */
+.iconBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 140ms var(--ease);
+}
+
+.iconBtn:hover {
+  color: var(--accent);
+}
+
+/* The surface this button opens is currently showing (phone on the call view). */
+.iconBtnActive {
+  color: var(--accent);
+}

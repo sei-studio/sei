@@ -2,16 +2,37 @@
  * "Summoning Terminal" look: sharp edges, periwinkle accent, no bubbles.
  * All values from tokens.css — no literal hex/px colors. */
 
+/* 260721 top/bottom split: the shared ChatTopBar (its styles live in
+ * ChatTopBar.module.css) sits above a row of [mainCol | presence panel];
+ * mainCol stacks the GAME AREA on top of the chat column. */
 .root {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   background: var(--window);
 }
 
+/* Everything under the top bar: main column + the presence side panel. */
+.content {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Game area over chat column. */
+.mainCol {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* The message column owns the absolute-positioned floating composer, so it is
-   the positioning context (not .root, which now also holds the side panel). */
+   the positioning context. */
 .chatCol {
   position: relative;
   flex: 1;
@@ -19,113 +40,6 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-
-/* ── Header bar (compact — no status row) ───────────────────────────────── */
-.header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-/* Back "<" — far left of the header. */
-.backBtn {
-  -webkit-appearance: none;
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: color 140ms var(--ease);
-}
-
-.backBtn:hover {
-  color: var(--accent);
-}
-
-/* #1 — avatar matches the name's cap height, not a big circle. */
-.headerAvatar {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  overflow: hidden;
-  border-radius: 50%;
-  background: var(--surface-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* The name is a button that opens the full profile page (260705; the presence
-   panel is reachable via message author names). Rendered as plain text
-   (button reset), lights to accent on hover. Baseline alignment keeps the
-   IdTag on the name's baseline instead of floating at the flex center (the
-   display font sits low in its line box, so centering read as misaligned). */
-.nameToggle {
-  -webkit-appearance: none;
-  appearance: none;
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-sm);
-  min-width: 0;
-  flex: 1;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-}
-
-.nameToggle:hover .headerName {
-  color: var(--accent);
-}
-
-.headerName {
-  font-family: var(--display);
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: color 140ms var(--ease);
-}
-
-.headerActions {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  flex-shrink: 0;
-}
-
-/* Naked icon buttons — no bordered square box (change #4). */
-.iconBtn {
-  -webkit-appearance: none;
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: color 140ms var(--ease);
-}
-
-.iconBtn:hover {
-  color: var(--accent);
 }
 
 /* ── Message list ───────────────────────────────────────────────────────── */
@@ -230,7 +144,11 @@
   grid-template-columns: 40px 1fr;
   column-gap: var(--space-md);
   margin: var(--space-sm) calc(-1 * var(--space-lg)) 0;
-  padding: var(--space-xs) var(--space-lg);
+  /* Bottom pad matches .rowCont (1px) so the gap between the header line and the
+   * first continuation line is the same as the gaps between later lines. The
+   * 40px avatar sits alongside the header + first text (never taller than them),
+   * so it does not add space of its own. */
+  padding: var(--space-xs) var(--space-lg) 1px;
 }
 
 /* A continuation row (same author): no avatar, text aligned to the gutter.
@@ -463,6 +381,37 @@
   width: 40px;
   color: var(--muted);
   flex: none;
+}
+
+/* Chess rows carrying the recorded game are a button that opens the replay
+   (260724). Same layout as .playRow plus a right-aligned hint revealed on
+   hover, with the message-row hover shade. */
+.playRowClickable {
+  grid-template-columns: 40px 1fr auto;
+  width: calc(100% + 2 * var(--space-lg));
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.playRowClickable:hover {
+  background: var(--accent-soft);
+  color: var(--text-2);
+}
+
+.replayHint {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.playRowClickable:hover .replayHint,
+.playRowClickable:focus-visible .replayHint {
+  opacity: 1;
 }
 
 /* ── Floating composer dock (hovers over the bottom of the list) ─────────── */
@@ -700,6 +649,33 @@
   );
 }
 
+/* Close "x" pinned to the panel's top-right corner, above the portrait art
+ * (rendered after .presFade so it stacks on top). Same quiet glyph pattern as
+ * .replyClose / the chess panel's close button: muted at rest, red on hover. */
+.presClose {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.presClose:hover {
+  color: var(--red);
+}
+
 .presBody {
   padding: 14px 18px 18px;
   display: flex;
@@ -743,8 +719,111 @@
   border-top: 1px solid var(--border);
 }
 
+/* ── Game area (260721 top/bottom split) ────────────────────────────────── */
+/* The game surface rides ON TOP of the chat, closed to zero height when no
+ * game is open. No divider hairline: the surfaces' own backgrounds carry the
+ * boundary (box/line minimalism pass). */
+.gameArea {
+  height: 0;
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg2);
+  transition: height 300ms var(--ease);
+}
+
+.gameOpen .gameArea {
+  /* Majority of the content height, but never squeeze the chat below a
+   * usable ~280px band (composer + the latest messages). */
+  height: min(62%, calc(100% - 280px));
+}
+
+/* While a game is open the presence panel is force-collapsed (defined after
+ * `.presOpen .presPanel` on purpose: equal specificity, later rule wins). */
+.gameOpen .presPanel {
+  width: 0;
+  border-left-color: transparent;
+  overflow: hidden;
+}
+
+/* ── Drag-resize split handle (260721) ──────────────────────────────────── */
+/* Zero-height boundary strip between the game area and the chat: it takes no
+ * layout space of its own; the ::after hit zone straddles the edge by 3px on
+ * each side (row-resize cursor), and the ::before hairline is invisible at
+ * rest, lighting up on hover / focus / drag (no fat divider bar). */
+.splitHandle {
+  position: relative;
+  height: 0;
+  flex: none;
+  z-index: 3;
+  outline: none;
+  touch-action: none;
+}
+
+.splitHandle::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 6px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.splitHandle::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease);
+}
+
+.splitHandle:hover::before,
+.splitHandle:focus-visible::before,
+.splitDragging .splitHandle::before {
+  opacity: 1;
+}
+
+/* While a drag is in flight the height transition is off, so the split tracks
+ * the pointer 1:1 instead of fighting the 300ms animation. */
+.splitDragging .gameArea {
+  transition: none;
+}
+
+/* No stray text selection while dragging across the chat below. */
+.splitDragging {
+  user-select: none;
+}
+
+/* ── Expand-over-chat (260721) ──────────────────────────────────────────── */
+/* The GameSurface bottom-left "V" grows the game area to the full content
+ * height. Defined AFTER the .gameOpen rules on purpose: equal specificity,
+ * later rule wins. The chat column keeps flex: 1 with a zero floor, so the
+ * animated height squeezes it away smoothly. */
+.gameExpanded .gameArea {
+  height: 100%;
+}
+
+.gameExpanded .chatCol {
+  min-height: 0;
+  overflow: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .presPanel {
     transition: none;
   }
+
+  .gameArea {
+    transition: none;
+  }
 }
+
+/* (260722) The docked call section between game and chat is gone: the in-game
+ * call UI lives inside GameSurface's bottom chrome row now. */

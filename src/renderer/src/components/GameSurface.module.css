@@ -1,0 +1,178 @@
+/* GameSurface — shared chrome around a game panel in the chat's game area.
+ * One bottom overlay ROW (260722): quiet chips left (V + fullscreen), the
+ * in-game call cluster centered, the end "x" right. Flat quiet chips floating
+ * over whichever surface is mounted (dark chess scene, Minecraft grays, watch
+ * picker); translucent window-mix backings keep them legible on all of them
+ * without adding boxes or hairlines.
+ *
+ * The whole row is hover-revealed. It rests at display: none (NOT opacity: 0
+ * alone) — an invisible box could still affect layout or scrollable overflow;
+ * allow-discrete keeps the fade both ways. Reveal logic (pointer proximity,
+ * focus, unread, connecting call) lives in GameSurface.tsx. */
+
+.surface {
+  /* Reserved-height contract: game panels pad their content clear of the
+   * overlay strip with var(--game-chrome-h, 56px) (chess consumes it). */
+  --game-chrome-h: 56px;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── Bottom chrome row (overlay, hover-revealed) ────────────────────────── */
+/* pointer-events: none on the row, auto on the clusters, so the game stays
+ * clickable through the empty parts of the strip. */
+.chrome {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--game-chrome-h);
+  z-index: 4;
+  display: none;
+  opacity: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-sm);
+  pointer-events: none;
+  transition:
+    opacity 140ms var(--ease),
+    display 140ms allow-discrete;
+}
+
+.chrome > * {
+  pointer-events: auto;
+}
+
+.chromeRevealed {
+  display: flex;
+  opacity: 1;
+}
+
+@starting-style {
+  .chromeRevealed {
+    opacity: 0;
+  }
+}
+
+/* Left cluster: expand-over-chat "V" + app fullscreen. */
+.chromeSide {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+/* Quiet chrome chip — borderless, translucent backing, accent on hover. */
+.chromeBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: color-mix(in srgb, var(--window) 55%, transparent);
+  backdrop-filter: blur(2px);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 140ms var(--ease), background 140ms var(--ease);
+}
+
+.chromeBtn:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Chevron points "V" (down) at rest — expanding covers the chat below —
+ * and flips to "^" once expanded (restore the chat). */
+.chev {
+  display: inline-flex;
+  transform: rotate(-90deg);
+  transition: transform 240ms var(--ease);
+}
+
+.chevExpanded {
+  transform: rotate(90deg);
+}
+
+/* Unread dot: a companion message arrived while chat is hidden. */
+.unreadDot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 2px solid var(--bg2);
+}
+
+/* ── Centered call cluster: participant pics + compact pill controls ────── */
+/* Absolutely centered in the row so it stays put regardless of the side
+ * clusters' widths. */
+.callCluster {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* Participant pic (click = return to the fullscreen call). */
+.tile {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surface-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: box-shadow 140ms var(--ease);
+}
+
+.tile:hover {
+  box-shadow: 0 0 0 2px rgba(var(--acc), 0.55);
+}
+
+.tileSpeaking {
+  box-shadow: 0 0 0 2px rgba(var(--acc), 0.45);
+}
+
+/* Unified end "x", right. Red on hover. */
+.endBtn {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.endBtn:hover {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome,
+  .chromeBtn,
+  .chev,
+  .tile {
+    transition: none;
+  }
+}

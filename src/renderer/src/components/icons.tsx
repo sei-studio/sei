@@ -630,6 +630,46 @@ export const MinimizeIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
+/** FullscreenIcon — corner arrows pointing out (enter app fullscreen). */
+export const FullscreenIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+    <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+    <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+    <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+  </svg>
+);
+
+/** ExitFullscreenIcon — corner arrows pointing in (leave app fullscreen). */
+export const ExitFullscreenIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+    <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+    <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+    <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+  </svg>
+);
+
 /** ChatIcon — speech bubble, the "just chat" activity tile. */
 export const ChatIcon: React.FC<IconProps> = ({ size = 30 }) => (
   <svg
@@ -681,6 +721,71 @@ export const LockIcon: React.FC<IconProps> = ({ size = 16 }) => (
   >
     <rect x={5} y={11} width={14} height={9} rx={1.5} />
     <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+
+/**
+ * FlipIcon — two curved arrows chasing each other in a circle. Chess HUD
+ * "flip board" control. Stroke-only, inherits currentColor.
+ */
+export const FlipIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <polyline points="21.5 5.5 21.5 10.5 16.5 10.5" />
+    <polyline points="2.5 18.5 2.5 13.5 7.5 13.5" />
+    <path d="M4.2 9.5a8 8 0 0 1 13.2-3l4.1 4" />
+    <path d="M2.5 13.5l4.1 4a8 8 0 0 0 13.2-3" />
+  </svg>
+);
+
+/**
+ * DrawIcon — two horizontal bars, the chess "=" draw sign. Legible at 16px;
+ * a handshake would turn to mush at this size. Chess HUD "offer draw" control.
+ */
+export const DrawIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6 9.5h12" />
+    <path d="M6 14.5h12" />
+  </svg>
+);
+
+/**
+ * FlagIcon — waving flag on a pole. Chess HUD "resign" control. Stroke-only,
+ * inherits currentColor.
+ */
+export const FlagIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M5 15s1-1 3.5-1 4.5 2 7 2 3.5-1 3.5-1V4s-1 1-3.5 1S11 3 8.5 3 5 4 5 4z" />
+    <path d="M5 21v-6" />
   </svg>
 );
 

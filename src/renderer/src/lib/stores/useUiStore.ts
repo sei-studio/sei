@@ -76,7 +76,12 @@ export type View =
 
 export type Modal =
   | null
-  | { kind: 'lan'; mode: 'info' | 'searching' }
+  // Minecraft setup window (260721, replaces the old LanModal): tabs for the
+  // open-to-LAN steps ('world') and skin setup pointers ('skin'). `searching`
+  // is true only on the launch-blocked path (Launch pressed, no open world):
+  // the world tab then shows the searching animation and auto-resumes the
+  // pending summon when LAN flips open.
+  | { kind: 'mc-setup'; tab: 'world' | 'skin'; searching: boolean }
   | { kind: 'delete-confirm'; characterId: string }
   // One-time "run skin setup" nudge shown on the first summon attempt by a
   // user who has never completed skin setup. Carries the character id so a
@@ -112,10 +117,19 @@ export type Modal =
   // surface for its error class. Opened centrally from the onStatus
   // subscription; before this, a mid-session death showed nothing at all.
   | { kind: 'bot-crash'; characterId: string }
-  // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games
-  // (games-picker) and a per-game About sheet with a Summon button (game-about).
+  // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games.
+  // Per-game info is a hover-only popup inside the picker (no about modal).
   | { kind: 'games-picker'; characterId: string }
-  | { kind: 'game-about'; characterId: string; gameId: string };
+  // 260721 — launching a game while ANOTHER game is active for the same
+  // companion. Confirming ends the previous session via its normal end path
+  // (lib/gameLaunch.ts holds the parked launch), then proceeds.
+  | {
+      kind: 'cross-launch';
+      characterId: string;
+      fromId: 'chess' | 'minecraft';
+      fromName: string;
+      toName: string;
+    };
 
 /**
  * B4 — which tab CharactersScreen should open on. The compass icon in the
@@ -138,8 +152,8 @@ interface UiState {
    * Phase 18/19 (task 6) — when a summon is launched from the chat surface (the
    * "Play together" games popup), the user should be RETURNED to that chat once
    * the bot joins, not yanked to the profile page. This records that intent so a
-   * deferred summon (LAN-not-open → LanModal auto-resume) lands back in chat too.
-   * Set alongside pendingSummonId; consumed + cleared by the LanModal resume.
+   * deferred summon (LAN-not-open → McSetupModal auto-resume) lands back in chat
+   * too. Set alongside pendingSummonId; consumed + cleared by the resume.
    */
   pendingSummonReturnToChat: boolean;
   /** B3/B4 — IconRail compass + CharactersScreen tab persistence. */
@@ -204,24 +218,16 @@ interface UiState {
    */
   chatReturnId: string | null;
   /**
-   * Voice-call minimize (chat change #6). When the user minimizes the
-   * full-screen voice call, the call keeps "running" as a small floating widget
-   * (MinimizedCall) rendered at the App shell level so it survives navigation.
-   * Holds the character on the call; null when no call is minimized. Restoring
-   * re-opens the voice-call view; hanging up clears it.
-   */
-  minimizedCall: { characterId: string } | null;
-  /**
    * Mute state for the active voice call, kept here (not in VoiceCallScreen
-   * local state) so it survives minimize → restore and is shared with the
-   * MinimizedCall widget. Reset to false whenever a call ends.
+   * local state) so it is shared between the full call surface and the
+   * bottom-center CallMiniBar. Reset to false whenever a call ends.
    */
   callMuted: boolean;
   /**
    * Deafen state for the active voice call (260705): silences everything the
    * call plays (companion voice + ambience) without touching the mic. Same
-   * home as callMuted for the same reasons (survives minimize, shared
-   * surfaces). Reset to false whenever a call ends.
+   * home as callMuted for the same reasons (shared surfaces). Reset to false
+   * whenever a call ends.
    */
   callDeafened: boolean;
   /** Appearance & feel: live captions on the voice-call screen (persisted via
@@ -254,10 +260,6 @@ interface UiState {
   setVisionCapable: (v: boolean) => void;
   /** Phase 18/19: record the chat a CharacterPage was opened from (or null). */
   setChatReturnId: (id: string | null) => void;
-  /** #6: collapse the voice call to the floating corner widget. */
-  minimizeCall: (characterId: string) => void;
-  /** #6: re-open the full voice-call view for the minimized call. */
-  restoreCall: () => void;
   /** #6: set the active call's mute state (shared by both call surfaces). */
   setCallMuted: (muted: boolean) => void;
   /** 260705: set the active call's deafen state (output silence). */
@@ -268,7 +270,7 @@ interface UiState {
   setCallOverlayEnabled: (v: boolean) => void;
   /** Set the conversation-starters toggle (quiet calls, companion starts a topic). */
   setConvoStartersEnabled: (v: boolean) => void;
-  /** #6: hang up / dismiss the call (clears the widget + resets mute). */
+  /** #6: hang up / dismiss the call (resets mute + deafen). */
   endCall: () => void;
 }
 
@@ -292,7 +294,6 @@ export const useUiStore = create<UiState>((set) => ({
   visionCapable: false,
   homeGreetingDismissed: false,
   chatReturnId: null,
-  minimizedCall: null,
   callMuted: false,
   callDeafened: false,
   callCaptions: false,
@@ -316,25 +317,10 @@ export const useUiStore = create<UiState>((set) => ({
   setChatPanelHidden: (v) => set({ chatPanelHidden: v }),
   setVisionCapable: (v) => set({ visionCapable: v }),
   setChatReturnId: (id) => set({ chatReturnId: id }),
-  // Minimizing leaves the call "running" in the corner and drops the user back
-  // onto that companion's chat (leaving Home, so dismiss the greeting).
-  minimizeCall: (characterId) =>
-    set({
-      minimizedCall: { characterId },
-      view: { kind: 'chat', characterId },
-      modal: null,
-      homeGreetingDismissed: true,
-    }),
-  restoreCall: () =>
-    set((s) =>
-      s.minimizedCall
-        ? { view: { kind: 'voice-call', characterId: s.minimizedCall.characterId }, minimizedCall: null }
-        : {},
-    ),
   setCallMuted: (muted) => set({ callMuted: muted }),
   setCallDeafened: (deafened) => set({ callDeafened: deafened }),
   setCallCaptions: (v) => set({ callCaptions: v }),
   setCallOverlayEnabled: (v) => set({ callOverlayEnabled: v }),
   setConvoStartersEnabled: (v) => set({ convoStartersEnabled: v }),
-  endCall: () => set({ minimizedCall: null, callMuted: false, callDeafened: false }),
+  endCall: () => set({ callMuted: false, callDeafened: false }),
 }));

@@ -26,7 +26,10 @@ const SRC = readFileSync(
   'utf8',
 )
 
-const EXEMPT = new Set(['stop'])
+// `stop` is a real method on the wrapper; `setDashboardWatch` (260721) is
+// also real — it forwards to the adapter-side dashboard telemetry handle
+// (_dash), not to the brain, so the _brain-forwarder pin does not apply.
+const EXEMPT = new Set(['stop', 'setDashboardWatch'])
 
 describe('bot entry port dispatch — every _running method has a _brain forwarder', () => {
   const dispatched = [...new Set([...SRC.matchAll(/_running\?\.(\w+)\?\./g)].map((m) => m[1]))]

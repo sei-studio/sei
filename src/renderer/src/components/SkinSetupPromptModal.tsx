@@ -9,7 +9,8 @@
  *
  *   - "Set up skins" → close + open the setup wizard (first-run, not re-entry).
  *   - "Skip for now" → resume the deferred summon via proceedSummon, which
- *     either summons (LAN connected) or opens the LAN modal (not connected).
+ *     either summons (LAN connected) or opens the Minecraft setup window in
+ *     searching mode (not connected).
  *
  * Esc and scrim-click both skip-and-continue (they route through proceedSummon),
  * matching the "Skip for now" affordance.
@@ -34,7 +35,7 @@ export function SkinSetupPromptModal({
   const openWizard = useWizardStore((s) => s.openWizard);
 
   const handleSkip = (): void => {
-    // proceedSummon replaces this modal (LAN modal) or navigates (summon),
+    // proceedSummon replaces this modal (setup window) or navigates (summon),
     // so it clears the prompt; no explicit closeModal needed. Async now
     // (it awaits a fresh LAN check) — fire-and-forget from this click handler.
     void proceedSummon(characterId);

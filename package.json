@@ -3,9 +3,6 @@
   "version": "0.4.7",
   "type": "module",
   "main": "dist/main/index.js",
-  "bin": {
-    "sei": "src/bot/cli/index.js"
-  },
   "scripts": {
     "dev": "node scripts/dev-viewer.mjs",
     "dev:tools": "node scripts/dev-viewer.mjs --tools",
@@ -19,13 +16,14 @@
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux",
-    "postinstall": "node scripts/postinstall.mjs",
-    "sei": "node src/bot/cli/index.js"
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
     "@huggingface/transformers": "^3.8.1",
     "@supabase/supabase-js": "^2.106.0",
+    "cce-1": "file:./vendor/cce-1",
+    "chess.js": "^1.4.0",
     "electron-updater": "^6.8.3",
     "img2skin": "file:./vendor/skin-gen",
     "mineflayer": "^4.23.0",
@@ -40,6 +38,7 @@
     "semver": "^7.8.0",
     "skinview3d": "3.4.2",
     "soulcaster": "file:./vendor/soulcaster",
+    "three": "^0.185.1",
     "yauzl": "^3.3.0",
     "zod": "^3.22.4",
     "zod-to-json-schema": "^3.25.2",
@@ -57,6 +56,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/semver": "^7.7.1",
+    "@types/three": "^0.185.1",
     "@types/yauzl": "^2.10.3",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "42.0.0",

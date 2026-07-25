@@ -1,16 +1,20 @@
 /**
  * CharacterPage — full-bleed character detail (the "Summoning Terminal").
  *
- * Layout (Party redesign §4.6): the portrait bleeds off the RIGHT edge behind a
- * left-to-right scrim; a left content panel carries a quiet back crumb, an
- * Oswald name + IdTag, the public/private share row (own chars),
- * the live status line, Description / Game tabs, and a bottom deploy row
- * (Play/Disconnect + a settings gear: it opens the editor directly for owned
- * customs, and drops a Reset memory / Unbind menu for view-only companions).
- * All prior functionality is preserved — persona /
- * description display + rotate, share toggle + multi-phase confirm, edit,
- * add/remove-from-library, report, cache-on-demand, reset memory, and the model
- * status row.
+ * Layout (Party redesign §4.6; 260721 static-info revision): the portrait
+ * bleeds off the RIGHT edge behind a left-to-right scrim; a left content
+ * panel carries a quiet back crumb, an Oswald name + IdTag, Description /
+ * Game tabs, and a bottom deploy row (Chat + Play + a settings gear: it
+ * opens the editor directly for owned customs, and drops a Reset memory /
+ * Unbind menu for view-only companions).
+ *
+ * This page is STATIC info only. Minecraft connect/disconnect controls live
+ * exclusively in the chat's game surface (McLaunchPanel Launch / the
+ * GameSurface end "x"); there is no live status line or session timer here.
+ * "Chat" routes to the chat page; "Play" routes to chat AND opens the
+ * Minecraft surface (launch panel, or the live dashboard when the bot is
+ * already online) and never reflects game state. The public/private share
+ * toggle sits in its own box under the stat boxes on the Description tab.
  *
  * Source: .planning/design/UI-REDESIGN-PARTY.md §4.6.
  */
@@ -24,7 +28,6 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
-import { Presence } from '../components/Presence';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { EditCharacterModal, type EditSection } from '../components/EditCharacterModal';
@@ -38,17 +41,11 @@ import { ReportCompanionModal } from '../components/ReportCompanionModal';
 import { ProactivenessBar } from '../components/ProactivenessBar';
 import { getProactiveness } from '../lib/proactiveness';
 import { formatDate } from '../lib/formatDate';
+import { requestGameLaunch, openGame } from '../lib/gameLaunch';
 import { BackIcon, GearIcon, RotateIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
-import { ERROR_COPY } from '../lib/errors';
 import type { Character } from '@shared/characterSchema';
-import type { BotStatus } from '@shared/ipc';
 import styles from './CharacterPage.module.css';
-
-// Stable "not summoned" fallback for the per-character status selector. A
-// module const (not an inline literal) keeps the zustand selector referentially
-// stable so an absent entry doesn't re-render the page on every store change.
-const NOT_SUMMONED: BotStatus = { kind: 'idle', characterId: '' };
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '-';
@@ -57,19 +54,6 @@ function fmtMs(ms: number): string {
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
-function fmtUptime(uptimeMs: number): string {
-  if (uptimeMs < 1000) return '0s';
-  if (uptimeMs < 60_000) return `${Math.floor(uptimeMs / 1000)}s`;
-  if (uptimeMs < 3_600_000) {
-    const m = Math.floor(uptimeMs / 60_000);
-    const s = Math.floor((uptimeMs % 60_000) / 1000);
-    return `${m}m ${s}s`;
-  }
-  const h = Math.floor(uptimeMs / 3_600_000);
-  const m = Math.floor((uptimeMs % 3_600_000) / 60_000);
-  return `${h}h ${m}m`;
 }
 
 export interface CharacterPageProps {
@@ -121,12 +105,7 @@ function CharacterPageSkeleton({ onBack }: { onBack: () => void }): React.ReactE
 
 export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
-  const openModal = useUiStore((s) => s.openModal);
   const characters = useDataStore((s) => s.characters);
-  // This page's character status only (multi-summon). All the downstream
-  // checks (`summon.kind === 'online' && summon.characterId === id`, the
-  // uptime line, isConnecting) now resolve per-character automatically.
-  const summon = useDataStore((s) => s.summons[id] ?? NOT_SUMMONED);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
   const authState = useAuthStore((s) => s.state);
   const setUpgradeFraming = useAuthStore((s) => s.setUpgradeFraming);
@@ -221,21 +200,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       EXIT_MS,
     );
   };
-
-  // ── Live uptime ticker (hoisted above the early-return for stable hook count) ──
-  // The supervisor emits the 'online' status ONCE; there is no periodic re-emit,
-  // so without a local clock the status line would sit frozen at "0s" for the
-  // whole session. We derive a live uptime from the session's absolute
-  // startedAtMs (Date.now() - startedAtMs) and re-render every second so
-  // "Connected · Xs" counts up — correct even if the page is opened mid-session.
-  const onlineForThisChar = summon.kind === 'online' && summon.characterId === id;
-  const [nowMs, setNowMs] = useState<number>(() => Date.now());
-  useEffect(() => {
-    if (!onlineForThisChar) return;
-    setNowMs(Date.now());
-    const tick = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(tick);
-  }, [onlineForThisChar]);
 
   // ── Library-state hooks (hoisted above the early-return for stable count) ──
   const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
@@ -367,27 +331,23 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // Per-character accent tint for the portrait bloom.
   const tint = palette[2] ?? palette[1] ?? 'var(--accent)';
 
-  const isActive = summon.kind === 'online' && summon.characterId === id;
-  const isErrored = summon.kind === 'error' && summon.characterId === id;
-  const isConnecting = summon.kind === 'connecting';
-
   const openEdit = (section: EditSection): void => {
     setEditSection(section);
     setEditing(true);
   };
 
-  const handleSummonClick = (): void => {
-    // Connected OR still connecting → this button is "Disconnect": clear the
-    // entry optimistically (instant, like the floating widget) then stop.
-    if (isActive || isConnecting) {
-      useDataStore.getState().setStatus({ kind: 'idle', characterId: id });
-      void sei.stop(id);
-      return;
-    }
-    // "Play" opens the game picker; each game tile launches through the shared
-    // summonFlow (skin-setup nudge → LAN gate). Keeps CharacterPage and
-    // CharactersScreen in lockstep on the same entry point.
-    openModal({ kind: 'games-picker', characterId: id });
+  // "Chat" routes to the chat page; "Play" routes to chat AND opens the
+  // Minecraft game surface (the launch panel, or the live dashboard when the
+  // bot is already online). Both are static: connection control lives in the
+  // game surface, never on this page. Play rides the shared cross-launch
+  // gate so a live chess/screen-share session confirms before it swaps.
+  const handleChatClick = (): void => {
+    navigate({ kind: 'chat', characterId: id });
+  };
+  const handlePlayClick = (): void => {
+    requestGameLaunch(id, { id: 'minecraft', name: 'Minecraft' }, () =>
+      openGame(id, 'minecraft'),
+    );
   };
 
   const onToggleShared = (): void => {
@@ -537,18 +497,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     }
   };
 
-  // GUI-05: status label uses centralized ERROR_COPY, not raw summon.message.
-  // Live-ticked uptime from the session start, so the label counts up instead
-  // of sticking at the emit-time "0s".
-  const liveUptimeMs = summon.kind === 'online' ? Math.max(0, nowMs - summon.startedAtMs) : 0;
-  const errorLabel =
-    summon.kind === 'error' && summon.characterId === id
-      ? (ERROR_COPY[summon.error] ?? ERROR_COPY.BOT_CRASH)
-      : '';
-  // The resting/idle status is intentionally not shown — the status line only
-  // appears when there's a live state to report (online / connecting / errored).
-  const showStatusRow = isActive || isConnecting || isErrored;
-
   return (
     <div className={styles.root}>
       {/* Portrait bleeds off the right edge behind a left-to-right scrim. */}
@@ -589,48 +537,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             </button>
           ) : null}
         </div>
-
-        {/* Public/private share row (own chars only) — Toggle + label. */}
-        {!viewOnly ? (
-          <div className={styles.shareRow}>
-            <Toggle
-              on={character.shared}
-              onChange={() => onToggleShared()}
-              disabled={shareConfirm !== null || (authState.kind !== 'signed_in' && character.shared)}
-              aria-label={
-                character.shared
-                  ? 'Companion is public. Turn off to make private.'
-                  : 'Companion is private. Turn on to make public.'
-              }
-            />
-            <span className={styles.shareLabel}>
-              {character.shared ? 'Public: others can invite' : 'Private'}
-            </span>
-          </div>
-        ) : null}
-
-        {/* Live status line (online / connecting / errored). */}
-        {showStatusRow ? (
-          <div className={styles.statusRow}>
-            {isErrored ? (
-              <>
-                <span className={styles.errDot} />
-                <span className={styles.statusLabel}>{errorLabel}</span>
-                <button type="button" className={styles.tryAgain} onClick={handleSummonClick}>
-                  Try again
-                </button>
-              </>
-            ) : (
-              <>
-                <Presence
-                  category={isConnecting ? 'connecting' : 'in-game'}
-                  label={isConnecting ? 'Connecting…' : 'In your world'}
-                />
-                {isActive ? <span className={styles.uptime}>{fmtUptime(liveUptimeMs)}</span> : null}
-              </>
-            )}
-          </div>
-        ) : null}
 
         {/* Tabs (mockup .pf-tab underline). */}
         <div className={styles.tabs} role="tablist">
@@ -725,6 +631,29 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               </div>
               {/* Reset memory moved into the deploy row's settings (gear) menu. */}
             </div>
+
+            {/* Public/private share toggle (own chars only), in its own box
+                under the stat boxes. */}
+            {!viewOnly ? (
+              <div className={styles.shareBox}>
+                <Toggle
+                  on={character.shared}
+                  onChange={() => onToggleShared()}
+                  disabled={
+                    shareConfirm !== null ||
+                    (authState.kind !== 'signed_in' && character.shared)
+                  }
+                  aria-label={
+                    character.shared
+                      ? 'Companion is public. Turn off to make private.'
+                      : 'Companion is private. Turn on to make public.'
+                  }
+                />
+                <span className={styles.shareLabel}>
+                  {character.shared ? 'Public: others can invite' : 'Private'}
+                </span>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className={styles.pane}>
@@ -743,7 +672,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           </div>
         )}
 
-        {/* Deploy row — Play / Disconnect + settings gear, pinned to the bottom. */}
+        {/* Deploy row — Chat + Play + settings gear, pinned to the bottom.
+            Both buttons are static routes; neither reflects game state. */}
         {addError ? (
           <p className={styles.addError} role="alert">
             {addError}
@@ -764,13 +694,20 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           ) : (
             <>
               <Button
-                kind={isActive ? 'danger' : 'accent'}
+                kind="primary"
                 size="lg"
                 className={styles.deployBig}
-                disabled={isConnecting}
-                onClick={handleSummonClick}
+                onClick={handleChatClick}
               >
-                {isActive ? 'Disconnect' : isConnecting ? 'Connecting…' : 'Play'}
+                Chat
+              </Button>
+              <Button
+                kind="accent"
+                size="lg"
+                className={styles.deployBig}
+                onClick={handlePlayClick}
+              >
+                Play
               </Button>
               <div className={styles.settingsWrap} ref={settingsRef}>
                 {!viewOnly ? (

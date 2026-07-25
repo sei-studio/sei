@@ -18,12 +18,19 @@
  * it. The bound port is exposed via `.port` / `.baseUrl` so the config writer
  * can stamp it into `customskinloader.json`.
  *
- * URL contract: GET `/skins/<username>.png` ONLY. The regex
- *   `^/skins/([A-Za-z0-9_]{1,16})\.png(\?.*)?$`
- * matches Minecraft's username constraints exactly and rejects any URL
- * containing `..`, `/`, or non-username characters — path-traversal cannot
- * resolve because the username goes through an in-memory persona lookup
- * (NEVER filesystem path concatenation).
+ * URL contract:
+ *   - GET `/skins/<username>.png` — persona skins. The regex
+ *     `^/skins/([A-Za-z0-9_]{1,16})\.png(\?.*)?$`
+ *     matches Minecraft's username constraints exactly and rejects any URL
+ *     containing `..`, `/`, or non-username characters — path-traversal cannot
+ *     resolve because the username goes through an in-memory persona lookup
+ *     (NEVER filesystem path concatenation).
+ *   - GET `/mcassets/<version>/item/<name>.png` — read-only Minecraft item
+ *     textures for the renderer's dashboard, served out of prismarine-viewer's
+ *     bundled per-version texture folders (260721). Both URL segments are
+ *     regex-validated and never percent-decoded; resolution + traversal
+ *     guards live in mcAssets.ts. Misses 404 as text/plain so the renderer's
+ *     <img onError> fallback (text-label slots) fires.
  *
  * 404 strategy: returns a pre-baked transparent 1×1 PNG (with status 404 +
  * content-type image/png) for unknown usernames. Some CustomSkinLoader builds
@@ -35,8 +42,10 @@
  *   - threat model: path traversal via /skins/... — mitigated by regex
  */
 import http from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { readSkinPng } from './skinStore';
 import { listCharacters } from './characterStore';
+import { parseMcAssetUrl, resolveMcAssetFile, defaultTexturesRoot } from './mcAssets';
 
 /**
  * Preferred FIXED loopback port for the skin server. Mirrors the auth
@@ -122,8 +131,12 @@ function listenOn(server: http.Server, port: number): Promise<void> {
  *
  * `args.port`, when provided, overrides the preferred port (tests / callers
  * that want an explicit port); the ephemeral fallback still applies.
+ * `args.texturesRoot` overrides the /mcassets textures dir (tests); the
+ * default resolves prismarine-viewer's bundled folder lazily per request.
  */
-export async function createSkinServer(args: { port?: number } = {}): Promise<SkinServer> {
+export async function createSkinServer(
+  args: { port?: number; texturesRoot?: string | null } = {},
+): Promise<SkinServer> {
   const server = http.createServer(async (req, res) => {
     try {
       const url = req.url || '';
@@ -139,6 +152,39 @@ export async function createSkinServer(args: { port?: number } = {}): Promise<Sk
         'access-control-allow-origin': '*',
         'access-control-allow-methods': 'GET',
       };
+      // ── /mcassets: Minecraft item textures for the dashboard (260721). ──
+      // Read-only, regex-gated, resolved inside prismarine-viewer's bundled
+      // textures dir (mcAssets.ts owns validation + the traversal guard).
+      if (req.method === 'GET' && url.startsWith('/mcassets/')) {
+        const asset = parseMcAssetUrl(url);
+        const root = args.texturesRoot !== undefined ? args.texturesRoot : defaultTexturesRoot();
+        const file = asset && root ? await resolveMcAssetFile(root, asset.version, asset.name) : null;
+        let png: Buffer | null = null;
+        if (file) {
+          try {
+            png = await readFile(file);
+          } catch {
+            png = null;
+          }
+        }
+        if (!png) {
+          // text/plain (NOT a placeholder PNG): the renderer relies on the
+          // <img> error event to fall back to its text-label slot rendering.
+          res.writeHead(404, { ...corsHeaders, 'content-type': 'text/plain' });
+          res.end('Not Found');
+          return;
+        }
+        res.writeHead(200, {
+          ...corsHeaders,
+          'content-type': 'image/png',
+          'content-length': String(png.length),
+          // Textures are immutable per version folder — cache hard so the
+          // inventory grid never refetches icons on re-render.
+          'cache-control': 'public, max-age=31536000, immutable',
+        });
+        res.end(png);
+        return;
+      }
       if (req.method !== 'GET' || !m) {
         res.writeHead(404, { ...corsHeaders, 'content-type': 'text/plain' });
         res.end('Not Found');
