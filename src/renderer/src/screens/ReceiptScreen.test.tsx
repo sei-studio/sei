@@ -9,13 +9,13 @@
  *
  * Invariants under test:
  *   1. Module exports a ReceiptScreen symbol.
- *   2. Source contains literal '$20.00 charged today' (FTC 16 CFR §425.5
+ *   2. The charge line renders the TIER's exact amount (FTC 16 CFR §425.5
  *      plain-language charge acknowledgement).
  *   3. Source contains literal 'Billed monthly' (frequency).
  *   4. Source contains literal 'Cancel anytime in Settings → Cloud AI →
  *      Cancel subscription' (cancellation steps).
  *   5. Source contains literal 'Back to Sei' (primary CTA label).
- *   6. PROXY-05 carve-out comment is present in the source.
+ *   6. The source records why the dollar amount must render here.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -41,9 +41,15 @@ describe('ReceiptScreen', () => {
     expect(typeof mod.ReceiptScreen).toBe('function');
   });
 
-  it('Test 2: source contains literal "$20.00 charged today"', () => {
+  it('Test 2: the charge line renders the tier\'s exact amount', async () => {
     const source = readFileSync(SOURCE_PATH, 'utf-8');
-    expect(source.includes('$20.00 charged today')).toBe(true);
+    expect(source.includes('charged today')).toBe(true);
+    // The amount comes from the plan catalog, so Quest and Party can never
+    // acknowledge each other's charge.
+    expect(source.includes('{card.chargeUsd')).toBe(true);
+    const { planCard } = await import('../lib/planCatalog');
+    expect(planCard('quest').chargeUsd).toBe('$8.00');
+    expect(planCard('party').chargeUsd).toBe('$18.00');
   });
 
   it('Test 3: source contains literal "Billed monthly"', () => {
@@ -63,8 +69,8 @@ describe('ReceiptScreen', () => {
     expect(source.includes('Back to Sei')).toBe(true);
   });
 
-  it('Test 6: PROXY-05 carve-out comment is present', () => {
+  it('Test 6: the source records why the dollar amount must render here', () => {
     const source = readFileSync(SOURCE_PATH, 'utf-8');
-    expect(source.includes('PROXY-05 carve-out')).toBe(true);
+    expect(source.includes('FTC 16 CFR §425.5')).toBe(true);
   });
 });

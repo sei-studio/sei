@@ -56,7 +56,7 @@ function mkChar(id: string, username: string): unknown {
 function makeSupervisor(over: {
   onSummonFailure: (info: SummonFailureInfo) => void;
   getLanPort?: () => number | null;
-  cloudCreditsDepleted?: () => Promise<boolean>;
+  cloudOverLimit?: () => Promise<boolean>;
   sendStatus?: (status: unknown) => void;
 }): ReturnType<typeof createBotSupervisor> {
   return createBotSupervisor({
@@ -64,7 +64,7 @@ function makeSupervisor(over: {
     sendStatus: over.sendStatus ?? vi.fn(),
     sendLog: vi.fn(),
     getSkinServerBaseUrl: () => null,
-    cloudCreditsDepleted: over.cloudCreditsDepleted ?? vi.fn(async () => false),
+    cloudOverLimit: over.cloudOverLimit ?? vi.fn(async () => false),
     emitHardStop: vi.fn(),
     onSummonFailure: over.onSummonFailure,
   });
@@ -156,7 +156,7 @@ describe('onSummonFailure — pre-gate sites', () => {
     getAiBackendKindSpy.mockResolvedValue('cloud-proxy');
     depletedSpy.mockResolvedValue(true);
     const onSummonFailure = vi.fn();
-    const sup = makeSupervisor({ onSummonFailure, cloudCreditsDepleted: depletedSpy });
+    const sup = makeSupervisor({ onSummonFailure, cloudOverLimit: depletedSpy });
 
     await expect(sup.summon(A)).rejects.toThrow('CLOUD_CREDITS_DEPLETED');
     expect(onSummonFailure).toHaveBeenCalledTimes(1);

@@ -12,12 +12,13 @@
  *
  * Invariants under test:
  *   1. Module exports an AutoRenewalConsentModal symbol.
- *   2. Source contains literal "$20/month" (CA ARL §17602(a)(1) clear-and-
- *      conspicuous disclosure inside the consent surface).
+ *   2. The consent label discloses the TIER's exact per-month amount ($8/month
+ *      for Quest, $18/month for Party) — CA ARL §17602(a)(1) clear-and-
+ *      conspicuous disclosure inside the consent surface.
  *   3. Source contains literal "until I cancel" (auto-renewal language).
- *   4. Source contains the PROXY-05 carve-out comment.
+ *   4. Source states that the amount is legally required.
  *   5. The handleConfirm flow calls recordSubscriptionConsent BEFORE
- *      creditsOpenCheckout('subscription') (legal anchor must land first).
+ *      creditsOpenCheckout(tier) (legal anchor must land first).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -34,7 +35,11 @@ let recordConsentMock: ReturnType<
   typeof vi.fn<(args: { consent_version: string }) => Promise<{ ok: true } | { ok: false; code: string }>>
 >;
 let openCheckoutMock: ReturnType<
-  typeof vi.fn<(kind: 'pack' | 'subscription') => Promise<{ ok: true } | { ok: false; code: string }>>
+  typeof vi.fn<
+    (kind: 'quest' | 'party' | 'topup_small' | 'topup_large') => Promise<
+      { ok: true } | { ok: false; code: string }
+    >
+  >
 >;
 let consentCalledAt = 0;
 let checkoutCalledAt = 0;
@@ -69,9 +74,17 @@ describe('AutoRenewalConsentModal', () => {
     expect(typeof mod.AutoRenewalConsentModal).toBe('function');
   });
 
-  it('Test 2: source contains literal "$20/month" (CA ARL clear-and-conspicuous)', () => {
+  it('Test 2: the consent label carries the tier\'s per-month amount (CA ARL clear-and-conspicuous)', async () => {
     const source = readFileSync(SOURCE_PATH, 'utf-8');
-    expect(source.includes('$20/month')).toBe(true);
+    // The amount is interpolated from the tier so Quest and Party can never
+    // disclose each other's price.
+    expect(source.includes('${card.price}/month until I cancel')).toBe(true);
+    // The catalog is the single source of those amounts.
+    const { planCard } = await import('../lib/planCatalog');
+    expect(planCard('quest').price).toBe('$8');
+    expect(planCard('party').price).toBe('$18');
+    expect(planCard('quest').chargeUsd).toBe('$8.00');
+    expect(planCard('party').chargeUsd).toBe('$18.00');
   });
 
   it('Test 3: source contains literal "until I cancel" (auto-renewal language)', () => {
@@ -79,9 +92,9 @@ describe('AutoRenewalConsentModal', () => {
     expect(source.includes('until I cancel')).toBe(true);
   });
 
-  it('Test 4: source contains PROXY-05 carve-out comment', () => {
+  it('Test 4: source records why the dollar amount must render here', () => {
     const source = readFileSync(SOURCE_PATH, 'utf-8');
-    expect(source.includes('PROXY-05 carve-out')).toBe(true);
+    expect(source.includes('CA ARL §17602(a)(1)')).toBe(true);
   });
 
   it('Test 5: handleConfirm calls recordSubscriptionConsent BEFORE creditsOpenCheckout', async () => {
@@ -93,7 +106,7 @@ describe('AutoRenewalConsentModal', () => {
     await mod.handleConfirmForTest('2026-05-26');
 
     expect(recordConsentMock).toHaveBeenCalledWith({ consent_version: '2026-05-26' });
-    expect(openCheckoutMock).toHaveBeenCalledWith('subscription');
+    expect(openCheckoutMock).toHaveBeenCalledWith('party');
     // Order invariant: consent INSERT MUST land before the checkout opens so
     // the legal anchor is recorded server-side even if the user closes the
     // browser before completing the LS flow.
@@ -113,7 +126,13 @@ describe('AutoRenewalConsentModal', () => {
     await mod.handleConfirmForTest('2026-05-26');
 
     expect(recordConsentMock).toHaveBeenCalledTimes(1);
-    expect(openCheckoutMock).toHaveBeenCalledWith('subscription');
+    expect(openCheckoutMock).toHaveBeenCalledWith('party');
+  });
+
+  it('Test 6b: the checkout kind follows the tier being purchased', async () => {
+    const mod = await import('./AutoRenewalConsentModal');
+    await mod.handleConfirmForTest('2026-05-26', undefined, 'quest');
+    expect(openCheckoutMock).toHaveBeenCalledWith('quest');
   });
 
   it('Test 7: onProceed fires AFTER creditsOpenCheckout (hand-off to the checkout watch)', async () => {

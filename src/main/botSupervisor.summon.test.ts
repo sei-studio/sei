@@ -58,7 +58,7 @@ function makeSupervisor(): ReturnType<typeof createBotSupervisor> {
     sendStatus: sendStatusSpy,
     sendLog: vi.fn(),
     getSkinServerBaseUrl: () => null,
-    cloudCreditsDepleted: vi.fn(async () => false),
+    cloudOverLimit: vi.fn(async () => false),
     emitHardStop: vi.fn(),
   });
 }

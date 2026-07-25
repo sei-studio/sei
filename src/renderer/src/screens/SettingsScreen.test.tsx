@@ -17,7 +17,8 @@
  *   S.4  — Realistic typing + developer console are <Toggle>s.
  *   S.5  — Danger actions use the shared Button danger kind (no bespoke
  *          .dangerBtn CSS).
- *   S.6  — Cloud users get a Playtime row whose Add navigates to credits.
+ *   S.6  — 260724: the Playtime row and every playtime-estimate reference are
+ *          gone. Weekly usage lives on the plan screen.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -94,11 +95,15 @@ describe('SettingsScreen (Party restyle structure)', () => {
     expect(src.includes('kind="danger"')).toBe(true);
   });
 
-  it('S.6: cloud users get a Playtime row whose Add navigates to credits', () => {
+  it('S.6: the Playtime row and its estimate plumbing are gone (260724)', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes('>Playtime<')).toBe(true);
-    expect(src.includes('tokensRemainingToPlaytime')).toBe(true);
-    expect(src.includes("navigate({ kind: 'credits' })")).toBe(true);
+    // No Playtime row: the weekly-allowance bar lives on the plan screen, and
+    // there is no time estimate left to show anywhere in the UI.
+    expect(src.includes('>Playtime<')).toBe(false);
+    expect(src.includes('tokensRemainingToPlaytime')).toBe(false);
+    expect(src.includes('playtimeEstimate')).toBe(false);
+    expect(src.includes('DEFAULT_TOKENS_PER_MIN')).toBe(false);
+    expect(src.includes('VISION_MULTIPLIER')).toBe(false);
   });
 });
 
