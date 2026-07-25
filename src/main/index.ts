@@ -669,14 +669,14 @@ async function bootstrap(): Promise<void> {
     // Closure-via-getter so a later restart of the skin server (port-drift
     // recovery) is observable by subsequent summons.
     getSkinServerBaseUrl: () => skinServer?.baseUrl ?? null,
-    // Pre-flight credit gate (quick/260605): block a cloud-proxy summon when
-    // the account's ledger is exhausted so the bot never joins the world to
-    // idle. cloudCreditsDepleted self-guards (no-session / BYOK / errors →
-    // false), so the dynamic import is the only thing we defend against here.
-    cloudCreditsDepleted: async () => {
+    // Pre-flight gate (260724): block a cloud-proxy summon when the account is
+    // over its weekly limit with no extra credits left, so the bot never joins
+    // the world to idle. cloudOverLimit self-guards (no-session / BYOK / errors
+    // → false), so the dynamic import is the only thing we defend against here.
+    cloudOverLimit: async () => {
       try {
-        const { cloudCreditsDepleted } = await import('./cloud/proxyClient');
-        return await cloudCreditsDepleted();
+        const { cloudOverLimit } = await import('./cloud/proxyClient');
+        return await cloudOverLimit();
       } catch {
         return false;
       }

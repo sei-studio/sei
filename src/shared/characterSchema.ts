@@ -341,15 +341,10 @@ export const UserConfigSchema = z.object({
     .nullable()
     .optional()
     .default(null),
-  /**
-   * 260617: ISO timestamp until which cloud (trial) play is daily-rate-limited
-   * (the proxy's $5/day spend cap). Set when a live session hits the cap; the
-   * summon gate refuses to fork until it elapses, then clears it. Cleared early
-   * by the renderer when a subscription goes active so a paid upgrade unblocks
-   * immediately. Absent / null = not limited. Optional (not defaulted) so the
-   * many manual UserConfig literals don't all need to spell it out.
-   */
-  daily_limited_until: z.string().nullable().optional(),
+  // 260724: `daily_limited_until` was removed with the $5/day spend cap. The
+  // weekly-allowance model has no client-persisted block: the summon gate asks
+  // the server (CreditsStatus.over_limit) on every summon. Stray values in old
+  // config.json files are dropped by the schema on the next write.
   /**
    * 260705: ISO timestamps of recent character creations, pruned to the
    * rolling 24h window on every write. Drives the MAX_CREATIONS_PER_DAY cap
@@ -399,7 +394,7 @@ export const UserConfigSchema = z.object({
    * and NOT defaulted (absent ≡ 'en' everywhere it is read, via
    * clampChatLanguage in src/shared/chatLanguage.ts) so the many manual
    * UserConfig literals don't all need to spell it out — same convention as
-   * analytics_opt_out / daily_limited_until. Keep the enum in sync with
+   * analytics_opt_out / creation_times. Keep the enum in sync with
    * CHAT_LANGUAGES (src/shared/chatLanguage.ts) and CHAT_LANGUAGE_NAMES
    * (src/bot/brain/promptLibrary.js — the bot can't import this module).
    */
@@ -647,7 +642,7 @@ export const UserConfigSchema = z.object({
    * disclosed default. Optional and NOT defaulted (absent ≡ false everywhere it
    * is read: `analytics_opt_out === true`) so the many manual UserConfig
    * literals don't all need to spell it out — same convention as
-   * daily_limited_until / creation_times above.
+   * creation_times above.
    */
   analytics_opt_out: z.boolean().optional(),
   /**

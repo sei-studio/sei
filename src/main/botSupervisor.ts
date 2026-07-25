@@ -34,7 +34,7 @@ import { clampChatLanguage } from '../shared/chatLanguage';
 import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
 import { buildLaunchContinuity } from './chat/continuity';
-import { loadConfig as loadUserConfig, saveConfig as saveUserConfig } from './configStore'; // UserConfig for bot init + daily-limit gate
+import { loadConfig as loadUserConfig } from './configStore'; // UserConfig for bot init
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
 import type { SummonFailureInfo, SummonPhase } from './diagnostics';
@@ -182,17 +182,16 @@ export interface BotSupervisorOptions {
    */
   getSkinServerBaseUrl: () => string | null;
   /**
-   * Pre-flight cloud-credit gate (quick/260605). Resolves `true` when the
-   * signed-in account is on the cloud-proxy backend AND its balance has fallen
-   * below the playable minimum (plan='depleted' — see MIN_PLAYABLE_BALANCE_MICRO
-   * in proxyClient). `_summon` consults this BEFORE forking a
-   * cloud bot and refuses to summon when `true`, so a no-credit user never
-   * joins the world to idle against a 402-ing proxy. MUST fail-open (resolve
-   * `false`) on any error or missing session — a transient ledger-read blip can
-   * never wrongly block a paying user. BYOK summons skip the check. Wired in
-   * index.ts to proxyClient.cloudCreditsDepleted.
+   * Pre-flight cloud gate (260724). Resolves `true` when the signed-in account
+   * is on the cloud-proxy backend AND is OVER LIMIT: its weekly allowance is
+   * spent and no extra credits remain (`CreditsStatus.over_limit`). `_summon`
+   * consults this BEFORE forking a cloud bot and refuses to summon when `true`,
+   * so a user whose next call would 402 never joins the world to idle. MUST
+   * fail-open (resolve `false`) on any error or missing session — a transient
+   * ledger-read blip can never wrongly block a paying user. BYOK summons skip
+   * the check. Wired in index.ts to proxyClient.cloudOverLimit.
    */
-  cloudCreditsDepleted: () => Promise<boolean>;
+  cloudOverLimit: () => Promise<boolean>;
   /**
    * Fan the out-of-playtime hard-stop modal to the renderer (wired to
    * emitCreditsHardStop). `_summon` calls this with reason='depleted' when the
@@ -625,49 +624,25 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // mid-session via parentPort {type:'jwt'}.
       cloudMode = { baseURL: PROXY_BASE_URL, authToken: latestJwt ?? '' };
 
-      // Pre-flight credit gate (quick/260605). Refuse to fork a cloud bot when
-      // the account's ledger is exhausted: otherwise the bot joins the LAN
-      // world, every proxy call 402s, and the user stares at an idle, silent
-      // companion. Surface the out-of-playtime hard-stop instead and abort the
-      // summon so nothing joins. cloudCreditsDepleted fails OPEN (false on any
-      // error / no session / BYOK), so this never blocks a funded or
-      // own-key user. The early throw runs BEFORE the 'connecting' status
-      // below, so the model row stays idle rather than flashing a connect.
-      if (await opts.cloudCreditsDepleted()) {
+      // Pre-flight gate (260724). Refuse to fork a cloud bot when the account
+      // is over its weekly limit with no extra credits left: otherwise the bot
+      // joins the LAN world, every proxy call 402s, and the user stares at an
+      // idle, silent companion. Surface the hard stop instead and abort the
+      // summon so nothing joins. cloudOverLimit fails OPEN (false on any error /
+      // no session / BYOK), so this never blocks a funded or own-key user. The
+      // early throw runs BEFORE the 'connecting' status below, so the model row
+      // stays idle rather than flashing a connect.
+      //
+      // This is the ONLY summon-time refusal. The old minimum-balance heuristic
+      // and the persisted daily-dollar block are both gone: the server decides,
+      // and a call that starts with any allowance left is allowed to finish.
+      if (await opts.cloudOverLimit()) {
         logger.warn(
-          '[sei/sup] summon blocked: out of playtime (balance below the playable minimum) — raising popup, not forking the bot',
+          '[sei/sup] summon blocked: weekly limit reached with no extra credits — raising popup, not forking the bot',
         );
         opts.emitHardStop({ reason: 'depleted' });
         opts.sendStatus({ kind: 'idle', characterId });
         throw new Error('CLOUD_CREDITS_DEPLETED');
-      }
-
-      // Daily-play-limit gate (trial $5/day spend cap, 260617). A prior session
-      // that hit the cap persisted daily_limited_until; refuse to fork until the
-      // window resets — the bot would just 429 daily_dollar and bounce. Raise the
-      // same daily-limit popup the mid-session path uses. Subscribers never hit
-      // the trial cap, and the renderer clears this flag on subscription-active,
-      // so a paid upgrade unblocks immediately; a config glitch fails OPEN.
-      try {
-        const cfg = await loadUserConfig();
-        const untilIso = cfg.daily_limited_until;
-        if (untilIso) {
-          const untilMs = Date.parse(untilIso);
-          if (Number.isFinite(untilMs) && Date.now() < untilMs) {
-            const sec = Math.max(1, Math.ceil((untilMs - Date.now()) / 1000));
-            logger.warn(`[sei/sup] summon blocked: daily play limit active ${sec}s more`);
-            opts.emitHardStop({ reason: 'rate_limited', retry_after_seconds: sec });
-            opts.sendStatus({ kind: 'idle', characterId });
-            throw new Error('DAILY_LIMIT_REACHED');
-          }
-          // Window elapsed — clear the stale flag so this and future summons pass.
-          await saveUserConfig({ ...cfg, daily_limited_until: null });
-        }
-      } catch (e) {
-        if ((e as Error)?.message === 'DAILY_LIMIT_REACHED') throw e;
-        logger.warn(
-          `[sei/sup] daily-limit gate check failed (allowing summon): ${(e as Error).message}`,
-        );
       }
     } else {
       // 260703 hard guard: local (BYOK) mode must NEVER fall back to the cloud
@@ -950,16 +925,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         });
         summonReject(new Error(`${data.error}: ${data.message}`));
       }
-      // Out-of-playtime popup (260616): a CLOUD_CREDITS_DEPLETED lifecycle error
-      // can arrive MID-SESSION — the running bot drew its balance below the
-      // playable minimum and the proxy 402'd its next turn, so orchestrator.js
-      // latched and is tearing the bot down (it leaves the world on its own).
-      // The pre-flight summon gate (_summon → cloudCreditsDepleted) only covers
-      // summon time, so raise the same out-of-playtime popup here for a session
-      // that depletes while live. emitHardStop is idempotent (sets
-      // hardStopActive=true); fires whether or not the summon promise resolved.
+      // Hard-stop popup (260616): a CLOUD_CREDITS_DEPLETED lifecycle error can
+      // arrive MID-SESSION — the running bot spent the last of its weekly
+      // allowance and extra credits, the proxy 402'd its next turn, and
+      // orchestrator.js latched and is tearing the bot down (it leaves the
+      // world on its own). The pre-flight summon gate (_summon →
+      // cloudOverLimit) only covers summon time, so raise the same popup here
+      // for a session that runs out while live. emitHardStop is idempotent
+      // (sets hardStopActive=true); fires whether or not the summon resolved.
       if (data.type === 'error' && data.error === 'CLOUD_CREDITS_DEPLETED') {
-        logger.warn('[sei/sup] bot depleted mid-session — raising out-of-playtime popup');
+        logger.warn('[sei/sup] bot hit the limit mid-session — raising the hard-stop popup');
         opts.emitHardStop({ reason: 'depleted' });
         // The bot latches halted and self-exits, but that self-shutdown is
         // best-effort: if its gracefulShutdown stalls (a hung brain.stop /
@@ -971,29 +946,17 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // no-ops if the bot already exited (session gone). Fire-and-forget.
         void _stop(characterId, STOP_TIMEOUT_MS);
       }
-      // Daily play limit ($5/day trial spend cap) hit MID-SESSION: the bot
-      // latched and is leaving the world quietly (no in-game chat). Raise the
-      // daily-limit popup and PERSIST the reset window so re-summons are blocked
-      // until it clears (the summon gate reads daily_limited_until).
-      // retryAfterSeconds is the honest reset countdown; default 24h if absent.
+      // A 429 arrived MID-SESSION and the bot latched, leaving the world quietly
+      // (no in-game chat). 260724: the daily-dollar spend bucket is gone, so
+      // this now only fires for the proxy's IP / abuse gates. Raise the popup;
+      // nothing is persisted, so the next summon is free to try again.
       if (data.type === 'error' && data.error === 'DAILY_LIMIT_REACHED') {
         const sec =
           typeof data.retryAfterSeconds === 'number' && data.retryAfterSeconds > 0
             ? data.retryAfterSeconds
             : 86_400;
-        logger.warn(`[sei/sup] bot hit daily play limit — popup + persisting ${sec}s block`);
+        logger.warn(`[sei/sup] bot was rate limited for ${sec}s — raising the popup`);
         opts.emitHardStop({ reason: 'rate_limited', retry_after_seconds: sec });
-        void (async (): Promise<void> => {
-          try {
-            const cfg = await loadUserConfig();
-            await saveUserConfig({
-              ...cfg,
-              daily_limited_until: new Date(Date.now() + sec * 1000).toISOString(),
-            });
-          } catch (e) {
-            logger.warn(`[sei/sup] failed to persist daily-limit block: ${(e as Error).message}`);
-          }
-        })();
         // Same backstop as the depleted path above: the bot is supposed to
         // leave the world on its own, but a stalled self-shutdown would leave
         // the avatar frozen in-game (still connected). Authoritatively drain
