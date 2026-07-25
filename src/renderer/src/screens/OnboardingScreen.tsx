@@ -126,7 +126,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // Item 4: AI backend kind. Signed-in users default to Sei's hosted
         // cloud AI ("on cloud by default after sign-in"); local-only users
         // default to BYOK ('local'). Signed-in users with no balance yet are
-        // routed to Credits below to claim the trial / subscribe.
+        // start on the free tier and can subscribe later from the plan screen.
         ai_backend_kind: signedIn ? 'cloud-proxy' : 'local',
         // 260703: this is a DEFAULT, not an explicit user pick — a later
         // sign-in may re-assert the cloud default over it. Only the Settings
@@ -172,7 +172,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // first launch skips a needless migration pass (incl. a cloud fetch).
         added_defaults_backfilled: true,
         defaults_to_world_migrated: true,
-        // The one-time $1 feedback reward is unclaimed on a new account.
+        // The one-time feedback reward is unclaimed on a new account.
         feedback_reward_claimed: false,
         // First-run onboarding flows into the dedicated skin-setup step next;
         // mark it pending so a relaunch mid-setup resumes there. Re-onboarding
@@ -185,17 +185,9 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       if (!signedIn) {
         await sei.saveApiKey(apiKey.trim());
       }
-      // Signed-in users default to Sei's cloud backend — best-effort auto-claim
-      // the one-time free trial so a fresh account starts with playtime (they
-      // disliked being dropped onto the playtime/credits screen; the summon-time
-      // gate covers a still-empty balance later).
-      if (signedIn) {
-        try {
-          await sei.trialClaim();
-        } catch {
-          /* best-effort */
-        }
-      }
+      // 260724: nothing to claim on sign-up. Every account starts on the free
+      // tier with a weekly allowance already available, so onboarding goes
+      // straight on instead of detouring through a claim step.
       if (!isReonboard) {
         // Fresh onboarding, signed-in: the companion questionnaire runs HERE,
         // inside the onboarding ritual (260706 — it used to ambush after the

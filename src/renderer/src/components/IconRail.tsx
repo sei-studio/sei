@@ -53,11 +53,6 @@ import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
-import {
-  tokensRemainingToPlaytime,
-  DEFAULT_TOKENS_PER_MIN,
-  VISION_MULTIPLIER,
-} from '../lib/playtimeEstimate';
 
 /**
  * Tooltip hover state lifted to the IconRail component so it can render a
@@ -230,29 +225,7 @@ export function IconRail(): React.ReactElement {
   const summons = useDataStore((s) => s.summons);
   const authState = useAuthStore((s) => s.state);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
-  const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
-  // Phase 15 (D-07): shrink the rail's "Playtime · ~Xh" figure via VISION_MULTIPLIER
-  // when Looking is 'continuous' (the automatic view — heavier usage). Read the
-  // mode from UserConfig. The playtime branch only renders for cloud-proxy users (the
-  // `aiBackendKind === 'cloud-proxy'` gate below), so D-11 holds — BYO/local
-  // users never see this.
-  const [autoRenderOn, setAutoRenderOn] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    void sei.getConfig().then((c) => {
-      if (!cancelled) setAutoRenderOn((c.vision_mode ?? 'on-demand') === 'continuous');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  // 260602-hbr: flat DEFAULT_TOKENS_PER_MIN multiplier (no per-user rate);
-  // Phase 15 D-07 scales it up when auto-look is on so the figure shrinks.
-  const playtimeRate = autoRenderOn
-    ? DEFAULT_TOKENS_PER_MIN * VISION_MULTIPLIER
-    : DEFAULT_TOKENS_PER_MIN;
-  const playtimeDisplay = tokensRemainingToPlaytime(remainingTokens, playtimeRate).display;
 
   // B3 — local confirm dialog for the cloud-icon click when the user is on
   // the local backend. Two-button "Switch to cloud?" panel that, on
@@ -437,7 +410,7 @@ export function IconRail(): React.ReactElement {
             <RailButton
               active={view.kind === 'credits'}
               onClick={() => navigate({ kind: 'credits' })}
-              title={`Playtime · ${playtimeDisplay}`}
+              title="Plan"
               setHover={setHoverTip}
             >
               <StarIcon size={22} />

@@ -28,11 +28,6 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { applyTheme, type ThemeMode } from '../lib/theme';
-import {
-  tokensRemainingToPlaytime,
-  DEFAULT_TOKENS_PER_MIN,
-  VISION_MULTIPLIER,
-} from '../lib/playtimeEstimate';
 import { Button } from '../components/Button';
 import { Seg } from '../components/Seg';
 import { Toggle } from '../components/Toggle';
@@ -96,9 +91,6 @@ export function SettingsScreen(): React.ReactElement {
   // CONTEXT D-57. Subscription cancel/manage lives on the Playtime screen →
   // "Manage billing" (Polar portal), not here.
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
-  // Cloud playtime estimate ("~Xh left"). Uses the same remaining_tokens source
-  // as UsageBar / playtimeEstimate; continuous vision burns faster (D-07).
-  const remainingTokens = useCreditsStore((s) => s.remaining_tokens);
   // WR-05 follow-up: flipping the backend mid-bot applies LIVE — main's
   // proxy.configure handler rebuilds the running utilityProcess's Anthropic SDK
   // in place. This notice is a positive confirmation that the swap reached the
@@ -548,9 +540,6 @@ export function SettingsScreen(): React.ReactElement {
   const isCloud = aiBackendKind === 'cloud-proxy';
   const backendSegValue: 'cloud' | 'mykey' = isCloud ? 'cloud' : 'mykey';
   const visionMode = cfg?.vision_mode ?? 'on-demand';
-  const playtimeRate =
-    visionMode === 'continuous' ? DEFAULT_TOKENS_PER_MIN * VISION_MULTIPLIER : DEFAULT_TOKENS_PER_MIN;
-  const playtimeDisplay = tokensRemainingToPlaytime(remainingTokens, playtimeRate).display;
 
   // Version value: "v{x}" alone, or "v{x} · <status>" after a check.
   const versionSuffix =
@@ -627,17 +616,9 @@ export function SettingsScreen(): React.ReactElement {
               </div>
             ) : null}
 
-            {/* Playtime — cloud users only. Estimate from the same source as
-                UsageBar; Add routes to the Playtime (credits) screen. */}
-            {isCloud ? (
-              <div className={styles.row}>
-                <span className={styles.label}>Playtime</span>
-                <span className={styles.value}>{playtimeDisplay}</span>
-                <Button kind="primary" size="sm" onClick={() => navigate({ kind: 'credits' })}>
-                  Add
-                </Button>
-              </div>
-            ) : null}
+            {/* 260724: the Playtime row is gone. Weekly usage lives on the plan
+                screen (the rail's Plan icon), and there is no time estimate to
+                show. */}
 
             {/* Account ID — the short 4-char public handle (profiles.handle) for
                 support workflows, not the long Supabase UUID. Falls back to the
@@ -817,8 +798,8 @@ export function SettingsScreen(): React.ReactElement {
           <h3 className={styles.groupTitle}>Minecraft</h3>
           <SkinSetupRow />
           {/* Looking (vision): Off / On-demand / Continuous. Every move writes
-              straight through. Continuous uses more playtime, surfaced as the
-              shrunk "~Xh left" on the Playtime screen (D-07), never a number
+              straight through. Continuous uses more of the weekly allowance;
+              that shows up on the plan screen's usage bar, never as a number
               here. The mode explanation lives behind the (i) tip. */}
           <div className={styles.row}>
             <span className={styles.label}>
