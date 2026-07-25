@@ -104,6 +104,24 @@
   margin: var(--space-xs) 0 0;
 }
 
+/* Inline text link inside a .helper line (e.g. the photo credits). */
+.creditLink {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.creditLink:hover {
+  color: var(--accent);
+}
+
 .helperError {
   color: var(--red);
 }

@@ -973,6 +973,21 @@ export function SettingsScreen(): React.ReactElement {
               Open
             </Button>
           </div>
+          <p className={styles.helper}>
+            Photo credits: Minecraft artwork by Mojang Studios. Movie night photo by{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal(
+                  'https://americanretirementhomes.org/movie-nights-and-in-house-entertainment-options/',
+                )
+              }
+            >
+              American Retirement Homes
+            </button>{' '}
+            (CC licensed).
+          </p>
         </div>
 
         {/* ── Danger ──────────────────────────────────────────── */}

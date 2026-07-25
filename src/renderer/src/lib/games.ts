@@ -42,25 +42,28 @@ export const GAMES: GameDef[] = [
   },
   {
     id: 'movie',
-    name: 'Watch a movie',
+    name: 'Watch Together',
     available: false,
     soon: true,
+    image: './img/game-movie.jpg',
     description: (name) =>
       `Movie night with ${name}: watch something together and talk about it as it plays.`,
   },
   {
     id: 'focus',
-    name: 'Focus together',
+    name: 'Focus',
     available: false,
     soon: true,
+    image: './img/game-focus.jpg',
     description: (name) =>
       `A quiet co-working session. ${name} keeps you company while you get things done.`,
   },
   {
     id: 'backseat',
-    name: 'Backseat my game',
+    name: 'Backseat',
     available: false,
     soon: true,
+    image: './img/game-backseat.svg',
     description: (name) =>
       `${name} watches you play any game and reacts like a friend on the couch.`,
   },

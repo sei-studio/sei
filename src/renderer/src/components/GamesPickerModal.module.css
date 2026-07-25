@@ -148,12 +148,25 @@
   letter-spacing: 0.01em;
 }
 
-/* Coming-soon caption under the name on placeholder tiles. */
-.tileSoon {
-  font-size: 12px;
-  color: var(--muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+/* Coming-soon image tiles keep their art readable under the lock dim. */
+.tileImage.tileLocked {
+  opacity: 0.82;
+}
+
+/* "SOON" tag pinned bottom-right on placeholder tiles (where the (i) sits
+ * on available ones), riding above the image scrim. */
+.soonTag {
+  position: absolute;
+  bottom: var(--space-sm);
+  right: var(--space-sm);
+  z-index: 1;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
 }
 
 /* Bottom-right (i) — hover-only info affordance (not clickable; it anchors

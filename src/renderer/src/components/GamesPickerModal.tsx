@@ -174,8 +174,8 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
                   </span>
                 )}
                 <span className={styles.tileName}>{g.name}</span>
-                {g.soon ? <span className={styles.tileSoon}>Coming soon</span> : null}
               </button>
+              {g.soon ? <span className={styles.soonTag}>SOON</span> : null}
               {g.available ? (
                 <span
                   className={styles.infoHint}
@@ -214,7 +214,8 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
       {suggestOpen ? (
         <FeedbackModal
           title="Suggest a game"
-          framing="What do you want to play together? Tell us and we will build the best ideas."
+          framing=""
+          fieldLabel="Game"
           placeholder="What game should we add?"
           onClose={() => setSuggestOpen(false)}
         />

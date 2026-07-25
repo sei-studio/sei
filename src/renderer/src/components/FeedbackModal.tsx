@@ -33,9 +33,10 @@ export interface FeedbackModalProps {
   /** Closes the modal. Caller controls mount/unmount. */
   onClose: () => void;
   /** Optional copy overrides (e.g. the games picker's "Suggest a game").
-   * The submit path is identical regardless. */
+   * The submit path is identical regardless. Empty framing hides the line. */
   title?: string;
   framing?: string;
+  fieldLabel?: string;
   placeholder?: string;
 }
 
@@ -43,6 +44,7 @@ export function FeedbackModal({
   onClose,
   title = 'Submit feedback',
   framing = "Tell us anything you like or don't like! We read all comments within 24 hrs.",
+  fieldLabel = 'Feedback',
   placeholder = 'What should we improve?',
 }: FeedbackModalProps): React.ReactElement {
   const [email, setEmail] = useState('');
@@ -91,7 +93,7 @@ export function FeedbackModal({
 
   return (
     <ModalShell title={title} onClose={onClose} scrimClose width={440}>
-      <p className={styles.framing}>{framing}</p>
+      {framing ? <p className={styles.framing}>{framing}</p> : null}
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="feedback-email">
@@ -106,7 +108,7 @@ export function FeedbackModal({
         </div>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="feedback-body">
-            Feedback
+            {fieldLabel}
           </label>
           <TextField
             value={body}
@@ -115,7 +117,7 @@ export function FeedbackModal({
             rows={5}
             autoFocus
             placeholder={placeholder}
-            aria-label="Feedback"
+            aria-label={fieldLabel}
           />
         </div>
         {error ? (
