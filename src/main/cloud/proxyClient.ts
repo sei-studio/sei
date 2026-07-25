@@ -466,7 +466,7 @@ export async function subscriptionStatus(): Promise<SubscriptionStatusInfo> {
  * POSTs to the `record-consent` Edge Function (two-client pattern: anon
  * client verifies the JWT, service_role client INSERTs into the immutable
  * subscription_consents table). The renderer-side AutoRenewalConsentModal
- * calls this BEFORE openCheckout('subscription'), but treats failures as
+ * calls this BEFORE the checkout or the tier change, but treats failures as
  * non-blocking: the legal anchor is the user's affirmative checkbox click,
  * not the server INSERT. If the INSERT fails, main logs the error so the
  * operator can backfill from console logs if a dispute requires the audit

@@ -1393,7 +1393,7 @@ export interface RendererApi {
    * §17602(b) recordkeeping. The renderer passes the active TOS_VERSION as
    * consent_version; main forwards to the record-consent Edge Function.
    *
-   * Non-blocking: callers proceed with `creditsOpenCheckout('subscription')`
+   * Non-blocking: callers proceed with the checkout or the tier change
    * even if this returns `ok: false` — the legal anchor is the user's
    * affirmative checkbox click which the renderer cannot lose. A failed
    * INSERT is logged in main; the operator can backfill from console logs

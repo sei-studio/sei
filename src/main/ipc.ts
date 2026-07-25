@@ -2612,7 +2612,7 @@ export function emitCreditsStatusUpdate(status: CreditsStatus): void {
 
 /**
  * Fan-out a CreditsHardStopEvent. Wave 2 calls this from the anthropicClient
- * 402 branch (ledger empty / remaining_pct hit 0) and from the rate-bucket
+ * 402 branch (weekly allowance spent, no extra credits) and from the rate-bucket
  * 503 branch (D-51). The renderer surfaces the HardStopModal in response.
  */
 export function emitCreditsHardStop(info: CreditsHardStopEvent): void {

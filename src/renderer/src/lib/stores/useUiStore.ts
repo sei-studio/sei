@@ -70,7 +70,7 @@ export type View =
   | { kind: 'unique-reveal'; characterId: string }
   // quick/260525-sbo Task 6 — FTC 16 CFR §425.5 in-app receipt after a
   // first-time subscription activation. Auto-navigated by useCreditsStore
-  // when the plan transitions from non-'unlimited' → 'unlimited' (once per
+  // when the plan moves up into a paid tier (once per
   // transition; guarded by a module-level prevPlan ref).
   | { kind: 'receipt' };
 
