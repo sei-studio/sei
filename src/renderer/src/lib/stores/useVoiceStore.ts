@@ -302,7 +302,7 @@ function friendlyError(err: unknown): string {
   // empty — the `name` is the reliable signal (NotAllowedError / NotFoundError).
   const name = (err as { name?: string })?.name ?? '';
   if (/VOICE_NO_SESSION/.test(msg)) return 'Sign in to use voice calls.';
-  if (/VOICE_NO_CREDITS/.test(msg)) return "You're out of playtime. Add more to keep calling.";
+  if (/VOICE_NO_CREDITS/.test(msg)) return "You've used this week's credits. Upgrade or top up to keep calling.";
   if (/VOICE_RATE_LIMITED/.test(msg)) return "You've hit today's usage cap. It resets tomorrow.";
   if (/VOICE_NOT_CONFIGURED/.test(msg)) return 'Voice service is not available right now.';
   if (name === 'NotFoundError' || /device not found/i.test(msg)) {
@@ -410,7 +410,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       if (/VOICE_RATE_LIMITED/.test(msg)) {
         set({ lastSpoken: '[voice paused, daily usage cap reached]' });
       } else if (/VOICE_NO_CREDITS/.test(msg)) {
-        set({ lastSpoken: '[voice paused, out of playtime]' });
+        set({ lastSpoken: '[voice paused, out of credits]' });
       }
     };
     const settleTts = (): void => {

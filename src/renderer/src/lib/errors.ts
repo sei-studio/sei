@@ -43,8 +43,8 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   SKIN_FILE_INVALID: "That doesn't look like a Minecraft skin PNG. Skins must be 64×64 pixels.",
   SKIN_SERVER_PORT_TAKEN: "Sei couldn't reserve a local port for serving skins. Restart Sei and try again.",
   WIZARD_PERMISSION_DENIED: "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.",
-  CLOUD_CREDITS_DEPLETED: "Out of cloud credits. Top up in the Credits screen, or switch to your own API key in Settings.",
-  DAILY_LIMIT_REACHED: "Daily play limit reached for non-subscribers. Wait for the reset, or upgrade to a Party plan.",
+  CLOUD_CREDITS_DEPLETED: "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.",
+  DAILY_LIMIT_REACHED: "Too many requests right now. Wait a little and try again.",
 };
 
 /**

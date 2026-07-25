@@ -195,7 +195,7 @@ export interface BotSupervisorOptions {
   /**
    * Fan the out-of-playtime hard-stop modal to the renderer (wired to
    * emitCreditsHardStop). `_summon` calls this with reason='depleted' when the
-   * credit gate refuses a summon, so the user sees the "add playtime" surface
+   * gate refuses a summon, so the user sees the upgrade / top up surface
    * instead of a bot that joins and does nothing.
    */
   emitHardStop: (info: CreditsHardStopEvent) => void;

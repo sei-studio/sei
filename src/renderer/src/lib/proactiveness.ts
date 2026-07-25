@@ -37,7 +37,7 @@ export const PROACTIVENESS_LEVELS: ProactivenessLevel[] = [
   {
     value: 2,
     label: 'Agentic',
-    blurb: '(Beta) Fully agentic. Initiates activities and can play independently. May use more playtime.',
+    blurb: '(Beta) Fully agentic. Initiates activities and can play independently. Uses more of your weekly credits.',
   },
 ];
 
