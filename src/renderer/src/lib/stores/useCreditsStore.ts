@@ -1,9 +1,10 @@
 /**
- * useCreditsStore — Phase 13 Plan 16 renderer-side credits state.
+ * useCreditsStore — renderer-side plan + weekly-usage state.
  *
- * Single source of truth for the credits UI (% bar, pricing icon, hard-stop
- * modal, settings row). Mirrors `useSyncStore.ts` (the gold-standard template)
- * — `interface FooState + FooActions + idempotent init() + push-seq race guard`.
+ * Single source of truth for the plan UI (usage hero, extra-credits row, plan
+ * cards, hard-stop modal, icon rail). Mirrors `useSyncStore.ts` (the
+ * gold-standard template) — `interface FooState + FooActions + idempotent
+ * init() + push-seq race guard`.
  *
  * Push-seq race guard (lines 64-83 of useSyncStore.ts in spirit):
  *   The renderer subscribes to `onCreditsStatusUpdate` BEFORE awaiting the
@@ -13,60 +14,69 @@
  *   fired during the await.
  *
  * State-shape invariants (must_haves):
- *   - NO token/dollar/micro fields — PROXY-05 bright-line. The proxy ships
- *     `X-Sei-Remaining-Pct` to the renderer; raw ledger units stay server-side.
+ *   - NO token/dollar/micro fields. The store carries percentages, credit
+ *     counts and dates; every monetary unit stays server-side (the only
+ *     dollar figures in the app are the plan cards, the top up packages and
+ *     the legally required purchase disclosures, all static copy).
  *   - `hardStopActive` is set ONLY by an explicit `onCreditsHardStop` push —
- *     never derived from `remaining_pct === 0` in render. Explicit semantics
- *     so a stale-but-zero seed doesn't spuriously trigger the modal.
- *   - `rateLimitedUntil` is a ms-epoch only; the banner component owns the
- *     1Hz `setInterval` for the countdown so the store doesn't re-render every
- *     second (T-13-16-04 disposition).
+ *     never derived from `over_limit` in render. Explicit semantics so a
+ *     stale-but-true seed doesn't spuriously trigger the modal.
+ *   - `rateLimitedUntil` is a ms-epoch only; any countdown component owns its
+ *     own 1Hz `setInterval` so the store doesn't re-render every second.
  *
  * Server-side semantics:
  *   - `acknowledgeHardStop()` clears LOCAL UI state only — it does NOT call
- *     the server. The server's view of the user's balance/rate-bucket is
- *     unchanged; this just dismisses the modal so the user can keep typing
- *     (their next call will either succeed or re-trigger the hard-stop push).
+ *     the server. The server's view of the user's allowance is unchanged; this
+ *     just dismisses the modal so the user can keep typing (their next call
+ *     will either succeed or re-trigger the hard-stop push).
  *
  * Boot wiring: `App.tsx` calls `useCreditsStore.getState().init()` on mount
  * when `ai_backend_kind === 'cloud-proxy'`. Idempotent — safe to call
  * multiple times.
  *
  * Sources:
- *   - 13-16-PLAN.md (this plan)
- *   - 13-PATTERNS.md §useCreditsStore (gold-standard pointer)
+ *   - .planning/quick/260724-sub-weekly-subscription-model/SPEC.md (§4 contract)
  *   - src/renderer/src/lib/stores/useSyncStore.ts (template — push-seq guard)
  *   - src/shared/ipc.ts (CreditsStatus, CreditsHardStopEvent contract)
  */
 
 import { create, type StoreApi } from 'zustand';
-import type { CreditsStatus, CreditsHardStopEvent } from '@shared/ipc';
+import type { CreditsStatus, CreditsHardStopEvent, PlanTier } from '@shared/ipc';
 import { sei } from '../ipcClient';
 
 type HardStopReason = CreditsHardStopEvent['reason'];
 
 /**
- * quick/260525-sbo Task 6 — pure transition predicate for the ReceiptScreen
- * auto-navigate side-effect. Returns true iff `prev` is a non-'unlimited'
- * value (including null = cold-load was treated as "no prior plan") AND
- * `next` is 'unlimited'.
+ * Which billing action a checkout watch is following: a new subscription, a
+ * one-time extra-credits package, or a resume of a cancel-scheduled sub.
+ */
+export type CheckoutKind = 'quest' | 'party' | 'topup_small' | 'topup_large' | 'resume';
+
+/** Ordered tiers. Index = rank; `free` is rank 0. */
+const TIER_RANK: Record<PlanTier, number> = { free: 0, quest: 1, party: 2 };
+
+/** True when the tier is a paid subscription. */
+export function isPaidTier(tier: PlanTier): boolean {
+  return tier !== 'free';
+}
+
+/**
+ * Pure transition predicate for the ReceiptScreen auto-navigate side-effect.
+ * Returns true iff `prev` is a KNOWN lower-ranked tier and `next` is a paid
+ * tier — i.e. we watched the user move up into a paid plan and owe them the
+ * FTC 16 CFR §425.5 in-app charge acknowledgement.
  *
- * Critically, `null → unlimited` returns FALSE: a cold-loaded user who is
- * already subscribed must NOT see the receipt on every app start. Only a
- * GENUINE transition (we observed them as non-unlimited, then they became
- * unlimited) qualifies as a subscription activation event worth surfacing.
+ * Critically, `null → party` returns FALSE: a cold-loaded user who is already
+ * subscribed must NOT see the receipt on every app start. Only a GENUINE
+ * transition qualifies as a subscription activation event.
  *
  * Exported so the unit test can exercise the predicate in isolation without
  * mocking useUiStore (and avoiding the lazy-import / circular-dep dance).
  */
-export function shouldNavigateToReceipt(
-  prev: CreditsStatus['plan'] | null,
-  next: CreditsStatus['plan'],
-): boolean {
-  if (next !== 'unlimited') return false;
+export function shouldNavigateToReceipt(prev: PlanTier | null, next: PlanTier): boolean {
+  if (!isPaidTier(next)) return false;
   if (prev === null) return false; // cold-load is not a transition
-  if (prev === 'unlimited') return false; // already unlimited; idle re-push
-  return true;
+  return TIER_RANK[next] > TIER_RANK[prev];
 }
 
 /**
@@ -76,12 +86,12 @@ export function shouldNavigateToReceipt(
  * state shape. The shouldNavigateToReceipt() helper above is the pure data
  * function; this ref is the impure execution-context anchor.
  */
-let prevPlanForReceipt: CreditsStatus['plan'] | null = null;
+let prevPlanForReceipt: PlanTier | null = null;
 
 /**
  * Checkout-watch tuning. After the user is sent to the hosted checkout in their
- * system browser, the credits screen shows a "complete your purchase" modal and
- * polls `creditsGet` at a high frequency until the webhook-driven grant lands —
+ * system browser, the plan screen shows a "complete your purchase" modal and
+ * polls `creditsGet` at a high frequency until the webhook-driven change lands —
  * the standard "waiting for an out-of-band payment" pattern. The poll is capped
  * by a wall-clock timeout so it never runs forever; after that, the
  * focus-refetch backstop (init()) and the in-game push channel still catch a
@@ -90,16 +100,16 @@ let prevPlanForReceipt: CreditsStatus['plan'] | null = null;
 export const CHECKOUT_POLL_INTERVAL_MS = 2_500;
 export const CHECKOUT_MAX_WAIT_MS = 180_000; // 3 minutes
 /**
- * After a checkout is initiated, re-read credits whenever the app window regains
- * focus for this long — the edge case where the user dismisses the modal, pays
- * in the browser anyway, then tabs back to the app.
+ * After a checkout is initiated, re-read the plan whenever the app window
+ * regains focus for this long — the edge case where the user dismisses the
+ * modal, pays in the browser anyway, then tabs back to the app.
  */
 export const CHECKOUT_FOCUS_REFETCH_WINDOW_MS = 30 * 60_000; // 30 minutes
 
 /** Pre-checkout snapshot used to detect that a purchase landed. */
 type CheckoutBaseline = {
-  remaining_tokens: number;
-  plan: CreditsStatus['plan'];
+  plan: PlanTier;
+  extra_credits_total: number;
   subscription_status_raw: CreditsStatus['subscription_status_raw'];
 };
 
@@ -124,12 +134,11 @@ let loadEpoch = 0;
 
 /**
  * 260703: read `ai_backend_kind` straight from the persisted UserConfig. The
- * credits snapshot (creditsGet) can fail transiently (offline ledger read,
- * IPC hiccup) — but the backend kind is a LOCAL config fact, and it gates the
- * Settings ACCOUNT MODE surface + the credits UI. If a failed seed left the
- * INITIAL 'local' in place while the actual calls ran cloud-proxy, the UI
- * claimed BYOK while spending cloud credits. Null on failure → caller keeps
- * the current value.
+ * plan snapshot (creditsGet) can fail transiently (offline read, IPC hiccup) —
+ * but the backend kind is a LOCAL config fact, and it gates the Settings
+ * ACCOUNT MODE surface + the plan UI. If a failed seed left the INITIAL 'local'
+ * in place while the actual calls ran cloud-proxy, the UI claimed BYOK while
+ * spending cloud credits. Null on failure → caller keeps the current value.
  */
 async function readBackendKindFromConfig(): Promise<CreditsStatus['ai_backend_kind'] | null> {
   try {
@@ -156,21 +165,20 @@ function clearCheckoutTimers(): void {
  * `baseline` snapshot to the latest `current` one?
  *
  *   - 'resume': the cancel-scheduled sub is no longer set to cancel — its status
- *     flips off 'cancelled' (back to 'active'). No new credits land, so the
- *     token/plan checks below don't apply.
- *   - A credit top-up (pack OR subscription grant) raises the remaining-tokens
- *     estimate, so a strictly-higher `remaining_tokens` confirms ANY purchase.
- *   - A subscription additionally flips plan→'unlimited' / status→'active',
- *     a faster, clearer signal for Party even before the grant total re-sums.
+ *     flips off 'cancelled'. Nothing is granted, so the other checks don't apply.
+ *   - A top up raises `extra_credits_total` (the bucket is non-expiring, so the
+ *     total only ever grows).
+ *   - A subscription flips `plan` to the purchased tier, or the status to
+ *     'active' — whichever webhook lands first.
  *
  * Exported so the unit test can exercise it in isolation.
  */
 export function isPurchaseConfirmed(
-  kind: 'pack' | 'subscription' | 'resume',
+  kind: CheckoutKind,
   baseline: CheckoutBaseline,
   current: {
-    remaining_tokens?: number;
-    plan: CreditsStatus['plan'];
+    plan: PlanTier;
+    extra_credits_total: number;
     subscription_status_raw: CreditsStatus['subscription_status_raw'];
   },
 ): boolean {
@@ -180,16 +188,15 @@ export function isPurchaseConfirmed(
       current.subscription_status_raw !== 'cancelled'
     );
   }
-  if (kind === 'subscription') {
-    if (current.plan === 'unlimited' && baseline.plan !== 'unlimited') return true;
-    if (
-      current.subscription_status_raw === 'active' &&
-      baseline.subscription_status_raw !== 'active'
-    ) {
-      return true;
-    }
+  if (kind === 'topup_small' || kind === 'topup_large') {
+    return current.extra_credits_total > baseline.extra_credits_total;
   }
-  return (current.remaining_tokens ?? 0) > baseline.remaining_tokens;
+  // A new subscription: the tier landed, or the status went active.
+  if (current.plan === kind && baseline.plan !== kind) return true;
+  return (
+    current.subscription_status_raw === 'active' &&
+    baseline.subscription_status_raw !== 'active'
+  );
 }
 
 /**
@@ -199,7 +206,7 @@ export function isPurchaseConfirmed(
  * Polls creditsGet until isPurchaseConfirmed(kind,…) fires or the cap elapses.
  */
 function startCheckoutWatch(
-  kind: 'pack' | 'subscription' | 'resume',
+  kind: CheckoutKind,
   get: StoreApi<CreditsState & CreditsActions>['getState'],
   set: StoreApi<CreditsState & CreditsActions>['setState'],
 ): void {
@@ -226,73 +233,68 @@ function startCheckoutWatch(
 }
 
 interface CreditsState {
+  /** Current subscription tier. Every account is 'free' unless a sub says otherwise. */
+  plan: PlanTier;
   /**
-   * 0..100, rounded to REMAINING_PCT_ROUND_STEP server-side. This is balance
-   * vs the DAILY cap — kept for HardStopModal's auto-dismiss gate and the
-   * IconRail PricingIcon arc. The primary usage display uses `usage_pct`.
-   */
-  remaining_pct: number;
-  /**
-   * 260602-hbr: usage as a percent of total available credits (used/available),
-   * 0% on a fresh grant, growing to 100% as credits are spent. Drives the
-   * UsageBar progress fill. PROXY-05: percent only — no token/dollar units.
+   * Weekly ALLOWANCE consumption, 0..100, clamped server-side. Drives the hero
+   * number and the main bar; 100 renders red.
    */
   usage_pct: number;
-  /** ITEM 4: server-supplied remaining-tokens count (undefined during rollout / cold-load). */
-  remaining_tokens?: number;
-  /**
-   * Lifetime spend / total granted in USD (dollar form of usage_pct). main
-   * computes these from ledger micros. Deliberately past the PROXY-05 percent-
-   * only line at the owner's request; drives the UsageBar tooltip "$used/$total".
-   * undefined for local/BYOK or before the first seed.
-   */
-  used_usd?: number;
-  total_usd?: number;
-  plan: CreditsStatus['plan'];
+  /** Allowance exhausted AND no extra credits left. Gates the hard stop. */
+  over_limit: boolean;
+  /** ISO timestamp the weekly allowance rolls over. Empty before the first seed. */
+  resets_at: string;
+  /** The non-expiring top up bucket, in credits. Both 0 when never topped up. */
+  extra_credits_used: number;
+  extra_credits_total: number;
   renews_at: string | null;
   /**
    * ISO end date when the subscription is cancel-scheduled ("to be cancelled")
-   * but still active. Drives the "Subscription will end {date}" line + Resume
-   * CTA. null for auto-renewing subscribers and non-subscribers.
+   * but still active. Drives the "Plan ends {date}" line + Resume CTA. null for
+   * auto-renewing subscribers and non-subscribers.
    */
   ends_at: string | null;
-  trial_claimed: boolean;
   ai_backend_kind: CreditsStatus['ai_backend_kind'];
   /**
-   * quick/260525-sbo Task 8 — raw LS subscription status passthrough.
-   * SettingsScreen renders contextual banners (past-due, paused) by reading
-   * this directly. null on no-session / never-subscribed / cold-load before
-   * the seed lands.
+   * Raw subscription status passthrough. SettingsScreen and the plan cards
+   * render contextual copy (past due, cancel-scheduled) by reading this
+   * directly. null on no-session / never-subscribed / cold-load.
    */
   subscription_status_raw: CreditsStatus['subscription_status_raw'];
   /**
    * Set ONLY by an explicit `onCreditsHardStop` push — never computed from
-   * `remaining_pct === 0`. Drives HardStopModal mounting in App.tsx.
+   * `over_limit` in render. Drives HardStopModal mounting in App.tsx.
    */
   hardStopActive: boolean;
   hardStopReason: HardStopReason | null;
   /**
-   * ms-epoch when the rate-limit window ends; banner component reads this and
-   * runs its own setInterval(1000) for the countdown. Store never holds the
-   * countdown value itself (would trigger 1Hz re-renders).
+   * ms-epoch when a rate-limit window ends, when the proxy sent one. Consumers
+   * run their own setInterval for any countdown so the store never re-renders
+   * at 1Hz.
    */
   rateLimitedUntil: number | null;
   /**
    * Checkout-watch state for the "complete your purchase in your browser" modal.
    *   - 'idle'      → no modal
-   *   - 'waiting'   → browser checkout open; polling creditsGet for the grant
-   *   - 'confirmed' → the grant landed (credits updated)
+   *   - 'waiting'   → browser checkout open; polling creditsGet for the change
+   *   - 'confirmed' → the change landed
    *   - 'timeout'   → polling gave up; the focus-refetch backstop takes over
    */
   checkoutStatus: 'idle' | 'waiting' | 'confirmed' | 'timeout';
   /** Which billing action the in-flight watch is for (drives modal copy). */
-  checkoutKind: 'pack' | 'subscription' | 'resume' | null;
+  checkoutKind: CheckoutKind | null;
+  /**
+   * The user asked for the top up packages from somewhere other than the plan
+   * screen (the hard-stop popup). The plan screen consumes this on mount and
+   * opens TopUpModal, so the purchase runs where the checkout watcher lives.
+   */
+  topUpRequested: boolean;
   initialized: boolean;
   loading: boolean;
   /**
    * True when the last snapshot attempt (seed or refresh) failed and no push
    * has replaced it: the numbers in the store are the INITIAL zeros, not
-   * account truth. Credits surfaces must render a "couldn't check, try again"
+   * account truth. Plan surfaces must render a "couldn't check, try again"
    * state instead of presenting 0% as fact. Cleared by any successful seed,
    * refresh, or status push.
    */
@@ -317,53 +319,47 @@ interface CreditsActions {
   init: () => Promise<void>;
   /** Re-fetch the snapshot and replace state. */
   refresh: () => Promise<void>;
+  /** Open the Polar checkout for a new subscription or a top up package. */
+  openCheckout: (kind: Exclude<CheckoutKind, 'resume'>) => Promise<void>;
   /**
-   * Claim the one-time free trial (CreditsScreen Trial card "Claim" button).
-   *
-   * SECURITY: this performs NO client-side grant. It calls the Supabase
-   * `trial-claim` Edge Function (via sei.trialClaim), which is the sole grant
-   * authority — `ledger_grants` has no INSERT RLS policy (service_role writes
-   * only), the grant is JWT-identified (never body-supplied), and a partial
-   * UNIQUE index caps it at one trial per user. A user poking this from the
-   * dev console can at most re-trigger an idempotent no-op. After the call we
-   * refresh() so `trial_claimed` / the balance reflect the server's truth.
-   *
-   * The trial is bound to the account UUID (derived server-side from the
-   * session JWT) — no arguments. Returns a typed result so the card can surface
-   * a transient state without inventing client-trusted claim status.
+   * Change the tier of an EXISTING subscription (Polar subscription update, not
+   * a fresh checkout). Refreshes afterwards so the cards re-paint as soon as the
+   * proxy has applied it; the webhook push is the authoritative follow-up.
    */
-  claimTrial: () => Promise<{ ok: true } | { ok: false; code: string }>;
-  /** Open the Polar checkout for the given product (proxy-minted session). */
-  openCheckout: (kind: 'pack' | 'subscription') => Promise<void>;
+  changePlan: (tier: PlanTier) => Promise<{ ok: true } | { ok: false; code: string }>;
   /**
-   * Open the hosted checkout for `kind` AND watch for the webhook-driven grant:
+   * Open the hosted checkout for `kind` AND watch for the webhook-driven change:
    * shows the "complete your purchase" modal and polls creditsGet at high
-   * frequency (capped by CHECKOUT_MAX_WAIT_MS) until the credits land. Pass
-   * `{ alreadyOpened: true }` when an earlier step (the Party consent modal)
-   * already launched the browser, so checkout isn't opened twice.
+   * frequency (capped by CHECKOUT_MAX_WAIT_MS) until it lands. Pass
+   * `{ alreadyOpened: true }` when an earlier step (the consent modal) already
+   * launched the browser, so checkout isn't opened twice.
    */
   beginPurchase: (
-    kind: 'pack' | 'subscription',
+    kind: Exclude<CheckoutKind, 'resume'>,
     opts?: { alreadyOpened?: boolean },
   ) => Promise<void>;
   /**
    * Resume a to-be-cancelled subscription: opens the Polar customer portal
    * (where Polar's uncancel lives) AND watches — same modal + polling as
-   * beginPurchase, but completion = the subscription flips off 'cancelled'
-   * (no new credits), and it never starts a new checkout.
+   * beginPurchase, but completion = the subscription flips off 'cancelled',
+   * and it never starts a new checkout.
    */
   beginResume: () => Promise<void>;
   /** Dismiss the checkout modal and stop polling (the browser action continues). */
   dismissCheckout: () => void;
+  /** Ask the plan screen to open the top up packages (see `topUpRequested`). */
+  requestTopUp: () => void;
+  /** The plan screen has opened the packages; clear the request. */
+  clearTopUpRequest: () => void;
   /**
-   * Open the customer-portal URL so the user can cancel their subscription.
-   * ITEM 8 (quick/260523-t8d): returns the typed result so callers can
-   * surface a fallback toast if the proxy can't find a portal URL.
+   * Open the customer-portal URL so the user can manage or cancel their
+   * subscription. Returns the typed result so callers can surface a fallback
+   * message if the proxy can't find a portal URL.
    */
   cancelSubscription: () => Promise<{ ok: true; portalUrl: string } | { ok: false; code: string }>;
   /**
    * Clears the hard-stop modal locally. Does NOT call the server — the
-   * server's balance/rate-bucket view is unchanged; the next proxied call
+   * server's view of the allowance is unchanged; the next proxied call
    * will either succeed or re-trigger the push.
    */
   acknowledgeHardStop: () => void;
@@ -372,15 +368,14 @@ interface CreditsActions {
 }
 
 const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'> = {
-  remaining_pct: 0,
+  plan: 'free',
   usage_pct: 0,
-  remaining_tokens: undefined,
-  used_usd: undefined,
-  total_usd: undefined,
-  plan: 'depleted',
+  over_limit: false,
+  resets_at: '',
+  extra_credits_used: 0,
+  extra_credits_total: 0,
   renews_at: null,
   ends_at: null,
-  trial_claimed: false,
   ai_backend_kind: 'local',
   subscription_status_raw: null,
   hardStopActive: false,
@@ -389,27 +384,27 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   snapshotFailed: false,
   checkoutStatus: 'idle',
   checkoutKind: null,
+  topUpRequested: false,
   initialized: false,
   loading: false,
   pushSeq: 0,
 };
 
-// 260617: once a subscription goes active, proactively clear any persisted
-// daily-play-limit block (UserConfig.daily_limited_until) so a user who just
-// upgraded past the trial cap is not still blocked at the summon gate. Writes
-// only when the flag is set, and at most once per app session.
-let clearedDailyForActive = false;
-async function clearDailyLimitOnSubscription(): Promise<void> {
-  if (clearedDailyForActive) return;
-  clearedDailyForActive = true;
-  try {
-    const cfg = await sei.getConfig();
-    if (cfg?.daily_limited_until) {
-      await sei.saveConfig({ ...cfg, daily_limited_until: null });
-    }
-  } catch {
-    clearedDailyForActive = false; // transient IPC failure — allow a later retry
-  }
+/** Project a CreditsStatus snapshot onto the store's data slice. */
+function fromStatus(status: CreditsStatus): Partial<CreditsState> {
+  return {
+    plan: status.plan,
+    usage_pct: status.usage_pct,
+    over_limit: status.over_limit,
+    resets_at: status.resets_at,
+    extra_credits_used: status.extra_credits_used,
+    extra_credits_total: status.extra_credits_total,
+    renews_at: status.renews_at,
+    ends_at: status.ends_at,
+    subscription_status_raw: status.subscription_status_raw ?? null,
+    ai_backend_kind: status.ai_backend_kind,
+    snapshotFailed: false,
+  };
 }
 
 export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) => ({
@@ -420,29 +415,11 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
 
     // 1. Subscribe FIRST (useSyncStore race-guard pattern: lines 77-91).
     const unsubStatus = sei.onCreditsStatusUpdate((status) => {
-      set((s) => ({
-        ...s,
-        remaining_pct: status.remaining_pct,
-        usage_pct: status.usage_pct ?? 0,
-        remaining_tokens: status.remaining_tokens,
-        used_usd: status.used_usd,
-        total_usd: status.total_usd,
-        plan: status.plan,
-        renews_at: status.renews_at,
-        ends_at: status.ends_at,
-        trial_claimed: status.trial_claimed,
-        ai_backend_kind: status.ai_backend_kind,
-        // quick/260525-sbo Task 8: pass through raw LS status for the
-        // SettingsScreen contextual banner.
-        subscription_status_raw: status.subscription_status_raw ?? null,
-        snapshotFailed: false,
-        pushSeq: s.pushSeq + 1,
-      }));
-      // quick/260525-sbo Task 6: detect non-unlimited → unlimited transition
-      // and navigate to ReceiptScreen exactly once (FTC 16 CFR §425.5
-      // in-app receipt surface). prevPlanForReceipt is a module-level ref
-      // that persists across pushes; shouldNavigateToReceipt is the pure
-      // transition predicate.
+      set((s) => ({ ...s, ...fromStatus(status), pushSeq: s.pushSeq + 1 }));
+      // Detect an upgrade into a paid tier and navigate to ReceiptScreen exactly
+      // once (FTC 16 CFR §425.5 in-app receipt surface). prevPlanForReceipt is a
+      // module-level ref that persists across pushes; shouldNavigateToReceipt is
+      // the pure transition predicate.
       if (shouldNavigateToReceipt(prevPlanForReceipt, status.plan)) {
         // Lazy import to avoid a circular dep on useUiStore.
         void import('./useUiStore').then(({ useUiStore }) => {
@@ -450,10 +427,6 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
         });
       }
       prevPlanForReceipt = status.plan;
-      // Clear a stale daily-limit block once the account is a subscriber.
-      if (status.subscription_status_raw === 'active') {
-        void clearDailyLimitOnSubscription();
-      }
     });
     const unsubHardStop = sei.onCreditsHardStop((info) => {
       set({
@@ -467,7 +440,7 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     });
 
     // Focus backstop for the "dismissed the modal, paid in the browser anyway,
-    // tabbed back" edge case: re-read credits when the window regains focus,
+    // tabbed back" edge case: re-read the plan when the window regains focus,
     // but only within a window after a checkout was initiated (so we don't
     // refetch on every unrelated focus). The in-modal poll handles the common
     // case where the purchase completes while the modal is still open.
@@ -497,36 +470,17 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
       const status = await sei.creditsGet();
       if (loadEpoch !== epochBefore) return; // superseded by a newer scope
       if (get().pushSeq === seqBefore) {
-        set({
-          remaining_pct: status.remaining_pct,
-          usage_pct: status.usage_pct ?? 0,
-          remaining_tokens: status.remaining_tokens,
-        used_usd: status.used_usd,
-        total_usd: status.total_usd,
-          plan: status.plan,
-          renews_at: status.renews_at,
-          ends_at: status.ends_at,
-          trial_claimed: status.trial_claimed,
-          ai_backend_kind: status.ai_backend_kind,
-          subscription_status_raw: status.subscription_status_raw ?? null,
-          snapshotFailed: false,
-          initialized: true,
-          loading: false,
-        });
-        // quick/260525-sbo Task 6: seed prevPlanForReceipt so the FIRST
-        // push after a cold-load isn't treated as a transition. Without
-        // this, an already-subscribed user would see ReceiptScreen on
-        // every app start (prev=null + first push reports 'unlimited'
-        // would be classified as a transition by the predicate if we
-        // didn't pre-set it here). The seed plan IS the prior plan from
-        // the store's perspective — the next push is the first that
-        // could be a real transition.
+        set({ ...fromStatus(status), initialized: true, loading: false });
+        // Seed prevPlanForReceipt so the FIRST push after a cold-load isn't
+        // treated as a transition. Without this, an already-subscribed user
+        // would see ReceiptScreen on every app start. The seed plan IS the
+        // prior plan from the store's perspective — the next push is the first
+        // that could be a real transition.
         prevPlanForReceipt = status.plan;
       } else {
-        // Push won — keep its values, just flip flags.
+        // Push won — keep its values, just flip flags. The push handler already
+        // updated prevPlanForReceipt as a side-effect.
         set({ initialized: true, loading: false });
-        // The push handler already updated prevPlanForReceipt as a
-        // side-effect — nothing to do here.
       }
     } catch {
       // Transient IPC failure: leave the store at defaults, mark initialized
@@ -534,7 +488,7 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
       // re-populate. 260703: EXCEPT ai_backend_kind — the INITIAL 'local'
       // must not stand in for a cloud-proxy profile (the UI would claim BYOK
       // while every LLM call reads config.json and spends cloud credits), so
-      // seed it from the local config, which doesn't need the ledger.
+      // seed it from the local config, which doesn't need the server.
       const kind = await readBackendKindFromConfig();
       if (loadEpoch !== epochBefore) return; // superseded by a newer scope
       set((s) => ({
@@ -554,21 +508,7 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     try {
       const status = await sei.creditsGet();
       if (loadEpoch !== epochBefore) return; // superseded by a scope transition
-      set({
-        remaining_pct: status.remaining_pct,
-        usage_pct: status.usage_pct ?? 0,
-        remaining_tokens: status.remaining_tokens,
-        used_usd: status.used_usd,
-        total_usd: status.total_usd,
-        plan: status.plan,
-        renews_at: status.renews_at,
-        ends_at: status.ends_at,
-        trial_claimed: status.trial_claimed,
-        ai_backend_kind: status.ai_backend_kind,
-        subscription_status_raw: status.subscription_status_raw ?? null,
-        snapshotFailed: false,
-        loading: false,
-      });
+      set({ ...fromStatus(status), loading: false });
     } catch {
       // 260703: same backend-kind backstop as init() — a failed snapshot must
       // not leave a stale/incorrect mode on the ACCOUNT MODE surface.
@@ -582,34 +522,17 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     }
   },
 
-  claimTrial: async (): Promise<{ ok: true } | { ok: false; code: string }> => {
-    // The trial is bound to the account UUID (derived server-side from the
-    // session JWT) — no username is needed. The Edge Function enforces the
-    // one-trial-per-account cap via the ledger_grants partial UNIQUE index.
-    const res = await sei.trialClaim();
-
-    // Success + the "Claimed" button state are derived from the SERVER snapshot
-    // (a kind='trial' ledger_grants row → `trial_claimed`), NOT from
-    // trialClaim's balance-delta heuristic. The delta read can race the
-    // just-committed grant (read-after-
-    // write lag) and report a real claim as "already claimed", which previously
-    // left the button stuck on "Claim" and the gauge stale. Refresh and trust
-    // `trial_claimed`; retry once after a short delay to absorb that lag so the
-    // grant (balance → "~Xh left") and the flag both land.
-    await get().refresh();
-    if (get().trial_claimed) return { ok: true };
-    await new Promise<void>((resolve) => setTimeout(resolve, 600));
-    await get().refresh();
-    if (get().trial_claimed) return { ok: true };
-
-    // Still not reflected: surface trialClaim's code (already_claimed / network)
-    // so the card can show an honest note. A 2xx-but-not-visible falls through
-    // as 'network' (transient) rather than a misleading "already claimed".
-    return { ok: false, code: res.ok ? 'network' : res.code };
-  },
-
   openCheckout: async (kind): Promise<void> => {
     await sei.creditsOpenCheckout(kind);
+  },
+
+  changePlan: async (tier): Promise<{ ok: true } | { ok: false; code: string }> => {
+    lastBillingActionAt = Date.now();
+    const res = await sei.creditsChangePlan(tier);
+    // Re-read either way: on success the tier may already be applied, and on
+    // failure the refresh confirms nothing moved.
+    await get().refresh();
+    return res;
   },
 
   beginPurchase: async (kind, opts): Promise<void> => {
@@ -617,15 +540,15 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     clearCheckoutTimers();
     const s = get();
     checkoutBaseline = {
-      remaining_tokens: s.remaining_tokens ?? 0,
       plan: s.plan,
+      extra_credits_total: s.extra_credits_total,
       subscription_status_raw: s.subscription_status_raw,
     };
     lastBillingActionAt = Date.now();
     set({ checkoutStatus: 'waiting', checkoutKind: kind });
 
     // Open the hosted checkout in the system browser unless an earlier step
-    // (the Party consent modal) already launched it.
+    // (the consent modal) already launched it.
     if (!opts?.alreadyOpened) {
       await get().openCheckout(kind);
     }
@@ -636,8 +559,8 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     clearCheckoutTimers();
     const s = get();
     checkoutBaseline = {
-      remaining_tokens: s.remaining_tokens ?? 0,
       plan: s.plan,
+      extra_credits_total: s.extra_credits_total,
       subscription_status_raw: s.subscription_status_raw,
     };
     lastBillingActionAt = Date.now();
@@ -654,12 +577,18 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     set({ checkoutStatus: 'idle', checkoutKind: null });
   },
 
+  requestTopUp: (): void => {
+    set({ topUpRequested: true });
+  },
+
+  clearTopUpRequest: (): void => {
+    set({ topUpRequested: false });
+  },
+
   cancelSubscription: async (): Promise<{ ok: true; portalUrl: string } | { ok: false; code: string }> => {
     // Opens the Polar customer portal (manage / cancel / RESUME a to-be-cancelled
     // sub). Arm the focus-refetch so that when the user finishes in the portal
-    // and tabs back, the credits screen re-reads and reflects the new state
-    // (e.g. resume → status flips back to active, the "will end" line reverts to
-    // the renewal line).
+    // and tabs back, the plan screen re-reads and reflects the new state.
     lastBillingActionAt = Date.now();
     return await sei.subscriptionCancel();
   },
@@ -682,13 +611,10 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     checkoutBaseline = null;
     lastBillingActionAt = 0;
     set({ ...INITIAL, unsubStatus: undefined, unsubHardStop: undefined, unsubFocus: undefined });
-    // quick/260525-sbo Task 6: clear the module-level prev-plan ref so a
-    // subsequent sign-in + re-init treats the next push as a cold-load
-    // rather than a transition (otherwise a sign-out from 'unlimited'
-    // followed by sign-in as a 'trial' user would spuriously fire the
-    // receipt navigate on the next status push if that user later
-    // subscribed within the same app session — the prev value from the
-    // previous account would still be in the ref).
+    // Clear the module-level prev-plan ref so a subsequent sign-in + re-init
+    // treats the next push as a cold-load rather than a transition (otherwise a
+    // sign-out from 'party' followed by sign-in as a free user could spuriously
+    // fire the receipt navigate later in the same app session).
     prevPlanForReceipt = null;
   },
 }));

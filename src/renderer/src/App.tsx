@@ -238,8 +238,8 @@ export function App(): React.ReactElement {
   //
   //    The store's init() early-returns when `initialized` is already true.
   //    Without an auth-aware reset, a user who signs out and signs in to a
-  //    DIFFERENT account keeps the previous account's remaining_pct, plan,
-  //    trial_claimed, and ai_backend_kind until either (a) a proxy call
+  //    DIFFERENT account keeps the previous account's plan, usage_pct and
+  //    ai_backend_kind until either (a) a proxy call
   //    fires a push, (b) refresh() is called manually, or (c) the renderer
   //    reloads. PricingIcon, CreditsScreen, and HardStopModal would show
   //    the previous user's data to the new user.
