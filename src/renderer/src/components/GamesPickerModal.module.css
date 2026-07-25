@@ -85,8 +85,12 @@
   );
 }
 
-.tileImage:not(.tileLocked):hover {
+.tileImage:hover {
   filter: brightness(1.08);
+}
+
+.tileImage.tileLocked:hover {
+  opacity: 1;
 }
 
 /* Name pinned bottom-left over the scrim, white regardless of theme. */
@@ -153,20 +157,25 @@
   opacity: 0.82;
 }
 
-/* "SOON" tag pinned bottom-right on placeholder tiles (where the (i) sits
- * on available ones), riding above the image scrim. */
+/* "SOON" tag on placeholder tiles: same corner box as the (i) affordance
+ * (26px tall, space-sm insets) so its bottom and left line up with the
+ * tooltip across tiles. Rides above the image scrim. */
 .soonTag {
   position: absolute;
   bottom: var(--space-sm);
-  right: var(--space-sm);
+  left: calc(100% - 26px - var(--space-sm));
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
   z-index: 1;
   font-family: var(--display);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   pointer-events: none;
+  white-space: nowrap;
 }
 
 /* Bottom-right (i) — hover-only info affordance (not clickable; it anchors
