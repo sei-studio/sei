@@ -46,6 +46,17 @@
   transition: width 300ms ease;
 }
 
+/* 260724: weekly allowance spent. Red so a full bar reads as a limit. */
+.fillOver {
+  background: var(--red);
+}
+
+/* 260724: quieter secondary bar (the extra-credits row) so it never competes
+   with the weekly-allowance bar above it. */
+.fillMuted {
+  background: var(--muted-2);
+}
+
 .label {
   position: absolute;
   inset: 0;

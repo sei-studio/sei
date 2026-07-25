@@ -26,10 +26,31 @@ export interface PercentBarProps {
    */
   label?: string;
   size?: 'sm' | 'md' | 'lg';
+  /**
+   * Fill tone. 'accent' is the default primary bar; 'muted' is the quieter
+   * secondary bar used for the extra-credits row so it never competes with the
+   * weekly-allowance hero above it.
+   */
+  tone?: 'accent' | 'muted';
+  /**
+   * 260724: the weekly allowance is spent. The fill turns red so a full bar
+   * reads as a limit, not as an achievement. Overrides `tone`.
+   */
+  overLimit?: boolean;
+  /** Hide the centred numeric label (the row already spells the value out). */
+  hideLabel?: boolean;
 }
 
-export function PercentBar({ value, label, size = 'lg' }: PercentBarProps): React.ReactElement {
+export function PercentBar({
+  value,
+  label,
+  size = 'lg',
+  tone = 'accent',
+  overLimit = false,
+  hideLabel = false,
+}: PercentBarProps): React.ReactElement {
   const v = Math.max(0, Math.min(100, Math.round(value)));
+  const fillTone = overLimit ? styles.fillOver : tone === 'muted' ? styles.fillMuted : '';
   return (
     <div
       className={`${styles.root} ${styles[size]}`}
@@ -39,8 +60,8 @@ export function PercentBar({ value, label, size = 'lg' }: PercentBarProps): Reac
       aria-valuemax={100}
       aria-label={label ?? `${v} percent`}
     >
-      <div className={styles.fill} style={{ width: `${v}%` }} />
-      <span className={styles.label}>{v}%</span>
+      <div className={`${styles.fill} ${fillTone}`} style={{ width: `${v}%` }} />
+      {hideLabel ? null : <span className={styles.label}>{v}%</span>}
     </div>
   );
 }

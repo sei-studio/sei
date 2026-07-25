@@ -1,25 +1,23 @@
 /**
  * ReceiptScreen — quick/260525-sbo Task 6.
  *
- * In-app receipt surface auto-navigated to when a user's plan transitions
- * from any non-'unlimited' value to 'unlimited' (= first-time subscription
- * activation). Required by FTC 16 CFR §425.5 ("plain-language
- * acknowledgement of the charges at the point of subscription"). The
- * transition trigger lives in useCreditsStore.shouldNavigateToReceipt +
- * the status-push side-effect; this component is the rendered surface.
+ * In-app receipt surface auto-navigated to when a user's plan moves UP into a
+ * paid tier (Free → Quest / Party, or Quest → Party). Required by FTC 16 CFR
+ * §425.5 ("plain-language acknowledgement of the charges at the point of
+ * subscription"). The transition trigger lives in
+ * useCreditsStore.shouldNavigateToReceipt + the status-push side-effect; this
+ * component is the rendered surface.
  *
- * PROXY-05 carve-out: this screen renders the literal "$20.00" amount in
- * the renderer per FTC 16 CFR §425.5 (plain-language acknowledgement of
- * charges at the point of subscription). The PROXY-05 bright-line ("no
- * dollar amounts in renderer") is suspended for the at-purchase legal-
- * disclosure surface only.
+ * This screen renders the literal charged amount per FTC 16 CFR §425.5. It is
+ * one of only three surfaces that keep dollar figures for legal reasons (with
+ * PreCtaDisclosure and AutoRenewalConsentModal), alongside the plan cards and
+ * top up packages.
  *
- * Idempotency: the auto-navigate fires AT MOST ONCE per non-unlimited →
- * unlimited transition (guarded by useCreditsStore.prevPlanForReceipt
- * module-level ref). Subsequent unlimited→unlimited pushes do NOT
- * re-navigate; an already-subscribed user opening the app does NOT see
- * this screen on cold-load (the seed plan is recorded as prev BEFORE the
- * first transition check).
+ * Idempotency: the auto-navigate fires AT MOST ONCE per upgrade (guarded by
+ * useCreditsStore.prevPlanForReceipt module-level ref). Repeat pushes on the
+ * same tier do NOT re-navigate; an already-subscribed user opening the app does
+ * NOT see this screen on cold-load (the seed plan is recorded as prev BEFORE
+ * the first transition check).
  *
  * Source: quick/260525-sbo Cluster F Task 6.
  */
@@ -29,12 +27,15 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from '../components/Button';
 import { BackIcon } from '../components/icons';
 import { formatRenewal } from '../lib/formatRenewal';
+import { planCard } from '../lib/planCatalog';
 import styles from './ReceiptScreen.module.css';
 
 export function ReceiptScreen(): React.ReactElement {
   const renewsAt = useCreditsStore((s) => s.renews_at);
+  const plan = useCreditsStore((s) => s.plan);
   const navigate = useUiStore((s) => s.navigate);
 
+  const card = planCard(plan);
   const nextBilling = formatRenewal(renewsAt) ?? 'in 30 days';
 
   return (
@@ -50,16 +51,15 @@ export function ReceiptScreen(): React.ReactElement {
             Back
           </Button>
         </div>
-        <h1 className={styles.title}>Welcome to Party!</h1>
+        <h1 className={styles.title}>Welcome to {card.name}!</h1>
 
         <div className={styles.tile}>
           {/*
-            * PROXY-05 carve-out (quick/260525-sbo Task 6): "$20.00 charged
-            * today" is the FTC 16 CFR §425.5 plain-language charge
-            * acknowledgement; the dollar amount MUST render in-app at the
-            * activation moment.
+            * "$X.00 charged today" is the FTC 16 CFR §425.5 plain-language
+            * charge acknowledgement; the dollar amount MUST render in-app at
+            * the activation moment, and MUST match the tier just purchased.
             */}
-          <p className={styles.line}>$20.00 charged today.</p>
+          <p className={styles.line}>{card.chargeUsd ?? '$0.00'} charged today.</p>
           <p className={styles.line}>Billed monthly until you cancel.</p>
           <p className={styles.line}>Next billing date: {nextBilling}.</p>
           <p className={styles.line}>

@@ -1,35 +1,24 @@
 /**
- * UsageBar — the credits usage bar (Party redesign restyle of 260602-hbr).
+ * UsageBar — the weekly-allowance usage bar (260724).
  *
  * A lean primitive: a usage-percent progress bar (PercentBar fed `usage_pct`
- * from useCreditsStore) with a quiet refresh affordance. The bar carries the
- * "$used/$total used, played Xh Ym" hover tooltip (developer-gated dollars).
+ * from useCreditsStore, red once the allowance is spent) with a quiet refresh
+ * affordance. The bar carries a "played Xh Ym" hover tooltip sourced from
+ * UserConfig.total_playtime_ms.
  *
- * The standalone "~Xh left" estimate text was lifted out of here in the Party
- * redesign — it now lives inline in the CreditsScreen hero (mockup .pt-hero).
- * The estimate helpers + ESTIMATE_TOOLTIP still export from this module so that
- * hero (and any other consumer) can reuse them.
- *
- * PROXY-05: the bar surfaces a PERCENT only. The dollar figures ride the
- * developer-gated tooltip (260615 owner-approved exception), never the markup.
+ * The bar surfaces a PERCENT only. There are no dollar figures, no token counts
+ * and no playtime ESTIMATES anywhere on it: the "$used/$total" tooltip and the
+ * "~Xh left" text both went away with the weekly-subscription model, which
+ * meters an allowance rather than a balance.
  */
 
 import React, { useEffect, useState } from 'react';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
-import { useUiStore } from '../lib/stores/useUiStore';
 import { sei } from '../lib/ipcClient';
 import { PercentBar } from './PercentBar';
 import { Button } from './Button';
 import { RefreshIcon } from './icons';
 import styles from './UsageBar.module.css';
-
-/** Shown on hover/focus of the estimate so the "~Xh left" is never read as a promise. */
-export const ESTIMATE_TOOLTIP = 'This is an estimate; actual playtime can vary.';
-
-/** "$1.20", or "$—" when the dollar figure isn't available (local/BYOK, no session, cold-load). */
-export function formatUsd(n: number | undefined): string {
-  return typeof n === 'number' && Number.isFinite(n) ? `$${n.toFixed(2)}` : '$–';
-}
 
 /** Cumulative playtime ms → "3h 17m". */
 export function formatPlayed(ms: number): string {
@@ -37,21 +26,9 @@ export function formatPlayed(ms: number): string {
   return `${Math.floor(total / 60)}h ${total % 60}m`;
 }
 
-/**
- * Bar hover tooltip. Defaults to "$used/$total used, played Xh Ym", but the
- * dollar figures are developer-only: with `showUsd` false (the default UX —
- * developer console off) the tooltip is just "played Xh Ym", so end users never
- * see raw spend. Flip `showUsd` true (Settings → Show developer console) to
- * reveal the "$used/$total used" prefix.
- */
-export function usageTooltip(
-  usedUsd: number | undefined,
-  totalUsd: number | undefined,
-  totalPlaytimeMs: number,
-  showUsd = true,
-): string {
-  const played = `played ${formatPlayed(totalPlaytimeMs)}`;
-  return showUsd ? `${formatUsd(usedUsd)}/${formatUsd(totalUsd)} used, ${played}` : played;
+/** Bar hover tooltip: total time played across every companion on this profile. */
+export function usageTooltip(totalPlaytimeMs: number): string {
+  return `Played ${formatPlayed(totalPlaytimeMs)} total`;
 }
 
 export interface UsageBarProps {
@@ -61,16 +38,12 @@ export interface UsageBarProps {
 
 export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   const usagePct = useCreditsStore((s) => s.usage_pct);
-  const usedUsd = useCreditsStore((s) => s.used_usd);
-  const totalUsd = useCreditsStore((s) => s.total_usd);
+  const overLimit = useCreditsStore((s) => s.over_limit);
   const refresh = useCreditsStore((s) => s.refresh);
   const loading = useCreditsStore((s) => s.loading);
   // Last snapshot fetch failed and nothing fresher landed: the store's zeros
   // are placeholders, so don't present "0 percent used" as account truth.
   const snapshotFailed = useCreditsStore((s) => s.snapshotFailed);
-  // The "$used/$total used" figures are developer-only. Off by default; shown
-  // only when Settings → Show developer console is on (ui-A7 flag).
-  const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
   // Cumulative playtime across all of this profile's characters (survives
   // deletion — accumulated at session-end in config). Feeds the bar tooltip.
   const [totalPlaytimeMs, setTotalPlaytimeMs] = useState(0);
@@ -87,7 +60,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
 
   const tooltip = snapshotFailed
     ? "Couldn't check your account right now. Refresh to try again."
-    : usageTooltip(usedUsd, totalUsd, totalPlaytimeMs, devConsoleVisible);
+    : usageTooltip(totalPlaytimeMs);
 
   return (
     <div className={styles.root}>
@@ -100,6 +73,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
         <PercentBar
           value={snapshotFailed ? 0 : usagePct}
           size={size}
+          overLimit={!snapshotFailed && overLimit}
           label={snapshotFailed ? 'usage unavailable' : `${Math.round(usagePct)} percent used`}
         />
       </div>
@@ -109,8 +83,8 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
         size="sm"
         icon={<RefreshIcon size={14} />}
         disabled={loading}
-        title="Refresh playtime"
-        aria-label="Refresh playtime"
+        title="Refresh"
+        aria-label="Refresh plan usage"
         onClick={() => {
           void refresh();
           void sei.getConfig().then((c) => setTotalPlaytimeMs(c.total_playtime_ms ?? 0));

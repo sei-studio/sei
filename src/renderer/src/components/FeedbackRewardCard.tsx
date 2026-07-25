@@ -1,11 +1,12 @@
 /**
- * FeedbackRewardCard — one-time feedback-for-playtime banner (260706).
+ * FeedbackRewardCard — one-time feedback-for-a-reset banner (260706, reworked
+ * 260724).
  *
- * Shown at the top of the Playtime screen once the account has spent $0.50 of
- * tokens and has not yet claimed the feedback reward. Submitting sends the
- * text to the proxy's POST /feedback with claimReward=true; the server grants
- * a trial-sized playtime recharge at most once per account (partial unique
- * index on ledger_grants — the client flag is only a mirror).
+ * Shown at the top of the plan screen once the account has spent part of its
+ * weekly allowance and has not yet claimed the feedback reward. Submitting
+ * sends the text to the proxy's POST /feedback with claimReward=true; the
+ * server resets this week's usage back to zero, at most once per account (the
+ * client flag is only a mirror).
  *
  * "Reply to my email" attaches the signed-in account email so the operator
  * can respond; unticked submissions stay anonymous on the feedback row (the
@@ -33,8 +34,8 @@ function submitErrorCopy(code: string): string {
 
 export interface FeedbackRewardCardProps {
   /**
-   * Fired once the banner is finished for good: the reward was granted, or
-   * the server says this account already claimed it. The parent flips to the
+   * Fired once the banner is finished for good: the usage reset was applied,
+   * or the server says this account already claimed it. The parent flips to the
    * standing "Submit feedback" button. The claimed flag is persisted to
    * config here, before the callback.
    */
@@ -73,9 +74,9 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
       // profile, then let the parent swap in the standing feedback button.
       const cfg = await sei.getConfig();
       await sei.saveConfig({ ...cfg, feedback_reward_claimed: true });
-      if (res.reward_granted) {
+      if (res.usage_reset) {
         void refreshCredits();
-        setDoneNote('Reward added. Thank you for the feedback.');
+        setDoneNote("This week's credits are reset. Thank you for the feedback.");
       } else {
         setDoneNote('Feedback sent. The reward was already claimed on this account.');
       }
@@ -98,7 +99,8 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
   return (
     <form className={styles.card} onSubmit={handleSubmit}>
       <p className={styles.lede}>
-        What do you not like about Sei? Submit any feedback and receive a free playtime recharge.
+        What do you not like about Sei? Send any feedback and this week's credits reset to
+        zero.
       </p>
       <TextField
         value={body}
@@ -119,7 +121,7 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
           Reply to my email
         </label>
         <Button kind="accent" size="md" type="submit" disabled={!canSubmit}>
-          {submitting ? 'Sending…' : 'Submit and claim reward'}
+          {submitting ? 'Sending…' : 'Submit and reset my credits'}
         </Button>
       </div>
       {error ? (

@@ -1,7 +1,7 @@
 /**
  * FeedbackModal — the standing "Submit feedback" form (260706).
  *
- * Opened from the Playtime screen after the one-time reward banner has been
+ * Opened from the plan screen after the one-time reward banner has been
  * used (and anywhere else a feedback entry point makes sense). Email is
  * optional: leaving it blank submits fully anonymously (the proxy stores no
  * user id on the row). Server-side the proxy caps submissions at 20/day per

@@ -19,7 +19,7 @@
  * surfaces (Playtime pill, plan labels, hard-stop copy) remain dollar-free.
  *
  * Lines rendered, in EXACT order:
- *   1. "$20.00 USD per month"
+ *   1. "$8.00 USD per month" / "$18.00 USD per month" (the tier's exact charge)
  *   2. Renewal day:
  *        - With renewsAt → "Auto-renews on the {Nth} of each month until you cancel"
  *        - Without       → "Auto-renews monthly until you cancel"  (first-time
@@ -35,16 +35,24 @@
  * Source: quick/260525-sbo Cluster F Task 4; money-back line removed 260602-uv9.
  */
 import React from 'react';
+import type { PlanTier } from '@shared/ipc';
+import { planChargeUsd } from '../lib/planCatalog';
 import styles from './PreCtaDisclosure.module.css';
 
 export interface PreCtaDisclosureProps {
   /**
    * ISO timestamp of the next renewal date if the user already has an
    * active subscription (renews_at on CreditsStatus). For the typical
-   * first-time-Join-a-Party path this is null — we render the
+   * first-time-subscribe path this is null — we render the
    * "Auto-renews monthly" fallback that doesn't claim a day-of-month.
    */
   renewsAt: string | null;
+  /**
+   * Which tier is being purchased. Drives the disclosed amount ($8.00 for
+   * Quest, $18.00 for Party) — the statute requires the price the consumer
+   * will actually be charged.
+   */
+  tier: Exclude<PlanTier, 'free'>;
 }
 
 /**
@@ -70,10 +78,10 @@ function renewalLine(renewsAt: string | null): string {
   return `Auto-renews on the ${ordinal(d.getDate())} of each month until you cancel.`;
 }
 
-export function PreCtaDisclosure({ renewsAt }: PreCtaDisclosureProps): React.ReactElement {
+export function PreCtaDisclosure({ renewsAt, tier }: PreCtaDisclosureProps): React.ReactElement {
   return (
     <div className={styles.block} role="group" aria-label="Subscription terms">
-      <p className={styles.line}>$20.00 USD per month</p>
+      <p className={styles.line}>{planChargeUsd(tier)} USD per month</p>
       <p className={styles.line}>{renewalLine(renewsAt)}</p>
       <p className={styles.line}>Cancel anytime in Settings → Cloud AI → Cancel subscription</p>
     </div>

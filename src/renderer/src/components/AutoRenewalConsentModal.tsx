@@ -2,21 +2,21 @@
  * AutoRenewalConsentModal — quick/260525-sbo Task 3.
  *
  * Blocking-ish consent gate that mounts BEFORE every Polar subscription
- * checkout (Party tile in CreditsScreen + HardStopModal). The user must (a)
- * check a checkbox whose label discloses the recurring charge amount and
- * frequency, and (b) click "Continue to checkout" — at which point the
+ * purchase or tier change (the plan cards in CreditsScreen + HardStopModal).
+ * The user must (a) check a checkbox whose label discloses the recurring
+ * charge amount and frequency, and (b) click Continue — at which point the
  * renderer (1) records an immutable consent row via the record-consent Edge
- * Function and (2) opens the Polar hosted checkout.
+ * Function and (2) either opens the Polar hosted checkout (a NEW subscription)
+ * or asks the proxy to update the existing subscription (a tier CHANGE).
  *
  * Required by California Bus & Prof Code §17602(a)(1) (clear-and-conspicuous
  * pre-CTA disclosure) + §17602(b) (recordkeeping). Without this surface Sei
  * cannot legally onboard California-resident subscribers.
  *
- * PROXY-05 carve-out: this modal MUST render the literal "$20/month" string
- * for CA ARL §17602(a)(1) clear-and-conspicuous compliance. The PROXY-05
- * invariant ("no dollar amounts in renderer") is suspended for the
- * at-purchase legal-disclosure surface only — all other UI surfaces
- * (Playtime pill, plan labels, hard-stop copy) remain dollar-free.
+ * This modal MUST render the literal per-month amount ($8/month for Quest,
+ * $18/month for Party) for CA ARL §17602(a)(1) clear-and-conspicuous
+ * compliance. Dollar amounts otherwise appear only on the plan cards and the
+ * top up packages.
  *
  * Structural template: SignInModal.tsx (scrim + role="dialog" + aria-modal +
  * useId for titleId + ESC closes via window keydown listener).
@@ -32,7 +32,9 @@
  *   - src/shared/legalVersions.ts TOS_VERSION (consent_version source)
  */
 import React, { useState } from 'react';
+import type { PlanTier } from '@shared/ipc';
 import { sei } from '../lib/ipcClient';
+import { planCard, planName } from '../lib/planCatalog';
 // Use relative import (not @shared alias) so vitest can resolve without
 // extra config — the legacy tsconfig.web.json paths are not registered in
 // vitest.config.ts.
@@ -43,13 +45,22 @@ import { PreCtaDisclosure } from './PreCtaDisclosure';
 import styles from './AutoRenewalConsentModal.module.css';
 
 export interface AutoRenewalConsentModalProps {
+  /** Which tier the user is agreeing to be charged for. */
+  tier: Exclude<PlanTier, 'free'>;
+  /**
+   * 'checkout' (default) starts a NEW subscription through the hosted Polar
+   * checkout. 'change' updates an EXISTING subscription to `tier` in place (no
+   * browser hop); the consent record is required either way because the
+   * recurring amount changes.
+   */
+  mode?: 'checkout' | 'change';
   /** Called on dismissal (ESC, Back CTA, or after Continue completes). */
   onClose: () => void;
   /**
-   * Called AFTER consent is recorded and the hosted checkout has been opened in
-   * the browser — the parent uses this to start the "complete your purchase"
-   * watch (high-freq creditsGet polling). Fires only on the Continue path, not
-   * on Back/ESC dismissal. Optional so non-watching callers can omit it.
+   * Called AFTER consent is recorded and the purchase action has been started —
+   * the parent uses this to begin the "complete your purchase" watch (high-freq
+   * creditsGet polling). Fires only on the Continue path, not on Back/ESC
+   * dismissal. Optional so non-watching callers can omit it.
    */
   onProceed?: () => void;
 }
@@ -73,6 +84,7 @@ export interface AutoRenewalConsentModalProps {
 export async function handleConfirmForTest(
   consentVersion: string,
   onProceed?: () => void,
+  tier: Exclude<PlanTier, 'free'> = 'party',
 ): Promise<void> {
   const w = (globalThis as unknown as { window: { sei: typeof sei } }).window;
   try {
@@ -87,17 +99,23 @@ export async function handleConfirmForTest(
       `[AutoRenewalConsentModal] record-consent threw: ${(err as Error).message} — proceeding to checkout anyway.`,
     );
   }
-  await w.sei.creditsOpenCheckout('subscription');
+  await w.sei.creditsOpenCheckout(tier);
   // Hand off to the parent's checkout watch AFTER the browser checkout opened.
   onProceed?.();
 }
 
 export function AutoRenewalConsentModal({
+  tier,
+  mode = 'checkout',
   onClose,
   onProceed,
 }: AutoRenewalConsentModalProps): React.ReactElement {
   const [checked, setChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const card = planCard(tier);
+  // CA ARL §17602(a)(1): the amount in the affirmative-consent label is the
+  // amount the consumer will actually be charged.
+  const consentLabel = `I agree to be charged ${card.price}/month until I cancel.`;
 
   // ESC closes (non-blocking — the user CAN dismiss without consenting, in
   // which case no checkout opens), but is suppressed while submitting so we
@@ -121,9 +139,15 @@ export function AutoRenewalConsentModal({
           `[AutoRenewalConsentModal] record-consent threw: ${(err as Error).message} — proceeding to checkout anyway.`,
         );
       }
-      // Step 2: open the LS hosted checkout. Modal closes immediately so the
-      // user lands on the browser tab without a stale scrim covering the app.
-      await sei.creditsOpenCheckout('subscription');
+      // Step 2: start the purchase. A new subscription opens the Polar hosted
+      // checkout (the modal closes immediately so the user lands on the browser
+      // tab without a stale scrim covering the app); a tier change is applied
+      // by the proxy in place, with no browser hop.
+      if (mode === 'change') {
+        await sei.creditsChangePlan(tier);
+      } else {
+        await sei.creditsOpenCheckout(tier);
+      }
       // Step 3: hand off to the parent's checkout watch (the browser is already
       // open, so it polls without re-opening). Fires only on this Continue path.
       onProceed?.();
@@ -144,8 +168,8 @@ export function AutoRenewalConsentModal({
       onClose={onClose}
     >
       <p className={styles.body}>
-        Party gives you heavier daily playtime that recharges every billing cycle. Polar
-        handles secure checkout and payment.
+        {planName(tier)} gives you {card.blurb}, refreshed every week. Polar handles
+        secure checkout and payment.
       </p>
 
       {/*
@@ -157,23 +181,20 @@ export function AutoRenewalConsentModal({
        * a first-time subscriber has no renewal date yet, so PreCtaDisclosure
        * renders the "Auto-renews monthly until you cancel" fallback.
        */}
-      <PreCtaDisclosure renewsAt={null} />
+      <PreCtaDisclosure renewsAt={null} tier={tier} />
 
       {/*
-       * PROXY-05 carve-out (quick/260525-sbo Task 3): the literal "$20/month"
-       * string MUST appear in the consent checkbox label per CA ARL
-       * §17602(a)(1). The PROXY-05 bright-line ("no dollar amounts in
-       * renderer") is suspended for the at-purchase legal-disclosure surface
-       * only.
+       * The literal per-month amount MUST appear in the consent checkbox label
+       * per CA ARL §17602(a)(1), and it must match the tier being purchased.
        */}
       <label className={styles.checkboxRow}>
         <input
           type="checkbox"
           checked={checked}
           onChange={(e) => setChecked(e.target.checked)}
-          aria-label="I agree to be charged $20/month until I cancel"
+          aria-label={consentLabel}
         />
-        <span>I agree to be charged $20/month until I cancel.</span>
+        <span>{consentLabel}</span>
       </label>
 
       <ModalFooter>
@@ -186,7 +207,13 @@ export function AutoRenewalConsentModal({
           onClick={() => void handleConfirm()}
           disabled={!checked || submitting}
         >
-          {submitting ? 'Opening in your browser…' : 'Continue to checkout'}
+          {submitting
+            ? mode === 'change'
+              ? 'Updating your plan…'
+              : 'Opening in your browser…'
+            : mode === 'change'
+              ? 'Confirm plan change'
+              : 'Continue to checkout'}
         </Button>
       </ModalFooter>
     </ModalShell>
