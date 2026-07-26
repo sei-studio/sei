@@ -19,7 +19,7 @@ An omni-game AI player mod.
 
 ---
 
-Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI characters into video games as real players, not chatbots. Pick a character, launch a supported game, and they join your world to play alongside you. Companions remember everything you've done together across sessions and across games. Use Sei to have personalized experiences with new friends and rivals. Sei plays Minecraft and its own in-app minigames today, and aims to support most multiplayer games.
+Sei is an AI companion platform ([sei.gg](https://sei.gg)) that lets you chat, call, and play games with AI powered gamers all in one place. Users can match with unique companions, create from scratch, import from other platforms, or explore shared companions. The app currently supports existing titles (Minecraft) as well as in-app minigames, with future plans to enable AI gamers to play every game in some capacity. Through gaming, Sei aims to create AI companions that help humans flourish.
 
 <div align="center">
 
@@ -40,27 +40,29 @@ Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI 
 
 ## Current Capabilities
 
-- Minecraft: companions join a LAN world as a real second player, no extra account needed
+- Minecraft: companions join a LAN world as a second player
 - In-app minigames: chess, with more on the way
-- Voice calls, solo or group
-- In-app chat
-- Persistent memory across sessions and games
-- Generated companions matched to you, or bring your own
+- Voice calls, solo or group, in 70+ languages
+- Unique companions matched to each player
 - Custom Minecraft skins and in-game vision
+- Autonomously managed long-term memory
+- Knowledge upload for importing existing companions
 - Bring your own API key or sign in for cloud-hosted AI
-- macOS and Windows
 
 ## Upcoming
 
 **v0.5 releases**
 
-- More minigames
+- More minigames!
+- Backseat (beta): watch you play games or do anything on your computer
+
+**v0.6**
+
+- Backseat (full): watch you play games, and intervene when they feel like it
 
 **v1.0**
 
 - Omni-game adapter: summon characters into any multiplayer game
-
-To suggest a game, use the suggest tile on the Games screen in app.
 
 ## Development
 
@@ -75,19 +77,19 @@ No `.env` needed. Cloud traffic routes through the Sei proxy, so sign-in, cloud 
 
 To run local mode instead, open Settings, pick a provider, and paste your own LLM API key.
 
-Help is welcome with:
+Help is welcome with any part of the repo, for example:
 
 - Improving the Minecraft experience
 - Adding support for new games
 - Better personality and memory
 
-I work on Sei alone. To get involved, reach out at [ouen@sei.gg](mailto:ouen@sei.gg).
+To get more involved with the product side, reach out at [ouen@sei.gg](mailto:ouen@sei.gg).
 
 ## Acknowledgements
 
 - [mineflayer](https://github.com/PrismarineJS/mineflayer): the Minecraft bot framework Sei's game adapter is built on
-- [Project AIRI](https://github.com/moeru-ai/airi): inspiration for AI characters that live in software
-- [Character.AI](https://character.ai): inspiration for personalized AI characters
-- [Neuro-sama](https://vedal.ai/): inspiration for an AI that plays games with people
+- [Project AIRI](https://github.com/moeru-ai/airi): open-sourced digital "embodied" AI companion
+- [Character.AI](https://character.ai): demonstrated personalized AI characters
+- [Neuro-sama](https://vedal.ai/): showed that AI can make people happy
 - [PrismarineJS](https://github.com/PrismarineJS): the broader Minecraft protocol tooling that makes this possible
 - Hoshimachi Suisei: the GOAT
