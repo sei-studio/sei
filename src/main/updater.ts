@@ -59,16 +59,27 @@ const FORCED_RESTART_DELAY_MS = 3500;
  * there to act on it. The periodic timer below is just a backstop for a session
  * left continuously in the foreground. Every automatic check funnels through
  * maybeBackgroundCheck(), which enforces MIN_BACKGROUND_GAP_MS between checks so
- * focus-thrashing or a wake+unlock burst can't spam the feed. Each check is one
- * ~1KB GitHub feed GET (latest.yml), so the cost is negligible either way.
+ * focus-thrashing or a wake+unlock burst can't spam the feed.
  */
 const PERIODIC_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 /**
  * Floor between two automatic (event- or timer-driven) checks. Bounds the feed
  * traffic from event triggers to at most one hit per this window, regardless of
  * how many focus/resume/unlock events fire.
+ *
+ * 5 minutes (260726, was 20). A check is 3 requests totalling ~8.7 KB measured:
+ * releases.atom (~8 KB, the feed walk), the channel yml (~0.5 KB), and
+ * notices.json (~0.1 KB, which rides this same clock). version.json is fetched
+ * only when an update is actually found. So the worst case is ~288 checks and
+ * ~2.5 MB per day, and only for a session that keeps triggering all day.
+ * releases.atom is a github.com endpoint, NOT api.github.com, so it is not
+ * subject to the 60/hr unauthenticated API limit.
+ *
+ * The floor exists to bound traffic, NOT to stop repeat popups: those are
+ * already deduped per version per run by handledVersions in
+ * handleUpdateAvailable, so shortening this cannot make the app nag.
  */
-const MIN_BACKGROUND_GAP_MS = 20 * 60 * 1000;
+const MIN_BACKGROUND_GAP_MS = 5 * 60 * 1000;
 
 /** Parsed, validated version.json policy fields used by the updater. */
 interface VersionPolicy {
