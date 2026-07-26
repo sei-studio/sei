@@ -189,6 +189,17 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(source.includes('CreationLimitModal')).toBe(true);
   });
 
+  it('Test 13b: dormant slots go translucent under a custom background (260726)', () => {
+    const homeCss = readFileSync(HOME_CSS, 'utf-8');
+    // The dormant fill is the one Home surface opaque enough (90% at the bottom
+    // stop) to hide a custom background, so it must opt into the shared tint the
+    // rail / drag strip / chat root use, keyed on --app-bg-tint.
+    expect(homeCss.includes(':root[data-app-bg] .dormant')).toBe(true);
+    expect(homeCss.includes('var(--app-bg-tint, 100%)')).toBe(true);
+    // Base (no custom background) styling is untouched.
+    expect(homeCss.includes('.dormant {')).toBe(true);
+  });
+
   it('Test 14: Home filter uses added_default_ids (defaults hidden unless invited)', () => {
     // The rule lives in the shared countsAsHomeSlot predicate now; homeLibrary
     // and CharactersScreen must carry no trace of the old removed_default_ids.

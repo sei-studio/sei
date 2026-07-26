@@ -235,6 +235,29 @@
   );
 }
 
+/* 260726: with a custom background active, the dormant fill (90% opaque at the
+   bottom stop) was the one surface still blocking the image on Home. Scale both
+   stops by the shared --app-bg-tint, the same lever the rail / drag strip /
+   chat root use, so the empty slots read as glass over the background.
+   The nested color-mix multiplies each stop's existing alpha by the tint, which
+   keeps the gradient's top-to-bottom shape: at "opacity 0%" the slot is exactly
+   as it was, at "opacity 100%" it is bare image. */
+:root[data-app-bg] .dormant {
+  background: linear-gradient(
+    180deg,
+    color-mix(
+      in srgb,
+      color-mix(in srgb, var(--bg2) 50%, transparent) var(--app-bg-tint, 100%),
+      transparent
+    ),
+    color-mix(
+      in srgb,
+      color-mix(in srgb, var(--bg) 90%, transparent) var(--app-bg-tint, 100%),
+      transparent
+    )
+  );
+}
+
 /* Per-slot starfield (design lab "Vigil sky"): each wall position keeps its
  * own faint constellation over a scatter of small stars at three brightness
  * tiers. sky0 Libra · sky1 Virgo · sky2 Aquarius · sky3 Scorpius. The whole
