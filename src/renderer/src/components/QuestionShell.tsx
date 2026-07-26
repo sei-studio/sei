@@ -2,7 +2,7 @@
  * QuestionShell — the central column used by OnboardingScreen and
  * AddCharacterScreen for each step.
  *
- * Layout: 520px max-width column with optional eyebrow / title / hint, the
+ * Layout: 520px max-width column with a title / optional hint, the
  * field children, and a footer row of (Back | StepDots | Next).
  *
  * Source: 04-UI-SPEC.md §"Question shell max-width 520px" + 04-07 Task 1.
@@ -15,7 +15,6 @@ import { BackIcon } from './icons';
 import styles from './QuestionShell.module.css';
 
 export interface QuestionShellProps {
-  eyebrow?: string;
   title: React.ReactNode;
   hint?: string;
   children: React.ReactNode;
@@ -45,7 +44,6 @@ export function QuestionShell(p: QuestionShellProps): React.ReactElement {
       style={p.wide ? { maxWidth: 820 } : undefined}
     >
       <div className={styles.body}>
-        {p.eyebrow ? <div className={styles.eyebrow}>{p.eyebrow}</div> : null}
         <h1 className={styles.title}>{p.title}</h1>
         {p.hint ? <p className={styles.hint}>{p.hint}</p> : null}
         <div className={styles.field}>{p.children}</div>

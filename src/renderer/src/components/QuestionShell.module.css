@@ -15,15 +15,6 @@
   padding: 56px 0;
 }
 
-/* Mono micro-label (see .u-lbl). Sentence case; no uppercase transform. */
-.eyebrow {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin-bottom: 16px;
-}
-
 .title {
   font-family: var(--display);
   font-size: 28px;

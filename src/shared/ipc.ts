@@ -915,6 +915,19 @@ export interface CreditsStatus {
   ends_at: string | null;
   subscription_status_raw: 'active' | 'cancelled' | 'expired' | 'past_due' | null;
   ai_backend_kind: 'local' | 'cloud-proxy';
+  /**
+   * Whether the once-per-account feedback reward is still claimable, read from
+   * `usage_periods.feedback_reset_at` (null there = unclaimed). `null` here
+   * means UNKNOWN: signed out, or the read failed.
+   *
+   * 260726: the feedback banner used to be gated only on the local
+   * `feedback_reward_claimed` mirror in config.json, which is per profile. A
+   * fresh profile (or a re-onboard, which writes the flag false) re-offered a
+   * reward the SERVER had already recorded as claimed, so the user wrote
+   * feedback and only then learned it was spent. The server is the authority;
+   * the local mirror now only covers the unknown case.
+   */
+  feedback_reward_available: boolean | null;
 }
 
 /**

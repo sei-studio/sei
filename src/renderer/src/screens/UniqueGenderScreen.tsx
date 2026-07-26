@@ -30,7 +30,6 @@ export function UniqueGenderScreen(): React.ReactElement {
 
   return (
     <QuestionShell
-      eyebrow="Meet your unique companion"
       title="Who are you hoping to meet?"
       hint="Everything else about them is a surprise, cast from your profile."
       stepCount={1}

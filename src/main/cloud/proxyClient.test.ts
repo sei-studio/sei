@@ -57,6 +57,10 @@ interface MockState {
   /** Non-null → the my_plan read fails (e.g. view missing pre-migration). */
   planError: { message: string } | null;
   subscription: { status: string; renews_at: string | null; ends_at: string | null } | null;
+  /** usage_periods row behind the feedback-reward gate. null = no row yet. */
+  usagePeriod: { feedback_reset_at: string | null } | null;
+  /** Non-null → the usage_periods read fails (gate falls back to UNKNOWN). */
+  usagePeriodError: { message: string } | null;
 }
 
 const state: MockState = {
@@ -64,6 +68,8 @@ const state: MockState = {
   plan: null,
   planError: null,
   subscription: null,
+  usagePeriod: null,
+  usagePeriodError: null,
 };
 
 function resetState(): void {
@@ -71,6 +77,8 @@ function resetState(): void {
   state.plan = null;
   state.planError = null;
   state.subscription = null;
+  state.usagePeriod = null;
+  state.usagePeriodError = null;
 }
 
 /** A complete, healthy my_plan row. Override fields per test. */
@@ -112,6 +120,8 @@ function makeMockSupabase(): unknown {
           if (table === 'my_plan') return { data: state.plan, error: state.planError };
           // subscriptionStatus still reads the my_subscription view.
           if (table === 'my_subscription') return { data: state.subscription, error: null };
+          if (table === 'usage_periods')
+            return { data: state.usagePeriod, error: state.usagePeriodError };
           return { data: null, error: null };
         }),
         // PostgrestFilterBuilder is thenable — awaiting it resolves to
@@ -162,6 +172,8 @@ describe('creditsGet', () => {
       subscription_status_raw: null,
       // 260703: the persisted backend kind, never a hardcoded 'local'.
       ai_backend_kind: 'cloud-proxy',
+      // Signed out: nothing to claim against.
+      feedback_reward_available: false,
     });
   });
 
@@ -189,6 +201,40 @@ describe('creditsGet', () => {
     expect(res.renews_at).toBe('2026-08-14T00:00:00Z');
     expect(res.subscription_status_raw).toBe('active');
     expect(res.ai_backend_kind).toBe('cloud-proxy');
+  });
+
+  // 260726: the feedback banner is gated on the SERVER, not the per-profile
+  // config mirror. A fresh profile (or a re-onboard, which writes the local
+  // flag false) used to re-offer a reward the account had already spent.
+  it('feedback reward is available when usage_periods has no claim stamp', async () => {
+    signIn();
+    state.plan = planRow();
+    state.usagePeriod = { feedback_reset_at: null };
+
+    const { creditsGet } = await import('./proxyClient');
+    expect((await creditsGet()).feedback_reward_available).toBe(true);
+  });
+
+  it('feedback reward is NOT available once feedback_reset_at is stamped', async () => {
+    signIn();
+    state.plan = planRow();
+    state.usagePeriod = { feedback_reset_at: '2026-07-10T00:31:24Z' };
+
+    const { creditsGet } = await import('./proxyClient');
+    expect((await creditsGet()).feedback_reward_available).toBe(false);
+  });
+
+  it('a failed usage_periods read reports UNKNOWN and does not fail the snapshot', async () => {
+    // Unknown must not hide a real reward, and must not take the whole plan
+    // snapshot down over a cosmetic gate.
+    signIn();
+    state.plan = planRow({ plan: 'quest' });
+    state.usagePeriodError = { message: 'network' };
+
+    const { creditsGet } = await import('./proxyClient');
+    const res = await creditsGet();
+    expect(res.feedback_reward_available).toBeNull();
+    expect(res.plan).toBe('quest');
   });
 
   it('throws when the my_plan read errors (never paints a failed read as a fresh free account)', async () => {

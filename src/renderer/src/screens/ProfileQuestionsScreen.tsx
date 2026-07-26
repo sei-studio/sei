@@ -248,7 +248,6 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
   // back; later steps keep the "Back" affordance.
   const onFirstStep = step === 0;
   const shellProps = {
-    eyebrow: 'Set up your companions',
     stepCount: questions.length,
     currentStep: step,
     onBack: back,

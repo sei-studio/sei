@@ -289,6 +289,12 @@ interface CreditsState {
    */
   subscription_status_raw: CreditsStatus['subscription_status_raw'];
   /**
+   * Server truth for the once-per-account feedback reward; `null` = unknown
+   * (signed out, cold load, or the read failed). The banner treats only an
+   * explicit `false` as "do not ask" so an unknown never hides a real reward.
+   */
+  feedback_reward_available: CreditsStatus['feedback_reward_available'];
+  /**
    * Set ONLY by an explicit `onCreditsHardStop` push — never computed from
    * `over_limit` in render. Drives HardStopModal mounting in App.tsx.
    */
@@ -423,6 +429,7 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   // UNKNOWN until main reports a kind (see the CreditsState field docs).
   ai_backend_kind: null,
   subscription_status_raw: null,
+  feedback_reward_available: null,
   hardStopActive: false,
   hardStopReason: null,
   rateLimitedUntil: null,
@@ -450,6 +457,7 @@ function fromStatus(status: CreditsStatus): Partial<CreditsState> {
     ends_at: status.ends_at,
     subscription_status_raw: status.subscription_status_raw ?? null,
     ai_backend_kind: status.ai_backend_kind,
+    feedback_reward_available: status.feedback_reward_available ?? null,
     snapshotFailed: false,
   };
 }

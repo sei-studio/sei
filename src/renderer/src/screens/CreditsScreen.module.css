@@ -116,12 +116,15 @@
   transition: width 240ms var(--ease);
 }
 
-/* 100% used: the fill and the number go red so a full bar reads as a limit. */
-.usageFillOver {
+/* 100% used: the fill goes red so a full bar reads as a limit (the number
+   itself stays the normal text color). Both fill modifiers are scoped through
+   the track element: a bare `.usageFillOver` loses to the `.usageTrack i`
+   element selector above on specificity, so neither modifier ever applied. */
+.usageTrack i.usageFillOver {
   background: var(--red);
 }
 
-.usageFillMuted {
+.usageTrack i.usageFillMuted {
   background: var(--muted-2);
 }
 

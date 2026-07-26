@@ -378,7 +378,12 @@
   letter-spacing: normal;
   color: var(--muted);
   margin: var(--space-sm) calc(-1 * var(--space-lg)) 0;
-  padding: var(--space-xs) var(--space-lg);
+  /* 260725: same vertical rhythm as .rowLead (4px top, 1px bottom, 8px
+     margin), so the gap between two consecutive session rows is the SAME 13px
+     as the gap between a session row and a message, or between messages from
+     two different authors. The old symmetric 4px bottom made stacked session
+     rows sit 3px further apart than everything else around them. */
+  padding: var(--space-xs) var(--space-lg) 1px;
 }
 
 .playIcon {

@@ -118,6 +118,8 @@ export async function creditsGet(): Promise<CreditsStatus> {
       ends_at: null,
       subscription_status_raw: null,
       ai_backend_kind: await backendKind(),
+      // Signed out: nothing to claim against, and no way to ask.
+      feedback_reward_available: false,
     };
   }
 
@@ -127,13 +129,20 @@ export async function creditsGet(): Promise<CreditsStatus> {
   // caller (auth.uid() = null) and returns no row, so the screen would paint a
   // signed-in account as a brand-new free one.
   const supabase = getAuthedClient(session.jwt);
-  const [planRow, kind] = await Promise.all([
+  const [planRow, rewardRow, kind] = await Promise.all([
     supabase
       .from('my_plan')
       .select(
         'plan,usage_pct,over_limit,resets_at,extra_credits_used,extra_credits_total,renews_at,ends_at,subscription_status_raw',
       )
       .maybeSingle(),
+    // 260726: the server is the authority on whether the once-per-account
+    // feedback reward is still there. `usage_periods` is RLS SELECT-own, so
+    // this rides the same authed session as my_plan and needs no proxy route.
+    // Deliberately NOT fatal: a failure here leaves the field UNKNOWN and the
+    // banner falls back to the local mirror, rather than failing the whole
+    // snapshot over a cosmetic gate.
+    supabase.from('usage_periods').select('feedback_reset_at').maybeSingle(),
     backendKind(),
   ]);
 
@@ -164,6 +173,11 @@ export async function creditsGet(): Promise<CreditsStatus> {
     ends_at: row.ends_at ?? null,
     subscription_status_raw: row.subscription_status_raw ?? null,
     ai_backend_kind: kind,
+    // No row yet (never spent anything) still means unclaimed: the RPC calls
+    // ensure_usage_period first, so the claim would create the row and succeed.
+    feedback_reward_available: rewardRow.error
+      ? null
+      : (rewardRow.data as { feedback_reset_at?: string | null } | null)?.feedback_reset_at == null,
   };
 }
 

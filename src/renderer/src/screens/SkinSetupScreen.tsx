@@ -97,7 +97,6 @@ export function SkinSetupScreen(): React.ReactElement {
 
   return (
     <div className={styles.root}>
-      <div className={styles.eyebrow}>Final step</div>
       <div className={styles.panel}>
         {/* The welcome step's footer carries "Set up later" (aligned with
             Begin); no separate skip row is rendered below the panel anymore. */}

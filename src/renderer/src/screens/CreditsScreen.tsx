@@ -140,6 +140,7 @@ export function CreditsScreen(): React.ReactElement {
   const renewsAt = useCreditsStore((s) => s.renews_at);
   const endsAt = useCreditsStore((s) => s.ends_at);
   const subscriptionStatusRaw = useCreditsStore((s) => s.subscription_status_raw);
+  const feedbackRewardAvailable = useCreditsStore((s) => s.feedback_reward_available);
   const beginPurchase = useCreditsStore((s) => s.beginPurchase);
   const beginResume = useCreditsStore((s) => s.beginResume);
   const dismissCheckout = useCreditsStore((s) => s.dismissCheckout);
@@ -320,8 +321,18 @@ export function CreditsScreen(): React.ReactElement {
         </div>
 
         {/* One-time feedback banner: appears once a quarter of the weekly
-            allowance is spent, retires permanently once submitted (260706). */}
-        {cloudMode && rewardClaimed === false && usedPct >= FEEDBACK_PROMPT_USAGE_PCT ? (
+            allowance is spent, retires permanently once submitted (260706).
+            260726: the SERVER decides whether the reward is still there
+            (usage_periods.feedback_reset_at). The local `rewardClaimed` mirror
+            is per profile, so a fresh profile or a re-onboard used to re-offer
+            a reward the account had already spent, and the user only found out
+            after writing the feedback. Only an explicit `false` suppresses the
+            banner: unknown (signed out, cold load, failed read) still falls
+            back to the local mirror. */}
+        {cloudMode &&
+        rewardClaimed === false &&
+        feedbackRewardAvailable !== false &&
+        usedPct >= FEEDBACK_PROMPT_USAGE_PCT ? (
           <FeedbackRewardCard onDone={() => setRewardClaimed(true)} />
         ) : null}
 

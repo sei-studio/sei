@@ -39,6 +39,7 @@ function status(overrides: Partial<CreditsStatus> = {}): CreditsStatus {
     ends_at: null,
     subscription_status_raw: null,
     ai_backend_kind: 'cloud-proxy',
+    feedback_reward_available: null,
     ...overrides,
   };
 }

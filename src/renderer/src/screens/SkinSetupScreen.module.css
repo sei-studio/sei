@@ -1,6 +1,6 @@
 /* SkinSetupScreen — onboarding skin-setup page.
  *
- * Mirrors the QuestionShell rhythm (centered column, mono eyebrow) so it reads
+ * Mirrors the QuestionShell rhythm (centered column) so it reads
  * as a sibling of the "What should they call you?" step. Tokens only, sharp
  * corners (design system §2/§7). The wizard panel supplies its own heading +
  * footer via WizardStepShell, so this frame just centers it.
@@ -14,15 +14,6 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-}
-
-/* Mono micro-label (see .u-lbl) framing the page as the final onboarding step. */
-.eyebrow {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin-bottom: 16px;
 }
 
 .panel {
