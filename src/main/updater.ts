@@ -45,6 +45,12 @@ const logger = {
 };
 
 const VERSION_URL = 'https://sei.gg/version.json';
+/**
+ * Policy feed for the beta channel, read INSTEAD of version.json when the user
+ * has opted into pre-releases. Optional on the site: if it is absent, the
+ * fetch falls back to version.json (see fetchVersionPolicy).
+ */
+const VERSION_URL_BETA = 'https://sei.gg/version-beta.json';
 const VERSION_FETCH_TIMEOUT_MS = 5000;
 /** Brief window so the forced-restart overlay can paint before quitAndInstall. */
 const FORCED_RESTART_DELAY_MS = 3500;
@@ -168,14 +174,14 @@ let eventsWired = false;
 /* -------------------------------------------------------------------------- */
 
 /**
- * Best-effort fetch of https://sei.gg/version.json. Returns null on any
- * failure (no network, timeout, bad JSON, non-2xx). Backward-compatible: the
- * legacy `{version, downloadUrl, notes}` shape still parses — `changelog`
- * falls back to `notes` and `apply` defaults to `on-restart` when absent.
+ * Best-effort fetch of a policy feed. Returns null on any failure (no network,
+ * timeout, bad JSON, non-2xx). Backward-compatible: the legacy
+ * `{version, downloadUrl, notes}` shape still parses — `changelog` falls back
+ * to `notes` and `apply` defaults to `on-restart` when absent.
  */
-function fetchVersionPolicy(): Promise<VersionPolicy | null> {
+function fetchPolicyFrom(url: string): Promise<VersionPolicy | null> {
   return new Promise((resolve) => {
-    const req = net.request({ url: VERSION_URL, method: 'GET', redirect: 'follow' });
+    const req = net.request({ url, method: 'GET', redirect: 'follow' });
     const timer = setTimeout(() => {
       try {
         req.abort();
@@ -227,6 +233,31 @@ function fetchVersionPolicy(): Promise<VersionPolicy | null> {
     });
     req.end();
   });
+}
+
+/**
+ * Fetch the update policy for THIS client's channel.
+ *
+ * Beta clients read version-beta.json, stable clients read version.json, so a
+ * changelog written for a pre-release never reaches users who never opted in.
+ * The site does not have to carry the beta file: a missing or broken one falls
+ * back to version.json, which is the pre-260726 behavior.
+ *
+ * LIMITATION worth remembering: the client that reads this is the one being
+ * OFFERED the update, i.e. the older build. So a given release's notes are
+ * segmented only if the build the user is upgrading FROM already had this code.
+ * The first beta to benefit is the one after 0.5.0-beta.1 — every 0.4.7 client
+ * offered 0.5.0-beta.1 still read the shared version.json, and there was no way
+ * to segment it: the URL is a constant and the request carries no app version
+ * (Electron's default UA has no app token).
+ */
+async function fetchVersionPolicy(): Promise<VersionPolicy | null> {
+  if (allowPrerelease) {
+    const beta = await fetchPolicyFrom(VERSION_URL_BETA);
+    if (beta) return beta;
+    logger.info('updater: no beta policy feed, falling back to version.json');
+  }
+  return fetchPolicyFrom(VERSION_URL);
 }
 
 /* -------------------------------------------------------------------------- */
