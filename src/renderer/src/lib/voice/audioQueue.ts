@@ -77,10 +77,19 @@ const canStreamMpeg = (): boolean =>
  * to finalize the previous frame, so the true last frame of a clip gets dropped
  * at end-of-stream — heard as the last word cut off abruptly. A few trailing
  * silent frames (~100ms) give the real final frame something to lean on so it
- * plays out in full. Each frame: sync header FF FB 90 00 then zeroed side-info +
+ * plays out in full. Each frame: sync header FF FB 90 C4 then zeroed side-info +
  * main-data (silence); length 417 bytes for these params. Built at runtime (no
  * base64 asset); if the decoder ever rejects it, the append simply no-ops and we
  * fall back to today's behavior.
+ *
+ * 260726: the 4th header byte was 0x00, which declares STEREO. Every clip
+ * ElevenLabs returns under main's ELEVENLABS_OUTPUT_FORMAT (mp3_44100_128) is
+ * MONO (verified against cached clips: their frames are FF FB 90 C4), so the
+ * padding forced a channel-mode change at the exact frame boundary the padding
+ * exists to protect. 0xC4 matches the stream: mode 11 (single channel),
+ * original bit set, no emphasis. Keep this header in sync if the output format
+ * constant in src/main/voice/tts.ts ever changes — bitrate and sample rate are
+ * baked into both this header and FRAME.
  */
 function buildSilenceMp3(frames = 4): ArrayBuffer {
   const FRAME = 417;
@@ -90,7 +99,7 @@ function buildSilenceMp3(frames = 4): ArrayBuffer {
     out[off] = 0xff;
     out[off + 1] = 0xfb;
     out[off + 2] = 0x90;
-    out[off + 3] = 0x00;
+    out[off + 3] = 0xc4;
     // remaining bytes stay 0 → decoded silence
   }
   return out.buffer;
@@ -99,6 +108,17 @@ const SILENCE_MP3 = buildSilenceMp3();
 
 export function createAudioQueue(
   onSpeakingChange: (speaking: boolean, characterId: string | null, text?: string) => void,
+  /**
+   * 260726: a clip just produced its FIRST audible sample. Distinct from
+   * onSpeakingChange(true), which fires when the slot reaches the playhead —
+   * for a streamed clip that is before the TTS request has even been sent, so
+   * the whole synthesis round trip sits between the two. The barge-in grace
+   * window (AEC convergence) must be armed from THIS event, not from the slot:
+   * on the call's first line the round trip is the coldest of the session and
+   * used to consume the entire window in silence, leaving the greeting
+   * interruptible from its first spoken word. Fires once per clip.
+   */
+  onAudible?: () => void,
 ): AudioQueue {
   const pending: Item[] = [];
   let current: HTMLAudioElement | null = null;
@@ -136,8 +156,24 @@ export function createAudioQueue(
     const done = (): void => finishCurrent(el);
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
+    markAudibleOnPlay(el);
     onSpeakingChange(true, characterId, text);
     void el.play().catch(() => done());
+  }
+
+  /** Fire onAudible the first time this element actually produces sound. Once
+   * only: a streamed clip that stalls waiting for chunks fires 'playing' again
+   * on resume, and re-arming the grace there would make a choppy clip
+   * progressively harder to interrupt. */
+  function markAudibleOnPlay(el: HTMLAudioElement): void {
+    if (!onAudible) return;
+    el.addEventListener(
+      'playing',
+      () => {
+        if (current === el) onAudible();
+      },
+      { once: true },
+    );
   }
 
   function playStream(item: StreamItem): void {
@@ -256,6 +292,7 @@ export function createAudioQueue(
     };
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
+    markAudibleOnPlay(el);
     onSpeakingChange(true, item.characterId, item.text);
     void el.play().catch(() => done());
   }

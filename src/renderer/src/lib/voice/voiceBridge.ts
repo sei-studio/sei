@@ -8,9 +8,24 @@
  * call open they are no-ops.
  */
 
+/**
+ * Where a spoken line sits inside its OWN reply. Both fields feed ElevenLabs'
+ * utterance conditioning (main/voice/tts.ts ttsContextFor), which is scoped to
+ * one reply: the first line has no `prev`, the last has no `more`, and a
+ * single-line reply has neither, so prosody resets at reply boundaries.
+ */
+export interface SpokenLineContext {
+  /** The line of this same reply spoken immediately before this one. */
+  prev?: string;
+  /** Another line of this same reply follows this one. */
+  more?: boolean;
+}
+
 interface VoiceHooks {
-  /** A companion chat message landed (send() reply or chat:message push). */
-  onCompanionText(characterId: string, text: string): void;
+  /** A companion chat message landed (send() reply or chat:message push).
+   * `ctx` places the line inside its reply for TTS conditioning. A pushed line
+   * arrives alone with no siblings, so it passes an empty context. */
+  onCompanionText(characterId: string, text: string, ctx: SpokenLineContext): void;
   /** Is a voice call currently open with this character? */
   isCallActive(characterId: string): boolean;
   /**
@@ -49,9 +64,13 @@ export function registerVoiceHooks(h: VoiceHooks): void {
   hooks = h;
 }
 
-export function notifyCompanionText(characterId: string, text: string): void {
+export function notifyCompanionText(
+  characterId: string,
+  text: string,
+  ctx: SpokenLineContext = {},
+): void {
   try {
-    hooks?.onCompanionText(characterId, text);
+    hooks?.onCompanionText(characterId, text, ctx);
   } catch {
     /* voice layer must never break chat */
   }

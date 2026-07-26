@@ -172,28 +172,52 @@ const TTS_NEXT_TEXT: Record<ChatLanguage, string> = {
   fr: " enfin, j'ai encore des choses à dire là-dessus.",
   es: ' en fin, todavía tengo más que decir sobre eso.',
 };
-/** A stale previous line must not make a NEW call's greeting sound
- * mid-conversation, so context expires between conversations. */
-const TTS_CONTEXT_TTL_MS = 3 * 60_000;
 /** Keep the conditioning tail short (and under the proxy's 1000-char field cap). */
 const TTS_PREVIOUS_TEXT_MAX = 500;
-const lastSpokenByCharacter = new Map<string, { text: string; at: number }>();
+/**
+ * Below this many characters a clip carries NO conditioning at all. The bleed
+ * that started this (a greeting rendered as "yo what's up, eh", the head of
+ * next_text spoken aloud) needed one ingredient above all: so little primary
+ * text that the context fields outweighed it. The same tiny clips are the ones
+ * that render as clipped fragments when told they continue a prior utterance.
+ * Mirrors STREAM_MIN_CHARS in the voice store, which routes the same clips
+ * around the streaming path — both thresholds encode "this clip is too small
+ * to survive extra machinery".
+ */
+const TTS_CONTEXT_MIN_CHARS = 24;
 
-function ttsContextFor(characterId: string, language: ChatLanguage): Record<string, string> {
-  const prev = lastSpokenByCharacter.get(characterId);
-  const fresh = prev && Date.now() - prev.at < TTS_CONTEXT_TTL_MS ? prev.text.slice(-TTS_PREVIOUS_TEXT_MAX) : undefined;
-  return { ...(fresh ? { previous_text: fresh } : {}), next_text: TTS_NEXT_TEXT[language] ?? TTS_NEXT_TEXT.en };
-}
-
-/** Record only AFTER a successful synthesis: a failed request's text was never
- * heard, so conditioning the next clip on it would be false continuity. */
-function rememberSpoken(characterId: string, text: string): void {
-  lastSpokenByCharacter.set(characterId, { text, at: Date.now() });
-}
-
-/** Test hook — the context map is module state that would leak across cases. */
-export function _resetTtsContextForTest(): void {
-  lastSpokenByCharacter.clear();
+/**
+ * Utterance-context conditioning, scoped to ONE reply.
+ *
+ *   previous_text — the line of THIS SAME reply that ran immediately before
+ *     this clip. Supplied by the renderer, which is the only layer that knows
+ *     the reply's line array; main used to keep its own last-spoken-per-
+ *     character map with a 3-minute TTL, which bled context ACROSS turns (and
+ *     raced: a multi-line reply fires all its TTS requests in one tick, so the
+ *     map still held the PREVIOUS turn's last line for every one of them).
+ *   next_text — sent when another line of this same reply follows, so the clip
+ *     does not land a sentence-final pitch drop mid-reply.
+ *
+ * Both are strictly intra-reply now: the first line of a reply has no
+ * previous_text, the last has no next_text, and a single-line reply gets
+ * neither. A reply is the unit of speech, so its boundaries are where the
+ * prosody should reset.
+ *
+ * 260726: next_text used to go out on EVERY clip, including final lines, where
+ * nothing followed. On the call-opening clip flash stopped merely READING the
+ * continuation string and started SPEAKING it.
+ */
+function ttsContextFor(
+  text: string,
+  language: ChatLanguage,
+  prev: string | undefined,
+  more: boolean,
+): Record<string, string> {
+  if (text.trim().length < TTS_CONTEXT_MIN_CHARS) return {};
+  return {
+    ...(prev ? { previous_text: prev.slice(-TTS_PREVIOUS_TEXT_MAX) } : {}),
+    ...(more ? { next_text: TTS_NEXT_TEXT[language] ?? TTS_NEXT_TEXT.en } : {}),
+  };
 }
 
 /**
@@ -341,7 +365,14 @@ export function prewarmTts(): void {
 }
 
 /** Synthesize `text` in `characterId`'s voice; resolves to audio/mpeg bytes. */
-export async function voiceTts(args: { characterId: string; text: string }): Promise<ArrayBuffer> {
+export async function voiceTts(args: {
+  characterId: string;
+  text: string;
+  /** Another line of this same reply follows (see ttsContextFor). */
+  more?: boolean;
+  /** The line of the SAME reply spoken immediately before this one. */
+  prev?: string;
+}): Promise<ArrayBuffer> {
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
   // Explicit "no voice" pick (260720): a silent companion never synthesizes.
@@ -360,11 +391,10 @@ export async function voiceTts(args: { characterId: string; text: string }): Pro
   // see spokenTextFor.
   const text = clipForRoute(spokenTextFor(args.text, language), route);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
-  const context = ttsContextFor(character.id, language);
+  const context = ttsContextFor(text, language, args.prev, args.more === true);
   const buf = await synthesize(
     text, voiceId, ttsSpeedFor(voicePitchRate(character)), language, voiceStabilityFor(character), route, context,
   );
-  rememberSpoken(character.id, text);
   return buf;
 }
 
@@ -387,7 +417,7 @@ export type TtsStreamEvent =
  * existing catch copy applies unchanged.
  */
 export async function voiceTtsStream(
-  args: { characterId: string; text: string },
+  args: { characterId: string; text: string; more?: boolean; prev?: string },
   sink: (event: TtsStreamEvent) => void,
 ): Promise<{ streamId: string }> {
   const character = await getCharacter(args.characterId);
@@ -412,8 +442,9 @@ export async function voiceTtsStream(
   // Language pin for non-English (see synthesize — same forward-compat stance).
   const langField = language !== 'en' ? { language_code: language } : {};
   const settings = voiceSettingsFor(speed, stability);
-  // Utterance-context conditioning (see ttsContextFor) — open terminal contour.
-  const context = ttsContextFor(character.id, language);
+  // Utterance-context conditioning (see ttsContextFor) — keeps a multi-line
+  // reply from dropping pitch between its own sentences.
+  const context = ttsContextFor(text, language, args.prev, args.more === true);
 
   const url = route.kind === 'direct'
     ? `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=${ELEVENLABS_OUTPUT_FORMAT}`
@@ -465,7 +496,6 @@ export async function voiceTtsStream(
   clearTimeout(timeout);
   // Upstream accepted the synthesis — this line is what the player will hear
   // last, so it becomes the next clip's previous_text.
-  rememberSpoken(character.id, text);
 
   const streamId = `tts-${nextStreamSeq++}`;
   // Pump in the background; the caller gets the id NOW so it can route chunks.

@@ -50,6 +50,7 @@ import { sttPolicy } from '../voice/sttPolicy';
 import { prefetchVoiceModel } from '../voice/modelPrefetch';
 import { registerVoiceHooks } from '../voice/voiceBridge';
 import { decideReaction, isJunkTranscript, type Participant } from '../voice/pfcSteer';
+import type { SpokenLineContext } from '../voice/voiceBridge';
 import {
   startRingtone,
   startAmbience,
@@ -130,7 +131,7 @@ let pendingTts = 0;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
  * speakerOriginSeq), threaded through the flush into speakAndCapture. */
-let pendingCompanionLines: Array<{ characterId: string; text: string; seq: number }> = [];
+let pendingCompanionLines: Array<{ characterId: string; text: string; seq: number; ctx: SpokenLineContext }> = [];
 const MAX_PENDING_COMPANION_LINES = 12;
 /** 260725 turn-failure retry: while runCompanionTurnInner has a player send in
  * flight for a speaker, this maps speakerId → its director sequence. The chat
@@ -312,6 +313,17 @@ const GREETING_READY_CAP_MS = 5000;
 // Once connected, hold a beat before the first word — a real "pickup" pause, and
 // it gives the greeting's TTS first-byte a moment to land.
 const CONNECT_SPEAK_DELAY_MS = 1000;
+/**
+ * Shortest line that still goes down the STREAMING TTS path (see
+ * speakCompanionLine). Below this the clip is fetched whole and played from one
+ * Blob, which cannot underrun. 24 chars is roughly a second of speech at these
+ * voices: long enough that streaming's head start is worth having, short enough
+ * that the one-word answers and interjections that were coming out choppy
+ * ("you", "are you", "yeah lol") take the safe path. Raise it if choppiness
+ * shows up on longer lines; each raise trades a little first-word latency on
+ * those lines for buffer safety.
+ */
+const STREAM_MIN_CHARS = 24;
 
 function friendlyError(err: unknown): string {
   const msg = String((err as Error)?.message ?? err);
@@ -410,8 +422,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   }
 
   /** Synthesize + display one companion line on the LIVE call, tagged with the
-   * speaker so the queue can report per-companion speaking state. */
-  function speakCompanionLine(characterId: string, text: string): void {
+   * speaker so the queue can report per-companion speaking state. `ctx` places
+   * the line inside its own reply (previous sibling / whether one follows),
+   * which is what main conditions the clip's opening and closing contour on
+   * (see ttsContextFor). */
+  function speakCompanionLine(characterId: string, text: string, ctx: SpokenLineContext = {}): void {
     const mySession = session;
     if (replyClockAt !== null) {
       console.log(
@@ -446,10 +461,23 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
 
     const canStream =
       typeof sei.voiceTtsStream === 'function' && typeof sei.onVoiceTtsChunk === 'function';
-    if (canStream && queue) {
+    // 260726: a TINY line does not stream. Streaming exists to cut time-to-
+    // first-audio on a long clip, and its cost is that playback starts on a
+    // buffer that is still filling. Every pitched character plays at
+    // playbackRate > 1 (Sui: 1.25) with preservesPitch off, so the renderer
+    // drains that buffer FASTER than the network fills it; on a clip of a few
+    // hundred ms there is never a lead to absorb a hiccup, and the underruns
+    // land at the only two places available — the first frames and the last
+    // ones before endOfStream. Symptom: "are you" and "you" came out choppy at
+    // both ends while full sentences were clean. Under the threshold the whole
+    // clip is fetched, then played from one Blob with its silence padding
+    // already baked in: no MSE, no underrun, and the latency given up is only
+    // the tail of an already-short synthesis.
+    const worthStreaming = text.length >= STREAM_MIN_CHARS;
+    if (canStream && worthStreaming && queue) {
       const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId));
       void sei
-        .voiceTtsStream({ characterId, text })
+        .voiceTtsStream({ characterId, text, ...ctx })
         .then(({ streamId }) => {
           if (session !== mySession) {
             handle.fail();
@@ -472,7 +500,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     }
 
     void sei
-      .voiceTts({ characterId, text })
+      .voiceTts({ characterId, text, ...ctx })
       .then((buf) => {
         if (session === mySession) queue?.enqueue(buf, characterId, text, pitchRateOf(characterId));
       })
@@ -497,8 +525,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
    * another speaker's, or the turn was superseded — is mirrored to the peers
    * immediately: the room heard it, so its transcripts must too, it just takes
    * no floor and chains nothing. */
-  function speakAndCapture(characterId: string, text: string, originSeq: number): void {
-    speakCompanionLine(characterId, text);
+  function speakAndCapture(characterId: string, text: string, originSeq: number, ctx: SpokenLineContext): void {
+    speakCompanionLine(characterId, text, ctx);
     const current = originSeq === directorSeq;
     // Floor-steal (260708): an armed capture whose speaker has produced NOTHING
     // yet is a pending floor, not a held one. A real spoken line from someone
@@ -540,7 +568,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     pendingCompanionLines = [];
     for (const line of lines) {
       if (get().participants.includes(line.characterId)) {
-        speakAndCapture(line.characterId, line.text, line.seq);
+        speakAndCapture(line.characterId, line.text, line.seq, line.ctx);
       }
     }
   }
@@ -827,12 +855,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         ?.catch(() => null);
       if (session !== mySession || mySeq !== directorSeq) return; // superseded while generating
       if (get().status !== 'live' || !get().participants.includes(speakerId)) return;
-      for (const r of result?.messages ?? []) {
+      const nudgeLines = (result?.messages ?? []).filter((r) => r.text);
+      for (let i = 0; i < nudgeLines.length; i++) {
         // Group calls: capture opens so the room hears it and may react.
-        if (r.text) {
-          spoke = true;
-          speakAndCapture(speakerId, r.text, mySeq);
-        }
+        spoke = true;
+        speakAndCapture(speakerId, nudgeLines[i].text, mySeq, {
+          prev: i > 0 ? nudgeLines[i - 1].text : undefined,
+          more: i < nudgeLines.length - 1,
+        });
       }
       // The nudge turn hung up (end_call). Same path as the send() endCall flag
       // and the voice:call-ended push: the goodbye lines just queued above get
@@ -903,7 +933,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       directorSendFailed.add(characterId);
       return true;
     },
-    onCompanionText: (characterId, text) => {
+    onCompanionText: (characterId, text, ctx) => {
       const s = get();
       if (!s.participants.includes(characterId)) return;
       // Date the line to its turn: the seq current when this speaker's
@@ -914,14 +944,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // Lines can arrive before the (first) line opens: buffer and flush on live.
       if (s.status === 'connecting') {
         if (pendingCompanionLines.length < MAX_PENDING_COMPANION_LINES) {
-          pendingCompanionLines.push({ characterId, text, seq: originSeq });
+          pendingCompanionLines.push({ characterId, text, seq: originSeq, ctx });
         }
         return;
       }
       if (s.status !== 'live') return;
       // Speak it, and open/feed the director's turn capture so the rest of the
       // room hears it and the banter chain runs (see speakAndCapture).
-      speakAndCapture(characterId, text, originSeq);
+      speakAndCapture(characterId, text, originSeq, ctx);
     },
     onPlayerText: (characterId, text) => {
       // A message TYPED to an on-call companion (the chat composer mid-call)
@@ -1060,20 +1090,30 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       speakerOriginSeq.set(characterId, directorSeq); // date the greet's lines
       void sei.voiceGreet?.(characterId)?.catch(() => {});
 
-      queue = createAudioQueue((speaking, cid, text) => {
-        if (session !== mySession) return;
-        // Advance the caption to the line that just STARTED playing, so it flows
-        // in step with the audio (each line shows as it's spoken) instead of
-        // jumping to the last-enqueued line. The previous line stays up during the
-        // brief gap between clips (speaking=false) until the next one begins.
-        set({
-          speaking,
-          speakingId: speaking ? cid : null,
-          ...(speaking && text ? { lastSpoken: text, lastSpokenId: cid } : {}),
-        });
-        dictation?.setHold(speaking);
-        if (!speaking) maybeFinishRemoteEnd();
-      });
+      queue = createAudioQueue(
+        (speaking, cid, text) => {
+          if (session !== mySession) return;
+          // Advance the caption to the line that just STARTED playing, so it flows
+          // in step with the audio (each line shows as it's spoken) instead of
+          // jumping to the last-enqueued line. The previous line stays up during the
+          // brief gap between clips (speaking=false) until the next one begins.
+          set({
+            speaking,
+            speakingId: speaking ? cid : null,
+            ...(speaking && text ? { lastSpoken: text, lastSpokenId: cid } : {}),
+          });
+          // Hold still tracks the SLOT, not the audio: the synthesis gap before
+          // a clip's first byte must keep the stiffer barge bar, or a noise in
+          // that gap trips the much lower normal speech threshold instead. The
+          // grace window inside the hold is armed separately, below.
+          dictation?.setHold(speaking);
+          if (!speaking) maybeFinishRemoteEnd();
+        },
+        () => {
+          if (session !== mySession) return;
+          dictation?.armBargeGrace();
+        },
+      );
       queue.setOutputMuted(useUiStore.getState().callDeafened);
 
       // 260709: conversation language — picks the local Whisper model

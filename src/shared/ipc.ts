@@ -1312,7 +1312,7 @@ export interface RendererApi {
    * VOICE_RATE_LIMITED (daily voice allowance), VOICE_NOT_CONFIGURED,
    * VOICE_TTS_FAILED.
    */
-  voiceTts(args: { characterId: string; text: string }): Promise<ArrayBuffer>;
+  voiceTts(args: { characterId: string; text: string; more?: boolean; prev?: string }): Promise<ArrayBuffer>;
   /**
    * Streaming variant (260705): main starts the same synthesis but resolves
    * as soon as the upstream responds, with a stream id; the audio then
@@ -1322,7 +1322,7 @@ export interface RendererApi {
    * Rejects with the same sentinel-prefixed messages as voiceTts when the
    * request fails before any audio flows.
    */
-  voiceTtsStream(args: { characterId: string; text: string }): Promise<{ streamId: string }>;
+  voiceTtsStream(args: { characterId: string; text: string; more?: boolean; prev?: string }): Promise<{ streamId: string }>;
   /** Chunks/completions for voiceTtsStream (one subscription, ids multiplex). */
   onVoiceTtsChunk(cb: (push: VoiceTtsChunkPush) => void): Unsubscribe;
   /**

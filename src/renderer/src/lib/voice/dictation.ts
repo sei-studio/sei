@@ -39,6 +39,13 @@ export interface Dictation {
    * longer a hard discard — during hold the VAD keeps listening at an
    * ELEVATED threshold so the player can barge in (see onBargeIn). */
   setHold(hold: boolean): void;
+  /** 260726: the held clip just became AUDIBLE — restart the barge-in grace
+   * window from here. setHold(true) fires when the clip takes the playhead,
+   * which for a streamed clip precedes the whole TTS round trip; on the first
+   * line of a call that gap routinely exceeded the window, so the greeting
+   * entered its first spoken word already interruptible with AEC converged on
+   * nothing. Re-arming on real audio gives every clip its full window. */
+  armBargeGrace(): void;
   /** True once the mic level shows live speech (drives the UI level dot). */
   speechActive(): boolean;
   /** Tear down mic, audio graph, and worker. */
@@ -94,7 +101,16 @@ const PRE_ROLL_FRAMES = 3;
 // interrupts; loud speakers → high residue → high bar, no self-triggering.
 // The old absolute constant survives only as BARGE_ABS_MIN, the floor that
 // keeps a dead-quiet room from setting a hair-trigger bar.
-const BARGE_ABS_MIN = 0.025;
+// Raised 0.025 -> 0.04 (260726): on HEADPHONES there is no leakage to learn
+// from, so holdResidue collapses to the room floor and the bar pins to this
+// constant for the whole call — 0.025 (~-32 dBFS) is close enough to a breath
+// or a mouth click on an in-ear mic that transients kept cutting clips off
+// (the AirPods "her last word gets chopped" report). 0.04 is ~-28 dBFS: still
+// well under conversational speech at a headset mic (~-24 dBFS, which is what
+// has to clear it) and ~10 dB over a quiet room floor, but above the transient
+// noise that was self-triggering. Ceiling comes from the tuning history above:
+// 0.065 was high enough that real speech never reached it.
+const BARGE_ABS_MIN = 0.04;
 const BARGE_NOISE_FACTOR = 5; // bar is also ≥ noiseFloor * this
 const BARGE_RESIDUE_FACTOR = 3; // bar is residue * this — speech must clear it
 // Residue EMA rates: rise fast so the first frames of a clip (and the grace
@@ -127,7 +143,11 @@ const BARGE_GRACE_MS = 600;
 // (a 3-frame speaker-echo burst) is also softer now that a barge-in FADES the
 // clip out (audioQueue clear) instead of hard-cutting it. If speaker users
 // report self-interruptions again, this is the knob to raise (4 frames = 400+).
-const BARGE_CONFIRM_MS = 300;
+// Raised 300 -> 400 (260726): back to the 4th consecutive over-bar frame. A
+// breath or a click is one or two frames and now always resets the run; real
+// speech holds. Pairs with the BARGE_ABS_MIN raise above — level gate first,
+// duration gate second, so a transient has to be both loud AND sustained.
+const BARGE_CONFIRM_MS = 400;
 
 /**
  * AudioWorklet processor (issue: ScriptProcessorNode is deprecated). Batches
@@ -585,6 +605,13 @@ export async function createDictation(opts: {
       if (h) holdSince = performance.now();
       bargeRunMs = 0; // any hold transition restarts the sustained-barge count
       hold = h;
+    },
+    armBargeGrace() {
+      // Only ever EXTENDS protection: hold is already true here (the clip owns
+      // the playhead), so this just restarts the window from the moment sound
+      // actually began. Silence before this point can no longer eat it.
+      holdSince = performance.now();
+      bargeRunMs = 0;
     },
     speechActive: () => inSpeech,
     stop() {

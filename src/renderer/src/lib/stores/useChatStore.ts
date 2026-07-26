@@ -482,7 +482,15 @@ export const useChatStore = create<ChatState>((set, get) => {
         // Gated on main's generation-time voice stamp (260725), same contract
         // as the push path above: a reply generated off-call must not play
         // just because a call opened while it was in flight.
-        if (replies[i].voice === true) notifyCompanionText(characterId, replies[i].text);
+        // Place the line inside its own reply: `prev` is the sibling just
+        // spoken, `more` says another follows. Conditioning never crosses a
+        // reply boundary (main/voice/tts.ts ttsContextFor).
+        if (replies[i].voice === true) {
+          notifyCompanionText(characterId, replies[i].text, {
+            prev: i > 0 ? replies[i - 1].text : undefined,
+            more: i < replies.length - 1,
+          });
+        }
       }
       // Voice calls (260705): the companion called end_call() this turn. Its
       // goodbye replies are already queued for TTS above; the voice store ends

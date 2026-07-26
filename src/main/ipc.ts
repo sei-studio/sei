@@ -1291,7 +1291,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // main-side state (idle-chat prompts read it) and forwards the mode into a
   // live game session so say() reroutes to the call.
   ipcMain.handle(IpcChannel.voice.tts, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
-    const args = z.object({ characterId: IdSchema, text: z.string().min(1).max(4000) }).parse(argsRaw);
+    const args = z
+      .object({
+        characterId: IdSchema,
+        text: z.string().min(1).max(4000),
+        more: z.boolean().optional(),
+        prev: z.string().max(4000).optional(),
+      })
+      .parse(argsRaw);
     const { voiceTts } = await import('./voice/tts');
     return await voiceTts(args);
   });
@@ -1300,7 +1307,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // ordered audio chunks on voice:tts-chunk until {done} / {error}. Pre-flight
   // failures reject with the same VOICE_* sentinels as voice:tts.
   ipcMain.handle(IpcChannel.voice.ttsStream, async (event, argsRaw: unknown): Promise<{ streamId: string }> => {
-    const args = z.object({ characterId: IdSchema, text: z.string().min(1).max(4000) }).parse(argsRaw);
+    const args = z
+      .object({
+        characterId: IdSchema,
+        text: z.string().min(1).max(4000),
+        more: z.boolean().optional(),
+        prev: z.string().max(4000).optional(),
+      })
+      .parse(argsRaw);
     const { voiceTtsStream } = await import('./voice/tts');
     const sender = event.sender;
     return await voiceTtsStream(args, (ev) => {

@@ -28,19 +28,18 @@ vi.mock('./elevenLabsKeyStore', () => ({
   resolveElevenLabsKey: mockResolveKey,
 }));
 
-import { voiceTts, voiceTtsStream, voicePreviewAvailable, ttsLanguageForText, _resetTtsContextForTest } from './tts';
+import { voiceTts, voiceTtsStream, voicePreviewAvailable, ttsLanguageForText } from './tts';
 import type { TtsStreamEvent } from './tts';
 
 const VOICE = VOICES[0].id;
 const CHAR = { id: 'c1', name: 'Testy' };
 const fetchSpy = vi.fn();
-/** Always-sent conditioning tail (utterance-context, 260726) — English default. */
+/** The next_text conditioning tail (utterance-context, 260726) — English default. */
 const NEXT_TEXT = " anyway, there's more I wanted to say about that.";
 
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchSpy);
   fetchSpy.mockReset();
-  _resetTtsContextForTest();
   mockGetCharacter.mockResolvedValue(CHAR);
   mockResolveVoiceId.mockResolvedValue(VOICE);
   mockGetSession.mockResolvedValue({ data: { session: { access_token: 'jwt-123' } } });
@@ -63,7 +62,10 @@ describe('voiceTts', () => {
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.sei.gg/tts/speech');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt-123');
-    expect(JSON.parse(init.body as string)).toEqual({ text: 'hello there', voice_id: VOICE, next_text: NEXT_TEXT });
+    // Opening clip (no previous_text yet) carries NO conditioning at all — see
+    // ttsContextFor: next_text on a conversation-opening line is what bled the
+    // continuation string into the greeting's audio.
+    expect(JSON.parse(init.body as string)).toEqual({ text: 'hello there', voice_id: VOICE });
   });
 
   it('direct route (dev env / BYOK key): talks to ElevenLabs directly with the pinned model', async () => {
@@ -73,29 +75,45 @@ describe('voiceTts', () => {
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toContain(`api.elevenlabs.io/v1/text-to-speech/${VOICE}/stream`);
     expect((init.headers as Record<string, string>)['xi-api-key']).toBe('dev-key');
-    expect(JSON.parse(init.body as string)).toEqual({ text: 'hi', model_id: 'eleven_flash_v2_5', next_text: NEXT_TEXT });
+    expect(JSON.parse(init.body as string)).toEqual({ text: 'hi', model_id: 'eleven_flash_v2_5' });
   });
 
-  it('carries the last SUCCESSFUL line as previous_text on the next request', async () => {
+  // Utterance conditioning is scoped to ONE reply (ttsContextFor): `prev` is
+  // the preceding line of that same reply, supplied by the caller, and
+  // next_text only rides along when another line follows. Nothing crosses a
+  // reply boundary, and a line too short to carry the extra context gets none.
+  const LONG = 'this line is long enough to carry context';
+  const LONG_2 = 'and here is the second line of that same reply';
+
+  it('takes previous_text from the caller, not from any cross-turn memory', async () => {
     fetchSpy.mockImplementation(async () => okAudio());
-    await voiceTts({ characterId: 'c1', text: 'first line' });
-    await voiceTts({ characterId: 'c1', text: 'second line' });
-    const [, init] = fetchSpy.mock.calls[1] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual({
-      text: 'second line',
-      voice_id: VOICE,
-      previous_text: 'first line',
-      next_text: NEXT_TEXT,
-    });
+    await voiceTts({ characterId: 'c1', text: LONG, more: true });
+    await voiceTts({ characterId: 'c1', text: LONG_2, prev: LONG });
+    const bodies = fetchSpy.mock.calls.map(([, i]) => JSON.parse((i as RequestInit).body as string));
+    expect(bodies[0].previous_text).toBeUndefined(); // first line of the reply
+    expect(bodies[0].next_text).toBe(NEXT_TEXT); // another line follows
+    expect(bodies[1].previous_text).toBe(LONG); // the sibling before it
+    expect(bodies[1].next_text).toBeUndefined(); // last line of the reply
   });
 
-  it('a FAILED synthesis never becomes previous_text (the player never heard it)', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response('{}', { status: 500 }));
-    await expect(voiceTts({ characterId: 'c1', text: 'lost line' })).rejects.toThrow(/VOICE_TTS_FAILED/);
+  it('carries NO conditioning across replies: a standalone line gets neither field', async () => {
     fetchSpy.mockImplementation(async () => okAudio());
-    await voiceTts({ characterId: 'c1', text: 'next line' });
-    const [, init] = fetchSpy.mock.calls[1] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual({ text: 'next line', voice_id: VOICE, next_text: NEXT_TEXT });
+    await voiceTts({ characterId: 'c1', text: LONG });
+    await voiceTts({ characterId: 'c1', text: LONG_2 });
+    for (const [, init] of fetchSpy.mock.calls as Array<[string, RequestInit]>) {
+      const body = JSON.parse(init.body as string);
+      expect(body.previous_text).toBeUndefined();
+      expect(body.next_text).toBeUndefined();
+    }
+  });
+
+  it('drops conditioning entirely on a clip too short to outweigh it', async () => {
+    fetchSpy.mockImplementation(async () => okAudio());
+    // Mid-reply on both sides, but three characters of primary text: this is
+    // the shape that got next_text SPOKEN ("yo what's up, eh").
+    await voiceTts({ characterId: 'c1', text: 'you', prev: LONG, more: true });
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ text: 'you', voice_id: VOICE });
   });
 
   it('clips text to the proxy request cap (2500 chars, proxy v35)', async () => {
