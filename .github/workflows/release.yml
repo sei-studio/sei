@@ -116,10 +116,15 @@ jobs:
         # (the mac auto-update payload — the dmg is download-only), and *.blockmap
         # files. Uploading only the dmg/exe silently breaks auto-update. Grab
         # every publishable artifact from release/ (nullglob drops the misses).
+        # The feed glob is *.yml, not latest*.yml: on a pre-release version
+        # electron-builder's detectUpdateChannel names the feed after the semver
+        # pre-release id (0.5.0-beta.1 -> beta-mac.yml), and a latest*.yml glob
+        # would upload no feed at all, breaking auto-update for beta users.
+        # builder-effective-config.yaml is .yaml, so it is not swept up.
         shell: bash
         run: |
           shopt -s nullglob
-          assets=(release/*.dmg release/*.zip release/*.exe release/*.AppImage release/*.blockmap release/latest*.yml)
+          assets=(release/*.dmg release/*.zip release/*.exe release/*.AppImage release/*.blockmap release/*.yml)
           mkdir -p dist-release
           cp "${assets[@]}" dist-release/
           echo "Collected for ${{ matrix.artifact_name }}:"
