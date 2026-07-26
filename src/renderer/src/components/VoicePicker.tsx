@@ -1,27 +1,48 @@
 /**
- * VoicePicker (260705, reworked 260720) — choose the companion's speaking
- * voice during creation and in Edit companion.
+ * VoicePicker (260705, reworked 260720, tabs + playground 260725) — choose the
+ * companion's speaking voice during creation and in Edit companion.
  *
  * Three selection states (see lib/voicePicker.ts):
  *   - Auto (default): metadata.voiceId stays unset; the runtime assigns a
  *     deterministic, roster-deduped pick from the curated pool on first use.
  *   - No voice: metadata.voiceId = 'none'; the companion is silent on calls.
- *   - A pinned pool voice, chosen from sections grouped by gender.
+ *   - A pinned pool voice, chosen from gender tabs (Feminine / Masculine /
+ *     Neutral). Only the active tab's voices render; the Auto / No-voice cards
+ *     and the legacy "Current voice" row sit above the tabs so they stay
+ *     visible from any tab.
  *
  * Samples (260720, bundled-first): every curated-pool voice ships a
  * pre-generated sample mp3 per conversation language in the renderer's public
  * assets (voice-previews/), so pool rows play instantly, offline, with no
- * sign-in. The live TTS path (main-side disk cache + session Map here)
- * remains ONLY as the fallback for voice ids without a bundled file, i.e. the
- * legacy "Current voice" row. One sample plays at a time; starting a second
- * stops the first. When TTS is unavailable (signed out, no dev key) only that
- * legacy row disables with a quiet hint; bundled samples keep playing.
+ * sign-in. The live TTS path (main-side disk cache + session Map here) is the
+ * fallback for voice ids without a bundled file (the legacy "Current voice"
+ * row), for a bundled asset that fails to load, and for ANY voice once the
+ * playground params are non-default (the bundled clips are recorded at engine
+ * defaults). One sample plays at a time; starting a second stops the first.
+ * When TTS is unavailable (signed out, no dev key) bundled samples keep
+ * playing.
+ *
+ * Playground (260725): a "Tune the voice" panel with Pitch (playback rate,
+ * pace-compensated by main so only the pitch shifts) and Calmness (ElevenLabs
+ * stability) sliders. Tuned previews fetch via sei.voicePreview and play at
+ * playbackRate = pitch with preservesPitch off, per the synthesis contract.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import type { VoiceInfo } from '@shared/ipc';
-import { groupVoices, reduceSelection, isUnlistedVoice, assetPathFor, NO_VOICE_ID } from '../lib/voicePicker';
+import {
+  groupVoices,
+  reduceSelection,
+  isUnlistedVoice,
+  assetPathFor,
+  normalizeVoiceParams,
+  PITCH_DEFAULT,
+  CALMNESS_DEFAULT,
+  NO_VOICE_ID,
+  type VoiceGroup,
+  type VoiceParams,
+} from '../lib/voicePicker';
 import { PlayIcon, StopIcon } from './icons';
 import styles from './VoicePicker.module.css';
 
@@ -29,15 +50,26 @@ export interface VoicePickerProps {
   /** Selected pool voice id, NO_VOICE_ID ('none') for silent, or null for Auto. */
   value: string | null;
   onChange: (voiceId: string | null) => void;
+  /** Playground params; absent key = engine default (see lib/voicePicker.ts). */
+  params: VoiceParams;
+  /** Receives NORMALIZED params (default-valued keys already dropped). */
+  onParamsChange: (params: VoiceParams) => void;
 }
 
-export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactElement {
+export function VoicePicker({
+  value,
+  onChange,
+  params,
+  onParamsChange,
+}: VoicePickerProps): React.ReactElement {
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** null = probing; false disables sample playback with the quiet hint. */
   const [samplesAvailable, setSamplesAvailable] = useState<boolean | null>(null);
+  /** User-chosen tab; null = derive from the selection (else Feminine). */
+  const [chosenTab, setChosenTab] = useState<VoiceGroup['key'] | null>(null);
 
   // Non-reactive playback internals.
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -45,6 +77,7 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
   const aliveRef = useRef(true);
   /** Conversation language for bundled samples; 'en' until the config loads. */
   const langRef = useRef('en');
+  const sliderIdBase = useId();
 
   useEffect(() => {
     // Re-arm on every (re)mount — StrictMode dev runs mount → cleanup → mount
@@ -68,7 +101,7 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
       .catch(() => {
         /* keep 'en' */
       });
-    // Probe sample availability (legacy TTS fallback rows only); a failed or
+    // Probe sample availability (live-TTS fallback rows only); a failed or
     // missing probe leaves samples enabled and the first play surfaces the
     // real state reactively.
     try {
@@ -104,6 +137,65 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
     setPlayingId(null);
   }
 
+  // ── Playground params (effective values; absent key = engine default) ────
+  const pitch = params.pitch ?? PITCH_DEFAULT;
+  const calmness = params.calmness ?? CALMNESS_DEFAULT;
+  const tuned = pitch !== PITCH_DEFAULT || calmness !== CALMNESS_DEFAULT;
+  /** The playground needs a concrete voice — Auto / No voice can't preview. */
+  const tunable = value !== null && value !== NO_VOICE_ID;
+
+  /**
+   * Start playback of `url` at `rate` (preservesPitch off — the synthesis
+   * contract makes playbackRate a pure pitch shift for TTS clips; bundled
+   * clips always play at rate 1). Resolves true once playback starts, false
+   * when the source fails to load or play, so callers can fall back.
+   */
+  function startAudio(url: string, voiceId: string, rate: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const el = new Audio(url);
+      el.preservesPitch = false;
+      el.playbackRate = rate;
+      audioRef.current = el;
+      el.addEventListener(
+        'ended',
+        () => {
+          if (audioRef.current === el) stopPlayback();
+        },
+        { once: true },
+      );
+      el.addEventListener(
+        'error',
+        () => {
+          if (audioRef.current === el) stopPlayback();
+          resolve(false);
+        },
+        { once: true },
+      );
+      setPlayingId(voiceId);
+      void el.play().then(
+        () => resolve(true),
+        () => {
+          if (audioRef.current === el) stopPlayback();
+          resolve(false);
+        },
+      );
+    });
+  }
+
+  /** Live TTS preview with the current params, session-cached per combo. */
+  async function playTts(voiceId: string): Promise<void> {
+    const key = `${voiceId}|${pitch}|${calmness}`;
+    let buf = cacheRef.current.get(key);
+    if (!buf) {
+      setLoadingId(voiceId);
+      buf = await sei.voicePreview({ voiceId, pitch, calmness });
+      cacheRef.current.set(key, buf);
+    }
+    if (!aliveRef.current) return;
+    const url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
+    await startAudio(url, voiceId, pitch);
+  }
+
   async function toggleSample(voiceId: string): Promise<void> {
     if (playingId === voiceId) {
       stopPlayback();
@@ -113,32 +205,13 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
     stopPlayback();
     setError(null);
     try {
-      let url: string;
-      if (voices.some((v) => v.id === voiceId)) {
-        // Pool voice: bundled sample asset — instant, offline, no sign-in.
-        url = assetPathFor(voiceId, langRef.current);
-      } else {
-        // Legacy voice with no bundled file: live TTS preview (cached).
-        let buf = cacheRef.current.get(voiceId);
-        if (!buf) {
-          setLoadingId(voiceId);
-          buf = await sei.voicePreview({ voiceId });
-          cacheRef.current.set(voiceId, buf);
-        }
-        if (!aliveRef.current) return;
-        url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
+      if (!tuned && voices.some((v) => v.id === voiceId)) {
+        // Pool voice at engine defaults: bundled sample asset — instant,
+        // offline, no sign-in. A load/play failure falls through to live TTS.
+        const ok = await startAudio(assetPathFor(voiceId, langRef.current), voiceId, PITCH_DEFAULT);
+        if (ok || !aliveRef.current) return;
       }
-      const el = new Audio(url);
-      audioRef.current = el;
-      el.addEventListener(
-        'ended',
-        () => {
-          if (audioRef.current === el) stopPlayback();
-        },
-        { once: true },
-      );
-      setPlayingId(voiceId);
-      void el.play().catch(() => stopPlayback());
+      await playTts(voiceId);
     } catch (err) {
       if (!aliveRef.current) return;
       if (/VOICE_NO_SESSION/.test(String((err as Error)?.message ?? ''))) {
@@ -153,6 +226,14 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
 
   const samplesOff = samplesAvailable === false;
 
+  function setPitchParam(next: number): void {
+    onParamsChange(normalizeVoiceParams({ pitch: next, calmness: params.calmness }));
+  }
+
+  function setCalmnessParam(next: number): void {
+    onParamsChange(normalizeVoiceParams({ pitch: params.pitch, calmness: next }));
+  }
+
   function renderRow(
     id: string,
     title: React.ReactNode,
@@ -161,13 +242,15 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
     bundled = true,
   ): React.ReactElement {
     const selected = value === id;
+    // Tuned previews always need live TTS, even for bundled pool voices.
+    const needsTts = !bundled || tuned;
     return (
       <div key={id} className={`${styles.row} ${selected ? styles.selected : ''}`}>
         <button
           type="button"
           className={styles.playBtn}
           aria-label={playingId === id ? `Stop ${label} sample` : `Play ${label} sample`}
-          disabled={(samplesOff && !bundled) || (loadingId !== null && loadingId !== id)}
+          disabled={(samplesOff && needsTts) || (loadingId !== null && loadingId !== id)}
           onClick={() => void toggleSample(id)}
         >
           {loadingId === id ? (
@@ -191,6 +274,17 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
       </div>
     );
   }
+
+  // ── Tabs: only the active gender group's voices render. Default: the group
+  //    containing the current selection, else the first group (Feminine when
+  //    populated — GROUP_ORDER puts it first). Empty groups have no tab. ─────
+  const groups = groupVoices(voices);
+  const selectedGroupKey = groups.find((g) => g.voices.some((v) => v.id === value))?.key ?? null;
+  const activeTab =
+    chosenTab !== null && groups.some((g) => g.key === chosenTab)
+      ? chosenTab
+      : (selectedGroupKey ?? groups[0]?.key ?? null);
+  const activeGroup = groups.find((g) => g.key === activeTab) ?? null;
 
   return (
     <div className={styles.root} role="radiogroup" aria-label="Voice">
@@ -228,26 +322,43 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
         </div>
       ) : null}
 
-      <div className={styles.list}>
-        {/* A voice assigned before the current pool curation: keep it visible
-            and selected instead of silently dropping it (Edit companion). */}
-        {isUnlistedVoice(value, voices) && value ? (
-          <section className={styles.group}>
-            <h3 className={styles.groupTitle}>Current voice</h3>
-            {renderRow(
-              value,
-              'Current voice',
-              'Assigned from an earlier voice pool.',
-              'current voice',
-              false,
-            )}
-          </section>
-        ) : null}
+      {/* A voice assigned before the current pool curation: keep it visible
+          and selected instead of silently dropping it (Edit companion).
+          Rendered ABOVE the tabs so it shows from any tab. */}
+      {isUnlistedVoice(value, voices) && value ? (
+        <section className={styles.group}>
+          <h3 className={styles.groupTitle}>Current voice</h3>
+          {renderRow(
+            value,
+            'Current voice',
+            'Assigned from an earlier voice pool.',
+            'current voice',
+            false,
+          )}
+        </section>
+      ) : null}
 
-        {groupVoices(voices).map((g) => (
-          <section key={g.key} className={styles.group}>
-            <h3 className={styles.groupTitle}>{g.title}</h3>
-            {g.voices.map((v) =>
+      {groups.length > 0 ? (
+        <div className={styles.tabs} role="tablist" aria-label="Voice group">
+          {groups.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              role="tab"
+              aria-selected={g.key === activeTab}
+              className={g.key === activeTab ? `${styles.tab} ${styles.tabActive}` : styles.tab}
+              onClick={() => setChosenTab(g.key)}
+            >
+              {g.title}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className={styles.list}>
+        {activeGroup ? (
+          <section className={styles.group}>
+            {activeGroup.voices.map((v) =>
               renderRow(
                 v.id,
                 <>
@@ -259,8 +370,79 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): React.ReactE
               ),
             )}
           </section>
-        ))}
+        ) : null}
       </div>
+
+      {/* ── Playground: pitch + calmness sliders (260725) ── */}
+      <section className={styles.tuner} aria-label="Tune the voice">
+        <h3 className={styles.groupTitle}>Tune the voice</h3>
+        {!tunable ? <div className={styles.hint}>Pick a voice to tune it.</div> : null}
+        {tunable && tuned && samplesOff ? (
+          <div className={styles.hint}>Sign in to hear tuned samples.</div>
+        ) : null}
+
+        <div className={styles.tunerRow}>
+          <div className={styles.tunerHead}>
+            <label className={styles.tunerLabel} htmlFor={`${sliderIdBase}-pitch`}>
+              Pitch
+            </label>
+            <span className={styles.tunerValue}>{pitch.toFixed(2)}</span>
+            <button
+              type="button"
+              className={styles.tunerReset}
+              onClick={() => setPitchParam(PITCH_DEFAULT)}
+              disabled={!tunable || params.pitch === undefined}
+            >
+              Reset
+            </button>
+          </div>
+          <input
+            id={`${sliderIdBase}-pitch`}
+            className={styles.tunerSlider}
+            type="range"
+            min={0.85}
+            max={1.4}
+            step={0.01}
+            value={pitch}
+            disabled={!tunable}
+            onChange={(e) => setPitchParam(Number(e.target.value))}
+          />
+          <div className={styles.tunerHint}>
+            Higher or lower voice. Speaking pace stays the same.
+          </div>
+        </div>
+
+        <div className={styles.tunerRow}>
+          <div className={styles.tunerHead}>
+            <label className={styles.tunerLabel} htmlFor={`${sliderIdBase}-calmness`}>
+              Calmness
+            </label>
+            <span className={styles.tunerValue}>{calmness.toFixed(2)}</span>
+            <button
+              type="button"
+              className={styles.tunerReset}
+              onClick={() => setCalmnessParam(CALMNESS_DEFAULT)}
+              disabled={!tunable || params.calmness === undefined}
+            >
+              Reset
+            </button>
+          </div>
+          <input
+            id={`${sliderIdBase}-calmness`}
+            className={styles.tunerSlider}
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={calmness}
+            disabled={!tunable}
+            onChange={(e) => setCalmnessParam(Number(e.target.value))}
+          />
+          <div className={styles.tunerHint}>
+            Higher is steadier and more even. Lower is more dramatic.
+          </div>
+        </div>
+      </section>
 
       {error ? <div className={styles.error}>{error}</div> : null}
     </div>

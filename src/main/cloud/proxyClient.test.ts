@@ -54,18 +54,22 @@ type MockPlanRow = Record<string, unknown> | null;
 interface MockState {
   session: MockSession | null;
   plan: MockPlanRow;
+  /** Non-null → the my_plan read fails (e.g. view missing pre-migration). */
+  planError: { message: string } | null;
   subscription: { status: string; renews_at: string | null; ends_at: string | null } | null;
 }
 
 const state: MockState = {
   session: null,
   plan: null,
+  planError: null,
   subscription: null,
 };
 
 function resetState(): void {
   state.session = null;
   state.plan = null;
+  state.planError = null;
   state.subscription = null;
 }
 
@@ -105,7 +109,7 @@ function makeMockSupabase(): unknown {
         gte: vi.fn(() => chain),
         maybeSingle: vi.fn(async () => {
           // 260724: creditsGet reads the single self-filtering my_plan view.
-          if (table === 'my_plan') return { data: state.plan, error: null };
+          if (table === 'my_plan') return { data: state.plan, error: state.planError };
           // subscriptionStatus still reads the my_subscription view.
           if (table === 'my_subscription') return { data: state.subscription, error: null };
           return { data: null, error: null };
@@ -185,6 +189,18 @@ describe('creditsGet', () => {
     expect(res.renews_at).toBe('2026-08-14T00:00:00Z');
     expect(res.subscription_status_raw).toBe('active');
     expect(res.ai_backend_kind).toBe('cloud-proxy');
+  });
+
+  it('throws when the my_plan read errors (never paints a failed read as a fresh free account)', async () => {
+    // 260725: a PostgREST failure (e.g. the my_plan view missing because the
+    // v0.5 migrations have not been applied) must reach the renderer as a
+    // thrown error so it shows snapshotFailed, not zeros.
+    signIn();
+    state.plan = null;
+    state.planError = { message: 'relation "public.my_plan" does not exist' };
+
+    const { creditsGet } = await import('./proxyClient');
+    await expect(creditsGet()).rejects.toThrow(/my_plan read failed/);
   });
 
   it('surfaces over_limit for a spent allowance with no extra credits', async () => {
@@ -352,11 +368,11 @@ describe('openCheckout', () => {
     vi.unstubAllGlobals();
   });
 
-  it('rejects a non-allowlisted checkout URL from the proxy (PROXY_NETWORK, no openExternal)', async () => {
+  it('rejects a non-https checkout URL from the proxy (PROXY_NETWORK, no openExternal)', async () => {
     signIn();
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ ok: true, url: 'https://evil.attacker.tld/checkout' }),
+      json: async () => ({ ok: true, url: 'file:///etc/passwd' }),
     });
     vi.stubGlobal('fetch', fetchSpy);
 
@@ -366,6 +382,25 @@ describe('openCheckout', () => {
 
     expect(res).toEqual({ ok: false, code: 'PROXY_NETWORK' });
     expect(shell.openExternal).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('260725: an arbitrary https host from the proxy now passes (host allowlist removed)', async () => {
+    // Documents the security delta of dropping the host allowlist: the checkout
+    // URL used to be bounded to polar.sh, so a compromised proxy or MITM could
+    // not redirect the user off-domain. It can now send them to any https site;
+    // only the protocol gate survives.
+    signIn();
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, url: 'https://evil.attacker.tld/checkout' }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { openCheckout } = await import('./proxyClient');
+    const res = await openCheckout('party');
+
+    expect(res).toEqual({ ok: true, url: 'https://evil.attacker.tld/checkout' });
     vi.unstubAllGlobals();
   });
 });

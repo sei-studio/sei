@@ -30,9 +30,11 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/useChessStore';
+import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { ChessPanel } from '../components/chess/ChessPanel';
 import { ChessReplayPanel } from '../components/chess/ChessReplayPanel';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
@@ -47,6 +49,7 @@ import { pickPalette } from '../lib/portraitPalettes';
 import { useDominantColor } from '../lib/useDominantColor';
 import { presenceOf, useMinuteTick } from '../lib/presence';
 import { actionVerb } from '../lib/actionVerb';
+import { readGameLayout, writeGameLayout } from '../lib/gameLayoutPref';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { Presence } from '../components/Presence';
 import { Button } from '../components/Button';
@@ -132,6 +135,14 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // separators and author-run detection key on the visible neighbors.
   const visibleMessages = useMemo(() => messages.filter((m) => !m.voice), [messages]);
   const awaiting = useChatStore((s) => s.awaiting[characterId]) ?? false;
+  // On a call the reply is SPOKEN and its row is a hidden voice row (see
+  // visibleMessages above), so "is typing…" would show and then nothing ever
+  // appears in the thread — read as the companion going unresponsive. While
+  // this character is on the live (or dialing) call, the indicator stays off.
+  const onCall = useVoiceStore(
+    (s) => s.participants.includes(characterId) && (s.status === 'live' || s.status === 'connecting'),
+  );
+  const showTyping = awaiting && !onCall;
   const loading = useChatStore((s) => s.loading[characterId]) ?? false;
   const load = useChatStore((s) => s.load);
   const send = useChatStore((s) => s.send);
@@ -261,8 +272,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // Re-render each minute so the Presence line decays online → idle (§2).
   useMinuteTick();
 
-  const theme: 'light' | 'dark' =
-    (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
+  const theme: 'light' | 'dark' = resolvedScheme();
 
   const companionName = character?.name ?? 'Companion';
   const userName = userProfile?.preferredName?.trim() || 'You';
@@ -469,25 +479,24 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       : summon?.kind === 'connecting';
 
   // Expand-over-chat (260721): the GameSurface bottom-left "V" grows the game
-  // area to the full content height, hiding the chat below it. Session-only
-  // state, never persisted. Reset when the game closes or the DM switches, so
-  // chat always comes back and a reopened game starts on the split.
-  const [gameExpanded, setGameExpanded] = useState(false);
+  // area to the full content height, hiding the chat below it.
+  const [gameExpanded, setGameExpanded] = useState(() => readGameLayout().expanded);
   // Drag-resize (260721): a hairline grab strip on the game/chat boundary.
-  // The dragged size is a session-local percentage of the main column (null =
-  // the default CSS split); dragging while expanded exits expanded mode into
-  // the dragged size, and double-click resets to the default split. The
-  // height transition is disabled while dragging (no animation fighting).
-  const [gameSplit, setGameSplit] = useState<number | null>(null);
+  // The dragged size is a percentage of the main column (null = the default
+  // CSS split); dragging while expanded exits expanded mode into the dragged
+  // size, and double-click resets to the default split. The height transition
+  // is disabled while dragging (no animation fighting).
+  const [gameSplit, setGameSplit] = useState<number | null>(() => readGameLayout().split);
   const [splitDragging, setSplitDragging] = useState(false);
   const chatHidden = gameOpen && gameExpanded;
+  // 260725: the sizing is a user PREFERENCE, not per-view state. It used to
+  // reset on unmount (and on a DM switch), so opening a profile and coming
+  // back dropped a full-window game straight back to the half split. Persist
+  // it instead: one sizing for every character and game, restored on mount
+  // and across restarts (gameLayoutPref coalesces the drag writes).
   useEffect(() => {
-    if (!gameOpen) setGameExpanded(false);
-  }, [gameOpen]);
-  useEffect(() => {
-    setGameExpanded(false);
-    setGameSplit(null);
-  }, [characterId]);
+    writeGameLayout({ expanded: gameExpanded, split: gameSplit });
+  }, [gameExpanded, gameSplit]);
 
   const mainColRef = useRef<HTMLDivElement | null>(null);
   const gameAreaRef = useRef<HTMLElement | null>(null);
@@ -639,12 +648,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
         {/* ── Message list ── */}
         <div
-          className={awaiting ? `${styles.list} ${styles.listTyping}` : styles.list}
+          className={showTyping ? `${styles.list} ${styles.listTyping}` : styles.list}
           ref={listRef}
           onScroll={onListScroll}
         >
           {loading ? <ChatSkeleton /> : null}
-          {!loading && visibleMessages.length === 0 && !awaiting ? (
+          {!loading && visibleMessages.length === 0 && !showTyping ? (
             <div className={styles.empty}>
               This is the beginning of your conversation with {companionName}. Say hi.
             </div>
@@ -771,7 +780,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
         {/* ── Floating composer (hovers over the chat window) ── */}
         <div className={styles.composerDock}>
-          {awaiting ? (
+          {showTyping ? (
             <div className={styles.typingLine} aria-live="polite">
               {companionName} is typing…
             </div>

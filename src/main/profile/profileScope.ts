@@ -174,6 +174,20 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
     }
   }
 
+  // 3.9 (260725) Broadcast the new scope's EFFECTIVE backend kind. A scope
+  //     switch changes the kind the spend paths will read without any config
+  //     write firing apiKeyStore's change listeners, so the renderer's mode
+  //     display (which starts UNKNOWN and only trusts main's reports) must be
+  //     told explicitly. Emitted BEFORE the scope-changed push so the mode is
+  //     already correct when the renderer re-bootstraps.
+  try {
+    const { getAiBackendKind } = await import('../apiKeyStore');
+    const { emitAiBackendKindChanged } = await import('../ipc');
+    emitAiBackendKindChanged(await getAiBackendKind());
+  } catch (err) {
+    console.warn(`[sei] profileScope: backend-kind broadcast failed: ${(err as Error).message}`);
+  }
+
   // 4. Tell the renderer to re-bootstrap onto the new profile.
   const win = getMainWindowRef();
   if (win && !win.isDestroyed()) {

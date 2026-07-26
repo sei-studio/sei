@@ -24,6 +24,18 @@
   position: relative;
 }
 
+/* 260724: custom app-background layer — the user's image + a black dim
+   implementing the brightness slider (backgroundImage set inline). Absolute
+   and FIRST in the DOM, so the positioned drag strip and .body stack above
+   it; covers the full window so the rail and top strip sit over it too. */
+.bgLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+}
+
 /* ── Drag strip — thin, transparent, no visible title bar ─────────────────
  * Reserves clearance for the OS window controls (macOS traffic lights /
  * Windows overlay) and keeps the frameless window movable. Transparent over
@@ -123,6 +135,17 @@
    to clear the macOS traffic lights. (260625) */
 .dragStrip.fullDivider {
   background-color: var(--window);
+}
+
+/* 260724: with a custom background active, the chrome goes translucent so the
+   image shows through the top strip too — same tint strength as the rail and
+   the content panel (--app-bg-tint = inverse of the opacity slider). */
+:root[data-app-bg] .dragStrip {
+  background-color: color-mix(in srgb, var(--rail) var(--app-bg-tint, 100%), transparent);
+}
+
+:root[data-app-bg] .dragStrip.fullDivider {
+  background-color: color-mix(in srgb, var(--window) var(--app-bg-tint, 100%), transparent);
 }
 
 

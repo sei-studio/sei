@@ -15,6 +15,7 @@
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { Button } from '../components/Button';
@@ -93,8 +94,7 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
     );
   }
 
-  const themeAttr = document.documentElement.getAttribute('data-theme');
-  const theme: 'light' | 'dark' = themeAttr === 'dark' ? 'dark' : 'light';
+  const theme: 'light' | 'dark' = resolvedScheme();
   const palette = pickPalette(character.id + character.name, theme);
   // Per-character accent tint for the portrait bloom (mirrors CharacterPage).
   const tint = palette[2] ?? palette[1] ?? 'var(--accent)';

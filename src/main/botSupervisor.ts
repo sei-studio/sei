@@ -34,6 +34,7 @@ import { clampChatLanguage } from '../shared/chatLanguage';
 import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
 import { buildLaunchContinuity } from './chat/continuity';
+import { readKnowledgeForPrompt } from './knowledge/knowledgeStore';
 import { loadConfig as loadUserConfig } from './configStore'; // UserConfig for bot init
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
@@ -302,6 +303,18 @@ export interface BotSupervisor {
    * the sampling. Returns false (no-op) when the character has no session.
    */
   setDashboardWatch(characterId: string, active: boolean): boolean;
+  /**
+   * 260725 play/pause: forward the in-app pause toggle into a live session
+   * ({type:'game-pause', paused} on port1). Runtime-only, never persisted.
+   * Returns false (no-op) when the character has no session.
+   */
+  setGamePaused(characterId: string, paused: boolean): boolean;
+  /**
+   * 260725 runtime game mode: forward reactive/proactive into a live session
+   * ({type:'game-mode', mode} on port1). Runtime-only, never persisted —
+   * every summon starts proactive. Returns false when there is no session.
+   */
+  setGameMode(characterId: string, mode: 'reactive' | 'proactive'): boolean;
 }
 
 interface ActiveSession {
@@ -747,6 +760,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // 260702 "stuck connecting" regression).
     const continuityP: Promise<Awaited<ReturnType<typeof buildLaunchContinuity>>> =
       buildLaunchContinuity(characterId).catch(() => null);
+    // 260725 Knowledge: user-provided reference text, shipped in the init
+    // payload (the continuity pattern) and appended to the bot's cached
+    // system prefix. Pure disk read; edits apply on the next summon.
+    const knowledgeP: Promise<string> = readKnowledgeForPrompt(characterId).catch(() => '');
     // ITEM 1 (quick/260523-t8d): expose the AI-backend mode + has-key state to
     // the bot child so brain/log.js can suppress the noisy game-state +
     // [haiku?] prompt logs when running in local (BYOK) mode without a key —
@@ -1018,6 +1035,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           continuityP,
           new Promise<null>((r) => setTimeout(() => r(null), 4_000)),
         ]);
+        const knowledge = await Promise.race([
+          knowledgeP,
+          new Promise<string>((r) => setTimeout(() => r(''), 2_000)),
+        ]);
         // Ship mc_username, preferred_name, and skinServerBaseUrl so the bot
         // can satisfy ConfigSchema, seed player_username for player-recognition
         // without disk reads, and log the skin server URL for verification.
@@ -1074,6 +1095,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // the bot's prompt so it knows what you were just talking about. null
               // when there is no prior chat. See chat/continuity.ts.
               continuity,
+              // 260725 Knowledge: user-provided reference text (already capped +
+              // sanitized by knowledgeStore). '' = none. Appended to the bot's
+              // cached system prefix by the orchestrator.
+              knowledge,
               // Voice calls (260707): true when this bot is spawning INTO an open
               // call (launch()ed or summoned mid-call). Shipped in the init
               // handshake — not the post-spawn {type:'voice-call'} message — so
@@ -1559,6 +1584,30 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       if (!session) return false;
       try {
         session.port1.postMessage({ type: 'voice-call-greet' });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    // 260725 play/pause: forward the in-app pause toggle into the live
+    // session (FSM hold + orchestrator freeze in the bot). Never persisted.
+    setGamePaused: (characterId: string, paused: boolean): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'game-pause', paused });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    // 260725 runtime game mode (reactive/proactive): forward into the live
+    // session. Never persisted — every summon starts proactive in the bot.
+    setGameMode: (characterId: string, mode: 'reactive' | 'proactive'): boolean => {
+      const session = sessions.get(characterId);
+      if (!session) return false;
+      try {
+        session.port1.postMessage({ type: 'game-mode', mode });
         return true;
       } catch {
         return false;

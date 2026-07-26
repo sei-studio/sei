@@ -19,19 +19,19 @@ export type VoiceSelection = string | null;
 
 export interface VoiceGroup {
   key: 'female' | 'male' | 'neutral';
-  /** Section heading, sentence case ("Female voices"). */
+  /** Tab label ("Feminine"). Internal keys stay 'female' | 'male' | 'neutral'. */
   title: string;
   voices: VoiceInfo[];
 }
 
 const GROUP_ORDER: Array<{ key: VoiceGroup['key']; title: string }> = [
-  { key: 'female', title: 'Female voices' },
-  { key: 'male', title: 'Male voices' },
-  { key: 'neutral', title: 'Neutral voices' },
+  { key: 'female', title: 'Feminine' },
+  { key: 'male', title: 'Masculine' },
+  { key: 'neutral', title: 'Neutral' },
 ];
 
 /**
- * Group the pool by gender for the picker's sections. Female / male /
+ * Group the pool by gender for the picker's tabs. Feminine / masculine /
  * neutral, in that order; a voice with an unknown gender label lands in the
  * neutral bucket rather than disappearing. Empty groups are omitted. Order
  * within a group preserves the pool order.
@@ -80,4 +80,31 @@ export function isUnlistedVoice(selection: VoiceSelection, voices: VoiceInfo[]):
 export function assetPathFor(voiceId: string, lang: string): string {
   const supported = (CHAT_LANGUAGE_CODES as string[]).includes(lang) ? lang : 'en';
   return `./voice-previews/${voiceId}-${supported}.mp3`;
+}
+
+/**
+ * Voice playground params (260725). Absent key = engine default; only
+ * non-default values are ever stored (persisted to character.metadata as
+ * voicePitch / voiceStability).
+ *
+ *   - pitch:    playback rate in [0.85, 1.4]; 1 = as recorded. Main
+ *               synthesizes with pace compensation, so playing the preview at
+ *               playbackRate = pitch with preservesPitch off shifts pitch
+ *               only, keeping the speaking pace.
+ *   - calmness: ElevenLabs stability in [0, 1]; higher is steadier.
+ */
+export interface VoiceParams {
+  pitch?: number;
+  calmness?: number;
+}
+
+export const PITCH_DEFAULT = 1;
+export const CALMNESS_DEFAULT = 0.5;
+
+/** Drop keys sitting at their engine default so absent-means-default holds. */
+export function normalizeVoiceParams(p: VoiceParams): VoiceParams {
+  const out: VoiceParams = {};
+  if (p.pitch !== undefined && p.pitch !== PITCH_DEFAULT) out.pitch = p.pitch;
+  if (p.calmness !== undefined && p.calmness !== CALMNESS_DEFAULT) out.calmness = p.calmness;
+  return out;
 }

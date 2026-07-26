@@ -29,6 +29,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
@@ -221,8 +222,7 @@ function HomeGrid(): React.ReactElement {
     };
   }, [authKind, characters]);
 
-  const theme: 'light' | 'dark' =
-    (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
+  const theme: 'light' | 'dark' = resolvedScheme();
 
   const handleSummon = (id: string): void => {
     // The panel's "Play" CTA opens the game picker; each tile launches through
@@ -546,8 +546,7 @@ function WorldGrid(): React.ReactElement {
 
   const navigate = useUiStore((s) => s.navigate);
 
-  const theme: 'light' | 'dark' =
-    (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
+  const theme: 'light' | 'dark' = resolvedScheme();
 
   useEffect(() => {
     // Warm-if-cold rather than an unconditional refresh: when the user hovered

@@ -19,6 +19,11 @@ function term(args, keys) {
   return null
 }
 
+/** Naive plural for a block/item term: "oak log" → "oak logs". */
+function plural(t) {
+  return /s$/.test(t) ? t : `${t}s`
+}
+
 /** Finite-number arg, rounded, or null. */
 function num(args, key) {
   const v = args && typeof args === 'object' ? args[key] : undefined
@@ -37,14 +42,19 @@ function humanize(name) {
 
 /**
  * Natural-language activity line for the currently-dispatching tool call.
- * `name` null (loop drained to idle) → "idle".
+ * `name` null (loop drained to idle) → "idling".
+ * `name` 'thinking' (a player message is being processed) → "thinking".
  * @param {string|null|undefined} name
  * @param {Record<string, unknown>|undefined} [args]
  * @returns {string}
  */
 export function activityLabel(name, args) {
-  if (!name) return 'idle'
+  if (!name) return 'idling'
   switch (name) {
+    // 260725: synthetic verb the orchestrator emits when a player-message
+    // turn starts, before any world tool runs (status window "thinking").
+    case 'thinking':
+      return 'thinking'
     case 'follow':
       return 'following you...'
     case 'unfollow':
@@ -62,7 +72,7 @@ export function activityLabel(name, args) {
     }
     case 'gather': {
       const thing = term(args, ['name', 'block', 'item'])
-      return thing ? `gathering ${thing}...` : 'gathering...'
+      return thing ? `gathering ${plural(thing)}...` : 'gathering...'
     }
     case 'find': {
       const thing = term(args, ['name', 'target', 'block', 'item'])

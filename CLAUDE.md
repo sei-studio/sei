@@ -168,6 +168,47 @@ P0_SAFETY (0)  →  P1_CHAT (1)  →  P2_MOVEMENT (2 ...)  →  P3_IDLE (3, 60s 
 Player chat (P1) preempts any non-P0 work mid-action. Adapter wiring lives in
 `src/bot/adapter/minecraft/fsmWires.js`.
 
+**Runtime mode + play/pause (260725).** Proactiveness is NO LONGER a
+per-character trait — it was removed from creation/edit/profile and from
+`character.metadata` (legacy keys are ignored everywhere; the persona expander
+no longer emits the `PROACTIVENESS:` line, though the parser still strips one
+if the cloud proxy sends it). Instead the in-app Minecraft dashboard has a
+controls window (`McDashboardPanel`) with:
+- **reactive / proactive mode** — runtime-only, NEVER persisted; every summon
+  starts `proactive`. Maps onto the old tiers (proactive = 2 agentic, reactive
+  = 1) via `orchestrator.setGameMode` (mutates `config.persona.proactiveness`
+  live, rebuilds the cached system prefix; idle cadence re-samples because
+  `idleFallbackMs` is passed as a function). Chat/voice/chess surfaces run at
+  a fixed tier 1.
+- **play/pause** — `orchestrator.setGamePaused` + `queue.setHold(predicate)`
+  (fsm.js). Pause aborts the live loop + long-runner and HOLDS the queue
+  (events stay queued, settle ticks are purged, idle timer disarmed). While
+  paused on a voice call, only call lines dispatch and every LLM call gets the
+  tiny paused notice instead of Minecraft context (`snapshotText()` is the
+  choke point; the fresh-loop seed has a paused branch; `startLongRunner`
+  refuses world tools). Unpause enqueues an idle tick framed "player just
+  unpaused your game" carrying what was mid-flight.
+  Pausing the brain is only half of it: the adapter runs autonomous loops that
+  never touch the FSM (follow's 1s trailing tick, reflex evasion, combat
+  retaliation, survival swim-up/retreat, gaze, auto-eat), so
+  `brain.setGamePaused` also calls the OPTIONAL adapter member
+  `setWorldPaused` (`adapter/minecraft/behaviors/pause.js`). It flips
+  `bot._seiPaused` (each of those loops early-returns on it), drops the
+  pathfinder goal + control states + digging/item use, disables auto-eat, and
+  clears the reflex/survival goal mutexes: the body stands still and takes
+  hits like a player away from their keyboard. `applyWorldPause` re-arms it
+  from connect.js on every spawn so a reconnect while paused comes back
+  frozen. follow KEEPS its target, so play resumes trailing.
+- **status window** — full-width strip fed by the existing dashboard
+  telemetry (`activityLabel.js`: actions → "gathering oak logs...", null →
+  "idling", plus the synthetic `thinking` verb the orchestrator emits when a
+  player-message turn starts). The panel sentence-cases the line for display
+  ("Gathering oak logs..."); the bot-side contract stays lowercase.
+Plumbing: `mcdash:set-paused` / `mcdash:set-mode` IPC → supervisor
+`{type:'game-pause'|'game-mode'}` port messages → `bot/index.js` forwarders.
+Renderer state lives in `useMcDashboardStore.controls` (cleared on session end
+AND at `launchSummon`, so stale pause/mode never survives into a new summon).
+
 **Iteration cap.** Tool-use chains are bounded by `memory.iteration_cap`
 (**default 30**, in `src/bot/config.js`) to stop single-layer runaway.
 > The old planning-era CLAUDE.md said 20 — that was wrong; the value is 30.
@@ -177,7 +218,10 @@ Player chat (P1) preempts any non-P0 work mid-action. Adapter wiring lives in
   maintain an append-only `MEMORY.md`; `PLAYER.md` tracks the other player.
 - **Compaction is a byte-threshold trigger:** after each successful
   `remember()`, if `MEMORY.md` exceeds `memory.compaction_trigger_bytes`
-  (**default 4096**), an async single-flight Haiku compaction fires.
+  (**default 8192** since 260725; `seed_memory_budget_bytes` doubled to 16384
+  alongside so the trigger stays below the seed budget, and the chat/chess
+  `readMemoryTail` mirrors went 6000 → 12000), an async single-flight
+  compaction fires.
 - **Memory is segmented by world.** A character accumulates memories across many
   LAN worlds; to keep them from bleeding together, `src/bot/brain/memory/worlds.js`
   assigns each world a **stable number** (fingerprinted by world spawn point +
@@ -190,6 +234,29 @@ Player chat (P1) preempts any non-P0 work mid-action. Adapter wiring lives in
 > The old CLAUDE.md framed this as "the LLM decides when to compact at semantic
 > boundaries" — misleading. The *write* is LLM-driven; the *compaction* is
 > mechanical (byte threshold).
+
+**Knowledge (260725).** Per-character, user-provided reference files (imported
+memories from other AI-companion platforms, facts about the player) injected
+into EVERY AI surface without the model asking: chat/voice/chess get it via a
+block in `buildSystemBlocks` (`src/main/chat/chatPrompts.ts`, right after the
+persona block, inside the cached stable region — no fifth `cache_control`);
+the Minecraft bot gets it in the summon init payload (`config._seiKnowledge`)
+appended to the cached system prefix in `rebuildPersonalitySystem`. Store:
+`src/main/knowledge/knowledgeStore.ts` under `paths.knowledgeDir(id)` =
+`<profileRoot>/knowledge/<characterId>/` (manifest `index.json` +
+`<entryUuid>.md` files) — deliberately OUTSIDE `memoryDir` so "Reset memory"
+never wipes it (character delete / remove-from-library / migration / profile
+import all handle it). Ingestion is main-only (`knowledge:extract` →
+`src/main/knowledge/extractText.ts`): .md/.txt/.text plus .docx via a minimal
+in-repo zip reader; legacy .doc rejected; binary-as-text rejected; control +
+zero-width/bidi chars stripped; 512 KB/upload, 64 KB/entry, 20 entries. Over
+32 KB total at create time the wizard offers an LLM compaction
+(`knowledge:compact`, target ≤ 8 KB, replaces all entries with one) — only
+Sei's stored copies are compacted, never the user's original files. UI: the
+Awaken "Import from another platform" tile (upload phase before the wizard
+questions) and the CharacterPage gear menu → Knowledge popup
+(`KnowledgeModal`, available for ALL characters). Prompt framing treats
+knowledge strictly as reference DATA, never instructions.
 
 The bot has **one entry path** (`src/bot/index.js`): forked by Electron, it
 waits for an `init` message over the port. (The standalone `sei` CLI was

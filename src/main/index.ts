@@ -27,6 +27,7 @@ import { createBotSupervisor } from './botSupervisor';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { initUpdater } from './updater';
+import { initNotices } from './notices';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration, runDefaultsToWorldMigration } from './migration';
 import { safeStorageBackendKind } from './apiKeyStore';
@@ -932,6 +933,9 @@ async function bootstrap(): Promise<void> {
   // the manual "Check for updates" + download/install IPC handlers route into
   // the same updater module via ipc.ts. No artificial 8s delay needed —
   // electron-updater's check is already async + non-blocking.
+  // Notices inbox (260725) — wire the push channel BEFORE initUpdater, which
+  // fires the startup notices refresh as the first leg of the shared cadence.
+  initNotices({ getMainWindow: () => mainWindow });
   initUpdater({ getMainWindow: () => mainWindow });
 
   // 6. Linux fallback warning (RESEARCH Pitfall 3)

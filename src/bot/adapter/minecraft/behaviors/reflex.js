@@ -366,6 +366,20 @@ export function startReflex(bot, config) {
 
   function tick() {
     if (_disposed) return
+    // 260725 play/pause: no evasion while the player has the game paused — an
+    // AFK player takes the arrow. Drop any pulse/strafe we are holding and let
+    // go of the flee mutex WITHOUT restoring the saved goal (pause.js already
+    // cleared the goal; restoring one here would walk the frozen body).
+    if (bot._seiPaused) {
+      releasePulse()
+      releaseStrafe()
+      if (_fleeId != null) {
+        _fleeId = null
+        bot._seiReflexActive = false
+        bot._seiSavedGoal = null
+      }
+      return
+    }
     // Knockback packets occasionally produce transient non-finite velocity /
     // position (combat.js:67-71). Skip the tick rather than read garbage —
     // T-17-01 mitigation: a malformed packet never throws out of the loop.

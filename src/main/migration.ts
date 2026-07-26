@@ -467,6 +467,13 @@ export async function runUuidRenameMigration(): Promise<void> {
       await rename(oldMemoryDir, newMemoryDir);
     }
 
+    // Rename knowledge dir (260725) the same way, if present.
+    const oldKnowledgeDir = paths.knowledgeDir(oldId);
+    const newKnowledgeDir = paths.knowledgeDir(newId);
+    if (await fileExists(oldKnowledgeDir)) {
+      await rename(oldKnowledgeDir, newKnowledgeDir);
+    }
+
     // Delete the old slug JSON (now superseded). ENOENT is swallowed so a
     // partial prior run that already deleted it is harmless.
     try { await unlink(oldJsonPath); } catch { /* swallow ENOENT */ }

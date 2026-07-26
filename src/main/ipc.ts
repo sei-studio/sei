@@ -37,9 +37,23 @@ import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION
 import { loadConfig, saveConfig } from './configStore';
 import { DEFAULT_CHARACTER_UUIDS } from './defaultCharacters';
 import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
+import {
+  addKnowledgeEntry,
+  compactKnowledge,
+  deleteKnowledgeEntry,
+  listKnowledge,
+  readKnowledgeEntry,
+  updateKnowledgeEntry,
+} from './knowledge/knowledgeStore';
+import { extractKnowledgeText, KNOWLEDGE_ENTRY_MAX_BYTES } from './knowledge/extractText';
 import { libraryCharacterCount } from './uniqueGeneration';
 import { paths } from './paths';
-import { saveApiKey, hasApiKey, safeStorageBackendKind } from './apiKeyStore';
+import {
+  saveApiKey,
+  hasApiKey,
+  safeStorageBackendKind,
+  onAiBackendKindChanged,
+} from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
@@ -287,7 +301,18 @@ const ApplySkinArgsSchema = z.object({
   username: z.string().nullable().optional(),
 });
 
+// 260725: guard so a macOS re-bootstrap (registerIpcHandlers can run again on
+// dock-icon reopen) doesn't stack duplicate kind-change listeners.
+let kindPushWired = false;
+
 export function registerIpcHandlers(deps: IpcHandlerDeps): void {
+  // Live-feed every persisted ai_backend_kind flip to the renderer's mode
+  // display (see emitAiBackendKindChanged). Scope switches emit separately
+  // from profileScope.
+  if (!kindPushWired) {
+    kindPushWired = true;
+    onAiBackendKindChanged((kind) => emitAiBackendKindChanged(kind));
+  }
   /**
    * Ensure the cloud row + portrait Storage object exist for `characterId`
    * BEFORE the moderation gate runs. Without this, the moderation Edge
@@ -968,6 +993,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch (err) {
       console.warn(`[sei] removeFromLibrary memory dir ${id}: ${(err as Error).message}`);
     }
+    try {
+      await rm(paths.knowledgeDir(id), { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[sei] removeFromLibrary knowledge dir ${id}: ${(err as Error).message}`);
+    }
     // Drop from the character index so chars.list doesn't re-surface it.
     try {
       const { readFile, writeFile, mkdir } = await import('node:fs/promises');
@@ -994,6 +1024,56 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       throw new Error('Cannot reset memory of the currently summoned character. Stop first.');
     }
     await resetMemoryForCharacter(id);
+  });
+
+  // ── 260725 Knowledge — per-character user-provided reference files ────────
+  // All parsing/sanitizing lives in main (knowledge/extractText.ts); character
+  // and entry ids are UUID-gated because both become path components under
+  // paths.knowledgeDir. Uploads arrive as base64 with a pre-decode length cap
+  // (512 KB raw ≈ 700 KB base64) so a hostile renderer can't balloon memory.
+  const KnowledgeCharId = z.string().uuid();
+  const KnowledgeEntryId = z.string().uuid();
+  ipcMain.handle(IpcChannel.knowledge.extract, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ name: z.string().min(1).max(300), bytesBase64: z.string().min(1).max(720_000) })
+      .parse(argsRaw);
+    const bytes = Buffer.from(args.bytesBase64, 'base64');
+    return extractKnowledgeText(args.name, bytes);
+  });
+  ipcMain.handle(IpcChannel.knowledge.list, async (_event, idArg: unknown) => {
+    return listKnowledge(KnowledgeCharId.parse(idArg));
+  });
+  ipcMain.handle(IpcChannel.knowledge.read, async (_event, idArg: unknown, entryArg: unknown) => {
+    return readKnowledgeEntry(KnowledgeCharId.parse(idArg), KnowledgeEntryId.parse(entryArg));
+  });
+  ipcMain.handle(IpcChannel.knowledge.add, async (_event, idArg: unknown, entryRaw: unknown) => {
+    const id = KnowledgeCharId.parse(idArg);
+    const entry = z
+      .object({
+        title: z.string().min(1).max(200),
+        content: z.string().min(1).max(KNOWLEDGE_ENTRY_MAX_BYTES * 2),
+        source: z.enum(['upload', 'text']).optional(),
+      })
+      .parse(entryRaw);
+    return addKnowledgeEntry(id, entry);
+  });
+  ipcMain.handle(
+    IpcChannel.knowledge.update,
+    async (_event, idArg: unknown, entryArg: unknown, patchRaw: unknown) => {
+      const patch = z
+        .object({
+          title: z.string().min(1).max(200).optional(),
+          content: z.string().min(1).max(KNOWLEDGE_ENTRY_MAX_BYTES * 2).optional(),
+        })
+        .parse(patchRaw);
+      return updateKnowledgeEntry(KnowledgeCharId.parse(idArg), KnowledgeEntryId.parse(entryArg), patch);
+    },
+  );
+  ipcMain.handle(IpcChannel.knowledge.delete, async (_event, idArg: unknown, entryArg: unknown) => {
+    await deleteKnowledgeEntry(KnowledgeCharId.parse(idArg), KnowledgeEntryId.parse(entryArg));
+  });
+  ipcMain.handle(IpcChannel.knowledge.compact, async (_event, idArg: unknown) => {
+    return compactKnowledge(KnowledgeCharId.parse(idArg));
   });
 
   // Phase 11 D-28 — portrait pipeline. Renderer canvas-resizes + re-encodes
@@ -1071,6 +1151,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { sendChatMessage } = await import('./chat/chatService');
     const { isCallActive } = await import('./voice/callState');
     const inCall = isCallActive(args.characterId);
+    // 260724 latency: a mid-call send means a spoken reply is coming — warm
+    // the TTS connection now so its handshake overlaps the LLM turn (chess
+    // replies in a call speak too, so this runs before the chess branch).
+    if (inCall) void import('./voice/tts').then((m) => m.prewarmTts()).catch(() => {});
     // Chess (260710): while a game is open, chat goes through the chess turn
     // runner instead — the reply knows the board, and a message during the
     // character's turn interrupts it (the turn reruns with an [interrupted]
@@ -1189,6 +1273,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // renders while summoned, but a stop can race the unmount cleanup call.
     deps.supervisor.setDashboardWatch(args.characterId, args.watching);
   });
+  // 260725 play/pause + runtime game mode — both runtime-only, never persisted.
+  ipcMain.handle(IpcChannel.mcdash.setPaused, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);
+    return deps.supervisor.setGamePaused(args.characterId, args.paused);
+  });
+  ipcMain.handle(IpcChannel.mcdash.setMode, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, mode: z.enum(['reactive', 'proactive']) })
+      .parse(argsRaw);
+    return deps.supervisor.setGameMode(args.characterId, args.mode);
+  });
 
   // ── Voice calls (260705) ──────────────────────────────────────────────────
   // TTS synthesis (proxy passthrough; the ElevenLabs key never reaches the
@@ -1211,6 +1306,44 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await voiceTtsStream(args, (ev) => {
       if (!sender.isDestroyed()) sender.send(IpcChannel.voice.ttsChunk, ev);
     });
+  });
+
+  // Cloud STT (260724): transcribe one call utterance via ElevenLabs Scribe
+  // (dev key direct, or the proxy with the Supabase JWT). The renderer races
+  // this against the local Whisper worker and falls back to local on any
+  // rejection, so failures here cost accuracy, never an utterance. Scribe's
+  // per-utterance language detection feeds the auto-switch (260725,
+  // voice/languageAutoSwitch.ts) — the renderer only ever sees the text.
+  ipcMain.handle(
+    IpcChannel.voice.stt,
+    async (
+      _event,
+      argsRaw: unknown,
+    ): Promise<{ text: string } | { unavailable: true; reason?: 'no-credentials' | 'upstream' }> => {
+      const args = z
+        .object({
+          // 16kHz mono Float32 PCM; 15s max utterance ≈ 960KB, 2MB is headroom.
+          pcm: z.instanceof(ArrayBuffer).refine((b) => b.byteLength > 0 && b.byteLength <= 2_000_000),
+        })
+        .parse(argsRaw);
+      const { voiceStt } = await import('./voice/stt');
+      const res = await voiceStt(args);
+      if ('text' in res) {
+        const { noteDetectedLanguage } = await import('./voice/languageAutoSwitch');
+        void noteDetectedLanguage(res);
+        return { text: res.text };
+      }
+      return res;
+    },
+  );
+
+  // Prewarm the voice upstream connection when mic speech OPENS, so the STT
+  // request at utterance-end (and the TTS shortly after) reuses a warm pooled
+  // connection instead of paying TCP+TLS setup. Same origin for both surfaces;
+  // prewarmTts owns the throttle.
+  ipcMain.handle(IpcChannel.voice.sttPrewarm, async (): Promise<void> => {
+    const { prewarmTts } = await import('./voice/tts');
+    prewarmTts();
   });
 
   ipcMain.handle(IpcChannel.voice.callState, async (_event, argsRaw: unknown): Promise<void> => {
@@ -1280,6 +1413,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       typeof argRaw === 'string'
         ? { characterId: IdSchema.parse(argRaw), peers: [] as string[] }
         : z.object({ characterId: IdSchema, peers: z.array(z.string()).default([]) }).parse(argRaw);
+    // 260724 latency: the greeting's TTS follows shortly — warm the connection.
+    void import('./voice/tts').then((m) => m.prewarmTts()).catch(() => {});
     deps.greetVoiceCall?.(parsed.characterId, parsed.peers);
   });
 
@@ -1297,6 +1432,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       })
       .parse(argsRaw);
     const { sendCompanionVoiceTurn } = await import('./chat/chatService');
+    // 260724 latency: a reaction line's TTS follows — warm the connection.
+    void import('./voice/tts').then((m) => m.prewarmTts()).catch(() => {});
     // 260708: this turn used to hardcode "no world open" — so while one
     // companion was IN the player's world, a call-only companion reacting on
     // the call was told no world existed (and repeated the open-to-LAN
@@ -1378,13 +1515,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.voice.preview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
-    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    // Playground params (260725): pitch/calmness are optional and re-clamped
+    // inside voicePreviewTts, so a stale renderer sending junk can only get a
+    // valid preview, never a bad upstream request.
+    const args = z
+      .object({
+        voiceId: z.string().min(1).max(64),
+        pitch: z.number().finite().optional(),
+        calmness: z.number().finite().optional(),
+      })
+      .parse(argsRaw);
     const { voicePreviewTts } = await import('./voice/tts');
-    return await voicePreviewTts(args.voiceId);
+    return await voicePreviewTts(args);
   });
 
   // Sample availability (260720): the picker disables play controls with a
-  // quiet hint when TTS cannot run (signed out, no dev key). Never throws.
+  // quiet hint when TTS cannot run (signed out, no key). Never throws.
   ipcMain.handle(IpcChannel.voice.previewAvailable, async (): Promise<boolean> => {
     try {
       const { voicePreviewAvailable } = await import('./voice/tts');
@@ -1392,6 +1538,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch {
       return false;
     }
+  });
+
+  // BYOK ElevenLabs key (260725): set/clear the stored key + presence probe.
+  // The plaintext is safeStorage-encrypted in main and NEVER returned to the
+  // renderer (mirrors config:save-api-key / config:has-api-key).
+  ipcMain.handle(IpcChannel.voice.elevenKeySet, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ key: z.string().min(8).max(200).nullable() }).parse(argsRaw);
+    const { setElevenLabsKey } = await import('./voice/elevenLabsKeyStore');
+    await setElevenLabsKey(args.key);
+  });
+
+  ipcMain.handle(IpcChannel.voice.elevenKeyStatus, async (): Promise<{ present: boolean }> => {
+    const { hasElevenLabsKey } = await import('./voice/elevenLabsKeyStore');
+    return { present: await hasElevenLabsKey() };
   });
 
   // First-meeting greeting (thoughts consumer #1). The renderer calls this when
@@ -1448,6 +1608,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.user.removeProfilePicture, async (): Promise<void> => {
     const { removeUserProfilePicture } = await import('./userProfile');
     await removeUserProfilePicture();
+  });
+
+  // 260724: custom app background — same bytes-over-IPC + _-slot pattern as
+  // the profile picture, with background-sized validation limits.
+  ipcMain.handle(IpcChannel.user.applyBackground, async (_event, argsRaw: unknown): Promise<string> => {
+    const args = z.object({ bytesBase64: z.string().min(1), format: z.enum(['png', 'jpeg', 'webp']) }).parse(argsRaw);
+    const bytes = Buffer.from(args.bytesBase64, 'base64');
+    const { applyBackgroundImage } = await import('./backgroundStore');
+    return await applyBackgroundImage(bytes);
+  });
+
+  ipcMain.handle(IpcChannel.user.removeBackground, async (): Promise<void> => {
+    const { removeBackgroundImage } = await import('./backgroundStore');
+    await removeBackgroundImage();
   });
 
   // Phase 11 D-16 — toggle public/private visibility on a character. Defaults
@@ -1729,7 +1903,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.config.save, async (_event, cfgArg: unknown): Promise<void> => {
     const cfg = UserConfigSchema.parse(cfgArg);
-    await saveConfig(cfg);
+    // 260725: renderer saves are wholesale (stale-copy hazard) and must never
+    // carry ai_backend_kind — the persisted value wins. See
+    // configStore.saveConfigFromRenderer.
+    const { saveConfigFromRenderer } = await import('./configStore');
+    await saveConfigFromRenderer(cfg);
     // Item 7: mirror the user's preferred name into the public profiles table
     // so Browse shows "by <name>" on their published characters. Fire-and-forget
     // (don't add a network round-trip to every config save, e.g. theme toggles)
@@ -2417,37 +2595,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // app:open-external — T-11-12-01 / T-12-17-01 / T-13-21-01. The renderer
   // can't call shell.openExternal directly (contextIsolation); we don't want
-  // to blindly forward an arbitrary URL either, because a compromised renderer
+  // to blindly forward an arbitrary URI either, because a compromised renderer
   // or an XSS hole in our own strings could pass `javascript:` / `file:///`
-  // URIs that the OS would happily resolve. The handler URL-parses + validates
-  // against an https-only host allowlist (legal pages + DMCA Designated Agent
-  // Directory + Polar checkout/customer-portal) plus a narrow mailto:
-  // allowlist (DMCA contact). Anything else throws — the renderer treats
-  // throws as silent no-ops.
+  // URIs that the OS would happily resolve. The handler URL-parses + gates the
+  // PROTOCOL to https (plus mailto for contact links). Anything else throws —
+  // the renderer treats throws as silent no-ops.
   //
-  // External URL allowlist — every host that shell.openExternal will route to.
-  // Adding a host = trusting it not to host malicious downloads or phishing.
-  //  - Phase 11 added 'sei.gg' / 'www.sei.gg' (marketing + legal pages).
-  //  - Phase 12-17 added 'dmca.copyright.gov' (DMCA Designated Agent Directory)
-  //    and the 'mailto:dmca@sei.app' scheme/path pair (DMCA contact).
-  //  - Polar migration (2026-06) trusts the 'polar.sh' registrable domain (exact
-  //    'polar.sh' + the '.polar.sh' suffix covering buy./sandbox./<org>. etc.).
-  //    Polar is the Merchant of Record; its billing UX is the cancellation
-  //    surface (Phase 13 open-question resolution #5).
-  //
-  // Host comparison uses exact-equality (Array.prototype.includes on a string
-  // array) for fixed hosts and a DOT-ANCHORED suffix match for '.polar.sh', so
-  // `evil.polar.sh.attacker.tld` is rejected even though it contains an
-  // allowlisted label as a substring (T-13-21-01). The protocol gate is
-  // enforced separately (https / mailto only) so `javascript:` / `data:` /
-  // `file:` URLs that happen to parse with a matching `hostname` field are
-  // still rejected (T-13-21-03).
+  // 260725: the HOST allowlist (sei.gg / dmca.copyright.gov / polar.sh) was
+  // removed — any https site is linkable now, so the notices inbox can point
+  // anywhere without a client release. See externalUrlValidator.ts for the
+  // rationale and for what the surviving protocol gate still buys.
   ipcMain.handle(IpcChannel.app.openExternal, async (_event, urlArg: unknown): Promise<void> => {
     const url = z.string().url().parse(urlArg);
     // 260525-s09 H5: validation extracted into src/main/lib/externalUrlValidator
     // so cancelSubscription and any future shell.openExternal call site stays in
-    // lockstep with this allowlist. The validator owns the allowlist + protocol
-    // gate + substring-host-bypass guard; see that module for provenance + rationale.
+    // lockstep. The validator owns the protocol gate; see that module for
+    // provenance + rationale.
     const { assertSafeExternalUrl } = await import('./lib/externalUrlValidator');
     assertSafeExternalUrl(url);
     const { shell } = await import('electron');
@@ -2491,6 +2654,29 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   ipcMain.handle(IpcChannel.app.version, async (): Promise<string> => {
     return app.getVersion();
+  });
+
+  // === Notices inbox (260725) ===
+  //
+  // Read-only-ish surface over ./notices: the feed refresh itself is driven by
+  // the updater's cadence (startup / focus / resume / periodic backstop), so the
+  // renderer only ever pulls the cached snapshot and records announced/read
+  // marks. Lazy import for the same reason as the updater handlers above.
+
+  ipcMain.handle(IpcChannel.app.noticesGet, async () => {
+    const { getNoticesSnapshot } = await import('./notices');
+    return getNoticesSnapshot();
+  });
+
+  ipcMain.handle(IpcChannel.app.noticesAck, async () => {
+    const { ackNoticesAnnounced } = await import('./notices');
+    return ackNoticesAnnounced();
+  });
+
+  ipcMain.handle(IpcChannel.app.noticesRead, async (_e, id: unknown) => {
+    const { getNoticesSnapshot, markNoticeRead } = await import('./notices');
+    if (typeof id !== 'string' || id.length === 0) return getNoticesSnapshot();
+    return markNoticeRead(id);
   });
 
   // === Frameless window controls (custom titlebar on Windows/Linux) ===
@@ -2571,15 +2757,23 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return creditsGet();
   });
 
+  // credits:catalog — 260725 server-driven pricing catalog. Reads the proxy's
+  // world-readable plan_config/topup_config tables (cached in
+  // cloud/pricingCatalog); null lets the renderer keep its bundled fallback.
+  ipcMain.handle(IpcChannel.credits.catalog, async () => {
+    const { pricingCatalogGet } = await import('./cloud/pricingCatalog');
+    return pricingCatalogGet();
+  });
+
   // credits:openCheckout — asks the proxy to mint a Polar checkout session
-  // (user_id stamped into metadata server-side), then opens the allowlist-
-  // validated URL in the user's SYSTEM BROWSER via shell.openExternal.
+  // (user_id stamped into metadata server-side), then opens the validated URL
+  // in the user's SYSTEM BROWSER via shell.openExternal.
   //
   // 260603: reverted the 260602-uv9 in-app popup BrowserWindow back to the
   // system browser (user request). The system browser is the safer host for a
   // third-party payment page — it has the user's saved payment methods, its own
   // phishing/cert UI, and zero Node/IPC surface by construction. The URL is
-  // allowlist-validated in proxyClient AND re-asserted here before the handoff.
+  // protocol-validated in proxyClient AND re-asserted here before the handoff.
   // Balance refresh still flows through the webhook → onCreditsStatusUpdate
   // push (no success-detection wiring needed).
   ipcMain.handle(IpcChannel.credits.openCheckout, async (_e, argsRaw: unknown) => {
@@ -2589,7 +2783,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const res = await openCheckout(parsed.kind);
     if (!res.ok) return res;
 
-    // Defense in depth: the URL was already allowlist-validated in proxyClient
+    // Defense in depth: the URL was already protocol-validated in proxyClient
     // before being returned, but we re-assert here before the OS handoff.
     const { assertSafeExternalUrl } = await import('./lib/externalUrlValidator');
     try {
@@ -2720,5 +2914,21 @@ export function emitCreditsStatusUpdate(status: CreditsStatus): void {
 export function emitCreditsHardStop(info: CreditsHardStopEvent): void {
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send(IpcChannel.credits.hardStop, info);
+  }
+}
+
+/**
+ * 260725: fan-out the EFFECTIVE ai_backend_kind to every renderer window.
+ * Called from the apiKeyStore change listener (wired in registerIpcHandlers)
+ * for every persisted flip, and from profileScope at the end of every scope
+ * switch (a scope switch changes the effective kind without a config write).
+ * This is the live feed the renderer's mode display tracks — the display
+ * starts as UNKNOWN and only ever shows a kind main has actually reported,
+ * so it can no longer claim BYOK while main routes calls through the cloud
+ * proxy (the recurring local-UI-cloud-billing incident).
+ */
+export function emitAiBackendKindChanged(kind: CreditsStatus['ai_backend_kind']): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send(IpcChannel.proxy.kindChanged, { kind });
   }
 }

@@ -36,6 +36,15 @@ export type {
   McDashMap,
 } from './mcDashboardIpc';
 
+/**
+ * 260725: runtime Minecraft play mode. Never persisted per character or in
+ * config — every summon starts 'proactive'; the in-game control window flips
+ * it live. 'reactive' follows instructions only (cheaper: 60s idle cadence +
+ * the reactive directive); 'proactive' plays alongside the player (5s idle
+ * cadence + the agentic directive).
+ */
+export type McGameMode = 'reactive' | 'proactive';
+
 /* -------------------------------------------------------------------------- */
 /*  Lifecycle / status / log domain types                                     */
 /* -------------------------------------------------------------------------- */
@@ -569,6 +578,36 @@ export interface ExpansionProgressEvent {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Knowledge (260725)                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Per-character Knowledge: user-provided reference files (imported memories
+ * from other platforms, facts about the player) injected into every AI
+ * surface — chat, voice, chess, Minecraft bot. Stored under
+ * <profileRoot>/knowledge/<characterId>/ (outside the memory dir, so "Reset
+ * memory" never wipes it). Content is sanitized plain text only; the manifest
+ * meta below is what list/read/add/update return.
+ */
+export interface KnowledgeEntryMeta {
+  id: string;
+  title: string;
+  /** UTF-8 byte size of the stored content. */
+  bytes: number;
+  /** ISO timestamp when the entry was added. */
+  added: string;
+  source: 'upload' | 'text' | 'compacted';
+}
+
+/**
+ * Total knowledge bytes above which the create flow suggests compaction
+ * ("can slow down the AI's responses on calls and in games"). Lives here
+ * (not in src/main/knowledge) because both sides need it: the renderer's
+ * create-flow gate and main's store import this single definition.
+ */
+export const KNOWLEDGE_COMPACT_SUGGEST_BYTES = 32 * 1024;
+
+/* -------------------------------------------------------------------------- */
 /*  Unique-companion generation (260703 procgen)                              */
 /* -------------------------------------------------------------------------- */
 
@@ -911,6 +950,40 @@ export interface CreditsHardStopEvent {
 }
 
 /**
+ * 260725 — server-driven pricing catalog.
+ *
+ * Read from the proxy's world-readable `plan_config` / `topup_config` tables
+ * (the same rows /billing/checkout mints sessions against), so a price,
+ * name, blurb or a whole new top up package can be retuned server-side and
+ * every up-to-date client repaints without a release. The renderer keeps a
+ * bundled copy of the launch catalog (`planCatalog.ts`) as the offline /
+ * failure fallback.
+ *
+ * All prices are integer cents; `*_credits` are display credits
+ * (µ$ / 5,000, converted in main). `blurb` null = the renderer derives its
+ * default line from the numbers.
+ */
+export interface CatalogPlan {
+  tier: PlanTier;
+  name: string;
+  price_cents: number;
+  weekly_credits: number;
+  blurb: string | null;
+}
+export interface CatalogTopUp {
+  /** topup_config row id — passed back verbatim as the checkout `kind`. */
+  kind: string;
+  name: string;
+  price_cents: number;
+  credits: number;
+  blurb: string | null;
+}
+export interface PricingCatalog {
+  plans: CatalogPlan[];
+  topups: CatalogTopUp[];
+}
+
+/**
  * Zod-validated argument shapes for the billing IPC channels. Validation
  * lives at the main-process trust boundary (every ipcMain.handle runs
  * `.parse(args)` before dispatch) — see PATTERNS §"Zod validation at every
@@ -920,13 +993,18 @@ export const ProxyConfigureArgsSchema = z.object({
   kind: z.enum(['local', 'cloud-proxy']),
 });
 /**
- * 260724: the four Polar products. `quest` / `party` are the monthly
- * subscriptions; `topup_small` / `topup_large` are one-time extra-credit
- * packages. Grant amounts live in the proxy's `topup_config` table, never in
- * client code.
+ * 260724: `quest` / `party` are the monthly subscriptions; `topup_small` /
+ * `topup_large` are one-time extra-credit packages. Grant amounts live in the
+ * proxy's `topup_config` table, never in client code.
+ *
+ * 260725: an open string (bounded like the proxy's own shape guard) rather
+ * than a closed enum — the sellable SKUs are DB rows now, and the top up
+ * surface paints packages from the server catalog, so a package added after
+ * this client shipped must still pass the boundary. The proxy remains the
+ * authority on what is actually purchasable (unknown kinds get 400).
  */
 export const CreditsCheckoutArgsSchema = z.object({
-  kind: z.enum(['quest', 'party', 'topup_small', 'topup_large']),
+  kind: z.string().min(1).max(64),
 });
 /**
  * 260724: change the tier of an EXISTING subscription (a Polar subscription
@@ -1007,6 +1085,27 @@ export interface RendererApi {
   ): Promise<Character>;
   deleteCharacter(id: string): Promise<void>;
   resetMemory(id: string): Promise<void>;
+
+  // 260725 Knowledge — user-provided reference files injected into every AI
+  // surface (chat / voice / chess / Minecraft bot). All parsing + sanitizing
+  // happens in main (knowledgeExtract); the renderer only ships raw bytes and
+  // renders plain text. Errors carry user-facing messages.
+  /** Validate + extract text from an uploaded file (.md/.txt/.text/.docx). */
+  knowledgeExtract(args: { name: string; bytesBase64: string }): Promise<{ title: string; content: string }>;
+  knowledgeList(characterId: string): Promise<KnowledgeEntryMeta[]>;
+  knowledgeRead(characterId: string, entryId: string): Promise<{ meta: KnowledgeEntryMeta; content: string } | null>;
+  knowledgeAdd(
+    characterId: string,
+    entry: { title: string; content: string; source?: 'upload' | 'text' },
+  ): Promise<KnowledgeEntryMeta>;
+  knowledgeUpdate(
+    characterId: string,
+    entryId: string,
+    patch: { title?: string; content?: string },
+  ): Promise<KnowledgeEntryMeta>;
+  knowledgeDelete(characterId: string, entryId: string): Promise<void>;
+  /** LLM-compact ALL entries into one (replaces the stored set; copies only, originals untouched). */
+  knowledgeCompact(characterId: string): Promise<KnowledgeEntryMeta>;
 
   // Phase 11 D-28 — portrait pipeline (file-on-disk, not inline data URL).
   /** Write portrait bytes for a character and return the path reference ('<uuid>.png'). */
@@ -1173,6 +1272,21 @@ export interface RendererApi {
   mcDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
   /** Telemetry pushes (~every 2s while watching, plus on action change). */
   onMcDashboardSnapshot(cb: (s: McDashboardSnapshotPush) => void): Unsubscribe;
+  /**
+   * 260725 play/pause: freeze/resume the in-game brain. Paused: no game LLM
+   * calls, in-flight actions abort-frozen; on a live voice call only voice
+   * lines reach the model, carrying a short paused notice instead of any
+   * Minecraft context. Runtime-only (never persisted). Resolves false when
+   * there is no live session.
+   */
+  mcSetPaused(characterId: string, paused: boolean): Promise<boolean>;
+  /**
+   * 260725 runtime game mode. 'proactive' (default at every summon): the AI
+   * plays alongside you. 'reactive': follows instructions only, cheaper.
+   * Runtime-only (never persisted). Resolves false when there is no live
+   * session.
+   */
+  mcSetMode(characterId: string, mode: McGameMode): Promise<boolean>;
 
   // --- Voice calls (260705) ---
   /**
@@ -1198,6 +1312,40 @@ export interface RendererApi {
   voiceTtsStream(args: { characterId: string; text: string }): Promise<{ streamId: string }>;
   /** Chunks/completions for voiceTtsStream (one subscription, ids multiplex). */
   onVoiceTtsChunk(cb: (push: VoiceTtsChunkPush) => void): Unsubscribe;
+  /**
+   * Cloud speech-to-text (260724): transcribe one call utterance via
+   * ElevenLabs Scribe (a resolved ElevenLabs key direct — dev env key or the
+   * BYOK user's stored key — or the Sei proxy with the Supabase JWT; same
+   * routing as voiceTts). `pcm` is raw Float32 mono audio at 16kHz, exactly
+   * what the dictation VAD captures. Resolves { text } on success (may be
+   * empty for non-speech), or { unavailable: true } when cloud STT cannot run
+   * at all right now — the caller should stop probing for the rest of the
+   * call. `reason` (260725, optional for back-compat) says why:
+   *   'no-credentials' — nothing configured client-side (BYOK with no stored
+   *     ElevenLabs key, or cloud with no session); turn Scribe off for the
+   *     call rather than prompting a Whisper install.
+   *   'upstream' — credentials exist but the upstream refused terminally
+   *     (auth, balance, cap, unconfigured service); surface the local
+   *     Whisper fallback prompt.
+   * Rejects on transient failures (network, upstream 5xx); the renderer
+   * falls back to the local Whisper result either way, so this surface never
+   * blocks an utterance.
+   *
+   * 260725: no language argument — Scribe auto-detects the language per
+   * utterance, and main persists a confident repeated detection into
+   * UserConfig.chat_language (voice/languageAutoSwitch.ts). The renderer
+   * only ever receives the transcript text.
+   */
+  voiceStt(args: { pcm: ArrayBuffer }): Promise<
+    { text: string } | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
+  >;
+  /**
+   * Fire-and-forget connection prewarm for the voice upstreams (260724).
+   * Called the moment the player's mic speech OPENS so the TCP+TLS handshake
+   * to the proxy/ElevenLabs origin overlaps the utterance itself, and the
+   * STT request that follows utterance-end reuses a warm pooled connection.
+   */
+  voiceSttPrewarm(): Promise<void>;
   /**
    * Mark a voice call open (active:true) or hung up (active:false) for a
    * character. Main records it (voice/callState) so idle-chat prompts carry
@@ -1262,14 +1410,38 @@ export interface RendererApi {
   onVoiceCallEnded(cb: (push: { characterId: string }) => void): Unsubscribe;
   /** The curated voice pool (labels + vibe blurbs) for the creation picker. */
   voiceListVoices(): Promise<VoiceInfo[]>;
-  /** Speak the canned preview line in an arbitrary pool voice (picker). */
-  voicePreview(args: { voiceId: string }): Promise<ArrayBuffer>;
   /**
-   * Whether voice samples can synthesize right now (signed-in session or a dev
-   * TTS key). The picker disables sample playback with a quiet hint when
-   * false; voice selection itself always works (260720).
+   * Speak the canned preview line in an arbitrary pool voice (picker).
+   * Playground params (260725): `pitch` is a playback rate (clamped to
+   * VOICE_PITCH_MIN..MAX in shared/voicePitch.ts) — main synthesizes with the
+   * matching pace compensation, so the clip must be PLAYED at
+   * playbackRate = pitch with preservesPitch off to land at normal pace with
+   * only the pitch shifted. `calmness` is ElevenLabs stability (clamped 0..1).
+   * Omitted params keep the request byte-identical to the pre-playground
+   * shape, so existing disk-cache entries stay valid.
+   */
+  voicePreview(args: { voiceId: string; pitch?: number; calmness?: number }): Promise<ArrayBuffer>;
+  /**
+   * Whether voice samples can synthesize right now (signed-in session, a dev
+   * TTS key, or a stored BYOK ElevenLabs key). The picker disables sample
+   * playback with a quiet hint when false; voice selection itself always
+   * works (260720).
    */
   voicePreviewAvailable(): Promise<boolean>;
+  /**
+   * BYOK voice (260725): store (or clear) the user's own ElevenLabs API key
+   * so 'local'-backend users get voice without the cloud proxy. `key` is
+   * trimmed and encrypted at rest via safeStorage in main (same handling as
+   * the Anthropic BYOK key); pass null to clear. The plaintext key is
+   * write-only from the renderer's perspective: it is NEVER returned to the
+   * renderer — use voiceElevenKeyStatus for presence.
+   */
+  voiceElevenKeySet(args: { key: string | null }): Promise<void>;
+  /**
+   * BYOK voice (260725): whether an ElevenLabs key is stored for the active
+   * profile. Presence only — the full key is NEVER returned to the renderer.
+   */
+  voiceElevenKeyStatus(): Promise<{ present: boolean }>;
 
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
@@ -1278,6 +1450,10 @@ export interface RendererApi {
   userApplyProfilePicture(args: { bytesBase64: string; format: 'png' | 'jpeg' | 'webp' }): Promise<string>;
   /** Clear the user profile picture and delete the on-disk file. */
   userRemoveProfilePicture(): Promise<void>;
+  /** 260724: apply custom app-background bytes; returns the path ref ('_bg.png'). */
+  userApplyBackground(args: { bytesBase64: string; format: 'png' | 'jpeg' | 'webp' }): Promise<string>;
+  /** Clear the custom app background and delete the on-disk file. */
+  userRemoveBackground(): Promise<void>;
 
   // App-level one-shot queries
   getStartupWarnings(): Promise<StartupWarnings>;
@@ -1408,10 +1584,10 @@ export interface RendererApi {
    */
   profileImportFromLocal(characterIds?: string[]): Promise<ImportLocalProfileResult>;
   /**
-   * Open a URL in the user's default browser. Main-side URL allowlists to
-   * the configured legal-pages host (sei.gg over https) — anything else is
-   * rejected as a throw (T-11-12-01). The renderer treats the throw as a
-   * silent no-op.
+   * Open a URL in the user's default browser. Any https site is allowed (the
+   * host allowlist was removed 260725); main still gates the PROTOCOL to
+   * https/mailto, so `javascript:` / `file:` / OS-handler URIs are rejected as
+   * a throw (T-11-12-01). The renderer treats the throw as a silent no-op.
    */
   openExternal(url: string): Promise<void>;
 
@@ -1450,14 +1626,22 @@ export interface RendererApi {
    */
   creditsGet: () => Promise<CreditsStatus>;
   /**
+   * 260725 — read the server-driven pricing catalog (plan cards + top up
+   * packages) from the proxy's world-readable config tables. Cached in main;
+   * null when the read fails and no cached copy exists (the renderer then
+   * keeps its bundled fallback copy).
+   */
+  creditsCatalog: () => Promise<PricingCatalog | null>;
+  /**
    * Open the Polar checkout for the requested product: a new subscription
-   * ('quest' / 'party') or a one-time extra-credits package ('topup_small' /
-   * 'topup_large'). The proxy mints the checkout session server-side (user_id
-   * in metadata) and returns the hosted URL, which is dispatched via
-   * shell.openExternal after an allowlist check.
+   * ('quest' / 'party') or a one-time extra-credits package (any
+   * `topup_config` row id from the pricing catalog, e.g. 'topup_small'). The
+   * proxy mints the checkout session server-side (user_id in metadata) and
+   * returns the hosted URL, which is dispatched via shell.openExternal after
+   * an allowlist check. The proxy 400s unknown kinds.
    */
   creditsOpenCheckout: (
-    kind: 'quest' | 'party' | 'topup_small' | 'topup_large',
+    kind: string,
   ) => Promise<{ ok: true } | { ok: false; code: string }>;
   /**
    * Change the tier of an EXISTING subscription (Polar subscription update, not
@@ -1523,6 +1707,15 @@ export interface RendererApi {
    * Returns the unsubscribe fn.
    */
   onCreditsHardStop: (cb: (info: CreditsHardStopEvent) => void) => Unsubscribe;
+  /**
+   * Subscribe to `proxy:kind-changed` pushes — the effective ai_backend_kind,
+   * emitted by main on every persisted change and at the end of every
+   * profile-scope switch. The single live feed for the mode the UI displays;
+   * see IpcChannel.proxy.kindChanged.
+   */
+  onAiBackendKindChanged: (
+    cb: (ev: { kind: CreditsStatus['ai_backend_kind'] }) => void,
+  ) => Unsubscribe;
 
   // Push subscriptions — return Unsubscribe (renderer cleans up on unmount)
   onStatus(cb: (status: BotStatus) => void): Unsubscribe;
@@ -1607,6 +1800,29 @@ export interface RendererApi {
   installUpdate(): Promise<void>;
   /** Current app version string (Settings → current version display). */
   getVersion(): Promise<string>;
+
+  // ── Notices inbox (260725) ────────────────────────────────────────────────
+  /**
+   * Fires whenever main refreshes the notices feed (same cadence as the update
+   * check). Carries the whole snapshot, including `autoOpen` — the renderer
+   * opens the inbox once for an unannounced notice, then calls `ackNotices`.
+   */
+  onNotices(cb: (snapshot: NoticesSnapshot) => void): Unsubscribe;
+  /**
+   * Pull the cached snapshot on mount. Race-proof counterpart to `onNotices`:
+   * the startup refresh can land before the renderer attaches its listener, and
+   * `autoOpen` is derived from persisted state rather than a one-shot flag, so
+   * this returns the same answer the dropped push carried. No network.
+   */
+  getNotices(): Promise<NoticesSnapshot>;
+  /**
+   * Acknowledge that the inbox auto-opened: marks every currently-cached notice
+   * announced so it never opens itself again for them. Returns the updated
+   * snapshot.
+   */
+  ackNotices(): Promise<NoticesSnapshot>;
+  /** Mark one notice read (the user selected it) — clears its unread dot. */
+  markNoticeRead(id: string): Promise<NoticesSnapshot>;
   /**
    * Host OS platform (`process.platform`), read once in preload and exposed as
    * a plain value so the renderer can branch its window chrome WITHOUT an async
@@ -1746,6 +1962,32 @@ export interface WhatsNewEvent {
   changelog: string;
 }
 
+/**
+ * One operator announcement from https://sei.gg/notices.json (260725). `body`
+ * is markdown (headings, bold/italic, links, images, lists, code, quotes,
+ * rules); the renderer parses it to React nodes with an explicit allowlist and
+ * never injects HTML.
+ */
+export interface Notice {
+  /** Stable unique id, never reused — identity for announced/read tracking. */
+  id: string;
+  title: string;
+  /** ISO date string (`2026-07-25`); may be empty when the feed omits it. */
+  date: string;
+  /** Markdown body. */
+  body: string;
+}
+
+/** The full notices-inbox state the renderer renders from. */
+export interface NoticesSnapshot {
+  /** Cached feed, newest first. */
+  notices: Notice[];
+  /** Ids the user has already opened (unread = in `notices`, not in here). */
+  readIds: string[];
+  /** True while at least one notice has never triggered its one auto-open. */
+  autoOpen: boolean;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  IPC channel string constants — single source of truth for both sides       */
 /* -------------------------------------------------------------------------- */
@@ -1838,6 +2080,17 @@ export const IpcChannel = {
     // cloud row (the user doesn't own it).
     removeFromLibrary: 'chars:remove-from-library',
   },
+  // 260725 Knowledge — per-character user-provided reference files. See the
+  // KnowledgeEntryMeta docblock and src/main/knowledge/knowledgeStore.ts.
+  knowledge: {
+    extract: 'knowledge:extract',
+    list: 'knowledge:list',
+    read: 'knowledge:read',
+    add: 'knowledge:add',
+    update: 'knowledge:update',
+    delete: 'knowledge:delete',
+    compact: 'knowledge:compact',
+  },
   config: {
     get: 'config:get',
     save: 'config:save',
@@ -1905,6 +2158,10 @@ export const IpcChannel = {
     setWatching: 'mcdash:set-watching',
     /** Push: McDashboardSnapshotPush (~every 2s while watching). */
     snapshot: 'mcdash:snapshot',
+    /** Invoke: 260725 play/pause ({characterId, paused} → boolean). */
+    setPaused: 'mcdash:set-paused',
+    /** Invoke: 260725 runtime game mode ({characterId, mode} → boolean). */
+    setMode: 'mcdash:set-mode',
   },
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
@@ -1913,6 +2170,10 @@ export const IpcChannel = {
     ttsStream: 'voice:tts-stream',
     /** Push (main → renderer): VoiceTtsChunkPush — ordered audio chunks for a ttsStream. */
     ttsChunk: 'voice:tts-chunk',
+    /** Invoke: cloud STT for one call utterance ({pcm, language?} → {text} | {unavailable}). */
+    stt: 'voice:stt',
+    /** Invoke: prewarm the voice upstream connection (fired at mic speech open). */
+    sttPrewarm: 'voice:stt-prewarm',
     /** Invoke: open/hang-up a voice call ({characterId, active, connectedMs?}). */
     callState: 'voice:call-state',
     /** Invoke: the call went live — companion should greet first (characterId). */
@@ -1937,11 +2198,18 @@ export const IpcChannel = {
     preview: 'voice:preview',
     /** Invoke: can voice samples synthesize right now? → boolean (260720). */
     previewAvailable: 'voice:preview-available',
+    /** Invoke: store/clear the BYOK ElevenLabs key ({key: string | null}) (260725). */
+    elevenKeySet: 'voice:eleven-key-set',
+    /** Invoke: is a BYOK ElevenLabs key stored? → {present} (260725). */
+    elevenKeyStatus: 'voice:eleven-key-status',
   },
   user: {
     getProfile: 'user:get-profile',
     applyProfilePicture: 'user:apply-profile-picture',
     removeProfilePicture: 'user:remove-profile-picture',
+    // 260724: custom app background (same _-slot portraits-dir pattern).
+    applyBackground: 'user:apply-background',
+    removeBackground: 'user:remove-background',
   },
   app: {
     ready: 'app:ready',
@@ -1962,6 +2230,11 @@ export const IpcChannel = {
     updateInstall: 'app:update-install',           // quitAndInstall
     whatsNewGet: 'app:whats-new-get',               // pull pending post-update changelog (race-proof)
     version: 'app:version',                         // app.getVersion()
+    // ── Notices inbox (260725) — refreshed on the update check's cadence ─────
+    notices: 'app:notices',                         // push: snapshot after a feed refresh
+    noticesGet: 'app:notices-get',                  // pull cached snapshot (race-proof)
+    noticesAck: 'app:notices-ack',                  // mark every cached notice announced
+    noticesRead: 'app:notices-read',                // mark one notice read
     // 260603 per-profile partitioning: main pushes this AFTER the active
     // account scope has switched (sign-in / sign-out / account swap) and the
     // new profile is initialized + bot stopped. The renderer re-bootstraps
@@ -1970,8 +2243,9 @@ export const IpcChannel = {
     // Phase 11 plan 12 — main-side validated launcher of OS browser for
     // ToS / Privacy links from the renderer. The renderer can't call
     // shell.openExternal directly (contextIsolation), and we don't want to
-    // let it pass arbitrary URLs through — the handler URL-allowlists to
-    // sei.gg before dispatching to shell.openExternal (T-11-12-01).
+    // let it pass arbitrary URIs through — the handler gates the protocol to
+    // https/mailto before dispatching to shell.openExternal (T-11-12-01). The
+    // host allowlist was removed 260725; see externalUrlValidator.ts.
     openExternal: 'app:open-external',
   },
   // Frameless window controls (custom titlebar on Windows/Linux). macOS keeps
@@ -2104,9 +2378,18 @@ export const IpcChannel = {
   //                             weekly allowance is spent and no extras remain.
   proxy: {
     configure: 'proxy:configure',
+    // 260725 main→renderer push: the EFFECTIVE ai_backend_kind, emitted on
+    // every persisted change (apiKeyStore.onAiBackendKindChanged) and at the
+    // end of every profile-scope switch. The renderer's mode display MUST
+    // track this (and start as unknown) rather than assume a default — a
+    // renderer that guessed 'local' while main ran cloud-proxy billed the
+    // user under a BYOK-looking UI (recurring incident, last on 260725).
+    kindChanged: 'proxy:kind-changed',
   },
   credits: {
     get: 'credits:get',
+    // 260725: server-driven pricing catalog (plan_config/topup_config read).
+    catalog: 'credits:catalog',
     openCheckout: 'credits:openCheckout',
     changePlan: 'credits:change-plan',
     statusUpdate: 'credits:status:update',

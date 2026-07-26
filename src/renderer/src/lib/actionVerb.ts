@@ -88,6 +88,12 @@ export function actionVerb(action: BotAction | undefined | null): string | null 
     case 'unfollow':
     case 'setPvp':
       return null;
+    // 260725: synthetic status-window verb (a player-message turn is being
+    // processed). The MC dashboard's status window renders it; the roster
+    // presence line stays quiet — "thinking" next to a chat avatar reads as
+    // typing, which the typing indicator already covers.
+    case 'thinking':
+      return null;
     default:
       return 'adventuring…';
   }

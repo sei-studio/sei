@@ -442,6 +442,24 @@ export async function start(config, hooks = {}) {
       try { _brain?.setVoiceCall?.(active) } catch {}
     },
     /**
+     * 260725 play/pause: forward the in-app pause toggle from the parentPort
+     * {type:'game-pause'} handler into the live brain (FSM hold + orchestrator
+     * freeze). The renderer owns the paused DISPLAY state (it initiated it),
+     * so the dashboard telemetry is not involved. No-op until the brain has
+     * started.
+     */
+    setGamePaused(paused) {
+      try { _brain?.setGamePaused?.(paused) } catch {}
+    },
+    /**
+     * 260725 runtime game mode: forward the reactive/proactive toggle from the
+     * parentPort {type:'game-mode'} handler. Never persisted — every summon
+     * starts proactive (see the persona.proactiveness seed in rawConfig).
+     */
+    setGameMode(mode) {
+      try { _brain?.setGameMode?.(mode === 'reactive' ? 'reactive' : 'proactive') } catch {}
+    },
+    /**
      * Voice calls (260705): the call pipeline just went live — prompt the brain
      * to greet the player first (like the spawn greeting, but into the call).
      */
@@ -572,6 +590,10 @@ async function bootstrapWithInit(initData) {
     // carries the app conversation into the world. null when there is no prior
     // chat. Stashed on config as _seiContinuity and injected by the orchestrator.
     continuity,           // { summary: string, recent: {role,text}[] } | null
+    // 260725 Knowledge: user-provided reference text (capped + sanitized in
+    // main by knowledgeStore). Stashed as config._seiKnowledge and appended to
+    // the cached system prefix by the orchestrator. '' / undefined = none.
+    knowledge,            // string | undefined
     // Voice calls (260707): true when spawning INTO an open call. Seeds the
     // orchestrator's voiceCallActive from the start so say() routes to the call
     // and the cold FIRST CONTACT greeting is skipped on the first tick (no race
@@ -670,18 +692,12 @@ async function bootstrapWithInit(initData) {
       // identity and login username always match.
       name: bot_mc_username,
       expanded: character.persona.expanded,
-      // Author-set proactiveness dial off character.metadata (the schema's
-      // forward-compat escape hatch). Drives the heartbeat directive, the idle
-      // cadence, and the UI bar. The dial is now 0–2 (Passive/Reactive/Agentic);
-      // legacy values 2 (old "Active") and 3 (old "Driven") both fold into 2
-      // (Agentic), so we clamp here before ConfigSchema (which now rejects >2).
-      // Out-of-range/missing falls to the ConfigSchema default (1, Reactive).
-      // MIRROR: src/main/chat/chatService.ts clampProactiveness() applies this
-      // exact clamp for the chat surface. The bot ships as raw ESM in a separate
-      // process and CANNOT import from src/main, so keep the two copies in sync.
-      ...(typeof character.metadata?.proactiveness === 'number' && Number.isInteger(character.metadata.proactiveness)
-        ? { proactiveness: Math.min(Math.max(0, character.metadata.proactiveness), 2) }
-        : {}),
+      // 260725: proactiveness is a RUNTIME mode, not a character trait. Any
+      // legacy character.metadata.proactiveness is deliberately ignored.
+      // Every summon starts at 2 (proactive: the bot plays alongside you);
+      // the in-app MC controls flip it to 1 (reactive: acts only on your
+      // instruction) live via the game-mode port message.
+      proactiveness: 2,
       // Texting punctuation register off character.metadata (260705). Only the
       // exact 'deliberate' value opts out of the casual trailing-period strip;
       // anything else (missing, junk) falls to the ConfigSchema default
@@ -751,6 +767,12 @@ async function bootstrapWithInit(initData) {
   try {
     config._seiContinuity =
       continuity && typeof continuity === 'object' ? continuity : null
+  } catch {}
+
+  // 260725 Knowledge: stash the user-provided reference text so the
+  // orchestrator can append it to the cached system prefix. Best-effort.
+  try {
+    config._seiKnowledge = typeof knowledge === 'string' ? knowledge : ''
   } catch {}
 
   // Voice calls (260707): stash whether this bot is spawning into an open call
@@ -1003,6 +1025,15 @@ if (process.parentPort) {
             // Voice calls (260705): the renderer's call pipeline just went live
             // — ask the brain to speak first (say() routes into the call).
             try { _running?.deliverVoiceCallGreeting?.() } catch {}
+          } else if (data && data.type === 'game-pause') {
+            // 260725: in-app play/pause button. paused:true freezes the brain
+            // (FSM hold + abort of live work); paused:false resumes with the
+            // "player just unpaused your game" tick.
+            try { _running?.setGamePaused?.(data.paused === true) } catch {}
+          } else if (data && data.type === 'game-mode') {
+            // 260725: runtime reactive/proactive mode. Never persisted; every
+            // summon starts proactive.
+            try { _running?.setGameMode?.(data.mode) } catch {}
           } else if (data && data.type === 'roster') {
             // 260618: the supervisor's roster of OTHER AI companions in this
             // world changed (a sibling bot was summoned or stopped). Apply it so

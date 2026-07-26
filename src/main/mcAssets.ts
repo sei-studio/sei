@@ -86,21 +86,34 @@ export function pickClosestVersion(requested: string, available: string[]): stri
   return best ?? keyed[0].v;
 }
 
-/** textures root → sorted version folder list (cached; missing root = []). */
+/**
+ * textures root → sorted version folder list (cached; missing root = []).
+ *
+ * 260725: a FAILED read is never left in the cache. These caches have no
+ * eviction, so memoizing one transient error (antivirus scan, slow network
+ * volume, EMFILE) as a successful empty result would leave the dashboard with
+ * no item textures for the rest of the app run. The entry is dropped on
+ * rejection so the next request retries.
+ */
 const versionsCache = new Map<string, Promise<string[]>>();
 
 function listTextureVersions(texturesRoot: string): Promise<string[]> {
-  let p = versionsCache.get(texturesRoot);
-  if (!p) {
-    p = readdir(texturesRoot, { withFileTypes: true })
-      .then((es) => es.filter((e) => e.isDirectory() && VERSION_DIR_RE.test(e.name)).map((e) => e.name))
-      .catch(() => []);
-    versionsCache.set(texturesRoot, p);
-  }
-  return p;
+  const cached = versionsCache.get(texturesRoot);
+  if (cached) return cached;
+  const pending: Promise<string[]> = readdir(texturesRoot, { withFileTypes: true })
+    .then((es) => es.filter((e) => e.isDirectory() && VERSION_DIR_RE.test(e.name)).map((e) => e.name))
+    .catch(() => {
+      if (versionsCache.get(texturesRoot) === pending) versionsCache.delete(texturesRoot);
+      return [];
+    });
+  versionsCache.set(texturesRoot, pending);
+  return pending;
 }
 
-/** `${root}|${version}` → item name → relative texture path ("items/x.png"). */
+/**
+ * `${root}|${version}` → item name → relative texture path ("items/x.png").
+ * Same no-caching-a-failed-read rule as versionsCache above.
+ */
 const itemMapCache = new Map<string, Promise<Map<string, string>>>();
 
 /** Map one items_textures.json `texture` ref to a relative png path. */
@@ -115,26 +128,31 @@ function textureRefToRelPath(ref: unknown): string | null {
 
 function loadItemTextureMap(texturesRoot: string, version: string): Promise<Map<string, string>> {
   const key = `${texturesRoot}|${version}`;
-  let p = itemMapCache.get(key);
-  if (!p) {
-    p = readFile(path.join(texturesRoot, version, 'items_textures.json'), 'utf8')
-      .then((raw) => {
-        const out = new Map<string, string>();
-        const entries: unknown = JSON.parse(raw);
-        if (Array.isArray(entries)) {
-          for (const e of entries) {
-            const name = (e as { name?: unknown })?.name;
-            if (typeof name !== 'string' || !/^[a-z0-9_]{1,64}$/.test(name)) continue;
-            const rel = textureRefToRelPath((e as { texture?: unknown }).texture);
-            if (rel) out.set(name, rel);
-          }
+  const cached = itemMapCache.get(key);
+  if (cached) return cached;
+  const pending: Promise<Map<string, string>> = readFile(
+    path.join(texturesRoot, version, 'items_textures.json'),
+    'utf8',
+  )
+    .then((raw) => {
+      const out = new Map<string, string>();
+      const entries: unknown = JSON.parse(raw);
+      if (Array.isArray(entries)) {
+        for (const e of entries) {
+          const name = (e as { name?: unknown })?.name;
+          if (typeof name !== 'string' || !/^[a-z0-9_]{1,64}$/.test(name)) continue;
+          const rel = textureRefToRelPath((e as { texture?: unknown }).texture);
+          if (rel) out.set(name, rel);
         }
-        return out;
-      })
-      .catch(() => new Map<string, string>());
-    itemMapCache.set(key, p);
-  }
-  return p;
+      }
+      return out;
+    })
+    .catch(() => {
+      if (itemMapCache.get(key) === pending) itemMapCache.delete(key);
+      return new Map<string, string>();
+    });
+  itemMapCache.set(key, pending);
+  return pending;
 }
 
 /**

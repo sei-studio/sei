@@ -1,26 +1,18 @@
 /**
  * Shared summon-attempt flow.
  *
- * Both CharacterPage (deploy bar) and CharactersScreen (grid card) trigger a
- * summon, and both must run the same two gates in the same order:
+ * Every summon entry point (the McLaunchPanel Launch button, crash-modal
+ * re-summons, the LAN modal retry) must run the same gates in the same order:
+ * the username-conflict guard, then the LAN gate — if connected, summon
+ * immediately; otherwise stash the pending id and open the Minecraft setup
+ * window on its "Connecting to world" tab in searching mode, which
+ * auto-resumes the summon when LAN flips to connected (McSetupModal, D-56).
  *
- *   1. First-summon skin-setup nudge — the FIRST time a user who has never
- *      completed skin setup tries to summon any character, show a one-time
- *      "run skin setup" prompt. This fires BEFORE the LAN "not connected"
- *      instruction (a user with no open world should be told about skins
- *      first). Gated by WizardState.hasRunOnce (have they ever set up) AND a
- *      profile-scoped wizard:prompt-shown flag (have we already nudged them),
- *      so it appears at most once per account. Skin setup is needed in BOTH
- *      cloud and local mode, so this is not gated on ai_backend_kind.
- *
- *   2. LAN gate — if connected, summon immediately; otherwise stash the
- *      pending id and open the Minecraft setup window on its "Connecting to
- *      world" tab in searching mode, which auto-resumes the summon when LAN
- *      flips to connected (McSetupModal, D-56).
- *
- * Centralised here (rather than duplicated per screen) so the gate order and
- * the show-once bookkeeping live in one place. `proceedSummon` is exported so
- * the skin-setup prompt's "skip for now" button can resume the normal flow.
+ * Centralised here (rather than duplicated per screen) so the gate order
+ * lives in one place. The old first-summon skin-setup nudge moved to the
+ * first OPEN of the Minecraft surface (maybeOfferSkinSetup in gameLaunch.ts,
+ * 260725) — by the time a summon fires the user has already been offered
+ * setup.
  */
 
 import { sei } from './ipcClient';
@@ -28,6 +20,7 @@ import { effectiveMcUsername } from '@shared/characterSchema';
 import { lanHostWarning, type LanHost, type LanHostWarning } from '@shared/ipc';
 import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
+import { useMcDashboardStore } from './stores/useMcDashboardStore';
 
 /**
  * 260709 — pre-summon host-compatibility disclaimer bookkeeping. Session-scoped
@@ -48,6 +41,11 @@ export function acknowledgeHostWarning(kind: LanHostWarning): void {
  * the disclaimer modal's "Summon anyway" resume.
  */
 export function launchSummon(id: string, fromChat: boolean): void {
+  // 260725: the dashboard's runtime controls (pause + reactive/proactive) are
+  // per-summon state. Drop any leftovers from a previous session here — the
+  // fresh bot process always starts unpaused and proactive, and a stale
+  // renderer "paused" flag would misreport it.
+  useMcDashboardStore.getState().reset(id);
   void sei.summon(id).catch(() => {
     // Errors surface via onStatus → BotStatus.error; the model row owns display.
   });
@@ -124,7 +122,7 @@ function blockedByUsernameConflict(id: string): boolean {
  * connected path — harmless when the caller is already on that page
  * (CharacterPage) and matches the CharactersScreen card behavior.
  */
-export async function proceedSummon(id: string): Promise<void> {
+async function proceedSummon(id: string): Promise<void> {
   const ui = useUiStore.getState();
   // 260703: gate on a FRESH LAN read, not the store snapshot. The background
   // poll damps open→closed transitions (OPEN_MISS_TOLERANCE), so a world that
@@ -160,27 +158,11 @@ export async function proceedSummon(id: string): Promise<void> {
 }
 
 /**
- * Entry point for a summon attempt. Shows the one-time skin-setup nudge if
- * warranted; otherwise falls straight through to {@link proceedSummon}. Never
- * blocks the summon on the nudge — any IPC failure degrades to the normal flow.
+ * Entry point for a summon attempt: the username-conflict guard, then the LAN
+ * gate ({@link proceedSummon}).
  */
 export async function attemptSummon(id: string): Promise<void> {
   // Refuse + popup if this character's in-game name collides with a live one.
   if (blockedByUsernameConflict(id)) return;
-  try {
-    const { shown } = await sei.wizardPromptShown('get');
-    if (!shown) {
-      const wiz = await sei.getWizardState();
-      if (!wiz.hasRunOnce) {
-        // First summon for a user who has never set up skins — nudge once,
-        // then never auto-show again (they can re-run setup from Settings).
-        await sei.wizardPromptShown('set');
-        useUiStore.getState().openModal({ kind: 'skin-setup-prompt', characterId: id });
-        return;
-      }
-    }
-  } catch {
-    // Best-effort — never let the nudge bookkeeping block a summon.
-  }
   await proceedSummon(id);
 }

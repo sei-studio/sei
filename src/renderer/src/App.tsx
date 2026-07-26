@@ -12,8 +12,9 @@
  *       - has key → home
  *  5. Hold the loading screen for ≥ LOADING_FLOOR_MS (1.6s) so the boot pulse
  *     animation reads (UI-SPEC §Animation Tokens).
- *  6. Render the modal layer (McSetupModal etc.) above the main view. The
- *     live-session surface is the floating SummonedWidget, not a transient toast.
+ *  6. Render the modal layer (McSetupModal etc.) above the main view. Live
+ *     sessions surface on the character page / chat game area only (260725:
+ *     the floating "in your world" popup was removed).
  *
  * Source: CONTEXT.md D-15/D-17/D-33/D-35, UI-SPEC.md §Animation Tokens
  *         (LoadingScreen 1.6s floor) + §Interaction Contracts → Theme toggle.
@@ -21,14 +22,13 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from './lib/ipcClient';
-import { applyTheme, subscribeSystemTheme, type ThemeMode } from './lib/theme';
+import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
 import { useUiStore } from './lib/stores/useUiStore';
 import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
-import { ActivityPickerScreen } from './screens/ActivityPickerScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
 import { AwakenScreen } from './screens/AwakenScreen';
 import { AddCharacterScreen } from './screens/AddCharacterScreen';
@@ -43,13 +43,11 @@ import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { CallMiniBar } from './components/call/CallMiniBar';
 import { CallOverlayPusher } from './components/CallOverlayPusher';
 import { CrossLaunchConfirmModal } from './components/CrossLaunchConfirmModal';
-import { SummonedWidget } from './components/SummonedWidget';
 import { GamesPickerModal } from './components/GamesPickerModal';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { CreditsScreen } from './screens/CreditsScreen';
 import { ReceiptScreen } from './screens/ReceiptScreen';
 import { McSetupModal } from './components/McSetupModal';
-import { SkinSetupPromptModal } from './components/SkinSetupPromptModal';
 import { SummonConflictModal } from './components/SummonConflictModal';
 import { LanHostWarningModal } from './components/LanHostWarningModal';
 import { UnsupportedVersionModal } from './components/UnsupportedVersionModal';
@@ -58,6 +56,8 @@ import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
 import { UpdatePopup, type UpdatePopupState } from './components/UpdatePopup';
+import { NoticesInboxModal } from './components/NoticesInboxModal';
+import { useNoticesStore } from './lib/stores/useNoticesStore';
 import { Banner } from './components/Banner';
 import { ERROR_COPY } from './lib/errors';
 import * as authStore from './lib/stores/useAuthStore';
@@ -102,6 +102,22 @@ export function App(): React.ReactElement {
   const setPasswordRecovery = useAuthStore((s) => s.setPasswordRecovery);
   const themeMode = useUiStore((s) => s.themeMode);
   const setThemeMode = useUiStore((s) => s.setThemeMode);
+  // 260724 — custom app background. MacosWindow paints the image itself
+  // (window-wide, under the chrome); here we derive the tint the surfaces
+  // above it use and mirror the active/tint state onto <html> so module CSS
+  // (IconRail, drag strip, chat) can adapt without prop drilling.
+  const backgroundImage = useUiStore((s) => s.backgroundImage);
+  const backgroundOpacity = useUiStore((s) => s.backgroundOpacity);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (backgroundImage) {
+      root.setAttribute('data-app-bg', '');
+      root.style.setProperty('--app-bg-tint', `${Math.round((1 - backgroundOpacity) * 100)}%`);
+    } else {
+      root.removeAttribute('data-app-bg');
+      root.style.removeProperty('--app-bg-tint');
+    }
+  }, [backgroundImage, backgroundOpacity]);
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const modal = useUiStore((s) => s.modal);
@@ -257,9 +273,12 @@ export function App(): React.ReactElement {
       // re-init (idempotent — init() checks `initialized` and rewires
       // the IPC subscriptions against the new session).
       useCreditsStore.getState().reset();
-      if (currentUserId !== null) {
-        void useCreditsStore.getState().init();
-      }
+      // 260725: init() runs for signed-OUT transitions too. reset() leaves
+      // ai_backend_kind UNKNOWN (null) and tears down the proxy:kind-changed
+      // subscription; without a re-init the signed-out UI would show neither
+      // mode forever. The signed-out creditsGet placeholder reports the real
+      // local-profile kind, and re-subscribing keeps main's kind feed live.
+      void useCreditsStore.getState().init();
       prevUserIdRef.current = currentUserId;
     }
   }, [authState]);
@@ -367,6 +386,10 @@ export function App(): React.ReactElement {
       sei.onWhatsNew((ev) => {
         setUpdatePopup({ kind: 'whats-new', version: ev.version, changelog: ev.changelog });
       }),
+      // Notices ride the update check's cadence in main, so their subscription
+      // belongs here too. init() both listens and does the race-proof pull; the
+      // store opens the inbox itself for a notice that has never been announced.
+      useNoticesStore.getState().init(),
     ];
     // Pull any pending post-update changelog on mount. The onWhatsNew push above
     // fires during early main bootstrap (before this listener exists) and is
@@ -408,9 +431,9 @@ export function App(): React.ReactElement {
           const cfg = await sei.getConfig();
           onboardedName = (cfg.preferred_name ?? '').trim();
           skinPending = cfg.skin_setup_pending === true;
-          // Default to the dark "Summoning Terminal" theme on fresh installs
-        // (no persisted theme_mode); users can still pick light / system.
-        const mode = (cfg.theme_mode ?? 'dark') as ThemeMode;
+          // Default to the midnight "Summoning Terminal" theme on fresh
+          // installs; legacy 'dark'/'light' values are clamped to the new names.
+          const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
           setThemeMode(mode);
           applyTheme(mode);
           useUiStore.getState().setDevConsoleVisible(!!cfg.dev_console_visible);
@@ -427,6 +450,10 @@ export function App(): React.ReactElement {
           useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
           // Product analytics opt-out (default OFF = analytics on).
           useUiStore.getState().setAnalyticsOptOut(cfg.analytics_opt_out === true);
+          // Custom app background (Theme section, 260724).
+          useUiStore.getState().setBackgroundImage(cfg.background_image ?? null);
+          useUiStore.getState().setBackgroundOpacity(cfg.background_opacity ?? 0.5);
+          useUiStore.getState().setBackgroundBrightness(cfg.background_brightness ?? 1);
         } catch {
           // Fall through with empty onboardedName → onboarding (fresh profile).
         }
@@ -532,9 +559,9 @@ export function App(): React.ReactElement {
         if (cancelled) return;
         onboardedName = (cfg.preferred_name ?? '').trim();
         skinPending = cfg.skin_setup_pending === true;
-        // Default to the dark "Summoning Terminal" theme on fresh installs
-        // (no persisted theme_mode); users can still pick light / system.
-        const mode = (cfg.theme_mode ?? 'dark') as ThemeMode;
+        // Default to the midnight "Summoning Terminal" theme on fresh
+        // installs; legacy 'dark'/'light' values are clamped to the new names.
+        const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
         setThemeMode(mode);
         applyTheme(mode);
         // ui-A7: seed the developer-console visibility from persisted config
@@ -560,6 +587,10 @@ export function App(): React.ReactElement {
         // (the scope-changed handler hydrated it, the initial bootstrap
         // didn't) — fix 260720.
         useUiStore.getState().setAnalyticsOptOut(cfg.analytics_opt_out === true);
+        // Custom app background (Theme section, 260724).
+        useUiStore.getState().setBackgroundImage(cfg.background_image ?? null);
+        useUiStore.getState().setBackgroundOpacity(cfg.background_opacity ?? 0.5);
+        useUiStore.getState().setBackgroundBrightness(cfg.background_brightness ?? 1);
       } catch {
         // Defaults already applied (themeMode='system' from store)
       }
@@ -632,12 +663,11 @@ export function App(): React.ReactElement {
     };
   }, [navigate, setThemeMode]);
 
-  // Skin setup is now a dedicated onboarding step (SkinSetupScreen, routed to
-  // while UserConfig.skin_setup_pending is true) rather than a modal auto-opened
-  // on first home — so the old home-trigger effect was removed. Existing users
-  // who predate the step (skin_setup_pending defaults false) aren't forced in;
-  // they still get the one-time first-summon nudge (SkinSetupPromptModal) and the
-  // Settings → "Re-run setup" entry.
+  // Skin setup runs the first time the Minecraft surface is opened (260725,
+  // maybeOfferSkinSetup in lib/gameLaunch.ts) — onboarding no longer arms
+  // skin_setup_pending. The SkinSetupScreen resume routing below is kept for
+  // profiles that armed the gate under the old flow (it self-clears on
+  // finish/skip); the Settings → "Re-run setup" entry remains for everyone.
 
   // ── Auth-state transitions driven by the Supabase auth-event push
   //    (initAuthState → onAuthState). We don't await any IPC ourselves.
@@ -727,13 +757,45 @@ export function App(): React.ReactElement {
     view.kind === 'onboarding' ||
     view.kind === 'auth-choice' ||
     view.kind === 'skin-setup' ||
-    view.kind === 'activity-picker' ||
     // 260703 procgen — the unique-companion flow + first-sign-in questionnaire
     // are full-page ritual surfaces (like onboarding), so the rail is hidden.
     view.kind === 'profile-questions' ||
     view.kind === 'unique-gender' ||
     view.kind === 'unique-casting' ||
     view.kind === 'unique-reveal';
+
+  // ── Custom background (260724) ────────────────────────────────────────
+  // The image (plus its brightness dim) is painted WINDOW-WIDE by
+  // MacosWindow's bgLayer, under the chrome — so the IconRail, the top drag
+  // strip, and chat show it too. Surfaces above it swap their opaque fills
+  // for a theme-colored tint whose strength is the inverse of the opacity
+  // slider ("opacity 100%" shows the image bare, "0%" is indistinguishable
+  // from no background): <main> and the elbow wrapper get inline styles here;
+  // the rail / drag strip / chat adapt via `:root[data-app-bg]` CSS keyed on
+  // the --app-bg-tint property maintained by the effect above.
+  const tintPct = Math.round((1 - backgroundOpacity) * 100);
+  const mainStyle: React.CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'auto',
+    background: backgroundImage
+      ? `color-mix(in srgb, var(--window) ${tintPct}%, transparent)`
+      : 'var(--window)',
+    borderTopLeftRadius: 12,
+    borderTop: '1px solid var(--border)',
+    borderLeft: '1px solid var(--border)',
+  };
+  const elbowStyle: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    background: backgroundImage
+      ? `color-mix(in srgb, var(--elbow) ${tintPct}%, transparent)`
+      : 'var(--elbow)',
+  };
 
   return (
     <>
@@ -805,9 +867,10 @@ export function App(): React.ReactElement {
             */}
             {/* Elbow backdrop so the content panel's rounded top-left corner
                 reveals the rail/header junction behind it (chrome-blue in light,
-                a lighter pocket in dark — see --elbow). */}
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, background: 'var(--elbow)' }}>
-              <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', background: 'var(--window)', borderTopLeftRadius: 12, borderTop: '1px solid var(--border)', borderLeft: '1px solid var(--border)' }}>
+                a lighter pocket in dark — see --elbow). Tinted translucent when
+                a custom background is active, like the rest of the chrome. */}
+            <div style={elbowStyle}>
+              <main style={mainStyle}>
                 {view.kind === 'auth-choice' && (
                   <AuthChoiceScreen
                     onChooseLocal={() => {
@@ -835,10 +898,11 @@ export function App(): React.ReactElement {
                   />
                 )}
                 {view.kind === 'skin-setup' && <SkinSetupScreen />}
-                {view.kind === 'activity-picker' && <ActivityPickerScreen />}
                 {view.kind === 'home' && <CharactersScreen />}
                 {view.kind === 'awaken' && <AwakenScreen />}
-                {view.kind === 'add-character' && <AddCharacterScreen />}
+                {view.kind === 'add-character' && (
+                  <AddCharacterScreen importFirst={view.importFirst === true} />
+                )}
                 {view.kind === 'character' && <CharacterPage id={view.id} />}
                 {view.kind === 'chat' && <ChatScreen characterId={view.characterId} />}
                 {view.kind === 'voice-call' && (
@@ -885,8 +949,7 @@ export function App(): React.ReactElement {
               {devConsoleVisible &&
               view.kind !== 'onboarding' &&
               view.kind !== 'auth-choice' &&
-              view.kind !== 'skin-setup' &&
-              view.kind !== 'activity-picker' ? (
+              view.kind !== 'skin-setup' ? (
                 <LogsBar />
               ) : null}
             </div>
@@ -896,14 +959,8 @@ export function App(): React.ReactElement {
       {/* Task 4 — drives the always-on-top call overlay window (renders nothing;
           pushes call state to main, which owns the overlay window). */}
       <CallOverlayPusher />
-      {/* Chat #7 — floating "in your world" unsummon popups for live sessions
-          (renders nothing unless a bot is summoned/connecting). */}
-      <SummonedWidget />
       {modal?.kind === 'mc-setup' ? (
         <McSetupModal tab={modal.tab} searching={modal.searching} />
-      ) : null}
-      {modal?.kind === 'skin-setup-prompt' ? (
-        <SkinSetupPromptModal characterId={modal.characterId} />
       ) : null}
       {modal?.kind === 'summon-conflict' ? (
         <SummonConflictModal
@@ -967,6 +1024,10 @@ export function App(): React.ReactElement {
           onDismiss={() => setUpdatePopup(null)}
         />
       ) : null}
+      {/* Notices inbox (260725). Self-mounting: the store decides visibility, so
+          this renders null until a notice arrives (opens once) or the user
+          reopens it from Playtime → Inbox. */}
+      <NoticesInboxModal />
       {/*
         Phase 11 D-26 — BLOCKING ToS+Privacy acceptance modal. Mounts as the
         LAST modal layer so it overlays every other modal/toast at the same

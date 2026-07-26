@@ -99,8 +99,8 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
   return (
     <form className={styles.card} onSubmit={handleSubmit}>
       <p className={styles.lede}>
-        What do you not like about Sei? Send any feedback and this week's credits reset to
-        zero.
+        What do you not like about Sei? As a thank you, your weekly usage limit will be
+        reset immediately.
       </p>
       <TextField
         value={body}

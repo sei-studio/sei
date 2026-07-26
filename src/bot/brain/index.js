@@ -217,7 +217,11 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // Reactive 1min / Agentic 5s), so a self-directed character resumes its
     // goal fast while a passive one only stirs rarely. An explicit
     // llm.idle_fallback_ms in config still wins as a manual override.
-    idleFallbackMs: config.llm?.idle_fallback_ms ?? idleCadenceMs(config.persona?.proactiveness),
+    // 260725: passed as a FUNCTION so every idle re-arm re-reads the tier —
+    // the in-app reactive/proactive mode buttons mutate
+    // config.persona.proactiveness live (orchestrator.setGameMode) and the
+    // cadence must follow without a re-summon.
+    idleFallbackMs: () => config.llm?.idle_fallback_ms ?? idleCadenceMs(config.persona?.proactiveness),
     logger,
   })
 
@@ -491,6 +495,30 @@ export async function start({ config, adapter, logger = console, onTerminalError
      * voice-call primer.
      */
     setVoiceCall: (active) => { try { orchestrator.setVoiceCall?.(active) } catch {} },
+    /**
+     * 260725 play/pause: the player pressed the in-app pause (or released it).
+     * Three coordinated moves: the orchestrator freezes/unfreezes (abort live
+     * work, capture the in-flight note, enqueue the resume tick), the FSM
+     * queue holds every event except live voice-call lines
+     * (orchestrator.allowWhilePaused) so no game LLM calls run while paused,
+     * and the adapter freezes the BODY (optional setWorldPaused member) so the
+     * game-side autonomous loops stop too — without it the bot keeps
+     * following, dodging and retaliating with the brain switched off.
+     */
+    setGamePaused: (paused) => {
+      try { orchestrator.setGamePaused?.(paused) } catch {}
+      try { adapter.setWorldPaused?.(paused) } catch {}
+      try {
+        queue.setHold(paused === true
+          ? (event, data) => orchestrator.allowWhilePaused?.(event, data) === true
+          : null)
+      } catch {}
+    },
+    /**
+     * 260725 runtime game mode (reactive/proactive), never persisted. Every
+     * summon starts proactive; the in-app MC mode buttons flip it live.
+     */
+    setGameMode: (mode) => { try { orchestrator.setGameMode?.(mode) } catch {} },
     /**
      * WR-05 follow-up: live-swap the AI backend (cloud-proxy ↔ BYOK) on the
      * running orchestrator without re-summoning. No-op when the orchestrator

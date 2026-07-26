@@ -143,4 +143,15 @@ describe('isJunkTranscript', () => {
       expect(isJunkTranscript(t)).toBe(false);
     }
   });
+
+  it('keeps non-Latin speech (260725: language auto-switch means CJK utterances are real turns)', () => {
+    for (const t of ['我今天想讲中文。', '日本語いいですか？', '한국어로 말해도 돼요?', 'Ça va?']) {
+      expect(isJunkTranscript(t)).toBe(false);
+    }
+  });
+
+  it('drops the Japanese Whisper silence hallucination', () => {
+    expect(isJunkTranscript('ご視聴ありがとうございました')).toBe(true);
+    expect(isJunkTranscript('ご視聴ありがとうございました。')).toBe(true);
+  });
 });

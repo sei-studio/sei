@@ -39,11 +39,11 @@
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-2);
-  margin: 0 0 24px;
+  margin: 0 0 8px;
 }
 
 .field {
-  margin-top: 16px;
+  margin-top: 0;
   animation: fade 220ms ease both;
 }
 

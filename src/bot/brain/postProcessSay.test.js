@@ -2,13 +2,13 @@
 //
 // 260616: all hardcoded content filters (telemetry/narration regex, fragment
 // words) were removed — nothing is banned by phrase or keyword. postProcessSay
-// now only NORMALIZES (whitespace collapse, lowercase, 256-char cap) and
+// now only NORMALIZES (whitespace collapse, lowercase) and
 // splitChatMessages only SPLITS a line into texting-style messages (count
 // capped). These tests pin that normalize/split behavior and that no message is
 // dropped for what it says.
 
 import { describe, it, expect } from 'vitest'
-import { postProcessSay, splitChatMessages } from './orchestrator.js'
+import { postProcessSay, splitChatMessages, clipChars } from './orchestrator.js'
 
 describe('postProcessSay — normalize only (no content filter)', () => {
   it('collapses whitespace', () => {
@@ -30,8 +30,11 @@ describe('postProcessSay — normalize only (no content filter)', () => {
     expect(postProcessSay(null)).toBe('')
   })
 
-  it('caps at 256 chars', () => {
-    expect(postProcessSay('x'.repeat(400)).length).toBe(256)
+  // 260725: the 256-char cap moved to the in-world send (emitChatMessages) —
+  // a long voice-call line ships whole (it is one TTS clip; the cap cut it
+  // off mid-sentence audibly).
+  it('does NOT cap length', () => {
+    expect(postProcessSay('x'.repeat(400)).length).toBe(400)
   })
 
   // 260707: the ONE exception to "no content filter" — a line that is nothing
@@ -111,6 +114,42 @@ describe('postProcessSay — normalize only (no content filter)', () => {
     expect(splitChatMessages(line)).toEqual(['gonna build a base', 'walls, roof, the works'])
     expect(splitChatMessages(postProcessSay('ok listen – you dig down')))
       .toEqual(['ok listen', 'you dig down'])
+  })
+})
+
+// 260725: postProcessSay no longer caps, so the bound moved to the delivery
+// points — 256 code units for the Minecraft packet (emitChatMessages), a much
+// looser runaway guard for app chat / voice (which are NOT style-capped, that
+// was the point of moving it). Both clip through clipChars, which must never
+// leave half a surrogate pair behind.
+describe('clipChars — code-point-safe delivery clip', () => {
+  it('returns short input untouched', () => {
+    expect(clipChars('hello', 256)).toBe('hello')
+    expect(clipChars('', 256)).toBe('')
+    expect(clipChars(null, 256)).toBe('')
+  })
+
+  it('clips at the limit when the boundary is a plain character', () => {
+    expect(clipChars('x'.repeat(300), 256)).toBe('x'.repeat(256))
+  })
+
+  it('steps back off a split surrogate pair rather than shipping half of one', () => {
+    const line = 'x'.repeat(255) + '\u{1F600}' + 'tail'
+    const clipped = clipChars(line, 256)
+    expect(clipped).toBe('x'.repeat(255))
+    expect(clipped.length).toBeLessThanOrEqual(256)
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(clipped)).toBe(false)
+  })
+
+  it('keeps a pair that fits entirely inside the limit', () => {
+    const line = 'x'.repeat(254) + '\u{1F600}' + 'tail'
+    expect(clipChars(line, 256)).toBe('x'.repeat(254) + '\u{1F600}')
+  })
+
+  it('an all-emoji line clips to an even number of code units', () => {
+    const clipped = clipChars('\u{1F600}'.repeat(200), 15)
+    expect(clipped.length).toBe(14)
+    expect([...clipped]).toHaveLength(7)
   })
 })
 

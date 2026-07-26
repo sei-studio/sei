@@ -1,20 +1,29 @@
 /**
- * CreditsScreen — plan + weekly usage surface (260724 subscription model).
+ * CreditsScreen — plan + weekly usage surface (260724 subscription model,
+ * 260725 sketch layout).
  *
  * Layout: a centered column —
- *   - BackRow + a usage HERO: "{pct}% used" (Oswald) over a flat bar, with a
- *     "Resets {date}" sub-line. At 100% the number and the bar turn red: a full
- *     bar has to read as a limit, not as an achievement.
- *   - An EXTRA CREDITS row: a quieter muted bar, "x / y extra credits used",
- *     and a Top up button. Extra credits are a separate, non-expiring bucket
- *     spent only after the week's allowance is gone.
+ *   - BackRow + a USAGE section (sketch 260725): two label/bar/value rows.
+ *     Row 1: "{Plan} plan" + "Resets in Xd Yh" on the left, the allowance bar,
+ *     "{pct}%" on the right (plain text color at every value; only the bar
+ *     fill goes red at 100). Row 2: "Extra credits" + "x/y used" on the left, the muted
+ *     bar, the Top up button on the right. The carry-over note sits directly
+ *     under the extra-credits row. Extra credits are a separate, non-expiring
+ *     bucket spent only after the week's allowance is gone.
  *   - Three PLAN cards (Free / Quest / Party). The current plan is highlighted
  *     and its button reads "Current plan"; the others offer Upgrade or
- *     Downgrade. A first subscription goes through the hosted checkout; a tier
- *     change on an existing subscription is applied in place by the proxy. Both
- *     pass through the auto-renewal consent gate, which is LEGALLY REQUIRED
- *     (CA ARL §17602(b)) and must never be bypassed. Downgrading to Free is a
- *     cancellation, so it routes to the Polar customer portal.
+ *     Downgrade. A first subscription goes straight to the hosted Polar
+ *     checkout; a tier change on an existing subscription is applied in place
+ *     by the proxy. 260725 operator decision: the in-app auto-renewal consent
+ *     modal was REMOVED — the recurring terms are disclosed on the Polar
+ *     hosted checkout page instead (Polar is the Merchant of Record).
+ *     260725 follow-up: that only covers the NOT-yet-subscribed branch. An
+ *     existing subscriber's tier change never opens a browser page (it is a
+ *     Polar subscription update billed against the card on file), so
+ *     PlanChangeConfirmModal below carries the recurring amount, the cadence
+ *     and the proration disclosure in-app before changePlan() fires.
+ *     Downgrading to Free is a cancellation, so it routes to the Polar
+ *     customer portal.
  *   - A "Manage billing" footer (Polar customer-portal flow via handleManage)
  *     plus the carry-over note. The button shows an "Opening…" pending state and
  *     an inline error when the portal can't be opened, so it is never a silent
@@ -38,20 +47,40 @@ import { useCreditsStore, type CheckoutKind } from '../lib/stores/useCreditsStor
 import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from '../components/Button';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
-import { PercentBar } from '../components/PercentBar';
 import { BackIcon, RefreshIcon } from '../components/icons';
 import { sei } from '../lib/ipcClient';
-import { AutoRenewalConsentModal } from '../components/AutoRenewalConsentModal';
 import { TopUpModal } from '../components/TopUpModal';
 import { FeedbackRewardCard } from '../components/FeedbackRewardCard';
 import { FeedbackModal } from '../components/FeedbackModal';
+import { useNoticesStore } from '../lib/stores/useNoticesStore';
 import { formatRenewal } from '../lib/formatRenewal';
-import { PLANS, TIER_ORDER, planName } from '../lib/planCatalog';
+import { TIER_ORDER, planCard, planName } from '../lib/planCatalog';
 import styles from './CreditsScreen.module.css';
 
-/** Footer note: what carries over between weeks and what does not (SPEC §2). */
+/** Note under the extra-credits bar: what carries over and what does not (SPEC §2). */
 const CARRY_OVER_NOTE =
   'Unused weekly credits do not carry over. Extra credits never expire.';
+
+/**
+ * "3 days 4 hr" / "4 hr 30 min" / "30 min" / "soon" from the resets_at ISO
+ * stamp (260725 wording). Two largest units only; minute precision is all the
+ * surface needs, and the screen re-renders on a 60s tick while open. Empty
+ * string on a bad date so the sub-line simply doesn't render.
+ */
+export function formatResetsIn(resetsAt: string, nowMs: number): string {
+  const t = Date.parse(resetsAt);
+  if (Number.isNaN(t)) return '';
+  const left = t - nowMs;
+  if (left <= 60_000) return 'soon';
+  const mins = Math.floor(left / 60_000);
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  // Compact consistent units (260725): "3d 4h" / "4h 30m" / "30m".
+  if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`;
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
 
 /**
  * 260706 — how much of the weekly allowance must be spent before the one-time
@@ -79,6 +108,23 @@ function manageErrorCopy(code: string): string {
   }
 }
 
+/**
+ * Plain-English copy for a failed in-place tier change. Codes come from
+ * proxyClient.changePlan (PROXY_NO_SESSION / PROXY_RATE_LIMITED /
+ * PROXY_NETWORK). Without this the failure was invisible: the watcher would
+ * simply poll for 3 minutes and report a timeout.
+ */
+function changeErrorCopy(code: string): string {
+  switch (code) {
+    case 'PROXY_NO_SESSION':
+      return 'Sign in to change your plan.';
+    case 'PROXY_RATE_LIMITED':
+      return 'Too many requests. Wait a moment and try again.';
+    default:
+      return 'Could not change your plan. Please try again.';
+  }
+}
+
 export function CreditsScreen(): React.ReactElement {
   // Separate selectors so React only re-subscribes the slices we read.
   const usagePct = useCreditsStore((s) => s.usage_pct);
@@ -100,21 +146,27 @@ export function CreditsScreen(): React.ReactElement {
   const checkoutStatus = useCreditsStore((s) => s.checkoutStatus);
   const checkoutKind = useCreditsStore((s) => s.checkoutKind);
   const cancelSubscription = useCreditsStore((s) => s.cancelSubscription);
+  const changePlan = useCreditsStore((s) => s.changePlan);
   const refresh = useCreditsStore((s) => s.refresh);
   const topUpRequested = useCreditsStore((s) => s.topUpRequested);
   const clearTopUpRequest = useCreditsStore((s) => s.clearTopUpRequest);
+  // 260725: server-driven catalog (bundled fallback until loadCatalog lands).
+  const planCards = useCreditsStore((s) => s.planCards);
   const navigate = useUiStore((s) => s.navigate);
-  // Every paid move routes through the consent gate (CA ARL §17602(b)) before
-  // the checkout or the subscription update runs.
-  const [consentFor, setConsentFor] = useState<{
-    tier: Exclude<PlanTier, 'free'>;
-    mode: 'checkout' | 'change';
-  } | null>(null);
   const [showTopUp, setShowTopUp] = useState(false);
   // "Manage billing" portal request: pending label + inline error so a failed
   // (or no-op) portal open is visible instead of silently doing nothing.
   const [managing, setManaging] = useState(false);
   const [manageError, setManageError] = useState<string | null>(null);
+  // 260725: the tier the user clicked on an EXISTING subscription, awaiting the
+  // in-app confirmation (recurring amount + cadence + proration). null = no
+  // confirmation open. `changeError` surfaces a rejected change inline.
+  const [pendingChange, setPendingChange] = useState<Exclude<PlanTier, 'free'> | null>(null);
+  const [changeError, setChangeError] = useState<string | null>(null);
+  // True while the watch modal is following an IN-PLACE tier change rather than
+  // a browser checkout, so it doesn't tell the user to finish something in a
+  // browser tab that never opened. Set by whichever purchase path starts.
+  const [inPlaceChange, setInPlaceChange] = useState(false);
   // A checkout is "in flight" from the click until the watch modal is dismissed.
   // Drives the plan-button disabled state so the user can't kick off a second
   // purchase while one is being watched.
@@ -131,6 +183,9 @@ export function CreditsScreen(): React.ReactElement {
   // session, and the reward is a server-side usage reset. BYOK/local users never
   // see the banner or the standing button.
   const cloudMode = useCreditsStore((s) => s.ai_backend_kind) === 'cloud-proxy';
+  // Notices inbox (260725) — the standing re-entry point under Submit feedback.
+  const openInbox = useNoticesStore((s) => s.openInbox);
+  const unreadNotices = useNoticesStore((s) => s.unreadCount());
   // Analytics (260707): pricing/plan surface viewed — top of the monetization
   // funnel (pairs with checkout_opened downstream).
   useEffect(() => {
@@ -183,17 +238,64 @@ export function CreditsScreen(): React.ReactElement {
     }
   };
 
+  // No subscription yet: open the hosted Polar checkout (its page carries the
+  // recurring terms) and watch. Already subscribed: the change is applied in
+  // place against the card on file, with no browser page to disclose anything,
+  // so it goes through the in-app confirmation first (260725).
+  const handlePlanSelect = (tier: Exclude<PlanTier, 'free'>): void => {
+    if (checkoutActive) return;
+    if (isSubscribed) {
+      setChangeError(null);
+      setPendingChange(tier);
+      return;
+    }
+    setInPlaceChange(false);
+    void beginPurchase(tier);
+  };
+
+  // Confirmed in PlanChangeConfirmModal. Order matters (260725): changePlan()
+  // refreshes internally, so calling it FIRST wrote the new tier into the store
+  // and beginPurchase's baseline then equalled the post-change state. No
+  // isPurchaseConfirmed clause could fire, the watcher polled for its full 3
+  // minutes and ended in 'timeout' — a successful change presented as a
+  // failure. beginPurchase snapshots the baseline synchronously (alreadyOpened
+  // skips the browser hop), so taking it before the change makes the flip
+  // detectable on the first poll.
+  const handleConfirmChange = async (): Promise<void> => {
+    const tier = pendingChange;
+    if (tier === null) return;
+    setPendingChange(null);
+    setChangeError(null);
+    setInPlaceChange(true);
+    void beginPurchase(tier, { alreadyOpened: true });
+    const res = await changePlan(tier);
+    if (!res.ok) {
+      // Nothing is coming: stop the watch instead of letting it time out.
+      dismissCheckout();
+      setChangeError(changeErrorCopy(res.code));
+    }
+  };
+
   const handleResume = (): void => {
     if (checkoutActive) return;
     // Opens the Polar customer portal (Polar's uncancel = subscription.uncanceled)
     // and shows the "continue in browser" watch modal that polls until the sub
     // flips off 'cancelled'. NOT a new subscription that would bill immediately.
+    setInPlaceChange(false);
     void beginResume();
   };
 
+  // 60s tick so the "Resets in Xd Yh" countdown stays fresh while the screen
+  // is open (matches the refresh poll cadence; no 1Hz re-render).
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const renewalText = formatRenewal(renewsAt);
   const endsText = formatRenewal(endsAt);
-  const resetsText = formatRenewal(resetsAt);
+  const resetsIn = resetsAt ? formatResetsIn(resetsAt, nowMs) : '';
   const isSubscribed = plan !== 'free';
   // "To be cancelled": still on the paid tier but set to cancel at period end.
   const cancelScheduled = isSubscribed && subscriptionStatusRaw === 'cancelled';
@@ -201,7 +303,7 @@ export function CreditsScreen(): React.ReactElement {
   // Extra credits: the bar fills as the non-expiring bucket is spent. An account
   // that never topped up shows an empty bar and the Top up button.
   const extraPct = extraTotal > 0 ? (extraUsed / extraTotal) * 100 : 0;
-  const extraLabel = `${extraUsed.toLocaleString()} / ${extraTotal.toLocaleString()} extra credits used`;
+  const extraLabel = `${extraUsed.toLocaleString()}/${extraTotal.toLocaleString()} credits used`;
 
   return (
     <div className={styles.root}>
@@ -223,20 +325,10 @@ export function CreditsScreen(): React.ReactElement {
           <FeedbackRewardCard onDone={() => setRewardClaimed(true)} />
         ) : null}
 
-        {/* Hero — "{pct}% used" + refresh beside it + a matching usage fill. */}
-        <div className={styles.hero}>
-          <div className={styles.heroTop}>
-            <div className={`${styles.heroBig} ${atLimit && !snapshotFailed ? styles.heroBigOver : ''}`}>
-              {snapshotFailed ? (
-                <>
-                  –%<small>used</small>
-                </>
-              ) : (
-                <>
-                  {usedPct}%<small>used</small>
-                </>
-              )}
-            </div>
+        {/* Usage — two label/bar/value rows per the 260725 sketch. */}
+        <div className={styles.usage}>
+          <div className={styles.usageHead}>
+            <h3 className={styles.sectionTitle}>Usage</h3>
             {/* Immediate creditsGet() on top of the 60s poll. */}
             <Button
               kind="quiet"
@@ -248,43 +340,60 @@ export function CreditsScreen(): React.ReactElement {
               onClick={() => void refresh()}
             />
           </div>
-          <div className={styles.heroBar}>
-            <i
-              className={atLimit && !snapshotFailed ? styles.heroBarOver : undefined}
-              style={{ width: snapshotFailed ? '0%' : `${usedPct}%` }}
-            />
-          </div>
-          {snapshotFailed ? (
-            <p className={styles.heroSub}>
-              Couldn't check your account right now. Refresh to try again.
-            </p>
-          ) : resetsText ? (
-            <p className={styles.heroSub}>Resets {resetsText}</p>
-          ) : null}
-        </div>
 
-        {/* Extra credits — the separate, non-expiring top up bucket. */}
-        <div className={styles.extra}>
-          <div className={styles.extraBar}>
-            <PercentBar
-              value={snapshotFailed ? 0 : extraPct}
-              size="sm"
-              tone="muted"
-              hideLabel
-              label={extraLabel}
-            />
+          {/* Row 1: the weekly allowance. */}
+          <div className={styles.usageRow}>
+            <div className={styles.usageLabel}>
+              <span className={styles.usageName}>{planName(planCards, plan)} plan</span>
+              {snapshotFailed ? (
+                <span className={styles.usageSubWarn}>
+                  Couldn't check your account. Refresh to try again.
+                </span>
+              ) : resetsIn ? (
+                <span className={styles.usageSub}>Resets in {resetsIn}</span>
+              ) : null}
+            </div>
+            <div className={styles.usageTrack}>
+              <i
+                className={atLimit && !snapshotFailed ? styles.usageFillOver : undefined}
+                style={{ width: snapshotFailed ? '0%' : `${usedPct}%` }}
+              />
+            </div>
+            {/* 260725: the percentage stays the normal text color at 100. The
+                bar fill still turns red, which is signal enough. */}
+            <span className={styles.usagePct}>{snapshotFailed ? '–%' : `${usedPct}%`}</span>
           </div>
-          <span className={styles.extraText}>{extraLabel}</span>
-          <Button kind="ghost" size="sm" disabled={checkoutActive} onClick={() => setShowTopUp(true)}>
-            Top up
-          </Button>
+
+          {/* Row 2: the separate, non-expiring extra-credits bucket. */}
+          <div className={styles.usageRow}>
+            <div className={styles.usageLabel}>
+              <span className={styles.usageName}>Extra credits</span>
+              <span className={styles.usageSub}>{extraLabel}</span>
+            </div>
+            <div className={styles.usageTrack}>
+              <i
+                className={styles.usageFillMuted}
+                style={{ width: snapshotFailed ? '0%' : `${Math.max(0, Math.min(100, extraPct))}%` }}
+              />
+            </div>
+            <Button
+              kind="ghost"
+              size="sm"
+              disabled={checkoutActive}
+              onClick={() => setShowTopUp(true)}
+            >
+              Top up
+            </Button>
+          </div>
+
+          <p className={styles.usageNote}>{CARRY_OVER_NOTE}</p>
         </div>
 
         {/* Plans — Free / Quest / Party, current one highlighted. */}
         <div className={styles.plans}>
-          <h3 className={styles.plansTitle}>Plans</h3>
+          <h3 className={styles.sectionTitle}>Plan</h3>
           <div className={styles.plansRow}>
-            {PLANS.map((card) => {
+            {planCards.map((card) => {
               const isCurrent = card.tier === plan;
               const isUpgrade = TIER_ORDER[card.tier] > TIER_ORDER[plan];
               return (
@@ -334,14 +443,7 @@ export function CreditsScreen(): React.ReactElement {
                         size="sm"
                         fullWidth
                         disabled={checkoutActive}
-                        onClick={() =>
-                          setConsentFor({
-                            tier: card.tier as Exclude<PlanTier, 'free'>,
-                            // No subscription yet → hosted checkout. Already
-                            // subscribed → update the existing one in place.
-                            mode: isSubscribed ? 'change' : 'checkout',
-                          })
-                        }
+                        onClick={() => handlePlanSelect(card.tier as Exclude<PlanTier, 'free'>)}
                       >
                         {isUpgrade ? 'Upgrade' : 'Downgrade'}
                       </Button>
@@ -360,12 +462,12 @@ export function CreditsScreen(): React.ReactElement {
           {cancelScheduled ? (
             <p className={styles.planRenewalNote}>
               {endsText
-                ? `Your ${planName(plan)} plan will not renew. It ends ${endsText}.`
-                : `Your ${planName(plan)} plan will not renew.`}
+                ? `Your ${planName(planCards, plan)} plan will not renew. It ends ${endsText}.`
+                : `Your ${planName(planCards, plan)} plan will not renew.`}
             </p>
           ) : isSubscribed && renewalText ? (
             <p className={styles.planRenewalNote}>
-              Your {planName(plan)} plan renews on {renewalText}.
+              Your {planName(planCards, plan)} plan renews on {renewalText}.
             </p>
           ) : null}
           {subscriptionStatusRaw === 'past_due' ? (
@@ -373,12 +475,16 @@ export function CreditsScreen(): React.ReactElement {
               Your last payment did not go through. Update your card in Manage billing.
             </p>
           ) : null}
+          {/* A rejected in-place tier change (260725). Without this the failure
+              was silent and the watcher's timeout was the only signal. */}
+          {changeError ? <p className={styles.manageError}>{changeError}</p> : null}
         </div>
 
         {/*
           Footer: "Manage billing" (Polar customer-portal flow via handleManage,
           shown for everyone; never-subscribed users no-op gracefully — FTC
-          Click-to-Cancel online cancel path) + the carry-over note.
+          Click-to-Cancel online cancel path). The carry-over note lives under
+          the extra-credits bar (260725).
         */}
         <div className={styles.foot}>
           <Button
@@ -390,7 +496,6 @@ export function CreditsScreen(): React.ReactElement {
           >
             {managing ? 'Opening…' : 'Manage billing'}
           </Button>
-          <span className={styles.disc}>{CARRY_OVER_NOTE}</span>
         </div>
         {manageError ? <p className={styles.manageError}>{manageError}</p> : null}
 
@@ -403,26 +508,36 @@ export function CreditsScreen(): React.ReactElement {
             </Button>
           </div>
         ) : null}
-      </div>
 
-      {consentFor ? (
-        <AutoRenewalConsentModal
-          tier={consentFor.tier}
-          mode={consentFor.mode}
-          onClose={() => setConsentFor(null)}
-          // Consent recorded and the purchase already started (the browser
-          // checkout, or the in-place subscription update) → WATCH only.
-          // alreadyOpened is always true here: re-entering beginPurchase's own
-          // checkout path would open a second browser tab, and for a tier
-          // change there is no checkout to open at all.
-          onProceed={() => void beginPurchase(consentFor.tier, { alreadyOpened: true })}
-        />
-      ) : null}
+        {/* Notices inbox (260725). Sits under "Submit feedback" and is shown to
+            everyone, cloud or local: announcements are not a paid surface. The
+            inbox opens itself once per new notice; this is the way back in. */}
+        <div className={styles.footFeedback}>
+          <Button kind="ghost" size="sm" onClick={openInbox}>
+            {unreadNotices > 0 ? `Inbox (${unreadNotices})` : 'Inbox'}
+          </Button>
+        </div>
+      </div>
 
       {showTopUp ? (
         <TopUpModal
           onClose={() => setShowTopUp(false)}
-          onProceed={(kind) => void beginPurchase(kind)}
+          onProceed={(kind) => {
+            setInPlaceChange(false);
+            void beginPurchase(kind);
+          }}
+        />
+      ) : null}
+
+      {/* In-app confirmation for a tier change on an EXISTING subscription: the
+          one purchase path with no hosted Polar page to disclose the recurring
+          terms (260725). */}
+      {pendingChange !== null ? (
+        <PlanChangeConfirmModal
+          tier={pendingChange}
+          currentTier={plan}
+          onCancel={() => setPendingChange(null)}
+          onConfirm={() => void handleConfirmChange()}
         />
       ) : null}
 
@@ -434,6 +549,7 @@ export function CreditsScreen(): React.ReactElement {
         <CheckoutWaitingModal
           status={checkoutStatus}
           kind={checkoutKind}
+          inPlace={inPlaceChange}
           onClose={dismissCheckout}
         />
       ) : null}
@@ -442,6 +558,74 @@ export function CreditsScreen(): React.ReactElement {
           has been used. */}
       {showFeedbackModal ? <FeedbackModal onClose={() => setShowFeedbackModal(false)} /> : null}
     </div>
+  );
+}
+
+/**
+ * PlanChangeConfirmModal — in-app confirmation for a tier change on an EXISTING
+ * subscription (260725).
+ *
+ * The hosted Polar checkout page carries the recurring terms for a FIRST
+ * subscription, but a tier change never opens it: it is a Polar subscription
+ * update, prorated against the card already on file, and it used to fire on a
+ * single click with no disclosure and no way back. This modal states the new
+ * plan, its recurring amount, the billing cadence, that the stored card is
+ * used, and how to cancel, before `changePlan()` runs. Wording carried over
+ * from the removed AutoRenewalConsentModal where it still applies (the
+ * checkbox is not: Polar's hosted page is the consent-of-record surface for a
+ * new subscription, and this is an existing subscriber changing a tier).
+ */
+function PlanChangeConfirmModal({
+  tier,
+  currentTier,
+  onCancel,
+  onConfirm,
+}: {
+  tier: Exclude<PlanTier, 'free'>;
+  currentTier: PlanTier;
+  onCancel: () => void;
+  onConfirm: () => void;
+}): React.ReactElement {
+  const planCards = useCreditsStore((s) => s.planCards);
+  const card = planCard(planCards, tier);
+  // The exact-charge form ("$8.00") is what the disclosure must state; the
+  // card face ("$8") is the fallback if the catalog omitted it.
+  const amount = card.chargeUsd ?? card.price;
+  const isUpgrade = TIER_ORDER[tier] > TIER_ORDER[currentTier];
+
+  return (
+    // Stacked tier (1100) so it sits above the plan screen like the other
+    // billing modals. ESC / Back dismiss without changing anything.
+    <ModalShell
+      title="Confirm your plan change"
+      width={440}
+      tier="stacked"
+      onClose={onCancel}
+      aria-label="Confirm plan change"
+    >
+      <div className={styles.confirmBody}>
+        <p className={styles.confirmLead}>
+          {card.name} is {amount} per month, billed through Polar. It renews automatically
+          until you cancel.
+        </p>
+        <p className={styles.checkoutMsg}>
+          {isUpgrade
+            ? `The change takes effect right away. Your card on file is charged now, prorated for the time left in your current billing period. After that you pay ${amount} each month.`
+            : `The change takes effect right away. Polar prorates the difference against your card on file for the time left in your current billing period. After that you pay ${amount} each month.`}
+        </p>
+        <p className={styles.checkoutMsg}>
+          You can cancel anytime from Manage billing.
+        </p>
+      </div>
+      <ModalFooter>
+        <Button kind="quiet" size="md" onClick={onCancel}>
+          Back
+        </Button>
+        <Button kind="primary" size="md" onClick={onConfirm}>
+          Confirm plan change
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }
 
@@ -456,25 +640,40 @@ export function CreditsScreen(): React.ReactElement {
 function CheckoutWaitingModal({
   status,
   kind,
+  inPlace,
   onClose,
 }: {
   status: 'waiting' | 'confirmed' | 'timeout';
   kind: CheckoutKind | null;
+  /**
+   * 260725 — this watch is following an in-place tier change (the proxy applies
+   * it against the card on file), so there is no browser tab to finish in and
+   * the copy must not send the user looking for one.
+   */
+  inPlace: boolean;
   onClose: () => void;
 }): React.ReactElement {
+  const planCards = useCreditsStore((s) => s.planCards);
   const isResume = kind === 'resume';
-  const isTopUp = kind === 'topup_small' || kind === 'topup_large';
-  const product = isTopUp ? 'extra credits' : kind ? planName(kind as PlanTier) : 'your plan';
+  // 260725: top up SKUs are an open, server-driven set — anything that is not
+  // a paid tier or 'resume' is a top up (mirrors isPurchaseConfirmed).
+  const isPlan = kind === 'quest' || kind === 'party';
+  const isTopUp = kind !== null && !isResume && !isPlan;
+  const product = isTopUp ? 'extra credits' : isPlan ? planName(planCards, kind as PlanTier) : 'your plan';
 
   const title =
     status === 'waiting'
       ? isResume
         ? 'Resume your subscription'
-        : 'Complete your purchase'
+        : inPlace
+          ? 'Updating your plan'
+          : 'Complete your purchase'
       : status === 'confirmed'
         ? isResume
           ? 'Subscription resumed'
-          : 'Purchase complete'
+          : inPlace
+            ? 'Plan updated'
+            : 'Purchase complete'
         : 'Still processing';
 
   return (
@@ -493,7 +692,9 @@ function CheckoutWaitingModal({
             <p className={styles.checkoutMsg}>
               {isResume
                 ? `Resume your ${product} subscription in your browser. This screen updates automatically once it's confirmed.`
-                : `Finish checking out for ${product} in your browser. This screen updates automatically once the payment is confirmed.`}
+                : inPlace
+                  ? `Applying your ${product} plan. This screen updates automatically once it's confirmed.`
+                  : `Finish checking out for ${product} in your browser. This screen updates automatically once the payment is confirmed.`}
             </p>
           </>
         ) : status === 'confirmed' ? (

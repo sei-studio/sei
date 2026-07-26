@@ -386,11 +386,51 @@ export const UserConfigSchema = z.object({
    * here when a non-default base_url / model is configured).
    */
   provider_config: z.record(z.unknown()).optional().default({}),
-  theme_mode: z.enum(['system', 'light', 'dark']).default('system'), // D-33
+  /**
+   * D-33, widened 260724: named themes. 'midnight' (dark hero) / 'ice'
+   * (pastel-sky light) / 'acorn' (beige/brown light) / 'mint' (green light).
+   * Legacy persisted values 'dark'/'light' are mapped in the preprocess so
+   * pre-260724 config.json files round-trip without a migration.
+   */
+  theme_mode: z
+    .preprocess(
+      (v) => (v === 'dark' ? 'midnight' : v === 'light' ? 'ice' : v),
+      z.enum(['system', 'midnight', 'ice', 'acorn', 'mint']),
+    )
+    .default('system'),
+  /**
+   * 260724: custom app background image — a path ref ('_bg.png') stored in the
+   * per-profile portraits dir and served via sei-portrait://, sitting UNDER the
+   * theme's window color on the main content panel. Null/absent = no custom
+   * background. Same no-data-URL boundary as profile_picture.
+   */
+  background_image: z
+    .string()
+    .refine((v) => !v.startsWith('data:'), { message: 'background_image must be a path reference, not a data URL' })
+    .nullable()
+    .optional()
+    .default(null),
+  /**
+   * How visible the custom background image is through the theme's window
+   * color (0 = invisible, 1 = fully visible). Only read when background_image
+   * is set. Optional (not defaulted) so manual UserConfig literals don't all
+   * need to spell it out; absent ≡ 0.5.
+   */
+  background_opacity: z.number().min(0).max(1).optional(),
+  /**
+   * Brightness applied to the custom background image (0.2 = heavily dimmed,
+   * 1 = original). Only read when background_image is set. Absent ≡ 1.
+   */
+  background_brightness: z.number().min(0.2).max(1).optional(),
   /**
    * 260709: CONVERSATION language — what the companion speaks and understands
    * in chat, on voice calls, and in game. NOT an app/UI locale (UI strings
-   * stay English). Picked during onboarding, changeable in Settings. Optional
+   * stay English). 260725: no longer user-picked (the onboarding step and
+   * Settings row were removed) — AUTO-DETECTED from the player's voice:
+   * ElevenLabs Scribe reports a language per call utterance and
+   * src/main/voice/languageAutoSwitch.ts persists a confident repeated
+   * detection here. Main is the only writer; saveConfigFromRenderer keeps
+   * the on-disk value against renderer wholesale saves. Optional
    * and NOT defaulted (absent ≡ 'en' everywhere it is read, via
    * clampChatLanguage in src/shared/chatLanguage.ts) so the many manual
    * UserConfig literals don't all need to spell it out — same convention as
@@ -673,6 +713,22 @@ export const UserConfigSchema = z.object({
    * active profile root, so each account on one machine gets its own id.
    */
   analytics_install_id: z.string().uuid().optional(),
+  /**
+   * 260725 BYOK voice: which speech-recognition engine the user picked for
+   * voice calls. 'scribe' = ElevenLabs Scribe (cloud; via the user's own key
+   * on BYOK, via the proxy on cloud accounts); 'whisper' = the local Whisper
+   * worker only. Optional and NOT defaulted (absent ≡ 'scribe' semantics,
+   * decided renderer-side) so the many manual UserConfig literals don't all
+   * need to spell it out — same convention as chat_language.
+   */
+  stt_engine: z.enum(['scribe', 'whisper']).optional(),
+  /**
+   * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
+   * the user accepts the Whisper-install prompt after a Scribe failure, so
+   * later calls fall back to local recognition without re-asking. Optional
+   * and NOT defaulted (absent ≡ false) — same convention as analytics_opt_out.
+   */
+  stt_local_fallback: z.boolean().optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

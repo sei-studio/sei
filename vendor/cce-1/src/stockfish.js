@@ -4,8 +4,10 @@
  * The engine build under ../engines/ is stockfish.js 18 lite-single
  * (GPL-3.0, see engines/Copying.txt); this loader is modeled on the
  * MIT-licensed loader that ships with the stockfish npm package.
- * Analyses run sequentially through an internal queue — one engine, one
- * search at a time, which is all CCE needs.
+ * Analyses run sequentially: individual UCI commands ride an internal queue,
+ * and each analysis additionally holds a transaction lock over its whole
+ * setoption/position/go sequence (see _transaction) — one engine, one search
+ * at a time, which is all CCE needs.
  */
 
 import { createRequire } from 'node:module';
@@ -21,6 +23,8 @@ export class StockfishEngine {
   constructor(engine) {
     this._engine = engine;
     this._queue = Promise.resolve();
+    // Transaction lock, one level above _queue: see _transaction().
+    this._lock = Promise.resolve();
     this._listener = null;
     engine.listener = (line) => this._listener?.(line);
   }
@@ -101,6 +105,27 @@ export class StockfishEngine {
     return result;
   }
 
+  /**
+   * Run a MULTI-command transaction with exclusive use of the engine.
+   *
+   * _queue serializes single commands, which is not enough: a search is
+   * `setoption` + `position` + `go`, and two concurrent callers can interleave
+   * their steps on the queue so a `go` searches the other caller's position.
+   * A long-lived host (one engine shared by several games, each on its own
+   * timer) hits this. This lock sits a level above _queue: the commands issued
+   * inside `fn` still ride the queue in order, and no other transaction can
+   * slip its own commands in between them.
+   */
+  _transaction(fn) {
+    const run = () => fn();
+    const result = this._lock.then(run, run);
+    this._lock = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   async setOption(name, value) {
     await this._post(`setoption name ${name} value ${value}`);
     // readyok fence so the option is applied before the next search.
@@ -117,38 +142,46 @@ export class StockfishEngine {
    *   best lines for the side to move, multipv order (best first). cp/mate
    *   are from the side to move's point of view, as UCI reports them.
    */
-  async analyze(fen, { multipv = 4, depth = 12 } = {}) {
-    await this.setOption('MultiPV', multipv);
-    await this._post(`position fen ${fen}`);
-    const lines = await this._command(`go depth ${depth}`, (l) => l.startsWith('bestmove'));
+  analyze(fen, { multipv = 4, depth = 12 } = {}) {
+    // One transaction: setoption + position + go must not be interleaved with
+    // another caller's, or the search runs on the wrong board.
+    return this._transaction(async () => {
+      await this.setOption('MultiPV', multipv);
+      await this._post(`position fen ${fen}`);
+      const lines = await this._command(`go depth ${depth}`, (l) => l.startsWith('bestmove'));
 
-    /** @type {Map<number, {uci: string, cp: number|null, mate: number|null, pv: string[]}>} */
-    const byPv = new Map();
-    for (const line of lines) {
-      const m = line.match(
-        /^info .*\bmultipv (\d+) score (cp|mate) (-?\d+)\b.* pv (.+)$/,
-      );
-      if (!m) continue;
-      const pv = m[4].split(' ');
-      byPv.set(Number(m[1]), {
-        uci: pv[0],
-        cp: m[2] === 'cp' ? Number(m[3]) : null,
-        mate: m[2] === 'mate' ? Number(m[3]) : null,
-        pv,
-      });
-    }
-    return [...byPv.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+      /** @type {Map<number, {uci: string, cp: number|null, mate: number|null, pv: string[]}>} */
+      const byPv = new Map();
+      for (const line of lines) {
+        const m = line.match(
+          /^info .*\bmultipv (\d+) score (cp|mate) (-?\d+)\b.* pv (.+)$/,
+        );
+        if (!m) continue;
+        const pv = m[4].split(' ');
+        byPv.set(Number(m[1]), {
+          uci: pv[0],
+          cp: m[2] === 'cp' ? Number(m[3]) : null,
+          mate: m[2] === 'mate' ? Number(m[3]) : null,
+          pv,
+        });
+      }
+      return [...byPv.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+    });
   }
 
   /** Best move at a UCI_Elo-limited strength (calibration anchors). */
-  async bestMoveAtElo(fen, elo, { movetimeMs = 100 } = {}) {
-    await this.setOption('UCI_LimitStrength', 'true');
-    await this.setOption('UCI_Elo', Math.max(1320, Math.min(3190, elo)));
-    await this._post(`position fen ${fen}`);
-    const lines = await this._command(`go movetime ${movetimeMs}`, (l) => l.startsWith('bestmove'));
-    const best = lines.at(-1).split(' ')[1];
-    await this.setOption('UCI_LimitStrength', 'false');
-    return best;
+  bestMoveAtElo(fen, elo, { movetimeMs = 100 } = {}) {
+    // Same transaction rule as analyze(); the UCI_LimitStrength on/off pair
+    // additionally must not leak into a concurrent search.
+    return this._transaction(async () => {
+      await this.setOption('UCI_LimitStrength', 'true');
+      await this.setOption('UCI_Elo', Math.max(1320, Math.min(3190, elo)));
+      await this._post(`position fen ${fen}`);
+      const lines = await this._command(`go movetime ${movetimeMs}`, (l) => l.startsWith('bestmove'));
+      const best = lines.at(-1).split(' ')[1];
+      await this.setOption('UCI_LimitStrength', 'false');
+      return best;
+    });
   }
 
   /**

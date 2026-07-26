@@ -8,10 +8,15 @@
  * once the week's allowance is gone.
  *
  * These packages are one-time purchases, so no auto-renewal consent gate
- * applies (CA ARL covers recurring charges only). The prices are static copy on
- * the package cards, matching the plan cards.
+ * applies (CA ARL covers recurring charges only).
  *
- * Structural template: ModalShell + ModalFooter, like AutoRenewalConsentModal.
+ * 260725: the package cards come from `useCreditsStore.topUpPackages` — the
+ * server-driven pricing catalog (proxy `topup_config` rows), seeded with the
+ * bundled launch copy as the offline fallback. A package added or retuned
+ * server-side appears here without a client release; its `kind` (the config
+ * row id) is passed straight through to the checkout.
+ *
+ * Structural template: ModalShell + ModalFooter.
  */
 import React from 'react';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
@@ -19,42 +24,22 @@ import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './TopUpModal.module.css';
 
-/**
- * The two `topup_config` SKUs. Credit totals are what the server grants, kept
- * here ONLY as marketing copy: the authoritative amounts live in the proxy's
- * `topup_config` table so they can be retuned without a client release. If the
- * two ever disagree, the server wins and this copy is the bug.
- */
-const PACKAGES: Array<{
-  kind: 'topup_small' | 'topup_large';
-  price: string;
-  credits: string;
-  note: string | null;
-}> = [
-  { kind: 'topup_small', price: '$5', credits: '800 credits', note: null },
-  {
-    kind: 'topup_large',
-    price: '$20',
-    credits: '3,600 credits',
-    note: '3,200 plus 400 bonus',
-  },
-];
-
 export interface TopUpModalProps {
   onClose: () => void;
   /**
    * Fired after a package's checkout has been opened in the browser, so the
    * parent can start its "complete your purchase" watch. The modal closes
-   * itself first.
+   * itself first. `kind` is the package's topup_config row id.
    */
-  onProceed?: (kind: 'topup_small' | 'topup_large') => void;
+  onProceed?: (kind: string) => void;
 }
 
 export function TopUpModal({ onClose, onProceed }: TopUpModalProps): React.ReactElement {
   const checkoutStatus = useCreditsStore((s) => s.checkoutStatus);
+  const packages = useCreditsStore((s) => s.topUpPackages);
   const busy = checkoutStatus !== 'idle';
 
-  const handleBuy = (kind: 'topup_small' | 'topup_large'): void => {
+  const handleBuy = (kind: string): void => {
     if (busy) return;
     onClose();
     onProceed?.(kind);
@@ -70,11 +55,10 @@ export function TopUpModal({ onClose, onProceed }: TopUpModalProps): React.React
       </p>
 
       <div className={styles.packs}>
-        {PACKAGES.map((pkg) => (
+        {packages.map((pkg) => (
           <div key={pkg.kind} className={styles.pack}>
             <span className={styles.packPrice}>{pkg.price}</span>
             <span className={styles.packCredits}>{pkg.credits}</span>
-            <span className={styles.packNote}>{pkg.note ?? 'one time'}</span>
             <div className={styles.packAction}>
               <Button
                 kind="accent"

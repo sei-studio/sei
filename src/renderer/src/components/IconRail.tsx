@@ -51,6 +51,7 @@ import { lastInteractionAt } from '../lib/lastInteraction';
 import { isHomeCharacter } from '../lib/homeLibrary';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
@@ -303,6 +304,10 @@ export function IconRail(): React.ReactElement {
   const authState = useAuthStore((s) => s.state);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
+  // Plan-button tooltip shows live weekly usage; fall back to the plain label
+  // when the snapshot hasn't loaded (a "Usage: 0%" would be a lie).
+  const usagePct = useCreditsStore((s) => s.usage_pct);
+  const usageKnown = useCreditsStore((s) => s.initialized && !s.snapshotFailed);
 
   // B3 — local confirm dialog for the cloud-icon click when the user is on
   // the local backend. Two-button "Switch to cloud?" panel that, on
@@ -347,8 +352,7 @@ export function IconRail(): React.ReactElement {
     else setShowCloudPrompt(true);
   };
 
-  const theme: 'light' | 'dark' =
-    (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
+  const theme: 'light' | 'dark' = resolvedScheme();
 
   // The Home and World tabs are sibling surfaces; a character profile (and the
   // add-character flow) is opened ON TOP of whichever tab the user was on.
@@ -489,16 +493,19 @@ export function IconRail(): React.ReactElement {
         <div className={styles.spacer} />
 
         <div className={styles.cluster}>
+          {/* 260725: three-state. UNKNOWN (null) renders NEITHER button — the
+              rail must never claim a mode main hasn't reported (a guessed
+              "Switch to cloud" here painted BYOK over live cloud billing). */}
           {aiBackendKind === 'cloud-proxy' ? (
             <RailButton
               active={view.kind === 'credits'}
               onClick={() => navigate({ kind: 'credits' })}
-              title="Plan"
+              title={usageKnown ? `Usage: ${Math.max(0, Math.min(100, Math.round(usagePct)))}%` : 'Plan'}
               setHover={setHoverTip}
             >
               <StarIcon size={22} />
             </RailButton>
-          ) : (
+          ) : aiBackendKind === 'local' ? (
             <RailButton
               onClick={handleCloudClick}
               title="Switch to cloud"
@@ -509,7 +516,7 @@ export function IconRail(): React.ReactElement {
                   "Switch to cloud?" prompt). */}
               <StarIcon size={22} />
             </RailButton>
-          )}
+          ) : null}
           <RailButton
             active={view.kind === 'settings'}
             onClick={() => navigate({ kind: 'settings' })}

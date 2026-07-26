@@ -30,6 +30,14 @@
   -webkit-app-region: no-drag;
 }
 
+/* 260724: with a custom background active (MacosWindow bgLayer under the whole
+   window), the rail goes translucent at the shared --app-bg-tint strength so
+   the image shows through the chrome, continuous with the top drag strip. */
+:root[data-app-bg] .rail {
+  background: color-mix(in srgb, var(--rail) var(--app-bg-tint, 100%), transparent);
+  border-right-color: transparent;
+}
+
 
 .cluster {
   display: flex;

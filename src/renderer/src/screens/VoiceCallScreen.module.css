@@ -286,6 +286,34 @@
   color: var(--muted);
 }
 
+/* ── Cloud-STT fallback prompt (260725) ─────────────────────────────────────
+   Non-blocking hint when cloud voice recognition fails on a model-less call:
+   offer the local Whisper backup without interrupting the call. */
+.fallbackPrompt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: 520px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+}
+
+.fallbackText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  text-align: left;
+}
+
+.fallbackActions {
+  display: flex;
+  gap: var(--space-sm);
+  flex: 0 0 auto;
+}
+
 /* The pill buttons themselves live in call/CallControls.module.css
  * (shared with GameSurface's in-game call cluster); this wrapper only spaces the
  * row off the name/captions. */

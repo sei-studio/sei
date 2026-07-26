@@ -134,20 +134,21 @@ export interface ExpandPersonaInput {
 }
 
 export interface ExpandPersonaResult {
-  /** The four-section persona text, with the leading PROACTIVENESS line stripped
-   *  (that line is config-only and never reaches the bot). */
+  /** The four-section persona text, with any leading PROACTIVENESS line stripped
+   *  (that line must never reach the bot). */
   expanded: string;
-  /** The proactiveness level the expander chose (0 passive / 1 reactive /
-   *  2 agentic), parsed from the leading `PROACTIVENESS:` line. This seeds the
-   *  runtime dial (the manual dial can override it later). Defaults to 1 when the
-   *  line is absent or unrecognized. */
+  /** Parsed from a leading `PROACTIVENESS:` line when present. 260725: the
+   *  level is no longer saved anywhere (proactiveness became a runtime-only
+   *  Minecraft mode) — this field survives only because the cloud proxy /
+   *  server prompt override may still ask the model for the line, and callers
+   *  may want to log it. Defaults to 1 when the line is absent. */
   proactiveness: number;
 }
 
-/** Map the expander's leading `PROACTIVENESS: <word>` line to the numeric level
- *  the runtime uses, and the persona text with that line removed. Defaults to
- *  reactive (1) when the line is missing/unrecognized so a non-compliant model
- *  response still yields a valid character. */
+/** Strip a leading `PROACTIVENESS: <word>` line if the model emitted one
+ *  (older prompts, the cloud proxy, or a server prompt override may still ask
+ *  for it) and return the persona text without it. The parsed level is
+ *  legacy — see ExpandPersonaResult.proactiveness. */
 const PROACTIVENESS_WORD_TO_LEVEL: Record<string, number> = { passive: 0, reactive: 1, agentic: 2 };
 export function parseProactivenessLine(text: string): { level: number; body: string } {
   const m = text.match(/^\s*PROACTIVENESS:\s*(passive|reactive|agentic)\b[^\n]*\n?/im);

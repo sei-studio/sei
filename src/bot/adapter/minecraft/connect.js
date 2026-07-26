@@ -22,6 +22,7 @@ import { startCombat } from './behaviors/combat.js'
 import { startReflex } from './behaviors/reflex.js'
 import { startGaze } from './behaviors/gaze.js'
 import { startSurvival } from './behaviors/survival.js'
+import { applyWorldPause } from './behaviors/pause.js'
 import { installFaceOnDig } from './behaviors/face.js'
 
 /**
@@ -288,6 +289,9 @@ export function createBotInstance({
       safeStart('startSurvival', () => startSurvival(bot, config))
       safeStart('startGaze', () => startGaze(bot, config))
       safeStart('startFollow', () => startFollow(bot, config))
+      // 260725: a reconnect while the player has the game paused must come
+      // back frozen, not quietly resume trailing/evading on the fresh bot.
+      safeStart('applyWorldPause', () => applyWorldPause(bot))
       try { onSpawn?.() } catch (err) { logger.warn?.(`[sei/connect] onSpawn hook threw: ${err && err.message}`) }
     } else {
       // respawn after death — restart follow + re-arm the reflex/survival/gaze
@@ -296,6 +300,7 @@ export function createBotInstance({
       safeStart('startSurvival(respawn)', () => startSurvival(bot, config))
       safeStart('startGaze(respawn)', () => startGaze(bot, config))
       safeStart('startFollow(respawn)', () => startFollow(bot, config))
+      safeStart('applyWorldPause(respawn)', () => applyWorldPause(bot))
     }
   })
 

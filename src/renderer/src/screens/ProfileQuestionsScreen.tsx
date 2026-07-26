@@ -83,7 +83,7 @@ const STYLE_OPTIONS: Array<{ value: ArtStyle; label: string; sub: string; imgs: 
 const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
 
 export interface ProfileQuestionsScreenProps {
-  next: 'home' | 'unique-gender' | 'activity-picker' | 'awaken' | 'settings';
+  next: 'home' | 'unique-gender' | 'awaken' | 'settings';
   mode: 'missing' | 'all' | 'first-fill';
   /**
    * Called when the user dismisses the questionnaire with "Later" on the first
@@ -111,8 +111,6 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
       navigate({ kind: 'home' });
     } else if (view === 'unique-gender') {
       navigate({ kind: 'unique-gender' });
-    } else if (view === 'activity-picker') {
-      navigate({ kind: 'activity-picker' });
     } else if (view === 'awaken') {
       navigate({ kind: 'awaken' });
     } else {
@@ -133,14 +131,12 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
   };
 
   // Where Back-on-the-first-step (cancel) lands. Gate flows return to a
-  // sensible origin; the mid-onboarding flow has no "back" (onboarding is
-  // already submitted), so cancel just continues onward — the missing
-  // answers are re-asked at "Meet my companion".
+  // sensible origin; the mid-onboarding flow (next: 'home') has no "back"
+  // (onboarding is already submitted), so cancel just continues onward — the
+  // missing answers are re-asked at "Meet my companion".
   const cancel = (): void => {
     if (next === 'unique-gender' || next === 'awaken') {
       navigate({ kind: 'awaken' });
-    } else if (next === 'activity-picker') {
-      navigate({ kind: 'activity-picker' });
     } else if (next === 'settings') {
       navigate({ kind: 'settings' });
     } else {

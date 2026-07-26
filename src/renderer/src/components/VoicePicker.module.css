@@ -1,6 +1,8 @@
-/* VoicePicker (260705, reworked 260720) — voice selection with grouped
-   gender sections + playable samples. Summoning Terminal: sharp corners,
-   token colors only, Oswald group headings, no uppercase transforms. */
+/* VoicePicker (260705, reworked 260720, tabs + playground 260725) — voice
+   selection with gender tabs + playable samples + tune panel. Summoning
+   Terminal: sharp corners, token colors only, Oswald group headings, no
+   uppercase transforms. Tab strip mirrors EditCharacterModal's underline
+   modeTabs. */
 
 .root {
   display: flex;
@@ -137,6 +139,119 @@
   font-size: 10.5px;
   letter-spacing: 0.04em;
   color: var(--muted);
+}
+
+/* ── Gender tabs (Feminine / Masculine / Neutral) ─────────────────────── */
+.tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 8px 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.tab:hover:not(.tabActive) {
+  color: var(--text);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tabActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Playground ("Tune the voice") ────────────────────────────────────── */
+.tuner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 12px 14px;
+}
+
+.tunerRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.tunerHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.tunerLabel {
+  font-weight: 600;
+}
+
+.tunerValue {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.tunerReset {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  padding: 2px 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tunerReset:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.tunerReset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tunerReset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tunerSlider {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.tunerSlider:disabled {
+  opacity: 0.5;
+}
+
+.tunerHint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .loadingDot {

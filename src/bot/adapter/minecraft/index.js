@@ -11,6 +11,7 @@ import { ADAPTER_INTERFACE_VERSION } from '../../brain/types.js'
 import { createDefaultRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { getProgression as readProgression } from './observers/progression.js'
+import { setWorldPaused } from './behaviors/pause.js'
 import { closeContainerSession } from './behaviors/container.js'
 import { closeFurnaceSession } from './behaviors/furnace.js'
 import { wireBotEvents } from './fsmWires.js'
@@ -160,6 +161,15 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
         try { console.warn(`[adapter.chat] bot.chat failed: ${err && err.message}`) } catch {}
       }
     },
+    /**
+     * 260725 play/pause. OPTIONAL adapter member (not in
+     * REQUIRED_ADAPTER_MEMBERS): the brain calls it, if present, from
+     * brain.setGamePaused. Holding the FSM queue only stops LLM-driven work —
+     * this freezes the BODY (follow trailing, reflex evasion, combat
+     * retaliation, survival, gaze, auto-eat), so a paused companion stands
+     * still like a player away from their keyboard. See behaviors/pause.js.
+     */
+    setWorldPaused: (paused) => setWorldPaused(bot, paused),
     closeAnySessions: async () => {
       try { await closeContainerSession() } catch {}
       try { await closeFurnaceSession() } catch {}

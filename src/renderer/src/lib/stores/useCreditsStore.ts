@@ -43,14 +43,30 @@
 import { create, type StoreApi } from 'zustand';
 import type { CreditsStatus, CreditsHardStopEvent, PlanTier } from '@shared/ipc';
 import { sei } from '../ipcClient';
+import {
+  PLANS,
+  TOP_UPS,
+  plansFromCatalog,
+  topUpsFromCatalog,
+  type PlanCard,
+  type TopUpPackage,
+} from '../planCatalog';
 
 type HardStopReason = CreditsHardStopEvent['reason'];
 
 /**
- * Which billing action a checkout watch is following: a new subscription, a
- * one-time extra-credits package, or a resume of a cancel-scheduled sub.
+ * Which billing action a checkout watch is following: a paid tier
+ * ('quest' / 'party'), 'resume' for un-cancelling a scheduled cancellation,
+ * or any top up SKU id from the server pricing catalog (e.g. 'topup_small').
+ * 260725: an open string rather than a closed union — top up packages are
+ * server catalog rows, so a package added after this client shipped must
+ * still flow through. Anything that is not a paid tier or 'resume' is
+ * treated as a top up.
  */
-export type CheckoutKind = 'quest' | 'party' | 'topup_small' | 'topup_large' | 'resume';
+export type CheckoutKind = string;
+
+/** The paid subscription tiers — the checkout kinds that are NOT top ups. */
+const PAID_TIERS: readonly string[] = ['quest', 'party'];
 
 /** Ordered tiers. Index = rank; `free` is rank 0. */
 const TIER_RANK: Record<PlanTier, number> = { free: 0, quest: 1, party: 2 };
@@ -166,10 +182,11 @@ function clearCheckoutTimers(): void {
  *
  *   - 'resume': the cancel-scheduled sub is no longer set to cancel — its status
  *     flips off 'cancelled'. Nothing is granted, so the other checks don't apply.
- *   - A top up raises `extra_credits_total` (the bucket is non-expiring, so the
+ *   - A subscription ('quest' / 'party') flips `plan` to the purchased tier, or
+ *     the status to 'active' — whichever webhook lands first.
+ *   - Any other kind is a top up SKU (260725: server catalog rows, open set):
+ *     it raises `extra_credits_total` (the bucket is non-expiring, so the
  *     total only ever grows).
- *   - A subscription flips `plan` to the purchased tier, or the status to
- *     'active' — whichever webhook lands first.
  *
  * Exported so the unit test can exercise it in isolation.
  */
@@ -188,15 +205,16 @@ export function isPurchaseConfirmed(
       current.subscription_status_raw !== 'cancelled'
     );
   }
-  if (kind === 'topup_small' || kind === 'topup_large') {
-    return current.extra_credits_total > baseline.extra_credits_total;
+  if (PAID_TIERS.includes(kind)) {
+    // A new subscription: the tier landed, or the status went active.
+    if (current.plan === kind && baseline.plan !== kind) return true;
+    return (
+      current.subscription_status_raw === 'active' &&
+      baseline.subscription_status_raw !== 'active'
+    );
   }
-  // A new subscription: the tier landed, or the status went active.
-  if (current.plan === kind && baseline.plan !== kind) return true;
-  return (
-    current.subscription_status_raw === 'active' &&
-    baseline.subscription_status_raw !== 'active'
-  );
+  // Everything else is a top up SKU.
+  return current.extra_credits_total > baseline.extra_credits_total;
 }
 
 /**
@@ -254,7 +272,16 @@ interface CreditsState {
    * auto-renewing subscribers and non-subscribers.
    */
   ends_at: string | null;
-  ai_backend_kind: CreditsStatus['ai_backend_kind'];
+  /**
+   * The mode the UI displays. 260725: `null` = UNKNOWN — main has not yet
+   * reported a kind for the current auth scope. The UI must render neither
+   * the BYOK nor the cloud surfaces while unknown. This field is only ever
+   * set from main's reports (creditsGet, the config fallback, or the
+   * proxy:kind-changed push); it must NEVER default to a guessed mode — a
+   * guessed 'local' painted a BYOK UI over live cloud billing (recurring
+   * incident, last 260725).
+   */
+  ai_backend_kind: CreditsStatus['ai_backend_kind'] | null;
   /**
    * Raw subscription status passthrough. SettingsScreen and the plan cards
    * render contextual copy (past due, cancel-scheduled) by reading this
@@ -289,6 +316,15 @@ interface CreditsState {
    * opens TopUpModal, so the purchase runs where the checkout watcher lives.
    */
   topUpRequested: boolean;
+  /**
+   * 260725 — the pricing catalog every money surface reads (plan cards,
+   * TopUpModal, the consent modal + disclosures, ReceiptScreen). Seeded with
+   * the bundled launch copy and overlaid by `loadCatalog()` with the
+   * server-driven catalog, so a server-side pricing retune repaints the app
+   * without a release.
+   */
+  planCards: PlanCard[];
+  topUpPackages: TopUpPackage[];
   initialized: boolean;
   loading: boolean;
   /**
@@ -310,6 +346,8 @@ interface CreditsState {
   unsubStatus?: () => void;
   /** Returned by onCreditsHardStop(cb) — invoked in reset(). */
   unsubHardStop?: () => void;
+  /** Returned by onAiBackendKindChanged(cb) — invoked in reset(). */
+  unsubKind?: () => void;
   /** Removes the window-focus refetch backstop listener — invoked in reset(). */
   unsubFocus?: () => void;
 }
@@ -319,6 +357,12 @@ interface CreditsActions {
   init: () => Promise<void>;
   /** Re-fetch the snapshot and replace state. */
   refresh: () => Promise<void>;
+  /**
+   * 260725 — overlay the server pricing catalog onto planCards /
+   * topUpPackages. Failure keeps the current (bundled or last-good) copy;
+   * main caches the read, so calling alongside every refresh is cheap.
+   */
+  loadCatalog: () => Promise<void>;
   /** Open the Polar checkout for a new subscription or a top up package. */
   openCheckout: (kind: Exclude<CheckoutKind, 'resume'>) => Promise<void>;
   /**
@@ -376,7 +420,8 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   extra_credits_total: 0,
   renews_at: null,
   ends_at: null,
-  ai_backend_kind: 'local',
+  // UNKNOWN until main reports a kind (see the CreditsState field docs).
+  ai_backend_kind: null,
   subscription_status_raw: null,
   hardStopActive: false,
   hardStopReason: null,
@@ -385,6 +430,8 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   checkoutStatus: 'idle',
   checkoutKind: null,
   topUpRequested: false,
+  planCards: [...PLANS],
+  topUpPackages: [...TOP_UPS],
   initialized: false,
   loading: false,
   pushSeq: 0,
@@ -428,6 +475,14 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
       }
       prevPlanForReceipt = status.plan;
     });
+    // 260725: main's live kind feed. Applied UNCONDITIONALLY (no epoch/seq
+    // guard): every emit is main's current truth at emit time, and main
+    // re-emits on every scope switch, so last-write-wins is correct. This is
+    // what makes the mode display converge even when the snapshot reads race
+    // or fail — the display can lag by one event, never lie steady-state.
+    const unsubKind = sei.onAiBackendKindChanged(({ kind }) => {
+      set({ ai_backend_kind: kind });
+    });
     const unsubHardStop = sei.onCreditsHardStop((info) => {
       set({
         hardStopActive: true,
@@ -458,7 +513,11 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
       if (canListen) window.removeEventListener('focus', onWindowFocus);
     };
 
-    set({ unsubStatus, unsubHardStop, unsubFocus });
+    set({ unsubStatus, unsubHardStop, unsubKind, unsubFocus });
+
+    // Overlay the server pricing catalog (260725). Fire-and-forget: the
+    // bundled copy renders meanwhile, and a failure just keeps it.
+    void get().loadCatalog();
 
     // 2. Seed; skip applying if a push arrived during the await, OR if a
     //    reset() (auth/scope transition) superseded this load while it was in
@@ -502,7 +561,24 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     }
   },
 
+  loadCatalog: async (): Promise<void> => {
+    const epochBefore = loadEpoch;
+    try {
+      const catalog = await sei.creditsCatalog();
+      if (!catalog || loadEpoch !== epochBefore) return;
+      set({
+        planCards: plansFromCatalog(catalog),
+        topUpPackages: topUpsFromCatalog(catalog),
+      });
+    } catch {
+      // Keep the current (bundled or last-good) copy.
+    }
+  },
+
   refresh: async (): Promise<void> => {
+    // Piggyback a catalog re-read (main's TTL cache makes the repeat cheap)
+    // so a server-side pricing retune lands with the next visible refresh.
+    void get().loadCatalog();
     const epochBefore = loadEpoch;
     set({ loading: true });
     try {
@@ -603,14 +679,21 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     // loadEpoch docs) so its late resolution can't repopulate this freshly
     // reset store with the previous profile's values.
     loadEpoch += 1;
-    const { unsubStatus, unsubHardStop, unsubFocus } = get();
+    const { unsubStatus, unsubHardStop, unsubKind, unsubFocus } = get();
     unsubStatus?.();
     unsubHardStop?.();
+    unsubKind?.();
     unsubFocus?.();
     clearCheckoutTimers();
     checkoutBaseline = null;
     lastBillingActionAt = 0;
-    set({ ...INITIAL, unsubStatus: undefined, unsubHardStop: undefined, unsubFocus: undefined });
+    set({
+      ...INITIAL,
+      unsubStatus: undefined,
+      unsubHardStop: undefined,
+      unsubKind: undefined,
+      unsubFocus: undefined,
+    });
     // Clear the module-level prev-plan ref so a subsequent sign-in + re-init
     // treats the next push as a cold-load rather than a transition (otherwise a
     // sign-out from 'party' followed by sign-in as a free user could spuriously

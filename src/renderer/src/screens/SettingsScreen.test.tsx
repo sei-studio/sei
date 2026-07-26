@@ -69,13 +69,17 @@ describe('SettingsScreen (Party restyle structure)', () => {
     expect(src.includes('Switch to your own API key')).toBe(false);
   });
 
-  it('S.3: theme is a Seg with the System option', () => {
+  it('S.3: theme picker is four color swatches, no System option', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     expect(src.includes('aria-label="Theme"')).toBe(true);
-    // dark / light / system all offered.
-    expect(src.includes("value: 'dark'")).toBe(true);
-    expect(src.includes("value: 'light'")).toBe(true);
-    expect(src.includes("value: 'system'")).toBe(true);
+    // All four named themes offered as swatches (260724).
+    expect(src.includes("value: 'midnight'")).toBe(true);
+    expect(src.includes("value: 'ice'")).toBe(true);
+    expect(src.includes("value: 'acorn'")).toBe(true);
+    expect(src.includes("value: 'mint'")).toBe(true);
+    // System was retired from the picker; names ride the data-tip tooltip.
+    expect(src.includes("value: 'system'")).toBe(false);
+    expect(src.includes('data-tip={t.label}')).toBe(true);
     // Persisted via saveConfig theme_mode, and reads themeMode from the store.
     expect(src.includes('theme_mode: mode')).toBe(true);
     expect(src.includes('useUiStore((s) => s.themeMode)')).toBe(true);

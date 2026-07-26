@@ -105,6 +105,17 @@ export function AwakenScreen(): React.ReactElement {
     navigate({ kind: 'add-character' });
   };
 
+  // 260725 Knowledge import: same wizard, but the knowledge-upload phase runs
+  // first. Same quota gate as handleCreate (it still creates a character).
+  const handleImport = async (): Promise<void> => {
+    const quota = await sei.checkCreateQuota();
+    if (quota.blocked) {
+      setCreateLimit({ resetsAt: quota.resetsAt });
+      return;
+    }
+    navigate({ kind: 'add-character', importFirst: true });
+  };
+
   const handleWorld = (): void => {
     // Analytics (260707): the World (public-character discovery) tab was opened.
     sei.track('world_browsed');
@@ -128,17 +139,21 @@ export function AwakenScreen(): React.ReactElement {
           <span className={styles.matchedSky} aria-hidden="true" />
           <GatherPixels cycle="a" large className={styles.mark} />
           <h2 className={styles.matchedTitle}>Meet my companion</h2>
-          <p className={styles.matchedSub}>Match with a companion meant for you.</p>
+          <p className={styles.matchedSub}>Match with a unique AI companion.</p>
           <span className={styles.go}>{beginLabel}</span>
         </button>
         <div className={styles.origins}>
           <button type="button" className={styles.origin} onClick={() => void handleCreate()}>
-            <h3 className={styles.originTitle}>Create my own</h3>
-            <p className={styles.originSub}>Design from scratch.</p>
+            <h3 className={styles.originTitle}>Create new companion</h3>
+            <p className={styles.originSub}>Design your AI's personality, voice, and appearance.</p>
+          </button>
+          <button type="button" className={styles.origin} onClick={() => void handleImport()}>
+            <h3 className={styles.originTitle}>Connect existing companion</h3>
+            <p className={styles.originSub}>Import your companion from another platform.</p>
           </button>
           <button type="button" className={styles.origin} onClick={handleWorld}>
-            <h3 className={styles.originTitle}>Invite from World</h3>
-            <p className={styles.originSub}>Browse existing companions.</p>
+            <h3 className={styles.originTitle}>Explore available companions</h3>
+            <p className={styles.originSub}>Browse companions shared by others in World.</p>
           </button>
         </div>
       </div>

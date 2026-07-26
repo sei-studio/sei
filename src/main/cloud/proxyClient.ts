@@ -13,7 +13,7 @@
  *                                       plus the local apiKeyStore backend kind.
  *   - openCheckout(kind)             → asks the proxy to mint a Polar (Merchant
  *                                       of Record) checkout session URL, then
- *                                       RETURNS the allowlist-validated URL (the
+ *                                       RETURNS the validated URL (the
  *                                       main IPC handler opens it in the system
  *                                       browser).
  *   - changePlan(tier)               → 260724: upgrade/downgrade an EXISTING
@@ -29,8 +29,8 @@
  *   - Edge Function calls go through `callEdgeFunction` (15s timeout + AbortController
  *     reused from Phase 10).
  *   - Checkout + portal URLs are minted SERVER-SIDE by the proxy (the
- *     write-scoped Polar token never reaches the client) and validated against
- *     the externalUrlValidator allowlist before use.
+ *     write-scoped Polar token never reaches the client) and validated by
+ *     externalUrlValidator (protocol gate) before use.
  *   - No pricing, allowance or grant constants live here. The weekly-allowance
  *     model (260724) keeps every tunable number in Postgres (`plan_config`,
  *     `topup_config`) and hands the client a fully derived snapshot via the
@@ -97,14 +97,12 @@ export async function creditsGet(): Promise<CreditsStatus> {
   // (useCreditsStore.ai_backend_kind → SettingsScreen); a hardcoded placeholder
   // made a transient getSession() miss paint a cloud-proxy profile as BYOK,
   // while every actual LLM call kept reading config.json and spending cloud
-  // credits. Best-effort: a config read failure falls back to the schema default.
+  // credits. 260725: a config read failure PROPAGATES (no `catch → 'local'`) —
+  // reporting a guessed 'local' as fact is the same lie; a rejected creditsGet
+  // leaves the renderer's mode display on UNKNOWN, which is the truth.
   async function backendKind(): Promise<CreditsStatus['ai_backend_kind']> {
-    try {
-      const { getAiBackendKind } = await import('../apiKeyStore');
-      return await getAiBackendKind();
-    } catch {
-      return 'local';
-    }
+    const { getAiBackendKind } = await import('../apiKeyStore');
+    return await getAiBackendKind();
   }
 
   const session = await getSessionOrNull();
@@ -139,6 +137,16 @@ export async function creditsGet(): Promise<CreditsStatus> {
     backendKind(),
   ]);
 
+  // 260725: a FAILED read must throw so the renderer shows its snapshotFailed
+  // surface ("Couldn't check your account") — swallowing it here painted the
+  // account as a fresh free one (0%, 0/0 extra, no resets line), which is a
+  // lie. This is exactly what a v0.5 client sees against a database without
+  // the v0.5 migrations (no my_plan view → PostgREST 404). A missing ROW
+  // (planRow.data null, no error) is still fine: genuinely-new accounts have
+  // no plan row and fall through to the free-tier defaults below.
+  if (planRow.error) {
+    throw new Error(`my_plan read failed: ${planRow.error.message}`);
+  }
   const row = (planRow.data ?? {}) as Partial<CreditsStatus>;
   const tier: PlanTier =
     row.plan === 'quest' || row.plan === 'party' ? row.plan : 'free';
@@ -211,23 +219,27 @@ export async function cloudOverLimit(): Promise<boolean> {
  * the JWT-verified `user_id` into the session metadata (so the polar-webhook
  * can attribute the purchase). The write-scoped Polar token never reaches the
  * client. We then validate the returned URL against the externalUrlValidator
- * allowlist (T-uv9-01) — so a compromised proxy or MITM cannot redirect the
- * user to an arbitrary URL.
+ * protocol gate (T-uv9-01) — so a compromised proxy or MITM cannot hand the OS
+ * a `file:`/local-handler URI. 260725: the HOST half of that check was removed
+ * (see externalUrlValidator.ts), so a hostile URL can now reach an arbitrary
+ * SITE; the system browser is the trust boundary from there.
  *
- * This function does not open anything itself: it returns the allowlist-
- * validated URL and the main IPC handler (src/main/ipc.ts credits.openCheckout)
+ * This function does not open anything itself: it returns the validated URL
+ * and the main IPC handler (src/main/ipc.ts credits.openCheckout)
  * opens it in the user's SYSTEM BROWSER via shell.openExternal (260603 reverted
  * the brief 260602-uv9 in-app popup BrowserWindow back to the system browser).
  * The cancelSubscription / customer-portal flow also uses shell.openExternal.
  *
- * The renderer can only supply the `kind` enum (Zod-validated at the IPC
- * boundary, 13-02).
+ * The renderer supplies `kind` as a bounded string (Zod-validated at the IPC
+ * boundary, 13-02). 260725: no longer a closed enum — top up SKUs are server
+ * catalog rows now, and the proxy is the authority on what is purchasable
+ * (unknown kinds get 400 there).
  *
  * Returns `{ ok: true, url }` on success; `{ ok: false, code }` on no session,
- * network failure, or a non-allowlisted URL.
+ * network failure, or a URL the validator rejects.
  */
 export async function openCheckout(
-  kind: 'quest' | 'party' | 'topup_small' | 'topup_large',
+  kind: string,
 ): Promise<{ ok: true; url: string } | { ok: false; code: ProxyErrorCode }> {
   const session = await getSessionOrNull();
   if (!session) return { ok: false, code: PROXY_NO_SESSION };
@@ -262,9 +274,8 @@ export async function openCheckout(
   const url = body.url;
   if (!url) return { ok: false, code: PROXY_NETWORK };
 
-  // Validate the proxy-supplied checkout URL against the same allowlist the
-  // portal flow uses (260525-s09 H5 / T-uv9-01) BEFORE returning it to the
-  // popup opener. Allowlist is NOT relaxed.
+  // Validate the proxy-supplied checkout URL through the same gate the portal
+  // flow uses (260525-s09 H5 / T-uv9-01) BEFORE returning it to the opener.
   try {
     const { assertSafeExternalUrl } = await import('../lib/externalUrlValidator');
     assertSafeExternalUrl(url);
@@ -516,7 +527,7 @@ export async function recordSubscriptionConsent(args: {
  * The proxy's /billing/customer-portal route auths via the user's Supabase JWT,
  * looks up their Polar customer id (captured by polar-webhook), mints a Polar
  * customer session server-side, and returns the signed `customer_portal_url`.
- * The renderer hands that URL to shell.openExternal (after the allowlist check
+ * The renderer hands that URL to shell.openExternal (after the validator check
  * below). The write-scoped Polar token never reaches the client.
  *
  * Returns `{ ok: true, portalUrl }` on success so the renderer can show a
@@ -563,9 +574,9 @@ export async function cancelSubscription(): Promise<
   const portalUrl = body.portalUrl;
   if (!portalUrl) return { ok: false, code: PROXY_NO_PORTAL_URL };
 
-  // 260525-s09 H5: validate the proxy-supplied portalUrl against the same
-  // allowlist the IPC handler uses. A compromised proxy or MITM cannot
-  // redirect the user to an arbitrary URL via shell.openExternal. Reject
+  // 260525-s09 H5: validate the proxy-supplied portalUrl through the same gate
+  // the IPC handler uses, so a compromised proxy or MITM cannot hand the OS a
+  // non-https URI via shell.openExternal. Reject
   // case maps to PROXY_NO_PORTAL_URL (semantically: "no usable portal URL")
   // rather than a new error code — keeps the renderer error map unchanged.
   try {

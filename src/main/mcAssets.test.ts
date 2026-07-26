@@ -152,6 +152,29 @@ describe('resolveMcAssetFile', () => {
   });
 });
 
+describe('resolveMcAssetFile caching (260725)', () => {
+  it('does not memoize a failed read as an empty result', async () => {
+    // A root whose readdir fails right now (transient FS error stand-in).
+    const late = path.join(root, 'late-root');
+    expect(await resolveMcAssetFile(late, '1.21.4', 'iron_pickaxe')).toBeNull();
+
+    // The version folder appears, but the item table read still fails.
+    await mkdir(path.join(late, '1.21.4', 'items'), { recursive: true });
+    expect(await resolveMcAssetFile(late, '1.21.4', 'iron_pickaxe')).toBeNull();
+
+    // Once both reads succeed the item resolves — no restart needed.
+    await writeFile(
+      path.join(late, '1.21.4', 'items_textures.json'),
+      JSON.stringify([
+        { name: 'iron_pickaxe', model: 'iron_pickaxe', texture: 'minecraft:items/iron_pickaxe' },
+      ]),
+    );
+    expect(await resolveMcAssetFile(late, '1.21.4', 'iron_pickaxe')).toBe(
+      path.join(late, '1.21.4', 'items', 'iron_pickaxe.png'),
+    );
+  });
+});
+
 describe('skin server /mcassets endpoint', () => {
   let server: SkinServer;
 

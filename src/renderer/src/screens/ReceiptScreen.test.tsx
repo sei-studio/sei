@@ -47,9 +47,9 @@ describe('ReceiptScreen', () => {
     // The amount comes from the plan catalog, so Quest and Party can never
     // acknowledge each other's charge.
     expect(source.includes('{card.chargeUsd')).toBe(true);
-    const { planCard } = await import('../lib/planCatalog');
-    expect(planCard('quest').chargeUsd).toBe('$8.00');
-    expect(planCard('party').chargeUsd).toBe('$18.00');
+    const { planCard, PLANS } = await import('../lib/planCatalog');
+    expect(planCard(PLANS, 'quest').chargeUsd).toBe('$8.00');
+    expect(planCard(PLANS, 'party').chargeUsd).toBe('$18.00');
   });
 
   it('Test 3: source contains literal "Billed monthly"', () => {

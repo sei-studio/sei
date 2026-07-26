@@ -12,7 +12,9 @@
  *  - Backend Seg (Cloud / My key) opens SwitchBackendConfirmModal; selection
  *    reverts on cancel because the Seg value is derived from ai_backend_kind,
  *    which only changes after a confirmed proxyConfigure.
- *  - Theme Seg persists theme_mode (dark / light / system) via saveConfig.
+ *  - Theme Seg persists theme_mode (midnight / ice / acorn / mint / system)
+ *    via saveConfig; lives in its own Theme group (above Appearance) together
+ *    with the custom background picker + sliders (260724).
  *  - Reset-all iterates the character list; resend-verification / export /
  *    update-check state machines unchanged; all modal opens unchanged.
  *
@@ -27,7 +29,7 @@ import { useWizardStore } from '../lib/stores/useWizardStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useDataStore } from '../lib/stores/useDataStore';
-import { applyTheme, type ThemeMode } from '../lib/theme';
+import { applyTheme, resolvedScheme, type ThemeMode, type ThemeName } from '../lib/theme';
 import { Button } from '../components/Button';
 import { Seg } from '../components/Seg';
 import { Toggle } from '../components/Toggle';
@@ -40,19 +42,44 @@ import { ResetAllMemoriesConfirmModal } from '../components/ResetAllMemoriesConf
 import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
+import { BackgroundImagePicker } from '../components/BackgroundImagePicker';
 import { InfoTip } from '../components/InfoTip';
 import { CopyIcon } from '../components/icons';
 import type { UserConfig } from '@shared/characterSchema';
-import { CHAT_LANGUAGES, clampChatLanguage, type ChatLanguage } from '@shared/chatLanguage';
 import type { WizardState } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
 
 const API_KEY_BULLET_LEN = 24;
 
+/**
+ * Theme swatches (260724): each theme renders as a circle split diagonally
+ * between its two main colors; the name rides the shared data-tip tooltip.
+ * Literal hex is deliberate here — a swatch previews ANOTHER theme's palette,
+ * which the current theme's tokens cannot express. Keep in sync with the
+ * per-theme blocks in tokens.css (bg + accent of each).
+ */
+const THEME_SWATCHES: { value: ThemeName; label: string; colors: [string, string] }[] = [
+  { value: 'midnight', label: 'Midnight', colors: ['#04070f', '#7fb0ff'] },
+  { value: 'ice', label: 'Ice', colors: ['#f3f8ff', '#7fb0ff'] },
+  { value: 'acorn', label: 'Acorn', colors: ['#f8f3ea', '#ad8a63'] },
+  { value: 'mint', label: 'Mint', colors: ['#eff8f2', '#57b47c'] },
+];
+
 export function SettingsScreen(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const themeMode = useUiStore((s) => s.themeMode);
   const setThemeMode = useUiStore((s) => s.setThemeMode);
+  // 260724 — Theme section: custom background + its two sliders. App.tsx
+  // hydrates these from persisted config; changes here write straight through
+  // (image via the user:apply/remove-background IPC, sliders via saveConfig on
+  // release so a drag doesn't spam disk writes).
+  const backgroundImage = useUiStore((s) => s.backgroundImage);
+  const backgroundOpacity = useUiStore((s) => s.backgroundOpacity);
+  const backgroundBrightness = useUiStore((s) => s.backgroundBrightness);
+  const backgroundBust = useUiStore((s) => s.backgroundBust);
+  const setBackgroundImage = useUiStore((s) => s.setBackgroundImage);
+  const setBackgroundOpacity = useUiStore((s) => s.setBackgroundOpacity);
+  const setBackgroundBrightness = useUiStore((s) => s.setBackgroundBrightness);
   // ui-A7: developer-console toggle. Default OFF; SettingsScreen owns the
   // surface that flips it. Persisted via UserConfig.dev_console_visible so
   // a relaunch preserves the choice.
@@ -110,6 +137,11 @@ export function SettingsScreen(): React.ReactElement {
     const target = pendingSwitch;
     if (!target) return;
     await window.sei.proxyConfigure(target);
+    // 260725: re-seed the local whole-config copy so later wholesale saves
+    // from this screen carry the new backend kind, not the mount-time value.
+    // (Main also refuses renderer writes to ai_backend_kind — this keeps the
+    // copy honest, that keeps the store authoritative.)
+    void sei.getConfig().then(setCfg).catch(() => {});
     // Refresh credits store so the icon rail (plan 13-17) reacts on next tick.
     await useCreditsStore.getState().refresh();
     if (botRunning) {
@@ -145,6 +177,13 @@ export function SettingsScreen(): React.ReactElement {
   const [keyDraft, setKeyDraft] = useState<string>('');
   const [keyError, setKeyError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 260725 BYOK voice: ElevenLabs API key (TTS + Scribe recognition). Same
+  // set/update/collapse rhythm as the LLM API key above; the key itself never
+  // comes back — voiceElevenKeyStatus only reports presence.
+  const [hasElevenKey, setHasElevenKey] = useState<boolean>(false);
+  const [editingElevenKey, setEditingElevenKey] = useState<boolean>(false);
+  const [elevenKeyDraft, setElevenKeyDraft] = useState<string>('');
+  const [elevenKeyError, setElevenKeyError] = useState<string | null>(null);
 
   // Phase 10 (D-11) — Account panel state. Modals + transient action statuses.
   const [signOutModalOpen, setSignOutModalOpen] = useState<boolean>(false);
@@ -221,6 +260,13 @@ export function SettingsScreen(): React.ReactElement {
       setAdvancedUpdates(c.advanced_updates === true);
     });
     void sei.hasApiKey().then((b) => setHasKey(b));
+    // 260725: seed the ElevenLabs-key saved-state indicator (presence only).
+    void sei
+      .voiceElevenKeyStatus()
+      .then(({ present }) => setHasElevenKey(present))
+      .catch(() => {
+        /* non-fatal — the row just shows "Not set" */
+      });
     // Seed the user's profile picture for the chat-avatar section below.
     void sei
       .userGetProfile()
@@ -292,6 +338,63 @@ export function SettingsScreen(): React.ReactElement {
     setKeyError(null);
   };
 
+  // 260725 BYOK voice: ElevenLabs key save/remove. Mirrors onSaveKey; the key
+  // is write-only (never displayed back), presence drives the bullet readout.
+  const onSaveElevenKey = async (): Promise<void> => {
+    const trimmed = elevenKeyDraft.trim();
+    if (!trimmed) {
+      setElevenKeyError('Key cannot be empty.');
+      return;
+    }
+    try {
+      await sei.voiceElevenKeySet({ key: trimmed });
+      const { present } = await sei.voiceElevenKeyStatus();
+      setHasElevenKey(present);
+      setElevenKeyDraft('');
+      setEditingElevenKey(false);
+      setElevenKeyError(null);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] voiceElevenKeySet failed', err);
+      setElevenKeyError('Failed to save key. Try again.');
+    }
+  };
+
+  const onCancelElevenKey = (): void => {
+    setElevenKeyDraft('');
+    setEditingElevenKey(false);
+    setElevenKeyError(null);
+  };
+
+  const onRemoveElevenKey = async (): Promise<void> => {
+    try {
+      await sei.voiceElevenKeySet({ key: null });
+      setHasElevenKey(false);
+      setElevenKeyError(null);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] voiceElevenKeySet (clear) failed', err);
+      setElevenKeyError('Failed to remove key. Try again.');
+    }
+  };
+
+  // 260725 BYOK voice recognition: Scribe (cloud, needs the ElevenLabs key)
+  // vs local Whisper. Absent means 'scribe'; applies from the next call.
+  const sttEngine: 'scribe' | 'whisper' = cfg?.stt_engine ?? 'scribe';
+  const onSelectSttEngine = async (next: 'scribe' | 'whisper'): Promise<void> => {
+    if (!cfg || next === sttEngine) return;
+    const updated: UserConfig = { ...cfg, stt_engine: next };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (stt_engine) failed', err);
+      setCfg(cfg);
+      setSaveError('Failed to save. Try again.');
+    }
+  };
+
   // Theme Seg: dark / light / system. Every move writes straight through —
   // setThemeMode (App re-applies + wires the system listener), applyTheme for
   // an immediate paint, and saveConfig persists the mode.
@@ -311,26 +414,29 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  const currentProvider: Provider = (cfg?.provider ?? 'anthropic') as Provider;
-
-  // 260709: conversation language. Chat and voice calls pick the change up on
-  // the next message/call; a companion already summoned in-game keeps its
-  // session language until the next summon (same fork-time bridging as
-  // vision_mode). Optimistic-then-rollback like the toggles above.
-  const chatLanguage: ChatLanguage = clampChatLanguage(cfg?.chat_language);
-  const onSelectLanguage = async (next: ChatLanguage): Promise<void> => {
-    if (!cfg || next === chatLanguage) return;
-    const updated: UserConfig = { ...cfg, chat_language: next };
-    setCfg(updated);
-    try {
-      await sei.saveConfig(updated);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (chat_language) failed', err);
-      setCfg(cfg);
-      setSaveError('Failed to save. Try again.');
-    }
+  // 260724: background image applied/removed. Main already persisted
+  // background_image inside the IPC handler; mirror it into the local cfg copy
+  // so a later slider commit (which saves the WHOLE cfg) can't resurrect a
+  // stale ref.
+  const onBackgroundChanged = (ref: string | null): void => {
+    setBackgroundImage(ref);
+    setCfg((c) => (c ? { ...c, background_image: ref } : c));
   };
+
+  // Sliders update the store on every input (live repaint of the <main>
+  // background) and persist on release/blur.
+  const commitBackgroundSliders = (): void => {
+    if (!cfg) return;
+    const { backgroundOpacity: opacity, backgroundBrightness: brightness } = useUiStore.getState();
+    if (cfg.background_opacity === opacity && cfg.background_brightness === brightness) return;
+    void persistConfig({
+      ...cfg,
+      background_opacity: opacity,
+      background_brightness: brightness,
+    });
+  };
+
+  const currentProvider: Provider = (cfg?.provider ?? 'anthropic') as Provider;
 
   // ui-A1: provider tile click changes config.provider AND clears any existing
   // api key (the prior key is for a different vendor; reusing it would silently
@@ -685,33 +791,21 @@ export function SettingsScreen(): React.ReactElement {
         ) : null}
 
         {/* ── AI ──────────────────────────────────────────────── */}
+        {/* The Chat language row was removed (260725): the conversation
+            language is auto-detected from the player's voice (Scribe STT →
+            main's voice/languageAutoSwitch.ts). */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>AI</h3>
-
-          {/* Conversation language (260709): what companions speak in chat, on
-              calls, and in game. Not the app UI language. Chat and calls apply
-              it immediately; an in-game companion picks it up at next summon. */}
-          <div className={styles.row}>
-            <span className={styles.label}>
-              Chat language
-              <InfoTip
-                label="About chat language"
-                text="The language your companions speak and understand, in chat, on voice calls, and in game. The app itself stays in English. A companion already in your world switches on its next summon."
-              />
-            </span>
-            <Seg
-              aria-label="Chat language"
-              value={chatLanguage}
-              options={CHAT_LANGUAGES.map((l) => ({ value: l.code, label: l.native }))}
-              onChange={(v) => void onSelectLanguage(v)}
-            />
-          </div>
 
           {/* Backend switch — signed-in only (main rejects cloud-proxy for
               signed-out callers; a signed-out user is always local). Selecting
               the other option opens the confirm modal; the Seg value tracks
               ai_backend_kind, so cancelling reverts the selection. */}
-          {authState.kind === 'signed_in' ? (
+          {/* 260725: aiBackendKind === null means main has not reported a mode
+              yet — render no Backend switch rather than a guessed selection.
+              (A guessed "My key" here is how the UI claimed BYOK over live
+              cloud billing.) */}
+          {authState.kind === 'signed_in' && aiBackendKind !== null ? (
             <div className={styles.row}>
               <span className={styles.label}>
                 Backend
@@ -789,6 +883,73 @@ export function SettingsScreen(): React.ReactElement {
                 )}
               </div>
               {keyError ? <div className={styles.errorRow}>{keyError}</div> : null}
+
+              {/* ElevenLabs key (260725): powers voice on BYOK — TTS always,
+                  and Scribe recognition when selected below. Write-only, same
+                  UX as the API key row. */}
+              <div className={styles.row}>
+                <span className={styles.label}>
+                  ElevenLabs key
+                  <InfoTip
+                    label="About the ElevenLabs key"
+                    text="sorry :( i'm working to support other voice models. for now, tts only supports elevenlabs."
+                  />
+                </span>
+                {editingElevenKey ? (
+                  <span className={styles.editor}>
+                    <TextField
+                      value={elevenKeyDraft}
+                      onChange={setElevenKeyDraft}
+                      type="password"
+                      placeholder="Your ElevenLabs key"
+                      autoFocus
+                      onEnter={() => void onSaveElevenKey()}
+                      aria-label="ElevenLabs key"
+                    />
+                    <Button kind="primary" size="sm" onClick={() => void onSaveElevenKey()}>
+                      Save
+                    </Button>
+                    <Button kind="quiet" size="sm" onClick={onCancelElevenKey}>
+                      Cancel
+                    </Button>
+                  </span>
+                ) : (
+                  <>
+                    <span className={styles.monoValue}>
+                      {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : 'Not set'}
+                    </span>
+                    <Button kind="ghost" size="sm" onClick={() => setEditingElevenKey(true)}>
+                      {hasElevenKey ? 'Update' : 'Set'}
+                    </Button>
+                    {hasElevenKey ? (
+                      <Button kind="quiet" size="sm" onClick={() => void onRemoveElevenKey()}>
+                        Remove
+                      </Button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+              {elevenKeyError ? <div className={styles.errorRow}>{elevenKeyError}</div> : null}
+
+              {/* Voice recognition (260725): what transcribes your mic on
+                  calls. Applies from the next call. */}
+              <div className={styles.row}>
+                <span className={styles.label}>Voice recognition</span>
+                <Seg
+                  aria-label="Voice recognition"
+                  value={sttEngine}
+                  options={[
+                    { value: 'scribe', label: 'ElevenLabs Scribe' },
+                    { value: 'whisper', label: 'Local Whisper' },
+                  ]}
+                  onChange={(v) => void onSelectSttEngine(v)}
+                />
+              </div>
+              <p className={styles.helper}>
+                {sttEngine === 'whisper'
+                  ? 'Free and offline. Downloads a small model on first call.'
+                  : 'Better accuracy. Uses your ElevenLabs key.'}
+              </p>
             </>
           ) : null}
         </div>
@@ -822,22 +983,106 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         </div>
 
+        {/* ── Theme (260724) — named themes + custom background ── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>Theme</h3>
+          <div className={styles.row}>
+            <span className={styles.label}>Theme</span>
+            {/* Swatch circles instead of a Seg; System was retired from the UI
+                (a legacy 'system' mode still resolves, and highlights the
+                theme it currently resolves to until the user picks one). */}
+            <div className={styles.swatchRow} role="radiogroup" aria-label="Theme">
+              {THEME_SWATCHES.map((t) => {
+                const active =
+                  themeMode === t.value ||
+                  (themeMode === 'system' &&
+                    t.value === (resolvedScheme() === 'dark' ? 'midnight' : 'ice'));
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    aria-label={t.label}
+                    data-tip={t.label}
+                    className={[styles.swatch, active ? styles.swatchOn : '']
+                      .filter(Boolean)
+                      .join(' ')}
+                    style={{
+                      // Longhands on purpose: the `background` shorthand resets
+                      // background-origin to padding-box, which makes the
+                      // gradient tile wrap under the 2px border and ring the
+                      // circle with the opposite color. border-box origin runs
+                      // the two halves all the way to the rim.
+                      backgroundImage: `linear-gradient(135deg, ${t.colors[0]} 50%, ${t.colors[1]} 50%)`,
+                      backgroundOrigin: 'border-box',
+                      backgroundClip: 'border-box',
+                    }}
+                    onClick={() => void onSelectTheme(t.value)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+          {/* Custom background image, painted under the theme colors on the
+              main content panel. The two sliders only appear once set. */}
+          <div className={styles.row}>
+            <span className={styles.label}>
+              Background
+              <InfoTip
+                label="About custom backgrounds"
+                text="Shows your own picture behind the app, under the theme colors. Use the sliders to blend it in."
+              />
+            </span>
+            <BackgroundImagePicker
+              value={backgroundImage}
+              bust={backgroundBust}
+              onChange={onBackgroundChanged}
+            />
+          </div>
+          {backgroundImage ? (
+            <>
+              <div className={styles.row}>
+                <span className={styles.label}>Background visibility</span>
+                <input
+                  className={styles.slider}
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round(backgroundOpacity * 100)}
+                  aria-label="Background visibility"
+                  onChange={(e) => setBackgroundOpacity(Number(e.target.value) / 100)}
+                  onMouseUp={commitBackgroundSliders}
+                  onTouchEnd={commitBackgroundSliders}
+                  onBlur={commitBackgroundSliders}
+                />
+                <span className={styles.monoValue}>{Math.round(backgroundOpacity * 100)}%</span>
+              </div>
+              <div className={styles.row}>
+                <span className={styles.label}>Background brightness</span>
+                <input
+                  className={styles.slider}
+                  type="range"
+                  min={20}
+                  max={100}
+                  step={1}
+                  value={Math.round(backgroundBrightness * 100)}
+                  aria-label="Background brightness"
+                  onChange={(e) => setBackgroundBrightness(Number(e.target.value) / 100)}
+                  onMouseUp={commitBackgroundSliders}
+                  onTouchEnd={commitBackgroundSliders}
+                  onBlur={commitBackgroundSliders}
+                />
+                <span className={styles.monoValue}>{Math.round(backgroundBrightness * 100)}%</span>
+              </div>
+            </>
+          ) : null}
+        </div>
+
         {/* ── Appearance ──────────────────────────────────────── */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>Appearance</h3>
-          <div className={styles.row}>
-            <span className={styles.label}>Theme</span>
-            <Seg
-              aria-label="Theme"
-              value={themeMode}
-              options={[
-                { value: 'dark', label: 'Dark' },
-                { value: 'light', label: 'Light' },
-                { value: 'system', label: 'System' },
-              ]}
-              onChange={(m) => void onSelectTheme(m)}
-            />
-          </div>
           {/* Appearance & feel: "Realistic typing" pacing. On by default. */}
           <div className={styles.row}>
             <span className={styles.label}>

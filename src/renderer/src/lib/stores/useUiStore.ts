@@ -17,19 +17,19 @@ export type View =
   | { kind: 'loading' }
   | { kind: 'auth-choice' }
   | { kind: 'onboarding'; isReonboard: boolean }
-  // Dedicated full-screen onboarding step (after name/API, before home) that
-  // runs the Minecraft skin setup wizard inline. Routed to from OnboardingScreen
-  // and resumed on relaunch while UserConfig.skin_setup_pending is true.
+  // Full-screen Minecraft skin setup page (wizard inline). Legacy resume
+  // surface: onboarding no longer arms UserConfig.skin_setup_pending (260725,
+  // skin setup moved to the first Minecraft open — see lib/gameLaunch.ts),
+  // but profiles that armed it under the old flow still resume here once.
   | { kind: 'skin-setup' }
-  // Post-onboarding "what would you like to do?" chooser (chat vs minecraft).
-  // Shown once right after name onboarding; routes to skin-setup (minecraft) or
-  // straight home (chat). A full-page entry surface like onboarding/skin-setup.
-  | { kind: 'activity-picker' }
   | { kind: 'home' }
   // Party redesign §4.3 — the "awaken a companion" chooser view (replaces
   // AddCompanionChooserModal). A normal in-app surface: the rail stays visible.
   | { kind: 'awaken' }
-  | { kind: 'add-character' }
+  // `importFirst` (260725): entered via the Awaken "Import from another
+  // platform" tile — the wizard opens with the knowledge-upload phase before
+  // the usual questions.
+  | { kind: 'add-character'; importFirst?: boolean }
   | { kind: 'character'; id: string }
   // Phase 18/19 — Discord-style in-app chat with a companion, plus a
   // placeholder Discord-style voice-call surface. Both are normal in-app
@@ -44,11 +44,11 @@ export type View =
   // add-companion chooser or the App-level first-sign-in questionnaire gate:
   //   - profile-questions : the companion questionnaire (age + dynamics +
   //                          art style). `next` decides where Finish lands:
-  //                          'activity-picker' (mid-onboarding, signed-in),
-  //                          'home' (App gate), 'unique-gender' (Awaken cast
-  //                          gate), 'awaken' / 'settings' ("Update my
-  //                          preferences" entries — cancel also returns
-  //                          there). `mode`: 'missing' asks only unanswered
+  //                          'home' (App gate and mid-onboarding),
+  //                          'unique-gender' (Awaken cast gate), 'awaken' /
+  //                          'settings' ("Update my preferences" entries —
+  //                          cancel also returns there). `mode`: 'missing'
+  //                          asks only unanswered
   //                          questions; 'all' is a full retake prefilled
   //                          with current answers.
   //   - unique-gender     : the single per-slot gender question.
@@ -56,7 +56,7 @@ export type View =
   //   - unique-reveal     : the "meet <name>" moment after a successful gen.
   | {
       kind: 'profile-questions';
-      next: 'home' | 'unique-gender' | 'activity-picker' | 'awaken' | 'settings';
+      next: 'home' | 'unique-gender' | 'awaken' | 'settings';
       // 'missing' asks only unanswered questions; 'all' is a full retake
       // prefilled with current answers; 'first-fill' behaves like 'missing' for
       // question selection but, on Finish, continues a brand-new user straight
@@ -83,10 +83,6 @@ export type Modal =
   // pending summon when LAN flips open.
   | { kind: 'mc-setup'; tab: 'world' | 'skin'; searching: boolean }
   | { kind: 'delete-confirm'; characterId: string }
-  // One-time "run skin setup" nudge shown on the first summon attempt by a
-  // user who has never completed skin setup. Carries the character id so a
-  // "skip for now" choice can resume the deferred summon.
-  | { kind: 'skin-setup-prompt'; characterId: string }
   // Multi-summon guard: blocks summoning a character whose in-game username
   // collides with an already-summoned one (the world would kick the second
   // with `name_taken`). Carries both names + the shared username for the copy.
@@ -242,6 +238,20 @@ interface UiState {
    * companion to bring up a topic on its own. Persisted via
    * UserConfig.call_convo_starters; App.tsx hydrates. ON by default. */
   convoStartersEnabled: boolean;
+  /**
+   * 260724 — custom app background. `backgroundImage` is the portrait path ref
+   * ('_bg.png', served via sei-portrait://) or null when no background is set;
+   * opacity (0..1, how visible the image is through the theme's window color)
+   * and brightness (0.2..1) are the two Theme-section sliders. Persisted via
+   * UserConfig.background_image/opacity/brightness; App.tsx hydrates at
+   * bootstrap + scope change and paints the layered background on <main>.
+   * `backgroundBust` is a cache-buster bumped on each re-upload (the ref is a
+   * FIXED path, so the URL never changes without it).
+   */
+  backgroundImage: string | null;
+  backgroundOpacity: number;
+  backgroundBrightness: number;
+  backgroundBust: number;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -270,6 +280,11 @@ interface UiState {
   setCallOverlayEnabled: (v: boolean) => void;
   /** Set the conversation-starters toggle (quiet calls, companion starts a topic). */
   setConvoStartersEnabled: (v: boolean) => void;
+  /** 260724: set the custom background image ref; bumps the cache-buster. */
+  setBackgroundImage: (ref: string | null) => void;
+  /** 260724: set the background sliders (opacity 0..1, brightness 0.2..1). */
+  setBackgroundOpacity: (v: number) => void;
+  setBackgroundBrightness: (v: number) => void;
   /** #6: hang up / dismiss the call (resets mute + deafen). */
   endCall: () => void;
 }
@@ -299,6 +314,11 @@ export const useUiStore = create<UiState>((set) => ({
   callCaptions: false,
   callOverlayEnabled: false,
   convoStartersEnabled: true,
+  // Custom background: none until App.tsx hydrates from persisted config.
+  backgroundImage: null,
+  backgroundOpacity: 0.5,
+  backgroundBrightness: 1,
+  backgroundBust: 0,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
   navigate: (view) =>
@@ -312,6 +332,10 @@ export const useUiStore = create<UiState>((set) => ({
   setHomeTab: (tab) =>
     set(tab === 'world' ? { homeTab: tab, homeGreetingDismissed: true } : { homeTab: tab }),
   setDevConsoleVisible: (v) => set({ devConsoleVisible: v }),
+  setBackgroundImage: (ref) =>
+    set((s) => ({ backgroundImage: ref, backgroundBust: s.backgroundBust + 1 })),
+  setBackgroundOpacity: (v) => set({ backgroundOpacity: v }),
+  setBackgroundBrightness: (v) => set({ backgroundBrightness: v }),
   setRealisticTyping: (v) => set({ realisticTyping: v }),
   setAnalyticsOptOut: (v) => set({ analyticsOptOut: v }),
   setChatPanelHidden: (v) => set({ chatPanelHidden: v }),

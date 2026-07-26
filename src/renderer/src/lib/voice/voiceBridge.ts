@@ -19,6 +19,14 @@ interface VoiceHooks {
    */
   onRemoteEndCall(characterId: string): void;
   /**
+   * A chat turn for this companion FAILED for real (not an interrupt). Returns
+   * true when the voice director owns the failure — it is retrying the turn
+   * and showing "Reconnecting…", so the chat surface must NOT append its
+   * unspoken apology bubble. False (no call, or not a director-dispatched
+   * turn) keeps the chat surface's normal failure copy.
+   */
+  onTurnFailed(characterId: string): boolean;
+  /**
    * The player sent a message to an on-call companion through a surface the
    * voice director doesn't own (typed into the chat composer mid-call). On a
    * group call the director mirrors it to the other companions and captures the
@@ -62,6 +70,14 @@ export function requestRemoteEndCall(characterId: string): void {
     hooks?.onRemoteEndCall(characterId);
   } catch {
     /* voice layer must never break chat */
+  }
+}
+
+export function notifyTurnFailed(characterId: string): boolean {
+  try {
+    return hooks?.onTurnFailed(characterId) ?? false;
+  } catch {
+    return false;
   }
 }
 

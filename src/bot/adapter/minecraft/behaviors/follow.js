@@ -97,6 +97,11 @@ export function startFollow(bot, config) {
   // LLM-issued movement action (goTo, dig, etc.) without an explicit pause.
   clearInterval(_interval)
   _interval = setInterval(() => {
+    // 260725 play/pause: the body is frozen, so do not re-install the follow
+    // goal or judge progress. `_target` is KEPT — the player pressing play
+    // resumes trailing where it left off. The progress clock is held at "now"
+    // so a long pause never surfaces as a bogus stuck report on resume.
+    if (bot._seiPaused) { _stuck = null; _lastPos = null; _lastProgressAt = Date.now(); return }
     if (!_target) { _stuck = null; _lastPos = null; return }
     const ent = resolveTargetEntity()
     const me = bot?.entity

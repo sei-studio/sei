@@ -49,6 +49,7 @@ function localCharPath(id: string): string { return path.join(localCharsDir(), `
 function localIndexPath(): string { return path.join(localCharsDir(), 'index.json'); }
 function localConfigPath(): string { return path.join(localRoot(), 'config.json'); }
 function localMemoryDir(id: string): string { return path.join(localRoot(), 'memory', id); }
+function localKnowledgeDir(id: string): string { return path.join(localRoot(), 'knowledge', id); }
 function localSkinPath(id: string): string { return path.join(localRoot(), 'skins', `${id}.png`); }
 function localPortraitPath(id: string): string { return path.join(localRoot(), 'portraits', `${id}.png`); }
 
@@ -163,6 +164,7 @@ export async function importLocalProfileInto(
       // Move local-only assets across FIRST — saveCharacterRaw pre-creates the
       // target memory dir, which would otherwise make the dir move a no-op.
       await moveFileIfPresent(localMemoryDir(id), paths.memoryDir(id));
+      await moveFileIfPresent(localKnowledgeDir(id), paths.knowledgeDir(id));
       await moveFileIfPresent(localSkinPath(id), paths.skinPngPath(id));
       await moveFileIfPresent(localPortraitPath(id), paths.portraitPath(id));
       // Then write the character into the account (stamp ownership so the

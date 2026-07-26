@@ -28,6 +28,7 @@ import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore } from './stores/useChessStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
+import { useWizardStore } from './stores/useWizardStore';
 import { attemptSummon } from './summonFlow';
 import { sei } from './ipcClient';
 
@@ -76,6 +77,30 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
 }
 
 /**
+ * First-open Minecraft skin setup (260725). Game setup happens when a game is
+ * FIRST opened, not during onboarding (the post-onboarding activity picker +
+ * skin-setup page were removed). The first time this account opens the
+ * Minecraft surface having never run skin setup, open the setup wizard over
+ * the launch panel — the welcome step carries "Set up later", so it informs
+ * rather than blocks, and it stays re-runnable from Settings. Gated by the
+ * same profile-scoped wizardPromptShown flag the old first-summon nudge used,
+ * so it shows at most once per account (users already nudged before this
+ * change are not re-prompted).
+ */
+async function maybeOfferSkinSetup(): Promise<void> {
+  try {
+    const { shown } = await sei.wizardPromptShown('get');
+    if (shown) return;
+    const wiz = await sei.getWizardState();
+    if (wiz.hasRunOnce) return;
+    await sei.wizardPromptShown('set');
+    useWizardStore.getState().openWizard(false);
+  } catch {
+    // Best-effort — never let setup bookkeeping block opening the game.
+  }
+}
+
+/**
  * Open a game's surface in the chat game area (the picker tile action).
  * Clears the OTHER surfaces' open-intent first so the single aside swaps to
  * the requested game instead of staying on a stale panel (chess has top
@@ -97,11 +122,16 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
 
   if (gameId === 'chess') {
     chess.openPanel(characterId);
-  } else if (useDataStore.getState().summons[characterId]?.kind !== 'online') {
-    // Minecraft with a live bot needs no flag: the dashboard is always open
-    // while the bot is online (no hide/minimize). Offline, open the launch
-    // panel.
-    dash.setLaunch(characterId, true);
+  } else {
+    if (useDataStore.getState().summons[characterId]?.kind !== 'online') {
+      // Minecraft with a live bot needs no flag: the dashboard is always open
+      // while the bot is online (no hide/minimize). Offline, open the launch
+      // panel.
+      dash.setLaunch(characterId, true);
+    }
+    // First Minecraft open for a never-set-up account → skin-setup wizard
+    // over the launch panel (async, best-effort).
+    void maybeOfferSkinSetup();
   }
 }
 

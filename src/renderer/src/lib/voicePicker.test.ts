@@ -8,6 +8,9 @@ import {
   reduceSelection,
   isUnlistedVoice,
   assetPathFor,
+  normalizeVoiceParams,
+  PITCH_DEFAULT,
+  CALMNESS_DEFAULT,
   NO_VOICE_ID,
 } from './voicePicker';
 
@@ -16,10 +19,10 @@ function v(id: string, gender: string): VoiceInfo {
 }
 
 describe('groupVoices', () => {
-  it('groups by gender in female, male, neutral order with sentence-case titles', () => {
+  it('groups by gender in female, male, neutral order with tab-label titles', () => {
     const groups = groupVoices([v('m1', 'male'), v('f1', 'female'), v('n1', 'neutral')]);
     expect(groups.map((g) => g.key)).toEqual(['female', 'male', 'neutral']);
-    expect(groups.map((g) => g.title)).toEqual(['Female voices', 'Male voices', 'Neutral voices']);
+    expect(groups.map((g) => g.title)).toEqual(['Feminine', 'Masculine', 'Neutral']);
   });
 
   it('preserves pool order within a group', () => {
@@ -93,5 +96,21 @@ describe('assetPathFor', () => {
     expect(assetPathFor('v1', 'de')).toBe('./voice-previews/v1-en.mp3');
     expect(assetPathFor('v1', '')).toBe('./voice-previews/v1-en.mp3');
     expect(assetPathFor('v1', 'EN')).toBe('./voice-previews/v1-en.mp3');
+  });
+});
+
+describe('normalizeVoiceParams', () => {
+  it('drops keys sitting at their engine default', () => {
+    expect(normalizeVoiceParams({ pitch: PITCH_DEFAULT, calmness: CALMNESS_DEFAULT })).toEqual({});
+    expect(normalizeVoiceParams({ pitch: PITCH_DEFAULT, calmness: 0.2 })).toEqual({ calmness: 0.2 });
+  });
+
+  it('keeps non-default values', () => {
+    expect(normalizeVoiceParams({ pitch: 1.2, calmness: 0.05 })).toEqual({ pitch: 1.2, calmness: 0.05 });
+  });
+
+  it('passes through absent keys untouched', () => {
+    expect(normalizeVoiceParams({})).toEqual({});
+    expect(normalizeVoiceParams({ pitch: 0.9 })).toEqual({ pitch: 0.9 });
   });
 });

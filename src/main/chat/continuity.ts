@@ -279,6 +279,9 @@ async function foldIntoSummary(
       'You maintain a running summary of the relationship and conversation between a game companion ("You") and their player. ' +
       'Fold the new messages into the existing summary. Keep it under 150 words, written first-person from the companion\'s point of view. ' +
       'Prioritise durable facts about the player, ongoing plans, running jokes, and emotional beats; drop small talk. ' +
+      'Anchor time-bound things to their date using the message stamps — "planning an LA trip (11 Jul)", not just ' +
+      '"planning an LA trip". The summary is read days or weeks later, and an undated event reads as if it just ' +
+      'happened. Keep the anchors already in the existing summary. ' +
       'Record only what was actually said — never assert current world/game state (e.g. do not write "we\'re playing now"); ' +
       'an announced join can fail after the fact. Output only the updated summary text.' +
       personaBlock;

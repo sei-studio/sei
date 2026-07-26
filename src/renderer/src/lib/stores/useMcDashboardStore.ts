@@ -16,12 +16,15 @@
 
 import { create } from 'zustand';
 import type { McDashboardSnapshot } from '@shared/mcDashboardIpc';
+import type { McGameMode } from '@shared/ipc';
 
 /** Narrow local view of the dashboard members on window.sei. Single cast. */
 interface McDashApi {
   mcDashboardGet(characterId: string): Promise<McDashboardSnapshot | null>;
   mcDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
   onMcDashboardSnapshot(cb: (s: McDashboardSnapshot) => void): () => void;
+  mcSetPaused(characterId: string, paused: boolean): Promise<boolean>;
+  mcSetMode(characterId: string, mode: McGameMode): Promise<boolean>;
 }
 
 function dashApi(): Partial<McDashApi> {
@@ -39,6 +42,13 @@ interface McDashboardStoreState {
    */
   launch: Record<string, boolean>;
   hydrated: Record<string, boolean>;
+  /**
+   * 260725 runtime controls, per character. NEVER persisted — reset() (bot
+   * left / session ended) drops the entry, so every summon starts unpaused
+   * and proactive. Absent entry == the default { paused: false, mode:
+   * 'proactive' }.
+   */
+  controls: Record<string, { paused: boolean; mode: McGameMode } | undefined>;
 
   /** Open/close the pre-summon launch panel for a character. */
   setLaunch: (characterId: string, open: boolean) => void;
@@ -46,7 +56,11 @@ interface McDashboardStoreState {
   hydrate: (characterId: string) => Promise<void>;
   /** Visibility hint → the bot only samples the minimap while true. */
   setWatching: (characterId: string, watching: boolean) => void;
-  /** Session ended: drop the snapshot. */
+  /** 260725: play/pause toggle — optimistic local state + bot forward. */
+  setPaused: (characterId: string, paused: boolean) => void;
+  /** 260725: reactive/proactive mode — optimistic local state + bot forward. */
+  setMode: (characterId: string, mode: McGameMode) => void;
+  /** Session ended: drop the snapshot + runtime controls. */
   reset: (characterId: string) => void;
 }
 
@@ -67,6 +81,7 @@ export const useMcDashboardStore = create<McDashboardStoreState>((set, get) => {
     snapshots: {},
     launch: {},
     hydrated: {},
+    controls: {},
 
     setLaunch: (characterId, open) => {
       set((s) => ({ launch: { ...s.launch, [characterId]: open } }));
@@ -95,10 +110,32 @@ export const useMcDashboardStore = create<McDashboardStoreState>((set, get) => {
         });
     },
 
+    setPaused: (characterId, paused) => {
+      const cur = get().controls[characterId] ?? { paused: false, mode: 'proactive' as McGameMode };
+      set((s) => ({ controls: { ...s.controls, [characterId]: { ...cur, paused } } }));
+      void dashApi()
+        .mcSetPaused?.(characterId, paused)
+        .catch(() => {
+          /* session already gone — reset() clears the local state anyway */
+        });
+    },
+
+    setMode: (characterId, mode) => {
+      const cur = get().controls[characterId] ?? { paused: false, mode: 'proactive' as McGameMode };
+      set((s) => ({ controls: { ...s.controls, [characterId]: { ...cur, mode } } }));
+      void dashApi()
+        .mcSetMode?.(characterId, mode)
+        .catch(() => {
+          /* session already gone */
+        });
+    },
+
     reset: (characterId) => {
       set((s) => ({
         snapshots: { ...s.snapshots, [characterId]: null },
         hydrated: { ...s.hydrated, [characterId]: false },
+        // Runtime-only by design: the next summon starts unpaused + proactive.
+        controls: { ...s.controls, [characterId]: undefined },
       }));
     },
   };

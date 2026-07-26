@@ -13,6 +13,13 @@
   background: var(--window);
 }
 
+/* 260724: with a custom background active, <main> already paints the tint the
+   whole app uses, so the chat root's opaque fill would just block the image.
+   Drop it and let the shared tint show through. */
+:root[data-app-bg] .root {
+  background: transparent;
+}
+
 /* Everything under the top bar: main column + the presence side panel. */
 .content {
   display: flex;
@@ -434,6 +441,14 @@
 
 .composerDock > * {
   pointer-events: auto;
+}
+
+/* 260724: over a custom background the band goes fully invisible — the area
+   around the message box shows the background like everything else (messages
+   scrolling under the gap are visible; the composer itself stays opaque).
+   Without a background the band is --window on --window, invisible anyway. */
+:root[data-app-bg] .composerDock {
+  background: transparent;
 }
 
 /* #3 — transient "copied to clipboard" flash, centered above the message box. */

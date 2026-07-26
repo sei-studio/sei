@@ -1420,10 +1420,10 @@ async function runPipeline(args: {
     shared: false,
     slug: null,
     metadata: {
-      proactiveness: 1,
       // Texting register off the sheet (see Sheet.punctuation). Promoted to a
-      // first-class metadata key — same forward-compat slot as proactiveness —
-      // so the bot init + chat surface read it without digging into the sheet.
+      // first-class metadata key (the metadata record is the forward-compat
+      // slot) so the bot init + chat surface read it without digging into the
+      // sheet.
       punctuation: sheet.punctuation === 'deliberate' ? 'deliberate' : 'casual',
       soulcaster_sheet: sheet as unknown as Record<string, unknown>,
       // TTS voice for voice calls. metadata rides the cloud sync verbatim, so

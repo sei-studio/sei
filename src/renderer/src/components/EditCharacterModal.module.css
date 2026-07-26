@@ -135,48 +135,6 @@
   color: var(--green);
 }
 
-/* ── Proactiveness segmented picker ───────────────────────────────────── */
-.proactivenessPicker {
-  display: flex;
-  gap: 4px;
-}
-
-.proactivenessStep {
-  flex: 1;
-  padding: 8px 4px;
-  font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  cursor: pointer;
-  transition: background 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease);
-}
-
-.proactivenessStep:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.proactivenessStep:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.proactivenessStepOn {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.proactivenessHelp {
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--muted);
-}
-
 /* ── Persona mode tabs (Standard / Advanced) — underline like detail tabs ── */
 .modeTabs {
   display: flex;

@@ -219,6 +219,95 @@ export const PencilIcon: React.FC<IconProps> = ({ size = 14 }) => (
 );
 
 /**
+ * UploadIcon — up-arrow over a tray. The Knowledge drop-zone glyph.
+ * Stroke-only, inherits currentColor.
+ */
+export const UploadIcon: React.FC<IconProps> = ({ size = 24 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M12 15V4" />
+    <path d="M7 9l5-5 5 5" />
+    <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+  </svg>
+);
+
+/**
+ * FileTextIcon — a sheet with a folded corner and text lines. Marks uploaded
+ * knowledge files in lists. Stroke-only, inherits currentColor.
+ */
+export const FileTextIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M14 2H6a1.5 1.5 0 0 0-1.5 1.5v17A1.5 1.5 0 0 0 6 22h12a1.5 1.5 0 0 0 1.5-1.5V7.5L14 2z" />
+    <path d="M14 2v5.5h5.5" />
+    <path d="M8.5 12h7M8.5 15.5h7M8.5 18.5h4" />
+  </svg>
+);
+
+/**
+ * NotePlusIcon — a sheet with a plus. The "Add text context" affordance in
+ * the Knowledge popup. Stroke-only, inherits currentColor.
+ */
+export const NotePlusIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M14 2H6a1.5 1.5 0 0 0-1.5 1.5v17A1.5 1.5 0 0 0 6 22h12a1.5 1.5 0 0 0 1.5-1.5V7.5L14 2z" />
+    <path d="M14 2v5.5h5.5" />
+    <path d="M12 11v6M9 14h6" />
+  </svg>
+);
+
+/**
+ * TrashIcon — delete affordance (knowledge entries, etc.). Stroke-only so it
+ * picks up the surrounding text color via `currentColor`.
+ */
+export const TrashIcon: React.FC<IconProps> = ({ size = 14 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 6h18" />
+    <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+    <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
+    <path d="M10 11v6M14 11v6" />
+  </svg>
+);
+
+/**
  * Two-arrows-in-a-circle rotate / swap icon used to flip the persona ↔
  * description sub-panes on CharacterPage. Stroke-only so it picks up the
  * surrounding text color via `currentColor`.

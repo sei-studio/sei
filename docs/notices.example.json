@@ -1,0 +1,16 @@
+{
+  "notices": [
+    {
+      "id": "260725-inbox",
+      "title": "Introducing the inbox",
+      "date": "2026-07-25",
+      "body": "Sei can now send you a note when something changes.\n\n## What lands here\n\n- New features worth knowing about\n- Server maintenance windows\n- Anything that changes how your companion behaves\n\nYou can reopen this inbox any time from **Playtime**, under Submit feedback.\n"
+    },
+    {
+      "id": "260720-voice-calls",
+      "title": "Voice calls",
+      "date": "2026-07-20",
+      "body": "Your companion can talk now.\n\n![The call screen](https://sei.gg/img/call.png)\n\nPick a voice in Edit companion, then press the phone button in chat. Captions are off by default and live in Settings, under Appearance and feel.\n\n> Calls use the same credits as chat.\n"
+    }
+  ]
+}

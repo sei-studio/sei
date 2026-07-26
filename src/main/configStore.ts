@@ -90,6 +90,83 @@ export async function updateConfig(
 }
 
 /**
+ * The ONLY UserConfig keys a renderer save (config:save IPC) may write.
+ *
+ * 260725: the renderer's settings surfaces hold a whole-config copy taken at
+ * mount and save it back wholesale on every toggle, so anything main wrote in
+ * between was silently reverted — the recurring "switched back to local" bug
+ * (ai_backend_kind), a mid-call language auto-switch (chat_language), and,
+ * with a longer fuse, every other main-owned field: a 2h Minecraft session
+ * folds into total_playtime_ms under the lock and the next toggle from a
+ * still-mounted Settings screen writes the pre-session value back, losing the
+ * playtime for good.
+ *
+ * Shielding fields one at a time never converges, so the direction is
+ * inverted: this allowlist enumerates the settings the RENDERER owns (the
+ * onboarding submit, the Settings rows, the sticky UI preferences), and every
+ * other field is taken from the on-disk config inside updateConfig's lock. A
+ * key the renderer omits keeps its on-disk value, so optional fields are never
+ * dropped by a save that predates them.
+ *
+ * Deliberately NOT here (main is the only legitimate writer):
+ *   ai_backend_kind / ai_backend_kind_source  apiKeyStore.setAiBackendKind
+ *   chat_language                             voice/languageAutoSwitch.ts
+ *   profile_picture / background_image        userProfile.ts / backgroundStore.ts
+ *   creation_times                            characterStore quota
+ *   removed_/added_default_ids, added_world_ids   library IPC handlers
+ *   user_profile, dynamics_granted            prefs:save / uniqueGeneration.ts
+ *   analytics_opt_out, analytics_install_id   analytics.ts (own IPC)
+ *   total_playtime_ms + the one-shot migration markers   session end / migration.ts
+ * Onboarding still sends several of those (it builds a whole fresh config);
+ * dropping its values is safe because a fresh profile's on-disk value is
+ * already the schema default, and the one-shot migrations it pre-marks are
+ * no-ops on a fresh install.
+ */
+const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
+  'mc_username',
+  'preferred_name',
+  'provider',
+  'provider_config',
+  'theme_mode',
+  'background_opacity',
+  'background_brightness',
+  'linuxBasicTextWarnDismissed',
+  'hide_vanilla_host_warning',
+  'hide_modded_host_warning',
+  'dev_console_visible',
+  'advanced_updates',
+  'realistic_typing',
+  'call_captions',
+  'call_overlay_enabled',
+  'call_convo_starters',
+  'chat_panel_hidden',
+  'skin_setup_pending',
+  'has_been_welcomed',
+  'feedback_reward_claimed',
+  'vision_mode',
+  'stt_engine',
+  'stt_local_fallback',
+];
+
+/**
+ * Save a config object that came from the RENDERER (the config:save IPC):
+ * renderer-owned settings are taken from the payload, everything else from
+ * the freshly-read on-disk config, under the file lock. See
+ * RENDERER_SETTABLE_KEYS above for why.
+ */
+export async function saveConfigFromRenderer(config: UserConfig): Promise<void> {
+  const incoming = config as Record<string, unknown>;
+  await updateConfig((current) => {
+    const next = { ...current } as Record<string, unknown>;
+    for (const key of RENDERER_SETTABLE_KEYS) {
+      // Absent (an optional field the renderer's copy never carried) → keep disk.
+      if (key in incoming) next[key] = incoming[key];
+    }
+    return next as UserConfig;
+  });
+}
+
+/**
  * Fold a finished session's duration into the profile's cumulative
  * `total_playtime_ms`. Atomic read-modify-write under the same file lock as
  * saveConfig so a concurrent settings write can't clobber the increment.

@@ -131,6 +131,8 @@ export function startGaze(bot, config) {
 
   function tick() {
     if (_disposed) return
+    // 260725 play/pause: an AFK player's head does not track you around.
+    if (bot._seiPaused) return
     if (bot._seiGazeHold > 0) return
     if (bot.isSleeping) return
     if (bot._seiReflexActive) return

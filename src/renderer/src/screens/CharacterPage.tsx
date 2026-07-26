@@ -22,6 +22,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -36,10 +37,9 @@ import { IdTag } from '../components/IdTag';
 import { SkinEditor } from '../components/SkinEditor';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
+import { KnowledgeModal } from '../components/KnowledgeModal';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ReportCompanionModal } from '../components/ReportCompanionModal';
-import { ProactivenessBar } from '../components/ProactivenessBar';
-import { getProactiveness } from '../lib/proactiveness';
 import { formatDate } from '../lib/formatDate';
 import { requestGameLaunch, openGame } from '../lib/gameLaunch';
 import { BackIcon, GearIcon, RotateIcon } from '../components/icons';
@@ -140,8 +140,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // Unbind = remove from library / delete. World-added chars unbind; owned
   // chars delete. Which confirm modal renders is chosen by isAddedFromWorld.
   const [releaseConfirmOpen, setReleaseConfirmOpen] = useState<boolean>(false);
-  // Settings (gear) popup in the deploy row — holds Reset memory + Unbind.
+  // Settings (gear) popup in the deploy row — holds Edit companion (owned
+  // customs), Knowledge, Reset memory and Unbind.
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  // 260725 Knowledge popup — available for every character.
+  const [knowledgeOpen, setKnowledgeOpen] = useState<boolean>(false);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -325,8 +328,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // World-preview / removed-default entries aren't in the library yet — no
   // memory to reset and nothing to release.
   const isPreview = isWorldPreview || isRemovedDefault;
-  const themeAttr = document.documentElement.getAttribute('data-theme');
-  const theme: 'light' | 'dark' = themeAttr === 'dark' ? 'dark' : 'light';
+  const theme: 'light' | 'dark' = resolvedScheme();
   const palette = pickPalette(character.id + character.name, theme);
   // Per-character accent tint for the portrait bloom.
   const tint = palette[2] ?? palette[1] ?? 'var(--accent)';
@@ -665,10 +667,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               previewCaption="This is how they appear in your world."
               onEditSkin={viewOnly ? undefined : () => openEdit('appearance')}
             />
-            <div className={styles.proactRow}>
-              <span className="u-lbl">Proactiveness</span>
-              <ProactivenessBar level={getProactiveness(character)} size="md" showLabel block />
-            </div>
           </div>
         )}
 
@@ -710,65 +708,75 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 Play
               </Button>
               <div className={styles.settingsWrap} ref={settingsRef}>
-                {!viewOnly ? (
-                  // Owned custom character: the gear goes STRAIGHT to the editor.
-                  // Reset memory and Unbind both live inside Edit, so a dropdown
-                  // that just repeats them is redundant. (viewOnly is true for
-                  // defaults you haven't adopted, foreign World invites, and
-                  // non-editable kinds — those keep the menu below since they
-                  // have no editor.)
-                  <Button
-                    kind="ghost"
-                    size="lg"
-                    aria-label="Edit companion"
-                    onClick={() => openEdit('basic')}
+                {/* 260725: EVERY character gets the settings menu (it used to
+                    jump straight into the editor for owned customs). Knowledge
+                    is available for all characters — including defaults and
+                    World invites — so it sits here next to Reset memory and
+                    Unbind; Edit companion leads the menu for owned customs. */}
+                <Button
+                  kind="ghost"
+                  size="lg"
+                  aria-haspopup="menu"
+                  aria-expanded={settingsOpen}
+                  aria-label="Companion settings"
+                  onClick={() => setSettingsOpen((o) => !o)}
+                >
+                  <GearIcon size={18} />
+                </Button>
+                {settingsOpen ? (
+                  <div
+                    className={styles.settingsMenu}
+                    role="menu"
+                    aria-label="Companion settings"
                   >
-                    <GearIcon size={18} />
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      kind="ghost"
-                      size="lg"
-                      aria-haspopup="menu"
-                      aria-expanded={settingsOpen}
-                      aria-label="Companion settings"
-                      onClick={() => setSettingsOpen((o) => !o)}
-                    >
-                      <GearIcon size={18} />
-                    </Button>
-                    {settingsOpen ? (
-                      <div
-                        className={styles.settingsMenu}
-                        role="menu"
-                        aria-label="Companion settings"
+                    {!viewOnly ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={styles.settingsItem}
+                        onClick={() => {
+                          setSettingsOpen(false);
+                          openEdit('basic');
+                        }}
                       >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={styles.settingsItem}
-                          onClick={() => {
-                            setSettingsOpen(false);
-                            onResetMemoryClick();
-                          }}
-                        >
-                          Reset memory
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={`${styles.settingsItem} ${styles.settingsItemDanger}`}
-                          onClick={() => {
-                            setSettingsOpen(false);
-                            setReleaseConfirmOpen(true);
-                          }}
-                        >
-                          Unbind
-                        </button>
-                      </div>
+                        Edit companion
+                      </button>
                     ) : null}
-                  </>
-                )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.settingsItem}
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        setKnowledgeOpen(true);
+                      }}
+                    >
+                      Knowledge
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.settingsItem}
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        onResetMemoryClick();
+                      }}
+                    >
+                      Reset memory
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={`${styles.settingsItem} ${styles.settingsItemDanger}`}
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        setReleaseConfirmOpen(true);
+                      }}
+                    >
+                      Unbind
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </>
           )}
@@ -785,6 +793,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               ? `Going public needs a description. Add one, then close this window to continue publishing ${character.name}.`
               : undefined
           }
+        />
+      ) : null}
+      {knowledgeOpen ? (
+        <KnowledgeModal
+          characterId={character.id}
+          characterName={character.name}
+          onClose={() => setKnowledgeOpen(false)}
         />
       ) : null}
       {resetConfirmOpen ? (

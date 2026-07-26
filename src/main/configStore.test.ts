@@ -11,7 +11,13 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _setUserDataOverride, paths } from './paths';
-import { addPlaytimeMs, backfillTotalPlaytimeOnce, loadConfig, saveConfig } from './configStore';
+import {
+  addPlaytimeMs,
+  backfillTotalPlaytimeOnce,
+  loadConfig,
+  saveConfig,
+  saveConfigFromRenderer,
+} from './configStore';
 import { CharacterSchema } from '../shared/characterSchema';
 
 const UUID_A = '11111111-1111-4111-8111-111111111111';
@@ -78,6 +84,109 @@ describe('addPlaytimeMs', () => {
     const cfg = await loadConfig();
     expect(cfg.preferred_name).toBe('Ouen');
     expect(cfg.total_playtime_ms).toBe(1234);
+  });
+});
+
+describe('saveConfigFromRenderer', () => {
+  it('a stale renderer copy can never revert ai_backend_kind (the recurring "switched back to local" bug)', async () => {
+    // The exact failure sequence: SettingsScreen snapshots the config at
+    // mount, the user confirms Switch to cloud (setAiBackendKind path writes
+    // cloud-proxy/user), then any toggle saves the whole stale copy back.
+    const mountSnapshot = await loadConfig(); // ai_backend_kind: 'local'
+    await saveConfig({
+      ...(await loadConfig()),
+      ai_backend_kind: 'cloud-proxy',
+      ai_backend_kind_source: 'user',
+    });
+    await saveConfigFromRenderer({ ...mountSnapshot, preferred_name: 'Renamed' });
+    const cfg = await loadConfig();
+    expect(cfg.ai_backend_kind).toBe('cloud-proxy');
+    expect(cfg.ai_backend_kind_source).toBe('user');
+    expect(cfg.preferred_name).toBe('Renamed'); // the actual edit still lands
+  });
+
+  it('a stale renderer copy can never revert chat_language (260725: auto-detected in main)', async () => {
+    const mountSnapshot = await loadConfig(); // chat_language absent (≡ 'en')
+    // The voice auto-switch lands a detection mid-call...
+    await saveConfig({ ...(await loadConfig()), chat_language: 'es' });
+    // ...then an open Settings screen saves its stale whole-config copy back.
+    await saveConfigFromRenderer({ ...mountSnapshot, preferred_name: 'Renamed' });
+    const cfg = await loadConfig();
+    expect(cfg.chat_language).toBe('es');
+    expect(cfg.preferred_name).toBe('Renamed');
+  });
+
+  it('seeds a fresh profile with the schema defaults (signed-out onboarding)', async () => {
+    await saveConfigFromRenderer({
+      ...(await loadConfig()),
+      preferred_name: 'Ouen',
+      ai_backend_kind: 'cloud-proxy', // renderer-supplied value is ignored
+    });
+    const cfg = await loadConfig();
+    expect(cfg.preferred_name).toBe('Ouen');
+    expect(cfg.ai_backend_kind).toBe('local');
+  });
+
+  it('260725: a stale renderer copy can never clobber a main-written field (playtime folded mid-session)', async () => {
+    // SettingsScreen snapshots the whole config at mount and saves
+    // `{...cfg, field}` on every toggle. A 2h Minecraft session ends while it
+    // stays mounted (foldPlaytime -> addPlaytimeMs under the lock); the next
+    // toggle must not write the pre-session total back.
+    const mountSnapshot = await loadConfig(); // total_playtime_ms: 0
+    await addPlaytimeMs(2 * 60 * 60 * 1000);
+    await saveConfigFromRenderer({ ...mountSnapshot, realistic_typing: false });
+    const cfg = await loadConfig();
+    expect(cfg.total_playtime_ms).toBe(7_200_000);
+    expect(cfg.realistic_typing).toBe(false); // the actual edit still lands
+  });
+
+  it('260725: main-owned lists and refs survive a stale renderer save', async () => {
+    const mountSnapshot = await loadConfig();
+    // Main writes while the settings copy is stale: a World character added to
+    // the library, a profile picture applied, a character created.
+    await saveConfig({
+      ...(await loadConfig()),
+      added_world_ids: [UUID_A],
+      profile_picture: '_user.png',
+      creation_times: ['2026-07-25T00:00:00.000Z'],
+    });
+    await saveConfigFromRenderer({ ...mountSnapshot, theme_mode: 'acorn' });
+    const cfg = await loadConfig();
+    expect(cfg.added_world_ids).toEqual([UUID_A]);
+    expect(cfg.profile_picture).toBe('_user.png');
+    expect(cfg.creation_times).toEqual(['2026-07-25T00:00:00.000Z']);
+    expect(cfg.theme_mode).toBe('acorn');
+  });
+
+  it('an optional key the renderer copy never carried keeps its on-disk value', async () => {
+    const mountSnapshot = await loadConfig(); // stt_local_fallback absent
+    // The voice store accepts the local-backup offer mid-call...
+    await saveConfig({ ...(await loadConfig()), stt_local_fallback: true });
+    // ...and a Settings toggle whose copy predates it must not unset it.
+    await saveConfigFromRenderer({ ...mountSnapshot, call_captions: true });
+    const cfg = await loadConfig();
+    expect(cfg.stt_local_fallback).toBe(true);
+    expect(cfg.call_captions).toBe(true);
+  });
+
+  it('keeps a sign-in cloud default written before onboarding submits', async () => {
+    // switchScopeForAuth → applyCloudDefaultForSignIn writes this before the
+    // renderer routes to onboarding, so onboarding's wholesale save must not
+    // undo it.
+    await saveConfig({
+      ...(await loadConfig()),
+      ai_backend_kind: 'cloud-proxy',
+      ai_backend_kind_source: 'default',
+    });
+    await saveConfigFromRenderer({
+      ...(await loadConfig()),
+      preferred_name: 'Ouen',
+      ai_backend_kind: 'local',
+      ai_backend_kind_source: 'default',
+    });
+    const cfg = await loadConfig();
+    expect(cfg.ai_backend_kind).toBe('cloud-proxy');
+    expect(cfg.preferred_name).toBe('Ouen');
   });
 });
 

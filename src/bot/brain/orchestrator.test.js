@@ -431,6 +431,30 @@ describe('say() tool (260617)', () => {
     expect(orch.currentLoop).toBeNull()
   })
 
+  // 260725: the 256-char cap lives at the in-world send. `slice(0, 256)` counts
+  // UTF-16 code units, so a long line ending in an emoji was cut BETWEEN the
+  // halves of a surrogate pair and Minecraft rendered the leftover half as a
+  // replacement glyph. The clip now steps back off a trailing high surrogate.
+  it('clips a long in-world line on a character boundary, never mid-surrogate', async () => {
+    const { adapter } = makeAdapter()
+    // 255 plain chars + one astral emoji = 257 code units; the naive cut at 256
+    // lands inside the emoji.
+    const long = 'x'.repeat(255) + '\u{1F600}'
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 'tu_say', name: 'say', input: { text: long } }] },
+    ])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('hey'))
+    expect(adapter.chat).toHaveBeenCalledTimes(1)
+    const sent = adapter.chat.mock.calls[0][0]
+    expect(sent.length).toBeLessThanOrEqual(256) // still under the packet cap
+    expect(sent).toBe('x'.repeat(255))
+    // No unpaired surrogate survived the clip.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(sent)).toBe(false)
+  })
+
   it('emits nothing when the model calls no say() (silence is the default)', async () => {
     _setTickIntervalForTests(10_000_000)
     const { adapter } = makeAdapter()

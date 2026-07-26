@@ -108,6 +108,11 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   let processing = false
   let idleTimer = null
   let disposed = false
+  // 260725 (game pause): while non-null, only events the predicate approves may
+  // dispatch — everything else stays QUEUED (not dropped) so a player message
+  // sent during a pause is answered on resume. The idle timer is disarmed for
+  // the duration (no fresh idle ticks pile up behind the hold). See setHold().
+  let holdPredicate = null
   // 260617: wall-clock of the last NON-idle activity (real chat / attack /
   // action progress / loop end). Used to stamp idle ticks with the TRUE quiet
   // duration so the prompt can stop claiming "about a minute has passed" (it now
@@ -118,7 +123,7 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
 
   function resetIdleTimer() {
     clearTimeout(idleTimer)
-    if (disposed) return
+    if (disposed || holdPredicate) return
     const delay = typeof idleFallbackMs === 'function' ? idleFallbackMs() : idleFallbackMs
     idleTimer = setTimeout(() => {
       enqueue(Priority.P3_IDLE, 'sei:idle', { quietMs: Date.now() - lastActivityAt })
@@ -198,7 +203,26 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   }
 
   async function processNext() {
-    const item = queue.shift()
+    // Hold gate (260725): dispatch only predicate-approved events while held.
+    // Scan past blocked items instead of head-only — a held P0 (e.g. an attack
+    // that landed on the frozen bot) must not shadow an allowed P1 voice line
+    // sitting behind it.
+    let item
+    if (holdPredicate) {
+      let idx = -1
+      for (let i = 0; i < queue.length; i++) {
+        let ok = false
+        try { ok = holdPredicate(queue[i].event, queue[i].data) === true } catch {}
+        if (ok) { idx = i; break }
+      }
+      if (idx === -1) {
+        processing = false
+        return
+      }
+      item = queue.splice(idx, 1)[0]
+    } else {
+      item = queue.shift()
+    }
     if (!item) {
       processing = false
       return
@@ -248,6 +272,39 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
     }
   }
 
+  /**
+   * 260725 (game pause): install or clear the dispatch hold.
+   *
+   * `predicate` — `(event, data) => boolean`; true = that queued event may
+   * still dispatch while the hold is on (the pause path allows live voice-call
+   * lines only). `null` clears the hold.
+   *
+   * Engaging: aborts the in-flight dispatch (a parked LLM call unwinds via
+   * its abort signal), disarms the idle timer, and PURGES queued settle ticks
+   * (`sei:idle` / `sei:loop_end`) — they are stale by resume time, and the
+   * enqueue-time dedupe would otherwise swallow the explicit resume tick.
+   * Real events (player chat, attacks) stay queued for after the release.
+   * Releasing: re-arms the idle timer and kicks the dispatcher.
+   */
+  function setHold(predicate) {
+    holdPredicate = typeof predicate === 'function' ? predicate : null
+    if (holdPredicate) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (queue[i].event === 'sei:idle' || queue[i].event === 'sei:loop_end') queue.splice(i, 1)
+      }
+      if (currentAction) {
+        try { currentAction.controller.abort() } catch {}
+        currentAction = null
+      }
+      scheduleProcess() // re-evaluate: an allowed event may already be queued
+    } else {
+      resetIdleTimer()
+      scheduleProcess()
+    }
+  }
+
   function dispose() {
     disposed = true
     clearTimeout(idleTimer)
@@ -263,5 +320,5 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   // even if no events arrive immediately after start.
   resetIdleTimer()
 
-  return { enqueue, resetIdleTimer, dispose }
+  return { enqueue, resetIdleTimer, setHold, dispose }
 }

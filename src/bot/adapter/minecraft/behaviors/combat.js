@@ -66,6 +66,9 @@ export function startCombat(bot, config) {
     clearTimeout(_exitTimer)
 
     _attackLoop = setInterval(() => {
+      // 260725 play/pause: an AFK player does not swing back. Drop the target
+      // entirely rather than idling on it, so the fight ends at the freeze.
+      if (bot._seiPaused) { stopAttacking(); return }
       if (!_target) return
       const live = bot.entities[_target.id]
       if (!live) return
@@ -101,6 +104,10 @@ export function startCombat(bot, config) {
 
   bot.on('entityHurt', (entity, source) => {
     if (entity !== bot.entity) return
+    // 260725 play/pause: while the player has the game paused the bot takes
+    // hits like an AFK player. No retaliation, and no sei:attacked either —
+    // the FSM hold would only bank it and fire a stale panic on resume.
+    if (bot._seiPaused) return
 
     const target = resolveAttacker(bot, source)
     if (!target) return

@@ -74,7 +74,7 @@ export function McDashMinimap({ map, yaw, sizePx }: McDashMinimapProps): React.R
           aria-label="Minimap around the companion"
         />
       ) : (
-        <div className={styles.empty}>surveying...</div>
+        <div className={styles.empty}>Surveying...</div>
       )}
       {map ? (
         <svg

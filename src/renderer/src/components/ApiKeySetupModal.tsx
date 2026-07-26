@@ -83,14 +83,15 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
     setError(null);
     setSaving(true);
     try {
-      // Spread the existing config so the provider + backend flip don't clobber
-      // mc_username / preferred_name / theme etc. (saveConfig replaces wholesale).
+      // Spread the existing config so the provider change doesn't clobber
+      // mc_username / preferred_name / theme etc. (saveConfig replaces
+      // wholesale). 260725: the backend flip is proxyConfigure's job alone —
+      // main strips ai_backend_kind from renderer saves.
       const cfg = await sei.getConfig();
       await sei.saveConfig({
         ...cfg,
         provider,
         provider_config: cfg.provider_config ?? {},
-        ai_backend_kind: 'local',
       });
       await sei.saveApiKey(key);
       await sei.proxyConfigure('local');

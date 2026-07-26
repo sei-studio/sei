@@ -17,10 +17,11 @@ import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
 import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
-import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
+import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isCallActive } from '../voice/callState';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
+import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { clampChatLanguage } from '../../shared/chatLanguage';
 import * as chatStore from './chatStore';
 import {
@@ -60,7 +61,10 @@ export interface ChatDeps {
   emitReply?: (characterId: string, message: ChatMessage) => void;
 }
 
-const MEMORY_BUDGET_BYTES = 6000;
+// 260725: doubled 6000 -> 12000 alongside the bot-side compaction trigger
+// (compaction_trigger_bytes 4096 -> 8192 in src/bot/config.js) so the chat
+// window keeps seeing the whole pre-compaction file.
+const MEMORY_BUDGET_BYTES = 12000;
 const MAX_HOPS = 3;
 /**
  * Voice calls (260706): cap the transcript sent to the model to the last N rows.
@@ -105,7 +109,10 @@ export function cancelInflightTurn(characterId: string): void {
 async function readMemoryTail(characterId: string): Promise<string> {
   try {
     const raw = await readFile(path.join(paths.memoryDir(characterId), 'MEMORY.md'), 'utf8');
-    return raw.length <= MEMORY_BUDGET_BYTES ? raw : raw.slice(-MEMORY_BUDGET_BYTES);
+    // Stamps render local-time for the model (the file stays UTC ISO on disk):
+    // the prompt clock is local, and ISO-vs-local is how "two weeks ago" got
+    // misread as "a few days ago". See humanizeMemoryStamps.
+    return humanizeMemoryStamps(raw.length <= MEMORY_BUDGET_BYTES ? raw : raw.slice(-MEMORY_BUDGET_BYTES));
   } catch {
     return '';
   }
@@ -308,15 +315,12 @@ export function foldUserNote(
 }
 
 /**
- * Author's proactiveness dial (0-2). Missing / non-integer / out-of-range →
- * reactive (1). MIRROR: src/bot/index.js (~line 538) clamps
- * character.metadata.proactiveness identically; the bot ships as raw ESM in a
- * separate process and CANNOT import from src/main, so these two copies must be
- * kept in sync by hand.
+ * 260725: proactiveness is a runtime-only Minecraft mode now, never read from
+ * character metadata. Chat/voice surfaces always run at the reactive tier —
+ * the chat directive for level 1 is the one that matches "replies, sometimes
+ * follows up, no agenda of its own".
  */
-function clampProactiveness(raw: unknown): number {
-  return typeof raw === 'number' && Number.isInteger(raw) ? Math.min(Math.max(0, raw), 2) : 1;
-}
+const CHAT_PROACTIVENESS = 1;
 
 /**
  * Texting punctuation register off character.metadata.punctuation (260705).
@@ -330,7 +334,7 @@ function clampPunctuation(raw: unknown): 'casual' | 'deliberate' {
 
 /**
  * Shared prompt assembly for a chat turn — getCharacter, loadConfig, the
- * summary+memory reads, the proactiveness clamp, the system blocks, and the
+ * summary+memory reads, the system blocks, and the
  * alternating messages array. Returns null when the character is missing.
  * Both sendChatMessage and sendLaunchFailedTurn build on this; the two callers
  * differ only in the per-turn openWorldDetected/inGame truth they pass in.
@@ -356,13 +360,11 @@ async function prepareChatTurn(
   // Watermark-based context (260702): every not-yet-summarized message verbatim
   // (50-99 between folds) + the rolling summary. Pure read — the batch fold runs
   // in the background AFTER the reply (see foldIfDue).
-  const [{ summary, history }, memory] = await Promise.all([
+  const [{ summary, history }, memory, knowledge] = await Promise.all([
     readChatContext(characterId),
     readMemoryTail(characterId),
+    readKnowledgeForPrompt(characterId).catch(() => ''),
   ]);
-  // Same source + clamp the bot uses (character.metadata.proactiveness), so the
-  // character is as forward in chat as it is in-game.
-  const proactiveness = clampProactiveness(character.metadata?.proactiveness);
   // Same source the bot uses (character.metadata.punctuation), so the character
   // texts with the same register in-app as in-game.
   const punctuation = clampPunctuation(character.metadata?.punctuation);
@@ -370,10 +372,11 @@ async function prepareChatTurn(
     persona: character.persona,
     name: character.name,
     preferredName: config.preferred_name ?? '',
-    proactiveness,
+    proactiveness: CHAT_PROACTIVENESS,
     punctuation,
     memory,
     summary,
+    knowledge,
     openWorldDetected: opts.openWorldDetected,
     inGame: opts.inGame,
     voiceCall: opts.voiceCall === true,
@@ -710,8 +713,18 @@ export async function sendChatMessage(
           const memText = String((toolUse.input as { text?: string })?.text ?? '').trim();
           if (memText) {
             try {
-              await appendMemory(path.join(paths.memoryDir(args.characterId), 'MEMORY.md'), memText);
-              note = 'Saved to your memory. Continue your reply; do not mention saving it.';
+              const written = await appendMemory(
+                path.join(paths.memoryDir(args.characterId), 'MEMORY.md'),
+                memText,
+              );
+              // 260725: appendMemory returns 0 when its bounded duplicate guard
+              // skips the write. Reporting a save that never happened taught the
+              // model to trust a second entry that does not exist, so mirror the
+              // game brain's honest result here.
+              note =
+                written === 0
+                  ? 'You already saved that a moment ago; nothing new was written. Continue your reply; do not mention it.'
+                  : 'Saved to your memory. Continue your reply; do not mention saving it.';
             } catch (err) {
               console.warn(`[sei] chat remember() append failed: ${(err as Error).message}`);
               note = 'The memory could not be saved. Continue your reply; do not mention it.';
@@ -1194,24 +1207,14 @@ export async function sendVoiceIdleTurn(
     });
     if (!prep) return { messages: [] };
     const { system, messages } = prep;
-    // Proactiveness-keyed nudge (260708): an agentic character (dial 2) is the
-    // one who keeps a call alive — its nudge asks for a topic outright and
-    // offers no silence option, so a quiet stretch reliably becomes
-    // conversation (the same dial that makes it self-directed in-game). Lower
-    // dials keep the original take-it-or-leave-it note with silence sanctioned.
-    const proactive = clampProactiveness(prep.character.metadata?.proactiveness) >= 2;
+    // 260725: proactiveness is no longer a per-character dial, so every
+    // companion gets the take-it-or-leave-it nudge with silence sanctioned.
     const quiet = Math.max(1, Math.round(quietSeconds));
-    const note = proactive
-      ? `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
-        'Keep the call alive: say something in one short spoken line. Anything real works: a thought on your mind, ' +
-        'something you remember about the player, something from earlier in this call, a question you actually want answered, ' +
-        (peers.length ? 'something to rope the other companions on the call into, ' : '') +
-        'or a new topic entirely. Pick whichever thread feels most alive and pull it. ' +
-        'Do not greet them again and do not ask if they are still there. Do not mention this note.]'
-      : `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
-        'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
-        'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
-        'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
+    const note =
+      `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
+      'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
+      'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
+      'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
     foldUserNote(messages, note);
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);

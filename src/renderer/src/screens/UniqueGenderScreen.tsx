@@ -2,8 +2,9 @@
  * UniqueGenderScreen — the single per-slot question asked before casting a
  * unique companion (260703 procgen, spec item 3). Everything else about the
  * companion is decided from the user profile during generation; only gender is
- * asked here. Three radio-tiles (Male / Female / Other) → Begin routes to the
- * full-screen casting screen with the chosen gender.
+ * asked here. Three radio-tiles (labels Masculine / Feminine / Other; values
+ * stay 'male' / 'female' / 'other') → Begin routes to the full-screen casting
+ * screen with the chosen gender.
  */
 
 import React, { useState } from 'react';
@@ -13,8 +14,8 @@ import type { UniqueGender } from '@shared/ipc';
 import styles from './ProfileQuestionsScreen.module.css';
 
 const OPTIONS: Array<{ value: UniqueGender; label: string; sub: string }> = [
-  { value: 'male', label: 'Male', sub: 'Cast a companion who presents male.' },
-  { value: 'female', label: 'Female', sub: 'Cast a companion who presents female.' },
+  { value: 'male', label: 'Masculine', sub: 'Cast a companion who presents masculine.' },
+  { value: 'female', label: 'Feminine', sub: 'Cast a companion who presents feminine.' },
   { value: 'other', label: 'Other', sub: 'Let the cast decide, or beyond the binary.' },
 ];
 

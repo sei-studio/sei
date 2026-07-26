@@ -19,6 +19,7 @@ import { useUiStore } from './useUiStore';
 import {
   notifyCompanionText,
   notifyPlayerText,
+  notifyTurnFailed,
   isVoiceCallActive,
   requestRemoteEndCall,
   voiceCallPeers,
@@ -234,7 +235,17 @@ export const useChatStore = create<ChatState>((set, get) => {
           // Voice calls (260705): a companion line that arrived over the push
           // (an in-game bot routing say() to the call) is spoken aloud, at the
           // moment it reveals so speech and bubbles stay in step.
-          if (revealPushed(characterId, message)) notifyCompanionText(characterId, message.text);
+          // ONLY call lines speak (260725): main stamps `voice` at GENERATION
+          // time, so it is the authority on whether this line was said on a
+          // call. Gating speech on the current call state instead let a line
+          // generated outside any call (a chess game-over reaction after
+          // hang-up) land late and play as a ghost clip into a NEW call the
+          // player had just dialed. An unstamped line is a text bubble, never
+          // audio; a stamped line still only plays while its character is on
+          // the call (the voice store's participants check).
+          if (revealPushed(characterId, message) && message.voice === true) {
+            notifyCompanionText(characterId, message.text);
+          }
         })
         .catch(() => {
           pushPending[characterId] = Math.max(0, (pushPending[characterId] ?? 1) - 1);
@@ -468,7 +479,10 @@ export const useChatStore = create<ChatState>((set, get) => {
         }));
         // Voice calls (260705): speak each reply bubble as it lands. The TTS
         // queue serializes clips, so multi-bubble replies stay in order.
-        notifyCompanionText(characterId, replies[i].text);
+        // Gated on main's generation-time voice stamp (260725), same contract
+        // as the push path above: a reply generated off-call must not play
+        // just because a call opened while it was in flight.
+        if (replies[i].voice === true) notifyCompanionText(characterId, replies[i].text);
       }
       // Voice calls (260705): the companion called end_call() this turn. Its
       // goodbye replies are already queued for TTS above; the voice store ends
@@ -484,6 +498,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Deliberate interrupt (main aborted this turn): don't show the "sorry"
       // fallback; the follow-up send keeps `awaiting` true for its own reply.
       if (isChatAbort(err)) {
+        set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+        return null;
+      }
+      // 260725: on a live voice call the director owns a failed turn — it
+      // retries the same utterance while the call shows "Reconnecting…", so
+      // the apology bubble below (which is never spoken) would only clutter
+      // the transcript. Local no-key failures stay on the chat surface: a
+      // retry cannot conjure a missing API key.
+      if (!isLocalNoApiKey(err) && notifyTurnFailed(characterId)) {
         set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         return null;
       }

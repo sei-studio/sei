@@ -17,12 +17,16 @@
   gap: 12px;
 }
 
+/* Solid surface card, mirrors CreditsScreen .planCard (260725): var(--bg4)
+   is light in light themes and dark in dark ones, and stays a visible step
+   off the modal's var(--bg2) panel in every theme. */
 .pack {
-  border: 1px solid var(--border-strong);
-  padding: 14px;
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  padding: 16px 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .packPrice {
@@ -39,13 +43,7 @@
   color: var(--text-2);
 }
 
-.packNote {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted-2);
-}
-
 .packAction {
   margin-top: auto;
-  padding-top: 10px;
+  padding-top: 12px;
 }

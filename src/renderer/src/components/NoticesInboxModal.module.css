@@ -1,0 +1,206 @@
+/* NoticesInboxModal — minimal two-column inbox. Tokens only (no literal hex).
+ * The panel itself must NOT scroll: the list and the reader own their own
+ * overflow so the header/footer stay pinned. */
+
+.panel {
+  overflow: hidden;
+  height: min(560px, calc(100vh - 64px));
+}
+
+.columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  gap: var(--space-md-plus);
+}
+
+/* ── Left column: titles ─────────────────────────────────────── */
+
+.titles {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-sm) 0 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-sm);
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--sans);
+  color: var(--text-2);
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+
+.item:hover {
+  background: var(--rail-active);
+  color: var(--text);
+}
+
+.itemActive,
+.itemActive:hover {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+
+.itemTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.itemDate {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+/* ── Right column: the notice ────────────────────────────────── */
+
+.reader {
+  overflow-y: auto;
+  padding-right: var(--space-sm);
+}
+
+.readerTitle {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--text);
+  margin: 0;
+}
+
+.readerDate {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-top: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ── Markdown body ───────────────────────────────────────────── */
+
+.body {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.h1,
+.h2,
+.h3 {
+  font-family: var(--display);
+  font-weight: 600;
+  color: var(--text);
+  margin: var(--space-md-plus) 0 var(--space-sm);
+}
+
+.h1 { font-size: 18px; }
+.h2 { font-size: 16px; }
+.h3 { font-size: 14px; letter-spacing: 0.02em; }
+
+.para {
+  margin: 0 0 var(--space-md);
+}
+
+.list {
+  margin: 0 0 var(--space-md);
+  padding-left: var(--space-lg);
+}
+
+.list li {
+  margin-bottom: var(--space-xs);
+}
+
+.quote {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--space-md-plus) 0;
+}
+
+.image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: var(--space-sm) 0;
+  border: 1px solid var(--border);
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--accent-strong);
+}
+
+.inlineCode,
+.codeBlock {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.inlineCode {
+  padding: 1px var(--space-xs);
+}
+
+.codeBlock {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

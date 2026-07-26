@@ -96,20 +96,20 @@ describe('parseProactivenessLine', () => {
 });
 
 describe('EXPANSION_SYSTEM contract', () => {
-  it('describes the four base sections and the three proactiveness levels', () => {
+  it('describes the four base sections', () => {
     for (const h of ['# CORE', '# VOICE', '# EXTERNAL', '# INTERNAL']) {
       expect(EXPANSION_SYSTEM).toContain(h);
-    }
-    for (const w of ['passive', 'reactive', 'agentic']) {
-      expect(EXPANSION_SYSTEM).toContain(w);
     }
     // The retired six-section headers are gone.
     expect(EXPANSION_SYSTEM).not.toContain('# REACTIONS');
     expect(EXPANSION_SYSTEM).not.toContain('# DEFAULT DYNAMIC');
   });
 
-  it('asks for the parseable, config-only PROACTIVENESS first line', () => {
-    expect(EXPANSION_SYSTEM).toContain('PROACTIVENESS: <passive|reactive|agentic>');
+  it('no longer asks for the PROACTIVENESS first line (runtime-only since 260725)', () => {
+    // The parser still tolerates + strips the line (the cloud proxy or a
+    // server prompt override may emit one), but the bundled prompt must not
+    // request it.
+    expect(EXPANSION_SYSTEM).not.toContain('PROACTIVENESS:');
   });
 
   it('keeps EXTERNAL about personality, not activity level, and drops the old stance derivation', () => {

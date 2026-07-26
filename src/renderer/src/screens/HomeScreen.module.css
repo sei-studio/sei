@@ -76,12 +76,29 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* 260724: bottom wash softened — it used to climb half the panel at 88%
+     opacity, which read as a heavy fog on the light themes. Now it rises just
+     past the character-name line so the name sits ON the wash (px-anchored so
+     tall panels don't stretch it higher) and stays faint. */
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--bg) 22%, transparent) 0%,
     transparent 28%,
-    transparent 48%,
-    color-mix(in srgb, var(--bg) 88%, transparent) 88%
+    transparent calc(100% - 140px),
+    color-mix(in srgb, var(--bg) 48%, transparent) 100%
+  );
+}
+
+/* 260724: on the dark themes the softened wash left the info block sitting on
+   bright art with almost no bed — deepen the bottom of the gradient (same
+   shape, stronger mix) so the name/status/lastline rest on a darker wash. */
+:root[data-scheme='dark'] .panelScrim {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 22%, transparent) 0%,
+    transparent 28%,
+    transparent calc(100% - 140px),
+    color-mix(in srgb, var(--bg) 76%, transparent) 100%
   );
 }
 
@@ -107,10 +124,45 @@
   font-weight: 600;
   font-size: 30px;
   line-height: 1.05;
-  color: var(--text);
+  /* 260724: names read as photo captions over the art — white/offwhite per
+     theme (see --art-fg in tokens.css) instead of the dark body text. */
+  color: var(--art-fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* On the light themes a white name can land on bright art; a soft dark
+   shadow keeps it legible without darkening the faint scrim. */
+:root[data-scheme='light'] .name {
+  text-shadow: 0 1px 2px rgba(15, 25, 35, 0.45), 0 2px 10px rgba(15, 25, 35, 0.3);
+}
+
+/* 260724: EVERYTHING in the info block sits on art, so on light themes the
+   dark text tones read as mud (the "Idle" line, the lastline, the ghost Play
+   button). Re-map the tokens those elements read (Presence uses --text-2,
+   lastline --text-2/--text, cloudNote --muted, ghost buttons
+   --text-2/--border-strong) to offwhite mixes of the theme's --art-fg —
+   scoped to the info block so the rest of the app keeps its normal ramp. */
+:root[data-scheme='light'] .info {
+  --text: var(--art-fg);
+  --text-2: color-mix(in srgb, var(--art-fg) 88%, transparent);
+  --muted: color-mix(in srgb, var(--art-fg) 72%, transparent);
+  --border-strong: color-mix(in srgb, var(--art-fg) 55%, transparent);
+  /* 260724: strengthened (0.35 → 0.65, tighter blur) — the small texts needed
+     a firmer dark edge on bright art. Same single shadow, no new effect; the
+     name keeps its own heavier two-layer shadow above. */
+  text-shadow: 0 1px 3px rgba(15, 25, 35, 0.65);
+}
+
+/* 260724: dark-theme counterpart — the small texts (Presence line, lastline,
+   cloudNote, ghost Play label) read too dim over the darkened wash. Lift them
+   toward the theme's --art-fg; the primary Message button keeps its own
+   accent-token colors and is untouched. */
+:root[data-scheme='dark'] .info {
+  --text: var(--art-fg);
+  --text-2: color-mix(in srgb, var(--art-fg) 86%, transparent);
+  --muted: color-mix(in srgb, var(--art-fg) 70%, transparent);
 }
 
 /* Mono micro-line for the cloud-only placeholder state. */

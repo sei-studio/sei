@@ -248,7 +248,7 @@ export const ConfigSchema = z.object({
     // cap entirely (no ceiling). The graceful close (orchestrator
     // gracefulCapClose) aborts the in-flight action and asks for one wrap-up line.
     iteration_cap: z.number().int().min(0).default(300),
-    seed_memory_budget_bytes: z.number().int().min(256).default(8192),
+    seed_memory_budget_bytes: z.number().int().min(256).default(16384),
     // Small: goals are terse, and a big heartbeat would crowd the snapshot.
     seed_heartbeat_budget_bytes: z.number().int().min(128).default(2048),
     seed_player_budget_bytes: z.number().int().min(256).default(1024),
@@ -257,7 +257,10 @@ export const ConfigSchema = z.object({
     // on-disk file exceeds this byte count, an async Haiku compaction is
     // fired (single-flight). Default sits below seed_memory_budget_bytes so
     // compaction runs before the seed-read truncation kicks in.
-    compaction_trigger_bytes: z.number().int().min(512).default(4096),
+    // 260725: doubled 4096 -> 8192 (memory holds twice as much before a
+    // compaction pass); seed_memory_budget_bytes doubled alongside to keep
+    // the trigger below the seed budget.
+    compaction_trigger_bytes: z.number().int().min(512).default(8192),
   }).default({}),
   // In-game vision knobs. Every field is `.default(...)` and the block itself
   // `.default({})`, so existing config.json files that lack a `vision` key

@@ -363,21 +363,17 @@ export async function expandAndSaveCharacter(
     if (serverSystem) expansionInput.systemPromptOverride = serverSystem;
   }
 
-  // 260630: the expander now CHOOSES the proactiveness level (0 passive /
-  // 1 reactive / 2 agentic) from the personality and returns it; we seed it into
-  // metadata, which is what bot/index.js reads to drive the runtime dial. The
-  // manual dial can override this later by editing metadata.proactiveness.
-  const { expanded, proactiveness } = await expandPersona(expansionInput);
+  // 260725: proactiveness is a runtime-only Minecraft mode now, never saved
+  // per character. expandPersona still tolerates (and strips) a leading
+  // "PROACTIVENESS: <word>" line — the cloud proxy or a server prompt
+  // override may still emit one — but the parsed level is discarded here.
+  const { expanded } = await expandPersona(expansionInput);
 
   const merged: Character = {
     ...validated,
     persona: {
       source: validated.persona.source,
       expanded,
-    },
-    metadata: {
-      ...(validated.metadata as Record<string, unknown> | undefined),
-      proactiveness,
     },
   };
   await saveCharacter(merged);
@@ -526,6 +522,9 @@ export async function deleteCharacter(id: string): Promise<void> {
   }
   // Remove memory dir recursively (idempotent)
   await rm(paths.memoryDir(id), { recursive: true, force: true });
+  // Remove knowledge dir (260725; lives outside memoryDir so Reset memory
+  // spares it, but a full character delete takes it too)
+  await rm(paths.knowledgeDir(id), { recursive: true, force: true });
 
   // Remove from index
   const idx = await loadIndex();

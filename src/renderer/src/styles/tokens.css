@@ -3,10 +3,15 @@
  * Source of truth: .planning/UI-DESIGN-SYSTEM.md (the "Summoning Terminal"
  * aesthetic). Ported from the sei-gui-improved mockup (hud.jsx :root + ui.jsx).
  *
- * Two themes share ONE structure. Dark is the hero (matches the mockup 1:1);
- * light is a paper-surfaced mirror of the same system. Every component reads
- * semantic tokens (--surface/--text/--accent/--border…) so a token edit here
- * re-skins the whole app. Do NOT add per-component values here.
+ * Four themes share ONE structure (260724):
+ *   midnight — dark hero (matches the mockup 1:1; formerly "dark")
+ *   ice      — pastel-sky light mirror (formerly "light")
+ *   acorn    — pastel beige/brown light
+ *   mint     — green light
+ * Every component reads semantic tokens (--surface/--text/--accent/--border…)
+ * so a token edit here re-skins the whole app. Do NOT add per-component
+ * values here. Scheme-scoped CSS (dark-only grain etc.) keys off the
+ * `data-scheme="light|dark"` attribute applyTheme() sets alongside data-theme.
  *
  * Token vocabulary (snap new UI to these — see the design doc):
  *   Surfaces   --bg --bg2 --bg3 --bg4 / --window --desktop --surface --surface-2
@@ -47,7 +52,7 @@
   --pixel: 'Press Start 2P', monospace;
 
   /*
-   * ── LIGHT theme — "Nurture sky" ───────────────────────────────
+   * ── ICE theme (light) — "Nurture sky" ─────────────────────────
    * Pastel skies + technology (Porter Robinson's Nurture, visualized): a
    * cloud-white field with a periwinkle #7FB0FF chrome. The IconRail AND the
    * shared top strip are a solid #7FB0FF inverted-L framing offwhite content;
@@ -88,6 +93,11 @@
   --card-top: #ffffff;
   --card-bottom: #eaf3ff;
 
+  /* Foreground for text sitting ON character art (home-wall names). Light
+     themes use white/offwhite so the name reads as a photo caption over the
+     art rather than inheriting the dark body text (260724). */
+  --art-fg: #ffffff;
+
   --text: #2a3340;
   --text-2: #586273;
   --muted: #7d92ab;
@@ -117,8 +127,8 @@
   --shadow-pop: 0 12px 32px rgba(34, 60, 110, .12);
 }
 
-/* Explicit light selector mirrors :root so applyTheme('light') is unambiguous. */
-:root[data-theme="light"] {
+/* Explicit ice selector mirrors :root so applyTheme('ice') is unambiguous. */
+:root[data-theme="ice"] {
   --bg: #f3f8ff;
   --bg2: #ffffff;
   --bg3: #ffffff;
@@ -138,6 +148,7 @@
   --rail-hover: rgba(255, 255, 255, 0.16);
   --card-top: #ffffff;
   --card-bottom: #eaf3ff;
+  --art-fg: #ffffff;
   --text: #2a3340;
   --text-2: #586273;
   --muted: #7d92ab;
@@ -160,10 +171,10 @@
 }
 
 /*
- * ── DARK theme — the hero. Verbatim from the mockup (hud.jsx :root) ──
+ * ── MIDNIGHT theme (dark) — the hero. Verbatim from the mockup (hud.jsx :root) ──
  *   bg #09090b · txt #e9e7e1 · accent periwinkle #7FB0FF · sharp · overlays.
  */
-:root[data-theme="dark"] {
+:root[data-theme="midnight"] {
   /* ── TEMP: dark-blue background experiment (hue of the #7fb0ff accent) ──
      Navy ramp swapped in for the original near-blacks. To REVERT, restore each
      value from the trailing comment (the /* was: … *​/ originals) and delete
@@ -200,6 +211,9 @@
   --card-top: #141e33;    /* was: #0c0c10 */
   --card-bottom: #0d1423;  /* was: #08080a */
 
+  /* Home-wall names keep the normal light body text on the dark theme. */
+  --art-fg: #e9e7e1;
+
   --text: #e9e7e1;
   --text-2: #a8a6a0;
   --muted: #82807a;
@@ -228,4 +242,98 @@
   --shadow-window: 0 0 0 1px rgba(0, 0, 0, .5), 0 24px 60px rgba(0, 0, 0, .55), 0 4px 16px rgba(0, 0, 0, .35);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .25), 0 18px 40px -16px rgba(0, 0, 0, .80);
   --shadow-pop: 0 18px 40px -8px rgba(0, 0, 0, .70);
+}
+
+/*
+ * ── ACORN theme (light) — pastel beige/brown ──────────────────────────
+ * Same structure as ice: warm cream surfaces framed by a soft acorn-brown
+ * chrome (rail + top strip), with light on-rail foregrounds.
+ */
+:root[data-theme="acorn"] {
+  --bg: #f8f3ea;
+  --bg2: #fffbf4;
+  --bg3: #fffbf4;
+  --bg4: #f0e6d5;
+  --window: #fffbf4;
+  --desktop: #ece0cc;
+  --surface: #f8f3ea;
+  --surface-2: #fffbf4;
+  --rail: #ad8a63;          /* acorn-brown chrome (rail + top strip) */
+  --rail-active: #f3e9da;
+  --elbow: #ad8a63;
+  --heading: #a07d55;
+  --rail-fg: rgba(255, 255, 255, 0.82);
+  --rail-fg-strong: #ffffff;
+  --rail-accent: #ffffff;
+  --rail-border: rgba(255, 255, 255, 0.30);
+  --rail-hover: rgba(255, 255, 255, 0.16);
+  --card-top: #fffbf4;
+  --card-bottom: #f3e9d8;
+  --art-fg: #f9f1e2;      /* warm offwhite of the acorn cream, not pure white */
+  --text: #3b3126;
+  --text-2: #6a5c4b;
+  --muted: #94836f;
+  --muted-2: #b7a892;
+  --accent: #ad8a63;
+  --accent-strong: #8a6a44; /* deeper brown — hover / high-contrast text */
+  --accent-soft: rgba(173, 138, 99, 0.20);
+  --accent-text: #ffffff;
+  --acc: 173 138 99;
+  --green: #4b9e58;
+  --red: #d94f3a;
+  --red-strong: #b83f2c;
+  --warn: #d99a2a;
+  --ok: 75 158 88;
+  --border: rgba(59, 45, 26, 0.12);
+  --border-strong: rgba(59, 45, 26, 0.19);
+  --shadow-window: 0 0 0 1px rgba(90, 66, 34, .08), 0 24px 60px rgba(90, 66, 34, .18), 0 4px 16px rgba(90, 66, 34, .07);
+  --shadow-card: 0 1px 2px rgba(90, 66, 34, .05), 0 4px 12px rgba(90, 66, 34, .06);
+  --shadow-pop: 0 12px 32px rgba(90, 66, 34, .12);
+}
+
+/*
+ * ── MINT theme (light) — shades of green ─────────────────────────────
+ * Same structure as ice: white/mint surfaces framed by a fresh green
+ * chrome (rail + top strip), with light on-rail foregrounds.
+ */
+:root[data-theme="mint"] {
+  --bg: #eff8f2;
+  --bg2: #ffffff;
+  --bg3: #ffffff;
+  --bg4: #e0f0e6;
+  --window: #ffffff;
+  --desktop: #d8ecdf;
+  --surface: #eff8f2;
+  --surface-2: #ffffff;
+  --rail: #57b47c;          /* mint-green chrome (rail + top strip) */
+  --rail-active: #e2f2e8;
+  --elbow: #57b47c;
+  --heading: #3f9c66;
+  --rail-fg: rgba(255, 255, 255, 0.82);
+  --rail-fg-strong: #ffffff;
+  --rail-accent: #ffffff;
+  --rail-border: rgba(255, 255, 255, 0.30);
+  --rail-hover: rgba(255, 255, 255, 0.16);
+  --card-top: #ffffff;
+  --card-bottom: #e6f4eb;
+  --art-fg: #edf9f1;      /* minty offwhite, not pure white */
+  --text: #24352b;
+  --text-2: #52665a;
+  --muted: #7b9587;
+  --muted-2: #a6bcae;
+  --accent: #57b47c;
+  --accent-strong: #359961; /* deeper green — hover / high-contrast text */
+  --accent-soft: rgba(87, 180, 124, 0.18);
+  --accent-text: #ffffff;
+  --acc: 87 180 124;
+  --green: #18a85c;
+  --red: #d94f3a;
+  --red-strong: #b83f2c;
+  --warn: #d99a2a;
+  --ok: 24 168 92;
+  --border: rgba(20, 45, 32, 0.11);
+  --border-strong: rgba(20, 45, 32, 0.17);
+  --shadow-window: 0 0 0 1px rgba(28, 74, 48, .08), 0 24px 60px rgba(28, 74, 48, .18), 0 4px 16px rgba(28, 74, 48, .07);
+  --shadow-card: 0 1px 2px rgba(28, 74, 48, .05), 0 4px 12px rgba(28, 74, 48, .06);
+  --shadow-pop: 0 12px 32px rgba(28, 74, 48, .12);
 }

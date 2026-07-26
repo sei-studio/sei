@@ -9,9 +9,9 @@
  * component is the rendered surface.
  *
  * This screen renders the literal charged amount per FTC 16 CFR §425.5. It is
- * one of only three surfaces that keep dollar figures for legal reasons (with
- * PreCtaDisclosure and AutoRenewalConsentModal), alongside the plan cards and
- * top up packages.
+ * the one surface that keeps a dollar figure for legal reasons (260725: the
+ * consent modal + pre-CTA disclosure were removed; Polar's hosted checkout
+ * carries the recurring terms), alongside the plan cards and top up packages.
  *
  * Idempotency: the auto-navigate fires AT MOST ONCE per upgrade (guarded by
  * useCreditsStore.prevPlanForReceipt module-level ref). Repeat pushes on the
@@ -33,9 +33,12 @@ import styles from './ReceiptScreen.module.css';
 export function ReceiptScreen(): React.ReactElement {
   const renewsAt = useCreditsStore((s) => s.renews_at);
   const plan = useCreditsStore((s) => s.plan);
+  // 260725: server-driven catalog, so the acknowledged charge matches what
+  // the proxy actually billed (bundled fallback until the catalog loads).
+  const planCards = useCreditsStore((s) => s.planCards);
   const navigate = useUiStore((s) => s.navigate);
 
-  const card = planCard(plan);
+  const card = planCard(planCards, plan);
   const nextBilling = formatRenewal(renewsAt) ?? 'in 30 days';
 
   return (

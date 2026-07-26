@@ -123,8 +123,15 @@ export function isJunkTranscript(raw: string): boolean {
   if (!text) return true;
   // A fully bracketed/parenthesized utterance is a non-speech tag, not speech.
   if (/^[[(].*[\])]$/.test(text)) return true;
-  // No letters at all (pure punctuation / digits / symbols) → junk.
-  if (!/[a-z]/i.test(text)) return true;
+  // No letters at all (pure punctuation / digits / symbols) → junk. Unicode
+  // letter class, NOT [a-z]: the conversation language auto-switch (260725)
+  // means players speak Chinese/Japanese/Korean on calls, and an ASCII-only
+  // check silently ate every CJK utterance before it became a turn.
+  if (!/\p{L}/u.test(text)) return true;
+  // Multilingual Whisper's classic silence hallucination in Japanese (its
+  // "thanks for watching"). Matched against the raw text — the lowercase
+  // normalization below is Latin-only and blanks CJK out.
+  if (/^ご視聴ありがとうございました[。!！]?$/.test(text)) return true;
   // Normalize to lowercase words for the pattern + stock-phrase checks.
   const lower = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   // A single "word" that is one letter repeated ≥3× ("hhhh", "aaaa", "mmmm").

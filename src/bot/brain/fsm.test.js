@@ -180,3 +180,87 @@ describe('reflex-tagged sei:attacked is conversation-tier, not safety-tier', () 
     q2.dispose()
   })
 })
+
+describe('createPriorityQueue setHold (game pause, 260725)', () => {
+  it('holds every event the predicate rejects, KEEPING it queued for release', async () => {
+    const order = []
+    const onDispatch = vi.fn((event) => { order.push(event) })
+    const q = createPriorityQueue({ onDispatch, idleFallbackMs: 1_000_000 })
+
+    q.setHold(() => false) // pause: nothing allowed
+    q.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true, text: 'hello?' })
+    await flush()
+    expect(onDispatch).not.toHaveBeenCalled()
+
+    q.setHold(null) // unpause: the queued chat dispatches now
+    await flush()
+    expect(order).toEqual(['sei:chat_received'])
+    q.dispose()
+  })
+
+  it('dispatches an allowed event even when a blocked higher-priority item sits ahead of it', async () => {
+    const order = []
+    const onDispatch = vi.fn((event) => { order.push(event) })
+    const q = createPriorityQueue({ onDispatch, idleFallbackMs: 1_000_000 })
+
+    // Only voice-call lines pass (the pause predicate's shape).
+    q.setHold((event, data) => event === 'sei:chat_received' && data?.voice === true)
+    // A P0 attack lands on the frozen bot, then a voice line arrives behind it.
+    q.enqueue(Priority.P0_SAFETY, 'sei:attacked', { attackerKind: 'mob' })
+    q.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true, voice: true, seiChat: true, text: 'you there?' })
+    await flush()
+
+    // The voice line dispatched; the attack stayed queued behind the hold.
+    expect(order).toEqual(['sei:chat_received'])
+
+    q.setHold(null)
+    await flush()
+    expect(order).toEqual(['sei:chat_received', 'sei:attacked'])
+    q.dispose()
+  })
+
+  it('purges queued settle ticks (sei:idle / sei:loop_end) when the hold engages', async () => {
+    const order = []
+    const onDispatch = vi.fn((event, data) => { order.push({ event, data }) })
+    const q = createPriorityQueue({ onDispatch, idleFallbackMs: 1_000_000 })
+
+    // Stall the dispatcher with a long-running dispatch so ticks accumulate.
+    let releaseFirst
+    onDispatch.mockImplementationOnce(() => new Promise((r) => { releaseFirst = r }))
+    q.enqueue(Priority.P2_MOVEMENT, 'sei:movement', {})
+    await flush()
+    q.enqueue(Priority.P3_IDLE, 'sei:idle', { quietMs: 1 })
+    q.enqueue(Priority.P2_5_LOOP_END, 'sei:loop_end', {})
+
+    q.setHold(() => false) // pause: aborts the in-flight dispatch + purges ticks
+    releaseFirst?.()
+    await flush()
+    q.setHold(null) // resume with an explicit fresh tick, like the orchestrator does
+    q.enqueue(Priority.P3_IDLE, 'sei:idle', { reason: 'game_unpaused' })
+    await flush()
+
+    // The stale idle/loop_end never dispatched; the explicit resume tick did
+    // (enqueue-time idle dedupe would have swallowed it had the purge not run).
+    const events = order.map((o) => o.event)
+    expect(events.filter((e) => e === 'sei:loop_end')).toEqual([])
+    expect(order.filter((o) => o.event === 'sei:idle').map((o) => o.data?.reason)).toEqual(['game_unpaused'])
+    q.dispose()
+  })
+
+  it('disarms the idle timer while held and re-arms on release', async () => {
+    vi.useFakeTimers()
+    const onDispatch = vi.fn()
+    const q = createPriorityQueue({ onDispatch, idleFallbackMs: 50 })
+
+    q.setHold(() => false)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(onDispatch).not.toHaveBeenCalled() // no idle ticks pile up while paused
+
+    q.setHold(null)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(onDispatch).toHaveBeenCalled()
+    expect(onDispatch.mock.calls[0][0]).toBe('sei:idle')
+    q.dispose()
+    vi.useRealTimers()
+  })
+})

@@ -21,6 +21,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useUiStore } from '../lib/stores/useUiStore';
 import styles from './MacosWindow.module.css';
 
 interface MacosWindowProps {
@@ -109,8 +110,26 @@ export function MacosWindow({ subtitle: _subtitle, railHidden = false, children 
   // the custom controls.
   const isWindows = sei.platform === 'win32';
 
+  // 260724 — custom app background: the image + its brightness dim paint here,
+  // window-wide and under everything (drag strip, rail, content), so the whole
+  // shell sits over it. The chrome above swaps to translucent tints when this
+  // is active (App.tsx mainStyle/elbowStyle + the `:root[data-app-bg]` rules).
+  const bgImage = useUiStore((s) => s.backgroundImage);
+  const bgBrightness = useUiStore((s) => s.backgroundBrightness);
+  const bgBust = useUiStore((s) => s.backgroundBust);
+  const dim = Math.min(1, Math.max(0, 1 - bgBrightness)).toFixed(3);
+
   return (
     <div className={styles.window}>
+      {bgImage ? (
+        <div
+          className={styles.bgLayer}
+          aria-hidden="true"
+          style={{
+            backgroundImage: `linear-gradient(rgba(0, 0, 0, ${dim}), rgba(0, 0, 0, ${dim})), url("sei-portrait://local/${bgImage}?v=${bgBust}")`,
+          }}
+        />
+      ) : null}
       {/*
         Thin drag strip — keeps the frameless window movable and gives the OS /
         custom window controls clearance above the content.

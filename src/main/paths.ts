@@ -106,6 +106,12 @@ export const paths = {
   // property of the MACHINE/install, not of any signed-in account — it must
   // survive account switches and sign-outs (mirrors wizardStatePath's tier).
   updateStatePath: () => path.join(userDataRoot(), 'update-state.json'),
+  // Notices inbox state (260725). Caches the last-fetched notices feed plus the
+  // announced/read id sets that drive the auto-open-once rule and the unread
+  // dots. DEVICE-GLOBAL for the same reason as updateStatePath: a notice is an
+  // announcement to the INSTALL, delivered on the same cadence as the update
+  // check, and must not re-announce itself on every account switch.
+  noticesStatePath: () => path.join(userDataRoot(), 'notices.json'),
   // 260603: one-shot marker that the global→profile partition has run for
   // this install. Device-global (the partition is a one-time layout upgrade).
   partitionMarkerPath: () => path.join(userDataRoot(), 'profiles-partitioned.json'),
@@ -133,7 +139,17 @@ export const paths = {
   characterPortraitPath: (id: string) => path.join(profileRootDir(), 'characters', `${id}.png`),
   indexPath: () => path.join(profileRootDir(), 'characters', 'index.json'),
   apiKeyPath: () => path.join(profileRootDir(), 'api_key.bin'),
+  // BYOK ElevenLabs voice key (260725) — same safeStorage-encrypted blob
+  // pattern as api_key.bin, profile-scoped for the same reason.
+  elevenLabsKeyPath: () => path.join(profileRootDir(), 'elevenlabs_key.bin'),
   memoryDir: (characterId: string) => path.join(profileRootDir(), 'memory', characterId),
+  // 260725 knowledge: user-uploaded reference files injected into every AI
+  // surface (chat / voice / chess / Minecraft bot). Deliberately OUTSIDE
+  // memoryDir so resetMemoryForCharacter (which rm -rf's the memory dir)
+  // never wipes user-provided knowledge. Layout: index.json manifest +
+  // <entryUuid>.md content files (filenames are always our own UUIDs — an
+  // uploaded file's name never becomes a path component).
+  knowledgeDir: (characterId: string) => path.join(profileRootDir(), 'knowledge', characterId),
   // Per-persona skin PNG storage. Files live under
   // <profileRoot>/skins/<personaId>.png. The persona id has already been
   // validated by main/ipc.ts's IdSchema (kebab-case slug regex, no '.', '/',

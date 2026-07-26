@@ -16,7 +16,7 @@
  * by display-budget truncation.
  */
 
-import { readFile } from 'node:fs/promises'
+import { readFile, appendFile, access } from 'node:fs/promises'
 import { atomicWrite } from '../storage/atomicWrite.js'
 import { withFileLock } from '../storage/fileLock.js'
 
@@ -29,6 +29,32 @@ const HEADER =
 function entryLine(timestamp, text) {
   const safe = String(text ?? '').replace(/\s*\n+\s*/g, ' ').trim()
   return `- [${timestamp}] ${safe}\n`
+}
+
+const STAMP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * Model-facing stamp humanization (260725). Entries are STORED with UTC ISO
+ * timestamps (stable, sortable, parser-friendly — the file format does not
+ * change), but the model reads them next to a local-time clock line like
+ * "Fri 25 Jul 2026, 14:57", and relating a UTC ISO instant to that reliably
+ * misjudges "how long ago" (live capture: a two-week-old "packing for LA"
+ * note surfaced as a days-old thread) and lands evening notes on the wrong
+ * day. So at READ time entry stamps are rendered in the same local format as
+ * the clock: "- [11 Jul 2026, 09:23] ...". Non-ISO bracket lines (the
+ * truncation marker, world headers) pass through untouched.
+ */
+export function humanizeMemoryStamps(text) {
+  return String(text ?? '').replace(
+    /^(- \[)(\d{4}-\d{2}-\d{2}T[0-9:.]+Z)(\])/gm,
+    (full, open, iso, close) => {
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return full
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mm = String(d.getMinutes()).padStart(2, '0')
+      return `${open}${d.getDate()} ${STAMP_MONTHS[d.getMonth()]} ${d.getFullYear()}, ${hh}:${mm}${close}`
+    },
+  )
 }
 
 export function createMemoryLog({ path: filePath } = {}) {
@@ -71,8 +97,74 @@ export async function noteWorld(filePath, num, label) {
     const labelPart = label ? ` — ${label}` : ''
     const sep = existing.endsWith('\n') ? '' : '\n'
     await atomicWrite(filePath, `${existing}${sep}\n## World ${num}${labelPart}\n`)
+    await archiveAppend(filePath, `\n## World ${num}${labelPart}\n`)
     return 1
   })
+}
+
+// ── Raw archive (260725) ────────────────────────────────────────────────
+// A write-only shadow of MEMORY.md: every entry line and world header is
+// mirrored here at append time and then NEVER touched again — not by the
+// compactor, not by forget(), not by any truncation, and nothing reads it at
+// runtime. It exists purely so that if compaction tech improves later, the
+// original uncompacted memories can be recovered. Best-effort by design: an
+// archive failure must never break a remember().
+
+const ARCHIVE_HEADER =
+  '# Memory archive\n' +
+  '\n' +
+  'Raw append-only mirror of every memory write. Never compacted, never\n' +
+  'forgotten from, never read by the app. Kept for future recovery only.\n' +
+  '\n'
+
+function archivePath(filePath) {
+  return filePath.replace(/\.md$/i, '') + '.archive.md'
+}
+
+async function archiveAppend(filePath, chunk) {
+  try {
+    const dest = archivePath(filePath)
+    let needHeader = false
+    try { await access(dest) } catch { needHeader = true }
+    await appendFile(dest, (needHeader ? ARCHIVE_HEADER : '') + chunk)
+  } catch { /* best-effort */ }
+}
+
+// Loose near-duplicate key: lowercase, letters/digits/spaces only, collapsed
+// whitespace. Same idea as the heartbeat's normalizeGoal.
+function normalizeEntry(text) {
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N} ]+/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// How far back the duplicate guard looks. The guard exists for a same-breath
+// double fire (live capture: the identical line written twice 9s apart, three
+// "marv goes by mars" variants inside 42s) — NOT for permanently banning a
+// fact. A thing the player re-confirms next week MUST append again: the seed
+// prompt now tells the model to mind the gap between an entry's stamp and
+// today ("a weeks-old note is an old thread"), so keeping the old stamp would
+// make a fresh confirmation read as stale history.
+const DEDUPE_WINDOW_MS = 10 * 60_000
+
+/**
+ * True when `key` already exists as an entry written inside DEDUPE_WINDOW_MS
+ * of `atMs` AND inside the CURRENT world segment (everything after the last
+ * `## World` header). Both bounds are deliberate: cross-world and older
+ * matches are the compactor's problem, not the append path's.
+ */
+function isRecentDuplicate(existing, key, atMs) {
+  const lastHeader = existing.lastIndexOf('\n## World ')
+  const segment = lastHeader === -1 ? existing : existing.slice(lastHeader)
+  const cutoff = atMs - DEDUPE_WINDOW_MS
+  for (const m of segment.matchAll(/^- \[([^\]]*)\] (.*)$/gm)) {
+    const at = Date.parse(m[1])
+    if (!Number.isFinite(at) || at < cutoff) continue
+    if (normalizeEntry(m[2]) === key) return true
+  }
+  return false
 }
 
 export async function appendMemory(filePath, text, when) {
@@ -93,7 +185,16 @@ export async function appendMemory(filePath, text, when) {
       else throw err
     }
     if (!existing.startsWith('# Memory')) existing = HEADER + existing
+    // Duplicate guard (260725): remember() sometimes fires twice in one breath
+    // (live capture: "hang up when they say bye" written twice, 9s apart).
+    // Skip an append whose normalized text EXACTLY matches a RECENT entry in
+    // THIS world — deliberately loose, near-misses are the compactor's job.
+    // Bounded on purpose: see DEDUPE_WINDOW_MS. Callers must treat 0 as "not
+    // written" (the remember() tool_result says so).
+    const atMs = Number.isFinite(whenDate.getTime()) ? whenDate.getTime() : Date.now()
+    if (isRecentDuplicate(existing, normalizeEntry(safe), atMs)) return 0
     await atomicWrite(filePath, existing + line)
+    await archiveAppend(filePath, line)
     return 1
   })
 }
@@ -101,10 +202,24 @@ export async function appendMemory(filePath, text, when) {
 /**
  * Remove all entries whose text contains `query` (case-insensitive substring).
  * Returns the number of removed lines.
+ *
+ * 260725: the query is matched against the entry as the MODEL SAW IT as well
+ * as against the raw line. Entries are stored with UTC ISO stamps but every
+ * seed read runs through humanizeMemoryStamps, so a forget() that quotes the
+ * entry the way it was shown ("- [11 Jul 2026, 09:23] they are packing for
+ * LA") could never match the ISO line on disk. Two tolerances cover it: the
+ * humanized rendering of each line is a second haystack, and a leading entry
+ * prefix is stripped off the query so the remaining text still matches.
  */
 export async function forgetMemory(filePath, query) {
   const q = String(query ?? '').trim().toLowerCase()
   if (!q) return 0
+  // "- [11 Jul 2026, 09:23] text" / "[11 jul 2026, 09:23] text" → "text". Only
+  // a leading BRACKETED stamp is stripped (so a query that legitimately starts
+  // with a dash is left alone), which narrows the match rather than widening
+  // it; a query that is nothing but a stamp strips to empty and falls back to
+  // the humanized-line haystack.
+  const qText = q.replace(/^(?:-\s*)?\[[^\]]*\]\s*/, '').trim()
 
   return withFileLock(filePath, async () => {
     let raw
@@ -119,9 +234,16 @@ export async function forgetMemory(filePath, query) {
     const kept = []
     for (const line of lines) {
       // Only entry lines (`- [iso] ...`) are candidates. Header / blank lines pass through.
-      if (/^- \[/.test(line) && line.toLowerCase().includes(q)) {
-        removed += 1
-        continue
+      if (/^- \[/.test(line)) {
+        const stored = line.toLowerCase()
+        const shown = humanizeMemoryStamps(line).toLowerCase()
+        if (
+          stored.includes(q) || shown.includes(q) ||
+          (qText && (stored.includes(qText) || shown.includes(qText)))
+        ) {
+          removed += 1
+          continue
+        }
       }
       kept.push(line)
     }
@@ -149,7 +271,7 @@ export async function readMemoryFull(filePath) {
  */
 export async function readMemoryForSeed(filePath, budgetBytes) {
   const full = await readMemoryFull(filePath)
-  if (Buffer.byteLength(full, 'utf8') <= budgetBytes) return full
+  if (Buffer.byteLength(full, 'utf8') <= budgetBytes) return humanizeMemoryStamps(full)
 
   const lines = full.split('\n')
   // Header ends at the first entry line OR world marker (whichever comes first).
@@ -188,5 +310,5 @@ export async function readMemoryForSeed(filePath, budgetBytes) {
   for (let i = 0; i < body.length; i++) {
     if (/^## World /.test(body[i]) || keep.has(i)) out.push(body[i])
   }
-  return out.join('\n') + '\n'
+  return humanizeMemoryStamps(out.join('\n') + '\n')
 }

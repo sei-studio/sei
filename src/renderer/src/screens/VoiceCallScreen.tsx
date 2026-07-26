@@ -22,6 +22,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -39,6 +40,7 @@ import {
   prefetchPct,
   prefetchVoiceModel,
 } from '../lib/voice/modelPrefetch';
+import { sttPolicy } from '../lib/voice/sttPolicy';
 import { UserIcon, PlusIcon } from '../components/icons';
 import { ChatTopBar } from '../components/ChatTopBar';
 import { CallControls } from '../components/call/CallControls';
@@ -75,6 +77,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const status = useVoiceStore((s) => s.status);
   const speakingId = useVoiceStore((s) => s.speakingId);
   const userSpeaking = useVoiceStore((s) => s.userSpeaking);
+  const reconnecting = useVoiceStore((s) => s.reconnecting);
   const lastHeard = useVoiceStore((s) => s.lastHeard);
   const lastSpoken = useVoiceStore((s) => s.lastSpoken);
   const error = useVoiceStore((s) => s.error);
@@ -82,6 +85,10 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const liveAt = useVoiceStore((s) => s.liveAt);
   const startCall = useVoiceStore((s) => s.startCall);
   const addParticipant = useVoiceStore((s) => s.addParticipant);
+  // 260725: cloud STT failed on a model-less call — offer the local backup.
+  const sttFallbackPrompt = useVoiceStore((s) => s.sttFallbackPrompt);
+  const acceptSttFallback = useVoiceStore((s) => s.acceptSttFallback);
+  const dismissSttFallback = useVoiceStore((s) => s.dismissSttFallback);
 
   // The user's own avatar (shown beside the companion pfps).
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -133,23 +140,39 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const [installPct, setInstallPct] = useState(0);
   useEffect(() => {
     let alive = true;
-    // A call already includes this character → the model is already in place.
+    // A call already includes this character → the pipeline is already up.
     if (useVoiceStore.getState().participants.includes(characterId)) {
       setGate('ready');
       return;
     }
-    void isVoiceModelReady().then((ready) => {
-      if (!alive) return;
-      if (ready) setGate('ready');
-      else if (prefetchInProgress()) {
-        setGate('installing');
-        setInstallPct(prefetchPct());
-        prefetchVoiceModel((pct) => alive && setInstallPct(pct)).then(
-          () => alive && setGate('ready'),
-          () => alive && setGate('failed'),
-        );
-      } else setGate('consent');
-    });
+    // 260725: cloud users without the local-fallback opt-in run calls in the
+    // 'none' local-model mode (Scribe only) — no Whisper model is needed, so
+    // the install gate opens immediately and the call connects without the
+    // ~40MB download. A failed config read falls back to the eager gate.
+    void sei
+      .getConfig()
+      .catch(() => null)
+      .then((cfg) => {
+        if (!alive) return;
+        // 260725: kind from the fresh config read (main truth), not the
+        // display store — the store can be UNKNOWN (null) at call time.
+        if (sttPolicy(cfg, cfg?.ai_backend_kind ?? 'cloud-proxy').localModel === 'none') {
+          setGate('ready');
+          return;
+        }
+        void isVoiceModelReady().then((ready) => {
+          if (!alive) return;
+          if (ready) setGate('ready');
+          else if (prefetchInProgress()) {
+            setGate('installing');
+            setInstallPct(prefetchPct());
+            prefetchVoiceModel((pct) => alive && setInstallPct(pct)).then(
+              () => alive && setGate('ready'),
+              () => alive && setGate('failed'),
+            );
+          } else setGate('consent');
+        });
+      });
     return () => {
       alive = false;
     };
@@ -186,8 +209,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
     void startCall(characterId);
   }, [gate, characterId, startCall]);
 
-  const theme: 'light' | 'dark' =
-    (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
+  const theme: 'light' | 'dark' = resolvedScheme();
 
   const companionName = character?.name ?? 'Companion';
   const isGroup = participants.length > 1;
@@ -202,6 +224,9 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const userAvatarSrc = portraitSrc(userProfile?.profilePicture);
 
   // Live: the call duration (00:00, ticking). Everything else keeps words.
+  // 260725: while a failed turn is being retried (LLM/proxy hiccup) the
+  // duration gives way to "Reconnecting…" so the quiet reads as a connection
+  // blip instead of a frozen companion; the timer returns on success.
   const subtitle =
     status === 'error'
       ? error ?? 'Call failed'
@@ -209,9 +234,11 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         ? // Outgoing state: always just "Calling…" (no "setting up 99%" — the
           // model-load percentage flashed on every call even from cache, task 3).
           'Calling…'
-        : liveAt !== null
-          ? formatDuration(nowTick - liveAt)
-          : '00:00';
+        : reconnecting
+          ? 'Reconnecting…'
+          : liveAt !== null
+            ? formatDuration(nowTick - liveAt)
+            : '00:00';
 
   // Install gate overlay: consent question, live progress, or failure. The
   // call UI behind it stays in its idle pose until the gate opens.
@@ -430,6 +457,27 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         <div className={styles.captions} aria-live="polite">
           {lastSpoken ? <p className={styles.captionCompanion}>{lastSpoken}</p> : null}
           {lastHeard ? <p className={styles.captionUser}>You: {lastHeard}</p> : null}
+        </div>
+      ) : null}
+
+      {/* Cloud-STT hiccup on a model-less call: a non-blocking offer to install
+          the local backup. Accepting persists stt_local_fallback and starts the
+          download (applies from the next call); dismissing hides it for the
+          rest of this call (the prompt only fires once per call). */}
+      {sttFallbackPrompt ? (
+        <div className={styles.fallbackPrompt} role="status">
+          <p className={styles.fallbackText}>
+            Voice recognition hiccup. Install the local backup model so calls keep working
+            offline?
+          </p>
+          <div className={styles.fallbackActions}>
+            <Button kind="quiet" size="sm" onClick={dismissSttFallback}>
+              Not now
+            </Button>
+            <Button kind="primary" size="sm" onClick={() => void acceptSttFallback()}>
+              Install
+            </Button>
+          </div>
         </div>
       ) : null}
 

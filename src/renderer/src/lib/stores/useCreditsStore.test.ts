@@ -65,10 +65,16 @@ let onCreditsHardStopMock: ReturnType<
 >;
 let statusUnsub: ReturnType<typeof vi.fn<() => void>>;
 let hardStopUnsub: ReturnType<typeof vi.fn<() => void>>;
+// 260725: proxy:kind-changed push (main's live backend-kind feed).
+let onAiBackendKindChangedMock: ReturnType<
+  typeof vi.fn<(cb: (ev: { kind: CreditsStatus['ai_backend_kind'] }) => void) => Unsubscribe>
+>;
+let kindUnsub: ReturnType<typeof vi.fn<() => void>>;
 
 // Captured push handlers so tests can fire them at deterministic moments.
 let statusHandler: ((s: CreditsStatus) => void) | null;
 let hardStopHandler: ((info: CreditsHardStopEvent) => void) | null;
+let kindHandler: ((ev: { kind: CreditsStatus['ai_backend_kind'] }) => void) | null;
 
 beforeEach(() => {
   vi.resetModules();
@@ -95,6 +101,14 @@ beforeEach(() => {
     hardStopHandler = cb;
     return hardStopUnsub;
   });
+  kindUnsub = vi.fn();
+  kindHandler = null;
+  onAiBackendKindChangedMock = vi.fn(
+    (cb: (ev: { kind: CreditsStatus['ai_backend_kind'] }) => void) => {
+      kindHandler = cb;
+      return kindUnsub;
+    },
+  );
 
   (globalThis as unknown as { window: unknown }).window = {
     sei: {
@@ -105,6 +119,7 @@ beforeEach(() => {
       getConfig: getConfigMock,
       onCreditsStatusUpdate: onCreditsStatusUpdateMock,
       onCreditsHardStop: onCreditsHardStopMock,
+      onAiBackendKindChanged: onAiBackendKindChangedMock,
     },
   };
 });
@@ -371,9 +386,32 @@ describe('useCreditsStore', () => {
 
     expect(statusUnsub).toHaveBeenCalledTimes(1);
     expect(hardStopUnsub).toHaveBeenCalledTimes(1);
+    expect(kindUnsub).toHaveBeenCalledTimes(1);
     expect(store.getState().initialized).toBe(false);
     expect(store.getState().hardStopActive).toBe(false);
     expect(store.getState().plan).toBe('free');
+  });
+
+  it('Test 11b (260725): backend kind starts UNKNOWN, tracks the kind push, and reverts to unknown on reset', async () => {
+    // The recurring local-UI-cloud-billing incident: the store must NEVER
+    // guess a mode. Before any main report the kind is null (UI shows neither
+    // BYOK nor cloud surfaces); the proxy:kind-changed push is applied
+    // unconditionally; reset() returns to unknown, not to a guessed 'local'.
+    creditsGetMock.mockImplementation(() => new Promise(() => {})); // seed never resolves
+    const store = await loadStore();
+    expect(store.getState().ai_backend_kind).toBeNull();
+
+    void store.getState().init();
+    expect(kindHandler).not.toBeNull();
+
+    kindHandler!({ kind: 'cloud-proxy' });
+    expect(store.getState().ai_backend_kind).toBe('cloud-proxy');
+
+    kindHandler!({ kind: 'local' });
+    expect(store.getState().ai_backend_kind).toBe('local');
+
+    store.getState().reset();
+    expect(store.getState().ai_backend_kind).toBeNull();
   });
 
   it('Test 12: no token/dollar/micro field names in the state shape', async () => {

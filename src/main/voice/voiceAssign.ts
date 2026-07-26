@@ -28,6 +28,11 @@ const VOICE_IDS = new Set((VOICES as Array<{ id: string }>).map((v) => v.id));
  * without this set, assignedVoiceId would reject the persisted id and
  * resolveVoiceId would re-roll, persist, and cloud-sync a different voice.
  * New assignments never draw from here; rollVoice only sees VOICES.
+ *
+ * 260725: the five neutral voices cut in the 260707 curation (River, Sammy,
+ * Riley, Ramona, Aaron) rejoined the pool as the neutral section of VOICES,
+ * so they were removed from this set — membership in both would be
+ * contradictory (this set is for voices REMOVED from the pool).
  */
 const LEGACY_VOICE_IDS = new Set([
   // female / young
@@ -70,12 +75,6 @@ const LEGACY_VOICE_IDS = new Set([
   'PerZoH0r6nxBZXCoIPpv', // Michael
   'UzI1NsMEV3ni5JRkRSls', // Alistair
   'RcEmXcISaHUgHOU4uNTz', // Hansi
-  // neutral
-  'SAz9YHcvj6GT2YYXdXww', // River
-  'M563YhMmA0S8vEYwkgYa', // Sammy
-  'JGzTGubAVbbgG0SsLIlg', // Riley
-  'Z9VxF84ucVtzvKlmYFhh', // Ramona
-  'YKlogvnVogI4aFHoGIEw', // Aaron
 ]);
 
 /** FNV-1a over the character id — a stable 32-bit seed for the fallback roll. */

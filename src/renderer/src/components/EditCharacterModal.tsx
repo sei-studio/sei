@@ -10,18 +10,20 @@
  *                 moved here from the character page's Skin tab, which is now
  *                 read-only.) Both apply immediately (no modal Save).
  *  - VOICE      — the same VoicePicker as the creation flow (Auto / No voice /
- *                 a pinned pool voice, with playable samples). Applies
- *                 immediately; persists character.metadata.voiceId (260720).
+ *                 a pinned pool voice, with playable samples + the pitch/
+ *                 calmness playground). DEFERRED (260725): edits stay local
+ *                 while fiddling and persist once on Done/close
+ *                 (metadata.voiceId / voicePitch / voiceStability).
  *  - PERSONA    — two modes:
- *      • Standard: persona SOURCE + PROACTIVENESS + a Regenerate button.
- *        Changing either marks the persona dirty; to leave you must Regenerate
- *        (re-runs the expander, persists) or Discard. Regenerate counts against
- *        the existing persona-expansion rate limit.
+ *      • Standard: persona SOURCE + a Regenerate button. Changing it marks the
+ *        persona dirty; to leave you must Regenerate (re-runs the expander,
+ *        persists) or Discard. Regenerate counts against the existing
+ *        persona-expansion rate limit.
  *      • Advanced: the raw expanded prompt sent to the LLM, edited verbatim
  *        (Save writes it as-is, skipExpansion). The user can drop the
- *        proactiveness framework etc.
+ *        standard framework etc.
  *      Switching Advanced → Standard regenerates from source (discarding manual
- *      edits), because Standard assumes expanded == expansion(source, tier).
+ *      edits), because Standard assumes expanded == expansion(source).
  *
  * Pattern lifted from DeleteConfirmModal for backdrop + ESC handling.
  */
@@ -40,7 +42,8 @@ import { ResetMemoryConfirmModal } from './ResetMemoryConfirmModal';
 import { PortraitImagePicker } from './PortraitImagePicker';
 import { SkinEditor } from './SkinEditor';
 import { VoicePicker } from './VoicePicker';
-import { PROACTIVENESS_LEVELS, getProactiveness } from '../lib/proactiveness';
+import type { VoiceParams } from '../lib/voicePicker';
+import { voicePitchRate, voiceStabilityFor } from '@shared/voicePitch';
 import type { Character } from '@shared/characterSchema';
 import styles from './EditCharacterModal.module.css';
 
@@ -69,7 +72,13 @@ export function EditCharacterModal({
   notice,
 }: EditCharacterModalProps): React.ReactElement {
   const [section, setSection] = useState<EditSection | 'danger'>(initialSection);
-  const [personaMode, setPersonaMode] = useState<PersonaMode>('standard');
+  // 260725: characters created with "Expand my prompt" OFF (the user wrote
+  // the exact prompt) open in Advanced; everything else opens in Standard.
+  // The flag tracks the user's latest editing mode afterwards (saveAdvanced
+  // stamps 'advanced', regenerate stamps 'standard').
+  const [personaMode, setPersonaMode] = useState<PersonaMode>(
+    character.metadata?.prompt_mode === 'advanced' ? 'advanced' : 'standard',
+  );
 
   // ── Edit state ──────────────────────────────────────────────────────
   const [name, setName] = useState<string>(character.name ?? '');
@@ -77,17 +86,29 @@ export function EditCharacterModal({
   const [portraitImage, setPortraitImage] = useState<string | null>(character.portrait_image);
   const [personaSource, setPersonaSource] = useState<string>(character.persona.source ?? '');
   const [personaExpanded, setPersonaExpanded] = useState<string>(character.persona.expanded ?? '');
-  const [proactiveness, setProactiveness] = useState<number>(getProactiveness(character));
-  // Which step the pointer/focus is previewing, so the help line below the
-  // picker can show that level's blurb without a native `title` tooltip (which
-  // renders unstyled BELOW the cursor and clips its text). Falls back to the
-  // selected level when nothing is hovered.
-  const [proactivenessHover, setProactivenessHover] = useState<number | null>(null);
   // Voice (260720): null = Auto (metadata.voiceId unset), 'none' = silent,
   // any other string = pinned pool voice. Same shape unique-cast writes.
   const [voiceId, setVoiceId] = useState<string | null>(
     typeof character.metadata?.voiceId === 'string' ? (character.metadata.voiceId as string) : null,
   );
+  // Voice playground (260725): pitch/calmness sliders, seeded from the
+  // EFFECTIVE values, not just the metadata keys — a character with a baked
+  // code default (Sui: pitch 1.224, calmness 0.85 in shared/voicePitch.ts)
+  // must open with the sliders where her voice actually is, not at neutral.
+  // Rounded to the slider's 0.01 step so the readout matches the thumb.
+  const [voiceParams, setVoiceParams] = useState<VoiceParams>(() => {
+    const p: VoiceParams = {};
+    const pitch = Math.round(voicePitchRate(character) * 100) / 100;
+    if (pitch !== 1) p.pitch = pitch;
+    const calm = voiceStabilityFor(character);
+    if (calm !== undefined) p.calmness = calm;
+    return p;
+  });
+  // Baselines for the deferred save (260725): voice edits no longer upload as
+  // you fiddle — they persist ONCE when the modal closes via Done (see
+  // persistVoiceSettings). These hold the last-persisted values.
+  const [savedVoiceId, setSavedVoiceId] = useState<string | null>(voiceId);
+  const [savedVoiceParams, setSavedVoiceParams] = useState<VoiceParams>(voiceParams);
 
   // ── Games: chess profile (260710). Auto-derived from the persona on the
   //    first game unless the user customizes it here (source 'user'). ─────
@@ -113,7 +134,6 @@ export function EditCharacterModal({
   const [savedDescription, setSavedDescription] = useState<string>(character.description ?? '');
   const [savedSource, setSavedSource] = useState<string>(character.persona.source ?? '');
   const [savedExpanded, setSavedExpanded] = useState<string>(character.persona.expanded ?? '');
-  const [savedProactiveness, setSavedProactiveness] = useState<number>(getProactiveness(character));
 
   const [error, setError] = useState<string | null>(null);
   const [savingBasic, setSavingBasic] = useState<boolean>(false);
@@ -145,10 +165,13 @@ export function EditCharacterModal({
   // ── Dirty flags ─────────────────────────────────────────────────────
   const basicDirty = name.trim() !== savedName.trim() || description.trim() !== savedDescription.trim();
   const sourceDirty = personaSource !== savedSource;
-  const proactivenessDirty = proactiveness !== savedProactiveness;
-  const standardDirty = sourceDirty || proactivenessDirty;
+  const standardDirty = sourceDirty;
   const expandedDirty = personaExpanded !== savedExpanded;
   const personaDirty = personaMode === 'standard' ? standardDirty : expandedDirty;
+  const voiceDirty =
+    voiceId !== savedVoiceId ||
+    voiceParams.pitch !== savedVoiceParams.pitch ||
+    voiceParams.calmness !== savedVoiceParams.calmness;
   const busy = savingBasic || regenerating || savingAdvanced;
 
   // Closing is blocked while persona has un-applied changes — the user must
@@ -161,6 +184,12 @@ export function EditCharacterModal({
       const ok = await persistBasic();
       if (!ok) return;
     }
+    // Voice edits persist ONCE here (260725) — Done/close is the save point;
+    // nothing uploads while the user is still fiddling with the sliders.
+    if (voiceDirty) {
+      const ok = await persistVoiceSettings();
+      if (!ok) return;
+    }
     onClose();
   };
 
@@ -171,7 +200,7 @@ export function EditCharacterModal({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canClose, basicDirty, name, description]);
+  }, [canClose, basicDirty, name, description, voiceDirty, voiceId, voiceParams]);
 
   // ── Persistence helpers ─────────────────────────────────────────────
   const persistBasic = async (): Promise<boolean> => {
@@ -240,25 +269,46 @@ export function EditCharacterModal({
     }
   };
 
-  /** Voice changes apply immediately, like appearance (260720). Auto (null)
-   *  removes the metadata key so the runtime auto-assignment applies again. */
-  const persistVoice = async (next: string | null): Promise<void> => {
-    setVoiceId(next);
+  // ── Voice persistence (260725: DEFERRED) ────────────────────────────
+  // Voice edits (picked voice + pitch/calmness sliders) no longer upload as
+  // the user fiddles — previews use the local state, and everything persists
+  // in ONE save when the modal closes via Done (requestClose). Reads the
+  // LATEST character before writing so it can't clobber a concurrent edit.
+  //
+  // Neutral-slider semantics: VoicePicker normalizes away default-valued keys
+  // (pitch 1.00, and calmness cleared via Reset). For a character with a
+  // BAKED non-neutral default (Sui), an absent key would silently fall back
+  // to the baked value — so when the user deliberately lands a slider on
+  // neutral, we write the neutral value EXPLICITLY instead of deleting the
+  // key. bakedFor() recomputes the code defaults with metadata blanked.
+  const persistVoiceSettings = async (): Promise<boolean> => {
     setError(null);
     try {
-      const metadata = { ...(character.metadata ?? {}) };
-      if (next === null) delete metadata.voiceId;
-      else metadata.voiceId = next;
-      const persisted = await sei.saveCharacter({ ...character, metadata }, { skipExpansion: true });
+      const latest = (await sei.getCharacter(character.id)) ?? character;
+      const metadata = { ...(latest.metadata ?? {}) };
+      if (voiceId === null) delete metadata.voiceId;
+      else metadata.voiceId = voiceId;
+      const baked = { id: character.id, metadata: {} };
+      if (voiceParams.pitch !== undefined) metadata.voicePitch = voiceParams.pitch;
+      else if (voicePitchRate(baked) !== 1) metadata.voicePitch = 1;
+      else delete metadata.voicePitch;
+      if (voiceParams.calmness !== undefined) metadata.voiceStability = voiceParams.calmness;
+      else if (voiceStabilityFor(baked) !== undefined) metadata.voiceStability = 0.5; // slider shows 0.50; baked default must not override it
+      else delete metadata.voiceStability;
+      const persisted = await sei.saveCharacter({ ...latest, metadata }, { skipExpansion: true });
       await refreshCharacter(character.id);
+      setSavedVoiceId(voiceId);
+      setSavedVoiceParams(voiceParams);
       onSaved?.(persisted);
+      return true;
     } catch (err) {
-      setError((err as Error)?.message ?? 'Failed to save voice.');
+      setError((err as Error)?.message ?? 'Failed to save voice settings.');
+      return false;
     }
   };
 
-  /** Re-run the expander from the current source + proactiveness, persist, and
-   *  sync the expanded text. Consumes one persona-expansion (rate-limited). */
+  /** Re-run the expander from the current source, persist, and sync the
+   *  expanded text. Consumes one persona-expansion (rate-limited). */
   const regenerate = async (): Promise<boolean> => {
     const trimmedSource = personaSource.trim();
     if (!trimmedSource) {
@@ -273,7 +323,8 @@ export function EditCharacterModal({
     const draft: Character = {
       ...character,
       persona: { source: trimmedSource, expanded: '' },
-      metadata: { ...(character.metadata ?? {}), proactiveness },
+      // Regenerating means the user is back on the standard framework.
+      metadata: { ...(character.metadata ?? {}), prompt_mode: 'standard' },
     };
     try {
       const persisted = await sei.saveCharacter(draft, { skipExpansion: false, expansionRequestId: requestId });
@@ -282,7 +333,6 @@ export function EditCharacterModal({
       setPersonaExpanded(nextExpanded);
       setSavedExpanded(nextExpanded);
       setSavedSource(trimmedSource);
-      setSavedProactiveness(proactiveness);
       onSaved?.(persisted);
       return true;
     } catch (err) {
@@ -302,6 +352,8 @@ export function EditCharacterModal({
     const draft: Character = {
       ...character,
       persona: { source: savedSource, expanded: personaExpanded },
+      // A hand-edited raw prompt means this character is Advanced-managed now.
+      metadata: { ...(character.metadata ?? {}), prompt_mode: 'advanced' },
     };
     try {
       const persisted = await sei.saveCharacter(draft, { skipExpansion: true });
@@ -339,7 +391,6 @@ export function EditCharacterModal({
 
   const discardStandard = (): void => {
     setPersonaSource(savedSource);
-    setProactiveness(savedProactiveness);
     setError(null);
   };
 
@@ -475,9 +526,14 @@ export function EditCharacterModal({
                 <div className={styles.subSection}>
                   <label className={styles.label}>Voice</label>
                   <p className={styles.paneHint}>
-                    How they sound on voice calls. Changes apply immediately.
+                    How they sound on voice calls. Changes save when you press Done.
                   </p>
-                  <VoicePicker value={voiceId} onChange={(v) => void persistVoice(v)} />
+                  <VoicePicker
+                    value={voiceId}
+                    onChange={setVoiceId}
+                    params={voiceParams}
+                    onParamsChange={setVoiceParams}
+                  />
                 </div>
               ) : null}
 
@@ -510,7 +566,7 @@ export function EditCharacterModal({
                   {confirmSwitch ? (
                     <div className={styles.confirmBanner} role="alertdialog" aria-label="Switch to standard mode">
                       <span className={styles.confirmBannerText}>
-                        Switching to Standard regenerates the persona from your source and proactiveness,
+                        Switching to Standard regenerates the persona from your source,
                         discarding your manual prompt edits. This uses one generation.
                       </span>
                       <div className={styles.confirmBannerActions}>
@@ -539,38 +595,13 @@ export function EditCharacterModal({
                           aria-label="Persona source"
                         />
                       </div>
-                      <div className={styles.field}>
-                        <label className={styles.label}>Proactiveness</label>
-                        <div className={styles.proactivenessPicker} role="radiogroup" aria-label="Proactiveness level">
-                          {PROACTIVENESS_LEVELS.map((lvl) => (
-                            <button
-                              key={lvl.value}
-                              type="button"
-                              role="radio"
-                              aria-checked={proactiveness === lvl.value}
-                              className={`${styles.proactivenessStep} ${proactiveness === lvl.value ? styles.proactivenessStepOn : ''}`}
-                              onClick={() => setProactiveness(lvl.value)}
-                              onMouseEnter={() => setProactivenessHover(lvl.value)}
-                              onMouseLeave={() => setProactivenessHover(null)}
-                              onFocus={() => setProactivenessHover(lvl.value)}
-                              onBlur={() => setProactivenessHover(null)}
-                              disabled={busy}
-                            >
-                              {lvl.label}
-                            </button>
-                          ))}
-                        </div>
-                        <span className={styles.proactivenessHelp}>
-                          {PROACTIVENESS_LEVELS[proactivenessHover ?? proactiveness]?.blurb}
-                        </span>
-                      </div>
                     </>
                   ) : (
                     <div className={styles.field}>
                       <label className={styles.label}>Raw prompt</label>
                       <p className={styles.paneHint}>
                         The exact prompt sent to the model each turn. Editing here overrides the standard
-                        framework (proactiveness, voice rules, and all).
+                        framework (voice rules and all).
                       </p>
                       <div className={styles.expandedBody}>
                         <button type="button" className={styles.expandedCopy} onClick={() => void onCopyExpanded()}>

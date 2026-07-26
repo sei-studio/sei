@@ -52,6 +52,7 @@ import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildSystemBlocks, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import {
   splitReply,
   toMessages,
@@ -61,7 +62,7 @@ import {
   TRANSCRIPT_STOP_SEQUENCES,
 } from '../chat/chatService';
 import * as chatStore from '../chat/chatStore';
-import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
+import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { createPriorityQueue, Priority } from '../../bot/brain/fsm.js';
 import { isCallActive } from '../voice/callState';
 import { clampChatLanguage } from '../../shared/chatLanguage';
@@ -948,26 +949,9 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
   }
 
   if (!opts?.silent) {
-    // Memory: one line in the character's own ledger about how it went.
-    void (async () => {
-      try {
-        const config = await loadConfig();
-        const player = (config.preferred_name ?? '').trim() || 'the player';
-        const aiColor = s.playerColor === 'w' ? 'b' : 'w';
-        const outcome =
-          result.winner === null
-            ? `we drew (${result.reason.replace('draw-', '')})`
-            : result.winner === aiColor
-              ? `i won (${result.reason})`
-              : `i lost (${result.reason})`;
-        await appendMemory(
-          path.join(paths.memoryDir(s.characterId), 'MEMORY.md'),
-          `played chess with ${player}: ${outcome} in ${Math.ceil(s.history.length / 2)} moves`,
-        );
-      } catch {
-        /* best-effort */
-      }
-    })();
+    // No mechanical memory line for the result (260725): template writes read
+    // as canned next to the character's own remember() notes, and the game-over
+    // reaction turn below can remember() anything actually worth keeping.
     // Let the character react to the result in chat.
     void runChessLlmTurn(s, { kind: 'game-over', voiceCall: isCallActive(s.characterId) }).catch(() => {});
   }
@@ -1426,7 +1410,12 @@ function buildGameThread(s: Session, history: ChatMessage[]): ChatMessage[] {
 async function readMemoryTail(id: string): Promise<string> {
   try {
     const raw = await readFile(path.join(paths.memoryDir(id), 'MEMORY.md'), 'utf8');
-    return raw.length <= 6000 ? raw : raw.slice(-6000);
+    // Mirrors chatService's MEMORY_BUDGET_BYTES (260725: 6000 -> 12000).
+    // 260725: stamps render local-time for the model, exactly as chatService's
+    // readMemoryTail and the bot's readMemoryForSeed do. buildSystemBlocks now
+    // tells the model to date each note against today's local clock, so raw UTC
+    // ISO stamps here made table talk misdate shared memories.
+    return humanizeMemoryStamps(raw.length <= 12000 ? raw : raw.slice(-12000));
   } catch {
     return '';
   }
@@ -1452,9 +1441,10 @@ async function runChessLlmTurn(
   if (!character) throw new Error('character not found');
   const config = await loadConfig();
   const playerName = (config.preferred_name ?? '').trim() || 'the player';
-  const [{ summary, history }, memory] = await Promise.all([
+  const [{ summary, history }, memory, knowledge] = await Promise.all([
     readChatContext(s.characterId),
     readMemoryTail(s.characterId),
+    readKnowledgeForPrompt(s.characterId).catch(() => ''),
   ]);
   const quietSec = (Date.now() - s.lastActivityAt) / 1000;
 
@@ -1466,6 +1456,7 @@ async function runChessLlmTurn(
     punctuation: character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual',
     memory,
     summary,
+    knowledge,
     openWorldDetected: false,
     inGame: false,
     voiceCall: opts.voiceCall,
@@ -1700,8 +1691,16 @@ async function runChessLlmTurn(
           const memText = String((tu.input as { text?: string })?.text ?? '').trim();
           if (memText) {
             try {
-              await appendMemory(path.join(paths.memoryDir(s.characterId), 'MEMORY.md'), memText);
-              note = 'Saved. Continue; do not mention saving it.';
+              // 260725: 0 means the bounded duplicate guard skipped the write.
+              // Same honesty fix as the game brain and chat surfaces.
+              const written = await appendMemory(
+                path.join(paths.memoryDir(s.characterId), 'MEMORY.md'),
+                memText,
+              );
+              note =
+                written === 0
+                  ? 'You already saved that a moment ago; nothing new was written. Continue.'
+                  : 'Saved. Continue; do not mention saving it.';
             } catch {
               note = 'Could not save it. Continue.';
             }

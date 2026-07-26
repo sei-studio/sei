@@ -31,6 +31,7 @@ import { app, net, powerMonitor, type BrowserWindow } from 'electron';
 import { IpcChannel, type WhatsNewEvent } from '../shared/ipc';
 import { deriveLevel, normalizeApply, shouldShowWhatsNew, type ApplyTiming } from './updatePolicy';
 import { loadUpdateState, saveUpdateState } from './updateStateStore';
+import { refreshNotices } from './notices';
 
 const logger = {
   info: (m: string) => console.log(`[sei] ${m}`),
@@ -512,12 +513,17 @@ async function runWhatsNewCheck(): Promise<void> {
  * uniformly. No-op in dev / on load failure (no autoUpdater).
  */
 function maybeBackgroundCheck(reason: string): void {
-  const au = autoUpdater;
-  if (!au) return;
   if (backgroundCheckInFlight || manualCheckInFlight) return;
   const now = Date.now();
   if (now - lastBackgroundCheckAt < MIN_BACKGROUND_GAP_MS) return;
   lastBackgroundCheckAt = now;
+  // Notices ride this exact clock (260725) — one throttle, one set of triggers,
+  // one extra ~1KB GET per wake-up. It sits ABOVE the autoUpdater guard on
+  // purpose: nothing about fetching a JSON feed is packaged-only, so notices
+  // work in dev while the update check stays disabled there.
+  void refreshNotices(reason);
+  const au = autoUpdater;
+  if (!au) return;
   backgroundCheckInFlight = true;
   backgroundCheck = true;
   logger.info(`updater: background re-check (${reason})`);
@@ -546,31 +552,37 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
   // renderer's pull (getPendingWhatsNew) shares this one computation.
   void ensureWhatsNewComputed();
 
-  const au = ensureAutoUpdater();
-  if (!au) return; // dev or load failure — nothing else to do.
-
-  // Flow A — startup auto-check. Seed the throttle so the window's own
-  // launch-time focus event doesn't immediately fire a redundant second check.
+  // Seed the throttle so the window's own launch-time focus event doesn't
+  // immediately fire a redundant second check. Done before anything else so it
+  // holds on the dev path too (where the notices refresh below is the only
+  // thing riding the cadence).
   lastBackgroundCheckAt = Date.now();
-  // Seed the channel from persisted config BEFORE the startup check, so an
-  // advanced-updates user checks the beta feed from the first check on. Config
-  // load is async and best-effort: on any failure we keep the safe stable
-  // default (a normal user must never be silently moved onto a beta). The
-  // lazy import keeps configStore out of updater's cold-start graph.
-  void (async () => {
-    try {
-      const { loadConfig } = await import('./configStore');
-      const cfg = await loadConfig();
-      allowPrerelease = cfg.advanced_updates === true;
-      au.allowPrerelease = allowPrerelease;
-    } catch (err) {
-      logger.warn(`updater: advanced-updates config read failed (${(err as Error).message})`);
-    }
-    au.checkForUpdates().catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.warn(`updater: startup checkForUpdates failed (${message})`);
-    });
-  })();
+  // Notices — startup leg of the shared cadence (260725). Runs in dev as well.
+  void refreshNotices('startup');
+
+  const au = ensureAutoUpdater();
+  if (au) {
+    // Flow A — startup auto-check. Seed the channel from persisted config
+    // BEFORE it, so an advanced-updates user checks the beta feed from the
+    // first check on. Config load is async and best-effort: on any failure we
+    // keep the safe stable default (a normal user must never be silently moved
+    // onto a beta). The lazy import keeps configStore out of updater's
+    // cold-start graph.
+    void (async () => {
+      try {
+        const { loadConfig } = await import('./configStore');
+        const cfg = await loadConfig();
+        allowPrerelease = cfg.advanced_updates === true;
+        au.allowPrerelease = allowPrerelease;
+      } catch (err) {
+        logger.warn(`updater: advanced-updates config read failed (${(err as Error).message})`);
+      }
+      au.checkForUpdates().catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(`updater: startup checkForUpdates failed (${message})`);
+      });
+    })();
+  }
 
   // Flow A' — self-notice a release without a relaunch. Responsiveness is
   // event-driven (see maybeBackgroundCheck); the periodic timer is only a
@@ -599,6 +611,9 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
  * events flow through the same handlers as the startup check.
  */
 export async function checkForUpdatesManual(): Promise<void> {
+  // A manual check refreshes notices too — same cadence, and the user asking
+  // "is there anything new" is exactly when an unseen announcement should land.
+  void refreshNotices('manual');
   const au = ensureAutoUpdater();
   if (!au) {
     send(IpcChannel.app.updateNotAvailable);

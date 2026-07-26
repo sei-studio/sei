@@ -148,9 +148,11 @@ export function createAnthropicClient(config) {
    * @param {Array<{role:string, content:Array<{type:string, name?:string, text?:string}>}>} [req.namedUserBlocks] Canonical pre-strip messages array carrying `name` fields on text blocks; used by log.js for cache-prefix hash elision. Logger-only; not sent to API.
    * @param {string} [req.path] Per-call SDK request path override. Used ONLY by the post-explicit-`visualize` turn to hit the proxy `/vision/v1/messages` vision-cap gate (15-02, VIS-07/D-09), and ONLY in cloud-proxy mode (BYOK/local providers never set it — D-11). When undefined the SDK uses its built-in `/v1/messages`.
    * @param {string} [req.model] Per-call model override (260703). Used by the MEMORY.md compactor to run on the latest Sonnet while the main loop stays on the configured (Haiku) model. When undefined the client's configured model is used.
+   * @param {(text: string, toolUseId: string) => void} [req.onSay] Voice-call latency (260724): when set, the request is made with SSE streaming and this fires the moment the FIRST `say` tool_use block's input JSON completes — typically seconds before the full turn finishes — so the caller can start TTS while the rest of the turn (remaining scratchpad, world-action calls) is still generating. Fires at most once per call(). The resolved response is byte-identical in shape to the non-streaming path. 260725: an error after it fired is no longer terminal — the retry REPLAYS the spoken line instead of speaking a new one (see below), so the tool calls bundled after the say() are recovered.
+   * @param {{id:string,text:string}} [req.spokenSay] A say() line the caller ALREADY delivered to the player in an earlier attempt of this same turn (the orchestrator's timeout retry). Suppresses `onSay` for this call and collapses every say block in the response down to this one — same tool_use id, same text the player heard — so the caller's early-say bookkeeping still pairs up and the bot never repeats itself. call() sets this for itself on its own rescue retries.
    * @returns {Promise<{toolUses:Array<{id:string,name:string,input:any}>, text:string, usage:object, stopReason:string}>}
    */
-  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking, path, model: modelOverride }) {
+  async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking, path, model: modelOverride, onSay, spokenSay }) {
     logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks })
     // 260502-h6i: stamp cache_control on the LAST tool entry so the cache
     // boundary lands at the end of the tools array (system → tools is now
@@ -190,6 +192,89 @@ export function createAnthropicClient(config) {
     }
     const deadline = setTimeout(() => { timedOut = true; ctrl.abort() }, budgetMs)
 
+    // 260724: the say() line handed to onSay is already in the player's ear.
+    // 260725: rather than making every later failure terminal (which dropped
+    // the come()/remember() calls the model bundled AFTER the say — the player
+    // heard "sure, coming!" and the bot never moved), the block is kept here
+    // and REPLAYED onto any retried attempt: onSay never fires twice, and the
+    // retry's own say blocks are collapsed into this one, so the turn's tool
+    // calls are recovered without the bot speaking a second, different line.
+    let spokenSayBlock = spokenSay
+      ? { type: 'tool_use', id: spokenSay.id, name: 'say', input: { text: spokenSay.text ?? '' } }
+      : null
+    let sayFired = spokenSayBlock !== null
+    const fireSayOnce = (block) => {
+      if (sayFired || typeof onSay !== 'function') return
+      sayFired = true
+      spokenSayBlock = { type: 'tool_use', id: block.id, name: 'say', input: block.input ?? {} }
+      try { onSay(block.input?.text ?? '', block.id) } catch { /* caller's problem, not the turn's */ }
+    }
+
+    /**
+     * Collapse a REPLAYED attempt's say blocks down to the one line the player
+     * already heard: the first say block becomes `spoken` (same id, so the
+     * caller's early-say record still matches and its tool_result bookkeeping
+     * is unchanged), any further say blocks are dropped, and everything else —
+     * the tool calls this retry existed to recover — passes through untouched.
+     * If the retry produced no say at all the spoken block is appended (never
+     * prepended — a `thinking` block must stay first), so the assistant turn
+     * always carries exactly one record of what was said.
+     */
+    function replaySpokenSay(content, spoken) {
+      const out = []
+      let placed = false
+      for (const b of content) {
+        if (b.type === 'tool_use' && b.name === 'say') {
+          if (!placed) { out.push(spoken); placed = true }
+          continue
+        }
+        out.push(b)
+      }
+      if (!placed) out.push(spoken)
+      return out
+    }
+
+    /**
+     * Streaming attempt (260724, voice-call turns only). Accumulates the SSE
+     * events back into the exact `messages.create` response shape the rest of
+     * call() consumes, and fires `fireSayOnce` at the first say-block close.
+     * Thinking/signature deltas are accumulated so history round-trips intact
+     * if extended thinking is ever enabled on a voice turn.
+     */
+    async function streamOnce(reqOpts) {
+      const stream = await sdk.messages.create({ ...req, stream: true }, reqOpts)
+      const content = []
+      let usage = {}
+      let stopReason = null
+      let cur = null
+      let curJson = ''
+      for await (const ev of stream) {
+        if (ev.type === 'message_start') {
+          usage = { ...(ev.message?.usage ?? {}) }
+        } else if (ev.type === 'content_block_start') {
+          cur = { ...ev.content_block }
+          curJson = ''
+        } else if (ev.type === 'content_block_delta' && cur) {
+          if (ev.delta.type === 'text_delta') cur.text = (cur.text ?? '') + ev.delta.text
+          else if (ev.delta.type === 'input_json_delta') curJson += ev.delta.partial_json
+          else if (ev.delta.type === 'thinking_delta') cur.thinking = (cur.thinking ?? '') + ev.delta.thinking
+          else if (ev.delta.type === 'signature_delta') cur.signature = ev.delta.signature
+        } else if (ev.type === 'content_block_stop' && cur) {
+          if (cur.type === 'tool_use') {
+            if (curJson) { try { cur.input = JSON.parse(curJson) } catch { cur.input = cur.input ?? {} } }
+            else cur.input = cur.input ?? {}
+            if (cur.name === 'say') fireSayOnce(cur)
+          }
+          content.push(cur)
+          cur = null
+        } else if (ev.type === 'message_delta') {
+          stopReason = ev.delta?.stop_reason ?? stopReason
+          if (ev.usage) usage = { ...usage, ...ev.usage }
+        }
+      }
+      return { content, usage, stop_reason: stopReason }
+    }
+
     const startedAt = Date.now()
     try {
       // Attempt loop: an optional 404 vision-path reroute plus up to
@@ -200,6 +285,11 @@ export function createAnthropicClient(config) {
       // sleeps are short, capped, and abort with the controller.
       let rescueRetries = 0
       while (true) {
+        // Captured BEFORE the attempt: non-null only when a say() was already
+        // spoken (by an earlier attempt here, or by a previous call() for this
+        // same turn via `spokenSay`), which is exactly when the response needs
+        // the replay collapse.
+        const replaySay = spokenSayBlock
         try {
           // Per-attempt timeout sits just above the REMAINING budget so the
           // deadline controller is always the authoritative cap.
@@ -208,9 +298,13 @@ export function createAnthropicClient(config) {
           // in cloud mode) routes this single request to the proxy's vision
           // route (observability only since 260705 — no hourly cap); undefined
           // keeps the SDK default `/v1/messages`.
-          const resp = await sdk.messages.create(req, { signal: ctrl.signal, timeout: Math.max(1_000, remainingMs + 2_000), ...(path ? { path } : {}) })
+          const reqOpts = { signal: ctrl.signal, timeout: Math.max(1_000, remainingMs + 2_000), ...(path ? { path } : {}) }
+          // 260724: onSay callers get the streaming attempt (early say emit);
+          // everyone else keeps the plain create. Both resolve the same shape.
+          const resp = typeof onSay === 'function' ? await streamOnce(reqOpts) : await sdk.messages.create(req, reqOpts)
           const elapsedMs = Date.now() - startedAt
-          const content = resp.content ?? []
+          const rawContent = resp.content ?? []
+          const content = replaySay ? replaySpokenSay(rawContent, replaySay) : rawContent
           const toolUses = content
             .filter(b => b.type === 'tool_use')
             .map(b => ({ id: b.id, name: b.name, input: b.input }))
@@ -256,6 +350,13 @@ export function createAnthropicClient(config) {
             path = undefined
             continue
           }
+          // 260725: an error after the early say() emit is NOT terminal any
+          // more. It used to be (a retry could speak a second, different
+          // line), but that dropped every tool call the model bundled after
+          // the say — the player heard "sure, coming!" and the bot never
+          // moved, with no retry anywhere. The retry now rides the normal
+          // rescue path below with `spokenSayBlock` set, which suppresses a
+          // second onSay and replays the spoken line into the response.
           // Rescue retries for transient failures (429 / 5xx / connection
           // blip), only with enough budget left to plausibly finish. Sleep
           // honors the server's Retry-After but hard-caps it: a denied early

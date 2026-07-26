@@ -350,6 +350,23 @@ export function startSurvival(bot, config) {
   // ═══════════════════════════════ TICK ════════════════════════════════════
   function tick() {
     if (_disposed) return
+    // 260725 play/pause: the body is frozen, and a frozen player drowns like
+    // any other AFK player. Stand fully down: release controls and drop our
+    // takeover flags WITHOUT restoring a goal (pause.js cleared it on purpose).
+    if (bot._seiPaused) {
+      if (_drownActive || _retreatActive || bot._seiSurvivalActive) {
+        _drownActive = false
+        _airDir = null
+        _retreatActive = false
+        _retreatMobId = null
+        bot._seiCriticalRetreat = false
+        bot._seiSurvivalActive = false
+        bot._seiSurvivalSavedGoal = null
+        _goalStolen = false
+        releaseControls()
+      }
+      return
+    }
     const pos = bot.entity?.position
     const vel = bot.entity?.velocity
     if (!pos || !vel) return

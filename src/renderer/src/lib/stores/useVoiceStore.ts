@@ -46,6 +46,8 @@ import { useDataStore } from './useDataStore';
 import { voicePitchRate } from '@shared/voicePitch';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createDictation, type Dictation } from '../voice/dictation';
+import { sttPolicy } from '../voice/sttPolicy';
+import { prefetchVoiceModel } from '../voice/modelPrefetch';
 import { registerVoiceHooks } from '../voice/voiceBridge';
 import { decideReaction, isJunkTranscript, type Participant } from '../voice/pfcSteer';
 import {
@@ -79,6 +81,10 @@ interface VoiceState {
   /** True while the player's own mic has live speech — lights the SAME ring on
    * the caller's avatar that companions get while speaking. */
   userSpeaking: boolean;
+  /** 260725: true while a failed voice turn is being retried (LLM/proxy
+   * hiccup). The call screen swaps the duration subtitle for "Reconnecting…"
+   * so a retry window reads as a connection blip, not a frozen companion. */
+  reconnecting: boolean;
   /** Last transcribed player utterance (caption line). */
   lastHeard: string;
   /** Last companion line sent to TTS (caption line). */
@@ -91,6 +97,11 @@ interface VoiceState {
   connectingDetail: string | null;
   /** Epoch ms the call went live — drives the on-screen duration timer. */
   liveAt: number | null;
+  /** 260725: cloud STT failed on a model-less ('none' policy) call, so an
+   * utterance was dropped with nothing to fall back on. The call screen shows
+   * a non-blocking prompt offering the local backup-model install. Edge-fired
+   * once per call by dictation; dismissing hides it for the rest of the call. */
+  sttFallbackPrompt: boolean;
 
   /** Dial the first companion, OR add another to a call already open. */
   startCall: (characterId: string) => Promise<void>;
@@ -100,6 +111,11 @@ interface VoiceState {
   removeParticipant: (characterId: string) => void;
   /** Hang up the whole call. */
   endCall: () => void;
+  /** Accept the local-backup offer: persists stt_local_fallback = true and
+   * starts the model download now; the fallback applies from the NEXT call. */
+  acceptSttFallback: () => Promise<void>;
+  /** Dismiss the local-backup offer for the rest of this call. */
+  dismissSttFallback: () => void;
 }
 
 /** Non-reactive session internals (torn down in endCall). */
@@ -116,6 +132,23 @@ let pendingTts = 0;
  * speakerOriginSeq), threaded through the flush into speakAndCapture. */
 let pendingCompanionLines: Array<{ characterId: string; text: string; seq: number }> = [];
 const MAX_PENDING_COMPANION_LINES = 12;
+/** 260725 turn-failure retry: while runCompanionTurnInner has a player send in
+ * flight for a speaker, this maps speakerId → its director sequence. The chat
+ * store's real-failure path asks (via the voiceBridge onTurnFailed hook)
+ * whether the director owns the failure; ownership = an entry here that is
+ * still current. Typed-composer sends are never in this map, so they keep the
+ * chat surface's apology bubble. */
+const directorSendSeq = new Map<string, number>();
+/** Speakers whose in-flight director send just failed (consumed by the retry
+ * loop right after send() settles). */
+const directorSendFailed = new Set<string>();
+/** Backoff schedule for retrying a failed voice turn. Bounded: after the last
+ * attempt the line clears and the turn stays silent — the player's next
+ * utterance starts a fresh turn anyway. */
+const TURN_RETRY_DELAYS_MS = [1_500, 3_000, 6_000];
+/** How many retry waits are showing "Reconnecting…" right now (a group
+ * broadcast can have several). State flag = count > 0. */
+let reconnectingCount = 0;
 /** Solo companion hang-up (end_call): end as soon as queued speech finishes. */
 let remoteEndAt: number | null = null;
 let remoteDrainedAt: number | null = null;
@@ -166,14 +199,6 @@ const CHAIN_GAP_NEXT_MS = 450;
 // if the player spoke while it generated (director sequence check).
 const IDLE_NUDGE_MIN_MS = 5_000;
 const IDLE_NUDGE_MAX_MS = 60_000;
-// Proactiveness-keyed pacing (260708): when an AGENTIC character (proactiveness
-// dial 2) is on the call, quiet stretches are shorter — it is the one expected
-// to keep the conversation going (its nudge prompt in main also drops the
-// silence option), so the call never sits dead for a minute waiting on the
-// default window. Turning the character's dial down restores the laid-back
-// cadence; the "Conversation starters" toggle still gates all of it.
-const PROACTIVE_NUDGE_MIN_MS = 6_000;
-const PROACTIVE_NUDGE_MAX_MS = 18_000;
 const IDLE_TICK_MS = 1_000;
 /** When the conversation last was busy — the quiet stretch is measured from here. */
 let idleQuietSince = 0;
@@ -191,18 +216,10 @@ let companionTurnsInFlight = 0;
  * activity resets it. */
 let idleQuietStreak = 0;
 const IDLE_BACKOFF_CAP = 8;
-function sampleIdleTarget(level = 1): number {
-  const min = level >= 2 ? PROACTIVE_NUDGE_MIN_MS : IDLE_NUDGE_MIN_MS;
-  const max = level >= 2 ? PROACTIVE_NUDGE_MAX_MS : IDLE_NUDGE_MAX_MS;
-  return min + Math.random() * (max - min);
-}
-
-/** The proactiveness dial (0-2) of a call participant — same source + clamp as
- * main and the bot (character.metadata.proactiveness, junk → 1). */
-function proactivenessOf(characterId: string): number {
-  const p = useDataStore.getState().characters.find((c) => c.id === characterId)?.metadata
-    ?.proactiveness;
-  return typeof p === 'number' && Number.isInteger(p) && p >= 0 && p <= 2 ? p : 1;
+// 260725: proactiveness is a runtime-only Minecraft mode now (never read from
+// character metadata), so every call runs the one laid-back nudge window.
+function sampleIdleTarget(): number {
+  return IDLE_NUDGE_MIN_MS + Math.random() * (IDLE_NUDGE_MAX_MS - IDLE_NUDGE_MIN_MS);
 }
 
 /** Spoken-turn capture. A companion's spoken lines almost always arrive ASYNC
@@ -305,6 +322,11 @@ function friendlyError(err: unknown): string {
   if (/VOICE_NO_CREDITS/.test(msg)) return "You've used this week's credits. Upgrade or top up to keep calling.";
   if (/VOICE_RATE_LIMITED/.test(msg)) return "You've hit today's usage cap. It resets tomorrow.";
   if (/VOICE_NOT_CONFIGURED/.test(msg)) return 'Voice service is not available right now.';
+  // BYOK (260726): the curated pool lives in Sei's ElevenLabs account, so the
+  // user's own key cannot speak that voice until they add it to their library.
+  if (/VOICE_NOT_IN_LIBRARY/.test(msg)) {
+    return 'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.';
+  }
   if (name === 'NotFoundError' || /device not found/i.test(msg)) {
     return 'No microphone was found. Connect one and try again.';
   }
@@ -411,6 +433,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         set({ lastSpoken: '[voice paused, daily usage cap reached]' });
       } else if (/VOICE_NO_CREDITS/.test(msg)) {
         set({ lastSpoken: '[voice paused, out of credits]' });
+      } else if (/VOICE_NOT_IN_LIBRARY/.test(msg)) {
+        // BYOK key + a curated-pool voice: every clip fails until they add the
+        // voice to their own ElevenLabs library or pick another one (260726).
+        set({ lastSpoken: '[voice unavailable, this voice is not in your ElevenLabs library]' });
       }
     };
     const settleTts = (): void => {
@@ -658,7 +684,45 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // cannot track parallel responders, and replies still speak + mirror
         // through onCompanionText → speakAndCapture.)
         if (capture) armTurnCapture(mySeq, speakerId, depth);
-        await useChatStore.getState().send(speakerId, incoming.text, undefined, peers);
+        // 260725 turn-failure retry: a real send() failure on a call used to
+        // be pure dead air — the chat store's apology bubble is never spoken,
+        // so the companion just froze (the "Marv froze after okay bye" class
+        // of report, when the cause IS a failed LLM call). The chat store now
+        // hands call-time failures back here (voiceBridge onTurnFailed); we
+        // retry the same utterance on a short backoff while the call subtitle
+        // shows "Reconnecting…". A new utterance (directorSeq bump), a
+        // hang-up, or exhausting the schedule ends the loop; the retried
+        // send's replies stream through onCompanionText like any other turn.
+        let holdsReconnectSlot = false;
+        try {
+          for (let attempt = 0; ; attempt += 1) {
+            directorSendFailed.delete(speakerId);
+            directorSendSeq.set(speakerId, mySeq);
+            try {
+              await useChatStore.getState().send(speakerId, incoming.text, undefined, peers);
+            } finally {
+              directorSendSeq.delete(speakerId);
+            }
+            // Success, abort/supersede, or a failure the chat surface kept.
+            if (!directorSendFailed.delete(speakerId)) break;
+            if (attempt >= TURN_RETRY_DELAYS_MS.length) break;
+            if (mySeq !== directorSeq || get().status !== 'live' || !get().participants.includes(speakerId)) break;
+            if (!holdsReconnectSlot) {
+              holdsReconnectSlot = true;
+              reconnectingCount += 1;
+              if (!get().reconnecting) set({ reconnecting: true });
+            }
+            await wait(TURN_RETRY_DELAYS_MS[attempt]);
+            if (mySeq !== directorSeq || get().status !== 'live') break;
+          }
+        } finally {
+          // Whichever way the loop exited (reply landed, superseded, gave up),
+          // this turn stops contributing to the indicator.
+          if (holdsReconnectSlot) {
+            reconnectingCount = Math.max(0, reconnectingCount - 1);
+            if (reconnectingCount === 0 && get().reconnecting) set({ reconnecting: false });
+          }
+        }
         // Silent-turn floor release (260708). For a NOT-in-game responder,
         // send() resolving means the whole turn is done — every streamed
         // sentence was already pushed — so a capture still empty here is a
@@ -701,19 +765,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     await chainFromLines(mySeq, speakerId, lines, depth);
   }
 
-  /** The pacing level for the idle starter: the HIGHEST proactiveness dial
-   * among the call's nudge-eligible (not-in-game) participants — one agentic
-   * companion on the line is enough to keep it moving. No eligible off-game
-   * participant → default pacing (the nudge will skip anyway). */
-  function callIdleLevel(): number {
-    const summons = useDataStore.getState().summons;
-    const off = get().participants.filter((id) => {
-      const k = summons[id]?.kind;
-      return k !== 'online' && k !== 'connecting';
-    });
-    return off.length ? Math.max(...off.map(proactivenessOf)) : 1;
-  }
-
   /** One tick of the idle-starter clock (module-level notes at the constants).
    * Chained setTimeout guarded by the session token, so the chain dies with the
    * call and two calls can never double-tick. */
@@ -732,7 +783,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // it a fresh randomly-sampled target ("x is sampled every turn"). Real
       // conversation (not the nudge machinery itself) also clears the backoff.
       idleQuietSince = Date.now();
-      idleTargetMs = sampleIdleTarget(callIdleLevel());
+      idleTargetMs = sampleIdleTarget();
       if (busyConversation) idleQuietStreak = 0;
     } else if (
       useUiStore.getState().convoStartersEnabled &&
@@ -766,12 +817,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     let spoke = false;
     try {
       if (!eligible.length) return;
-      // The most proactive companion is the one who starts topics (260708): an
-      // agentic character on the call is expected to carry the conversation, so
-      // it gets the nudge over a laid-back peer; ties keep the random spread.
-      const top = Math.max(...eligible.map(proactivenessOf));
-      const pool = eligible.filter((id) => proactivenessOf(id) === top);
-      const speakerId = pool[Math.floor(Math.random() * pool.length)];
+      // 260725: no per-character proactiveness dial anymore — any eligible
+      // companion may start a topic; the random pick keeps the spread.
+      const speakerId = eligible[Math.floor(Math.random() * eligible.length)];
       const peers = s.participants.filter((id) => id !== speakerId).map(nameOf);
       const quietSeconds = Math.round((Date.now() - idleQuietSince) / 1000);
       const result = await sei
@@ -796,7 +844,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // (silence, skip, failure) grows the backoff; a spoken line resets it.
       idleQuietStreak = spoke ? 0 : idleQuietStreak + 1;
       idleQuietSince = Date.now();
-      idleTargetMs = sampleIdleTarget(callIdleLevel());
+      idleTargetMs = sampleIdleTarget();
     }
   }
 
@@ -845,6 +893,16 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   registerVoiceHooks({
     isCallActive: (characterId) => get().participants.includes(characterId),
     onRemoteEndCall: requestRemoteEnd,
+    onTurnFailed: (characterId) => {
+      // Own the failure only when it belongs to a director-dispatched voice
+      // turn that is STILL current — the retry loop in runCompanionTurnInner
+      // is awaiting this very send. Typed-composer sends (never in the map)
+      // and stale turns keep the chat surface's apology bubble.
+      if (directorSendSeq.get(characterId) !== directorSeq) return false;
+      if (get().status !== 'live' || !get().participants.includes(characterId)) return false;
+      directorSendFailed.add(characterId);
+      return true;
+    },
     onCompanionText: (characterId, text) => {
       const s = get();
       if (!s.participants.includes(characterId)) return;
@@ -936,12 +994,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     speaking: false,
     speakingId: null,
     userSpeaking: false,
+    reconnecting: false,
     lastHeard: '',
     lastSpoken: '',
     lastSpokenId: null,
     error: null,
     connectingDetail: null,
     liveAt: null,
+    sttFallbackPrompt: false,
 
     startCall: async (characterId) => {
       const prev = get();
@@ -965,6 +1025,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       remoteDrainedAt = null;
       ttsStreams.clear();
       ttsOrphans.clear();
+      directorSendSeq.clear();
+      directorSendFailed.clear();
+      reconnectingCount = 0;
       set({
         participants: [characterId],
         callCharacterId: characterId,
@@ -972,12 +1035,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         speaking: false,
         speakingId: null,
         userSpeaking: false,
+        reconnecting: false,
         lastHeard: '',
         lastSpoken: '',
         lastSpokenId: null,
         error: null,
         connectingDetail: null,
         liveAt: null,
+        sttFallbackPrompt: false,
       });
 
       silenceDressing();
@@ -1011,19 +1076,74 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       });
       queue.setOutputMuted(useUiStore.getState().callDeafened);
 
-      // 260709: conversation language — picks the Whisper model (English-only
-      // tiny.en vs multilingual base) and pins the decode language. Read at
-      // call start so a Settings change applies from the next call. Best-effort:
-      // a failed config read falls back to English rather than blocking the dial.
-      const chatLanguage = await sei
-        .getConfig()
-        .then((c) => c.chat_language ?? 'en')
-        .catch(() => 'en' as const);
+      // 260709: conversation language — picks the local Whisper model
+      // (English-only tiny.en vs multilingual base) and pins its decode
+      // language. Read at call start; the value is auto-detected from voice
+      // by main (260725, voice/languageAutoSwitch.ts), so a mid-call switch
+      // applies from the next call. Best-effort: a failed config read falls
+      // back to English rather than blocking the dial.
+      // 260725: the same read feeds the STT policy (sttPolicy.ts) — whether the
+      // local Whisper worker boots at all, and whether cloud Scribe is wired.
+      const callCfg = await sei.getConfig().catch(() => null);
       if (session !== mySession) return;
+      const chatLanguage = callCfg?.chat_language ?? 'en';
+      // 260725: kind from the fresh config read (main truth), not the display
+      // store — the store can be UNKNOWN (null) at call time.
+      const policy = sttPolicy(callCfg, callCfg?.ai_backend_kind ?? 'cloud-proxy');
+
+      // Cloud STT (260724): race ElevenLabs Scribe against the local Whisper
+      // worker for every utterance (dictation/sttArbiter own the policy; local
+      // is always the fallback, so this can only improve transcripts). One
+      // {unavailable} answer (signed out + no dev key, no credits, daily cap)
+      // turns it off for the remainder of this call — no per-utterance
+      // re-probing of a dead surface.
+      let cloudSttOff = false;
+      // 260725: 'no-credentials' means cloud STT can never work this call
+      // (signed out, or BYOK with no ElevenLabs key and no dev key) — that
+      // disable stays SILENT: in 'none' mode it must not raise the backup-
+      // model prompt the way a genuine upstream failure does.
+      let cloudSttSilentOff = false;
+      const cloudTranscribe = async (audio: Float32Array): Promise<string | null> => {
+        if (cloudSttOff || !sei.voiceStt) return null;
+        try {
+          // No language pin (260725): Scribe auto-detects per utterance, and
+          // main persists a confident repeated detection into
+          // UserConfig.chat_language (voice/languageAutoSwitch.ts) — this is
+          // how the conversation language switches now that the picker UI is
+          // gone. The next call start re-reads the config for the local
+          // Whisper model choice below.
+          const res = await sei.voiceStt({
+            pcm: audio.buffer.slice(0, audio.byteLength) as ArrayBuffer,
+          });
+          if ('unavailable' in res) {
+            cloudSttOff = true;
+            const { reason } = res as { unavailable: true; reason?: 'no-credentials' | 'upstream' };
+            if (reason === 'no-credentials') cloudSttSilentOff = true;
+            return null;
+          }
+          return res.text;
+        } catch {
+          return null; // transient — local covers this utterance, retry on the next
+        }
+      };
 
       try {
         dictation = await createDictation({
           language: chatLanguage,
+          // Mode matrix (sttPolicy.ts): cloud users without the local-fallback
+          // opt-in run 'none' (Scribe-only, no model download); everyone else
+          // runs 'eager' (today's race). BYOK with stt_engine 'whisper' drops
+          // cloudTranscribe entirely.
+          localModel: policy.localModel,
+          cloudTranscribe: policy.useCloud ? cloudTranscribe : undefined,
+          onCloudSttFailure:
+            policy.localModel === 'none'
+              ? () => {
+                  if (session !== mySession) return;
+                  if (cloudSttSilentOff) return; // no-credentials: stay quiet
+                  set({ sttFallbackPrompt: true });
+                }
+              : undefined,
           onStatus: (status, detail) => {
             if (session !== mySession) return;
             set({ connectingDetail: status === 'loading-model' && detail ? detail : null });
@@ -1053,6 +1173,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             // Light the caller's own avatar ring while they talk (same ring the
             // companions get). Muted → never lit, even if a frame leaks through.
             if (session !== mySession) return;
+            // 260724 latency: speech just OPENED — prewarm the voice upstream
+            // now so the STT request at utterance-end (and the TTS reply after)
+            // lands on a warm connection. Throttled in main; fire-and-forget.
+            if (active) void sei.voiceSttPrewarm?.().catch(() => {});
             set({ userSpeaking: active && !useUiStore.getState().callMuted });
           },
         });
@@ -1109,7 +1233,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // greeting about to play immediately resets it anyway) and ticks for the
       // life of the call — the session guard kills the chain at hang-up.
       idleQuietSince = now;
-      idleTargetMs = sampleIdleTarget(callIdleLevel());
+      idleTargetMs = sampleIdleTarget();
       idleQuietStreak = 0;
       window.setTimeout(() => idleTick(mySession), IDLE_TICK_MS);
 
@@ -1215,6 +1339,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           .catch(() => {});
       }
       liveSince.clear();
+      directorSendSeq.clear();
+      directorSendFailed.clear();
+      reconnectingCount = 0;
       set({
         participants: [],
         callCharacterId: null,
@@ -1222,15 +1349,35 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         speaking: false,
         speakingId: null,
         userSpeaking: false,
+        reconnecting: false,
         lastHeard: '',
         lastSpoken: '',
         lastSpokenId: null,
         error: null,
         connectingDetail: null,
         liveAt: null,
+        sttFallbackPrompt: false,
       });
       useUiStore.getState().endCall();
     },
+
+    // 260725: the cloud-STT backup-model offer (see sttFallbackPrompt).
+    acceptSttFallback: async () => {
+      set({ sttFallbackPrompt: false });
+      try {
+        const cfg = await sei.getConfig();
+        await sei.saveConfig({ ...cfg, stt_local_fallback: true });
+      } catch {
+        // Best-effort: if the write fails the prompt can fire again next call.
+      }
+      // Start the ~40MB download NOW so the next call boots with the fallback
+      // in place. This call stays cloud-only — hot-swapping a Whisper worker
+      // into a live dictation session is not worth the machinery, and the
+      // download would not finish in time to help this call anyway.
+      void prefetchVoiceModel().catch(() => {});
+    },
+
+    dismissSttFallback: () => set({ sttFallbackPrompt: false }),
   };
 });
 

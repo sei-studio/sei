@@ -1,70 +1,41 @@
 // src/main/lib/externalUrlValidator.test.ts
 //
-// 260525-s09 H5: unit tests for the shared shell.openExternal allowlist
-// validator. Covers https-allow / https-reject (substring-host bypass attempt),
-// mailto allow/reject, protocol gate (javascript: / data: / file: rejected),
-// malformed URL.
+// Unit tests for the shared shell.openExternal gate.
+//
+// 260525-s09 H5 introduced this as a host allowlist; 260725 removed the host
+// half (any site is linkable, so a notice can point anywhere without a client
+// release) and kept the protocol gate. These tests pin the surviving contract:
+// https/mailto pass regardless of host, everything the OS would resolve as a
+// local protocol handler is rejected.
 
 import { describe, it, expect } from 'vitest';
-import {
-  assertSafeExternalUrl,
-  ALLOWED_HTTPS_HOSTS,
-  ALLOWED_HTTPS_SUFFIXES,
-  ALLOWED_MAILTO,
-} from './externalUrlValidator';
+import { assertSafeExternalUrl } from './externalUrlValidator';
 
-describe('assertSafeExternalUrl — H5 shared allowlist validator (260525-s09)', () => {
-  // ─── Allow-path: https hosts on the allowlist ─────────────────────────
-  it('allows https://sei.gg/legal', () => {
+describe('assertSafeExternalUrl — shell.openExternal protocol gate', () => {
+  // ─── Allow-path: any https host ───────────────────────────────────────
+  it('allows the hosts the app itself links to', () => {
     expect(() => assertSafeExternalUrl('https://sei.gg/legal')).not.toThrow();
-  });
-
-  it('allows https://www.sei.gg/', () => {
     expect(() => assertSafeExternalUrl('https://www.sei.gg/')).not.toThrow();
-  });
-
-  it('allows https://dmca.copyright.gov/', () => {
     expect(() => assertSafeExternalUrl('https://dmca.copyright.gov/')).not.toThrow();
-  });
-
-  it('allows https://polar.sh/my-org/portal (Polar customer portal)', () => {
-    expect(() => assertSafeExternalUrl('https://polar.sh/my-org/portal')).not.toThrow();
-  });
-
-  it('allows https://buy.polar.sh/polar_c_abc123 (Polar hosted checkout subdomain)', () => {
-    // Polar serves checkout/portal across subdomains; the dot-anchored
-    // '.polar.sh' suffix rule trusts the whole registrable domain.
     expect(() => assertSafeExternalUrl('https://buy.polar.sh/polar_c_abc123')).not.toThrow();
   });
 
-  it('allows https://sandbox.polar.sh/my-org/portal (Polar sandbox)', () => {
-    expect(() => assertSafeExternalUrl('https://sandbox.polar.sh/my-org/portal')).not.toThrow();
+  it('allows arbitrary third-party https hosts (260725: host allowlist removed)', () => {
+    expect(() => assertSafeExternalUrl('https://discord.gg/abc123')).not.toThrow();
+    expect(() => assertSafeExternalUrl('https://youtu.be/abc')).not.toThrow();
+    expect(() => assertSafeExternalUrl('https://example.com/anything?q=1#x')).not.toThrow();
+    // Look-alike hosts are no longer special: there is nothing left to imitate.
+    expect(() => assertSafeExternalUrl('https://www.sei.gg.attacker.tld/')).not.toThrow();
   });
 
-  // ─── Allow-path: mailto on the allowlist ──────────────────────────────
-  it('allows mailto:dmca@sei.gg', () => {
+  // ─── Allow-path: mailto ───────────────────────────────────────────────
+  it('allows any mailto address', () => {
     expect(() => assertSafeExternalUrl('mailto:dmca@sei.gg')).not.toThrow();
+    expect(() => assertSafeExternalUrl('mailto:someone@example.com')).not.toThrow();
   });
 
-  // ─── Reject-path: substring-host bypass attempts ──────────────────────
-  it('rejects host that CONTAINS the polar.sh label but is a different domain', () => {
-    expect(() =>
-      assertSafeExternalUrl('https://evil.polar.sh.attacker.tld/'),
-    ).toThrow(/rejected/);
-  });
-
-  it('rejects a non-dot-anchored polar.sh look-alike (evilpolar.sh)', () => {
-    expect(() => assertSafeExternalUrl('https://evilpolar.sh/')).toThrow(/rejected/);
-  });
-
-  it('rejects host that CONTAINS an allowlisted host as a substring (sei.gg)', () => {
-    expect(() => assertSafeExternalUrl('https://www.sei.gg.attacker.tld/')).toThrow(
-      /rejected/,
-    );
-  });
-
-  // ─── Reject-path: protocol gate ───────────────────────────────────────
-  it('rejects http (not https) even for an allowlisted host', () => {
+  // ─── Reject-path: protocol gate (the load-bearing half) ───────────────
+  it('rejects http (not https)', () => {
     expect(() => assertSafeExternalUrl('http://sei.gg/')).toThrow(/rejected/);
   });
 
@@ -80,31 +51,15 @@ describe('assertSafeExternalUrl — H5 shared allowlist validator (260525-s09)',
     expect(() => assertSafeExternalUrl('data:text/html,<script>')).toThrow(/rejected/);
   });
 
-  // ─── Reject-path: mailto not on allowlist ─────────────────────────────
-  it('rejects a mailto whose address is not on the allowlist', () => {
-    expect(() => assertSafeExternalUrl('mailto:attacker@evil.tld')).toThrow(/rejected/);
+  it('rejects OS-resolved local protocol handlers', () => {
+    // The reason the protocol gate outlived the host allowlist: these are
+    // execution surfaces on Windows, not links.
+    expect(() => assertSafeExternalUrl('ms-msdt:/id PCWDiagnostic')).toThrow(/rejected/);
+    expect(() => assertSafeExternalUrl('search-ms:query=x')).toThrow(/rejected/);
   });
 
   // ─── Reject-path: malformed URL ───────────────────────────────────────
   it('rejects a malformed URL string', () => {
     expect(() => assertSafeExternalUrl('not a url')).toThrow(/malformed|rejected/);
-  });
-
-  // ─── Sanity: exported lists are non-empty and match the documented set ─
-  it('exports the documented https-host allowlist verbatim', () => {
-    expect(ALLOWED_HTTPS_HOSTS).toEqual([
-      'sei.gg',
-      'www.sei.gg',
-      'dmca.copyright.gov',
-      'polar.sh',
-    ]);
-  });
-
-  it('exports the documented https-suffix allowlist verbatim', () => {
-    expect(ALLOWED_HTTPS_SUFFIXES).toEqual(['.polar.sh']);
-  });
-
-  it('exports the documented mailto allowlist verbatim', () => {
-    expect(ALLOWED_MAILTO).toEqual(['dmca@sei.gg']);
   });
 });

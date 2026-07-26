@@ -311,13 +311,6 @@
   font-family: var(--sans);
 }
 
-/* ── Game tab: proactiveness control ─────────────────────────────────── */
-.proactRow {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 /* ── Deploy row (mockup .deploy) — pinned to the bottom ──────────────── */
 .deploy {
   margin-top: auto;

@@ -139,6 +139,66 @@
   padding: var(--space-xs) 0;
 }
 
+/* 260724: theme swatches — a circle split diagonally between each theme's two
+   main colors (fill set inline per theme). Round on purpose: these are color
+   chips, not controls in the sharp-edged chrome vocabulary. Names ride the
+   shared data-tip tooltip. */
+.swatchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  /* The two color halves (inline gradient) fill the WHOLE circle — the border
+     is transparent so nothing behind the button leaks in at the rim; a faint
+     INSET hairline keeps light swatches visible on light surfaces. Selected
+     state paints the accent ring over the gradient's outer edge instead of
+     around it, so there is never a gap between ring and fill. */
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.swatch:hover {
+  transform: scale(1.12);
+}
+
+.swatchOn {
+  border-color: var(--accent);
+}
+
+/* 260724: Theme-section range sliders (background visibility / brightness).
+   Thin hairline track + square accent thumb, sharp per D-28. */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 180px;
+  height: 2px;
+  background: var(--border-strong);
+  outline: none;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+}
+
+.slider:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 4px;
+}
+
 /* Icon-only copy affordance for the Account ID row. Mirrors the chat message
    hover actions; the "Copied" flash rides the global data-tip tooltip. */
 .copyBtn {

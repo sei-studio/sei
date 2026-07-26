@@ -1,14 +1,17 @@
 /**
- * CreditsScreen — plan + weekly usage surface (260724).
+ * CreditsScreen — plan + weekly usage surface (260724, 260725 sketch layout).
  *
- * A single centered 860px column: a percent-used hero (big Oswald % + a flat
- * accent bar that turns red at 100% + a "Resets {date}" line), a quieter
- * extra-credits row, three plan cards, and a footer with Manage billing + the
- * carry-over note. Sharp edges, Oswald display, tokens only (no hex).
+ * A single centered 860px column. USAGE section: two aligned label/bar/value
+ * rows ("{Plan} plan / Resets in Xd Yh" + allowance bar + "{pct}%", then
+ * "Extra credits / x/y used" + muted bar + Top up), with the carry-over note
+ * directly beneath. PLANS section: three solid-surface cards (light surface in
+ * light themes, dark in dark — var(--surface) on var(--window) does this per
+ * theme). Sharp edges, Oswald display, tokens only (no hex).
  *
  * Dollar amounts on this screen are limited to the plan cards (the top up
- * packages live in TopUpModal). Everything else is percentages and credits.
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.8; mockup .pt-* / .plan.
+ * packages live in TopUpModal). Plan cards carry positioning copy only —
+ * never credit amounts (260725).
+ * Source: .planning/design/UI-REDESIGN-PARTY.md §4.8 + the 260725 sketch.
  */
 
 .root {
@@ -35,91 +38,28 @@
   margin-left: -12px;
 }
 
-/* ── Hero: {pct}% used + flat usage bar + refresh ─────────────── */
-.hero {
+/* ── Usage: two aligned label / bar / value rows (260725 sketch) ── */
+.usage {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
-.heroBig {
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 46px;
-  line-height: 1;
-  color: var(--text);
-}
-
-.heroBig small {
-  font-size: 18px;
-  color: var(--muted);
-  font-weight: 400;
-  margin-left: 8px;
-}
-
-/* 100% used: the number goes red so a full bar reads as a limit. */
-.heroBigOver {
-  color: var(--red);
-}
-
-.heroBar {
-  height: 10px;
-  background: var(--bg3);
-}
-
-.heroBar i {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  transition: width 240ms var(--ease);
-}
-
-.heroBarOver {
-  background: var(--red);
-}
-
-/* ── Extra credits: muted bar + count + Top up ────────────────── */
-.extra {
+/* Shared section heading ("Usage" / "Plan") + the quiet refresh beside it. */
+.usageHead {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.extraBar {
-  flex: 1 1 180px;
-  min-width: 120px;
+/* Oswald's tall ascender space makes the centered refresh button read as
+   floating high next to the title; nudge it down to the text's optical
+   center (260725). */
+.usageHead > button {
+  margin-top: 3px;
 }
 
-.extraText {
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-/* "{pct}% used" + the quiet refresh button on one line. */
-.heroTop {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.heroSub {
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--muted);
-  margin: 0;
-}
-
-/* ── Plans: three tier cards ─────────────────────────────────── */
-.plans {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.plansTitle {
+.sectionTitle {
   font-family: var(--display);
   font-weight: 600;
   font-size: 16px;
@@ -127,38 +67,132 @@
   margin: 0;
 }
 
-.plansRow {
+/* Label column | flexible bar | fixed-ish right slot, vertically centered.
+   The two rows share the grid so their bars start and end on the same lines. */
+.usageRow {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: minmax(150px, 190px) 1fr minmax(64px, auto);
+  align-items: center;
+  gap: 16px;
+}
+
+.usageLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.usageName {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.usageSub {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.usageSubWarn {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--warn);
+}
+
+/* Flat track + fill. Square ends: the Summoning Terminal look stays sharp. */
+.usageTrack {
+  height: 8px;
+  background: var(--bg4);
+  overflow: hidden;
+}
+
+.usageTrack i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms var(--ease);
+}
+
+/* 100% used: the fill and the number go red so a full bar reads as a limit. */
+.usageFillOver {
+  background: var(--red);
+}
+
+.usageFillMuted {
+  background: var(--muted-2);
+}
+
+/* Left-aligned to the right column's start so it lines up with the Top up
+   button below it (260725). */
+.usagePct {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  justify-self: start;
+}
+
+/* Carry-over note, directly under the extra-credits row. Indented to the bar
+   column so it reads as a caption for the bars, not a new section. */
+.usageNote {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted-2);
+  margin: -6px 0 0;
+}
+
+/* ── Plans: three solid tier cards (260725) ───────────────────── */
+.plans {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
-.planCard {
-  border: 1px solid var(--border-strong);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-height: 158px;
+.plansRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
 }
 
-/* Active subscription — accent outline (mockup .plan.on). */
+/* Solid surface: var(--bg4) is a visible step off the window in every theme
+   (soft periwinkle tint in ice, elevated navy in midnight, warm sand in
+   acorn), so the cards read light in light mode and dark in dark mode. Quiet
+   border keeps the edge crisp. */
+.planCard {
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  padding: 20px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 172px;
+}
+
+/* Active subscription — accent edge on the solid surface. */
 .planCardActive {
   border-color: var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 .planName {
   font-family: var(--sans);
   font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--muted);
 }
 
 .planPrice {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 28px;
+  font-size: 30px;
   line-height: 1;
   color: var(--text);
+  margin-top: 2px;
 }
 
 .planPriceQualifier {
@@ -173,12 +207,12 @@
   font-family: var(--sans);
   font-size: 13px;
   color: var(--text-2);
-  margin: 0;
+  margin: 2px 0 0;
 }
 
 .planCardActions {
   margin-top: auto;
-  padding-top: 8px;
+  padding-top: 12px;
 }
 
 /* "Your Party plan renews on …" / "… will not renew" note under the cards. */
@@ -189,7 +223,7 @@
   margin: 4px 0 0;
 }
 
-/* ── Footer: Manage billing + carry-over note ────────────────── */
+/* ── Footer: Manage billing ──────────────────────────────────── */
 .foot {
   display: flex;
   align-items: center;
@@ -202,12 +236,6 @@
  * of the footer cluster rather than a new section. */
 .footFeedback {
   margin-top: -16px;
-}
-
-.disc {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted-2);
 }
 
 .manageError {
@@ -258,6 +286,20 @@
   margin: 0;
 }
 
+/* ── Plan-change confirmation body (260725) ──────────────────────
+   Layout only; the paragraphs reuse .checkoutMsg for their type. */
+.confirmBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.confirmLead {
+  font-family: var(--sans);
+  color: var(--text);
+  margin: 0;
+}
+
 @keyframes checkoutSpin {
   to {
     transform: rotate(360deg);
@@ -268,7 +310,7 @@
   .checkoutSpinner {
     animation: none;
   }
-  .heroBar i {
+  .usageTrack i {
     transition: none;
   }
 }

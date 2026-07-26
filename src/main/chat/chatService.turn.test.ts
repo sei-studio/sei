@@ -391,12 +391,11 @@ describe('peer-impersonation drop (260708)', () => {
   });
 });
 
-// 260708 (demo directive): an agentic character (proactiveness 2) must always
-// have something to say on an idle call — its nudge note asks for a topic
-// outright and offers NO silence option, so quiet stretches reliably become
-// conversation. Lower dials keep the original take-it-or-leave-it note.
-describe('idle nudge — proactiveness-keyed note (260708)', () => {
-  it('proactiveness 2 gets the keep-alive note with no silence option', async () => {
+// 260725: proactiveness is a runtime-only Minecraft mode now — no per-character
+// dial. Every companion gets the take-it-or-leave-it nudge note with silence
+// sanctioned, even one whose (now-ignored) legacy metadata carries a dial.
+describe('idle nudge — single note, silence sanctioned (260725)', () => {
+  it('legacy metadata.proactiveness is ignored; the note sanctions silence', async () => {
     character.metadata = { proactiveness: 2 };
     setCallActive(CHAR, true);
     createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok so weird thought.' }] });
@@ -406,12 +405,11 @@ describe('idle nudge — proactiveness-keyed note (260708)', () => {
     expect(result.messages.length).toBe(1);
     const req = createSpy.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
     const body = JSON.stringify(req.messages);
-    expect(body).toContain('Keep the call alive');
-    expect(body).toContain('rope the other companions');
-    expect(body).not.toContain('reply with exactly (silence)');
+    expect(body).toContain('reply with exactly (silence)');
+    expect(body).not.toContain('Keep the call alive');
   });
 
-  it('default proactiveness keeps the original note with silence sanctioned', async () => {
+  it('default (no metadata) gets the same note', async () => {
     setCallActive(CHAR, true);
     createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '(silence)' }] });
 

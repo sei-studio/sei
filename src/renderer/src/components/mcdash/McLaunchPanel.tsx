@@ -65,7 +65,7 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
             )
           }
         >
-          {connecting ? 'connecting...' : 'Launch'}
+          {connecting ? 'Connecting...' : 'Launch'}
         </Button>
         {failReason ? (
           <p className={styles.failLine} role="alert">

@@ -21,6 +21,7 @@ import {
   type UpdateProgressEvent,
   type UpdateDownloadedEvent,
   type WhatsNewEvent,
+  type NoticesSnapshot,
   type ScopeChangedEvent,
   type AuthState,
   type SyncStatusPushEvent,
@@ -41,6 +42,16 @@ const api: RendererApi = {
   saveCharacter: (c, opts) => ipcRenderer.invoke(IpcChannel.chars.save, c, opts),
   deleteCharacter: (id) => ipcRenderer.invoke(IpcChannel.chars.delete, id),
   resetMemory: (id) => ipcRenderer.invoke(IpcChannel.chars.resetMemory, id),
+
+  // 260725 Knowledge — per-character user-provided reference files.
+  knowledgeExtract: (args) => ipcRenderer.invoke(IpcChannel.knowledge.extract, args),
+  knowledgeList: (characterId) => ipcRenderer.invoke(IpcChannel.knowledge.list, characterId),
+  knowledgeRead: (characterId, entryId) => ipcRenderer.invoke(IpcChannel.knowledge.read, characterId, entryId),
+  knowledgeAdd: (characterId, entry) => ipcRenderer.invoke(IpcChannel.knowledge.add, characterId, entry),
+  knowledgeUpdate: (characterId, entryId, patch) =>
+    ipcRenderer.invoke(IpcChannel.knowledge.update, characterId, entryId, patch),
+  knowledgeDelete: (characterId, entryId) => ipcRenderer.invoke(IpcChannel.knowledge.delete, characterId, entryId),
+  knowledgeCompact: (characterId) => ipcRenderer.invoke(IpcChannel.knowledge.compact, characterId),
 
   // Phase 11 D-28 portrait pipeline.
   charsApplyPortrait: (args) => ipcRenderer.invoke(IpcChannel.chars.applyPortrait, args),
@@ -128,6 +139,10 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.mcdash.snapshot, handler);
     return () => ipcRenderer.off(IpcChannel.mcdash.snapshot, handler);
   },
+  mcSetPaused: (characterId, paused) =>
+    ipcRenderer.invoke(IpcChannel.mcdash.setPaused, { characterId, paused }),
+  mcSetMode: (characterId, mode) =>
+    ipcRenderer.invoke(IpcChannel.mcdash.setMode, { characterId, mode }),
 
   // Voice calls (260705)
   voiceTts: (args) => ipcRenderer.invoke(IpcChannel.voice.tts, args),
@@ -137,6 +152,8 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.voice.ttsChunk, handler);
     return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
   },
+  voiceStt: (args) => ipcRenderer.invoke(IpcChannel.voice.stt, args),
+  voiceSttPrewarm: () => ipcRenderer.invoke(IpcChannel.voice.sttPrewarm),
   voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
   voiceGreet: (characterId, peers) => ipcRenderer.invoke(IpcChannel.voice.greet, { characterId, peers: peers ?? [] }),
   voiceCompanionTurn: (args) => ipcRenderer.invoke(IpcChannel.voice.companionTurn, args),
@@ -152,6 +169,8 @@ const api: RendererApi = {
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),
+  voiceElevenKeySet: (args) => ipcRenderer.invoke(IpcChannel.voice.elevenKeySet, args),
+  voiceElevenKeyStatus: () => ipcRenderer.invoke(IpcChannel.voice.elevenKeyStatus),
   onVoiceCallEnded(cb: (push: { characterId: string }) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: { characterId: string }) => cb(push);
     ipcRenderer.on(IpcChannel.voice.callEnded, handler);
@@ -162,6 +181,8 @@ const api: RendererApi = {
   userGetProfile: () => ipcRenderer.invoke(IpcChannel.user.getProfile),
   userApplyProfilePicture: (args) => ipcRenderer.invoke(IpcChannel.user.applyProfilePicture, args),
   userRemoveProfilePicture: () => ipcRenderer.invoke(IpcChannel.user.removeProfilePicture),
+  userApplyBackground: (args) => ipcRenderer.invoke(IpcChannel.user.applyBackground, args),
+  userRemoveBackground: () => ipcRenderer.invoke(IpcChannel.user.removeBackground),
 
   getStartupWarnings: () => ipcRenderer.invoke(IpcChannel.app.warnings),
 
@@ -224,6 +245,7 @@ const api: RendererApi = {
   // --- Proxy + billing + plan ---
   proxyConfigure: (kind) => ipcRenderer.invoke(IpcChannel.proxy.configure, { kind }),
   creditsGet: () => ipcRenderer.invoke(IpcChannel.credits.get),
+  creditsCatalog: () => ipcRenderer.invoke(IpcChannel.credits.catalog),
   creditsOpenCheckout: (kind) => ipcRenderer.invoke(IpcChannel.credits.openCheckout, { kind }),
   creditsChangePlan: (tier) => ipcRenderer.invoke(IpcChannel.credits.changePlan, { tier }),
   subscriptionStatus: () => ipcRenderer.invoke(IpcChannel.subscription.status),
@@ -243,6 +265,14 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, info: CreditsHardStopEvent): void => cb(info);
     ipcRenderer.on(IpcChannel.credits.hardStop, handler);
     return () => ipcRenderer.off(IpcChannel.credits.hardStop, handler);
+  },
+  onAiBackendKindChanged(cb: (ev: { kind: CreditsStatus['ai_backend_kind'] }) => void) {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      ev: { kind: CreditsStatus['ai_backend_kind'] },
+    ): void => cb(ev);
+    ipcRenderer.on(IpcChannel.proxy.kindChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.proxy.kindChanged, handler);
   },
 
   onStatus(cb: (status: BotStatus) => void) {
@@ -335,6 +365,16 @@ const api: RendererApi = {
   downloadUpdate: () => ipcRenderer.invoke(IpcChannel.app.updateDownload),
   installUpdate: () => ipcRenderer.invoke(IpcChannel.app.updateInstall),
   getVersion: () => ipcRenderer.invoke(IpcChannel.app.version),
+
+  // --- Notices inbox (260725) ---
+  onNotices(cb: (snapshot: NoticesSnapshot) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, snapshot: NoticesSnapshot) => cb(snapshot);
+    ipcRenderer.on(IpcChannel.app.notices, handler);
+    return () => ipcRenderer.off(IpcChannel.app.notices, handler);
+  },
+  getNotices: () => ipcRenderer.invoke(IpcChannel.app.noticesGet),
+  ackNotices: () => ipcRenderer.invoke(IpcChannel.app.noticesAck),
+  markNoticeRead: (id: string) => ipcRenderer.invoke(IpcChannel.app.noticesRead, id),
 
   // --- Window chrome (frameless custom titlebar on Windows/Linux) ---
   platform: process.platform,

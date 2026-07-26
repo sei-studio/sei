@@ -7,10 +7,14 @@ import { describe, it, expect } from 'vitest'
 import { activityLabel } from './activityLabel.js'
 
 describe('activityLabel', () => {
-  it('is "idle" when no tool is dispatching', () => {
-    expect(activityLabel(null)).toBe('idle')
-    expect(activityLabel(undefined)).toBe('idle')
-    expect(activityLabel('')).toBe('idle')
+  it('is "idling" when no tool is dispatching', () => {
+    expect(activityLabel(null)).toBe('idling')
+    expect(activityLabel(undefined)).toBe('idling')
+    expect(activityLabel('')).toBe('idling')
+  })
+
+  it('is "thinking" while a player message is being processed (260725)', () => {
+    expect(activityLabel('thinking')).toBe('thinking')
   })
 
   it('maps dig with a block arg to "mining <block>..."', () => {
@@ -28,8 +32,9 @@ describe('activityLabel', () => {
     expect(activityLabel('goTo', {})).toBe('walking somewhere...')
   })
 
-  it('maps gather / find / craft with their subject', () => {
-    expect(activityLabel('gather', { name: 'oak_log' })).toBe('gathering oak log...')
+  it('maps gather / find / craft with their subject (gather pluralizes)', () => {
+    expect(activityLabel('gather', { name: 'oak_log' })).toBe('gathering oak logs...')
+    expect(activityLabel('gather', { name: 'glass' })).toBe('gathering glass...')
     expect(activityLabel('find', { name: 'diamond_ore' })).toBe('looking for diamond ore...')
     expect(activityLabel('craft', { item: 'crafting_table' })).toBe('crafting crafting table...')
   })

@@ -27,9 +27,10 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* Darkened game-ish backdrop behind the gray dialogs (the in-game
-   * inventory dims the world behind it the same way). */
-  background: rgba(16, 16, 20, 0.82);
+  /* 260725: the backdrop is the SAME vanilla gray as the dialogs (was a dark
+   * scrim). The windows read as panels on one GUI surface, separated by their
+   * black outline and bevels rather than by a dark gap. */
+  background: var(--mc-dialog);
   color: var(--mc-gui-text);
   font-family: var(--mc-font);
   box-sizing: border-box;
@@ -229,23 +230,96 @@
   z-index: 1;
 }
 
-.slotHint {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 6px;
-  color: #6f6f6f;
+/* ── Status window (260725): full-width strip above the other dialogs,
+ * carrying the live "what is the AI doing" line. ── */
+.statusDialog {
+  flex-basis: 100%;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 12px;
+}
+
+.statusTitle {
+  font-size: 9px;
+  color: var(--mc-gui-muted);
+  flex: none;
+}
+
+.statusText {
+  font-size: 12px;
+  color: var(--mc-gui-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── Controls window (260725): play/pause + reactive/proactive. ── */
+.controlsDialog {
+  width: 200px;
+  gap: 8px;
+}
+
+/* Vanilla-style raised button: gray face, light top/left bevel, dark
+ * bottom/right, white label with the classic 1px shadow. */
+.mcButton {
+  font-family: var(--mc-font);
+  font-size: 10px;
+  letter-spacing: 0.04em;
   text-align: center;
+  color: #ffffff;
+  text-shadow: 1px 1px 0 #3f3f3f;
+  background: var(--mc-slot);
+  padding: 9px 6px;
+  box-sizing: border-box;
+  border-top: 2px solid var(--mc-dialog-light);
+  border-left: 2px solid var(--mc-dialog-light);
+  border-bottom: 2px solid var(--mc-slot-dark);
+  border-right: 2px solid var(--mc-slot-dark);
+  outline: 2px solid var(--mc-outline);
+  cursor: pointer;
+}
+
+.mcButton:hover {
+  background: #9d9d9d;
+}
+
+/* Selected mode: pressed-in bevel (inverted) + darker face. */
+.mcButtonOn {
+  background: #6e6e6e;
+  border-top-color: var(--mc-slot-dark);
+  border-left-color: var(--mc-slot-dark);
+  border-bottom-color: var(--mc-dialog-light);
+  border-right-color: var(--mc-dialog-light);
+}
+
+.mcButtonOn:hover {
+  background: #6e6e6e;
+}
+
+/* Leave-the-world button, set apart at the bottom of the controls window by
+ * the hint caption above it. Same vanilla button, warmer face so it does not
+ * read as a third mode. */
+.disconnectBtn {
+  margin-top: auto;
+  background: #a06060;
+}
+
+.disconnectBtn:hover {
+  background: #b06e6e;
+}
+
+/* Hover/focus description caption. Fixed min-height so the window does not
+ * jump while the text appears and disappears. */
+.controlsHint {
+  font-size: 8px;
+  line-height: 1.6;
+  color: var(--mc-gui-text);
+  min-height: 52px;
 }
 
 /* ── Map dialog contents ── */
-.activity {
-  font-size: 11px;
-  color: var(--mc-gui-text);
-}
-
 .posLine {
   font-size: 9px;
   color: var(--mc-gui-muted);
@@ -261,6 +335,5 @@
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #cfcfd6;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.75);
+  color: var(--mc-gui-text);
 }

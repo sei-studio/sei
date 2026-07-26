@@ -1,0 +1,84 @@
+/* FullscreenTextField.module.css — inline textarea + expand-icon popup editor.
+   Sharp corners per D-28 (matches TextField). */
+
+.wrap {
+  position: relative;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  padding: 12px 40px 12px 14px; /* right gutter clears the expand button */
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 140ms ease;
+}
+
+.input:hover,
+.input:focus {
+  border-color: var(--accent);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.expandBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.expandBtn:hover,
+.expandBtn:focus-visible {
+  color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.editorPanel {
+  gap: 16px;
+}
+
+.editor {
+  width: min(80vw, 880px);
+  height: min(60vh, 520px);
+  resize: none;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  padding: 16px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  outline: none;
+}
+
+.editor:focus {
+  border-color: var(--accent);
+}
+
+.editor::placeholder {
+  color: var(--muted);
+}

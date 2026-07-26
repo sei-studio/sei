@@ -68,13 +68,19 @@ export const VOICES = [
   { id: 'cymHWdiF8WjUCg6vvFxx', owner: '64cbc624eb5aab4e95a968e1f41d75402277cca6e549036ed17e56ea33bbbc9e', label: 'Vane', gender: 'male', age: 'adult', tags: ['rough', 'raspy', 'steady'], vibe: 'rugged and gravelly, weathered outdoorsman, American accent' },
   { id: 'jhBzyKbsdeM6F66SZCaK', owner: '64cbc624eb5aab4e95a968e1f41d75402277cca6e549036ed17e56ea33bbbc9e', label: 'Sterling', gender: 'male', age: 'adult', tags: ['steady', 'deep', 'classy', 'rough'], vibe: 'steady and resonant British' },
   { id: 'aCF7fSyJwGn1etojgoux', owner: '6b23cb827cffc727ee63533b4d22b384b930ea6d31dd1cf65f49beb14b22ed10', label: 'Kel', gender: 'male', age: 'adult', tags: ['calm', 'deep', 'casual'], vibe: 'calm, authentic and deep, unhurried, American accent' },
-  { id: 'bAq8AI9QURijOtmeFFqT', owner: 'b70fb323818c15577a8d8626a1f514d62fd3572497d33722a5dcb724524192c9', label: 'Sigma', gender: 'male', age: 'adult', tags: ['robotic', 'calm', 'steady'], vibe: 'an AI’s even cadence, synthetic calm, American accent' },
-  { id: 'NoiYxL9g25M4orC8Q0ls', owner: '84170eba2e50e0df575fca41c02e69d51200016cc292e0f433bb2b37cea28126', label: 'Vector', gender: 'male', age: 'adult', tags: ['robotic', 'professional'], vibe: 'clipped technical synth, machine-precise, American accent' },
   // elder
   { id: 'M5E055lOUxMi0kJpGyE9', owner: '72026985ddcf2e1b6cf05e05a8d5dc2e4d1b644e967553f8f6bf36210739d9a5', label: 'Gravel', gender: 'male', age: 'elder', tags: ['rough', 'raspy', 'dark', 'deep'], vibe: 'deep grit, midnight rasp, British accent' },
   { id: '507tTFX0IPtqFzGd1CAL', owner: '84170eba2e50e0df575fca41c02e69d51200016cc292e0f433bb2b37cea28126', label: 'Rusty', gender: 'male', age: 'elder', tags: ['casual', 'dry', 'raspy'], vibe: 'weathered and folksy, porch-chair drawl' },
   { id: '0hh7H4ZVAtaGpm1VZyEN', owner: 'fd99b11504e8c1aac6e847ea61616cd450db4e2b1b8aaa196c35d58c85fd9f28', label: 'David', gender: 'male', age: 'elder', tags: ['deep', 'steady', 'rough'], vibe: 'deep Southern cowboy, slow and sure' },
 
+  // ----------------------------------------------------------------- neutral
+  { id: 'bAq8AI9QURijOtmeFFqT', owner: 'b70fb323818c15577a8d8626a1f514d62fd3572497d33722a5dcb724524192c9', label: 'Sigma', gender: 'neutral', age: 'adult', tags: ['robotic', 'calm', 'steady'], vibe: 'an AI’s even cadence, synthetic calm, American accent' },
+  { id: 'NoiYxL9g25M4orC8Q0ls', owner: '84170eba2e50e0df575fca41c02e69d51200016cc292e0f433bb2b37cea28126', label: 'Vector', gender: 'neutral', age: 'adult', tags: ['robotic', 'professional'], vibe: 'clipped technical synth, machine-precise, American accent' },
+  { id: 'SAz9YHcvj6GT2YYXdXww', owner: null, label: 'River', gender: 'neutral', age: 'adult', tags: ['calm', 'casual', 'steady'], vibe: 'relaxed, neutral and informative, American accent' },
+  { id: 'M563YhMmA0S8vEYwkgYa', owner: '72d8ea4415caeb85f77dd77de1c9d5e039bb42aae280420cd215e24ef5d6fdbd', label: 'Sammy', gender: 'neutral', age: 'young', tags: ['cute', 'warm', 'upbeat'], vibe: 'sweet, warm and quirky, American accent' },
+  { id: 'JGzTGubAVbbgG0SsLIlg', owner: '64cbc624eb5aab4e95a968e1f41d75402277cca6e549036ed17e56ea33bbbc9e', label: 'Riley', gender: 'neutral', age: 'young', tags: ['upbeat', 'bright', 'raspy'], vibe: 'husky optimism, scratchy and content, American accent' },
+  { id: 'Z9VxF84ucVtzvKlmYFhh', owner: '896c30d5b4e54ce4e58ad93dd5dd5c0c615976a5503741f047fbf6b1ac977a5f', label: 'Ramona', gender: 'neutral', age: 'young', tags: ['casual', 'dry'], vibe: 'casual and unbothered, American accent' },
+  { id: 'YKlogvnVogI4aFHoGIEw', owner: 'ad827f2c0300d36094ca79e518b1a5df8c3609eb269353c30dcec3ac8878a437', label: 'Aaron', gender: 'neutral', age: 'adult', tags: ['deep', 'calm', 'confident'], vibe: 'deep, smooth and confident, American accent' },
 ];
 
 // Personality seed -> voice tags that suit it. Used as a soft multiplier in

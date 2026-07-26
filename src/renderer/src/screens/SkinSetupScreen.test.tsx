@@ -11,8 +11,8 @@
  *      home on the World tab (and offers a "Skip for now").
  *   3. The `skin-setup` view exists in the UI store's View union.
  *   4. UserConfigSchema carries the `skin_setup_pending` gate.
- *   5. OnboardingScreen sets skin_setup_pending on a fresh submit and routes to
- *      the skin-setup step (not straight home).
+ *   5. OnboardingScreen no longer arms the gate (260725: game setup moved to
+ *      the first Minecraft open — maybeOfferSkinSetup in lib/gameLaunch.ts).
  *   6. App.tsx renders SkinSetupScreen, hides the IconRail for it, suppresses the
  *      global wizard modal there, and resumes the step while skin_setup_pending.
  *   7. SetupWizardModal exports the reusable WizardStepMachine.
@@ -56,12 +56,16 @@ describe('SkinSetupScreen — dedicated onboarding step', () => {
     expect(/skin_setup_pending:\s*z\.boolean\(\)/.test(SCHEMA)).toBe(true);
   });
 
-  it('Test 5: OnboardingScreen sets the gate and routes to the activity picker', () => {
-    // First-run onboarding still arms the skin-setup gate, but routes to the
-    // activity picker (chat-vs-game chooser); the picker forwards to skin-setup
-    // only when the player chooses Minecraft, else it clears the gate + goes home.
-    expect(ONBOARD.includes('skin_setup_pending: !isReonboard')).toBe(true);
-    expect(ONBOARD.includes("navigate({ kind: 'activity-picker' })")).toBe(true);
+  it('Test 5: OnboardingScreen no longer arms the gate; skin setup rides the first Minecraft open', () => {
+    // 260725: game setup happens on first open of that game, not during
+    // onboarding. Onboarding writes the gate cleared and routes home; the
+    // first Minecraft open offers the wizard (gameLaunch.maybeOfferSkinSetup).
+    expect(ONBOARD.includes('skin_setup_pending: false')).toBe(true);
+    expect(ONBOARD.includes('activity-picker')).toBe(false);
+    const GAME_LAUNCH = r('src', 'renderer', 'src', 'lib', 'gameLaunch.ts');
+    expect(GAME_LAUNCH.includes('maybeOfferSkinSetup')).toBe(true);
+    expect(GAME_LAUNCH.includes("wizardPromptShown('get')")).toBe(true);
+    expect(GAME_LAUNCH.includes('openWizard(false)')).toBe(true);
   });
 
   it('Test 6: App.tsx renders, isolates, and resumes the step', () => {
