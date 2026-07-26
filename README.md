@@ -41,7 +41,7 @@ Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI 
 ## Current Capabilities
 
 - Minecraft: companions join a LAN world as a real second player, no extra account needed
-- In-app minigames: chess, Connect 4, 20 questions
+- In-app minigames: chess, with more on the way
 - Voice calls, solo or group
 - In-app chat
 - Persistent memory across sessions and games
