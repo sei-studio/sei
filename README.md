@@ -2,7 +2,7 @@
 
 [<img src="docs/sei-logo-blue.png" alt="Sei" width="240" />](https://sei.gg)
 
-Summon any character into your game.
+Play games with AI gamers.
 An omni-game AI player mod.
 
 <img src="docs/app-home.png" alt="Sei launcher" width="720" />
@@ -19,41 +19,50 @@ An omni-game AI player mod.
 
 ---
 
-Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI characters into video games as real players, not chatbots. Pick a character, launch a supported game, and they join your world to play alongside you. Companions remember everything you've done together across sessions and across games. Use Sei to have personalized experiences with new friends and rivals. Sei is currently compatible with Minecraft, and aims to support most multiplayer games.
+Sei is an AI game companion launcher ([sei.gg](https://sei.gg)) that summons AI characters into video games as real players, not chatbots. Pick a character, launch a supported game, and they join your world to play alongside you. Companions remember everything you've done together across sessions and across games. Use Sei to have personalized experiences with new friends and rivals. Sei plays Minecraft and its own in-app minigames today, and aims to support most multiplayer games.
 
 <div align="center">
 
-<img src="docs/marv.png" alt="A Sei character playing in Minecraft" width="720" />
+<table>
+<tr>
+<td><img src="docs/shot-voice.png" alt="A group voice call in Sei" width="240" /></td>
+<td><img src="docs/shot-minecraft.png" alt="A Sei character playing Minecraft" width="240" /></td>
+<td><img src="docs/shot-chess.png" alt="A Sei character playing chess" width="240" /></td>
+</tr>
+<tr>
+<td align="center"><sub>Voice call</sub></td>
+<td align="center"><sub>Existing games</sub></td>
+<td align="center"><sub>In-app minigames</sub></td>
+</tr>
+</table>
 
 </div>
 
-## Current Capabilities (v0.4)
+## Current Capabilities
 
-- Summon a Minecraft AI companion into a LAN world as a real second player, no additional account needed
-- Characters chat, build, gather, fight, follow, and act on their own
-- In-app chat: text companions outside the game, and they reach out to you too
-- Voice calls: talk with companions out loud, solo or in group calls, in and out of game
-- Companion matching: answer a short profile and get matched with unique, generated companions
-- Per-character persistent memory across sessions
-- Custom Minecraft skins via Fabric + CustomSkinLoader
-- Real in-game vision on demand
+- Minecraft: companions join a LAN world as a real second player, no extra account needed
+- In-app minigames: chess, Connect 4, 20 questions
+- Voice calls, solo or group
+- In-app chat
+- Persistent memory across sessions and games
+- Generated companions matched to you, or bring your own
+- Custom Minecraft skins and in-game vision
 - Bring your own API key or sign in for cloud-hosted AI
-- Public cloud character library 
-- Cross-platform: macOS, Windows
+- macOS and Windows
 
 ## Upcoming
 
-**v0.5**
+**v0.5 releases**
 
-- Minigame compatibility: play chess, GeoGuessr, and other minigames with companions
+- More minigames
 
 **v1.0**
 
 - Omni-game adapter: summon characters into any multiplayer game
 
-## Development
+To suggest a game, use the suggest tile on the Games screen in app.
 
-Contributions are welcome. Particularly with persona expansion, the mineflayer adapter, adapters for other games, and the loop architecture.
+## Development
 
 ```bash
 git clone https://github.com/sei-studio/sei.git
@@ -62,19 +71,23 @@ npm install
 npm run dev
 ```
 
-A source build works out of the box with no `.env` and no Supabase credentials — the same experience as the packaged app. Database and auth traffic routes through the Sei cloud proxy (`api.sei.gg/supabase`), which holds the public anon key server-side, so signing in, cloud characters, and cloud AI all work from a plain `git clone`. (A `.env` is only for overrides — pointing at your own proxy or your own Supabase project; see `.env.example`.)
+No `.env` needed. Cloud traffic routes through the Sei proxy, so sign-in, cloud characters, and cloud AI work from a plain clone. Use `.env.example` only to point at your own proxy or Supabase project.
 
-Prefer local mode (your own LLM API key, no account)? **Add your API key** (one of):
+To run local mode instead, open Settings, pick a provider, and paste your own LLM API key.
 
-- Open Sei -> Settings -> select provider -> paste your key
-- Edit `config.json` in user-data folder directly
+Help is welcome with:
 
-I'm currently working on this project by myself. For general discussions and closer contributions, reach out at [ouen@sei.gg](mailto:ouen@sei.gg). 
+- Improving the Minecraft experience
+- Adding support for new games
+- Better personality and memory
+
+I work on Sei alone. To get involved, reach out at [ouen@sei.gg](mailto:ouen@sei.gg).
 
 ## Acknowledgements
 
 - [mineflayer](https://github.com/PrismarineJS/mineflayer): the Minecraft bot framework Sei's game adapter is built on
 - [Project AIRI](https://github.com/moeru-ai/airi): inspiration for AI characters that live in software
 - [Character.AI](https://character.ai): inspiration for personalized AI characters
+- [Neuro-sama](https://vedal.ai/): inspiration for an AI that plays games with people
 - [PrismarineJS](https://github.com/PrismarineJS): the broader Minecraft protocol tooling that makes this possible
 - Hoshimachi Suisei: the GOAT
