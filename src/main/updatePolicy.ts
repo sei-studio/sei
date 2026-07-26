@@ -119,3 +119,38 @@ export function shouldShowWhatsNew(lastSeen: string | null, cur: string): boolea
   if (!lastSeen) return false;
   return isPatchOnlyBump(lastSeen, cur);
 }
+
+/**
+ * True for the "the feed points at something with no installable build behind
+ * it" family of electron-updater errors. Those must read as *no update*, not as
+ * a failed check.
+ *
+ * A git tag is PUBLIC the moment it is pushed, and GitHub's `releases.atom`
+ * (which electron-updater's GitHubProvider reads when `allowPrerelease` is on,
+ * instead of the API) lists tags that have no published release. A draft
+ * release is invisible, but its TAG is not — so between `git push --tags` and
+ * publishing, the draft's tag is the newest feed entry, and every channel-file
+ * request against it 404s because draft assets are not downloadable. Same shape
+ * when a tag is pushed before its build finishes, or when the build fails.
+ *
+ * 260725: v0.5.0-beta.1 sat in draft for ~20 minutes and every beta-channel
+ * client reported "check failed" for the whole window.
+ *
+ * Note this reports "up to date" rather than falling back to the newest tag
+ * that DOES have assets — reproducing the provider's feed walk is not worth it
+ * for a transient state. A published release genuinely missing its `.yml` would
+ * also land here, so callers should log it.
+ */
+export function isMissingReleaseArtifacts(err: unknown): boolean {
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  if (code === 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' || code === 'ERR_UPDATER_NO_PUBLISHED_VERSIONS') {
+    return true;
+  }
+  // Fall back to the message: the `code` property is lost whenever the error
+  // crosses a boundary that re-wraps it (or arrives as a plain string).
+  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  return (
+    /cannot find .*\.yml in the latest release artifacts/i.test(message) ||
+    /no published versions/i.test(message)
+  );
+}

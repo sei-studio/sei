@@ -29,7 +29,13 @@
  */
 import { app, net, powerMonitor, type BrowserWindow } from 'electron';
 import { IpcChannel, type WhatsNewEvent } from '../shared/ipc';
-import { deriveLevel, normalizeApply, shouldShowWhatsNew, type ApplyTiming } from './updatePolicy';
+import {
+  deriveLevel,
+  isMissingReleaseArtifacts,
+  normalizeApply,
+  shouldShowWhatsNew,
+  type ApplyTiming,
+} from './updatePolicy';
 import { loadUpdateState, saveUpdateState } from './updateStateStore';
 import { refreshNotices } from './notices';
 
@@ -288,6 +294,15 @@ function ensureAutoUpdater(): AutoUpdater | null {
 
   autoUpdater.on('error', (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
+    // A feed entry with no downloadable build behind it (a draft release's
+    // tag, or a tag whose build has not landed) is "nothing to install", not a
+    // failed check. Still logged at warn: a PUBLISHED release missing its .yml
+    // looks identical from here and would otherwise go unnoticed.
+    if (isMissingReleaseArtifacts(err)) {
+      logger.warn(`updater: ignoring feed entry with no installable assets (${message})`);
+      if (!isBackgroundDiscovery()) send(IpcChannel.app.updateNotAvailable);
+      return;
+    }
     logger.warn(`updater error: ${message}`);
     send(IpcChannel.app.updateError, message);
   });
@@ -630,8 +645,13 @@ export async function checkForUpdatesManual(): Promise<void> {
     await au.checkForUpdates();
   } catch (err) {
     const message = (err as Error).message;
-    logger.warn(`updater: manual checkForUpdates failed (${message})`);
-    send(IpcChannel.app.updateError, message);
+    if (isMissingReleaseArtifacts(err)) {
+      logger.warn(`updater: manual check found no installable release (${message})`);
+      send(IpcChannel.app.updateNotAvailable);
+    } else {
+      logger.warn(`updater: manual checkForUpdates failed (${message})`);
+      send(IpcChannel.app.updateError, message);
+    }
   } finally {
     manualCheckInFlight = false;
   }

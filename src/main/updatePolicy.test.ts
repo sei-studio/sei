@@ -8,14 +8,25 @@
  *   - isPatchOnlyBump: forward patch-only true; minor/major/equal/down false.
  *   - normalizeApply: 'now' passes through; everything else → 'on-restart'.
  *   - shouldShowWhatsNew: patch-only forward bump only.
+ *   - isMissingReleaseArtifacts: a feed entry with no installable build behind
+ *     it (draft release's tag, tag ahead of its build) reads as "no update",
+ *     while real failures still surface as errors.
  */
 import { describe, it, expect } from 'vitest';
 import {
   deriveLevel,
+  isMissingReleaseArtifacts,
   isPatchOnlyBump,
   normalizeApply,
   shouldShowWhatsNew,
 } from './updatePolicy';
+
+/** Build an error shaped like electron-updater's `newError(message, code)`. */
+function updaterError(message: string, code?: string): Error {
+  const err = new Error(message);
+  if (code) (err as Error & { code?: string }).code = code;
+  return err;
+}
 
 describe('deriveLevel', () => {
   it('patch-only bump → mandatory', () => {
@@ -123,5 +134,52 @@ describe('shouldShowWhatsNew', () => {
   it('false for equal versions and downgrades', () => {
     expect(shouldShowWhatsNew('0.1.2', '0.1.2')).toBe(false);
     expect(shouldShowWhatsNew('0.2.0', '0.1.1')).toBe(false);
+  });
+});
+
+describe('isMissingReleaseArtifacts', () => {
+  it('true for the draft-tag case: channel file 404s on the newest feed entry', () => {
+    // Verbatim shape from GitHubProvider.getLatestVersion (260725, v0.5.0-beta.1
+    // sat in draft while its tag was already public in releases.atom).
+    const err = updaterError(
+      'Cannot find beta-mac.yml in the latest release artifacts ' +
+        '(https://github.com/sei-studio/sei/releases/download/v0.5.0-beta.1/beta-mac.yml): ' +
+        'HttpError: 404 Not Found',
+      'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND',
+    );
+    expect(isMissingReleaseArtifacts(err)).toBe(true);
+  });
+
+  it('true for a repo with no published versions', () => {
+    expect(
+      isMissingReleaseArtifacts(
+        updaterError('No published versions on GitHub', 'ERR_UPDATER_NO_PUBLISHED_VERSIONS'),
+      ),
+    ).toBe(true);
+  });
+
+  it('true from the message alone when the code is lost in re-wrapping', () => {
+    expect(
+      isMissingReleaseArtifacts(
+        updaterError('Cannot find latest-mac.yml in the latest release artifacts (...): 404'),
+      ),
+    ).toBe(true);
+    expect(isMissingReleaseArtifacts('No published versions on GitHub')).toBe(true);
+  });
+
+  it('false for real failures that must still surface as "check failed"', () => {
+    expect(isMissingReleaseArtifacts(updaterError('net::ERR_INTERNET_DISCONNECTED'))).toBe(false);
+    expect(isMissingReleaseArtifacts(updaterError('HttpError: 500 Internal Server Error'))).toBe(false);
+    expect(
+      isMissingReleaseArtifacts(updaterError('Cannot parse releases feed', 'ERR_UPDATER_INVALID_RELEASE_FEED')),
+    ).toBe(false);
+    expect(isMissingReleaseArtifacts(updaterError('sha512 checksum mismatch'))).toBe(false);
+  });
+
+  it('false for null, undefined, and non-error junk', () => {
+    expect(isMissingReleaseArtifacts(null)).toBe(false);
+    expect(isMissingReleaseArtifacts(undefined)).toBe(false);
+    expect(isMissingReleaseArtifacts({})).toBe(false);
+    expect(isMissingReleaseArtifacts(42)).toBe(false);
   });
 });
