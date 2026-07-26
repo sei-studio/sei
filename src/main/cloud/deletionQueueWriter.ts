@@ -61,6 +61,12 @@ export async function enqueueStorageOrphans(
         storage_paths: paths,
       })
       .abortSignal(controller.signal);
+    // A unique violation means an equivalent pending row already covers these
+    // paths (deletion_queue_user_pending_uniq, keyed on user_id +
+    // storage_paths since 20260726000000). The insurance row exists, so the
+    // enqueue succeeded as far as callers are concerned — retrying a delete
+    // must not surface as a failure.
+    if (error && (error as { code?: string }).code === '23505') return;
     if (error) throw new Error(`${CLOUD_DELETION_QUEUE_INSERT_FAILED}: ${error.message}`);
   } finally {
     clearTimeout(handle);
