@@ -64,6 +64,7 @@ import {
 import { IdTag } from '../components/IdTag';
 import { CHAT_TEXT_MAX, type ChatMessage, type ChatReplyRef, type UserProfile } from '@shared/ipc';
 import type { Character } from '@shared/characterSchema';
+import { ClipCard } from '../components/backseat/ClipCard';
 import styles from './ChatScreen.module.css';
 
 export interface ChatScreenProps {
@@ -774,13 +775,17 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                     <span className={styles.timestamp}>{fmtTimestamp(m.ts)}</span>
                   </div>
                   <div className={styles.msgText}>{m.text}</div>
+                  {m.clip ? <ClipCard clip={m.clip} /> : null}
                 </div>
                 {rowActions(m)}
               </div>
             ) : (
               <div className={styles.rowCont}>
                 <span aria-hidden="true" />
-                <div className={styles.msgText}>{m.text}</div>
+                <div className={styles.msgText}>
+                  {m.text}
+                  {m.clip ? <ClipCard clip={m.clip} /> : null}
+                </div>
                 {rowActions(m)}
               </div>
             );

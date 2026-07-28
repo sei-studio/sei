@@ -135,6 +135,38 @@ const api: RendererApi = {
   drawSaveGallery: (characterId, pngDataUrl) =>
     ipcRenderer.invoke(IpcChannel.draw.saveGallery, { characterId, pngDataUrl }),
   drawEnd: (characterId) => ipcRenderer.invoke(IpcChannel.draw.end, characterId),
+
+  // Backseat (260728) — see src/shared/backseatIpc.ts.
+  backseatSources: () => ipcRenderer.invoke(IpcChannel.backseat.sources),
+  backseatStart: (characterId, sourceId, sourceName, mode) =>
+    ipcRenderer.invoke(IpcChannel.backseat.start, { characterId, sourceId, sourceName, mode }),
+  backseatGetState: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.backseat.getState, characterId),
+  backseatTick: (tick) => ipcRenderer.invoke(IpcChannel.backseat.tick, tick),
+  backseatGate: (characterId, grid) =>
+    ipcRenderer.invoke(IpcChannel.backseat.gate, { characterId, grid }),
+  backseatSetPaused: (characterId, paused) =>
+    ipcRenderer.invoke(IpcChannel.backseat.setPaused, { characterId, paused }),
+  backseatSaveClip: (characterId, requestId, webmBase64) =>
+    ipcRenderer.invoke(IpcChannel.backseat.saveClip, { characterId, requestId, webmBase64 }),
+  backseatRevealClip: (clipPath) =>
+    ipcRenderer.invoke(IpcChannel.backseat.revealClip, clipPath),
+  backseatEnd: (characterId) => ipcRenderer.invoke(IpcChannel.backseat.end, characterId),
+  onBackseatState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.backseat.state, handler);
+    return () => ipcRenderer.off(IpcChannel.backseat.state, handler);
+  },
+  onBackseatLine(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, l: Parameters<typeof cb>[0]) => cb(l);
+    ipcRenderer.on(IpcChannel.backseat.line, handler);
+    return () => ipcRenderer.off(IpcChannel.backseat.line, handler);
+  },
+  onBackseatClipRequest(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, r: Parameters<typeof cb>[0]) => cb(r);
+    ipcRenderer.on(IpcChannel.backseat.clipRequest, handler);
+    return () => ipcRenderer.off(IpcChannel.backseat.clipRequest, handler);
+  },
   onChessState(cb) {
     const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
     ipcRenderer.on(IpcChannel.chess.state, handler);

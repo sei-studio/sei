@@ -28,13 +28,14 @@ import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore } from './stores/useChessStore';
 import { useDrawStore } from './stores/useDrawStore';
+import { useBackseatStore } from './stores/useBackseatStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
 import { useWizardStore } from './stores/useWizardStore';
 import { attemptSummon } from './summonFlow';
 import { sei } from './ipcClient';
 
 /** The launchable games (the picker's coming-soon tiles are never active). */
-export type LaunchGameId = 'chess' | 'minecraft' | 'draw';
+export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat';
 
 export interface ActiveGameInfo {
   id: LaunchGameId;
@@ -56,6 +57,11 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
   if (draw && draw.phase !== 'gallery' && draw.phase !== 'setup') {
     return { id: 'draw', name: 'Draw!' };
   }
+  // Backseat has no panel of its own in the app: the session IS the overlay
+  // window, so "active" is simply whether main reports a live session.
+  if (useBackseatStore.getState().active[characterId]) {
+    return { id: 'backseat', name: 'Backseat' };
+  }
   const summon = useDataStore.getState().summons[characterId]?.kind;
   if (summon === 'online' || summon === 'connecting') {
     return { id: 'minecraft', name: 'Minecraft' };
@@ -74,6 +80,10 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
   }
   if (id === 'draw') {
     await useDrawStore.getState().end(characterId);
+    return;
+  }
+  if (id === 'backseat') {
+    await useBackseatStore.getState().end(characterId);
     return;
   }
   // Minecraft: same instant-disconnect path the chat panel uses.
@@ -118,6 +128,11 @@ async function maybeOfferSkinSetup(): Promise<void> {
  * cross-launch confirm has already ended it by the time this runs.
  */
 export function openGame(characterId: string, gameId: LaunchGameId): void {
+  // Backseat opens no surface here at all. Its entry point is the share picker
+  // inside the games popup, and once started its only UI is the always-on-top
+  // overlay window, so there is nothing to mount in the app.
+  if (gameId === 'backseat') return;
+
   // Draw! is a full-page route of its own rather than a panel in the chat
   // game area, so it navigates instead of mounting an aside. Any stale chess
   // panel intent is dropped first so returning to chat later is clean.

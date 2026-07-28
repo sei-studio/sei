@@ -16,6 +16,17 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   void import('./components/chess/DevChessShot').then(({ DevChessShot }) => {
     root.render(<DevChessShot />);
   });
+} else if (new URLSearchParams(window.location.search).has('backseat')) {
+  // Backseat (260728) loads the same bundle in its own always-on-top window.
+  // That window is not just chrome: it OWNS the screen-share capture, because
+  // it is the one window guaranteed to stay visible while the player is in a
+  // fullscreen game. Capturing from the main window instead would mean the
+  // ring buffer stops the moment the game takes over the display.
+  document.documentElement.style.background = 'transparent';
+  document.body.style.background = 'transparent';
+  void import('./components/backseat/BackseatOverlay').then(({ BackseatOverlay }) => {
+    root.render(<BackseatOverlay />);
+  });
 } else if (new URLSearchParams(window.location.search).has('overlay')) {
   document.documentElement.style.background = 'transparent';
   document.body.style.background = 'transparent';

@@ -26,6 +26,11 @@ import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
+import {
+  initBackseatOverlay,
+  closeBackseatOverlay,
+  sendToBackseatOverlay,
+} from './backseatOverlay';
 import { initUpdater } from './updater';
 import { initNotices } from './notices';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
@@ -618,6 +623,10 @@ async function bootstrap(): Promise<void> {
   // target so it can load the overlay-mode bundle.
   initCallOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
 
+  // Backseat overlay (260728): same idea, but that window is interactive and it
+  // OWNS the screen-share capture, so it needs the same bundle target.
+  initBackseatOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
+
   // Replay latest LAN state on did-finish-load so freshly-loaded renderer is in sync.
   mainWindow.webContents.on('did-finish-load', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -635,6 +644,14 @@ async function bootstrap(): Promise<void> {
     clearAllCalls();
     // The overlay belongs to the call the (now-gone) renderer was driving.
     closeCallOverlay();
+    closeBackseatOverlay();
+    // Backseat capture lives entirely in the renderer (getDisplayMedia, the
+    // ring buffer, the recorders), so a renderer that navigated or died has
+    // taken the session's eyes with it. Leaving the session open would keep
+    // main waiting on ticks that can never arrive.
+    void import('./backseat/backseatService')
+      .then((m) => m.clearAllBackseat())
+      .catch(() => {});
   };
   mainWindow.webContents.on('did-navigate', sweepVoiceCalls);
   mainWindow.webContents.on('render-process-gone', sweepVoiceCalls);
@@ -779,6 +796,27 @@ async function bootstrap(): Promise<void> {
       pushChatMessage,
       isSummoned: (id) => supervisor?.isActive(id) ?? false,
       pushLog: broadcastLog,
+    });
+  }
+
+  // Backseat (260728): the companion watches a shared window and comments.
+  // Mutually exclusive with Minecraft, same as chess and Draw!. Everything the
+  // renderer captures stays in the renderer; only finished image grids and the
+  // harvested clip cross to main.
+  {
+    const { initBackseatService } = await import('./backseat/backseatService');
+    // These three go to the OVERLAY window, not the main one: it owns the
+    // capture pipeline and draws the mini chat, and it is the window that
+    // stays alive while the player is in a game. Chat messages still take the
+    // ordinary chat channel to the main window so the transcript is complete.
+    initBackseatService({
+      pushState: (state) => sendToBackseatOverlay(IpcChannel.backseat.state, state),
+      pushLine: (characterId, line) =>
+        sendToBackseatOverlay(IpcChannel.backseat.line, { characterId, ...line }),
+      requestClip: (characterId, requestId) =>
+        sendToBackseatOverlay(IpcChannel.backseat.clipRequest, { characterId, requestId }),
+      pushChatMessage,
+      isCallActive,
     });
   }
 

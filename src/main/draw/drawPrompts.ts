@@ -23,7 +23,7 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
-import { CANVAS_H, CANVAS_W, type DrawChatMessage } from '../../shared/drawIpc';
+import { CANVAS_H, CANVAS_W, type DrawChatMessage, type DrawRole } from '../../shared/drawIpc';
 
 /** Strokes the character may spend on one picture before we cut it off. */
 export const MAX_AI_STROKES = 16;
@@ -242,6 +242,102 @@ export function buildDrawTurnBlock(opts: {
   }
 
   lines.push(
+    '',
+    '## Everything said this turn',
+    renderChat(turnChat, aiName, playerName),
+    '',
+    '## Chat history from previous turns',
+    renderChat(priorChat, aiName, playerName),
+  );
+
+  return lines.join('\n');
+}
+
+/**
+ * Volatile block for the TURN-END reaction beat (260728).
+ *
+ * Without this the character never learned how a turn resolved until the next
+ * turn's prompt, which is far too late to say anything about it. It is worst in
+ * the case that prompted this: a guess counts the moment the word appears in a
+ * sentence, so a hedged line ("that box makes me think projector but I'm
+ * committing to the simpler guess first") WINS while the character believes it
+ * has just guessed something else. It then opened the next turn with no idea it
+ * had scored. So the outcome is stated plainly here, and the winning line is
+ * quoted back when the character is the one who landed it.
+ */
+export function buildTurnEndBlock(opts: {
+  round: number;
+  rounds: number;
+  aiName: string;
+  playerName: string;
+  /** Who was drawing this turn. */
+  drawer: DrawRole;
+  word: string;
+  guessed: boolean;
+  /** The line that landed it, when someone got there. */
+  winningLine: string | null;
+  scores: { player: number; ai: number };
+  turnChat: DrawChatMessage[];
+  priorChat: DrawChatMessage[];
+  gameOver: boolean;
+}): string {
+  const {
+    round,
+    rounds,
+    aiName,
+    playerName,
+    drawer,
+    word,
+    guessed,
+    winningLine,
+    scores,
+    turnChat,
+    priorChat,
+    gameOver,
+  } = opts;
+
+  const lines = ['# TURN OVER', `Round ${round} of ${rounds}.`, ''];
+
+  if (drawer === 'player' && guessed) {
+    lines.push(
+      `YOU GOT IT. ${playerName} was drawing "${word.toUpperCase()}" and you guessed it. The point is yours.`,
+    );
+    if (winningLine) {
+      lines.push(
+        '',
+        `The line that won it was yours: "${winningLine}"`,
+        'A guess counts the moment the word appears anywhere in a sentence. So that line scored even if ' +
+          'you were still hedging, thinking out loud, or leaning towards a different answer when you typed it. ' +
+          'You won the round on it either way.',
+      );
+    }
+  } else if (drawer === 'player' && !guessed) {
+    lines.push(
+      `Time ran out. ${playerName} was drawing "${word.toUpperCase()}" and you did not get it. No point.`,
+    );
+  } else if (drawer === 'ai' && guessed) {
+    lines.push(
+      `${playerName} guessed your drawing. It was "${word.toUpperCase()}", and the point is theirs.`,
+    );
+    if (winningLine) lines.push('', `They got it with: "${winningLine}"`);
+  } else {
+    lines.push(
+      `Time ran out and ${playerName} never got your drawing of "${word.toUpperCase()}". Nobody scores.`,
+    );
+  }
+
+  lines.push(
+    '',
+    `Score now: ${playerName} ${scores.player}, you ${scores.ai}.`,
+    '',
+    gameOver
+      ? 'That was the last turn. The game is over, so this is your closing line.'
+      : 'The next turn starts in a moment.',
+    '',
+    'React in ONE short line, in your own voice, the way someone would between rounds. ' +
+      'Gloat, groan, defend your drawing, tease them. Do not explain the rules back, do not recap ' +
+      'the score, and do not announce what is coming next. If you genuinely have nothing to add, ' +
+      'reply with exactly (silence) and nothing will be sent.',
     '',
     '## Everything said this turn',
     renderChat(turnChat, aiName, playerName),

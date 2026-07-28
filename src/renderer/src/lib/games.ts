@@ -69,11 +69,11 @@ export const GAMES: GameDef[] = [
   {
     id: 'backseat',
     name: 'Backseat',
-    available: false,
-    soon: true,
+    available: true,
     image: './img/game-backseat.svg',
     description: (name) =>
-      `${name} watches you play any game and reacts like a friend on the couch.`,
+      `Share a window and ${name} watches you play, reacting as it happens and ` +
+      `saying what they want to see you try next. Works with any game.`,
   },
   {
     id: 'suggest',

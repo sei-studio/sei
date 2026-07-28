@@ -40,6 +40,20 @@ export type {
   DrawSnapshotRequest,
   DrawStroke,
 } from './drawIpc';
+import type {
+  BackseatLine,
+  BackseatMode,
+  BackseatSource,
+  BackseatState,
+  BackseatTick,
+} from './backseatIpc';
+export type {
+  BackseatLine,
+  BackseatMode,
+  BackseatSource,
+  BackseatState,
+  BackseatTick,
+} from './backseatIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 export type {
   McDashboardSnapshot,
@@ -290,6 +304,14 @@ export interface ChatMessage {
    * caption spam.
    */
   voice?: boolean;
+  /**
+   * Backseat (260728): a clip the companion saved off the screen share while
+   * watching the player. `path` is an absolute path to the .webm under
+   * <profileRoot>/clips/<characterId>/; `reason` is the companion's own short
+   * phrase for what is in it, shown as the caption. Rendered as a playable
+   * card under the line that asked for it.
+   */
+  clip?: { path: string; reason: string };
   /**
    * Set on a `system` row that records a finished play session, so the UI can
    * render it with the game icon (Discord-style "You and X played Minecraft for
@@ -1312,6 +1334,33 @@ export interface RendererApi {
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
 
+  // --- Backseat (260728) --- see src/shared/backseatIpc.ts for the tick
+  // model, the image-grid geometry and the authority split. The renderer owns
+  // capture; every model call happens in main.
+  /** Shareable windows and screens for the source picker. */
+  backseatSources(): Promise<BackseatSource[]>;
+  /** Begin watching. Rejects with BACKSEAT_ERR_MC_ACTIVE while summoned. */
+  backseatStart(
+    characterId: string,
+    sourceId: string,
+    sourceName: string,
+    mode: BackseatMode,
+  ): Promise<BackseatState>;
+  backseatGetState(characterId: string): Promise<BackseatState | null>;
+  /** Raise a tick. Main decides whether it becomes a spoken line. */
+  backseatTick(tick: BackseatTick): Promise<void>;
+  /** Ask the small VLM whether this grid is interesting. False on any error. */
+  backseatGate(characterId: string, grid: string): Promise<boolean>;
+  backseatSetPaused(characterId: string, paused: boolean): Promise<void>;
+  /** Answer to a backseat:clip-request; null when no segment was available. */
+  backseatSaveClip(characterId: string, requestId: string, webmBase64: string | null): Promise<void>;
+  /** Open a saved clip in the OS player (the chat clip card's click action). */
+  backseatRevealClip(clipPath: string): Promise<void>;
+  backseatEnd(characterId: string): Promise<void>;
+  onBackseatState(cb: (state: BackseatState) => void): Unsubscribe;
+  onBackseatLine(cb: (l: BackseatLine & { characterId: string }) => void): Unsubscribe;
+  onBackseatClipRequest(cb: (r: { characterId: string; requestId: string }) => void): Unsubscribe;
+
   // --- Minecraft dashboard (260721) --- see src/shared/mcDashboardIpc.ts for
   // the snapshot model. Character-scoped; live only while summoned.
   /** Latest telemetry snapshot, or null when there is no live session. */
@@ -2218,6 +2267,27 @@ export const IpcChannel = {
     aiStroke: 'draw:ai-stroke',
     /** Push: DrawSnapshotRequest — rasterize the canvas and answer. */
     snapshotRequest: 'draw:snapshot-request',
+  },
+  // Backseat (260728) — the companion watches a shared window and comments.
+  // Protocol details in src/shared/backseatIpc.ts. `tick`, `gate` and
+  // `saveClip` all flow renderer -> main because the renderer owns capture and
+  // main owns every model call.
+  backseat: {
+    sources: 'backseat:sources',
+    start: 'backseat:start',
+    getState: 'backseat:get-state',
+    tick: 'backseat:tick',
+    gate: 'backseat:gate',
+    setPaused: 'backseat:set-paused',
+    saveClip: 'backseat:save-clip',
+    revealClip: 'backseat:reveal-clip',
+    end: 'backseat:end',
+    /** Push: full BackseatState on every change. */
+    state: 'backseat:state',
+    /** Push: BackseatLine as the companion says it (the overlay mini chat). */
+    line: 'backseat:line',
+    /** Push: main asking the renderer to harvest the rolling clip buffer. */
+    clipRequest: 'backseat:clip-request',
   },
   // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
   // Protocol details in src/shared/mcDashboardIpc.ts.

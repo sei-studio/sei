@@ -1330,6 +1330,111 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await draw.endDraw(id);
   });
 
+  // ── Backseat (260728) ─────────────────────────────────────────────────────
+  // Thin wrappers over src/main/backseat/backseatService (module state
+  // initialized in main/index.ts). The grid payloads are large but bounded:
+  // a 1204x1008 JPEG is ~150 KB, ~200 KB as a base64 data URL.
+  ipcMain.handle(IpcChannel.backseat.sources, async () => {
+    const { desktopCapturer } = await import('electron');
+    const sources = await desktopCapturer.getSources({
+      types: ['window', 'screen'],
+      thumbnailSize: { width: 320, height: 180 },
+      fetchWindowIcons: true,
+    });
+    return sources
+      // Sei's own windows are never useful to share and sharing the picker
+      // itself produces an infinite hall of mirrors.
+      .filter((s) => !/^Sei($| [-—|])/.test(s.name))
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        kind: s.id.startsWith('screen:') ? ('screen' as const) : ('window' as const),
+        thumbnail: s.thumbnail.toDataURL(),
+        ...(s.appIcon ? { appIcon: s.appIcon.toDataURL() } : {}),
+      }));
+  });
+  ipcMain.handle(IpcChannel.backseat.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        sourceId: z.string().max(300),
+        sourceName: z.string().max(200),
+        mode: z.enum(['voice', 'text']),
+      })
+      .parse(argsRaw);
+    const { BACKSEAT_ERR_MC_ACTIVE } = await import('../shared/backseatIpc');
+    if (deps.supervisor.isActive(args.characterId)) throw new Error(BACKSEAT_ERR_MC_ACTIVE);
+    const backseat = await import('./backseat/backseatService');
+    return await backseat.startBackseat(
+      args.characterId,
+      args.sourceId,
+      args.sourceName,
+      args.mode,
+    );
+  });
+  ipcMain.handle(IpcChannel.backseat.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const backseat = await import('./backseat/backseatService');
+    return backseat.getBackseatState(id);
+  });
+  ipcMain.handle(IpcChannel.backseat.tick, async (_event, tickRaw: unknown) => {
+    const tick = z
+      .object({
+        characterId: IdSchema,
+        kind: z.enum(['user', 'gate', 'jolt']),
+        grid: z.string().max(8_000_000),
+        capturedAt: z.number(),
+        text: z.string().max(4000).optional(),
+        joltReason: z.enum(['gain', 'color']).optional(),
+      })
+      .parse(tickRaw);
+    const backseat = await import('./backseat/backseatService');
+    // Fire and forget: the renderer must not block its capture loop on a turn
+    // that takes a second or more.
+    void backseat.handleTick(tick).catch(() => {});
+  });
+  ipcMain.handle(IpcChannel.backseat.gate, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, grid: z.string().max(8_000_000) })
+      .parse(argsRaw);
+    const backseat = await import('./backseat/backseatService');
+    return await backseat.askGate(args.characterId, args.grid);
+  });
+  ipcMain.handle(IpcChannel.backseat.setPaused, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);
+    const backseat = await import('./backseat/backseatService');
+    backseat.setBackseatPaused(args.characterId, args.paused);
+  });
+  ipcMain.handle(IpcChannel.backseat.saveClip, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        requestId: z.string().max(100),
+        webmBase64: z.string().max(200_000_000).nullable(),
+      })
+      .parse(argsRaw);
+    const backseat = await import('./backseat/backseatService');
+    backseat.receiveClip(args.characterId, args.requestId, args.webmBase64);
+  });
+  ipcMain.handle(IpcChannel.backseat.revealClip, async (_event, pathArg: unknown) => {
+    const clipPath = z.string().max(4096).parse(pathArg);
+    const { paths } = await import('./paths');
+    const { shell } = await import('electron');
+    const nodePath = await import('node:path');
+    // Only ever open files we wrote: the renderer hands back a path that came
+    // from a pushed message, but a compromised or buggy caller must not be
+    // able to turn this into "open anything on disk".
+    const root = nodePath.join(paths.profileRoot(), 'clips');
+    const resolved = nodePath.resolve(clipPath);
+    if (!resolved.startsWith(nodePath.resolve(root) + nodePath.sep)) return;
+    shell.showItemInFolder(resolved);
+  });
+  ipcMain.handle(IpcChannel.backseat.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const backseat = await import('./backseat/backseatService');
+    await backseat.endBackseat(id);
+  });
+
   // ── Minecraft dashboard (260721) ──────────────────────────────────────────
   // Thin wrappers over src/main/mcDashboard/mcDashboardService (module state
   // initialized in main/index.ts) + the supervisor's watch-flag port message.

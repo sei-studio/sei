@@ -96,6 +96,7 @@ import {
   PEN_TOOL,
   buildDrawTurnBlock,
   buildGuessTurnBlock,
+  buildTurnEndBlock,
   drawContractBlock,
   turnEndLine,
 } from './drawPrompts';
@@ -131,6 +132,14 @@ const POLL_MS = 500;
 const SNAPSHOT_TIMEOUT_MS = 2_000;
 /** Pause on the reveal between turns. */
 const TURN_GAP_MS = 4_000;
+/**
+ * The turn-end reaction beat runs inside that gap, and the gap waits for it.
+ * These bound the wait: the call is abandoned after the timeout, and whatever
+ * it did say gets at least the minimum pause on screen before the next turn
+ * wipes the canvas.
+ */
+const TURN_END_TIMEOUT_MS = 12_000;
+const TURN_END_MIN_PAUSE_MS = 1_800;
 
 /**
  * Tool arrays, one per turn kind — a DELIBERATE divergence from chess, which
@@ -212,6 +221,8 @@ interface Session {
   gapTimer: NodeJS.Timeout | null;
   guess: GuessSched;
   draw: DrawRun;
+  /** In-flight turn-end reaction call, so teardown can abort it. */
+  endCtrl: AbortController | null;
   startedAt: number;
   /** finishGame has already run for this session; it must never run twice. */
   finished: boolean;
@@ -326,6 +337,7 @@ async function newSession(characterId: string): Promise<Session> {
       toolNotes: new Map(),
       done: false,
     },
+    endCtrl: null,
     startedAt: Date.now(),
     finished: false,
     playerName: (config.preferred_name ?? '').trim() || 'You',
@@ -404,8 +416,10 @@ function teardownTimers(s: Session): void {
   s.gapTimer = null;
   s.guess.ctrl?.abort();
   s.draw.ctrl?.abort();
+  s.endCtrl?.abort();
   s.guess.ctrl = null;
   s.draw.ctrl = null;
+  s.endCtrl = null;
 }
 
 /** Close the game. An unfinished game is recorded as abandoned. */
@@ -608,6 +622,12 @@ function endTurn(s: Session, guessed: boolean): void {
     guessed,
   });
 
+  // Whoever landed it did so on a specific line, and for the character's own
+  // correct guess that line is the whole point of the reaction beat below.
+  const winningLine = guessed
+    ? ([...s.chat].reverse().find((m) => m.correct)?.text ?? null)
+    : null;
+
   const guesserName = drawer === 'player' ? s.aiName : s.playerName;
   systemLine(s, turnEndLine({ guessed, word: s.word, guesserName }));
 
@@ -615,7 +635,17 @@ function endTurn(s: Session, guessed: boolean): void {
   log(s, `turn end round=${s.round} drawer=${drawer} guessed=${guessed} strokes=${s.strokes.length}`);
   push(s);
 
-  s.gapTimer = setTimeout(() => advanceTurn(s), TURN_GAP_MS);
+  // Reaction beat, then advance. The gap WAITS for the call rather than racing
+  // it: a reaction that lands after the next turn has already wiped the canvas
+  // reads as the character talking about the wrong picture.
+  const key = s.turnKey;
+  const startedAt = Date.now();
+  const gameOver = drawer === 'ai' && s.round >= s.rounds;
+  void runTurnEndReaction(s, key, { drawer, guessed, winningLine, gameOver }).finally(() => {
+    if (sessions.get(s.characterId) !== s || s.turnKey !== key || s.phase !== 'turn-end') return;
+    const wait = Math.max(TURN_END_MIN_PAUSE_MS, TURN_GAP_MS - (Date.now() - startedAt));
+    s.gapTimer = setTimeout(() => advanceTurn(s), wait);
+  });
 }
 
 function advanceTurn(s: Session): void {
@@ -882,6 +912,89 @@ async function runGuessCall(s: Session, imageBase64: string, key: string): Promi
     clearTimeout(timeout);
     s.guess.ctrl = null;
   }
+}
+
+// ── the turn-end reaction beat ───────────────────────────────────────────────
+
+/**
+ * One short line between turns, so the character knows how the turn actually
+ * resolved. See buildTurnEndBlock for why this exists: a hedged sentence that
+ * happens to contain the word WINS, and without this beat the character carried
+ * on believing it had guessed something else.
+ *
+ * Never throws: the gap timer is armed from `.finally()` either way, so a
+ * failed or slow reaction can only cost the line, never the game.
+ */
+async function runTurnEndReaction(
+  s: Session,
+  key: string,
+  ctx: { drawer: DrawRole; guessed: boolean; winningLine: string | null; gameOver: boolean },
+): Promise<void> {
+  try {
+    const { system, sdk, punctuation } = await prepareCall(s);
+    if (s.turnKey !== key || s.phase !== 'turn-end') return;
+
+    const turnChat = chatSinceTurnStart(s);
+    const block = buildTurnEndBlock({
+      round: s.round,
+      rounds: s.rounds,
+      aiName: s.aiName,
+      playerName: s.playerName,
+      drawer: ctx.drawer,
+      word: s.word,
+      guessed: ctx.guessed,
+      winningLine: ctx.winningLine,
+      scores: s.scores,
+      turnChat,
+      priorChat: s.chat.slice(0, s.chat.length - turnChat.length),
+      gameOver: ctx.gameOver,
+    });
+
+    const ctrl = new AbortController();
+    s.endCtrl = ctrl;
+    const timeout = setTimeout(() => ctrl.abort(), TURN_END_TIMEOUT_MS);
+    try {
+      const res = await sdk.client.messages.create(
+        {
+          model: sdk.model,
+          max_tokens: 200,
+          system,
+          tools: GUESS_TOOLS,
+          messages: [{ role: 'user', content: block }],
+        },
+        { signal: ctrl.signal },
+      );
+      if (s.turnKey !== key || s.phase !== 'turn-end') return;
+      await honorRememberCalls(s, res.content);
+
+      const text = res.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join(' ')
+        .trim();
+      // The word is public by now (the reveal line already named it), so this
+      // is deliberately NOT redacted.
+      for (const line of splitReply(text, punctuation).slice(0, 2)) {
+        if (isSilence(line)) continue;
+        say(s, 'ai', line);
+      }
+      push(s);
+    } finally {
+      clearTimeout(timeout);
+      if (s.endCtrl === ctrl) s.endCtrl = null;
+    }
+  } catch (err) {
+    log(s, `turn-end reaction failed: ${String(err)}`);
+  }
+}
+
+/**
+ * The "(silence)" convention chat and voice already use: models cannot return
+ * an empty reply, but they reliably write the literal filler when told quiet is
+ * allowed, so it is parsed out rather than fought.
+ */
+function isSilence(line: string): boolean {
+  return /^[([]?\s*(silence|says nothing|stays? silent|no reply)\s*[)\]]?[.!]?$/i.test(line.trim());
 }
 
 // ── the character's drawing turn ─────────────────────────────────────────────

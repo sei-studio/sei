@@ -1,0 +1,215 @@
+/**
+ * Backseat share picker — swaps into the games popup's existing frame, so it
+ * inherits the modal's padding and background and only styles its own body.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: 0;
+  /* The popup is a fixed frame; the source list is what scrolls. */
+  max-height: 68vh;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.back {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+
+.back:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.headings {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--heading);
+}
+
+.sub {
+  margin: var(--space-xs) 0 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-right: var(--space-xs);
+}
+
+.groupLabel {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-sm);
+}
+
+.empty {
+  margin: var(--space-lg) 0;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+.tile:hover {
+  border-color: var(--accent);
+}
+
+.tileOn {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.thumbWrap {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg4);
+}
+
+.thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.thumbBlank {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tileName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.appIcon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.tileText {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text);
+  /* Window titles run long and are not worth two lines in a grid this dense. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+}
+
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+.mode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.mode:hover {
+  border-color: var(--accent);
+}
+
+.modeOn {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.modeName {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.modeHint {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.error {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--red);
+}

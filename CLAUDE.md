@@ -378,6 +378,96 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   and border is a generated squiggle (`squigglePath.ts` / `Squiggle.tsx`), and
   the face is Architects Daughter (OFL), self-hosted like every other font.
 
+## Backseat (260728)
+
+The companion watches a window the player shares and comments on it live,
+launched from the "Play together" tiles. **Mutually exclusive with a Minecraft
+summon, chess and Draw!** (the shared `lib/gameLaunch.ts` gate). Works in voice
+mode (spoken through the live call) or text mode (a mini chat on the overlay);
+both write to the SAME chat thread and the same memory as every other surface.
+
+- **Authority split.** The renderer owns pixels and sound: `getDisplayMedia`,
+  the ring buffer, frame scoring, grid compositing, the rolling clip recorders,
+  and two of the three triggers. Main owns the session and EVERY model call.
+  Contract: `src/shared/backseatIpc.ts`.
+- **The capture lives in the OVERLAY window, not the main window.** This is
+  load-bearing. A backseat session runs entirely while the player is inside a
+  fullscreen game, so the main window is hidden or fully occluded and Chromium
+  clamps its timers. The always-on-top overlay (`src/main/backseatOverlay.ts`,
+  renderer `?backseat=1` branch in `main.tsx`) is the one window guaranteed to
+  stay on screen. Both windows also set `backgroundThrottling: false`, and the
+  frame pump itself runs in a worker off `MediaStreamTrackProcessor` so it is
+  immune to throttling regardless.
+- **The image grid is IG-VLM (arXiv 2403.18406), reproduced exactly.** SIX
+  frames, composited into ONE image, 3 rows x 2 columns, filled row-first. N=6
+  beat 4/9/12/16/20 in the paper and near-square grids beat wide ones, which
+  for 16:9 cells means 3x2 and not 2x3. The prompt describes the layout and
+  ordering explicitly (`BACKSEAT_CONTRACT`); without that the model reads six
+  unrelated pictures instead of six seconds of time.
+- **Grid size is pinned to Haiku, and there is a test for it.** Haiku 4.5 is a
+  STANDARD-tier vision model: long edge <= 1568 px AND <= 1568 visual tokens, at
+  `ceil(w/28) * ceil(h/28)` tokens. The largest legal 32:27 grid is **1204x1008
+  (cells 602x336) = 1548 tokens**. Oversize is not an error, it is a silent
+  server-side downscale, so `backseatIpc.test.ts` asserts both the cap and that
+  we are not leaving budget on the table.
+- **The ring buffer does not hold 900 frames.** "15 s at 60 fps, one frame per
+  second by loudest gain" read literally is several GB or 60 JPEG encodes a
+  second. It does not have to be: the selection rule is a running argmax, so
+  `captureWorker.ts` keeps exactly ONE frame per one-second bucket alive (the
+  best so far, as an ImageBitmap), discards every loser immediately, and encodes
+  the winner once at the bucket boundary. 1 encode/second, ~15 JPEGs resident,
+  and still every frame examined. Full-rate 60 fps video is kept only by
+  MediaRecorder, which is the only consumer that needs it.
+- **Three triggers, arbitrated in one place** (`backseatService.handleTick`):
+  1. `user` — the player spoke or typed. ALWAYS answered, and preempts an
+     in-flight gate/jolt turn. Typing arms a grid on the first keystroke
+     (idempotent + single-flight, so a burst composites once) and it ships with
+     the finished sentence; a latch older than 30 s is recomposited instead.
+  2. `gate` — a small VLM on DeepInfra reads a fresh grid every 6 s.
+  3. `jolt` — a local audio/colour discontinuity, no model involved. Thresholds
+     are deliberately extreme (18 dB over the trailing median, 0.34 mean thumb
+     delta) with a 20 s refractory, so it catches what lands between gate calls
+     without ever out-talking the gate.
+  Gate and jolt are DROPPED, never queued, when a turn is running or the
+  companion spoke < 8 s ago: a queued reaction describes a moment that has
+  passed, which reads as confusion rather than lateness.
+- **The gate threshold is LEARNED, not written down** (`salienceGate.ts`). The
+  target is ~1/4 of grids positive, and a fixed cutoff cannot reach it: small
+  VLMs say yes to almost anything and their verbalized confidence is nearly
+  constant regardless of correctness. So the gate reads the yes-token LOGPROB
+  and takes the cutoff from the upper quartile of a rolling 40-score window, per
+  session. A frantic shooter and a slow strategy game each get gated on their
+  own most-eventful moments. Fails CLOSED on any error: an outage makes the
+  companion quiet, never chatty.
+- **Clips.** `save_clip` writes the last 15 s to
+  `<profileRoot>/clips/<characterId>/` and attaches it to the chat line that
+  asked for it (`ChatMessage.clip`, rendered by `ClipCard`). A WebM segment is
+  only decodable from its own header, so the tail of a chunk list is not a
+  clip: two recorders staggered by half a period mean the longest-running one
+  always yields a complete file containing the requested window. The honest
+  cost is that a saved clip runs 15-30 s rather than exactly 15.
+- **Three UI panels.** (1) `BackseatSourcePicker` swaps into the games popup's
+  existing frame rather than opening a second dialog. (2) the voice-mode
+  overlay: status dot plus pause/stop revealed on hover, whole surface
+  draggable. (3) text mode adds an always-shown translucent mini chat above the
+  controls. `BackseatOverlay.module.css` is a **deliberate exception** to the
+  tokens.css rule for BACKGROUNDS only: it paints over someone else's game, so
+  opaque `--surface` would punch an app-coloured rectangle into their screen.
+  Accent, radii and type still come from tokens.
+- **Continuity + analytics** follow the contracts below: `REMEMBER_TOOL` honored
+  inline (single-shot turns, no tool loop), one `event: {kind:'play'}` row at
+  `endBackseat` plus `foldIfDue`, and `backseat_started` / `backseat_ended` with
+  `duration_ms`. Per-tick commentary is deliberately NOT persisted beyond the
+  normal chat messages the companion actually said.
+- **Tool-array policy:** ONE array for every tick kind (chess-style). Ticks are
+  6-8 s apart, well inside the cache TTL, so per-tick-kind arrays would
+  invalidate the prefix almost every turn for nothing.
+
+**Owed:** the gate currently needs `SEI_GATE_DEV_KEY` (see `.env.example`).
+Production should route it through the proxy the way TTS does, so no DeepInfra
+key ships in the client. Until then packaged builds run on the user and jolt
+triggers only.
+
 ## Instrumenting a game or timed surface (REQUIRED)
 
 **Every new game, minigame, or timed surface MUST emit analytics before it
@@ -414,7 +504,7 @@ Rules that follow from the existing implementations:
   (`public/app.js`). That is the only dashboard change needed.
 
 Current members: `bot_session_ended` (Minecraft), `chess_game_ended`,
-`voice_call_ended`, `draw_game_ended`.
+`voice_call_ended`, `draw_game_ended`, `backseat_ended`.
 
 ## Continuity for a game or timed surface (REQUIRED)
 
@@ -490,6 +580,8 @@ src/
     apiKeyStore.ts      safeStorage key + getAiBackendKind()
     configStore.ts      <userData>/config.json (Zod-validated, atomic)
     characterStore.ts   local character library
+    backseat/           screen-watch session, salience gate, tick arbitration
+    backseatOverlay.ts  always-on-top overlay window (OWNS the capture renderer)
     auth/               Supabase, PKCE loopback OAuth, session, jwtBridge
     cloud/              proxyClient, credits/billing, cloud character sync, moderation
     updater.ts          electron-updater driver (packaged builds only)

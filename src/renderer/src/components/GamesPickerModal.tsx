@@ -22,6 +22,8 @@ import { openGame, requestGameLaunch, type LaunchGameId } from '../lib/gameLaunc
 import { GAMES, type GameDef } from '../lib/games';
 import { MCBlock, GamepadIcon, InfoIcon, PlusIcon } from './icons';
 import { FeedbackModal } from './FeedbackModal';
+import { BackseatSourcePicker } from './backseat/BackseatSourcePicker';
+import { useBackseatStore } from '../lib/stores/useBackseatStore';
 import styles from './GamesPickerModal.module.css';
 
 export interface GamesPickerModalProps {
@@ -59,6 +61,13 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
   const suggestOpenRef = useRef(false);
   suggestOpenRef.current = suggestOpen;
 
+  // Backseat (260728): the tile swaps this popup's BODY to the share picker
+  // rather than opening a surface, so choosing a window reads as part of
+  // starting the game instead of a second dialog on top of the first.
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareOpenRef = useRef(false);
+  shareOpenRef.current = shareOpen;
+
   const cancelShow = (): void => {
     if (showTimer.current !== null) {
       window.clearTimeout(showTimer.current);
@@ -95,6 +104,11 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
       if (e.key !== 'Escape') return;
       // The open feedback form owns ESC (ModalShell closes itself).
       if (suggestOpenRef.current) return;
+      // ESC backs out of the share picker to the tiles before it closes.
+      if (shareOpenRef.current) {
+        setShareOpen(false);
+        return;
+      }
       // ESC dismisses the info popup first; a second ESC closes the picker.
       if (popupRef.current) {
         setPopup(null);
@@ -118,6 +132,14 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
     // the cross-launch confirm first; otherwise openGame mounts the picked
     // surface in the chat's game area (chess card / Minecraft launch panel,
     // or the live dashboard when the bot is already online).
+    if (g.id === 'backseat') {
+      hideInfo();
+      // Still gated: backseat and a Minecraft summon cannot both be live.
+      requestGameLaunch(characterId, { id: 'backseat', name: 'Backseat' }, () =>
+        setShareOpen(true),
+      );
+      return;
+    }
     if (g.id === 'chess' || g.id === 'minecraft' || g.id === 'draw') {
       const id = g.id as LaunchGameId;
       closeModal();
@@ -140,6 +162,18 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
       }}
     >
       <div className={styles.modal}>
+        {shareOpen ? (
+          <BackseatSourcePicker
+            characterId={characterId}
+            companionName={companionName}
+            onBack={() => setShareOpen(false)}
+            onStarted={() => {
+              useBackseatStore.getState().markStarted(characterId);
+              closeModal();
+            }}
+          />
+        ) : (
+        <>
         <div className={styles.header}>
           <h2 id="games-picker-title" className={styles.title}>
             Play together
@@ -192,6 +226,8 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
             </div>
           ))}
         </div>
+        </>
+        )}
       </div>
       {popup ? (
         <div

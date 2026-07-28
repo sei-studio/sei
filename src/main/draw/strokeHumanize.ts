@@ -34,6 +34,38 @@ import { CANVAS_H, CANVAS_W } from '../../shared/drawIpc';
 const RESAMPLE_PX = 4;
 /** Peak normal offset applied by the wobble, in canvas units. */
 const WOBBLE_AMP = 2.2;
+/**
+ * Canvas units per unit of noise input. The wobble is driven by ARC LENGTH,
+ * not by point index, so its wavelength is a fixed physical size (~130px for
+ * the slow term, ~57px for the ripple) no matter how long the stroke is.
+ *
+ * Indexing by position used to make the frequency depend on stroke length:
+ * every stroke got the same ~2.6 cycles, so a 900px outline bowed gently while
+ * a 30px detail buzzed. Arc length gives a long stroke several gentle waves and
+ * a short one a fraction of a wave, which is what a hand actually does.
+ */
+const WOBBLE_SCALE_MAX_PX = 55;
+/**
+ * Floor on that scale, so a SHORT stroke still completes most of a bow instead
+ * of receiving a fraction of a wave, which is a uniform sideways offset (the
+ * line stays straight, it just sits slightly off). Growing the wavelength with
+ * length but clamping both ends gives a short stroke roughly one gentle bow and
+ * a long one several slow waves, which is how a hand behaves.
+ */
+const WOBBLE_SCALE_MIN_PX = 18;
+/**
+ * Distance over which the wobble ramps to full amplitude at each end, itself
+ * capped to a share of the stroke so a short one is not entirely ramp.
+ */
+const TAPER_PX = 24;
+const TAPER_MAX_SHARE = 0.35;
+/**
+ * The end taper never reaches zero. Tapering to 0 put both endpoints exactly on
+ * the ideal path, and a short stroke is nearly all "end", so small details and
+ * stick limbs came out ruler-straight next to wobbly outlines. A weak baseline
+ * everywhere reads better than a perfect line anywhere.
+ */
+const TAPER_FLOOR = 0.35;
 /** Nominal doodling pen speed, canvas units per second. */
 const PEN_SPEED = 620;
 
@@ -199,6 +231,16 @@ export function humanizeStroke(
   const cos = Math.cos(tilt);
   const sin = Math.sin(tilt);
 
+  // Cumulative arc length: both the wobble frequency and the end taper are
+  // measured in canvas units, so neither depends on how many points the model
+  // happened to send.
+  const arc: number[] = new Array(dense.length);
+  arc[0] = 0;
+  for (let i = 1; i < dense.length; i++) arc[i] = arc[i - 1] + dist(dense[i - 1], dense[i]);
+  const total = arc[arc.length - 1];
+  const scale = Math.max(WOBBLE_SCALE_MIN_PX, Math.min(WOBBLE_SCALE_MAX_PX, total * 0.7));
+  const taperLen = Math.min(TAPER_PX, total * TAPER_MAX_SHARE);
+
   const wobbled: DrawPoint[] = dense.map((p, i) => {
     // Tangent from neighbours, so the offset is perpendicular to travel.
     const prev = dense[Math.max(0, i - 1)];
@@ -210,9 +252,12 @@ export function humanizeStroke(
     const nx = -ty / len;
     const ny = tx / len;
 
-    const u = (i / dense.length) * 6;
-    // Taper the wobble at both ends: a pen is steadiest where it lands.
-    const ends = Math.min(1, Math.min(i, dense.length - 1 - i) / 6);
+    const u = arc[i] / scale;
+    // Taper the wobble at both ends: a pen is steadiest where it lands. The
+    // taper floors above zero so no run is ever perfectly straight.
+    const fromEnd = Math.min(arc[i], total - arc[i]);
+    const taper = taperLen > 0 ? Math.min(1, fromEnd / taperLen) : 1;
+    const ends = TAPER_FLOOR + (1 - TAPER_FLOOR) * taper;
     const off = noiseAt(u, phaseA, phaseB) * amp * ends;
 
     const wx = p.x + nx * off;
