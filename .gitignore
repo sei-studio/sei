@@ -50,3 +50,4 @@ ARCHITECTURE.md
 
 # (the proxy server + supabase/ backend moved to the private sei-proxy repo)
 
+resources/audio-tap/

@@ -1349,8 +1349,13 @@ export interface RendererApi {
   backseatGetState(characterId: string): Promise<BackseatState | null>;
   /** Raise a tick. Main decides whether it becomes a spoken line. */
   backseatTick(tick: BackseatTick): Promise<void>;
-  /** Ask the small VLM whether this grid is interesting. False on any error. */
-  backseatGate(characterId: string, grid: string): Promise<boolean>;
+  /** Ask the small VLM whether this grid (plus the audio transcript over its
+   *  window) is interesting. False on any error. */
+  backseatGate(characterId: string, grid: string, transcript?: string): Promise<boolean>;
+  /** macOS only: start the bundled system-audio tap; PCM arrives on
+   *  onBackseatPcm. Null when the tap cannot run on this machine. */
+  backseatAudioStart(): Promise<{ sampleRate: number; channels: number } | null>;
+  backseatAudioStop(): Promise<void>;
   backseatSetPaused(characterId: string, paused: boolean): Promise<void>;
   /** Answer to a backseat:clip-request; null when no segment was available. */
   backseatSaveClip(characterId: string, requestId: string, webmBase64: string | null): Promise<void>;
@@ -1360,6 +1365,8 @@ export interface RendererApi {
   onBackseatState(cb: (state: BackseatState) => void): Unsubscribe;
   onBackseatLine(cb: (l: BackseatLine & { characterId: string }) => void): Unsubscribe;
   onBackseatClipRequest(cb: (r: { characterId: string; requestId: string }) => void): Unsubscribe;
+  /** Tap PCM relay (macOS): raw interleaved Float32 LE, whole frames. */
+  onBackseatPcm(cb: (chunk: ArrayBuffer) => void): Unsubscribe;
 
   // --- Minecraft dashboard (260721) --- see src/shared/mcDashboardIpc.ts for
   // the snapshot model. Character-scoped; live only while summoned.
@@ -2282,6 +2289,11 @@ export const IpcChannel = {
     saveClip: 'backseat:save-clip',
     revealClip: 'backseat:reveal-clip',
     end: 'backseat:end',
+    /** macOS system-audio tap lifecycle (main spawns the bundled helper). */
+    audioStart: 'backseat:audio-start',
+    audioStop: 'backseat:audio-stop',
+    /** Push: raw tap PCM to the overlay renderer (ArrayBuffer payload). */
+    pcm: 'backseat:pcm',
     /** Push: full BackseatState on every change. */
     state: 'backseat:state',
     /** Push: BackseatLine as the companion says it (the overlay mini chat). */

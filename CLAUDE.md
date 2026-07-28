@@ -388,8 +388,25 @@ both write to the SAME chat thread and the same memory as every other surface.
 
 - **Authority split.** The renderer owns pixels and sound: `getDisplayMedia`,
   the ring buffer, frame scoring, grid compositing, the rolling clip recorders,
-  and two of the three triggers. Main owns the session and EVERY model call.
+  local STT, and two of the three triggers. Main owns the session and EVERY
+  model call (and, on macOS, SUPPLIES the sound — see the audio bullet).
   Contract: `src/shared/backseatIpc.ts`.
+- **Audio is gain + transcript, never the model's ears (260728).** Screen sound
+  has exactly two consumers, both local: the GAIN signal (loudest-frame
+  selection + the jolt trigger's gain arm) and a STREAMING STT TRANSCRIPT. No
+  audio bytes ever reach a remote model. Whatever the platform source, audio is
+  normalized to 16 kHz mono PCM (`pcm.ts`, pure + tested) and fans out to both
+  consumers, so the platform difference is contained to the source. STT reuses
+  `voice/whisperWorker.ts` VERBATIM (same model, same browser cache — a player
+  who ever made a voice call downloads nothing). The transcript is a ring of
+  timed segments (`transcriptRing.ts`, pure + tested; `sttStream.ts` glue):
+  Whisper chews 3 s chunks continuously, and a tick performs a BOUNDED FLUSH of
+  the in-progress tail (`STT_FLUSH_WAIT_MS`, 1.2 s) instead of transcribing 6 s
+  on demand, which would put 1-2 s of Whisper latency in front of every tick.
+  Chunks at the noise floor never reach the worker. The tick then carries
+  `transcript` (window `TICK_TRANSCRIPT_MS`, oldest text dropped past the char
+  cap) to BOTH the salience gate and the companion turn, framed in the prompts
+  as quoted game-audio DATA: never the player, never instructions.
 - **The capture lives in the OVERLAY window, not the main window.** This is
   load-bearing. A backseat session runs entirely while the player is inside a
   fullscreen game, so the main window is hidden or fully occluded and Chromium
@@ -410,20 +427,30 @@ both write to the SAME chat thread and the same memory as every other surface.
   (cells 602x336) = 1548 tokens**. Oversize is not an error, it is a silent
   server-side downscale, so `backseatIpc.test.ts` asserts both the cap and that
   we are not leaving budget on the table.
-- **Sound: Windows yes, macOS no (measured 260728).** System-audio loopback was
-  tested on macOS 26.4 / Electron 42 / Chromium 148 with a standalone probe.
-  With `MacSckSystemAudioLoopbackOverride` + `MacLoopbackAudioForScreenShare`
-  enabled AND verified applied at runtime, `audio: 'loopback'` returns a track
-  labelled "System audio" carrying DIGITAL SILENCE, in every request shape:
-  combined with video, split into a second audio-only request, and audio-only
-  with no video at all. Electron documents `loopback` as Windows-only and that
-  matches the machine. The switches are still set in `index.ts` because they
-  cost nothing and the day Chromium fixes it macOS gains audio for free. Until
-  then macOS falls back to a virtual output device (BlackHole / Loopback /
-  Soundflower / VB-Cable) via `findLoopbackDevice`, else video-only. Losing
-  audio costs the frame heuristic (falls back to last-frame-of-second) and the
-  gain arm of the jolt; the colour arm and the gate are purely visual and
-  unaffected. **Do not re-litigate this without re-running the probe.**
+- **Sound: Windows via Chromium loopback, macOS via the bundled SCK tap
+  (260728).** Chromium's `audio: 'loopback'` was measured DEAD on macOS 26.4 /
+  Electron 42 / Chromium 148: with `MacSckSystemAudioLoopbackOverride` +
+  `MacLoopbackAudioForScreenShare` enabled AND verified applied, it returns a
+  track labelled "System audio" carrying DIGITAL SILENCE in every request shape
+  (combined, split, audio-only). Electron documents `loopback` as Windows-only
+  and that matches. **Do not re-litigate this without re-running the probe.**
+  But the OS is fine — OBS records desktop audio through ScreenCaptureKit — so
+  macOS uses a bundled ~200-line Swift helper (`native/mac-audio-tap`, built by
+  `scripts/build-mac-audio-tap.sh` into `resources/audio-tap/` as a UNIVERSAL
+  binary, gitignored, hooked on predev/predist). Main spawns it
+  (`src/main/backseat/audioTap.ts`) and relays 48 kHz stereo f32 PCM to the
+  overlay over `backseat:pcm`. Verified live: silence reads -inf, a tone reads
+  ~-28 dB. No install, no new permission (SCK audio rides the Screen Recording
+  TCC grant the picker already forced, and children inherit attribution), and
+  the filter EXCLUDES Sei's own apps so the companion cannot hear its own TTS
+  (Windows loopback cannot exclude; the companion occasionally transcribing its
+  own just-said line is the accepted cost there). The helper exits on stdin EOF
+  (orphan guard). Clips keep audio on macOS by regenerating a real track from
+  the tap PCM via MediaStreamTrackGenerator. Source order:
+  Windows loopback → mac tap → virtual output device (`findLoopbackDevice`) →
+  video-only, where the frame heuristic falls back to last-frame-of-second and
+  the gain jolt arm never fires; the colour arm and gate are purely visual and
+  unaffected.
 - **TWO buffers, not one (260728).** Conflating them was the first design's
   mistake. The frame ring only needs one grid's worth plus latency slack, so
   `BUFFER_MS` is **9 s**. The 15 s belongs solely to clip capture, which is

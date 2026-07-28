@@ -2,9 +2,17 @@
  * Backseat capture controller (260728) — the renderer half of the session.
  *
  * Owns the shared MediaStream and everything downstream of it: the worker that
- * keeps the ring buffer and composites grids, the audio meter that drives frame
- * selection, the rolling recorders that back clip export, and the two triggers
- * the renderer raises locally (the every-6s salience gate, and the jolt).
+ * keeps the ring buffer and composites grids, the normalized PCM pipeline that
+ * drives frame selection AND the streaming transcript, the rolling recorders
+ * that back clip export, and the two triggers the renderer raises locally (the
+ * every-6s salience gate, and the jolt).
+ *
+ * Audio (260728): the model never hears sound. Screen audio exists for two
+ * local consumers only — the GAIN signal (loudest-frame selection + the jolt
+ * trigger's gain arm) and the STT TRANSCRIPT (sttStream.ts, the packaged
+ * Whisper model). Whatever the platform source, audio is normalized to mono
+ * Float32 at STT_SAMPLE_RATE before either consumer sees it, so the pipeline
+ * below the source line is identical everywhere.
  *
  * It decides only WHEN to hand main a grid. Whether that grid becomes a spoken
  * line is entirely main's call — see src/main/backseat/backseatService.ts.
@@ -18,8 +26,11 @@ import {
   CAPTURE_H,
   CAPTURE_W,
   GATE_INTERVAL_MS,
+  STT_SAMPLE_RATE,
   type BackseatTickKind,
 } from '../../../../shared/backseatIpc';
+import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
+import { createSttStream, type SttStream } from './sttStream';
 
 /**
  * How long a grid captured at the player's first word stays usable. Someone can
@@ -59,14 +70,25 @@ export interface CaptureHandle {
 
 let active: CaptureHandle | null = null;
 
-/** RMS of the analyser's time-domain window, in dBFS (-100..0). */
-function meter(analyser: AnalyserNode, buf: Float32Array<ArrayBuffer>): number {
-  analyser.getFloatTimeDomainData(buf);
-  let sum = 0;
-  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-  const rms = Math.sqrt(sum / buf.length);
-  return rms > 0 ? Math.max(-100, 20 * Math.log10(rms)) : -100;
-}
+/**
+ * Where the session's audio comes from. Everything downstream is identical;
+ * only the source differs per platform:
+ *
+ *   'track'  a real MediaStreamTrack (Windows desktop loopback, or a virtual
+ *            output device), read via MediaStreamTrackProcessor exactly like
+ *            the video track.
+ *   'tap'    the bundled macOS ScreenCaptureKit helper: main spawns it and
+ *            relays interleaved Float32 PCM over backseat:pcm.
+ *   'none'   video-only. Frame choice falls back to last-of-second, the gain
+ *            jolt arm never fires, and there is no transcript.
+ */
+type AudioSource =
+  | { kind: 'track'; track: MediaStreamTrack }
+  | { kind: 'tap'; sampleRate: number; channels: number }
+  | { kind: 'none' };
+
+/** Gain metering window: ~32 ms at 16 kHz, close to the old analyser's. */
+const GAIN_WINDOW_SAMPLES = 512;
 
 /**
  * Find a virtual loopback input device (BlackHole, Loopback, Soundflower, VB
@@ -89,7 +111,7 @@ async function findLoopbackDevice(): Promise<string | null> {
 }
 
 /**
- * Open the shared stream. Audio is requested but NEVER required.
+ * Open the shared stream. Audio is wanted but NEVER required.
  *
  * 260728, measured on macOS 26.4 / Electron 42 / Chromium 148: system-audio
  * loopback does not work on macOS at all. With
@@ -100,15 +122,23 @@ async function findLoopbackDevice(): Promise<string | null> {
  * video at all. Electron documents `loopback` as Windows-only, and that matches
  * what the machine actually does.
  *
- * So on macOS the only route to another app's sound is a virtual audio device
- * the player installs themselves, which is what findLoopbackDevice looks for.
- * Failing that we run video-only, and the pipeline degrades in three known
- * ways, none fatal: frame selection falls back to "last frame of each second",
- * the gain arm of the jolt trigger never fires (the colour arm still does), and
- * the companion cannot hear what it is watching. The salience gate and the grid
- * are unaffected, because both are purely visual by design.
+ * So the source order is:
+ *   Windows   inline desktop loopback (works, documented).
+ *   macOS     the bundled ScreenCaptureKit tap, spawned by main — the same
+ *             OS facility OBS records desktop audio with, verified live
+ *             (probe 260728: silence reads -inf, a tone reads ~-28 dB). No
+ *             install, no extra permission (it rides Screen Recording, which
+ *             the picker already required), and it EXCLUDES Sei's own audio
+ *             so the companion cannot transcribe its own TTS voice.
+ *   fallback  a virtual output device the player installed (BlackHole et al.)
+ *   else      video-only: frame selection falls back to "last frame of each
+ *             second", the gain jolt arm never fires (the colour arm still
+ *             does), and there is no transcript. The grid and the gate are
+ *             unaffected, both purely visual by design.
  */
-async function openStream(sourceId: string): Promise<{ stream: MediaStream; hasAudio: boolean }> {
+async function openStream(
+  sourceId: string,
+): Promise<{ stream: MediaStream; audioSource: AudioSource }> {
   const video = {
     mandatory: {
       chromeMediaSource: 'desktop',
@@ -125,7 +155,8 @@ async function openStream(sourceId: string): Promise<{ stream: MediaStream; hasA
         audio: { mandatory: { chromeMediaSource: 'desktop' } } as unknown as MediaTrackConstraints,
         video,
       });
-      if (stream.getAudioTracks().length) return { stream, hasAudio: true };
+      const track = stream.getAudioTracks()[0];
+      if (track) return { stream, audioSource: { kind: 'track', track } };
       stream.getTracks().forEach((t) => t.stop());
     } catch {
       /* fall through to video-only */
@@ -134,9 +165,19 @@ async function openStream(sourceId: string): Promise<{ stream: MediaStream; hasA
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
 
-  // Everywhere else (and on Windows if the above failed): a virtual output
-  // device, if the player has one. Added as a separate track on the same
-  // stream so the rest of the pipeline sees one stream either way.
+  // macOS: the bundled tap. Main answers null anywhere it cannot run (not
+  // macOS, binary missing, pre-13, TCC refused), which just falls through.
+  if (navigator.userAgent.includes('Mac')) {
+    try {
+      const fmt = await sei.backseatAudioStart();
+      if (fmt) return { stream, audioSource: { kind: 'tap', ...fmt } };
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // A virtual output device, if the player has one. Added as a real track on
+  // the same stream so clips record it for free.
   const deviceId = await findLoopbackDevice();
   if (deviceId) {
     try {
@@ -147,13 +188,137 @@ async function openStream(sourceId: string): Promise<{ stream: MediaStream; hasA
       const track = mic.getAudioTracks()[0];
       if (track) {
         stream.addTrack(track);
-        return { stream, hasAudio: true };
+        return { stream, audioSource: { kind: 'track', track } };
       }
     } catch {
       /* device vanished or is in use; video-only is still a working session */
     }
   }
-  return { stream, hasAudio: false };
+  return { stream, audioSource: { kind: 'none' } };
+}
+
+/**
+ * Normalize an audio source into 16 kHz mono PCM and fan it out to the two
+ * consumers (gain + STT). For the macOS tap it also regenerates a REAL audio
+ * track (MediaStreamTrackGenerator) and adds it to the stream, so clip
+ * recordings keep sound on macOS too — the loopback/virtual paths already
+ * carry a real track.
+ *
+ * Returns a stop() that tears down whichever source was in use.
+ */
+function startAudioPipeline(
+  source: AudioSource,
+  stream: MediaStream,
+  onPcm16k: (pcm: Float32Array) => void,
+): { stop: () => void } {
+  if (source.kind === 'none') return { stop: () => {} };
+
+  if (source.kind === 'track') {
+    // Same pattern as the video: MediaStreamTrackProcessor is throttle-immune
+    // and hands AudioData off the realtime thread. Reading it does not steal
+    // the track from MediaRecorder; a track feeds any number of sinks.
+    let running = true;
+    const processor = new (window as unknown as {
+      MediaStreamTrackProcessor: new (o: { track: MediaStreamTrack }) => {
+        readable: ReadableStream<AudioData>;
+      };
+    }).MediaStreamTrackProcessor({ track: source.track });
+    const reader = processor.readable.getReader();
+    void (async () => {
+      while (running) {
+        const { done, value } = await reader.read().catch(() => ({ done: true, value: null }));
+        if (done || !value) break;
+        try {
+          const frames = value.numberOfFrames;
+          const chans = Math.min(2, value.numberOfChannels) || 1;
+          const planes: Float32Array[] = [];
+          for (let c = 0; c < chans; c++) {
+            const buf = new Float32Array(frames);
+            value.copyTo(buf, { planeIndex: c, format: 'f32-planar' });
+            planes.push(buf);
+          }
+          let mono = planes[0];
+          if (planes.length === 2) {
+            mono = new Float32Array(frames);
+            for (let i = 0; i < frames; i++) mono[i] = (planes[0][i] + planes[1][i]) / 2;
+          }
+          onPcm16k(resampleMono(mono, value.sampleRate, STT_SAMPLE_RATE));
+        } catch {
+          /* one bad AudioData never kills the pipeline */
+        } finally {
+          value.close();
+        }
+      }
+      try {
+        reader.releaseLock();
+      } catch {
+        /* already released */
+      }
+    })();
+    return {
+      stop: () => {
+        running = false;
+        void reader.cancel().catch(() => {});
+      },
+    };
+  }
+
+  // The tap: PCM arrives over IPC as interleaved Float32 at the tap's rate.
+  const { sampleRate, channels } = source;
+  // Rebuild a real track for the clip recorders (16 kHz clips would sound like
+  // a phone call; the generator carries the tap's full rate).
+  let writer: { write: (d: unknown) => Promise<void>; close: () => Promise<void> } | null = null;
+  let tsSamples = 0;
+  const baseUs = performance.now() * 1000;
+  const Gen = (window as unknown as {
+    MediaStreamTrackGenerator?: new (o: { kind: 'audio' }) => MediaStreamTrack & {
+      writable: WritableStream;
+    };
+  }).MediaStreamTrackGenerator;
+  if (CLIPS_ENABLED && Gen) {
+    try {
+      const gen = new Gen({ kind: 'audio' });
+      writer = gen.writable.getWriter();
+      stream.addTrack(gen);
+    } catch {
+      writer = null;
+    }
+  }
+
+  const off = sei.onBackseatPcm((chunk: ArrayBuffer) => {
+    const interleaved = new Float32Array(chunk);
+    const frames = Math.floor(interleaved.length / channels);
+    if (!frames) return;
+    if (writer) {
+      try {
+        const AD = (window as unknown as { AudioData: new (init: unknown) => unknown }).AudioData;
+        void writer
+          .write(
+            new AD({
+              format: 'f32',
+              sampleRate,
+              numberOfFrames: frames,
+              numberOfChannels: channels,
+              timestamp: baseUs + (tsSamples / sampleRate) * 1_000_000,
+              data: interleaved,
+            }),
+          )
+          .catch(() => {});
+        tsSamples += frames;
+      } catch {
+        /* clip audio is best-effort */
+      }
+    }
+    onPcm16k(resampleMono(downmixInterleaved(interleaved, channels), sampleRate, STT_SAMPLE_RATE));
+  });
+
+  return {
+    stop: () => {
+      off();
+      void writer?.close().catch(() => {});
+      void sei.backseatAudioStop().catch(() => {});
+    },
+  };
 }
 
 export async function startCapture(
@@ -161,10 +326,11 @@ export async function startCapture(
   sourceId: string,
 ): Promise<CaptureHandle> {
   stopCapture();
-  const { stream, hasAudio } = await openStream(sourceId);
+  const { stream, audioSource } = await openStream(sourceId);
   const videoTrack = stream.getVideoTracks()[0];
   if (!videoTrack) {
     stream.getTracks().forEach((t) => t.stop());
+    if (audioSource.kind === 'tap') void sei.backseatAudioStop().catch(() => {});
     throw new Error('The shared window produced no video.');
   }
 
@@ -182,24 +348,35 @@ export async function startCapture(
     processor.readable as unknown as Transferable,
   ]);
 
-  // ── Audio meter ─────────────────────────────────────────────────────────
-  let audioCtx: AudioContext | null = null;
-  let meterTimer: number | null = null;
-  if (hasAudio) {
-    audioCtx = new AudioContext();
-    const src = audioCtx.createMediaStreamSource(stream);
-    const analyser = audioCtx.createAnalyser();
-    // 1024 samples is ~21 ms at 48 kHz: short enough to resolve a single
-    // gunshot, long enough that the RMS is not dominated by one sample.
-    analyser.fftSize = 1024;
-    src.connect(analyser);
-    const buf = new Float32Array(new ArrayBuffer(analyser.fftSize * 4));
-    // Sampled just above capture rate so every frame the worker sees has a
-    // loudness reading no older than one frame interval.
-    meterTimer = window.setInterval(() => {
-      worker.postMessage({ type: 'gain', db: meter(analyser, buf) });
-    }, 1000 / CAPTURE_FPS);
+  // ── Audio: gain + transcript, one normalized feed ───────────────────────
+  // The transcript ring runs for the whole session; the same 16 kHz mono PCM
+  // drives the gain signal in ~32 ms windows, so every frame the worker sees
+  // has a loudness reading about as fresh as the old analyser gave it.
+  let language = 'en';
+  try {
+    const cfg = (await sei.getConfig()) as { chat_language?: string } | null;
+    if (cfg?.chat_language) language = cfg.chat_language;
+  } catch {
+    /* English is the right default */
   }
+  const stt: SttStream = createSttStream({ language });
+  const pipeline = startAudioPipeline(audioSource, stream, (pcm) => {
+    stt.push(pcm);
+    for (let i = 0; i < pcm.length; i += GAIN_WINDOW_SAMPLES) {
+      const win = pcm.subarray(i, Math.min(pcm.length, i + GAIN_WINDOW_SAMPLES));
+      worker.postMessage({ type: 'gain', db: rmsDb(win) });
+    }
+  });
+  /** The transcript a tick carries: bounded flush, then the window's text.
+   *  Undefined (field omitted) when silent, so the prompt says nothing. */
+  const tickTranscript = async (): Promise<string | undefined> => {
+    try {
+      const text = await stt.tickTranscript();
+      return text || undefined;
+    } catch {
+      return undefined;
+    }
+  };
 
   // ── Rolling recorders (clip export) ─────────────────────────────────────
   const rollers: Array<Rolling | null> = [null, null];
@@ -295,7 +472,7 @@ export async function startCapture(
   const sendTick = async (
     kind: BackseatTickKind,
     grid: { dataUrl: string; capturedAt: number },
-    extra: { text?: string; joltReason?: 'gain' | 'color' } = {},
+    extra: { text?: string; joltReason?: 'gain' | 'color'; transcript?: string } = {},
   ): Promise<void> => {
     if (stopped) return;
     try {
@@ -327,7 +504,10 @@ export async function startCapture(
       if (paused || stopped) return;
       void (async () => {
         const grid = await composite();
-        if (grid) await sendTick('jolt', grid, { joltReason: msg.reason });
+        if (!grid) return;
+        // On a gain jolt the transcript is literally what the loud thing said.
+        const transcript = await tickTranscript();
+        await sendTick('jolt', grid, { joltReason: msg.reason, transcript });
       })();
     }
   };
@@ -346,8 +526,14 @@ export async function startCapture(
       try {
         const grid = await composite();
         if (!grid || paused || stopped) return;
-        const interesting = await sei.backseatGate(characterId, grid.dataUrl);
-        if (interesting && !paused && !stopped) await sendTick('gate', grid);
+        // The grid and the transcript describe the same window: composite
+        // first, then the bounded STT flush (the spec's "wait a few
+        // milliseconds longer for the stt to catch up"). Both the small VLM
+        // and, on a yes, the companion get the same pair.
+        const transcript = await tickTranscript();
+        if (paused || stopped) return;
+        const interesting = await sei.backseatGate(characterId, grid.dataUrl, transcript);
+        if (interesting && !paused && !stopped) await sendTick('gate', grid, { transcript });
       } catch {
         /* gate outage degrades to quiet */
       } finally {
@@ -385,7 +571,8 @@ export async function startCapture(
       if (stopped) return;
       stopped = true;
       window.clearInterval(gateTimer);
-      if (meterTimer !== null) window.clearInterval(meterTimer);
+      pipeline.stop();
+      stt.stop();
       window.clearTimeout(staggerTimer);
       cycleTimers.forEach((t) => window.clearInterval(t));
       offClip();
@@ -402,7 +589,6 @@ export async function startCapture(
       // Give the worker a beat to close its bitmaps before the thread dies.
       window.setTimeout(() => worker.terminate(), 250);
       stream.getTracks().forEach((t) => t.stop());
-      void audioCtx?.close().catch(() => {});
       if (active === handle) active = null;
     },
     setPaused: (p: boolean) => {
@@ -436,7 +622,10 @@ export async function startCapture(
         grid = await composite();
       }
       if (!grid) return;
-      await sendTick('user', grid, { text });
+      // What the game said around the moment they reacted to — the flush
+      // window reaches back far enough to cover a held grid's span.
+      const transcript = await tickTranscript();
+      await sendTick('user', grid, { text, transcript });
     },
   };
 

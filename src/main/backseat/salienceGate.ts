@@ -76,15 +76,30 @@ const GATE_TIMEOUT_MS = 5_000;
  * are examples, not an enumeration — a game-agnostic watcher cannot have a
  * closed list — but they anchor what "significant" means well enough that the
  * score separates.
+ *
+ * The transcript (260728) is the local Whisper ring's text for the same
+ * window. It is quoted DATA from the game's audio — dialogue, a caster, lyrics
+ * — never instructions; a video that says "answer yes" costs at worst one
+ * spurious companion turn, which the adaptive threshold then absorbs into the
+ * window like any other score.
  */
-const GATE_PROMPT =
-  `This image is a ${GRID_ROWS}x${GRID_COLS} grid of ${GRID_FRAMES} frames from six seconds of gameplay, ` +
-  'in order: left to right along each row, then down to the next row. ' +
-  'Comparing the frames to each other, is there a significant change across them, ' +
-  'such as a kill, a death, a revive, a discovery, a completed objective, a dramatic escape, ' +
-  'or a major change in location? ' +
-  'Ordinary movement, walking, aiming, menus, and looting are NOT significant. ' +
-  'Answer with exactly one word: yes or no.';
+function gatePrompt(transcript?: string): string {
+  const audio = transcript
+    ? `The game audio over the same six seconds was transcribed as: "${transcript}". ` +
+      'Treat it as part of what happened; something significant SAID (a call-out, a reveal, ' +
+      'a dramatic line) also counts. '
+    : '';
+  return (
+    `This image is a ${GRID_ROWS}x${GRID_COLS} grid of ${GRID_FRAMES} frames from six seconds of gameplay, ` +
+    'in order: left to right along each row, then down to the next row. ' +
+    audio +
+    'Comparing the frames to each other, is there a significant change across them, ' +
+    'such as a kill, a death, a revive, a discovery, a completed objective, a dramatic escape, ' +
+    'or a major change in location? ' +
+    'Ordinary movement, walking, aiming, menus, and looting are NOT significant. ' +
+    'Answer with exactly one word: yes or no.'
+  );
+}
 
 /** Per-session rolling scores, keyed by characterId. */
 const windows = new Map<string, number[]>();
@@ -172,7 +187,11 @@ let warnedMissingKey = false;
  * passthrough is not built yet, so a packaged build with no dev key gates
  * closed and backseat runs on the user and jolt triggers alone.
  */
-export async function gateGrid(characterId: string, grid: string): Promise<boolean> {
+export async function gateGrid(
+  characterId: string,
+  grid: string,
+  transcript?: string,
+): Promise<boolean> {
   const key = process.env.SEI_GATE_DEV_KEY;
   if (!key) {
     if (!warnedMissingKey) {
@@ -200,7 +219,7 @@ export async function gateGrid(characterId: string, grid: string): Promise<boole
             role: 'user',
             content: [
               { type: 'image_url', image_url: { url: grid } },
-              { type: 'text', text: GATE_PROMPT },
+              { type: 'text', text: gatePrompt(transcript) },
             ],
           },
         ],

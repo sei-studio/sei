@@ -143,8 +143,10 @@ const api: RendererApi = {
   backseatGetState: (characterId) =>
     ipcRenderer.invoke(IpcChannel.backseat.getState, characterId),
   backseatTick: (tick) => ipcRenderer.invoke(IpcChannel.backseat.tick, tick),
-  backseatGate: (characterId, grid) =>
-    ipcRenderer.invoke(IpcChannel.backseat.gate, { characterId, grid }),
+  backseatGate: (characterId, grid, transcript) =>
+    ipcRenderer.invoke(IpcChannel.backseat.gate, { characterId, grid, transcript }),
+  backseatAudioStart: () => ipcRenderer.invoke(IpcChannel.backseat.audioStart),
+  backseatAudioStop: () => ipcRenderer.invoke(IpcChannel.backseat.audioStop),
   backseatSetPaused: (characterId, paused) =>
     ipcRenderer.invoke(IpcChannel.backseat.setPaused, { characterId, paused }),
   backseatSaveClip: (characterId, requestId, webmBase64) =>
@@ -166,6 +168,11 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, r: Parameters<typeof cb>[0]) => cb(r);
     ipcRenderer.on(IpcChannel.backseat.clipRequest, handler);
     return () => ipcRenderer.off(IpcChannel.backseat.clipRequest, handler);
+  },
+  onBackseatPcm(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, chunk: ArrayBuffer) => cb(chunk);
+    ipcRenderer.on(IpcChannel.backseat.pcm, handler);
+    return () => ipcRenderer.off(IpcChannel.backseat.pcm, handler);
   },
   onChessState(cb) {
     const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);

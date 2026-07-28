@@ -198,6 +198,12 @@ export async function endBackseat(characterId: string): Promise<void> {
   } catch {
     /* the window may already be gone */
   }
+  try {
+    const { stopAudioTap } = await import('./audioTap');
+    stopAudioTap();
+  } catch {
+    /* tap never ran */
+  }
 
   void (async () => {
     try {
@@ -243,7 +249,11 @@ export function clearAllBackseat(): void {
 
 // ── The gate passthrough ──────────────────────────────────────────────────
 
-export async function askGate(characterId: string, grid: string): Promise<boolean> {
+export async function askGate(
+  characterId: string,
+  grid: string,
+  transcript?: string,
+): Promise<boolean> {
   const s = sessions.get(characterId);
   if (!s || s.state.phase !== 'watching') return false;
   // Spending a gate call while the companion is barred from speaking anyway
@@ -251,7 +261,7 @@ export async function askGate(characterId: string, grid: string): Promise<boolea
   // grids that could never have produced a line.
   if (Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) return false;
   if (s.inflight) return false;
-  return await gateGrid(characterId, grid);
+  return await gateGrid(characterId, grid, transcript);
 }
 
 // ── Clips ─────────────────────────────────────────────────────────────────
@@ -404,6 +414,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     joltReason: tick.joltReason,
     secondsSinceLastLine: s.lastSpokeAt ? (Date.now() - s.lastSpokeAt) / 1000 : null,
     sourceName: s.state.sourceName,
+    transcript: tick.transcript,
   });
   const base64 = tick.grid.replace(/^data:image\/\w+;base64,/, '');
   const content: unknown[] = [

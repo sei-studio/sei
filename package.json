@@ -16,7 +16,11 @@
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux",
-    "postinstall": "node scripts/postinstall.mjs"
+    "postinstall": "node scripts/postinstall.mjs",
+    "build:audiotap": "bash scripts/build-mac-audio-tap.sh",
+    "predev": "bash scripts/build-mac-audio-tap.sh",
+    "predist": "bash scripts/build-mac-audio-tap.sh",
+    "predist:mac": "bash scripts/build-mac-audio-tap.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

@@ -10,12 +10,22 @@
  *
  *   renderer  owns PIXELS AND SOUND. It runs getDisplayMedia, keeps the ring
  *             buffer, scores every frame, composites the image grid, records
- *             the rolling clip, and raises the two local triggers. It decides
- *             nothing about what the companion says.
+ *             the rolling clip, runs local STT over the game audio, and raises
+ *             the two local triggers. It decides nothing about what the
+ *             companion says.
  *   main      owns the SESSION AND EVERY MODEL CALL: the salience gate (a small
  *             VLM on DeepInfra), the companion turn (Haiku), clip files,
  *             analytics, and the continuity rows. It never sees a raw frame,
- *             only finished grids.
+ *             only finished grids. (On macOS it also SUPPLIES the sound: it
+ *             spawns the bundled ScreenCaptureKit tap and relays raw PCM to the
+ *             overlay renderer — see `backseat:pcm` below — because Chromium
+ *             loopback is Windows-only.)
+ *
+ * Audio never reaches the big model as audio (260728). Screen sound exists for
+ * exactly two consumers, both local: the GAIN signal (frame selection + the
+ * jolt trigger) and the STT TRANSCRIPT (the same packaged Whisper model voice
+ * calls use). The transcript of the grid's window rides each tick as text, for
+ * both the salience gate and the companion turn.
  *
  * The unit of work is a TICK: one image grid plus the reason it fired. Ticks
  * are raised three ways, in descending priority (see BackseatTickKind):
@@ -100,6 +110,51 @@ export const GRID_VISUAL_TOKENS = Math.ceil(GRID_W / 28) * Math.ceil(GRID_H / 28
 
 /** The window a grid spans: GRID_FRAMES buckets of one second each. */
 export const GRID_SPAN_MS = GRID_FRAMES * 1000; // 6000
+
+// ── Audio: gain + transcript, never the model's ears ──────────────────────
+//
+// One normalized pipeline on both platforms: whatever the source, the renderer
+// ends up holding mono Float32 PCM at STT_SAMPLE_RATE and feeds it to the gain
+// meter and to a continuously running Whisper worker (the exact
+// voice/whisperWorker.ts voice calls ship, same model cache, no new download).
+//
+//   Windows  the desktop-loopback audio track, read via
+//            MediaStreamTrackProcessor exactly like the video track.
+//   macOS    the bundled ScreenCaptureKit tap (native/mac-audio-tap): main
+//            spawns it, relays 48 kHz stereo f32le over `backseat:pcm`, and the
+//            renderer downmixes/resamples. Falls back to a virtual output
+//            device (BlackHole et al.), else video-only.
+//
+// The transcript is a RING of timed segments, not per-tick transcription:
+// Whisper chews CHUNK-sized pieces continuously, so at tick time nearly the
+// whole window is already text and the tick only waits for a bounded FLUSH of
+// the in-progress tail. Transcribing 6 s on demand would put 1-2 s of Whisper
+// latency in front of every tick; the flush wait is a few hundred ms.
+
+/** The tap helper's fixed wire format (48 kHz stereo Float32 LE). */
+export const TAP_SAMPLE_RATE = 48_000;
+export const TAP_CHANNELS = 2;
+/** What Whisper wants, and what the whole renderer pipeline normalizes to. */
+export const STT_SAMPLE_RATE = 16_000;
+/** Steady-state transcription chunk. Short enough that the flush tail is
+ *  cheap, long enough that Whisper has context to segment words. */
+export const STT_CHUNK_MS = 3_000;
+/** A flush tail shorter than this is dropped rather than transcribed: Whisper
+ *  on a fraction of a word only hallucinates. */
+export const STT_MIN_FLUSH_MS = 400;
+/** Hard bound on how long a tick waits for the flush before shipping with
+ *  whatever transcript exists (the spec's "wait a few milliseconds longer"). */
+export const STT_FLUSH_WAIT_MS = 1_200;
+/** Segment retention. Longer than any tick window so a slow user tick still
+ *  finds the words that were said when they started typing. */
+export const TRANSCRIPT_KEEP_MS = 30_000;
+/** The transcript window a tick carries: the grid span plus lead-in, so a
+ *  line that STARTED just before the oldest frame is not cut mid-sentence. */
+export const TICK_TRANSCRIPT_MS = GRID_SPAN_MS + 2_000;
+/** Cap on the transcript text a tick ships. A dialogue-heavy video can emit a
+ *  lot of words in 8 s; past this the OLDEST text is dropped, keeping the tail
+ *  (closest to the moment the tick is about). */
+export const TICK_TRANSCRIPT_MAX_CHARS = 600;
 
 // ── Cadence ───────────────────────────────────────────────────────────────
 
@@ -187,6 +242,13 @@ export interface BackseatTick {
   text?: string;
   /** Why a jolt fired, for the prompt ("the screen changed colour completely"). */
   joltReason?: 'gain' | 'color';
+  /**
+   * What the game audio said during (roughly) the grid's window, from the
+   * local Whisper ring. Absent when there is no audio source or nothing was
+   * said. This is DATA about the game, never the player speaking, and the
+   * prompts frame it that way.
+   */
+  transcript?: string;
 }
 
 /** A line the companion said, pushed to the overlay's mini chat. */
@@ -226,9 +288,19 @@ export const BACKSEAT_ERR_NO_SOURCE = 'BACKSEAT_NO_SOURCE';
  *   backseatGetState(characterId): Promise<BackseatState | null>
  *   backseatTick(tick: BackseatTick): Promise<void>
  *     Raise a tick. Main decides whether it becomes a spoken line.
- *   backseatGate(characterId, grid): Promise<boolean>
- *     Ask the small VLM whether this grid is interesting. Resolves false on any
- *     error, so a gate outage degrades to "quiet", never to "chatty".
+ *   backseatGate(characterId, grid, transcript?): Promise<boolean>
+ *     Ask the small VLM whether this grid (plus what the audio said over it)
+ *     is interesting. Resolves false on any error, so a gate outage degrades
+ *     to "quiet", never to "chatty".
+ *   backseatAudioStart(): Promise<{sampleRate, channels} | null>
+ *     macOS only: spawn the bundled system-audio tap and start relaying PCM to
+ *     this window on backseat:pcm. Null when the tap cannot run (not macOS,
+ *     helper missing, TCC refused, pre-13 macOS) — the renderer then tries a
+ *     virtual device, else runs video-only.
+ *   backseatAudioStop(): Promise<void>
+ *   onBackseatPcm(cb: (chunk: ArrayBuffer) => void): () => void
+ *     Raw interleaved Float32 LE at TAP_SAMPLE_RATE/TAP_CHANNELS, whole frames
+ *     guaranteed.
  *   backseatSetPaused(characterId, paused): Promise<void>
  *   backseatSaveClip(characterId, webmBase64): Promise<void>
  *     Answer to a backseat:clip-request: the last 15 seconds, which main writes

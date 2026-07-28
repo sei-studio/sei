@@ -143,6 +143,17 @@ mac:
   # (~76MB saved; both mac arches stay because arm64+x64 build in one job).
   files:
     - "!node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
+  # 260728 backseat: the bundled ScreenCaptureKit system-audio tap
+  # (native/mac-audio-tap, built by scripts/build-mac-audio-tap.sh into a
+  # UNIVERSAL binary — one file serves both arch builds). Chromium loopback
+  # audio is Windows-only, so this helper is how macOS backseat hears the game.
+  # It lands at Contents/Resources/audio-tap/sei-audio-tap; electron-osx-sign
+  # picks Mach-O executables in Resources up for hardened signing, and the
+  # notarization pass covers it (USER-ACTION: on the first mac dist, verify
+  # with `codesign -dv --verbose Sei.app/Contents/Resources/audio-tap/sei-audio-tap`).
+  extraResources:
+    - from: resources/audio-tap
+      to: audio-tap
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
     # Voice calls (260707): the TCC prompt string macOS shows the first time Sei

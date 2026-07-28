@@ -1386,6 +1386,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         capturedAt: z.number(),
         text: z.string().max(4000).optional(),
         joltReason: z.enum(['gain', 'color']).optional(),
+        transcript: z.string().max(4000).optional(),
       })
       .parse(tickRaw);
     const backseat = await import('./backseat/backseatService');
@@ -1395,10 +1396,25 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.backseat.gate, async (_event, argsRaw: unknown) => {
     const args = z
-      .object({ characterId: IdSchema, grid: z.string().max(8_000_000) })
+      .object({
+        characterId: IdSchema,
+        grid: z.string().max(8_000_000),
+        transcript: z.string().max(4000).optional(),
+      })
       .parse(argsRaw);
     const backseat = await import('./backseat/backseatService');
-    return await backseat.askGate(args.characterId, args.grid);
+    return await backseat.askGate(args.characterId, args.grid, args.transcript);
+  });
+  // macOS system-audio tap (260728): the overlay renderer cannot hear the
+  // system on macOS (Chromium loopback is Windows-only, measured), so main
+  // spawns the bundled ScreenCaptureKit helper and relays PCM back to it.
+  ipcMain.handle(IpcChannel.backseat.audioStart, async () => {
+    const { startAudioTap } = await import('./backseat/audioTap');
+    return await startAudioTap();
+  });
+  ipcMain.handle(IpcChannel.backseat.audioStop, async () => {
+    const { stopAudioTap } = await import('./backseat/audioTap');
+    stopAudioTap();
   });
   ipcMain.handle(IpcChannel.backseat.setPaused, async (_event, argsRaw: unknown) => {
     const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);
