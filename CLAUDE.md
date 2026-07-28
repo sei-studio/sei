@@ -452,6 +452,19 @@ both write to the SAME chat thread and the same memory as every other surface.
   Gate and jolt are DROPPED, never queued, when a turn is running or the
   companion spoke < 8 s ago: a queued reaction describes a moment that has
   passed, which reads as confusion rather than lateness.
+- **Gate model + logprob shape are MEASURED, not assumed (260728).** Live test
+  against a matched pair of real grids (six identical frames vs six different
+  ones): `Qwen/Qwen3-VL-30B-A3B-Instruct` correct on both (~520 ms, ~1240 img
+  tokens, ~$0.00019/call = ~$0.11/hr at the 6 s cadence); `gemma-3-4b-it` says
+  yes to everything; `gemma-3-12b-it` says no to everything.
+  `Qwen/Qwen2.5-VL-7B-Instruct` is NOT on DeepInfra at all (404).
+  Critically: **DeepInfra honours `logprobs` but ignores `top_logprobs`**, so
+  only the chosen token's logprob comes back. The first parser read
+  `top_logprobs` only and fell through to a hard 0/1; measured, the model
+  emitted "no" for BOTH grids, so the gate would have been **permanently
+  silent** while the continuous scores separated cleanly (0.018 vs 0.148,
+  stable over repeats). `scoreFromLogprobs` now derives p(yes) from the chosen
+  token and there is a regression test pinning the real response shape.
 - **The gate threshold is LEARNED, not written down** (`salienceGate.ts`). The
   target is ~1/4 of grids positive, and a fixed cutoff cannot reach it: small
   VLMs say yes to almost anything and their verbalized confidence is nearly
