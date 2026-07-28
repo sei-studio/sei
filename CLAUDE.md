@@ -314,6 +314,171 @@ together" tiles. **Mutually exclusive with a Minecraft summon** per character.
 - **Packaging:** onnxruntime-node ships all-platform prebuilds; per-OS `files`
   excludes in `electron-builder.yml` drop the foreign ones.
 
+## Draw! minigame (260727)
+
+Turn-based sketch guessing, launched from the "Play together" tiles. **Mutually
+exclusive with a Minecraft summon and with chess** per character (the shared
+`lib/gameLaunch.ts` gate).
+
+- **Shape:** N rounds (1-5, setup slider). Each ROUND is two TURNS: the player
+  draws while the character guesses, then the character draws while the player
+  guesses. Every turn is capped at `TURN_MS` (3 min) and ends early the instant
+  the guesser says the word. Contract: `src/shared/drawIpc.ts`.
+- **Guessing is literal, not semantic.** `matchesWord` (`guessMatch.ts`) is
+  whole-word containment in any sentence, forgiving only case/punctuation, a
+  trailing plural on either side, and a closed-up two-word answer ("hotdog").
+  Fuzzy matching was rejected deliberately: the guesser cannot tell why a
+  near-miss counted. `redactWord` is the backstop that keeps the DRAWER from
+  handing the round away.
+- **Own canvas, no dependency.** tldraw's SDK is not free, Excalidraw is far
+  too heavy, and `perfect-freehand` gives variable width where the game wants
+  one thickness. The real requirement was a stroke DATA model (needed for the
+  stroke eraser, snapshots, playback and export), so it is hand-rolled:
+  `drawRender.ts` is the single painter shared by the live canvas, the snapshot
+  the character looks at, and the gallery PNG.
+- **The character's GUESSING turn** rides a 500ms poll over a PURE policy in
+  `guessSchedule.ts` (3 strokes since the last dispatch, or 10s; never within
+  5s of the previous guess COMPLETING; single flight). "At most one queued
+  guess" needs no queue: strokes drawn during an in-flight call leave the
+  counter high and the single dispatch that follows resets it. Two edge cases
+  are load-bearing and tested: an UNCHANGED canvas never reaches the model (the
+  snapshot PNG is hashed), and a LONG single stroke still triggers (the
+  snapshot includes the in-progress stroke, so no committed stroke is needed).
+- **The character's DRAWING turn** is a real tool-use thread on `s.draw.thread`
+  carried across hops, NOT a fresh call per hop. A picture needs more strokes
+  than one response returns (the model stops on `tool_use`), and without the
+  thread it re-starts the picture every hop, because "you have drawn 4 strokes"
+  says nothing about WHERE. The `pen` tool is adapted from tldraw's
+  agent-template `PenAction` (MIT), narrowed to `{intent, points, style,
+  closed}` — no colour, no fill, no ids, since black-at-one-thickness is all
+  either player gets.
+- **Humanization** (`strokeHumanize.ts`) resamples, offsets along the normal by
+  smooth noise, overshoots the end, and samples playback timing. It is seeded
+  from the stroke id and therefore DETERMINISTIC — the gallery and the exported
+  PNG must redraw exactly what the player watched appear.
+- **Streamed playback:** strokes leave on `draw:ai-stroke` as their tool_use
+  block completes, so the first stroke is on the player's canvas seconds before
+  the model has finished the picture. `strokes` in the pushed state is
+  deliberately NOT authoritative during the character's turn (main knows the
+  whole picture early); the renderer reveals from the push and snaps to state
+  at turn end. Same idea as the chess reveal gate, without the ack.
+- **`word` is never sent to the guesser.** `visibleWord()` returns it only
+  while the local player is drawing, or once the turn has ended.
+- **Continuity (260728):** both turn kinds offer `remember()` (tool_result note
+  on the drawing turn's loop, honored inline on the single-shot guessing turn),
+  and `finishGame` writes one play row naming the words each side drew, then
+  fires `foldIfDue`. The per-line game chat is deliberately never persisted.
+  See the continuity contract below.
+- **UI:** `src/renderer/src/components/draw/` + `useDrawStore`. It is a
+  full-page ROUTE (`{kind:'draw'}`, IconRail KEPT; only in-app fullscreen drops
+  it), not a chat-screen aside,
+  because the game wants canvas-beside-chat and a white handdrawn register.
+  `draw.module.css` is a **deliberate, documented exception** to the
+  tokens.css rule: it declares a scoped palette on `.root` instead. Every rule
+  and border is a generated squiggle (`squigglePath.ts` / `Squiggle.tsx`), and
+  the face is Architects Daughter (OFL), self-hosted like every other font.
+
+## Instrumenting a game or timed surface (REQUIRED)
+
+**Every new game, minigame, or timed surface MUST emit analytics before it
+ships.** This is not optional polish. Chess shipped in v0.5.0 with zero
+instrumentation and voice calls shipped in v0.4.x the same way, so for three
+weeks the dashboard's "minutes" meant *Minecraft only* and the question "is
+anyone playing chess?" had no answer from any source: PostHog had no chess
+event, and `ledger_consumption` records spend with no surface column, so the
+cost could not be attributed either. Fixed 260728.
+
+The contract is two events per surface:
+
+- **`<surface>_started`** — fired when the surface actually opens, with the
+  parameters that shape the session (for chess: `player_color`, `ai_elo`,
+  `profile_source`).
+- **`<surface>_ended`** — fired at the single lifecycle choke point, carrying
+  **`duration_ms`**. That key name is load-bearing: the analytics dashboard
+  sums playtime with one query across every event in its `SESSION_EVENTS` list
+  (`analytics/server.mjs`), so a surface that names its duration field anything
+  else is invisible in playtime. Also send `character_id` and an outcome.
+
+Rules that follow from the existing implementations:
+
+- Fire `_ended` on **abandoned/aborted** sessions too, with a `reason` — that
+  time was still spent. `chessService.endSession` is the choke point precisely
+  because every exit path (resign, draw, checkmate, abandon, engine failure)
+  routes through it.
+- Emit only **shape, never content**: no board state, no chat text, no persona.
+- Use a **lazy `await import('../analytics')` inside a fire-and-forget block**,
+  so the module graph and the tests never depend on analytics being
+  initialized. `capture()` is already a no-op when uninitialized or opted out.
+- Then add the new `_ended` name to `SESSION_EVENTS` in the analytics repo
+  (`~/slop/sei-studio/analytics/server.mjs`) and a label in `SURFACE_LABEL`
+  (`public/app.js`). That is the only dashboard change needed.
+
+Current members: `bot_session_ended` (Minecraft), `chess_game_ended`,
+`voice_call_ended`, `draw_game_ended`.
+
+## Continuity for a game or timed surface (REQUIRED)
+
+**Every surface where the character talks to the player MUST carry continuity
+in BOTH directions.** Context flowing IN is the easy half and is usually done
+by reflex, because a surface that does not load the persona is obviously
+broken. The OUT half is the one that gets skipped, and it is invisible when it
+is missing: the game plays fine, and then the character has no idea it ever
+happened. Draw! shipped that way first (260727) and was fixed at 260728; chess
+had it from the start. The contract is three things.
+
+1. **IN** — the surface's `prepareCall` equivalent passes `persona`, `memory`
+   (`readMemoryTail`, the 12000-byte MEMORY.md tail via `humanizeMemoryStamps`),
+   `summary` + `history` (`readChatContext`) and `knowledge`
+   (`readKnowledgeForPrompt`) into `buildSystemBlocks`. Whole-game constants go
+   in `extraStable` so they ride inside the cached region.
+2. **OUT, long-term** — offer `REMEMBER_TOOL` (`src/main/chat/chatPrompts.ts`)
+   on the surface's turns, so the character can write to the same per-character
+   `MEMORY.md` that chat, voice and the bot share. In a **tool loop**, answer it
+   with a `tool_result` note and treat `appendMemory() === 0` as "duplicate, not
+   written" rather than claiming a save. In a **single-shot** call, honor it
+   inline after the response (`honorRememberCalls`) or the write is silently
+   dropped. Tell the prompt what is NOT worth saving: Draw!'s words come from a
+   random bank, so the contract says "save the person, not the round".
+3. **OUT, short-term** — write ONE `event: { kind: 'play', ... }` transcript row
+   at the surface's single end choke point, carrying enough shape to be worth
+   summarizing, then fire `void foldIfDue(characterId, persona.expanded)`
+   fire-and-forget. Without the fold the surface's rows are the ones that never
+   make it into the rolling summary.
+
+Deliberately NOT persisted: the surface's own per-line chat. A guessing turn is
+a wall of "cat? dog? is that a house?" that would bury real conversation in the
+transcript and re-bill it in every future prompt. Summarize the session in the
+play row instead.
+
+One place where following chess is WRONG: chess hands every turn kind a single
+tool array so the cache prefix never flips. That is right when turns are
+seconds apart, and wrong when they are minutes apart (Draw!'s are three, past
+the cache TTL already), where per-turn-kind arrays cost nothing and keep a
+guessing turn from being handed a drawing tool. Pick per surface and write down
+which you picked.
+
+## In-app fullscreen for game surfaces
+
+The fullscreen control on a game surface means **in-app**, not OS window
+fullscreen (260728: it used to call `window:fullscreen-toggle`, which took over
+the whole display and was awkward to undo). It gives the mounted game every
+pixel the app window has: the IconRail goes, and the chat goes.
+
+State is `useUiStore.gameFullscreen`, and the rule for any NEW game surface is:
+
+- the mounted surface OWNS the flag: it sets it, and **clears it on unmount**
+  (`useEffect(() => () => setFullscreen(false), [])`). That is why
+  `App.tsx`'s `railHidden` needs no per-view test and the rail can never stay
+  hidden after the game is gone;
+- games hosted in the chat screen's game area get it for free through
+  `GameSurface`; a full-page game route (Draw!) wires its own toggle;
+- a full-page game route hides the chat by virtue of being a route, so it
+  keeps the IconRail by DEFAULT and only drops it in fullscreen. Do not add the
+  route to `railHidden` — that is for onboarding-style ritual surfaces.
+
+The `windowFullscreenToggle` / `windowIsFullscreen` IPC still exists on the
+preload bridge but no renderer surface calls it.
+
 ## Directory map
 
 ```

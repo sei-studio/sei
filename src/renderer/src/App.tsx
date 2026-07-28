@@ -36,6 +36,7 @@ import { ComingSoonScreen } from './screens/ComingSoonScreen';
 import { CharacterPage } from './screens/CharacterPage';
 import { ChatScreen } from './screens/ChatScreen';
 import { VoiceCallScreen } from './screens/VoiceCallScreen';
+import { DrawScreen } from './components/draw/DrawScreen';
 import { ProfileQuestionsScreen } from './screens/ProfileQuestionsScreen';
 import { UniqueGenderScreen } from './screens/UniqueGenderScreen';
 import { UniqueCastingScreen } from './screens/UniqueCastingScreen';
@@ -108,6 +109,8 @@ export function App(): React.ReactElement {
   // (IconRail, drag strip, chat) can adapt without prop drilling.
   const backgroundImage = useUiStore((s) => s.backgroundImage);
   const backgroundOpacity = useUiStore((s) => s.backgroundOpacity);
+  // In-app game fullscreen (260728): the mounted game surface owns this flag.
+  const gameFullscreen = useUiStore((s) => s.gameFullscreen);
   useEffect(() => {
     const root = document.documentElement;
     if (backgroundImage) {
@@ -762,7 +765,11 @@ export function App(): React.ReactElement {
     view.kind === 'profile-questions' ||
     view.kind === 'unique-gender' ||
     view.kind === 'unique-casting' ||
-    view.kind === 'unique-reveal';
+    view.kind === 'unique-reveal' ||
+    // 260728 — a game surface asked for in-app fullscreen. No view test is
+    // needed: the flag is set and cleared by the mounted game surface itself
+    // (see useUiStore.gameFullscreen), so it cannot outlive the game.
+    gameFullscreen;
 
   // ── Custom background (260724) ────────────────────────────────────────
   // The image (plus its brightness dim) is painted WINDOW-WIDE by
@@ -908,6 +915,7 @@ export function App(): React.ReactElement {
                 {view.kind === 'voice-call' && (
                   <VoiceCallScreen characterId={view.characterId} />
                 )}
+                {view.kind === 'draw' && <DrawScreen characterId={view.characterId} />}
                 {view.kind === 'settings' && <SettingsScreen />}
                 {view.kind === 'credits' && <CreditsScreen />}
                 {view.kind === 'receipt' && <ReceiptScreen />}

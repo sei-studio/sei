@@ -9,8 +9,12 @@
  *             (chat hidden; chevron flips to "^" to restore). While chat is
  *             hidden, ChatScreen sets `unread` when a companion message lands
  *             and this button carries the red dot.
- *           - the app-window fullscreen button (window:fullscreen-toggle IPC);
- *             icon swaps between enter/exit states.
+ *           - the IN-APP fullscreen button (260728): hides the IconRail AND
+ *             the chat, so the game gets every pixel the app window has. It
+ *             used to toggle the OS window's fullscreen, which was the wrong
+ *             verb: a game wants the whole app, not the whole display, and
+ *             taking over the display is awkward to undo. State lives in
+ *             useUiStore.gameFullscreen; icon swaps between enter/exit.
  *
  *   center  - the in-game call cluster (260722, replacing the CallDock strip):
  *             participant profile pics (click one to return to the fullscreen
@@ -34,12 +38,11 @@
  * (e.g. chess consumes var(--game-chrome-h, 56px)).
  *
  * The expand STATE lives in ChatScreen (it drives the game/chat heights via a
- * root class); fullscreen state is the OS window's and is re-read on resize so
- * an Esc exit keeps the icon honest.
+ * root class); the fullscreen flag lives in useUiStore because the IconRail it
+ * hides is App.tsx's, not this component's.
  */
 
 import React, { useEffect, useState } from 'react';
-import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -79,7 +82,6 @@ export function GameSurface({
   children,
 }: GameSurfaceProps): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
   // Hover-reveal state for the bottom chrome row.
   const [nearBottom, setNearBottom] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
@@ -93,26 +95,11 @@ export function GameSurface({
   const callActive =
     participants.length > 0 && (callStatus === 'live' || callStatus === 'connecting');
 
-  // Seed + track the OS fullscreen state. A resize fires on enter/leave
-  // (including Esc / the native control), so re-reading there keeps the icon
-  // in sync without a dedicated push channel.
-  useEffect(() => {
-    let alive = true;
-    const read = (): void => {
-      void sei
-        .windowIsFullscreen()
-        .then((v) => alive && setFullscreen(v))
-        .catch(() => {
-          /* older preload without the bridge — button stays in enter state */
-        });
-    };
-    read();
-    window.addEventListener('resize', read);
-    return () => {
-      alive = false;
-      window.removeEventListener('resize', read);
-    };
-  }, []);
+  // In-app fullscreen. The surface OWNS the flag: it clears it on unmount, so
+  // ending a game or navigating away can never leave the IconRail hidden.
+  const fullscreen = useUiStore((s) => s.gameFullscreen);
+  const setFullscreen = useUiStore((s) => s.setGameFullscreen);
+  useEffect(() => () => setFullscreen(false), [setFullscreen]);
 
   const toggleLabel = expanded ? (unread ? 'Show chat, new messages' : 'Show chat') : 'Hide chat';
 
@@ -162,14 +149,7 @@ export function GameSurface({
           <button
             type="button"
             className={styles.chromeBtn}
-            onClick={() =>
-              void sei
-                .windowFullscreenToggle()
-                .then(setFullscreen)
-                .catch(() => {
-                  /* bridge missing — leave the window as is */
-                })
-            }
+            onClick={() => setFullscreen(!fullscreen)}
             aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >

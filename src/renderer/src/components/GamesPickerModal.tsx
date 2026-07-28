@@ -118,7 +118,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
     // the cross-launch confirm first; otherwise openGame mounts the picked
     // surface in the chat's game area (chess card / Minecraft launch panel,
     // or the live dashboard when the bot is already online).
-    if (g.id === 'chess' || g.id === 'minecraft') {
+    if (g.id === 'chess' || g.id === 'minecraft' || g.id === 'draw') {
       const id = g.id as LaunchGameId;
       closeModal();
       requestGameLaunch(characterId, { id, name: g.name }, () => openGame(characterId, id));

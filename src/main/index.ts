@@ -762,6 +762,26 @@ async function bootstrap(): Promise<void> {
     });
   }
 
+  // Draw! minigame (260727): module-state deps for src/main/draw/drawService.
+  // Mutually exclusive with Minecraft (isSummoned gate), same as chess. The
+  // snapshot request is a push the renderer answers over draw:snapshot.
+  {
+    const { initDrawService } = await import('./draw/drawService');
+    const send = (channel: string, payload: unknown): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(channel, payload);
+      }
+    };
+    initDrawService({
+      pushState: (state) => send(IpcChannel.draw.state, state),
+      pushAiStroke: (s) => send(IpcChannel.draw.aiStroke, s),
+      pushSnapshotRequest: (r) => send(IpcChannel.draw.snapshotRequest, r),
+      pushChatMessage,
+      isSummoned: (id) => supervisor?.isActive(id) ?? false,
+      pushLog: broadcastLog,
+    });
+  }
+
   // Minecraft dashboard (260721): push deps for src/main/mcDashboard.
   initMcDashboardService({
     pushSnapshot: (s) => {
@@ -834,6 +854,12 @@ async function bootstrap(): Promise<void> {
     // Y" system row (renderer supplies how long audio actually flowed).
     notifyCallEnded: (id, connectedMs) => {
       void emitCallSession(id, connectedMs);
+      // Analytics (260728): calls are playtime too. `connectedMs` is the time
+      // audio actually flowed (the renderer only reports it for calls that
+      // connected), so a failed call contributes nothing. Same `duration_ms`
+      // key as bot_session_ended / chess_game_ended so the dashboard can sum
+      // all three. See the games rule in CLAUDE.md.
+      capture('voice_call_ended', { character_id: id, duration_ms: connectedMs });
     },
     // Voice calls (260705): the call went live — companion greets first. An
     // in-game session takes it over the port (say() routes into the call); an
@@ -1004,6 +1030,8 @@ if (!gotLock) {
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }
     // Chess: abort any in-flight AI turn + release the ONNX/stockfish engine.
     try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
+    // Draw!: clear turn timers and abort any in-flight guess/draw call.
+    try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
     try { if (lanWatcherHandle) lanWatcherHandle.stop(); } catch { /* best-effort */ }
     // Close the skin server's TCP listener so the port is
     // freed promptly. server.close drains in-flight requests before resolving.

@@ -41,6 +41,14 @@ export const GAMES: GameDef[] = [
       `Untimed, so take as long as you like.`,
   },
   {
+    id: 'draw',
+    name: 'Draw!',
+    available: true,
+    description: (name) =>
+      `Take turns sketching and guessing with ${name}. ` +
+      `Whoever is guessing types in the chat, and any sentence with the word in it counts.`,
+  },
+  {
     id: 'movie',
     name: 'Watch Together',
     available: false,

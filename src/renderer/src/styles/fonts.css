@@ -117,3 +117,16 @@
   font-style: normal;
   font-display: swap;
 }
+
+/* ── Architects Daughter (Draw! minigame only, OFL-1.1) ───────────────
+ * The Draw! surface deliberately sits outside the Summoning Terminal type
+ * system: it is a white page in a handdrawn register, so it uses this face
+ * rather than --display/--sans. Nothing else in the app should reference it.
+ */
+@font-face {
+  font-family: 'Architects Daughter';
+  src: url('/fonts/architects-daughter-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

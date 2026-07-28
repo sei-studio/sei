@@ -28,6 +28,18 @@ import type { ErrorClass } from './errorClasses';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
+import type {
+  DrawAiStroke,
+  DrawGameState,
+  DrawSnapshotRequest,
+  DrawStroke,
+} from './drawIpc';
+export type {
+  DrawAiStroke,
+  DrawGameState,
+  DrawSnapshotRequest,
+  DrawStroke,
+} from './drawIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 export type {
   McDashboardSnapshot,
@@ -1277,6 +1289,29 @@ export interface RendererApi {
   /** First-run engine model download progress (status 'preparing'). */
   onChessDownload(cb: (p: ChessDownloadProgress) => void): Unsubscribe;
 
+  // --- Draw! minigame (260727) --- see src/shared/drawIpc.ts for the state
+  // model, the word-visibility rule and the AI stroke playback protocol.
+  /** Open the surface at the setup screen. Rejects with DRAW_ERR_MC_ACTIVE while summoned. */
+  drawOpen(characterId: string): Promise<DrawGameState>;
+  /** Start a game with the chosen round count (1-5). */
+  drawStart(characterId: string, rounds: number): Promise<DrawGameState>;
+  drawGetState(characterId: string): Promise<DrawGameState | null>;
+  /** The player lifted the pen. Ignored unless it is their turn to draw. */
+  drawStroke(characterId: string, stroke: DrawStroke): Promise<void>;
+  /** Stroke eraser: remove one whole stroke. */
+  drawErase(characterId: string, strokeId: string): Promise<void>;
+  /** A chat line. Also the guess channel while the character is drawing. */
+  drawChat(characterId: string, text: string): Promise<void>;
+  /** Answer to a draw:snapshot-request. */
+  drawSnapshot(requestId: string, dataUrl: string): Promise<void>;
+  /** Write the gallery PNG to the Desktop; resolves with the saved path. */
+  drawSaveGallery(characterId: string, pngDataUrl: string): Promise<string>;
+  /** Close the game. Unfinished games are recorded 'abandoned'. */
+  drawEnd(characterId: string): Promise<void>;
+  onDrawState(cb: (state: DrawGameState) => void): Unsubscribe;
+  onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
+  onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
+
   // --- Minecraft dashboard (260721) --- see src/shared/mcDashboardIpc.ts for
   // the snapshot model. Character-scoped; live only while summoned.
   /** Latest telemetry snapshot, or null when there is no live session. */
@@ -2163,6 +2198,26 @@ export const IpcChannel = {
     state: 'chess:state',
     /** Push: ChessDownloadProgress during the one-time model download. */
     download: 'chess:download',
+  },
+  // Draw! minigame (260727) — sketch guessing. Protocol details in
+  // src/shared/drawIpc.ts. `snapshot` is the renderer ANSWERING the
+  // snapshotRequest push, which is why it is an invoke and not a push.
+  draw: {
+    open: 'draw:open',
+    start: 'draw:start',
+    getState: 'draw:get-state',
+    stroke: 'draw:stroke',
+    erase: 'draw:erase',
+    chat: 'draw:chat',
+    snapshot: 'draw:snapshot',
+    saveGallery: 'draw:save-gallery',
+    end: 'draw:end',
+    /** Push: full DrawGameState on every change. */
+    state: 'draw:state',
+    /** Push: DrawAiStroke, one per stroke the character draws. */
+    aiStroke: 'draw:ai-stroke',
+    /** Push: DrawSnapshotRequest — rasterize the canvas and answer. */
+    snapshotRequest: 'draw:snapshot-request',
   },
   // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
   // Protocol details in src/shared/mcDashboardIpc.ts.

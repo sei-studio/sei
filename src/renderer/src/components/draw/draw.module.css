@@ -1,0 +1,503 @@
+/**
+ * Draw! surface styles.
+ *
+ * DELIBERATE EXCEPTION to the "always use tokens.css" rule. This screen is not
+ * part of the Summoning Terminal look: it is a white page in a handdrawn
+ * register, and the global tokens are all built for the dark periwinkle theme.
+ * Rather than scatter raw hex through the rules, the palette is declared once
+ * as scoped custom properties on .root and everything below references those.
+ * Nothing outside this module may use them.
+ */
+
+.root {
+  --ink: #111111;
+  --ink-soft: #6b6b6b;
+  --ink-faint: #c9c9c9;
+  --paper: #ffffff;
+  --accent: #f2c94c;
+  --accent-deep: #d3a92f;
+  --good: #1a8a3f;
+
+  --hand: 'Architects Daughter', 'Comic Sans MS', cursive;
+  --type: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* Fills <main>, NOT the window. It used to be position:absolute/inset:0,
+     which was fine only while this route hid the IconRail: the nearest
+     positioned ancestor is MacosWindow's frame, so the page covered the rail
+     as well. Now that the rail stays by default (260728), the page has to be
+     an ordinary in-flow box that ends where main ends. */
+  width: 100%;
+  height: 100%;
+  /* main is rounded at the top-left; the white page must not square it off. */
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--hand);
+  -webkit-font-smoothing: antialiased;
+}
+
+.loading {
+  font-family: var(--type);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* ── shared hand-drawn chrome ─────────────────────────────────────────── */
+
+.frameHost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: var(--ink);
+}
+
+.frameSvg {
+  display: block;
+}
+
+.rule {
+  width: 100%;
+  height: 8px;
+  color: var(--ink-faint);
+  flex: 0 0 auto;
+}
+
+.handBtn {
+  position: relative;
+  padding: 12px 26px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 22px;
+  cursor: pointer;
+  transition: transform 90ms ease;
+}
+
+.handBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: var(--accent);
+}
+
+.handBtn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.handBtn:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.handBtnQuiet {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--hand);
+  font-size: 17px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.handBtnQuiet:hover {
+  color: var(--ink);
+}
+
+/* ── setup ────────────────────────────────────────────────────────────── */
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(540px, 88%);
+  padding: 40px 0;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 68px;
+  font-weight: 400;
+  letter-spacing: 1px;
+}
+
+.tagline {
+  margin: 0;
+  max-width: 40ch;
+  font-family: var(--type);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+.roundsLabel {
+  margin-top: 12px;
+  font-size: 30px;
+}
+
+.slider {
+  width: 260px;
+  accent-color: var(--accent-deep);
+  cursor: pointer;
+}
+
+.roundsHint {
+  margin: 0;
+  font-family: var(--type);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.error {
+  margin: 0;
+  font-family: var(--type);
+  font-size: 12px;
+  color: #b3261e;
+}
+
+/* ── game layout: canvas beside chat ──────────────────────────────────── */
+
+.game {
+  display: flex;
+  gap: 26px;
+  align-items: stretch;
+  width: min(1320px, 96%);
+  height: min(860px, 94%);
+  padding: 18px 0;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 10px;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 0 0 auto;
+}
+
+.round {
+  font-family: var(--type);
+  font-size: 12px;
+  color: var(--ink-soft);
+  min-width: 96px;
+}
+
+.word {
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 34px;
+  letter-spacing: 1px;
+  text-transform: lowercase;
+}
+
+.headerNote {
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 24px;
+  color: var(--ink-soft);
+}
+
+.clock {
+  min-width: 96px;
+  text-align: right;
+  font-family: var(--type);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvasFrame {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvasWrap {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  height: 100%;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--paper);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  flex: 0 0 auto;
+  height: 52px;
+}
+
+.toolbarSpacer {
+  height: 52px;
+  flex: 0 0 auto;
+}
+
+.tool {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--hand);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.toolGlyph {
+  font-size: 24px;
+  line-height: 1;
+  color: var(--ink-soft);
+}
+
+.toolOn .toolGlyph {
+  color: var(--ink);
+}
+
+/* ── chat column ──────────────────────────────────────────────────────── */
+
+.side {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 320px;
+  min-height: 0;
+  gap: 4px;
+}
+
+.sideHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.score {
+  font-size: 19px;
+}
+
+/* Right end of the side head: the fullscreen toggle sits beside "End". */
+.sideActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Icon-only sibling of .handBtnQuiet (the corner arrows carry the meaning). */
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  color: var(--ink);
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 10px;
+}
+
+.chatList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.chatLine {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.chatWho {
+  display: block;
+  font-family: var(--type);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.chatCorrect {
+  color: var(--good);
+}
+
+.chatSystem {
+  margin: 6px 0;
+  font-family: var(--type);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.chatInputRow {
+  position: relative;
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+}
+
+.chatInput {
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 19px;
+  outline: none;
+}
+
+.chatInput::placeholder {
+  color: var(--ink-faint);
+}
+
+.chatInput:disabled {
+  color: var(--ink-faint);
+}
+
+/* ── gallery ──────────────────────────────────────────────────────────── */
+
+.gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(1320px, 94%);
+  padding: 36px 0;
+}
+
+.galleryTitle {
+  margin: 0;
+  font-size: 52px;
+  font-weight: 400;
+}
+
+.galleryRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.rowName {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 400;
+}
+
+.cells {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: 16px;
+}
+
+.cell {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cellArt {
+  position: relative;
+  width: 100%;
+  color: var(--ink-faint);
+}
+
+.cellCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--paper);
+}
+
+.cellWord {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 19px;
+}
+
+.gotIt {
+  font-family: var(--type);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--good);
+}
+
+.missed {
+  font-family: var(--type);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.galleryActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.savedNote {
+  margin: 0;
+  font-family: var(--type);
+  font-size: 11px;
+  color: var(--ink-soft);
+  word-break: break-all;
+}
+
+@media (max-width: 900px) {
+  .game {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .side {
+    flex: 1 1 auto;
+    min-height: 260px;
+  }
+}

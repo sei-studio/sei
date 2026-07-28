@@ -1257,6 +1257,79 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await chess.ackReveal(args.characterId, args.uci);
   });
 
+  // ── Draw! minigame (260727) ───────────────────────────────────────────────
+  // Thin wrappers over src/main/draw/drawService (module state initialized
+  // from index.ts via initDrawService). All character-scoped except `snapshot`,
+  // which is keyed by the requestId main handed out.
+  const PointSchema = z.object({ x: z.number().finite(), y: z.number().finite() });
+  const StrokeSchema = z.object({
+    id: z.string().min(1).max(64),
+    // Bounded so a runaway pointer handler cannot post an unbounded array
+    // across the bridge; the renderer decimates before sending.
+    points: z.array(PointSchema).min(2).max(4000),
+  });
+
+  ipcMain.handle(IpcChannel.draw.open, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    return await draw.openDraw(id);
+  });
+  ipcMain.handle(IpcChannel.draw.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, rounds: z.number().int().min(1).max(5) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    return await draw.startDraw(args.characterId, args.rounds);
+  });
+  ipcMain.handle(IpcChannel.draw.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    return draw.getDrawState(id);
+  });
+  ipcMain.handle(IpcChannel.draw.stroke, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, stroke: StrokeSchema }).parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    draw.playerStroke(args.characterId, args.stroke);
+  });
+  ipcMain.handle(IpcChannel.draw.erase, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, strokeId: z.string().min(1).max(64) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    draw.playerErase(args.characterId, args.strokeId);
+  });
+  ipcMain.handle(IpcChannel.draw.chat, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, text: z.string().min(1).max(2000) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    await draw.playerChat(args.characterId, args.text);
+  });
+  ipcMain.handle(IpcChannel.draw.snapshot, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        requestId: z.string().min(1).max(64),
+        // A 1000x700 black-on-white doodle PNG is a few KB; the ceiling is a
+        // sanity bound, not a target.
+        dataUrl: z.string().max(8_000_000),
+      })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    draw.receiveSnapshot(args.requestId, args.dataUrl);
+  });
+  ipcMain.handle(IpcChannel.draw.saveGallery, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, pngDataUrl: z.string().max(64_000_000) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    return await draw.saveGallery(args.characterId, args.pngDataUrl);
+  });
+  ipcMain.handle(IpcChannel.draw.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    await draw.endDraw(id);
+  });
+
   // ── Minecraft dashboard (260721) ──────────────────────────────────────────
   // Thin wrappers over src/main/mcDashboard/mcDashboardService (module state
   // initialized in main/index.ts) + the supervisor's watch-flag port message.

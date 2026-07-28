@@ -27,13 +27,14 @@
 import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore } from './stores/useChessStore';
+import { useDrawStore } from './stores/useDrawStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
 import { useWizardStore } from './stores/useWizardStore';
 import { attemptSummon } from './summonFlow';
 import { sei } from './ipcClient';
 
 /** The launchable games (the picker's coming-soon tiles are never active). */
-export type LaunchGameId = 'chess' | 'minecraft';
+export type LaunchGameId = 'chess' | 'minecraft' | 'draw';
 
 export interface ActiveGameInfo {
   id: LaunchGameId;
@@ -50,6 +51,11 @@ export interface ActiveGameInfo {
 export function activeGameFor(characterId: string): ActiveGameInfo | null {
   const chess = useChessStore.getState().games[characterId];
   if (chess && chess.status !== 'ended') return { id: 'chess', name: 'Chess' };
+  const draw = useDrawStore.getState().games[characterId];
+  // A game sitting on the setup screen is not yet active; the gallery is over.
+  if (draw && draw.phase !== 'gallery' && draw.phase !== 'setup') {
+    return { id: 'draw', name: 'Draw!' };
+  }
   const summon = useDataStore.getState().summons[characterId]?.kind;
   if (summon === 'online' || summon === 'connecting') {
     return { id: 'minecraft', name: 'Minecraft' };
@@ -64,6 +70,10 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
 export async function endActiveGame(characterId: string, id: LaunchGameId): Promise<void> {
   if (id === 'chess') {
     await useChessStore.getState().end(characterId);
+    return;
+  }
+  if (id === 'draw') {
+    await useDrawStore.getState().end(characterId);
     return;
   }
   // Minecraft: same instant-disconnect path the chat panel uses.
@@ -108,6 +118,18 @@ async function maybeOfferSkinSetup(): Promise<void> {
  * cross-launch confirm has already ended it by the time this runs.
  */
 export function openGame(characterId: string, gameId: LaunchGameId): void {
+  // Draw! is a full-page route of its own rather than a panel in the chat
+  // game area, so it navigates instead of mounting an aside. Any stale chess
+  // panel intent is dropped first so returning to chat later is clean.
+  if (gameId === 'draw') {
+    const chess = useChessStore.getState();
+    const g = chess.games[characterId];
+    if (!g || g.status === 'ended') void chess.end(characterId);
+    useMcDashboardStore.getState().setLaunch(characterId, false);
+    useUiStore.getState().navigate({ kind: 'draw', characterId });
+    return;
+  }
+
   useUiStore.getState().navigate({ kind: 'chat', characterId });
   const chess = useChessStore.getState();
   const dash = useMcDashboardStore.getState();

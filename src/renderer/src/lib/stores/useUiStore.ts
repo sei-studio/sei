@@ -36,6 +36,11 @@ export type View =
   // surfaces (the IconRail stays visible, unlike the full-page entry flows).
   | { kind: 'chat'; characterId: string }
   | { kind: 'voice-call'; characterId: string }
+  // 260727 Draw! — the sketch-guessing minigame. A full-page surface (rail
+  // hidden) because it is deliberately its own visual world: a white page in
+  // a handdrawn register, canvas beside chat, rather than the chat screen's
+  // top/bottom game split.
+  | { kind: 'draw'; characterId: string }
   | { kind: 'settings' }
   | { kind: 'credits' }
   | { kind: 'coming-soon' }
@@ -122,7 +127,7 @@ export type Modal =
   | {
       kind: 'cross-launch';
       characterId: string;
-      fromId: 'chess' | 'minecraft';
+      fromId: 'chess' | 'minecraft' | 'draw';
       fromName: string;
       toName: string;
     };
@@ -252,6 +257,22 @@ interface UiState {
   backgroundOpacity: number;
   backgroundBrightness: number;
   backgroundBust: number;
+  /**
+   * 260728 — IN-APP fullscreen for a game surface. Not the OS window's
+   * fullscreen (that is what this button used to do, and it was the wrong
+   * verb: a game does not need the whole display, it needs the whole app).
+   * True means "give the mounted game every pixel the app has": the IconRail
+   * goes (App.tsx folds this into railHidden) and, for the games hosted in the
+   * chat screen's game area, the chat below goes too (ChatScreen folds it into
+   * chatHidden).
+   *
+   * Session-only and OWNED BY THE MOUNTED SURFACE: whichever game surface is
+   * on screen sets it, and clears it on unmount. That is what keeps the rail
+   * from staying hidden after the game is gone, and it is why there is no
+   * "which view is this" test in railHidden. Any future game surface gets the
+   * behaviour by doing the same two things.
+   */
+  gameFullscreen: boolean;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -285,6 +306,7 @@ interface UiState {
   /** 260724: set the background sliders (opacity 0..1, brightness 0.2..1). */
   setBackgroundOpacity: (v: number) => void;
   setBackgroundBrightness: (v: number) => void;
+  setGameFullscreen: (v: boolean) => void;
   /** #6: hang up / dismiss the call (resets mute + deafen). */
   endCall: () => void;
 }
@@ -319,6 +341,7 @@ export const useUiStore = create<UiState>((set) => ({
   backgroundOpacity: 0.5,
   backgroundBrightness: 1,
   backgroundBust: 0,
+  gameFullscreen: false,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
   navigate: (view) =>
@@ -336,6 +359,7 @@ export const useUiStore = create<UiState>((set) => ({
     set((s) => ({ backgroundImage: ref, backgroundBust: s.backgroundBust + 1 })),
   setBackgroundOpacity: (v) => set({ backgroundOpacity: v }),
   setBackgroundBrightness: (v) => set({ backgroundBrightness: v }),
+  setGameFullscreen: (v) => set({ gameFullscreen: v }),
   setRealisticTyping: (v) => set({ realisticTyping: v }),
   setAnalyticsOptOut: (v) => set({ analyticsOptOut: v }),
   setChatPanelHidden: (v) => set({ chatPanelHidden: v }),

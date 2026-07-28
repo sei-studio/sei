@@ -488,7 +488,13 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // is disabled while dragging (no animation fighting).
   const [gameSplit, setGameSplit] = useState<number | null>(() => readGameLayout().split);
   const [splitDragging, setSplitDragging] = useState(false);
-  const chatHidden = gameOpen && gameExpanded;
+  // In-app fullscreen (260728) hides the chat too, on top of whatever the
+  // expand "V" was set to, and restores that state on exit rather than
+  // clobbering it. It is not persisted into the layout preference: fullscreen
+  // is a thing you do for a moment, the split is a thing you keep.
+  const gameFullscreen = useUiStore((s) => s.gameFullscreen);
+  const setGameFullscreen = useUiStore((s) => s.setGameFullscreen);
+  const chatHidden = gameOpen && (gameExpanded || gameFullscreen);
   // 260725: the sizing is a user PREFERENCE, not per-view state. It used to
   // reset on unmount (and on a DM switch), so opening a profile and coming
   // back dropped a full-window game straight back to the half split. Persist
@@ -606,9 +612,19 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           >
             {gameOpen ? (
               <GameSurface
-                expanded={gameExpanded}
+                expanded={chatHidden}
                 unread={gameUnread}
-                onToggle={() => setGameExpanded((v) => !v)}
+                // The "V" always means "show me the chat again", so while
+                // fullscreen is hiding it, pressing V leaves fullscreen rather
+                // than toggling a state with no visible effect.
+                onToggle={() => {
+                  if (gameFullscreen) {
+                    setGameFullscreen(false);
+                    setGameExpanded(false);
+                    return;
+                  }
+                  setGameExpanded((v) => !v);
+                }}
                 onEnd={onGameEnd}
                 confirmEnd={confirmGameEnd}
               >

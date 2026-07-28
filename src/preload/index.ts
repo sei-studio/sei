@@ -119,6 +119,22 @@ const api: RendererApi = {
   chessEnd: (characterId) => ipcRenderer.invoke(IpcChannel.chess.end, characterId),
   chessAckReveal: (characterId, uci) =>
     ipcRenderer.invoke(IpcChannel.chess.ackReveal, { characterId, uci }),
+
+  // Draw! minigame (260727) — see src/shared/drawIpc.ts.
+  drawOpen: (characterId) => ipcRenderer.invoke(IpcChannel.draw.open, characterId),
+  drawStart: (characterId, rounds) =>
+    ipcRenderer.invoke(IpcChannel.draw.start, { characterId, rounds }),
+  drawGetState: (characterId) => ipcRenderer.invoke(IpcChannel.draw.getState, characterId),
+  drawStroke: (characterId, stroke) =>
+    ipcRenderer.invoke(IpcChannel.draw.stroke, { characterId, stroke }),
+  drawErase: (characterId, strokeId) =>
+    ipcRenderer.invoke(IpcChannel.draw.erase, { characterId, strokeId }),
+  drawChat: (characterId, text) => ipcRenderer.invoke(IpcChannel.draw.chat, { characterId, text }),
+  drawSnapshot: (requestId, dataUrl) =>
+    ipcRenderer.invoke(IpcChannel.draw.snapshot, { requestId, dataUrl }),
+  drawSaveGallery: (characterId, pngDataUrl) =>
+    ipcRenderer.invoke(IpcChannel.draw.saveGallery, { characterId, pngDataUrl }),
+  drawEnd: (characterId) => ipcRenderer.invoke(IpcChannel.draw.end, characterId),
   onChessState(cb) {
     const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
     ipcRenderer.on(IpcChannel.chess.state, handler);
@@ -128,6 +144,21 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
     ipcRenderer.on(IpcChannel.chess.download, handler);
     return () => ipcRenderer.off(IpcChannel.chess.download, handler);
+  },
+  onDrawState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.draw.state, handler);
+    return () => ipcRenderer.off(IpcChannel.draw.state, handler);
+  },
+  onDrawAiStroke(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.draw.aiStroke, handler);
+    return () => ipcRenderer.off(IpcChannel.draw.aiStroke, handler);
+  },
+  onDrawSnapshotRequest(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, r: Parameters<typeof cb>[0]) => cb(r);
+    ipcRenderer.on(IpcChannel.draw.snapshotRequest, handler);
+    return () => ipcRenderer.off(IpcChannel.draw.snapshotRequest, handler);
   },
 
   // Minecraft dashboard (260721)

@@ -363,6 +363,22 @@ export async function startChess(
   sessions.set(characterId, s);
   push(s);
 
+  // Analytics (260728): a game surface must report its own playtime, or it is
+  // invisible — `minutes` used to mean Minecraft only. Lazy import so the
+  // module graph (and the tests) never depend on analytics being initialized;
+  // capture() is a no-op when it is not. No board state, no chat, no persona.
+  void (async () => {
+    try {
+      const { capture } = await import('../analytics');
+      capture('chess_game_started', {
+        character_id: characterId,
+        player_color: playerColor,
+        ai_elo: profile.elo,
+        profile_source: profile.source,
+      });
+    } catch { /* analytics is never load-bearing */ }
+  })();
+
   // Warm the engine (first run downloads the model with progress pushes).
   void (async () => {
     try {
@@ -908,6 +924,27 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
     `game over: ${result.winner === null ? 'draw' : `${colorName(result.winner)} wins`} ` +
       `(${result.reason}) plies=${s.history.length} durationMs=${durationMs}`,
   );
+
+  // Analytics (260728): `duration_ms` is the SHARED contract every timed
+  // surface emits, so the dashboard can sum playtime across Minecraft, chess
+  // and calls with one query. Fired for abandoned games too (that time was
+  // still spent); `reason` distinguishes them. See the games rule in CLAUDE.md.
+  void (async () => {
+    try {
+      const { capture } = await import('../analytics');
+      capture('chess_game_ended', {
+        character_id: s.characterId,
+        duration_ms: durationMs,
+        plies: s.history.length,
+        reason: result.reason,
+        // 'player' | 'ai' | 'draw' — never the raw colour, which would need
+        // playerColor to interpret.
+        outcome: result.winner === null ? 'draw' : result.winner === s.playerColor ? 'player' : 'ai',
+        ai_elo: s.profile.elo,
+        spoke: s.spoke,
+      });
+    } catch { /* analytics is never load-bearing */ }
+  })();
   // Transcript event ("You and X played chess. You won in N moves.") — same
   // shape the Minecraft/watch sessions append, rendered with the gamepad icon.
   // Abandoned games leave no row ONLY when nothing happened at all (no moves
