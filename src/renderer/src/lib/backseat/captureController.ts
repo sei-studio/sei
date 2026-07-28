@@ -12,7 +12,8 @@
 
 import { sei } from '../ipcClient';
 import {
-  BUFFER_MS,
+  CLIP_MS,
+  CLIPS_ENABLED,
   CAPTURE_FPS,
   CAPTURE_H,
   CAPTURE_W,
@@ -38,8 +39,8 @@ const USER_GRID_MAX_AGE_MS = 30_000;
  * exactly 15 — it always covers the moment asked for, sometimes with more lead
  * in. That is the right way to be wrong here.
  */
-const CLIP_PERIOD_MS = BUFFER_MS * 2;
-const CLIP_STAGGER_MS = BUFFER_MS;
+const CLIP_PERIOD_MS = CLIP_MS * 2;
+const CLIP_STAGGER_MS = CLIP_MS;
 
 interface Rolling {
   recorder: MediaRecorder;
@@ -68,12 +69,44 @@ function meter(analyser: AnalyserNode, buf: Float32Array<ArrayBuffer>): number {
 }
 
 /**
- * Open the shared stream. Audio is requested but never required: on macOS,
- * loopback capture of another app's sound needs a virtual audio device, so the
- * constraint fails there and we fall back to video only. Losing audio costs the
- * loudest-frame heuristic and the gain arm of the jolt trigger; the colour arm
- * and the salience gate carry on unchanged, and the worker's frame selection
- * degrades to "the last frame of each second", which is a sane default.
+ * Find a virtual loopback input device (BlackHole, Loopback, Soundflower, VB
+ * Cable). This is the ONLY way to hear another app's audio on macOS today, so
+ * when the player has one installed and set as their output, backseat can hear
+ * their game and their videos. Returns null when none is present.
+ */
+async function findLoopbackDevice(): Promise<string | null> {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const hit = devices.find(
+      (d) =>
+        d.kind === 'audioinput' &&
+        /blackhole|loopback|soundflower|vb-?cable|virtual/i.test(d.label),
+    );
+    return hit ? hit.deviceId : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open the shared stream. Audio is requested but NEVER required.
+ *
+ * 260728, measured on macOS 26.4 / Electron 42 / Chromium 148: system-audio
+ * loopback does not work on macOS at all. With
+ * `MacSckSystemAudioLoopbackOverride` and `MacLoopbackAudioForScreenShare` both
+ * enabled and verified applied, `audio: 'loopback'` produces a track labelled
+ * "System audio" that carries digital silence, in every request shape tried:
+ * combined with video, split into a second request, and audio-only with no
+ * video at all. Electron documents `loopback` as Windows-only, and that matches
+ * what the machine actually does.
+ *
+ * So on macOS the only route to another app's sound is a virtual audio device
+ * the player installs themselves, which is what findLoopbackDevice looks for.
+ * Failing that we run video-only, and the pipeline degrades in three known
+ * ways, none fatal: frame selection falls back to "last frame of each second",
+ * the gain arm of the jolt trigger never fires (the colour arm still does), and
+ * the companion cannot hear what it is watching. The salience gate and the grid
+ * are unaffected, because both are purely visual by design.
  */
 async function openStream(sourceId: string): Promise<{ stream: MediaStream; hasAudio: boolean }> {
   const video = {
@@ -85,16 +118,42 @@ async function openStream(sourceId: string): Promise<{ stream: MediaStream; hasA
       maxFrameRate: CAPTURE_FPS,
     },
   } as unknown as MediaTrackConstraints;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { mandatory: { chromeMediaSource: 'desktop' } } as unknown as MediaTrackConstraints,
-      video,
-    });
-    return { stream, hasAudio: stream.getAudioTracks().length > 0 };
-  } catch {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
-    return { stream, hasAudio: false };
+  // Windows: desktop loopback works, so ask for it inline.
+  if (navigator.userAgent.includes('Windows')) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { mandatory: { chromeMediaSource: 'desktop' } } as unknown as MediaTrackConstraints,
+        video,
+      });
+      if (stream.getAudioTracks().length) return { stream, hasAudio: true };
+      stream.getTracks().forEach((t) => t.stop());
+    } catch {
+      /* fall through to video-only */
+    }
   }
+
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+
+  // Everywhere else (and on Windows if the above failed): a virtual output
+  // device, if the player has one. Added as a separate track on the same
+  // stream so the rest of the pipeline sees one stream either way.
+  const deviceId = await findLoopbackDevice();
+  if (deviceId) {
+    try {
+      const mic = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: deviceId } },
+        video: false,
+      });
+      const track = mic.getAudioTracks()[0];
+      if (track) {
+        stream.addTrack(track);
+        return { stream, hasAudio: true };
+      }
+    } catch {
+      /* device vanished or is in use; video-only is still a working session */
+    }
+  }
+  return { stream, hasAudio: false };
 }
 
 export async function startCapture(
@@ -165,15 +224,22 @@ export async function startCapture(
     rec.start(1000);
   };
   const cycleTimers: number[] = [];
-  cycle(0);
-  cycleTimers.push(window.setInterval(() => cycle(0), CLIP_PERIOD_MS));
-  const staggerTimer = window.setTimeout(() => {
-    cycle(1);
-    cycleTimers.push(window.setInterval(() => cycle(1), CLIP_PERIOD_MS));
-  }, CLIP_STAGGER_MS);
+  let staggerTimer = 0;
+  // Continuously encoding 720p60 for a whole session is by far the most
+  // expensive thing here, and it exists only so a rare save_clip has something
+  // to harvest. With clipping off, none of it runs.
+  if (CLIPS_ENABLED) {
+    cycle(0);
+    cycleTimers.push(window.setInterval(() => cycle(0), CLIP_PERIOD_MS));
+    staggerTimer = window.setTimeout(() => {
+      cycle(1);
+      cycleTimers.push(window.setInterval(() => cycle(1), CLIP_PERIOD_MS));
+    }, CLIP_STAGGER_MS);
+  }
 
   /** The complete segment that best covers the last BUFFER_MS. */
   const harvestClip = async (): Promise<string | null> => {
+    if (!CLIPS_ENABLED) return null;
     const candidates = rollers.filter((r): r is Rolling => !!r && r.chunks.length > 0);
     if (!candidates.length) return null;
     // Longest-running recorder = the one whose segment reaches furthest back.

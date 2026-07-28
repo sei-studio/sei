@@ -31,9 +31,35 @@
  */
 
 // ── Ring buffer ───────────────────────────────────────────────────────────
+//
+// There are TWO independent buffers, and conflating them was the first design's
+// mistake. The frame ring only ever needs enough closed one-second buckets to
+// build a grid, plus slack for the latency between a trigger firing and the
+// composite being requested. That is GRID_FRAMES + a few seconds, NOT 15.
+//
+// The 15 seconds belongs solely to CLIP capture (the Outplayed-style "save that
+// bit" feature), which is served by MediaRecorder and nothing else. So clipping
+// can be switched off independently, and when it is, the whole MediaRecorder
+// path disappears and the retained window shrinks to BUFFER_MS.
 
-/** Rolling window the renderer retains, and the length of a saved clip. */
-export const BUFFER_MS = 15_000;
+/**
+ * Frames the ring keeps: one grid's worth (6 s) plus 3 s of slack, so a trigger
+ * that fires and then waits on a gate round trip still finds its own moment in
+ * the buffer rather than a window that has already rolled past it.
+ */
+export const BUFFER_MS = 9_000;
+/** Length of a saved clip. Only meaningful when clipping is enabled. */
+export const CLIP_MS = 15_000;
+/**
+ * Whether the rolling clip recorders run at all.
+ *
+ * They are the single most expensive thing in the pipeline: two MediaRecorders
+ * continuously encoding 720p60 for the whole session, purely so that a rare
+ * save_clip call has something to harvest. Everything else backseat does (the
+ * grid, both local triggers, the gate) is unaffected by turning this off, so
+ * this is the first dial to reach for if capture is costing too much.
+ */
+export const CLIPS_ENABLED = true;
 /** Frame retention target. The capture loop degrades gracefully below this. */
 export const CAPTURE_FPS = 60;
 /** Capture resolution requested from getDisplayMedia (downscaled per cell). */

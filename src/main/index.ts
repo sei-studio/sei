@@ -66,6 +66,19 @@ if (!app.isPackaged) {
 // handler is attached in bootstrap() once userData/paths are resolved.
 registerPortraitScheme();
 
+// Backseat (260728): ask Chromium for the macOS system-audio loopback path.
+// MEASURED NOT TO WORK on macOS 26.4 / Electron 42 / Chromium 148 — the track
+// is created and labelled "System audio" but carries digital silence, in every
+// request shape. Electron documents `loopback` as Windows-only and that matches
+// reality. The switches are left in because they cost nothing, they are the
+// documented path, and the day Chromium fixes it macOS gains audio with no code
+// change. Until then macOS falls back to a virtual audio device if the player
+// has one (see captureController.findLoopbackDevice), else video-only.
+app.commandLine.appendSwitch(
+  'enable-features',
+  'MacSckSystemAudioLoopbackOverride,MacLoopbackAudioForScreenShare',
+);
+
 const logger = {
   info: (m: string) => console.log(`[sei] ${m}`),
   warn: (m: string) => console.warn(`[sei] ${m}`),

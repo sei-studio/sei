@@ -140,6 +140,9 @@ const TURN_GAP_MS = 4_000;
  */
 const TURN_END_TIMEOUT_MS = 12_000;
 const TURN_END_MIN_PAUSE_MS = 1_800;
+/** The last turn's reaction is a closing line, and the gallery replaces the
+ *  whole screen, so it gets longer to be read. */
+const GAME_END_MIN_PAUSE_MS = 3_400;
 
 /**
  * Tool arrays, one per turn kind — a DELIBERATE divergence from chess, which
@@ -643,7 +646,8 @@ function endTurn(s: Session, guessed: boolean): void {
   const gameOver = drawer === 'ai' && s.round >= s.rounds;
   void runTurnEndReaction(s, key, { drawer, guessed, winningLine, gameOver }).finally(() => {
     if (sessions.get(s.characterId) !== s || s.turnKey !== key || s.phase !== 'turn-end') return;
-    const wait = Math.max(TURN_END_MIN_PAUSE_MS, TURN_GAP_MS - (Date.now() - startedAt));
+    const floor = gameOver ? GAME_END_MIN_PAUSE_MS : TURN_END_MIN_PAUSE_MS;
+    const wait = Math.max(floor, TURN_GAP_MS - (Date.now() - startedAt));
     s.gapTimer = setTimeout(() => advanceTurn(s), wait);
   });
 }
