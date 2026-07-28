@@ -410,6 +410,27 @@ both write to the SAME chat thread and the same memory as every other surface.
   (cells 602x336) = 1548 tokens**. Oversize is not an error, it is a silent
   server-side downscale, so `backseatIpc.test.ts` asserts both the cap and that
   we are not leaving budget on the table.
+- **Sound: Windows yes, macOS no (measured 260728).** System-audio loopback was
+  tested on macOS 26.4 / Electron 42 / Chromium 148 with a standalone probe.
+  With `MacSckSystemAudioLoopbackOverride` + `MacLoopbackAudioForScreenShare`
+  enabled AND verified applied at runtime, `audio: 'loopback'` returns a track
+  labelled "System audio" carrying DIGITAL SILENCE, in every request shape:
+  combined with video, split into a second audio-only request, and audio-only
+  with no video at all. Electron documents `loopback` as Windows-only and that
+  matches the machine. The switches are still set in `index.ts` because they
+  cost nothing and the day Chromium fixes it macOS gains audio for free. Until
+  then macOS falls back to a virtual output device (BlackHole / Loopback /
+  Soundflower / VB-Cable) via `findLoopbackDevice`, else video-only. Losing
+  audio costs the frame heuristic (falls back to last-frame-of-second) and the
+  gain arm of the jolt; the colour arm and the gate are purely visual and
+  unaffected. **Do not re-litigate this without re-running the probe.**
+- **TWO buffers, not one (260728).** Conflating them was the first design's
+  mistake. The frame ring only needs one grid's worth plus latency slack, so
+  `BUFFER_MS` is **9 s**. The 15 s belongs solely to clip capture, which is
+  `CLIP_MS` and lives entirely in MediaRecorder. Clipping is the most expensive
+  thing in the pipeline (two recorders encoding 720p60 for the whole session for
+  a rare `save_clip`), so it sits behind `CLIPS_ENABLED` and vanishes completely
+  when off. That is the first dial to turn if capture costs too much.
 - **The ring buffer does not hold 900 frames.** "15 s at 60 fps, one frame per
   second by loudest gain" read literally is several GB or 60 JPEG encodes a
   second. It does not have to be: the selection rule is a running argmax, so
@@ -462,6 +483,10 @@ both write to the SAME chat thread and the same memory as every other surface.
 - **Tool-array policy:** ONE array for every tick kind (chess-style). Ticks are
   6-8 s apart, well inside the cache TTL, so per-tick-kind arrays would
   invalidate the prefix almost every turn for nothing.
+
+**Extracted:** the screen-watching half is mirrored as a public standalone repo
+at `sei-studio/backseat` (AGPL-3.0) with a plain-language architecture README.
+Changes here should be mirrored there when the design moves.
 
 **Owed:** the gate currently needs `SEI_GATE_DEV_KEY` (see `.env.example`).
 Production should route it through the proxy the way TTS does, so no DeepInfra
