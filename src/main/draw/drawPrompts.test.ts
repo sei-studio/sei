@@ -194,6 +194,34 @@ describe('the instructions come after the chat log', () => {
       /Right now: the turn just ended\. Ouen was the one drawing, YOU were guessing\.$/,
     );
   });
+
+  // 260729, from a live complaint on the web build: after guessing the
+  // player's knife, the character said "that one was easy, you made the blade
+  // too obvious". The generic "gloat, tease" beat framed a good drawing as a
+  // flaw. When the character guessed the PLAYER's drawing, it compliments.
+  it('compliments the drawing it guessed instead of gloating', () => {
+    const base = {
+      round: 1,
+      rounds: 3,
+      aiName: AI,
+      playerName: PLAYER,
+      word: 'horn',
+      winningLine: 'is it a horn',
+      scores: { player: 0, ai: 1 },
+      turnChat: [],
+      priorChat: [],
+      gameOver: false,
+      gallery: [entry({ guessed: true })],
+    };
+    const won = buildTurnEndBlock({ ...base, drawer: 'player' as const, guessed: true });
+    expect(won).toContain('they drew it well');
+    expect(won).toContain('Never call it easy or obvious');
+    expect(won).not.toContain('Gloat');
+    // Every other outcome keeps the banter beat.
+    for (const [drawer, guessed] of [['player', false], ['ai', true], ['ai', false]] as const) {
+      expect(buildTurnEndBlock({ ...base, drawer, guessed })).toContain('Gloat');
+    }
+  });
 });
 
 describe('turnEndLine', () => {

@@ -544,7 +544,18 @@ export function buildTurnEndBlock(opts: {
       : 'The next turn starts in a moment.',
     '',
     'React in ONE short line, in your own voice, the way someone would between rounds. ' +
-      'Gloat, groan, defend your drawing, tease them. Do not explain the rules back, do not recap ' +
+      // When the character guessed the PLAYER's drawing, its win came from
+      // their good drawing. "Gloat, tease" here produced "that one was easy,
+      // you made the blade too obvious" live on the web build (260729): a
+      // put-down of a player who did exactly what the game asks. Readable
+      // means well drawn, and the prompt has to say so or the model frames
+      // its point as their mistake.
+      (drawer === 'player' && guessed
+        ? 'You got it because they drew it well: a drawing you can read fast is a GOOD drawing. ' +
+          'Compliment it, and name the detail that sold it if you can. Never call it easy or obvious, ' +
+          'and never make your point sound like a flaw in their drawing. '
+        : 'Gloat, groan, defend your drawing, tease them. ') +
+      'Do not explain the rules back, do not recap ' +
       'the score, and do not announce what is coming next. If you genuinely have nothing to add, ' +
       'reply with exactly (silence) and nothing will be sent.',
     '',
