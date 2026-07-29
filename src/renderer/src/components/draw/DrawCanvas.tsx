@@ -244,9 +244,15 @@ export function DrawCanvas({
   // ── pointer input ─────────────────────────────────────────────────────────
   const toLogical = (e: React.PointerEvent): DrawPoint => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // ONE scale for input and paint. paintStrokes scales by width alone, so
+    // mapping y by rect.height put the ink above the cursor whenever the box
+    // was not exactly 10:7. The resize fit keeps it 10:7; this keeps the pen
+    // under the cursor even if it ever is not.
+    const sc = Math.max(1e-6, rect.width / CANVAS_W);
+    const clamp = (v: number, hi: number): number => Math.min(hi, Math.max(0, v));
     return {
-      x: ((e.clientX - rect.left) / Math.max(1, rect.width)) * CANVAS_W,
-      y: ((e.clientY - rect.top) / Math.max(1, rect.height)) * CANVAS_H,
+      x: clamp((e.clientX - rect.left) / sc, CANVAS_W),
+      y: clamp((e.clientY - rect.top) / sc, CANVAS_H),
     };
   };
 
