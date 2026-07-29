@@ -19,6 +19,7 @@ function base(over: Partial<GuessGateInput> = {}): GuessGateInput {
     strokesSinceDispatch: 0,
     lastDispatchAt: T0,
     lastCompletedAt: 0,
+    pendingChat: false,
     now: T0,
     ...over,
   };
@@ -127,6 +128,47 @@ describe('guessGate', () => {
       now: T0 + 1_000,
     });
     expect(guessGate(first)).toEqual({ go: true, reason: 'strokes' });
+  });
+
+  // 260728 — a player who stopped drawing to talk got total silence: chat woke
+  // nothing, and the next scheduled look aborted on the unchanged canvas.
+  it('answers the player even with nothing drawn yet', () => {
+    const spokenTo = base({ pendingChat: true, strokeCount: 0, now: T0 + 1_000 });
+    expect(guessGate(spokenTo)).toEqual({ go: true, reason: 'chat' });
+  });
+
+  it('answers the player without waiting for the stroke or time trigger', () => {
+    const justLooked = base({
+      pendingChat: true,
+      strokeCount: 4,
+      strokesSinceDispatch: 0,
+      lastDispatchAt: T0,
+      now: T0 + 1_000,
+    });
+    expect(guessGate(justLooked)).toEqual({ go: true, reason: 'chat' });
+    // Same state without the message waits, which is what makes the difference real.
+    expect(guessGate({ ...justLooked, pendingChat: false })).toEqual({
+      go: false,
+      reason: 'no-trigger',
+    });
+  });
+
+  it('still coalesces a burst of messages behind the cooldown and single flight', () => {
+    const inFlight = base({ pendingChat: true, strokeCount: 4, inFlight: true });
+    expect(guessGate(inFlight)).toEqual({ go: false, reason: 'in-flight' });
+
+    const cooling = base({
+      pendingChat: true,
+      strokeCount: 4,
+      lastCompletedAt: T0,
+      now: T0 + GUESS_COOLDOWN_MS - 1,
+    });
+    expect(guessGate(cooling)).toEqual({ go: false, reason: 'cooldown' });
+  });
+
+  it('ignores chat once the turn is not the player drawing', () => {
+    expect(guessGate(base({ pendingChat: true, drawer: 'ai' })).go).toBe(false);
+    expect(guessGate(base({ pendingChat: true, phase: 'turn-end' })).go).toBe(false);
   });
 
   it('stays silent when it is not the player drawing', () => {

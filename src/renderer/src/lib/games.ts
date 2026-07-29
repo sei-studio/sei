@@ -44,6 +44,12 @@ export const GAMES: GameDef[] = [
     id: 'draw',
     name: 'Draw!',
     available: true,
+    // The start page's own wordmark and drawings, rendered through the real
+    // Architects Daughter face and captured to PNG, so the tile is literally
+    // what the game looks like. Text is a raster here on purpose: an SVG used
+    // as a CSS background-image cannot reach the app's @font-face, so a text
+    // element in one would silently fall back to a system serif.
+    image: './img/game-draw.png',
     description: (name) =>
       `Take turns sketching and guessing with ${name}. ` +
       `Whoever is guessing types in the chat, and any sentence with the word in it counts.`,

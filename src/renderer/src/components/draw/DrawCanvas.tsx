@@ -26,6 +26,7 @@ import {
   MIN_POINT_SPACING,
   hitTestStroke,
   paintStrokes,
+  pencilCssWidth,
   strokesToPng,
 } from './drawRender';
 import styles from './draw.module.css';
@@ -44,6 +45,12 @@ export interface DrawCanvasProps {
   tool: 'pen' | 'eraser';
   /** Identifies the current turn; a change resets local playback state. */
   turnToken: string;
+  /**
+   * DrawGameState.clearSeq: bumped when the character wipes its own page with
+   * the `clear` tool. The revealed list is local and deliberately survives a
+   * state push, so this is the only thing that can throw it away mid-turn.
+   */
+  clearToken: number;
   onStroke: (stroke: DrawStroke) => void;
   onErase: (strokeId: string) => void;
 }
@@ -61,6 +68,7 @@ export function DrawCanvas({
   mode,
   tool,
   turnToken,
+  clearToken,
   onStroke,
   onErase,
 }: DrawCanvasProps): React.ReactElement {
@@ -87,7 +95,8 @@ export function DrawCanvas({
   }, []);
 
   // Reset playback whenever the turn changes: strokes queued for a turn that
-  // has ended must never bleed into the next one.
+  // has ended must never bleed into the next one. Also on a mid-turn wipe,
+  // which is the same reset without the turn ending.
   useEffect(() => {
     queue.current = [];
     playing.current = null;
@@ -95,7 +104,7 @@ export function DrawCanvas({
     live.current = null;
     drawing.current = false;
     dirty.current = true;
-  }, [turnToken]);
+  }, [turnToken, clearToken]);
 
   useEffect(() => {
     dirty.current = true;
@@ -137,8 +146,19 @@ export function DrawCanvas({
   useEffect(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
-    if (!wrap || !canvas) return;
+    const host = wrap?.parentElement;
+    if (!wrap || !canvas || !host) return;
     const resize = (): void => {
+      // Fit 10:7 inside whatever the box leaves, in px, rather than leaning on
+      // `aspect-ratio` + `max-width`: that pair clamps the width and keeps the
+      // definite height, so on a box wider than 10:7 the paper came out
+      // stretched, and a stretched paper means the pointer and the painted
+      // stroke no longer agree (paintStrokes scales by width alone).
+      const avail = host.getBoundingClientRect();
+      const cssW = Math.max(1, Math.min(avail.width, (avail.height * CANVAS_W) / CANVAS_H));
+      wrap.style.width = `${cssW}px`;
+      wrap.style.height = `${(cssW * CANVAS_H) / CANVAS_W}px`;
+
       const rect = wrap.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       const w = Math.max(1, Math.round(rect.width * dpr));
@@ -148,10 +168,22 @@ export function DrawCanvas({
         canvas.height = h;
         dirty.current = true;
       }
+      // Tell the chrome how thick the pen currently looks, so every squiggle
+      // on the page is drawn at the width of the strokes on this canvas.
+      //
+      // Published on the SURFACE ROOT rather than on our own parent (260728):
+      // scoping it to the canvas frame meant the frame matched the pen while
+      // the rules, the chat box and the buttons stayed on the static fallback,
+      // which is the drift the single-pen rule exists to prevent.
+      wrap
+        .closest<HTMLElement>(`.${styles.root}`)
+        ?.style.setProperty('--hand-stroke', `${pencilCssWidth(rect.width).toFixed(2)}px`);
     };
     resize();
+    // The HOST is observed, not the wrap: the wrap's size is now an output of
+    // this function, so watching it would be watching our own writes.
     const ro = new ResizeObserver(resize);
-    ro.observe(wrap);
+    ro.observe(host);
     return () => ro.disconnect();
   }, []);
 
@@ -281,8 +313,13 @@ export function DrawCanvas({
       ref={wrapRef}
       className={styles.canvasWrap}
       data-tool={interactive ? tool : 'none'}
-      style={{ aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
     >
+      {/* No frame in here (260728). The drawn box is .canvasBox one level up,
+          because it holds the tools as well as the paper; a second outline this
+          close inside it would read as two boxes. The canvas paints an opaque
+          white background over its whole box, so anything that must stay
+          visible above it needs .frameHost's z-index, which .canvasBox's frame
+          has. */}
       <canvas
         ref={canvasRef}
         className={styles.canvas}

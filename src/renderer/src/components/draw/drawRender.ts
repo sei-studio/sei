@@ -15,6 +15,23 @@ import { CANVAS_H, CANVAS_W, type DrawPoint, type DrawStroke } from '@shared/dra
 /** The one and only pen width, in logical units. */
 export const LINE_WIDTH = 4;
 
+/**
+ * The pen's width as it actually lands on screen, in CSS px, for a canvas
+ * displayed `cssWidth` wide.
+ *
+ * Every hand-drawn line in this surface is meant to look like it came off the
+ * same pen: the frames, the rules, the button outlines and the strokes on the
+ * canvas. The chrome is drawn in CSS px while the pen works in logical canvas
+ * units, so the two only agree if the chrome is told what the canvas scale
+ * currently is. The art containers publish this as `--hand-stroke` and the
+ * squiggles consume it. (A fixed number cannot work: the canvas ranges from
+ * roughly 550 to 980 px wide depending on the window, which is a real
+ * 2.2px-to-3.9px swing in how thick the pen looks.)
+ */
+export function pencilCssWidth(cssWidth: number): number {
+  return (LINE_WIDTH * cssWidth) / CANVAS_W;
+}
+
 export interface PartialStroke {
   points: DrawPoint[];
   /**
@@ -56,6 +73,18 @@ export interface PaintOpts {
   scale?: number;
   lineWidth?: number;
   partial?: PartialStroke | null;
+  /**
+   * Where the picture's top-left corner lands in the target context, in device
+   * px. Default 0,0.
+   *
+   * This has to be passed in rather than set by the caller beforehand, because
+   * the paint resets the transform outright (below) and so DISCARDS any
+   * translate already on the context. A caller that translated first got its
+   * picture painted at the origin and then clipped to where it meant to put it,
+   * which is why saved gallery cells showed a magnified crop of one corner of
+   * the drawing rather than the drawing (260728).
+   */
+  translate?: DrawPoint;
 }
 
 /** Paint a whole picture. The context is left with its transform restored. */
@@ -66,13 +95,13 @@ export function paintStrokes(
 ): void {
   const scale = opts.scale ?? 1;
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, opts.translate?.x ?? 0, opts.translate?.y ?? 0);
   if (opts.background) {
     ctx.fillStyle = opts.background;
     ctx.fillRect(0, 0, CANVAS_W * scale, CANVAS_H * scale);
   }
   ctx.scale(scale, scale);
-  ctx.strokeStyle = '#111111';
+  ctx.strokeStyle = '#000000';
   ctx.lineWidth = opts.lineWidth ?? LINE_WIDTH;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';

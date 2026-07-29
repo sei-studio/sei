@@ -6,23 +6,41 @@
  * its own rather than a panel in the chat screen, because the chat screen
  * splits top/bottom and this game wants canvas-beside-chat.
  *
- * Three phases map to three layouts:
- *   setup    title, a rounds slider, start
+ * Four phases map to four layouts:
+ *   setup    title, how many rounds, start
+ *   pick     three words to choose between, before each of the player's turns
  *   drawing  header (word or who is drawing, and the clock) + canvas + chat,
  *   turn-end same layout, revealed answer, input still live
  *   gallery  the sheet
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MAX_ROUNDS, MIN_ROUNDS, type DrawStroke } from '@shared/drawIpc';
+import { ROUNDS, type DrawStroke } from '@shared/drawIpc';
 import { useDrawStore } from '../../lib/stores/useDrawStore';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { DrawCanvas } from './DrawCanvas';
 import { DrawChat } from './DrawChat';
 import { DrawGallery } from './DrawGallery';
-import { SquiggleFrame, SquiggleRule } from './Squiggle';
+import { SquiggleFrame, SquiggleHighlight, SquiggleRule } from './Squiggle';
 import { FullscreenIcon, ExitFullscreenIcon } from '../icons';
+import { Doodle } from './Doodle';
+import { crown, horse, shrimp } from './doodles';
 import styles from './draw.module.css';
+
+/**
+ * The three doodles on the start page. Real drawings from real games rather
+ * than illustration: the point of the screen is to show what the game produces.
+ * The middle one is small and sits higher, and flips out of phase with the
+ * other two, so the row reads as three separate scraps of paper rather than one
+ * shaking block.
+ */
+const DOODLES = [
+  { data: shrimp, label: 'A hand-drawn shrimp', cls: styles.doodleLeft, wash: undefined },
+  // Only the crown is coloured in, and roughly: one spot of colour is a
+  // highlight, three would just be a palette.
+  { data: crown, label: 'A hand-drawn crown', cls: styles.doodleMid, wash: 'var(--accent)' },
+  { data: horse, label: 'A hand-drawn horse', cls: styles.doodleRight, wash: undefined },
+] as const;
 
 function formatClock(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -36,6 +54,8 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
   const savedTo = useDrawStore((s) => s.savedTo[characterId]);
   const open = useDrawStore((s) => s.open);
   const start = useDrawStore((s) => s.start);
+  const newGame = useDrawStore((s) => s.newGame);
+  const pickWord = useDrawStore((s) => s.pickWord);
   const sendStroke = useDrawStore((s) => s.sendStroke);
   const erase = useDrawStore((s) => s.erase);
   const sendChat = useDrawStore((s) => s.sendChat);
@@ -50,7 +70,6 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
   const setFullscreen = useUiStore((s) => s.setGameFullscreen);
   useEffect(() => () => setFullscreen(false), [setFullscreen]);
 
-  const [rounds, setRounds] = useState(3);
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
   const [now, setNow] = useState(() => Date.now());
 
@@ -102,8 +121,8 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
         <DrawGallery
           state={state}
           savedTo={savedTo ?? ''}
-          onSave={(png) => void saveGallery(characterId, png)}
-          onPlayAgain={() => void start(characterId, state.rounds)}
+          onSave={(png) => saveGallery(characterId, png)}
+          onPlayAgain={() => void newGame(characterId)}
           onClose={close}
         />
       </div>
@@ -114,42 +133,77 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
     return (
       <div className={styles.root}>
         <div className={styles.setup}>
-          <h1 className={styles.title}>Draw!</h1>
-          <p className={styles.tagline}>
-            Take turns drawing. Whoever is guessing types in the chat, and any sentence with the
-            word in it counts.
-          </p>
-          <SquiggleRule seed="setup-rule" />
+          <h1 className={`${styles.title} ${styles.titleBig}`}>DRAW!</h1>
 
-          <label className={styles.roundsLabel} htmlFor="draw-rounds">
-            {rounds} round{rounds === 1 ? '' : 's'}
-          </label>
-          <input
-            id="draw-rounds"
-            className={styles.slider}
-            type="range"
-            min={MIN_ROUNDS}
-            max={MAX_ROUNDS}
-            step={1}
-            value={rounds}
-            onChange={(e) => setRounds(Number(e.target.value))}
-          />
-          <p className={styles.roundsHint}>
-            You draw {rounds} and {state.aiName} draws {rounds}. Three minutes a turn.
-          </p>
+          <div className={styles.doodles}>
+            {DOODLES.map((d) => (
+              <Doodle
+                key={d.label}
+                doodle={d.data}
+                label={d.label}
+                wash={d.wash}
+                className={d.cls}
+              />
+            ))}
+          </div>
+
+          <p className={styles.tagline}>Take turns drawing and guessing. Three rounds.</p>
 
           <button
             type="button"
             className={styles.handBtn}
-            onClick={() => void start(characterId, rounds)}
+            data-on="true"
+            onClick={() => void start(characterId, ROUNDS)}
             disabled={starting}
           >
+            <SquiggleHighlight seed="start-hl" />
             <SquiggleFrame seed="start-btn" />
-            {starting ? 'Starting...' : 'Start'}
+            <span className={styles.btnLabel}>{starting ? 'Starting...' : 'Start!'}</span>
           </button>
           {error ? <p className={styles.error}>{error}</p> : null}
-          <button type="button" className={styles.handBtnQuiet} onClick={close}>
-            Back
+          <button
+            type="button"
+            className={styles.handBtnQuiet}
+            onClick={close}
+            aria-label="Leave Draw!"
+            title="Leave"
+          >
+            <SquiggleHighlight seed="setup-x-hl" />
+            <span className={styles.btnLabel}>x</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.phase === 'pick') {
+    return (
+      <div className={styles.root}>
+        <div className={styles.pick}>
+          <h1 className={styles.title}>Pick a word</h1>
+          <div className={styles.pickWords}>
+            {state.wordChoices.map((w) => (
+              <button
+                key={w}
+                type="button"
+                className={styles.pickWord}
+                onClick={() => pickWord(characterId, w)}
+              >
+                <SquiggleHighlight seed={`pick-hl-${w}`} />
+                <SquiggleFrame seed={`pick-${w}`} />
+                <span className={styles.btnLabel}>{w}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className={styles.handBtnQuiet}
+            onClick={close}
+            aria-label="Leave Draw!"
+            title="Leave"
+          >
+            <SquiggleHighlight seed="pick-x-hl" />
+            <span className={styles.btnLabel}>x</span>
           </button>
         </div>
       </div>
@@ -181,40 +235,52 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
             <span className={styles.clock}>{live ? formatClock(remaining) : ''}</span>
           </header>
 
-          <div className={styles.canvasFrame}>
-            <SquiggleFrame seed="canvas-frame" strokeWidth={2.5} />
-            <DrawCanvas
-              characterId={characterId}
-              strokes={state.strokes}
-              mode={live ? (iAmDrawing ? 'player-draw' : 'ai-draw') : 'view'}
-              tool={tool}
-              turnToken={state.turnKey}
-              onStroke={(stroke: DrawStroke) => sendStroke(characterId, stroke)}
-              onErase={(id) => erase(characterId, id)}
-            />
-          </div>
-
-          {/* Toolbar only exists on the player's own drawing turn. */}
-          {live && iAmDrawing ? (
-            <div className={styles.toolbar}>
-              {(['pen', 'eraser'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  className={tool === t ? `${styles.tool} ${styles.toolOn}` : styles.tool}
-                  onClick={() => setTool(t)}
-                  aria-pressed={tool === t}
-                  aria-label={t === 'pen' ? 'Pen' : 'Stroke eraser'}
-                  title={t === 'pen' ? 'Pen' : 'Eraser (removes a whole stroke)'}
-                >
-                  {tool === t ? <SquiggleFrame seed={`tool-${t}`} shape="ellipse" /> : null}
-                  <span className={styles.toolGlyph}>{t === 'pen' ? '/' : 'x'}</span>
-                </button>
-              ))}
+          {/* The paper is ONE drawn box holding the drawing area and the tools.
+              Its bottom edge is the bottom of the stage column, which is the
+              bottom of the chat input on the right, so the two columns finish
+              on the same line. The tools live in the space that buys, rather
+              than hanging off the outside of the box (260728). */}
+          <div className={styles.canvasBox}>
+            <SquiggleFrame seed="canvas-frame" />
+            <div className={styles.canvasFrame}>
+              <DrawCanvas
+                characterId={characterId}
+                strokes={state.strokes}
+                mode={live ? (iAmDrawing ? 'player-draw' : 'ai-draw') : 'view'}
+                tool={tool}
+                turnToken={state.turnKey}
+                clearToken={state.clearSeq}
+                onStroke={(stroke: DrawStroke) => sendStroke(characterId, stroke)}
+                onErase={(id) => erase(characterId, id)}
+              />
             </div>
-          ) : (
-            <div className={styles.toolbarSpacer} />
-          )}
+
+            {/* Toolbar only exists on the player's own drawing turn. Both tools
+                are always drawn in full: the ring is the tool's outline, not its
+                selected state, so neither of them appears only on hover. */}
+            {live && iAmDrawing ? (
+              <div className={styles.toolbar}>
+                {(['pen', 'eraser'] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className={styles.tool}
+                    data-on={tool === t ? 'true' : 'false'}
+                    onClick={() => setTool(t)}
+                    aria-pressed={tool === t}
+                    aria-label={t === 'pen' ? 'Pen' : 'Stroke eraser'}
+                    title={t === 'pen' ? 'Pen' : 'Eraser (removes a whole stroke)'}
+                  >
+                    <SquiggleHighlight seed={`tool-hl-${t}`} shape="ellipse" />
+                    <SquiggleFrame seed={`tool-${t}`} shape="ellipse" />
+                    <span className={styles.toolGlyph}>{t === 'pen' ? '/' : 'x'}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className={styles.toolbarSpacer} />
+            )}
+          </div>
         </div>
 
         <aside className={styles.side}>
@@ -230,10 +296,20 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
                 aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                 title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               >
-                {fullscreen ? <ExitFullscreenIcon size={16} /> : <FullscreenIcon size={16} />}
+                <SquiggleHighlight seed="fs-hl" />
+                <span className={styles.btnLabel}>
+                  {fullscreen ? <ExitFullscreenIcon size={16} /> : <FullscreenIcon size={16} />}
+                </span>
               </button>
-              <button type="button" className={styles.handBtnQuiet} onClick={close}>
-                End
+              <button
+                type="button"
+                className={styles.handBtnQuiet}
+                onClick={close}
+                aria-label="Leave Draw!"
+                title="Leave"
+              >
+                <SquiggleHighlight seed="game-x-hl" />
+                <span className={styles.btnLabel}>x</span>
               </button>
             </div>
           </div>

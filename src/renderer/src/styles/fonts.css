@@ -130,3 +130,26 @@
   font-style: normal;
   font-display: swap;
 }
+
+/* ── Roboto Mono (Draw! minigame only, Apache-2.0) ────────────────────
+ * The typed half of the Draw! surface: the round counter, the clock, the
+ * tagline. It pairs with Architects Daughter the way a printed form pairs
+ * with what someone wrote on it, and it is the one place in the app that
+ * does NOT use JetBrains Mono for its monospace. Nothing else should
+ * reference it.
+ */
+@font-face {
+  font-family: 'Roboto Mono';
+  src: url('/fonts/roboto-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto Mono';
+  src: url('/fonts/roboto-mono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}

@@ -24,6 +24,8 @@ import type {
 interface DrawApi {
   drawOpen(characterId: string): Promise<DrawGameState>;
   drawStart(characterId: string, rounds: number): Promise<DrawGameState>;
+  drawNewGame(characterId: string): Promise<DrawGameState>;
+  drawPickWord(characterId: string, word: string): Promise<DrawGameState>;
   drawGetState(characterId: string): Promise<DrawGameState | null>;
   drawStroke(characterId: string, stroke: DrawStroke): Promise<void>;
   drawErase(characterId: string, strokeId: string): Promise<void>;
@@ -53,10 +55,15 @@ export interface DrawStoreState {
 
   open: (characterId: string) => Promise<void>;
   start: (characterId: string, rounds: number) => Promise<void>;
+  /** Back to the setup screen after a game, round count preselected. */
+  newGame: (characterId: string) => Promise<void>;
+  /** Choose one of the offered words and begin the drawing turn. */
+  pickWord: (characterId: string, word: string) => void;
   sendStroke: (characterId: string, stroke: DrawStroke) => void;
   erase: (characterId: string, strokeId: string) => void;
   sendChat: (characterId: string, text: string) => void;
-  saveGallery: (characterId: string, pngDataUrl: string) => Promise<void>;
+  /** Resolves with the written file path, or null when the save failed. */
+  saveGallery: (characterId: string, pngDataUrl: string) => Promise<string | null>;
   end: (characterId: string) => Promise<void>;
 }
 
@@ -111,6 +118,28 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
       }
     },
 
+    newGame: async (characterId) => {
+      const api = drawApi();
+      if (!api.drawNewGame) return;
+      try {
+        applyState(await api.drawNewGame(characterId));
+        set((s) => ({
+          error: { ...s.error, [characterId]: null },
+          // The path to the last game's PNG belongs to that game.
+          savedTo: { ...s.savedTo, [characterId]: '' },
+        }));
+      } catch (err) {
+        set((s) => ({ error: { ...s.error, [characterId]: (err as Error).message } }));
+      }
+    },
+
+    // Fire-and-forget like the other in-turn intents: main answers with a
+    // pushed state either way, and a swallowed click is better than a button
+    // that can hang on a slow round trip.
+    pickWord: (characterId, word) => {
+      void drawApi().drawPickWord?.(characterId, word)?.catch(() => {});
+    },
+
     // Fire-and-forget: main pushes the resulting state, so there is nothing to
     // await and a dropped stroke must never block the pen.
     sendStroke: (characterId, stroke) => {
@@ -125,12 +154,14 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
 
     saveGallery: async (characterId, pngDataUrl) => {
       const api = drawApi();
-      if (!api.drawSaveGallery) return;
+      if (!api.drawSaveGallery) return null;
       try {
         const file = await api.drawSaveGallery(characterId, pngDataUrl);
         set((s) => ({ savedTo: { ...s.savedTo, [characterId]: file } }));
+        return file;
       } catch (err) {
         set((s) => ({ error: { ...s.error, [characterId]: (err as Error).message } }));
+        return null;
       }
     },
 
