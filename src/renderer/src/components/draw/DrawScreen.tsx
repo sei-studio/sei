@@ -54,7 +54,6 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
   const savedTo = useDrawStore((s) => s.savedTo[characterId]);
   const open = useDrawStore((s) => s.open);
   const start = useDrawStore((s) => s.start);
-  const newGame = useDrawStore((s) => s.newGame);
   const pickWord = useDrawStore((s) => s.pickWord);
   const sendStroke = useDrawStore((s) => s.sendStroke);
   const erase = useDrawStore((s) => s.erase);
@@ -122,7 +121,10 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
           state={state}
           savedTo={savedTo ?? ''}
           onSave={(png) => saveGallery(characterId, png)}
-          onPlayAgain={() => void newGame(characterId)}
+          // Play again really plays again (web build, 260729): the setup screen
+          // lost its round chooser, so there is no choice to send anyone back
+          // for. startDraw abandons or completes the finished session itself.
+          onPlayAgain={() => void start(characterId, ROUNDS)}
           onClose={close}
         />
       </div>
@@ -133,7 +135,7 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
     return (
       <div className={styles.root}>
         <div className={styles.setup}>
-          <h1 className={`${styles.title} ${styles.titleBig}`}>DRAW!</h1>
+          <h1 className={`${styles.title} ${styles.titleBig}`}>draw!</h1>
 
           <div className={styles.doodles}>
             {DOODLES.map((d) => (
@@ -158,7 +160,7 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
           >
             <SquiggleHighlight seed="start-hl" />
             <SquiggleFrame seed="start-btn" />
-            <span className={styles.btnLabel}>{starting ? 'Starting...' : 'Start!'}</span>
+            <span className={styles.btnLabel}>{starting ? 'Starting...' : 'Start'}</span>
           </button>
           {error ? <p className={styles.error}>{error}</p> : null}
           <button

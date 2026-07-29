@@ -14,7 +14,7 @@ import { paintStrokes } from './drawRender';
  * --hand-stroke in draw.module.css: one pen drew the pictures and the frames
  * around them, and that has to stay true at thumbnail size.
  */
-const CELL_PEN_CSS = 3.5;
+const CELL_PEN_CSS = 4.4;
 import { PLAYER_LABEL, composeCellPng, composeGalleryPng, galleryByRound } from './galleryExport';
 import { SquiggleFrame, SquiggleHighlight, SquiggleUnderline } from './Squiggle';
 import styles from './draw.module.css';
@@ -148,19 +148,12 @@ export function DrawGallery({
     [state.gallery, columns],
   );
 
-  const save = async (): Promise<void> => {
+  // Share: render the tile first and SHOW it. Nothing touches the Desktop
+  // until "Save to Desktop" is pressed inside the popup (web build, 260729).
+  const share = async (): Promise<void> => {
     if (saving) return;
-    setSaving(true);
-    try {
-      const png = await composeGalleryPng(state);
-      if (!png) return;
-      // The popup only opens on a WRITTEN file: "Saved!" over a failed save
-      // would be a lie, and the store surfaces the error line instead.
-      const file = await onSave(png);
-      if (file) setPopup({ png, saved: true });
-    } finally {
-      setSaving(false);
-    }
+    const png = await composeGalleryPng(state);
+    if (png) setPopup({ png, saved: false });
   };
 
   const openCell = async (entry: DrawGalleryEntry): Promise<void> => {
@@ -201,12 +194,20 @@ export function DrawGallery({
       ))}
 
       <div className={styles.galleryActions}>
-        <button type="button" className={styles.handBtn} onClick={() => void save()} disabled={saving}>
+        <button
+          type="button"
+          className={styles.handBtn}
+          data-on="true"
+          onClick={() => void share()}
+          disabled={saving}
+        >
           <SquiggleHighlight seed="save-hl" />
           <SquiggleFrame seed="save-btn" />
-          <span className={styles.btnLabel}>{saving ? 'Saving...' : 'Save to Desktop'}</span>
+          <span className={styles.btnLabel}>Share</span>
         </button>
-        <button type="button" className={styles.handBtn} data-on="true" onClick={onPlayAgain}>
+        {/* Share wears the highlight now, not Play again: the sheet exists to
+            be shared, and a second lit button was two primaries. */}
+        <button type="button" className={styles.handBtn} onClick={onPlayAgain}>
           <SquiggleHighlight seed="again-hl" />
           <SquiggleFrame seed="again-btn" />
           <span className={styles.btnLabel}>Play again</span>

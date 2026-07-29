@@ -507,12 +507,12 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
 }
 
 /**
- * Back to the setup screen after a game (the gallery's "play again").
+ * Back to the setup screen after a game.
  *
- * Deliberately NOT a straight restart: the round count is the one thing a
- * player is most likely to want to change once they have seen how long a game
- * actually takes, so this returns them to the screen where they choose it, with
- * their previous choice already selected.
+ * No longer what the gallery's "Play again" does (260729): with the round
+ * chooser gone from setup there is no choice to send anyone back for, so the
+ * button calls startDraw directly and really plays again. This stays on the
+ * contract for any surface that wants the setup screen itself.
  */
 export async function newDrawGame(characterId: string): Promise<DrawGameState> {
   if (requireDeps().isSummoned(characterId)) {
