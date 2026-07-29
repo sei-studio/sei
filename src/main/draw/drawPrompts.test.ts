@@ -4,6 +4,7 @@ import {
   buildDrawTurnBlock,
   buildGuessTurnBlock,
   buildTurnEndBlock,
+  drawContractBlock,
   roundsRecap,
   turnEndLine,
 } from './drawPrompts';
@@ -221,6 +222,39 @@ describe('the instructions come after the chat log', () => {
     for (const [drawer, guessed] of [['player', false], ['ai', true], ['ai', false]] as const) {
       expect(buildTurnEndBlock({ ...base, drawer, guessed })).toContain('Gloat');
     }
+  });
+});
+
+describe('the game is the referee', () => {
+  // 260729, live capture on the web build: the player guessed "credit card",
+  // the word was something else, and the character said "yes! that's it!",
+  // answered a follow-up with "that works too!", then posted a fabricated
+  // "[game] Round 2 of 3..." line copying the prompt's own system-line
+  // format. Nothing had told it the engine adjudicates guesses.
+  it('tells the character it never judges guesses or posts [game] lines', () => {
+    const contract = drawContractBlock({ playerName: PLAYER, rounds: 3, turnSeconds: 180 });
+    expect(contract).toContain('THE GAME ITSELF IS THE REFEREE');
+    expect(contract).toContain('never declare a guess correct');
+    expect(contract).toContain('never write a line that begins with [game]');
+    expect(contract).toContain('no guess so far has been right');
+  });
+
+  it('restates on the drawing turn that every guess so far is wrong', () => {
+    const block = buildDrawTurnBlock({
+      round: 1,
+      rounds: 3,
+      word: 'wallet',
+      aiName: AI,
+      playerName: PLAYER,
+      turnChat: [],
+      priorChat: [],
+      secondsLeft: 100,
+      strokesUsed: 0,
+      resuming: false,
+      gallery: [],
+    });
+    expect(block).toContain('every guess so far is WRONG');
+    expect(block).toContain('Never tell them a guess is right');
   });
 });
 

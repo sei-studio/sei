@@ -329,7 +329,9 @@ function toState(s: Session): DrawGameState {
     turnEndsAt: s.phase === 'drawing' ? s.turnEndsAt : null,
     strokes: s.strokes,
     clearSeq: s.clearSeq,
-    chat: s.chat,
+    // hidden lines are model-only (the character's own word slips) and must
+    // never reach the renderer: their modelText names the live word.
+    chat: s.chat.filter((m) => !m.hidden),
     scores: s.scores,
     gallery: s.gallery,
     playerName: s.playerName,
@@ -381,14 +383,29 @@ function systemLine(s: Session, text: string, modelText?: string): void {
  * it which side of the round it is on.
  */
 function wordSlipLine(s: Session, who: DrawRole): void {
+  if (who === 'ai') {
+    // The character's own slip is dropped SILENTLY (260729). A public "Marv
+    // can't type this word!" line was tried first, and live it read as the
+    // game scolding the character mid-round, drawing the player's eye to a
+    // failure they otherwise never see. Only the character is told, via a
+    // hidden line, so the thread stays coherent and it does not re-send it.
+    s.chat.push({
+      id: randomUUID(),
+      from: 'player',
+      text: '',
+      at: Date.now(),
+      system: true,
+      hidden: true,
+      modelText:
+        'Your last line was NOT sent: it contained your secret word. ' +
+        `${s.playerName} never saw it. Do not repeat it and do not mention this; just carry on drawing.`,
+    });
+    return;
+  }
   systemLine(
     s,
-    who === 'ai'
-      ? `${s.aiName} can't type this word! They're drawing it, not guessing it.`
-      : "You can't type this word! You're drawing it, not guessing it.",
-    who === 'ai'
-      ? 'You cannot type this word! You are drawing it, not guessing it. Do not respond to this message.'
-      : `${s.playerName} typed the word they are drawing, so the game hid the line. You did not see it.`,
+    "You can't type this word! You're drawing it, not guessing it.",
+    `${s.playerName} typed the word they are drawing, so the game hid the line. You did not see it.`,
   );
 }
 
@@ -1129,7 +1146,11 @@ async function runGuessCall(
       .join(' ')
       .trim();
     // One look produces one or two short lines, never a wall.
-    return splitReply(text, punctuation).slice(0, 2).map(plainLine).filter(Boolean);
+    return splitReply(text, punctuation)
+      .slice(0, 2)
+      .map(plainLine)
+      .filter(Boolean)
+      .filter((l) => !isFakeGameLine(l));
   } finally {
     clearTimeout(timeout);
     s.guess.ctrl = null;
@@ -1200,7 +1221,7 @@ async function runTurnEndReaction(
       // is deliberately NOT redacted.
       for (const raw of splitReply(text, punctuation).slice(0, 2)) {
         const line = plainLine(raw);
-        if (!line || isSilence(line)) continue;
+        if (!line || isSilence(line) || isFakeGameLine(line)) continue;
         say(s, 'ai', line);
       }
       push(s);
@@ -1220,6 +1241,17 @@ async function runTurnEndReaction(
  */
 function isSilence(line: string): boolean {
   return /^[([]?\s*(silence|says nothing|stays? silent|no reply)\s*[)\]]?[.!]?$/i.test(line.trim());
+}
+
+/**
+ * Fabricated game-state backstop (260729, live capture on the web build). The
+ * prompt renders real system lines as "[game] Round 2 of 3. ..." and the model
+ * copied the format into chat, announcing a round change that had not
+ * happened. The prompt forbids it (drawContractBlock's referee paragraph) and
+ * this drops whatever slips through: the [game] prefix belongs to the game.
+ */
+function isFakeGameLine(line: string): boolean {
+  return /^\s*\[\s*game\s*\]/i.test(line);
 }
 
 // ── the character's drawing turn ─────────────────────────────────────────────
@@ -1368,6 +1400,15 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
     if (pending.length > 0) {
       notes.push(
         `${s.playerName} says: ${pending.map((t) => `"${t}"`).join(' ')}\n` +
+          // 260729, live capture (web build): the player guessed "credit
+          // card", the word was something else, and the character answered
+          // "yes! that's it!" then role-played the round ending. It was never
+          // told the engine adjudicates, so a close guess FELT right and it
+          // called the win.
+          'The game has already checked every one of those lines against your word: NONE of them is it. ' +
+          'A correct guess ends the turn on the spot, so if you are reading this, they have not got it, ' +
+          'however close a line feels. Never tell them a guess is right or "counts". You may say a guess ' +
+          'is close or cold, but only the game says when it is got. ' +
           'Answer if it wants an answer (never with the word), then carry on drawing. ' +
           'A reply on its own is not an answer to "draw more" or "I cannot tell what that is": ' +
           'if they are asking for more picture, put more picture on the page in the same turn.',
@@ -1422,7 +1463,7 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
       let slipped = false;
       for (const raw of splitReply(b.text, punctuation).slice(0, 2)) {
         const part = plainLine(raw);
-        if (!part) continue;
+        if (!part || isFakeGameLine(part)) continue;
         // Backstop for the never-say-your-word rule. The line is dropped
         // WHOLE rather than patched: 260728 replaced the answer with "[...]"
         // in place, which still pointed at exactly where the word went and

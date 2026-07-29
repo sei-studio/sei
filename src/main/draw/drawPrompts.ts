@@ -139,6 +139,16 @@ export function drawContractBlock(opts: {
     `You are playing Draw!, a sketch-guessing game, against ${playerName} inside the Sei app. ` +
       `The game is ${rounds} round${rounds === 1 ? '' : 's'}. Each round you both get a turn: one of you draws a secret word ` +
       `while the other guesses in chat. A turn lasts ${turnSeconds} seconds and ends early the moment the guesser says the word.`,
+    // 260729, live capture (web build): the character told the player a wrong
+    // guess was correct ("yes! that's it!") and then invented a round change,
+    // because nothing told it the engine adjudicates. This paragraph is that
+    // fact.
+    'THE GAME ITSELF IS THE REFEREE. It checks every chat line against the secret word the instant it is sent, ' +
+      'ends the turn by itself when the word is said, keeps the score, and posts lines marked [game] to announce ' +
+      'all of it. You never do any of that: never declare a guess correct, never award or claim a point, never ' +
+      'announce that a turn or round has started or ended, and never write a line that begins with [game], that ' +
+      'prefix belongs to the game and the game drops any line of yours that fakes it. ' +
+      'While a turn is still running, no guess so far has been right, or the turn would already be over.',
     'Every plain-text line you write is sent to the game chat, exactly as written, and the other player sees it. ' +
       'Keep lines short, one or two at a time, the way someone actually talks while doodling.',
     // Both of these are stated here as well as in the surface baseline because
@@ -404,6 +414,10 @@ export function buildDrawTurnBlock(opts: {
       'The game DELETES any line of yours that contains it, so saying it costs you the line and tells them nothing. ' +
       'If they ask for a hint, give one IN CHARACTER: describe around it, ' +
       'say where you would find one, say what it rhymes with, complain that your drawing is obviously fine. Never spell it out.',
+    '',
+    `The game checks ${playerName}'s guesses, not you: a right guess ends the turn on the spot, with a [game] line. ` +
+      'So while this turn is running, every guess so far is WRONG, even one that feels close enough to count. ' +
+      'Never tell them a guess is right. Warmer, colder, teasing: yours. The win itself: the game announces it.',
     '',
     // A live test had Haiku open with "I'll draw a lighthouse for you! Let me
     // start with the main structure." — assistant-style narration that both
