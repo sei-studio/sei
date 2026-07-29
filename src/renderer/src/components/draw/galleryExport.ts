@@ -25,15 +25,11 @@
 
 import { CANVAS_H, CANVAS_W, type DrawGalleryEntry, type DrawGameState } from '@shared/drawIpc';
 import { paintStrokes } from './drawRender';
-import { squiggleRectPolylines, type SquigglePoint } from './squigglePath';
+import { squiggleBlob, squiggleRectPolylines, type SquigglePoint } from './squigglePath';
 
 const HAND_FONT = "'Architects Daughter', 'Comic Sans MS', cursive";
 
-/**
- * The player is "you" on the on-screen sheet. The EXPORTED tile uses their real
- * name instead (this is only its fallback), because the file is made to be
- * posted and "you" means the wrong person once it leaves this machine.
- */
+/** The player is "you" on the on-screen sheet: it is their copy of the game. */
 export const PLAYER_LABEL = 'you';
 
 /** Where the tile sends anyone who sees it. */
@@ -46,6 +42,9 @@ const PAD = 56;
 const PEN = 4;
 
 const TITLE_PX = 128;
+/* The title used to sit right at the top pad; a third of its own height of
+   extra air above reads less like a cropped screenshot. */
+const TITLE_DROP = 44;
 const BODY_PX = 26;
 const GAP = 18;
 const ROW_LABEL_H = 40;
@@ -68,6 +67,7 @@ function squiggleFrame(
   w: number,
   h: number,
   seed: string,
+  amp?: number,
 ): void {
   ctx.save();
   ctx.translate(x, y);
@@ -75,7 +75,9 @@ function squiggleFrame(
   ctx.lineWidth = PEN;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (const side of squiggleRectPolylines(w, h, seed)) stroke(ctx, side);
+  // The default 1.8px wobble reads hand-drawn at cell size but disappears on
+  // a big frame; callers drawing large pass a proportionally larger amp.
+  for (const side of squiggleRectPolylines(w, h, seed, amp ?? 1.8)) stroke(ctx, side);
   ctx.restore();
 }
 
@@ -176,16 +178,30 @@ export async function composeGalleryPng(state: DrawGameState): Promise<string> {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // ── title ──────────────────────────────────────────────────────────────
-  ctx.fillStyle = '#000000';
+  // ── title: big, centred, highlighted ───────────────────────────────────
+  // Ordinary letter casing, like every other handwritten word on the surface.
+  const title = 'draw!';
   ctx.font = `${TITLE_PX}px ${HAND_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText('DRAW!', SIZE / 2, PAD + TITLE_PX * 0.78);
+  const titleBase = PAD + TITLE_DROP + TITLE_PX * 0.78;
+  // The highlighter goes down first: a rough yellow blob (the same shape the
+  // on-screen swipes use) sitting BEHIND the black text, never under it as a
+  // clean rectangle.
+  const tw = ctx.measureText(title).width;
+  const hlW = tw + 72;
+  const hlH = TITLE_PX * 1.02;
+  ctx.save();
+  ctx.translate((SIZE - hlW) / 2, titleBase - TITLE_PX * 0.74);
+  ctx.fillStyle = '#ffe500';
+  ctx.fill(new Path2D(squiggleBlob(hlW, hlH, 'tile-title-hl')));
+  ctx.restore();
+  ctx.fillStyle = '#000000';
+  ctx.fillText(title, SIZE / 2, titleBase);
   ctx.textAlign = 'left';
 
   // ── the two rows, vertically centred in what is left ───────────────────
-  const headBottom = PAD + TITLE_PX;
+  const headBottom = PAD + TITLE_DROP + TITLE_PX;
   const footTop = SIZE - PAD - BODY_PX * 1.6;
   // Deliberate air under the title: at this size the word is the loudest thing
   // on the sheet and the drawings have to start clear of it, not tucked under.
@@ -199,16 +215,134 @@ export async function composeGalleryPng(state: DrawGameState): Promise<string> {
   // lot of slack, and dead-centring it drops the block onto the credit line.
   let y = bandTop + Math.max(0, (bandH - blockH) * 0.4);
 
-  const playerName = (state.playerName ?? '').trim() || PLAYER_LABEL;
-  y = drawRow(ctx, { x, y, name: playerName, entries: playerEntries, columns, cell });
+  // "human" and "AI", never names (web build, 260729): the tile gets posted
+  // where "you" points at nobody and the character's name means nothing, and
+  // the pairing says outright which row a person drew.
+  y = drawRow(ctx, { x, y, name: 'human', entries: playerEntries, columns, cell });
   y += ROW_GAP;
-  drawRow(ctx, { x, y, name: state.aiName, entries: aiEntries, columns, cell });
+  drawRow(ctx, { x, y, name: 'AI', entries: aiEntries, columns, cell });
 
   // ── footer ─────────────────────────────────────────────────────────────
   ctx.fillStyle = '#000000';
   ctx.font = `${BODY_PX}px ${HAND_FONT}`;
   ctx.textAlign = 'right';
   ctx.fillText(CREDIT, SIZE - PAD, SIZE - PAD);
+
+  return c.toDataURL('image/png');
+}
+
+/**
+ * One drawing as its own share tile (web build, 260729), opened by clicking a
+ * gallery cell. Same square sheet, same pen, same credit as the game tile. The
+ * caption says "according to a human / an AI, this is a {word}" with the word
+ * on the highlighter: the drawer is named by species, not by name, because
+ * this file gets posted where "you" and the character's name mean nothing.
+ */
+export async function composeCellPng(
+  entry: DrawGalleryEntry,
+  drawer: 'player' | 'ai',
+): Promise<string> {
+  try {
+    await (document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
+  } catch {
+    /* font loading API unavailable — fall through with the fallback face */
+  }
+
+  const c = document.createElement('canvas');
+  c.width = SIZE;
+  c.height = SIZE;
+  const ctx = c.getContext('2d');
+  if (!ctx) return '';
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // ── caption: two centred lines, broken after the comma ─────────────────
+  const word = entry.word.toLowerCase();
+  const a = /^[aeiou]/i.test(word) ? 'an' : 'a';
+  const line1 = drawer === 'player' ? 'according to a human,' : 'according to an AI,';
+  const pre = `this is ${a} `;
+  const post = '.';
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  // Shrink to fit the WIDER line: the sentence is fixed but the word is the
+  // player's, so neither length is under our control.
+  let capPx = 76;
+  const widest = (): number => {
+    ctx.font = `${capPx}px ${HAND_FONT}`;
+    const l2 = ctx.measureText(pre).width + ctx.measureText(word).width + ctx.measureText(post).width;
+    return Math.max(ctx.measureText(line1).width, l2);
+  };
+  while (capPx > 40 && widest() > SIZE - PAD * 2) capPx -= 2;
+  const preW = ctx.measureText(pre).width;
+  const wordW = ctx.measureText(word).width;
+  const line2W = preW + wordW + ctx.measureText(post).width;
+  const x2 = (SIZE - line2W) / 2;
+
+  // ── the drawing box, placed before the caption is ──────────────────────
+  // The caption used to hang from the top pad and the box was hung off the
+  // caption, which left visibly more air below the text than above it
+  // (260729). Now the box is placed off a NOMINAL caption bottom and the
+  // caption is then centred in the air actually left above the box, so its
+  // distance to the sheet top equals its distance to the frame.
+  const nomBase2 = PAD + 30 + capPx * 0.78 + capPx * 1.35;
+  const bandTop = nomBase2 + capPx * 0.5 + 40;
+  const footTop = SIZE - PAD - BODY_PX * 1.6;
+  const bandH = footTop - bandTop;
+  // Deliberately narrower than the sheet (260729): a frame running pad to
+  // pad read as a border on the tile, not a framed drawing.
+  const w = Math.min((SIZE - PAD * 2) * 0.78, (bandH * CANVAS_W) / CANVAS_H);
+  const h = (w * CANVAS_H) / CANVAS_W;
+  const x = (SIZE - w) / 2;
+  const y = bandTop + Math.max(0, (bandH - h) * 0.45);
+
+  // Caption block height: line1 cap top through line2's descender.
+  const blockH = capPx * (0.78 + 1.35 + 0.22);
+  const base1 = (y - blockH) / 2 + capPx * 0.78;
+  const base2 = base1 + capPx * 1.35;
+
+  // The highlighter goes down first, behind the WORD only (the full stop
+  // stays on plain paper). Bleed is modest: at 26px the swipe swallowed the
+  // tail of the word before it.
+  ctx.save();
+  ctx.translate(x2 + preW - 12, base2 - capPx * 0.74);
+  ctx.fillStyle = '#ffe500';
+  ctx.fill(
+    new Path2D(squiggleBlob(wordW + 24, capPx * 1.05, `cell-cap-hl-${drawer}-${entry.round}`)),
+  );
+  ctx.restore();
+
+  ctx.fillStyle = '#000000';
+  ctx.textAlign = 'center';
+  ctx.fillText(line1, SIZE / 2, base1);
+  ctx.textAlign = 'left';
+  ctx.fillText(pre, x2, base2);
+  ctx.fillText(word, x2 + preW, base2);
+  ctx.fillText(post, x2 + preW + wordW, base2);
+
+  // ── the drawing ────────────────────────────────────────────────────────
+  // amp 7: the wobble has to scale with the frame to stay visibly a pen.
+  squiggleFrame(ctx, x, y, w, h, `cell-pop-${drawer}-${entry.round}`, 7);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  const scale = w / CANVAS_W;
+  paintStrokes(ctx, entry.strokes, {
+    translate: { x, y },
+    scale,
+    // The same 4 device px the game tile holds its pen at.
+    lineWidth: PEN / scale,
+  });
+  ctx.restore();
+
+  // ── footer ─────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#000000';
+  ctx.font = `${BODY_PX}px ${HAND_FONT}`;
+  ctx.textAlign = 'right';
+  ctx.fillText(CREDIT, SIZE - PAD, SIZE - PAD);
+  ctx.textAlign = 'left';
 
   return c.toDataURL('image/png');
 }

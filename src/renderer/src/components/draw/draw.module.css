@@ -83,7 +83,7 @@
   -webkit-font-smoothing: antialiased;
 }
 
-.root :is(.title, .galleryTitle) {
+.root .title {
   -webkit-text-stroke: var(--hand-text-stroke-title) currentColor;
 }
 
@@ -759,8 +759,11 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  /* Everything on this page is centred as a block; the row NAMES read
+     left-aligned because each row section shrinks to its drawings. */
+  align-items: center;
   gap: 8px;
-  width: min(1320px, 94%);
+  width: min(1650px, 94%);
   height: 100%;
   padding: 24px 0;
   overflow: hidden;
@@ -768,13 +771,6 @@
      fit" is only true under border-box, and this rule is load-bearing enough
      that it should not depend on a stylesheet this module does not own. */
   box-sizing: border-box;
-}
-
-.galleryTitle {
-  margin: 0;
-  font-size: var(--fs-title);
-  font-weight: 400;
-  flex: 0 0 auto;
 }
 
 /* The two rows share whatever the header and actions leave behind, and are
@@ -797,12 +793,22 @@
   flex: 0 0 auto;
 }
 
+/* A flex row, not a 1fr grid: the drawings are height-driven (aspect ratio
+   off the row height), so equal-width columns left a moat of slack around
+   each one. Flex lets every cell hug its art and the row shrink to fit,
+   which is what makes the centred sections read as one tight block. */
 .cells {
-  display: grid;
-  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
-  gap: 14px;
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
   flex: 1 1 auto;
   min-height: 0;
+  max-width: 100%;
+}
+
+.cells > .cell {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .cell {
@@ -826,6 +832,12 @@
   color: var(--ink);
 }
 
+/* A finished drawing opens as its own share tile. The affordance is the
+   cursor (and the keyboard focus ring); a hover tint would be a second ink. */
+.cellArtClick {
+  cursor: pointer;
+}
+
 .cellCanvas {
   display: block;
   width: 100%;
@@ -842,17 +854,24 @@
   flex: 0 0 auto;
 }
 
-/* Only the misses are marked. A "got it" on everything else was noise, and the
-   absence of this is the same information. */
-.missed {
-  composes: typed;
+/* A guessed word wears the highlighter; a missed one goes bare. The absence
+   is the same information without a second ink. */
+.cellWordText {
+  position: relative;
+  padding: 0 4px;
+}
+
+.cellWordGuessed .highlightHost {
+  opacity: 1;
 }
 
 .galleryActions {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 14px;
+  /* 26: the "draw!" header is gone, so the air it occupied is spent here,
+     between the drawings and the buttons. */
+  margin-top: 26px;
   flex: 0 0 auto;
 }
 
@@ -900,6 +919,12 @@
   display: block;
   width: min(38vh, 46vw, 380px);
   height: auto;
+}
+
+.savePopupActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 @media (max-width: 900px) {
