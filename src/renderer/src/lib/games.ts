@@ -55,6 +55,18 @@ export const GAMES: GameDef[] = [
       `Whoever is guessing types in the chat, and any sentence with the word in it counts.`,
   },
   {
+    // Preview of the feature living on v0.5-backseat; the tile ships ahead of
+    // the code so the picker says what is coming next.
+    id: 'backseat',
+    name: 'Backseat',
+    available: false,
+    soon: true,
+    image: './img/game-backseat.svg',
+    description: (name) =>
+      `Share a window and ${name} watches you play, reacting as it happens and ` +
+      `saying what they want to see you try next. Works with any game.`,
+  },
+  {
     id: 'stardew',
     name: 'Stardew Valley',
     available: false,
@@ -63,6 +75,16 @@ export const GAMES: GameDef[] = [
     description: (name) =>
       `Farm side by side in Pelican Town. ${name} joins your co-op farm to plant, ` +
       `mine, and chat through the seasons with you.`,
+  },
+  {
+    id: 'dontstarve',
+    name: "Don't Starve",
+    available: false,
+    soon: true,
+    image: './img/game-dontstarve.jpg',
+    description: (name) =>
+      `Survive the Constant together. ${name} gathers, fights, and keeps the fire ` +
+      `going with you through the night.`,
   },
   {
     id: 'focus',
