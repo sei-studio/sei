@@ -201,6 +201,16 @@
   flex: 0 0 auto;
 }
 
+/* The rule svg must not be inline: an inline svg sits on the text baseline of
+   the host's line box, and at the handwritten face's 22px metrics that paints
+   the line ~18px BELOW the 8px host (the host's rect stays put, so the layout
+   math looks aligned while the pixels are not). Block pins the svg to the
+   host's top, which is what makes the side rule land on the canvas box's top
+   line. */
+.rule svg {
+  display: block;
+}
+
 /* Underline for the quiet buttons. It replaces text-decoration, which is the
    one straight line CSS draws for you. */
 .underline {
