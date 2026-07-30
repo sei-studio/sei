@@ -78,7 +78,7 @@ export const GAMES: GameDef[] = [
   },
   {
     id: 'dontstarve',
-    name: "Don't Starve",
+    name: "Don't Starve Together",
     available: false,
     soon: true,
     image: './img/game-dontstarve.jpg',
