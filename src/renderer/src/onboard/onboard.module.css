@@ -269,11 +269,12 @@
 /* Walk bob — lives on the INNER wrapper because .sui's transform is the
    slide transition and .suiImg's is the leaving flip. 520ms = TWO stride
    frames (WALK_FRAME_MS 260), phase-locked to the frame cut (both start on
-   the same pose change): she RISES through the stand frame, peaks exactly
-   on the swap to stride, and FALLS through it — one bounce per step
+   the same pose change). steps(1) makes it a hard SNAP, not a smooth
+   ease: down for the stand frame, popped up for the stride frame, cutting
+   in the same instant the sprite swaps — the bounce is drawn, not tweened
    (260730). */
 .suiWalking {
-  animation: suiBob 520ms ease-in-out infinite;
+  animation: suiBob 520ms steps(1, end) infinite;
 }
 
 @keyframes suiBob {

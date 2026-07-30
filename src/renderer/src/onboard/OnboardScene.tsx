@@ -45,10 +45,10 @@ const SUI = {
 };
 
 // Slower stride to match the slower walk slide (260729). The CSS bob cycle
-// (suiBob, 520ms) is 2x this on purpose (260730): she rises through the
-// stand frame, peaks on the swap to stride, and falls through it. Both
-// clocks start on the same pose change; change one period and you must
-// change the other.
+// (suiBob, 520ms) is 2x this on purpose (260730): a steps(1) SNAP — down
+// for the stand frame, up for the stride frame, cutting the instant the
+// sprite swaps. Both clocks start on the same pose change; change one
+// period and you must change the other.
 const WALK_FRAME_MS = 260;
 // Fast flap: at the old 240ms a short line finished typing after only two or
 // three talk frames, which read as a barely-moving mouth (260729).
