@@ -420,6 +420,7 @@ const api: RendererApi = {
   windowMinimize: () => ipcRenderer.invoke(IpcChannel.window.minimize),
   windowMaximizeToggle: () => ipcRenderer.invoke(IpcChannel.window.maximizeToggle),
   windowClose: () => ipcRenderer.invoke(IpcChannel.window.close),
+  appQuit: () => ipcRenderer.invoke(IpcChannel.app.quit),
   windowIsMaximized: () => ipcRenderer.invoke(IpcChannel.window.isMaximized),
   windowFullscreenToggle: () => ipcRenderer.invoke(IpcChannel.window.fullscreenToggle),
   windowIsFullscreen: () => ipcRenderer.invoke(IpcChannel.window.isFullscreen),

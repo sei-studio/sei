@@ -56,8 +56,8 @@ export const ZH_ONBOARD: Record<string, string> = {
   Androgynous: '中性',
 
   /* ── Dialogue controls ────────────────────────────────────────────── */
-  Yep: '是呀',
-  Nah: '不是',
+  // 'Yes'/'No' (the newQ choices since 260730) live in games.ts ('是'/'否'),
+  // which is spread later and would win over any entry here anyway.
   Back: '返回',
   'Your name': '你的名字',
   'Sounds fun': '听起来不错',
@@ -69,6 +69,9 @@ export const ZH_ONBOARD: Record<string, string> = {
   "Let's go": '出发！',
   'or {enter} to continue': '或按 {enter} 继续',
   'Quit Sei': '退出 Sei',
+  'Mute voice': '静音',
+  'Unmute voice': '取消静音',
+  'Voice volume': '音量',
   Click: '点击',
   'Try again': '重试',
   'Setting up...': '正在设置……',

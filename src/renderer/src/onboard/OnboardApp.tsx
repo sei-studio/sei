@@ -48,18 +48,67 @@ import threeDF from '../assets/art-styles/3d-female.jpg';
 import threeDM from '../assets/art-styles/3d-male.jpg';
 import styles from './onboard.module.css';
 
-/**
- * Language corner (260730): a very small globe, top-right, above the drag
- * strip. Click reveals a chrome-less two-line menu (EN / 中文); picking one
- * flips the live UI language and persists config.ui_language so the rest of
- * onboarding, and every character created after it, follows.
- */
-function LangCorner(): React.ReactElement {
+/* ── Corner controls (260730) ────────────────────────────────────────────
+   One always-visible row in the top-right: [volume] [language] [quit].
+   Chrome-less by design — bare ink on the sky, no boxes. Each control's
+   dropdown opens on HOVER (only two languages, so a popup would be
+   overkill): the globe reveals two text items (EN / 中文), the speaker
+   reveals a minimal vertical volume slider. Clicking the speaker toggles
+   mute; clicking a language flips the live UI language and persists
+   config.ui_language so the rest of onboarding, and every character created
+   after it, follows. The X quits the whole app (appQuit): a bare window
+   close on macOS left Sei sitting in the dock with no window. */
+
+export interface VoicePrefs {
+  volume: number;
+  muted: boolean;
+}
+
+const VOICE_PREFS_KEY = 'sei.onboard.voice';
+
+function loadVoicePrefs(): VoicePrefs {
+  try {
+    const raw = localStorage.getItem(VOICE_PREFS_KEY);
+    if (raw) {
+      const v = JSON.parse(raw) as Partial<VoicePrefs>;
+      if (typeof v.volume === 'number' && Number.isFinite(v.volume) && typeof v.muted === 'boolean') {
+        return { volume: Math.min(1, Math.max(0, v.volume)), muted: v.muted };
+      }
+    }
+  } catch {
+    /* fall through to defaults */
+  }
+  // Voice ON by default.
+  return { volume: 0.85, muted: false };
+}
+
+function VolumeIcon({ muted }: { muted: boolean }): React.ReactElement {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" />
+      {muted ? (
+        <path d="m15 9 5 6M20 9l-5 6" />
+      ) : (
+        <>
+          <path d="M14.5 9.5a3.6 3.6 0 0 1 0 5" />
+          <path d="M17 7a7 7 0 0 1 0 10" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function CornerControls(props: {
+  prefs: VoicePrefs;
+  onPrefs: (next: VoicePrefs) => void;
+}): React.ReactElement {
+  const { prefs, onPrefs } = props;
+  const tt = useT();
   const lang = useLangStore((s) => s.lang);
   const setLang = useLangStore((s) => s.setLang);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<'vol' | 'lang' | null>(null);
   const pick = (next: UiLanguage): void => {
-    setOpen(false);
+    setOpen(null);
     if (next === lang) return;
     setLang(next);
     void (async () => {
@@ -72,39 +121,77 @@ function LangCorner(): React.ReactElement {
     })();
   };
   return (
-    <div className={styles.langCorner}>
+    <div className={styles.corner} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={styles.cornerItem}
+        onMouseEnter={() => setOpen('vol')}
+        onMouseLeave={() => setOpen((o) => (o === 'vol' ? null : o))}
+      >
+        <button
+          type="button"
+          className={styles.cornerBtn}
+          aria-label={prefs.muted ? tt('Unmute voice') : tt('Mute voice')}
+          onClick={() => onPrefs({ ...prefs, muted: !prefs.muted })}
+        >
+          <VolumeIcon muted={prefs.muted} />
+        </button>
+        {open === 'vol' ? (
+          <div className={styles.volDrop}>
+            <input
+              className={styles.volRange}
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={prefs.muted ? 0 : prefs.volume}
+              aria-label={tt('Voice volume')}
+              // Dragging the slider always unmutes — a muted slider that
+              // moves silently reads as broken.
+              onChange={(e) => onPrefs({ volume: Number(e.target.value), muted: false })}
+            />
+          </div>
+        ) : null}
+      </div>
+      <div
+        className={styles.cornerItem}
+        onMouseEnter={() => setOpen('lang')}
+        onMouseLeave={() => setOpen((o) => (o === 'lang' ? null : o))}
+      >
+        <button type="button" className={styles.cornerBtn} aria-label={tt('Language')} aria-expanded={open === 'lang'}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+          </svg>
+        </button>
+        {open === 'lang' ? (
+          <div className={styles.langMenu} role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              className={lang === 'en' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
+              onClick={() => pick('en')}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={lang === 'zh' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
+              onClick={() => pick('zh')}
+            >
+              中文
+            </button>
+          </div>
+        ) : null}
+      </div>
       <button
         type="button"
-        className={styles.langGlobeBtn}
-        aria-label="Language"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        className={`${styles.cornerBtn} ${styles.cornerClose}`}
+        aria-label={tt('Quit Sei')}
+        onClick={() => void sei.appQuit()}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-        </svg>
+        ×
       </button>
-      {open ? (
-        <div className={styles.langMenu} role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            className={lang === 'en' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
-            onClick={() => pick('en')}
-          >
-            EN
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={lang === 'zh' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
-            onClick={() => pick('zh')}
-          >
-            中文
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -564,6 +651,48 @@ export function OnboardApp({
       )
     : '';
   const tw = useTypewriter(lineText);
+
+  // ── Sui's voice-over (260730) ──────────────────────────────────────────
+  // Pre-generated ElevenLabs clips (her live call voice: mrmaApeLxpgZi4RK7oGq,
+  // synthesized at speed 0.8 / stability 0.95) bundled under
+  // public/voice/onboard/<line>.<en|zh>.mp3. Playback mirrors calls: rate
+  // 1.25 with preservesPitch OFF cancels the synthesis slowdown and leaves
+  // only the pitch lift (see shared/voicePitch.ts). The two {name} lines
+  // (iSee/job) were generated name-free, so the clip never has to speak a
+  // name the player typed. 'dots' is silent by design.
+  const uiLang = useLangStore((s) => s.lang);
+  const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(loadVoicePrefs);
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const effVolume = voicePrefs.muted ? 0 : voicePrefs.volume;
+  useEffect(() => {
+    try {
+      localStorage.setItem(VOICE_PREFS_KEY, JSON.stringify(voicePrefs));
+    } catch {
+      /* volume just won't persist */
+    }
+    // Live-apply to the playing clip so mute/slider act mid-sentence.
+    if (voiceAudioRef.current) voiceAudioRef.current.volume = effVolume;
+  }, [voicePrefs, effVolume]);
+  useEffect(() => {
+    if (!line || line === 'dots') return undefined;
+    const clip = line === 'ready' && genCharacterIdRef.current ? 'readyGen' : line;
+    const audio = new Audio(`./voice/onboard/${clip}.${uiLang}.mp3`);
+    audio.playbackRate = 1.25;
+    audio.preservesPitch = false;
+    audio.volume = effVolume;
+    voiceAudioRef.current = audio;
+    void audio.play().catch(() => {
+      /* missing clip or autoplay refusal: text carries the line */
+    });
+    return () => {
+      audio.pause();
+      if (voiceAudioRef.current === audio) voiceAudioRef.current = null;
+    };
+    // effVolume deliberately not a dep: volume changes apply live above
+    // without restarting the clip. uiLang IS one: a language flip restarts
+    // the line (matching the typewriter, which also restarts).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [line, uiLang]);
   useEffect(() => {
     if (!line) return;
     // The panic sequence holds the shock face straight through the
@@ -771,7 +900,7 @@ export function OnboardApp({
 
   return (
     <div className={styles.root}>
-      <LangCorner />
+      <CornerControls prefs={voicePrefs} onPrefs={setVoicePrefs} />
       <div
         className={styles.card}
         onClick={clickAdvances ? advance : line && !tw.done ? tw.skip : undefined}
@@ -882,17 +1011,6 @@ export function OnboardApp({
           )
         ) : null}
 
-        <button
-          className={styles.closeBtn}
-          aria-label={tt('Quit Sei')}
-          onClick={(e) => {
-            e.stopPropagation();
-            void sei.windowClose();
-          }}
-        >
-          ×
-        </button>
-
         <div className={phase.k === 'fade' ? `${styles.fade} ${styles.fadeOn} ${fadeThemeClass()}` : styles.fade} />
       </div>
     </div>
@@ -936,7 +1054,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
       return (
         <div className={styles.choices}>
           <button className={styles.pill} onClick={() => goLine('nameQ')}>
-            {tt('Yep')}
+            {tt('Yes')}
           </button>
           <button
             className={styles.pill}
@@ -945,7 +1063,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
               goLine('welcomeBack');
             }}
           >
-            {tt('Nah')}
+            {tt('No')}
           </button>
           <button className={styles.quietLink} onClick={() => goLine('runPlace')}>
             {tt('Back')}

@@ -63,44 +63,70 @@
   -webkit-app-region: drag;
 }
 
-/* ── Language corner (260730) ─────────────────────────────────────────────
-   A very small globe in the top-right that reveals a chrome-less two-line
-   menu (EN / 中文). Deliberately no boxes, borders or backgrounds: just ink
-   on the sky. Sits above the drag strip and opts out of window-drag so it
-   stays clickable. */
-.langCorner {
+/* ── Corner controls (260730) ─────────────────────────────────────────────
+   One always-visible row top-right: [volume] [language] [quit]. Deliberately
+   no boxes, borders or backgrounds: just ink on the sky. Sits above the drag
+   strip and opts out of window-drag so it stays clickable. The dropdowns
+   (language menu, volume slider) open on HOVER, so they hang directly off
+   the icon's box with padding instead of margin — a gap between icon and
+   dropdown would fire mouseleave mid-travel and close the menu. */
+.corner {
   position: absolute;
-  top: 10px;
+  top: 8px;
   right: 12px;
-  z-index: 41;
+  z-index: 50;
   -webkit-app-region: no-drag;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
+  gap: 4px;
   color: #23324a;
 }
-.langGlobeBtn {
+.cornerItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.cornerBtn {
   appearance: none;
   background: none;
   border: none;
-  padding: 2px;
+  padding: 4px;
   margin: 0;
   cursor: pointer;
   color: inherit;
   opacity: 0.55;
   line-height: 0;
+  height: 23px;
+  display: flex;
+  align-items: center;
 }
-.langGlobeBtn:hover {
+.cornerBtn:hover {
   opacity: 0.9;
 }
+/* The quit ×: a text glyph, sized to sit level with the 15px icons. */
+.cornerClose {
+  font-size: 21px;
+  font-family: inherit;
+  padding-top: 0;
+  padding-bottom: 2px;
+}
 .langMenu {
+  position: absolute;
+  top: 100%;
+  /* Centered under the icon WITHOUT inheriting the 23px item column as a
+     width bound: an absolute box's shrink-to-fit is limited by its static
+     position's available space, which wrapped 中文 into a vertical stack. */
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
-  margin-top: 2px;
+  padding-top: 2px;
 }
 .langItem {
+  white-space: nowrap;
   appearance: none;
   background: none;
   border: none;
@@ -119,6 +145,41 @@
 .langItemOn {
   opacity: 1;
   font-weight: 600;
+}
+/* Vertical volume slider: no track box, no background — a 2px ink line
+   painted by a gradient on the input itself, with a small round thumb.
+   writing-mode + rtl direction make the native range vertical with "up =
+   louder" in Chromium. */
+.volDrop {
+  position: absolute;
+  top: 100%;
+  padding-top: 2px;
+}
+.volRange {
+  -webkit-appearance: none;
+  appearance: none;
+  writing-mode: vertical-rl;
+  direction: rtl;
+  width: 16px;
+  height: 72px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  background: linear-gradient(
+    to right,
+    transparent 7px,
+    rgba(35, 50, 74, 0.4) 7px,
+    rgba(35, 50, 74, 0.4) 9px,
+    transparent 9px
+  );
+}
+.volRange::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #23324a;
 }
 
 .card button,
@@ -723,32 +784,7 @@
   100% { width: 94%; }
 }
 
-/* ── Close button + fade ───────────────────────────────────────────────── */
-
-.closeBtn {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  z-index: 50;
-  appearance: none;
-  border: none;
-  background: none;
-  color: rgba(35, 40, 58, 0.4);
-  font-size: 24px;
-  line-height: 1;
-  padding: 6px 8px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-
-.card:hover .closeBtn {
-  opacity: 1;
-}
-
-.closeBtn:hover {
-  color: rgba(35, 40, 58, 0.85);
-}
+/* ── Fade ──────────────────────────────────────────────────────────────── */
 
 .fade {
   position: absolute;

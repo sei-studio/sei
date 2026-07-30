@@ -2900,6 +2900,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     win?.setWindowButtonVisibility(visible === true);
   });
 
+  // === App quit (260730) — onboarding's X ===
+  // A plain window close on macOS leaves the app alive in the dock with no
+  // window, which reads as a broken exit during first-run. app.quit() runs the
+  // normal before-quit shutdown chain.
+  ipcMain.handle(IpcChannel.app.quit, async (): Promise<void> => {
+    app.quit();
+  });
+
   // === Factory reset (260728) — Settings danger zone ===
   ipcMain.handle(IpcChannel.app.factoryReset, async (): Promise<void> => {
     const { runFactoryReset } = await import('./factoryReset');

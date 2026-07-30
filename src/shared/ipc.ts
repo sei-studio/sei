@@ -1928,6 +1928,12 @@ export interface RendererApi {
   windowMaximizeToggle(): Promise<void>;
   /** Close the window (quits the app on the last window). */
   windowClose(): Promise<void>;
+  /**
+   * Quit the entire app (260730). The onboarding X uses this instead of
+   * windowClose: on macOS closing the last window leaves the app running in
+   * the dock, which reads as a broken exit during first-run.
+   */
+  appQuit(): Promise<void>;
   /** Current maximized state — seeds the restore/maximize icon on mount. */
   windowIsMaximized(): Promise<boolean>;
   /** Fires on every maximize/unmaximize so the icon can swap live. */
@@ -2379,6 +2385,9 @@ export const IpcChannel = {
     openExternal: 'app:open-external',
     // 260728: wipe all local state back to a fresh install + relaunch.
     factoryReset: 'app:factory-reset',
+    // 260730: quit the whole app (onboarding's X). window:close alone leaves
+    // the app alive in the macOS dock with no window.
+    quit: 'app:quit',
   },
   // Frameless window controls (custom titlebar on Windows/Linux). macOS keeps
   // its native traffic lights and never calls these, but the channels are
