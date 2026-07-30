@@ -12,6 +12,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { KnowledgeDropZone } from './KnowledgeDropZone';
@@ -44,6 +45,7 @@ export function KnowledgeModal({
   characterName,
   onClose,
 }: KnowledgeModalProps): React.ReactElement {
+  const t = useT();
   const [entries, setEntries] = useState<KnowledgeEntryMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -88,7 +90,7 @@ export function KnowledgeModal({
     try {
       const res = await sei.knowledgeRead(characterId, entryId);
       if (!res) {
-        setError('This entry could not be read.');
+        setError(t('This entry could not be read.'));
         return;
       }
       setFormTitle(res.meta.title);
@@ -135,21 +137,22 @@ export function KnowledgeModal({
 
   return (
     <ModalShell
-      title={`${characterName}'s knowledge`}
+      title={t("{name}'s knowledge", { name: characterName })}
       width={880}
       onClose={onClose}
       escClose
       scrimClose
-      aria-label="Knowledge"
+      aria-label={t('Knowledge')}
     >
       <p className={styles.lede}>
-        You can manually add things for the AI to know here. The AI has a separate internal
-        memory storage.
+        {t(
+          'You can manually add things for the AI to know here. The AI has a separate internal memory storage.',
+        )}
       </p>
       <div className={styles.columns}>
         <div className={styles.listCol}>
           {entries.length === 0 ? (
-            <p className={styles.empty}>No knowledge yet. Upload files or add text context.</p>
+            <p className={styles.empty}>{t('No knowledge yet. Upload files or add text context.')}</p>
           ) : (
             entries.map((e) => (
               <div key={e.id} className={styles.row}>
@@ -160,15 +163,15 @@ export function KnowledgeModal({
                   <span className={styles.rowTitle}>{e.title}</span>
                   <span className={styles.rowMeta}>
                     {Math.max(1, Math.round(e.bytes / 1024))} KB
-                    {e.source === 'compacted' ? ' · compacted' : e.source === 'text' ? ' · text' : ''}
+                    {e.source === 'compacted' ? t(' · compacted') : e.source === 'text' ? t(' · text') : ''}
                   </span>
                 </div>
                 <div className={styles.rowActions}>
                   <button
                     type="button"
                     className={styles.iconBtn}
-                    aria-label={`Edit ${e.title}`}
-                    title="Edit"
+                    aria-label={t('Edit {title}', { title: e.title })}
+                    title={t('Edit')}
                     onClick={() => void openEdit(e.id)}
                   >
                     <PencilIcon size={14} />
@@ -176,12 +179,16 @@ export function KnowledgeModal({
                   <button
                     type="button"
                     className={[styles.iconBtn, confirmDeleteId === e.id ? styles.iconBtnDanger : ''].join(' ')}
-                    aria-label={confirmDeleteId === e.id ? `Confirm delete ${e.title}` : `Delete ${e.title}`}
-                    title={confirmDeleteId === e.id ? 'Click again to delete' : 'Delete'}
+                    aria-label={
+                      confirmDeleteId === e.id
+                        ? t('Confirm delete {title}', { title: e.title })
+                        : t('Delete {title}', { title: e.title })
+                    }
+                    title={confirmDeleteId === e.id ? t('Click again to delete') : t('Delete')}
                     onClick={() => void remove(e.id)}
                     onBlur={() => setConfirmDeleteId((id) => (id === e.id ? null : id))}
                   >
-                    {confirmDeleteId === e.id ? <span className={styles.confirmDel}>Delete?</span> : <TrashIcon size={14} />}
+                    {confirmDeleteId === e.id ? <span className={styles.confirmDel}>{t('Delete?')}</span> : <TrashIcon size={14} />}
                   </button>
                 </div>
               </div>
@@ -189,9 +196,14 @@ export function KnowledgeModal({
           )}
           {entries.length > 0 ? (
             <div className={styles.totals}>
-              {entries.length} entr{entries.length === 1 ? 'y' : 'ies'}, {Math.max(1, totalKb)} KB total
+              {entries.length === 1
+                ? t('1 entry, {kb} KB total', { kb: Math.max(1, totalKb) })
+                : t('{count} entries, {kb} KB total', {
+                    count: entries.length,
+                    kb: Math.max(1, totalKb),
+                  })}
               {totalBytes > KNOWLEDGE_COMPACT_SUGGEST_BYTES
-                ? ' · large knowledge can slow down replies on calls and in games'
+                ? t(' · large knowledge can slow down replies on calls and in games')
                 : ''}
             </div>
           ) : null}
@@ -205,8 +217,8 @@ export function KnowledgeModal({
                 kind="ghost"
                 size="sm"
                 onClick={openAddText}
-                aria-label="Add text context"
-                title="Add text context"
+                aria-label={t('Add text context')}
+                title={t('Add text context')}
                 icon={<NotePlusIcon size={16} />}
               />
             }
@@ -220,42 +232,42 @@ export function KnowledgeModal({
       ) : null}
       <ModalFooter>
         <Button kind="primary" onClick={onClose}>
-          Done
+          {t('Done')}
         </Button>
       </ModalFooter>
 
       {form ? (
         <ModalShell
-          title={form.mode === 'add' ? 'Add text context' : 'Edit knowledge'}
+          title={form.mode === 'add' ? t('Add text context') : t('Edit knowledge')}
           width={560}
           tier="stacked"
           onClose={() => setForm(null)}
           escClose
-          aria-label={form.mode === 'add' ? 'Add text context' : 'Edit knowledge'}
+          aria-label={form.mode === 'add' ? t('Add text context') : t('Edit knowledge')}
         >
           <div className={styles.formField}>
-            <span className="u-lbl">Title</span>
-            <TextField value={formTitle} onChange={setFormTitle} aria-label="Knowledge title" autoFocus />
+            <span className="u-lbl">{t('Title')}</span>
+            <TextField value={formTitle} onChange={setFormTitle} aria-label={t('Knowledge title')} autoFocus />
           </div>
           <div className={styles.formField}>
-            <span className="u-lbl">Content</span>
+            <span className="u-lbl">{t('Content')}</span>
             <textarea
               className={styles.formTextarea}
               value={formContent}
               onChange={(e) => setFormContent(e.target.value)}
-              aria-label="Knowledge content"
+              aria-label={t('Knowledge content')}
             />
           </div>
           <ModalFooter>
             <Button kind="quiet" onClick={() => setForm(null)} disabled={formBusy}>
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button
               kind="accent"
               onClick={() => void saveForm()}
               disabled={formBusy || formTitle.trim() === '' || formContent.trim() === ''}
             >
-              {formBusy ? 'Saving…' : 'Save'}
+              {formBusy ? t('Saving…') : t('Save')}
             </Button>
           </ModalFooter>
         </ModalShell>

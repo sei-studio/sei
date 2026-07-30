@@ -157,6 +157,11 @@ export const ConfigSchema = z.object({
     // measured — e.g. Marv). Drives PUNCTUATION_DIRECTIVES in the cached
     // system prefix AND the splitChatMessages trailing-period behavior.
     punctuation: z.enum(['casual', 'deliberate']).default('casual'),
+    // 260730: per-character language pin (character.metadata.language,
+    // stamped at creation under the Chinese UI). When set it beats the
+    // profile-wide chat_language below in rebuildPersonalitySystem. Optional:
+    // absent = no pin.
+    language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
   }),
   anthropic: z.object({
     // Phase 13-15 (D-40 sub-delivery a): api_key is no longer strictly required

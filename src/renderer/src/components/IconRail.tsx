@@ -62,6 +62,7 @@ import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useChessStore } from '../lib/stores/useChessStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
+import { useT } from '../lib/i18n';
 
 /**
  * Tooltip hover state lifted to the IconRail component so it can render a
@@ -227,6 +228,7 @@ function AvatarButton({
   theme,
   setHover,
 }: AvatarButtonProps): React.ReactElement {
+  const t = useT();
   const palette = useMemo(
     () => pickPalette(characterId + characterName, theme),
     [characterId, characterName, theme],
@@ -241,9 +243,9 @@ function AvatarButton({
   // Screen readers get the live activity as a suffix on the avatar's name.
   const ariaLabel =
     activity === 'call'
-      ? `${characterName}, on a call`
+      ? t('{name}, on a call', { name: characterName })
       : activity === 'game'
-        ? `${characterName}, playing a game`
+        ? t('{name}, playing a game', { name: characterName })
         : characterName;
   return (
     <button
@@ -296,6 +298,7 @@ function AvatarButton({
 }
 
 export function IconRail(): React.ReactElement {
+  const t = useT();
   const view = useUiStore((s) => s.view);
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
@@ -416,7 +419,7 @@ export function IconRail(): React.ReactElement {
 
   return (
     <>
-      <nav className={styles.rail} aria-label="Primary">
+      <nav className={styles.rail} aria-label={t('Primary')}>
         <div className={styles.cluster}>
           <RailButton
             active={homeActive}
@@ -424,7 +427,7 @@ export function IconRail(): React.ReactElement {
               setHomeTab('home');
               navigate({ kind: 'home' });
             }}
-            title="Home"
+            title={t('Home')}
             setHover={setHoverTip}
             dataTutorial="rail-home"
           >
@@ -434,7 +437,7 @@ export function IconRail(): React.ReactElement {
           <RailButton
             active={worldActive}
             onClick={handleCompassClick}
-            title="World"
+            title={t('World')}
             // Warm the World grid's first page while the pointer is still on
             // the icon, so the public characters are already loaded by the time
             // the tab opens instead of popping in after the local/default ones.
@@ -493,10 +496,10 @@ export function IconRail(): React.ReactElement {
               if (homeCharacters.length >= MAX_COMPANION_SLOTS) setShowPartyFull(true);
               else navigate({ kind: 'awaken' });
             }}
-            aria-label="Awaken a companion"
-            onMouseEnter={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
+            aria-label={t('Awaken a companion')}
+            onMouseEnter={(e) => attachHover(e.currentTarget, t('Awaken'), setHoverTip)}
             onMouseLeave={() => setHoverTip(null)}
-            onFocus={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
+            onFocus={(e) => attachHover(e.currentTarget, t('Awaken'), setHoverTip)}
             onBlur={() => setHoverTip(null)}
           >
             <PlusIcon size={18} />
@@ -513,7 +516,7 @@ export function IconRail(): React.ReactElement {
             <RailButton
               active={view.kind === 'credits'}
               onClick={() => navigate({ kind: 'credits' })}
-              title={usageKnown ? `Usage: ${Math.max(0, Math.min(100, Math.round(usagePct)))}%` : 'Plan'}
+              title={usageKnown ? t('Usage: {pct}%', { pct: Math.max(0, Math.min(100, Math.round(usagePct))) }) : t('Plan')}
               setHover={setHoverTip}
             >
               <StarIcon size={22} />
@@ -521,7 +524,7 @@ export function IconRail(): React.ReactElement {
           ) : aiBackendKind === 'local' ? (
             <RailButton
               onClick={handleCloudClick}
-              title="Switch to cloud"
+              title={t('Switch to cloud')}
               setHover={setHoverTip}
             >
               {/* Same StarIcon as the cloud-proxy branch — consistent rail
@@ -533,7 +536,7 @@ export function IconRail(): React.ReactElement {
           <RailButton
             active={view.kind === 'settings'}
             onClick={() => navigate({ kind: 'settings' })}
-            title="Settings"
+            title={t('Settings')}
             setHover={setHoverTip}
           >
             <SettingsIcon size={22} />
@@ -561,17 +564,19 @@ export function IconRail(): React.ReactElement {
 
       {showPartyFull ? (
         <ModalShell
-          title="Party full"
+          title={t('Party full')}
           onClose={() => setShowPartyFull(false)}
           scrimClose
         >
           <p className={styles.cloudPromptBody}>
-            All {MAX_COMPANION_SLOTS} companion slots are taken. Release a companion from
-            their page to make room for a new one.
+            {t(
+              'All {n} companion slots are taken. Release a companion from their page to make room for a new one.',
+              { n: MAX_COMPANION_SLOTS },
+            )}
           </p>
           <ModalFooter>
             <Button kind="primary" size="md" onClick={() => setShowPartyFull(false)}>
-              Got it
+              {t('Got it')}
             </Button>
           </ModalFooter>
         </ModalShell>
@@ -579,16 +584,16 @@ export function IconRail(): React.ReactElement {
 
       {showCloudPrompt ? (
         <ModalShell
-          title="Switch to cloud?"
+          title={t('Switch to cloud?')}
           onClose={() => setShowCloudPrompt(false)}
           scrimClose
         >
           <p className={styles.cloudPromptBody}>
-            Sign in to use Sei&apos;s hosted AI. You keep your local characters either way.
+            {t("Sign in to use Sei's hosted AI. You keep your local characters either way.")}
           </p>
           <ModalFooter>
             <Button kind="quiet" size="md" onClick={() => setShowCloudPrompt(false)}>
-              Not now
+              {t('Not now')}
             </Button>
             <Button
               kind="primary"
@@ -600,7 +605,7 @@ export function IconRail(): React.ReactElement {
                 setPendingCloudAfterSignIn(true);
               }}
             >
-              Continue
+              {t('Continue')}
             </Button>
           </ModalFooter>
         </ModalShell>

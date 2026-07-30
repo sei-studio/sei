@@ -41,6 +41,7 @@ import type {
   UserPreferencesPatch,
 } from '@shared/characterSchema';
 import { PREF_QUESTIONS } from '@shared/characterSchema';
+import { useT } from '../lib/i18n';
 import styles from './ProfileQuestionsScreen.module.css';
 import chibiF from '../assets/art-styles/chibi-female.jpg';
 import chibiM from '../assets/art-styles/chibi-male.jpg';
@@ -94,6 +95,7 @@ export interface ProfileQuestionsScreenProps {
 }
 
 export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestionsScreenProps): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   // Questions this run asks, resolved from the current profile on mount.
   // null = still loading the profile.
@@ -251,10 +253,10 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
     stepCount: questions.length,
     currentStep: step,
     onBack: back,
-    backLabel: onFirstStep ? 'Later' : 'Back',
+    backLabel: onFirstStep ? t('Later') : t('Back'),
     hideBackIcon: onFirstStep,
     onNext: () => void goNext(),
-    nextLabel: isLast ? (submitting ? 'Saving…' : 'Finish') : 'Continue',
+    nextLabel: isLast ? (submitting ? t('Saving…') : t('Finish')) : t('Continue'),
     nextKind: isLast ? ('accent' as const) : undefined,
     nextDisabled: !answered(current) || submitting,
     // Wider column so the tile groups lay out horizontally and every question
@@ -266,11 +268,13 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
     return (
       <QuestionShell
         {...shellProps}
-        title="How old should your companions feel?"
-        hint="This shapes how the companions Sei casts for you come across. You can update this any time from Settings."
+        title={t('How old should your companions feel?')}
+        hint={t(
+          'This shapes how the companions Sei casts for you come across. You can update this any time from Settings.',
+        )}
       >
         <TileGroup
-          ariaLabel="Companion age range"
+          ariaLabel={t('Companion age range')}
           options={AGE_OPTIONS}
           value={age}
           onChange={setAge}
@@ -288,10 +292,12 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
     return (
       <QuestionShell
         {...shellProps}
-        title="What are you looking for?"
-        hint="Rank what you're hoping to meet. Your first companion matches your first pick, the next one your second, and so on. You don't have to rank them all."
+        title={t('What are you looking for?')}
+        hint={t(
+          "Rank what you're hoping to meet. Your first companion matches your first pick, the next one your second, and so on. You don't have to rank them all.",
+        )}
       >
-        <div className={styles.rankGrid} aria-label="Companion dynamics ranking">
+        <div className={styles.rankGrid} aria-label={t('Companion dynamics ranking')}>
           {DYNAMIC_OPTIONS.map((opt) => {
             const rank = ranking.indexOf(opt.value);
             const ranked = rank !== -1;
@@ -310,10 +316,10 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
                 onClick={() => toggleDynamic(opt.value)}
               >
                 <span className={styles.rankTileText}>
-                  <span className={styles.tileLabel}>{opt.label}</span>
-                  <span className={styles.tileSub}>{opt.sub}</span>
+                  <span className={styles.tileLabel}>{t(opt.label)}</span>
+                  <span className={styles.tileSub}>{t(opt.sub)}</span>
                 </span>
-                {ranked ? <span className={styles.rankBadge}>{ORDINALS[rank]}</span> : null}
+                {ranked ? <span className={styles.rankBadge}>{t(ORDINALS[rank])}</span> : null}
               </button>
             );
           })}
@@ -324,8 +330,8 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
             onClick={toggleSurprise}
           >
             <span className={styles.rankTileText}>
-              <span className={styles.tileLabel}>Surprise me</span>
-              <span className={styles.tileSub}>Let the cast decide who you meet.</span>
+              <span className={styles.tileLabel}>{t('Surprise me')}</span>
+              <span className={styles.tileSub}>{t('Let the cast decide who you meet.')}</span>
             </span>
           </button>
         </div>
@@ -341,11 +347,11 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
   return (
     <QuestionShell
       {...shellProps}
-      title="Pick an art style"
-      hint="How your companions look when Sei gives them a face."
+      title={t('Pick an art style')}
+      hint={t('How your companions look when Sei gives them a face.')}
     >
       <TileGroup
-        ariaLabel="Art style"
+        ariaLabel={t('Art style')}
         options={STYLE_OPTIONS}
         value={style}
         onChange={setStyle}
@@ -377,6 +383,7 @@ function TileGroup<T extends string>({
   value: T | null;
   onChange: (v: T) => void;
 }): React.ReactElement {
+  const t = useT();
   const imageOnly = options.some((opt) => opt.imgs);
   return (
     <div
@@ -392,7 +399,7 @@ function TileGroup<T extends string>({
             type="button"
             role="radio"
             aria-checked={selected}
-            aria-label={opt.imgs ? `${opt.label}. ${opt.sub}` : undefined}
+            aria-label={opt.imgs ? `${t(opt.label)}. ${t(opt.sub)}` : undefined}
             className={`${styles.tile} ${opt.imgs ? styles.tileImageOnly : ''} ${selected ? styles.tileSelected : ''}`}
             onClick={() => onChange(opt.value)}
           >
@@ -403,8 +410,8 @@ function TileGroup<T extends string>({
               </span>
             ) : (
               <>
-                <span className={styles.tileLabel}>{opt.label}</span>
-                <span className={styles.tileSub}>{opt.sub}</span>
+                <span className={styles.tileLabel}>{t(opt.label)}</span>
+                <span className={styles.tileSub}>{t(opt.sub)}</span>
               </>
             )}
           </button>

@@ -23,7 +23,7 @@ import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isCallActive } from '../voice/callState';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
-import { clampChatLanguage } from '../../shared/chatLanguage';
+import { surfaceLanguage } from '../../shared/chatLanguage';
 import * as chatStore from './chatStore';
 import {
   drainThoughts,
@@ -401,7 +401,9 @@ async function prepareChatTurn(
     voicePeers: opts.voicePeers,
     // 260709: conversation language — read per turn (loadConfig above), so a
     // Settings change applies from the very next message with no restart.
-    language: clampChatLanguage(config.chat_language),
+    // 260730: a character created under the Chinese UI carries
+    // metadata.language, which pins its surfaces regardless of auto-detect.
+    language: surfaceLanguage(character.metadata, config.chat_language),
   });
   // Voice: only the last N rows go to the model (VOICE_RECENT_CAP). Slice the raw
   // transcript BEFORE toMessages so role-merge + first-must-be-user still hold.

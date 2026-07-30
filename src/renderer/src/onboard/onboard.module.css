@@ -63,6 +63,64 @@
   -webkit-app-region: drag;
 }
 
+/* ── Language corner (260730) ─────────────────────────────────────────────
+   A very small globe in the top-right that reveals a chrome-less two-line
+   menu (EN / 中文). Deliberately no boxes, borders or backgrounds: just ink
+   on the sky. Sits above the drag strip and opts out of window-drag so it
+   stays clickable. */
+.langCorner {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 41;
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: #23324a;
+}
+.langGlobeBtn {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 2px;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.55;
+  line-height: 0;
+}
+.langGlobeBtn:hover {
+  opacity: 0.9;
+}
+.langMenu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin-top: 2px;
+}
+.langItem {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 1px 2px;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+.langItem:hover {
+  opacity: 1;
+}
+.langItemOn {
+  opacity: 1;
+  font-weight: 600;
+}
+
 .card button,
 .card input,
 .card select,

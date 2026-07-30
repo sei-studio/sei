@@ -9,6 +9,7 @@
  */
 
 import React, { useState } from 'react';
+import { useT } from '../lib/i18n';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { Button } from './Button';
 import { FullscreenIcon } from './icons';
@@ -30,6 +31,7 @@ export function FullscreenTextField({
   modalTitle,
   ...rest
 }: FullscreenTextFieldProps): React.ReactElement {
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   return (
@@ -46,8 +48,8 @@ export function FullscreenTextField({
           type="button"
           className={styles.expandBtn}
           onClick={() => setOpen(true)}
-          aria-label={`Expand ${rest['aria-label']}`}
-          title="Expand"
+          aria-label={t('Expand {label}', { label: rest['aria-label'] })}
+          title={t('Expand')}
         >
           <FullscreenIcon size={14} />
         </button>
@@ -72,7 +74,7 @@ export function FullscreenTextField({
           />
           <ModalFooter>
             <Button kind="accent" onClick={() => setOpen(false)}>
-              Done
+              {t('Done')}
             </Button>
           </ModalFooter>
         </ModalShell>

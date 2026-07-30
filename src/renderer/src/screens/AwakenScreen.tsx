@@ -18,6 +18,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { GatherPixels } from '../components/GatherPixels';
@@ -27,6 +28,7 @@ import { CreationLimitModal } from '../components/CreationLimitModal';
 import styles from './AwakenScreen.module.css';
 
 export function AwakenScreen(): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const authKind = useAuthStore((s) => s.state.kind);
@@ -52,7 +54,7 @@ export function AwakenScreen(): React.ReactElement {
       cancelled = true;
     };
   }, []);
-  const beginLabel = authKind !== 'signed_in' || backendLocal ? 'Sign In' : 'Begin';
+  const beginLabel = authKind !== 'signed_in' || backendLocal ? t('Sign In') : t('Begin');
 
   // Flagship "Be matched" path. Cloud + signed-in only: a signed-out user OR a
   // local-mode (BYOK) user is routed to the sign-in modal (framed for this
@@ -127,7 +129,7 @@ export function AwakenScreen(): React.ReactElement {
     <div className={styles.root}>
       <div className={styles.head}>
         <Button kind="quiet" size="sm" onClick={() => navigate({ kind: 'home' })}>
-          ← Back
+          {t('← Back')}
         </Button>
       </div>
       <div className={styles.body}>
@@ -138,22 +140,24 @@ export function AwakenScreen(): React.ReactElement {
         >
           <span className={styles.matchedSky} aria-hidden="true" />
           <GatherPixels cycle="a" large className={styles.mark} />
-          <h2 className={styles.matchedTitle}>Meet my companion</h2>
-          <p className={styles.matchedSub}>Match with a unique AI companion.</p>
+          <h2 className={styles.matchedTitle}>{t('Meet my companion')}</h2>
+          <p className={styles.matchedSub}>{t('Match with a unique AI companion.')}</p>
           <span className={styles.go}>{beginLabel}</span>
         </button>
         <div className={styles.origins}>
           <button type="button" className={styles.origin} onClick={() => void handleCreate()}>
-            <h3 className={styles.originTitle}>Create new companion</h3>
-            <p className={styles.originSub}>Design your AI's personality, voice, and appearance.</p>
+            <h3 className={styles.originTitle}>{t('Create new companion')}</h3>
+            <p className={styles.originSub}>
+              {t("Design your AI's personality, voice, and appearance.")}
+            </p>
           </button>
           <button type="button" className={styles.origin} onClick={() => void handleImport()}>
-            <h3 className={styles.originTitle}>Connect existing companion</h3>
-            <p className={styles.originSub}>Import your companion from another platform.</p>
+            <h3 className={styles.originTitle}>{t('Connect existing companion')}</h3>
+            <p className={styles.originSub}>{t('Import your companion from another platform.')}</p>
           </button>
           <button type="button" className={styles.origin} onClick={handleWorld}>
-            <h3 className={styles.originTitle}>Explore available companions</h3>
-            <p className={styles.originSub}>Browse companions shared by others in World.</p>
+            <h3 className={styles.originTitle}>{t('Explore available companions')}</h3>
+            <p className={styles.originSub}>{t('Browse companions shared by others in World.')}</p>
           </button>
         </div>
       </div>
@@ -167,7 +171,7 @@ export function AwakenScreen(): React.ReactElement {
             className={styles.prefsLink}
             onClick={() => navigate({ kind: 'profile-questions', next: 'awaken', mode: 'all' })}
           >
-            Update my preferences
+            {t('Update my preferences')}
           </button>
         </div>
       ) : null}

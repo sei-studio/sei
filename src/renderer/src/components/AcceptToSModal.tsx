@@ -24,6 +24,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { sei as seiRaw } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './AcceptToSModal.module.css';
@@ -45,6 +46,7 @@ export interface AcceptToSModalProps {
 }
 
 export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.ReactElement {
+  const t = useT();
   const [checked, setChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,17 +93,18 @@ export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.React
   // scrimClose, no onClose) — there is no dismissal path. The dedicated
   // keydown/preventDefault effect above also stops any other ESC handler.
   return (
-    <ModalShell title="Review Sei’s Terms" width={460} escClose={false}>
+    <ModalShell title={t('Review Sei’s Terms')} width={460} escClose={false}>
       <p className={styles.body}>
-        We have published a Privacy Policy and Terms of Service. Please review and accept to
-        continue.
+        {t(
+          'We have published a Privacy Policy and Terms of Service. Please review and accept to continue.',
+        )}
       </p>
       <div className={styles.linkRow}>
         <Button kind="ghost" size="md" onClick={openTerms} disabled={submitting}>
-          Open Terms of Service
+          {t('Open Terms of Service')}
         </Button>
         <Button kind="ghost" size="md" onClick={openPrivacy} disabled={submitting}>
-          Open Privacy Policy
+          {t('Open Privacy Policy')}
         </Button>
       </div>
       <label className={styles.checkbox}>
@@ -111,7 +114,7 @@ export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.React
           onChange={(e) => setChecked(e.target.checked)}
           disabled={submitting}
         />
-        <span>I have read and agree to both</span>
+        <span>{t('I have read and agree to both')}</span>
       </label>
       {error ? (
         <p className={styles.errorText} role="alert">
@@ -125,7 +128,7 @@ export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.React
           onClick={handleSubmit}
           disabled={!checked || submitting}
         >
-          {submitting ? 'Accepting…' : 'Accept and continue'}
+          {submitting ? t('Accepting…') : t('Accept and continue')}
         </Button>
       </ModalFooter>
     </ModalShell>

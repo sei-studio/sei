@@ -444,6 +444,18 @@ export const UserConfigSchema = z.object({
    * (src/bot/brain/promptLibrary.js — the bot can't import this module).
    */
   chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
+  /**
+   * 260730: APP UI language. 'zh' switches every renderer surface to Chinese
+   * AND stamps characters created while it is active with
+   * metadata.language 'zh', which makes their AI surfaces (persona
+   * generation, chat, games, the Minecraft bot) run on Chinese prompts.
+   * Distinct from chat_language above, which is the auto-detected
+   * CONVERSATION language for voice calls. Optional and NOT defaulted
+   * (absent ≡ 'en' everywhere it is read) so the many manual UserConfig
+   * literals don't all need to spell it out — same convention as
+   * chat_language.
+   */
+  ui_language: z.enum(['en', 'zh']).optional(),
   /** Plan 07: Linux basic_text safeStorage warning Banner dismissal (Pitfall A2). */
   linuxBasicTextWarnDismissed: z.boolean().default(false),
   /**

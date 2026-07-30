@@ -15,6 +15,7 @@
  */
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import type { PeekLocalProfileResult } from '../../../shared/ipc';
@@ -27,9 +28,9 @@ export interface ImportLocalProfileModalProps {
 }
 
 export function ImportLocalProfileModal({ peek, onDone }: ImportLocalProfileModalProps): React.ReactElement {
+  const t = useT();
   const [submitting, setSubmitting] = useState(false);
   const count = peek.migratableCharacterIds.length;
-  const charLabel = count === 1 ? 'companion' : 'companions';
 
   async function handleImport(): Promise<void> {
     setSubmitting(true);
@@ -44,21 +45,28 @@ export function ImportLocalProfileModal({ peek, onDone }: ImportLocalProfileModa
   }
 
   return (
-    <ModalShell title="Bring your companion to this account?" escClose={false}>
+    <ModalShell title={t('Bring your companion to this account?')} escClose={false}>
       <p className={styles.body}>
         {count > 0
-          ? `You set up ${count} ${charLabel} before signing in. Bring ${count === 1 ? 'it' : 'them'}, along with your memories together, into this account, or start fresh.`
-          : `Bring your existing setup into this account, or start fresh.`}
+          ? count === 1
+            ? t(
+                'You set up 1 companion before signing in. Bring it, along with your memories together, into this account, or start fresh.',
+              )
+            : t(
+                'You set up {count} companions before signing in. Bring them, along with your memories together, into this account, or start fresh.',
+                { count },
+              )
+          : t('Bring your existing setup into this account, or start fresh.')}
       </p>
       {submitting ? (
-        <p className={styles.status}>Importing…</p>
+        <p className={styles.status}>{t('Importing…')}</p>
       ) : (
         <ModalFooter>
           <Button kind="ghost" onClick={() => onDone(false)}>
-            Start fresh
+            {t('Start fresh')}
           </Button>
           <Button kind="primary" onClick={() => void handleImport()}>
-            Bring it over
+            {t('Bring it over')}
           </Button>
         </ModalFooter>
       )}

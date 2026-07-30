@@ -19,6 +19,7 @@
  */
 
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 import { ArrowIcon } from './icons';
 import styles from './ProviderSelect.module.css';
 
@@ -66,6 +67,7 @@ export interface ProviderSelectProps {
 }
 
 export function ProviderSelect({ value, onChange, compact = false }: ProviderSelectProps): React.ReactElement {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const selectedIndex = Math.max(0, PROVIDERS.findIndex((p) => p.id === value));
   const [activeIndex, setActiveIndex] = useState(selectedIndex);
@@ -163,7 +165,7 @@ export function ProviderSelect({ value, onChange, compact = false }: ProviderSel
         className={styles.trigger}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label="Choose a model provider"
+        aria-label={t('Choose a model provider')}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onTriggerKeyDown}
       >
@@ -178,7 +180,7 @@ export function ProviderSelect({ value, onChange, compact = false }: ProviderSel
           className={styles.list}
           role="listbox"
           tabIndex={-1}
-          aria-label="Model provider"
+          aria-label={t('Model provider')}
           aria-activedescendant={`${baseId}-opt-${activeIndex}`}
           onKeyDown={onListKeyDown}
         >

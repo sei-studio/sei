@@ -67,7 +67,7 @@ import * as chatStore from '../chat/chatStore';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { createPriorityQueue, Priority } from '../../bot/brain/fsm.js';
 import { isCallActive } from '../voice/callState';
-import { clampChatLanguage } from '../../shared/chatLanguage';
+import { surfaceLanguage } from '../../shared/chatLanguage';
 import { ensureModel, modelReady } from './modelStore';
 import { getOrCreateChessProfile, type ChessProfile } from './chessProfile';
 import { createChessLog, NULL_CHESS_LOG, type ChessLog } from './chessLog';
@@ -910,9 +910,12 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
     const plyCount = s.history.length;
     void (async () => {
       let name = 'your companion';
+      let rowLanguage: 'zh' | undefined;
       try {
         const c = await getCharacter(s.characterId);
         if (c?.name) name = c.name;
+        const { characterLanguage } = await import('../../shared/chatLanguage');
+        if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
       } catch { /* generic name */ }
       // Replay payload: SAN/UCI only (the renderer rebuilds per-ply FENs from
       // the start position), so a long game stays a few hundred bytes in the
@@ -929,7 +932,7 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
       const ev: ChatMessage = {
         id: randomUUID(),
         role: 'system',
-        text: chessSummaryText(name, s.playerColor, result, plyCount, durationMs),
+        text: chessSummaryText(name, s.playerColor, result, plyCount, durationMs, rowLanguage),
         ts: Date.now(),
         event: { kind: 'play', game: 'Chess', durationMs, ...(chess ? { chess } : {}) },
       } as ChatMessage;
@@ -960,9 +963,12 @@ export function chessSummaryText(
   result: ChessResult,
   plyCount: number,
   durationMs: number,
+  language?: 'en' | 'zh',
 ): string {
   if (result.reason === 'abandoned') {
-    return `You and ${name} left a chess game unfinished.`;
+    return language === 'zh'
+      ? `你和${name}有一局国际象棋没有下完。`
+      : `You and ${name} left a chess game unfinished.`;
   }
   // One shape for every game surface, results deliberately omitted: see the
   // note in src/main/chat/playSummary.ts. playerColor / result / plyCount are
@@ -970,7 +976,7 @@ export function chessSummaryText(
   // carries them for the replay card.
   void playerColor;
   void plyCount;
-  return playSummaryText(name, 'Chess', durationMs);
+  return playSummaryText(name, language === 'zh' ? '国际象棋' : 'Chess', durationMs, language);
 }
 
 /** Log-friendly error description including status and the cause chain. */
@@ -1438,7 +1444,8 @@ async function runChessLlmTurn(
     openWorldDetected: false,
     inGame: false,
     voiceCall: opts.voiceCall,
-    language: clampChatLanguage(config.chat_language),
+    // 260730: character-pinned language wins over the auto-detected one.
+    language: surfaceLanguage(character.metadata, config.chat_language),
     // STATIC for the whole game, so it rides inside the cached region. The
     // volatile per-turn view goes in the messages tail below, never here.
     extraStable: chessContractBlock(s, playerName),

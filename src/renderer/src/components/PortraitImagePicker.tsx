@@ -20,6 +20,7 @@
 import React, { useRef } from 'react';
 import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
+import { t as tBare, useT } from '../lib/i18n';
 import { PortraitCropModal } from './PortraitCropModal';
 import { UserIcon } from './icons';
 import avatarStyles from './PortraitImagePicker.module.css';
@@ -64,6 +65,7 @@ export function PortraitImagePicker({
   variant = 'default',
 }: PortraitImagePickerProps): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const t = useT();
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<boolean>(false);
   // Decoded source image awaiting crop/preview in the popup (null = closed).
@@ -97,7 +99,7 @@ export function PortraitImagePicker({
     e.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      setError('Pick an image file (PNG/JPG/WebP).');
+      setError(t('Pick an image file (PNG/JPG/WebP).'));
       return;
     }
     try {
@@ -107,7 +109,7 @@ export function PortraitImagePicker({
       cropUrlRef.current = objectUrl;
       setCropImg(img);
     } catch (err) {
-      setError((err as Error).message ?? 'Could not open that image.');
+      setError((err as Error).message ?? t('Could not open that image.'));
     }
   };
 
@@ -121,7 +123,7 @@ export function PortraitImagePicker({
       if (bytes.byteLength > MAX_BYTES) {
         // Unreachable in practice (the compressor targets the budget), but keep
         // a guard so a pathological input surfaces a clear message.
-        setError('Could not get this image under 500KB. Try a simpler picture.');
+        setError(t('Could not get this image under 500KB. Try a simpler picture.'));
         return;
       }
       const bytesBase64 = bytesToBase64(bytes);
@@ -131,7 +133,7 @@ export function PortraitImagePicker({
       setBust((b) => b + 1);
       onChange(ref);
     } catch (err) {
-      setError(prettifyError((err as Error).message ?? 'Failed to apply portrait.'));
+      setError(prettifyError((err as Error).message ?? t('Failed to apply portrait.')));
     } finally {
       setBusy(false);
       closeCrop();
@@ -147,7 +149,7 @@ export function PortraitImagePicker({
       else await sei.charsRemovePortrait(characterId as string);
       onChange(null);
     } catch (err) {
-      setError((err as Error).message ?? 'Failed to remove portrait.');
+      setError((err as Error).message ?? t('Failed to remove portrait.'));
     } finally {
       setBusy(false);
     }
@@ -174,14 +176,14 @@ export function PortraitImagePicker({
           className={avatarStyles.avatar}
           onClick={onPick}
           disabled={busy}
-          aria-label={value ? 'Change profile picture' : 'Add profile picture'}
+          aria-label={value ? t('Change profile picture') : t('Add profile picture')}
         >
           {src ? (
             <img src={src} alt="" className={avatarStyles.avatarImg} />
           ) : (
             <UserIcon size={22} />
           )}
-          <span className={avatarStyles.avatarOverlay}>{busy ? '…' : 'Change'}</span>
+          <span className={avatarStyles.avatarOverlay}>{busy ? '…' : t('Change')}</span>
         </button>
         {hiddenInput}
         {error ? <span className={avatarStyles.err}>{error}</span> : null}
@@ -204,7 +206,7 @@ export function PortraitImagePicker({
       {value ? (
         <img
           src={portraitSrc(value)!}
-          alt="Card image preview"
+          alt={t('Card image preview')}
           style={{
             width: 56,
             height: 56,
@@ -228,7 +230,7 @@ export function PortraitImagePicker({
             fontFamily: 'var(--mono)',
           }}
         >
-          NONE
+          {t('NONE')}
         </div>
       )}
       <input
@@ -253,7 +255,7 @@ export function PortraitImagePicker({
           opacity: busy ? 0.6 : 1,
         }}
       >
-        {busy ? 'Working…' : value ? 'Change' : 'Upload'}
+        {busy ? t('Working…') : value ? t('Change') : t('Upload')}
       </button>
       {value ? (
         <button
@@ -271,7 +273,7 @@ export function PortraitImagePicker({
             opacity: busy ? 0.6 : 1,
           }}
         >
-          Remove
+          {t('Remove')}
         </button>
       ) : null}
       {error ? (
@@ -298,7 +300,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Could not decode the picked file as an image.'));
+    img.onerror = () => reject(new Error(tBare('Could not decode the picked file as an image.')));
     img.src = src;
   });
 }
@@ -357,7 +359,7 @@ async function canvasToPortraitBytes(
   // Nothing fit even at the smallest scale/quality — apply the smallest we got
   // (main re-validates; an honest error surfaces only for truly pathological input).
   if (smallest) return smallest;
-  throw new Error('Could not encode the image.');
+  throw new Error(tBare('Could not encode the image.'));
 }
 
 function encode(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
@@ -407,9 +409,9 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 /** Map the well-known main-side error codes to user-friendly copy. */
 function prettifyError(msg: string): string {
-  if (msg.includes('PORTRAIT_TOO_LARGE_DIM')) return 'Picture is too big (max 1024×1024).';
-  if (msg.includes('PORTRAIT_TOO_LARGE')) return 'File too large (max 500KB after resize).';
-  if (msg.includes('PORTRAIT_TOO_SHORT')) return 'File looks empty.';
-  if (msg.includes('PORTRAIT_BAD_MAGIC')) return 'Only PNG, JPEG, or WebP images are accepted.';
+  if (msg.includes('PORTRAIT_TOO_LARGE_DIM')) return tBare('Picture is too big (max 1024×1024).');
+  if (msg.includes('PORTRAIT_TOO_LARGE')) return tBare('File too large (max 500KB after resize).');
+  if (msg.includes('PORTRAIT_TOO_SHORT')) return tBare('File looks empty.');
+  if (msg.includes('PORTRAIT_BAD_MAGIC')) return tBare('Only PNG, JPEG, or WebP images are accepted.');
   return msg;
 }

@@ -10,6 +10,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { DrawChatMessage } from '@shared/drawIpc';
+import { useT } from '../../lib/i18n';
 import { SquiggleFrame, SquiggleHighlight } from './Squiggle';
 import styles from './draw.module.css';
 
@@ -30,6 +31,7 @@ export function DrawChat({
   disabled,
   onSend,
 }: DrawChatProps): React.ReactElement {
+  const t = useT();
   const [text, setText] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -124,7 +126,7 @@ export function DrawChat({
               submit();
             }
           }}
-          aria-label="Chat and guesses"
+          aria-label={t('Chat and guesses')}
         />
       </div>
     </div>

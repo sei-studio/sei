@@ -30,6 +30,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -71,6 +72,7 @@ export function EditCharacterModal({
   initialSection = 'basic',
   notice,
 }: EditCharacterModalProps): React.ReactElement {
+  const t = useT();
   const [section, setSection] = useState<EditSection | 'danger'>(initialSection);
   // 260725: characters created with "Expand my prompt" OFF (the user wrote
   // the exact prompt) open in Advanced; everything else opens in Standard.
@@ -206,7 +208,7 @@ export function EditCharacterModal({
   const persistBasic = async (): Promise<boolean> => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Name cannot be empty.');
+      setError(t('Name cannot be empty.'));
       return false;
     }
     setSavingBasic(true);
@@ -223,7 +225,7 @@ export function EditCharacterModal({
       onSaved?.(persisted);
       return true;
     } catch (err) {
-      setError((err as Error)?.message ?? 'Failed to save.');
+      setError((err as Error)?.message ?? t('Failed to save.'));
       return false;
     } finally {
       setSavingBasic(false);
@@ -251,7 +253,7 @@ export function EditCharacterModal({
       window.setTimeout(() => setChessSaved(false), 1500);
       onSaved?.(persisted);
     } catch (err) {
-      setError((err as Error)?.message ?? 'Failed to save.');
+      setError((err as Error)?.message ?? t('Failed to save.'));
     } finally {
       setSavingChess(false);
     }
@@ -265,7 +267,7 @@ export function EditCharacterModal({
       await refreshCharacter(character.id);
       onSaved?.(persisted);
     } catch (err) {
-      setError((err as Error)?.message ?? 'Failed to save image.');
+      setError((err as Error)?.message ?? t('Failed to save image.'));
     }
   };
 
@@ -302,7 +304,7 @@ export function EditCharacterModal({
       onSaved?.(persisted);
       return true;
     } catch (err) {
-      setError((err as Error)?.message ?? 'Failed to save voice settings.');
+      setError((err as Error)?.message ?? t('Failed to save voice settings.'));
       return false;
     }
   };
@@ -312,14 +314,14 @@ export function EditCharacterModal({
   const regenerate = async (): Promise<boolean> => {
     const trimmedSource = personaSource.trim();
     if (!trimmedSource) {
-      setError('Persona source cannot be empty.');
+      setError(t('Persona source cannot be empty.'));
       return false;
     }
     setRegenerating(true);
     setError(null);
     const requestId = crypto.randomUUID();
     activeRequestId.current = requestId;
-    setExpansion({ pct: 0, label: 'Starting' });
+    setExpansion({ pct: 0, label: t('Starting') });
     const draft: Character = {
       ...character,
       persona: { source: trimmedSource, expanded: '' },
@@ -336,7 +338,7 @@ export function EditCharacterModal({
       onSaved?.(persisted);
       return true;
     } catch (err) {
-      setError((err as Error)?.message ?? 'Failed to regenerate.');
+      setError((err as Error)?.message ?? t('Failed to regenerate.'));
       return false;
     } finally {
       setRegenerating(false);
@@ -361,7 +363,7 @@ export function EditCharacterModal({
       setSavedExpanded(personaExpanded);
       onSaved?.(persisted);
     } catch (err) {
-      setError((err as Error)?.message ?? 'Failed to save.');
+      setError((err as Error)?.message ?? t('Failed to save.'));
     } finally {
       setSavingAdvanced(false);
     }
@@ -408,7 +410,7 @@ export function EditCharacterModal({
       navigate({ kind: 'home' });
     } catch (err) {
       console.error('[EditCharacterModal] deleteCharacter failed', err);
-      setError('Failed to delete. Try again.');
+      setError(t('Failed to delete. Try again.'));
     }
   };
 
@@ -424,7 +426,7 @@ export function EditCharacterModal({
       useChatStore.getState().evictLocal(character.id);
       setResetDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset memory.');
+      setError(err instanceof Error ? err.message : t('Failed to reset memory.'));
     } finally {
       setResetting(false);
     }
@@ -458,12 +460,12 @@ export function EditCharacterModal({
         escClose={false}
         scrimClose
         onClose={() => void requestClose()}
-        aria-label="Edit companion"
+        aria-label={t('Edit companion')}
       >
         {/* ── Sidebar ── */}
         <aside className={styles.sidebar}>
             <h2 id="edit-character-title" className={styles.title}>
-              Edit companion
+              {t('Edit companion')}
             </h2>
             <nav className={styles.nav}>
               {NAV.map((n) => (
@@ -474,7 +476,7 @@ export function EditCharacterModal({
                   onClick={() => setSection(n.key)}
                   aria-current={section === n.key}
                 >
-                  {n.label}
+                  {t(n.label)}
                 </button>
               ))}
             </nav>
@@ -487,18 +489,18 @@ export function EditCharacterModal({
               {section === 'basic' ? (
                 <>
                   <div className={styles.field}>
-                    <label className={styles.label}>Name</label>
-                    <TextField value={name} onChange={setName} aria-label="Companion name" />
+                    <label className={styles.label}>{t('Name')}</label>
+                    <TextField value={name} onChange={setName} aria-label={t('Companion name')} />
                   </div>
                   <div className={styles.field}>
-                    <label className={styles.label}>Description</label>
-                    <p className={styles.paneHint}>For you and other players</p>
+                    <label className={styles.label}>{t('Description')}</label>
+                    <p className={styles.paneHint}>{t('For you and other players')}</p>
                     <TextField
                       value={description}
                       onChange={setDescription}
                       multiline
                       rows={4}
-                      aria-label="Description"
+                      aria-label={t('Description')}
                     />
                   </div>
                 </>
@@ -507,7 +509,7 @@ export function EditCharacterModal({
               {section === 'appearance' ? (
                 <>
                   <div className={styles.subSection}>
-                    <label className={styles.label}>Card image</label>
+                    <label className={styles.label}>{t('Card image')}</label>
                     <PortraitImagePicker
                       characterId={character.id}
                       value={portraitImage}
@@ -515,18 +517,18 @@ export function EditCharacterModal({
                     />
                   </div>
                   <div className={styles.subSection}>
-                    <label className={styles.label}>Skin</label>
+                    <label className={styles.label}>{t('Skin')}</label>
                     <SkinEditor character={character} onChanged={() => void refreshCharacter(character.id)} />
                   </div>
-                  <span className={styles.appearanceNote}>Image and skin changes apply immediately.</span>
+                  <span className={styles.appearanceNote}>{t('Image and skin changes apply immediately.')}</span>
                 </>
               ) : null}
 
               {section === 'voice' ? (
                 <div className={styles.subSection}>
-                  <label className={styles.label}>Voice</label>
+                  <label className={styles.label}>{t('Voice')}</label>
                   <p className={styles.paneHint}>
-                    How they sound on voice calls. Changes save when you press Done.
+                    {t('How they sound on voice calls. Changes save when you press Done.')}
                   </p>
                   <VoicePicker
                     value={voiceId}
@@ -539,7 +541,7 @@ export function EditCharacterModal({
 
               {section === 'persona' ? (
                 <>
-                  <div className={styles.modeTabs} role="tablist" aria-label="Persona edit mode">
+                  <div className={styles.modeTabs} role="tablist" aria-label={t('Persona edit mode')}>
                     <button
                       type="button"
                       role="tab"
@@ -548,7 +550,7 @@ export function EditCharacterModal({
                       onClick={requestStandard}
                       disabled={busy}
                     >
-                      Standard
+                      {t('Standard')}
                     </button>
                     <button
                       type="button"
@@ -557,24 +559,25 @@ export function EditCharacterModal({
                       className={personaMode === 'advanced' ? `${styles.modeTab} ${styles.modeTabActive}` : styles.modeTab}
                       onClick={goAdvanced}
                       disabled={busy || standardDirty}
-                      title={standardDirty ? 'Regenerate or discard your changes first' : undefined}
+                      title={standardDirty ? t('Regenerate or discard your changes first') : undefined}
                     >
-                      Advanced
+                      {t('Advanced')}
                     </button>
                   </div>
 
                   {confirmSwitch ? (
-                    <div className={styles.confirmBanner} role="alertdialog" aria-label="Switch to standard mode">
+                    <div className={styles.confirmBanner} role="alertdialog" aria-label={t('Switch to standard mode')}>
                       <span className={styles.confirmBannerText}>
-                        Switching to Standard regenerates the persona from your source,
-                        discarding your manual prompt edits. This uses one generation.
+                        {t(
+                          'Switching to Standard regenerates the persona from your source, discarding your manual prompt edits. This uses one generation.',
+                        )}
                       </span>
                       <div className={styles.confirmBannerActions}>
                         <Button kind="quiet" size="sm" onClick={() => setConfirmSwitch(false)} disabled={busy}>
-                          Keep editing
+                          {t('Keep editing')}
                         </Button>
                         <Button kind="accent" size="sm" onClick={() => void confirmSwitchToStandard()} disabled={busy}>
-                          {regenerating ? 'Regenerating…' : 'Regenerate & switch'}
+                          {regenerating ? t('Regenerating…') : t('Regenerate & switch')}
                         </Button>
                       </div>
                     </div>
@@ -583,29 +586,32 @@ export function EditCharacterModal({
                   {personaMode === 'standard' ? (
                     <>
                       <div className={styles.field}>
-                        <label className={styles.label}>Persona source</label>
+                        <label className={styles.label}>{t('Persona source')}</label>
                         <p className={styles.paneHint}>
-                          A short description; the model expands it into the companion&apos;s voice and behavior.
+                          {t(
+                            "A short description; the model expands it into the companion's voice and behavior.",
+                          )}
                         </p>
                         <TextField
                           value={personaSource}
                           onChange={setPersonaSource}
                           multiline
                           rows={5}
-                          aria-label="Persona source"
+                          aria-label={t('Persona source')}
                         />
                       </div>
                     </>
                   ) : (
                     <div className={styles.field}>
-                      <label className={styles.label}>Raw prompt</label>
+                      <label className={styles.label}>{t('Raw prompt')}</label>
                       <p className={styles.paneHint}>
-                        The exact prompt sent to the model each turn. Editing here overrides the standard
-                        framework (voice rules and all).
+                        {t(
+                          'The exact prompt sent to the model each turn. Editing here overrides the standard framework (voice rules and all).',
+                        )}
                       </p>
                       <div className={styles.expandedBody}>
                         <button type="button" className={styles.expandedCopy} onClick={() => void onCopyExpanded()}>
-                          {copied ? 'Copied' : 'Copy'}
+                          {copied ? t('Copied') : t('Copy')}
                         </button>
                         <textarea
                           className={styles.expandedTextarea}
@@ -613,7 +619,7 @@ export function EditCharacterModal({
                           onChange={(e) => setPersonaExpanded(e.target.value)}
                           spellCheck={false}
                           disabled={busy}
-                          aria-label="Raw expanded prompt"
+                          aria-label={t('Raw expanded prompt')}
                         />
                       </div>
                     </div>
@@ -624,12 +630,14 @@ export function EditCharacterModal({
               {section === 'games' ? (
                 <>
                   <div className={styles.field}>
-                    <label className={styles.label}>Chess</label>
+                    <label className={styles.label}>{t('Chess')}</label>
                     <p className={styles.paneHint}>
-                      How {character.name} plays in the chess minigame. Left on auto, strength and
-                      style are decided from the persona the first time you play.
+                      {t(
+                        'How {name} plays in the chess minigame. Left on auto, strength and style are decided from the persona the first time you play.',
+                        { name: character.name },
+                      )}
                     </p>
-                    <div className={styles.chessModeRow} role="radiogroup" aria-label="Chess profile mode">
+                    <div className={styles.chessModeRow} role="radiogroup" aria-label={t('Chess profile mode')}>
                       <button
                         type="button"
                         role="radio"
@@ -637,7 +645,7 @@ export function EditCharacterModal({
                         className={!chessCustom ? `${styles.modeTab} ${styles.modeTabActive}` : styles.modeTab}
                         onClick={() => setChessCustom(false)}
                       >
-                        Auto
+                        {t('Auto')}
                       </button>
                       <button
                         type="button"
@@ -646,7 +654,7 @@ export function EditCharacterModal({
                         className={chessCustom ? `${styles.modeTab} ${styles.modeTabActive}` : styles.modeTab}
                         onClick={() => setChessCustom(true)}
                       >
-                        Custom
+                        {t('Custom')}
                       </button>
                     </div>
                   </div>
@@ -654,7 +662,7 @@ export function EditCharacterModal({
                     <>
                       <div className={styles.field}>
                         <label className={styles.label} htmlFor="chess-elo">
-                          Strength: Elo {chessElo}
+                          {t('Strength: Elo {elo}', { elo: chessElo })}
                         </label>
                         <input
                           id="chess-elo"
@@ -667,18 +675,18 @@ export function EditCharacterModal({
                           onChange={(e) => setChessElo(Number(e.currentTarget.value))}
                         />
                         <span className={styles.paneHint}>
-                          400 barely knows the rules; 900 casual; 1400 club player; 2000 fierce.
+                          {t('400 barely knows the rules; 900 casual; 1400 club player; 2000 fierce.')}
                         </span>
                       </div>
                       <div className={styles.field}>
-                        <label className={styles.label}>Play style</label>
+                        <label className={styles.label}>{t('Play style')}</label>
                         <TextField
                           value={chessStyle}
                           onChange={setChessStyle}
                           multiline
                           rows={3}
-                          placeholder="Aggressive, loves flashy sacrifices, sulks when losing..."
-                          aria-label="Chess play style"
+                          placeholder={t('Aggressive, loves flashy sacrifices, sulks when losing...')}
+                          aria-label={t('Chess play style')}
                         />
                       </div>
                     </>
@@ -689,8 +697,9 @@ export function EditCharacterModal({
               {section === 'danger' && !isDefault ? (
                 <div className={styles.dangerPane}>
                   <p className={styles.dangerHint}>
-                    Reset wipes this companion&apos;s memory of you and starts fresh. Unbinding removes the
-                    companion permanently and cannot be undone.
+                    {t(
+                      "Reset wipes this companion's memory of you and starts fresh. Unbinding removes the companion permanently and cannot be undone.",
+                    )}
                   </p>
                   <div className={styles.dangerRow}>
                     <Button
@@ -699,10 +708,10 @@ export function EditCharacterModal({
                       onClick={() => setResetConfirmOpen(true)}
                       disabled={resetting || busy}
                     >
-                      {resetDone ? 'Memory reset' : resetting ? 'Resetting…' : 'Reset memory'}
+                      {resetDone ? t('Memory reset') : resetting ? t('Resetting…') : t('Reset memory')}
                     </Button>
                     <Button kind="danger" size="md" onClick={() => setConfirmingDelete(true)} disabled={busy}>
-                      Unbind companion
+                      {t('Unbind companion')}
                     </Button>
                   </div>
                 </div>
@@ -711,12 +720,18 @@ export function EditCharacterModal({
               {expansion ? (
                 <div className={styles.field} aria-live="polite">
                   <label className={styles.label}>
-                    Expanding persona: {expansion.label} · {expansion.pct}%
+                    {t('Expanding persona: {label} · {pct}%', {
+                      label: expansion.label,
+                      pct: expansion.pct,
+                    })}
                   </label>
                   <PercentBar
                     value={expansion.pct}
                     size="sm"
-                    label={`Expanding persona: ${expansion.label}, ${expansion.pct} percent`}
+                    label={t('Expanding persona: {label}, {pct} percent', {
+                      label: expansion.label,
+                      pct: expansion.pct,
+                    })}
                   />
                 </div>
               ) : null}
@@ -727,31 +742,31 @@ export function EditCharacterModal({
             {/* ── Pane footer (contextual actions) ── */}
             <div className={styles.footer}>
               {personaDirty && section !== 'persona' ? (
-                <span className={styles.footerHint}>Unsaved persona changes. Open Persona to apply or discard.</span>
+                <span className={styles.footerHint}>{t('Unsaved persona changes. Open Persona to apply or discard.')}</span>
               ) : null}
               {section === 'basic' ? (
                 <>
-                  {basicSaved ? <span className={styles.savedTag}>Saved</span> : null}
+                  {basicSaved ? <span className={styles.savedTag}>{t('Saved')}</span> : null}
                   <Button kind="quiet" size="md" onClick={() => void requestClose()} disabled={!canClose}>
-                    Close
+                    {t('Close')}
                   </Button>
                   <Button kind="primary" size="md" onClick={() => void persistBasic()} disabled={!basicDirty || busy}>
-                    {savingBasic ? 'Saving…' : 'Save'}
+                    {savingBasic ? t('Saving…') : t('Save')}
                   </Button>
                 </>
               ) : null}
 
               {section === 'appearance' || section === 'voice' || section === 'danger' ? (
                 <Button kind="primary" size="md" onClick={() => void requestClose()} disabled={!canClose}>
-                  Done
+                  {t('Done')}
                 </Button>
               ) : null}
 
               {section === 'games' ? (
                 <>
-                  {chessSaved ? <span className={styles.savedTag}>Saved</span> : null}
+                  {chessSaved ? <span className={styles.savedTag}>{t('Saved')}</span> : null}
                   <Button kind="quiet" size="md" onClick={() => void requestClose()} disabled={!canClose}>
-                    Close
+                    {t('Close')}
                   </Button>
                   <Button
                     kind="primary"
@@ -759,7 +774,7 @@ export function EditCharacterModal({
                     onClick={() => void persistChess()}
                     disabled={!chessDirty || busy || savingChess}
                   >
-                    {savingChess ? 'Saving…' : 'Save'}
+                    {savingChess ? t('Saving…') : t('Save')}
                   </Button>
                 </>
               ) : null}
@@ -768,15 +783,15 @@ export function EditCharacterModal({
                 personaMode === 'standard' ? (
                   <>
                     {standardDirty ? (
-                      <span className={styles.footerHint}>Regenerate to apply, or discard.</span>
+                      <span className={styles.footerHint}>{t('Regenerate to apply, or discard.')}</span>
                     ) : null}
                     {standardDirty ? (
                       <Button kind="quiet" size="md" onClick={discardStandard} disabled={busy}>
-                        Discard
+                        {t('Discard')}
                       </Button>
                     ) : (
                       <Button kind="quiet" size="md" onClick={() => void requestClose()} disabled={!canClose}>
-                        Close
+                        {t('Close')}
                       </Button>
                     )}
                     <Button
@@ -785,21 +800,21 @@ export function EditCharacterModal({
                       onClick={() => void regenerate()}
                       disabled={busy || !standardDirty || personaSource.trim() === ''}
                     >
-                      {regenerating ? 'Regenerating…' : 'Regenerate'}
+                      {regenerating ? t('Regenerating…') : t('Regenerate')}
                     </Button>
                   </>
                 ) : (
                   <>
                     {expandedDirty ? (
-                      <span className={styles.footerHint}>Save to apply, or discard.</span>
+                      <span className={styles.footerHint}>{t('Save to apply, or discard.')}</span>
                     ) : null}
                     {expandedDirty ? (
                       <Button kind="quiet" size="md" onClick={discardAdvanced} disabled={busy}>
-                        Discard
+                        {t('Discard')}
                       </Button>
                     ) : (
                       <Button kind="quiet" size="md" onClick={() => void requestClose()} disabled={!canClose}>
-                        Close
+                        {t('Close')}
                       </Button>
                     )}
                     <Button
@@ -808,7 +823,7 @@ export function EditCharacterModal({
                       onClick={() => void saveAdvanced()}
                       disabled={busy || !expandedDirty}
                     >
-                      {savingAdvanced ? 'Saving…' : 'Save'}
+                      {savingAdvanced ? t('Saving…') : t('Save')}
                     </Button>
                   </>
                 )

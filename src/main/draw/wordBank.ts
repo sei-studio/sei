@@ -133,11 +133,69 @@ const RAW_WORDS: readonly string[] = [
 export const WORD_BANK: readonly string[] = [...new Set(RAW_WORDS)];
 
 /**
- * Pick `count` distinct words. Uniform Fisher-Yates over a copy, so a game
- * never repeats a word and no part of the bank is favoured.
+ * 260730: the Chinese bank, used when the character is language-pinned zh
+ * (metadata.language). Same selection rules: one word (1-3 characters),
+ * drawable as a line doodle, concrete, no culture/brand knowledge needed.
+ * Matching is contiguous containment (guessMatch CJK path), so entries must
+ * be everyday words the guesser would naturally type in a sentence.
  */
-export function pickWords(count: number): string[] {
-  const pool = [...WORD_BANK];
+const RAW_WORDS_ZH: readonly string[] = [
+  // 动物
+  '猫', '狗', '马', '牛', '猪', '羊', '鸭子', '鸡', '猫头鹰', '企鹅',
+  '鹦鹉', '老鹰', '蝙蝠', '老鼠', '兔子', '松鼠', '刺猬', '狐狸', '狼', '熊',
+  '狮子', '老虎', '斑马', '长颈鹿', '大象', '犀牛', '河马', '骆驼', '袋鼠', '熊猫',
+  '猴子', '鹿', '浣熊', '海豹', '鲸鱼', '海豚', '鲨鱼', '章鱼', '鱿鱼', '水母',
+  '螃蟹', '龙虾', '虾', '海星', '海马', '蜗牛', '虫子', '蚂蚁', '蜜蜂', '蝴蝶',
+  '飞蛾', '瓢虫', '蜘蛛', '蝎子', '蜻蜓', '蚱蜢', '毛毛虫', '青蛙', '乌龟', '蜥蜴',
+  '蛇', '鳄鱼', '恐龙', '龙', '独角兽', '美人鱼',
+  // 植物和自然
+  '树', '椰子树', '仙人掌', '花', '向日葵', '玫瑰', '郁金香', '蘑菇', '叶子', '四叶草',
+  '松果', '草', '海草', '珊瑚', '木头', '树枝', '森林', '岛', '山', '火山',
+  '洞穴', '悬崖', '瀑布', '河', '湖', '海滩', '沙漠', '冰山', '石头', '峡谷',
+  // 天空和天气
+  '太阳', '月亮', '星星', '云', '雨', '雪', '雪花', '彩虹', '闪电', '龙卷风',
+  '彗星', '星球', '土星', '银河', '日出', '日落', '雾', '水坑', '冰柱', '风',
+  // 食物和饮料
+  '苹果', '香蕉', '橙子', '葡萄', '草莓', '西瓜', '菠萝', '柠檬', '樱桃', '桃子',
+  '梨', '椰子', '牛油果', '胡萝卜', '西兰花', '玉米', '土豆', '西红柿', '洋葱', '辣椒',
+  '南瓜', '生菜', '面包', '吐司', '三明治', '汉堡', '热狗', '披萨', '寿司', '面条',
+  '汤', '沙拉', '米饭', '鸡蛋', '培根', '奶酪', '黄油', '煎饼', '华夫饼', '甜甜圈',
+  '饼干', '蛋糕', '纸杯蛋糕', '派', '冰淇淋', '冰棍', '棒棒糖', '糖果', '巧克力', '爆米花',
+  '蜂蜜', '果酱', '咖啡', '茶', '饺子', '包子', '火锅', '粽子', '月饼', '奶茶',
+  // 物品
+  '椅子', '桌子', '床', '沙发', '灯', '书', '铅笔', '钢笔', '剪刀', '钥匙',
+  '锁', '门', '窗户', '梯子', '桶', '扫帚', '雨伞', '眼镜', '帽子', '手套',
+  '围巾', '袜子', '鞋子', '靴子', '裙子', '裤子', '衬衫', '外套', '背包', '钱包',
+  '手表', '戒指', '皇冠', '手机', '电脑', '键盘', '鼠标', '耳机', '相机', '电视',
+  '遥控器', '电池', '灯泡', '蜡烛', '火柴', '锤子', '锯子', '螺丝刀', '扳手', '钉子',
+  '斧头', '铲子', '水管', '风筝', '气球', '礼物', '蛋筒', '瓶子', '杯子', '碗',
+  '盘子', '筷子', '勺子', '叉子', '刀', '锅', '水壶', '牙刷', '牙膏', '肥皂',
+  '毛巾', '镜子', '梳子', '枕头', '毯子', '闹钟', '日历', '信封', '邮票', '地图',
+  '旗子', '奖杯', '骰子', '拼图', '积木', '陀螺', '悠悠球', '秋千', '滑梯', '跷跷板',
+  // 交通和建筑
+  '汽车', '公交车', '卡车', '拖拉机', '摩托车', '自行车', '滑板', '火车', '地铁', '飞机',
+  '直升机', '火箭', '飞碟', '热气球', '船', '帆船', '潜水艇', '锚', '灯塔', '桥',
+  '房子', '城堡', '塔', '教堂', '帐篷', '小木屋', '风车', '水井', '烟囱', '栅栏',
+  '长城', '金字塔', '摩天轮', '过山车', '雕像', '喷泉', '路灯', '红绿灯', '邮箱', '垃圾桶',
+  // 人和身体
+  '眼睛', '鼻子', '嘴巴', '耳朵', '手', '脚', '牙齿', '头发', '胡子', '骨头',
+  '心', '脚印', '拳头', '婴儿', '机器人', '幽灵', '巫师', '国王', '王后', '骑士',
+  '海盗', '小丑', '天使', '雪人', '木乃伊', '侦探', '宇航员', '超人',
+  // 运动和乐器
+  '足球', '篮球', '棒球', '网球', '乒乓球', '保龄球', '飞镖', '钓鱼竿', '滑雪板', '冰鞋',
+  '吉他', '钢琴', '小提琴', '鼓', '喇叭', '笛子', '口琴', '麦克风', '铃铛', '哨子',
+];
+
+export const WORD_BANK_ZH: readonly string[] = [...new Set(RAW_WORDS_ZH)];
+
+/**
+ * Pick `count` distinct words. Uniform Fisher-Yates over a copy, so a game
+ * never repeats a word and no part of the bank is favoured. `language`
+ * selects the bank (260730): 'zh' draws from the Chinese bank, anything else
+ * from the English one.
+ */
+export function pickWords(count: number, language?: string): string[] {
+  const pool = language === 'zh' ? [...WORD_BANK_ZH] : [...WORD_BANK];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];

@@ -17,6 +17,7 @@
  */
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { TextField } from './TextField';
@@ -31,6 +32,7 @@ export interface SetNewPasswordModalProps {
 const MIN_PASSWORD_LEN = 8;
 
 export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): React.ReactElement {
+  const t = useT();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -42,11 +44,11 @@ export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): Reac
     if (submitting) return;
     setError(null);
     if (password.length < MIN_PASSWORD_LEN) {
-      setError(`Password must be at least ${MIN_PASSWORD_LEN} characters.`);
+      setError(t('Password must be at least {min} characters.', { min: MIN_PASSWORD_LEN }));
       return;
     }
     if (password !== confirm) {
-      setError("Those passwords don't match.");
+      setError(t("Those passwords don't match."));
       return;
     }
     setSubmitting(true);
@@ -67,13 +69,13 @@ export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): Reac
   // Success sub-state — confirm and let the user dismiss back into the app.
   if (done) {
     return (
-      <ModalShell title="Password updated" width={460} tier="recovery" escClose={false}>
+      <ModalShell title={t('Password updated')} width={460} tier="recovery" escClose={false}>
         <p className={styles.framing}>
-          You can sign in with your new password next time. You're all set for now.
+          {t("You can sign in with your new password next time. You're all set for now.")}
         </p>
         <ModalFooter>
           <Button kind="accent" size="md" onClick={onClose}>
-            Back to Sei
+            {t('Back to Sei')}
           </Button>
         </ModalFooter>
       </ModalShell>
@@ -81,33 +83,35 @@ export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): Reac
   }
 
   return (
-    <ModalShell title="Choose a new password" width={460} tier="recovery" escClose={false}>
+    <ModalShell title={t('Choose a new password')} width={460} tier="recovery" escClose={false}>
       <p className={styles.framing}>
-        Enter a new password for your Sei account. At least {MIN_PASSWORD_LEN} characters.
+        {t('Enter a new password for your Sei account. At least {min} characters.', {
+          min: MIN_PASSWORD_LEN,
+        })}
       </p>
 
       <form className={styles.form} onSubmit={onSubmit}>
         <div className={styles.fieldGroup}>
-          <label className={styles.fieldLabel} htmlFor="new-password">New password</label>
+          <label className={styles.fieldLabel} htmlFor="new-password">{t('New password')}</label>
           <TextField
             value={password}
             onChange={setPassword}
-            placeholder={`At least ${MIN_PASSWORD_LEN} characters`}
+            placeholder={t('At least {min} characters', { min: MIN_PASSWORD_LEN })}
             type="password"
             autoFocus
-            aria-label="New password"
+            aria-label={t('New password')}
             aria-invalid={!!error}
           />
         </div>
 
         <div className={styles.fieldGroup}>
-          <label className={styles.fieldLabel} htmlFor="confirm-password">Confirm password</label>
+          <label className={styles.fieldLabel} htmlFor="confirm-password">{t('Confirm password')}</label>
           <TextField
             value={confirm}
             onChange={setConfirm}
-            placeholder="Re-enter your new password"
+            placeholder={t('Re-enter your new password')}
             type="password"
-            aria-label="Confirm password"
+            aria-label={t('Confirm password')}
             aria-invalid={!!error}
           />
         </div>
@@ -120,7 +124,7 @@ export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): Reac
           type="submit"
           disabled={submitting || !password || !confirm}
         >
-          {submitting ? 'Saving…' : 'Save new password'}
+          {submitting ? t('Saving…') : t('Save new password')}
         </Button>
       </form>
     </ModalShell>

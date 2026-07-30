@@ -704,6 +704,14 @@ async function bootstrapWithInit(initData) {
       // ('casual'). MIRROR: src/main/chat/chatService.ts clampPunctuation()
       // applies the same read for the chat surface — keep the two in sync.
       ...(character.metadata?.punctuation === 'deliberate' ? { punctuation: 'deliberate' } : {}),
+      // 260730: per-character language pin (metadata.language, stamped at
+      // creation under the Chinese UI). Only known codes pass; anything else
+      // falls through to config.chat_language. MIRROR:
+      // src/shared/chatLanguage.ts characterLanguage() for the main-process
+      // surfaces — keep the two reads in sync.
+      ...(['en', 'zh', 'ja', 'ko', 'fr', 'es'].includes(character.metadata?.language)
+        ? { language: character.metadata.language }
+        : {}),
     },
     // Phase 13-15: when cloudMode is provided, the SDK routes through the
     // proxy with Bearer auth (apiKey is unused — anthropicClient passes

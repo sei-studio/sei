@@ -32,6 +32,7 @@ import { useMcDashboardStore } from './stores/useMcDashboardStore';
 import { useWizardStore } from './stores/useWizardStore';
 import { attemptSummon } from './summonFlow';
 import { sei } from './ipcClient';
+import { t } from './i18n';
 
 /** The launchable games (the picker's coming-soon tiles are never active). */
 export type LaunchGameId = 'chess' | 'minecraft' | 'draw';
@@ -50,15 +51,15 @@ export interface ActiveGameInfo {
  */
 export function activeGameFor(characterId: string): ActiveGameInfo | null {
   const chess = useChessStore.getState().games[characterId];
-  if (chess && chess.status !== 'ended') return { id: 'chess', name: 'Chess' };
+  if (chess && chess.status !== 'ended') return { id: 'chess', name: t('Chess') };
   const draw = useDrawStore.getState().games[characterId];
   // A game sitting on the setup screen is not yet active; the gallery is over.
   if (draw && draw.phase !== 'gallery' && draw.phase !== 'setup') {
-    return { id: 'draw', name: 'Draw!' };
+    return { id: 'draw', name: t('Draw!') };
   }
   const summon = useDataStore.getState().summons[characterId]?.kind;
   if (summon === 'online' || summon === 'connecting') {
-    return { id: 'minecraft', name: 'Minecraft' };
+    return { id: 'minecraft', name: t('Minecraft') };
   }
   return null;
 }

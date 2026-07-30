@@ -31,6 +31,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { t, useLangStore, useT, type UiLanguage } from '../lib/i18n';
 import { OnboardScene, type SuiPose } from './OnboardScene';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import type { AuthState, UniqueGender } from '@shared/ipc';
@@ -46,6 +47,81 @@ import cartoonM from '../assets/art-styles/cartoon-male.jpg';
 import threeDF from '../assets/art-styles/3d-female.jpg';
 import threeDM from '../assets/art-styles/3d-male.jpg';
 import styles from './onboard.module.css';
+
+/**
+ * Language corner (260730): a very small globe, top-right, above the drag
+ * strip. Click reveals a chrome-less two-line menu (EN / 中文); picking one
+ * flips the live UI language and persists config.ui_language so the rest of
+ * onboarding, and every character created after it, follows.
+ */
+function LangCorner(): React.ReactElement {
+  const lang = useLangStore((s) => s.lang);
+  const setLang = useLangStore((s) => s.setLang);
+  const [open, setOpen] = useState(false);
+  const pick = (next: UiLanguage): void => {
+    setOpen(false);
+    if (next === lang) return;
+    setLang(next);
+    void (async () => {
+      try {
+        const cfg = await sei.getConfig();
+        await sei.saveConfig({ ...cfg, ui_language: next });
+      } catch {
+        /* live flip already happened; persistence retries on Settings */
+      }
+    })();
+  };
+  return (
+    <div className={styles.langCorner}>
+      <button
+        type="button"
+        className={styles.langGlobeBtn}
+        aria-label="Language"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+        </svg>
+      </button>
+      {open ? (
+        <div className={styles.langMenu} role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            className={lang === 'en' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
+            onClick={() => pick('en')}
+          >
+            EN
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={lang === 'zh' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
+            onClick={() => pick('zh')}
+          >
+            中文
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Render a translated template with React nodes in {placeholder} slots.
+ * Node substitution can't ride t()'s string params, and concatenating
+ * separately translated fragments is banned, so the whole sentence stays ONE
+ * dictionary key and the nodes are spliced in afterwards. The English key
+ * itself renders correctly through the same path (split leaves the literal
+ * text around each placeholder intact). */
+function fmtNodes(template: string, nodes: Record<string, React.ReactNode>): React.ReactNode {
+  return template.split(/(\{[a-z]+\})/i).map((part, i) => {
+    const m = /^\{([a-z]+)\}$/i.exec(part);
+    if (!m) return part;
+    return <React.Fragment key={i}>{nodes[m[1]] ?? part}</React.Fragment>;
+  });
+}
 
 type AgeRange = NonNullable<UserPreferences['companion_age_range']>;
 type ArtStyle = NonNullable<UserPreferences['art_style']>;
@@ -247,6 +323,7 @@ export function OnboardApp({
   startAtSignIn,
   onStartFresh,
 }: OnboardAppProps): React.ReactElement {
+  const tt = useT();
   const [phase, setPhase] = useState<Phase>(
     startAtSignIn ? { k: 'auth', mode: 'returning' } : { k: 'intro' },
   );
@@ -446,7 +523,7 @@ export function OnboardApp({
       setGroundIn(true);
     } catch (err) {
       if (run !== setupRunRef.current) return;
-      setSetupError((err as Error).message || 'Something went wrong.');
+      setSetupError((err as Error).message || t('Something went wrong.'));
     }
   }, [buildConfig]);
 
@@ -474,16 +551,18 @@ export function OnboardApp({
   // Display text: the 'ready' line has a variant for when a companion was
   // generated, and {name} placeholders render as the entered name (the name
   // is fixed before iSee/job render, so the typewriter never restarts
-  // mid-line).
-  const lineText = (
-    line === 'ready'
-      ? genCharacterIdRef.current
-        ? "Welcome back! Everything is all set, and someone's waiting to meet you. You ready?"
-        : SCRIPT.ready
-      : line
-        ? SCRIPT[line]
-        : ''
-  ).replaceAll('{name}', name.trim());
+  // mid-line). Translation happens HERE, at render, via the subscribed
+  // translator — the module-level SCRIPT stays English keys, so a language
+  // flip re-renders with the other language instead of baking one in at
+  // import time.
+  const lineText = line
+    ? tt(
+        line === 'ready' && genCharacterIdRef.current
+          ? "Welcome back! Everything is all set, and someone's waiting to meet you. You ready?"
+          : SCRIPT[line],
+        { name: name.trim() },
+      )
+    : '';
   const tw = useTypewriter(lineText);
   useEffect(() => {
     if (!line) return;
@@ -692,6 +771,7 @@ export function OnboardApp({
 
   return (
     <div className={styles.root}>
+      <LangCorner />
       <div
         className={styles.card}
         onClick={clickAdvances ? advance : line && !tw.done ? tw.skip : undefined}
@@ -714,7 +794,10 @@ export function OnboardApp({
             </p>
             {hintOn && tw.done ? (
               <div className={styles.continueHint}>
-                <MouseIcon /> or <span className={styles.hintGlyph}>&#x21B5;</span> to continue
+                <MouseIcon />{' '}
+                {fmtNodes(tt('or {enter} to continue'), {
+                  enter: <span className={styles.hintGlyph}>&#x21B5;</span>,
+                })}
               </div>
             ) : null}
             {tw.done ? <LineControls
@@ -768,7 +851,7 @@ export function OnboardApp({
         {phase.k === 'welcome-existing' ? (
           <div className={styles.panel}>
             <p className={styles.panelText}>
-              Welcome back! You already have an account with this login. Signing you in...
+              {tt('Welcome back! You already have an account with this login. Signing you in...')}
             </p>
           </div>
         ) : null}
@@ -778,7 +861,7 @@ export function OnboardApp({
             <div className={styles.panel}>
               <p className={styles.panelText}>{setupError}</p>
               <button className={styles.pill} onClick={() => void runCloudSetup()}>
-                Try again
+                {tt('Try again')}
               </button>
             </div>
           ) : (
@@ -794,14 +877,14 @@ export function OnboardApp({
               <div className={`${styles.progress} ${styles.progressBig}`}>
                 <div className={styles.progressFill} />
               </div>
-              <p className={styles.panelText}>Setting up...</p>
+              <p className={styles.panelText}>{tt('Setting up...')}</p>
             </div>
           )
         ) : null}
 
         <button
           className={styles.closeBtn}
-          aria-label="Quit Sei"
+          aria-label={tt('Quit Sei')}
           onClick={(e) => {
             e.stopPropagation();
             void sei.windowClose();
@@ -823,7 +906,7 @@ function fadeThemeClass(): string {
 /** The "click" half of the continue hint: a mouse with the left button shaded. */
 function MouseIcon(): React.ReactElement {
   return (
-    <svg className={styles.hintMouse} viewBox="0 0 16 22" aria-label="Click">
+    <svg className={styles.hintMouse} viewBox="0 0 16 22" aria-label={t('Click')}>
       <rect x="1" y="1" width="14" height="20" rx="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <path d="M8 1 A7 7 0 0 0 1 8 L 8 8 Z" fill="currentColor" />
       <line x1="8" y1="1" x2="8" y2="8" stroke="currentColor" strokeWidth="1.2" />
@@ -846,13 +929,14 @@ interface LineControlsProps {
 
 function LineControls(props: LineControlsProps): React.ReactElement | null {
   const { line, name, setName, answersRef, goLine, advance, walkOff } = props;
+  const tt = useT();
 
   switch (line) {
     case 'newQ':
       return (
         <div className={styles.choices}>
           <button className={styles.pill} onClick={() => goLine('nameQ')}>
-            Yep
+            {tt('Yep')}
           </button>
           <button
             className={styles.pill}
@@ -861,10 +945,10 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
               goLine('welcomeBack');
             }}
           >
-            Nah
+            {tt('Nah')}
           </button>
           <button className={styles.quietLink} onClick={() => goLine('runPlace')}>
-            Back
+            {tt('Back')}
           </button>
         </div>
       );
@@ -875,16 +959,16 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
             className={styles.nameInput}
             value={name}
             autoFocus
-            placeholder="Your name"
+            placeholder={tt('Your name')}
             maxLength={40}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && name.trim()) goLine('iSee');
             }}
-            aria-label="Your name"
+            aria-label={tt('Your name')}
           />
           <button className={styles.quietLink} onClick={() => goLine('newQ')}>
-            Back
+            {tt('Back')}
           </button>
         </div>
       );
@@ -892,10 +976,10 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
       return (
         <div className={styles.choices}>
           <button className={styles.pill} onClick={advance}>
-            Sounds fun
+            {tt('Sounds fun')}
           </button>
           <button className={styles.quietLink} onClick={() => goLine('skipConfirm')}>
-            Not interested
+            {tt('Not interested')}
           </button>
         </div>
       );
@@ -909,10 +993,10 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
               walkOff('auth-new');
             }}
           >
-            Skip
+            {tt('Skip')}
           </button>
           <button className={styles.pill} onClick={() => goLine('job')}>
-            Nevermind
+            {tt('Nevermind')}
           </button>
         </div>
       );
@@ -936,11 +1020,11 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
                 goLine('qArt');
               }}
             >
-              {o.label}
+              {tt(o.label)}
             </button>
           ))}
           <button className={styles.quietLink} onClick={() => goLine('qDyn')}>
-            Back
+            {tt('Back')}
           </button>
         </div>
       );
@@ -952,7 +1036,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
               <button
                 key={o.value}
                 className={styles.artTile}
-                aria-label={o.label}
+                aria-label={tt(o.label)}
                 onClick={() => {
                   answersRef.current.art = o.value;
                   goLine('qGender');
@@ -966,7 +1050,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
             ))}
           </div>
           <button className={styles.quietLink} onClick={() => goLine('qAge')}>
-            Back
+            {tt('Back')}
           </button>
         </div>
       );
@@ -982,11 +1066,11 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
                 goLine('allDone');
               }}
             >
-              {o.label}
+              {tt(o.label)}
             </button>
           ))}
           <button className={styles.quietLink} onClick={() => goLine('qArt')}>
-            Back
+            {tt('Back')}
           </button>
         </div>
       );
@@ -994,7 +1078,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
       return (
         <div className={styles.choices}>
           <button className={styles.pill} onClick={advance}>
-            Let's go
+            {tt("Let's go")}
           </button>
         </div>
       );
@@ -1012,6 +1096,7 @@ function DynPicker(props: {
   onDone: () => void;
   onBack: () => void;
 }): React.ReactElement {
+  const tt = useT();
   const [picked, setPicked] = useState<Dynamic[]>([]);
   const [surprise, setSurprise] = useState(false);
   const toggle = (v: Dynamic): void => {
@@ -1030,7 +1115,7 @@ function DynPicker(props: {
               onClick={() => toggle(o.value)}
             >
               {rank >= 0 ? <span className={styles.rankBadge}>{rank + 1}</span> : null}
-              {o.label}
+              {tt(o.label)}
             </button>
           );
         })}
@@ -1041,7 +1126,7 @@ function DynPicker(props: {
             setPicked([]);
           }}
         >
-          Surprise me
+          {tt('Surprise me')}
         </button>
       </div>
       <div className={styles.choices}>
@@ -1053,10 +1138,10 @@ function DynPicker(props: {
             props.onDone();
           }}
         >
-          Done
+          {tt('Done')}
         </button>
         <button className={styles.quietLink} onClick={props.onBack}>
-          Back
+          {tt('Back')}
         </button>
       </div>
     </div>
@@ -1107,6 +1192,7 @@ function AuthPanel(props: {
   onStartFresh?: () => void;
 }): React.ReactElement {
   const { mode, needsTos } = props;
+  const tt = useT();
   // New users create an account; returning users sign in. Both can toggle.
   const [signup, setSignup] = useState(mode === 'new');
   const [email, setEmail] = useState('');
@@ -1157,7 +1243,7 @@ function AuthPanel(props: {
         if (!res.ok) setError(res.message);
       }
     } catch (err) {
-      setError((err as Error).message || 'Something went wrong.');
+      setError((err as Error).message || t('Something went wrong.'));
     } finally {
       setSubmitting(false);
     }
@@ -1167,32 +1253,35 @@ function AuthPanel(props: {
     return (
       <div className={styles.panel}>
         <p className={styles.panelText}>
-          One more thing: the{' '}
-          <a
-            className={styles.panelLink}
-            href="#tos"
-            onClick={(e) => {
-              e.preventDefault();
-              void sei.openExternal('https://sei.gg/terms.html');
-            }}
-          >
-            Terms of Service
-          </a>{' '}
-          and{' '}
-          <a
-            className={styles.panelLink}
-            href="#privacy"
-            onClick={(e) => {
-              e.preventDefault();
-              void sei.openExternal('https://sei.gg/privacy.html');
-            }}
-          >
-            Privacy Policy
-          </a>
-          .
+          {fmtNodes(tt('One more thing: the {terms} and {privacy}.'), {
+            terms: (
+              <a
+                className={styles.panelLink}
+                href="#tos"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void sei.openExternal('https://sei.gg/terms.html');
+                }}
+              >
+                {tt('Terms of Service')}
+              </a>
+            ),
+            privacy: (
+              <a
+                className={styles.panelLink}
+                href="#privacy"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void sei.openExternal('https://sei.gg/privacy.html');
+                }}
+              >
+                {tt('Privacy Policy')}
+              </a>
+            ),
+          })}
         </p>
         <button className={styles.pill} onClick={props.onAgreeTos}>
-          I agree
+          {tt('I agree')}
         </button>
       </div>
     );
@@ -1206,9 +1295,9 @@ function AuthPanel(props: {
       // Pass the address explicitly: an unverified signup has no session, so
       // the handler's signed-in fallback cannot resolve it (260729).
       const res = await sei.resendVerification({ email: email.trim() });
-      setVerifyNote(res.ok ? 'Sent. Give it a minute, and check spam too.' : res.message);
+      setVerifyNote(res.ok ? t('Sent. Give it a minute, and check spam too.') : res.message);
     } catch {
-      setVerifyNote("Couldn't resend. Try again in a moment.");
+      setVerifyNote(t("Couldn't resend. Try again in a moment."));
     } finally {
       setResendBusy(false);
     }
@@ -1216,16 +1305,16 @@ function AuthPanel(props: {
 
   const forgotPassword = async (): Promise<void> => {
     if (!email.trim()) {
-      setError('Enter your email above first.');
+      setError(t('Enter your email above first.'));
       return;
     }
     setError(null);
     setResetNote(null);
     try {
       const res = await sei.sendPasswordReset({ email: email.trim() });
-      setResetNote(res.ok ? 'Reset link sent. Check your email.' : res.message);
+      setResetNote(res.ok ? t('Reset link sent. Check your email.') : res.message);
     } catch {
-      setResetNote("Couldn't send the reset link. Try again in a moment.");
+      setResetNote(t("Couldn't send the reset link. Try again in a moment."));
     }
   };
 
@@ -1233,18 +1322,18 @@ function AuthPanel(props: {
     return (
       <div className={styles.panel}>
         <p className={styles.panelText}>
-          Check your email to confirm your account. This continues on its own once you do.
+          {tt('Check your email to confirm your account. This continues on its own once you do.')}
         </p>
         <button
           className={`${styles.pill} ${styles.pillWide}`}
           disabled={resendBusy}
           onClick={() => void resendEmail()}
         >
-          {resendBusy ? 'Sending...' : 'Resend email'}
+          {resendBusy ? tt('Sending...') : tt('Resend email')}
         </button>
         {verifyNote ? <p className={styles.panelNote}>{verifyNote}</p> : null}
         <button className={styles.quietLink} onClick={() => setAwaitingVerify(false)}>
-          Back
+          {tt('Back')}
         </button>
       </div>
     );
@@ -1259,21 +1348,21 @@ function AuthPanel(props: {
         className={styles.field}
         type="email"
         value={email}
-        placeholder="Email"
+        placeholder={tt('Email')}
         autoFocus
         onChange={(e) => setEmail(e.target.value)}
-        aria-label="Email"
+        aria-label={tt('Email')}
       />
       <input
         className={styles.field}
         type="password"
         value={password}
-        placeholder="Password"
+        placeholder={tt('Password')}
         onChange={(e) => setPassword(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submit();
         }}
-        aria-label="Password"
+        aria-label={tt('Password')}
       />
       {!signup ? (
         <button
@@ -1281,23 +1370,23 @@ function AuthPanel(props: {
           disabled={submitting}
           onClick={() => void forgotPassword()}
         >
-          Forgot password?
+          {tt('Forgot password?')}
         </button>
       ) : null}
       {resetNote ? <p className={styles.panelNote}>{resetNote}</p> : null}
       {signup ? (
         <>
-          <div className={styles.dobRow} aria-label="Birthday">
+          <div className={styles.dobRow} aria-label={tt('Birthday')}>
             <select
               className={styles.fieldSelect}
               value={dobMonth}
               onChange={(e) => setDobMonth(Number(e.target.value))}
-              aria-label="Birth month"
+              aria-label={tt('Birth month')}
             >
-              <option value={0}>Month</option>
+              <option value={0}>{tt('Month')}</option>
               {MONTHS.map((m, i) => (
                 <option key={m} value={i + 1}>
-                  {m}
+                  {tt(m)}
                 </option>
               ))}
             </select>
@@ -1305,9 +1394,9 @@ function AuthPanel(props: {
               className={styles.fieldSelect}
               value={dobDay}
               onChange={(e) => setDobDay(Number(e.target.value))}
-              aria-label="Birth day"
+              aria-label={tt('Birth day')}
             >
-              <option value={0}>Day</option>
+              <option value={0}>{tt('Day')}</option>
               {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
                 <option key={d} value={d}>
                   {d}
@@ -1318,9 +1407,9 @@ function AuthPanel(props: {
               className={styles.fieldSelect}
               value={dobYear}
               onChange={(e) => setDobYear(Number(e.target.value))}
-              aria-label="Birth year"
+              aria-label={tt('Birth year')}
             >
-              <option value={0}>Year</option>
+              <option value={0}>{tt('Year')}</option>
               {years.map((y) => (
                 <option key={y} value={y}>
                   {y}
@@ -1335,28 +1424,32 @@ function AuthPanel(props: {
               onChange={(e) => setTosChecked(e.target.checked)}
             />
             <span>
-              I agree to the{' '}
-              <a
-                className={styles.panelLink}
-                href="#tos"
-                onClick={(e) => {
-                  e.preventDefault();
-                  void sei.openExternal('https://sei.gg/terms.html');
-                }}
-              >
-                Terms
-              </a>{' '}
-              and{' '}
-              <a
-                className={styles.panelLink}
-                href="#privacy"
-                onClick={(e) => {
-                  e.preventDefault();
-                  void sei.openExternal('https://sei.gg/privacy.html');
-                }}
-              >
-                Privacy Policy
-              </a>
+              {fmtNodes(tt('I agree to the {terms} and {privacy}'), {
+                terms: (
+                  <a
+                    className={styles.panelLink}
+                    href="#tos"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void sei.openExternal('https://sei.gg/terms.html');
+                    }}
+                  >
+                    {tt('Terms')}
+                  </a>
+                ),
+                privacy: (
+                  <a
+                    className={styles.panelLink}
+                    href="#privacy"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void sei.openExternal('https://sei.gg/privacy.html');
+                    }}
+                  >
+                    {tt('Privacy Policy')}
+                  </a>
+                ),
+              })}
             </span>
           </label>
         </>
@@ -1367,7 +1460,13 @@ function AuthPanel(props: {
         </p>
       ) : null}
       <button className={`${styles.pill} ${styles.pillWide}`} disabled={!canSubmit} onClick={() => void submit()}>
-        {signup ? (submitting ? 'Creating account...' : 'Create account') : submitting ? 'Signing in...' : 'Sign in'}
+        {signup
+          ? submitting
+            ? tt('Creating account...')
+            : tt('Create account')
+          : submitting
+            ? tt('Signing in...')
+            : tt('Sign in')}
       </button>
       <button
         className={styles.googleBtn}
@@ -1379,19 +1478,19 @@ function AuthPanel(props: {
         }}
       >
         <GoogleG />
-        Continue with Google
+        {tt('Continue with Google')}
       </button>
       {mode === 'new' ? (
         <button className={styles.quietLink} onClick={() => setSignup((s) => !s)}>
-          {signup ? 'I already have an account' : 'New here? Create an account'}
+          {signup ? tt('I already have an account') : tt('New here? Create an account')}
         </button>
       ) : props.onStartFresh ? (
         <button className={styles.quietLink} onClick={props.onStartFresh}>
-          I'm new here
+          {tt("I'm new here")}
         </button>
       ) : null}
       <button className={styles.quietLink} onClick={props.onLocal}>
-        Continue locally with my own API key
+        {tt('Continue locally with my own API key')}
       </button>
     </div>
   );
@@ -1402,6 +1501,7 @@ function AuthPanel(props: {
  * On success (or an explicit cancel) it just dismisses itself — the session
  * lands via the auth push and OnboardApp proceeds from there. */
 function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
+  const tt = useT();
   const [error, setError] = useState<string | null>(null);
   const startedRef = useRef(false);
   const inFlightRef = useRef(false);
@@ -1414,11 +1514,11 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
       (res) => {
         inFlightRef.current = false;
         if (res.ok || res.reason === 'user_cancelled') props.onDone();
-        else setError(res.message || "Sign-in didn't finish. Try again.");
+        else setError(res.message || t("Sign-in didn't finish. Try again."));
       },
       () => {
         inFlightRef.current = false;
-        setError("Sign-in didn't finish. Try again.");
+        setError(t("Sign-in didn't finish. Try again."));
       },
     );
   };
@@ -1445,10 +1545,10 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
       <div className={styles.panel}>
         <p className={styles.panelText}>{error}</p>
         <button className={`${styles.pill} ${styles.pillWide}`} onClick={start}>
-          Try again
+          {tt('Try again')}
         </button>
         <button className={styles.quietLink} onClick={() => void cancel()}>
-          Cancel sign-in
+          {tt('Cancel sign-in')}
         </button>
       </div>
     );
@@ -1456,11 +1556,12 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
   return (
     <div className={styles.panel}>
       <p className={styles.panelText}>
-        We opened a browser tab to finish signing in with Google. Come back when you're done;
-        this picks up on its own.
+        {tt(
+          "We opened a browser tab to finish signing in with Google. Come back when you're done; this picks up on its own.",
+        )}
       </p>
       <button className={styles.quietLink} onClick={() => void cancel()}>
-        Cancel sign-in
+        {tt('Cancel sign-in')}
       </button>
     </div>
   );
@@ -1485,6 +1586,7 @@ const PROVIDERS: Array<{ value: string; label: string }> = [
 ];
 
 function LocalSetupPanel(props: { onDone: (provider: string, key: string) => void }): React.ReactElement {
+  const tt = useT();
   const [provider, setProvider] = useState('anthropic');
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1496,18 +1598,18 @@ function LocalSetupPanel(props: { onDone: (provider: string, key: string) => voi
     try {
       props.onDone(provider, key);
     } catch (err) {
-      setError((err as Error).message || 'Something went wrong.');
+      setError((err as Error).message || t('Something went wrong.'));
       setBusy(false);
     }
   };
   return (
     <div className={styles.panel}>
-      <p className={styles.panelText}>Pick your model provider and paste your API key.</p>
+      <p className={styles.panelText}>{tt('Pick your model provider and paste your API key.')}</p>
       <select
         className={styles.fieldSelect}
         value={provider}
         onChange={(e) => setProvider(e.target.value)}
-        aria-label="Model provider"
+        aria-label={tt('Model provider')}
       >
         {PROVIDERS.map((p) => (
           <option key={p.value} value={p.value}>
@@ -1524,7 +1626,7 @@ function LocalSetupPanel(props: { onDone: (provider: string, key: string) => voi
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submit();
         }}
-        aria-label="API key"
+        aria-label={tt('API key')}
       />
       {error ? (
         <p className={styles.panelError} role="alert">
@@ -1532,7 +1634,7 @@ function LocalSetupPanel(props: { onDone: (provider: string, key: string) => voi
         </p>
       ) : null}
       <button className={`${styles.pill} ${styles.pillWide}`} disabled={!key.trim() || busy} onClick={() => void submit()}>
-        Done
+        {tt('Done')}
       </button>
     </div>
   );

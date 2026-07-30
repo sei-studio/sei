@@ -7,6 +7,7 @@
  * Source: 04-09 PLAN Task 1; 04-UI-SPEC §"Plain-English error copy".
  */
 import React from 'react';
+import { useT } from '../lib/i18n';
 import styles from './Banner.module.css';
 
 export interface BannerProps {
@@ -16,6 +17,7 @@ export interface BannerProps {
 }
 
 export function Banner({ kind, message, onDismiss }: BannerProps): React.ReactElement {
+  const t = useT();
   return (
     <div className={`${styles.banner} ${styles[kind]}`} role="alert">
       <span className={styles.message}>{message}</span>
@@ -24,7 +26,7 @@ export function Banner({ kind, message, onDismiss }: BannerProps): React.ReactEl
           type="button"
           className={styles.dismiss}
           onClick={onDismiss}
-          aria-label="Dismiss"
+          aria-label={t('Dismiss')}
         >
           ×
         </button>

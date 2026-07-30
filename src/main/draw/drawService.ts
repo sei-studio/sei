@@ -90,7 +90,7 @@ import { splitReply } from '../chat/chatService';
 import { plainLine } from '../chat/plainLine';
 import * as chatStore from '../chat/chatStore';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
-import { clampChatLanguage } from '../../shared/chatLanguage';
+import { characterLanguage, surfaceLanguage, type ChatLanguage } from '../../shared/chatLanguage';
 import { pickWords } from './wordBank';
 import { findWordMatch, matchesWord, saysWord } from './guessMatch';
 import { guessGate } from './guessSchedule';
@@ -354,6 +354,8 @@ interface Session {
    * stocked for the worst case: every round spends 1 + WORD_CHOICES of it.
    */
   pool: string[];
+  /** 260730: character-pinned game language ('zh' bank + prompts); null = en. */
+  language: ChatLanguage | null;
   /** The words on offer during a 'pick' phase; empty otherwise. */
   wordChoices: string[];
   word: string;
@@ -510,11 +512,19 @@ function systemLine(s: Session, text: string, modelText?: string): void {
  * it which side of the round it is on.
  */
 function wordSlipLine(s: Session, who: DrawRole): void {
+  // Player-facing wording follows the game language (260730); the
+  // modelText stays English per the language directive's contract that
+  // instructions to the model are always English.
+  const zh = s.language === 'zh';
   systemLine(
     s,
     who === 'ai'
-      ? `${s.aiName} can't type this word! They're drawing it, not guessing it.`
-      : "You can't type this word! You're drawing it, not guessing it.",
+      ? zh
+        ? `${s.aiName}不能打出这个词！他们在画它，不是在猜它。`
+        : `${s.aiName} can't type this word! They're drawing it, not guessing it.`
+      : zh
+        ? '你不能打出这个词！你在画它，不是在猜它。'
+        : "You can't type this word! You're drawing it, not guessing it.",
     who === 'ai'
       ? 'You cannot type this word! You are drawing it, not guessing it. Do not respond to this message.'
       : `${s.playerName} typed the word they are drawing, so the game hid the line. You did not see it.`,
@@ -559,6 +569,9 @@ async function newSession(characterId: string, rounds = 3): Promise<Session> {
     finished: false,
     playerName: (config.preferred_name ?? '').trim() || 'You',
     aiName: character?.name ?? 'Companion',
+    // 260730: the game runs in the character's language (word bank + the
+    // language directive buildSystemBlocks already gets). null = English.
+    language: characterLanguage(character?.metadata) ?? null,
   };
 }
 
@@ -600,7 +613,7 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
 
   // One word for each of the character's turns, WORD_CHOICES for each of the
   // player's. All distinct, so nothing offered can duplicate anything drawn.
-  s.pool = pickWords(s.rounds * (1 + WORD_CHOICES));
+  s.pool = pickWords(s.rounds * (1 + WORD_CHOICES), s.language ?? undefined);
   s.round = 1;
   s.startedAt = Date.now();
   log(s, `game start rounds=${s.rounds}`);
@@ -823,7 +836,7 @@ async function finishGame(s: Session, reason: 'completed' | 'abandoned'): Promis
   const ev: ChatMessage = {
     id: randomUUID(),
     role: 'system',
-    text: playSummaryText(s.aiName, 'Draw!', durationMs),
+    text: playSummaryText(s.aiName, 'Draw!', durationMs, s.language === 'zh' ? 'zh' : undefined),
     ts: Date.now(),
     event: { kind: 'play', game: 'Draw!', durationMs },
   } as ChatMessage;
@@ -886,8 +899,12 @@ function startDrawingPhase(s: Session): void {
   systemLine(
     s,
     drawer === 'player'
-      ? `Round ${s.round} of ${s.rounds}. Your turn to draw.`
-      : `Round ${s.round} of ${s.rounds}. ${s.aiName} is drawing.`,
+      ? s.language === 'zh'
+        ? `第${s.round}轮，共${s.rounds}轮。轮到你画了。`
+        : `Round ${s.round} of ${s.rounds}. Your turn to draw.`
+      : s.language === 'zh'
+        ? `第${s.round}轮，共${s.rounds}轮。${s.aiName}正在画。`
+        : `Round ${s.round} of ${s.rounds}. ${s.aiName} is drawing.`,
     drawer === 'player'
       ? `Round ${s.round} of ${s.rounds}. ${s.playerName} draws, you guess.`
       : `Round ${s.round} of ${s.rounds}. You draw, ${s.playerName} guesses.`,
@@ -943,6 +960,7 @@ function endTurn(s: Session, guessed: boolean): void {
     guesser: drawer === 'player' ? 'ai' : 'player',
     aiName: s.aiName,
     playerName: s.playerName,
+    language: s.language === 'zh' ? 'zh' : 'en',
   });
   systemLine(s, reveal.text, reveal.modelText);
 
@@ -1387,7 +1405,11 @@ async function runTurnEndReaction(
  * allowed, so it is parsed out rather than fought.
  */
 function isSilence(line: string): boolean {
-  return /^[([]?\s*(silence|says nothing|stays? silent|no reply)\s*[)\]]?[.!]?$/i.test(line.trim());
+  // 260730: CJK variants — a zh-pinned character writes （沉默） and the
+  // English-only pattern let it leak into the game chat as a spoken line.
+  return /^[([（]?\s*(silence|says nothing|stays? silent|no reply|沉默|无言|不说话|沈黙|無言|침묵)\s*[)\]）]?[.!。！]?$/i.test(
+    line.trim(),
+  );
 }
 
 /**
@@ -1398,7 +1420,8 @@ function isSilence(line: string): boolean {
  * through: the [game] prefix belongs to the engine alone.
  */
 function isFakeGameLine(line: string): boolean {
-  return /^\s*\[\s*game\s*\]/i.test(line);
+  // 260730: CJK variants — a zh model copies the prefix as [游戏] or 【游戏】.
+  return /^\s*(\[\s*game\s*\]|[[【]\s*游戏\s*[\]】])/i.test(line);
 }
 
 /**
@@ -1928,7 +1951,8 @@ async function prepareCall(s: Session): Promise<{
     openWorldDetected: false,
     inGame: false,
     voiceCall: false,
-    language: clampChatLanguage(config.chat_language),
+    // 260730: character-pinned language wins over the auto-detected one.
+    language: surfaceLanguage(character.metadata, config.chat_language),
     extraStable: drawContractBlock({
       playerName: s.playerName,
       rounds: s.rounds,

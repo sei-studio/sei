@@ -628,14 +628,19 @@ export function turnEndLine(opts: {
   guesser: DrawRole;
   aiName: string;
   playerName: string;
+  /** 260730: player-facing wording follows the game language; modelText stays English. */
+  language?: 'en' | 'zh' | null;
 }): { text: string; modelText: string } {
   const { guessed, word, guesser, aiName, playerName } = opts;
+  const zh = opts.language === 'zh';
   if (!guessed) {
     const line = `Time. It was "${word}".`;
-    return { text: line, modelText: line };
+    return { text: zh ? `时间到。答案是「${word}」。` : line, modelText: line };
   }
   return {
-    text: `${guesser === 'ai' ? aiName : playerName} got it. It was "${word}".`,
+    text: zh
+      ? `${guesser === 'ai' ? aiName : playerName}猜对了。答案是「${word}」。`
+      : `${guesser === 'ai' ? aiName : playerName} got it. It was "${word}".`,
     modelText: `${guesser === 'ai' ? 'You' : playerName} got it. It was "${word}".`,
   };
 }

@@ -20,6 +20,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { uiLanguage, useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { GoogleSignInButton } from './GoogleSignInButton';
@@ -43,6 +44,7 @@ type Mode = 'signin' | 'signup';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.ReactElement {
+  const t = useT();
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -112,7 +114,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
     setError(null);
     // Item 8 — specific message for a malformed email, pre-network.
     if (!EMAIL_RE.test(email.trim())) {
-      setError("That doesn't look like a valid email address.");
+      setError(t("That doesn't look like a valid email address."));
       return;
     }
     setSubmitting(true);
@@ -187,7 +189,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
     // valid-looking address before firing so we don't send the user to a
     // "check your email" dead-end with nothing entered.
     if (!EMAIL_RE.test(email.trim())) {
-      setError('Enter your email above, then tap "Forgot your password?"');
+      setError(t('Enter your email above, then tap "Forgot your password?"'));
       return;
     }
     setSubmitting(true);
@@ -205,34 +207,40 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
     }
   };
 
-  const titleText = mode === 'signin' ? 'Sign in to Sei' : 'Create your Sei account';
+  const titleText = mode === 'signin' ? t('Sign in to Sei') : t('Create your Sei account');
   const ctaLabel = submitting
     ? mode === 'signin'
-      ? 'Signing in…'
-      : 'Creating account…'
+      ? t('Signing in…')
+      : t('Creating account…')
     : mode === 'signin'
-      ? 'Sign In'
-      : 'Create Account';
+      ? t('Sign In')
+      : t('Create Account');
   const toggleLabel =
-    mode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in';
+    mode === 'signin' ? t('New here? Create an account') : t('Already have an account? Sign in');
 
   // 260519 UAT fix #2 — verification-pending sub-state. Renders inside the
   // same scrim+modal frame so the user isn't bounced anywhere; only the modal
   // body content changes. Replaced by the verify-email Banner (plan 06) once
   // that ships.
   if (verificationSentTo !== null) {
+    // Keep the <strong> around the email: translate with the {email}
+    // placeholder intact, then split on it and re-insert the styled node.
+    const [vBefore, vAfter] = t(
+      'We sent a verification link to {email}. Open it on this device to finish signing in.',
+    ).split('{email}');
     return (
-      <ModalShell title="Check your email" width={460} escClose={!submitting} onClose={onClose}>
+      <ModalShell title={t('Check your email')} width={460} escClose={!submitting} onClose={onClose}>
         <p className={styles.framing}>
-          We sent a verification link to <strong>{verificationSentTo}</strong>. Open it on this
-          device to finish signing in.
+          {vBefore}
+          <strong>{verificationSentTo}</strong>
+          {vAfter}
         </p>
         <p className={styles.framing}>
-          You can close this window. Once you click the link, Sei signs you in automatically.
+          {t('You can close this window. Once you click the link, Sei signs you in automatically.')}
         </p>
         <ModalFooter>
           <Button kind="quiet" size="md" onClick={onClose}>
-            Back to Sei
+            {t('Back to Sei')}
           </Button>
         </ModalFooter>
       </ModalShell>
@@ -242,18 +250,22 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   // Forgot-password sub-state — neutral "check your email" panel. Same frame as
   // the verification panel; copy is deliberately account-existence-neutral.
   if (resetSentTo !== null) {
+    const [rBefore, rAfter] = t(
+      "If an account exists for {email}, we've sent a password reset link. Open it on this device to choose a new password.",
+    ).split('{email}');
     return (
-      <ModalShell title="Check your email" width={460} escClose={!submitting} onClose={onClose}>
+      <ModalShell title={t('Check your email')} width={460} escClose={!submitting} onClose={onClose}>
         <p className={styles.framing}>
-          If an account exists for <strong>{resetSentTo}</strong>, we've sent a password reset
-          link. Open it on this device to choose a new password.
+          {rBefore}
+          <strong>{resetSentTo}</strong>
+          {rAfter}
         </p>
         <p className={styles.framing}>
-          You can close this window. Once you click the link, Sei prompts you for a new password.
+          {t('You can close this window. Once you click the link, Sei prompts you for a new password.')}
         </p>
         <ModalFooter>
           <Button kind="quiet" size="md" onClick={onClose}>
-            Back to Sei
+            {t('Back to Sei')}
           </Button>
         </ModalFooter>
       </ModalShell>
@@ -264,7 +276,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
     <>
     <ModalShell title={titleText} width={460} escClose={!submitting} onClose={onClose}>
         {framingLabel ? (
-          <p className={styles.framing}>Sign in to {framingLabel}</p>
+          <p className={styles.framing}>{t('Sign in to {action}', { action: framingLabel })}</p>
         ) : null}
 
         <div className={styles.toggleRow}>
@@ -282,24 +294,24 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
 
         <form className={styles.form} onSubmit={onSubmit}>
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel} htmlFor="signin-email">Email</label>
+            <label className={styles.fieldLabel} htmlFor="signin-email">{t('Email')}</label>
             <TextField
               value={email}
               onChange={setEmail}
               placeholder="you@example.com"
               autoFocus
-              aria-label="Email"
+              aria-label={t('Email')}
             />
           </div>
 
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel} htmlFor="signin-password">Password</label>
+            <label className={styles.fieldLabel} htmlFor="signin-password">{t('Password')}</label>
             <TextField
               value={password}
               onChange={setPassword}
-              placeholder={mode === 'signup' ? 'At least 8 characters' : ''}
+              placeholder={mode === 'signup' ? t('At least 8 characters') : ''}
               type="password"
-              aria-label="Password"
+              aria-label={t('Password')}
               aria-invalid={!!error}
             />
           </div>
@@ -316,18 +328,21 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           */}
           {mode === 'signup' ? (
             <div className={styles.fieldGroup}>
-              <label className={styles.fieldLabel}>Date of birth</label>
+              <label className={styles.fieldLabel}>{t('Date of birth')}</label>
               <div className={styles.dobRow}>
                 <select
                   className={styles.dobSelect}
                   value={dobMonth}
                   onChange={(e) => setDobMonth(e.target.value)}
-                  aria-label="Month of birth"
+                  aria-label={t('Month of birth')}
                 >
-                  <option value="">Month</option>
+                  <option value="">{t('Month')}</option>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                     <option key={m} value={String(m)}>
-                      {new Date(2000, m - 1, 1).toLocaleString('en-US', { month: 'short' })}
+                      {new Date(2000, m - 1, 1).toLocaleString(
+                        uiLanguage() === 'zh' ? 'zh-CN' : 'en-US',
+                        { month: 'short' },
+                      )}
                     </option>
                   ))}
                 </select>
@@ -335,9 +350,9 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
                   className={styles.dobSelect}
                   value={dobDay}
                   onChange={(e) => setDobDay(e.target.value)}
-                  aria-label="Day of birth"
+                  aria-label={t('Day of birth')}
                 >
-                  <option value="">Day</option>
+                  <option value="">{t('Day')}</option>
                   {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
                     <option key={d} value={String(d)}>
                       {d}
@@ -348,9 +363,9 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
                   className={styles.dobSelect}
                   value={dobYear}
                   onChange={(e) => setDobYear(e.target.value)}
-                  aria-label="Year of birth"
+                  aria-label={t('Year of birth')}
                 >
-                  <option value="">Year</option>
+                  <option value="">{t('Year')}</option>
                   {(() => {
                     const currentYear = new Date().getFullYear();
                     return Array.from({ length: 100 }, (_, i) => currentYear - i).map((y) => (
@@ -370,29 +385,41 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
                 type="checkbox"
                 checked={tosChecked}
                 onChange={(e) => setTosChecked(e.target.checked)}
-                aria-label="I agree to the Terms of Service and Privacy Policy"
+                aria-label={t('I agree to the Terms of Service and Privacy Policy')}
               />
               <span>
-                I agree to the{' '}
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void sei.openExternal('https://sei.gg/terms.html');
-                  }}
-                >
-                  Terms of Service
-                </a>{' '}
-                and{' '}
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void sei.openExternal('https://sei.gg/privacy.html');
-                  }}
-                >
-                  Privacy Policy
-                </a>
+                {/* The links must survive translation, so the sentence is
+                    translated with {tos}/{privacy} placeholders intact and the
+                    anchor nodes are re-inserted at their positions. */}
+                {t('I agree to the {tos} and {privacy}')
+                  .split(/(\{tos\}|\{privacy\})/g)
+                  .map((part, i) =>
+                    part === '{tos}' ? (
+                      <a
+                        key={i}
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          void sei.openExternal('https://sei.gg/terms.html');
+                        }}
+                      >
+                        {t('Terms of Service')}
+                      </a>
+                    ) : part === '{privacy}' ? (
+                      <a
+                        key={i}
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          void sei.openExternal('https://sei.gg/privacy.html');
+                        }}
+                      >
+                        {t('Privacy Policy')}
+                      </a>
+                    ) : (
+                      part
+                    ),
+                  )}
               </span>
             </label>
           ) : null}
@@ -421,23 +448,23 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
               disabled={submitting}
               onClick={() => { void onForgot(); }}
             >
-              Forgot your password?
+              {t('Forgot your password?')}
             </button>
           ) : null}
         </form>
 
-        <div className={styles.divider}>or</div>
+        <div className={styles.divider}>{t('or')}</div>
 
         <GoogleSignInButton
           onClick={onGoogleClick}
           disabled={submitting}
           fullWidth
-          label={mode === 'signup' ? 'Sign up with Google' : 'Sign in with Google'}
+          label={mode === 'signup' ? t('Sign up with Google') : t('Sign in with Google')}
         />
 
         <ModalFooter>
           <Button kind="quiet" size="md" onClick={onClose} disabled={submitting}>
-            Back to Sei
+            {t('Back to Sei')}
           </Button>
         </ModalFooter>
     </ModalShell>

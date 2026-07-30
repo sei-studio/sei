@@ -17,7 +17,12 @@
  */
 
 /** "a few seconds" / "7 minutes" / "2 hours". */
-export function formatPlayDuration(ms: number): string {
+export function formatPlayDuration(ms: number, language?: 'en' | 'zh'): string {
+  if (language === 'zh') {
+    if (ms < 60_000) return '几秒钟';
+    if (ms < 3_600_000) return `${Math.max(1, Math.round(ms / 60_000))}分钟`;
+    return `${Math.max(1, Math.round(ms / 3_600_000))}小时`;
+  }
   if (ms < 60_000) return 'a few seconds';
   if (ms < 3_600_000) {
     const m = Math.max(1, Math.round(ms / 60_000));
@@ -32,7 +37,19 @@ export function formatPlayDuration(ms: number): string {
  *
  * `game` is shown verbatim, so pass it as it should read to the player
  * ("Minecraft", "Chess", "Draw!", "Backseat").
+ *
+ * 260730: the row is PERSISTED transcript content, so a zh-pinned character
+ * writes it in Chinese (the language it and its player converse in), not in
+ * the current UI language, which can change after the fact.
  */
-export function playSummaryText(name: string, game: string, durationMs: number): string {
+export function playSummaryText(
+  name: string,
+  game: string,
+  durationMs: number,
+  language?: 'en' | 'zh',
+): string {
+  if (language === 'zh') {
+    return `你和${name}玩了${formatPlayDuration(durationMs, 'zh')}${game}。`;
+  }
   return `You and ${name} played ${game} for ${formatPlayDuration(durationMs)}.`;
 }

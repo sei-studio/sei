@@ -55,6 +55,7 @@ import { FeedbackModal } from '../components/FeedbackModal';
 import { useNoticesStore } from '../lib/stores/useNoticesStore';
 import { formatRenewal } from '../lib/formatRenewal';
 import { TIER_ORDER, planCard, planName } from '../lib/planCatalog';
+import { t, useT } from '../lib/i18n';
 import styles from './CreditsScreen.module.css';
 
 /** Note under the extra-credits bar: what carries over and what does not (SPEC §2). */
@@ -98,13 +99,13 @@ const FEEDBACK_PROMPT_USAGE_PCT = 25;
 function manageErrorCopy(code: string): string {
   switch (code) {
     case 'PROXY_NO_SESSION':
-      return 'Sign in to manage billing.';
+      return t('Sign in to manage billing.');
     case 'PROXY_NO_PORTAL_URL':
       // No Polar customer on record yet (never purchased) or the billing
       // backend is unavailable, so there is nothing to manage.
-      return 'No billing to manage yet. Subscribe or top up first.';
+      return t('No billing to manage yet. Subscribe or top up first.');
     default:
-      return 'Could not open billing. Please try again.';
+      return t('Could not open billing. Please try again.');
   }
 }
 
@@ -117,15 +118,16 @@ function manageErrorCopy(code: string): string {
 function changeErrorCopy(code: string): string {
   switch (code) {
     case 'PROXY_NO_SESSION':
-      return 'Sign in to change your plan.';
+      return t('Sign in to change your plan.');
     case 'PROXY_RATE_LIMITED':
-      return 'Too many requests. Wait a moment and try again.';
+      return t('Too many requests. Wait a moment and try again.');
     default:
-      return 'Could not change your plan. Please try again.';
+      return t('Could not change your plan. Please try again.');
   }
 }
 
 export function CreditsScreen(): React.ReactElement {
+  const t = useT();
   // Separate selectors so React only re-subscribes the slices we read.
   const usagePct = useCreditsStore((s) => s.usage_pct);
   const overLimit = useCreditsStore((s) => s.over_limit);
@@ -304,7 +306,10 @@ export function CreditsScreen(): React.ReactElement {
   // Extra credits: the bar fills as the non-expiring bucket is spent. An account
   // that never topped up shows an empty bar and the Top up button.
   const extraPct = extraTotal > 0 ? (extraUsed / extraTotal) * 100 : 0;
-  const extraLabel = `${extraUsed.toLocaleString()}/${extraTotal.toLocaleString()} credits used`;
+  const extraLabel = t('{used}/{total} credits used', {
+    used: extraUsed.toLocaleString(),
+    total: extraTotal.toLocaleString(),
+  });
 
   return (
     <div className={styles.root}>
@@ -316,7 +321,7 @@ export function CreditsScreen(): React.ReactElement {
             icon={<BackIcon size={14} />}
             onClick={() => navigate({ kind: 'home' })}
           >
-            Back
+            {t('Back')}
           </Button>
         </div>
 
@@ -339,15 +344,15 @@ export function CreditsScreen(): React.ReactElement {
         {/* Usage — two label/bar/value rows per the 260725 sketch. */}
         <div className={styles.usage}>
           <div className={styles.usageHead}>
-            <h3 className={styles.sectionTitle}>Usage</h3>
+            <h3 className={styles.sectionTitle}>{t('Usage')}</h3>
             {/* Immediate creditsGet() on top of the 60s poll. */}
             <Button
               kind="quiet"
               size="sm"
               icon={<RefreshIcon size={14} />}
               disabled={loading}
-              title="Refresh"
-              aria-label="Refresh plan usage"
+              title={t('Refresh')}
+              aria-label={t('Refresh plan usage')}
               onClick={() => void refresh()}
             />
           </div>
@@ -355,13 +360,15 @@ export function CreditsScreen(): React.ReactElement {
           {/* Row 1: the weekly allowance. */}
           <div className={styles.usageRow}>
             <div className={styles.usageLabel}>
-              <span className={styles.usageName}>{planName(planCards, plan)} plan</span>
+              <span className={styles.usageName}>
+                {t('{name} plan', { name: planName(planCards, plan) })}
+              </span>
               {snapshotFailed ? (
                 <span className={styles.usageSubWarn}>
-                  Couldn't check your account. Refresh to try again.
+                  {t("Couldn't check your account. Refresh to try again.")}
                 </span>
               ) : resetsIn ? (
-                <span className={styles.usageSub}>Resets in {resetsIn}</span>
+                <span className={styles.usageSub}>{t('Resets in {time}', { time: resetsIn })}</span>
               ) : null}
             </div>
             <div className={styles.usageTrack}>
@@ -378,7 +385,7 @@ export function CreditsScreen(): React.ReactElement {
           {/* Row 2: the separate, non-expiring extra-credits bucket. */}
           <div className={styles.usageRow}>
             <div className={styles.usageLabel}>
-              <span className={styles.usageName}>Extra credits</span>
+              <span className={styles.usageName}>{t('Extra credits')}</span>
               <span className={styles.usageSub}>{extraLabel}</span>
             </div>
             <div className={styles.usageTrack}>
@@ -393,16 +400,16 @@ export function CreditsScreen(): React.ReactElement {
               disabled={checkoutActive}
               onClick={() => setShowTopUp(true)}
             >
-              Top up
+              {t('Top up')}
             </Button>
           </div>
 
-          <p className={styles.usageNote}>{CARRY_OVER_NOTE}</p>
+          <p className={styles.usageNote}>{t(CARRY_OVER_NOTE)}</p>
         </div>
 
         {/* Plans — Free / Quest / Party, current one highlighted. */}
         <div className={styles.plans}>
-          <h3 className={styles.sectionTitle}>Plan</h3>
+          <h3 className={styles.sectionTitle}>{t('Plan')}</h3>
           <div className={styles.plansRow}>
             {planCards.map((card) => {
               const isCurrent = card.tier === plan;
@@ -431,11 +438,11 @@ export function CreditsScreen(): React.ReactElement {
                         disabled={checkoutActive}
                         onClick={handleResume}
                       >
-                        Resume
+                        {t('Resume')}
                       </Button>
                     ) : isCurrent ? (
                       <Button kind="primary" size="sm" fullWidth disabled aria-disabled>
-                        Current plan
+                        {t('Current plan')}
                       </Button>
                     ) : card.tier === 'free' ? (
                       // Moving to Free is a cancellation: Polar owns that flow.
@@ -446,7 +453,7 @@ export function CreditsScreen(): React.ReactElement {
                         disabled={managing}
                         onClick={() => void handleManage()}
                       >
-                        {managing ? 'Opening…' : 'Downgrade'}
+                        {managing ? t('Opening…') : t('Downgrade')}
                       </Button>
                     ) : (
                       <Button
@@ -456,7 +463,7 @@ export function CreditsScreen(): React.ReactElement {
                         disabled={checkoutActive}
                         onClick={() => handlePlanSelect(card.tier as Exclude<PlanTier, 'free'>)}
                       >
-                        {isUpgrade ? 'Upgrade' : 'Downgrade'}
+                        {isUpgrade ? t('Upgrade') : t('Downgrade')}
                       </Button>
                     )}
                   </div>
@@ -473,17 +480,23 @@ export function CreditsScreen(): React.ReactElement {
           {cancelScheduled ? (
             <p className={styles.planRenewalNote}>
               {endsText
-                ? `Your ${planName(planCards, plan)} plan will not renew. It ends ${endsText}.`
-                : `Your ${planName(planCards, plan)} plan will not renew.`}
+                ? t('Your {name} plan will not renew. It ends {date}.', {
+                    name: planName(planCards, plan),
+                    date: endsText,
+                  })
+                : t('Your {name} plan will not renew.', { name: planName(planCards, plan) })}
             </p>
           ) : isSubscribed && renewalText ? (
             <p className={styles.planRenewalNote}>
-              Your {planName(planCards, plan)} plan renews on {renewalText}.
+              {t('Your {name} plan renews on {date}.', {
+                name: planName(planCards, plan),
+                date: renewalText,
+              })}
             </p>
           ) : null}
           {subscriptionStatusRaw === 'past_due' ? (
             <p className={styles.planRenewalNote}>
-              Your last payment did not go through. Update your card in Manage billing.
+              {t('Your last payment did not go through. Update your card in Manage billing.')}
             </p>
           ) : null}
           {/* A rejected in-place tier change (260725). Without this the failure
@@ -505,7 +518,7 @@ export function CreditsScreen(): React.ReactElement {
             aria-disabled={managing}
             onClick={() => void handleManage()}
           >
-            {managing ? 'Opening…' : 'Manage billing'}
+            {managing ? t('Opening…') : t('Manage billing')}
           </Button>
         </div>
         {manageError ? <p className={styles.manageError}>{manageError}</p> : null}
@@ -515,7 +528,7 @@ export function CreditsScreen(): React.ReactElement {
         {cloudMode && rewardClaimed === true ? (
           <div className={styles.footFeedback}>
             <Button kind="ghost" size="sm" onClick={() => setShowFeedbackModal(true)}>
-              Submit feedback
+              {t('Submit feedback')}
             </Button>
           </div>
         ) : null}
@@ -525,7 +538,7 @@ export function CreditsScreen(): React.ReactElement {
             inbox opens itself once per new notice; this is the way back in. */}
         <div className={styles.footFeedback}>
           <Button kind="ghost" size="sm" onClick={openInbox}>
-            {unreadNotices > 0 ? `Inbox (${unreadNotices})` : 'Inbox'}
+            {unreadNotices > 0 ? t('Inbox ({n})', { n: unreadNotices }) : t('Inbox')}
           </Button>
         </div>
       </div>
@@ -597,6 +610,7 @@ function PlanChangeConfirmModal({
   onCancel: () => void;
   onConfirm: () => void;
 }): React.ReactElement {
+  const t = useT();
   const planCards = useCreditsStore((s) => s.planCards);
   const card = planCard(planCards, tier);
   // The exact-charge form ("$8.00") is what the disclosure must state; the
@@ -608,32 +622,40 @@ function PlanChangeConfirmModal({
     // Stacked tier (1100) so it sits above the plan screen like the other
     // billing modals. ESC / Back dismiss without changing anything.
     <ModalShell
-      title="Confirm your plan change"
+      title={t('Confirm your plan change')}
       width={440}
       tier="stacked"
       onClose={onCancel}
-      aria-label="Confirm plan change"
+      aria-label={t('Confirm plan change')}
     >
       <div className={styles.confirmBody}>
         <p className={styles.confirmLead}>
-          {card.name} is {amount} per month, billed through Polar. It renews automatically
-          until you cancel.
+          {t(
+            '{name} is {amount} per month, billed through Polar. It renews automatically until you cancel.',
+            { name: card.name, amount },
+          )}
         </p>
         <p className={styles.checkoutMsg}>
           {isUpgrade
-            ? `The change takes effect right away. Your card on file is charged now, prorated for the time left in your current billing period. After that you pay ${amount} each month.`
-            : `The change takes effect right away. Polar prorates the difference against your card on file for the time left in your current billing period. After that you pay ${amount} each month.`}
+            ? t(
+                'The change takes effect right away. Your card on file is charged now, prorated for the time left in your current billing period. After that you pay {amount} each month.',
+                { amount },
+              )
+            : t(
+                'The change takes effect right away. Polar prorates the difference against your card on file for the time left in your current billing period. After that you pay {amount} each month.',
+                { amount },
+              )}
         </p>
         <p className={styles.checkoutMsg}>
-          You can cancel anytime from Manage billing.
+          {t('You can cancel anytime from Manage billing.')}
         </p>
       </div>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel}>
-          Back
+          {t('Back')}
         </Button>
         <Button kind="primary" size="md" onClick={onConfirm}>
-          Confirm plan change
+          {t('Confirm plan change')}
         </Button>
       </ModalFooter>
     </ModalShell>
@@ -664,28 +686,33 @@ function CheckoutWaitingModal({
   inPlace: boolean;
   onClose: () => void;
 }): React.ReactElement {
+  const t = useT();
   const planCards = useCreditsStore((s) => s.planCards);
   const isResume = kind === 'resume';
   // 260725: top up SKUs are an open, server-driven set — anything that is not
   // a paid tier or 'resume' is a top up (mirrors isPurchaseConfirmed).
   const isPlan = kind === 'quest' || kind === 'party';
   const isTopUp = kind !== null && !isResume && !isPlan;
-  const product = isTopUp ? 'extra credits' : isPlan ? planName(planCards, kind as PlanTier) : 'your plan';
+  const product = isTopUp
+    ? t('extra credits')
+    : isPlan
+      ? planName(planCards, kind as PlanTier)
+      : t('your plan');
 
   const title =
     status === 'waiting'
       ? isResume
-        ? 'Resume your subscription'
+        ? t('Resume your subscription')
         : inPlace
-          ? 'Updating your plan'
-          : 'Complete your purchase'
+          ? t('Updating your plan')
+          : t('Complete your purchase')
       : status === 'confirmed'
         ? isResume
-          ? 'Subscription resumed'
+          ? t('Subscription resumed')
           : inPlace
-            ? 'Plan updated'
-            : 'Purchase complete'
-        : 'Still processing';
+            ? t('Plan updated')
+            : t('Purchase complete')
+        : t('Still processing');
 
   return (
     // Stacked tier (1100): this watcher sits above the base plan screen.
@@ -694,7 +721,7 @@ function CheckoutWaitingModal({
       title={title}
       tier="stacked"
       onClose={onClose}
-      aria-label={isResume ? 'Resume subscription status' : 'Checkout status'}
+      aria-label={isResume ? t('Resume subscription status') : t('Checkout status')}
     >
       <div className={styles.checkoutBody}>
         {status === 'waiting' ? (
@@ -702,10 +729,19 @@ function CheckoutWaitingModal({
             <span className={styles.checkoutSpinner} aria-hidden="true" />
             <p className={styles.checkoutMsg}>
               {isResume
-                ? `Resume your ${product} subscription in your browser. This screen updates automatically once it's confirmed.`
+                ? t(
+                    "Resume your {product} subscription in your browser. This screen updates automatically once it's confirmed.",
+                    { product },
+                  )
                 : inPlace
-                  ? `Applying your ${product} plan. This screen updates automatically once it's confirmed.`
-                  : `Finish checking out for ${product} in your browser. This screen updates automatically once the payment is confirmed.`}
+                  ? t(
+                      "Applying your {product} plan. This screen updates automatically once it's confirmed.",
+                      { product },
+                    )
+                  : t(
+                      'Finish checking out for {product} in your browser. This screen updates automatically once the payment is confirmed.',
+                      { product },
+                    )}
             </p>
           </>
         ) : status === 'confirmed' ? (
@@ -715,27 +751,28 @@ function CheckoutWaitingModal({
             </span>
             <p className={styles.checkoutMsg}>
               {isResume
-                ? `Your ${product} subscription will continue, with no end date.`
+                ? t('Your {product} subscription will continue, with no end date.', { product })
                 : isTopUp
-                  ? 'Your extra credits are now available.'
-                  : `Your ${product} plan is active.`}
+                  ? t('Your extra credits are now available.')
+                  : t('Your {product} plan is active.', { product })}
             </p>
           </>
         ) : (
           <p className={styles.checkoutMsg}>
-            This is taking longer than usual. You can close this; it will update here
-            automatically once it completes.
+            {t(
+              'This is taking longer than usual. You can close this; it will update here automatically once it completes.',
+            )}
           </p>
         )}
       </div>
       <ModalFooter>
         {status === 'confirmed' ? (
           <Button kind="primary" size="md" onClick={onClose}>
-            Done
+            {t('Done')}
           </Button>
         ) : (
           <Button kind="quiet" size="md" onClick={onClose}>
-            Close
+            {t('Close')}
           </Button>
         )}
       </ModalFooter>

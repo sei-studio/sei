@@ -193,17 +193,20 @@ const playStartedAt = new Map<string, number>();
 /** Post the "You and <name> played Minecraft for <duration>" system row. */
 async function emitPlaySession(characterId: string, durationMs: number): Promise<void> {
   let name = 'your companion';
+  let rowLanguage: 'zh' | undefined;
   try {
     const { getCharacter } = await import('./characterStore');
     const c = await getCharacter(characterId);
     if (c?.name) name = c.name;
+    const { characterLanguage } = await import('../shared/chatLanguage');
+    if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
   } catch {
     /* fall back to the generic name */
   }
   await appendChatMessage(characterId, {
     id: randomUUID(),
     role: 'system',
-    text: playSummaryText(name, 'Minecraft', durationMs),
+    text: playSummaryText(name, 'Minecraft', durationMs, rowLanguage),
     ts: Date.now(),
     event: { kind: 'play', game: 'minecraft', durationMs },
   });
@@ -214,17 +217,23 @@ async function emitPlaySession(characterId: string, durationMs: number): Promise
  *  the call was actually live (never for calls that failed to connect). */
 async function emitCallSession(characterId: string, durationMs: number): Promise<void> {
   let name = 'your companion';
+  let callLanguage: 'zh' | undefined;
   try {
     const { getCharacter } = await import('./characterStore');
     const c = await getCharacter(characterId);
     if (c?.name) name = c.name;
+    const { characterLanguage } = await import('../shared/chatLanguage');
+    if (characterLanguage(c?.metadata) === 'zh') callLanguage = 'zh';
   } catch {
     /* fall back to the generic name */
   }
   await appendChatMessage(characterId, {
     id: randomUUID(),
     role: 'system',
-    text: `You and ${name} called for ${formatPlayDuration(durationMs)}.`,
+    text:
+      callLanguage === 'zh'
+        ? `你和${name}通话了${formatPlayDuration(durationMs, 'zh')}。`
+        : `You and ${name} called for ${formatPlayDuration(durationMs)}.`,
     // A call is not a game, so it keeps its own verb; only the shared duration
     // phrasing is reused.
     ts: Date.now(),

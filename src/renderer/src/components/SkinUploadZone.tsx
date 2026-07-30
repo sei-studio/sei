@@ -20,6 +20,7 @@ import React, { useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { ERROR_COPY } from '../lib/errors';
 import { classifyRendererError } from '../lib/errors';
+import { t as tBare, useT } from '../lib/i18n';
 import styles from './SkinUploadZone.module.css';
 
 export interface SkinUploadZoneProps {
@@ -88,6 +89,7 @@ export function SkinUploadZone({
   onError,
   disabled,
 }: SkinUploadZoneProps): React.ReactElement {
+  const t = useT();
   const [dragOver, setDragOver] = useState<boolean>(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Hidden <input type=file> kept for fallback keyboard activation if the
@@ -134,11 +136,11 @@ export function SkinUploadZone({
     setDragOver(false);
     const file = e.dataTransfer?.files?.[0];
     if (!file) {
-      onError(ERROR_COPY.SKIN_FILE_INVALID);
+      onError(tBare(ERROR_COPY.SKIN_FILE_INVALID));
       return;
     }
     if (file.type && file.type !== 'image/png') {
-      onError(ERROR_COPY.SKIN_FILE_INVALID);
+      onError(tBare(ERROR_COPY.SKIN_FILE_INVALID));
       return;
     }
     try {
@@ -146,7 +148,7 @@ export function SkinUploadZone({
       const bytes = new Uint8Array(buf);
       const check = validatePng64x64(bytes);
       if (!check.ok) {
-        onError(ERROR_COPY.SKIN_FILE_INVALID);
+        onError(tBare(ERROR_COPY.SKIN_FILE_INVALID));
         return;
       }
       const pngBase64 = bytesToBase64(bytes);
@@ -156,7 +158,7 @@ export function SkinUploadZone({
       const sha256 = bufferToHex(digest);
       onUpload({ pngBase64, sha256 });
     } catch {
-      onError(ERROR_COPY.SKIN_FILE_INVALID);
+      onError(tBare(ERROR_COPY.SKIN_FILE_INVALID));
     }
   };
 
@@ -194,10 +196,10 @@ export function SkinUploadZone({
         aria-hidden="true"
       />
       <p className={styles.heading}>
-        {dragOver ? 'Drop to upload' : 'Drop a 64x64 PNG here, or click to browse'}
+        {dragOver ? t('Drop to upload') : t('Drop a 64x64 PNG here, or click to browse')}
       </p>
       <p id="skin-upload-zone-secondary" className={styles.secondary}>
-        Files stay on your computer.
+        {t('Files stay on your computer.')}
       </p>
     </div>
   );

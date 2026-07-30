@@ -20,6 +20,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { ProviderSelect, type Provider } from './ProviderSelect';
@@ -52,6 +53,7 @@ export interface ApiKeySetupModalProps {
 }
 
 export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps): React.ReactElement {
+  const t = useT();
   const [provider, setProvider] = useState<Provider>('anthropic');
   const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
   const save = async (): Promise<void> => {
     const key = apiKey.trim();
     if (!key) {
-      setError('API key cannot be empty.');
+      setError(t('API key cannot be empty.'));
       return;
     }
     setError(null);
@@ -97,7 +99,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
       await sei.proxyConfigure('local');
       onComplete();
     } catch {
-      setError("Couldn't save your key. Try again.");
+      setError(t("Couldn't save your key. Try again."));
       setSaving(false);
     }
   };
@@ -106,13 +108,15 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
   const canSave = apiKey.trim() !== '' && !saving;
 
   return (
-    <ModalShell title="Use your own API key" tier="stacked" onClose={onCancel} escClose={false}>
+    <ModalShell title={t('Use your own API key')} tier="stacked" onClose={onCancel} escClose={false}>
       <p className={styles.body}>
-        Pick a provider and paste a key. Sei runs on your key instead of playtime.
+        {t('Pick a provider and paste a key. Sei runs on your key instead of playtime.')}
       </p>
       <ProviderSelect value={provider} onChange={setProvider} compact />
       <div className={styles.keyField}>
-        <span className={styles.fieldLabel}>Paste your {providerLabel} API key</span>
+        <span className={styles.fieldLabel}>
+          {t('Paste your {provider} API key', { provider: providerLabel })}
+        </span>
         <TextField
           value={apiKey}
           onChange={(v) => {
@@ -126,17 +130,17 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
           onEnter={() => {
             if (canSave) void save();
           }}
-          aria-label="API key"
+          aria-label={t('API key')}
           aria-invalid={!!error}
         />
       </div>
       {error ? <p className={styles.error}>{error}</p> : null}
       <ModalFooter>
         <Button kind="quiet" disabled={saving} onClick={onCancel}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="primary" disabled={!canSave} onClick={() => void save()}>
-          {saving ? 'Saving…' : 'Save & switch'}
+          {saving ? t('Saving…') : t('Save & switch')}
         </Button>
       </ModalFooter>
     </ModalShell>

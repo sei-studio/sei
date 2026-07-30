@@ -12,6 +12,7 @@
 
 import { create } from 'zustand';
 import { sei } from '../ipcClient';
+import { t } from '../i18n';
 import type {
   McInstall,
   WizardInstallResult,
@@ -133,7 +134,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         // the none-found branch instead: it carries Try-again / Open-settings
         // and no step number, which is the right UI for "couldn't scan".
         set({
-          error: (err as Error).message ?? 'Detection failed',
+          error: (err as Error).message ?? t('Detection failed'),
           step: 'none-found',
         });
       }
@@ -181,7 +182,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         set({ results, step: anyFailed ? 'one-failed' : 'done' });
       } catch (err) {
         set({
-          error: (err as Error).message ?? 'Install failed',
+          error: (err as Error).message ?? t('Install failed'),
           step: 'one-failed',
         });
       } finally {

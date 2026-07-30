@@ -26,6 +26,7 @@ import { attemptSummon } from '../../lib/summonFlow';
 import { requestGameLaunch } from '../../lib/gameLaunch';
 import { ERROR_COPY } from '../../lib/errors';
 import { Button } from '../Button';
+import { useT } from '../../lib/i18n';
 import styles from './McLaunchPanel.module.css';
 
 /** Same renderer-relative art the picker tile uses (public/img). */
@@ -36,6 +37,7 @@ export interface McLaunchPanelProps {
 }
 
 export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactElement {
+  const t = useT();
   const summon = useDataStore((s) => s.summons[characterId]);
   const openModal = useUiStore((s) => s.openModal);
   const connecting = summon?.kind === 'connecting';
@@ -65,11 +67,11 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
             )
           }
         >
-          {connecting ? 'Connecting...' : 'Launch'}
+          {connecting ? t('Connecting...') : t('Launch')}
         </Button>
         {failReason ? (
           <p className={styles.failLine} role="alert">
-            {failReason}
+            {t(failReason)}
           </p>
         ) : null}
         <button
@@ -77,7 +79,7 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
           className={styles.setupLink}
           onClick={() => openModal({ kind: 'mc-setup', tab: 'world', searching: false })}
         >
-          How do I set up launch?
+          {t('How do I set up launch?')}
         </button>
       </div>
     </div>

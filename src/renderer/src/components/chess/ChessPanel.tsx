@@ -41,6 +41,7 @@ import { useChessStore, boardUiFor } from '../../lib/stores/useChessStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { requestGameLaunch } from '../../lib/gameLaunch';
 import { sei } from '../../lib/ipcClient';
+import { useT } from '../../lib/i18n';
 import { Button } from '../Button';
 import { PercentBar } from '../PercentBar';
 import { ModalShell, ModalFooter } from '../ModalShell';
@@ -64,40 +65,44 @@ const SIDE_OPTIONS: Array<{ value: ColorChoice; label: string }> = [
   { value: 'b', label: 'Black' },
 ];
 
+/** The translator shape from useT, for helpers called inside renders. */
+type Tr = (en: string, params?: Record<string, string | number>) => string;
+
 /** Plain-language result copy (no em dashes in user-visible text). Shared
  * with ChessReplayPanel (the replay's result banner uses the same copy). */
-function resultCopy(result: ChessResult, game: ChessGameState, name: string): {
+function resultCopy(result: ChessResult, game: ChessGameState, name: string, t: Tr): {
   title: string;
   detail: string;
 } {
   const playerWon = result.winner !== null && result.winner === game.playerColor;
   const title =
-    result.winner === null ? 'Draw' : playerWon ? 'You won' : `${name} won`;
+    result.winner === null ? t('Draw') : playerWon ? t('You won') : t('{name} won', { name });
   switch (result.reason) {
     case 'checkmate':
-      return { title, detail: 'Checkmate.' };
+      return { title, detail: t('Checkmate.') };
     case 'stalemate':
-      return { title: 'Draw', detail: 'Stalemate. No legal moves left.' };
+      return { title: t('Draw'), detail: t('Stalemate. No legal moves left.') };
     case 'draw-agreed':
-      return { title: 'Draw', detail: 'You both agreed to a draw.' };
+      return { title: t('Draw'), detail: t('You both agreed to a draw.') };
     case 'draw-material':
-      return { title: 'Draw', detail: 'Not enough pieces left to checkmate.' };
+      return { title: t('Draw'), detail: t('Not enough pieces left to checkmate.') };
     case 'draw-repetition':
-      return { title: 'Draw', detail: 'The same position repeated three times.' };
+      return { title: t('Draw'), detail: t('The same position repeated three times.') };
     case 'draw-fifty':
-      return { title: 'Draw', detail: 'Fifty moves without a capture or pawn move.' };
+      return { title: t('Draw'), detail: t('Fifty moves without a capture or pawn move.') };
     case 'resign':
-      return { title, detail: `You resigned. ${name} takes the game.` };
+      return { title, detail: t('You resigned. {name} takes the game.', { name }) };
     case 'forfeit':
-      return { title, detail: `${name} forfeited the game.` };
+      return { title, detail: t('{name} forfeited the game.', { name }) };
     case 'abandoned':
-      return { title: 'Game closed', detail: 'This game ended without a result.' };
+      return { title: t('Game closed'), detail: t('This game ended without a result.') };
     default:
       return { title, detail: '' };
   }
 }
 
 export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement {
+  const t = useT();
   const game = useChessStore((s) => s.games[characterId] ?? null);
   const download = useChessStore((s) => s.downloads[characterId]);
   const starting = useChessStore((s) => s.starting[characterId] ?? false);
@@ -110,7 +115,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
   const hydrate = useChessStore((s) => s.hydrate);
 
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
-  const name = character?.name ?? 'Companion';
+  const name = character?.name ?? t('Companion');
 
   const [colorChoice, setColorChoice] = useState<ColorChoice>('random');
   const [startErr, setStartErr] = useState<string | null>(null);
@@ -150,11 +155,11 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
       if (/CHESS_MC_SESSION_ACTIVE/.test(msg)) {
         setMcConflict(true);
       } else if (/CHESS_MODEL_DOWNLOAD_FAILED/.test(msg)) {
-        setStartErr('The chess brain failed to download. Check your connection and try again.');
+        setStartErr(t('The chess brain failed to download. Check your connection and try again.'));
       } else if (/not available in this build/.test(msg)) {
-        setStartErr('Chess is not available in this build yet.');
+        setStartErr(t('Chess is not available in this build yet.'));
       } else {
-        setStartErr("The game couldn't start. Try again in a moment.");
+        setStartErr(t("The game couldn't start. Try again in a moment."));
       }
     }
   };
@@ -212,7 +217,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
   const showLaunch = !game || preparing || (game.status === 'ended' && rematchScreen);
 
   return (
-    <div className={styles.panel} aria-label={`Chess with ${name}`}>
+    <div className={styles.panel} aria-label={t('Chess with {name}', { name })}>
       {showLaunch ? (
         /* ── Launch screen: content over the dark board photo ── */
         <div className={styles.launch}>
@@ -230,24 +235,24 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
           {/* 260721: no local close control; the GameSurface bottom-right "x"
               is the one dismiss/end affordance for every game surface. */}
           <div className={styles.launchContent}>
-            <h3 className={styles.launchTitle}>Chess</h3>
+            <h3 className={styles.launchTitle}>{t('Chess')}</h3>
             {preparing ? (
               downloadFailed ? (
                 <>
                   <p className={styles.launchError}>
-                    {download?.error ?? 'The download failed. Check your connection and try again.'}
+                    {download?.error ?? t('The download failed. Check your connection and try again.')}
                   </p>
                   <Button kind="accent" size="md" onClick={() => void doStart(colorChoice)}>
-                    Try again
+                    {t('Try again')}
                   </Button>
                 </>
               ) : (
                 <>
-                  <p className={styles.launchHint}>Setting up the chess brain (one-time download).</p>
+                  <p className={styles.launchHint}>{t('Setting up the chess brain (one-time download).')}</p>
                   <div className={styles.progressWrap}>
                     <PercentBar
                       value={Math.max(0, download?.pct ?? 0)}
-                      label="Chess engine download progress"
+                      label={t('Chess engine download progress')}
                       size="md"
                     />
                   </div>
@@ -255,7 +260,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
               )
             ) : (
               <>
-                <div className={styles.sideRow} role="radiogroup" aria-label="Your side">
+                <div className={styles.sideRow} role="radiogroup" aria-label={t('Your side')}>
                   {SIDE_OPTIONS.map((opt, i) => (
                     <React.Fragment key={opt.value}>
                       {i > 0 ? (
@@ -275,7 +280,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                         disabled={starting}
                         onClick={() => setColorChoice(opt.value)}
                       >
-                        {opt.label}
+                        {t(opt.label)}
                       </button>
                     </React.Fragment>
                   ))}
@@ -294,7 +299,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                     )
                   }
                 >
-                  {starting ? 'Starting…' : rematchScreen ? 'Start' : 'Launch'}
+                  {starting ? t('Starting…') : rematchScreen ? t('Start') : t('Launch')}
                 </Button>
               </>
             )}
@@ -314,13 +319,13 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
             {game.status === 'active' || (capturedStrips && capturedStrips.top.pieces.length > 0) ? (
               <div className={styles.hudTopLeft}>
                 {game.status === 'active' ? (
-                  <div className={styles.hudControls} role="group" aria-label="Game controls">
+                  <div className={styles.hudControls} role="group" aria-label={t('Game controls')}>
                     <button
                       type="button"
                       className={styles.ctrlBtn}
                       onClick={() => setUi(characterId, { flip: !(ui.flip ?? false) })}
-                      aria-label="Flip board"
-                      data-tip="Flip board"
+                      aria-label={t('Flip board')}
+                      data-tip={t('Flip board')}
                       data-tip-edge="left"
                     >
                       <FlipIcon size={16} />
@@ -330,15 +335,15 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                       className={styles.ctrlBtn}
                       disabled={game.drawOffer !== null}
                       onClick={() => void offerDraw(characterId)}
-                      aria-label="Offer draw"
-                      data-tip="Offer draw"
+                      aria-label={t('Offer draw')}
+                      data-tip={t('Offer draw')}
                       data-tip-edge="left"
                     >
                       <DrawIcon size={16} />
                     </button>
                     {confirmResign ? (
                       <span className={styles.resignConfirm}>
-                        <span className={styles.resignLabel}>Resign?</span>
+                        <span className={styles.resignLabel}>{t('Resign?')}</span>
                         <Button
                           kind="danger"
                           size="sm"
@@ -347,10 +352,10 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                             void resign(characterId);
                           }}
                         >
-                          Yes
+                          {t('Yes')}
                         </Button>
                         <Button kind="quiet" size="sm" onClick={() => setConfirmResign(false)}>
-                          No
+                          {t('No')}
                         </Button>
                       </span>
                     ) : (
@@ -358,8 +363,8 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                         type="button"
                         className={`${styles.ctrlBtn} ${styles.ctrlDanger}`}
                         onClick={() => setConfirmResign(true)}
-                        aria-label="Resign"
-                        data-tip="Resign"
+                        aria-label={t('Resign')}
+                        data-tip={t('Resign')}
                         data-tip-edge="left"
                       >
                         <FlagIcon size={16} />
@@ -372,7 +377,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                     <CapturedRow
                       pieces={capturedStrips.top.pieces}
                       diff={capturedStrips.top.diff}
-                      label={capturedStrips.top.label}
+                      label={t(capturedStrips.top.label)}
                     />
                   </div>
                 ) : null}
@@ -386,7 +391,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                   <CapturedRow
                     pieces={capturedStrips.bottom.pieces}
                     diff={capturedStrips.bottom.diff}
-                    label={capturedStrips.bottom.label}
+                    label={t(capturedStrips.bottom.label)}
                   />
                 </div>
               </div>
@@ -396,7 +401,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
             <div className={styles.hudTopRight}>
               <div className={styles.moves} ref={listRef}>
                 {game.history.length === 0 ? (
-                  <div className={styles.movesEmpty}>No moves yet</div>
+                  <div className={styles.movesEmpty}>{t('No moves yet')}</div>
                 ) : (
                   pairs(game.history.length).map(([wi, bi], n) => (
                     <div key={n} className={styles.moveRow}>
@@ -421,7 +426,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                   className={styles.backToLive}
                   onClick={() => setUi(characterId, { viewPly: null })}
                 >
-                  Back to live
+                  {t('Back to live')}
                 </button>
               ) : null}
             </div>
@@ -429,19 +434,19 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
             {/* Draw offer, bottom-center. */}
             {game.status === 'active' && game.drawOffer === 'ai' ? (
               <div className={styles.offerBanner}>
-                <span>{name} offers a draw</span>
+                <span>{t('{name} offers a draw', { name })}</span>
                 <div className={styles.offerActions}>
                   <Button kind="accent" size="sm" onClick={() => void respondDraw(characterId, true)}>
-                    Accept
+                    {t('Accept')}
                   </Button>
                   <Button kind="quiet" size="sm" onClick={() => void respondDraw(characterId, false)}>
-                    Decline
+                    {t('Decline')}
                   </Button>
                 </div>
               </div>
             ) : null}
             {game.status === 'active' && game.drawOffer === 'player' ? (
-              <div className={styles.offerNote}>Draw offer sent</div>
+              <div className={styles.offerNote}>{t('Draw offer sent')}</div>
             ) : null}
 
             {/* Result, centered. The wrapper is passive (board scrubbing keeps
@@ -453,7 +458,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                 <ResultBanner result={game.result} game={game} name={name} />
                 <div className={styles.resultActions}>
                   <Button kind="accent" size="md" onClick={() => setRematchScreen(true)}>
-                    Rematch
+                    {t('Rematch')}
                   </Button>
                 </div>
               </div>
@@ -465,21 +470,23 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
       {/* ── Minecraft-session conflict confirm ── */}
       {mcConflict ? (
         <ModalShell
-          title={`${name} is in Minecraft`}
+          title={t('{name} is in Minecraft', { name })}
           onClose={() => setMcConflict(false)}
           scrimClose
           tier="stacked"
         >
           <p className={styles.modalBody}>
-            {name} is playing in a Minecraft world right now. Disconnect them from the world to
-            start a chess game?
+            {t(
+              '{name} is playing in a Minecraft world right now. Disconnect them from the world to start a chess game?',
+              { name },
+            )}
           </p>
           <ModalFooter>
             <Button kind="quiet" size="md" onClick={() => setMcConflict(false)}>
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button kind="primary" size="md" onClick={() => void onConfirmDisconnect()}>
-              Disconnect and play
+              {t('Disconnect and play')}
             </Button>
           </ModalFooter>
         </ModalShell>
@@ -546,7 +553,8 @@ export function ResultBanner({
   game: ChessGameState;
   name: string;
 }): React.ReactElement {
-  const { title, detail } = resultCopy(result, game, name);
+  const t = useT();
+  const { title, detail } = resultCopy(result, game, name, t);
   const playerWon = result.winner !== null && result.winner === game.playerColor;
   return (
     <div

@@ -43,6 +43,7 @@ import {
   type VoiceGroup,
   type VoiceParams,
 } from '../lib/voicePicker';
+import { useT } from '../lib/i18n';
 import { PlayIcon, StopIcon } from './icons';
 import styles from './VoicePicker.module.css';
 
@@ -62,6 +63,7 @@ export function VoicePicker({
   params,
   onParamsChange,
 }: VoicePickerProps): React.ReactElement {
+  const t = useT();
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -89,7 +91,7 @@ export function VoicePicker({
         if (aliveRef.current) setVoices(v);
       })
       .catch(() => {
-        if (aliveRef.current) setError('Could not load the voice list.');
+        if (aliveRef.current) setError(t('Could not load the voice list.'));
       });
     // Conversation language, for picking the bundled sample file. Best-effort:
     // a failed read leaves English, which always exists.
@@ -217,7 +219,7 @@ export function VoicePicker({
       if (/VOICE_NO_SESSION/.test(String((err as Error)?.message ?? ''))) {
         setSamplesAvailable(false);
       } else {
-        setError('Sample unavailable right now.');
+        setError(t('Sample unavailable right now.'));
       }
     } finally {
       if (aliveRef.current) setLoadingId(null);
@@ -249,7 +251,11 @@ export function VoicePicker({
         <button
           type="button"
           className={styles.playBtn}
-          aria-label={playingId === id ? `Stop ${label} sample` : `Play ${label} sample`}
+          aria-label={
+            playingId === id
+              ? t('Stop {name} sample', { name: label })
+              : t('Play {name} sample', { name: label })
+          }
           disabled={(samplesOff && needsTts) || (loadingId !== null && loadingId !== id)}
           onClick={() => void toggleSample(id)}
         >
@@ -287,7 +293,7 @@ export function VoicePicker({
   const activeGroup = groups.find((g) => g.key === activeTab) ?? null;
 
   return (
-    <div className={styles.root} role="radiogroup" aria-label="Voice">
+    <div className={styles.root} role="radiogroup" aria-label={t('Voice')}>
       {/* Auto — the recommended default. */}
       <button
         type="button"
@@ -296,9 +302,9 @@ export function VoicePicker({
         className={`${styles.optionCard} ${value === null ? styles.selected : ''}`}
         onClick={() => onChange(null)}
       >
-        <div className={styles.rowTitle}>Auto: let Sei pick</div>
+        <div className={styles.rowTitle}>{t('Auto: let Sei pick')}</div>
         <div className={styles.rowVibe}>
-          A voice that fits their personality, never one another companion already uses. Recommended.
+          {t('A voice that fits their personality, never one another companion already uses. Recommended.')}
         </div>
       </button>
 
@@ -310,15 +316,15 @@ export function VoicePicker({
         className={`${styles.optionCard} ${value === NO_VOICE_ID ? styles.selected : ''}`}
         onClick={() => onChange(reduceSelection(value, NO_VOICE_ID))}
       >
-        <div className={styles.rowTitle}>No voice</div>
+        <div className={styles.rowTitle}>{t('No voice')}</div>
         <div className={styles.rowVibe}>
-          A silent companion. They chat by text and stay quiet on voice calls.
+          {t('A silent companion. They chat by text and stay quiet on voice calls.')}
         </div>
       </button>
 
       {samplesOff && isUnlistedVoice(value, voices) ? (
         <div className={styles.hint}>
-          Sign in to play the current voice sample. Picking a voice still works.
+          {t('Sign in to play the current voice sample. Picking a voice still works.')}
         </div>
       ) : null}
 
@@ -327,19 +333,19 @@ export function VoicePicker({
           Rendered ABOVE the tabs so it shows from any tab. */}
       {isUnlistedVoice(value, voices) && value ? (
         <section className={styles.group}>
-          <h3 className={styles.groupTitle}>Current voice</h3>
+          <h3 className={styles.groupTitle}>{t('Current voice')}</h3>
           {renderRow(
             value,
-            'Current voice',
-            'Assigned from an earlier voice pool.',
-            'current voice',
+            t('Current voice'),
+            t('Assigned from an earlier voice pool.'),
+            t('current voice'),
             false,
           )}
         </section>
       ) : null}
 
       {groups.length > 0 ? (
-        <div className={styles.tabs} role="tablist" aria-label="Voice group">
+        <div className={styles.tabs} role="tablist" aria-label={t('Voice group')}>
           {groups.map((g) => (
             <button
               key={g.key}
@@ -349,7 +355,7 @@ export function VoicePicker({
               className={g.key === activeTab ? `${styles.tab} ${styles.tabActive}` : styles.tab}
               onClick={() => setChosenTab(g.key)}
             >
-              {g.title}
+              {t(g.title)}
             </button>
           ))}
         </div>
@@ -374,17 +380,17 @@ export function VoicePicker({
       </div>
 
       {/* ── Playground: pitch + calmness sliders (260725) ── */}
-      <section className={styles.tuner} aria-label="Tune the voice">
-        <h3 className={styles.groupTitle}>Tune the voice</h3>
-        {!tunable ? <div className={styles.hint}>Pick a voice to tune it.</div> : null}
+      <section className={styles.tuner} aria-label={t('Tune the voice')}>
+        <h3 className={styles.groupTitle}>{t('Tune the voice')}</h3>
+        {!tunable ? <div className={styles.hint}>{t('Pick a voice to tune it.')}</div> : null}
         {tunable && tuned && samplesOff ? (
-          <div className={styles.hint}>Sign in to hear tuned samples.</div>
+          <div className={styles.hint}>{t('Sign in to hear tuned samples.')}</div>
         ) : null}
 
         <div className={styles.tunerRow}>
           <div className={styles.tunerHead}>
             <label className={styles.tunerLabel} htmlFor={`${sliderIdBase}-pitch`}>
-              Pitch
+              {t('Pitch')}
             </label>
             <span className={styles.tunerValue}>{pitch.toFixed(2)}</span>
             <button
@@ -393,7 +399,7 @@ export function VoicePicker({
               onClick={() => setPitchParam(PITCH_DEFAULT)}
               disabled={!tunable || params.pitch === undefined}
             >
-              Reset
+              {t('Reset')}
             </button>
           </div>
           <input
@@ -408,14 +414,14 @@ export function VoicePicker({
             onChange={(e) => setPitchParam(Number(e.target.value))}
           />
           <div className={styles.tunerHint}>
-            Higher or lower voice. Speaking pace stays the same.
+            {t('Higher or lower voice. Speaking pace stays the same.')}
           </div>
         </div>
 
         <div className={styles.tunerRow}>
           <div className={styles.tunerHead}>
             <label className={styles.tunerLabel} htmlFor={`${sliderIdBase}-calmness`}>
-              Calmness
+              {t('Calmness')}
             </label>
             <span className={styles.tunerValue}>{calmness.toFixed(2)}</span>
             <button
@@ -424,7 +430,7 @@ export function VoicePicker({
               onClick={() => setCalmnessParam(CALMNESS_DEFAULT)}
               disabled={!tunable || params.calmness === undefined}
             >
-              Reset
+              {t('Reset')}
             </button>
           </div>
           <input
@@ -439,7 +445,7 @@ export function VoicePicker({
             onChange={(e) => setCalmnessParam(Number(e.target.value))}
           />
           <div className={styles.tunerHint}>
-            Higher is steadier and more even. Lower is more dramatic.
+            {t('Higher is steadier and more even. Lower is more dramatic.')}
           </div>
         </div>
       </section>

@@ -15,6 +15,7 @@
 
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { t as tBare, useT } from '../lib/i18n';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { Button } from './Button';
@@ -24,11 +25,11 @@ import styles from './FeedbackRewardCard.module.css';
 function submitErrorCopy(code: string): string {
   switch (code) {
     case 'PROXY_RATE_LIMITED':
-      return 'Daily feedback limit reached. Try again tomorrow.';
+      return tBare('Daily feedback limit reached. Try again tomorrow.');
     case 'PROXY_NO_SESSION':
-      return 'Sign in to submit feedback.';
+      return tBare('Sign in to submit feedback.');
     default:
-      return 'Feedback could not be sent. Check your connection and try again.';
+      return tBare('Feedback could not be sent. Check your connection and try again.');
   }
 }
 
@@ -47,6 +48,7 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
     s.state.kind === 'signed_in' ? s.state.user.email : null,
   );
   const refreshCredits = useCreditsStore((s) => s.refresh);
+  const t = useT();
   const [body, setBody] = useState('');
   const [replyToEmail, setReplyToEmail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -76,9 +78,9 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
       await sei.saveConfig({ ...cfg, feedback_reward_claimed: true });
       if (res.usage_reset) {
         void refreshCredits();
-        setDoneNote("This week's credits are reset. Thank you for the feedback.");
+        setDoneNote(t("This week's credits are reset. Thank you for the feedback."));
       } else {
-        setDoneNote('Feedback sent. The reward was already claimed on this account.');
+        setDoneNote(t('Feedback sent. The reward was already claimed on this account.'));
       }
       window.setTimeout(onDone, 4000);
     } catch {
@@ -99,16 +101,15 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
   return (
     <form className={styles.card} onSubmit={handleSubmit}>
       <p className={styles.lede}>
-        What do you not like about Sei? As a thank you, your weekly usage limit will be
-        reset immediately.
+        {t('What do you not like about Sei? As a thank you, your weekly usage limit will be reset immediately.')}
       </p>
       <TextField
         value={body}
         onChange={setBody}
         multiline
         rows={3}
-        placeholder="Tell us what to fix or improve"
-        aria-label="Feedback"
+        placeholder={t('Tell us what to fix or improve')}
+        aria-label={t('Feedback')}
       />
       <div className={styles.row}>
         <label className={styles.checkbox}>
@@ -118,10 +119,10 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
             onChange={(e) => setReplyToEmail(e.target.checked)}
             disabled={!authEmail}
           />
-          Reply to my email
+          {t('Reply to my email')}
         </label>
         <Button kind="accent" size="md" type="submit" disabled={!canSubmit}>
-          {submitting ? 'Sending…' : 'Submit and reset my credits'}
+          {submitting ? t('Sending…') : t('Submit and reset my credits')}
         </Button>
       </div>
       {error ? (

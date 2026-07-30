@@ -23,6 +23,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from './lib/ipcClient';
 import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
+import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
 import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
@@ -80,6 +81,7 @@ import { ImportLocalProfileModal } from './components/ImportLocalProfileModal';
 import type { PeekLocalProfileResult } from '../../shared/ipc';
 
 export function App(): React.ReactElement {
+  const t = useT();
   const view = useUiStore((s) => s.view);
   // ui-A7: developer-console visibility toggle. Default OFF — LogsBar only
   // mounts when the Settings → Show developer console toggle is flipped.
@@ -443,6 +445,8 @@ export function App(): React.ReactElement {
           const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
           setThemeMode(mode);
           applyTheme(mode);
+          // App UI language follows the incoming profile's config (260730).
+          useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
           useUiStore.getState().setDevConsoleVisible(!!cfg.dev_console_visible);
           // Appearance & feel: seed the "Realistic typing" pacing toggle
           // (default ON) so useChatStore.send() reads the right value.
@@ -574,6 +578,8 @@ export function App(): React.ReactElement {
         const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
         setThemeMode(mode);
         applyTheme(mode);
+        // App UI language (260730): hydrate before the first localized render.
+        useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
         // ui-A7: seed the developer-console visibility from persisted config
         // BEFORE the first render of any view that mounts LogsBar — the
         // gate below reads useUiStore.devConsoleVisible directly.
@@ -896,7 +902,7 @@ export function App(): React.ReactElement {
           {authState.kind === 'signed_in' && !authState.user.emailVerified ? (
             <Banner
               kind="warn"
-              message="Verify your email to publish companions or buy credits. Check your inbox for a link from Sei."
+              message={t('Verify your email to publish companions or buy credits. Check your inbox for a link from Sei.')}
             />
           ) : null}
           {/*
@@ -911,7 +917,7 @@ export function App(): React.ReactElement {
             <Banner
               kind="warn"
               /* signed_in-gated by the conditional above */
-              message="Your system has no keyring, so Sei is storing your sign-in less securely. Install gnome-keyring or kwallet for full protection."
+              message={t('Your system has no keyring, so Sei is storing your sign-in less securely. Install gnome-keyring or kwallet for full protection.')}
               onDismiss={() => {
                 // Optimistic local dismiss + best-effort persistence.
                 setWarnings((w) => ({ ...w, sessionDismissed: true }));
@@ -929,7 +935,7 @@ export function App(): React.ReactElement {
           {warnings.keychainFallbackPlaintext && !warnings.keychainDismissed ? (
             <Banner
               kind="warn"
-              message={ERROR_COPY.KEYCHAIN_FALLBACK_PLAINTEXT}
+              message={t(ERROR_COPY.KEYCHAIN_FALLBACK_PLAINTEXT)}
               onDismiss={() => setWarnings((w) => ({ ...w, keychainDismissed: true }))}
             />
           ) : null}

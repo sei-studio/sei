@@ -21,6 +21,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -66,6 +67,7 @@ export interface VoiceCallScreenProps {
 }
 
 export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const characters = useDataStore((s) => s.characters);
   const character = characters.find((c) => c.id === characterId);
@@ -211,16 +213,16 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
   const theme: 'light' | 'dark' = resolvedScheme();
 
-  const companionName = character?.name ?? 'Companion';
+  const companionName = character?.name ?? t('Companion');
   const isGroup = participants.length > 1;
   // Header title: the companion's name on a solo call, "Group call" with 2+.
-  const title = isGroup ? 'Group call' : companionName;
+  const title = isGroup ? t('Group call') : companionName;
   // Avatar size shrinks as the roster grows so every companion + the user + the
   // "＋" tile stay on ONE row (the "＋ pushed to its own ugly second row" fix).
   const companionCount = participants.length;
   const avatarPx =
     companionCount <= 1 ? 176 : companionCount === 2 ? 140 : companionCount === 3 ? 118 : companionCount === 4 ? 104 : 92;
-  const userName = userProfile?.preferredName?.trim() || 'You';
+  const userName = userProfile?.preferredName?.trim() || t('You');
   const userAvatarSrc = portraitSrc(userProfile?.profilePicture);
 
   // Live: the call duration (00:00, ticking). Everything else keeps words.
@@ -229,13 +231,13 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   // blip instead of a frozen companion; the timer returns on success.
   const subtitle =
     status === 'error'
-      ? error ?? 'Call failed'
+      ? error ?? t('Call failed')
       : status === 'connecting'
         ? // Outgoing state: always just "Calling…" (no "setting up 99%" — the
           // model-load percentage flashed on every call even from cache, task 3).
-          'Calling…'
+          t('Calling…')
         : reconnecting
-          ? 'Reconnecting…'
+          ? t('Reconnecting…')
           : liveAt !== null
             ? formatDuration(nowTick - liveAt)
             : '00:00';
@@ -244,29 +246,38 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   // call UI behind it stays in its idle pose until the gate opens.
   const installOverlay =
     gate === 'consent' || gate === 'installing' || gate === 'failed' ? (
-      <div className={styles.installScrim} role="dialog" aria-modal="true" aria-label="Voice module setup">
+      <div
+        className={styles.installScrim}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('Voice module setup')}
+      >
         <div className={styles.installModal}>
           <h2 className={styles.installTitle}>
-            {gate === 'failed' ? 'Download failed' : 'Set up voice calls'}
+            {gate === 'failed' ? t('Download failed') : t('Set up voice calls')}
           </h2>
           {gate === 'consent' ? (
             <>
               <p className={styles.installBody}>
-                Calling {companionName} needs the voice module, a one-time ~40 MB download that
-                lets Sei understand your voice. Install it now?
+                {t(
+                  'Calling {name} needs the voice module, a one-time ~40 MB download that lets Sei understand your voice. Install it now?',
+                  { name: companionName },
+                )}
               </p>
               <div className={styles.installActions}>
                 <Button kind="ghost" onClick={() => navigate({ kind: 'chat', characterId })}>
-                  Not now
+                  {t('Not now')}
                 </Button>
                 <Button kind="primary" onClick={handleInstall}>
-                  Install
+                  {t('Install')}
                 </Button>
               </div>
             </>
           ) : gate === 'installing' ? (
             <>
-              <p className={styles.installBody}>Downloading the voice module… {installPct}%</p>
+              <p className={styles.installBody}>
+                {t('Downloading the voice module… {pct}%', { pct: installPct })}
+              </p>
               <div
                 className={styles.installBar}
                 role="progressbar"
@@ -280,14 +291,14 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           ) : (
             <>
               <p className={styles.installBody}>
-                The voice module couldn&rsquo;t be downloaded. Check your connection and try again.
+                {t("The voice module couldn't be downloaded. Check your connection and try again.")}
               </p>
               <div className={styles.installActions}>
                 <Button kind="ghost" onClick={() => navigate({ kind: 'chat', characterId })}>
-                  Back
+                  {t('Back')}
                 </Button>
                 <Button kind="primary" onClick={handleInstall}>
-                  Retry
+                  {t('Retry')}
                 </Button>
               </div>
             </>
@@ -303,13 +314,13 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
       className={styles.pickerScrim}
       role="dialog"
       aria-modal="true"
-      aria-label="Add a companion to the call"
+      aria-label={t('Add a companion to the call')}
       onClick={() => setPickerOpen(false)}
     >
       <div className={styles.pickerModal} onClick={(e) => e.stopPropagation()}>
-        <h2 className={styles.pickerTitle}>Add to call</h2>
+        <h2 className={styles.pickerTitle}>{t('Add to call')}</h2>
         {addable.length === 0 ? (
-          <p className={styles.pickerEmpty}>Everyone is already on the call.</p>
+          <p className={styles.pickerEmpty}>{t('Everyone is already on the call.')}</p>
         ) : (
           <div className={styles.pickerList}>
             {addable.map((c) => {
@@ -346,7 +357,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         )}
         <div className={styles.installActions}>
           <Button kind="ghost" onClick={() => setPickerOpen(false)}>
-            Done
+            {t('Done')}
           </Button>
         </div>
       </div>
@@ -395,7 +406,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
               </div>
               {/* Always name each companion under their avatar, like the user's
                   own tile, even on a 1:1 call. */}
-              <span className={styles.tileName}>{c?.name ?? 'Companion'}</span>
+              <span className={styles.tileName}>{c?.name ?? t('Companion')}</span>
             </div>
           );
         })}
@@ -434,12 +445,12 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
               className={styles.addBtn}
               style={{ width: avatarPx, height: avatarPx }}
               onClick={() => setPickerOpen(true)}
-              aria-label="Add a companion to the call"
-              title="Add a companion"
+              aria-label={t('Add a companion to the call')}
+              title={t('Add a companion')}
             >
               <PlusIcon size={Math.round(avatarPx * 0.3)} />
             </button>
-            <span className={styles.tileName}>Add</span>
+            <span className={styles.tileName}>{t('Add')}</span>
           </div>
         ) : null}
       </div>
@@ -456,7 +467,9 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
       {captionsOn ? (
         <div className={styles.captions} aria-live="polite">
           {lastSpoken ? <p className={styles.captionCompanion}>{lastSpoken}</p> : null}
-          {lastHeard ? <p className={styles.captionUser}>You: {lastHeard}</p> : null}
+          {lastHeard ? (
+            <p className={styles.captionUser}>{t('You: {text}', { text: lastHeard })}</p>
+          ) : null}
         </div>
       ) : null}
 
@@ -467,15 +480,16 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
       {sttFallbackPrompt ? (
         <div className={styles.fallbackPrompt} role="status">
           <p className={styles.fallbackText}>
-            Voice recognition hiccup. Install the local backup model so calls keep working
-            offline?
+            {t(
+              'Voice recognition hiccup. Install the local backup model so calls keep working offline?',
+            )}
           </p>
           <div className={styles.fallbackActions}>
             <Button kind="quiet" size="sm" onClick={dismissSttFallback}>
-              Not now
+              {t('Not now')}
             </Button>
             <Button kind="primary" size="sm" onClick={() => void acceptSttFallback()}>
-              Install
+              {t('Install')}
             </Button>
           </div>
         </div>

@@ -13,6 +13,7 @@
  * the sign-out RPC is in flight.
  */
 import React, { useState } from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
@@ -29,6 +30,7 @@ export function SignOutConfirmModal({
   onCancel,
   onConfirm,
 }: SignOutConfirmModalProps): React.ReactElement {
+  const t = useT();
   const [submitting, setSubmitting] = useState(false);
 
   const handleConfirm = async (): Promise<void> => {
@@ -41,8 +43,8 @@ export function SignOutConfirmModal({
     }
   };
 
-  const title = botRunning ? 'Sign out will stop your bot. Continue?' : 'Sign out?';
-  const ctaLabel = submitting ? 'Signing out…' : 'Sign out';
+  const title = botRunning ? t('Sign out will stop your bot. Continue?') : t('Sign out?');
+  const ctaLabel = submitting ? t('Signing out…') : t('Sign out');
 
   return (
     <ModalShell
@@ -52,11 +54,11 @@ export function SignOutConfirmModal({
       scrimClose={!submitting}
     >
       <p className={styles.body}>
-        Your local characters, memory, and saved API key stay on this machine.
+        {t('Your local characters, memory, and saved API key stay on this machine.')}
       </p>
       <ModalFooter>
         <Button kind="ghost" size="md" onClick={onCancel} disabled={submitting}>
-          Stay signed in
+          {t('Stay signed in')}
         </Button>
         <Button kind="primary" size="md" onClick={handleConfirm} disabled={submitting}>
           {ctaLabel}

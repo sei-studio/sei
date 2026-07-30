@@ -21,6 +21,7 @@ import React from 'react';
 // what Sei actually joins. Deep import on purpose: the package root pulls the
 // full protocol stack, which must never enter the renderer.
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
+import { t as tr, useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -30,9 +31,11 @@ import styles from './UnsupportedVersionModal.module.css';
 /** Highest Minecraft Java version Sei's networking stack can join. */
 const LATEST_SUPPORTED: string = supportedVersions[supportedVersions.length - 1];
 
+// Rendered through t(step, { version }) — the {version} placeholder is filled
+// at display time so the step copy stays a stable dictionary key.
 const STEPS: readonly string[] = [
   'Open the Minecraft launcher and go to the Installations tab.',
-  `Create or select an installation on ${LATEST_SUPPORTED} or another supported version.`,
+  'Create or select an installation on {version} or another supported version.',
   'Open your world from that installation.',
   'Return to Sei and try the summon again.',
 ];
@@ -58,55 +61,68 @@ function humanBody(message: string, detectedVersion: string | null): string {
     .trim();
   if (stripped.length > 0) return stripped;
   if (detectedVersion) {
-    return `This world is running Minecraft ${detectedVersion}, which is not supported yet. Sei supports Java versions up to ${LATEST_SUPPORTED}.`;
+    return tr(
+      'This world is running Minecraft {version}, which is not supported yet. Sei supports Java versions up to {latest}.',
+      { version: detectedVersion, latest: LATEST_SUPPORTED },
+    );
   }
-  return `This world runs a Minecraft version that is not supported yet. Sei supports Java versions up to ${LATEST_SUPPORTED}.`;
+  return tr(
+    'This world runs a Minecraft version that is not supported yet. Sei supports Java versions up to {latest}.',
+    { latest: LATEST_SUPPORTED },
+  );
 }
 
 export function UnsupportedVersionModal({
   characterId,
   message,
 }: UnsupportedVersionModalProps): React.ReactElement {
+  const t = useT();
   const closeModal = useUiStore((s) => s.closeModal);
-  const name = useDataStore(
-    (s) => s.characters.find((c) => c.id === characterId)?.name ?? 'Your companion',
-  );
+  const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
+  const name = rawName ?? t('Your companion');
   // The LAN watcher's status ping names the world's version even when the
   // bot's error text is empty (fallback body only).
   const detectedVersion = useDataStore((s) =>
     s.lan.kind === 'open' ? (s.lan.versionName ?? null) : null,
   );
+  // Keep the <strong> around the name: translate with the {name} placeholder
+  // intact, then split on it and re-insert the styled node.
+  const [joinBefore, joinAfter] = t("{name} couldn't join.").split('{name}');
   return (
     <ModalShell
-      title="Minecraft version not supported"
+      title={t('Minecraft version not supported')}
       width={440}
       scrimClose
       onClose={closeModal}
-      aria-label="Minecraft version not supported"
+      aria-label={t('Minecraft version not supported')}
     >
       <p className={styles.body}>
-        <strong>{name}</strong> couldn&apos;t join. {humanBody(message, detectedVersion)} To switch
-        to a supported version:
+        {joinBefore}
+        <strong>{name}</strong>
+        {joinAfter} {humanBody(message, detectedVersion)}{' '}
+        {t('To switch to a supported version:')}
       </p>
       <ol className={styles.steps}>
         {STEPS.map((step, i) => (
           <li key={i} className={styles.step}>
             <span className={styles.stepNumber}>{String(i + 1).padStart(2, '0')}</span>
-            <span className={styles.stepBody}>{step}</span>
+            <span className={styles.stepBody}>{t(step, { version: LATEST_SUPPORTED })}</span>
           </li>
         ))}
       </ol>
       <p className={styles.hint}>
-        Alternatively, run the skin setup in Sei settings. It installs our modded Fabric version of
-        Minecraft, which is supported and shows character skins.
+        {t(
+          'Alternatively, run the skin setup in Sei settings. It installs our modded Fabric version of Minecraft, which is supported and shows character skins.',
+        )}
       </p>
       <p className={styles.hint}>
-        Minecraft may not open worlds saved on a newer version. If your world will not open, create
-        a new world on the supported version and play there.
+        {t(
+          'Minecraft may not open worlds saved on a newer version. If your world will not open, create a new world on the supported version and play there.',
+        )}
       </p>
       <ModalFooter>
         <Button kind="accent" size="md" onClick={closeModal}>
-          Got it
+          {t('Got it')}
         </Button>
       </ModalFooter>
     </ModalShell>

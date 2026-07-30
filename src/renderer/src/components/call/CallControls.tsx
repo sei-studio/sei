@@ -23,6 +23,7 @@ import {
   HeadphonesOffIcon,
   PhoneOffIcon,
 } from '../icons';
+import { useT } from '../../lib/i18n';
 import styles from './CallControls.module.css';
 
 export interface CallControlsProps {
@@ -33,6 +34,7 @@ export interface CallControlsProps {
 }
 
 export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): React.ReactElement {
+  const t = useT();
   const muted = useUiStore((s) => s.callMuted);
   const setMuted = useUiStore((s) => s.setCallMuted);
   const deafened = useUiStore((s) => s.callDeafened);
@@ -50,8 +52,8 @@ export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): Reac
         className={muted ? `${btn} ${styles.pillBtnToggled}` : btn}
         onClick={() => setMuted(!muted)}
         aria-pressed={muted}
-        aria-label={muted ? 'Unmute' : 'Mute'}
-        title={muted ? 'Unmute' : 'Mute'}
+        aria-label={muted ? t('Unmute') : t('Mute')}
+        title={muted ? t('Unmute') : t('Mute')}
       >
         {muted ? <MicOffIcon size={iconPx} /> : <MicIcon size={iconPx} />}
       </button>
@@ -61,8 +63,8 @@ export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): Reac
         className={deafened ? `${btn} ${styles.pillBtnToggled}` : btn}
         onClick={() => setDeafened(!deafened)}
         aria-pressed={deafened}
-        aria-label={deafened ? 'Undeafen' : 'Deafen'}
-        title={deafened ? 'Undeafen' : 'Deafen'}
+        aria-label={deafened ? t('Undeafen') : t('Deafen')}
+        title={deafened ? t('Undeafen') : t('Deafen')}
       >
         {deafened ? <HeadphonesOffIcon size={iconPx} /> : <HeadphonesIcon size={iconPx} />}
       </button>
@@ -74,8 +76,8 @@ export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): Reac
           endCall();
           onHangUp?.();
         }}
-        aria-label="Hang up"
-        title="Hang up"
+        aria-label={t('Hang up')}
+        title={t('Hang up')}
       >
         <PhoneOffIcon size={small ? 17 : 24} />
       </button>

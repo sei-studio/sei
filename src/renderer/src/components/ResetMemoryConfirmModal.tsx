@@ -12,6 +12,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
@@ -27,19 +28,20 @@ export function ResetMemoryConfirmModal({
   onCancel,
   onConfirm,
 }: ResetMemoryConfirmModalProps): React.ReactElement {
+  const t = useT();
   return (
-    <ModalShell title={`Reset ${characterName}'s memory?`} onClose={onCancel}>
+    <ModalShell title={t("Reset {name}'s memory?", { name: characterName })} onClose={onCancel}>
       <p className={styles.body}>
-        This will reset everything this companion remembers about you, including your chat
-        history. It will not reset their in-game inventory and location within a world. Please
-        reset manually or create a new world to start fresh.
+        {t(
+          'This will reset everything this companion remembers about you, including your chat history. It will not reset their in-game inventory and location within a world. Please reset manually or create a new world to start fresh.',
+        )}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="danger" size="md" onClick={onConfirm}>
-          Reset memory
+          {t('Reset memory')}
         </Button>
       </ModalFooter>
     </ModalShell>

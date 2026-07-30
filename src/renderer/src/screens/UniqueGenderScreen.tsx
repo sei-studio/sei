@@ -11,6 +11,7 @@ import React, { useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { QuestionShell } from '../components/QuestionShell';
 import type { UniqueGender } from '@shared/ipc';
+import { useT } from '../lib/i18n';
 import styles from './ProfileQuestionsScreen.module.css';
 
 const OPTIONS: Array<{ value: UniqueGender; label: string; sub: string }> = [
@@ -20,6 +21,7 @@ const OPTIONS: Array<{ value: UniqueGender; label: string; sub: string }> = [
 ];
 
 export function UniqueGenderScreen(): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const [gender, setGender] = useState<UniqueGender | null>(null);
 
@@ -30,17 +32,17 @@ export function UniqueGenderScreen(): React.ReactElement {
 
   return (
     <QuestionShell
-      title="Who are you hoping to meet?"
-      hint="Everything else about them is a surprise, cast from your profile."
+      title={t('Who are you hoping to meet?')}
+      hint={t('Everything else about them is a surprise, cast from your profile.')}
       stepCount={1}
       currentStep={0}
       onBack={() => navigate({ kind: 'home' })}
       onNext={begin}
-      nextLabel="Begin"
+      nextLabel={t('Begin')}
       nextKind="accent"
       nextDisabled={gender === null}
     >
-      <div role="radiogroup" aria-label="Companion gender" className={styles.tiles}>
+      <div role="radiogroup" aria-label={t('Companion gender')} className={styles.tiles}>
         {OPTIONS.map((opt) => {
           const selected = gender === opt.value;
           return (
@@ -52,8 +54,8 @@ export function UniqueGenderScreen(): React.ReactElement {
               className={`${styles.tile} ${selected ? styles.tileSelected : ''}`}
               onClick={() => setGender(opt.value)}
             >
-              <span className={styles.tileLabel}>{opt.label}</span>
-              <span className={styles.tileSub}>{opt.sub}</span>
+              <span className={styles.tileLabel}>{t(opt.label)}</span>
+              <span className={styles.tileSub}>{t(opt.sub)}</span>
             </button>
           );
         })}

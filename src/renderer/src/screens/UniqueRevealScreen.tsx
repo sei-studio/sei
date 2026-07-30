@@ -22,6 +22,7 @@ import { Button } from '../components/Button';
 import { IdTag } from '../components/IdTag';
 import { pickPalette } from '../lib/portraitPalettes';
 import type { Character } from '@shared/characterSchema';
+import { useT } from '../lib/i18n';
 import styles from './UniqueRevealScreen.module.css';
 
 /** First 2 sentences (max ~240 chars) of a longer blob, for the fallback intro. */
@@ -37,6 +38,7 @@ export interface UniqueRevealScreenProps {
 }
 
 export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const [character, setCharacter] = useState<Character | null>(null);
   const [loadError, setLoadError] = useState<boolean>(false);
@@ -72,11 +74,11 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
     return (
       <div className={styles.fallback}>
         <div className={styles.fallbackCol}>
-          <div className={styles.heading}>Your companion is ready</div>
-          <p className={styles.intro}>They’re waiting in your party.</p>
+          <div className={styles.heading}>{t('Your companion is ready')}</div>
+          <p className={styles.intro}>{t('They’re waiting in your party.')}</p>
           <div className={styles.actions}>
             <Button kind="accent" size="lg" onClick={() => navigate({ kind: 'home' })}>
-              Go home
+              {t('Go home')}
             </Button>
           </div>
         </div>
@@ -128,10 +130,10 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
 
         <div className={styles.actions}>
           <Button kind="quiet" size="lg" onClick={() => navigate({ kind: 'home' })}>
-            Later
+            {t('Later')}
           </Button>
           <Button kind="accent" size="lg" onClick={sayHello} data-tutorial="say-hello">
-            Say hello
+            {t('Say hello')}
           </Button>
         </div>
       </main>

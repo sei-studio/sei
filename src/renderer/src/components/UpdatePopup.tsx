@@ -27,6 +27,7 @@
  *   - .planning/quick/260604-uoy-... PLAN.md Task 6
  */
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { PercentBar } from './PercentBar';
@@ -99,6 +100,7 @@ function renderChangelog(text: string): React.ReactNode {
 }
 
 export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps): React.ReactElement {
+  const t = useT();
   const dismissable =
     state.kind === 'available-optional' ||
     state.kind === 'whats-new' ||
@@ -110,15 +112,18 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps)
 
   let body: React.ReactNode;
   let footer: React.ReactNode = null;
-  let title = 'Update';
+  let title = t('Update');
 
   switch (state.kind) {
     case 'available-optional':
-      title = 'Update available';
+      title = t('Update available');
       body = (
         <>
           <p className={styles.body}>
-            Sei {state.latestVersion} is ready. You’re on {state.currentVersion}.
+            {t('Sei {latest} is ready. You’re on {current}.', {
+              latest: state.latestVersion,
+              current: state.currentVersion,
+            })}
           </p>
           {state.changelog ? (
             <div className={styles.changelog}>{renderChangelog(state.changelog)}</div>
@@ -128,60 +133,66 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps)
       footer = (
         <>
           <Button kind="quiet" size="md" onClick={() => onDismiss?.()}>
-            Later
+            {t('Later')}
           </Button>
           <Button kind="primary" size="md" onClick={() => onUpdateNow?.()}>
-            Update now
+            {t('Update now')}
           </Button>
         </>
       );
       break;
 
     case 'downloading':
-      title = 'Downloading update';
+      title = t('Downloading update');
       body = (
         <>
-          <p className={styles.body}>Downloading the latest version…</p>
-          <PercentBar value={state.percent} label={`Downloading update, ${Math.round(state.percent)} percent`} size="md" />
+          <p className={styles.body}>{t('Downloading the latest version…')}</p>
+          <PercentBar
+            value={state.percent}
+            label={t('Downloading update, {percent} percent', {
+              percent: Math.round(state.percent),
+            })}
+            size="md"
+          />
         </>
       );
       break;
 
     case 'downloaded':
-      title = 'Update ready';
-      body = <p className={styles.body}>Update downloaded. Restarting…</p>;
+      title = t('Update ready');
+      body = <p className={styles.body}>{t('Update downloaded. Restarting…')}</p>;
       break;
 
     case 'downloaded-on-restart':
-      title = 'Update ready';
+      title = t('Update ready');
       body = (
         <p className={styles.body}>
-          Update downloaded. It’ll apply the next time you restart Sei.
+          {t('Update downloaded. It’ll apply the next time you restart Sei.')}
         </p>
       );
       footer = (
         <>
           <Button kind="quiet" size="md" onClick={() => onDismiss?.()}>
-            Later
+            {t('Later')}
           </Button>
           <Button kind="primary" size="md" onClick={() => onUpdateNow?.()}>
-            Restart now
+            {t('Restart now')}
           </Button>
         </>
       );
       break;
 
     case 'forced':
-      title = 'Update ready';
-      body = <p className={styles.body}>Applying the update. Sei will restart in a moment…</p>;
+      title = t('Update ready');
+      body = <p className={styles.body}>{t('Applying the update. Sei will restart in a moment…')}</p>;
       break;
 
     case 'whats-new':
-      title = `What’s new in ${state.version}`;
+      title = t('What’s new in {version}', { version: state.version });
       body = <div className={styles.changelog}>{renderChangelog(state.changelog)}</div>;
       footer = (
         <Button kind="primary" size="md" onClick={() => onDismiss?.()}>
-          Got it
+          {t('Got it')}
         </Button>
       );
       break;

@@ -53,6 +53,7 @@ import { BackIcon, FullscreenIcon, ExitFullscreenIcon, PhoneIcon, UserIcon } fro
 import { CallControls } from './call/CallControls';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { Button } from './Button';
+import { useT } from '../lib/i18n';
 import confirmStyles from './confirmModal.module.css';
 import styles from './GameSurface.module.css';
 
@@ -94,6 +95,7 @@ export function GameChromeRow({
   confirmEnd,
   expand,
 }: GameChromeRowProps): React.ReactElement {
+  const t = useT();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // In-game call cluster: the live call session, if any.
@@ -112,9 +114,9 @@ export function GameChromeRow({
 
   const toggleLabel = expand?.expanded
     ? expand.unread
-      ? 'Show chat, new messages'
-      : 'Show chat'
-    : 'Hide chat';
+      ? t('Show chat, new messages')
+      : t('Show chat')
+    : t('Hide chat');
 
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
@@ -132,7 +134,7 @@ export function GameChromeRow({
               className={styles.chromeBtn}
               onClick={expand.onToggle}
               aria-label={toggleLabel}
-              title={expand.expanded ? 'Show chat' : 'Hide chat'}
+              title={expand.expanded ? t('Show chat') : t('Hide chat')}
             >
               <span
                 className={expand.expanded ? `${styles.chev} ${styles.chevExpanded}` : styles.chev}
@@ -147,8 +149,8 @@ export function GameChromeRow({
             type="button"
             className={styles.chromeBtn}
             onClick={() => setFullscreen(!fullscreen)}
-            aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            aria-label={fullscreen ? t('Exit fullscreen') : t('Enter fullscreen')}
+            title={fullscreen ? t('Exit fullscreen') : t('Fullscreen')}
           >
             {fullscreen ? <ExitFullscreenIcon size={14} /> : <FullscreenIcon size={14} />}
           </button>
@@ -168,8 +170,8 @@ export function GameChromeRow({
                   type="button"
                   className={speaking ? `${styles.tile} ${styles.tileSpeaking}` : styles.tile}
                   onClick={() => navigate({ kind: 'voice-call', characterId: participants[0] })}
-                  aria-label={`Return to call with ${c?.name ?? 'Companion'}`}
-                  title="Return to call"
+                  aria-label={t('Return to call with {name}', { name: c?.name ?? t('Companion') })}
+                  title={t('Return to call')}
                 >
                   {c ? (
                     <PixelPortrait
@@ -193,8 +195,8 @@ export function GameChromeRow({
               type="button"
               className={styles.chromeBtn}
               onClick={() => startOrOpenCall(characterId)}
-              aria-label="Voice call"
-              title="Voice call"
+              aria-label={t('Voice call')}
+              title={t('Voice call')}
             >
               <PhoneIcon size={14} />
             </button>
@@ -206,19 +208,19 @@ export function GameChromeRow({
           type="button"
           className={`${styles.chromeBtn} ${styles.endBtn}`}
           onClick={() => (confirmEnd ? setConfirmOpen(true) : onEnd())}
-          aria-label="End game"
-          title="End game"
+          aria-label={t('End game')}
+          title={t('End game')}
         >
           ×
         </button>
       </div>
 
       {confirmOpen ? (
-        <ModalShell title="End game" onClose={() => setConfirmOpen(false)} scrimClose>
-          <p className={confirmStyles.body}>This will end the game.</p>
+        <ModalShell title={t('End game')} onClose={() => setConfirmOpen(false)} scrimClose>
+          <p className={confirmStyles.body}>{t('This will end the game.')}</p>
           <ModalFooter>
             <Button kind="quiet" size="md" onClick={() => setConfirmOpen(false)}>
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button
               kind="danger"
@@ -228,7 +230,7 @@ export function GameChromeRow({
                 onEnd();
               }}
             >
-              End game
+              {t('End game')}
             </Button>
           </ModalFooter>
         </ModalShell>

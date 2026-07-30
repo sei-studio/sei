@@ -147,11 +147,18 @@ export function postProcessSay(s) {
 //                  the flat, measured register (e.g. Marv).
 // The matching prompt text is PUNCTUATION_DIRECTIVES (promptLibrary.js); this
 // is the deterministic backstop, independent of model compliance.
+// 260730: CJK sentences end in 。！？ with NO following space, so the
+// (?<=[.?!])\s+ rule never fired and an entire Chinese reply shipped as one
+// giant message. Split directly after a run of CJK enders (same idea as
+// chatService.ts takeSentences, the voice streaming splitter). The trailing
+// 。 is kept even for 'casual' — dropping the full-width stop reads as a cut
+// off sentence in Chinese, unlike the English texting-register period.
 export function splitChatMessages(line, punctuation = 'casual') {
   if (!line) return []
   return line
-    // Break on dashes (with or without surrounding spaces) and after . ? !
-    .split(/\s*[—–]\s*|(?<=[.?!])\s+/)
+    // Break on dashes (with or without surrounding spaces), after . ? ! plus
+    // whitespace, and after CJK sentence enders regardless of spacing.
+    .split(/\s*[—–]\s*|(?<=[.?!])\s+|(?<=[。！？])/)
     .map((seg) => {
       const s = seg.trim()
       return punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')
@@ -1266,8 +1273,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // 260709: conversation language (UserConfig.chat_language, bridged by
         // botSupervisor at fork). '' for English — spread so no empty block is
         // ever appended and existing sessions keep the exact same cache key.
-        ...(renderLanguageDirective(config.chat_language)
-          ? [renderLanguageDirective(config.chat_language)]
+        // 260730: a per-character pin (persona.language, from
+        // character.metadata.language) beats the profile-wide setting.
+        ...(renderLanguageDirective(config.persona?.language ?? config.chat_language)
+          ? [renderLanguageDirective(config.persona?.language ?? config.chat_language)]
           : []),
         // 260725 Knowledge: user-provided reference files (capped + sanitized
         // in main, shipped via the init payload). APPENDED (never inserted) for

@@ -25,6 +25,7 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { PercentBar } from '../components/PercentBar';
 import { Button } from '../components/Button';
 import type { GenStage, GenerateUniqueResult, UniqueGender } from '@shared/ipc';
+import { useT } from '../lib/i18n';
 import styles from './UniqueCastingScreen.module.css';
 
 const STAGE_ORDER: GenStage[] = ['sheet', 'portrait', 'skin', 'persona', 'saving'];
@@ -85,6 +86,7 @@ export interface UniqueCastingScreenProps {
 }
 
 export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const [stageState, setStageState] = useState<Partial<Record<GenStage, 'start' | 'done' | 'error'>>>(
     {},
@@ -187,8 +189,8 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
     return (
       <div className={styles.root}>
         <div className={styles.center}>
-          <div className={styles.errTitle}>{copy.title}</div>
-          <p className={styles.errBody}>{copy.body}</p>
+          <div className={styles.errTitle}>{t(copy.title)}</div>
+          <p className={styles.errBody}>{t(copy.body)}</p>
           {errDetail ? (
             <p className={styles.errDetail} title={errDetail}>
               {errDetail.length > 200 ? `${errDetail.slice(0, 200)}…` : errDetail}
@@ -196,14 +198,14 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
           ) : null}
           <div className={styles.actions}>
             <Button kind="quiet" size="md" onClick={() => navigate({ kind: 'home' })}>
-              Back
+              {t('Back')}
             </Button>
             <Button
               kind="accent"
               size="md"
               onClick={() => setAttempt((a) => a + 1)}
             >
-              Try again
+              {t('Try again')}
             </Button>
           </div>
         </div>
@@ -224,15 +226,23 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
     <div className={styles.root}>
       <div className={styles.center}>
         <div className={styles.headline} aria-live="polite">
-          {STAGE_COPY[activeStage]}
+          {t(STAGE_COPY[activeStage])}
         </div>
         <div className={styles.barWrap}>
-          <PercentBar value={pct} size="md" label={`Casting your companion, ${pct} percent`} />
+          <PercentBar
+            value={pct}
+            size="md"
+            label={t('Casting your companion, {pct} percent', { pct })}
+          />
         </div>
         {portraitFailed ? (
-          <p className={styles.blurred}>Image generation failed. Continuing without a portrait.</p>
+          <p className={styles.blurred}>
+            {t('Image generation failed. Continuing without a portrait.')}
+          </p>
         ) : skinFailed ? (
-          <p className={styles.blurred}>Skin generation failed. Continuing with the default skin.</p>
+          <p className={styles.blurred}>
+            {t('Skin generation failed. Continuing with the default skin.')}
+          </p>
         ) : null}
       </div>
     </div>

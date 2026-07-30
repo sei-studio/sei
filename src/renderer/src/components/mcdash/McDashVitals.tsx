@@ -7,6 +7,7 @@
  */
 
 import React from 'react';
+import { useT } from '../../lib/i18n';
 import styles from './McDashboardPanel.module.css';
 
 type Cell = [number, number];
@@ -89,8 +90,9 @@ function iconState(value: number, index: number): IconState {
 }
 
 export function HeartsRow({ health }: { health: number }): React.ReactElement {
+  const t = useT();
   return (
-    <div className={styles.vitalRow} role="img" aria-label={`Health ${health} of 20`}>
+    <div className={styles.vitalRow} role="img" aria-label={t('Health {value} of 20', { value: health })}>
       {Array.from({ length: 10 }, (_, i) => (
         <Heart key={i} state={iconState(health, i)} />
       ))}
@@ -99,8 +101,9 @@ export function HeartsRow({ health }: { health: number }): React.ReactElement {
 }
 
 export function FoodRow({ food }: { food: number }): React.ReactElement {
+  const t = useT();
   return (
-    <div className={styles.vitalRow} role="img" aria-label={`Food ${food} of 20`}>
+    <div className={styles.vitalRow} role="img" aria-label={t('Food {value} of 20', { value: food })}>
       {Array.from({ length: 10 }, (_, i) => (
         <Drumstick key={i} state={iconState(food, i)} />
       ))}

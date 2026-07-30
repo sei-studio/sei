@@ -7,7 +7,13 @@
  * `description` is the body of the hover info popup on each picker tile
  * (companion-name aware, 1-2 sentences). Setup instructions live with each
  * game's own surface (e.g. the Minecraft setup window), not here.
+ *
+ * i18n: descriptions call the bare t() so they evaluate at render time (the
+ * picker subscribes via useT). Game NAMES stay the proper English names here;
+ * caption-like names ('Suggest a game') are translated at the display site.
  */
+
+import { t } from './i18n';
 
 export interface GameDef {
   id: string;
@@ -28,8 +34,10 @@ export const GAMES: GameDef[] = [
     available: true,
     image: './img/game-minecraft.webp',
     description: (name) =>
-      `${name} joins your Minecraft world as a real player, walking beside you, ` +
-      `mining, building, and talking as you explore together.`,
+      t(
+        '{name} joins your Minecraft world as a real player, walking beside you, mining, building, and talking as you explore together.',
+        { name },
+      ),
   },
   {
     id: 'chess',
@@ -37,8 +45,10 @@ export const GAMES: GameDef[] = [
     available: true,
     image: './img/chess-launch.png',
     description: (name) =>
-      `A classic game of chess against ${name}, right inside your chat. ` +
-      `Untimed, so take as long as you like.`,
+      t(
+        'A classic game of chess against {name}, right inside your chat. Untimed, so take as long as you like.',
+        { name },
+      ),
   },
   {
     id: 'draw',
@@ -51,8 +61,10 @@ export const GAMES: GameDef[] = [
     // element in one would silently fall back to a system serif.
     image: './img/game-draw.png',
     description: (name) =>
-      `Take turns sketching and guessing with ${name}. ` +
-      `Whoever is guessing types in the chat, and any sentence with the word in it counts.`,
+      t(
+        'Take turns sketching and guessing with {name}. Whoever is guessing types in the chat, and any sentence with the word in it counts.',
+        { name },
+      ),
   },
   {
     // Preview of the feature living on v0.5-backseat; the tile ships ahead of
@@ -63,8 +75,10 @@ export const GAMES: GameDef[] = [
     soon: true,
     image: './img/game-backseat.svg',
     description: (name) =>
-      `Share a window and ${name} watches you play, reacting as it happens and ` +
-      `saying what they want to see you try next. Works with any game.`,
+      t(
+        'Share a window and {name} watches you play, reacting as it happens and saying what they want to see you try next. Works with any game.',
+        { name },
+      ),
   },
   {
     id: 'stardew',
@@ -73,8 +87,10 @@ export const GAMES: GameDef[] = [
     soon: true,
     image: './img/game-stardew.jpg',
     description: (name) =>
-      `Farm side by side in Pelican Town. ${name} joins your co-op farm to plant, ` +
-      `mine, and chat through the seasons with you.`,
+      t(
+        'Farm side by side in Pelican Town. {name} joins your co-op farm to plant, mine, and chat through the seasons with you.',
+        { name },
+      ),
   },
   {
     id: 'dontstarve',
@@ -83,8 +99,10 @@ export const GAMES: GameDef[] = [
     soon: true,
     image: './img/game-dontstarve.jpg',
     description: (name) =>
-      `Survive the Constant together. ${name} gathers, fights, and keeps the fire ` +
-      `going with you through the night.`,
+      t(
+        'Survive the Constant together. {name} gathers, fights, and keeps the fire going with you through the night.',
+        { name },
+      ),
   },
   {
     id: 'focus',
@@ -93,13 +111,15 @@ export const GAMES: GameDef[] = [
     soon: true,
     image: './img/game-focus.jpg',
     description: (name) =>
-      `A quiet co-working session. ${name} keeps you company while you get things done.`,
+      t('A quiet co-working session. {name} keeps you company while you get things done.', {
+        name,
+      }),
   },
   {
     id: 'suggest',
     name: 'Suggest a game',
     available: true,
     description: () =>
-      'Tell us what you want to play together. Suggestions go straight to the team.',
+      t('Tell us what you want to play together. Suggestions go straight to the team.'),
   },
 ];

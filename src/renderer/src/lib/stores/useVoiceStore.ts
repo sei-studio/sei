@@ -45,6 +45,7 @@ import { useChatStore } from './useChatStore';
 import { useDataStore } from './useDataStore';
 import { voicePitchRate } from '@shared/voicePitch';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
+import { t } from '../i18n';
 import { createDictation, type Dictation } from '../voice/dictation';
 import { sttPolicy } from '../voice/sttPolicy';
 import { prefetchVoiceModel } from '../voice/modelPrefetch';
@@ -331,26 +332,26 @@ function friendlyError(err: unknown): string {
   // getUserMedia failures arrive as DOMExceptions whose `message` is often
   // empty — the `name` is the reliable signal (NotAllowedError / NotFoundError).
   const name = (err as { name?: string })?.name ?? '';
-  if (/VOICE_NO_SESSION/.test(msg)) return 'Sign in to use voice calls.';
-  if (/VOICE_NO_CREDITS/.test(msg)) return "You've used this week's credits. Upgrade or top up to keep calling.";
-  if (/VOICE_RATE_LIMITED/.test(msg)) return "You've hit today's usage cap. It resets tomorrow.";
-  if (/VOICE_NOT_CONFIGURED/.test(msg)) return 'Voice service is not available right now.';
+  if (/VOICE_NO_SESSION/.test(msg)) return t('Sign in to use voice calls.');
+  if (/VOICE_NO_CREDITS/.test(msg)) return t("You've used this week's credits. Upgrade or top up to keep calling.");
+  if (/VOICE_RATE_LIMITED/.test(msg)) return t("You've hit today's usage cap. It resets tomorrow.");
+  if (/VOICE_NOT_CONFIGURED/.test(msg)) return t('Voice service is not available right now.');
   // BYOK (260726): the curated pool lives in Sei's ElevenLabs account, so the
   // user's own key cannot speak that voice until they add it to their library.
   if (/VOICE_NOT_IN_LIBRARY/.test(msg)) {
-    return 'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.';
+    return t('This voice is not in your ElevenLabs library. Add it there, or pick a different voice.');
   }
   if (name === 'NotFoundError' || /device not found/i.test(msg)) {
-    return 'No microphone was found. Connect one and try again.';
+    return t('No microphone was found. Connect one and try again.');
   }
   if (name === 'NotAllowedError' || /permission/i.test(msg)) {
     // Windows has no per-app prompt for desktop apps: access is silently
     // blocked by the OS privacy toggle, so name the exact switch (260709).
     return sei.platform === 'win32'
-      ? 'Microphone access is blocked by Windows. In Settings, open Privacy & security > Microphone, turn on microphone access and "Let desktop apps access your microphone", then try again.'
-      : 'Microphone access was blocked. Allow it and try again.';
+      ? t('Microphone access is blocked by Windows. In Settings, open Privacy & security > Microphone, turn on microphone access and "Let desktop apps access your microphone", then try again.')
+      : t('Microphone access was blocked. Allow it and try again.');
   }
-  return 'Voice call failed to start. Try again in a moment.';
+  return t('Voice call failed to start. Try again in a moment.');
 }
 
 export const useVoiceStore = create<VoiceState>((set, get) => {

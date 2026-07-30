@@ -17,6 +17,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import styles from './GoogleSignInButton.module.css';
 
 interface GoogleSignInButtonProps {
@@ -66,13 +67,14 @@ export function GoogleSignInButton({
   fullWidth,
   label = 'Sign in with Google',
 }: GoogleSignInButtonProps): React.ReactElement {
+  const t = useT();
   const cls = [styles.button, fullWidth ? styles.fullWidth : ''].filter(Boolean).join(' ');
   return (
     <button type="button" className={cls} onClick={onClick} disabled={disabled}>
       <span className={styles.glyphWrap}>
         <GoogleGlyph />
       </span>
-      <span className={styles.label}>{label}</span>
+      <span className={styles.label}>{t(label)}</span>
     </button>
   );
 }

@@ -18,6 +18,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ROUNDS, type DrawStroke } from '@shared/drawIpc';
 import { useDrawStore } from '../../lib/stores/useDrawStore';
 import { useUiStore } from '../../lib/stores/useUiStore';
+import { useT } from '../../lib/i18n';
 import { DrawCanvas, type DrawCanvasControl } from './DrawCanvas';
 import { DrawChat } from './DrawChat';
 import { DrawGallery } from './DrawGallery';
@@ -67,6 +68,7 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
 }
 
 function DrawScreenBody({ characterId }: { characterId: string }): React.ReactElement {
+  const t = useT();
   const state = useDrawStore((s) => s.games[characterId]);
   const starting = useDrawStore((s) => s.starting[characterId]);
   const error = useDrawStore((s) => s.error[characterId]);
@@ -173,7 +175,7 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
   if (!state) {
     return (
       <div className={styles.root}>
-        <p className={styles.loading}>{error ?? 'Loading...'}</p>
+        <p className={styles.loading}>{error ?? t('Loading...')}</p>
       </div>
     );
   }
@@ -196,21 +198,21 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
     return (
       <div className={styles.root}>
         <div className={styles.setup}>
-          <h1 className={`${styles.title} ${styles.titleBig}`}>DRAW!</h1>
+          <h1 className={`${styles.title} ${styles.titleBig}`}>{t('DRAW!')}</h1>
 
           <div className={styles.doodles}>
             {DOODLES.map((d) => (
               <Doodle
                 key={d.label}
                 doodle={d.data}
-                label={d.label}
+                label={t(d.label)}
                 wash={d.wash}
                 className={d.cls}
               />
             ))}
           </div>
 
-          <p className={styles.tagline}>Take turns drawing and guessing. Three rounds.</p>
+          <p className={styles.tagline}>{t('Take turns drawing and guessing. Three rounds.')}</p>
 
           <button
             type="button"
@@ -221,15 +223,15 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
           >
             <SquiggleHighlight seed="start-hl" />
             <SquiggleFrame seed="start-btn" />
-            <span className={styles.btnLabel}>{starting ? 'Starting...' : 'Start!'}</span>
+            <span className={styles.btnLabel}>{starting ? t('Starting...') : t('Start!')}</span>
           </button>
           {error ? <p className={styles.error}>{error}</p> : null}
           <button
             type="button"
             className={styles.handBtnQuiet}
             onClick={close}
-            aria-label="Leave Draw!"
-            title="Leave"
+            aria-label={t('Leave Draw!')}
+            title={t('Leave')}
           >
             <SquiggleHighlight seed="setup-x-hl" />
             <span className={styles.btnLabel}>x</span>
@@ -243,7 +245,7 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
     return (
       <div className={styles.root}>
         <div className={styles.pick}>
-          <h1 className={styles.title}>Pick a word</h1>
+          <h1 className={styles.title}>{t('Pick a word')}</h1>
           <div className={styles.pickWords}>
             {state.wordChoices.map((w) => (
               <button
@@ -262,8 +264,8 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
             type="button"
             className={styles.handBtnQuiet}
             onClick={close}
-            aria-label="Leave Draw!"
-            title="Leave"
+            aria-label={t('Leave Draw!')}
+            title={t('Leave')}
           >
             <SquiggleHighlight seed="pick-x-hl" />
             <span className={styles.btnLabel}>x</span>
@@ -287,11 +289,11 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
 
   const header = !live
     ? state.word
-      ? `It was "${state.word}"`
-      : 'Turn over'
+      ? t('It was "{word}"', { word: state.word })
+      : t('Turn over')
     : iAmDrawing
       ? state.word ?? ''
-      : `${state.aiName} is drawing`;
+      : t('{name} is drawing', { name: state.aiName });
 
   return (
     <div
@@ -307,7 +309,7 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
         <div className={styles.stage}>
           <header className={styles.header}>
             <span className={styles.round}>
-              Round {state.round}/{state.rounds}
+              {t('Round {n}/{m}', { n: state.round, m: state.rounds })}
             </span>
             <span className={iAmDrawing && live ? styles.word : styles.headerNote}>{header}</span>
             <span className={styles.clock}>{live ? formatClock(remaining) : ''}</span>
@@ -322,10 +324,11 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
             <SquiggleFrame seed="canvas-frame" />
             {paused ? (
               <div className={styles.pausedOverlay}>
-                <p className={styles.pausedTitle}>game paused</p>
+                <p className={styles.pausedTitle}>{t('game paused')}</p>
                 <p className={`${styles.pausedNote} ${styles.typed}`}>
-                  usage limit reached. top up or wait, then resume: the turn picks
-                  up right where it stopped.
+                  {t(
+                    'usage limit reached. top up or wait, then resume: the turn picks up right where it stopped.',
+                  )}
                 </p>
                 <button
                   type="button"
@@ -335,7 +338,7 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
                 >
                   <SquiggleHighlight seed="resume-hl" />
                   <SquiggleFrame seed="resume-btn" />
-                  <span className={styles.btnLabel}>Resume</span>
+                  <span className={styles.btnLabel}>{t('Resume')}</span>
                 </button>
               </div>
             ) : null}
@@ -358,20 +361,20 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
                 selected state, so neither of them appears only on hover. */}
             {live && iAmDrawing ? (
               <div className={styles.toolbar}>
-                {(['pen', 'eraser'] as const).map((t) => (
+                {(['pen', 'eraser'] as const).map((tk) => (
                   <button
-                    key={t}
+                    key={tk}
                     type="button"
                     className={styles.tool}
-                    data-on={tool === t ? 'true' : 'false'}
-                    onClick={() => setTool(t)}
-                    aria-pressed={tool === t}
-                    aria-label={t === 'pen' ? 'Pen' : 'Stroke eraser'}
-                    title={t === 'pen' ? 'Pen' : 'Eraser (removes a whole stroke)'}
+                    data-on={tool === tk ? 'true' : 'false'}
+                    onClick={() => setTool(tk)}
+                    aria-pressed={tool === tk}
+                    aria-label={tk === 'pen' ? t('Pen') : t('Stroke eraser')}
+                    title={tk === 'pen' ? t('Pen') : t('Eraser (removes a whole stroke)')}
                   >
-                    <SquiggleHighlight seed={`tool-hl-${t}`} shape="ellipse" />
-                    <SquiggleFrame seed={`tool-${t}`} shape="ellipse" />
-                    <span className={styles.toolGlyph}>{t === 'pen' ? '/' : 'x'}</span>
+                    <SquiggleHighlight seed={`tool-hl-${tk}`} shape="ellipse" />
+                    <SquiggleFrame seed={`tool-${tk}`} shape="ellipse" />
+                    <span className={styles.toolGlyph}>{tk === 'pen' ? '/' : 'x'}</span>
                   </button>
                 ))}
               </div>
@@ -392,7 +395,7 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
             messages={visibleChat}
             playerName={state.playerName}
             aiName={state.aiName}
-            placeholder={chatPlaceholder}
+            placeholder={t(chatPlaceholder)}
             disabled={!live}
             onSend={(t) => sendChat(characterId, t)}
           />

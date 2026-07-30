@@ -21,6 +21,28 @@
  * why a near-miss counted.
  */
 
+/* ── CJK path (260730) ────────────────────────────────────────────────────
+   Chinese has no spaces and no plurals, so the token walk below cannot see it
+   (normalize() deletes every Han character). A CJK answer instead matches by
+   CONTIGUOUS CONTAINMENT over a normalized string that keeps Han characters
+   and alphanumerics only: "是不是灯塔？？" contains "灯塔". The same three
+   values hold: literal, case/punctuation-forgiving, nothing fuzzy. */
+
+const HAN_RE = /[㐀-䶿一-鿿]/;
+
+function hasCjk(s: string): boolean {
+  return HAN_RE.test(s);
+}
+
+/** Keep Han + lowercase alphanumerics, drop everything else, no spaces. */
+function normalizeCjk(s: string): string {
+  let out = '';
+  for (const ch of s.toLowerCase()) {
+    if (HAN_RE.test(ch) || /[a-z0-9]/.test(ch)) out += ch;
+  }
+  return out;
+}
+
 /** Lowercase, strip diacritics, reduce every separator to a single space. */
 function normalize(s: string): string {
   return s
@@ -50,6 +72,10 @@ function tokensEqual(a: string, b: string): boolean {
  * order and adjacent, for two-word answers).
  */
 export function matchesWord(message: string, word: string): boolean {
+  if (hasCjk(word)) {
+    const target = normalizeCjk(word);
+    return target.length > 0 && normalizeCjk(message).includes(target);
+  }
   const target = tokenize(word);
   if (target.length === 0) return false;
   const said = tokenize(message);
@@ -129,6 +155,24 @@ export function findWordMatch(
   message: string,
   word: string,
 ): { start: number; end: number } | null {
+  if (hasCjk(word)) {
+    // CJK: walk the raw text keeping normalized characters with their source
+    // index, find the contiguous target, map back to a raw [start, end).
+    const target = normalizeCjk(word);
+    if (target.length === 0) return null;
+    const kept: { ch: string; idx: number }[] = [];
+    let i = 0;
+    for (const ch of message) {
+      const low = ch.toLowerCase();
+      if (HAN_RE.test(low) || /[a-z0-9]/.test(low)) kept.push({ ch: low, idx: i });
+      i += ch.length; // supplementary-plane characters occupy two UTF-16 units
+    }
+    const hay = kept.map((k) => k.ch).join('');
+    const at = hay.indexOf(target);
+    if (at < 0) return null;
+    const last = kept[at + target.length - 1];
+    return { start: kept[at].idx, end: last.idx + last.ch.length };
+  }
   const target = tokenize(word);
   if (target.length === 0) return null;
   const spans = tokenizeWithSpans(message);
@@ -164,6 +208,18 @@ export function findWordMatch(
  * character is told plainly never to say the word.
  */
 export function redactWord(text: string, word: string): string | null {
+  if (hasCjk(word)) {
+    // CJK: no word boundaries exist, so redact every contiguous occurrence
+    // (tolerating separators between the characters, mirroring the Latin
+    // pattern's tolerance). Chars are regex-escaped individually.
+    const chars = [...normalizeCjk(word)];
+    if (chars.length === 0) return text;
+    const esc = (c: string): string => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(chars.map(esc).join('[^㐀-䶿一-鿿a-z0-9]*'), 'gi');
+    const out = text.replace(re, '[...]').trim();
+    if (out.replace(/\[\.\.\.\]/g, '').replace(/[^㐀-䶿一-鿿a-z0-9]/gi, '').length === 0) return null;
+    return out;
+  }
   const target = tokenize(word);
   if (target.length === 0) return text;
 

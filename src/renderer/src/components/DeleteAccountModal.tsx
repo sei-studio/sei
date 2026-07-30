@@ -11,6 +11,7 @@
  */
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { TextField } from './TextField';
@@ -27,6 +28,7 @@ export function DeleteAccountModal({
   onCancel,
   onConfirmed,
 }: DeleteAccountModalProps): React.ReactElement {
+  const t = useT();
   const [typed, setTyped] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,8 +51,8 @@ export function DeleteAccountModal({
       } else {
         setError(
           res.code === 'network'
-            ? "Couldn't reach the account-deletion service. Try again."
-            : res.message || "Couldn't delete the account. Try again.",
+            ? t("Couldn't reach the account-deletion service. Try again.")
+            : res.message || t("Couldn't delete the account. Try again."),
         );
       }
     } finally {
@@ -60,9 +62,13 @@ export function DeleteAccountModal({
 
   const para3Id = 'delete-account-confirm-instruction';
 
+  // Keep the <strong> around the email: translate with the {email} placeholder
+  // intact, then split on it and re-insert the styled node.
+  const [confirmBefore, confirmAfter] = t('To confirm, type {email} below.').split('{email}');
+
   return (
     <ModalShell
-      title="Delete your Sei account?"
+      title={t('Delete your Sei account?')}
       width={460}
       onClose={onCancel}
       escClose={!submitting && phase === 'idle'}
@@ -70,15 +76,19 @@ export function DeleteAccountModal({
       {phase === 'idle' ? (
         <>
           <p className={styles.body}>
-            Cloud-side, this removes your companions, shared listings, credit ledger, and uploaded
-            skin &amp; portrait files within 30 days.
+            {t(
+              'Cloud-side, this removes your companions, shared listings, credit ledger, and uploaded skin & portrait files within 30 days.',
+            )}
           </p>
           <p className={styles.body}>
-            Local-side, your companions on this machine, your bot&apos;s memory, and any cloud
-            companions you&apos;ve opened locally are untouched.
+            {t(
+              "Local-side, your companions on this machine, your bot's memory, and any cloud companions you've opened locally are untouched.",
+            )}
           </p>
           <p id={para3Id} className={styles.body}>
-            To confirm, type <strong className={styles.bodyEmphasis}>{accountEmail}</strong> below.
+            {confirmBefore}
+            <strong className={styles.bodyEmphasis}>{accountEmail}</strong>
+            {confirmAfter}
           </p>
 
           <div className={styles.confirmInputRow}>
@@ -86,7 +96,7 @@ export function DeleteAccountModal({
               value={typed}
               onChange={setTyped}
               placeholder={accountEmail}
-              aria-label={`Type ${accountEmail} to confirm account deletion`}
+              aria-label={t('Type {email} to confirm account deletion', { email: accountEmail })}
               aria-invalid={typed.length > 0 && !matches}
             />
           </div>
@@ -99,21 +109,21 @@ export function DeleteAccountModal({
 
           <ModalFooter>
             <Button kind="ghost" size="md" onClick={onCancel} disabled={submitting}>
-              Keep my account
+              {t('Keep my account')}
             </Button>
             <Button
               kind="danger"
               size="md"
               onClick={onConfirmClick}
               disabled={!canConfirm}
-              aria-label="Delete account"
+              aria-label={t('Delete account')}
             >
-              {submitting ? 'Deleting…' : 'Delete account'}
+              {submitting ? t('Deleting…') : t('Delete account')}
             </Button>
           </ModalFooter>
         </>
       ) : (
-        <p className={styles.success}>Account scheduled for deletion. Signing you out…</p>
+        <p className={styles.success}>{t('Account scheduled for deletion. Signing you out…')}</p>
       )}
     </ModalShell>
   );

@@ -29,6 +29,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT, uiLanguage } from '../lib/i18n';
 import { SeiPixelMark } from '../components/SeiPixelMark';
 import { Button } from '../components/Button';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
@@ -60,6 +61,7 @@ export function AuthChoiceScreen({
   onChooseLocal,
   framingLabel = null,
 }: AuthChoiceScreenProps): React.ReactElement {
+  const t = useT();
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -111,7 +113,7 @@ export function AuthChoiceScreen({
     // hit the network, rather than letting it fall through to a generic
     // credentials error.
     if (!EMAIL_RE.test(email.trim())) {
-      setError("That doesn't look like a valid email address.");
+      setError(t("That doesn't look like a valid email address."));
       return;
     }
     setSubmitting(true);
@@ -159,7 +161,7 @@ export function AuthChoiceScreen({
     // Reuse the typed email — the field sits directly above the link. Require a
     // valid-looking address first so we don't send the user to a dead-end panel.
     if (!EMAIL_RE.test(email.trim())) {
-      setError('Enter your email above, then tap "Forgot your password?"');
+      setError(t('Enter your email above, then tap "Forgot your password?"'));
       return;
     }
     setSubmitting(true);
@@ -178,13 +180,13 @@ export function AuthChoiceScreen({
 
   const ctaLabel = submitting
     ? mode === 'signin'
-      ? 'Signing in…'
-      : 'Creating account…'
+      ? t('Signing in…')
+      : t('Creating account…')
     : mode === 'signin'
-      ? 'Sign In'
-      : 'Create Account';
+      ? t('Sign In')
+      : t('Create Account');
   const toggleLabel =
-    mode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in';
+    mode === 'signin' ? t('New here? Create an account') : t('Already have an account? Sign in');
 
   // Verification-pending sub-state. Replaces the form with a "Check your
   // email" panel; user can still drop back to local via the bottom link.
@@ -195,20 +197,22 @@ export function AuthChoiceScreen({
           <SeiPixelMark height={44} />
         </div>
         <div className={styles.formPanel}>
-          <h1 className={styles.title}>Check your email</h1>
+          <h1 className={styles.title}>{t('Check your email')}</h1>
           <p className={styles.bodyText}>
-            We sent a verification link to <strong>{verificationSentTo}</strong>. Open it on this
-            device to finish signing in.
+            {t(
+              'We sent a verification link to {email}. Open it on this device to finish signing in.',
+              { email: verificationSentTo },
+            )}
           </p>
           <p className={styles.bodyText}>
-            Keep this window open. Once you click the link, Sei signs you in automatically.
+            {t('Keep this window open. Once you click the link, Sei signs you in automatically.')}
           </p>
           <Button kind="quiet" size="md" onClick={() => setVerificationSentTo(null)}>
-            Back
+            {t('Back')}
           </Button>
         </div>
         <button type="button" className={styles.localLink} onClick={onChooseLocal}>
-          Continue locally →
+          {t('Continue locally →')}
         </button>
       </div>
     );
@@ -223,20 +227,22 @@ export function AuthChoiceScreen({
           <SeiPixelMark height={44} />
         </div>
         <div className={styles.formPanel}>
-          <h1 className={styles.title}>Check your email</h1>
+          <h1 className={styles.title}>{t('Check your email')}</h1>
           <p className={styles.bodyText}>
-            If an account exists for <strong>{resetSentTo}</strong>, we've sent a password reset
-            link. Open it on this device to choose a new password.
+            {t(
+              "If an account exists for {email}, we've sent a password reset link. Open it on this device to choose a new password.",
+              { email: resetSentTo },
+            )}
           </p>
           <p className={styles.bodyText}>
-            Keep this window open. Once you click the link, Sei prompts you for a new password.
+            {t('Keep this window open. Once you click the link, Sei prompts you for a new password.')}
           </p>
           <Button kind="quiet" size="md" onClick={() => setResetSentTo(null)}>
-            Back
+            {t('Back')}
           </Button>
         </div>
         <button type="button" className={styles.localLink} onClick={onChooseLocal}>
-          Continue locally →
+          {t('Continue locally →')}
         </button>
       </div>
     );
@@ -250,29 +256,29 @@ export function AuthChoiceScreen({
 
       <div className={styles.formPanel}>
         {framingLabel ? (
-          <p className={styles.framing}>Sign in to {framingLabel}</p>
+          <p className={styles.framing}>{t('Sign in to {label}', { label: t(framingLabel) })}</p>
         ) : null}
 
         <form className={styles.form} onSubmit={onSubmit}>
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel} htmlFor="auth-email">Email</label>
+            <label className={styles.fieldLabel} htmlFor="auth-email">{t('Email')}</label>
             <TextField
               value={email}
               onChange={setEmail}
               placeholder="you@example.com"
               autoFocus
-              aria-label="Email"
+              aria-label={t('Email')}
             />
           </div>
 
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel} htmlFor="auth-password">Password</label>
+            <label className={styles.fieldLabel} htmlFor="auth-password">{t('Password')}</label>
             <TextField
               value={password}
               onChange={setPassword}
-              placeholder={mode === 'signup' ? 'At least 8 characters' : ''}
+              placeholder={mode === 'signup' ? t('At least 8 characters') : ''}
               type="password"
-              aria-label="Password"
+              aria-label={t('Password')}
               aria-invalid={!!error}
             />
           </div>
@@ -286,18 +292,21 @@ export function AuthChoiceScreen({
           */}
           {mode === 'signup' ? (
             <div className={styles.fieldGroup}>
-              <label className={styles.fieldLabel}>Date of birth</label>
+              <label className={styles.fieldLabel}>{t('Date of birth')}</label>
               <div className={styles.dobRow}>
                 <select
                   className={styles.dobSelect}
                   value={dobMonth}
                   onChange={(e) => setDobMonth(e.target.value)}
-                  aria-label="Month of birth"
+                  aria-label={t('Month of birth')}
                 >
-                  <option value="">Month</option>
+                  <option value="">{t('Month')}</option>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                     <option key={m} value={String(m)}>
-                      {new Date(2000, m - 1, 1).toLocaleString('en-US', { month: 'short' })}
+                      {new Date(2000, m - 1, 1).toLocaleString(
+                        uiLanguage() === 'zh' ? 'zh-CN' : 'en-US',
+                        { month: 'short' },
+                      )}
                     </option>
                   ))}
                 </select>
@@ -305,9 +314,9 @@ export function AuthChoiceScreen({
                   className={styles.dobSelect}
                   value={dobDay}
                   onChange={(e) => setDobDay(e.target.value)}
-                  aria-label="Day of birth"
+                  aria-label={t('Day of birth')}
                 >
-                  <option value="">Day</option>
+                  <option value="">{t('Day')}</option>
                   {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
                     <option key={d} value={String(d)}>
                       {d}
@@ -318,9 +327,9 @@ export function AuthChoiceScreen({
                   className={styles.dobSelect}
                   value={dobYear}
                   onChange={(e) => setDobYear(e.target.value)}
-                  aria-label="Year of birth"
+                  aria-label={t('Year of birth')}
                 >
-                  <option value="">Year</option>
+                  <option value="">{t('Year')}</option>
                   {(() => {
                     const currentYear = new Date().getFullYear();
                     return Array.from({ length: 100 }, (_, i) => currentYear - i).map((y) => (
@@ -340,10 +349,10 @@ export function AuthChoiceScreen({
                 type="checkbox"
                 checked={tosChecked}
                 onChange={(e) => setTosChecked(e.target.checked)}
-                aria-label="I agree to the Terms of Service and Privacy Policy"
+                aria-label={t('I agree to the Terms of Service and Privacy Policy')}
               />
               <span>
-                I agree to the{' '}
+                {t('I agree to the')}{' '}
                 <a
                   href="#"
                   onClick={(e) => {
@@ -351,9 +360,9 @@ export function AuthChoiceScreen({
                     void sei.openExternal('https://sei.gg/terms.html');
                   }}
                 >
-                  Terms of Service
+                  {t('Terms of Service')}
                 </a>{' '}
-                and{' '}
+                {t('and')}{' '}
                 <a
                   href="#"
                   onClick={(e) => {
@@ -361,7 +370,7 @@ export function AuthChoiceScreen({
                     void sei.openExternal('https://sei.gg/privacy.html');
                   }}
                 >
-                  Privacy Policy
+                  {t('Privacy Policy')}
                 </a>
               </span>
             </label>
@@ -393,19 +402,19 @@ export function AuthChoiceScreen({
                 disabled={submitting}
                 onClick={() => { void onForgot(); }}
               >
-                Forgot your password?
+                {t('Forgot your password?')}
               </button>
             </div>
           ) : null}
         </form>
 
-        <div className={styles.divider}>or</div>
+        <div className={styles.divider}>{t('or')}</div>
 
         <GoogleSignInButton
           onClick={onGoogleClick}
           disabled={submitting}
           fullWidth
-          label={mode === 'signup' ? 'Sign up with Google' : 'Sign in with Google'}
+          label={mode === 'signup' ? t('Sign up with Google') : t('Sign in with Google')}
         />
 
         <div className={styles.toggleRow}>
@@ -423,7 +432,7 @@ export function AuthChoiceScreen({
       </div>
 
       <button type="button" className={styles.localLink} onClick={onChooseLocal}>
-        Continue locally →
+        {t('Continue locally →')}
       </button>
 
       {oauthInFlight ? (

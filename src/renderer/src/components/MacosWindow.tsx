@@ -22,6 +22,7 @@
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useT } from '../lib/i18n';
 import styles from './MacosWindow.module.css';
 
 interface MacosWindowProps {
@@ -43,6 +44,7 @@ interface MacosWindowProps {
  * opts out of the drag region and calls the matching main-process handler.
  */
 function WindowControls(): React.ReactElement {
+  const t = useT();
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     void sei.windowIsMaximized().then(setMaximized).catch(() => {});
@@ -54,8 +56,8 @@ function WindowControls(): React.ReactElement {
       <button
         className={styles.ctlBtn}
         onClick={() => void sei.windowMinimize()}
-        aria-label="Minimize"
-        title="Minimize"
+        aria-label={t('Minimize')}
+        title={t('Minimize')}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <rect x="1" y="4.5" width="8" height="1" fill="currentColor" />
@@ -64,8 +66,8 @@ function WindowControls(): React.ReactElement {
       <button
         className={styles.ctlBtn}
         onClick={() => void sei.windowMaximizeToggle()}
-        aria-label={maximized ? 'Restore' : 'Maximize'}
-        title={maximized ? 'Restore' : 'Maximize'}
+        aria-label={maximized ? t('Restore') : t('Maximize')}
+        title={maximized ? t('Restore') : t('Maximize')}
       >
         {maximized ? (
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -81,8 +83,8 @@ function WindowControls(): React.ReactElement {
       <button
         className={`${styles.ctlBtn} ${styles.ctlClose}`}
         onClick={() => void sei.windowClose()}
-        aria-label="Close"
-        title="Close"
+        aria-label={t('Close')}
+        title={t('Close')}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M1 1 L9 9 M9 1 L1 9" stroke="currentColor" strokeWidth="1.1" />

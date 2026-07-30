@@ -14,6 +14,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import styles from './PercentBar.module.css';
 
 export interface PercentBarProps {
@@ -49,6 +50,7 @@ export function PercentBar({
   overLimit = false,
   hideLabel = false,
 }: PercentBarProps): React.ReactElement {
+  const t = useT();
   const v = Math.max(0, Math.min(100, Math.round(value)));
   const fillTone = overLimit ? styles.fillOver : tone === 'muted' ? styles.fillMuted : '';
   return (
@@ -58,7 +60,7 @@ export function PercentBar({
       aria-valuenow={v}
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-label={label ?? `${v} percent`}
+      aria-label={label ?? t('{value} percent', { value: v })}
     >
       <div className={`${styles.fill} ${fillTone}`} style={{ width: `${v}%` }} />
       {hideLabel ? null : <span className={styles.label}>{v}%</span>}

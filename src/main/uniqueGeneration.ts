@@ -1338,6 +1338,9 @@ async function runPipeline(args: {
   let portraitBytes: Buffer | null = null;
   let skinBytes: Buffer | null = null;
   let expanded: string | null = null;
+  // 260730: set when the persona was generated in Chinese (zh UI), so the
+  // saved character carries the matching metadata.language pin.
+  let generatedLanguage: 'zh' | undefined;
 
   // The portrait/skin branch swallows its own failures — an image failure must
   // NEVER fail the whole generation (character saves with no portrait/skin).
@@ -1376,14 +1379,24 @@ async function runPipeline(args: {
   const personaBranch = (async (): Promise<void> => {
     emit('persona', 'start');
     const { expandPersona } = await import('./personaExpansion');
+    // 260730: a cast generated under the Chinese UI gets a Chinese persona.
+    let castLanguage: 'zh' | undefined;
+    try {
+      const { loadConfig } = await import('./configStore');
+      castLanguage = (await loadConfig()).ui_language === 'zh' ? 'zh' : undefined;
+    } catch {
+      castLanguage = undefined;
+    }
     const { expanded: exp } = await expandPersona({
       name: sheet.name,
       source: blurb,
       // /free/expand — the proxy injects the server-owned EXPANSION_SYSTEM here
       // (the SDK POSTs to <baseURL>/v1/messages = /free/expand/v1/messages).
       cloudMode: { baseURL: `${PROXY_BASE_URL}/free/expand`, authToken: jwt },
+      ...(castLanguage ? { language: castLanguage } : {}),
     });
     expanded = exp;
+    generatedLanguage = castLanguage;
     emit('persona', 'done');
   })();
 
@@ -1429,6 +1442,9 @@ async function runPipeline(args: {
       // TTS voice for voice calls. metadata rides the cloud sync verbatim, so
       // the assignment follows the character across devices.
       ...(sheet.voice_id ? { voiceId: sheet.voice_id } : {}),
+      // 260730: language pin for every AI surface (see chatLanguage.ts
+      // characterLanguage). Stamped only when the cast ran under the zh UI.
+      ...(generatedLanguage ? { language: generatedLanguage } : {}),
     },
     created: now,
     last_launched: null,

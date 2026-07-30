@@ -23,7 +23,7 @@ import { getCharacter } from '../characterStore';
 import { loadConfig } from '../configStore';
 import { VOICE_PITCH_MAX, VOICE_PITCH_MIN, ttsSpeedFor, voicePitchRate, voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
-import { clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
+import { characterLanguage, clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
 import { toSpokenRegister, toSpokenUtterance } from './spokenRegister';
 import { resolveVoiceId, isPoolVoiceId } from './voiceAssign';
 import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previewCache';
@@ -394,8 +394,12 @@ export async function voiceTts(args: {
   }
   const voiceId = await resolveVoiceId(character);
   // Per-message pin: the text's own script beats the conversation language
-  // (see ttsLanguageForText — the fix for English-accented CJK).
-  const language = ttsLanguageForText(args.text, await ttsLanguage());
+  // (see ttsLanguageForText — the fix for English-accented CJK). A
+  // character-pinned language (metadata.language, 260730) beats auto-detect.
+  const language = ttsLanguageForText(
+    args.text,
+    characterLanguage(character.metadata) ?? (await ttsLanguage()),
+  );
   const route = await resolveElevenLabsRoute();
   // Spoken register BEFORE the cap: chat lines mirrored into the call carry
   // shorthand ("lmao", "rn") that TTS would read literally, and texting
@@ -442,7 +446,10 @@ export async function voiceTtsStream(
   }
   const voiceId = await resolveVoiceId(character);
   // Per-message pin (see ttsLanguageForText and voiceTts).
-  const language = ttsLanguageForText(args.text, await ttsLanguage());
+  const language = ttsLanguageForText(
+    args.text,
+    characterLanguage(character.metadata) ?? (await ttsLanguage()),
+  );
   const route = await resolveElevenLabsRoute();
   // Spoken register BEFORE the cap (see voiceTts / speechTextFor).
   const text = clipForRoute(speechTextFor(args.text, language), route);

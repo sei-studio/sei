@@ -24,6 +24,7 @@ import {
   type NoticeInline,
 } from '../lib/noticeMarkdown';
 import { useNoticesStore } from '../lib/stores/useNoticesStore';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './NoticesInboxModal.module.css';
@@ -145,6 +146,7 @@ export function NoticeBody({ body }: { body: string }): React.ReactElement {
 }
 
 export function NoticesInboxModal(): React.ReactElement | null {
+  const t = useT();
   const open = useNoticesStore((s) => s.open);
   const notices = useNoticesStore((s) => s.notices);
   const readIds = useNoticesStore((s) => s.readIds);
@@ -166,17 +168,17 @@ export function NoticesInboxModal(): React.ReactElement | null {
 
   return (
     <ModalShell
-      title="Inbox"
+      title={t('Inbox')}
       width={760}
       scrimClose
       onClose={close}
       panelClassName={styles.panel}
     >
       {notices.length === 0 ? (
-        <p className={styles.empty}>No notices yet.</p>
+        <p className={styles.empty}>{t('No notices yet.')}</p>
       ) : (
         <div className={styles.columns}>
-          <ul className={styles.titles} role="listbox" aria-label="Notices">
+          <ul className={styles.titles} role="listbox" aria-label={t('Notices')}>
             {notices.map((n) => {
               const unread = !readIds.includes(n.id);
               const active = selected?.id === n.id;
@@ -192,7 +194,7 @@ export function NoticesInboxModal(): React.ReactElement | null {
                     onClick={() => select(n.id)}
                   >
                     <span className={styles.itemTitle}>
-                      {unread ? <span className={styles.dot} aria-label="Unread" /> : null}
+                      {unread ? <span className={styles.dot} aria-label={t('Unread')} /> : null}
                       {n.title}
                     </span>
                     <span className={styles.itemDate}>{formatNoticeDate(n.date)}</span>
@@ -216,7 +218,7 @@ export function NoticesInboxModal(): React.ReactElement | null {
 
       <ModalFooter>
         <Button kind="ghost" size="sm" onClick={close}>
-          Close
+          {t('Close')}
         </Button>
       </ModalFooter>
     </ModalShell>

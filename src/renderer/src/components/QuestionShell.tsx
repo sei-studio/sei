@@ -9,6 +9,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { StepDots } from './StepDots';
 import { BackIcon } from './icons';
@@ -38,6 +39,7 @@ export interface QuestionShellProps {
 }
 
 export function QuestionShell(p: QuestionShellProps): React.ReactElement {
+  const t = useT();
   return (
     <div
       className={styles.root}
@@ -55,9 +57,9 @@ export function QuestionShell(p: QuestionShellProps): React.ReactElement {
           icon={p.hideBackIcon ? undefined : <BackIcon size={14} />}
           onClick={p.onBack}
           disabled={p.backDisabled}
-          aria-label={p.backLabel ?? 'Back'}
+          aria-label={t(p.backLabel ?? 'Back')}
         >
-          {p.backLabel ?? 'Back'}
+          {t(p.backLabel ?? 'Back')}
         </Button>
         <StepDots count={p.stepCount} current={p.currentStep} />
         {p.secondaryLabel ? (
@@ -71,7 +73,7 @@ export function QuestionShell(p: QuestionShellProps): React.ReactElement {
           onClick={p.onNext}
           disabled={p.nextDisabled}
         >
-          {p.nextLabel ?? 'Continue'}
+          {t(p.nextLabel ?? 'Continue')}
         </Button>
       </div>
     </div>

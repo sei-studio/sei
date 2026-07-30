@@ -16,6 +16,7 @@
 import React from 'react';
 import type { McInstall, WizardInstallResult, WizardProgressEvent } from '@shared/ipc';
 import { StatusPill } from './StatusPill';
+import { t, useT } from '../lib/i18n';
 import styles from './InstallProgressList.module.css';
 
 export interface InstallProgressListProps {
@@ -37,53 +38,57 @@ interface StageRender {
  * Map a WizardProgressEvent (or absence) to its visual descriptor.
  */
 function describeStage(ev: WizardProgressEvent | undefined): StageRender {
-  if (!ev) return { label: 'Queued', pct: null, terminal: null };
+  if (!ev) return { label: t('Queued'), pct: null, terminal: null };
   switch (ev.stage) {
     case 'queued':
-      return { label: 'Queued', pct: null, terminal: null };
+      return { label: t('Queued'), pct: null, terminal: null };
     case 'fabric-downloading':
       return {
-        label: `Downloading Fabric Loader… ${ev.pct}%`,
+        label: t('Downloading Fabric Loader… {pct}%', { pct: ev.pct }),
         pct: ev.pct,
         terminal: null,
       };
     case 'fabric-installing':
-      return { label: 'Installing Fabric Loader…', pct: null, terminal: null };
+      return { label: t('Installing Fabric Loader…'), pct: null, terminal: null };
     case 'mods-linking': {
       // 260518-o1k T7: scan/link counters. Before totalEstimate is known
       // (the first event the orchestrator fires) we show "Scanning your
       // mods…" with no numerics. After readdir lands we show
       // "Scanning your mods (linked X of Y so far, Z excluded)."
       if (ev.totalEstimate == null) {
-        return { label: 'Scanning your mods…', pct: null, terminal: null };
+        return { label: t('Scanning your mods…'), pct: null, terminal: null };
       }
       return {
-        label: `Scanning your mods (linked ${ev.linked} of ${ev.totalEstimate} so far, ${ev.excluded} excluded).`,
+        label: t('Scanning your mods (linked {linked} of {total} so far, {excluded} excluded).', {
+          linked: ev.linked,
+          total: ev.totalEstimate,
+          excluded: ev.excluded,
+        }),
         pct: null,
         terminal: null,
       };
     }
     case 'mod-downloading':
       return {
-        label: `Downloading CustomSkinLoader… ${ev.pct}%`,
+        label: t('Downloading CustomSkinLoader… {pct}%', { pct: ev.pct }),
         pct: ev.pct,
         terminal: null,
       };
     case 'mod-placing':
-      return { label: 'Placing mod…', pct: null, terminal: null };
+      return { label: t('Placing mod…'), pct: null, terminal: null };
     case 'config-writing':
-      return { label: 'Writing config…', pct: null, terminal: null };
+      return { label: t('Writing config…'), pct: null, terminal: null };
     case 'done':
-      return { label: 'Setup complete', pct: null, terminal: 'done' };
+      return { label: t('Setup complete'), pct: null, terminal: 'done' };
     case 'failed':
       return {
-        label: 'Setup failed',
+        label: t('Setup failed'),
         pct: null,
         terminal: 'failed',
         terminalSecondary: ev.message,
       };
     case 'cancelled':
-      return { label: 'Cancelled', pct: null, terminal: 'cancelled' };
+      return { label: t('Cancelled'), pct: null, terminal: 'cancelled' };
   }
 }
 
@@ -92,6 +97,8 @@ export function InstallProgressList({
   progress,
   results,
 }: InstallProgressListProps): React.ReactElement {
+  // Subscribes to the language so describeStage's bare t() re-evaluates on toggle.
+  const t = useT();
   return (
     <div className={styles.list}>
       {installs.map((install) => {
@@ -107,18 +114,18 @@ export function InstallProgressList({
         // read as "Setup complete": report it as skipped, honestly.
         if (install.kind === 'lunar') {
           render = {
-            label: 'Skipped',
+            label: t('Skipped'),
             pct: null,
             terminal: 'skipped',
-            terminalSecondary: 'Lunar Client needs no setup. Skin mods are not supported.',
+            terminalSecondary: t('Lunar Client needs no setup. Skin mods are not supported.'),
           };
         }
         if (result && !render.terminal) {
           if (result.ok) {
-            render = { label: 'Setup complete', pct: null, terminal: 'done' };
+            render = { label: t('Setup complete'), pct: null, terminal: 'done' };
           } else {
             render = {
-              label: 'Setup failed',
+              label: t('Setup failed'),
               pct: null,
               terminal: 'failed',
               terminalSecondary: result.message,
@@ -134,18 +141,18 @@ export function InstallProgressList({
             <div className={styles.stage}>
               {render.terminal === 'done' ? (
                 <span className={styles.checkMark}>
-                  <StatusPill tone="green" label="Setup complete" />
+                  <StatusPill tone="green" label={t('Setup complete')} />
                 </span>
               ) : render.terminal === 'failed' ? (
                 <StatusPill
                   tone="red"
-                  label="Setup failed"
+                  label={t('Setup failed')}
                   secondary={render.terminalSecondary}
                 />
               ) : render.terminal === 'cancelled' ? (
-                <StatusPill tone="muted" label="Cancelled" />
+                <StatusPill tone="muted" label={t('Cancelled')} />
               ) : render.terminal === 'skipped' ? (
-                <StatusPill tone="warn" label="Skipped" secondary={render.terminalSecondary} />
+                <StatusPill tone="warn" label={t('Skipped')} secondary={render.terminalSecondary} />
               ) : (
                 <div className={styles.inFlight}>
                   <div className={styles.stageLabel}>{render.label}</div>

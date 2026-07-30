@@ -10,6 +10,8 @@
  * Source: .planning/design/UI-REDESIGN-PARTY.md §2.
  */
 
+import { t } from './i18n';
+
 export interface BotAction {
   name: string | null;
   args?: Record<string, unknown>;
@@ -31,60 +33,60 @@ export function actionVerb(action: BotAction | undefined | null): string | null 
   const a = action.args;
   switch (action.name) {
     case 'follow':
-      return 'following you…';
+      return t('following you…');
     case 'goTo':
-      return 'heading somewhere…';
+      return t('heading somewhere…');
     case 'explore':
-      return 'exploring…';
+      return t('exploring…');
     case 'gather': {
       const item = argString(a, ['item', 'block', 'resource', 'name']);
-      return item ? `gathering ${item}…` : 'gathering…';
+      return item ? t('gathering {item}…', { item }) : t('gathering…');
     }
     case 'dig':
     case 'digIn':
-      return 'digging…';
+      return t('digging…');
     case 'build':
-      return 'building…';
+      return t('building…');
     case 'shelter':
-      return 'building a shelter…';
+      return t('building a shelter…');
     case 'placeBlock':
-      return 'placing blocks…';
+      return t('placing blocks…');
     case 'find': {
       const thing = argString(a, ['target', 'block', 'item', 'name', 'entity']);
-      return thing ? `looking for ${thing}…` : 'looking around…';
+      return thing ? t('looking for {thing}…', { thing }) : t('looking around…');
     }
     case 'look':
-      return 'looking around…';
+      return t('looking around…');
     case 'equip':
-      return 'gearing up…';
+      return t('gearing up…');
     case 'consumeItem':
-      return 'having a snack…';
+      return t('having a snack…');
     case 'sleep':
-      return 'sleeping…';
+      return t('sleeping…');
     case 'attackEntity': {
       const target = argString(a, ['entity', 'target', 'name']);
-      return target ? `fighting ${target}…` : 'fighting…';
+      return target ? t('fighting {target}…', { target }) : t('fighting…');
     }
     case 'craft': {
       const item = argString(a, ['item', 'recipe', 'name']);
-      return item ? `crafting ${item}…` : 'crafting…';
+      return item ? t('crafting {item}…', { item }) : t('crafting…');
     }
     case 'openFurnace':
     case 'smeltInput':
     case 'addFuel':
     case 'takeSmelted':
-      return 'smelting…';
+      return t('smelting…');
     case 'openContainer':
     case 'depositItem':
     case 'withdrawItem':
-      return 'rummaging through chests…';
+      return t('rummaging through chests…');
     case 'dropItem':
-      return 'dropping items…';
+      return t('dropping items…');
     case 'readSign':
-      return 'reading a sign…';
+      return t('reading a sign…');
     case 'activateItem':
     case 'activateBlock':
-      return 'fiddling with something…';
+      return t('fiddling with something…');
     case 'unfollow':
     case 'setPvp':
       return null;
@@ -95,6 +97,6 @@ export function actionVerb(action: BotAction | undefined | null): string | null 
     case 'thinking':
       return null;
     default:
-      return 'adventuring…';
+      return t('adventuring…');
   }
 }

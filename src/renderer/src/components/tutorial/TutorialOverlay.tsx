@@ -19,7 +19,8 @@
  * navigation, panel animation). A step whose target never appears renders a
  * full scrim — the text still reads fine, and the click still advances.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useT } from '../../lib/i18n';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { useTutorialStore, type TutorialStep } from '../../lib/stores/useTutorialStore';
@@ -122,22 +123,31 @@ export function TutorialOverlay(): React.ReactElement | null {
   const companion = characters.find((c) => c.id === characterId);
   const hasSui = characters.some((c) => c.id === DEFAULT_CHARACTER_UUIDS.sui);
 
-  const lines: Record<TutorialStep, string> = useMemo(
-    () => ({
-      meet: `Meet ${companion?.name ?? 'them'}, they're your new unique AI companion. Only you are connected to them.`,
-      sayhi: "Let's say hi to them!",
-      texting: "Here's where you can text and call them. Looks familiar, right?",
-      games: 'This is how you play games together. Here, try clicking it.',
-      tiles: "Just click a tile to launch the game. I'm working hard to add new games. Remember to check every week!",
-      terminal:
-        'This is your main terminal. You can connect with up to four AIs here. Just click an empty slot to awaken.',
-      settings:
-        "This is settings. You can change the app's colors and add a custom background here. Make yourself at home!",
-      sui: "Did I mention? I'm here too! If you ever wanna play with me, I'd be really happy!",
-      bye: "Anyways, that's all from me. Welcome to Sei!",
-    }),
-    [companion?.name],
-  );
+  // Translated at render through the subscribed translator (no useMemo: the
+  // record is nine short strings, and memoizing on the translator's identity
+  // would recompute every render anyway). The companion's name rides t()'s
+  // {name} interpolation so each line stays one dictionary key.
+  const tt = useT();
+  const lines: Record<TutorialStep, string> = {
+    meet: tt(
+      "Meet {name}, they're your new unique AI companion. Only you are connected to them.",
+      { name: companion?.name ?? tt('them') },
+    ),
+    sayhi: tt("Let's say hi to them!"),
+    texting: tt("Here's where you can text and call them. Looks familiar, right?"),
+    games: tt('This is how you play games together. Here, try clicking it.'),
+    tiles: tt(
+      "Just click a tile to launch the game. I'm working hard to add new games. Remember to check every week!",
+    ),
+    terminal: tt(
+      'This is your main terminal. You can connect with up to four AIs here. Just click an empty slot to awaken.',
+    ),
+    settings: tt(
+      "This is settings. You can change the app's colors and add a custom background here. Make yourself at home!",
+    ),
+    sui: tt("Did I mention? I'm here too! If you ever wanna play with me, I'd be really happy!"),
+    bye: tt("Anyways, that's all from me. Welcome to Sei!"),
+  };
 
   const def = STEPS[step];
   const tw = useTypewriter(active ? lines[step] : '');
@@ -396,7 +406,7 @@ export function TutorialOverlay(): React.ReactElement | null {
       )}
 
       <button className={styles.skip} onClick={finish}>
-        {'> Skip tutorial'}
+        {'> ' + tt('Skip tutorial')}
       </button>
 
       <div

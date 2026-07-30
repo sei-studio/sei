@@ -22,6 +22,7 @@
 import { create } from 'zustand';
 import type { ChessDownloadProgress, ChessGameState, ChessReplayData } from '@shared/chessIpc';
 import { replayHistory, START_FEN } from '../../components/chess/chessUtil';
+import { t } from '../i18n';
 
 /**
  * Narrow local view of the chess members on window.sei — matches the doc
@@ -231,7 +232,7 @@ export const useChessStore = create<ChessStoreState>((set, get) => {
 
     start: async (characterId, playerColor) => {
       const fn = chessApi().chessStart;
-      if (!fn) throw new Error(NOT_AVAILABLE);
+      if (!fn) throw new Error(t(NOT_AVAILABLE));
       set((s) => ({ starting: { ...s.starting, [characterId]: true } }));
       try {
         const state = await fn(characterId, { playerColor });

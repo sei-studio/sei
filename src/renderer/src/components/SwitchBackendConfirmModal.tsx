@@ -11,6 +11,7 @@
  * Esc / scrim-click cancel are suppressed while the switch is in flight.
  */
 import React, { useState } from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
@@ -27,6 +28,7 @@ export function SwitchBackendConfirmModal({
   onCancel,
   onConfirm,
 }: SwitchBackendConfirmModalProps): React.ReactElement {
+  const t = useT();
   const [submitting, setSubmitting] = useState(false);
 
   const handleConfirm = async (): Promise<void> => {
@@ -40,11 +42,15 @@ export function SwitchBackendConfirmModal({
   };
 
   const toCloud = direction === 'cloud-proxy';
-  const title = toCloud ? 'Switch to managed billing?' : 'Switch to your own API key?';
+  const title = toCloud ? t('Switch to managed billing?') : t('Switch to your own API key?');
   const body = toCloud
-    ? 'Sei will stop using your local API key and route through our managed cloud, billed to your subscription or credits. This applies to a running bot right away. You can switch back any time.'
-    : 'Sei will stop using managed cloud credits and route through the API key stored on this device. This applies to a running bot right away. Your subscription keeps renewing until you cancel it.';
-  const ctaLabel = submitting ? 'Switching…' : toCloud ? 'Switch to cloud' : 'Switch to my key';
+    ? t(
+        'Sei will stop using your local API key and route through our managed cloud, billed to your subscription or credits. This applies to a running bot right away. You can switch back any time.',
+      )
+    : t(
+        'Sei will stop using managed cloud credits and route through the API key stored on this device. This applies to a running bot right away. Your subscription keeps renewing until you cancel it.',
+      );
+  const ctaLabel = submitting ? t('Switching…') : toCloud ? t('Switch to cloud') : t('Switch to my key');
 
   return (
     <ModalShell
@@ -56,7 +62,7 @@ export function SwitchBackendConfirmModal({
       <p className={styles.body}>{body}</p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel} disabled={submitting}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="primary" size="md" onClick={handleConfirm} disabled={submitting}>
           {ctaLabel}

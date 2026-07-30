@@ -101,6 +101,16 @@ export interface ExpandPersonaInput {
    */
   name: string;
   priorExpanded?: string;
+  /**
+   * 260730: generation language. 'zh' asks the model to write the persona
+   * PROSE in Simplified Chinese while keeping the machine-parsed skeleton
+   * (the four `# SECTION` headers and the `PROACTIVENESS:` line) in English,
+   * so parseProactivenessLine and REQUIRED_SECTION_HEADERS keep working.
+   * Goes in the USER message deliberately: the cloud proxy overwrites
+   * `system` server-side, but the user message is ours on both paths.
+   * Absent/'en' → no extra instruction, byte-identical to before.
+   */
+  language?: 'en' | 'zh';
   /** BYOK mode. Ignored when `cloudMode` is set. */
   apiKey?: string;
   /** Cloud-proxy mode (Phase 13). When set, the SDK routes via baseURL + Bearer JWT. */
@@ -253,6 +263,7 @@ export function buildExpansionUserMessage(
   name: string,
   source: string,
   priorExpanded?: string,
+  language?: 'en' | 'zh',
 ): string {
   const lines: string[] = [
     `Character name: ${name}`,
@@ -271,6 +282,15 @@ export function buildExpansionUserMessage(
     '',
     'Expand into the four-section prompt now. If the name matches a known franchise character (e.g. Pikachu, Goku), let that context inform the CORE and VOICE sections.',
   );
+  if (language === 'zh') {
+    // 260730: Chinese-UI characters get a Chinese persona. The skeleton the
+    // client parses stays English: the four section headers exactly as
+    // specified, and the leading PROACTIVENESS line with its English keyword.
+    lines.push(
+      '',
+      'Write every line of persona PROSE in natural Simplified Chinese (the character thinks and speaks in Chinese). Keep the structural skeleton in English exactly as specified: the four section headers (# CORE, # VOICE, # EXTERNAL, # INTERNAL) and the leading PROACTIVENESS: line with its English keyword. Do not translate those markers. Do not use em dashes; use Chinese punctuation in the prose.',
+    );
+  }
   return lines.join('\n');
 }
 
@@ -348,7 +368,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
         messages: { create: (req: unknown, opts?: unknown) => Promise<unknown> };
       });
 
-  const userMessage = buildExpansionUserMessage(name, source, priorExpanded);
+  const userMessage = buildExpansionUserMessage(name, source, priorExpanded, input.language);
 
   // Emit an immediate "connecting" tick so the renderer can paint the progress
   // bar the moment the IPC call lands — before the first token arrives (covers

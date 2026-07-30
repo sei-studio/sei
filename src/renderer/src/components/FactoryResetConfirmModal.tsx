@@ -10,6 +10,7 @@
  */
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
@@ -21,6 +22,7 @@ export interface FactoryResetConfirmModalProps {
 export function FactoryResetConfirmModal({
   onCancel,
 }: FactoryResetConfirmModalProps): React.ReactElement {
+  const t = useT();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,23 +35,22 @@ export function FactoryResetConfirmModal({
       // Success never returns (the app restarts). Reaching here means the
       // handler threw before the relaunch.
     } catch (err) {
-      setError((err as Error).message || 'Factory reset failed.');
+      setError((err as Error).message || t('Factory reset failed.'));
       setSubmitting(false);
     }
   };
 
   return (
     <ModalShell
-      title="Factory reset Sei?"
+      title={t('Factory reset Sei?')}
       onClose={onCancel}
       escClose={!submitting}
       scrimClose={!submitting}
     >
       <p className={styles.body}>
-        This deletes everything Sei keeps on this device: every companion, their memories and
-        chat history, your settings, your sign-in, and any saved API keys. Data stored in your
-        cloud account is not touched. Sei will restart like a fresh install. This can't be
-        undone.
+        {t(
+          "This deletes everything Sei keeps on this device: every companion, their memories and chat history, your settings, your sign-in, and any saved API keys. Data stored in your cloud account is not touched. Sei will restart like a fresh install. This can't be undone.",
+        )}
       </p>
       {error ? (
         <p className={styles.body} role="alert">
@@ -58,10 +59,10 @@ export function FactoryResetConfirmModal({
       ) : null}
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel} disabled={submitting}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="danger" size="md" onClick={() => void handleConfirm()} disabled={submitting}>
-          {submitting ? 'Erasing…' : 'Erase everything'}
+          {submitting ? t('Erasing…') : t('Erase everything')}
         </Button>
       </ModalFooter>
     </ModalShell>

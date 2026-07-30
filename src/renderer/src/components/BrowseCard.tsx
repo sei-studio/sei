@@ -15,6 +15,7 @@ import React, { useState } from 'react';
 import type { BrowseEntry } from '@shared/ipc';
 import { PixelPortrait } from './PixelPortrait';
 import { pickPalette } from '../lib/portraitPalettes';
+import { useT } from '../lib/i18n';
 import { IdTag } from './IdTag';
 import styles from './BrowseCard.module.css';
 
@@ -46,6 +47,7 @@ export function BrowseCard({
   ready: readyOverride,
   onPrefetch,
 }: BrowseCardProps): React.ReactElement {
+  const t = useT();
   const palette = pickPalette(entry.id + entry.name, theme);
 
   // Hold the wireframe until the portrait has actually SETTLED (loaded or
@@ -74,7 +76,7 @@ export function BrowseCard({
           onOpen();
         }
       }}
-      aria-label={`Open ${entry.name}`}
+      aria-label={t('Open {name}', { name: entry.name })}
     >
       <div className={styles.art}>
         <PixelPortrait

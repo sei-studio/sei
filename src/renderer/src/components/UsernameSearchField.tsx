@@ -20,6 +20,7 @@ import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { ERROR_COPY } from '../lib/errors';
 import { classifyRendererError } from '../lib/errors';
+import { t as tBare, useT } from '../lib/i18n';
 import { TextField } from './TextField';
 import { Button } from './Button';
 import styles from './UsernameSearchField.module.css';
@@ -50,20 +51,20 @@ function mapMojangError(
   const lower = rawMessage.toLowerCase();
   if (lower.includes('no minecraft account named')) {
     return {
-      copy: `No Minecraft account named ${input}. Check the spelling.`,
+      copy: tBare('No Minecraft account named {name}. Check the spelling.', { name: input }),
       isNetwork: false,
     };
   }
   if (lower.includes('rate-limited') || lower.includes('rate limited')) {
     return {
-      copy: 'Mojang is rate-limiting lookups. Wait a minute and try again.',
+      copy: tBare('Mojang is rate-limiting lookups. Wait a minute and try again.'),
       isNetwork: false,
     };
   }
   if (lower.includes('invalid characters') || lower.includes('invalid username')) {
     return {
       copy:
-        "That doesn't look like a Minecraft username. Use letters, digits, and underscores only.",
+        tBare("That doesn't look like a Minecraft username. Use letters, digits, and underscores only."),
       isNetwork: false,
     };
   }
@@ -72,12 +73,12 @@ function mapMojangError(
   const classified = classifyRendererError({ message: rawMessage });
   if (classified.class === 'NETWORK_OFFLINE') {
     return {
-      copy: "Couldn't reach Mojang. Check your connection and try again.",
+      copy: tBare("Couldn't reach Mojang. Check your connection and try again."),
       isNetwork: true,
     };
   }
   // Generic Mojang failure — UI-SPEC copy from ERROR_COPY[MOJANG_LOOKUP_FAILED].
-  return { copy: ERROR_COPY.MOJANG_LOOKUP_FAILED, isNetwork: false };
+  return { copy: tBare(ERROR_COPY.MOJANG_LOOKUP_FAILED), isNetwork: false };
 }
 
 export function UsernameSearchField({
@@ -86,6 +87,7 @@ export function UsernameSearchField({
   disabled,
   initialValue,
 }: UsernameSearchFieldProps): React.ReactElement {
+  const t = useT();
   const [input, setInput] = useState<string>(() => initialValue ?? '');
   const [state, setState] = useState<FieldState>({ kind: 'idle' });
 
@@ -113,7 +115,7 @@ export function UsernameSearchField({
 
   return (
     <div className={styles.wrapper}>
-      <div className={styles.fieldEyebrow}>MOJANG USERNAME</div>
+      <div className={styles.fieldEyebrow}>{t('MOJANG USERNAME')}</div>
       <div className={styles.row}>
         <div className={styles.inputCol}>
           <TextField
@@ -125,10 +127,10 @@ export function UsernameSearchField({
                 setState({ kind: 'idle' });
               }
             }}
-            placeholder="e.g. Notch"
+            placeholder={t('e.g. Notch')}
             disabled={disabled || busy}
             onEnter={() => void handleSearch()}
-            aria-label="Mojang username"
+            aria-label={t('Mojang username')}
           />
         </div>
         <Button
@@ -137,12 +139,12 @@ export function UsernameSearchField({
           onClick={() => void handleSearch()}
           disabled={buttonDisabled}
         >
-          {busy ? 'Searching...' : 'Look up'}
+          {busy ? t('Searching...') : t('Look up')}
         </Button>
       </div>
       {state.kind === 'found' ? (
         <p className={`${styles.result} ${styles.success}`}>
-          Found {state.resolvedUsername}&apos;s current skin.
+          {t("Found {name}'s current skin.", { name: state.resolvedUsername })}
         </p>
       ) : null}
       {state.kind === 'error' ? (

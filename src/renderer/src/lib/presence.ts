@@ -16,6 +16,7 @@ import { useSyncExternalStore } from 'react';
 import type { Character } from '@shared/characterSchema';
 import type { BotStatus } from '@shared/ipc';
 import { lastInteractionAt } from './lastInteraction';
+import { t } from './i18n';
 
 export type PresenceCategory = 'in-game' | 'connecting' | 'new' | 'online' | 'idle';
 
@@ -45,16 +46,16 @@ export function presenceOf(
   summon: BotStatus | undefined,
   now: number = Date.now(),
 ): PresenceInfo {
-  if (summon?.kind === 'online') return { category: 'in-game', label: PRESENCE_LABEL['in-game'] };
+  if (summon?.kind === 'online') return { category: 'in-game', label: t(PRESENCE_LABEL['in-game']) };
   if (summon?.kind === 'connecting')
-    return { category: 'connecting', label: PRESENCE_LABEL.connecting };
+    return { category: 'connecting', label: t(PRESENCE_LABEL.connecting) };
   const last = lastInteractionAt(character);
-  if (!last) return { category: 'new', label: PRESENCE_LABEL.new };
+  if (!last) return { category: 'new', label: t(PRESENCE_LABEL.new) };
   const lastMs = Date.parse(last);
   if (Number.isFinite(lastMs) && now - lastMs <= ONLINE_WINDOW_MS) {
-    return { category: 'online', label: PRESENCE_LABEL.online };
+    return { category: 'online', label: t(PRESENCE_LABEL.online) };
   }
-  return { category: 'idle', label: PRESENCE_LABEL.idle };
+  return { category: 'idle', label: t(PRESENCE_LABEL.idle) };
 }
 
 /* ── Shared 60s ticker ─────────────────────────────────────────────────

@@ -207,4 +207,15 @@ describe('splitChatMessages — texting-style split (no content filter)', () => 
       .toEqual(['you nearby?', 'i need wood.'])
     expect(splitChatMessages('hm... fine.', 'deliberate')).toEqual(['hm...', 'fine.'])
   })
+
+  // 260730: CJK sentences end in 。！？ with no following space; without the
+  // dedicated split a whole Chinese reply shipped as ONE message.
+  it('splits Chinese sentences on 。！？ with no space after them', () => {
+    expect(splitChatMessages('我去挖矿。你要一起来吗？好！'))
+      .toEqual(['我去挖矿。', '你要一起来吗？', '好！'])
+  })
+
+  it('keeps the full-width stop (。 is not the casual trailing-period strip)', () => {
+    expect(splitChatMessages('走吧。')).toEqual(['走吧。'])
+  })
 })

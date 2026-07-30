@@ -48,6 +48,7 @@ import type { UserConfig } from '@shared/characterSchema';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { useT } from '../lib/i18n';
 import styles from './OnboardingScreen.module.css';
 
 export interface OnboardingScreenProps {
@@ -63,6 +64,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   // D-03: signed-in users skip Provider tiles + API-key entry, leaving just
   // the Name step. Local users get Name → Provider → API key.
   const STEPS = signedIn ? 1 : 3;
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const themeMode = useUiStore((s) => s.themeMode);
@@ -283,13 +285,13 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   if (step === 0) {
     return (
       <QuestionShell
-        title="What should they call you?"
+        title={t('What should they call you?')}
         stepCount={STEPS}
         currentStep={step}
         onBack={isReonboard || !signedIn ? back : undefined}
         backDisabled={signedIn && !isReonboard}
         onNext={next}
-        nextLabel={signedIn ? 'Finish' : undefined}
+        nextLabel={signedIn ? t('Finish') : undefined}
         nextKind={signedIn ? 'accent' : undefined}
         nextDisabled={!validate()}
       >
@@ -300,7 +302,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
           onEnter={() => {
             if (validate()) void next();
           }}
-          aria-label="Name"
+          aria-label={t('Name')}
         />
         {signedIn && error ? (
           <div className={styles.error} role="alert">
@@ -315,7 +317,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   if (step === 1) {
     return (
       <QuestionShell
-        title="Which model provider?"
+        title={t('Which model provider?')}
         stepCount={STEPS}
         currentStep={step}
         onBack={back}
@@ -348,12 +350,12 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   const providerLabel = PROVIDER_LABELS[provider] ?? 'API';
   return (
     <QuestionShell
-      title={`Paste your ${providerLabel} API key.`}
+      title={t('Paste your {provider} API key.', { provider: providerLabel })}
       stepCount={STEPS}
       currentStep={step}
       onBack={back}
       onNext={next}
-      nextLabel="Finish"
+      nextLabel={t('Finish')}
       nextKind="accent"
       nextDisabled={!validate()}
     >
@@ -370,7 +372,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         onEnter={() => {
           if (validate()) void next();
         }}
-        aria-label="API key"
+        aria-label={t('API key')}
         aria-invalid={!!error}
       />
       {error ? (

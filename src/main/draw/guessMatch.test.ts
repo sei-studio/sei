@@ -152,3 +152,34 @@ describe('saysWord', () => {
     expect(saysWord('  almost done  ', 'lighthouse')).toBe(false);
   });
 });
+
+// 260730 — the CJK path. Chinese has no spaces, no plurals and no word
+// boundaries, so the token walk cannot see it: matching is contiguous
+// containment over Han + alphanumeric characters, forgiving punctuation and
+// nothing else.
+describe('CJK matching', () => {
+  it('matches a Chinese word inside a sentence', () => {
+    expect(matchesWord('是不是灯塔？？', '灯塔')).toBe(true);
+    expect(matchesWord('灯塔！', '灯塔')).toBe(true);
+    expect(matchesWord('我觉得像一座灯塔吧', '灯塔')).toBe(true);
+  });
+
+  it('misses when the word is not there', () => {
+    expect(matchesWord('是房子吗', '灯塔')).toBe(false);
+    // Only half the word is not the word.
+    expect(matchesWord('好多灯啊', '灯塔')).toBe(false);
+  });
+
+  it('findWordMatch points at the raw span of the Chinese word', () => {
+    const m = findWordMatch('是不是灯塔？？', '灯塔');
+    expect(m).not.toBeNull();
+    expect('是不是灯塔？？'.slice(m!.start, m!.end)).toBe('灯塔');
+  });
+
+  it('redacts and drops the drawer saying their own Chinese word', () => {
+    expect(saysWord('这是灯塔', '灯塔')).toBe(true);
+    expect(redactWord('这是灯塔', '灯塔')).toBe('这是[...]');
+    expect(redactWord('灯塔', '灯塔')).toBeNull();
+    expect(saysWord('快猜呀', '灯塔')).toBe(false);
+  });
+});

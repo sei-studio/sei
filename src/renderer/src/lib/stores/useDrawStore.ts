@@ -19,6 +19,7 @@ import type {
   DrawSnapshotRequest,
   DrawStroke,
 } from '@shared/drawIpc';
+import { t } from '../i18n';
 
 /** Narrow local view of the draw members on window.sei. Single cast point. */
 interface DrawApi {
@@ -93,7 +94,7 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
     open: async (characterId) => {
       const api = drawApi();
       if (!api.drawOpen) {
-        set((s) => ({ error: { ...s.error, [characterId]: NOT_AVAILABLE } }));
+        set((s) => ({ error: { ...s.error, [characterId]: t(NOT_AVAILABLE) } }));
         return;
       }
       try {

@@ -7,6 +7,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CANVAS_H, CANVAS_W, type DrawGalleryEntry, type DrawGameState } from '@shared/drawIpc';
+import { useT } from '../../lib/i18n';
 import { paintStrokes } from './drawRender';
 
 /**
@@ -110,6 +111,7 @@ export function DrawGallery({
   onPlayAgain,
   onClose,
 }: DrawGalleryProps): React.ReactElement {
+  const t = useT();
   const [saving, setSaving] = useState(false);
   /** The just-saved tile, shown in the confirmation popup until dismissed. */
   const [savedPng, setSavedPng] = useState<string | null>(null);
@@ -142,7 +144,7 @@ export function DrawGallery({
   // the web version): the drawings get the space, and the score lives in the
   // row names, which is where the eye already goes to compare the two rows.
   const rows = [
-    [`${PLAYER_LABEL} ${state.scores.player}`, playerEntries] as const,
+    [`${t(PLAYER_LABEL)} ${state.scores.player}`, playerEntries] as const,
     [`${state.aiName} ${state.scores.ai}`, aiEntries] as const,
   ];
 
@@ -163,34 +165,34 @@ export function DrawGallery({
         <button type="button" className={styles.handBtn} onClick={() => void save()} disabled={saving}>
           <SquiggleHighlight seed="save-hl" />
           <SquiggleFrame seed="save-btn" />
-          <span className={styles.btnLabel}>{saving ? 'Saving...' : 'Save to Desktop'}</span>
+          <span className={styles.btnLabel}>{saving ? t('Saving...') : t('Save to Desktop')}</span>
         </button>
         <button type="button" className={styles.handBtn} data-on="true" onClick={onPlayAgain}>
           <SquiggleHighlight seed="again-hl" />
           <SquiggleFrame seed="again-btn" />
-          <span className={styles.btnLabel}>Play again</span>
+          <span className={styles.btnLabel}>{t('Play again')}</span>
         </button>
         <button type="button" className={styles.handBtnQuiet} onClick={onClose}>
           <SquiggleUnderline seed="gallery-close" />
-          <span className={styles.btnLabel}>Close</span>
+          <span className={styles.btnLabel}>{t('Close')}</span>
         </button>
       </div>
-      {savedTo ? <p className={styles.savedNote}>Saved to {savedTo}</p> : null}
+      {savedTo ? <p className={styles.savedNote}>{t('Saved to {path}', { path: savedTo })}</p> : null}
 
       {savedPng ? (
         <div className={styles.savePopupOverlay}>
           <div className={styles.savePopup}>
             <SquiggleFrame seed="save-popup" />
-            <h2 className={styles.savePopupTitle}>Saved!</h2>
+            <h2 className={styles.savePopupTitle}>{t('Saved!')}</h2>
             <div className={styles.savePopupArt}>
               <SquiggleFrame seed="save-popup-art" />
-              <img className={styles.savePopupImg} src={savedPng} alt="The saved picture" />
+              <img className={styles.savePopupImg} src={savedPng} alt={t('The saved picture')} />
             </div>
             <button
               type="button"
               className={styles.handBtn}
               onClick={() => setSavedPng(null)}
-              aria-label="Close"
+              aria-label={t('Close')}
             >
               <SquiggleHighlight seed="save-popup-x-hl" shape="ellipse" />
               <SquiggleFrame seed="save-popup-x" shape="ellipse" />

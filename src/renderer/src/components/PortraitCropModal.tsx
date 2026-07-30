@@ -17,6 +17,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './PortraitCropModal.module.css';
@@ -61,6 +62,7 @@ export function PortraitCropModal({
   busy = false,
   shape = 'card',
 }: PortraitCropModalProps): React.ReactElement {
+  const t = useT();
   const FRAME_W = FRAME_DIMS[shape].w;
   const FRAME_H = FRAME_DIMS[shape].h;
   const OUT_H = Math.round(OUT_W * (FRAME_H / FRAME_W));
@@ -154,13 +156,13 @@ export function PortraitCropModal({
 
   return (
     <ModalShell
-      title="Crop your image"
+      title={t('Crop your image')}
       width={FRAME_W + PANEL_PAD}
       onClose={onCancel}
       escClose={!busy}
       scrimClose={!busy}
     >
-      <div className={styles.hint}>Drag to reposition. Scroll or use the slider to zoom.</div>
+      <div className={styles.hint}>{t('Drag to reposition. Scroll or use the slider to zoom.')}</div>
 
       <div
         className={styles.stage}
@@ -198,15 +200,15 @@ export function PortraitCropModal({
         value={zoom}
         disabled={busy}
         onChange={(e) => setZoom(Number(e.target.value))}
-        aria-label="Zoom"
+        aria-label={t('Zoom')}
       />
 
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel} disabled={busy}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="primary" size="md" onClick={confirm} disabled={busy}>
-          {busy ? 'Working…' : 'Use photo'}
+          {busy ? t('Working…') : t('Use photo')}
         </Button>
       </ModalFooter>
     </ModalShell>
