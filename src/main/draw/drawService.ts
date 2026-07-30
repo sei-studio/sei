@@ -1696,12 +1696,23 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
   // remember() writes are async and the stream handler is not, so they are
   // collected here and drained once the message closes.
   const remembers: Array<{ id: string; input: unknown }> = [];
+  // A hop's chat lines, HELD until the hop's last block has streamed (260730).
+  // The model narrates BEFORE it draws ("ok i think you're gonna see it now",
+  // then four pen calls), and a text block completes off the stream ahead of
+  // the pen blocks that follow it. Emitting the line at that moment queued its
+  // playback barrier behind the PREVIOUS hop's strokes only, which had usually
+  // finished playing, so the line landed on screen while the strokes it was
+  // narrating were still being drawn (260730 live). Buffering the lines to the
+  // end of the hop puts their barrier behind the hop's OWN strokes: the chat
+  // trails the picture instead of spoiling it. Ordering only, not latency:
+  // a hop takes a few seconds and its strokes play for many more.
+  const heldLines: string[] = [];
+  let heldSlipped = false;
 
   const emitBlock = (b: Anthropic.ContentBlock): void => {
     if (s.turnKey !== key || s.phase !== 'drawing') return;
 
     if (b.type === 'text') {
-      let slipped = false;
       for (const raw of splitReply(b.text, punctuation).slice(0, 2)) {
         const part = plainLine(raw);
         if (!part || isFakeGameLine(part)) continue;
@@ -1710,13 +1721,11 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
         // in place, which still pointed at exactly where the word went and
         // read to the player as a bug rather than as the game stepping in.
         if (saysWord(part, s.word)) {
-          slipped = true;
+          heldSlipped = true;
           continue;
         }
-        say(s, 'ai', part);
+        heldLines.push(part);
       }
-      if (slipped) wordSlipLine(s, 'ai');
-      push(s);
       return;
     }
     if (b.type !== 'tool_use') return;
@@ -1810,6 +1819,15 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
     const final = await stream.finalMessage();
     // Anything the event did not deliver (an SDK path that does not emit it).
     for (let i = emitted; i < final.content.length; i++) emitBlock(final.content[i]);
+    // Flush the held chat lines now that every pen block of the hop has been
+    // pushed: their playback barriers queue behind the whole hop's strokes.
+    if (s.turnKey === key && s.phase === 'drawing' && (heldLines.length > 0 || heldSlipped)) {
+      for (const part of heldLines) say(s, 'ai', part);
+      if (heldSlipped) wordSlipLine(s, 'ai');
+      heldLines.length = 0;
+      heldSlipped = false;
+      push(s);
+    }
     // Keep the assistant turn verbatim so the next hop's tool_results line up
     // with the ids it actually issued.
     s.draw.thread.push({ role: 'assistant', content: final.content });

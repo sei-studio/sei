@@ -106,6 +106,7 @@ export const CLEAR_TOOL: Anthropic.Tool = {
   name: 'clear',
   description:
     'Wipe the canvas completely and start the drawing again from nothing. Everything you have drawn this turn disappears from the player\'s screen. Use it when the picture is not working and you want a different approach, not to tidy up. ' +
+    'Redrawing the object ALWAYS starts with clear: never draw a second version of it on top of or beside the old one, that only stacks two unreadable pictures. ' +
     'A clear is a promise to redraw: the player is left staring at a blank page, so you MUST draw the new version immediately, in this same turn, starting with your very next pen calls.',
   input_schema: {
     type: 'object',
@@ -132,6 +133,7 @@ export function selfLookNote(word: string, playerName: string): string {
     `The image attached is YOUR canvas, exactly as ${playerName} is seeing it right now. ` +
     `This is what you have drawn so far for the word "${word}". ` +
     'If they are not guessing it, consider adding detail, or clearing the page and drawing something else. ' +
+    'Never draw a second copy of the object over or next to the first: a redraw starts with clear. ' +
     'Judge it as a stranger would: is it big enough, is it in the middle of the page, would anyone name it in a few seconds?'
   );
 }
@@ -430,6 +432,7 @@ export function buildDrawTurnBlock(opts: {
     ...contextSections({ gallery, playerName, aiName, turnChat, priorChat }),
     '# YOUR TURN TO DRAW',
     `Round ${round} of ${rounds}. You are drawing; ${playerName} is guessing. ${turnClockLine(secondsLeft)}`,
+    "You just happen to be the world's smartest and greatest AI artist.",
     'Do NOT guess this turn and do not ask what it is. You already know: you are the one drawing it.',
     '',
     `Your word is: ${word.toUpperCase()}`,
