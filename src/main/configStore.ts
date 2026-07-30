@@ -141,6 +141,7 @@ const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'call_convo_starters',
   'chat_panel_hidden',
   'skin_setup_pending',
+  'tutorial_state',
   'has_been_welcomed',
   'feedback_reward_claimed',
   'vision_mode',

@@ -815,20 +815,26 @@ export function OnboardApp({
   }, [phase.k]);
 
   /** New branch only: did the session that just landed belong to an account
-   * that already existed? A password sign-in is definitive (the panel was in
-   * "I already have an account" mode). OAuth can be either, so fall back to
-   * the account's age: Supabase creates the user at the moment of a first
-   * Google sign-in, so an account older than a few minutes is a returning
-   * one. A 'signup' intent (even with an email-verification delay) and a
-   * boot-restored session (null intent, relaunch mid-onboarding) are new. */
+   * that already existed? Decided by ACCOUNT AGE for both the password form
+   * and OAuth (260730). A pure intent check ('signin' = existing) broke the
+   * boomerang first-timer: someone who created their account mid-onboarding,
+   * quit before setup ran (the email-verification detour is the common way),
+   * and came back through "I already have an account". Their profile has no
+   * config yet, so the welcome-back dead-end would bounce them to Home and
+   * replay the whole questionnaire on the NEXT launch — the account-age
+   * window routes them into setup + tutorial now instead. 48h comfortably
+   * covers a verify-tomorrow detour while still catching genuine veterans;
+   * the cost when it misjudges (a days-old account's first sign-in on a
+   * second machine) is one redundant setup, not data loss. A 'signup'
+   * intent and a boot-restored session (null intent, relaunch
+   * mid-onboarding) are always new. */
   const signedIntoExistingAccount = useCallback((): boolean => {
     const a = authRef.current;
     if (a.kind !== 'signed_in') return false;
     const intent = authIntentRef.current;
-    if (intent === 'signin') return true;
-    if (intent === 'oauth') {
+    if (intent === 'signin' || intent === 'oauth') {
       const ageMs = Date.now() - Date.parse(a.user.createdAt);
-      return Number.isFinite(ageMs) && ageMs > 5 * 60_000;
+      return Number.isFinite(ageMs) && ageMs > 48 * 3600_000;
     }
     return false;
   }, []);

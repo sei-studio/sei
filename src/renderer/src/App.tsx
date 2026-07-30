@@ -31,7 +31,7 @@ import { IconRail } from './components/IconRail';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { OnboardApp, type OnboardResult } from './onboard/OnboardApp';
 import { TutorialOverlay } from './components/tutorial/TutorialOverlay';
-import { useTutorialStore } from './lib/stores/useTutorialStore';
+import { useTutorialStore, type TutorialStep } from './lib/stores/useTutorialStore';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
 import { AwakenScreen } from './screens/AwakenScreen';
@@ -555,6 +555,55 @@ export function App(): React.ReactElement {
   }
 
   // ── Initial bootstrap: config → characters → first view (with floor) ──
+  /**
+   * Resume a tour the user quit mid-way (config.tutorial_state, 260730).
+   * Re-arms the store at the saved step and navigates to that step's screen,
+   * so a quit during the tutorial comes back to the SAME place — including
+   * the otherwise one-shot unique-reveal "say hello" page. Returns false
+   * (caller falls through to its normal destination) when nothing is armed.
+   */
+  const resumeSavedTutorial = useCallback(async (): Promise<boolean> => {
+    try {
+      const ts = (await sei.getConfig()).tutorial_state;
+      if (!ts) return false;
+      // 'tiles' resumes at 'games': the tiles step needs the games modal
+      // open, and only the games click reopens it. Unknown step names (from
+      // a newer client's config) degrade to the nearest safe start.
+      const STEP_MAP: Record<string, TutorialStep> = {
+        meet: 'meet',
+        sayhi: 'sayhi',
+        texting: 'texting',
+        games: 'games',
+        tiles: 'games',
+        terminal: 'terminal',
+        settings: 'settings',
+        sui: 'sui',
+        bye: 'bye',
+      };
+      let step: TutorialStep = STEP_MAP[ts.step] ?? (ts.characterId ? 'meet' : 'terminal');
+      let characterId = ts.characterId;
+      if (characterId && !useDataStore.getState().characters.some((c) => c.id === characterId)) {
+        // The companion is gone (deleted mid-tour): degrade to the reduced tour.
+        characterId = null;
+      }
+      if (!characterId && ['meet', 'sayhi', 'texting', 'games'].includes(step)) step = 'terminal';
+      useTutorialStore.getState().resume(characterId, step);
+      if ((step === 'meet' || step === 'sayhi') && characterId) {
+        navigate({ kind: 'unique-reveal', characterId });
+      } else if ((step === 'texting' || step === 'games') && characterId) {
+        navigate({ kind: 'chat', characterId });
+      } else if (step === 'settings') {
+        navigate({ kind: 'settings' });
+      } else {
+        useUiStore.getState().setHomeTab('home');
+        navigate({ kind: 'home' });
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, [navigate]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -667,6 +716,8 @@ export function App(): React.ReactElement {
           navigate({ kind: 'onboard' });
         } else if (skinPending) {
           navigate({ kind: 'skin-setup' });
+        } else if (await resumeSavedTutorial()) {
+          // Quit mid-tutorial last time: back to the same step and screen.
         } else {
           useUiStore.getState().setHomeTab('home');
           navigate({ kind: 'home' });
@@ -685,7 +736,7 @@ export function App(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [navigate, setThemeMode]);
+  }, [navigate, setThemeMode, resumeSavedTutorial]);
 
   // Skin setup runs the first time the Minecraft surface is opened (260725,
   // maybeOfferSkinSetup in lib/gameLaunch.ts) — onboarding no longer arms
@@ -797,13 +848,17 @@ export function App(): React.ReactElement {
             setHomeTab('home');
             navigate({ kind: 'home' });
           }
+        } else if (await resumeSavedTutorial()) {
+          // A BYOK profile boots through the sign-in scene ("Continue
+          // locally"), so its mid-tour quit resumes HERE, not in the boot
+          // routing above.
         } else {
           setHomeTab('home');
           navigate({ kind: 'home' });
         }
       })();
     },
-    [navigate, setHomeTab],
+    [navigate, setHomeTab, resumeSavedTutorial],
   );
 
   // B5: LoadingScreen is gone — the renderer routes directly to the initial

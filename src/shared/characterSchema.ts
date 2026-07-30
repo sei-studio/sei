@@ -576,6 +576,20 @@ export const UserConfigSchema = z.object({
    */
   skin_setup_pending: z.boolean().optional().default(false),
   /**
+   * In-flight tutorial (260730). The post-onboarding tour used to be
+   * deliberately unpersisted, which meant a mid-tour quit silently dropped
+   * the rest of the tour AND the one-shot unique-reveal "say hello" page.
+   * Now the renderer writes the current step here on every advance and
+   * clears it (null) when the tour finishes or is skipped; boot resumes an
+   * armed tour at the same step/screen. `characterId` null = reduced tour.
+   * Steps are validated loosely (string) so an old client never chokes on a
+   * step name added later; the resume path maps unknown steps to a safe one.
+   */
+  tutorial_state: z
+    .object({ step: z.string(), characterId: z.string().nullable() })
+    .nullable()
+    .optional(),
+  /**
    * Bundled defaults (sui / lyra / clawd) the user has "removed from library".
    * The on-disk JSON for these chars stays so the World tab can still surface
    * them as system-authored entries, but they're hidden from Home + IconRail
