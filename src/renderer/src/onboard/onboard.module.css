@@ -52,12 +52,16 @@
   --grain: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27120%27%20height%3D%27120%27%3E%3Cfilter%20id%3D%27n%27%20color-interpolation-filters%3D%27sRGB%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.5%27%20numOctaves%3D%272%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20values%3D%270%200%200%200%201%200%200%200%200%201%200%200%200%200%201%200%200%200%201%200%27%2F%3E%3CfeComponentTransfer%3E%3CfeFuncA%20type%3D%27discrete%27%20tableValues%3D%270%200%200%200%200%200.1%200.1%200.18%200.18%27%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%27120%27%20height%3D%27120%27%20filter%3D%27url(%23n)%27%2F%3E%3C%2Fsvg%3E");
 }
 
-/* The scene has no titlebar; keep the window draggable from a top strip. */
+/* The scene has no titlebar; keep the window draggable from a top strip.
+   The strip STOPS short of the corner controls (260730): a no-drag carve-out
+   inside a drag region still gets clicks, but HOVER events over the band are
+   unreliable on macOS, which made the hover-opened corner dropdowns read as
+   dead. Not painting the drag region there at all sidesteps it. */
 .dragStrip {
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
+  right: 120px;
   height: 38px;
   z-index: 40;
   -webkit-app-region: drag;
@@ -77,7 +81,7 @@
   z-index: 50;
   -webkit-app-region: no-drag;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 4px;
   color: #23324a;
 }
@@ -100,16 +104,10 @@
   height: 23px;
   display: flex;
   align-items: center;
+  -webkit-app-region: no-drag;
 }
 .cornerBtn:hover {
   opacity: 0.9;
-}
-/* The quit ×: a text glyph, sized to sit level with the 15px icons. */
-.cornerClose {
-  font-size: 21px;
-  font-family: inherit;
-  padding-top: 0;
-  padding-bottom: 2px;
 }
 .langMenu {
   position: absolute;

@@ -157,7 +157,15 @@ function CornerControls(props: {
         onMouseEnter={() => setOpen('lang')}
         onMouseLeave={() => setOpen((o) => (o === 'lang' ? null : o))}
       >
-        <button type="button" className={styles.cornerBtn} aria-label={tt('Language')} aria-expanded={open === 'lang'}>
+        <button
+          type="button"
+          className={styles.cornerBtn}
+          aria-label={tt('Language')}
+          aria-expanded={open === 'lang'}
+          // Click also toggles the menu — hover opens it, but a click that
+          // does nothing reads as broken.
+          onClick={() => setOpen((o) => (o === 'lang' ? null : 'lang'))}
+        >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
             <circle cx="12" cy="12" r="9" />
             <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
@@ -184,13 +192,12 @@ function CornerControls(props: {
           </div>
         ) : null}
       </div>
-      <button
-        type="button"
-        className={`${styles.cornerBtn} ${styles.cornerClose}`}
-        aria-label={tt('Quit Sei')}
-        onClick={() => void sei.appQuit()}
-      >
-        ×
+      {/* An svg X (not a text ×): a glyph sits on the font baseline, which
+          left it riding higher than the icon boxes beside it. */}
+      <button type="button" className={styles.cornerBtn} aria-label={tt('Quit Sei')} onClick={() => void sei.appQuit()}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" />
+        </svg>
       </button>
     </div>
   );
