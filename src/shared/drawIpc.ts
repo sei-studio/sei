@@ -154,6 +154,14 @@ export interface DrawGameState {
   wordChoices: string[];
   /** Epoch ms when the live turn expires; null outside a turn. */
   turnEndsAt: number | null;
+  /**
+   * Usage-limit pause (260730): the cloud ledger 402'd (or the proxy 429'd) a
+   * turn, so the game froze its clock and stopped every model call instead of
+   * going silent. `pausedRemainingMs` is the turn time left when the pause
+   * landed; the renderer shows it frozen and offers Resume (draw:resume).
+   */
+  paused?: boolean;
+  pausedRemainingMs?: number;
   /** Committed strokes for the current turn (see the ai-stroke note above). */
   strokes: DrawStroke[];
   /**

@@ -36,6 +36,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
+import { raiseUsageLimitPopup } from '../chat/usageLimit';
 import { Chess } from 'chess.js';
 import type { ChatMessage, ChatSendResult, LogBatch } from '../../shared/ipc';
 import type {
@@ -648,7 +649,12 @@ async function dispatchYourMove(s: Session): Promise<void> {
       if ((err as Error).message === CHAT_ABORTED) return;
       console.error(`[sei/chess] AI turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
       s.log.line(`move turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
-      if (attempt === 0 && isConnectionError(err)) {
+      // Usage limit (260730): raise the popup, skip the retry (it would 402
+      // again), and fall through to fallbackPlay — the ENGINE picks the move
+      // for free, so the game stays alive and playable; after a top up the
+      // next turn simply talks again. Nothing here ends the session.
+      const limited = await raiseUsageLimitPopup(err);
+      if (!limited && attempt === 0 && isConnectionError(err)) {
         await new Promise((r) => setTimeout(r, 1500));
         if (s.status !== 'active') return;
         continue;
@@ -674,6 +680,7 @@ async function dispatchChat(s: Session, nudge: boolean): Promise<void> {
     replies = await runChessLlmTurn(s, { kind: 'chat-reply', voiceCall });
   } catch (err) {
     if ((err as Error).message !== CHAT_ABORTED) {
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei/chess] chat reply failed: ${describeErr(err)}`);
     }
   }
@@ -705,6 +712,7 @@ async function dispatchIdle(s: Session): Promise<void> {
     replies = await runChessLlmTurn(s, { kind: 'idle', voiceCall: isCallActive(s.characterId) });
   } catch (err) {
     if ((err as Error).message !== CHAT_ABORTED) {
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei/chess] idle turn failed: ${describeErr(err)}`);
     }
     return;

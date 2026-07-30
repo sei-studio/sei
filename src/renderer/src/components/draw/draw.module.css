@@ -534,6 +534,35 @@
   justify-content: center;
 }
 
+/* Usage-limit pause (260730): sits over the whole drawn box, paper-opaque so
+   the half-finished picture recedes without a second ink. Above .frameHost
+   (z-index 1) so the notice and Resume stay clickable. */
+.pausedOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--paper);
+  text-align: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.pausedTitle {
+  margin: 0;
+  font-family: var(--hand);
+  font-size: var(--fs-body);
+}
+
+.pausedNote {
+  margin: 0;
+  max-width: 340px;
+}
+
 /* The paper itself. Sized in px by DrawCanvas rather than by aspect-ratio:
    `height:100%` plus `max-width:100%` clamps the width without giving the
    height back, so a box wider than 10:7 silently stretched the page and the

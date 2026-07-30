@@ -1341,6 +1341,8 @@ export interface RendererApi {
   drawSaveGallery(characterId: string, pngDataUrl: string): Promise<string>;
   /** Close the game. Unfinished games are recorded 'abandoned'. */
   drawEnd(characterId: string): Promise<void>;
+  /** Resume a game paused by a usage limit (260730): re-arms the turn clock. */
+  drawResume(characterId: string): Promise<void>;
   onDrawState(cb: (state: DrawGameState) => void): Unsubscribe;
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
@@ -2270,6 +2272,8 @@ export const IpcChannel = {
     snapshot: 'draw:snapshot',
     saveGallery: 'draw:save-gallery',
     end: 'draw:end',
+    /** Invoke: resume after a usage-limit pause (260730). */
+    resume: 'draw:resume',
     /** Push: full DrawGameState on every change. */
     state: 'draw:state',
     /** Push: DrawAiStroke, one per stroke the character draws. */

@@ -164,6 +164,7 @@ const ttsOrphans = new Map<string, Array<{ chunk?: ArrayBuffer; done?: boolean; 
 let unsubUiMirror: (() => void) | null = null;
 let offTtsChunk: (() => void) | null = null;
 let offCallEnded: (() => void) | null = null;
+let offCreditsHardStop: (() => void) | null = null;
 
 // ── PFC steer: turn-taking director state ────────────────────────────────────
 // The decision policy (who speaks, whether to chain, junk rejection) lives in
@@ -1026,6 +1027,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     /* preload without onVoiceCallEnded — companion hang-ups just won't land */
   }
 
+  // Usage limit (260730): every companion line on a call is a cloud LLM + TTS
+  // call, so once the ledger 402s the call is a dead line anyway. Hang up so
+  // the player is not left talking to silence; the HardStopModal (raised by
+  // the same push, at the App root) explains what happened.
+  try {
+    offCreditsHardStop =
+      sei.onCreditsHardStop?.(() => {
+        const st = useVoiceStore.getState();
+        if (st.participants.length > 0 && (st.status === 'live' || st.status === 'connecting')) {
+          st.endCall();
+        }
+      }) ?? null;
+  } catch {
+    /* preload without onCreditsHardStop — the popup alone covers it */
+  }
+
   return {
     participants: [],
     callCharacterId: null,
@@ -1453,5 +1470,6 @@ if (import.meta.hot) {
     unsubUiMirror?.();
     offTtsChunk?.();
     offCallEnded?.();
+    offCreditsHardStop?.();
   });
 }

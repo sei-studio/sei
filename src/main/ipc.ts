@@ -1351,6 +1351,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const draw = await import('./draw/drawService');
     return await draw.saveGallery(args.characterId, args.pngDataUrl);
   });
+  ipcMain.handle(IpcChannel.draw.resume, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    draw.resumeDraw(id);
+  });
   ipcMain.handle(IpcChannel.draw.end, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
     const draw = await import('./draw/drawService');

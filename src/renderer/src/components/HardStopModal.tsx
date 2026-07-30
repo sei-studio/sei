@@ -136,8 +136,8 @@ export function HardStopModal(): React.ReactElement | null {
       <ModalShell title="Too many requests" width={440} onClose={acknowledgeHardStop}>
         <p className={styles.body}>
           {retryWhen
-            ? `Sei's servers are limiting requests right now, so your companion stepped out of the world. This does not use up any of your credits. You can summon again after ${retryWhen}.`
-            : "Sei's servers are limiting requests right now, so your companion stepped out of the world. This does not use up any of your credits. You can summon again in a little while."}
+            ? `Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again after ${retryWhen}.`
+            : "Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again in a little while."}
         </p>
         <ModalFooter>
           <Button kind="primary" size="md" onClick={acknowledgeHardStop}>
@@ -168,11 +168,11 @@ export function HardStopModal(): React.ReactElement | null {
     // Click-outside intentionally does NOT dismiss (scrimClose omitted) — Close,
     // the CTAs, and ESC are the deliberate dismiss paths. Base tier: the consent
     // gate and the top up modal stack above this at 1100.
-    <ModalShell title="You've used this week's credits" width={440} onClose={acknowledgeHardStop}>
+    <ModalShell title="Usage limit reached" width={440} onClose={acknowledgeHardStop}>
       <p className={styles.body}>
         {resetsText
-          ? `Your credits refresh ${resetsText}. Upgrade for a bigger weekly allowance, or top up to keep playing now.`
-          : 'Upgrade for a bigger weekly allowance, or top up to keep playing now.'}
+          ? `You've used this week's allowance. It refreshes ${resetsText}. Upgrade for a bigger weekly allowance, or top up to keep playing now.`
+          : "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now."}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={acknowledgeHardStop}>

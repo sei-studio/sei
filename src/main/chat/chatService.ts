@@ -16,6 +16,7 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
+import { raiseUsageLimitPopup } from './usageLimit';
 import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
@@ -851,6 +852,9 @@ export async function sendChatMessage(
 
     return { replies, launch, ...(endCallRequested ? { endCall: true } : {}), ...(isStreaming ? { streamed: true } : {}) };
   } catch (err) {
+    // Usage limit (260730): a 402/429 from the proxy raises the HardStopModal
+    // instead of hiding behind the generic "sorry" fallback.
+    void raiseUsageLimitPopup(err);
     // Interrupt/supersede surfaces as a typed sentinel so the renderer can tell
     // it apart from a real failure (and NOT show the "sorry" fallback).
     if (isAbortError(err) || ctrl.signal.aborted || superseded()) {
@@ -1076,6 +1080,7 @@ export async function sendVoiceGreetingTurn(
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.
     if (!isAbortError(err)) {
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);
     }
     return [];
@@ -1205,6 +1210,8 @@ export async function sendCompanionVoiceTurn(
     return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
   } catch (err) {
     if (!isAbortError(err)) {
+      // Usage limit (260730): raise the popup; useVoiceStore hangs up on it.
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei] companion voice turn failed: ${(err as Error).message}`);
     }
     return [];
@@ -1289,6 +1296,7 @@ export async function sendVoiceIdleTurn(
     return { messages: spoken, ...(endCall ? { endCall: true } : {}) };
   } catch (err) {
     if (!isAbortError(err)) {
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei] voice idle turn failed: ${(err as Error).message}`);
     }
     return { messages: [] };

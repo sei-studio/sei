@@ -33,6 +33,7 @@ interface DrawApi {
   drawSnapshot(requestId: string, dataUrl: string): Promise<void>;
   drawSaveGallery(characterId: string, pngDataUrl: string): Promise<string>;
   drawEnd(characterId: string): Promise<void>;
+  drawResume(characterId: string): Promise<void>;
   onDrawState(cb: (s: DrawGameState) => void): () => void;
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): () => void;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): () => void;
@@ -64,6 +65,8 @@ export interface DrawStoreState {
   sendChat: (characterId: string, text: string) => void;
   /** Resolves with the written file path, or null when the save failed. */
   saveGallery: (characterId: string, pngDataUrl: string) => Promise<string | null>;
+  /** Resume a game paused by the usage limit; state comes back on the push. */
+  resume: (characterId: string) => void;
   end: (characterId: string) => Promise<void>;
 }
 
@@ -163,6 +166,10 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
         set((s) => ({ error: { ...s.error, [characterId]: (err as Error).message } }));
         return null;
       }
+    },
+
+    resume: (characterId) => {
+      void drawApi().drawResume?.(characterId)?.catch?.(() => {});
     },
 
     end: async (characterId) => {

@@ -141,6 +141,7 @@ const api: RendererApi = {
   drawSaveGallery: (characterId, pngDataUrl) =>
     ipcRenderer.invoke(IpcChannel.draw.saveGallery, { characterId, pngDataUrl }),
   drawEnd: (characterId) => ipcRenderer.invoke(IpcChannel.draw.end, characterId),
+  drawResume: (characterId) => ipcRenderer.invoke(IpcChannel.draw.resume, characterId),
 
   onChessState(cb) {
     const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);

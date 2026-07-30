@@ -58,6 +58,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
+import { raiseUsageLimitPopup } from '../chat/usageLimit';
 import type { ChatMessage, ChatSendResult, LogBatch } from '../../shared/ipc';
 import { isCallActive } from '../voice/callState';
 import {
@@ -370,6 +371,13 @@ interface Session {
   poll: NodeJS.Timeout | null;
   turnTimer: NodeJS.Timeout | null;
   gapTimer: NodeJS.Timeout | null;
+  /**
+   * Usage-limit pause (260730). A 402/429 mid-turn freezes the game instead of
+   * letting it run silent: timers cleared, remaining turn time latched, both
+   * runners parked. draw:resume re-arms everything from pausedRemainingMs.
+   */
+  paused: boolean;
+  pausedRemainingMs: number;
   guess: GuessSched;
   draw: DrawRun;
   /** In-flight turn-end reaction call, so teardown can abort it. */
@@ -423,6 +431,7 @@ function toState(s: Session): DrawGameState {
     word: visibleWord(s),
     wordChoices: s.phase === 'pick' ? s.wordChoices : [],
     turnEndsAt: s.phase === 'drawing' ? s.turnEndsAt : null,
+    ...(s.paused ? { paused: true, pausedRemainingMs: s.pausedRemainingMs } : {}),
     strokes: s.strokes,
     clearSeq: s.clearSeq,
     chat: s.chat,
@@ -541,6 +550,8 @@ async function newSession(characterId: string, rounds = 3): Promise<Session> {
     poll: null,
     turnTimer: null,
     gapTimer: null,
+    paused: false,
+    pausedRemainingMs: 0,
     guess: freshGuess(),
     draw: freshDraw(),
     endCtrl: null,
@@ -683,6 +694,55 @@ export async function endDraw(characterId: string): Promise<void> {
   // Bump the key so any continuation still in flight sees a dead turn.
   s.turnKey = randomUUID();
   if (s.round > 0) await finishGame(s, s.phase === 'gallery' ? 'completed' : 'abandoned');
+}
+
+/**
+ * Usage-limit pause (260730). A 402/429 out of any of this session's model
+ * calls means every further call this turn would fail the same way, so
+ * instead of a silent frozen game: freeze the clock (latch the remaining
+ * time), stop the poll and turn timers, and mark the state paused. The
+ * HardStopModal (raised by raiseUsageLimitPopup before this runs) explains;
+ * the draw surface shows its own paused notice with a Resume control.
+ * Only a live 'drawing' phase pauses — a turn-end reaction failure just
+ * costs the reaction line.
+ */
+function pauseForUsageLimit(s: Session): void {
+  if (s.paused || s.phase !== 'drawing') return;
+  s.paused = true;
+  s.pausedRemainingMs = Math.max(10_000, s.turnEndsAt - Date.now());
+  if (s.turnTimer) { clearTimeout(s.turnTimer); s.turnTimer = null; }
+  if (s.poll) { clearInterval(s.poll); s.poll = null; }
+  s.guess.ctrl?.abort();
+  log(s, `usage-limit pause: ${Math.round(s.pausedRemainingMs / 1000)}s of the turn latched`);
+  push(s);
+}
+
+/**
+ * Resume after a usage-limit pause (draw:resume). Re-arms the clock from the
+ * latched remainder and restarts whichever runner the drawer implies. Safe to
+ * call when nothing is paused. If credits are still depleted the next model
+ * call pauses the game again, so a hopeful click costs nothing.
+ */
+export function resumeDraw(characterId: string): void {
+  const s = sessions.get(characterId);
+  if (!s || !s.paused) return;
+  s.paused = false;
+  s.turnStartedAt = Date.now() - (TURN_MS - s.pausedRemainingMs);
+  s.turnEndsAt = Date.now() + s.pausedRemainingMs;
+  const key = s.turnKey;
+  s.turnTimer = setTimeout(() => {
+    if (s.turnKey === key) endTurn(s, false);
+  }, s.pausedRemainingMs);
+  if (s.drawer === 'player') {
+    s.poll = setInterval(() => void tickGuessScheduler(s), POLL_MS);
+  } else {
+    s.poll = setInterval(() => tickDrawIdle(s), POLL_MS);
+    // Quiet time while paused must not read as player silence.
+    s.draw.lastActivityAt = Date.now();
+    void runDrawTurn(s);
+  }
+  log(s, 'usage-limit pause resumed');
+  push(s);
 }
 
 /**
@@ -1095,6 +1155,7 @@ async function honorRememberCalls(s: Session, content: Anthropic.ContentBlock[])
 
 /** One poll tick: ask the policy, dispatch if it says go. */
 async function tickGuessScheduler(s: Session): Promise<void> {
+  if (s.paused) return;
   const gate = guessGate({
     phase: s.phase,
     drawer: s.drawer,
@@ -1166,6 +1227,7 @@ async function dispatchGuess(s: Session): Promise<void> {
     log(s, `guess failed: ${String(err)}`);
     // A failed call must not swallow what the player said.
     s.guess.pendingPlayerChat.unshift(...said);
+    if (await raiseUsageLimitPopup(err)) pauseForUsageLimit(s);
   } finally {
     s.guess.inFlight = false;
     s.guess.lastCompletedAt = Date.now();
@@ -1315,6 +1377,7 @@ async function runTurnEndReaction(
     }
   } catch (err) {
     log(s, `turn-end reaction failed: ${String(err)}`);
+    void raiseUsageLimitPopup(err);
   }
 }
 
@@ -1369,6 +1432,7 @@ function wipeAiCanvas(s: Session): string[] {
  * the table.
  */
 function tickDrawIdle(s: Session): void {
+  if (s.paused) return;
   if (s.phase !== 'drawing' || s.drawer !== 'ai') return;
   if (s.draw.running || s.draw.idleNudge) return;
   if (Date.now() - s.draw.lastActivityAt < DRAW_IDLE_NUDGE_MS) return;
@@ -1386,6 +1450,7 @@ function tickDrawIdle(s: Session): void {
  */
 async function runDrawTurn(s: Session): Promise<void> {
   if (s.draw.running) return;
+  if (s.paused) return;
   if (s.phase !== 'drawing' || s.drawer !== 'ai') return;
   s.draw.running = true;
   const key = s.turnKey;
@@ -1406,6 +1471,7 @@ async function runDrawTurn(s: Session): Promise<void> {
     }
   } catch (err) {
     log(s, `draw turn failed: ${String(err)}`);
+    if (await raiseUsageLimitPopup(err)) pauseForUsageLimit(s);
   } finally {
     s.draw.running = false;
     // A line that landed while the last hop was closing out still deserves an

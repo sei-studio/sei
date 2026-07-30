@@ -79,6 +79,7 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
   const erase = useDrawStore((s) => s.erase);
   const sendChat = useDrawStore((s) => s.sendChat);
   const saveGallery = useDrawStore((s) => s.saveGallery);
+  const resume = useDrawStore((s) => s.resume);
   const end = useDrawStore((s) => s.end);
   const navigate = useUiStore((s) => s.navigate);
   // Draw! is a route of its own, so it already covers the chat screen; the
@@ -275,7 +276,14 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
   // drawing / turn-end
   const iAmDrawing = state.drawer === 'player';
   const live = state.phase === 'drawing';
-  const remaining = state.turnEndsAt ? state.turnEndsAt - now : 0;
+  const paused = state.paused === true;
+  // While usage-limit paused the clock holds at the latched remainder (main
+  // stopped its timers; turnEndsAt is stale by design until resume).
+  const remaining = paused
+    ? state.pausedRemainingMs ?? 0
+    : state.turnEndsAt
+      ? state.turnEndsAt - now
+      : 0;
 
   const header = !live
     ? state.word
@@ -312,6 +320,25 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
               than hanging off the outside of the box (260728). */}
           <div className={styles.canvasBox}>
             <SquiggleFrame seed="canvas-frame" />
+            {paused ? (
+              <div className={styles.pausedOverlay}>
+                <p className={styles.pausedTitle}>game paused</p>
+                <p className={`${styles.pausedNote} ${styles.typed}`}>
+                  usage limit reached. top up or wait, then resume: the turn picks
+                  up right where it stopped.
+                </p>
+                <button
+                  type="button"
+                  className={styles.handBtn}
+                  data-on="true"
+                  onClick={() => resume(characterId)}
+                >
+                  <SquiggleHighlight seed="resume-hl" />
+                  <SquiggleFrame seed="resume-btn" />
+                  <span className={styles.btnLabel}>Resume</span>
+                </button>
+              </div>
+            ) : null}
             <div className={styles.canvasFrame}>
               <DrawCanvas
                 characterId={characterId}
