@@ -28,6 +28,9 @@ import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
 import { OnboardingScreen } from './screens/OnboardingScreen';
+import { OnboardApp, type OnboardResult } from './onboard/OnboardApp';
+import { TutorialOverlay } from './components/tutorial/TutorialOverlay';
+import { useTutorialStore } from './lib/stores/useTutorialStore';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
 import { AwakenScreen } from './screens/AwakenScreen';
@@ -409,8 +412,9 @@ export function App(): React.ReactElement {
   //    Main pushes app:scope-changed AFTER it has torn down the bot, switched
   //    the local data scope, and seeded the new profile. We reload the new
   //    profile's config + characters and re-route:
-  //      • sign-out (account → local) → AuthChoice (the sign-in chooser), so a
-  //        user signing out can re-auth as someone else (fix 260605);
+  //      • sign-out (account → local) → the scene's sign-in panel (260729,
+  //        signin variant): re-auth as someone else, "I'm new here" for the
+  //        full scene, or continue locally;
   //      • otherwise a profile with no mc_username is treated as a fresh install
   //        → onboarding (the signed-in onboarding flow only asks MC username +
   //        preferred name); a profile with an mc_username → home.
@@ -463,18 +467,16 @@ export function App(): React.ReactElement {
         // Replace the previous profile's character list + library state.
         try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
         try { await useLibraryStateStore.getState().refresh(); } catch { /* no hidden defaults */ }
-        // Sign-out (account → local): return to the sign-in chooser, NOT
-        // onboarding. After signing out the user may want to authenticate as a
-        // different account, so the next screen must be AuthChoice (email /
-        // Google / continue-locally). Routing straight to onboarding here —
-        // which this handler does for a local scope with no mc_username — would
-        // skip the chooser and force the local-only MC-username → API-key flow
-        // on someone who only meant to re-auth. AuthChoice's "Continue locally"
-        // still reaches the local path (→ home if an API key is saved, else
-        // onboarding). This handler wins the navigation race against the
-        // authState push because app:scope-changed is emitted after the async
-        // scope teardown, so the sign-out routing must live here. (Fix 260605.)
-        if (ev.reason === 'sign-out') { navigate({ kind: 'auth-choice' }); return; }
+        // Sign-out (account → local): straight to the scene's sign-in panel
+        // (260729; replaced AuthChoice here). Same signin variant as the boot
+        // route below — a signing-out user usually just wants to switch
+        // accounts, so no cutscene; re-auth, "I'm new here" (full scene), and
+        // continue-locally are all on the panel, covering the old "must show
+        // the chooser" concern (fix 260605). This handler wins the navigation
+        // race against the authState push because app:scope-changed is
+        // emitted after the async scope teardown, so the sign-out routing
+        // must live here.
+        if (ev.reason === 'sign-out') { navigate({ kind: 'onboard', signin: true }); return; }
         // Re-seed the credits store now that the scope has ACTUALLY switched.
         // The authState-keyed effect above already reset()+init()'d it from the
         // SYNCHRONOUS signed_in push — which fires BEFORE this async scope switch
@@ -490,6 +492,11 @@ export function App(): React.ReactElement {
           useCreditsStore.getState().reset();
           await useCreditsStore.getState().init();
         } catch { /* keep last */ }
+        // 260728 Sui onboarding: while the first-run scene is driving (view
+        // 'onboard'), it owns navigation — the sign-in that just landed came
+        // from the scene's own panel, and the scene continues into setup +
+        // generation itself. The data reloads above still ran.
+        if (useUiStore.getState().view.kind === 'onboard') return;
         // Onboarded but skin-setup still pending → resume the dedicated step.
         if (onboardedName && skinPending) { navigate({ kind: 'skin-setup' }); return; }
         // Onboarded account → home, on the HOME tab (which shows the welcome
@@ -520,7 +527,7 @@ export function App(): React.ReactElement {
             if (peek.hasData) { setImportOffer(peek); return; }
           } catch { /* fall through to onboarding */ }
         }
-        navigate({ kind: 'onboarding', isReonboard: false });
+        navigate({ kind: 'onboard' });
       })();
     });
   }, [navigate, setThemeMode, runQuestionnaireGate]);
@@ -537,7 +544,7 @@ export function App(): React.ReactElement {
       skinPending = cfg.skin_setup_pending === true;
     } catch { /* onboarding */ }
     try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
-    if (!onboardedName) { navigate({ kind: 'onboarding', isReonboard: false }); return; }
+    if (!onboardedName) { navigate({ kind: 'onboard' }); return; }
     if (skinPending) { navigate({ kind: 'skin-setup' }); return; }
     useUiStore.getState().setHomeTab('home');
     navigate({ kind: 'home' });
@@ -646,19 +653,27 @@ export function App(): React.ReactElement {
       const currentAuth = useAuthStore.getState().state;
       if (currentAuth.kind === 'signed_in') {
         // 260603: a signed-in account that hasn't onboarded yet (no
-        // preferred_name in its profile) is a fresh account → onboarding.
-        // Onboarded-but-skin-pending → resume the dedicated skin-setup step.
-        // Otherwise home, on the Home tab (which shows the welcome message).
+        // preferred_name in its profile) is a fresh account → the Sui
+        // onboarding scene (260728; it skips its sign-in step when a session
+        // is already live). Onboarded-but-skin-pending → resume the dedicated
+        // skin-setup step. Otherwise home, on the Home tab.
         if (!onboardedName) {
-          navigate({ kind: 'onboarding', isReonboard: false });
+          navigate({ kind: 'onboard' });
         } else if (skinPending) {
           navigate({ kind: 'skin-setup' });
         } else {
           useUiStore.getState().setHomeTab('home');
           navigate({ kind: 'home' });
         }
+      } else if (!onboardedName) {
+        // Fresh install (nothing configured on the local profile) → the Sui
+        // onboarding scene, which owns sign-in/sign-up/continue-locally.
+        navigate({ kind: 'onboard' });
       } else {
-        navigate({ kind: 'auth-choice' });
+        // Signed-out profile that HAS onboarded: the scene mounted directly
+        // at its sign-in panel (260729; replaced AuthChoice). No cutscene —
+        // a local BYOK launch stays one "Continue locally" click.
+        navigate({ kind: 'onboard', signin: true });
       }
     })();
     return () => {
@@ -679,8 +694,8 @@ export function App(): React.ReactElement {
   //    Downward (signed_in → local): BL-04 fix — sign-out from Settings or a
   //    successful delete-account flips authState to 'local' but the user was
   //    parked on the Settings view, whose Account panel is now hidden,
-  //    leaving them stranded. Route them back to AuthChoice so the next step
-  //    (re-sign-in, or proceed as local) is reachable.
+  //    leaving them stranded. Route them to the Sui onboarding scene so the
+  //    next step (re-sign-in, or proceed as local) is reachable.
   //
   //    ITEM 16 (quick/260523-t8d): the previous unconditional
   //    "authState.kind === 'local' && view.kind === 'settings' → auth-choice"
@@ -714,7 +729,9 @@ export function App(): React.ReactElement {
     ) {
       // Only bounce on the actual downward transition — direct navigation to
       // Settings from IconRail while ALREADY in local mode is allowed.
-      navigate({ kind: 'auth-choice' });
+      // 260729: lands on the scene's sign-in panel, same destination as the
+      // scope-changed sign-out route above.
+      navigate({ kind: 'onboard', signin: true });
     }
     prevAuthKindRef.current = authState.kind;
   }, [authState, view.kind, navigate, setHomeTab]);
@@ -732,6 +749,7 @@ export function App(): React.ReactElement {
   //    `scopeSwitchPendingRef` suppresses this effect during that window so the
   //    two paths never fight. A sign-out clears the checked-ref so a different
   //    account is re-checked next time.
+  const tutorialActive = useTutorialStore((s) => s.active);
   useEffect(() => {
     if (authState.kind !== 'signed_in') {
       prefsCheckedForUserRef.current = null;
@@ -739,18 +757,70 @@ export function App(): React.ReactElement {
     }
     if (view.kind !== 'home') return;
     if (scopeSwitchPendingRef.current) return; // wait for onScopeChanged
+    // 260728: never interrupt Sui's tour with the questionnaire (a user who
+    // skipped companion creation has unanswered prefs; the Awaken gate — or
+    // this effect on the next Home render after the tour — re-asks).
+    if (tutorialActive) return;
     let cancelled = false;
     void runQuestionnaireGate(authState.user.id, { isCancelled: () => cancelled });
     return () => {
       cancelled = true;
     };
-  }, [authState, view.kind, runQuestionnaireGate]);
+  }, [authState, view.kind, tutorialActive, runQuestionnaireGate]);
+
+  // ── Sui onboarding completion (260728): route + arm the tutorial. ─────
+  const handleOnboardComplete = useCallback(
+    (res: OnboardResult) => {
+      void (async () => {
+        // The scene saved config + possibly generated a companion; pull the
+        // fresh state before landing anywhere.
+        try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
+        try { await useLibraryStateStore.getState().refresh(); } catch { /* none */ }
+        // Re-fetch ToS status: the store's cached value was read at the
+        // signed_in transition, racing the signup path's fire-and-forget
+        // acceptance insert, and a stale `false` mounts the blocking legal
+        // modal over the tutorial (260729).
+        void useAuthStore.getState().refreshTosStatus();
+        if (res.tutorial) {
+          useTutorialStore.getState().start(res.characterId);
+          if (res.characterId) {
+            // Land on the character reveal page (portrait + "Say hello"); the
+            // tour's say-hi step spotlights that button.
+            navigate({ kind: 'unique-reveal', characterId: res.characterId });
+          } else {
+            setHomeTab('home');
+            navigate({ kind: 'home' });
+          }
+        } else {
+          setHomeTab('home');
+          navigate({ kind: 'home' });
+        }
+      })();
+    },
+    [navigate, setHomeTab],
+  );
 
   // B5: LoadingScreen is gone — the renderer routes directly to the initial
   // view in the bootstrap effect above. The 'loading' view variant is a
   // transient state before that effect resolves; render nothing for a frame
   // rather than mounting the prior boot pulse.
   if (view.kind === 'loading') return <></>;
+
+  // 260728: the Sui onboarding scene is chromeless — no MacosWindow drag
+  // strip, no version tag, no rail; the mac traffic lights hide over IPC
+  // while it is mounted (OnboardApp's own effect).
+  if (view.kind === 'onboard') {
+    // key: a signin-variant mount must not reuse a full-scene instance's
+    // state (and vice versa) if the view flips between them.
+    return (
+      <OnboardApp
+        key={view.signin ? 'signin' : 'full'}
+        startAtSignIn={view.signin === true}
+        onStartFresh={() => navigate({ kind: 'onboard' })}
+        onComplete={handleOnboardComplete}
+      />
+    );
+  }
 
   // The IconRail is suppressed on the full-page entry surfaces (onboarding /
   // sign-in / skin setup). MacosWindow needs the same signal so its top-bar
@@ -1044,8 +1114,14 @@ export function App(): React.ReactElement {
         first-time users that bypassed the signup checkbox, and any user signed
         in before a TOS_VERSION bump). On accept, refreshTosStatus() flips
         tosAccepted → true and this conditional unmounts.
+        260729: suppressed while Sui's tutorial runs. Onboarding already
+        handled ToS (signup checkbox / the scene's own gate); this modal
+        appearing there was a stale cache read racing the fire-and-forget
+        acceptance insert, and it sat over the tour and froze it.
+        handleOnboardComplete re-fetches the status, so a genuinely
+        unaccepted user still gets the gate right after the tour.
       */}
-      {authState.kind === 'signed_in' && tosAccepted === false ? (
+      {authState.kind === 'signed_in' && tosAccepted === false && !tutorialActive ? (
         <AcceptToSModal
           onAccepted={() => {
             // Mirror main's privacy re-consent (tos:accept clears
@@ -1105,6 +1181,13 @@ export function App(): React.ReactElement {
       {passwordRecovery && authState.kind === 'signed_in' ? (
         <SetNewPasswordModal onClose={() => setPasswordRecovery(false)} />
       ) : null}
+      {/*
+        260728 — Sui's post-onboarding tour. Unconditional mount: the
+        component returns null unless useTutorialStore.active. Sits above
+        every modal (z 4000) because the games-popup step spotlights the open
+        GamesPickerModal.
+      */}
+      <TutorialOverlay />
     </>
   );
 }

@@ -39,6 +39,7 @@ import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
 import { ResetAllMemoriesConfirmModal } from '../components/ResetAllMemoriesConfirmModal';
+import { FactoryResetConfirmModal } from '../components/FactoryResetConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
@@ -190,6 +191,8 @@ export function SettingsScreen(): React.ReactElement {
   // WR-10: capture the account email at modal-open time so the modal can
   // remain mounted across the SIGNED_OUT transition that fires mid-flow.
   const [deleteAccountState, setDeleteAccountState] = useState<{ email: string } | null>(null);
+  // 260728: factory reset (danger zone) confirm popup.
+  const [factoryResetOpen, setFactoryResetOpen] = useState(false);
   // Plan 11-18 — re-open entry for the one-shot migration modal.
   const [migrateModalOpen, setMigrateModalOpen] = useState<boolean>(false);
   // Plan 12-14 — DMCA Designated Agent info modal. Visible to BOTH signed-in
@@ -984,7 +987,7 @@ export function SettingsScreen(): React.ReactElement {
         </div>
 
         {/* ── Theme (260724) — named themes + custom background ── */}
-        <div className={styles.group}>
+        <div className={styles.group} data-tutorial="theme-group">
           <h3 className={styles.groupTitle}>Theme</h3>
           <div className={styles.row}>
             <span className={styles.label}>Theme</span>
@@ -1301,6 +1304,16 @@ export function SettingsScreen(): React.ReactElement {
               </p>
             </>
           ) : null}
+          <div className={styles.row}>
+            <span className={styles.label}>Factory reset</span>
+            <Button kind="danger" size="sm" onClick={() => setFactoryResetOpen(true)}>
+              Factory reset…
+            </Button>
+          </div>
+          <p className={styles.helper}>
+            Erases everything on this device and restarts Sei like a fresh install. Cloud data
+            stays on your account.
+          </p>
         </div>
       </div>
 
@@ -1345,6 +1358,9 @@ export function SettingsScreen(): React.ReactElement {
         />
       ) : null}
       {dmcaModalOpen ? <DmcaContactModal onClose={() => setDmcaModalOpen(false)} /> : null}
+      {factoryResetOpen ? (
+        <FactoryResetConfirmModal onCancel={() => setFactoryResetOpen(false)} />
+      ) : null}
     </div>
   );
 }

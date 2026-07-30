@@ -174,10 +174,13 @@ export class ChessScene {
     this.library = createPieceLibrary();
 
     // ── Lights ──
-    const hemi = new THREE.HemisphereLight(0xfff4e0, 0x5c4030, 0.5);
+    // Contrast over brightness (260729): the strong key light does the
+    // lifting; ambient + fill stay low so shadowed faces and cast shadows
+    // actually go dark instead of washing toward the midtones.
+    const hemi = new THREE.HemisphereLight(0xfff4e0, 0x3a281c, 0.3);
     this.scene.add(hemi);
 
-    const key = new THREE.DirectionalLight(0xfff1dd, 1.5);
+    const key = new THREE.DirectionalLight(0xfff1dd, 2.1);
     key.position.set(5, 11, 6);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -190,7 +193,7 @@ export class ChessScene {
     key.shadow.bias = -0.0004;
     this.scene.add(key);
 
-    const fill = new THREE.DirectionalLight(0xcdd8ff, 0.35);
+    const fill = new THREE.DirectionalLight(0xcdd8ff, 0.2);
     fill.position.set(-6, 7, -4);
     this.scene.add(fill);
 

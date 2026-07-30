@@ -60,6 +60,9 @@ const api: RendererApi = {
   // Phase 11 D-16 — public/private toggle.
   charsSetShared: (args) => ipcRenderer.invoke(IpcChannel.chars.setShared, args),
 
+  // 260729 — save full portrait art to disk (native save dialog).
+  charsExportPortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.exportPortrait, id),
+
   // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
   checkCreateQuota: () => ipcRenderer.invoke(IpcChannel.chars.checkCreateQuota),
 
@@ -124,6 +127,9 @@ const api: RendererApi = {
   drawOpen: (characterId) => ipcRenderer.invoke(IpcChannel.draw.open, characterId),
   drawStart: (characterId, rounds) =>
     ipcRenderer.invoke(IpcChannel.draw.start, { characterId, rounds }),
+  drawNewGame: (characterId) => ipcRenderer.invoke(IpcChannel.draw.newGame, characterId),
+  drawPickWord: (characterId, word) =>
+    ipcRenderer.invoke(IpcChannel.draw.pickWord, { characterId, word }),
   drawGetState: (characterId) => ipcRenderer.invoke(IpcChannel.draw.getState, characterId),
   drawStroke: (characterId, stroke) =>
     ipcRenderer.invoke(IpcChannel.draw.stroke, { characterId, stroke }),
@@ -278,7 +284,7 @@ const api: RendererApi = {
   signOut: () => ipcRenderer.invoke(IpcChannel.auth.signout),
   deleteAccount: () => ipcRenderer.invoke(IpcChannel.auth.deleteAccount),
   exportData: () => ipcRenderer.invoke(IpcChannel.auth.exportData),
-  resendVerification: () => ipcRenderer.invoke(IpcChannel.auth.resendVerification),
+  resendVerification: (args) => ipcRenderer.invoke(IpcChannel.auth.resendVerification, args),
   sendPasswordReset: (args) => ipcRenderer.invoke(IpcChannel.auth.sendPasswordReset, args),
   updatePassword: (args) => ipcRenderer.invoke(IpcChannel.auth.updatePassword, args),
   setCaptchaToken: (token: string | null) =>
@@ -464,6 +470,13 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.app.scopeChanged, handler);
     return () => ipcRenderer.off(IpcChannel.app.scopeChanged, handler);
   },
+
+  // --- Onboarding chrome toggle (260728) ---
+  windowSetButtonsVisible: (visible: boolean) =>
+    ipcRenderer.invoke(IpcChannel.window.setButtonsVisible, visible),
+
+  // --- Factory reset (260728) ---
+  factoryReset: () => ipcRenderer.invoke(IpcChannel.app.factoryReset),
 };
 
 contextBridge.exposeInMainWorld('sei', api);

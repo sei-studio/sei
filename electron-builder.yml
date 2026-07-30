@@ -94,17 +94,25 @@ mac:
   # @electron/asar bails with "pattern is too long" when asarUnpack covers
   # node_modules/**/*.
   #
-  # ZIP-ONLY (dmg dropped 2026-06-21): the bundled prismarine-viewer texture tree
-  # is ~32k tiny files. dmgbuild auto-sizes the DMG volume from the byte-sum of
-  # the .app (+~10%), which badly understates the APFS per-file block/inode
-  # overhead of 32k files — so `ditto` overflows the mounted volume with
-  # "No space left on device" even with 40GB+ free on the runner. There is no
-  # electron-builder knob to pad the DMG size, and the textures can't move into
-  # the asar (node-canvas reads them via native fs, which bypasses Electron's
-  # asar layer). The zip is ALSO the macOS auto-update payload (latest-mac.yml +
-  # app-update.yml reference it), so zip-only loses nothing functional; mac users
-  # unzip and drag to /Applications. Re-add a `dmg` target here if the
-  # texture-count/sizing problem is solved (e.g. prune textures to 1.20-1.21).
+  # DMG RE-ENABLED (260728): the dmg was dropped 2026-06-21 because the bundled
+  # prismarine-viewer texture tree was ~32k tiny files — dmgbuild auto-sizes the
+  # DMG volume from the byte-sum of the .app (+~10%), which badly understates
+  # the APFS per-file block/inode overhead at that file count, so `ditto`
+  # overflowed the mounted volume with "No space left on device". The fix is the
+  # texture prune below (mac `files`): mac builds keep only the 1.20.1 / 1.21.1
+  # / 1.21.4 texture sets (~9.4k files, the versions players actually run),
+  # which brings the count under the sizing slack. The tradeoff: on macOS, a
+  # LAN world older than 1.20 loses POV vision (povRenderer degrades to
+  # CANT_SEE) and dashboard item icons (mcAssets 404s → text labels). Windows
+  # ships the full tree and is unaffected.
+  #
+  # The zip stays: it is the macOS auto-update payload (latest-mac.yml +
+  # app-update.yml reference it). The dmg is the manual download — drag to
+  # /Applications IS the install, which is why the in-app "Move to
+  # Applications?" prompt was retired (src/main/relocate.ts).
+  # USER-ACTION: the sizing failure was empirical — verify the first
+  # `npm run dist:mac` actually produces both dmgs before pointing the website
+  # at them, and update sei-website's download links from .zip to .dmg.
   #
   # Dual-arch (2026-06-22): arm64 + x64 build in a SINGLE mac job/invocation, so
   # one latest-mac.yml covers both (no cross-runner feed merge). x64 native deps
@@ -112,6 +120,8 @@ mac:
   # per-arch signing fast, so building both no longer balloons the job.
   target:
     - target: zip
+      arch: [arm64, x64]
+    - target: dmg
       arch: [arm64, x64]
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -141,8 +151,14 @@ mac:
   # build/entitlements.mac.plist.
   # 260710 chess: drop the linux + windows onnxruntime prebuilds from mac builds
   # (~76MB saved; both mac arches stay because arm64+x64 build in one job).
+  # 260728 dmg: prune prismarine-viewer textures to the versions players run
+  # (see the DMG RE-ENABLED note above) — the file-count cut is what makes the
+  # dmg target buildable again. Keep 1.20.1 / 1.21.1 / 1.21.4; the second line
+  # drops the orphaned per-version atlas PNGs that sit beside the folders.
   files:
     - "!node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
+    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}/**"
+    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
   # 260728 backseat: the bundled ScreenCaptureKit system-audio tap
   # (native/mac-audio-tap, built by scripts/build-mac-audio-tap.sh into a
   # UNIVERSAL binary — one file serves both arch builds). Chromium loopback
@@ -162,18 +178,18 @@ mac:
     # the packaged/notarized build even after the user allows the mic.
     NSMicrophoneUsageDescription: "Sei uses your microphone so you can talk to your characters on a voice call."
 
-# dmg target dropped 2026-06-21 (see mac.target note above) — config kept,
-# commented, for easy re-enable once the 32k-texture-file DMG sizing is solved.
-# dmg:
-#   sign: false               # default since electron-builder 20.43.0
-#   contents:
-#     - x: 410
-#       y: 220
-#       type: link
-#       path: /Applications
-#     - x: 130
-#       y: 220
-#       type: file
+# dmg layout: app on the left, /Applications link on the right — the classic
+# drag-to-install window (re-enabled 260728 with the texture prune above).
+dmg:
+  sign: false               # default since electron-builder 20.43.0
+  contents:
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+    - x: 130
+      y: 220
+      type: file
 
 win:
   target:

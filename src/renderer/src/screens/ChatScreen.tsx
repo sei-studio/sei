@@ -588,8 +588,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       } ${chatHidden ? styles.gameExpanded : ''} ${splitDragging ? styles.splitDragging : ''}`}
     >
       {/* ── Top bar: identical structure across chat, games and calls
-          (260721) — the shared ChatTopBar. ── */}
-      <ChatTopBar characterId={characterId} />
+          (260721) — the shared ChatTopBar. Game fullscreen hides it too
+          (260729): fullscreen means the game gets every pixel the app window
+          has, and the bar's own buttons (call, end) live in the game's bottom
+          chrome row, so nothing up here is load-bearing while it is hidden. ── */}
+      {!(gameOpen && gameFullscreen) ? <ChatTopBar characterId={characterId} /> : null}
 
       <div className={styles.content}>
         <div className={styles.mainCol} ref={mainColRef}>
@@ -613,6 +616,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           >
             {gameOpen ? (
               <GameSurface
+                characterId={characterId}
                 expanded={chatHidden}
                 unread={gameUnread}
                 // The "V" always means "show me the chat again", so while
@@ -829,7 +833,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               Copied to clipboard
             </div>
           ) : null}
-          <div className={styles.composer}>
+          <div className={styles.composer} data-tutorial="composer">
             <textarea
               ref={inputRef}
               className={styles.input}

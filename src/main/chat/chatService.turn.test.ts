@@ -18,14 +18,18 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _setUserDataOverride, paths } from '../paths';
 
-const { createSpy, getCharacterSpy, patchCharacterSpy } = vi.hoisted(() => ({
+const { createSpy, streamSpy, getCharacterSpy, patchCharacterSpy } = vi.hoisted(() => ({
   createSpy: vi.fn(),
+  streamSpy: vi.fn(),
   getCharacterSpy: vi.fn(),
   patchCharacterSpy: vi.fn(),
 }));
 vi.mock('./sdk', () => ({
   CHAT_TIMEOUT_MS: 30_000,
-  buildChatSdk: vi.fn(async () => ({ client: { messages: { create: createSpy } }, model: 'test-model' })),
+  buildChatSdk: vi.fn(async () => ({
+    client: { messages: { create: createSpy, stream: streamSpy } },
+    model: 'test-model',
+  })),
 }));
 vi.mock('../characterStore', () => ({
   getCharacter: getCharacterSpy,
@@ -71,6 +75,7 @@ beforeEach(async () => {
     },
   );
   createSpy.mockReset();
+  streamSpy.mockReset();
 });
 afterEach(async () => {
   _setUserDataOverride(null);
@@ -300,7 +305,9 @@ describe('call-only companion: world truth + single-shot launch honor (260708)',
     });
 
     expect(onLaunch).toHaveBeenCalledTimes(1);
-    expect(replies.map((r) => r.text)).toEqual(['hopping in']);
+    // A voice reply keeps its terminal period (260729, splitReply `spoken`):
+    // it is speech being transcribed, and the mark is the intonation TTS lands.
+    expect(replies.map((r) => r.text)).toEqual(['hopping in.']);
     const req = createSpy.mock.calls[0][0] as { system: unknown };
     expect(JSON.stringify(req.system)).toContain('an open Minecraft world is detected');
     expect(JSON.stringify(req.system)).not.toContain('no open Minecraft world is detected');
@@ -499,5 +506,59 @@ describe('transcript stop sequences (260722 — chess voice-call TTS prompt leak
       const req = call[0] as { stop_sequences?: string[] };
       expect(req.stop_sequences).toEqual(expect.arrayContaining(['\nHuman:', '\nPlayer:']));
     }
+  });
+});
+
+/**
+ * The STREAMED voice turn's per-sentence emit (260729). A live call always
+ * takes this path (isStreaming = isVoice), so it is where a call's spoken text
+ * and its prosody context actually come from — the renderer's own prev/more
+ * bookkeeping lives in the blocking reveal loop, which a streamed reply skips.
+ */
+describe('streamed voice turn: spoken text keeps its punctuation and carries reply context', () => {
+  /** Minimal stand-in for the SDK's MessageStream: async-iterable + finalMessage. */
+  function fakeStream(deltas: string[]) {
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const text of deltas) {
+          yield { type: 'content_block_delta', delta: { type: 'text_delta', text } };
+        }
+      },
+      finalMessage: async () => ({ content: [{ type: 'text', text: deltas.join('') }], usage: {} }),
+    };
+  }
+
+  it('emits each sentence with its place in the reply, period intact', async () => {
+    setCallActive(CHAR, true);
+    // Two sentences land in ONE delta (so the first KNOWS another follows), then
+    // an unterminated tail that flushes after finalMessage.
+    streamSpy.mockReturnValue(fakeStream(['hey. i got the iron. ', 'want me to smelt it?']));
+    const emitReply = vi.fn();
+    const d: ChatDeps = { ...deps(), emitReply };
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'you there', voiceCall: true }, d);
+
+    expect(result.streamed).toBe(true); // the renderer must not re-speak these
+    const emitted = emitReply.mock.calls.map(([, msg, speech]) => [msg.text, speech]);
+    expect(emitted).toEqual([
+      // The trailing period SURVIVES on a call (splitReply `spoken`): it is the
+      // terminal intonation, not texting formality.
+      ['hey.', { prev: undefined, more: true }],
+      ['i got the iron.', { prev: 'hey.', more: false }],
+      ['want me to smelt it?', { prev: 'i got the iron.', more: false }],
+    ]);
+  });
+
+  it('never asserts `more` from text it does not have yet', async () => {
+    setCallActive(CHAR, true);
+    // One sentence per delta: at the moment each is emitted, nothing further is
+    // known, and a false `more` would send next_text on what turns out to be the
+    // last line and take its terminal fall away. Unknown means false.
+    streamSpy.mockReturnValue(fakeStream(['sure. ', 'give me a sec. ']));
+    const emitReply = vi.fn();
+
+    await sendChatMessage({ characterId: CHAR, text: 'can you help', voiceCall: true }, { ...deps(), emitReply });
+
+    expect(emitReply.mock.calls.map(([, , speech]) => speech.more)).toEqual([false, false]);
   });
 });

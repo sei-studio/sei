@@ -42,8 +42,9 @@ import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ReportCompanionModal } from '../components/ReportCompanionModal';
 import { formatDate } from '../lib/formatDate';
 import { requestGameLaunch, openGame } from '../lib/gameLaunch';
-import { BackIcon, GearIcon, RotateIcon } from '../components/icons';
+import { BackIcon, GearIcon, RotateIcon, FullscreenIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
+import { portraitSrc } from '../lib/portraitSrc';
 import type { Character } from '@shared/characterSchema';
 import styles from './CharacterPage.module.css';
 
@@ -173,6 +174,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // edit modal at Basic, and resume the publish once the modal closes with a
   // description present.
   const [needsDescription, setNeedsDescription] = useState<boolean>(false);
+  // 260729 — full-art popup (the corner expand button over the portrait).
+  const [artOpen, setArtOpen] = useState<boolean>(false);
+  const [artSaving, setArtSaving] = useState<boolean>(false);
+  const [artSavedTo, setArtSavedTo] = useState<string | null>(null);
 
   // ── Exit animation (mirror of the enter slide) ────────────────────────────
   // The page enters with a slide (.content → detailIn) + portrait rise (.dPic →
@@ -518,6 +523,24 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         <div className={styles.dScrim} />
       </div>
 
+      {/* Expand the full art (260729) — only when there is real portrait art
+          to show (the procedural sprite has nothing to save). */}
+      {portraitSrc(character.portrait_image) ? (
+        <button
+          type="button"
+          className={styles.artExpandBtn}
+          onClick={() => {
+            setArtSavedTo(null);
+            setArtOpen(true);
+          }}
+          aria-label="View full art"
+          data-tip="View full art"
+          data-tip-edge="right"
+        >
+          <FullscreenIcon size={16} />
+        </button>
+      ) : null}
+
       <main className={`${styles.content} ${leaving ? styles.contentLeaving : ''}`}>
         <div className={styles.crumb}>
           <Button kind="quiet" size="sm" icon={<BackIcon size={13} />} onClick={closePage}>
@@ -696,6 +719,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 size="lg"
                 className={styles.deployBig}
                 onClick={handleChatClick}
+                data-tutorial="chat-cta"
               >
                 Chat
               </Button>
@@ -848,6 +872,46 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           }}
         />
       ) : null}
+      {artOpen ? (
+        <ModalShell
+          title={null}
+          width={720}
+          escClose
+          scrimClose
+          onClose={() => setArtOpen(false)}
+          aria-label={`${character.name} full art`}
+        >
+          <img
+            className={styles.artModalImg}
+            src={portraitSrc(character.portrait_image) ?? undefined}
+            alt={`${character.name} full art`}
+            draggable={false}
+          />
+          {artSavedTo ? <p className={styles.artSavedNote}>Saved to {artSavedTo}</p> : null}
+          <ModalFooter>
+            <Button kind="quiet" size="md" onClick={() => setArtOpen(false)}>
+              Close
+            </Button>
+            <Button
+              kind="accent"
+              size="md"
+              disabled={artSaving}
+              onClick={() => {
+                setArtSaving(true);
+                setArtSavedTo(null);
+                sei
+                  .charsExportPortrait(id)
+                  .then((p) => setArtSavedTo(p))
+                  .catch(() => setArtSavedTo(null))
+                  .finally(() => setArtSaving(false));
+              }}
+            >
+              {artSaving ? 'Saving...' : 'Save'}
+            </Button>
+          </ModalFooter>
+        </ModalShell>
+      ) : null}
+
       {shareConfirm ? (
         <ModalShell
           title={null}

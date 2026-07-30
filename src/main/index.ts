@@ -19,7 +19,7 @@
 import { app, BrowserWindow, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createMainWindow } from './windowChrome';
+import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
 import { watchLan } from './lanWatcher';
@@ -31,6 +31,7 @@ import {
   closeBackseatOverlay,
   sendToBackseatOverlay,
 } from './backseatOverlay';
+import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater } from './updater';
 import { initNotices } from './notices';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
@@ -38,13 +39,13 @@ import { runFirstLaunchMigration, runUuidRenameMigration, runDefaultsToWorldMigr
 import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
-import { maybeOfferMoveToApplications, cleanupRelocationLeftover } from './relocate';
+import { cleanupRelocationLeftover } from './relocate';
 import {
   initMcDashboardService,
   publishMcDashboardSnapshot,
   clearMcDashboard,
 } from './mcDashboard/mcDashboardService';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage } from '../shared/ipc';
+import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
@@ -86,6 +87,9 @@ const logger = {
 };
 
 let mainWindow: BrowserWindow | null = null;
+// Startup splash (260728) — shown from whenReady, closed when the main window
+// first paints (or by the failsafe timer).
+let splashWindow: BrowserWindow | null = null;
 let latestLanState: LanState = { kind: 'closed' };
 let lanWatcherHandle: ReturnType<typeof watchLan> | null = null;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
@@ -113,6 +117,45 @@ function rendererTarget(): string {
     return process.env.ELECTRON_RENDERER_URL;
   }
   return path.join(__dirname, '../renderer/index.html');
+}
+
+/**
+ * Voice calls (260705): a call cannot survive its renderer — the mic and
+ * audio playback live there. Sweep the call flags on any main-frame
+ * navigation (incl. reload/HMR) and on renderer death, telling any live bot
+ * to resume normal in-game chat; without this a mid-call reload leaves the
+ * bot muted in minecraft chat forever.
+ */
+function sweepVoiceCalls(): void {
+  for (const id of activeCallIds()) supervisor?.setVoiceCall(id, false);
+  clearAllCalls();
+  // The overlay belongs to the call the (now-gone) renderer was driving.
+  closeCallOverlay();
+  closeBackseatOverlay();
+  // Backseat capture lives entirely in the renderer (getDisplayMedia, the
+  // ring buffer, the recorders), so a renderer that navigated or died has
+  // taken the session's eyes with it. Leaving the session open would keep
+  // main waiting on ticks that can never arrive.
+  void import('./backseat/backseatService')
+    .then((m) => m.clearAllBackseat())
+    .catch(() => {});
+}
+
+/**
+ * Wire the lifecycle listeners the main window needs (extracted 260728).
+ */
+function wireMainWindowEvents(win: BrowserWindow): void {
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+  // Replay latest LAN state on did-finish-load so freshly-loaded renderer is in sync.
+  win.webContents.on('did-finish-load', () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IpcChannel.lan.state, latestLanState);
+    }
+  });
+  win.webContents.on('did-navigate', sweepVoiceCalls);
+  win.webContents.on('render-process-gone', sweepVoiceCalls);
 }
 
 function broadcastLan(state: LanState): void {
@@ -147,10 +190,12 @@ const currentStatuses = new Map<string, BotStatus>();
  */
 const onlineIds = new Set<string>();
 
-/** Push a chat message (bot reply while in-game, or a system line) to the UI. */
-function pushChatMessage(characterId: string, message: ChatMessage): void {
+/** Push a chat message (bot reply while in-game, or a system line) to the UI.
+ * `speech` rides along on a streamed voice reply's per-sentence pushes so the
+ * renderer can hand TTS the line's place in its reply (see ChatMessagePush). */
+function pushChatMessage(characterId: string, message: ChatMessage, speech?: SpokenLineContext): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(IpcChannel.chat.message, { characterId, message });
+    mainWindow.webContents.send(IpcChannel.chat.message, { characterId, message, ...(speech ? { speech } : {}) });
   }
 }
 
@@ -171,17 +216,6 @@ async function appendChatMessage(characterId: string, message: ChatMessage): Pro
 // mid-session backend-switch re-emit doesn't reset the clock.
 const playStartedAt = new Map<string, number>();
 
-/** Human phrase for a play-session length ("a few seconds" / "N minutes" / "N hours"). */
-function formatPlayDuration(ms: number): string {
-  if (ms < 60_000) return 'a few seconds';
-  if (ms < 3_600_000) {
-    const m = Math.max(1, Math.round(ms / 60_000));
-    return `${m} minute${m === 1 ? '' : 's'}`;
-  }
-  const h = Math.max(1, Math.round(ms / 3_600_000));
-  return `${h} hour${h === 1 ? '' : 's'}`;
-}
-
 /** Post the "You and <name> played Minecraft for <duration>" system row. */
 async function emitPlaySession(characterId: string, durationMs: number): Promise<void> {
   let name = 'your companion';
@@ -195,7 +229,7 @@ async function emitPlaySession(characterId: string, durationMs: number): Promise
   await appendChatMessage(characterId, {
     id: randomUUID(),
     role: 'system',
-    text: `You and ${name} played Minecraft for ${formatPlayDuration(durationMs)}.`,
+    text: playSummaryText(name, 'Minecraft', durationMs),
     ts: Date.now(),
     event: { kind: 'play', game: 'minecraft', durationMs },
   });
@@ -217,6 +251,8 @@ async function emitCallSession(characterId: string, durationMs: number): Promise
     id: randomUUID(),
     role: 'system',
     text: `You and ${name} called for ${formatPlayDuration(durationMs)}.`,
+    // A call is not a game, so it keeps its own verb; only the shared duration
+    // phrasing is reused.
     ts: Date.now(),
     event: { kind: 'call', durationMs },
   });
@@ -627,9 +663,19 @@ async function bootstrap(): Promise<void> {
   mainWindow = createMainWindow({
     preloadPath: preloadPath(),
     indexHtmlUrlOrPath: rendererTarget(),
+    // Startup splash (260728): once the main window is ready, close the splash
+    // immediately (no fade, 260729) before the first show — the two never
+    // overlap. The failsafe timer in whenReady covers a bootstrap that never
+    // gets here.
+    beforeFirstShow: async () => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        const s = splashWindow;
+        splashWindow = null;
+        await closeSplashWindow(s);
+      }
+    },
   });
-
-  mainWindow.on('closed', () => { mainWindow = null; });
+  wireMainWindowEvents(mainWindow);
 
   // Always-on-top call overlay (260706): a second frameless window driven by the
   // renderer's voice:overlay-set pushes. Init with the same preload + renderer
@@ -639,35 +685,6 @@ async function bootstrap(): Promise<void> {
   // Backseat overlay (260728): same idea, but that window is interactive and it
   // OWNS the screen-share capture, so it needs the same bundle target.
   initBackseatOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
-
-  // Replay latest LAN state on did-finish-load so freshly-loaded renderer is in sync.
-  mainWindow.webContents.on('did-finish-load', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IpcChannel.lan.state, latestLanState);
-    }
-  });
-
-  // Voice calls (260705): a call cannot survive its renderer — the mic and
-  // audio playback live there. Sweep the call flags on any main-frame
-  // navigation (incl. reload/HMR) and on renderer death, telling any live bot
-  // to resume normal in-game chat; without this a mid-call reload leaves the
-  // bot muted in minecraft chat forever.
-  const sweepVoiceCalls = (): void => {
-    for (const id of activeCallIds()) supervisor?.setVoiceCall(id, false);
-    clearAllCalls();
-    // The overlay belongs to the call the (now-gone) renderer was driving.
-    closeCallOverlay();
-    closeBackseatOverlay();
-    // Backseat capture lives entirely in the renderer (getDisplayMedia, the
-    // ring buffer, the recorders), so a renderer that navigated or died has
-    // taken the session's eyes with it. Leaving the session open would keep
-    // main waiting on ticks that can never arrive.
-    void import('./backseat/backseatService')
-      .then((m) => m.clearAllBackseat())
-      .catch(() => {});
-  };
-  mainWindow.webContents.on('did-navigate', sweepVoiceCalls);
-  mainWindow.webContents.on('render-process-gone', sweepVoiceCalls);
 
   // 3. LAN watcher (D-21 — single instance for the whole app session)
   lanWatcherHandle = watchLan({
@@ -818,18 +835,29 @@ async function bootstrap(): Promise<void> {
   // harvested clip cross to main.
   {
     const { initBackseatService } = await import('./backseat/backseatService');
-    // These three go to the OVERLAY window, not the main one: it owns the
-    // capture pipeline and draws the mini chat, and it is the window that
-    // stays alive while the player is in a game. Chat messages still take the
-    // ordinary chat channel to the main window so the transcript is complete.
+    // Lines and clip requests go to the OVERLAY window: it owns the capture
+    // pipeline and draws the mini chat, and it is the window that stays alive
+    // while the player is in a game. STATE goes to BOTH windows — the main
+    // window's useBackseatStore needs the 'ended' push, or stopping from the
+    // overlay leaves the IconRail's game badge lit forever (260728 live). Chat
+    // messages still take the ordinary chat channel so the transcript is
+    // complete.
     initBackseatService({
-      pushState: (state) => sendToBackseatOverlay(IpcChannel.backseat.state, state),
+      pushState: (state) => {
+        sendToBackseatOverlay(IpcChannel.backseat.state, state);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IpcChannel.backseat.state, state);
+        }
+      },
       pushLine: (characterId, line) =>
         sendToBackseatOverlay(IpcChannel.backseat.line, { characterId, ...line }),
       requestClip: (characterId, requestId) =>
         sendToBackseatOverlay(IpcChannel.backseat.clipRequest, { characterId, requestId }),
       pushChatMessage,
       isCallActive,
+      // Session logs ride the same batched channel as bot/chess/draw logs, so
+      // the in-app developer console (LogsBar) shows [backseat] lines live.
+      pushLog: broadcastLog,
     });
   }
 
@@ -925,7 +953,14 @@ async function bootstrap(): Promise<void> {
         try {
           const { sendVoiceGreetingTurn } = await import('./chat/chatService');
           const replies = await sendVoiceGreetingTurn(id, peers);
-          for (const r of replies) pushChatMessage(id, r);
+          // The greeting is spoken, so each line carries its place in the reply
+          // for TTS conditioning (260729): first line no `prev`, last no `more`.
+          replies.forEach((r, i) =>
+            pushChatMessage(id, r, {
+              prev: i > 0 ? replies[i - 1].text : undefined,
+              more: i < replies.length - 1,
+            }),
+          );
         } catch (err) {
           console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);
         }
@@ -1046,14 +1081,22 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
-    // First thing on launch (macOS only): offer to relocate to /Applications so
-    // auto-update works. If accepted, the app quits + relaunches from there, so
-    // skip the rest of startup. No-op on Windows/Linux and in dev. See relocate.ts.
-    if (maybeOfferMoveToApplications()) return;
-
-    // If a prior launch moved us here from ~/Downloads, trash the leftover copy
-    // now that we're running from /Applications. Best-effort, never blocks.
+    // If a prior version's "Move to Applications" prompt moved us here from
+    // ~/Downloads, trash the leftover copy now that we're running from
+    // /Applications. The prompt itself was retired when the macOS download
+    // became a dmg (drag-to-Applications IS the install); this stays one more
+    // cycle to consume in-flight sentinels from pre-dmg installs. Best-effort,
+    // never blocks. See relocate.ts.
     cleanupRelocationLeftover();
+
+    // Startup splash (260728): the white Sei logo, up before any heavy
+    // bootstrap work, closed when the main window first paints. The failsafe
+    // timer covers a bootstrap that errors before showing a window.
+    splashWindow = createSplashWindow();
+    setTimeout(() => {
+      if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
+      splashWindow = null;
+    }, 15_000);
 
     bootstrap().catch((err) => {
       logger.error(`bootstrap failed: ${(err as Error).message}`);

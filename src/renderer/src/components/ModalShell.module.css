@@ -16,7 +16,8 @@
   max-height: calc(100vh - 64px);
   overflow-y: auto;
   background: var(--bg2);
-  border: 1px solid var(--border-strong);
+  /* Borderless popup (260729): the shadow alone lifts the panel off the
+     scrim; the hairline frame read as clutter on every dialog. */
   box-shadow: var(--shadow-pop);
   padding: 20px;
   display: flex;

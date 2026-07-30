@@ -26,6 +26,7 @@ import {
   MIN_POINT_SPACING,
   hitTestStroke,
   paintStrokes,
+  pencilCssWidth,
   strokesToPng,
 } from './drawRender';
 import styles from './draw.module.css';
@@ -36,6 +37,11 @@ const SNAPSHOT_WIDTH = 640;
 
 export type DrawCanvasMode = 'player-draw' | 'ai-draw' | 'view';
 
+/** Imperative seam for playback-ordering (see queueBarrier below). */
+export interface DrawCanvasControl {
+  queueBarrier: (cb: () => void) => void;
+}
+
 export interface DrawCanvasProps {
   characterId: string;
   /** Committed strokes from main. Ignored in ai-draw mode (see above). */
@@ -44,8 +50,23 @@ export interface DrawCanvasProps {
   tool: 'pen' | 'eraser';
   /** Identifies the current turn; a change resets local playback state. */
   turnToken: string;
+  /**
+   * DrawGameState.clearSeq: bumped when the character wipes its own page with
+   * the `clear` tool. The revealed list is local and deliberately survives a
+   * state push, so this is the only thing that can throw it away mid-turn.
+   */
+  clearToken: number;
   onStroke: (stroke: DrawStroke) => void;
   onErase: (strokeId: string) => void;
+  /**
+   * Receives the playback-barrier seam (260729, from the web version). The
+   * screen uses it to hold the character's chat lines until the strokes it
+   * drew BEFORE saying them have actually appeared on screen: main pushes
+   * chat the moment the model emits it, but stroke reveal runs at hand speed,
+   * so "you've got all the parts there" used to land while the canvas was two
+   * strokes in.
+   */
+  controlRef?: React.MutableRefObject<DrawCanvasControl | null>;
 }
 
 interface Playing {
@@ -55,14 +76,25 @@ interface Playing {
   durationMs: number;
 }
 
+/** A held callback in the playback queue; costs no frames of its own. */
+interface Barrier {
+  barrier: () => void;
+}
+
+function isBarrier(q: DrawAiStroke | Barrier): q is Barrier {
+  return 'barrier' in q;
+}
+
 export function DrawCanvas({
   characterId,
   strokes,
   mode,
   tool,
   turnToken,
+  clearToken,
   onStroke,
   onErase,
+  controlRef,
 }: DrawCanvasProps): React.ReactElement {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -72,7 +104,7 @@ export function DrawCanvas({
   const drawing = useRef(false);
 
   // Character playback state.
-  const queue = useRef<DrawAiStroke[]>([]);
+  const queue = useRef<Array<DrawAiStroke | Barrier>>([]);
   const playing = useRef<Playing | null>(null);
   const revealed = useRef<DrawStroke[]>([]);
 
@@ -87,15 +119,38 @@ export function DrawCanvas({
   }, []);
 
   // Reset playback whenever the turn changes: strokes queued for a turn that
-  // has ended must never bleed into the next one.
+  // has ended must never bleed into the next one. Also on a mid-turn wipe,
+  // which is the same reset without the turn ending. Pending barriers FIRE
+  // rather than vanish, so a chat line held behind a stroke that will never
+  // play is released, not leaked.
   useEffect(() => {
+    const dropped = queue.current;
     queue.current = [];
     playing.current = null;
     revealed.current = [];
     live.current = null;
     drawing.current = false;
     dirty.current = true;
-  }, [turnToken]);
+    for (const q of dropped) if (isBarrier(q)) q.barrier();
+  }, [turnToken, clearToken]);
+
+  // The barrier seam handed to the screen. In a hidden window strokes commit
+  // instantly, so the barrier does too.
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = {
+      queueBarrier: (cb: () => void) => {
+        if (document.hidden || propsRef.current.mode !== 'ai-draw') {
+          cb();
+          return;
+        }
+        queue.current.push({ barrier: cb });
+      },
+    };
+    return () => {
+      controlRef.current = null;
+    };
+  }, [controlRef]);
 
   useEffect(() => {
     dirty.current = true;
@@ -137,8 +192,19 @@ export function DrawCanvas({
   useEffect(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
-    if (!wrap || !canvas) return;
+    const host = wrap?.parentElement;
+    if (!wrap || !canvas || !host) return;
     const resize = (): void => {
+      // Fit 10:7 inside whatever the box leaves, in px, rather than leaning on
+      // `aspect-ratio` + `max-width`: that pair clamps the width and keeps the
+      // definite height, so on a box wider than 10:7 the paper came out
+      // stretched, and a stretched paper means the pointer and the painted
+      // stroke no longer agree (paintStrokes scales by width alone).
+      const avail = host.getBoundingClientRect();
+      const cssW = Math.max(1, Math.min(avail.width, (avail.height * CANVAS_W) / CANVAS_H));
+      wrap.style.width = `${cssW}px`;
+      wrap.style.height = `${(cssW * CANVAS_H) / CANVAS_W}px`;
+
       const rect = wrap.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       const w = Math.max(1, Math.round(rect.width * dpr));
@@ -148,10 +214,22 @@ export function DrawCanvas({
         canvas.height = h;
         dirty.current = true;
       }
+      // Tell the chrome how thick the pen currently looks, so every squiggle
+      // on the page is drawn at the width of the strokes on this canvas.
+      //
+      // Published on the SURFACE ROOT rather than on our own parent (260728):
+      // scoping it to the canvas frame meant the frame matched the pen while
+      // the rules, the chat box and the buttons stayed on the static fallback,
+      // which is the drift the single-pen rule exists to prevent.
+      wrap
+        .closest<HTMLElement>(`.${styles.root}`)
+        ?.style.setProperty('--hand-stroke', `${pencilCssWidth(rect.width).toFixed(2)}px`);
     };
     resize();
+    // The HOST is observed, not the wrap: the wrap's size is now an output of
+    // this function, so watching it would be watching our own writes.
     const ro = new ResizeObserver(resize);
-    ro.observe(wrap);
+    ro.observe(host);
     return () => ro.disconnect();
   }, []);
 
@@ -165,8 +243,14 @@ export function DrawCanvas({
 
         // Advance playback.
         if (propsRef.current.mode === 'ai-draw') {
-          if (!playing.current && queue.current.length > 0) {
-            const next = queue.current.shift() as DrawAiStroke;
+          while (!playing.current && queue.current.length > 0) {
+            const next = queue.current.shift() as DrawAiStroke | Barrier;
+            // A barrier is a held chat line waiting for every stroke queued
+            // before it to finish playing. It costs no frames of its own.
+            if (isBarrier(next)) {
+              next.barrier();
+              continue;
+            }
             playing.current = {
               stroke: next.stroke,
               startAt: now + next.delayBeforeMs,
@@ -281,8 +365,13 @@ export function DrawCanvas({
       ref={wrapRef}
       className={styles.canvasWrap}
       data-tool={interactive ? tool : 'none'}
-      style={{ aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
     >
+      {/* No frame in here (260728). The drawn box is .canvasBox one level up,
+          because it holds the tools as well as the paper; a second outline this
+          close inside it would read as two boxes. The canvas paints an opaque
+          white background over its whole box, so anything that must stay
+          visible above it needs .frameHost's z-index, which .canvasBox's frame
+          has. */}
       <canvas
         ref={canvasRef}
         className={styles.canvas}

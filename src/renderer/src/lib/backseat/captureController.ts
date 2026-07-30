@@ -26,6 +26,8 @@ import {
   CAPTURE_H,
   CAPTURE_W,
   GATE_INTERVAL_MS,
+  JOLT_COLOR_DELTA,
+  JOLT_GAIN_DB,
   STT_SAMPLE_RATE,
   type BackseatTickKind,
 } from '../../../../shared/backseatIpc';
@@ -483,15 +485,31 @@ export async function startCapture(
         capturedAt: grid.capturedAt,
         ...extra,
       });
-    } catch {
+    } catch (err) {
       /* a dropped tick is a missed comment, never a broken session */
+      console.warn(`[backseat] tick send failed: ${(err as Error)?.message}`);
     }
   };
 
   worker.onmessage = (e: MessageEvent): void => {
     const msg = e.data as
       | { type: 'grid'; requestId: string; grid: { dataUrl: string; capturedAt: number } | null }
-      | { type: 'jolt'; reason: 'gain' | 'color'; at: number };
+      | {
+          type: 'jolt';
+          reason: 'gain' | 'color';
+          at: number;
+          gainDb: number;
+          baseDb: number;
+          colorDelta: number | null;
+        }
+      | {
+          type: 'stats';
+          fps: number | null;
+          gainDb: number;
+          baseDb: number;
+          colorDelta: number | null;
+          buckets: number;
+        };
     if (msg.type === 'grid') {
       const resolve = pendingGrids.get(msg.requestId);
       if (resolve) {
@@ -500,11 +518,29 @@ export async function startCapture(
       }
       return;
     }
+    if (msg.type === 'stats') {
+      // Every 10 s, so "are the signals alive" is answerable from the console
+      // (forwarded to the terminal in dev by backseatOverlay.ts). gain vs base
+      // is what the gain jolt arms on; colorDelta is what the colour arm sees.
+      console.log(
+        `[backseat] signals: ${msg.fps ?? '?'}fps, ${msg.buckets} buckets, ` +
+          `gain ${msg.gainDb}dB vs base ${msg.baseDb}dB (jolt at +${JOLT_GAIN_DB}), ` +
+          `colorDelta ${msg.colorDelta ?? 'n/a'} (jolt at ${JOLT_COLOR_DELTA})`,
+      );
+      return;
+    }
     if (msg.type === 'jolt') {
+      console.log(
+        `[backseat] JOLT ${msg.reason}: gain ${msg.gainDb}dB vs base ${msg.baseDb}dB, ` +
+          `colorDelta ${msg.colorDelta ?? 'n/a'}`,
+      );
       if (paused || stopped) return;
       void (async () => {
         const grid = await composite();
-        if (!grid) return;
+        if (!grid) {
+          console.warn('[backseat] jolt tick dropped: no grid from worker');
+          return;
+        }
         // On a gain jolt the transcript is literally what the loud thing said.
         const transcript = await tickTranscript();
         await sendTick('jolt', grid, { joltReason: msg.reason, transcript });
@@ -525,7 +561,12 @@ export async function startCapture(
     void (async () => {
       try {
         const grid = await composite();
-        if (!grid || paused || stopped) return;
+        if (!grid) {
+          // Capture is not producing frames; the gate never even gets asked.
+          console.warn('[backseat] gate poll skipped: no grid from worker (ring empty?)');
+          return;
+        }
+        if (paused || stopped) return;
         // The grid and the transcript describe the same window: composite
         // first, then the bounded STT flush (the spec's "wait a few
         // milliseconds longer for the stt to catch up"). Both the small VLM

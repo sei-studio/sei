@@ -81,6 +81,80 @@ export function matchesWord(message: string, word: string): boolean {
   return false;
 }
 
+/** A token plus the raw-text range [start, end) it was read from. */
+interface TokenSpan {
+  tok: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * tokenize(), but keeping the raw-text range each token came from, so a match
+ * found in normalized space can be pointed back at the original sentence.
+ * Normalization is applied per character; each raw character contributes its
+ * normalized alphanumerics to the current token, so diacritics and punctuation
+ * never shift the recorded indices.
+ */
+function tokenizeWithSpans(s: string): TokenSpan[] {
+  const spans: TokenSpan[] = [];
+  let tok = '';
+  let start = -1;
+  for (let i = 0; i < s.length; i++) {
+    const kept = s[i]
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+    if (kept) {
+      if (start < 0) start = i;
+      tok += kept;
+    } else if (start >= 0) {
+      spans.push({ tok, start, end: i });
+      tok = '';
+      start = -1;
+    }
+  }
+  if (start >= 0) spans.push({ tok, start, end: s.length });
+  return spans;
+}
+
+/**
+ * Where `word` sits inside `message`, as a raw-index range [start, end), or
+ * null when it is not there. The same matching walk as matchesWord over
+ * position-carrying tokens, so on any line matchesWord accepts this finds the
+ * span it accepted it for. Exists so the renderer can highlight the winning
+ * word rather than the whole winning sentence (260728).
+ */
+export function findWordMatch(
+  message: string,
+  word: string,
+): { start: number; end: number } | null {
+  const target = tokenize(word);
+  if (target.length === 0) return null;
+  const spans = tokenizeWithSpans(message);
+
+  for (let i = 0; i + target.length <= spans.length; i++) {
+    let hit = true;
+    for (let j = 0; j < target.length; j++) {
+      if (!tokensEqual(spans[i + j].tok, target[j])) {
+        hit = false;
+        break;
+      }
+    }
+    if (hit) return { start: spans[i].start, end: spans[i + target.length - 1].end };
+  }
+
+  // "hotdog" for "hot dog". Multi-token answers only, mirroring matchesWord.
+  if (target.length >= 2) {
+    const joined = target.join('');
+    for (const sp of spans) {
+      if (tokensEqual(sp.tok, joined)) return { start: sp.start, end: sp.end };
+    }
+  }
+
+  return null;
+}
+
 /**
  * Redact the answer from a line the DRAWER is about to say, so a slip never
  * hands the round away. Returns null when the line is nothing but the answer
@@ -104,4 +178,16 @@ export function redactWord(text: string, word: string): string | null {
   // Nothing left but the redaction marker and punctuation: drop the line.
   if (out.replace(/\[\.\.\.\]/g, '').replace(/[^a-z0-9]/gi, '').length === 0) return null;
   return out;
+}
+
+/**
+ * True when a line spoken by the DRAWER contains their own word (260728).
+ *
+ * Same tolerant pattern as redactWord, asked as a question instead of an edit,
+ * because the line is now dropped whole rather than patched: a "[...]" in the
+ * middle of a sentence still told the guesser exactly where the answer went,
+ * and it read as a bug rather than as the game protecting itself.
+ */
+export function saysWord(text: string, word: string): boolean {
+  return redactWord(text, word) !== text.trim();
 }

@@ -251,11 +251,13 @@ export interface BackseatTick {
   transcript?: string;
 }
 
-/** A line the companion said, pushed to the overlay's mini chat. */
+/** A line in the overlay's mini chat: the companion's, or the player's own. */
 export interface BackseatLine {
   id: string;
   text: string;
   at: number;
+  /** Set when this is the player's own typed line. Absent = the companion. */
+  who?: 'player';
   /** Set when the line accompanied a saved clip. */
   clipPath?: string;
 }
@@ -268,7 +270,7 @@ export interface BackseatState {
   sourceName: string;
   /** Companion display name, for the mini chat. */
   aiName: string;
-  /** Rolling tail of what the companion has said this session (mini chat). */
+  /** Rolling tail of the session's mini chat (companion + player lines). */
   lines: BackseatLine[];
   /** Session start, for the duration the analytics event reports. */
   startedAt: number;

@@ -28,8 +28,14 @@ import { GRID_COLS, GRID_FRAMES, GRID_ROWS, GRID_SPAN_MS } from '../../shared/ba
  *  2. set the register. Short, in character, and — the actual point of the
  *     name — leaning forward: a backseat driver has opinions about what you
  *     should do next and says what they want to see.
- *  3. sanction silence. Most six-second windows do not deserve a line, and a
- *     companion that comments on every one is unbearable within a minute.
+ *  3. calibrate silence. The model only sees PRE-FILTERED moments (the gate or
+ *     a jolt already judged them eventful, or the player spoke), so the default
+ *     is to speak; (silence) exists for filter misses and repeats. 260728: the
+ *     first wording sanctioned silence as "the normal outcome" ON TOP of the
+ *     gate's filtering, and Haiku took it — five gate ticks in a live session,
+ *     five silent turns, a companion that only ever answered direct messages.
+ *     Rate control belongs to the gate + MIN_SPEAK_GAP_MS, not to a second
+ *     model-side mood filter.
  */
 export const BACKSEAT_CONTRACT = [
   'You are watching the player play, live, over a screen share. You can see the game, and you can ' +
@@ -59,11 +65,12 @@ export const BACKSEAT_CONTRACT = [
     'They are showing you something they enjoy, so be a good audience: be curious about it, ' +
     'ask about the parts you do not understand, and want things.',
 
-  'WHEN TO SAY NOTHING. You are shown the screen far more often than you should speak. ' +
-    'If nothing has really changed, or you would only be repeating a reaction you already gave, ' +
-    'reply with exactly (silence) and nothing else. It is never shown to the player, it just ends ' +
-    'your turn. Silence is the normal outcome and costs you nothing. ' +
-    'The one exception is when the player says something to you: then you always answer.',
+  'WHEN TO SAY NOTHING. You are only shown the screen when something probably DID just happen, ' +
+    'so most looks deserve a line: if you can tell what changed, react to it. ' +
+    'But the filter is imperfect. If you genuinely cannot tell what happened, or you would only be ' +
+    'repeating a reaction you already gave, reply with exactly (silence) and nothing else. It is ' +
+    'never shown to the player, it just ends your turn. ' +
+    'And when the player says something to you, you always answer.',
 
   'REPEATING YOURSELF. Your recent lines are in the conversation above. Check them before you speak. ' +
     'Commenting twice on the same moment is worse than staying quiet.',
@@ -134,8 +141,9 @@ export function tickNote(args: {
     );
   }
   return (
-    `[System note, not the player speaking: here is the last few seconds of their play.${heard} ` +
-    'Say something only if it is worth saying, otherwise reply with exactly (silence). ' +
-    `${gap} Do not mention this note.]`
+    `[System note, not the player speaking: here is the last few seconds of their play, and ` +
+    `something in it looked eventful.${heard} Work out what happened and react to it in character. ` +
+    'Reply with exactly (silence) only if you cannot tell what changed, or you would just be ' +
+    `repeating your last line. ${gap} Do not mention this note.]`
   );
 }

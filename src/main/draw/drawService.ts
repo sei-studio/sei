@@ -58,7 +58,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, LogBatch } from '../../shared/ipc';
+import type { ChatMessage, ChatSendResult, LogBatch } from '../../shared/ipc';
+import { isCallActive } from '../voice/callState';
 import {
   CANVAS_H,
   CANVAS_W,
@@ -66,6 +67,7 @@ import {
   MAX_ROUNDS,
   MIN_ROUNDS,
   TURN_MS,
+  WORD_CHOICES,
   type DrawAiStroke,
   type DrawChatMessage,
   type DrawGalleryEntry,
@@ -81,16 +83,19 @@ import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildSystemBlocks, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { splitReply } from '../chat/chatService';
+import { plainLine } from '../chat/plainLine';
 import * as chatStore from '../chat/chatStore';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { clampChatLanguage } from '../../shared/chatLanguage';
 import { pickWords } from './wordBank';
-import { matchesWord, redactWord } from './guessMatch';
+import { findWordMatch, matchesWord, saysWord } from './guessMatch';
 import { guessGate } from './guessSchedule';
 import { humanizeStroke } from './strokeHumanize';
 import {
+  CLEAR_TOOL,
   MAX_AI_STROKES,
   MAX_DRAW_HOPS,
   PEN_TOOL,
@@ -98,7 +103,10 @@ import {
   buildGuessTurnBlock,
   buildTurnEndBlock,
   drawContractBlock,
+  selfLookNote,
+  turnClockLine,
   turnEndLine,
+  type DrawRestart,
 } from './drawPrompts';
 
 // ── deps + module state ──────────────────────────────────────────────────────
@@ -130,6 +138,14 @@ function requireDeps(): DrawDeps {
 const POLL_MS = 500;
 /** How long the renderer gets to answer a snapshot request. */
 const SNAPSHOT_TIMEOUT_MS = 2_000;
+/**
+ * How long the character may go without saying anything before an UNCHANGED
+ * canvas is allowed through anyway. 10s (260729, from the web version; was
+ * 30s): equal to the time trigger, so a player who stops drawing still hears a
+ * guess roughly every 10 seconds instead of the character going quiet for half
+ * a minute.
+ */
+const UNCHANGED_NUDGE_MS = 10_000;
 /** Pause on the reveal between turns. */
 const TURN_GAP_MS = 4_000;
 /**
@@ -160,7 +176,47 @@ const GAME_END_MIN_PAUSE_MS = 3_400;
  * after the first of that turn still hits the cache.
  */
 const GUESS_TOOLS = [REMEMBER_TOOL] as Anthropic.Messages.Tool[];
-const DRAW_TOOLS = [PEN_TOOL, REMEMBER_TOOL] as Anthropic.Messages.Tool[];
+const DRAW_TOOLS = [PEN_TOOL, CLEAR_TOOL, REMEMBER_TOOL] as Anthropic.Messages.Tool[];
+
+/**
+ * How often the character may look at its OWN canvas mid-turn (260728).
+ *
+ * The look costs an image on top of the thread, so it is rationed the same way
+ * the guessing scheduler rations its looks: it happens only when the player has
+ * just said something (which is when "are they getting it?" is a live
+ * question), and never twice inside this window.
+ */
+const SELF_LOOK_COOLDOWN_MS = 12_000;
+/**
+ * Quiet time before the parked drawing runner is re-woken with its own canvas
+ * attached (the idle backup, 260729 from the web version). A parked runner
+ * otherwise wakes only on player chat, so a silent player meant the character
+ * sat on a three-stroke picture for the rest of the turn. Not armed inside the
+ * floor: a nudge that lands at the buzzer produces a stroke nobody sees.
+ * (The web runs 15s/10s of a 60s turn; these are its values for our 180s one.)
+ */
+const DRAW_IDLE_NUDGE_MS = 30_000;
+const DRAW_IDLE_FLOOR_MS = 20_000;
+/**
+ * Engine-forced restart (260729, from the web version). When the player has
+ * fired this many wrong lines at one picture, the picture has failed, and
+ * waiting for the model to decide to `clear` was measured optimistic: live,
+ * the character defended a tractor nobody could read for a whole turn. The
+ * game wipes the canvas itself and the next drawing call opens fresh with
+ * "the game wiped it for you, draw it differently". Guarded so it never fires
+ * on an almost-there picture with no time to rebuild: once per turn, only
+ * while a real picture exists, and only with enough clock left for the redraw
+ * to be guessable.
+ */
+const AUTO_CLEAR_WRONG_GUESSES = 6;
+const AUTO_CLEAR_MIN_LEFT_MS = 45_000;
+const AUTO_CLEAR_MIN_STROKES = 4;
+/**
+ * Wipes allowed per drawing turn. Two is enough to abandon a bad idea and
+ * commit to a better one; unbounded is a way to spend a whole turn on a blank
+ * page.
+ */
+const MAX_CLEARS = 2;
 
 interface GuessSched {
   strokesSinceDispatch: number;
@@ -169,6 +225,10 @@ interface GuessSched {
   inFlight: boolean;
   lastSnapshotHash: string;
   lastGuessText: string;
+  /** Player lines said during THEIR drawing turn that still want an answer. */
+  pendingPlayerChat: string[];
+  /** When the character last posted a line this turn. 0 = not yet. */
+  lastSpokeAt: number;
   ctrl: AbortController | null;
 }
 
@@ -198,6 +258,86 @@ interface DrawRun {
   toolNotes: Map<string, string>;
   /** The model returned no tool call: the picture is finished. */
   done: boolean;
+  /** When the character last looked at its own canvas. 0 = not yet. */
+  lastLookAt: number;
+  /** Wipes spent this turn (see MAX_CLEARS). */
+  clears: number;
+  /**
+   * Blank-canvas correction (260728/260729). Two ways to be staring at an
+   * empty page: the model cleared it and walked away, or it opened the turn
+   * with table talk and zero pen calls (found live on the web). A no-stroke
+   * hop on a blank canvas gets a corrective user note and another hop instead
+   * of parking as done. Bounded, and reset per clear.
+   */
+  blankNudges: number;
+  nudgeBlank: boolean;
+  /**
+   * The model's own `intent` strings for the strokes of the CURRENT attempt
+   * (260729). Captured at wipe time so the restart block can say what the
+   * failed picture was, stroke by stroke — "draw it differently" needs
+   * something concrete to differ from.
+   */
+  strokeIntents: string[];
+  /**
+   * Set when a wipe happened and the redraw belongs to a FRESH thread: the
+   * next drawing call opens with a new turn block carrying this instead of
+   * continuing the old conversation (260729). Relying on the model to clear
+   * and redraw inside one turn kept failing live; a reset thread whose opening
+   * line is "the page is blank, start again" does not.
+   */
+  restart: DrawRestart | null;
+  /** Player lines during this attempt that were not the word. Reset per wipe. */
+  wrongGuesses: number;
+  /** The engine wipes a failed picture at most once per turn. */
+  autoCleared: boolean;
+  /** End of the last hop (or turn start). Feeds the idle backup tick. */
+  lastActivityAt: number;
+  /**
+   * Idle backup (260729): a parked drawing runner used to wake ONLY on player
+   * chat, so a silent player meant the character sat on a three-stroke picture
+   * for the rest of the turn. After DRAW_IDLE_NUDGE_MS of quiet the tick
+   * re-wakes it with fresh eyes on its own canvas and "the player has not
+   * guessed it yet".
+   */
+  idleNudge: boolean;
+}
+
+function freshGuess(): GuessSched {
+  return {
+    strokesSinceDispatch: 0,
+    // Seed the dispatch clock at turn start so the first look is a full
+    // TIME_TRIGGER_MS in, not immediately at a blank canvas.
+    lastDispatchAt: Date.now(),
+    lastCompletedAt: 0,
+    inFlight: false,
+    lastSnapshotHash: '',
+    lastGuessText: '',
+    pendingPlayerChat: [],
+    lastSpokeAt: 0,
+    ctrl: null,
+  };
+}
+
+function freshDraw(): DrawRun {
+  return {
+    ctrl: null,
+    running: false,
+    strokesUsed: 0,
+    pendingPlayerChat: [],
+    thread: [],
+    toolNotes: new Map(),
+    done: false,
+    lastLookAt: 0,
+    clears: 0,
+    blankNudges: 0,
+    nudgeBlank: false,
+    strokeIntents: [],
+    restart: null,
+    wrongGuesses: 0,
+    autoCleared: false,
+    lastActivityAt: Date.now(),
+    idleNudge: false,
+  };
 }
 
 interface Session {
@@ -207,14 +347,22 @@ interface Session {
   rounds: number;
   round: number;
   drawer: DrawRole | null;
-  /** Two words per round: [playerTurn, aiTurn]. */
-  words: string[];
+  /**
+   * Undealt words for the rest of the game, all distinct. Dealt one at a time
+   * to the character and WORD_CHOICES at a time to the player, so the pool is
+   * stocked for the worst case: every round spends 1 + WORD_CHOICES of it.
+   */
+  pool: string[];
+  /** The words on offer during a 'pick' phase; empty otherwise. */
+  wordChoices: string[];
   word: string;
   turnEndsAt: number;
   /** Bumped every turn; guards every async continuation. */
   turnKey: string;
   turnStartedAt: number;
   strokes: DrawStroke[];
+  /** Bumped by the character's `clear` tool; see DrawGameState.clearSeq. */
+  clearSeq: number;
   chat: DrawChatMessage[];
   scores: { player: number; ai: number };
   gallery: DrawGalleryEntry[];
@@ -273,8 +421,10 @@ function toState(s: Session): DrawGameState {
     drawer: s.drawer,
     turnKey: s.turnKey,
     word: visibleWord(s),
+    wordChoices: s.phase === 'pick' ? s.wordChoices : [],
     turnEndsAt: s.phase === 'drawing' ? s.turnEndsAt : null,
     strokes: s.strokes,
+    clearSeq: s.clearSeq,
     chat: s.chat,
     scores: s.scores,
     gallery: s.gallery,
@@ -290,31 +440,100 @@ function push(s: Session): void {
 function say(s: Session, from: DrawRole, text: string, extra?: Partial<DrawChatMessage>): DrawChatMessage {
   const m: DrawChatMessage = { id: randomUUID(), from, text, at: Date.now(), ...extra };
   s.chat.push(m);
+  if (from === 'ai') speakOnCall(s, text);
   return m;
 }
 
-function systemLine(s: Session, text: string): void {
-  s.chat.push({ id: randomUUID(), from: 'player', text, at: Date.now(), system: true });
+/**
+ * Voice call during Draw! (260729): while a live call is running, every line
+ * the character says in the game is ALSO spoken through the call. The line is
+ * pushed as a voice-stamped chat message — the renderer speaks any
+ * `voice: true` push and never renders it as a bubble — but deliberately NOT
+ * persisted: the per-line game chat stays out of the transcript (the Draw!
+ * continuity contract), and voice rows are invisible in the UI anyway.
+ */
+function speakOnCall(s: Session, text: string): void {
+  if (!isCallActive(s.characterId)) return;
+  try {
+    requireDeps().pushChatMessage(s.characterId, {
+      id: randomUUID(),
+      role: 'companion',
+      text,
+      ts: Date.now(),
+      voice: true,
+    } as ChatMessage);
+  } catch {
+    /* renderer gone */
+  }
+}
+
+/**
+ * Where the winning word sits in the winning line, so the renderer highlights
+ * the word rather than the whole sentence. Spread into the `correct` extra;
+ * empty when the span cannot be located (renderer falls back to the line).
+ */
+function winningRange(line: string, word: string): Partial<DrawChatMessage> {
+  const range = findWordMatch(line, word);
+  return range ? { correctRange: range } : {};
+}
+
+/**
+ * A game line in the chat log. `modelText` is what the CHARACTER reads in its
+ * place, and every caller that writes in the second person or names a live
+ * secret MUST supply one: the chat log is replayed verbatim into the prompt,
+ * so "Your turn to draw: horn" both leaked the answer to the guesser and was
+ * read by the character as its own instruction (260728).
+ */
+function systemLine(s: Session, text: string, modelText?: string): void {
+  s.chat.push({
+    id: randomUUID(),
+    from: 'player',
+    text,
+    at: Date.now(),
+    system: true,
+    ...(modelText ? { modelText } : {}),
+  });
+}
+
+/**
+ * The drawer typed their own word. The line never reaches the log; this goes in
+ * its place, and the character additionally reads a plain instruction telling
+ * it which side of the round it is on.
+ */
+function wordSlipLine(s: Session, who: DrawRole): void {
+  systemLine(
+    s,
+    who === 'ai'
+      ? `${s.aiName} can't type this word! They're drawing it, not guessing it.`
+      : "You can't type this word! You're drawing it, not guessing it.",
+    who === 'ai'
+      ? 'You cannot type this word! You are drawing it, not guessing it. Do not respond to this message.'
+      : `${s.playerName} typed the word they are drawing, so the game hid the line. You did not see it.`,
+  );
 }
 
 // ── lifecycle ────────────────────────────────────────────────────────────────
 
-async function newSession(characterId: string): Promise<Session> {
+async function newSession(characterId: string, rounds = 3): Promise<Session> {
   const character = await getCharacter(characterId);
   const config = await loadConfig();
   return {
     gameId: randomUUID(),
     characterId,
     phase: 'setup',
-    rounds: 3,
+    // Carried across "play again" so the setup screen opens on the length the
+    // player last chose rather than resetting to the default every time.
+    rounds,
     round: 0,
     drawer: null,
-    words: [],
+    pool: [],
+    wordChoices: [],
     word: '',
     turnEndsAt: 0,
     turnKey: randomUUID(),
     turnStartedAt: 0,
     strokes: [],
+    clearSeq: 0,
     chat: [],
     scores: { player: 0, ai: 0 },
     gallery: [],
@@ -322,24 +541,8 @@ async function newSession(characterId: string): Promise<Session> {
     poll: null,
     turnTimer: null,
     gapTimer: null,
-    guess: {
-      strokesSinceDispatch: 0,
-      lastDispatchAt: 0,
-      lastCompletedAt: 0,
-      inFlight: false,
-      lastSnapshotHash: '',
-      lastGuessText: '',
-      ctrl: null,
-    },
-    draw: {
-      ctrl: null,
-      running: false,
-      strokesUsed: 0,
-      pendingPlayerChat: [],
-      thread: [],
-      toolNotes: new Map(),
-      done: false,
-    },
+    guess: freshGuess(),
+    draw: freshDraw(),
     endCtrl: null,
     startedAt: Date.now(),
     finished: false,
@@ -380,11 +583,13 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
     prev.turnKey = randomUUID();
     if (prev.round > 0) await finishGame(prev, prev.phase === 'gallery' ? 'completed' : 'abandoned');
   }
-  const s = await newSession(characterId);
+  const clamped = Math.max(MIN_ROUNDS, Math.min(MAX_ROUNDS, Math.round(rounds) || 1));
+  const s = await newSession(characterId, clamped);
   sessions.set(characterId, s);
 
-  s.rounds = Math.max(MIN_ROUNDS, Math.min(MAX_ROUNDS, Math.round(rounds) || 1));
-  s.words = pickWords(s.rounds * 2);
+  // One word for each of the character's turns, WORD_CHOICES for each of the
+  // player's. All distinct, so nothing offered can duplicate anything drawn.
+  s.pool = pickWords(s.rounds * (1 + WORD_CHOICES));
   s.round = 1;
   s.startedAt = Date.now();
   log(s, `game start rounds=${s.rounds}`);
@@ -397,6 +602,50 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
   })();
 
   beginTurn(s, 'player');
+  return toState(s);
+}
+
+/**
+ * Back to the setup screen after a game (the gallery's "play again").
+ *
+ * Deliberately NOT a straight restart: the round count is the one thing a
+ * player is most likely to want to change once they have seen how long a game
+ * actually takes, so this returns them to the screen where they choose it, with
+ * their previous choice already selected.
+ */
+export async function newDrawGame(characterId: string): Promise<DrawGameState> {
+  if (requireDeps().isSummoned(characterId)) {
+    const err = new Error('Minecraft session active') as Error & { code?: string };
+    err.code = DRAW_ERR_MC_ACTIVE;
+    throw err;
+  }
+  const prev = sessions.get(characterId);
+  if (prev) {
+    teardownTimers(prev);
+    prev.turnKey = randomUUID();
+    if (prev.round > 0) await finishGame(prev, prev.phase === 'gallery' ? 'completed' : 'abandoned');
+  }
+  const s = await newSession(characterId, prev?.rounds ?? 3);
+  sessions.set(characterId, s);
+  push(s);
+  return toState(s);
+}
+
+/**
+ * The player chose one of the offered words; the turn starts now. Ignored
+ * unless that word is actually on offer, so a stale click from a previous
+ * round cannot deal a word the player never saw.
+ */
+export function pickDrawWord(characterId: string, word: string): DrawGameState | null {
+  const s = sessions.get(characterId);
+  if (!s) return null;
+  if (s.phase !== 'pick' || s.drawer !== 'player') return toState(s);
+  const chosen = s.wordChoices.find((w) => w === word);
+  if (!chosen) return toState(s);
+  s.word = chosen;
+  s.wordChoices = [];
+  log(s, `word picked round=${s.round} word="${chosen}"`);
+  startDrawingPhase(s);
   return toState(s);
 }
 
@@ -509,27 +758,12 @@ async function finishGame(s: Session, reason: 'completed' | 'abandoned'): Promis
 
   // The in-game chat is deliberately NOT persisted: a guessing turn is a wall
   // of "cat? dog? is that a house?" that would bury real conversation in the
-  // transcript and in every future prompt. What DOES belong is the shape of
-  // the session, and the words are the part of it worth carrying, because they
-  // are what the two of them actually talked about for six minutes.
-  const drawn = (who: DrawRole): string =>
-    s.gallery
-      .filter((g) => g.drawer === who)
-      .map((g) => g.word)
-      .join(', ');
-  const parts = [
-    `You and ${s.aiName} played Draw!.`,
-    `${s.scores.player}-${s.scores.ai} over ${turnsPlayed} turn${turnsPlayed === 1 ? '' : 's'}.`,
-  ];
-  const mine = drawn('player');
-  const theirs = drawn('ai');
-  if (mine) parts.push(`You drew: ${mine}.`);
-  if (theirs) parts.push(`${s.aiName} drew: ${theirs}.`);
-
+  // transcript and in every future prompt. Nor are the words or the score: one
+  // shape for every game surface, see src/main/chat/playSummary.ts.
   const ev: ChatMessage = {
     id: randomUUID(),
     role: 'system',
-    text: parts.join(' '),
+    text: playSummaryText(s.aiName, 'Draw!', durationMs),
     ts: Date.now(),
     event: { kind: 'play', game: 'Draw!', durationMs },
   } as ChatMessage;
@@ -552,41 +786,51 @@ async function finishGame(s: Session, reason: 'completed' | 'abandoned'): Promis
 function beginTurn(s: Session, drawer: DrawRole): void {
   teardownTimers(s);
   s.turnKey = randomUUID();
-  s.phase = 'drawing';
   s.drawer = drawer;
   s.guessed = false;
   s.strokes = [];
+  s.word = '';
+  s.wordChoices = [];
+
+  s.guess = freshGuess();
+  s.draw = freshDraw();
+
+  // The character is dealt its word; the player chooses theirs first, and the
+  // clock does not start until they have (startDrawingPhase, via pickDrawWord).
+  if (drawer === 'ai') {
+    s.word = s.pool.shift() ?? '';
+    startDrawingPhase(s);
+    return;
+  }
+
+  s.phase = 'pick';
+  s.wordChoices = s.pool.splice(0, WORD_CHOICES);
+  log(s, `pick round=${s.round} choices=${s.wordChoices.join('/')}`);
+  push(s);
+}
+
+/**
+ * Arm the live turn: clock, reveal line, and whichever of the two runners the
+ * drawer implies. Split out of beginTurn so the player's pick screen can sit in
+ * front of it without any of the turn's timers running.
+ */
+function startDrawingPhase(s: Session): void {
+  const drawer = s.drawer ?? 'player';
+  s.phase = 'drawing';
   s.turnStartedAt = Date.now();
   s.turnEndsAt = s.turnStartedAt + TURN_MS;
-  // words[] is laid out two per round: the player's turn then the character's.
-  s.word = s.words[(s.round - 1) * 2 + (drawer === 'player' ? 0 : 1)] ?? '';
 
-  s.guess = {
-    strokesSinceDispatch: 0,
-    // Seed the dispatch clock at turn start so the first look is a full
-    // TIME_TRIGGER_MS in, not immediately at a blank canvas.
-    lastDispatchAt: Date.now(),
-    lastCompletedAt: 0,
-    inFlight: false,
-    lastSnapshotHash: '',
-    lastGuessText: '',
-    ctrl: null,
-  };
-  s.draw = {
-    ctrl: null,
-    running: false,
-    strokesUsed: 0,
-    pendingPlayerChat: [],
-    thread: [],
-    toolNotes: new Map(),
-    done: false,
-  };
-
+  // The player-facing wording and the character-facing wording differ on
+  // purpose: the second person means opposite things to the two readers, and
+  // the word itself must never appear in what the guesser is shown.
   systemLine(
     s,
     drawer === 'player'
-      ? `Round ${s.round} of ${s.rounds}. Your turn to draw: ${s.word}.`
+      ? `Round ${s.round} of ${s.rounds}. Your turn to draw.`
       : `Round ${s.round} of ${s.rounds}. ${s.aiName} is drawing.`,
+    drawer === 'player'
+      ? `Round ${s.round} of ${s.rounds}. ${s.playerName} draws, you guess.`
+      : `Round ${s.round} of ${s.rounds}. You draw, ${s.playerName} guesses.`,
   );
 
   const key = s.turnKey;
@@ -600,6 +844,8 @@ function beginTurn(s: Session, drawer: DrawRole): void {
   if (drawer === 'player') {
     s.poll = setInterval(() => void tickGuessScheduler(s), POLL_MS);
   } else {
+    // The poll slot is free on this turn kind, so it hosts the idle backup.
+    s.poll = setInterval(() => tickDrawIdle(s), POLL_MS);
     void runDrawTurn(s);
   }
 }
@@ -631,8 +877,14 @@ function endTurn(s: Session, guessed: boolean): void {
     ? ([...s.chat].reverse().find((m) => m.correct)?.text ?? null)
     : null;
 
-  const guesserName = drawer === 'player' ? s.aiName : s.playerName;
-  systemLine(s, turnEndLine({ guessed, word: s.word, guesserName }));
+  const reveal = turnEndLine({
+    guessed,
+    word: s.word,
+    guesser: drawer === 'player' ? 'ai' : 'player',
+    aiName: s.aiName,
+    playerName: s.playerName,
+  });
+  systemLine(s, reveal.text, reveal.modelText);
 
   s.phase = 'turn-end';
   log(s, `turn end round=${s.round} drawer=${drawer} guessed=${guessed} strokes=${s.strokes.length}`);
@@ -714,22 +966,62 @@ export async function playerChat(characterId: string, text: string): Promise<voi
   if (!s) return;
   const clean = text.trim();
   if (!clean) return;
-  // Nothing to say into before the game starts or after it is over.
-  if (s.phase === 'setup' || s.phase === 'gallery') return;
+  // Nothing to say into before the game starts, while choosing a word, or
+  // after it is over.
+  if (s.phase === 'setup' || s.phase === 'pick' || s.phase === 'gallery') return;
+
+  // The player is drawing and just typed their own word. Written out it hands
+  // the round away, so the line never enters the log at all: the character
+  // reads the chat verbatim and would simply take the answer from it.
+  if (s.phase === 'drawing' && s.drawer === 'player' && saysWord(clean, s.word)) {
+    wordSlipLine(s, 'player');
+    push(s);
+    return;
+  }
 
   const correct = s.phase === 'drawing' && s.drawer === 'ai' && matchesWord(clean, s.word);
-  say(s, 'player', clean, correct ? { correct: true } : undefined);
+  say(s, 'player', clean, correct ? { correct: true, ...winningRange(clean, s.word) } : undefined);
   push(s);
 
   if (correct) {
     endTurn(s, true);
     return;
   }
-  // Mid-drawing table talk: let the character answer it (hint requests included).
-  if (s.phase === 'drawing' && s.drawer === 'ai') {
+  if (s.phase !== 'drawing') return;
+  if (s.drawer === 'ai') {
+    // Mid-drawing table talk: let the character answer it (hints included).
+    // Every non-winning line also counts against the picture (see the
+    // engine-forced restart above): six wrong guesses at one attempt means
+    // the attempt has failed.
+    s.draw.wrongGuesses += 1;
     s.draw.pendingPlayerChat.push(clean);
     void runDrawTurn(s);
+    return;
   }
+  // The player is drawing and talking at the same time. Queue it for the guess
+  // scheduler, which picks it up on the next poll (within POLL_MS) and answers
+  // it whether or not the canvas has changed. Before 260728 this branch did not
+  // exist and the line simply sat in the log unanswered.
+  s.guess.pendingPlayerChat.push(clean);
+}
+
+/**
+ * `chat:send` routing while a Draw! game is live (260729), mirroring chess:
+ * a message typed in the chat screen — or DICTATED on a live voice call —
+ * lands in the game as a guess or table talk instead of reaching a chat brain
+ * that knows nothing about the round. Returns null when no game is taking
+ * chat, falling through to the normal path. `replies` is empty + `streamed`:
+ * the character's side arrives over the draw:state push (and, on a call, as
+ * spoken voice pushes), so the chat screen must not wait for a reply here.
+ */
+export async function handlePlayerChat(args: {
+  characterId: string;
+  text: string;
+}): Promise<ChatSendResult | null> {
+  const s = sessions.get(args.characterId);
+  if (!s || (s.phase !== 'drawing' && s.phase !== 'turn-end')) return null;
+  await playerChat(args.characterId, args.text);
+  return { replies: [], streamed: true };
 }
 
 /** The renderer's answer to a draw:snapshot-request. */
@@ -811,6 +1103,7 @@ async function tickGuessScheduler(s: Session): Promise<void> {
     strokesSinceDispatch: s.guess.strokesSinceDispatch,
     lastDispatchAt: s.guess.lastDispatchAt,
     lastCompletedAt: s.guess.lastCompletedAt,
+    pendingChat: s.guess.pendingPlayerChat.length > 0,
     now: Date.now(),
   });
   if (!gate.go) return;
@@ -820,10 +1113,14 @@ async function tickGuessScheduler(s: Session): Promise<void> {
 async function dispatchGuess(s: Session): Promise<void> {
   const key = s.turnKey;
   // Claim the single-flight slot BEFORE the first await, or two ticks can race
-  // through the guard and both dispatch.
+  // through the guard and both dispatch. Draining the chat queue here is part
+  // of the same claim: lines that arrive during the call stay queued for the
+  // next one instead of being answered twice.
   s.guess.inFlight = true;
   s.guess.strokesSinceDispatch = 0;
   s.guess.lastDispatchAt = Date.now();
+  const said = s.guess.pendingPlayerChat;
+  s.guess.pendingPlayerChat = [];
 
   try {
     const dataUrl = await requestSnapshot(s);
@@ -834,20 +1131,31 @@ async function dispatchGuess(s: Session): Promise<void> {
     if (!base64) return;
 
     // Unchanged canvas: the player has not drawn since the last look, so a
-    // second opinion on the same picture is a repeat guess and wasted credit.
-    const hash = createHash('sha1').update(base64).digest('hex');
-    if (hash === s.guess.lastSnapshotHash) return;
-    s.guess.lastSnapshotHash = hash;
+    // second opinion on the same picture is usually a repeat guess and wasted
+    // credit. Two exceptions, both cases where staying silent is worse:
+    //
+    //   - the player SAID something. They are owed an answer whether or not
+    //     they have touched the canvas since;
+    //   - the character has been quiet a long time. Skipping forever is how a
+    //     player who pauses to think ends up watching their companion freeze,
+    //     which is exactly what this guard used to do. After NUDGE_MS it gets
+    //     one more look, and the prompt tells it the picture has not changed so
+    //     it says something new rather than repeating its last guess.
+    const unchanged = createHash('sha1').update(base64).digest('hex') === s.guess.lastSnapshotHash;
+    const quietFor = Date.now() - (s.guess.lastSpokeAt || s.turnStartedAt);
+    if (unchanged && said.length === 0 && quietFor < UNCHANGED_NUDGE_MS) return;
+    s.guess.lastSnapshotHash = createHash('sha1').update(base64).digest('hex');
 
-    const lines = await runGuessCall(s, base64, key);
+    const lines = await runGuessCall(s, base64, key, { said, unchanged });
     if (s.turnKey !== key) return;
 
     for (const line of lines) {
       // A repeat of the immediately previous guess reads as a stutter.
       if (line.toLowerCase() === s.guess.lastGuessText.toLowerCase()) continue;
       s.guess.lastGuessText = line;
+      s.guess.lastSpokeAt = Date.now();
       const correct = matchesWord(line, s.word);
-      say(s, 'ai', line, correct ? { correct: true } : undefined);
+      say(s, 'ai', line, correct ? { correct: true, ...winningRange(line, s.word) } : undefined);
       push(s);
       if (correct) {
         endTurn(s, true);
@@ -856,13 +1164,20 @@ async function dispatchGuess(s: Session): Promise<void> {
     }
   } catch (err) {
     log(s, `guess failed: ${String(err)}`);
+    // A failed call must not swallow what the player said.
+    s.guess.pendingPlayerChat.unshift(...said);
   } finally {
     s.guess.inFlight = false;
     s.guess.lastCompletedAt = Date.now();
   }
 }
 
-async function runGuessCall(s: Session, imageBase64: string, key: string): Promise<string[]> {
+async function runGuessCall(
+  s: Session,
+  imageBase64: string,
+  key: string,
+  opts: { said: string[]; unchanged: boolean },
+): Promise<string[]> {
   const { system, sdk, punctuation } = await prepareCall(s);
   if (s.turnKey !== key) return [];
 
@@ -875,6 +1190,10 @@ async function runGuessCall(s: Session, imageBase64: string, key: string): Promi
     turnChat,
     priorChat: s.chat.slice(0, s.chat.length - turnChat.length),
     secondsLeft: Math.max(0, Math.round((s.turnEndsAt - Date.now()) / 1000)),
+    said: opts.said,
+    unchanged: opts.unchanged,
+    strokeCount: s.strokes.length,
+    gallery: s.gallery,
   });
 
   const ctrl = new AbortController();
@@ -911,7 +1230,11 @@ async function runGuessCall(s: Session, imageBase64: string, key: string): Promi
       .join(' ')
       .trim();
     // One look produces one or two short lines, never a wall.
-    return splitReply(text, punctuation).slice(0, 2);
+    return splitReply(text, punctuation)
+      .slice(0, 2)
+      .map(plainLine)
+      .filter(Boolean)
+      .filter((l) => !isFakeGameLine(l));
   } finally {
     clearTimeout(timeout);
     s.guess.ctrl = null;
@@ -952,6 +1275,8 @@ async function runTurnEndReaction(
       turnChat,
       priorChat: s.chat.slice(0, s.chat.length - turnChat.length),
       gameOver: ctx.gameOver,
+      // Includes the turn that just ended: endTurn pushes it before this runs.
+      gallery: s.gallery,
     });
 
     const ctrl = new AbortController();
@@ -978,8 +1303,9 @@ async function runTurnEndReaction(
         .trim();
       // The word is public by now (the reveal line already named it), so this
       // is deliberately NOT redacted.
-      for (const line of splitReply(text, punctuation).slice(0, 2)) {
-        if (isSilence(line)) continue;
+      for (const raw of splitReply(text, punctuation).slice(0, 2)) {
+        const line = plainLine(raw);
+        if (!line || isSilence(line) || isFakeGameLine(line)) continue;
         say(s, 'ai', line);
       }
       push(s);
@@ -1001,7 +1327,57 @@ function isSilence(line: string): boolean {
   return /^[([]?\s*(silence|says nothing|stays? silent|no reply)\s*[)\]]?[.!]?$/i.test(line.trim());
 }
 
+/**
+ * Fabricated game-state backstop (260729, live capture on the web). The prompt
+ * renders real system lines as "[game] Round 2 of 3. ..." and the model copied
+ * the format into chat, announcing a round change that had not happened. The
+ * prompt now forbids it (drawContractBlock) and this drops whatever slips
+ * through: the [game] prefix belongs to the engine alone.
+ */
+function isFakeGameLine(line: string): boolean {
+  return /^\s*\[\s*game\s*\]/i.test(line);
+}
+
+/**
+ * Wipe the character's canvas mid-turn. Shared by the model's `clear` tool and
+ * the engine's forced restart (260729). Returns the wiped strokes' intents,
+ * for the restart block's "do not redraw that" line.
+ */
+function wipeAiCanvas(s: Session): string[] {
+  const priorIntents = s.draw.strokeIntents;
+  s.draw.strokeIntents = [];
+  s.draw.clears += 1;
+  s.draw.strokesUsed = 0;
+  // Each wipe gets its own shot at the blank-page backstop, and guesses at
+  // the OLD picture must not count against the new one.
+  s.draw.blankNudges = 0;
+  s.draw.wrongGuesses = 0;
+  s.strokes = [];
+  s.clearSeq += 1;
+  return priorIntents;
+}
+
 // ── the character's drawing turn ─────────────────────────────────────────────
+
+/**
+ * The idle backup. A parked runner (done, or out of strokes) otherwise wakes
+ * only on player chat; a silent player left the character certain a
+ * three-stroke blob was finished. After DRAW_IDLE_NUDGE_MS of quiet this
+ * re-enters the loop with `idleNudge` set, which bypasses the park conditions
+ * for exactly one hop and attaches fresh eyes. Out-of-strokes is deliberately
+ * NOT exempt: `clear` refunds the budget, so "clear and change" is still on
+ * the table.
+ */
+function tickDrawIdle(s: Session): void {
+  if (s.phase !== 'drawing' || s.drawer !== 'ai') return;
+  if (s.draw.running || s.draw.idleNudge) return;
+  if (Date.now() - s.draw.lastActivityAt < DRAW_IDLE_NUDGE_MS) return;
+  if (s.turnEndsAt - Date.now() < DRAW_IDLE_FLOOR_MS) return;
+  s.draw.lastActivityAt = Date.now();
+  s.draw.idleNudge = true;
+  log(s, 'draw idle nudge: re-waking the parked runner');
+  void runDrawTurn(s);
+}
 
 /**
  * Drives the drawing turn to completion, then parks. Re-entrant by design:
@@ -1018,10 +1394,11 @@ async function runDrawTurn(s: Session): Promise<void> {
     for (let hop = 0; hop < MAX_DRAW_HOPS; hop++) {
       if (s.turnKey !== key || s.phase !== 'drawing') return;
       if (Date.now() >= s.turnEndsAt) return;
-      // Finished picture with nothing to answer: park until a player line
-      // wakes us.
-      if (s.draw.done && s.draw.pendingPlayerChat.length === 0) return;
-      if (s.draw.strokesUsed >= MAX_AI_STROKES && s.draw.pendingPlayerChat.length === 0) return;
+      // Finished picture with nothing to answer and no idle wake: park until
+      // a player line or the idle backup wakes us.
+      const wake = s.draw.pendingPlayerChat.length > 0 || s.draw.idleNudge;
+      if (s.draw.done && !wake) return;
+      if (s.draw.strokesUsed >= MAX_AI_STROKES && !wake) return;
 
       const more = await runDrawCall(s, key);
       if (s.turnKey !== key) return;
@@ -1040,6 +1417,37 @@ async function runDrawTurn(s: Session): Promise<void> {
 }
 
 /**
+ * Prompt-cache the drawing thread incrementally across hops (260728).
+ *
+ * The thread is append-only and re-sent verbatim every hop, so without a
+ * breakpoint each hop re-bills every earlier hop at full input price — the one
+ * quadratic cost in the game. A marker on the last message caches the whole
+ * prefix; the next hop then pays full price only for what it appended. The
+ * marker MOVES: unlike chat, the same array persists across hops, so the old
+ * stamp must be stripped or the request exceeds the API's four-breakpoint
+ * budget (three are already spent inside `system`). Break-even is one re-read,
+ * so only the final hop's increment ever loses (the 25% write premium on a few
+ * hundred tokens); the thread dying with the turn costs nothing — expiry is
+ * free and the next turn's calls still match the system prefix.
+ */
+function markThreadCached(thread: Anthropic.MessageParam[]): void {
+  for (const m of thread) {
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if (b && typeof b === 'object' && 'cache_control' in b) {
+        delete (b as { cache_control?: unknown }).cache_control;
+      }
+    }
+  }
+  const last = thread[thread.length - 1];
+  if (!last || !Array.isArray(last.content) || last.content.length === 0) return;
+  const tail = last.content[last.content.length - 1];
+  if (tail && typeof tail === 'object') {
+    (tail as { cache_control?: { type: 'ephemeral' } }).cache_control = { type: 'ephemeral' };
+  }
+}
+
+/**
  * One hop of the drawing turn's tool-use loop. Returns true when the model
  * asked to keep going (it made tool calls), false when it is finished.
  *
@@ -1054,12 +1462,42 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
   const { system, sdk, punctuation } = await prepareCall(s);
   if (s.turnKey !== key) return false;
 
+  // Forced restart (260729): the player has thrown enough wrong lines at this
+  // picture that it has demonstrably failed, and there is still time to draw a
+  // better one. Wipe it at a hop boundary (never mid-response, so an in-flight
+  // reply's strokes cannot land on the fresh page) and open a fresh thread
+  // that says the game did it.
+  if (
+    !s.draw.autoCleared &&
+    s.draw.wrongGuesses >= AUTO_CLEAR_WRONG_GUESSES &&
+    s.draw.clears < MAX_CLEARS &&
+    s.draw.strokesUsed >= AUTO_CLEAR_MIN_STROKES &&
+    s.turnEndsAt - Date.now() > AUTO_CLEAR_MIN_LEFT_MS
+  ) {
+    s.draw.autoCleared = true;
+    const wrongGuesses = s.draw.wrongGuesses;
+    const priorIntents = wipeAiCanvas(s);
+    s.draw.thread = [];
+    s.draw.toolNotes.clear();
+    s.draw.done = false;
+    s.draw.restart = { auto: true, wrongGuesses, priorIntents };
+    log(s, `auto-clear after ${wrongGuesses} wrong guesses (${s.draw.clears}/${MAX_CLEARS} wipes)`);
+    push(s);
+  }
+
   const pending = s.draw.pendingPlayerChat;
   s.draw.pendingPlayerChat = [];
+  // Consume the idle wake. Un-park `done` for this one hop; a text-only
+  // answer re-parks through the toolCalls === 0 branch below.
+  const idle = s.draw.idleNudge;
+  s.draw.idleNudge = false;
+  if (idle) s.draw.done = false;
 
   // First hop opens the thread with the turn block; later hops answer the
   // outstanding tool calls, folding in anything the player said meanwhile.
   if (s.draw.thread.length === 0) {
+    const restart = s.draw.restart;
+    s.draw.restart = null;
     const turnChat = chatSinceTurnStart(s);
     const block = buildDrawTurnBlock({
       round: s.round,
@@ -1071,7 +1509,8 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
       priorChat: s.chat.slice(0, s.chat.length - turnChat.length),
       secondsLeft: Math.max(0, Math.round((s.turnEndsAt - Date.now()) / 1000)),
       strokesUsed: s.draw.strokesUsed,
-      resuming: false,
+      gallery: s.gallery,
+      ...(restart ? { restart } : {}),
     });
     s.draw.thread.push({ role: 'user', content: [{ type: 'text', text: block }] });
   } else {
@@ -1093,27 +1532,101 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
       }
     }
     s.draw.toolNotes.clear();
+
+    // Eyes on its own page (260728). Rationed exactly like the guessing
+    // scheduler's looks: it happens only when the player has just said
+    // something (which is when "are they getting it?" is a live question) or
+    // on an idle wake, and never twice inside the cooldown (the idle wake
+    // bypasses the cooldown: fresh eyes are the point of it).
+    let look = '';
+    if (
+      (pending.length > 0 || idle) &&
+      s.draw.strokesUsed > 0 &&
+      (idle || Date.now() - s.draw.lastLookAt >= SELF_LOOK_COOLDOWN_MS)
+    ) {
+      const dataUrl = await requestSnapshot(s);
+      if (s.turnKey !== key) return false;
+      look = dataUrl?.replace(/^data:image\/\w+;base64,/, '') ?? '';
+      if (look === dataUrl) look = '';
+      if (look) s.draw.lastLookAt = Date.now();
+    }
+
     const secondsLeft = Math.max(0, Math.round((s.turnEndsAt - Date.now()) / 1000));
     const notes: string[] = [];
     if (pending.length > 0) {
       notes.push(
         `${s.playerName} says: ${pending.map((t) => `"${t}"`).join(' ')}\n` +
-          'Answer if it wants an answer (never with the word), then carry on drawing.',
+          // 260729, live capture (web): the player guessed "credit card", the
+          // word was something else, and the character answered "yes! that's
+          // it!" then role-played the round ending. It was never told the
+          // engine adjudicates, so a close guess FELT right and it called the
+          // win.
+          'The game has already checked every one of those lines against your word: NONE of them is it. ' +
+          'A correct guess ends the turn on the spot, so if you are reading this, they have not got it, ' +
+          'however close a line feels. Never tell them a guess is right or "counts". You may say a guess ' +
+          'is close or cold, but only the game says when it is got. ' +
+          'Answer if it wants an answer (never with the word), then carry on drawing. ' +
+          'A reply on its own is not an answer to "draw more" or "I cannot tell what that is": ' +
+          'if they are asking for more picture, put more picture on the page in the same turn.',
+      );
+    }
+    if (look) notes.push(selfLookNote(s.word, s.playerName));
+    if (idle) {
+      notes.push(
+        `${s.playerName} has not guessed it yet, and they have gone quiet. ` +
+          'Judge the picture, not your memory of drawing it: if it is on the right track, add the detail that would give it away. ' +
+          'If you doubt a stranger could name it, call clear and draw it a DIFFERENT way. ' +
+          'Never draw a second version on top of or beside the old one. Do not answer this with words alone.',
+      );
+    }
+    // Blank-page corrections. Two ways to be staring at an empty page: the
+    // model cleared it and walked away (260728), or it opened the turn with
+    // table talk and zero pen calls (found live on the web). One note covers
+    // whichever happened.
+    const nudged = s.draw.nudgeBlank;
+    s.draw.nudgeBlank = false;
+    if (s.draw.strokesUsed === 0 && (nudged || s.draw.clears > 0)) {
+      notes.push(
+        s.draw.clears > 0
+          ? 'The canvas is BLANK: you cleared it and have not drawn the replacement yet. ' +
+              `${s.playerName} is watching an empty page. Draw the new picture now, with pen calls, ` +
+              'before saying anything else.'
+          : 'The canvas is BLANK. You have not drawn anything: the player is staring at an empty page ' +
+              'while you talk. Call `pen` NOW and draw your word. Do not reply with text only.',
       );
     }
     notes.push(
-      `${s.draw.strokesUsed}/${MAX_AI_STROKES} strokes used, about ${secondsLeft}s left. ` +
+      `${s.draw.strokesUsed}/${MAX_AI_STROKES} strokes used. ${turnClockLine(secondsLeft)} ` +
         'Keep drawing if the picture is not recognisable yet, otherwise stop calling pen.',
     );
+    // The recency slot, every hop. The equivalent line closes the opening turn
+    // block, but on later hops that block is thousands of tokens up the thread
+    // and the model drifted into third-person mutterings about the player
+    // ("they're getting close to something here") that all landed in chat.
+    notes.push(
+      `Anything you type is a chat line ${s.playerName} reads the moment you send it. ` +
+        'Speak straight TO them: "you", never their name, never "they". ' +
+        'You have no private notes here.',
+    );
+    if (look) {
+      content.push({
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: look },
+      });
+    }
     content.push({ type: 'text', text: notes.join('\n\n') });
     s.draw.thread.push({ role: 'user', content });
   }
+
+  markThreadCached(s.draw.thread);
 
   const ctrl = new AbortController();
   s.draw.ctrl = ctrl;
   const timeout = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS * 2);
 
   let toolCalls = 0;
+  let cleared = false;
+  let clearedIntents: string[] = [];
   // remember() writes are async and the stream handler is not, so they are
   // collected here and drained once the message closes.
   const remembers: Array<{ id: string; input: unknown }> = [];
@@ -1122,12 +1635,21 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
     if (s.turnKey !== key || s.phase !== 'drawing') return;
 
     if (b.type === 'text') {
-      for (const part of splitReply(b.text, punctuation).slice(0, 2)) {
-        // Backstop for the never-say-your-word rule.
-        const safe = redactWord(part, s.word);
-        if (!safe) continue;
-        say(s, 'ai', safe);
+      let slipped = false;
+      for (const raw of splitReply(b.text, punctuation).slice(0, 2)) {
+        const part = plainLine(raw);
+        if (!part || isFakeGameLine(part)) continue;
+        // Backstop for the never-say-your-word rule. The line is dropped
+        // WHOLE rather than patched: 260728 replaced the answer with "[...]"
+        // in place, which still pointed at exactly where the word went and
+        // read to the player as a bug rather than as the game stepping in.
+        if (saysWord(part, s.word)) {
+          slipped = true;
+          continue;
+        }
+        say(s, 'ai', part);
       }
+      if (slipped) wordSlipLine(s, 'ai');
       push(s);
       return;
     }
@@ -1140,18 +1662,36 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
       remembers.push({ id: b.id, input: b.input });
       return;
     }
+    if (b.name === 'clear') {
+      toolCalls += 1;
+      if (s.draw.clears >= MAX_CLEARS) {
+        s.draw.toolNotes.set(b.id, 'no more wipes left this turn. work with what is on the page.');
+        return;
+      }
+      cleared = true;
+      clearedIntents = wipeAiCanvas(s);
+      s.draw.toolNotes.set(
+        b.id,
+        `canvas wiped. ${s.playerName} is now watching a blank page: draw the new picture NOW, ` +
+          'in this same turn, and do not stop calling pen until it is on the page.',
+      );
+      log(s, `ai cleared canvas (${s.draw.clears}/${MAX_CLEARS})`);
+      push(s);
+      return;
+    }
     if (b.name !== 'pen') return;
     // Counted even when the stroke is refused below, because the API still
     // needs a tool_result for it on the next hop.
     toolCalls += 1;
     if (s.draw.strokesUsed >= MAX_AI_STROKES) return;
 
-    const input = b.input as { points?: unknown; style?: unknown; closed?: unknown };
+    const input = b.input as { intent?: unknown; points?: unknown; style?: unknown; closed?: unknown };
     const raw = Array.isArray(input?.points) ? input.points : [];
     const points = raw
       .map((p) => p as { x?: unknown; y?: unknown })
       .filter((p) => typeof p?.x === 'number' && typeof p?.y === 'number')
-      .map((p) => ({ x: p.x as number, y: p.y as number }));
+      .map((p) => ({ x: p.x as number, y: p.y as number }))
+      .slice(0, 120);
     if (points.length < 2) return;
 
     const h = humanizeStroke(randomUUID(), points, {
@@ -1161,6 +1701,9 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
     if (!h) return;
 
     s.draw.strokesUsed += 1;
+    if (typeof input?.intent === 'string' && input.intent.trim()) {
+      s.draw.strokeIntents.push(input.intent.trim().slice(0, 80));
+    }
     s.strokes.push(h.stroke);
     try {
       requireDeps().pushAiStroke({
@@ -1205,13 +1748,47 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
     // with the ids it actually issued.
     s.draw.thread.push({ role: 'assistant', content: final.content });
     for (const r of remembers) s.draw.toolNotes.set(r.id, await honorRemember(s, r.input));
-    if (toolCalls === 0) s.draw.done = true;
+    if (cleared && s.draw.strokesUsed === 0 && s.turnKey === key && s.phase === 'drawing') {
+      // The wipe was not followed by a redraw in the same response (260729).
+      // Do not nudge down the old conversation: reset the thread so the very
+      // next call opens fresh on "the page is blank, start the drawing again",
+      // with the wiped attempt's stroke intents carried in so it draws the
+      // word a different way instead of the same picture twice.
+      s.draw.thread = [];
+      s.draw.toolNotes.clear();
+      s.draw.done = false;
+      s.draw.restart = { auto: false, priorIntents: clearedIntents };
+      log(s, 'clear with no redraw in the same response: resetting the thread for a fresh start');
+    } else if (toolCalls === 0) {
+      // Blank-page backstop. A text-only response normally means the picture
+      // is finished, but on a blank canvas it means the character is talking
+      // at an empty page: either it opened the turn with table talk and zero
+      // pen calls (found live on the web) or it cleared and walked away
+      // (260728). One nudge hop tells it the page is blank (the flag folds the
+      // correction into the next hop's user message so roles keep
+      // alternating); bounded, reset per clear, and skipped when the turn is
+      // nearly over anyway.
+      if (
+        s.draw.strokesUsed === 0 &&
+        s.draw.blankNudges < 2 &&
+        Date.now() < s.turnEndsAt - 15_000 &&
+        s.turnKey === key &&
+        s.phase === 'drawing'
+      ) {
+        s.draw.blankNudges += 1;
+        s.draw.nudgeBlank = true;
+        log(s, 'blank canvas: nudging a redraw hop');
+      } else {
+        s.draw.done = true;
+      }
+    }
   } finally {
     clearTimeout(timeout);
     s.draw.ctrl = null;
+    s.draw.lastActivityAt = Date.now();
   }
 
-  return toolCalls > 0;
+  return toolCalls > 0 || !s.draw.done;
 }
 
 // ── shared call prep ─────────────────────────────────────────────────────────
@@ -1258,6 +1835,8 @@ async function prepareCall(s: Session): Promise<{
     name: character.name,
     preferredName: config.preferred_name ?? '',
     proactiveness: 1,
+    // Not the Discord-like chat surface: live game, board/canvas beside chat.
+    surface: 'game',
     punctuation,
     memory,
     summary,

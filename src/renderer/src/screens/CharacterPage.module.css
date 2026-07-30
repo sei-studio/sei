@@ -70,15 +70,58 @@
   inset: 0;
   z-index: 2;
   pointer-events: none;
+  /* Softened 260729: fainter wash, shorter reach — the art carries the right
+     half of the page uncovered; the left band stays strong enough for text. */
   background:
     linear-gradient(
       90deg,
-      var(--window) 4%,
-      color-mix(in srgb, var(--window) 86%, transparent) 30%,
-      color-mix(in srgb, var(--window) 36%, transparent) 56%,
-      transparent 80%
+      var(--window) 3%,
+      color-mix(in srgb, var(--window) 74%, transparent) 24%,
+      color-mix(in srgb, var(--window) 22%, transparent) 46%,
+      transparent 62%
     ),
-    linear-gradient(0deg, color-mix(in srgb, var(--window) 72%, transparent), transparent 32%);
+    linear-gradient(0deg, color-mix(in srgb, var(--window) 45%, transparent), transparent 20%);
+}
+
+/* Expand-art corner button (260729): floats over the portrait's bottom-right,
+   reusing the game surface's fullscreen glyph. Quiet, borderless chip. */
+.artExpandBtn {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--window) 45%, transparent);
+  color: var(--text-2);
+  transition: color 140ms var(--ease), background 140ms var(--ease);
+}
+
+.artExpandBtn:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--window) 65%, transparent);
+}
+
+/* Full-art popup body. */
+.artModalImg {
+  display: block;
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  margin: 0 auto;
+}
+
+.artSavedNote {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
+  word-break: break-all;
 }
 
 /* ── Left content panel ──────────────────────────────────────────────── */
@@ -350,7 +393,6 @@
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-pop);
 }
 

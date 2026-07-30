@@ -27,6 +27,8 @@ interface ButtonProps {
   style?: React.CSSProperties;
   className?: string;
   title?: string;
+  /** Tutorial spotlight anchor (260728) — see components/tutorial. */
+  'data-tutorial'?: string;
 }
 
 export function Button({

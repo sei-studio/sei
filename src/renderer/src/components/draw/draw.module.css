@@ -7,19 +7,61 @@
  * Rather than scatter raw hex through the rules, the palette is declared once
  * as scoped custom properties on .root and everything below references those.
  * Nothing outside this module may use them.
+ *
+ * Three rules hold this surface together (260728). Breaking any one of them is
+ * what made it look assembled rather than drawn:
+ *
+ *   ONE INK.    Black on white, and nothing in between. There is no grey here:
+ *               no hairlines, no dimmed captions, no soft placeholder. Anything
+ *               that needs to recede does it by being small or by being said
+ *               once, not by fading out. The single exception is --accent,
+ *               which is a highlighter and only ever sits BEHIND black.
+ *   TWO SIZES.  --fs-title and --fs-body in the handwritten face. A
+ *               handwritten face has no weights to grade with, so a third size
+ *               reads as a mistake rather than as hierarchy. The typed face is
+ *               a separate voice at its own single small size.
+ *   ONE PEN.    Every LINE is --hand-stroke wide, and every line is squiggly:
+ *               nothing here may use a CSS border, text-decoration, or a
+ *               native control that draws its own track.
  */
 
 .root {
-  --ink: #111111;
-  --ink-soft: #6b6b6b;
-  --ink-faint: #c9c9c9;
+  --ink: #000000;
   --paper: #ffffff;
-  --accent: #f2c94c;
-  --accent-deep: #d3a92f;
-  --good: #1a8a3f;
+  /* Highlighter, not ink. Only ever behind black text. */
+  --accent: #ffe500;
 
   --hand: 'Architects Daughter', 'Comic Sans MS', cursive;
-  --type: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --type: 'Roboto Mono', ui-monospace, Menlo, monospace;
+
+  /* The handwritten scale, and the whole of it. */
+  --fs-title: 46px;
+  --fs-body: 22px;
+  /* The typed face is deliberately much smaller: it is the printed apparatus
+     around the game (round counter, clock, the game's own announcements), not
+     anything either player said. */
+  --fs-typed: 13px;
+
+  /* Width of EVERY hand-drawn line on this surface: the squiggle frames, the
+     rules, the button outlines, and the pen on the canvas. They all have to
+     look like one pen, so there is exactly one number and no call site may
+     override it.
+
+     This is the fallback, used where no canvas is on screen (setup, gallery).
+     Wherever art IS rendered, DrawCanvas republishes it with the pen's true
+     on-screen width at the current canvas scale (pencilCssWidth in
+     drawRender.ts) so the chrome matches the strokes exactly. */
+  --hand-stroke: 3.5px;
+
+  /* Glyph outlines are lines too, and the face is a single fixed weight, so the
+     46px title is drawn with a visibly heavier pen than the 22px body beside
+     it. Stroking the outline in the fill colour adds that width back.
+
+     ONLY the title gets it (260728). Applying the same correction to body text
+     was tried and reverted: at 22px it did not read as a heavier pen, it read
+     as bold, and the chat column turned into a wall of shouting. Body text
+     stays at the face's natural weight. */
+  --hand-text-stroke-title: 0.3px;
 
   /* Fills <main>, NOT the window. It used to be position:absolute/inset:0,
      which was fine only while this route hid the IconRail: the nearest
@@ -37,13 +79,80 @@
   background: var(--paper);
   color: var(--ink);
   font-family: var(--hand);
+  font-size: var(--fs-body);
   -webkit-font-smoothing: antialiased;
 }
 
-.loading {
+.root :is(.title, .galleryTitle) {
+  -webkit-text-stroke: var(--hand-text-stroke-title) currentColor;
+}
+
+/* ── the typed half ───────────────────────────────────────────────────── */
+
+/* Roboto Mono, in ordinary sentence case, small. */
+.typed {
   font-family: var(--type);
-  font-size: 13px;
-  color: var(--ink-soft);
+  font-size: var(--fs-typed);
+  line-height: 1.5;
+  -webkit-text-stroke: 0;
+}
+
+.loading {
+  composes: typed;
+  margin: 0;
+}
+
+.tagline {
+  composes: typed;
+  /* Some air above, so the copy does not read as a caption hanging off the
+     horse's feet, but not so much that the controls drift away from the
+     drawings they belong to. */
+  margin: 12px 0 0;
+  max-width: 52ch;
+}
+
+.error {
+  composes: typed;
+  margin: 0;
+}
+
+.round {
+  composes: typed;
+  min-width: 110px;
+}
+
+.clock {
+  composes: typed;
+  min-width: 110px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.savedNote {
+  composes: typed;
+  margin: 0;
+  word-break: break-all;
+  /* Appears only after a save; it must not push the page into a scroll. */
+  flex: 0 0 auto;
+}
+
+.chatSystem {
+  composes: typed;
+  margin: 7px 0;
+  text-align: center;
+}
+
+/* The speaker's name is apparatus, not speech: typed, small, and out of the
+   way, so a run of guesses reads as talking rather than as a list of labels. */
+.chatWho {
+  composes: typed;
+  display: block;
+  margin-bottom: 1px;
+  /* Above the highlight swipe on a winning line. A static element paints
+     BELOW a positioned sibling in the same stacking context, so without this
+     the name is buried under the yellow. */
+  position: relative;
+  z-index: 2;
 }
 
 /* ── shared hand-drawn chrome ─────────────────────────────────────────── */
@@ -53,17 +162,57 @@
   inset: 0;
   pointer-events: none;
   color: var(--ink);
+  /* Above the canvas. The drawing surface paints an opaque white background
+     over its whole box, and the frame is its exact size, so without this the
+     border around the canvas is painted over and vanishes completely
+     (260728). */
+  z-index: 1;
 }
 
 .frameSvg {
   display: block;
 }
 
+/* The single width for every squiggle. Set here rather than as an SVG
+   attribute so no call site can pass its own number. */
+.handPath {
+  stroke-width: var(--hand-stroke);
+}
+
 .rule {
   width: 100%;
   height: 8px;
-  color: var(--ink-faint);
+  color: var(--ink);
   flex: 0 0 auto;
+}
+
+/* Underline for the quiet buttons. It replaces text-decoration, which is the
+   one straight line CSS draws for you. */
+.underline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 8px;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+/* The marker swipe. Hidden until its control is hovered or on. */
+.highlightHost {
+  position: absolute;
+  inset: 0;
+  color: var(--accent);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 0;
+}
+
+/* Anything that has to stay readable on top of the swipe. A bare text node has
+   no box to raise, so labels are wrapped. */
+.btnLabel {
+  position: relative;
+  z-index: 2;
 }
 
 .handBtn {
@@ -73,14 +222,13 @@
   background: transparent;
   color: var(--ink);
   font-family: var(--hand);
-  font-size: 22px;
+  font-size: var(--fs-body);
   cursor: pointer;
   transition: transform 90ms ease;
 }
 
 .handBtn:hover:not(:disabled) {
   transform: translateY(-1px);
-  background: var(--accent);
 }
 
 .handBtn:active:not(:disabled) {
@@ -88,24 +236,27 @@
 }
 
 .handBtn:disabled {
-  color: var(--ink-faint);
   cursor: default;
 }
 
+.handBtn:hover:not(:disabled) .highlightHost,
+.handBtn[data-on='true'] .highlightHost {
+  opacity: 1;
+}
+
 .handBtnQuiet {
+  position: relative;
   padding: 6px 12px;
   border: none;
   background: transparent;
-  color: var(--ink-soft);
+  color: var(--ink);
   font-family: var(--hand);
-  font-size: 17px;
+  font-size: var(--fs-body);
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
-.handBtnQuiet:hover {
-  color: var(--ink);
+.handBtnQuiet:hover .highlightHost {
+  opacity: 1;
 }
 
 /* ── setup ────────────────────────────────────────────────────────────── */
@@ -114,56 +265,190 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  width: min(540px, 88%);
+  gap: 18px;
+  width: min(560px, 88%);
   padding: 40px 0;
   text-align: center;
+  /* Sits a little below the middle of the page. Offset rather than padding or
+     margin: .root centres this box, so anything that grows the box only moves
+     the contents by HALF of what it adds, which makes "down a bit" a guessing
+     game. This shifts by exactly what it says. */
+  position: relative;
+  top: 30px;
 }
 
 .title {
   margin: 0;
-  font-size: 68px;
+  font-size: var(--fs-title);
   font-weight: 400;
   letter-spacing: 1px;
 }
 
-.tagline {
-  margin: 0;
-  max-width: 40ch;
-  font-family: var(--type);
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--ink-soft);
+/* The start page's "Draw!" only. A DELIBERATE exception to the two-sizes rule:
+   this one is a wordmark on a splash screen, not a heading in a hierarchy, and
+   it is the only thing on the page competing with the drawings. Nothing else
+   may use it. */
+.titleBig {
+  font-size: calc(var(--fs-title) * 2);
 }
 
-.roundsLabel {
-  margin-top: 12px;
-  font-size: 30px;
+/* Three real drawings from real games. Bottom-aligned so they sit on a shared
+   line despite their different proportions, with the middle one lifted off it. */
+.doodles {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  /* Tight enough that the three read as one huddle rather than three separate
+     exhibits. A transform does not change the box flex laid out, so the hard
+     outward lean eats into this and the drawings very nearly touch. */
+  gap: 10px;
+  /* Air above the row, so the wordmark reads as a title over the drawings
+     rather than as the first thing in the same stack. */
+  margin: 16px 0 4px;
 }
 
-.slider {
-  width: 260px;
-  accent-color: var(--accent-deep);
+.doodle {
+  height: 185px;
+  /* Auto width off the viewBox, so each drawing keeps its own proportions
+     rather than being squashed to a common box. */
+  width: auto;
+  color: var(--ink);
+  user-select: none;
+  /* A flipbook, not a wobble: the transform SNAPS between two angles and is
+     never interpolated, which is why the keyframes hold each angle over a range
+     instead of easing between two stops. 0.66s over two states is three flips a
+     second. */
+  animation: doodleTilt 0.66s infinite;
+}
+
+/* The pen, at the same width as every other line here. non-scaling-stroke is
+   what makes that true at three different display sizes: it takes stroke-width
+   as screen px instead of scaling it with the viewBox. */
+.doodlePath {
+  stroke-width: var(--hand-stroke);
+}
+
+/* Small, raised, and half a period out of step with its neighbours, so the row
+   does not read as one rigid block shaking. */
+.doodleMid {
+  height: 44px;
+  /* Bottom-aligned row, so a bigger bottom margin lifts it higher. Tuned so
+     the crown perches just clear of the shrimp's and horse's body mass rather
+     than sitting level with their heads. */
+  margin-bottom: 134px;
+  animation-delay: -0.33s;
+}
+
+/* The outer two lean AWAY from the middle: the left one always at a negative
+   angle, the right one always positive, so the row opens outwards like three
+   things propped up rather than three things listing the same way. Each still
+   snaps, just within its own one-sided range. */
+.doodleLeft {
+  animation-name: doodleTiltLeft;
+}
+
+.doodleRight {
+  animation-name: doodleTiltRight;
+}
+
+@keyframes doodleTilt {
+  0%,
+  49.999% {
+    transform: rotate(-3.5deg);
+  }
+  50%,
+  100% {
+    transform: rotate(3.5deg);
+  }
+}
+
+/* Negative rotation is counter-clockwise, which tips the TOP of the drawing to
+   the LEFT, so the left-hand doodle leans away from the middle; the right-hand
+   one is the mirror. Both ranges stay entirely on their own side of zero, so
+   neither ever flicks back through upright. */
+@keyframes doodleTiltLeft {
+  0%,
+  49.999% {
+    transform: rotate(-24deg);
+  }
+  50%,
+  100% {
+    transform: rotate(-17deg);
+  }
+}
+
+@keyframes doodleTiltRight {
+  0%,
+  49.999% {
+    transform: rotate(17deg);
+  }
+  50%,
+  100% {
+    transform: rotate(24deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doodle {
+    animation: none;
+  }
+}
+
+/* ── pick a word ──────────────────────────────────────────────────────── */
+
+.pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: min(760px, 90%);
+  padding: 40px 0;
+  text-align: center;
+}
+
+.pickWords {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 22px;
+}
+
+.pickWord {
+  position: relative;
+  min-width: 190px;
+  padding: 24px 28px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: var(--fs-body);
   cursor: pointer;
+  transition: transform 90ms ease;
 }
 
-.roundsHint {
-  margin: 0;
-  font-family: var(--type);
-  font-size: 12px;
-  color: var(--ink-soft);
+.pickWord:hover {
+  transform: translateY(-2px);
 }
 
-.error {
-  margin: 0;
-  font-family: var(--type);
-  font-size: 12px;
-  color: #b3261e;
+.pickWord:hover .highlightHost {
+  opacity: 1;
 }
 
 /* ── game layout: canvas beside chat ──────────────────────────────────── */
 
 .game {
+  /* The two columns are ruled off against each other, so the numbers that make
+     that true live here and both sides read them:
+       --head-h   the height of BOTH heads (round/word/clock on the left, score
+                  and buttons on the right). Equal heads plus an equal gap is
+                  what puts the side rule on the same line as the top edge of
+                  the drawn canvas box. The number is the natural height of one
+                  line of --fs-body in the handwritten face, so fixing it here
+                  changes neither head, it only makes them agree.
+       --col-gap  the space under both heads. */
+  --head-h: 31px;
+  --col-gap: 10px;
+
   display: flex;
   gap: 26px;
   align-items: stretch;
@@ -177,61 +462,70 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
-  gap: 10px;
+  gap: var(--col-gap);
 }
 
 .header {
   display: flex;
+  /* Still a baseline row: the typed round counter and clock sit on the same
+     line as the handwritten word. The band is exactly one line tall, so
+     stating the height changes nothing here; it exists so the side head can be
+     told to match it. */
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
   flex: 0 0 auto;
-}
-
-.round {
-  font-family: var(--type);
-  font-size: 12px;
-  color: var(--ink-soft);
-  min-width: 96px;
+  height: var(--head-h);
 }
 
 .word {
   flex: 1 1 auto;
   text-align: center;
-  font-size: 34px;
+  font-size: var(--fs-body);
   letter-spacing: 1px;
-  text-transform: lowercase;
 }
 
 .headerNote {
   flex: 1 1 auto;
   text-align: center;
-  font-size: 24px;
-  color: var(--ink-soft);
+  font-size: var(--fs-body);
 }
 
-.clock {
-  min-width: 96px;
-  text-align: right;
-  font-family: var(--type);
-  font-size: 22px;
-  font-variant-numeric: tabular-nums;
-}
-
-.canvasFrame {
+/* The drawn box: paper on top, tools in the strip at the bottom, one outline
+   around both. It takes all the height the header leaves, so its bottom edge
+   is the stage's bottom edge, which is the bottom of the chat input box in the
+   other column. */
+.canvasBox {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  /* Inside the drawn line, so neither the paper nor the tools sit on top of
+     it. */
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.canvasFrame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  /* Top-aligned, not centred: the paper keeps its 10:7 shape, so whatever
+     height is left over has to go somewhere, and all of it belongs at the
+     bottom where the tools already are. Centred, it would open a dead white
+     band along the top edge of the box that looks like paper and is not. */
+  align-items: flex-start;
   justify-content: center;
 }
 
+/* The paper itself. Sized in px by DrawCanvas rather than by aspect-ratio:
+   `height:100%` plus `max-width:100%` clamps the width without giving the
+   height back, so a box wider than 10:7 silently stretched the page and the
+   painted art no longer matched the pointer. */
 .canvasWrap {
   position: relative;
-  max-width: 100%;
-  max-height: 100%;
-  height: 100%;
+  flex: 0 0 auto;
 }
 
 .canvas {
@@ -241,10 +535,14 @@
   background: var(--paper);
 }
 
+/* Sits INSIDE the drawn box, in the strip below the paper (260728). It used to
+   hang underneath the box, which made the tools read as page furniture rather
+   than as the two things lying next to the drawing. */
 .toolbar {
   display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 18px;
   flex: 0 0 auto;
   height: 52px;
 }
@@ -254,6 +552,8 @@
   flex: 0 0 auto;
 }
 
+/* Both tools are always drawn, ring and all: the ring is the tool's outline,
+   not its selected state. Selection is the marker swipe behind it. */
 .tool {
   position: relative;
   width: 46px;
@@ -267,13 +567,16 @@
   place-items: center;
 }
 
-.toolGlyph {
-  font-size: 24px;
-  line-height: 1;
-  color: var(--ink-soft);
+.tool:hover .highlightHost,
+.tool[data-on='true'] .highlightHost {
+  opacity: 1;
 }
 
-.toolOn .toolGlyph {
+.toolGlyph {
+  position: relative;
+  z-index: 2;
+  font-size: var(--fs-body);
+  line-height: 1;
   color: var(--ink);
 }
 
@@ -284,44 +587,84 @@
   flex-direction: column;
   flex: 0 0 320px;
   min-height: 0;
-  gap: 4px;
+  /* No gap: the rule carries its own margins, because it has to land on an
+     exact line rather than wherever a shared gap puts it (see below). */
+  gap: 0;
 }
 
+/* The same fixed band as the stage header, so the rule under it starts level
+   with the top of the drawn canvas box. */
 .sideHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex: 0 0 auto;
+  height: var(--head-h);
 }
 
+/* The rule is the right column's version of the canvas box's top edge, and the
+   two have to read as one line across the page. Both are drawn 4px down inside
+   an 8px SVG band (SquiggleRule) or 2px down inside the frame (squiggleRect's
+   inset), so the rule is lifted by that 2px difference on top of the shared
+   column gap. */
+.side > .rule {
+  margin-top: calc(var(--col-gap) - 2px);
+  margin-bottom: 4px;
+}
+
+/* Everything in the side head sits on ONE line. Each item is the full height of
+   the band and centres its own content, so the score, the fullscreen icon and
+   the leave x share a centre instead of the text sitting on its own baseline
+   while the two buttons sit in their boxes. line-height: 1 is what makes that
+   true for the text: at the face's natural line-height the glyphs sit low in a
+   much taller box, and centring the box does not centre the writing. */
 .score {
-  font-size: 19px;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  font-size: var(--fs-body);
+  line-height: 1;
 }
 
-/* Right end of the side head: the fullscreen toggle sits beside "End". */
+/* Right end of the side head: the fullscreen toggle sits beside the leave x. */
 .sideActions {
   display: flex;
   align-items: center;
+  height: 100%;
   gap: 2px;
+}
+
+.sideActions .handBtnQuiet {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 10px;
+  line-height: 1;
 }
 
 /* Icon-only sibling of .handBtnQuiet (the corner arrows carry the meaning). */
 .iconBtn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 30px;
-  height: 30px;
+  height: 100%;
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--ink-soft);
+  color: var(--ink);
   cursor: pointer;
 }
 
-.iconBtn:hover {
-  color: var(--ink);
+.iconBtn .btnLabel {
+  display: flex;
+  align-items: center;
+}
+
+.iconBtn:hover .highlightHost {
+  opacity: 1;
 }
 
 .chat {
@@ -329,119 +672,166 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-  gap: 10px;
+  gap: 12px;
 }
 
 .chatList {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 6px;
+  /* Breathing room INSIDE the scroll box on every side. Without it a scrolled
+     line is clipped flush against the rule above and the input frame below,
+     which reads as the chat running straight through them rather than as a
+     list that scrolls (260728). The right pad also keeps a highlighted line
+     off the scrollbar. */
+  padding: 8px 8px 8px 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 2px;
 }
 
 .chatLine {
   margin: 0;
-  font-size: 19px;
-  line-height: 1.35;
+  font-size: var(--fs-body);
+  line-height: 1.3;
   word-break: break-word;
 }
 
-.chatWho {
-  display: block;
-  font-family: var(--type);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+/* Gap between speakers rather than between lines: consecutive lines from one
+   person are one block with one name on it (see DrawChat). */
+.chatTurn {
+  margin-top: 10px;
 }
 
+/* A correct guess is highlighted, not recoloured: a third ink would break the
+   one-ink rule, and the highlighter is already the game's "this one" mark.
+   The swipe is an SVG child (see DrawChat), not a background, so it has the
+   same rough edge as a selected button. */
 .chatCorrect {
-  color: var(--good);
+  position: relative;
 }
 
-.chatSystem {
-  margin: 6px 0;
-  font-family: var(--type);
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--ink-soft);
-  text-align: center;
+.chatCorrect .highlightHost {
+  opacity: 1;
+}
+
+/* The winning word inside the winning line. Inline-block gives the swipe a box
+   exactly the width of the word; the whole-line swipe is the fallback for the
+   rare line where main could not locate the word. */
+.chatHit {
+  position: relative;
+  display: inline-block;
 }
 
 .chatInputRow {
   position: relative;
   flex: 0 0 auto;
-  color: var(--ink-faint);
+  color: var(--ink);
 }
 
 .chatInput {
   width: 100%;
-  padding: 11px 14px;
+  padding: 12px 14px;
   border: none;
   background: transparent;
   color: var(--ink);
   font-family: var(--hand);
-  font-size: 19px;
+  font-size: var(--fs-body);
   outline: none;
 }
 
 .chatInput::placeholder {
-  color: var(--ink-faint);
-}
-
-.chatInput:disabled {
-  color: var(--ink-faint);
+  color: var(--ink);
+  opacity: 1;
 }
 
 /* ── gallery ──────────────────────────────────────────────────────────── */
 
+/* The gallery must FIT, never scroll: it is a single showcase page and the
+   save button has to be reachable without hunting for it. So the page is
+   height-bounded and the cells are sized by the space left over, rather than
+   the page growing to fit the cells. That inversion is the whole trick: cell
+   width is 1/rounds of the page, so a ONE round game used to produce two
+   full-width cells about 900px tall each and a page three screens long. */
 .gallery {
+  /* Anchors the "Saved!" popup overlay, which must cover this page and not
+     the window: the IconRail beside it keeps its own look. */
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  /* Everything on this page is centred as a block; the row NAMES read
+     left-aligned because each row section shrinks to its drawings (260729,
+     from the web version). */
+  align-items: center;
+  gap: 8px;
   width: min(1320px, 94%);
-  padding: 36px 0;
+  height: 100%;
+  padding: 24px 0;
+  overflow: hidden;
+  /* Stated rather than inherited from global.css: "height 100% and it must
+     fit" is only true under border-box, and this rule is load-bearing enough
+     that it should not depend on a stylesheet this module does not own. */
+  box-sizing: border-box;
 }
 
-.galleryTitle {
-  margin: 0;
-  font-size: 52px;
-  font-weight: 400;
-}
-
+/* The two rows share whatever the header and actions leave behind, and are
+   squeezed before the actions are: the save button is the reason the screen
+   exists, so it may never be the thing pushed off the bottom. */
 .galleryRow {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 6px;
+  margin-top: 8px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .rowName {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--fs-body);
   font-weight: 400;
+  flex: 0 0 auto;
 }
 
+/* A flex row, not a 1fr grid (260729, from the web version): the drawings are
+   height-driven (aspect ratio off the row height), so equal-width grid columns
+   left a moat of slack around each one. Flex lets every cell hug its art and
+   the row shrink to fit, which is what makes the centred sections read as one
+   tight block. */
 .cells {
-  display: grid;
-  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
-  gap: 16px;
+  display: flex;
+  justify-content: flex-start;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 100%;
+}
+
+.cells > .cell {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .cell {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* Centred so the art takes its width from its aspect ratio rather than being
+     stretched to the column, which is what lets height drive the size. */
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
 }
 
 .cellArt {
   position: relative;
-  width: 100%;
-  color: var(--ink-faint);
+  /* Takes the height the row grants it; aspect-ratio (inline) turns that into a
+     width, and max-width clamps back the other way on a wide, short page. */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 100%;
+  color: var(--ink);
 }
 
 .cellCanvas {
@@ -454,46 +844,93 @@
 .cellWord {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
-  font-size: 19px;
+  font-size: var(--fs-body);
+  flex: 0 0 auto;
 }
 
-.gotIt {
-  font-family: var(--type);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--good);
+/* A guessed word wears the highlighter; a missed one goes bare (260729, from
+   the web version). The absence is the same information without a second
+   ink. */
+.cellWordText {
+  position: relative;
+  padding: 0 4px;
 }
 
-.missed {
-  font-family: var(--type);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-faint);
+.cellWordText[data-guessed='true'] .highlightHost {
+  opacity: 1;
 }
 
 .galleryActions {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 22px;
+  /* 26 (260729): the "DRAW!" header is gone, so the air it occupied is spent
+     here, between the drawings and the buttons. */
+  margin-top: 26px;
+  flex: 0 0 auto;
 }
 
-.savedNote {
+/* ── the "Saved!" popup (260728) ──────────────────────────────────────────
+   Confirmation after "Save to Desktop": the saved tile itself, on paper, with
+   an x to close. The backdrop is the same paper at partial opacity rather than
+   a grey scrim: grey is an ink this surface does not own. */
+.savePopupOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.savePopup {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 26px 34px 18px;
+  background: var(--paper);
+  max-width: min(88%, 560px);
+}
+
+.savePopupTitle {
   margin: 0;
-  font-family: var(--type);
-  font-size: 11px;
-  color: var(--ink-soft);
-  word-break: break-all;
+  font-size: var(--fs-title);
+  font-weight: 400;
+  -webkit-text-stroke: var(--hand-text-stroke-title) currentColor;
+}
+
+/* The preview is the share tile main wrote to disk, shown as an image: it is
+   already square and already carries its own layout, so it only needs a frame
+   drawn by the same pen as everything else. */
+.savePopupArt {
+  position: relative;
+  padding: 10px;
+}
+
+.savePopupImg {
+  display: block;
+  width: min(38vh, 46vw, 380px);
+  height: auto;
 }
 
 @media (max-width: 900px) {
   .game {
     flex-direction: column;
     height: auto;
+  }
+
+  /* Stacked, the page has no leftover height to hand the box, and the paper is
+     sized from the box rather than the other way round: without a height of its
+     own here the box would have nothing to give and the paper would collapse. */
+  .canvasBox {
+    flex: 0 0 auto;
+    height: 58vh;
+    min-height: 320px;
   }
 
   .side {

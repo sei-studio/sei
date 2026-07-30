@@ -4,7 +4,7 @@
  * introduces it using the same full-bleed layout as CharacterPage: the portrait
  * bleeds off the RIGHT edge behind a left-to-right scrim, and a left content
  * panel carries the reveal copy. That panel drops the profile page's crumb /
- * tabs / stats / deploy row and instead shows a "Say hello to" eyebrow, the
+ * tabs / stats / deploy row and instead shows the
  * name + public_id tag (when the cloud row has assigned one), a short intro
  * pulled from the character's description (falling back to the first sentences
  * of persona.source), and two CTAs:
@@ -85,13 +85,8 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
   }
 
   if (!character) {
-    return (
-      <div className={styles.fallback}>
-        <div className={styles.fallbackCol}>
-          <div className={styles.eyebrow}>Casting complete</div>
-        </div>
-      </div>
-    );
+    // Brief pre-load state — a blank fallback beats a stray label flashing in.
+    return <div className={styles.fallback} />;
   }
 
   const theme: 'light' | 'dark' = resolvedScheme();
@@ -124,7 +119,6 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
       </div>
 
       <main className={styles.content}>
-        <div className={styles.eyebrow}>Say hello to</div>
         <div className={styles.nameRow}>
           <h1 className={styles.heading}>{character.name}</h1>
           {character.public_id ? <IdTag id={character.public_id} size="md" /> : null}
@@ -136,7 +130,7 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
           <Button kind="quiet" size="lg" onClick={() => navigate({ kind: 'home' })}>
             Later
           </Button>
-          <Button kind="accent" size="lg" onClick={sayHello}>
+          <Button kind="accent" size="lg" onClick={sayHello} data-tutorial="say-hello">
             Say hello
           </Button>
         </div>

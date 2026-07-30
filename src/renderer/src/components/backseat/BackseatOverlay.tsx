@@ -157,7 +157,10 @@ export function BackseatOverlay(): React.ReactElement | null {
               </p>
             ) : (
               lines.map((l) => (
-                <div key={l.id} className={styles.line}>
+                <div
+                  key={l.id}
+                  className={`${styles.line} ${l.who === 'player' ? styles.linePlayer : ''}`}
+                >
                   <span className={styles.lineText}>{l.text}</span>
                   {l.clipPath ? (
                     <button

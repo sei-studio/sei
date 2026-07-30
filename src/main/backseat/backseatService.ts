@@ -44,12 +44,15 @@ import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildSystemBlocks, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { clampChatLanguage } from '../../shared/chatLanguage';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import * as chatStore from '../chat/chatStore';
+import type { LogBatch } from '../../shared/ipc';
 import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, tickNote } from './backseatPrompts';
 import { gateGrid, resetGateWindow } from './salienceGate';
+import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
 
 const MEMORY_BUDGET_BYTES = 12000;
 /** Transcript window. Backseat turns are frequent and short, so the same
@@ -71,6 +74,9 @@ export interface BackseatDeps {
   requestClip: (characterId: string, requestId: string) => void;
   /** True when a voice call is open, so replies are spoken rather than shown. */
   isCallActive?: (characterId: string) => boolean;
+  /** Batched log lines into the in-app developer console (LogsBar), same
+   *  pipeline as bot/chess/draw logs. */
+  pushLog?: (batch: LogBatch) => void;
 }
 
 interface Session {
@@ -87,10 +93,30 @@ interface Session {
    *  calls save_clip on two consecutive ticks about the same play does not
    *  produce two files. Cleared when the companion next stays quiet. */
   clipCooldownUntil: number;
+  /** Per-session log into the in-app console + a rolling file (backseatLog). */
+  log: BackseatLog;
 }
 
 const sessions = new Map<string, Session>();
 let deps: BackseatDeps | null = null;
+
+/**
+ * Dev only: keep the most recent grid per kind on disk so a human can check
+ * what the models are actually being shown (cell legibility, ordering, JPEG
+ * artifacts). Overwrites in place — this is a peephole, not a recording.
+ */
+async function dumpGridForDev(kind: string, grid: string): Promise<void> {
+  try {
+    const { app } = await import('electron');
+    if (app.isPackaged) return;
+    const dir = path.join(app.getPath('userData'), 'backseat-debug');
+    await mkdir(dir, { recursive: true });
+    const b64 = grid.replace(/^data:image\/\w+;base64,/, '');
+    await writeFile(path.join(dir, `grid-${kind}-latest.jpg`), Buffer.from(b64, 'base64'));
+  } catch {
+    /* debug aid only, never load-bearing */
+  }
+}
 
 export function initBackseatService(d: BackseatDeps): void {
   deps = d;
@@ -99,6 +125,22 @@ export function initBackseatService(d: BackseatDeps): void {
 function requireDeps(): BackseatDeps {
   if (!deps) throw new Error('backseat service not initialized');
   return deps;
+}
+
+/** One line to BOTH sinks: the terminal (prefixed) and the session's in-app
+ *  console log. Every user-visible diagnostic in this module goes through
+ *  here — a line that only reaches the terminal is invisible to anyone
+ *  debugging from LogsBar (260728: the in-app console read empty for a whole
+ *  session while the terminal had the full story). */
+function slog(s: Session, msg: string, warn = false): void {
+  (warn ? console.warn : console.log)(`[sei/backseat] ${msg}`);
+  s.log.line(msg);
+}
+
+/** Overlay-renderer console lines (signals, jolts, gate scheduling) forwarded
+ *  by backseatOverlay's console-message hook into the session log. */
+export function appendOverlayLog(characterId: string, message: string): void {
+  sessions.get(characterId)?.log.line(message);
 }
 
 export function getBackseatState(characterId: string): BackseatState | null {
@@ -121,6 +163,7 @@ export async function startBackseat(
   if (existing && existing.state.phase !== 'ended') await endBackseat(characterId);
 
   const character = await getCharacter(characterId);
+  const log = await createBackseatLog(characterId, deps?.pushLog ?? (() => {}));
   const s: Session = {
     characterId,
     state: {
@@ -137,15 +180,24 @@ export async function startBackseat(
     lastSpokeAt: 0,
     clips: new Map(),
     clipCooldownUntil: 0,
+    log,
   };
   sessions.set(characterId, s);
   resetGateWindow(characterId);
+  slog(s, `session start: mode=${mode}, source="${sourceName}"`);
   // The overlay window is not decoration: it is the renderer that owns the
   // capture pipeline, because it is the only one guaranteed to stay visible
   // (and therefore unthrottled) while the player is in a fullscreen game.
   const { openBackseatOverlay } = await import('../backseatOverlay');
   openBackseatOverlay({ characterId, sourceId, mode });
   push(s);
+
+  void (async () => {
+    const { app } = await import('electron');
+    if (!app.isPackaged) {
+      slog(s, `dev grid dumps: ${path.join(app.getPath('userData'), 'backseat-debug')}`);
+    }
+  })().catch(() => {});
 
   void (async () => {
     try {
@@ -192,6 +244,10 @@ export async function endBackseat(characterId: string): Promise<void> {
   push(s);
   sessions.delete(characterId);
   resetGateWindow(characterId);
+  slog(
+    s,
+    `session end: ${Math.round(durationMs / 1000)}s, ${lineCount} line(s) said`,
+  );
   try {
     const { closeBackseatOverlay } = await import('../backseatOverlay');
     closeBackseatOverlay();
@@ -225,21 +281,24 @@ export async function endBackseat(characterId: string): Promise<void> {
   // rolling summary, then the fold. Without this the companion watches an hour
   // of someone's game and afterwards has no idea it happened.
   try {
-    const minutes = Math.max(1, Math.round(durationMs / 60000));
+    // One shape for every game surface (src/main/chat/playSummary.ts). The
+    // window name is deliberately dropped with the rest of the detail; what
+    // survives is that the two of them spent the time together.
+    const character = await getCharacter(characterId);
     const row: ChatMessage = {
       id: randomUUID(),
       role: 'system',
       ts: Date.now(),
-      text: `You watched ${minutes === 1 ? 'a minute' : `${minutes} minutes`} of ${s.state.sourceName || 'their game'} together.`,
+      text: playSummaryText(character?.name ?? 'your companion', 'Backseat', durationMs),
       event: { kind: 'play', game: 'Backseat', durationMs },
     };
     await chatStore.appendMessage(characterId, row);
     requireDeps().pushChatMessage(characterId, row);
-    const character = await getCharacter(characterId);
     if (character) void foldIfDue(characterId, character.persona.expanded).catch(() => {});
   } catch (err) {
-    console.warn(`[sei] backseat play row failed: ${(err as Error).message}`);
+    slog(s, `play row failed: ${(err as Error).message}`, true);
   }
+  void s.log.close().catch(() => {});
 }
 
 /** Drop every session (renderer death/reload — capture cannot outlive it). */
@@ -259,9 +318,16 @@ export async function askGate(
   // Spending a gate call while the companion is barred from speaking anyway
   // is pure waste, and it also skews the adaptive threshold's window with
   // grids that could never have produced a line.
-  if (Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) return false;
-  if (s.inflight) return false;
-  return await gateGrid(characterId, grid, transcript);
+  if (Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) {
+    slog(s, `gate skipped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago)`);
+    return false;
+  }
+  if (s.inflight) {
+    slog(s, 'gate skipped (turn in flight)');
+    return false;
+  }
+  void dumpGridForDev('gate', grid);
+  return await gateGrid(characterId, grid, transcript, (line) => s.log.line(line));
 }
 
 // ── Clips ─────────────────────────────────────────────────────────────────
@@ -294,7 +360,7 @@ async function harvestClip(s: Session): Promise<string | null> {
     await writeFile(file, Buffer.from(b64, 'base64'));
     return file;
   } catch (err) {
-    console.warn(`[sei] backseat clip write failed: ${(err as Error).message}`);
+    slog(s, `clip write failed: ${(err as Error).message}`, true);
     return null;
   }
 }
@@ -319,7 +385,7 @@ async function readMemoryTail(characterId: string): Promise<string> {
  * un-honored tool call is a silently dropped write.
  */
 async function honorRemember(
-  characterId: string,
+  s: Session,
   content: Anthropic.Messages.ContentBlock[],
 ): Promise<void> {
   for (const b of content) {
@@ -327,9 +393,9 @@ async function honorRemember(
     const text = String((b.input as { text?: string })?.text ?? '').trim();
     if (!text) continue;
     try {
-      await appendMemory(path.join(paths.memoryDir(characterId), 'MEMORY.md'), text);
+      await appendMemory(path.join(paths.memoryDir(s.characterId), 'MEMORY.md'), text);
     } catch (err) {
-      console.warn(`[sei] backseat remember() failed: ${(err as Error).message}`);
+      slog(s, `remember() failed: ${(err as Error).message}`, true);
     }
   }
 }
@@ -344,16 +410,48 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   if (s.state.phase === 'paused') return;
 
   const isUser = tick.kind === 'user';
+  const label = tick.kind + (tick.joltReason ? `:${tick.joltReason}` : '');
   if (!isUser) {
-    if (s.inflight) return;
-    if (Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) return;
+    if (s.inflight) {
+      slog(s, `tick ${label} dropped (turn in flight)`);
+      return;
+    }
+    if (Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) {
+      slog(
+        s,
+        `tick ${label} dropped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago)`,
+      );
+      return;
+    }
   } else if (s.inflight && s.inflightKind !== 'user') {
     // Preempt a reaction with an answer.
+    slog(s, `tick user preempts in-flight ${s.inflightKind} turn`);
     s.inflight.abort();
     s.inflight = null;
     s.inflightKind = null;
   } else if (s.inflight) {
     return;
+  }
+  slog(s, `tick ${label} -> turn`);
+  void dumpGridForDev(tick.kind, tick.grid);
+
+  // The player's typed line is real conversation: persist it to the shared
+  // chat thread (so the main window shows it and the NEXT turn's history has
+  // the player's side), and echo it into the overlay's mini chat. Without this
+  // the transcript read like the companion talking to itself (260728 live).
+  if (isUser && tick.text) {
+    const msg: ChatMessage = { id: randomUUID(), role: 'user', text: tick.text, ts: Date.now() };
+    try {
+      await chatStore.appendMessage(s.characterId, msg);
+    } catch (err) {
+      slog(s, `player line persist failed: ${(err as Error).message}`, true);
+    }
+    const d = requireDeps();
+    d.pushChatMessage(s.characterId, msg);
+    const line: BackseatLine = { id: msg.id, text: msg.text, at: msg.ts, who: 'player' };
+    s.state.lines.push(line);
+    while (s.state.lines.length > LINE_TAIL) s.state.lines.shift();
+    d.pushLine(s.characterId, line);
   }
 
   const ctrl = new AbortController();
@@ -364,7 +462,7 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   } catch (err) {
     const e = err as { name?: string; message?: string };
     if (e?.name !== 'AbortError' && !/abort/i.test(e?.message ?? '')) {
-      console.warn(`[sei] backseat turn failed: ${e?.message}`);
+      slog(s, `turn failed: ${e?.message}`, true);
     }
   } finally {
     if (s.inflight === ctrl) {
@@ -404,7 +502,15 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     extraStable: BACKSEAT_CONTRACT,
   } as Parameters<typeof buildSystemBlocks>[0]);
 
-  const messages = toMessages(history.slice(-RECENT_CAP));
+  // On a user tick the player's line was just persisted (handleTick), so it is
+  // also the tail of `history`; drop that copy — the canonical one goes inline
+  // below with the grid attached, and the model must not read it twice.
+  let recent = history.slice(-RECENT_CAP);
+  if (tick.kind === 'user' && tick.text) {
+    const last = recent[recent.length - 1];
+    if (last && last.role === 'user' && last.text === tick.text) recent = recent.slice(0, -1);
+  }
+  const messages = toMessages(recent);
 
   // The player's own line is a real user message; a gate/jolt tick is not, so
   // it is framed as a system note. Either way the grid is attached to the same
@@ -439,7 +545,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   );
   if (ctrl.signal.aborted || s.inflight !== ctrl) return;
 
-  await honorRemember(s.characterId, res.content);
+  await honorRemember(s, res.content);
 
   const replyText = res.content
     .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
@@ -451,6 +557,11 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   // quiet turn does not start a new gap; the companion stays as available as
   // it was before the tick.
   if (!replyText || isSilenceFiller(replyText)) {
+    slog(
+      s,
+      `turn ${tick.kind}: silence` +
+        (replyText ? ` ("${replyText.slice(0, 60)}")` : ' (empty reply)'),
+    );
     s.clipCooldownUntil = 0;
     return;
   }
@@ -477,6 +588,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   const parts = splitReply(replyText, character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual')
     .filter((t) => t && !isSilenceFiller(t));
   if (!parts.length) return;
+  slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
 
   const d = requireDeps();
   const now = Date.now();

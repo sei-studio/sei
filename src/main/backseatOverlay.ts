@@ -101,6 +101,25 @@ export function openBackseatOverlay(args: {
     },
   });
 
+  // Relay this renderer's console: the capture pipeline (worker signals, jolt
+  // fires, gate scheduling) lives in THIS window, and its devtools are
+  // effectively unreachable under the fullscreen game a session runs behind.
+  // `[backseat` lines feed the session's in-app console log (all builds); the
+  // terminal echo is dev-only and adds anything warning-or-worse, with
+  // Vite/HMR chatter filtered out either way.
+  w.webContents.on('console-message', (event) => {
+    const { level, message } = event;
+    const isBackseat = message.includes('[backseat');
+    if (isBackseat) {
+      void import('./backseat/backseatService')
+        .then((m) => m.appendOverlayLog(args.characterId, message))
+        .catch(() => {});
+    }
+    if (app.isPackaged) return;
+    if (!isBackseat && level !== 'warning' && level !== 'error') return;
+    console.log(`[backseat-overlay${level === 'info' ? '' : `:${level}`}] ${message}`);
+  });
+
   w.setAlwaysOnTop(true, 'screen-saver');
   w.setVisibleOnAllWorkspaces(true, {
     visibleOnFullScreen: true,

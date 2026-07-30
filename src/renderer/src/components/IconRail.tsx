@@ -12,7 +12,8 @@
  *      Each socket carries a top-right activity badge when the character is
  *      on a voice call (phone) or in a live game session (controller) — see
  *      avatarActivityBadge below.
- *   5. Round + button — navigates to add-character
+ *   5. Round + button — always visible; opens the awaken flow, or a
+ *      "Party full" explainer when every companion slot is taken (260728)
  *   6. Flex spacer
  *   7. Credits/Cloud icon — StarIcon (4-point) in BOTH states for consistent
  *      rail iconography; only the click target differs:
@@ -102,6 +103,8 @@ interface RailButtonProps {
   onHoverStart?: () => void;
   setHover: SetHover;
   children: React.ReactNode;
+  /** Tutorial spotlight anchor (260728) — see components/tutorial. */
+  dataTutorial?: string;
 }
 
 function RailButton({
@@ -114,6 +117,7 @@ function RailButton({
   onHoverStart,
   setHover,
   children,
+  dataTutorial,
 }: RailButtonProps): React.ReactElement {
   const cls = [
     styles.railButton,
@@ -128,6 +132,7 @@ function RailButton({
       aria-label={title}
       className={cls}
       type="button"
+      data-tutorial={dataTutorial}
       onMouseEnter={(e) => {
         if (title) attachHover(e.currentTarget, title, setHover);
         onHoverStart?.();
@@ -330,6 +335,9 @@ export function IconRail(): React.ReactElement {
   // finish signing in we complete the switch automatically (see effect below).
   const [pendingCloudAfterSignIn, setPendingCloudAfterSignIn] = useState(false);
   const [hoverTip, setHoverTip] = useState<TooltipState | null>(null);
+  // 260728: the + socket is always rendered; a click while every companion
+  // slot is taken opens this explainer instead of the awaken flow.
+  const [showPartyFull, setShowPartyFull] = useState(false);
 
   // Flip the AI backend to cloud-proxy (the canonical switch SettingsScreen
   // uses), refresh the credits store so the rail swaps to the Playtime icon +
@@ -426,6 +434,7 @@ export function IconRail(): React.ReactElement {
             }}
             title="Home"
             setHover={setHoverTip}
+            dataTutorial="rail-home"
           >
             <RosterIcon size={22} />
           </RailButton>
@@ -480,23 +489,27 @@ export function IconRail(): React.ReactElement {
               setHover={setHoverTip}
             />
           ))}
-          {/* Hidden while the party is full: chars:save rejects a 5th companion,
-              so offering the entry point would only lead to that error. Reappears
-              reactively when a slot opens up. */}
-          {homeCharacters.length < MAX_COMPANION_SLOTS && (
-            <button
-              type="button"
-              className={`${styles.circleButton} ${view.kind === 'awaken' || view.kind === 'add-character' ? styles.circleActive : ''}`}
-              onClick={() => navigate({ kind: 'awaken' })}
-              aria-label="Awaken a companion"
-              onMouseEnter={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
-              onMouseLeave={() => setHoverTip(null)}
-              onFocus={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
-              onBlur={() => setHoverTip(null)}
-            >
-              <PlusIcon size={18} />
-            </button>
-          )}
+          {/* 260728: ALWAYS rendered. It used to unmount when the counted set
+              reached MAX_COMPANION_SLOTS, and any state where the count and the
+              visible roster disagreed made the button silently vanish with no
+              way to tell why ("+ is missing" report). A permanent entry point
+              with a "party full" dialog on click is discoverable in every
+              state, and chars:save stays the authoritative backstop. */}
+          <button
+            type="button"
+            className={`${styles.circleButton} ${view.kind === 'awaken' || view.kind === 'add-character' ? styles.circleActive : ''}`}
+            onClick={() => {
+              if (homeCharacters.length >= MAX_COMPANION_SLOTS) setShowPartyFull(true);
+              else navigate({ kind: 'awaken' });
+            }}
+            aria-label="Awaken a companion"
+            onMouseEnter={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
+            onMouseLeave={() => setHoverTip(null)}
+            onFocus={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
+            onBlur={() => setHoverTip(null)}
+          >
+            <PlusIcon size={18} />
+          </button>
         </div>
 
         <div className={styles.spacer} />
@@ -553,6 +566,24 @@ export function IconRail(): React.ReactElement {
         >
           {hoverTip.label}
         </div>
+      ) : null}
+
+      {showPartyFull ? (
+        <ModalShell
+          title="Party full"
+          onClose={() => setShowPartyFull(false)}
+          scrimClose
+        >
+          <p className={styles.cloudPromptBody}>
+            All {MAX_COMPANION_SLOTS} companion slots are taken. Release a companion from
+            their page to make room for a new one.
+          </p>
+          <ModalFooter>
+            <Button kind="primary" size="md" onClick={() => setShowPartyFull(false)}>
+              Got it
+            </Button>
+          </ModalFooter>
+        </ModalShell>
       ) : null}
 
       {showCloudPrompt ? (

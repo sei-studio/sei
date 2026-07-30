@@ -11,7 +11,13 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { squiggleEllipse, squiggleLine, squiggleRect } from './squigglePath';
+import {
+  squiggleBlob,
+  squiggleBlobEllipse,
+  squiggleEllipse,
+  squiggleLine,
+  squiggleRect,
+} from './squigglePath';
 import styles from './draw.module.css';
 
 function useSize(ref: React.RefObject<HTMLElement | null>): { w: number; h: number } {
@@ -39,15 +45,21 @@ interface FrameProps {
   /** Stable across renders, or the border re-wiggles and looks like it vibrates. */
   seed: string;
   shape?: 'rect' | 'ellipse';
-  strokeWidth?: number;
   className?: string;
 }
 
-/** A wobbly outline filling the nearest positioned ancestor. */
+/**
+ * A wobbly outline filling the nearest positioned ancestor.
+ *
+ * There is deliberately NO strokeWidth prop (260728). Width and colour come
+ * from CSS alone — `--hand-stroke` and `currentColor` — because every line on
+ * this surface has to read as the same pen, and a per-call-site number is how
+ * that drifted in the first place (the canvas frame was 2.5, everything else
+ * 2, the pen about 3.9).
+ */
 export function SquiggleFrame({
   seed,
   shape = 'rect',
-  strokeWidth = 2,
   className,
 }: FrameProps): React.ReactElement {
   const hostRef = useRef<HTMLSpanElement | null>(null);
@@ -62,21 +74,87 @@ export function SquiggleFrame({
     <span ref={hostRef} className={`${styles.frameHost} ${className ?? ''}`} aria-hidden="true">
       {d ? (
         <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className={styles.frameSvg}>
-          <path d={d} fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+          <path d={d} className={styles.handPath} fill="none" stroke="currentColor" strokeLinecap="round" />
         </svg>
       ) : null}
     </span>
   );
 }
 
-/** A wobbly horizontal rule spanning its parent. */
-export function SquiggleRule({
+/**
+ * The marker swipe behind a selected or hovered control.
+ *
+ * Rendered ALWAYS and revealed with opacity from CSS, because a hover state
+ * cannot mount a component: the shape has to already exist for `:hover` to show
+ * it, and re-seeding it on every pointer entry would make it crawl.
+ *
+ * It paints behind its siblings, so anything that must stay legible on top of
+ * it needs `.btnLabel` (position + z-index); a bare text node has no box to
+ * raise.
+ */
+export function SquiggleHighlight({
   seed,
-  strokeWidth = 2,
+  shape = 'rect',
 }: {
   seed: string;
-  strokeWidth?: number;
+  shape?: 'rect' | 'ellipse';
 }): React.ReactElement {
+  const hostRef = useRef<HTMLSpanElement | null>(null);
+  const { w, h } = useSize(hostRef);
+  return (
+    <span ref={hostRef} className={styles.highlightHost} aria-hidden="true">
+      {w > 2 && h > 2 ? (
+        <svg
+          width={w}
+          height={h}
+          viewBox={`0 0 ${w} ${h}`}
+          className={styles.frameSvg}
+          style={{ overflow: 'visible' }}
+        >
+          <path
+            d={
+              shape === 'ellipse'
+                ? squiggleBlobEllipse(w, h, seed)
+                : squiggleBlob(w, h, seed)
+            }
+            fill="currentColor"
+            stroke="none"
+          />
+        </svg>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * A wobbly underline pinned to the bottom of the nearest positioned ancestor,
+ * for the quiet text buttons. It exists so nothing on this page has to use
+ * `text-decoration: underline`, which is the one perfectly straight line CSS
+ * draws for you and the last machine-made line left on the surface.
+ */
+export function SquiggleUnderline({ seed }: { seed: string }): React.ReactElement {
+  const hostRef = useRef<HTMLSpanElement | null>(null);
+  const { w } = useSize(hostRef);
+  const h = 8;
+  return (
+    <span ref={hostRef} className={styles.underline} aria-hidden="true">
+      {w > 2 ? (
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className={styles.frameSvg}>
+          <path
+            d={squiggleLine(1, h / 2, w - 1, h / 2, seed)}
+            className={styles.handPath}
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+          />
+        </svg>
+      ) : null}
+    </span>
+  );
+}
+
+/** A wobbly horizontal rule spanning its parent. Width/colour from CSS, as above. */
+export function SquiggleRule({ seed }: { seed: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const { w } = useSize(hostRef);
   const h = 8;
@@ -86,9 +164,9 @@ export function SquiggleRule({
         <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
           <path
             d={squiggleLine(1, h / 2, w - 1, h / 2, seed)}
+            className={styles.handPath}
             fill="none"
             stroke="currentColor"
-            strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
         </svg>

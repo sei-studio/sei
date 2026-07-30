@@ -155,26 +155,30 @@ function providerLabel(provider: string): string {
 
 /**
  * Build the SignUpResult for an email Supabase reports as already registered.
- * Surfaces an honest, non-silent message (260605). When the account is
- * OAuth-only (no 'email' identity) we name the provider so the renderer can
- * steer the user to the right button; otherwise we tell them to sign in.
+ *
+ * 260729: silent forgot-password treatment. The 260605 honest message ("an
+ * account with this email already exists") leaked account existence to anyone
+ * typing an address into the signup form, so it is gone: we silently send a
+ * password-reset link to the address and return the SAME
+ * `{ ok: true, requiresVerification: true }` a brand-new signup gets. In-app,
+ * registered and unregistered emails are indistinguishable; the legitimate
+ * owner still gets in via the reset link in their inbox (the email copy says
+ * to ignore it if unrequested).
+ *
+ * OAuth-only accounts (Google, no password identity): sendPasswordReset
+ * refuses those by design (a reset link would graft a password identity), so
+ * no email goes out. Accepted cost of staying silent — that user can still
+ * sign in with "Continue with Google", and an attacker learns nothing.
  */
 async function alreadyRegisteredResult(email: string): Promise<SignUpResult> {
-  const providers = await lookupIdentityProviders(email);
-  if (providers && providers.length > 0 && !providers.includes('email')) {
-    const friendly = providerLabel(providers.includes('google') ? 'google' : providers[0]);
-    return {
-      ok: false,
-      code: 'already_registered',
-      provider: friendly,
-      message: `You already have a Sei account with this email via ${friendly}. Use “Continue with ${friendly}” to sign in.`,
-    };
+  try {
+    await sendPasswordReset({ email });
+  } catch (err) {
+    // Still return neutral success: the send failing must not reopen the
+    // enumeration channel, and the user can recover via "forgot password?".
+    logger.warn(`signup silent-reset send failed: ${(err as Error).message}`);
   }
-  return {
-    ok: false,
-    code: 'already_registered',
-    message: 'An account with this email already exists. Sign in instead.',
-  };
+  return { ok: true, requiresVerification: true };
 }
 
 /**
@@ -787,23 +791,25 @@ export async function exportData(): Promise<ExportDataResult> {
  * Rate-limit policy (Supabase default: 60s between resends per email):
  *   - 429 / "rate limit" → {code:'rate_limited'} with the verbatim D-04 copy.
  *   - Any other error    → {code:'network'} fallback.
- *   - Not signed in      → {code:'network', 'Not signed in'} — defensive only;
- *     the UI surfaces resend only from the verify-email Banner, which is gated
- *     on authState.kind === 'signed_in', so this branch should be unreachable.
+ *   - No email available → {code:'network', 'Not signed in'} — a freshly
+ *     signed-up-but-unverified user has NO session, so callers in that state
+ *     (the onboarding verify panel, 260729) pass the address they just signed
+ *     up with explicitly; the signed-in fallback serves the Settings Banner.
  *
  * 15s timeout wrap mirrors signInWithPassword / signUpWithPassword.
  *
  * Plan 10-06.
  */
-export async function resendVerification(): Promise<ResendVerificationResult> {
+export async function resendVerification(email?: string): Promise<ResendVerificationResult> {
   const state = getCurrentAuthState();
-  if (state.kind !== 'signed_in') {
+  const target = email?.trim() || (state.kind === 'signed_in' ? state.user.email : undefined);
+  if (!target) {
     return { ok: false, code: 'network', message: 'Not signed in' };
   }
   const supabase = getClient();
   try {
     const result = await withTimeout(
-      supabase.auth.resend({ type: 'signup', email: state.user.email }),
+      supabase.auth.resend({ type: 'signup', email: target }),
       15_000,
       // Timeout fallback shape — only .error is read on the unhappy path.
       () =>

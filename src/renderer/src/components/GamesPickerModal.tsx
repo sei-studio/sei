@@ -161,7 +161,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
         if (e.target === e.currentTarget) closeModal();
       }}
     >
-      <div className={styles.modal}>
+      <div className={styles.modal} data-tutorial="games-modal">
         {shareOpen ? (
           <BackseatSourcePicker
             characterId={characterId}

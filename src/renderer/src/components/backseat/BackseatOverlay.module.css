@@ -193,6 +193,17 @@
   gap: 3px;
 }
 
+/* The player's own typed lines: right-aligned and slightly dimmed, so the
+   two voices read apart without bubbles or names in a panel this small. */
+.linePlayer {
+  align-items: flex-end;
+}
+
+.linePlayer .lineText {
+  text-align: right;
+  color: rgba(255, 255, 255, 0.62);
+}
+
 .lineText {
   font-family: var(--sans);
   font-size: 13px;

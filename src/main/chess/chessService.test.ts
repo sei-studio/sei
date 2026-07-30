@@ -1,7 +1,7 @@
 /**
  * Chess service state machine — the parts most likely to corrupt a game:
  *   - the AI move enters the presentation hold, presents as pendingAiMove
- *     after prethink, and only commits on ackReveal (the renderer quiet gate)
+ *     when the turn ends, and only commits on ackReveal (the renderer quiet gate)
  *   - an illegal play() gets a retry tool_result, not a broken board
  *   - a player chat during the hold NEVER re-decides: the reply turn knows
  *     the queued move and may revise it (play) or hold it back (wait)
@@ -177,11 +177,9 @@ beforeEach(async () => {
   createSpy.mockReset();
   // Default LLM behavior: comment + no tools (used by reaction turns etc).
   createSpy.mockResolvedValue({ content: [{ type: 'text', text: 'gg' }], usage: {} });
-  // Presentation timing: present decisions instantly, keep idle ticks and the
-  // conversation cap out of the way unless a test tightens them.
-  CHESS_TIMING.prethinkFloorMs = 0;
-  CHESS_TIMING.prethinkCapMs = 0;
-  CHESS_TIMING.obviousExtraMs = 0;
+  // Presentation timing: keep idle ticks and the conversation cap out of the
+  // way unless a test tightens them. (Decisions present instantly since
+  // 260729 — the prethink delay is gone from the service itself.)
   CHESS_TIMING.idleMinMs = 120_000;
   CHESS_TIMING.idleMaxMs = 120_000;
   CHESS_TIMING.capMs = 45_000;
@@ -583,7 +581,9 @@ describe('chess session lifecycle', () => {
     expect(ended.result).toEqual({ winner: null, reason: 'draw-agreed' });
     // The draw leaves a history summary row in the transcript.
     const row = await waitFor(() => chatPushed.find((m) => m.event?.kind === 'play'));
-    expect(row.text).toBe('You and Marv played chess. The game ended in a draw after 1 move.');
+    // 260728: every game surface writes the same sentence, results excluded.
+    // See src/main/chat/playSummary.ts for why the outcome was dropped.
+    expect(row.text).toBe('You and Marv played Chess for a few seconds.');
   });
 });
 
@@ -638,7 +638,7 @@ describe('chess history summary row', () => {
         aiElo: expect.any(Number),
       },
     });
-    expect(row.text).toBe('You and Marv played chess. Marv won in 2 moves.');
+    expect(row.text).toBe('You and Marv played Chess for a few seconds.');
   });
 
   it('player resign writes the summary row with the companion as winner', async () => {
@@ -661,7 +661,7 @@ describe('chess history summary row', () => {
     expect(resigned.result).toEqual({ winner: 'b', reason: 'resign' });
 
     const row = await waitFor(() => chatPushed.find((m) => m.event?.kind === 'play'));
-    expect(row.text).toBe('You and Marv played chess. Marv won in 1 move.');
+    expect(row.text).toBe('You and Marv played Chess for a few seconds.');
   });
 
   it('closing an in-progress game writes the unfinished row; a moveless close leaves none', async () => {
@@ -844,16 +844,11 @@ describe('prompt truth and pacing (260722 commentary fixes)', () => {
     expect(sys).toContain('Never tell them to play or to move');
   });
 
-  it('prethink spends at most the remaining budget: a slow decide presents instantly despite a huge floor', async () => {
-    // The 10s cap is on APPARENT think time (decide latency included). With
-    // the LLM already slower than the whole budget, even a pathological floor
-    // must not add more delay on top.
-    CHESS_TIMING.prethinkFloorMs = 60_000;
-    CHESS_TIMING.obviousExtraMs = 0;
-    CHESS_TIMING.prethinkCapMs = 150;
+  it('a decided move presents immediately: no artificial delay after the decision', async () => {
+    // 260729: the sampled prethink delay is gone; the only wait the player
+    // sees is the real engine + LLM latency.
     createSpy.mockImplementation(async (params: { tools?: { name: string }[] }) => {
       if (params.tools?.some((t) => t.name === 'play')) {
-        await new Promise((r) => setTimeout(r, 200)); // decide latency > budget
         return {
           content: [{ type: 'tool_use', id: 'tu1', name: 'play', input: { move: 'e5' } }],
           usage: {},
@@ -866,7 +861,7 @@ describe('prompt truth and pacing (260722 commentary fixes)', () => {
     await playerMove(CHAR, 'e2e4');
     const pending = await waitFor(
       () => pushed.find((s) => s.pendingAiMove?.san === 'e5'),
-      2_000, // far below the 60s floor: only the exhausted budget can pass this
+      2_000,
     );
     expect(pending.pendingAiMove!.san).toBe('e5');
   });

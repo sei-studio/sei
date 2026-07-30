@@ -65,7 +65,7 @@
   height: min(60vh, 520px);
   resize: none;
   background: var(--bg);
-  border: 1px solid var(--border-strong);
+  border: none;
   border-radius: 0;
   padding: 16px;
   color: var(--text);

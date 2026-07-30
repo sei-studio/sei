@@ -1,0 +1,715 @@
+/**
+ * Onboarding scene styles (260728).
+ *
+ * This surface is a deliberate, documented exception to the tokens.css rule:
+ * it is the ONE themeless screen in the app. It paints a fixed light,
+ * hand-drawn look (matching the layer art + chibi sprites) across the whole
+ * window, with no window chrome (App skips MacosWindow for this view and the
+ * mac traffic lights are hidden over IPC). No dark/light mode, no borders —
+ * hierarchy comes from size and placement.
+ *
+ * TYPE RULE (260729): the handwritten face (Architects Daughter, the same
+ * face Draw! uses as --hand) is reserved for SUI'S LINES only. Every piece of
+ * apparatus — buttons, inputs, panels, hints — uses the app's normal --sans.
+ *
+ * TEXTURE RULE (260729): interactive whites are TRANSLUCENT and GRAINY.
+ * --grain is an SVG feTurbulence noise tile layered over rgba white — but the
+ * grain belongs to SURFACES, not controls-on-surfaces: the sign-in panel is
+ * grainy and the fields/buttons sitting ON it are clean (grain under
+ * everything, never on top). Dialogue-level controls sit directly on the sky,
+ * so they carry their own grain. The Google button stays opaque white with
+ * the four-color G per Google's branding.
+ *
+ * SCALE LOCK: `.stage` is the one element the scene art lives in. It keeps
+ * the art's exact 3:2 aspect, covers the window (width: max(100vw, 150vh)),
+ * and is anchored to the bottom edge — so the ground never floats and the
+ * layers and the Sui sprite share ONE scale factor (matched line weights).
+ * Dialogue and panels are window-coordinate overlays at full readable size.
+ */
+
+.root {
+  position: fixed;
+  inset: 0;
+  background: #9cc3fc; /* layer1 sky */
+}
+
+.card {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  user-select: none;
+  font-family: var(--sans, 'Rajdhani', 'Noto Sans', sans-serif);
+  /* WHITE speckle (260729), verified live in Chromium. Three load-bearing
+     pieces, learned the hard way: (1) color-interpolation-filters='sRGB' —
+     under the linearRGB default the noise distribution shifts so far that a
+     top-bucket threshold keeps nothing and the tile renders as flat color;
+     (2) the discrete feFuncA table thresholds the turbulence into distinct
+     specks (continuous low-alpha noise averages into the fill and vanishes);
+     (3) speck alpha stays WELL below 1 or the texture reads as solid white
+     flecks instead of grain.
+     KNOBS: baseFrequency 0.5 = speck size (lower = chunkier); the last four
+     tableValues = speck density/brightness (0.1/0.18 two-level grain). */
+  --grain: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27120%27%20height%3D%27120%27%3E%3Cfilter%20id%3D%27n%27%20color-interpolation-filters%3D%27sRGB%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.5%27%20numOctaves%3D%272%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20values%3D%270%200%200%200%201%200%200%200%200%201%200%200%200%200%201%200%200%200%201%200%27%2F%3E%3CfeComponentTransfer%3E%3CfeFuncA%20type%3D%27discrete%27%20tableValues%3D%270%200%200%200%200%200.1%200.1%200.18%200.18%27%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%27120%27%20height%3D%27120%27%20filter%3D%27url(%23n)%27%2F%3E%3C%2Fsvg%3E");
+}
+
+/* The scene has no titlebar; keep the window draggable from a top strip. */
+.dragStrip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  z-index: 40;
+  -webkit-app-region: drag;
+}
+
+.card button,
+.card input,
+.card select,
+.card a,
+.card label {
+  -webkit-app-region: no-drag;
+}
+
+/* ── Scene ─────────────────────────────────────────────────────────────── */
+
+.scene {
+  position: absolute;
+  inset: 0;
+}
+
+.stage {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: max(100vw, 150vh); /* cover a 3:2 canvas from any window aspect */
+  aspect-ratio: 3 / 2;
+}
+
+.sky,
+.layerImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* The stage IS the art's aspect — fill is exact, no cropping, no skew.
+     NO opacity transition here: the grass frames swap 1↔0 instantly. A
+     60ms crossfade let both tufts sit at partial alpha mid-swap, which
+     read as flicker (260729). */
+  object-fit: fill;
+}
+
+.ground {
+  position: absolute;
+  inset: 0;
+  /* Slow, symmetric ease both directions — the ground creeping down/up is
+     what sells the "camera tilting" illusion, so in and out share the SAME
+     duration and a gentle in-out curve (260729; was 950ms decelerate-only). */
+  transition: transform 2400ms cubic-bezier(0.45, 0.05, 0.3, 0.95);
+  will-change: transform;
+}
+
+.groundIn {
+  transform: translateY(0);
+}
+
+.groundOut {
+  transform: translateY(103%);
+}
+
+.sui {
+  position: absolute;
+  /* A sixth of her width hangs off the right edge (260729: 1% was too
+     centered, -21% cropped too much of her) so at 66% width she anchors the
+     corner without crowding the dialogue column. */
+  right: -10%;
+  bottom: 7%;
+  /* 1.75x the original 38% (260729): at 38% her pen weight read thinner
+     than the layer art's; at 66% the line thicknesses match. */
+  width: 66%;
+  aspect-ratio: 1241 / 828;
+  transition: transform 2600ms cubic-bezier(0.3, 0, 0.35, 1);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.suiInner {
+  position: absolute;
+  inset: 0;
+}
+
+/* The front copy of Sui: identical twin rendered AFTER the grass, visible
+   only in the rightmost 10% of the stage. There she overlaps the tufts; in
+   the other 90% the behind-grass copy shows through instead. */
+.suiFrontClip {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 0 0 90%);
+  pointer-events: none;
+}
+
+/* Walk bob — lives on the INNER wrapper because .sui's transform is the
+   slide transition and .suiImg's is the leaving flip. 520ms = two stride
+   frames (WALK_FRAME_MS 260), with a peak per step so the bounce lands in
+   time with the legs. */
+.suiWalking {
+  animation: suiBob 520ms ease-in-out infinite;
+}
+
+@keyframes suiBob {
+  0%, 50%, 100% { transform: translateY(0); }
+  25%, 75% { transform: translateY(-2%); }
+}
+
+.suiOn {
+  transform: translateX(0);
+}
+
+.suiOff {
+  transform: translateX(140%);
+}
+
+.suiImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Walking off is the walk-in reversed: she turns around (mirrored frames)
+   and strides out the way she came, instead of moonwalking backwards. */
+.suiFlipped .suiImg {
+  transform: scaleX(-1);
+}
+
+@keyframes suiJitter {
+  0%, 100% { margin-bottom: 0; }
+  25% { margin-bottom: 6px; }
+  75% { margin-bottom: -2px; }
+}
+
+.suiShake {
+  animation: suiJitter 220ms ease-in-out 3;
+}
+
+/* ── Dialogue ──────────────────────────────────────────────────────────── */
+
+.dialogue {
+  position: absolute;
+  top: 13%;
+  left: 7%;
+  /* Wide enough that the five art-style tiles sit in ONE row at the 1000px
+     window floor. */
+  width: 68%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  z-index: 10;
+}
+
+.lineText {
+  margin: 0;
+  /* Sui's voice — the ONE place the handwritten face appears. */
+  font-family: 'Architects Daughter', 'Comic Sans MS', cursive;
+  font-size: 32px;
+  line-height: 1.35;
+  color: #23283a;
+}
+
+.lineShout {
+  font-size: 48px;
+  letter-spacing: 0.04em;
+}
+
+.caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #23283a;
+  opacity: 0.6;
+  animation: caretBlink 0.9s steps(1) infinite;
+}
+
+@keyframes caretBlink {
+  50% { opacity: 0; }
+}
+
+/* "(mouse) or ↵ to continue" — the idle nudge. Mounted only after the line
+   has sat unadvanced for a while (OnboardApp owns the timer), so the
+   animation just fades it in on arrival. */
+.continueHint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: rgba(35, 40, 58, 0.55);
+  opacity: 0;
+  animation: hintIn 700ms ease forwards;
+}
+
+@keyframes hintIn {
+  to { opacity: 1; }
+}
+
+.hintMouse {
+  width: 15px;
+  height: 20px;
+  display: block;
+}
+
+.hintGlyph {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* ── Choices ───────────────────────────────────────────────────────────── */
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.choicesCol {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* FLAT rule (260729, replaced the brief neumorphic pass): no shadows, no
+   depth illusion anywhere. Every window and button is a flat grainy
+   translucent white defined by a single hairline white border; fields are
+   the same surface without the border. */
+
+.pill {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 14px;
+  padding: 10px 24px;
+  background-color: rgba(255, 255, 255, 0.42);
+  background-image: var(--grain);
+  color: #23283a;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.pill:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.62);
+}
+
+.pill:active:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.75);
+}
+
+.pill:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pillWide {
+  width: 100%;
+  text-align: center;
+}
+
+.pillPicked {
+  background-color: rgba(255, 255, 255, 0.78);
+  border-color: rgba(255, 255, 255, 0.95);
+}
+
+.rankBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #23283a;
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.quietLink {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 4px 2px;
+  color: #23283a;
+  opacity: 0.55;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+/* Brackets frame every quiet link so bare text doesn't float unanchored. */
+.quietLink::before {
+  content: '[ ';
+}
+
+.quietLink::after {
+  content: ' ]';
+}
+
+.quietLink:hover {
+  opacity: 0.9;
+}
+
+.nameInput {
+  appearance: none;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  padding: 12px 20px;
+  min-width: 320px;
+  background-color: rgba(255, 255, 255, 0.42);
+  background-image: var(--grain);
+  color: #23283a;
+  font-family: inherit;
+  font-size: 21px;
+  font-weight: 500;
+}
+
+.nameInput:focus {
+  background-color: rgba(255, 255, 255, 0.58);
+}
+
+.nameInput::placeholder {
+  color: rgba(35, 40, 58, 0.4);
+}
+
+/* ── Art style tiles ───────────────────────────────────────────────────── */
+
+.artRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.artTile {
+  appearance: none;
+  border: none;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: inherit;
+  transition: transform 120ms ease;
+}
+
+.artTile:hover {
+  transform: translateY(-2px) scale(1.04);
+}
+
+.artImgs {
+  display: flex;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.artImgs img {
+  width: 58px;
+  height: 78px;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Panels (sign-in / local setup / progress) ─────────────────────────── */
+
+.panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 380px;
+  max-height: 90%;
+  overflow-y: auto;
+  border-radius: 22px;
+  padding: 30px 30px 26px;
+  background-color: rgba(255, 255, 255, 0.22);
+  background-image: var(--grain);
+  backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  align-items: stretch;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  animation: panelIn 500ms ease both;
+  z-index: 20;
+}
+
+@keyframes panelIn {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.panelLogo {
+  height: 30px;
+  align-self: center;
+  margin-bottom: 8px;
+  /* sei-text.png is black glyphs on transparent; force to pure white
+     regardless of source color, matching the panel's white text. */
+  filter: brightness(0) invert(1);
+  image-rendering: pixelated;
+}
+
+.panelText {
+  margin: 0;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 500;
+  text-align: center;
+  text-shadow: 0 1px 6px rgba(35, 40, 58, 0.35);
+}
+
+.panelNote {
+  margin: 0;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  opacity: 0.85;
+  text-shadow: 0 1px 6px rgba(35, 40, 58, 0.35);
+}
+
+.panelLink {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.panelError {
+  margin: 0;
+  color: #7a1f2b;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* Fields and buttons ON the panel carry no grain of their own — the panel's
+   texture stays underneath them (grain under everything, never on top). */
+.field {
+  appearance: none;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  padding: 11px 15px;
+  background-color: rgba(255, 255, 255, 0.38);
+  color: #23283a;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.field:focus {
+  background-color: rgba(255, 255, 255, 0.55);
+}
+
+.field::placeholder {
+  color: rgba(35, 40, 58, 0.45);
+}
+
+.fieldSelect {
+  appearance: none;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  padding: 11px 15px;
+  background-color: rgba(255, 255, 255, 0.38);
+  color: #23283a;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+
+.fieldSelect:focus {
+  background-color: rgba(255, 255, 255, 0.55);
+}
+
+/* Pills rendered ON the panel (Sign in, Resend, Try again) drop their grain
+   for the same reason as the fields: the panel's texture sits beneath them. */
+.panel .pill {
+  background-image: none;
+}
+
+/* Google's button: opaque white with the four-color G, borderless (260729),
+   corners matched to the pills. Deliberately NOT grainy or translucent. */
+.googleBtn {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 42px;
+  border: none;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-family: Roboto, 'Noto Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.googleBtn:hover:not(:disabled) {
+  background-color: #f4f6f8;
+}
+
+.googleBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.googleIcon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.dobRow {
+  display: flex;
+  gap: 8px;
+}
+
+.tosRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: #ffffff;
+  font-size: 14px;
+  text-shadow: 0 1px 6px rgba(35, 40, 58, 0.35);
+  cursor: pointer;
+}
+
+.tosRow input {
+  margin-top: 3px;
+}
+
+/* ── Setup state (boxless, 260729) ─────────────────────────────────────── */
+
+/* Vertically centered: logo, then the bar, then the caption. */
+.setupWrap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(460px, 80%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  z-index: 20;
+  animation: setupIn 500ms ease both;
+}
+
+@keyframes setupIn {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.setupLogo {
+  height: 58px;
+  /* Extra air between the wordmark and the progress bar (the flex gap stays
+     22px so the caption spacing under the bar is unchanged). */
+  margin-bottom: 16px;
+  /* sei-text.png is black glyphs on transparent; force pure white. */
+  filter: brightness(0) invert(1);
+  image-rendering: pixelated;
+}
+
+.progressBig {
+  height: 14px;
+  width: 100%;
+}
+
+/* ── Progress bar ──────────────────────────────────────────────────────── */
+
+.progress {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  width: 40%;
+  border-radius: 999px;
+  background: #ffffff;
+  animation: progressCreep 90s cubic-bezier(0.15, 0.6, 0.5, 1) forwards;
+}
+
+@keyframes progressCreep {
+  0% { width: 4%; }
+  20% { width: 46%; }
+  60% { width: 76%; }
+  100% { width: 94%; }
+}
+
+/* ── Close button + fade ───────────────────────────────────────────────── */
+
+.closeBtn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 50;
+  appearance: none;
+  border: none;
+  background: none;
+  color: rgba(35, 40, 58, 0.4);
+  font-size: 24px;
+  line-height: 1;
+  padding: 6px 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.card:hover .closeBtn {
+  opacity: 1;
+}
+
+.closeBtn:hover {
+  color: rgba(35, 40, 58, 0.85);
+}
+
+.fade {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 850ms ease;
+  z-index: 60;
+}
+
+.fadeOn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.fadeLight {
+  background: #ffffff;
+}
+
+.fadeDark {
+  background: #0b0d12;
+}

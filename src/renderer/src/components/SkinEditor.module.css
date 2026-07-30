@@ -102,7 +102,6 @@
   text-align: center;
   background: color-mix(in srgb, var(--window) 82%, transparent);
   backdrop-filter: blur(2px);
-  border: 1px solid var(--border);
 }
 
 .setupOverlayTitle {

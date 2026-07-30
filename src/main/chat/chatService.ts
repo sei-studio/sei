@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, ChatSendResult, LanState } from '../../shared/ipc';
+import type { ChatMessage, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
@@ -57,8 +57,11 @@ export interface ChatDeps {
    * streaming voice turn to emit each sentence the moment it completes, so TTS
    * starts on sentence 1 while the rest still generates. Wired to pushChatMessage
    * in index.ts; absent → the turn falls back to the blocking, all-at-once path.
+   *
+   * `speech` places the line inside its own reply for TTS utterance conditioning
+   * (260729) — the streamed path's equivalent of the reveal loop's prev/more.
    */
-  emitReply?: (characterId: string, message: ChatMessage) => void;
+  emitReply?: (characterId: string, message: ChatMessage, speech?: SpokenLineContext) => void;
 }
 
 // 260725: doubled 6000 -> 12000 alongside the bot-side compaction trigger
@@ -143,11 +146,25 @@ async function honorRememberCalls(characterId: string, content: Anthropic.Messag
  * written one-thought-per-line as a single wall of text — a model prompted to
  * "keep lines short like texting" separates thoughts with single newlines, not
  * blank ones). One line → one bubble, matching the bot's in-game
- * splitChatMessages. Purely visual: voice TTS streams off the raw reply by
- * sentence, not off these bubbles. Empty chunks are dropped; a reply with no
- * content collapses to a single "…" so the turn is never message-less.
+ * splitChatMessages. Empty chunks are dropped; a reply with no content collapses
+ * to a single "…" so the turn is never message-less.
+ *
+ * `spoken` is set on a VOICE CALL, and it turns the trailing-period strip off.
+ * The bubbles this returns are ALSO the text handed to TTS on a call (both the
+ * streamed emit and persistReplies), so the strip was deleting the one mark
+ * ElevenLabs reads as "this thought ended" — 260729: a one-sentence spoken reply
+ * came out with no terminal pitch fall, sounding cut off mid-sentence. On a call
+ * the line is speech being transcribed, not a text message, so it keeps its
+ * punctuation everywhere: in the clip, in the caption and in the transcript.
+ * (The comment that used to sit here claimed this function was "purely visual"
+ * because "voice TTS streams off the raw reply by sentence". It does not: the
+ * streamed sentence is bubbled through here first.)
  */
-export function splitReply(text: string, punctuation: 'casual' | 'deliberate' = 'casual'): string[] {
+export function splitReply(
+  text: string,
+  punctuation: 'casual' | 'deliberate' = 'casual',
+  spoken = false,
+): string[] {
   const parts = text
     .split(/\n+/)
     .map((s) => s.trim())
@@ -156,7 +173,7 @@ export function splitReply(text: string, punctuation: 'casual' | 'deliberate' = 
     // ("hm...") carries tone and is kept, and ? / ! always stay. 'deliberate'
     // characters (character.metadata.punctuation) keep their full stops.
     // Mirrors splitChatMessages in src/bot/brain/orchestrator.js.
-    .map((s) => (punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')))
+    .map((s) => (spoken || punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')))
     .filter(Boolean);
   return parts.length ? parts : ['…'];
 }
@@ -450,7 +467,8 @@ async function persistReplies(
   // Silence-filler drop is voice-only (see SILENCE_FILLER_RE): typed chat never
   // prompts the "(silence)" convention, so a filler-shaped line there is a real
   // reply and persisting it beats silently losing the turn.
-  const parts = splitReply(replyText, punctuation);
+  // A voice reply keeps its terminal punctuation (see splitReply `spoken`).
+  const parts = splitReply(replyText, punctuation, opts?.voice === true);
   const replies: ChatMessage[] = (opts?.voice
     ? parts.map(stripPeerImpersonation).filter((text) => text && !isSilenceFiller(text))
     : parts)
@@ -578,13 +596,28 @@ export async function sendChatMessage(
     const isStreaming = isVoice;
     const streamedReplies: ChatMessage[] = [];
     let streamBuf = '';
-    const emitStreamedBubble = async (raw: string): Promise<void> => {
-      for (const raw_b of splitReply(raw, prep.punctuation)) {
-        // The silence-filler and peer-impersonation drops stay VOICE-scoped
-        // (matching persistReplies): typed chat never prompts the "(silence)"
-        // convention, so a filler-shaped line there is a real reply.
-        const b = isVoice ? stripPeerImpersonation(raw_b) : raw_b;
-        if (!b || (isVoice && isSilenceFiller(b))) continue;
+    /**
+     * The line emitted just before this one, WITHIN this reply (260729). It
+     * rides out with each push as `speech.prev` so TTS can condition the clip's
+     * opening on it (previous_text — see voice/tts.ts ttsContextFor). The
+     * renderer cannot supply it on this path: its own prev/more bookkeeping
+     * lives in the blocking reveal loop, which a streamed reply skips
+     * entirely, so every clip on a live call was reaching ElevenLabs with no
+     * context at all and each sentence opened as a fresh utterance.
+     */
+    let prevSpoken: string | undefined;
+    /** `moreAfter`: text of this same reply is ALREADY known to follow. */
+    const emitStreamedBubble = async (raw: string, moreAfter: boolean): Promise<void> => {
+      // The silence-filler and peer-impersonation drops stay VOICE-scoped
+      // (matching persistReplies): typed chat never prompts the "(silence)"
+      // convention, so a filler-shaped line there is a real reply. Resolved up
+      // front, not inside the loop, because `more` needs to know which of these
+      // is genuinely the last one going out.
+      const parts = splitReply(raw, prep.punctuation, isVoice)
+        .map((b) => (isVoice ? stripPeerImpersonation(b) : b))
+        .filter((b) => b && !(isVoice && isSilenceFiller(b)));
+      for (let i = 0; i < parts.length; i++) {
+        const b = parts[i];
         const msg: ChatMessage = {
           id: randomUUID(),
           role: 'companion',
@@ -595,7 +628,8 @@ export async function sendChatMessage(
         };
         streamedReplies.push(msg);
         await chatStore.appendMessage(args.characterId, msg);
-        deps.emitReply?.(args.characterId, msg);
+        deps.emitReply?.(args.characterId, msg, { prev: prevSpoken, more: i < parts.length - 1 || moreAfter });
+        prevSpoken = b;
       }
     };
 
@@ -646,13 +680,26 @@ export async function sendChatMessage(
             streamBuf += ev.delta.text;
             const { sentences, rest } = takeSentences(streamBuf);
             streamBuf = rest;
-            for (const s of sentences) await emitStreamedBubble(s);
+            // `more` is only ever asserted from text we ALREADY hold: another
+            // extracted sentence, or a partial left in the buffer. Mid-stream we
+            // cannot know whether the model is about to write a further
+            // sentence, and guessing the wrong way is the expensive direction —
+            // a false `more` sends next_text on what turns out to be the last
+            // line and takes its terminal fall away, which is the very bug this
+            // change exists to fix. Unknown therefore means false: the clip
+            // lands as a complete sentence, and if another does follow, IT gets
+            // `prev` so its own opening still continues cleanly.
+            for (let i = 0; i < sentences.length; i++) {
+              await emitStreamedBubble(sentences[i], i < sentences.length - 1 || streamBuf.trim().length > 0);
+            }
           }
         }
         res = await stream.finalMessage();
         // This hop's trailing partial (a final sentence with no boundary punct,
         // or the whole reply when the model ends without terminal punctuation).
-        if (streamBuf.trim()) await emitStreamedBubble(streamBuf);
+        // Nothing more is known to follow: a further hop may still speak, but
+        // only after a tool round trip, which is a new utterance by then.
+        if (streamBuf.trim()) await emitStreamedBubble(streamBuf, false);
         streamBuf = '';
       } else {
         res = await client.messages.create(params, opts);

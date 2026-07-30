@@ -191,18 +191,26 @@ export async function gateGrid(
   characterId: string,
   grid: string,
   transcript?: string,
+  /** Extra sink for the diagnostic lines (the session's in-app console log);
+   *  the terminal always gets its copy regardless. */
+  log?: (line: string) => void,
 ): Promise<boolean> {
+  const emit = (line: string, warn = false): void => {
+    (warn ? console.warn : console.log)(`[sei/backseat] ${line}`);
+    log?.(line);
+  };
   const key = process.env.SEI_GATE_DEV_KEY;
   if (!key) {
     if (!warnedMissingKey) {
       warnedMissingKey = true;
-      console.warn('[sei] backseat: no SEI_GATE_DEV_KEY — the salience gate is disabled.');
+      emit('no SEI_GATE_DEV_KEY — the salience gate is disabled.', true);
     }
     return false;
   }
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), GATE_TIMEOUT_MS);
+  const t0 = Date.now();
   try {
     const res = await fetch(DEEPINFRA_URL, {
       method: 'POST',
@@ -225,10 +233,18 @@ export async function gateGrid(
         ],
       }),
     });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      // Loud on purpose: fail-closed means every one of these is a companion
+      // that goes quiet with no visible reason (401 = bad key, 402 = balance).
+      emit(`gate HTTP ${res.status} (${Date.now() - t0}ms)`, true);
+      return false;
+    }
     const body = (await res.json()) as { choices?: unknown[] };
     const score = scoreFromLogprobs(body.choices?.[0]);
-    if (score === null) return false;
+    if (score === null) {
+      emit('gate: response had no usable score', true);
+      return false;
+    }
 
     const scores = windows.get(characterId) ?? [];
     const threshold = thresholdFor(scores);
@@ -237,8 +253,20 @@ export async function gateGrid(
     scores.push(score);
     while (scores.length > WINDOW) scores.shift();
     windows.set(characterId, scores);
-    return score >= threshold;
-  } catch {
+    const pass = score >= threshold;
+    // One line per call (6 s cadence): the whole health of the gate — score
+    // separation, learned cutoff, window fill, latency — reads off this.
+    emit(
+      `gate p=${score.toFixed(3)} cut=${threshold.toFixed(3)} ` +
+        `n=${scores.length} ${Date.now() - t0}ms -> ${pass ? 'TICK' : 'quiet'}`,
+    );
+    return pass;
+  } catch (err) {
+    const e = err as { name?: string; message?: string };
+    emit(
+      `gate ${e?.name === 'AbortError' ? `timeout after ${GATE_TIMEOUT_MS}ms` : `failed: ${e?.message}`}`,
+      true,
+    );
     return false;
   } finally {
     clearTimeout(timer);

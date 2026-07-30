@@ -16,10 +16,12 @@ import type { Persona } from '../../shared/characterSchema';
 import {
   UNIVERSAL_BASELINE,
   CHAT_BASELINE,
+  GAME_SURFACE_BASELINE,
   VOICE_CALL_PRIMER,
   renderPersona,
   renderChatProactivenessDirective,
   renderPunctuationDirective,
+  VOICE_PUNCTUATION_DIRECTIVE,
   renderLanguageDirective,
 } from '../../bot/brain/promptLibrary.js';
 import type { ChatLanguage } from '../../shared/chatLanguage';
@@ -36,8 +38,23 @@ export interface BuildSystemArgs {
    * Texting punctuation register (character.metadata.punctuation, 260705).
    * Rendered as the same PUNCTUATION_DIRECTIVES text the game brain caches, and
    * enforced mechanically by splitReply's trailing-period strip (casual only).
+   * IGNORED when `voiceCall` is set (260729): a call is spoken, so the register
+   * and the strip both step aside for VOICE_PUNCTUATION_DIRECTIVE and
+   * splitReply's `spoken` flag. Punctuation is intonation there, not style.
    */
   punctuation: 'casual' | 'deliberate';
+  /**
+   * Which surface this prompt is for (260728). Default 'chat'.
+   *
+   * 'game' swaps the Discord-like CHAT_BASELINE for GAME_SURFACE_BASELINE and
+   * drops the two chat-only tails: the "player messages are timestamped" note
+   * (a game surface does not stamp its lines) and the Minecraft
+   * connection/launch status block (no game surface passes a launch tool, and
+   * "you are NOT in any Minecraft world" is noise when the character is sitting
+   * at a chess board). Draw! and chess pass 'game'; chat, voice and backseat
+   * stay on 'chat'.
+   */
+  surface?: 'chat' | 'game';
   /** Tail of MEMORY.md (shared with the game) — what the companion remembers. */
   memory: string;
   /** Rolling cross-surface conversation summary (bridge.json). */
@@ -170,6 +187,7 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   // Static per config, so it rides the cached block 0 like the timestamp
   // note; a language auto-switch misses the cache once, the honest price.
   const languageDirective = renderLanguageDirective(args.language ?? 'en');
+  const isGame = args.surface === 'game';
   const blocks: SystemBlock[] = [{
     type: 'text',
     text:
@@ -183,11 +201,13 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
           'One exception: when the player is saying goodbye or ending the call, never reply with (silence). Say a short goodbye back, and if the conversation is clearly over, hang up with end_call.\n\n'
         : '') +
       (inGroupCall ? `[group call] ${groupCallNote(args.voicePeers as string[])}\n\n` : '') +
-      `${UNIVERSAL_BASELINE}\n\n${CHAT_BASELINE}\n\n` +
+      `${UNIVERSAL_BASELINE}\n\n${isGame ? GAME_SURFACE_BASELINE : CHAT_BASELINE}\n\n` +
       (languageDirective ? `${languageDirective}\n\n` : '') +
-      'Player messages are prefixed with the time they were sent, like "[3 Jul 10:34]". ' +
-      'Use it to notice gaps — a new day or a long silence deserves acknowledgment, not mid-conversation continuity. ' +
-      'Never copy the format: your own replies must not contain timestamps.',
+      (isGame
+        ? ''
+        : 'Player messages are prefixed with the time they were sent, like "[3 Jul 10:34]". ' +
+          'Use it to notice gaps — a new day or a long silence deserves acknowledgment, not mid-conversation continuity. ' +
+          'Never copy the format: your own replies must not contain timestamps.'),
   }];
 
   // Persona block carries the cache boundary. Same renderer as the MC bot; the
@@ -198,7 +218,13 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   ];
   if (args.preferredName) personaParts.push(`The player's name is ${args.preferredName}.`);
   personaParts.push(renderChatProactivenessDirective(args.proactiveness));
-  personaParts.push(renderPunctuationDirective(args.punctuation));
+  // Punctuation register (260729): a call is SPOKEN, so the texting directive is
+  // replaced rather than added to — see VOICE_PUNCTUATION_DIRECTIVE. The persona
+  // block's cached prefix already diverges between chat and call (block 0 leads
+  // with the primer), so branching here costs no extra cache write.
+  personaParts.push(
+    args.voiceCall === true ? VOICE_PUNCTUATION_DIRECTIVE : renderPunctuationDirective(args.punctuation),
+  );
   blocks.push({ type: 'text', text: personaParts.join('\n\n') });
 
   // 260725 Knowledge — user-uploaded reference material. Sits between persona
@@ -261,16 +287,19 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
       'or in the world, that session ended or the join failed. Never claim to be in the game now.';
   blocks.push({
     type: 'text',
-    text:
-      `The current date and time is ${formatNow()}.\n` +
-      `${connLine}\n` +
-      (args.openWorldDetected
-        ? 'World status: an open Minecraft world is detected, so you could join if asked. ' +
-          'Only call launch when the player clearly asks you to play or join right now. ' +
-          'A question like "are you in the game?" or "can you see my world?" is NOT a request to join — just answer it in words; do not launch.'
-        : 'World status: no open Minecraft world is detected — the player has none open to LAN, so launch would fail. ' +
-          'Do not call launch. If they want to play, walk them through opening their world to LAN in your own words. ' +
-          'You cannot see their screen, so describe the steps, do not quote any status text.'),
+    text: isGame
+      ? // A game surface has no launch tool and is not about Minecraft, so the
+        // clock is the only fact here that still applies to it.
+        `The current date and time is ${formatNow()}.`
+      : `The current date and time is ${formatNow()}.\n` +
+        `${connLine}\n` +
+        (args.openWorldDetected
+          ? 'World status: an open Minecraft world is detected, so you could join if asked. ' +
+            'Only call launch when the player clearly asks you to play or join right now. ' +
+            'A question like "are you in the game?" or "can you see my world?" is NOT a request to join — just answer it in words; do not launch.'
+          : 'World status: no open Minecraft world is detected — the player has none open to LAN, so launch would fail. ' +
+            'Do not call launch. If they want to play, walk them through opening their world to LAN in your own words. ' +
+            'You cannot see their screen, so describe the steps, do not quote any status text.'),
   });
 
   // Prompt caching (260706): re-sending the full memory + summary uncached every

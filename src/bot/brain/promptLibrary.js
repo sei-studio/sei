@@ -57,6 +57,32 @@ minecraft: Vanilla Minecraft. open-world survival game. you can join the player'
 `.trim()
 
 // =============================================================================
+// 2a. IN-APP GAME SURFACE — chess, Draw!, and the other games that run inside
+//     the app with their own board or canvas beside a chat column.
+//
+//     These surfaces used to be handed CHAT_BASELINE, which opens with "This is
+//     a text chat, not a game" and describes an asynchronous Discord-like
+//     interface. Live capture (260728, Draw!): the character talked about the
+//     player "reading" its lines, said "waiting for you to read this lol"
+//     mid-turn, and carried a drawer's frame into a turn it had spent guessing.
+//     It also described launch(), a tool no game surface passes. So the surface
+//     contract is its own document: live, side by side, and the game's own rules
+//     below it are the authority on whose turn it is.
+// =============================================================================
+
+export const GAME_SURFACE_BASELINE = `
+You are playing a game with the player inside Sei Terminal, live, right now. This is NOT a text conversation and it is not Minecraft. The game's own rules appear later in this prompt, and they are the authority on what is happening and whose turn it is.
+
+Your text output goes to the game's chat, which sits right beside the game itself. The player is there the whole time and sees each line the instant you write it, so keep it to one or two short lines at a time and leave room for them to answer.
+
+Talk TO them, never about them. Say "you". Never use their name as the subject of a sentence and never refer to them in the third person: the rules below name them so they can say who does what, and that naming is for you to read, not to copy.
+
+What you write is a plain line in a chat box, exactly as typed. No markdown of any kind: no asterisks, no bold or italics, no backticks, no headers, no bullet points, no emoji-as-formatting. The prompt you are reading is formatted; nothing you write is.
+
+You can see the game. So can they. Do not describe the state of it back to them, do not narrate what you are about to do, and do not announce your own moves.
+`.trim()
+
+// =============================================================================
 // 2b. VOICE CALL MODE — prepended to the START of the prompt (both surfaces:
 //     the idle chat brain's block 0 and the game brain's per-turn seed) while
 //     the player has a live voice call open. Everything the model writes for
@@ -644,6 +670,23 @@ export function renderPunctuationDirective(punctuation) {
   const key = punctuation === 'deliberate' ? 'deliberate' : 'casual'
   return `# TEXTING\n${PUNCTUATION_DIRECTIVES[key]}`
 }
+
+/**
+ * 260729: the texting directive above has NO business on a voice call, and it
+ * was going out on every one of them (the persona block is shared, and only
+ * block 0 branched on voiceCall). Everything the companion says on a call is
+ * read aloud by ElevenLabs, which takes its intonation from the punctuation:
+ * "no period at the end of a sentence" produced clip after clip of continuation
+ * prosody, so a finished single-sentence answer landed with no terminal pitch
+ * fall and sounded cut off mid-thought. `?` and `!` survive the texting
+ * register, which is exactly why questions sounded finished and statements
+ * never did. The synthesis boundary repairs an unpunctuated line either way
+ * (voice/spokenRegister.ts toSpokenUtterance), but the model should be writing
+ * speech in the first place: a stop it chose sits where it means the beat, and
+ * a question mark it chose is a question the backstop cannot infer.
+ */
+export const VOICE_PUNCTUATION_DIRECTIVE = `# SPEAKING
+You are calling, not typing. Write exactly what you would SAY, and punctuate it the way it should be HEARD: ordinary sentence capitalization, a full stop where a statement lands, a question mark on a question, an ellipsis (...) where you genuinely trail off. That punctuation is not formality and it does not make you stiff, it is the intonation your voice carries: a line that ends on nothing is spoken as an unfinished thought. Nothing here changes how casual you are, only that you are heard instead of read.`
 
 // 260709: conversation-language directive. The conversation language
 // (UserConfig.chat_language) is auto-detected from the player's voice since

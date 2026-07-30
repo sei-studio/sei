@@ -10,7 +10,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { DrawChatMessage } from '@shared/drawIpc';
-import { SquiggleFrame } from './Squiggle';
+import { SquiggleFrame, SquiggleHighlight } from './Squiggle';
 import styles from './draw.module.css';
 
 export interface DrawChatProps {
@@ -50,7 +50,7 @@ export function DrawChat({
   return (
     <div className={styles.chat}>
       <div className={styles.chatList} ref={listRef}>
-        {messages.map((m) => {
+        {messages.map((m, i) => {
           if (m.system) {
             return (
               <p key={m.id} className={styles.chatSystem}>
@@ -58,13 +58,53 @@ export function DrawChat({
               </p>
             );
           }
+          // Consecutive lines from one person are one block under one name.
+          // Guessing produces runs of four or five lines from the same side,
+          // and repeating the name above each turned the column into a list of
+          // labels with the actual talking squeezed between them. A system line
+          // breaks the run, because something happened in between.
+          const prev = messages[i - 1];
+          const startsTurn = !prev || prev.system || prev.from !== m.from;
+          const cls = [
+            styles.chatLine,
+            startsTurn && i > 0 ? styles.chatTurn : '',
+            m.correct ? styles.chatCorrect : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
+          // The swipe goes behind the winning WORD, not the whole sentence
+          // (260728): highlighting the full line read as the sentence being
+          // the answer. Main locates the word (findWordMatch) and sends the
+          // range; a line without one falls back to the whole-line swipe.
+          const range =
+            m.correct &&
+            m.correctRange &&
+            m.correctRange.start >= 0 &&
+            m.correctRange.end > m.correctRange.start &&
+            m.correctRange.end <= m.text.length
+              ? m.correctRange
+              : null;
           return (
-            <p
-              key={m.id}
-              className={m.correct ? `${styles.chatLine} ${styles.chatCorrect}` : styles.chatLine}
-            >
-              <span className={styles.chatWho}>{m.from === 'ai' ? aiName : playerName}</span>
-              {m.text}
+            <p key={m.id} className={cls}>
+              {/* The winning line is marked with the same rough swipe as a
+                  selected button, not a filled rectangle: a hard-edged block
+                  is the one shape this surface does not draw. */}
+              {m.correct && !range ? <SquiggleHighlight seed={`hl-${m.id}`} /> : null}
+              {startsTurn ? (
+                <span className={styles.chatWho}>{m.from === 'ai' ? aiName : playerName}</span>
+              ) : null}
+              {range ? (
+                <span className={styles.btnLabel}>
+                  {m.text.slice(0, range.start)}
+                  <span className={styles.chatHit}>
+                    <SquiggleHighlight seed={`hl-${m.id}`} />
+                    <span className={styles.btnLabel}>{m.text.slice(range.start, range.end)}</span>
+                  </span>
+                  {m.text.slice(range.end)}
+                </span>
+              ) : (
+                <span className={styles.btnLabel}>{m.text}</span>
+              )}
             </p>
           );
         })}

@@ -20,16 +20,21 @@ import { useVoiceStore } from './stores/useVoiceStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore, isChessOpen } from './stores/useChessStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
+import { useDrawStore, isDrawActive } from './stores/useDrawStore';
+import { useBackseatStore } from './stores/useBackseatStore';
 import { isVoiceModelReady } from './voice/modelPrefetch';
 
 /**
- * True when this character has an open game surface in the chat's game area.
- * Mirrors ChatScreen's `gameOpen`: chess panel or game, Minecraft bot online
- * (dashboard) or the launch panel open.
+ * True when this character has an open game surface: chess panel or game,
+ * Minecraft bot online (dashboard) or the launch panel open, a Draw! game in
+ * play (its full-page route carries the same bottom chrome, 260729), or a
+ * backseat session.
  */
 export function isGameSurfaceOpen(characterId: string): boolean {
   if (isChessOpen(useChessStore.getState(), characterId)) return true;
   if (useDataStore.getState().summons[characterId]?.kind === 'online') return true;
+  if (isDrawActive(useDrawStore.getState(), characterId)) return true;
+  if (useBackseatStore.getState().active[characterId] === true) return true;
   return useMcDashboardStore.getState().launch[characterId] === true;
 }
 

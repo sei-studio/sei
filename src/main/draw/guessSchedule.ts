@@ -9,12 +9,22 @@
  * The policy:
  *
  *   trigger    3 committed strokes since the last dispatch, OR 10s since the
- *              last dispatch. Whichever lands first.
+ *              last dispatch, OR the player said something. Whichever lands
+ *              first.
  *   cooldown   never within 5s of the previous guess COMPLETING. Measured from
  *              completion, not dispatch, so a slow model call is not chased
  *              straight down by the next one.
  *   in flight  one at a time.
- *   empty      never guess at a canvas with nothing on it.
+ *   empty      never guess at a canvas with nothing on it, UNLESS the player
+ *              has said something: "any hints?" before a single line is drawn
+ *              still deserves an answer.
+ *
+ * The chat trigger was missing until 260728 and the hole was bad. Player chat
+ * during the player's OWN drawing turn woke nothing at all — it was recorded
+ * and the character only ever saw it on the next snapshot dispatch. That
+ * dispatch then usually aborted on the unchanged-canvas hash (drawService), so
+ * a player who stopped drawing to talk got total silence until they picked the
+ * pen back up. From the other side of the screen the companion had frozen.
  *
  * "At most one queued guess" needs no queue. Strokes drawn while a call is in
  * flight simply leave `strokesSinceDispatch` above the trigger, and the single
@@ -54,11 +64,13 @@ export interface GuessGateInput {
   lastDispatchAt: number;
   /** When the last guess finished. 0 when none has yet. */
   lastCompletedAt: number;
+  /** The player has said something the character has not answered yet. */
+  pendingChat: boolean;
   now: number;
 }
 
 export type GuessGate =
-  | { go: true; reason: 'strokes' | 'time' }
+  | { go: true; reason: 'strokes' | 'time' | 'chat' }
   | { go: false; reason: 'not-drawing' | 'in-flight' | 'cooldown' | 'empty-canvas' | 'no-trigger' };
 
 export function guessGate(i: GuessGateInput): GuessGate {
@@ -67,6 +79,11 @@ export function guessGate(i: GuessGateInput): GuessGate {
   if (i.lastCompletedAt > 0 && i.now - i.lastCompletedAt < GUESS_COOLDOWN_MS) {
     return { go: false, reason: 'cooldown' };
   }
+  // Answering comes before every canvas condition: being spoken to is a reason
+  // to reply even with nothing drawn yet, and the cooldown above is what stops
+  // a burst of messages from becoming a burst of calls (they coalesce into the
+  // one dispatch that drains them).
+  if (i.pendingChat) return { go: true, reason: 'chat' };
   if (i.strokeCount <= 0) return { go: false, reason: 'empty-canvas' };
 
   // Stroke trigger is checked first purely so the reason reads usefully in

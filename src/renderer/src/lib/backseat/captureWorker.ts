@@ -102,6 +102,16 @@ let running = false;
 /** Frames seen vs buckets closed, surfaced for diagnostics. */
 let framesSeen = 0;
 
+/**
+ * Periodic signal report (260728), so "is the jolt arm alive" is answerable
+ * from the dev console instead of by faith: the controller logs each one, and
+ * the overlay's console is forwarded to the terminal in dev. Numbers only —
+ * the controller owns the wording.
+ */
+const STATS_INTERVAL_MS = 10_000;
+let lastStatsAt = 0;
+let statsFramesSeen = 0;
+
 // ── Setup ─────────────────────────────────────────────────────────────────
 
 function ensureCanvases(): void {
@@ -257,7 +267,40 @@ async function onFrame(frame: VideoFrame): Promise<void> {
   }
 
   const jolt = checkJolt(now, thumb);
-  if (jolt) self.postMessage({ type: 'jolt', reason: jolt, at: now });
+  if (jolt) {
+    const past = thumbTrace.find(([t]) => now - t >= COLOR_LOOKBACK_MS);
+    self.postMessage({
+      type: 'jolt',
+      reason: jolt,
+      at: now,
+      gainDb: round1(currentGain),
+      baseDb: round1(baselineGain()),
+      colorDelta: past ? round3(thumbDelta(thumb, past[1])) : null,
+    });
+  }
+
+  if (now - lastStatsAt >= STATS_INTERVAL_MS) {
+    const past = thumbTrace.find(([t]) => now - t >= COLOR_LOOKBACK_MS);
+    self.postMessage({
+      type: 'stats',
+      // null on the first report: there is no previous window to rate against.
+      fps: lastStatsAt ? Math.round(((framesSeen - statsFramesSeen) * 1000) / (now - lastStatsAt)) : null,
+      gainDb: round1(currentGain),
+      baseDb: round1(baselineGain()),
+      colorDelta: past ? round3(thumbDelta(thumb, past[1])) : null,
+      buckets: ring.length,
+    });
+    lastStatsAt = now;
+    statsFramesSeen = framesSeen;
+  }
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
 }
 
 // ── Grid compositing ──────────────────────────────────────────────────────

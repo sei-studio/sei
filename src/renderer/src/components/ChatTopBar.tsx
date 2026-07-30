@@ -105,6 +105,7 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
           aria-label="Play together"
           data-tip="Play together"
           data-tip-edge="right"
+          data-tutorial="games-btn"
         >
           <GamepadIcon size={18} />
         </button>
@@ -115,6 +116,7 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
           aria-label={onCallView ? 'Back to chat' : 'Voice call'}
           data-tip={onCallView ? 'Back to chat' : 'Voice call'}
           data-tip-edge="right"
+          data-tutorial="call-btn"
         >
           <PhoneIcon size={18} />
         </button>

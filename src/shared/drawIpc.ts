@@ -36,9 +36,21 @@ export const TURN_MS = 180_000;
 export const CANVAS_W = 1000;
 export const CANVAS_H = 700;
 
-/** Round-count bounds for the setup slider. */
+/**
+ * Every game is this long (260728). The setup screen used to offer 1-5, which
+ * was a choice nobody had the information to make before their first game and
+ * did not want to make again after it. Three rounds is six turns, about twelve
+ * minutes, which is where a session lands anyway.
+ *
+ * MIN/MAX are kept as the bounds main clamps an incoming request to, so an old
+ * renderer or a replayed IPC call cannot ask for a hundred-round game.
+ */
+export const ROUNDS = 3;
 export const MIN_ROUNDS = 1;
 export const MAX_ROUNDS = 5;
+
+/** Words offered to the player before each of their drawing turns. */
+export const WORD_CHOICES = 3;
 
 export type DrawRole = 'player' | 'ai';
 
@@ -58,8 +70,14 @@ export interface DrawStroke {
 }
 
 export type DrawPhase =
-  /** Setup screen: rounds slider + start. No turn is running. */
+  /** Setup screen: round count + start. No turn is running. */
   | 'setup'
+  /**
+   * The player is choosing which of `wordChoices` to draw. Only ever precedes
+   * one of THEIR turns; the character's word is dealt to it directly. The turn
+   * clock does not start until the choice is made.
+   */
+  | 'pick'
   /** A turn is live (see `drawer` for whose). */
   | 'drawing'
   /** Turn over, answer revealed, short pause before the next turn. */
@@ -74,8 +92,28 @@ export interface DrawChatMessage {
   at: number;
   /** Set on the message that contained the correct guess. */
   correct?: boolean;
+  /**
+   * Raw-index range [start, end) of the winning word inside `text`, set
+   * alongside `correct` so the renderer highlights the word itself rather than
+   * the whole sentence. Absent when the word could not be located in the raw
+   * text; the renderer falls back to highlighting the whole line.
+   */
+  correctRange?: { start: number; end: number };
   /** Set on system lines ("Time's up. It was a lighthouse."). */
   system?: boolean;
+  /**
+   * What the CHARACTER is shown in place of `text`, when the two must differ.
+   * The renderer ignores this field entirely.
+   *
+   * It exists because the chat log is replayed verbatim into the character's
+   * prompt, and a system line written for the player is wrong there twice over
+   * (260728): "Round 1 of 3. Your turn to draw: horn." handed the guesser the
+   * answer, and its second person reads as addressed to the model, which is
+   * how the character ended up believing it had drawn the player's words. A
+   * line carrying this field states the same fact in the third person, and
+   * never names a word that is still secret.
+   */
+  modelText?: string;
 }
 
 /** A finished turn, kept for the end-of-game gallery. */
@@ -109,10 +147,22 @@ export interface DrawGameState {
    * while they are drawing, and after any turn has ended.
    */
   word: string | null;
+  /**
+   * The words on offer during the 'pick' phase; empty otherwise. Only ever the
+   * player's own choices, so this never reveals anything the character drew.
+   */
+  wordChoices: string[];
   /** Epoch ms when the live turn expires; null outside a turn. */
   turnEndsAt: number | null;
   /** Committed strokes for the current turn (see the ai-stroke note above). */
   strokes: DrawStroke[];
+  /**
+   * Bumped when the CHARACTER wipes its own page mid-turn with the `clear`
+   * tool. The renderer's revealed list is local and survives a state push by
+   * design (see the strokes note above), so this is the one signal that tells
+   * it to throw that list away without ending the turn.
+   */
+  clearSeq: number;
   /** Whole-game chat, oldest first. Guesses and table talk share the log. */
   chat: DrawChatMessage[];
   /** A point per correct guess, to the guesser. */
@@ -159,6 +209,12 @@ export const DRAW_ERR_MC_ACTIVE = 'DRAW_MC_SESSION_ACTIVE';
  *     count. Rejects with DRAW_ERR_MC_ACTIVE when the character is summoned.
  *   drawOpen(characterId: string): Promise<DrawGameState>
  *     Open the surface without starting (setup phase).
+ *   drawNewGame(characterId: string): Promise<DrawGameState>
+ *     Back to the setup screen after a finished game, keeping the round count
+ *     as the preselected value so "play again" can be replayed at a new length.
+ *   drawPickWord(characterId: string, word: string): Promise<DrawGameState>
+ *     Choose one of `wordChoices` during the 'pick' phase and begin the turn.
+ *     Ignored unless that word is actually on offer.
  *   drawGetState(characterId: string): Promise<DrawGameState | null>
  *   drawStroke(characterId: string, stroke: DrawStroke): Promise<void>
  *     The player lifted the pen. Ignored unless it is their turn to draw.

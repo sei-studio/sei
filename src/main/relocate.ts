@@ -1,34 +1,26 @@
 /**
- * First-launch "Move to Applications" prompt (macOS only).
+ * Relocation leftover cleanup (macOS only).
  *
- * Why this exists: the macOS build ships as a .zip (no .dmg), so people often
- * unzip into ~/Downloads and run the app right there. Gatekeeper then
+ * History: while the macOS build shipped as a .zip (no .dmg), people often
+ * unzipped into ~/Downloads and ran the app right there. Gatekeeper then
  * "translocates" it — runs it from a read-only randomized mount — and
- * electron-updater cannot replace the bundle in place, so auto-update silently
- * breaks until the app lives in a normal writable location. Moving it to
- * /Applications fixes that (and clears translocation).
+ * electron-updater cannot replace the bundle in place, so first launch showed
+ * a "Move to Applications?" prompt (`maybeOfferMoveToApplications`). The dmg
+ * download made drag-to-Applications the install itself, so the prompt was
+ * retired (260728). What remains is the post-move sweep:
  *
- * Windows ships an NSIS installer that already installs to a permanent per-user
- * location (%LOCALAPPDATA%\Programs\Sei) with shortcuts, so there is nothing to
- * relocate — this function is a deliberate no-op off macOS (and in dev, where
- * the app is unpackaged and lives in the source tree).
- *
- * Returns `true` if a move was initiated — macOS quits + relaunches the app
- * from the new location, so the caller should stop further startup. Returns
- * `false` to continue launching from the current location.
- *
- * ── Self-delete after move ──────────────────────────────────────────────────
- * `app.moveToApplicationsFolder()` *copies* the bundle into /Applications and
- * relaunches from there, but it does NOT remove the source the user launched
- * from. Worse, under App Translocation the running bundle path is a read-only
- * /private/var/folders/.../AppTranslocation/... mount, so the API never even
- * sees the real ~/Downloads/Sei.app — the original is always left behind. To
- * keep things tidy we drop a one-shot sentinel before the move and, on the
- * relaunched /Applications instance, `cleanupRelocationLeftover()` trashes the
- * stray copy (Trash, not unlink — reversible).
+ * `app.moveToApplicationsFolder()` *copied* the bundle into /Applications and
+ * relaunched from there, but it did NOT remove the source the user launched
+ * from (under App Translocation it never even saw the real ~/Downloads copy).
+ * The prompt dropped a one-shot sentinel before the move; on the relaunched
+ * /Applications instance, `cleanupRelocationLeftover()` trashes the stray copy
+ * (Trash, not unlink — reversible). It stays wired for one more release cycle
+ * so a user whose LAST pre-dmg launch accepted the move still gets the
+ * leftover cleaned after updating. With no prompt writing sentinels, it is a
+ * no-op for everyone else and can be deleted once pre-dmg installs are gone.
  */
-import { app, dialog, shell } from 'electron';
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
+import { app, shell } from 'electron';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,82 +34,6 @@ function cleanupSentinelPath(): string {
 function currentAppBundle(): string {
   // exe = <bundle>/Contents/MacOS/<name>  →  up three levels is the .app root.
   return path.resolve(app.getPath('exe'), '../../..');
-}
-
-export function maybeOfferMoveToApplications(): boolean {
-  // Only packaged macOS builds that are not already in /Applications.
-  if (process.platform !== 'darwin' || !app.isPackaged) return false;
-
-  let inApplications = false;
-  try {
-    inApplications = app.isInApplicationsFolder();
-  } catch {
-    // API unavailable for some reason — never block launch over this.
-    return false;
-  }
-  if (inApplications) return false;
-
-  const choice = dialog.showMessageBoxSync({
-    type: 'question',
-    buttons: ['Yes', 'No'],
-    defaultId: 0,
-    cancelId: 1,
-    title: 'Move Sei to Applications?',
-    message: 'Move to Applications folder?',
-    detail:
-      'Sei will need to move to receive future updates automatically. ' +
-      'If you’d like, I can move myself there.',
-  });
-  if (choice !== 0) return false; // "No" — keep running from the current spot.
-
-  const sentinel = cleanupSentinelPath();
-  try {
-    // Record where we are launching FROM so the relaunched copy can trash it.
-    // Under translocation this is the read-only mount path (ignored later); the
-    // post-move sweep finds the real ~/Downloads/Sei.app regardless.
-    try {
-      writeFileSync(sentinel, currentAppBundle(), 'utf8');
-    } catch {
-      /* best-effort — a missing sentinel just means no auto-cleanup */
-    }
-
-    // Copies the bundle into /Applications (prompting for admin auth if that
-    // folder isn't writable), then quits + relaunches from the new location.
-    const moved = app.moveToApplicationsFolder({
-      conflictHandler: (conflictType) => {
-        if (conflictType === 'existsAndRunning') {
-          // An older Sei is already OPEN from /Applications — can't replace it.
-          dialog.showMessageBoxSync({
-            type: 'info',
-            buttons: ['OK'],
-            message: 'Sei is already open from your Applications folder.',
-            detail: 'Quit that copy first, then try moving this one again.',
-          });
-          return false; // abort the move
-        }
-        return true; // 'exists' but not running → replace the old copy
-      },
-    });
-
-    // The move was aborted (e.g. conflict handler said no) — drop the sentinel
-    // so we don't trash a perfectly good copy on the next ordinary launch.
-    if (!moved) {
-      try { unlinkSync(sentinel); } catch {}
-    }
-    return moved;
-  } catch (err) {
-    try { unlinkSync(sentinel); } catch {}
-    dialog.showMessageBoxSync({
-      type: 'warning',
-      buttons: ['Continue'],
-      message: 'Couldn’t move Sei automatically.',
-      detail:
-        'You can move Sei to your Applications folder yourself (drag it there) ' +
-        'so it can keep itself up to date.\n\n' +
-        (err as Error).message,
-    });
-    return false; // continue launching from where we are
-  }
 }
 
 /**

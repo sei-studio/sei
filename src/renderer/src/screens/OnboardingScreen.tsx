@@ -6,6 +6,12 @@
  *  1. Provider tiles.
  *  2. API key.
  *
+ * Fresh-onboard completion (260728): Sui is seeded into a party slot
+ * (fire-and-forget chars:add-to-library — removable any time), and a
+ * brand-new signed-in profile continues from the questionnaire into the
+ * unique-companion flow ('first-fill' → gender question → casting) so the
+ * ritual ends on a first companion, not an empty Home.
+ *
  * The conversation-language step was removed (260725): the language is now
  * auto-detected from the player's voice (ElevenLabs Scribe STT → main's
  * voice/languageAutoSwitch.ts persists UserConfig.chat_language). Onboarding
@@ -39,6 +45,9 @@ import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import type { UserConfig } from '@shared/characterSchema';
+import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
+import { useDataStore } from '../lib/stores/useDataStore';
+import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import styles from './OnboardingScreen.module.css';
 
 export interface OnboardingScreenProps {
@@ -193,18 +202,42 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       // tier with a weekly allowance already available, so onboarding goes
       // straight on instead of detouring through a claim step.
       if (!isReonboard) {
+        // 260728: every fresh profile starts with Sui in one of the four party
+        // slots (removable any time — she is an ordinary World invite, so the
+        // character page offers Release). Fire-and-forget: chars:add-to-library
+        // pulls her cloud row + art and writes added_world_ids, then the data +
+        // library stores refresh so Home/IconRail show her the moment the user
+        // lands there. Offline or fetch failure just means no Sui — never a
+        // blocked onboarding.
+        void sei
+          .charsAddToLibrary(DEFAULT_CHARACTER_UUIDS.sui)
+          .then(async () => {
+            await useDataStore.getState().loadCharacters();
+            await useLibraryStateStore.getState().refresh();
+          })
+          .catch(() => {
+            /* best-effort seed */
+          });
         // Fresh onboarding, signed-in: the companion questionnaire runs HERE,
         // inside the onboarding ritual (260706 — it used to ambush after the
-        // user had already landed on Home). mode 'missing' asks only the
-        // unanswered questions, so a re-install whose cloud prefs are complete
-        // skips straight through, and one whose prefs predate a newer question
-        // answers just the gap. Fail-open to home — the Home and Awaken
-        // gates re-ask if this read failed.
+        // user had already landed on Home). 260728: a BRAND-NEW profile (no
+        // completed questionnaire at all) runs it as 'first-fill', which
+        // continues past Finish into the unique-companion flow — the gender
+        // question, then the casting screen — so onboarding lands the user on
+        // their first companion instead of an empty Home. A profile that
+        // already completed but is missing a newer question stays a 'missing'
+        // top-up that returns to Home (mirrors App.tsx's Home gate). Fail-open
+        // to home — the Home and Awaken gates re-ask if this read failed.
         if (signedIn) {
           try {
             const prefs = await sei.prefsGet();
             if (prefs.missing.length > 0) {
-              navigate({ kind: 'profile-questions', next: 'home', mode: 'missing' });
+              const firstFill = !prefs.profile?.completed_at;
+              navigate({
+                kind: 'profile-questions',
+                next: 'home',
+                mode: firstFill ? 'first-fill' : 'missing',
+              });
               return;
             }
           } catch {
