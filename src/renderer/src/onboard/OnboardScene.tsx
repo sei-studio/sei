@@ -43,6 +43,10 @@ const SUI = {
   talk: './img/onboard/sui-talk.png',
   shock: './img/onboard/sui-shock.png',
 };
+// Grass footsteps (260730): Kenney "Impact Sounds", CC0 — see
+// public/sfx/README.md. Two samples alternated so consecutive steps never
+// sound identical; one plays on every stride frame swap.
+const FOOTSTEPS = ['./sfx/footstep-grass-0.ogg', './sfx/footstep-grass-1.ogg'];
 
 // Slower stride to match the slower walk slide (260729). The CSS bob cycle
 // (suiBob, 520ms) is 2x this on purpose (260730): a steps(1) SNAP — down
@@ -58,6 +62,9 @@ const GRASS_FRAME_MS = 420;
 export interface OnboardSceneProps {
   groundIn: boolean;
   sui: SuiPose;
+  /** Footstep volume, 0..1 (0/undefined = silent). The parent scales its
+   * voice volume down so the steps stay quiet under Sui's lines. */
+  sfxVolume?: number;
   onGroundIn?: () => void;
   onGroundOut?: () => void;
   onSuiEntered?: () => void;
@@ -75,11 +82,34 @@ export function OnboardScene(props: OnboardSceneProps): React.ReactElement {
     return () => clearInterval(t);
   }, [groundIn]);
 
+  // Footsteps ride the SAME tick as the frame swap so they can never drift
+  // from the legs. Volume through a ref: the interval callback always reads
+  // the live value without re-arming (and re-phasing) the walk clock.
+  const sfxVolRef = useRef(props.sfxVolume ?? 0);
+  sfxVolRef.current = props.sfxVolume ?? 0;
+  const stepAudioRef = useRef<HTMLAudioElement[] | null>(null);
+  const stepIdxRef = useRef(0);
+  const playFootstep = (): void => {
+    const vol = sfxVolRef.current;
+    if (vol <= 0) return;
+    if (!stepAudioRef.current) stepAudioRef.current = FOOTSTEPS.map((src) => new Audio(src));
+    const a = stepAudioRef.current[stepIdxRef.current];
+    stepIdxRef.current = (stepIdxRef.current + 1) % stepAudioRef.current.length;
+    a.volume = Math.min(1, vol);
+    a.currentTime = 0;
+    void a.play().catch(() => {
+      /* decode/autoplay hiccup: a silent step, not worth surfacing */
+    });
+  };
+
   // Sui frame alternation per pose.
   const [flip, setFlip] = useState(false);
   useEffect(() => {
     if (sui === 'entering' || sui === 'leaving') {
-      const t = setInterval(() => setFlip((f) => !f), WALK_FRAME_MS);
+      const t = setInterval(() => {
+        setFlip((f) => !f);
+        playFootstep();
+      }, WALK_FRAME_MS);
       return () => clearInterval(t);
     }
     if (sui === 'talking') {

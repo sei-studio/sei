@@ -916,6 +916,8 @@ export function OnboardApp({
         <OnboardScene
           groundIn={groundIn}
           sui={sui}
+          // Footsteps follow the voice volume/mute, well under her lines.
+          sfxVolume={effVolume * 0.35}
           onGroundIn={onGroundIn}
           onGroundOut={onGroundOut}
           onSuiEntered={onSuiEntered}
