@@ -267,16 +267,18 @@
 }
 
 /* Walk bob — lives on the INNER wrapper because .sui's transform is the
-   slide transition and .suiImg's is the leaving flip. 520ms = two stride
-   frames (WALK_FRAME_MS 260), with a peak per step so the bounce lands in
-   time with the legs. */
+   slide transition and .suiImg's is the leaving flip. 1040ms = FOUR stride
+   frames (WALK_FRAME_MS 260), phase-locked to the frame cut (both start on
+   the same pose change): she RISES across a stand+stride pair and FALLS
+   across the next pair — stand, walk, up; stand, walk, down (260730; the
+   old 520ms cycle bounced once per pair, out of step with the legs). */
 .suiWalking {
-  animation: suiBob 520ms ease-in-out infinite;
+  animation: suiBob 1040ms ease-in-out infinite;
 }
 
 @keyframes suiBob {
-  0%, 50%, 100% { transform: translateY(0); }
-  25%, 75% { transform: translateY(-2%); }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2%); }
 }
 
 .suiOn {
