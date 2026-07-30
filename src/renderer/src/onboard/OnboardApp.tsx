@@ -660,13 +660,15 @@ export function OnboardApp({
   const tw = useTypewriter(lineText);
 
   // ── Sui's voice-over (260730) ──────────────────────────────────────────
-  // Pre-generated ElevenLabs clips (her live call voice: mrmaApeLxpgZi4RK7oGq,
-  // synthesized at speed 0.8 / stability 0.95) bundled under
+  // Pre-generated ElevenLabs clips (her live call voice: tnVKC6NjwhdRxoQIfKue,
+  // synthesized at speed 1/1.3 / stability 0.75) bundled under
   // public/voice/onboard/<line>.<en|zh>.mp3. Playback mirrors calls: rate
-  // 1.25 with preservesPitch OFF cancels the synthesis slowdown and leaves
-  // only the pitch lift (see shared/voicePitch.ts). The two {name} lines
-  // (iSee/job) were generated name-free, so the clip never has to speak a
-  // name the player typed. 'dots' is silent by design.
+  // 1.3 with preservesPitch OFF cancels the synthesis slowdown and leaves
+  // only the pitch lift (see shared/voicePitch.ts). Regenerate the clips
+  // (and keep these two numbers in step) if her cloud row's voice settings
+  // change. The two {name} lines (iSee/job) were generated name-free, so the
+  // clip never has to speak a name the player typed. 'dots' is silent by
+  // design.
   const uiLang = useLangStore((s) => s.lang);
   const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(loadVoicePrefs);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -684,7 +686,7 @@ export function OnboardApp({
     if (!line || line === 'dots') return undefined;
     const clip = line === 'ready' && genCharacterIdRef.current ? 'readyGen' : line;
     const audio = new Audio(`./voice/onboard/${clip}.${uiLang}.mp3`);
-    audio.playbackRate = 1.25;
+    audio.playbackRate = 1.3;
     audio.preservesPitch = false;
     audio.volume = effVolume;
     voiceAudioRef.current = audio;
