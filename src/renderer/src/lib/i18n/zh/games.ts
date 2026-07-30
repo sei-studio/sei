@@ -1,5 +1,7 @@
 /** Game surfaces (chess + Draw!). See ../zh.ts for the dictionary rules. */
 export const ZH_GAMES: Record<string, string> = {
+  // ── Mini tile (bottom-right picture-in-picture) ───────────────────────────
+  'Back to game': '返回游戏',
   // ── Chess: launch screen ──────────────────────────────────────────────────
   'Chess': '国际象棋',
   'Chess with {name}': '与{name}下棋',

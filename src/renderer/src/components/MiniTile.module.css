@@ -1,0 +1,103 @@
+/* MiniTile — bottom-right picture-in-picture tile (Summoning Terminal).
+ * Sharp edges, token colors; the inline `right` offset moves the tile left of
+ * the chat profile panel when that panel is open. The vignette is what makes
+ * it read as a window into another surface rather than part of this one. */
+
+.tile {
+  position: fixed;
+  bottom: 14px;
+  /* Above app chrome and tooltips (200), below the ModalShell tiers (1000+). */
+  z-index: 600;
+  border: 1px solid var(--border-strong);
+  background: var(--bg2);
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+  overflow: hidden;
+  transition: right 300ms var(--ease);
+}
+
+.tile:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Game previews are display-only; the tile itself is the click target. */
+.chessBox,
+.drawBox {
+  pointer-events: none;
+}
+
+.chessBox {
+  width: 188px;
+}
+
+/* The chess board carries its own 1px border; the tile already draws one. */
+.chessBox > :first-child {
+  border: none;
+}
+
+.drawBox {
+  width: 224px;
+  aspect-ratio: 1000 / 700; /* logical CANVAS_W x CANVAS_H */
+  background: #fff;
+}
+
+.drawCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Darkened edges: the "somewhere else" treatment. */
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 22px rgba(0, 0, 0, 0.5),
+    inset 0 0 4px rgba(0, 0, 0, 0.35);
+}
+
+/* "<" re-expand chip, top-left, above the vignette. */
+.backBtn {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.backBtn:hover {
+  background: var(--bg);
+  color: var(--accent);
+}
+
+/* Call tile: portraits only (never the player's own), on the panel wash. */
+.callRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 20px;
+}
+
+.portrait {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.speaking {
+  box-shadow: 0 0 0 2px var(--accent);
+}

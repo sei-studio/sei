@@ -46,6 +46,7 @@ import { UniqueGenderScreen } from './screens/UniqueGenderScreen';
 import { UniqueCastingScreen } from './screens/UniqueCastingScreen';
 import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { CallMiniBar } from './components/call/CallMiniBar';
+import { MiniTile } from './components/MiniTile';
 import { CallOverlayPusher } from './components/CallOverlayPusher';
 import { CrossLaunchConfirmModal } from './components/CrossLaunchConfirmModal';
 import { GamesPickerModal } from './components/GamesPickerModal';
@@ -1079,6 +1080,10 @@ export function App(): React.ReactElement {
                   chrome row; elsewhere the icon-rail badge is the ambient
                   call indicator. */}
               <CallMiniBar />
+              {/* 260730 — bottom-right picture-in-picture tile: a live game
+                  or call that is not on screen floats here (game replaces
+                  call when both are away). */}
+              <MiniTile />
               {/*
                 LogsBar — quick task 260508-mun item 5. Hidden during
                 onboarding and auth-choice (pre-app surfaces).
