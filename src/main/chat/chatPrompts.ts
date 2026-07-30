@@ -21,6 +21,7 @@ import {
   renderPersona,
   renderChatProactivenessDirective,
   renderPunctuationDirective,
+  VOICE_PUNCTUATION_DIRECTIVE,
   renderLanguageDirective,
 } from '../../bot/brain/promptLibrary.js';
 import type { ChatLanguage } from '../../shared/chatLanguage';
@@ -37,6 +38,9 @@ export interface BuildSystemArgs {
    * Texting punctuation register (character.metadata.punctuation, 260705).
    * Rendered as the same PUNCTUATION_DIRECTIVES text the game brain caches, and
    * enforced mechanically by splitReply's trailing-period strip (casual only).
+   * IGNORED when `voiceCall` is set (260729): a call is spoken, so the register
+   * and the strip both step aside for VOICE_PUNCTUATION_DIRECTIVE and
+   * splitReply's `spoken` flag. Punctuation is intonation there, not style.
    */
   punctuation: 'casual' | 'deliberate';
   /**
@@ -214,7 +218,13 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   ];
   if (args.preferredName) personaParts.push(`The player's name is ${args.preferredName}.`);
   personaParts.push(renderChatProactivenessDirective(args.proactiveness));
-  personaParts.push(renderPunctuationDirective(args.punctuation));
+  // Punctuation register (260729): a call is SPOKEN, so the texting directive is
+  // replaced rather than added to — see VOICE_PUNCTUATION_DIRECTIVE. The persona
+  // block's cached prefix already diverges between chat and call (block 0 leads
+  // with the primer), so branching here costs no extra cache write.
+  personaParts.push(
+    args.voiceCall === true ? VOICE_PUNCTUATION_DIRECTIVE : renderPunctuationDirective(args.punctuation),
+  );
   blocks.push({ type: 'text', text: personaParts.join('\n\n') });
 
   // 260725 Knowledge — user-uploaded reference material. Sits between persona

@@ -110,9 +110,22 @@ const PRE_ROLL_FRAMES = 3;
 // has to clear it) and ~10 dB over a quiet room floor, but above the transient
 // noise that was self-triggering. Ceiling comes from the tuning history above:
 // 0.065 was high enough that real speech never reached it.
-const BARGE_ABS_MIN = 0.04;
+// Lowered 0.04 -> 0.03 (260728, "interrupting on an open laptop mic takes
+// shouting"): a built-in mic at arm's length reads several dB quieter than a
+// headset mic, so ordinary speech was hovering AT the 0.04 bar and only a
+// raised voice held above it for the full BARGE_CONFIRM_MS run. 0.03 keeps
+// ~8 dB over a quiet room floor; the 260726 transient problem is guarded by
+// the level gate AND the 400ms sustained-run gate together, so the duration
+// gate carries more of the load now. If in-ear transients chop clips again,
+// raise BARGE_CONFIRM_MS before re-raising this.
+const BARGE_ABS_MIN = 0.03;
 const BARGE_NOISE_FACTOR = 5; // bar is also ≥ noiseFloor * this
-const BARGE_RESIDUE_FACTOR = 3; // bar is residue * this — speech must clear it
+// Lowered 3 -> 2.5 (260728, same laptop report): on open speakers the residue
+// term dominates the bar, and 3x the echo EMA (~9.5 dB over it) demanded a
+// shout from an arm's-length mic. 2.5x (~8 dB) still clears the residue's own
+// frame-to-frame wobble — single echo peaks reset the sustained-run gate and
+// never survive 400ms — while genuine speech over the companion lands.
+const BARGE_RESIDUE_FACTOR = 2.5; // bar is residue * this — speech must clear it
 // Residue EMA rates: rise fast so the first frames of a clip (and the grace
 // window) capture how loud its echo really is; decay slow so brief pauses
 // inside a clip don't collapse the bar mid-sentence.

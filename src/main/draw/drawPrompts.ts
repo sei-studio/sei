@@ -26,6 +26,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   CANVAS_H,
   CANVAS_W,
+  TURN_MS,
   type DrawChatMessage,
   type DrawGalleryEntry,
   type DrawRole,
@@ -39,6 +40,17 @@ export const MAX_AI_STROKES = 16;
  * picture plus a couple of replies.
  */
 export const MAX_DRAW_HOPS = 10;
+
+/**
+ * The clock, stated as elapsed AND remaining (260729, from the web version).
+ * "About 170 seconds left" reads as "no hurry" at the start of a turn; pairing
+ * it with how much has passed keeps the number meaning something.
+ */
+export function turnClockLine(secondsLeft: number): string {
+  const turnSeconds = Math.round(TURN_MS / 1000);
+  const elapsed = Math.max(0, Math.min(turnSeconds, turnSeconds - secondsLeft));
+  return `About ${elapsed} seconds of the turn's ${turnSeconds} have passed; about ${secondsLeft} seconds left.`;
+}
 
 export const PEN_TOOL: Anthropic.Tool = {
   name: 'pen',
@@ -139,8 +151,8 @@ export function drawContractBlock(opts: {
     `You are playing Draw!, a sketch-guessing game, against ${playerName} inside the Sei app. ` +
       `The game is ${rounds} round${rounds === 1 ? '' : 's'}. Each round you both get a turn: one of you draws a secret word ` +
       `while the other guesses in chat. A turn lasts ${turnSeconds} seconds and ends early the moment the guesser says the word.`,
-    // 260729, live capture (web build): the character told the player a wrong
-    // guess was correct ("yes! that's it!") and then invented a round change,
+    // 260729, live capture (web): the character told the player a wrong guess
+    // was correct ("yes! that's it!") and then invented a round change,
     // because nothing told it the engine adjudicates. This paragraph is that
     // fact.
     'THE GAME ITSELF IS THE REFEREE. It checks every chat line against the secret word the instant it is sent, ' +
@@ -320,7 +332,7 @@ export function buildGuessTurnBlock(opts: {
   const head = [
     ...contextSections({ gallery, playerName, aiName, turnChat, priorChat }),
     '# YOUR TURN TO GUESS',
-    `Round ${round} of ${rounds}. ${playerName} is drawing; you are guessing. About ${secondsLeft} seconds left in the turn.`,
+    `Round ${round} of ${rounds}. ${playerName} is drawing; you are guessing. ${turnClockLine(secondsLeft)}`,
     'You have NO word this turn and you are NOT drawing. You cannot see the answer: work it out from the picture.',
     '',
   ];
@@ -369,6 +381,22 @@ export function buildGuessTurnBlock(opts: {
   ].join('\n');
 }
 
+/**
+ * Second (or third) attempt at the same word, after a wipe (260729). The
+ * drawing thread is RESET after any clear that was not followed by a redraw in
+ * the same response, and the fresh opening block carries this instead of a
+ * corrective note buried in a long thread. `priorIntents` are the model's own
+ * stroke descriptions from the wiped attempt, so "draw it differently" has
+ * something concrete to differ from.
+ */
+export interface DrawRestart {
+  /** True when the GAME wiped the canvas (too many wrong guesses), false when the model called `clear` itself. */
+  auto: boolean;
+  /** Wrong guesses that triggered an auto wipe. */
+  wrongGuesses?: number;
+  priorIntents: string[];
+}
+
 /** Volatile per-turn block for a DRAWING turn. */
 export function buildDrawTurnBlock(opts: {
   round: number;
@@ -380,13 +408,9 @@ export function buildDrawTurnBlock(opts: {
   priorChat: DrawChatMessage[];
   secondsLeft: number;
   strokesUsed: number;
-  /**
-   * Retained for the resume path. The mid-turn case is handled by the tool-use
-   * thread instead, which carries what was already drawn.
-   */
-  resuming: boolean;
   /** Turns already played, for the attribution recap. */
   gallery: DrawGalleryEntry[];
+  restart?: DrawRestart;
 }): string {
   const {
     round,
@@ -398,14 +422,14 @@ export function buildDrawTurnBlock(opts: {
     priorChat,
     secondsLeft,
     strokesUsed,
-    resuming,
     gallery,
+    restart,
   } = opts;
 
   const lines = [
     ...contextSections({ gallery, playerName, aiName, turnChat, priorChat }),
     '# YOUR TURN TO DRAW',
-    `Round ${round} of ${rounds}. You are drawing; ${playerName} is guessing. About ${secondsLeft} seconds left in the turn.`,
+    `Round ${round} of ${rounds}. You are drawing; ${playerName} is guessing. ${turnClockLine(secondsLeft)}`,
     'Do NOT guess this turn and do not ask what it is. You already know: you are the one drawing it.',
     '',
     `Your word is: ${word.toUpperCase()}`,
@@ -419,6 +443,25 @@ export function buildDrawTurnBlock(opts: {
       'So while this turn is running, every guess so far is WRONG, even one that feels close enough to count. ' +
       'Never tell them a guess is right. Warmer, colder, teasing: yours. The win itself: the game announces it.',
     '',
+    ...(restart
+      ? [
+          '## STARTING OVER',
+          restart.auto
+            ? `You already drew this word once this turn and it did not land: ${playerName} guessed wrong ` +
+              `${restart.wrongGuesses ?? 'several'} times, so the game wiped the canvas for you.`
+            : 'You wiped your own canvas: your first attempt at this word was not working.',
+          ...(restart.priorIntents.length > 0
+            ? [
+                `The wiped attempt was, stroke by stroke: ${restart.priorIntents.join(', ')}. ` +
+                  'Do NOT redraw that same picture.',
+              ]
+            : []),
+          `The page is BLANK right now and ${playerName} is watching it. Start drawing again with pen calls ` +
+            'IMMEDIATELY, and draw it DIFFERENTLY this time: a new angle, bigger, simpler, or leading with the ' +
+            'one detail that gives it away. You may say one short line about starting over, but the pen calls come first.',
+          '',
+        ]
+      : []),
     // A live test had Haiku open with "I'll draw a lighthouse for you! Let me
     // start with the main structure." — assistant-style narration that both
     // leaks the answer and breaks character. Banning the narration outright is
@@ -440,17 +483,13 @@ export function buildDrawTurnBlock(opts: {
     '- No letters, numbers, arrows or written labels of any kind. That is cheating and the player will see it.',
     `- You can wipe the page with \`clear\` and start the drawing again. Use it when what you have is not working, not to tidy up. ` +
       'If you clear, draw the new picture straight away, in this same turn: never leave the page blank.',
+    '- ADD to the picture or REPLACE the picture, never both: a redraw starts with `clear`. ' +
+      'Drawing a second version of the object on top of or beside the first stacks two unreadable pictures on one page.',
     '',
     'You can talk while you draw, and it is good if you do. Short lines between strokes, reacting to their guesses.',
   ];
 
-  if (resuming) {
-    lines.push(
-      '',
-      `${playerName} just said something. Answer it if it wants an answer, then carry on drawing where you left off. ` +
-        `You have already drawn ${strokesUsed} stroke${strokesUsed === 1 ? '' : 's'}; do not start the picture over.`,
-    );
-  } else if (strokesUsed > 0) {
+  if (strokesUsed > 0) {
     lines.push(
       '',
       `You have already drawn ${strokesUsed} stroke${strokesUsed === 1 ? '' : 's'} of this picture. ` +
@@ -558,18 +597,7 @@ export function buildTurnEndBlock(opts: {
       : 'The next turn starts in a moment.',
     '',
     'React in ONE short line, in your own voice, the way someone would between rounds. ' +
-      // When the character guessed the PLAYER's drawing, its win came from
-      // their good drawing. "Gloat, tease" here produced "that one was easy,
-      // you made the blade too obvious" live on the web build (260729): a
-      // put-down of a player who did exactly what the game asks. Readable
-      // means well drawn, and the prompt has to say so or the model frames
-      // its point as their mistake.
-      (drawer === 'player' && guessed
-        ? 'You got it because they drew it well: a drawing you can read fast is a GOOD drawing. ' +
-          'Compliment it, and name the detail that sold it if you can. Never call it easy or obvious, ' +
-          'and never make your point sound like a flaw in their drawing. '
-        : 'Gloat, groan, defend your drawing, tease them. ') +
-      'Do not explain the rules back, do not recap ' +
+      'Gloat, groan, defend your drawing, tease them. Do not explain the rules back, do not recap ' +
       'the score, and do not announce what is coming next. If you genuinely have nothing to add, ' +
       'reply with exactly (silence) and nothing will be sent.',
     '',

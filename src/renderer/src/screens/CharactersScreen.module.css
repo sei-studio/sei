@@ -46,7 +46,6 @@
   align-items: center;
   gap: 8px;
   background: var(--bg2);
-  border: 1px solid var(--border-strong);
   padding: 0 12px;
   color: var(--muted);
   transition: border-color 0.2s ease;
@@ -77,7 +76,7 @@
   appearance: none;
   height: 38px;
   padding: 0 28px 0 12px;
-  border: 1px solid var(--border-strong);
+  border: none;
   background: var(--bg2);
   color: var(--text);
   font-family: var(--sans);

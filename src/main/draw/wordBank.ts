@@ -26,13 +26,6 @@ const RAW_WORDS: readonly string[] = [
   'ant', 'bee', 'wasp', 'butterfly', 'moth', 'ladybug', 'spider', 'scorpion',
   'beetle', 'dragonfly', 'grasshopper', 'caterpillar', 'frog', 'toad', 'turtle',
   'lizard', 'snake', 'crocodile', 'dinosaur', 'dragon', 'unicorn', 'mermaid',
-  'fish', 'goldfish', 'hamster', 'guinea pig', 'ferret', 'donkey', 'bull', 'rooster', 'turkey', 'goose',
-  'swan', 'llama', 'pigeon', 'seagull', 'crow', 'ostrich', 'toucan', 'pelican', 'hummingbird', 'woodpecker',
-  'vulture', 'stork', 'puffin', 'dodo', 'mole', 'badger', 'boar', 'cheetah', 'hyena', 'buffalo',
-  'meerkat', 'lemur', 'mammoth', 'polar bear', 'walrus', 'platypus', 'anteater', 'armadillo', 'stingray', 'eel',
-  'swordfish', 'clownfish', 'pufferfish', 'narwhal', 'manatee', 'piranha', 'catfish', 'clam', 'sea urchin',
-  'chameleon', 'cobra', 'tadpole', 'fly', 'mosquito', 'cockroach', 'cricket', 'firefly', 'centipede',
-  'praying mantis',
 
   // plants and nature
   'tree', 'palm tree', 'cactus', 'flower', 'sunflower', 'rose', 'tulip', 'daisy',
@@ -112,15 +105,6 @@ const RAW_WORDS: readonly string[] = [
   'footprint', 'handprint', 'smile', 'tear', 'shadow', 'ghost', 'angel',
   'wizard', 'knight', 'pirate', 'cowboy', 'astronaut', 'diver', 'clown',
   'snowman', 'scarecrow', 'statue', 'king', 'queen',
-
-  // occupations. Drawable by outfit or prop; office jobs that all render as
-  // "person at desk" (lawyer, programmer, accountant) are left out on purpose.
-  'firefighter', 'soldier', 'sailor', 'pilot', 'mailman', 'lifeguard', 'referee', 'doctor', 'nurse', 'dentist',
-  'surgeon', 'judge', 'chef', 'baker', 'butcher', 'waiter', 'farmer', 'mechanic', 'plumber', 'carpenter',
-  'construction worker', 'janitor', 'lumberjack', 'miner', 'blacksmith', 'shepherd', 'beekeeper', 'zookeeper',
-  'bus driver', 'jockey', 'teacher', 'librarian', 'scientist', 'vet', 'detective', 'spy', 'ninja', 'viking',
-  'witch', 'superhero', 'caveman', 'magician', 'juggler', 'acrobat', 'ballerina', 'photographer', 'reporter',
-  'dj', 'artist', 'singer', 'samurai',
 
   // objects and odds and ends
   'phone', 'laptop', 'computer', 'keyboard', 'mouse pad', 'television',

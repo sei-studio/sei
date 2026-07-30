@@ -290,9 +290,14 @@ export function effectiveMcUsername(c: Pick<Character, 'username' | 'name'>): st
  *   - signed in: own / legacy null-owner chars shown; foreign-owned chars
  *     (owner set, !== current user) shown only when added from World
  *     (addedWorldIds);
- *   - signed out: only legacy null-owner chars shown — a cached copy of
- *     someone else's public character (owner stamped) can't be a party member
- *     because a signed-out user can't invite from World.
+ *   - signed out: legacy null-owner chars shown, PLUS foreign-owned chars the
+ *     user explicitly invited (addedWorldIds). 260728: the invite check was
+ *     added for the fresh-onboarding Sui seed — a local-only (BYOK) profile now
+ *     starts with Sui in added_world_ids, and an explicit invite recorded in
+ *     the user's own config is a party membership regardless of auth. A merely
+ *     CACHED copy of someone else's public character (owner stamped, never
+ *     invited) still never reads as a party member — that was the 260706 bug
+ *     this branch exists to prevent.
  */
 export function countsAsHomeSlot(
   c: Pick<Character, 'id' | 'is_default' | 'owner'>,
@@ -307,7 +312,7 @@ export function countsAsHomeSlot(
     }
     return true;
   }
-  return c.owner == null;
+  return c.owner == null || opts.addedWorldIds.has(c.id);
 }
 
 /**

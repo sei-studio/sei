@@ -671,6 +671,23 @@ export function renderPunctuationDirective(punctuation) {
   return `# TEXTING\n${PUNCTUATION_DIRECTIVES[key]}`
 }
 
+/**
+ * 260729: the texting directive above has NO business on a voice call, and it
+ * was going out on every one of them (the persona block is shared, and only
+ * block 0 branched on voiceCall). Everything the companion says on a call is
+ * read aloud by ElevenLabs, which takes its intonation from the punctuation:
+ * "no period at the end of a sentence" produced clip after clip of continuation
+ * prosody, so a finished single-sentence answer landed with no terminal pitch
+ * fall and sounded cut off mid-thought. `?` and `!` survive the texting
+ * register, which is exactly why questions sounded finished and statements
+ * never did. The synthesis boundary repairs an unpunctuated line either way
+ * (voice/spokenRegister.ts toSpokenUtterance), but the model should be writing
+ * speech in the first place: a stop it chose sits where it means the beat, and
+ * a question mark it chose is a question the backstop cannot infer.
+ */
+export const VOICE_PUNCTUATION_DIRECTIVE = `# SPEAKING
+You are calling, not typing. Write exactly what you would SAY, and punctuate it the way it should be HEARD: ordinary sentence capitalization, a full stop where a statement lands, a question mark on a question, an ellipsis (...) where you genuinely trail off. That punctuation is not formality and it does not make you stiff, it is the intonation your voice carries: a line that ends on nothing is spoken as an unfinished thought. Nothing here changes how casual you are, only that you are heard instead of read.`
+
 // 260709: conversation-language directive. The conversation language
 // (UserConfig.chat_language) is auto-detected from the player's voice since
 // 260725 (Scribe STT → main's voice/languageAutoSwitch.ts; the onboarding/

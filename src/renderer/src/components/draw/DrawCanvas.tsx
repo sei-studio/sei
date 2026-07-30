@@ -37,6 +37,11 @@ const SNAPSHOT_WIDTH = 640;
 
 export type DrawCanvasMode = 'player-draw' | 'ai-draw' | 'view';
 
+/** Imperative seam for playback-ordering (see queueBarrier below). */
+export interface DrawCanvasControl {
+  queueBarrier: (cb: () => void) => void;
+}
+
 export interface DrawCanvasProps {
   characterId: string;
   /** Committed strokes from main. Ignored in ai-draw mode (see above). */
@@ -53,6 +58,15 @@ export interface DrawCanvasProps {
   clearToken: number;
   onStroke: (stroke: DrawStroke) => void;
   onErase: (strokeId: string) => void;
+  /**
+   * Receives the playback-barrier seam (260729, from the web version). The
+   * screen uses it to hold the character's chat lines until the strokes it
+   * drew BEFORE saying them have actually appeared on screen: main pushes
+   * chat the moment the model emits it, but stroke reveal runs at hand speed,
+   * so "you've got all the parts there" used to land while the canvas was two
+   * strokes in.
+   */
+  controlRef?: React.MutableRefObject<DrawCanvasControl | null>;
 }
 
 interface Playing {
@@ -60,6 +74,15 @@ interface Playing {
   /** Wall-clock ms when the stroke itself should begin (after its pause). */
   startAt: number;
   durationMs: number;
+}
+
+/** A held callback in the playback queue; costs no frames of its own. */
+interface Barrier {
+  barrier: () => void;
+}
+
+function isBarrier(q: DrawAiStroke | Barrier): q is Barrier {
+  return 'barrier' in q;
 }
 
 export function DrawCanvas({
@@ -71,6 +94,7 @@ export function DrawCanvas({
   clearToken,
   onStroke,
   onErase,
+  controlRef,
 }: DrawCanvasProps): React.ReactElement {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -80,7 +104,7 @@ export function DrawCanvas({
   const drawing = useRef(false);
 
   // Character playback state.
-  const queue = useRef<DrawAiStroke[]>([]);
+  const queue = useRef<Array<DrawAiStroke | Barrier>>([]);
   const playing = useRef<Playing | null>(null);
   const revealed = useRef<DrawStroke[]>([]);
 
@@ -96,15 +120,37 @@ export function DrawCanvas({
 
   // Reset playback whenever the turn changes: strokes queued for a turn that
   // has ended must never bleed into the next one. Also on a mid-turn wipe,
-  // which is the same reset without the turn ending.
+  // which is the same reset without the turn ending. Pending barriers FIRE
+  // rather than vanish, so a chat line held behind a stroke that will never
+  // play is released, not leaked.
   useEffect(() => {
+    const dropped = queue.current;
     queue.current = [];
     playing.current = null;
     revealed.current = [];
     live.current = null;
     drawing.current = false;
     dirty.current = true;
+    for (const q of dropped) if (isBarrier(q)) q.barrier();
   }, [turnToken, clearToken]);
+
+  // The barrier seam handed to the screen. In a hidden window strokes commit
+  // instantly, so the barrier does too.
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = {
+      queueBarrier: (cb: () => void) => {
+        if (document.hidden || propsRef.current.mode !== 'ai-draw') {
+          cb();
+          return;
+        }
+        queue.current.push({ barrier: cb });
+      },
+    };
+    return () => {
+      controlRef.current = null;
+    };
+  }, [controlRef]);
 
   useEffect(() => {
     dirty.current = true;
@@ -197,8 +243,14 @@ export function DrawCanvas({
 
         // Advance playback.
         if (propsRef.current.mode === 'ai-draw') {
-          if (!playing.current && queue.current.length > 0) {
-            const next = queue.current.shift() as DrawAiStroke;
+          while (!playing.current && queue.current.length > 0) {
+            const next = queue.current.shift() as DrawAiStroke | Barrier;
+            // A barrier is a held chat line waiting for every stroke queued
+            // before it to finish playing. It costs no frames of its own.
+            if (isBarrier(next)) {
+              next.barrier();
+              continue;
+            }
             playing.current = {
               stroke: next.stroke,
               startAt: now + next.delayBeforeMs,
@@ -244,15 +296,9 @@ export function DrawCanvas({
   // ── pointer input ─────────────────────────────────────────────────────────
   const toLogical = (e: React.PointerEvent): DrawPoint => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    // ONE scale for input and paint. paintStrokes scales by width alone, so
-    // mapping y by rect.height put the ink above the cursor whenever the box
-    // was not exactly 10:7. The resize fit keeps it 10:7; this keeps the pen
-    // under the cursor even if it ever is not.
-    const sc = Math.max(1e-6, rect.width / CANVAS_W);
-    const clamp = (v: number, hi: number): number => Math.min(hi, Math.max(0, v));
     return {
-      x: clamp((e.clientX - rect.left) / sc, CANVAS_W),
-      y: clamp((e.clientY - rect.top) / sc, CANVAS_H),
+      x: ((e.clientX - rect.left) / Math.max(1, rect.width)) * CANVAS_W,
+      y: ((e.clientY - rect.top) / Math.max(1, rect.height)) * CANVAS_H,
     };
   };
 

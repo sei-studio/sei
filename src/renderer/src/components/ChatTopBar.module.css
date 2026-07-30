@@ -69,6 +69,10 @@
   padding: 0;
   cursor: pointer;
   text-align: left;
+  /* Optical centering against the 22px avatar (260729): Oswald reserves a
+     tall ascender box, so the caps sit visibly below the flex center. */
+  position: relative;
+  top: -2px;
 }
 
 .nameToggle:hover .headerName {
@@ -92,6 +96,10 @@
   align-items: center;
   gap: var(--space-xs);
   flex-shrink: 0;
+  /* Same optical raise as the name, so the games/call icons share the
+     avatar's center line. */
+  position: relative;
+  top: -1px;
 }
 
 /* Naked icon buttons — no bordered square box. */

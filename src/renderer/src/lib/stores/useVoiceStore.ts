@@ -785,7 +785,16 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // user removed them) still speak a queued reaction into the room — that
         // was the "Sui kept talking in the background after she left" bug.
         if (!get().participants.includes(speakerId)) return;
-        if (get().status === 'live') for (const l of lines) speakCompanionLine(speakerId, l);
+        // Place each line inside its own reply for TTS conditioning (260729),
+        // the same way the reveal loop and the idle nudge do.
+        if (get().status === 'live') {
+          for (let i = 0; i < lines.length; i++) {
+            speakCompanionLine(speakerId, lines[i], {
+              prev: i > 0 ? lines[i - 1] : undefined,
+              more: i < lines.length - 1,
+            });
+          }
+        }
       }
     } catch {
       lines = [];

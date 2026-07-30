@@ -37,6 +37,7 @@ import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useChatStore, chatPreviewFor } from '../lib/stores/useChatStore';
 import { lastInteractionAt } from '../lib/lastInteraction';
 import { isHomeCharacter } from '../lib/homeLibrary';
+import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import { presenceOf, useMinuteTick } from '../lib/presence';
 import { actionVerb } from '../lib/actionVerb';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -337,6 +338,7 @@ function HomeGrid(): React.ReactElement {
               role="button"
               tabIndex={0}
               aria-label={`Open ${c.name}`}
+              data-tutorial={c.id === DEFAULT_CHARACTER_UUIDS.sui ? 'sui-card' : undefined}
               onClick={() => {
                 void handleOpen(c.id);
               }}
@@ -412,6 +414,7 @@ function HomeGrid(): React.ReactElement {
             role="button"
             tabIndex={0}
             aria-label="Awaken a companion"
+            data-tutorial={i === 0 ? 'empty-slot' : undefined}
             onClick={() => {
               void handleAwaken();
             }}

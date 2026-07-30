@@ -55,13 +55,14 @@ export const GAMES: GameDef[] = [
       `Whoever is guessing types in the chat, and any sentence with the word in it counts.`,
   },
   {
-    id: 'movie',
-    name: 'Watch Together',
+    id: 'stardew',
+    name: 'Stardew Valley',
     available: false,
     soon: true,
-    image: './img/game-movie.jpg',
+    image: './img/game-stardew.jpg',
     description: (name) =>
-      `Movie night with ${name}: watch something together and talk about it as it plays.`,
+      `Farm side by side in Pelican Town. ${name} joins your co-op farm to plant, ` +
+      `mine, and chat through the seasons with you.`,
   },
   {
     id: 'focus',
@@ -71,15 +72,6 @@ export const GAMES: GameDef[] = [
     image: './img/game-focus.jpg',
     description: (name) =>
       `A quiet co-working session. ${name} keeps you company while you get things done.`,
-  },
-  {
-    id: 'backseat',
-    name: 'Backseat',
-    available: false,
-    soon: true,
-    image: './img/game-backseat.svg',
-    description: (name) =>
-      `${name} watches you play any game and reacts like a friend on the couch.`,
   },
   {
     id: 'suggest',

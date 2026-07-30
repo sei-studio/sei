@@ -16,6 +16,15 @@ import type { LanHost, LanHostWarning, UniqueGender } from '@shared/ipc';
 export type View =
   | { kind: 'loading' }
   | { kind: 'auth-choice' }
+  // First-run Sui onboarding scene (260728): the full-window animated ritual
+  // (OnboardApp). Fresh installs and fresh accounts land here; the legacy
+  // 'onboarding' QuestionShell flow below remains for Settings re-onboard.
+  // signin (260729): mount directly at the sign-in panel on the empty sky —
+  // no walk-in, no dialogue. Used wherever an already-onboarded profile
+  // needs to (re)auth: BOOT while signed out, and sign-out from Settings
+  // (both replaced AuthChoice). One click to proceed, like the old chooser;
+  // the panel's "I'm new here" link remounts the full scene.
+  | { kind: 'onboard'; signin?: boolean }
   | { kind: 'onboarding'; isReonboard: boolean }
   // Full-screen Minecraft skin setup page (wizard inline). Legacy resume
   // surface: onboarding no longer arms UserConfig.skin_setup_pending (260725,

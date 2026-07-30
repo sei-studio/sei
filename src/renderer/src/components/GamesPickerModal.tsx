@@ -139,7 +139,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
         if (e.target === e.currentTarget) closeModal();
       }}
     >
-      <div className={styles.modal}>
+      <div className={styles.modal} data-tutorial="games-modal">
         <div className={styles.header}>
           <h2 id="games-picker-title" className={styles.title}>
             Play together

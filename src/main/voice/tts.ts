@@ -24,7 +24,7 @@ import { loadConfig } from '../configStore';
 import { VOICE_PITCH_MAX, VOICE_PITCH_MIN, ttsSpeedFor, voicePitchRate, voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
 import { clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
-import { toSpokenRegister } from './spokenRegister';
+import { toSpokenRegister, toSpokenUtterance } from './spokenRegister';
 import { resolveVoiceId, isPoolVoiceId } from './voiceAssign';
 import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previewCache';
 import { NO_VOICE_ID } from '../../shared/voiceIds';
@@ -145,6 +145,17 @@ export function ttsLanguageForText(text: string, conversationLanguage: ChatLangu
  */
 function spokenTextFor(text: string, language: ChatLanguage): string {
   return language === 'en' ? toSpokenRegister(text) : text.trim();
+}
+
+/**
+ * The full chat-register → spoken-register conversion for one clip: shorthand
+ * expansion (English only) then utterance form — sentence casing and the
+ * terminal full stop the texting register drops (see toSpokenUtterance for why
+ * that is prosody and not formality). Every language gets the second half; the
+ * stop mark itself is per-script.
+ */
+function speechTextFor(text: string, language: ChatLanguage): string {
+  return toSpokenUtterance(spokenTextFor(text, language), language);
 }
 
 // Delivery calmness (260724): voiceStabilityFor moved to shared/voicePitch.ts
@@ -387,11 +398,14 @@ export async function voiceTts(args: {
   const language = ttsLanguageForText(args.text, await ttsLanguage());
   const route = await resolveElevenLabsRoute();
   // Spoken register BEFORE the cap: chat lines mirrored into the call carry
-  // shorthand ("lmao", "rn") that TTS would read literally. English only —
-  // see spokenTextFor.
-  const text = clipForRoute(spokenTextFor(args.text, language), route);
+  // shorthand ("lmao", "rn") that TTS would read literally, and texting
+  // punctuation that reads as an unfinished thought — see speechTextFor.
+  const text = clipForRoute(speechTextFor(args.text, language), route);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
-  const context = ttsContextFor(text, language, args.prev, args.more === true);
+  // previous_text is conditioning, so it gets the same register the clip
+  // itself is rendered in.
+  const prev = args.prev ? speechTextFor(args.prev, language) : undefined;
+  const context = ttsContextFor(text, language, prev, args.more === true);
   const buf = await synthesize(
     text, voiceId, ttsSpeedFor(voicePitchRate(character)), language, voiceStabilityFor(character), route, context,
   );
@@ -430,8 +444,8 @@ export async function voiceTtsStream(
   // Per-message pin (see ttsLanguageForText and voiceTts).
   const language = ttsLanguageForText(args.text, await ttsLanguage());
   const route = await resolveElevenLabsRoute();
-  // Spoken register BEFORE the cap (see voiceTts). English only.
-  const text = clipForRoute(spokenTextFor(args.text, language), route);
+  // Spoken register BEFORE the cap (see voiceTts / speechTextFor).
+  const text = clipForRoute(speechTextFor(args.text, language), route);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
   // BYOK with no key: same pre-flight sentinel as synthesize (see there).
   if (route.kind === 'unconfigured') throw new Error(NOT_CONFIGURED_BYOK);
@@ -443,8 +457,14 @@ export async function voiceTtsStream(
   const langField = language !== 'en' ? { language_code: language } : {};
   const settings = voiceSettingsFor(speed, stability);
   // Utterance-context conditioning (see ttsContextFor) — keeps a multi-line
-  // reply from dropping pitch between its own sentences.
-  const context = ttsContextFor(text, language, args.prev, args.more === true);
+  // reply from dropping pitch between its own sentences. `prev` is normalized
+  // like the clip itself (see voiceTts).
+  const context = ttsContextFor(
+    text,
+    language,
+    args.prev ? speechTextFor(args.prev, language) : undefined,
+    args.more === true,
+  );
 
   const url = route.kind === 'direct'
     ? `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=${ELEVENLABS_OUTPUT_FORMAT}`

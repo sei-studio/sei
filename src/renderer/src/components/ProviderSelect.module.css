@@ -89,7 +89,6 @@
   max-height: 296px;
   overflow-y: auto;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-pop);
   outline: none;
 }

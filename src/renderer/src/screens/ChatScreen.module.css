@@ -298,7 +298,6 @@
   right: var(--space-md);
   display: inline-flex;
   background: var(--surface-2);
-  border: 1px solid var(--border-strong);
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms var(--ease);
@@ -465,7 +464,6 @@
   letter-spacing: 0.04em;
   color: var(--accent);
   background: var(--surface-2);
-  border: 1px solid var(--border-strong);
   padding: 3px var(--space-sm);
   margin-bottom: var(--space-xs);
   animation: copiedFade 160ms var(--ease);
@@ -500,8 +498,6 @@
   padding: 6px var(--space-md);
   color: var(--text-2);
   background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-bottom: none;
 }
 
 .replyName {
@@ -542,15 +538,15 @@
   color: var(--red);
 }
 
-/* §4.5 — the mockup boxed composer: --bg2 fill, --border-strong hairline,
-   input + accent send glyph. Still hovers over the list via .composerDock. */
+/* §4.5 — the boxed composer: --bg2 fill, input + accent send glyph. Still
+   hovers over the list via .composerDock. Borderless (260729): the fill alone
+   frames it, matching the borderless popup treatment. */
 .composer {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 11px 14px;
   background: var(--bg2);
-  border: 1px solid var(--border-strong);
 }
 
 .input {
@@ -611,18 +607,16 @@
 .presPanel {
   width: 0;
   flex: none;
-  border-left: 1px solid transparent;
   background: color-mix(in srgb, var(--pres-tint, transparent) 20%, var(--bg2));
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  transition: width 300ms var(--ease), border-color 300ms var(--ease);
+  transition: width 300ms var(--ease);
 }
 
 .presOpen .presPanel {
   width: 260px;
-  border-left-color: var(--border);
   overflow-y: auto;
 }
 
@@ -762,7 +756,6 @@
  * `.presOpen .presPanel` on purpose: equal specificity, later rule wins). */
 .gameOpen .presPanel {
   width: 0;
-  border-left-color: transparent;
   overflow: hidden;
 }
 

@@ -132,11 +132,86 @@ describe('turn blocks state the role outright', () => {
       priorChat: [],
       secondsLeft: 100,
       strokesUsed: 0,
-      resuming: false,
       gallery: [],
     });
     expect(block).toContain('Do NOT guess this turn');
     expect(block).toContain('Your word is: GRASS');
+  });
+});
+
+describe('the game is the referee', () => {
+  // 260729, live capture (web): the player guessed "credit card", the word was
+  // something else, and the character said "yes! that's it!", then posted a
+  // fabricated "[game] Round 2 of 3..." line copying the prompt's own
+  // system-line format. Nothing had told it the engine adjudicates guesses and
+  // owns the [game] prefix.
+  it('tells the character it never judges guesses or posts [game] lines', () => {
+    const contract = drawContractBlock({ playerName: PLAYER, rounds: 3, turnSeconds: 180 });
+    expect(contract).toContain('THE GAME ITSELF IS THE REFEREE');
+    expect(contract).toContain('never declare a guess correct');
+    expect(contract).toContain('never write a line that begins with [game]');
+    expect(contract).toContain('no guess so far has been right');
+  });
+
+  it('restates on the drawing turn that every guess so far is wrong', () => {
+    const block = buildDrawTurnBlock({
+      round: 1,
+      rounds: 3,
+      word: 'wallet',
+      aiName: AI,
+      playerName: PLAYER,
+      turnChat: [],
+      priorChat: [],
+      secondsLeft: 40,
+      strokesUsed: 0,
+      gallery: [],
+    });
+    expect(block).toContain('every guess so far is WRONG');
+    expect(block).toContain('Never tell them a guess is right');
+  });
+});
+
+describe('the restart block', () => {
+  // 260729: relying on the model to clear and redraw inside one long thread
+  // kept failing live, so a wipe resets the thread and the fresh opening block
+  // carries the story: what was wiped, who wiped it, and that the redraw must
+  // be different and must start now.
+  const base = {
+    round: 2,
+    rounds: 3,
+    word: 'tractor',
+    aiName: AI,
+    playerName: PLAYER,
+    turnChat: [],
+    priorChat: [],
+    secondsLeft: 50,
+    strokesUsed: 0,
+    gallery: [],
+  };
+
+  it('tells the model what it wiped and demands a different picture', () => {
+    const block = buildDrawTurnBlock({
+      ...base,
+      restart: { auto: false, priorIntents: ['the cab outline', 'big back wheel'] },
+    });
+    expect(block).toContain('STARTING OVER');
+    expect(block).toContain('You wiped your own canvas');
+    expect(block).toContain('the cab outline, big back wheel');
+    expect(block).toContain('Do NOT redraw that same picture.');
+    expect(block).toContain('DIFFERENTLY');
+  });
+
+  it('says the game did it on an auto wipe', () => {
+    const block = buildDrawTurnBlock({
+      ...base,
+      restart: { auto: true, wrongGuesses: 6, priorIntents: [] },
+    });
+    expect(block).toContain('the game wiped the canvas for you');
+    expect(block).toContain('guessed wrong 6 times');
+  });
+
+  it('says nothing about restarting on a normal turn', () => {
+    expect(buildDrawTurnBlock(base)).not.toContain('STARTING OVER');
   });
 });
 
@@ -167,7 +242,6 @@ describe('the instructions come after the chat log', () => {
       priorChat: [msg({ from: 'ai', text: 'watch this' })],
       secondsLeft: 100,
       strokesUsed: 0,
-      resuming: false,
       gallery: [],
     });
     expect(block.indexOf('watch this')).toBeLessThan(block.indexOf('# YOUR TURN TO DRAW'));
@@ -194,67 +268,6 @@ describe('the instructions come after the chat log', () => {
     expect(block.trimEnd()).toMatch(
       /Right now: the turn just ended\. Ouen was the one drawing, YOU were guessing\.$/,
     );
-  });
-
-  // 260729, from a live complaint on the web build: after guessing the
-  // player's knife, the character said "that one was easy, you made the blade
-  // too obvious". The generic "gloat, tease" beat framed a good drawing as a
-  // flaw. When the character guessed the PLAYER's drawing, it compliments.
-  it('compliments the drawing it guessed instead of gloating', () => {
-    const base = {
-      round: 1,
-      rounds: 3,
-      aiName: AI,
-      playerName: PLAYER,
-      word: 'horn',
-      winningLine: 'is it a horn',
-      scores: { player: 0, ai: 1 },
-      turnChat: [],
-      priorChat: [],
-      gameOver: false,
-      gallery: [entry({ guessed: true })],
-    };
-    const won = buildTurnEndBlock({ ...base, drawer: 'player' as const, guessed: true });
-    expect(won).toContain('they drew it well');
-    expect(won).toContain('Never call it easy or obvious');
-    expect(won).not.toContain('Gloat');
-    // Every other outcome keeps the banter beat.
-    for (const [drawer, guessed] of [['player', false], ['ai', true], ['ai', false]] as const) {
-      expect(buildTurnEndBlock({ ...base, drawer, guessed })).toContain('Gloat');
-    }
-  });
-});
-
-describe('the game is the referee', () => {
-  // 260729, live capture on the web build: the player guessed "credit card",
-  // the word was something else, and the character said "yes! that's it!",
-  // answered a follow-up with "that works too!", then posted a fabricated
-  // "[game] Round 2 of 3..." line copying the prompt's own system-line
-  // format. Nothing had told it the engine adjudicates guesses.
-  it('tells the character it never judges guesses or posts [game] lines', () => {
-    const contract = drawContractBlock({ playerName: PLAYER, rounds: 3, turnSeconds: 180 });
-    expect(contract).toContain('THE GAME ITSELF IS THE REFEREE');
-    expect(contract).toContain('never declare a guess correct');
-    expect(contract).toContain('never write a line that begins with [game]');
-    expect(contract).toContain('no guess so far has been right');
-  });
-
-  it('restates on the drawing turn that every guess so far is wrong', () => {
-    const block = buildDrawTurnBlock({
-      round: 1,
-      rounds: 3,
-      word: 'wallet',
-      aiName: AI,
-      playerName: PLAYER,
-      turnChat: [],
-      priorChat: [],
-      secondsLeft: 100,
-      strokesUsed: 0,
-      resuming: false,
-      gallery: [],
-    });
-    expect(block).toContain('every guess so far is WRONG');
-    expect(block).toContain('Never tell them a guess is right');
   });
 });
 

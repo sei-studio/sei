@@ -32,7 +32,6 @@
   width: 100%;
   max-width: 420px;
   background: var(--surface);
-  border: 1px solid var(--border);
   padding: var(--space-xl) var(--space-xl) var(--space-xl);
   display: flex;
   flex-direction: column;

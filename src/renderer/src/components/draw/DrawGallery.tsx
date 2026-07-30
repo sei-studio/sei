@@ -14,22 +14,15 @@ import { paintStrokes } from './drawRender';
  * --hand-stroke in draw.module.css: one pen drew the pictures and the frames
  * around them, and that has to stay true at thumbnail size.
  */
-const CELL_PEN_CSS = 4.4;
-import { PLAYER_LABEL, composeCellPng, composeGalleryPng, galleryByRound } from './galleryExport';
+const CELL_PEN_CSS = 3.5;
+import { PLAYER_LABEL, composeGalleryPng, galleryByRound } from './galleryExport';
 import { SquiggleFrame, SquiggleHighlight, SquiggleUnderline } from './Squiggle';
 import styles from './draw.module.css';
 
 /** One drawing, painted at cell size. */
-function GalleryCell({
-  entry,
-  onOpen,
-}: {
-  entry: DrawGalleryEntry | undefined;
-  /** Opens the drawing as its own share tile. */
-  onOpen: (entry: DrawGalleryEntry) => void;
-}): React.ReactElement {
-  const artRef = useRef<HTMLDivElement | null>(null);
+function GalleryCell({ entry }: { entry: DrawGalleryEntry | undefined }): React.ReactElement {
   const ref = useRef<HTMLCanvasElement | null>(null);
+  const artRef = useRef<HTMLDivElement | null>(null);
 
   // Repainted on RESIZE as well as on entry, because the gallery sizes its
   // cells from the space left over rather than from a fixed grid: the cell
@@ -40,13 +33,14 @@ function GalleryCell({
     if (!c) return;
     const paint = (): void => {
       // The cells are height-driven, and flexbox max-content OVERESTIMATES a
-      // height-driven aspect-ratio box (it sizes it as if the caption were
-      // not there), which left slack either side of every drawing. Pin the
-      // art's width to its measured height so the row hugs the art.
+      // height-driven aspect-ratio box (it sizes it as if the caption were not
+      // there), which left a moat of slack either side of every drawing
+      // (260729, from the web version). Pin the art's width to its measured
+      // height so the row hugs the art.
       const art = artRef.current;
       if (art) {
-        const ah = art.clientHeight;
-        if (ah > 0) art.style.width = `${Math.round((ah * CANVAS_W) / CANVAS_H)}px`;
+        const h = art.clientHeight;
+        if (h > 0) art.style.width = `${Math.round((h * CANVAS_W) / CANVAS_H)}px`;
       }
       const dpr = window.devicePixelRatio || 1;
       const rect = c.getBoundingClientRect();
@@ -73,42 +67,26 @@ function GalleryCell({
     return () => ro.disconnect();
   }, [entry]);
 
-  // Each drawing opens as its own share tile (web build, 260729). The
-  // affordance is the cursor alone: a hover tint would be a second ink.
-  const clickable = Boolean(entry);
+  const seed = `cell-${entry?.round ?? 0}-${entry?.drawer ?? 'x'}`;
   return (
     <figure className={styles.cell}>
       <div
         ref={artRef}
-        className={`${styles.cellArt}${clickable ? ` ${styles.cellArtClick}` : ''}`}
+        className={styles.cellArt}
         style={{ aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
-        role={clickable ? 'button' : undefined}
-        tabIndex={clickable ? 0 : undefined}
-        aria-label={entry?.word}
-        onClick={entry ? () => onOpen(entry) : undefined}
-        onKeyDown={
-          entry
-            ? (e): void => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onOpen(entry);
-                }
-              }
-            : undefined
-        }
       >
-        <SquiggleFrame seed={`cell-${entry?.round ?? 0}-${entry?.drawer ?? 'x'}`} />
+        <SquiggleFrame seed={seed} />
         <canvas ref={ref} className={styles.cellCanvas} />
       </div>
       <figcaption className={styles.cellWord}>
         {/* A guessed word wears the highlighter; a missed one goes bare. The
-            absence is the same information without a second ink. */}
+            absence is the same information without a second ink (260729, from
+            the web version; it used to be a typed "missed" marker). */}
         <span
-          className={`${styles.cellWordText}${entry?.guessed ? ` ${styles.cellWordGuessed}` : ''}`}
+          className={styles.cellWordText}
+          data-guessed={entry?.guessed ? 'true' : 'false'}
         >
-          {entry?.guessed ? (
-            <SquiggleHighlight seed={`cell-${entry.round}-${entry.drawer}-hl`} />
-          ) : null}
+          {entry?.guessed ? <SquiggleHighlight seed={`${seed}-hl`} /> : null}
           <span className={styles.btnLabel}>{entry ? entry.word : '-'}</span>
         </span>
       </figcaption>
@@ -133,11 +111,8 @@ export function DrawGallery({
   onClose,
 }: DrawGalleryProps): React.ReactElement {
   const [saving, setSaving] = useState(false);
-  /**
-   * The tile popup: the game tile lands here already saved ("Saved!"); a
-   * clicked drawing lands here unsaved, with its own save button.
-   */
-  const [popup, setPopup] = useState<{ png: string; saved: boolean } | null>(null);
+  /** The just-saved tile, shown in the confirmation popup until dismissed. */
+  const [savedPng, setSavedPng] = useState<string | null>(null);
   const columns = Math.max(1, state.rounds);
   const playerEntries = useMemo(
     () => galleryByRound(state.gallery, 'player', columns),
@@ -148,66 +123,49 @@ export function DrawGallery({
     [state.gallery, columns],
   );
 
-  // Share: render the tile first and SHOW it. Nothing touches the Desktop
-  // until "Save to Desktop" is pressed inside the popup (web build, 260729).
-  const share = async (): Promise<void> => {
+  const save = async (): Promise<void> => {
     if (saving) return;
-    const png = await composeGalleryPng(state);
-    if (png) setPopup({ png, saved: false });
-  };
-
-  const openCell = async (entry: DrawGalleryEntry): Promise<void> => {
-    if (saving) return;
-    const png = await composeCellPng(entry, entry.drawer);
-    if (png) setPopup({ png, saved: false });
-  };
-
-  const savePopupPng = async (): Promise<void> => {
-    if (saving || !popup) return;
     setSaving(true);
     try {
-      const file = await onSave(popup.png);
-      if (file) setPopup({ png: popup.png, saved: true });
+      const png = await composeGalleryPng(state);
+      if (!png) return;
+      // The popup only opens on a WRITTEN file: "Saved!" over a failed save
+      // would be a lie, and the store surfaces the error line instead.
+      const file = await onSave(png);
+      if (file) setSavedPng(png);
     } finally {
       setSaving(false);
     }
   };
 
+  // The big "DRAW!" header and the separate score line are gone (260729, from
+  // the web version): the drawings get the space, and the score lives in the
+  // row names, which is where the eye already goes to compare the two rows.
+  const rows = [
+    [`${PLAYER_LABEL} ${state.scores.player}`, playerEntries] as const,
+    [`${state.aiName} ${state.scores.ai}`, aiEntries] as const,
+  ];
+
   return (
     <div className={styles.gallery}>
-      {/* No header (web build, 260729): the drawings get its space, and the
-          score lives in the row names now, not on its own line. */}
-      {(
-        [
-          [PLAYER_LABEL, state.scores.player, playerEntries] as const,
-          [state.aiName, state.scores.ai, aiEntries] as const,
-        ]
-      ).map(([name, score, entries]) => (
+      {rows.map(([name, entries]) => (
         <section key={name} className={styles.galleryRow}>
-          <h2 className={styles.rowName}>{`${name} - ${score} guessed`}</h2>
+          <h2 className={styles.rowName}>{name}</h2>
           <div className={styles.cells} style={{ ['--cols' as string]: String(columns) }}>
-            {entries.map((e, i) => (
-              <GalleryCell key={`${name}-${i}`} entry={e} onOpen={(en) => void openCell(en)} />
+            {Array.from({ length: columns }, (_, i) => (
+              <GalleryCell key={`${name}-${i}`} entry={entries[i]} />
             ))}
           </div>
         </section>
       ))}
 
       <div className={styles.galleryActions}>
-        <button
-          type="button"
-          className={styles.handBtn}
-          data-on="true"
-          onClick={() => void share()}
-          disabled={saving}
-        >
+        <button type="button" className={styles.handBtn} onClick={() => void save()} disabled={saving}>
           <SquiggleHighlight seed="save-hl" />
           <SquiggleFrame seed="save-btn" />
-          <span className={styles.btnLabel}>Share</span>
+          <span className={styles.btnLabel}>{saving ? 'Saving...' : 'Save to Desktop'}</span>
         </button>
-        {/* Share wears the highlight now, not Play again: the sheet exists to
-            be shared, and a second lit button was two primaries. */}
-        <button type="button" className={styles.handBtn} onClick={onPlayAgain}>
+        <button type="button" className={styles.handBtn} data-on="true" onClick={onPlayAgain}>
           <SquiggleHighlight seed="again-hl" />
           <SquiggleFrame seed="again-btn" />
           <span className={styles.btnLabel}>Play again</span>
@@ -219,41 +177,25 @@ export function DrawGallery({
       </div>
       {savedTo ? <p className={styles.savedNote}>Saved to {savedTo}</p> : null}
 
-      {popup ? (
+      {savedPng ? (
         <div className={styles.savePopupOverlay}>
           <div className={styles.savePopup}>
             <SquiggleFrame seed="save-popup" />
-            {popup.saved ? <h2 className={styles.savePopupTitle}>Saved!</h2> : null}
+            <h2 className={styles.savePopupTitle}>Saved!</h2>
             <div className={styles.savePopupArt}>
               <SquiggleFrame seed="save-popup-art" />
-              <img className={styles.savePopupImg} src={popup.png} alt="The share tile" />
+              <img className={styles.savePopupImg} src={savedPng} alt="The saved picture" />
             </div>
-            <div className={styles.savePopupActions}>
-              {!popup.saved ? (
-                <button
-                  type="button"
-                  className={styles.handBtn}
-                  onClick={() => void savePopupPng()}
-                  disabled={saving}
-                >
-                  <SquiggleHighlight seed="save-popup-save-hl" />
-                  <SquiggleFrame seed="save-popup-save" />
-                  <span className={styles.btnLabel}>
-                    {saving ? 'Saving...' : 'Save to Desktop'}
-                  </span>
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className={styles.handBtn}
-                onClick={() => setPopup(null)}
-                aria-label="Close"
-              >
-                <SquiggleHighlight seed="save-popup-x-hl" shape="ellipse" />
-                <SquiggleFrame seed="save-popup-x" shape="ellipse" />
-                <span className={styles.btnLabel}>x</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              className={styles.handBtn}
+              onClick={() => setSavedPng(null)}
+              aria-label="Close"
+            >
+              <SquiggleHighlight seed="save-popup-x-hl" shape="ellipse" />
+              <SquiggleFrame seed="save-popup-x" shape="ellipse" />
+              <span className={styles.btnLabel}>x</span>
+            </button>
           </div>
         </div>
       ) : null}

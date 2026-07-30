@@ -34,15 +34,13 @@
   --hand: 'Architects Daughter', 'Comic Sans MS', cursive;
   --type: 'Roboto Mono', ui-monospace, Menlo, monospace;
 
-  /* The handwritten scale, and the whole of it. Scaled up 25% with the web
-     build (a4d9329, "scale the design, not the page"): at the original size
-     the whole surface read as a small drawing pinned in a big window. */
-  --fs-title: 58px;
-  --fs-body: 28px;
+  /* The handwritten scale, and the whole of it. */
+  --fs-title: 46px;
+  --fs-body: 22px;
   /* The typed face is deliberately much smaller: it is the printed apparatus
      around the game (round counter, clock, the game's own announcements), not
      anything either player said. */
-  --fs-typed: 16px;
+  --fs-typed: 13px;
 
   /* Width of EVERY hand-drawn line on this surface: the squiggle frames, the
      rules, the button outlines, and the pen on the canvas. They all have to
@@ -53,7 +51,7 @@
      Wherever art IS rendered, DrawCanvas republishes it with the pen's true
      on-screen width at the current canvas scale (pencilCssWidth in
      drawRender.ts) so the chrome matches the strokes exactly. */
-  --hand-stroke: 4.4px;
+  --hand-stroke: 3.5px;
 
   /* Glyph outlines are lines too, and the face is a single fixed weight, so the
      46px title is drawn with a visibly heavier pen than the 22px body beside
@@ -85,7 +83,7 @@
   -webkit-font-smoothing: antialiased;
 }
 
-.root .title {
+.root :is(.title, .galleryTitle) {
   -webkit-text-stroke: var(--hand-text-stroke-title) currentColor;
 }
 
@@ -109,9 +107,8 @@
   /* Some air above, so the copy does not read as a caption hanging off the
      horse's feet, but not so much that the controls drift away from the
      drawings they belong to. */
-  margin: 6px 0 0;
-  /* Wide enough that the one-sentence pitch stays on one line. */
-  max-width: 72ch;
+  margin: 12px 0 0;
+  max-width: 52ch;
 }
 
 .error {
@@ -139,12 +136,9 @@
   flex: 0 0 auto;
 }
 
-/* A system line announces what comes NEXT (a turn, a reveal), so the air
-   goes ABOVE it: it used to sit symmetric and read as a caption for the
-   message before it. */
 .chatSystem {
   composes: typed;
-  margin: 16px 0 5px;
+  margin: 7px 0;
   text-align: center;
 }
 
@@ -223,7 +217,7 @@
 
 .handBtn {
   position: relative;
-  padding: 15px 32px;
+  padding: 12px 26px;
   border: none;
   background: transparent;
   color: var(--ink);
@@ -272,7 +266,7 @@
   flex-direction: column;
   align-items: center;
   gap: 18px;
-  width: min(700px, 88%);
+  width: min(560px, 88%);
   padding: 40px 0;
   text-align: center;
   /* Sits a little below the middle of the page. Offset rather than padding or
@@ -298,17 +292,6 @@
   font-size: calc(var(--fs-title) * 2);
 }
 
-/* The art block rides higher while Start stays exactly where it was: the
-   title pulls everything after it up 32px, the tagline sits tight, and the
-   button gives the full 40 back. */
-.setup .titleBig {
-  margin-top: -32px;
-}
-
-.setup .handBtn {
-  margin-top: 40px;
-}
-
 /* Three real drawings from real games. Bottom-aligned so they sit on a shared
    line despite their different proportions, with the middle one lifted off it. */
 .doodles {
@@ -325,7 +308,7 @@
 }
 
 .doodle {
-  height: 231px;
+  height: 185px;
   /* Auto width off the viewBox, so each drawing keeps its own proportions
      rather than being squashed to a common box. */
   width: auto;
@@ -351,8 +334,8 @@
   height: 44px;
   /* Bottom-aligned row, so a bigger bottom margin lifts it higher. Tuned so
      the crown perches just clear of the shrimp's and horse's body mass rather
-     than sitting level with their heads (raised by its own height, a377663). */
-  margin-bottom: 178px;
+     than sitting level with their heads. */
+  margin-bottom: 134px;
   animation-delay: -0.33s;
 }
 
@@ -432,8 +415,8 @@
 
 .pickWord {
   position: relative;
-  min-width: 238px;
-  padding: 30px 35px;
+  min-width: 190px;
+  padding: 24px 28px;
   border: none;
   background: transparent;
   color: var(--ink);
@@ -463,14 +446,14 @@
                   line of --fs-body in the handwritten face, so fixing it here
                   changes neither head, it only makes them agree.
        --col-gap  the space under both heads. */
-  --head-h: 39px;
+  --head-h: 31px;
   --col-gap: 10px;
 
   display: flex;
   gap: 26px;
   align-items: stretch;
-  width: min(1650px, 96%);
-  height: min(1075px, 94%);
+  width: min(1320px, 96%);
+  height: min(860px, 94%);
   padding: 18px 0;
 }
 
@@ -561,11 +544,11 @@
   justify-content: center;
   gap: 18px;
   flex: 0 0 auto;
-  height: 65px;
+  height: 52px;
 }
 
 .toolbarSpacer {
-  height: 65px;
+  height: 52px;
   flex: 0 0 auto;
 }
 
@@ -573,8 +556,8 @@
    not its selected state. Selection is the marker swipe behind it. */
 .tool {
   position: relative;
-  width: 58px;
-  height: 58px;
+  width: 46px;
+  height: 46px;
   border: none;
   background: transparent;
   color: var(--ink);
@@ -602,7 +585,7 @@
 .side {
   display: flex;
   flex-direction: column;
-  flex: 0 0 400px;
+  flex: 0 0 320px;
   min-height: 0;
   /* No gap: the rule carries its own margins, because it has to land on an
      exact line rather than wherever a shared gap puts it (see below). */
@@ -777,10 +760,11 @@
   display: flex;
   flex-direction: column;
   /* Everything on this page is centred as a block; the row NAMES read
-     left-aligned because each row section shrinks to its drawings. */
+     left-aligned because each row section shrinks to its drawings (260729,
+     from the web version). */
   align-items: center;
   gap: 8px;
-  width: min(1650px, 94%);
+  width: min(1320px, 94%);
   height: 100%;
   padding: 24px 0;
   overflow: hidden;
@@ -810,14 +794,15 @@
   flex: 0 0 auto;
 }
 
-/* A flex row, not a 1fr grid: the drawings are height-driven (aspect ratio
-   off the row height), so equal-width columns left a moat of slack around
-   each one. Flex lets every cell hug its art and the row shrink to fit,
-   which is what makes the centred sections read as one tight block. */
+/* A flex row, not a 1fr grid (260729, from the web version): the drawings are
+   height-driven (aspect ratio off the row height), so equal-width grid columns
+   left a moat of slack around each one. Flex lets every cell hug its art and
+   the row shrink to fit, which is what makes the centred sections read as one
+   tight block. */
 .cells {
   display: flex;
   justify-content: flex-start;
-  gap: 10px;
+  gap: 14px;
   flex: 1 1 auto;
   min-height: 0;
   max-width: 100%;
@@ -849,12 +834,6 @@
   color: var(--ink);
 }
 
-/* A finished drawing opens as its own share tile. The affordance is the
-   cursor (and the keyboard focus ring); a hover tint would be a second ink. */
-.cellArtClick {
-  cursor: pointer;
-}
-
 .cellCanvas {
   display: block;
   width: 100%;
@@ -871,14 +850,15 @@
   flex: 0 0 auto;
 }
 
-/* A guessed word wears the highlighter; a missed one goes bare. The absence
-   is the same information without a second ink. */
+/* A guessed word wears the highlighter; a missed one goes bare (260729, from
+   the web version). The absence is the same information without a second
+   ink. */
 .cellWordText {
   position: relative;
   padding: 0 4px;
 }
 
-.cellWordGuessed .highlightHost {
+.cellWordText[data-guessed='true'] .highlightHost {
   opacity: 1;
 }
 
@@ -886,8 +866,8 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  /* 26: the "draw!" header is gone, so the air it occupied is spent here,
-     between the drawings and the buttons. */
+  /* 26 (260729): the "DRAW!" header is gone, so the air it occupied is spent
+     here, between the drawings and the buttons. */
   margin-top: 26px;
   flex: 0 0 auto;
 }
@@ -914,7 +894,7 @@
   gap: 12px;
   padding: 26px 34px 18px;
   background: var(--paper);
-  max-width: min(88%, 700px);
+  max-width: min(88%, 560px);
 }
 
 .savePopupTitle {
@@ -934,14 +914,8 @@
 
 .savePopupImg {
   display: block;
-  width: min(38vh, 46vw, 475px);
+  width: min(38vh, 46vw, 380px);
   height: auto;
-}
-
-.savePopupActions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
 }
 
 @media (max-width: 900px) {

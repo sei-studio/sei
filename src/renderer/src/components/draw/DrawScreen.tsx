@@ -18,11 +18,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ROUNDS, type DrawStroke } from '@shared/drawIpc';
 import { useDrawStore } from '../../lib/stores/useDrawStore';
 import { useUiStore } from '../../lib/stores/useUiStore';
-import { DrawCanvas } from './DrawCanvas';
+import { DrawCanvas, type DrawCanvasControl } from './DrawCanvas';
 import { DrawChat } from './DrawChat';
 import { DrawGallery } from './DrawGallery';
+import { GameChromeRow, CHROME_PROXIMITY_PX } from '../GameSurface';
 import { SquiggleFrame, SquiggleHighlight, SquiggleRule } from './Squiggle';
-import { FullscreenIcon, ExitFullscreenIcon } from '../icons';
 import { Doodle } from './Doodle';
 import { crown, horse, shrimp } from './doodles';
 import styles from './draw.module.css';
@@ -54,6 +54,7 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
   const savedTo = useDrawStore((s) => s.savedTo[characterId]);
   const open = useDrawStore((s) => s.open);
   const start = useDrawStore((s) => s.start);
+  const newGame = useDrawStore((s) => s.newGame);
   const pickWord = useDrawStore((s) => s.pickWord);
   const sendStroke = useDrawStore((s) => s.sendStroke);
   const erase = useDrawStore((s) => s.erase);
@@ -64,13 +65,56 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
   // Draw! is a route of its own, so it already covers the chat screen; the
   // IconRail is the only chrome left to give up, and it stays by default.
   // Fullscreen here means "and the rail too". Cleared on unmount, so leaving
-  // the game can never strand the app without its rail.
-  const fullscreen = useUiStore((s) => s.gameFullscreen);
+  // the game can never strand the app without its rail. The toggle itself
+  // lives in the universal bottom chrome row (GameChromeRow, 260729).
   const setFullscreen = useUiStore((s) => s.setGameFullscreen);
   useEffect(() => () => setFullscreen(false), [setFullscreen]);
 
+  // Hover-reveal for the bottom chrome row, same proximity band as the
+  // chat-hosted game surfaces.
+  const [nearBottom, setNearBottom] = useState(false);
+
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
   const [now, setNow] = useState(() => Date.now());
+
+  // The character's chat lines held back until the strokes it drew BEFORE
+  // saying them have finished their on-screen playback (260729, from the web
+  // version). Main pushes chat the moment the model emits it, but stroke
+  // reveal runs at hand speed, so "you've got all the parts there" used to
+  // land while the canvas was two strokes in. Pushes preserve order (strokes
+  // leave main before the state push that carries the line), so a playback
+  // barrier queued on arrival releases the line at the right moment.
+  const canvasCtl = useRef<DrawCanvasControl | null>(null);
+  const seenChatIds = useRef<Set<string>>(new Set());
+  const [heldChatIds, setHeldChatIds] = useState<ReadonlySet<string>>(() => new Set());
+  const chat = state?.chat;
+  const aiTurn = state?.phase === 'drawing' && state?.drawer === 'ai';
+  useEffect(() => {
+    if (!chat) return;
+    for (const m of chat) {
+      if (seenChatIds.current.has(m.id)) continue;
+      seenChatIds.current.add(m.id);
+      if (!aiTurn || m.system || m.from !== 'ai') continue;
+      const ctl = canvasCtl.current;
+      if (!ctl) continue;
+      setHeldChatIds((prev) => new Set(prev).add(m.id));
+      ctl.queueBarrier(() => {
+        setHeldChatIds((prev) => {
+          if (!prev.has(m.id)) return prev;
+          const next = new Set(prev);
+          next.delete(m.id);
+          return next;
+        });
+      });
+    }
+    // Leaving the character's drawing turn releases anything still held (belt
+    // and braces: the canvas fires dropped barriers on every turn change too).
+    if (!aiTurn) setHeldChatIds((prev) => (prev.size > 0 ? new Set() : prev));
+  }, [chat, aiTurn]);
+  const visibleChat = useMemo(
+    () => (chat ?? []).filter((m) => !heldChatIds.has(m.id)),
+    [chat, heldChatIds],
+  );
 
   // Open the surface (setup phase) on first mount.
   const opened = useRef(false);
@@ -121,10 +165,7 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
           state={state}
           savedTo={savedTo ?? ''}
           onSave={(png) => saveGallery(characterId, png)}
-          // Play again really plays again (web build, 260729): the setup screen
-          // lost its round chooser, so there is no choice to send anyone back
-          // for. startDraw abandons or completes the finished session itself.
-          onPlayAgain={() => void start(characterId, ROUNDS)}
+          onPlayAgain={() => void newGame(characterId)}
           onClose={close}
         />
       </div>
@@ -135,7 +176,7 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
     return (
       <div className={styles.root}>
         <div className={styles.setup}>
-          <h1 className={`${styles.title} ${styles.titleBig}`}>draw!</h1>
+          <h1 className={`${styles.title} ${styles.titleBig}`}>DRAW!</h1>
 
           <div className={styles.doodles}>
             {DOODLES.map((d) => (
@@ -160,7 +201,7 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
           >
             <SquiggleHighlight seed="start-hl" />
             <SquiggleFrame seed="start-btn" />
-            <span className={styles.btnLabel}>{starting ? 'Starting...' : 'Start'}</span>
+            <span className={styles.btnLabel}>{starting ? 'Starting...' : 'Start!'}</span>
           </button>
           {error ? <p className={styles.error}>{error}</p> : null}
           <button
@@ -226,7 +267,15 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
       : `${state.aiName} is drawing`;
 
   return (
-    <div className={styles.root}>
+    <div
+      className={styles.root}
+      style={{ position: 'relative' }}
+      onPointerMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        setNearBottom(r.bottom - e.clientY <= CHROME_PROXIMITY_PX);
+      }}
+      onPointerLeave={() => setNearBottom(false)}
+    >
       <div className={styles.game}>
         <div className={styles.stage}>
           <header className={styles.header}>
@@ -254,6 +303,7 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
                 clearToken={state.clearSeq}
                 onStroke={(stroke: DrawStroke) => sendStroke(characterId, stroke)}
                 onErase={(id) => erase(characterId, id)}
+                controlRef={canvasCtl}
               />
             </div>
 
@@ -290,34 +340,10 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
             <span className={styles.score}>
               {state.playerName} {state.scores.player} - {state.scores.ai} {state.aiName}
             </span>
-            <div className={styles.sideActions}>
-              <button
-                type="button"
-                className={styles.iconBtn}
-                onClick={() => setFullscreen(!fullscreen)}
-                aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-                title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-              >
-                <SquiggleHighlight seed="fs-hl" />
-                <span className={styles.btnLabel}>
-                  {fullscreen ? <ExitFullscreenIcon size={16} /> : <FullscreenIcon size={16} />}
-                </span>
-              </button>
-              <button
-                type="button"
-                className={styles.handBtnQuiet}
-                onClick={close}
-                aria-label="Leave Draw!"
-                title="Leave"
-              >
-                <SquiggleHighlight seed="game-x-hl" />
-                <span className={styles.btnLabel}>x</span>
-              </button>
-            </div>
           </div>
           <SquiggleRule seed="side-rule" />
           <DrawChat
-            messages={state.chat}
+            messages={visibleChat}
             playerName={state.playerName}
             aiName={state.aiName}
             placeholder={chatPlaceholder}
@@ -326,6 +352,16 @@ export function DrawScreen({ characterId }: { characterId: string }): React.Reac
           />
         </aside>
       </div>
+
+      {/* The universal bottom button row (260729): fullscreen, the call
+          cluster (or the phone that starts one), and the end "x". Same
+          component, same reveal band, as the chat-hosted game surfaces. */}
+      <GameChromeRow
+        characterId={characterId}
+        revealed={nearBottom}
+        onEnd={close}
+        confirmEnd
+      />
     </div>
   );
 }

@@ -389,10 +389,32 @@ export interface CallOverlayState {
   participants: CallOverlayParticipant[];
 }
 
+/**
+ * Where a spoken line sits inside its OWN reply (260729). Feeds ElevenLabs'
+ * utterance conditioning (main/voice/tts.ts ttsContextFor), which is scoped to
+ * one reply: the first line has no `prev`, the last has no `more`, so prosody
+ * resets at reply boundaries instead of bleeding across turns. Mirrors the
+ * renderer-side SpokenLineContext (lib/voice/voiceBridge.ts) structurally.
+ */
+export interface SpokenLineContext {
+  /** The line of this same reply spoken immediately before this one. */
+  prev?: string;
+  /** Another line of this same reply is known to follow this one. */
+  more?: boolean;
+}
+
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
 export interface ChatMessagePush {
   characterId: string;
   message: ChatMessage;
+  /**
+   * Voice calls (260729): set on the per-sentence pushes of a STREAMED reply,
+   * which is the only path a live call takes. The renderer speaks these pushes,
+   * and without this it had no way to know a sentence's place in its reply (the
+   * prev/more bookkeeping lives in the blocking reveal loop a streamed reply
+   * skips), so every clip was synthesized context-free.
+   */
+  speech?: SpokenLineContext;
 }
 
 /** In-app user profile surfaced to the chat + settings. */
@@ -727,12 +749,12 @@ export type SignUpResult =
   // signups never hits it.
   | { ok: false; code: 'weak_password' | 'invalid_email' | 'network' | 'under_13'; message: string }
   | { ok: false; code: 'cooldown'; message: string; retryAfterMs: number }
-  // No-silent-failure (260605): an already-registered email no longer returns a
-  // neutral "check your email" that sends nothing. We surface it honestly so the
-  // user can sign in instead. `provider` (when known) names the existing sign-in
-  // method (e.g. 'Google') so the renderer can steer them to the right button.
-  // This intentionally trades the previous enumeration resistance for honesty,
-  // per the product owner's explicit "cannot silently fail" directive.
+  // 260729: NO LONGER PRODUCED. The 260605 honest already-registered surface
+  // leaked account existence to anyone typing an address into signup, so an
+  // already-registered email now silently sends a password-reset link and
+  // returns the same neutral `{ ok: true, requiresVerification: true }` a new
+  // signup gets (see alreadyRegisteredResult in authHandlers.ts). The variant
+  // stays in the union so renderer branches keep compiling; they are dead.
   | { ok: false; code: 'already_registered'; message: string; provider?: string };
 
 export type OAuthResult =
@@ -1144,6 +1166,13 @@ export interface RendererApi {
   charsSetShared(args: { id: string; shared: boolean }): Promise<void>;
 
   /**
+   * 260729 — save the character's full portrait art to disk. Opens a native
+   * save dialog; resolves the written path, or null when the user cancels or
+   * the character has no portrait art.
+   */
+  charsExportPortrait(characterId: string): Promise<string | null>;
+
+  /**
    * Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY,
    * local rolling-24h log — all backends, BYOK included). Called before
    * entering the new-character flow so a maxed-out user sees a "come back
@@ -1295,6 +1324,10 @@ export interface RendererApi {
   drawOpen(characterId: string): Promise<DrawGameState>;
   /** Start a game with the chosen round count (1-5). */
   drawStart(characterId: string, rounds: number): Promise<DrawGameState>;
+  /** Back to the setup screen, keeping the last round count preselected. */
+  drawNewGame(characterId: string): Promise<DrawGameState>;
+  /** Choose one of `wordChoices` and begin the player's drawing turn. */
+  drawPickWord(characterId: string, word: string): Promise<DrawGameState>;
   drawGetState(characterId: string): Promise<DrawGameState | null>;
   /** The player lifted the pen. Ignored unless it is their turn to draw. */
   drawStroke(characterId: string, stroke: DrawStroke): Promise<void>;
@@ -1572,7 +1605,13 @@ export interface RendererApi {
   signOut(): Promise<void>;
   deleteAccount(): Promise<DeleteAccountResult>;
   exportData(): Promise<ExportDataResult>;
-  resendVerification(): Promise<ResendVerificationResult>;
+  /**
+   * Resend the signup verification email. Pass `email` when the caller is NOT
+   * signed in (a fresh unverified signup has no session): the onboarding
+   * verify panel sends the address it just signed up with. Without it, falls
+   * back to the signed-in user's address (the Settings Banner path).
+   */
+  resendVerification(args?: { email?: string }): Promise<ResendVerificationResult>;
   /**
    * Send a password-reset email. Neutral success (anti-enumeration): returns
    * { ok:true } whether or not the address is registered. The email links to the
@@ -1900,6 +1939,20 @@ export interface RendererApi {
   /** Current fullscreen state — seeds the fullscreen button icon on mount. */
   windowIsFullscreen(): Promise<boolean>;
   /**
+   * Show/hide the native macOS traffic lights (260728). The first-run Sui
+   * onboarding scene hides them (it renders no window chrome at all) and
+   * restores them when the ritual completes. No-op on Windows/Linux — the
+   * renderer simply doesn't mount its custom controls on that surface.
+   */
+  windowSetButtonsVisible(visible: boolean): Promise<void>;
+  /**
+   * Factory reset (260728): stops every bot/session, deletes ALL local state
+   * (profiles incl. configs/characters/memories/keys, session, caches) except
+   * the anti-abuse device-id/signup trackers, then relaunches the app fresh.
+   * The renderer never sees this resolve on success — the app restarts.
+   */
+  factoryReset(): Promise<void>;
+  /**
    * Fires when the active account profile scope changes at runtime (sign-in,
    * sign-out, or account swap) once main has torn down the old bot, switched
    * the data scope, and initialized the new profile. The renderer re-bootstraps
@@ -2094,6 +2147,9 @@ export const IpcChannel = {
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
     setShared: 'chars:set-shared',
+    // 260729 — save a copy of the character's full portrait art to disk via a
+    // native save dialog (the profile page's expand-art popup).
+    exportPortrait: 'chars:export-portrait',
     // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
     // Renderer calls this before entering the new-character flow.
     checkCreateQuota: 'chars:check-create-quota',
@@ -2205,6 +2261,8 @@ export const IpcChannel = {
   draw: {
     open: 'draw:open',
     start: 'draw:start',
+    newGame: 'draw:new-game',
+    pickWord: 'draw:pick-word',
     getState: 'draw:get-state',
     stroke: 'draw:stroke',
     erase: 'draw:erase',
@@ -2315,6 +2373,8 @@ export const IpcChannel = {
     // https/mailto before dispatching to shell.openExternal (T-11-12-01). The
     // host allowlist was removed 260725; see externalUrlValidator.ts.
     openExternal: 'app:open-external',
+    // 260728: wipe all local state back to a fresh install + relaunch.
+    factoryReset: 'app:factory-reset',
   },
   // Frameless window controls (custom titlebar on Windows/Linux). macOS keeps
   // its native traffic lights and never calls these, but the channels are
@@ -2327,6 +2387,8 @@ export const IpcChannel = {
     maximizedChanged: 'window:maximized-changed', // push: main → renderer
     fullscreenToggle: 'window:fullscreen-toggle', // game-surface fullscreen button
     isFullscreen: 'window:is-fullscreen',
+    // 260728 onboarding: hide/show the mac traffic lights around the Sui scene.
+    setButtonsVisible: 'window:set-buttons-visible',
   },
   // Skin pipeline.
   skin: {

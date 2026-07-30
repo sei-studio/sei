@@ -114,14 +114,6 @@ export interface DrawChatMessage {
    * never names a word that is still secret.
    */
   modelText?: string;
-  /**
-   * Model-only line (260729): stripped from every state push, so the renderer
-   * never sees it. Used for the character's own word slips — the player just
-   * sees the line silently not arrive, while the character is told its line
-   * was hidden so the thread stays coherent. A public "can't type this word!"
-   * system line was tried first and read as the game scolding the character.
-   */
-  hidden?: boolean;
 }
 
 /** A finished turn, kept for the end-of-game gallery. */

@@ -22,10 +22,10 @@
  * The move decision is atomic and never aborted or re-run. Once play() lands
  * the decision enters a HOLD (s.hold) and the contention moves entirely to
  * presentation:
- *   decide -> prethink (sampled human think time; Maia entropy + eval
- *   closeness, log-normal skew) -> present (commentary bubbles +
- *   pendingAiMove push) -> renderer reveals after its quiet gate (2s after
- *   the last utterance finishes printing/speaking) -> ack -> commit.
+ *   decide -> present immediately (commentary bubbles + pendingAiMove push;
+ *   the sampled "human think" prethink delay was removed 260729) -> renderer
+ *   reveals after its quiet gate (2s after the last utterance finishes
+ *   printing/speaking) -> ack -> commit.
  * A player chat during the hold runs as a normal P1 turn that KNOWS the
  * queued move: it can update it (play() again), or hold it back entirely
  * (wait(), after which only player messages and idle ticks wake the move). A
@@ -52,6 +52,7 @@ import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildSystemBlocks, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import {
   splitReply,
@@ -94,7 +95,8 @@ interface CandidateOut {
     tags: string[];
     line: { sans: string[]; sentence: string } | null;
   }>;
-  /** Human-difficulty signals for the prethink sampler (cce-1 `think`). */
+  /** Human-difficulty signals from cce-1 `think` (informational; the prethink
+   * delay that consumed them was removed 260729). */
   think?: { top1P: number; entropy: number; evalGapCp: number | null };
 }
 
@@ -116,14 +118,13 @@ interface ChatBufferEntry {
 interface HoldState {
   move: { uci: string; san: string };
   decidedAt: number;
-  /** Move-turn table talk, buffered until prethink elapses. */
+  /** Move-turn table talk, pushed at presentation. */
   commentary: ChatMessage[];
   /** Commentary pushed + pendingAiMove published to the renderer. */
   presented: boolean;
   /** wait(): the move only wakes on player messages or idle ticks. */
   held: boolean;
   replyCycles: number;
-  prethinkTimer: NodeJS.Timeout | null;
   capTimer: NodeJS.Timeout | null;
 }
 
@@ -183,9 +184,8 @@ interface Session {
   lastMacro: string;
   /**
    * When the AI started thinking about the current move (the player's move
-   * landed / warm-up concluded it moves first). The prethink sampler subtracts
-   * the decide latency already elapsed from this, so the TOTAL apparent think
-   * time stays inside prethinkCapMs. Null while it is not deciding.
+   * landed / warm-up concluded it moves first). Diagnostic only since 260729:
+   * logged as decideLatency when the move presents. Null while not deciding.
    */
   thinkingSince: number | null;
   /**
@@ -199,21 +199,11 @@ interface Session {
 
 /**
  * Presentation timing. Exported and mutable for tests only; not user copy.
- * prethink = sampled "human think" delay between the LLM decision returning
- * and the commentary/move presenting. postthink (the 2s quiet gate after the
- * last utterance) lives renderer-side in useAiMoveReveal's settle window.
+ * A decided move presents immediately (the sampled prethink delay was removed
+ * 260729); postthink (the 2s quiet gate after the last utterance) lives
+ * renderer-side in useAiMoveReveal's settle window.
  */
 export const CHESS_TIMING = {
-  /** Instant answers are allowed (260722: the floor read as lag, not thought). */
-  prethinkFloorMs: 0,
-  /**
-   * Hard ceiling on the APPARENT think time (decide latency + sampled delay).
-   * The sampler subtracts the time the LLM/engine already took from this
-   * budget, so the player never waits more than ~10s after their move.
-   */
-  prethinkCapMs: 10_000,
-  /** Obvious move (recapture / dominant Maia top-1): floor + rand * this. */
-  obviousExtraMs: 900,
   /** Force-commit after this many reply cycles during a (non-held) hold. */
   capReplyCycles: 4,
   /** Force-commit wall clock since the decision (disarmed by wait()). */
@@ -735,46 +725,11 @@ function sampleIdleDelayMs(s: Session): number {
 
 // ── the presentation hold ────────────────────────────────────────────────────
 
-/**
- * Sampled "human think" delay before the decision presents. Obvious moves
- * (recaptures, a dominant Maia top-1) answer near-instantly; hard choices
- * (high human-policy entropy, close candidate evals) draw from a log-normal
- * so most thinks are quick with the occasional genuine tank — the skew Allie
- * (arXiv 2410.03893) observed in real human clocks.
- */
-function samplePrethinkMs(s: Session): number {
-  const T = CHESS_TIMING;
-  // The player has been waiting since the AI started deciding (engine +
-  // LLM latency IS think time from their side of the table). Whatever is
-  // left of the prethink budget bounds the sampled delay: total apparent
-  // thinking never exceeds prethinkCapMs, and zero (instant) is fine.
-  const elapsed = s.thinkingSince == null ? 0 : Date.now() - s.thinkingSince;
-  const budget = Math.max(0, T.prethinkCapMs - elapsed);
-  const t = s.candidateCache?.out.think;
-  if (isRecapture(s) || (t?.top1P ?? 0) > 0.7) {
-    return Math.min(budget, T.prethinkFloorMs + Math.random() * T.obviousExtraMs);
-  }
-  const closeness = t?.evalGapCp == null ? 0.5 : 1 - Math.min(t.evalGapCp / 200, 1);
-  const difficulty = 0.6 * (t?.entropy ?? 0.5) + 0.4 * closeness;
-  const median = 1000 + 6000 * difficulty;
-  const sampled = median * Math.exp(0.5 * gaussian());
-  return Math.min(budget, Math.max(T.prethinkFloorMs, sampled));
-}
-
-function gaussian(): number {
-  const u = Math.random() || 1e-9;
-  const v = Math.random() || 1e-9;
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-/** The decided move recaptures on the square the player just captured on. */
-function isRecapture(s: Session): boolean {
-  const last = s.history[s.history.length - 1];
-  if (!last || !last.san.includes('x') || !s.hold) return false;
-  return s.hold.move.uci.slice(2, 4) === last.uci.slice(2, 4);
-}
-
-/** Enter the hold for a decided move and schedule its presentation. */
+/** Enter the hold for a decided move. Presentation is the CALLER's job once
+ * the turn's commentary is final (it used to be the prethink timer's; the
+ * sampled "human think" delay was removed 260729, so the real engine + LLM
+ * latency is the only wait the player sees). The cap timer still force-commits
+ * an unpresented hold, so an aborted turn cannot strand the move. */
 function beginHold(s: Session, move: { uci: string; san: string }, commentary: ChatMessage[]): void {
   clearHoldTimers(s);
   s.hold = {
@@ -784,18 +739,12 @@ function beginHold(s: Session, move: { uci: string; san: string }, commentary: C
     presented: false,
     held: false,
     replyCycles: 0,
-    prethinkTimer: null,
     capTimer: null,
   };
-  const prethinkMs = samplePrethinkMs(s);
   s.log.line(
-    `decided ${move.san} (${move.uci}) prethink=${Math.round(prethinkMs)}ms ` +
+    `decided ${move.san} (${move.uci}) ` +
       `decideLatency=${s.thinkingSince == null ? '?' : Date.now() - s.thinkingSince}ms commentaryLines=${commentary.length}`,
   );
-  s.hold.prethinkTimer = setTimeout(() => {
-    if (s.hold) s.hold.prethinkTimer = null;
-    void presentHold(s);
-  }, prethinkMs);
   armCapTimer(s);
 }
 
@@ -809,9 +758,7 @@ function armCapTimer(s: Session): void {
 
 function clearHoldTimers(s: Session): void {
   if (!s.hold) return;
-  if (s.hold.prethinkTimer) clearTimeout(s.hold.prethinkTimer);
   if (s.hold.capTimer) clearTimeout(s.hold.capTimer);
-  s.hold.prethinkTimer = null;
   s.hold.capTimer = null;
 }
 
@@ -1009,30 +956,13 @@ export function chessSummaryText(
   if (result.reason === 'abandoned') {
     return `You and ${name} left a chess game unfinished.`;
   }
-  const moves = Math.ceil(plyCount / 2);
-  const inMoves = moves > 0 ? ` in ${moves} move${moves === 1 ? '' : 's'}` : '';
-  const afterMoves = moves > 0 ? ` after ${moves} move${moves === 1 ? '' : 's'}` : '';
-  // Sub-minute games skip the duration (a move count says it better).
-  const opener =
-    durationMs >= 60_000
-      ? `You and ${name} played chess for ${formatChessDuration(durationMs)}.`
-      : `You and ${name} played chess.`;
-  if (result.winner === null) {
-    return `${opener} The game ended in a draw${afterMoves}.`;
-  }
-  return result.winner === playerColor
-    ? `${opener} You won${inMoves}.`
-    : `${opener} ${name} won${inMoves}.`;
-}
-
-/** Human phrase for a game length (mirrors the watch play-row phrasing). */
-function formatChessDuration(ms: number): string {
-  if (ms < 3_600_000) {
-    const m = Math.max(1, Math.round(ms / 60_000));
-    return `${m} minute${m === 1 ? '' : 's'}`;
-  }
-  const h = Math.max(1, Math.round(ms / 3_600_000));
-  return `${h} hour${h === 1 ? '' : 's'}`;
+  // One shape for every game surface, results deliberately omitted: see the
+  // note in src/main/chat/playSummary.ts. playerColor / result / plyCount are
+  // kept in the signature because the ChessReplayData on the same row still
+  // carries them for the replay card.
+  void playerColor;
+  void plyCount;
+  return playSummaryText(name, 'Chess', durationMs);
 }
 
 /** Log-friendly error description including status and the cause chain. */
@@ -1071,6 +1001,7 @@ async function fallbackPlay(s: Session): Promise<void> {
   if (!pick) throw new Error('no candidates');
   s.log.line(`fallback: playing first candidate ${pick.san} (no valid play() from the model)`);
   beginHold(s, { uci: pick.uci, san: pick.san }, []);
+  await presentHold(s);
 }
 
 // ── the LLM turn ─────────────────────────────────────────────────────────────
@@ -1461,8 +1392,8 @@ async function readMemoryTail(id: string): Promise<string> {
 /**
  * Run one chess LLM turn. kind:
  *   'move'       — it is the AI's move: optional commentary + the play/draw/
- *                  forfeit loop. Commentary is BUFFERED into the hold and only
- *                  presents after the prethink delay.
+ *                  forfeit loop. Commentary is BUFFERED into the hold and
+ *                  presents with the move as soon as the turn loop ends.
  *   'chat-reply' — answer player chat with the game as context. During a hold
  *                  it can revise (play), hold (wait) or accept a draw.
  *   'idle'       — quiet-table tick; a line is optional, silence expected.
@@ -1490,6 +1421,8 @@ async function runChessLlmTurn(
     name: character.name,
     preferredName: config.preferred_name ?? '',
     proactiveness: 1,
+    // Not the Discord-like chat surface: live game, board/canvas beside chat.
+    surface: 'game',
     punctuation: character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual',
     memory,
     summary,
@@ -1544,8 +1477,8 @@ async function runChessLlmTurn(
   // is stated in the turn block instead, where it costs nothing to vary.
   const tools = CHESS_TOOLS;
 
-  // Move-turn table talk presents only after the prethink delay; everything
-  // else speaks immediately.
+  // Move-turn table talk presents together with the move at the end of the
+  // turn loop; everything else speaks immediately.
   const deferSpeech = opts.kind === 'move';
   // Backstop for the "keep it short" contract: a turn may not spill more than a
   // couple of bubbles no matter what the model does. A live game-over turn wrote
@@ -1770,8 +1703,10 @@ async function runChessLlmTurn(
         // The model never produced a valid play() — keep the game moving.
         await fallbackPlay(s);
       } else if (s.hold) {
-        // Attach the buffered table talk to the hold; prethink presents it.
+        // Attach the buffered table talk to the hold and present right away
+        // (260729: no prethink delay — commentary is final once the loop ends).
         s.hold.commentary = spoken.slice();
+        await presentHold(s);
       }
     } else if (presentAfterTurn) {
       await presentHold(s);

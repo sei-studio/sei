@@ -223,7 +223,6 @@ export function UniqueCastingScreen({ gender }: UniqueCastingScreenProps): React
   return (
     <div className={styles.root}>
       <div className={styles.center}>
-        <div className={styles.eyebrow}>Casting your companion</div>
         <div className={styles.headline} aria-live="polite">
           {STAGE_COPY[activeStage]}
         </div>
