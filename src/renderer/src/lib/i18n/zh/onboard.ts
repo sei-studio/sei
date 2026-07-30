@@ -5,36 +5,39 @@
  * not literal. No em dashes in any value; Chinese punctuation throughout.
  */
 export const ZH_ONBOARD: Record<string, string> = {
-  /* ── Sui's script ─────────────────────────────────────────────────── */
-  "Hey. I'm Sui!": '嗨，我是 Sui！',
-  'I run this place. The Sei terminal, I mean.': '这地方归我管。我是说，这个 Sei 终端。',
+  /* ── Sui's script ─────────────────────────────────────────────────────
+     Register (260730): natural spoken Chinese, playful and a little cutesy,
+     the way Sui actually talks. No tech vocabulary a non-technical player
+     would never say: "终端" is out, the thing she runs is just "系统". */
+  "Hey. I'm Sui!": '嗨嗨！我是 Sui！',
+  'I run this place. The Sei terminal, I mean.': '这地方归我管哦。就是这个 Sei 系统啦。',
   'Hmmmm... Are you new here?': '嗯……你是新来的吗？',
   "Ah, welcome back. I'm not needed here then. Back to gaming I go!":
-    '啊，欢迎回来。那就没我什么事啦，我打游戏去咯！',
-  "So! My name's Sui. What do I call you?": '那么！我叫 Sui。你呢，我该怎么称呼你？',
-  'I see I see... {name}!': '原来如此原来如此……{name}！',
+    '啊，欢迎回来～那就没我什么事啦，我打游戏去咯！',
+  "So! My name's Sui. What do I call you?": '好啦！我叫 Sui。你呢？我该怎么叫你呀？',
+  'I see I see... {name}!': '哦哦，原来如此原来如此……{name}！',
   'So, {name}, my job here is to help you meet other AI friends from my world.':
-    '那么{name}，我的工作呢，就是帮你认识来自我们世界的其他 AI 朋友。',
+    '那个呢，{name}，我的任务就是带你认识我们世界里的其他 AI 朋友！',
   'Aww, really? I was going to find a companion just for you. You wanna skip it?':
-    '诶，真的吗？我本来还想给你找一位专属于你的伙伴呢。真的要跳过吗？',
+    '诶，真的吗？我本来还想给你找一位只属于你的伙伴呢。真的要跳过吗？',
   'The terminal says I need five quick answers from you. It uses them to pick who you meet first, so be honest with me okay?':
-    '终端说要先问你五个小问题，它会用你的回答来决定你最先遇到谁。所以要对我说实话哦？',
+    '系统说要先问你五个小问题，看看你最先遇到谁最合适。要跟我说实话哦？',
   'First! What kind of people do you like having around? Pick as many as you want. Order matters.':
-    '第一题！你喜欢身边有什么样的人？想选几个都可以，顺序也很重要哦。',
+    '第一题！你喜欢身边有什么样的人？想选几个都行，先选的更重要哦。',
   "Oooh, noted. Second, we AI can live for a very long time. Which age range best fits what you're looking for?":
-    '哦哦，记下了。第二题，我们 AI 可以活很久很久。你想找的伙伴，哪个年龄段最合适？',
+    '哦哦，记下啦。第二题，我们 AI 可是能活很久很久的。你想找的伙伴，大概多大合适呀？',
   'Ok, um, fourth. Take a look at these portraits. Which one do you like the most?':
     '好，呃，第四题。看看这几张画像，你最喜欢哪一张？',
   'Last one! Let me pull up the options... which do you prefer?':
-    '最后一题！我把选项调出来……你更喜欢哪一种？',
+    '最后一题！我把选项翻出来哈……你更喜欢哪一种？',
   "Aaaand we're done! By the way, you can always change these later in the app.":
-    '好～全部答完啦！对了，这些以后都可以在应用里随时修改。',
+    '好～全部答完啦！对了，这些以后随时都能改的。',
   'AHHHHH!': '啊啊啊啊啊！',
   "I SKIPPED THE THIRD QUESTION! You still need to sign in! Ok, I'll go set things up for you while you do that.":
-    '我把第三题跳过去了！而且你还得登录呢！好吧，你先登录，我去把一切都给你准备好。',
-  'Welcome back! Everything is in place. You ready?': '欢迎回来！一切都准备好了。你准备好了吗？',
+    '我把第三题跳过去了！！对了你还得登录呢！好叭，你先登录，我去把东西都给你准备好。',
+  'Welcome back! Everything is in place. You ready?': '欢迎回来！都弄好啦。准备好了吗？',
   "Welcome back! Everything is all set, and someone's waiting to meet you. You ready?":
-    '欢迎回来！一切都安排妥当，还有一位正等着见你呢。你准备好了吗？',
+    '欢迎回来！都安排好啦，还有一位正等着见你呢。准备好了吗？',
 
   /* ── Questionnaire chips ──────────────────────────────────────────── */
   'A partner in crime': '一起闯祸的搭档',
@@ -148,7 +151,7 @@ export const ZH_ONBOARD: Record<string, string> = {
   "Just click a tile to launch the game. I'm working hard to add new games. Remember to check every week!":
     '点一下卡片就能开始游戏。我正在努力添加新游戏，记得每周都来看看哦！',
   'This is your main terminal. You can connect with up to four AIs here. Just click an empty slot to awaken.':
-    '这里是你的主终端，最多可以同时连接四位 AI。点击空位就能唤醒新伙伴。',
+    '这里是你的主界面，最多可以同时连接四位 AI。点击空位就能唤醒新伙伴。',
   "This is settings. You can change the app's colors and add a custom background here. Make yourself at home!":
     '这里是设置。你可以在这里更换应用配色，还能添加自定义背景。把这里当成自己家吧！',
   "Did I mention? I'm here too! If you ever wanna play with me, I'd be really happy!":
