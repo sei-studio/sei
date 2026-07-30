@@ -81,10 +81,11 @@ export interface GameChromeRowProps {
  * unified end "x". Extracted from GameSurface so the full-page Draw! route can
  * mount the SAME row instead of inventing its own corner buttons.
  *
- * The phone chip is new with the extraction: it starts a call IN PLACE when
- * none is running (startOrOpenCall). It has to live down here rather than only
- * in ChatTopBar, because fullscreen now hides the top bar and Draw! never had
- * one.
+ * The phone chip appears in FULLSCREEN only (260729): every game surface now
+ * carries the shared ChatTopBar outside fullscreen (Draw! included), and its
+ * phone button is THE way to start a call. The chip exists solely because
+ * fullscreen hides that bar; showing it alongside the bar read as a second,
+ * redundant call button.
  */
 export function GameChromeRow({
   characterId,
@@ -186,7 +187,7 @@ export function GameChromeRow({
             })}
             <CallControls size="sm" />
           </div>
-        ) : (
+        ) : fullscreen ? (
           <div className={styles.callCluster}>
             <button
               type="button"
@@ -198,7 +199,7 @@ export function GameChromeRow({
               <PhoneIcon size={14} />
             </button>
           </div>
-        )}
+        ) : null}
 
         {/* Right: the unified end control. */}
         <button

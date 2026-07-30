@@ -22,6 +22,7 @@ import { DrawCanvas, type DrawCanvasControl } from './DrawCanvas';
 import { DrawChat } from './DrawChat';
 import { DrawGallery } from './DrawGallery';
 import { GameChromeRow, CHROME_PROXIMITY_PX } from '../GameSurface';
+import { ChatTopBar } from '../ChatTopBar';
 import { SquiggleFrame, SquiggleHighlight, SquiggleRule } from './Squiggle';
 import { Doodle } from './Doodle';
 import { crown, horse, shrimp } from './doodles';
@@ -47,7 +48,25 @@ function formatClock(ms: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
+/**
+ * The route wrapper: the same ChatTopBar every companion surface carries
+ * (chess gets it from ChatScreen), above the game page. Fullscreen hides it,
+ * exactly as ChatScreen does for the chat-hosted games; the bar's buttons
+ * (call, games) stay reachable through the bottom chrome row's fullscreen
+ * affordances. The bar sits OUTSIDE .root on purpose: it keeps the app's own
+ * theme, not the game's white paper palette.
+ */
 export function DrawScreen({ characterId }: { characterId: string }): React.ReactElement {
+  const fullscreen = useUiStore((s) => s.gameFullscreen);
+  return (
+    <div className={styles.page}>
+      {!fullscreen ? <ChatTopBar characterId={characterId} /> : null}
+      <DrawScreenBody characterId={characterId} />
+    </div>
+  );
+}
+
+function DrawScreenBody({ characterId }: { characterId: string }): React.ReactElement {
   const state = useDrawStore((s) => s.games[characterId]);
   const starting = useDrawStore((s) => s.starting[characterId]);
   const error = useDrawStore((s) => s.error[characterId]);

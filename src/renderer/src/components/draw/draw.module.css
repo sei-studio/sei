@@ -25,6 +25,21 @@
  *               native control that draws its own track.
  */
 
+/* Route wrapper: the shared ChatTopBar (app theme) above the game page. Layout
+   only; every colour on the page itself still comes from .root's scoped
+   palette below. */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.page .root {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+
 .root {
   --ink: #000000;
   --paper: #ffffff;

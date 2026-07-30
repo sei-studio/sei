@@ -53,12 +53,22 @@ export function squiggleLinePoints(
   const ny = (x2 - x1) / (len || 1);
   const phase = rng() * Math.PI * 2;
 
+  // The wobble has to scale with LENGTH (260729): at a fixed t*5.3 the whole
+  // side carries under one wave whatever its size, so the big canvas box came
+  // out with a ~1.8px bend over 900px and read as a machine-straight rule
+  // while every small button around it wobbled. One slow wave per ~130px
+  // (min: the old constant, so short sides render pixel-identical), and the
+  // amplitude grows a little with length, capped well below anything that
+  // would read as a different pen.
+  const waves = Math.max(5.3, len / 55);
+  const lenAmp = amp * Math.min(1.5, Math.max(1, len / 420));
+
   const pts: SquigglePoint[] = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     // Taper to zero at both ends so the line meets its neighbours cleanly.
     const taper = Math.sin(Math.PI * t);
-    const off = (Math.sin(t * 5.3 + phase) * 0.7 + Math.sin(t * 11.7 + phase * 2) * 0.3) * amp * taper;
+    const off = (Math.sin(t * waves + phase) * 0.7 + Math.sin(t * waves * 2.2 + phase * 2) * 0.3) * lenAmp * taper;
     pts.push({ x: x1 + (x2 - x1) * t + nx * off, y: y1 + (y2 - y1) * t + ny * off });
   }
   return pts;
