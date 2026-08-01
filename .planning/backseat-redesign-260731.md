@@ -347,6 +347,34 @@ Also measured and rejected:
   call). NOT calibrated against its own resampling ceiling, so "somewhat" is
   not yet a number. Parked, not rejected.
 
+- **Structured narration was run and is also rejected**, though it is the best of
+  the three. Jaccard over content words, same calibration (signal = 3 s-apart
+  minus unrelated; noise = 1 minus the resampling ceiling):
+
+  | field | signal | noise | signal/noise |
+  |---|---|---|---|
+  | scene | 0.243 | 0.318 | **0.76** |
+  | actions | 0.121 | 0.448 | 0.27 |
+  | events | 0.113 | 0.561 | 0.20 |
+  | outcome | 0.103 | 0.551 | 0.19 |
+  | prose (embed) | 0.037 | 0.251 | 0.15 |
+
+  5x better than prose, but only on `scene` — and `scene` is the wrong field for
+  the case that motivated this (walking vs standing-and-shooting on the SAME map
+  share a scene). `actions` and `events`, the fields that would separate it, stay
+  noise-dominated at 4x noise-to-signal.
+
+  The decisive detail: **`static: true` came back on 0 of 61 grids.** Three
+  minutes of Valorant containing buy phases and walking, and the model never once
+  said nothing happened. That is the small-VLM yes-bias `salienceGate.ts` was
+  written to defend against, reappearing in a new costume — intrinsic to the
+  model, not to the output format, which is why changing the format keeps not
+  fixing it.
+
+  The one thing structured narration does do well (detect a location change) is
+  already covered for free by the visual signal in Stage 4, with no model call
+  and no latency.
+
 ### Revised direction
 
 - **Stage 1 proceeds as planned**, minus the cell-labelling sub-idea.
@@ -359,10 +387,10 @@ Also measured and rejected:
 - **Priority shifts to Stages 4 and 5.** The local visual and audio signals
   measure real physical events rather than a model's prose, they are free, and
   they are now the most promising route to "when to talk".
-- **Open question for a later pass:** whether a structured narration
-  (`{scene, actions, events, outcome}`, PROMPT_JSON in the lab, written but not
-  yet run) separates where prose does not. Field-wise comparison is the one
-  remaining untested hypothesis and it is cheap.
+- **No untested hypotheses remain** in the narration-as-wake-signal family.
+  Prose, prose+labels, multi-image and structured were all measured against the
+  same calibrated ceiling and floor. The wake decision moves to the local
+  signals (Stages 4 and 5).
 
 
 ---
