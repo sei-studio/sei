@@ -1,5 +1,11 @@
 # Backseat redesign: sequence, narration, and wake sources
 
+> **SUPERSEDED 260801 by `.planning/backseat-v2-260801.md`.** Kept for its
+> Stage 0 measurements, which are the reason the successor exists: narration
+> novelty was measured and does not separate, so the small VLM was removed
+> rather than repaired. Stage 1 (log-spaced frames) was validated here and
+> carried forward unchanged. Stages 2-5 were replaced by a scheduled wake.
+
 Branch: `v0.5-backseat`
 Worktree: `.claude/worktrees/v0.5-backseat`
 Date: 260731
