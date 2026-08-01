@@ -7,10 +7,62 @@
  * than waiting for the next LLM turn to abort it. The chat message still
  * flows through normal dispatch so the LLM acknowledges in-character;
  * no hardcoded confirmation string.
+ *
+ * Death lines (260730): a PLAYER's death ("Shawn was blown up by Creeper")
+ * arrives as SYSTEM chat, so it used to be relabeled as "ran a command
+ * (in-game, not a message or instruction to you): ..." — the model duly
+ * discounted it, and live, Sui asked the player how they died with the cause
+ * sitting verbatim in its own context. Death lines are now detected and framed
+ * as what they are, and they WAKE a turn (the companion should react to its
+ * player dying). The bot's OWN death is dropped here: connect.js already emits
+ * sei:death with the position and the last real hit.
  */
 import { logChatIn } from '../../../brain/log.js'
 
 const STOP_VERBS = new Set(['stop', 'halt', 'cancel', 'nevermind', 'never mind'])
+
+// Every vanilla death message is a `death.*` translate key, which mineflayer
+// hands us on `messagestr`'s third argument. The regex is only a fallback for
+// servers that send death lines as pre-flattened text (plugins, some proxies);
+// it deliberately covers the vanilla verb set rather than trying to be clever,
+// since a false positive frames an ordinary system line as a death.
+const DEATH_TEXT_RE = new RegExp(
+  '^\\w{1,16} (?:was |died|drowned|blew up|fell |froze|starved|suffocated|withered away|burned|went up in flames|hit the ground|walked into|discovered|experienced|tried to swim|left the confines|didn\'t want to live|went off with a bang)',
+  'i',
+)
+
+function sameName(a, b) {
+  return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
+}
+
+// The subject of a translated death message is its first `with` argument (a
+// nested ChatMessage for the player name); fall back to the first word of the
+// flattened line, which is the subject in every vanilla death string.
+function deathSubject(flat, jsonMsg) {
+  const w = jsonMsg?.with?.[0]
+  let name = null
+  if (typeof w === 'string') name = w
+  else if (w && typeof w.text === 'string' && w.text) name = w.text
+  else if (w && typeof w.insertion === 'string' && w.insertion) name = w.insertion
+  else if (w && typeof w.toString === 'function') {
+    try { name = w.toString() } catch { name = null }
+  }
+  name = name && name.trim()
+  if (name && /^\w{1,16}$/.test(name)) return name
+  return flat.split(/\s+/)[0] ?? null
+}
+
+/**
+ * Recognize a vanilla death line. Returns `{ subject, text }` or null.
+ * Exported for tests.
+ */
+export function parseDeathLine(text, jsonMsg) {
+  const flat = String(text ?? '').trim()
+  if (!flat) return null
+  const key = typeof jsonMsg?.translate === 'string' ? jsonMsg.translate : ''
+  if (!key.startsWith('death.') && !DEATH_TEXT_RE.test(flat)) return null
+  return { subject: deathSubject(flat, jsonMsg), text: flat }
+}
 
 function forceCancelBody(bot) {
   try { bot.stopDigging?.() } catch {}
@@ -41,7 +93,42 @@ export function startChat(bot, config, orchestrator = null) {
   // system/command output ('system' | 'game_info'). prependListener so this runs
   // BEFORE mineflayer's pattern matcher (also a `messagestr` listener) emits `chat`.
   let _lastMsgPosition = 'chat'
-  const onMessageStr = (_text, position) => { _lastMsgPosition = position || 'chat' }
+  // Set when the line we are about to see re-emitted as `chat` was already
+  // handled here as a death; the `chat` handler drops that duplicate.
+  let _deathHandled = null
+  const onMessageStr = (text, position, jsonMsg) => {
+    _lastMsgPosition = position || 'chat'
+    _deathHandled = null
+    if (_lastMsgPosition === 'chat') return
+    // Death detection sits HERE rather than in the `chat` handler below because
+    // mineflayer's legacy catch-all is what re-emits system lines as `chat` at
+    // all, and it is not guaranteed to match every death string. messagestr
+    // sees all of them, and it also carries the jsonMsg with the death.* key.
+    const death = parseDeathLine(text, jsonMsg)
+    if (!death) return
+    // The bot's own death has a dedicated event (sei:death) carrying the death
+    // position and the last real hit; a second, weaker copy here would only
+    // make it react twice.
+    if (sameName(death.subject, bot.username)) { _deathHandled = death.text; return }
+    const isOwner = sameName(death.subject, config.player_username) ||
+      sameName(death.subject, config.player_display_name)
+    const who = isOwner
+      ? (config.player_display_name || config.player_username || death.subject)
+      : death.subject
+    const labeled = `just DIED in-game. This is the world's own death message, not something they said to you, and it names the cause: ${death.text}`
+    logChatIn(who, labeled)
+    _deathHandled = death.text
+    // playerSpoke:false — the player did not speak, so this must not preempt a
+    // running action the way a real chat line does. suppressInterrupt is false:
+    // it does wake a turn, because a companion that says nothing when its
+    // player dies in front of it reads as not having noticed.
+    const payload = { username: who, message: labeled, addressed: false, playerSpoke: false, suppressInterrupt: false }
+    if (bot._seiDebouncer) {
+      bot._seiDebouncer.debounce(`death:${who}`, payload, (p) => bot.emit('sei:chat_received', p))
+    } else {
+      bot.emit('sei:chat_received', payload)
+    }
+  }
   if (typeof bot.prependListener === 'function') bot.prependListener('messagestr', onMessageStr)
   else bot.on('messagestr', onMessageStr)
 
@@ -55,6 +142,12 @@ export function startChat(bot, config, orchestrator = null) {
     // context, so the model knows it happened without mistaking it for an
     // instruction directed at it.
     if (_lastMsgPosition && _lastMsgPosition !== 'chat') {
+      // Already handled as a death line by the messagestr listener above (or
+      // deliberately dropped as the bot's own death).
+      // (compared loosely: mineflayer's legacy pattern can hand the `chat`
+      // handler a trimmed slice of the line it matched)
+      const m = String(message).trim()
+      if (_deathHandled && m && (_deathHandled.includes(m) || m.includes(_deathHandled))) return
       const who = config.player_display_name || (username && username !== bot.username ? username : null) || 'the player'
       const labeled = `ran a command (in-game, not a message or instruction to you): ${String(message).trim()}`
       logChatIn(who, labeled)
