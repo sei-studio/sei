@@ -1382,9 +1382,6 @@ export interface RendererApi {
   backseatGetState(characterId: string): Promise<BackseatState | null>;
   /** Raise a tick. Main decides whether it becomes a spoken line. */
   backseatTick(tick: BackseatTick): Promise<void>;
-  /** Ask the small VLM whether this grid (plus the audio transcript over its
-   *  window) is interesting. False on any error. */
-  backseatGate(characterId: string, grid: string, transcript?: string): Promise<boolean>;
   /** macOS only: start the bundled system-audio tap; PCM arrives on
    *  onBackseatPcm. Null when the tap cannot run on this machine. */
   backseatAudioStart(): Promise<{ sampleRate: number; channels: number } | null>;
@@ -2342,7 +2339,6 @@ export const IpcChannel = {
     start: 'backseat:start',
     getState: 'backseat:get-state',
     tick: 'backseat:tick',
-    gate: 'backseat:gate',
     setPaused: 'backseat:set-paused',
     saveClip: 'backseat:save-clip',
     revealClip: 'backseat:reveal-clip',

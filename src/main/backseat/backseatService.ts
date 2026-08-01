@@ -9,17 +9,21 @@
  *
  * ── Tick arbitration ────────────────────────────────────────────────────
  *
- * One turn in flight per session, ever. Beyond that:
+ * One turn in flight per session, ever. Which tick wins is a strict priority
+ * ladder (PRIORITY below), and the ordering is the whole point: the more
+ * specific the reason for looking, the more it deserves the turn.
  *
- *   'user'  always runs. Being spoken to and ignored is the one failure the
- *           player definitely notices, so a user tick ABORTS an in-flight
- *           gate/jolt turn and takes its place: a reaction to six seconds ago
- *           is worth less than an answer to the question just asked.
- *   'gate'  and 'jolt' are dropped whenever a turn is already running, when
- *           the session is paused, or when the companion spoke less than
- *           MIN_SPEAK_GAP_MS ago. They are never queued. A queued reaction
- *           arrives describing a moment that has passed, which reads as the
- *           companion being confused rather than late.
+ *   'user'  the player spoke. Being spoken to and ignored is the one failure
+ *           they definitely notice, so it preempts anything and ignores
+ *           MIN_SPEAK_GAP_MS.
+ *   'jolt'  something measurable changed on screen or in the sound. Preempts a
+ *           scheduled look, because a reaction to the thing that just happened
+ *           beats an idle glance at the same six seconds.
+ *   'idle'  the scheduled look. Preempts nothing.
+ *
+ * A tick that cannot preempt is DROPPED, never queued. A queued reaction
+ * arrives describing a moment that has passed, which reads as the companion
+ * being confused rather than late.
  *
  * Silence is a first-class outcome: most ticks end with the model replying
  * "(silence)", which is parsed out and never persisted or spoken.
@@ -41,7 +45,7 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
-import { buildSystemBlocks, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
+import { buildSystemBlocks, markMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { playSummaryText } from '../chat/playSummary';
@@ -51,8 +55,13 @@ import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memor
 import * as chatStore from '../chat/chatStore';
 import type { LogBatch } from '../../shared/ipc';
 import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, tickNote } from './backseatPrompts';
-import { gateGrid, resetGateWindow } from './salienceGate';
 import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
+
+/**
+ * Tick priority. Strictly ordered: a tick preempts an in-flight turn only when
+ * its priority is higher, and is dropped otherwise.
+ */
+const PRIORITY: Record<BackseatTick['kind'], number> = { user: 3, jolt: 2, idle: 1 };
 
 const MEMORY_BUDGET_BYTES = 12000;
 /** Transcript window. Backseat turns are frequent and short, so the same
@@ -93,6 +102,21 @@ interface Session {
    *  calls save_clip on two consecutive ticks about the same play does not
    *  produce two files. Cleared when the companion next stays quiet. */
   clipCooldownUntil: number;
+  /**
+   * Index into the chat history where this session's verbatim window starts.
+   *
+   * Prompt caching (260801): the obvious `history.slice(-RECENT_CAP)` slides
+   * by one every time a line is appended, which changes the FIRST message in
+   * the request and therefore invalidates the whole message prefix — a
+   * guaranteed cache miss on every line the companion speaks. Holding the
+   * start fixed and only re-anchoring once the window has grown to twice
+   * RECENT_CAP makes the prefix byte-identical between ticks, which is the
+   * only thing a breakpoint can actually exploit. Cost of the re-anchor is one
+   * miss per RECENT_CAP lines instead of one per line.
+   *
+   * -1 until the first turn reads the history length.
+   */
+  historyAnchor: number;
   /** Per-session log into the in-app console + a rolling file (backseatLog). */
   log: BackseatLog;
 }
@@ -180,10 +204,10 @@ export async function startBackseat(
     lastSpokeAt: 0,
     clips: new Map(),
     clipCooldownUntil: 0,
+    historyAnchor: -1,
     log,
   };
   sessions.set(characterId, s);
-  resetGateWindow(characterId);
   slog(s, `session start: mode=${mode}, source="${sourceName}"`);
   // The overlay window is not decoration: it is the renderer that owns the
   // capture pipeline, because it is the only one guaranteed to stay visible
@@ -243,7 +267,6 @@ export async function endBackseat(characterId: string): Promise<void> {
   s.clips.clear();
   push(s);
   sessions.delete(characterId);
-  resetGateWindow(characterId);
   slog(
     s,
     `session end: ${Math.round(durationMs / 1000)}s, ${lineCount} line(s) said`,
@@ -304,30 +327,6 @@ export async function endBackseat(characterId: string): Promise<void> {
 /** Drop every session (renderer death/reload — capture cannot outlive it). */
 export function clearAllBackseat(): void {
   for (const id of [...sessions.keys()]) void endBackseat(id).catch(() => {});
-}
-
-// ── The gate passthrough ──────────────────────────────────────────────────
-
-export async function askGate(
-  characterId: string,
-  grid: string,
-  transcript?: string,
-): Promise<boolean> {
-  const s = sessions.get(characterId);
-  if (!s || s.state.phase !== 'watching') return false;
-  // Spending a gate call while the companion is barred from speaking anyway
-  // is pure waste, and it also skews the adaptive threshold's window with
-  // grids that could never have produced a line.
-  if (Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) {
-    slog(s, `gate skipped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago)`);
-    return false;
-  }
-  if (s.inflight) {
-    slog(s, 'gate skipped (turn in flight)');
-    return false;
-  }
-  void dumpGridForDev('gate', grid);
-  return await gateGrid(characterId, grid, transcript, (line) => s.log.line(line));
 }
 
 // ── Clips ─────────────────────────────────────────────────────────────────
@@ -411,26 +410,25 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
 
   const isUser = tick.kind === 'user';
   const label = tick.kind + (tick.joltReason ? `:${tick.joltReason}` : '');
-  if (!isUser) {
-    if (s.inflight) {
-      slog(s, `tick ${label} dropped (turn in flight)`);
+
+  // Being talked to always earns an answer, so a user tick skips the speak-gap
+  // floor. Everything else respects it: two lines about the same six seconds
+  // is worse than one.
+  if (!isUser && Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) {
+    slog(s, `tick ${label} dropped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago)`);
+    return;
+  }
+
+  if (s.inflight) {
+    const running = s.inflightKind ?? 'idle';
+    if (PRIORITY[tick.kind] <= PRIORITY[running]) {
+      slog(s, `tick ${label} dropped (${running} turn in flight)`);
       return;
     }
-    if (Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) {
-      slog(
-        s,
-        `tick ${label} dropped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago)`,
-      );
-      return;
-    }
-  } else if (s.inflight && s.inflightKind !== 'user') {
-    // Preempt a reaction with an answer.
-    slog(s, `tick user preempts in-flight ${s.inflightKind} turn`);
+    slog(s, `tick ${label} preempts in-flight ${running} turn`);
     s.inflight.abort();
     s.inflight = null;
     s.inflightKind = null;
-  } else if (s.inflight) {
-    return;
   }
   slog(s, `tick ${label} -> turn`);
   void dumpGridForDev(tick.kind, tick.grid);
@@ -502,15 +500,31 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     extraStable: BACKSEAT_CONTRACT,
   } as Parameters<typeof buildSystemBlocks>[0]);
 
+  // Verbatim window, anchored rather than sliding (see Session.historyAnchor).
+  // A sliding tail changes messages[0] every time a line lands, which throws
+  // away the entire message-prefix cache; re-anchoring only when the window has
+  // doubled costs one miss per RECENT_CAP lines instead of one per line.
+  if (s.historyAnchor < 0 || history.length - s.historyAnchor > RECENT_CAP * 2) {
+    s.historyAnchor = Math.max(0, history.length - RECENT_CAP);
+  }
   // On a user tick the player's line was just persisted (handleTick), so it is
   // also the tail of `history`; drop that copy — the canonical one goes inline
   // below with the grid attached, and the model must not read it twice.
-  let recent = history.slice(-RECENT_CAP);
+  let recent = history.slice(s.historyAnchor);
   if (tick.kind === 'user' && tick.text) {
     const last = recent[recent.length - 1];
     if (last && last.role === 'user' && last.text === tick.text) recent = recent.slice(0, -1);
   }
   const messages = toMessages(recent);
+  // Prompt caching (260801), and the reason this is NOT markLastMessageCached.
+  // buildSystemBlocks already spent three of Anthropic's four breakpoints. The
+  // fourth belongs HERE, at the end of the history, not on the message below:
+  // that message carries a fresh ~1548-token grid and a note unique to this
+  // tick, so a breakpoint on it writes ~1600 tokens at the 1.25x write
+  // multiplier every single tick and can never read one of them back. Marking
+  // the history instead makes system + transcript a cache READ per tick and
+  // leaves the image as plain input, written nowhere.
+  markMessageCached(messages, messages.length - 1);
 
   // The player's own line is a real user message; a gate/jolt tick is not, so
   // it is framed as a system note. Either way the grid is attached to the same
@@ -528,7 +542,6 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     { type: 'text', text: tick.kind === 'user' ? `${note}\n\n${tick.text ?? ''}` : note },
   ];
   messages.push({ role: 'user', content: content as never });
-  markLastMessageCached(messages);
 
   const { client, model } = await buildChatSdk();
   const res = await client.messages.create(
@@ -544,6 +557,20 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
   );
   if (ctrl.signal.aborted || s.inflight !== ctrl) return;
+
+  // The cache layout above is only worth anything if it hits, and the only way
+  // to know is to read it back. cacheRead should dominate within a session;
+  // cacheWrite staying high tick after tick means the prefix is churning.
+  const u = res.usage as unknown as {
+    input_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+  slog(
+    s,
+    `turn ${tick.kind}: in=${u?.input_tokens ?? 0} cacheRead=${u?.cache_read_input_tokens ?? 0} ` +
+      `cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
+  );
 
   await honorRemember(s, res.content);
 

@@ -149,8 +149,6 @@ const api: RendererApi = {
   backseatGetState: (characterId) =>
     ipcRenderer.invoke(IpcChannel.backseat.getState, characterId),
   backseatTick: (tick) => ipcRenderer.invoke(IpcChannel.backseat.tick, tick),
-  backseatGate: (characterId, grid, transcript) =>
-    ipcRenderer.invoke(IpcChannel.backseat.gate, { characterId, grid, transcript }),
   backseatAudioStart: () => ipcRenderer.invoke(IpcChannel.backseat.audioStart),
   backseatAudioStop: () => ipcRenderer.invoke(IpcChannel.backseat.audioStop),
   backseatSetPaused: (characterId, paused) =>

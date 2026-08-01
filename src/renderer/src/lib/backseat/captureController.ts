@@ -3,16 +3,17 @@
  *
  * Owns the shared MediaStream and everything downstream of it: the worker that
  * keeps the ring buffer and composites grids, the normalized PCM pipeline that
- * drives frame selection AND the streaming transcript, the rolling recorders
- * that back clip export, and the two triggers the renderer raises locally (the
- * every-6s salience gate, and the jolt).
+ * feeds the gain signal AND the streaming transcript, the rolling recorders
+ * that back clip export, and the wakes the renderer raises locally (the
+ * scheduled idle look, and the jolt).
  *
  * Audio (260728): the model never hears sound. Screen audio exists for two
- * local consumers only — the GAIN signal (loudest-frame selection + the jolt
- * trigger's gain arm) and the STT TRANSCRIPT (sttStream.ts, the packaged
- * Whisper model). Whatever the platform source, audio is normalized to mono
- * Float32 at STT_SAMPLE_RATE before either consumer sees it, so the pipeline
- * below the source line is identical everywhere.
+ * local consumers only — the GAIN signal (the jolt trigger's gain arm) and the
+ * STT TRANSCRIPT (sttStream.ts, the packaged Whisper model). Whatever the
+ * platform source, audio is normalized to mono Float32 at STT_SAMPLE_RATE
+ * before either consumer sees it, so the pipeline below the source line is
+ * identical everywhere. 260801: audio no longer influences WHICH frames the
+ * grid uses — the offset table does, unconditionally.
  *
  * It decides only WHEN to hand main a grid. Whether that grid becomes a spoken
  * line is entirely main's call — see src/main/backseat/backseatService.ts.
@@ -25,9 +26,9 @@ import {
   CAPTURE_FPS,
   CAPTURE_H,
   CAPTURE_W,
-  GATE_INTERVAL_MS,
   JOLT_COLOR_DELTA,
   JOLT_GAIN_DB,
+  nextIdleDelayMs,
   STT_SAMPLE_RATE,
   type BackseatTickKind,
 } from '../../../../shared/backseatIpc';
@@ -61,6 +62,15 @@ interface Rolling {
   startedAt: number;
 }
 
+/** A composited grid as the worker returns it. */
+interface Grid {
+  dataUrl: string;
+  /** Capture time of the NEWEST cell, not of the composite. */
+  capturedAt: number;
+  /** Achieved offsets per cell, seconds before capturedAt; null = black cell. */
+  offsets: Array<number | null>;
+}
+
 export interface CaptureHandle {
   stop: () => void;
   setPaused: (paused: boolean) => void;
@@ -68,6 +78,12 @@ export interface CaptureHandle {
   armUserGrid: () => void;
   /** Send the player's finished line with the latched (or a fresh) grid. */
   sendUserTick: (text: string) => Promise<void>;
+  /**
+   * The companion just said something. Push the scheduled look back a full
+   * fresh interval: main already spoke about these seconds, and an idle tick
+   * arriving right behind a jolt reply is two lines about one moment.
+   */
+  noteSpoke: () => void;
 }
 
 let active: CaptureHandle | null = null;
@@ -81,8 +97,9 @@ let active: CaptureHandle | null = null;
  *            the video track.
  *   'tap'    the bundled macOS ScreenCaptureKit helper: main spawns it and
  *            relays interleaved Float32 PCM over backseat:pcm.
- *   'none'   video-only. Frame choice falls back to last-of-second, the gain
- *            jolt arm never fires, and there is no transcript.
+ *   'none'   video-only. The grid is unaffected (frame choice is purely
+ *            temporal), but the gain jolt arm never fires and there is no
+ *            transcript.
  */
 type AudioSource =
   | { kind: 'track'; track: MediaStreamTrack }
@@ -448,9 +465,13 @@ export async function startCapture(
   };
 
   // ── Grid requests ───────────────────────────────────────────────────────
+  // `offsets` is what the worker ACTUALLY achieved per cell, in seconds before
+  // capturedAt (null = the cell was left black). Diagnostics only: it is logged
+  // so a session can be checked for whether the log spacing held, and nothing
+  // downstream reads it.
   let seq = 0;
-  const pendingGrids = new Map<string, (g: { dataUrl: string; capturedAt: number } | null) => void>();
-  const composite = (): Promise<{ dataUrl: string; capturedAt: number } | null> => {
+  const pendingGrids = new Map<string, (g: Grid | null) => void>();
+  const composite = (): Promise<Grid | null> => {
     const requestId = `g${++seq}`;
     return new Promise((resolve) => {
       pendingGrids.set(requestId, resolve);
@@ -466,17 +487,20 @@ export async function startCapture(
   let paused = false;
   let stopped = false;
   /** Grid latched when the player began speaking or typing. */
-  let held: { dataUrl: string; capturedAt: number } | null = null;
+  let held: Grid | null = null;
   /** Single-flight guard so a burst of keystrokes composites once, not once
    *  per character — the "avoid overloading" case. */
   let arming = false;
 
   const sendTick = async (
     kind: BackseatTickKind,
-    grid: { dataUrl: string; capturedAt: number },
+    grid: Grid,
     extra: { text?: string; joltReason?: 'gain' | 'color'; transcript?: string } = {},
   ): Promise<void> => {
     if (stopped) return;
+    console.log(
+      `[backseat] tick ${kind}: cells at -${grid.offsets.map((o) => (o === null ? 'x' : o.toFixed(2))).join('/')}s`,
+    );
     try {
       await sei.backseatTick({
         characterId,
@@ -493,7 +517,7 @@ export async function startCapture(
 
   worker.onmessage = (e: MessageEvent): void => {
     const msg = e.data as
-      | { type: 'grid'; requestId: string; grid: { dataUrl: string; capturedAt: number } | null }
+      | { type: 'grid'; requestId: string; grid: Grid | null }
       | {
           type: 'jolt';
           reason: 'gain' | 'color';
@@ -505,10 +529,11 @@ export async function startCapture(
       | {
           type: 'stats';
           fps: number | null;
+          eps: number | null;
           gainDb: number;
           baseDb: number;
           colorDelta: number | null;
-          buckets: number;
+          samples: number;
         };
     if (msg.type === 'grid') {
       const resolve = pendingGrids.get(msg.requestId);
@@ -523,7 +548,7 @@ export async function startCapture(
       // (forwarded to the terminal in dev by backseatOverlay.ts). gain vs base
       // is what the gain jolt arms on; colorDelta is what the colour arm sees.
       console.log(
-        `[backseat] signals: ${msg.fps ?? '?'}fps, ${msg.buckets} buckets, ` +
+        `[backseat] signals: ${msg.fps ?? '?'}fps, ${msg.eps ?? '?'} encodes/s, ${msg.samples} samples, ` +
           `gain ${msg.gainDb}dB vs base ${msg.baseDb}dB (jolt at +${JOLT_GAIN_DB}), ` +
           `colorDelta ${msg.colorDelta ?? 'n/a'} (jolt at ${JOLT_COLOR_DELTA})`,
       );
@@ -548,40 +573,56 @@ export async function startCapture(
     }
   };
 
-  // ── The salience gate ───────────────────────────────────────────────────
-  // Every GATE_INTERVAL_MS a fresh grid goes to the small VLM in main, and a
-  // yes becomes a tick. Single-flight: if the gate call is still out when the
-  // next interval fires, that interval is skipped rather than queued, so a slow
-  // gate makes the companion quieter instead of building a backlog of stale
-  // grids that all land at once.
-  let gateBusy = false;
-  const gateTimer = window.setInterval(() => {
-    if (paused || stopped || gateBusy) return;
-    gateBusy = true;
-    void (async () => {
-      try {
-        const grid = await composite();
-        if (!grid) {
-          // Capture is not producing frames; the gate never even gets asked.
-          console.warn('[backseat] gate poll skipped: no grid from worker (ring empty?)');
-          return;
+  // ── The scheduled look ──────────────────────────────────────────────────
+  // The steady-state wake, and the only one with no opinion about the screen:
+  // a randomised timer (nextIdleDelayMs) composites a grid and hands it up. All
+  // of the "was that worth saying anything about" judgement happens in the
+  // model, prompted by tickNote's 'idle' branch.
+  //
+  // 260801: this replaces a 6 s poll of a small VLM asked whether the grid was
+  // interesting. Measured, that model said yes far too readily and the
+  // narration-novelty scheme meant to replace it carried almost no signal, so
+  // the gate is gone rather than retuned (.planning/backseat-v2-260801.md).
+  //
+  // A setTimeout chain rather than setInterval: the delay is redrawn every
+  // time, and it also has to be resettable from outside (noteSpoke) so an idle
+  // look never lands seconds after a jolt already produced a line about the
+  // same moment.
+  let idleTimer = 0;
+  let idleBusy = false;
+  const scheduleIdle = (): void => {
+    if (stopped) return;
+    window.clearTimeout(idleTimer);
+    const delay = nextIdleDelayMs();
+    idleTimer = window.setTimeout(() => {
+      scheduleIdle();
+      if (paused || stopped || idleBusy) return;
+      idleBusy = true;
+      void (async () => {
+        try {
+          const grid = await composite();
+          if (!grid) {
+            // Capture is not producing frames; there is nothing to look at.
+            console.warn('[backseat] idle look skipped: no grid from worker (ring empty?)');
+            return;
+          }
+          if (paused || stopped) return;
+          // The grid and the transcript describe the same window: composite
+          // first, then the bounded STT flush (the spec's "wait a few
+          // milliseconds longer for the stt to catch up").
+          const transcript = await tickTranscript();
+          if (paused || stopped) return;
+          await sendTick('idle', grid, { transcript });
+        } catch {
+          /* a missed look is a missed comment, never a broken session */
+        } finally {
+          idleBusy = false;
         }
-        if (paused || stopped) return;
-        // The grid and the transcript describe the same window: composite
-        // first, then the bounded STT flush (the spec's "wait a few
-        // milliseconds longer for the stt to catch up"). Both the small VLM
-        // and, on a yes, the companion get the same pair.
-        const transcript = await tickTranscript();
-        if (paused || stopped) return;
-        const interesting = await sei.backseatGate(characterId, grid.dataUrl, transcript);
-        if (interesting && !paused && !stopped) await sendTick('gate', grid, { transcript });
-      } catch {
-        /* gate outage degrades to quiet */
-      } finally {
-        gateBusy = false;
-      }
-    })();
-  }, GATE_INTERVAL_MS);
+      })();
+    }, delay);
+    console.log(`[backseat] next idle look in ${(delay / 1000).toFixed(1)}s`);
+  };
+  scheduleIdle();
 
   // ── Clip requests from main ─────────────────────────────────────────────
   const offClip = sei.onBackseatClipRequest(({ characterId: id, requestId }) => {
@@ -611,7 +652,7 @@ export async function startCapture(
     stop: () => {
       if (stopped) return;
       stopped = true;
-      window.clearInterval(gateTimer);
+      window.clearTimeout(idleTimer);
       pipeline.stop();
       stt.stop();
       window.clearTimeout(staggerTimer);
@@ -667,6 +708,9 @@ export async function startCapture(
       // window reaches back far enough to cover a held grid's span.
       const transcript = await tickTranscript();
       await sendTick('user', grid, { text, transcript });
+    },
+    noteSpoke: () => {
+      if (!stopped) scheduleIdle();
     },
   };
 

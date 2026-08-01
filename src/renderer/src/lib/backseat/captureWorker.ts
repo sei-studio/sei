@@ -1,34 +1,38 @@
 /**
- * Backseat capture worker (260728) — the ring buffer, the frame heuristic, and
- * the image-grid compositor. Runs off the main thread because the capture loop
- * must survive the player being in a fullscreen game with Sei behind it:
- * a worker is never rAF-throttled, and MediaStreamTrackProcessor's readable is
+ * Backseat capture worker — the ring buffer, the local signals, and the
+ * image-grid compositor. Runs off the main thread because the capture loop must
+ * survive the player being in a fullscreen game with Sei behind it: a worker is
+ * never rAF-throttled, and MediaStreamTrackProcessor's readable is
  * transferable, so the frames come straight here.
  *
  * ── Why this does not hold 900 frames ────────────────────────────────────
  *
- * The contract is "15 s at 60 fps, pick one frame per second by loudest gain".
- * Read literally that is 900 retained 720p frames — several GB raw, or 60 JPEG
- * encodes a second, and neither is survivable on a machine that is also
- * running a game.
+ * At 60 fps, BUFFER_MS of retained 720p video is several hundred raw frames —
+ * several GB, or 60 JPEG encodes a second, and neither is survivable on a
+ * machine that is also running a game.
  *
- * It does not have to be. The selection rule is a running argmax: within a
- * one-second bucket the winner is whichever frame had the loudest audio, and
- * that is knowable incrementally. So the worker keeps exactly ONE frame per
- * bucket alive at a time (the best seen so far, as an ImageBitmap) and throws
- * every loser away the moment it loses. At the bucket boundary the winner is
- * encoded to JPEG once and appended to the ring.
+ * It does not have to be. The grid only ever reads six moments out of the
+ * buffer, and GRID_OFFSETS_S says in advance roughly where they land, so the
+ * ring only needs to be fine enough to resolve the tightest gap in that table
+ * (187 ms). SAMPLE_INTERVAL_MS = 100 ms clears it with room to spare: one
+ * cell-sized JPEG every tenth of a second, ~90 of them (~3 MB) covering
+ * BUFFER_MS, at 10 encodes/second rather than 60.
  *
- * That is 1 encode/second instead of 60, and steady-state memory of
- * BUFFER_SECONDS JPEGs (~35 KB each) plus a single live bitmap — while still
- * examining all 60 frames per second and picking exactly the one the spec
- * asks for. The full-rate 60 fps video is not lost either: MediaRecorder in
- * the controller keeps it for clip export, which is the only thing that
- * actually needs every frame.
+ * The full-rate 60 fps video is not lost either: MediaRecorder in the
+ * controller keeps it for clip export, which is the only thing that actually
+ * needs every frame.
  *
- * Frames are examined at capture rate for two more signals, both cheap enough
- * to run on every single frame: the audio gain that drives selection, and a
- * 32x18 thumbnail whose frame-to-frame distance is the colour-jolt trigger.
+ * 260801: this used to keep ONE frame per one-second bucket, chosen by running
+ * argmax over audio gain. That made the cell spacing depend on where the loud
+ * moments fell — consecutive cells 40 ms to 1.9 s apart, under a prompt that
+ * claimed "about a second apart" — which is why the companion could never read
+ * a sequence off the grid. Uniform sampling plus a fixed offset table replaces
+ * it, and the selection rule no longer depends on audio at all (which also
+ * retires the video-only special case it used to need).
+ *
+ * Frames are still examined at capture rate for two signals, both cheap enough
+ * to run on every single frame: the audio gain, and a 32x18 thumbnail whose
+ * frame-to-frame distance is the colour-jolt trigger.
  */
 
 import {
@@ -39,13 +43,14 @@ import {
   GRID_H,
   GRID_COLS,
   GRID_FRAMES,
+  GRID_OFFSETS_S,
+  SAMPLE_INTERVAL_MS,
+  SAMPLE_TOLERANCE_MS,
   JOLT_COLOR_DELTA,
   JOLT_GAIN_DB,
   JOLT_REFRACTORY_MS,
 } from '../../../../shared/backseatIpc';
 
-/** Closed one-second buckets kept in the ring. */
-const BUFFER_SECONDS = Math.ceil(BUFFER_MS / 1000);
 /** Thumbnail grid for the colour-jolt signal. Tiny on purpose: this is a
  *  "did the whole screen repaint" detector, not a motion estimator. */
 const THUMB_W = 32;
@@ -58,10 +63,8 @@ const COLOR_LOOKBACK_MS = 1000;
 const CELL_QUALITY = 0.72;
 const GRID_QUALITY = 0.82;
 
-interface ClosedBucket {
-  /** Bucket index (floor(t / 1000)), so gaps in capture are visible. */
-  second: number;
-  /** Capture time of the winning frame. */
+interface Sample {
+  /** Capture time of the frame this was encoded from. */
   at: number;
   jpeg: Blob;
 }
@@ -70,10 +73,11 @@ interface ClosedBucket {
 
 let cellCanvas: OffscreenCanvas | null = null;
 let cellCtx: OffscreenCanvasRenderingContext2D | null = null;
-/** Separate surface for the once-a-second JPEG encode. It has to be separate:
- *  convertToBlob is async, and the frame loop keeps drawing into cellCanvas
- *  while it is pending, so encoding through the live canvas would sometimes
- *  write a LATER frame into the closing bucket. */
+/** Separate surface for the JPEG encode. It has to be separate: convertToBlob
+ *  is async, and the frame loop keeps drawing into cellCanvas while it is
+ *  pending, so encoding through the live canvas would sometimes write a LATER
+ *  frame into the sample. The copy into it is synchronous, which is what pins
+ *  the sample to the moment it claims. */
 let encodeCanvas: OffscreenCanvas | null = null;
 let encodeCtx: OffscreenCanvasRenderingContext2D | null = null;
 let thumbCanvas: OffscreenCanvas | null = null;
@@ -81,14 +85,15 @@ let thumbCtx: OffscreenCanvasRenderingContext2D | null = null;
 let gridCanvas: OffscreenCanvas | null = null;
 let gridCtx: OffscreenCanvasRenderingContext2D | null = null;
 
-/** Closed buckets, oldest first, capped at BUFFER_SECONDS. */
-const ring: ClosedBucket[] = [];
-
-/** The in-progress bucket's best frame so far, by audio gain. */
-let liveSecond = -1;
-let liveBest: ImageBitmap | null = null;
-let liveBestGain = -Infinity;
-let liveBestAt = 0;
+/** Samples, oldest first, spanning at most BUFFER_MS. */
+const ring: Sample[] = [];
+/** When the last sample was taken, so the 10 Hz cadence is independent of the
+ *  capture rate (which varies with what the shared window is doing). */
+let lastSampleAt = 0;
+/** One encode in flight at a time. At 10 Hz with a ~2 ms encode this never
+ *  actually skips; it exists so a stalled encode drops samples instead of
+ *  queueing them and pushing them out of order. */
+let encoding = false;
 
 /** Latest audio loudness, posted from the main thread (dBFS, -100..0). */
 let currentGain = -100;
@@ -99,8 +104,9 @@ const thumbTrace: Array<[number, Uint8ClampedArray]> = [];
 
 let lastJoltAt = 0;
 let running = false;
-/** Frames seen vs buckets closed, surfaced for diagnostics. */
+/** Frames seen vs samples encoded, surfaced for diagnostics. */
 let framesSeen = 0;
+let encodes = 0;
 
 /**
  * Periodic signal report (260728), so "is the jolt arm alive" is answerable
@@ -111,6 +117,7 @@ let framesSeen = 0;
 const STATS_INTERVAL_MS = 10_000;
 let lastStatsAt = 0;
 let statsFramesSeen = 0;
+let statsEncodes = 0;
 
 // ── Setup ─────────────────────────────────────────────────────────────────
 
@@ -198,28 +205,34 @@ function checkJolt(now: number, thumb: Uint8ClampedArray): 'gain' | 'color' | nu
   return null;
 }
 
-// ── Bucket lifecycle ──────────────────────────────────────────────────────
+// ── Sampling ──────────────────────────────────────────────────────────────
 
-async function closeBucket(): Promise<void> {
-  const best = liveBest;
-  const second = liveSecond;
-  const at = liveBestAt;
-  liveBest = null;
-  liveBestGain = -Infinity;
-  if (!best || second < 0) return;
+/**
+ * Freeze the current frame into the ring. The copy onto the encode surface is
+ * synchronous, so the JPEG is of the frame that was live at `at` even though
+ * the encode itself finishes later and the frame loop has moved on.
+ */
+function sample(at: number): void {
+  if (encoding) return;
+  encoding = true;
   try {
-    // One encode per second of wall clock. The winner is drawn onto the
-    // dedicated encode surface (an ImageBitmap has no encoder of its own) so
-    // the concurrent frame loop cannot overwrite it mid-encode.
-    encodeCtx!.drawImage(best, 0, 0);
-    const jpeg = await encodeCanvas!.convertToBlob({ type: 'image/jpeg', quality: CELL_QUALITY });
-    ring.push({ second, at, jpeg });
-    while (ring.length > BUFFER_SECONDS) ring.shift();
+    encodeCtx!.drawImage(cellCanvas!, 0, 0);
   } catch {
-    // A dropped bucket costs one grid cell, never the session.
-  } finally {
-    best.close();
+    encoding = false;
+    return;
   }
+  void encodeCanvas!
+    .convertToBlob({ type: 'image/jpeg', quality: CELL_QUALITY })
+    .then((jpeg) => {
+      ring.push({ at, jpeg });
+      while (ring.length && at - ring[0].at > BUFFER_MS) ring.shift();
+      encodes++;
+    })
+    // A dropped sample costs at most one grid cell, never the session.
+    .catch(() => {})
+    .finally(() => {
+      encoding = false;
+    });
 }
 
 async function onFrame(frame: VideoFrame): Promise<void> {
@@ -247,23 +260,12 @@ async function onFrame(frame: VideoFrame): Promise<void> {
     while (thumbTrace.length && now - thumbTrace[0][0] > COLOR_LOOKBACK_MS * 3) thumbTrace.shift();
   }
 
-  const second = Math.floor(now / 1000);
-  if (second !== liveSecond) {
-    // closeBucket() takes ownership of liveBest/liveSecond synchronously before
-    // its first await, so it is safe to not await here — and it must not be
-    // awaited, or a slow encode would stall the frame loop for a whole frame.
-    void closeBucket();
-    liveSecond = second;
-  }
-  // Running argmax over the bucket. `>=` rather than `>` so that in the very
-  // common case of digital silence (every frame at the noise floor) the cell
-  // ends up being the LAST frame of the second rather than the first, which is
-  // the more useful one: it is closest to whatever happens next.
-  if (currentGain >= liveBestGain) {
-    liveBestGain = currentGain;
-    liveBestAt = now;
-    liveBest?.close();
-    liveBest = cellCanvas!.transferToImageBitmap();
+  // Uniform 10 Hz, independent of the capture rate. sample() returns
+  // immediately; the encode finishes on a microtask so the frame loop is never
+  // stalled by it.
+  if (now - lastSampleAt >= SAMPLE_INTERVAL_MS) {
+    lastSampleAt = now;
+    sample(now);
   }
 
   const jolt = checkJolt(now, thumb);
@@ -281,17 +283,22 @@ async function onFrame(frame: VideoFrame): Promise<void> {
 
   if (now - lastStatsAt >= STATS_INTERVAL_MS) {
     const past = thumbTrace.find(([t]) => now - t >= COLOR_LOOKBACK_MS);
+    const span = now - lastStatsAt;
     self.postMessage({
       type: 'stats',
       // null on the first report: there is no previous window to rate against.
-      fps: lastStatsAt ? Math.round(((framesSeen - statsFramesSeen) * 1000) / (now - lastStatsAt)) : null,
+      fps: lastStatsAt ? Math.round(((framesSeen - statsFramesSeen) * 1000) / span) : null,
+      // Should sit at ~10/s. Below that means the encode is not keeping up and
+      // the grid's recent cells are landing off their offsets.
+      eps: lastStatsAt ? Math.round(((encodes - statsEncodes) * 1000) / span) : null,
       gainDb: round1(currentGain),
       baseDb: round1(baselineGain()),
       colorDelta: past ? round3(thumbDelta(thumb, past[1])) : null,
-      buckets: ring.length,
+      samples: ring.length,
     });
     lastStatsAt = now;
     statsFramesSeen = framesSeen;
+    statsEncodes = encodes;
   }
 }
 
@@ -305,31 +312,62 @@ function round3(n: number): number {
 
 // ── Grid compositing ──────────────────────────────────────────────────────
 
+/** The sample closest in time to `target`, or null if the ring is empty. */
+function nearest(target: number): Sample | null {
+  let best: Sample | null = null;
+  let bestGap = Infinity;
+  for (const s of ring) {
+    const gap = Math.abs(s.at - target);
+    // The ring is ordered, so once the gap starts growing again the best is
+    // behind us.
+    if (gap > bestGap) break;
+    best = s;
+    bestGap = gap;
+  }
+  return best;
+}
+
 /**
- * Build the 3x2 grid from the most recent GRID_FRAMES buckets, oldest in the
- * top-left, filled row-first — the arrangement IG-VLM (arXiv 2403.18406)
- * found best, and the one the prompt describes to the model.
+ * Build the 3x2 grid, one cell per entry in GRID_OFFSETS_S, oldest in the
+ * top-left, filled row-first — the arrangement IG-VLM (arXiv 2403.18406) found
+ * best, and the one the prompt describes to the model.
  *
- * Buckets that never closed (capture hiccup, or the session is younger than
- * six seconds) leave their cell black rather than shifting the others: a
- * missing cell is honest, a shifted one silently lies about the timeline.
+ * Every cell is resolved independently against wall-clock time rather than by
+ * position in the ring, so a capture hiccup shifts nothing: an offset with no
+ * sample within SAMPLE_TOLERANCE_MS leaves its cell black. A missing cell is
+ * honest; a shifted one silently lies about the timeline, which is the failure
+ * this whole redesign exists to fix.
+ *
+ * `offsets` reports what was ACTUALLY achieved, in seconds before capturedAt,
+ * with null for a black cell. Nothing downstream depends on it — it is there so
+ * a session log can show whether the spacing held.
  */
-async function composite(): Promise<{ dataUrl: string; capturedAt: number } | null> {
-  const picked = ring.slice(-GRID_FRAMES);
-  if (!picked.length) return null;
+async function composite(): Promise<{
+  dataUrl: string;
+  capturedAt: number;
+  offsets: Array<number | null>;
+} | null> {
+  if (!ring.length) return null;
+  const now = Date.now();
   gridCtx!.fillStyle = '#000';
   gridCtx!.fillRect(0, 0, GRID_W, GRID_H);
 
-  // Anchor on the newest bucket so a gap in the middle leaves a hole in the
-  // right place instead of compacting the sequence.
-  const newest = picked[picked.length - 1].second;
-  const bySecond = new Map(picked.map((b) => [b.second, b]));
+  const picked: Array<Sample | null> = [];
+  for (const offsetS of GRID_OFFSETS_S) {
+    const hit = nearest(now - offsetS * 1000);
+    picked.push(hit && Math.abs(hit.at - (now - offsetS * 1000)) <= SAMPLE_TOLERANCE_MS ? hit : null);
+  }
+  const newestAt = picked.reduce((m, s) => (s && s.at > m ? s.at : m), 0);
+  // Every offset missed: the ring holds only samples older than the whole
+  // table, so there is no honest grid to build.
+  if (!newestAt) return null;
+
   for (let i = 0; i < GRID_FRAMES; i++) {
-    const bucket = bySecond.get(newest - (GRID_FRAMES - 1 - i));
-    if (!bucket) continue;
+    const hit = picked[i];
+    if (!hit) continue;
     let bmp: ImageBitmap | null = null;
     try {
-      bmp = await createImageBitmap(bucket.jpeg);
+      bmp = await createImageBitmap(hit.jpeg);
       const col = i % GRID_COLS;
       const row = Math.floor(i / GRID_COLS);
       gridCtx!.drawImage(bmp, col * CELL_W, row * CELL_H, CELL_W, CELL_H);
@@ -346,7 +384,8 @@ async function composite(): Promise<{ dataUrl: string; capturedAt: number } | nu
   for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
   return {
     dataUrl: `data:image/jpeg;base64,${btoa(bin)}`,
-    capturedAt: picked[picked.length - 1].at,
+    capturedAt: newestAt,
+    offsets: picked.map((s) => (s ? Math.round(newestAt - s.at) / 1000 : null)),
   };
 }
 
@@ -393,7 +432,7 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
     return;
   }
   if (msg.type === 'composite') {
-    let out: { dataUrl: string; capturedAt: number } | null = null;
+    let out: Awaited<ReturnType<typeof composite>> = null;
     try {
       out = await composite();
     } catch {
@@ -406,8 +445,6 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
     running = false;
     encodeCanvas = null;
     encodeCtx = null;
-    liveBest?.close();
-    liveBest = null;
     ring.length = 0;
     gainTrace.length = 0;
     thumbTrace.length = 0;

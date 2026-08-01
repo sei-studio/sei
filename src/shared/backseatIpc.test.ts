@@ -7,17 +7,25 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  BUFFER_MS,
   CELL_H,
   CELL_W,
   GRID_COLS,
   GRID_FRAMES,
   GRID_H,
+  GRID_OFFSETS_S,
   GRID_ROWS,
   GRID_SPAN_MS,
   GRID_VISUAL_TOKENS,
   GRID_W,
   CAPTURE_H,
   CAPTURE_W,
+  IDLE_MAX_MS,
+  IDLE_MEAN_EXTRA_MS,
+  IDLE_MIN_MS,
+  MIN_SPEAK_GAP_MS,
+  nextIdleDelayMs,
+  SAMPLE_INTERVAL_MS,
 } from './backseatIpc';
 
 /** Claude's documented cost: one visual token per 28x28 patch. */
@@ -70,7 +78,90 @@ describe('backseat image grid', () => {
     expect(Math.abs(cell - source) / source).toBeLessThan(0.02);
   });
 
-  it('spans one second per frame', () => {
-    expect(GRID_SPAN_MS).toBe(GRID_FRAMES * 1000);
+  it('spans back to its oldest offset', () => {
+    expect(GRID_SPAN_MS).toBe(GRID_OFFSETS_S[0] * 1000);
+  });
+});
+
+describe('frame offsets', () => {
+  it('has exactly one offset per cell', () => {
+    expect(GRID_OFFSETS_S).toHaveLength(GRID_FRAMES);
+  });
+
+  it('runs oldest to newest, which is the order the prompt describes', () => {
+    // The compositor fills row-first from GRID_OFFSETS_S[0], and the contract
+    // tells the model the top-left is the oldest. A table that is not strictly
+    // descending would make that sentence a lie.
+    for (let i = 1; i < GRID_OFFSETS_S.length; i++) {
+      expect(GRID_OFFSETS_S[i]).toBeLessThan(GRID_OFFSETS_S[i - 1]);
+    }
+  });
+
+  it('is resolvable at the ring sample rate', () => {
+    // The whole point of log spacing is that consecutive cells are
+    // distinguishable. If the tightest gap ever drops below the sample
+    // interval, two cells can resolve to the SAME sample and the grid silently
+    // shows five moments instead of six.
+    let tightest = Infinity;
+    for (let i = 1; i < GRID_OFFSETS_S.length; i++) {
+      tightest = Math.min(tightest, (GRID_OFFSETS_S[i - 1] - GRID_OFFSETS_S[i]) * 1000);
+    }
+    expect(tightest).toBeGreaterThan(SAMPLE_INTERVAL_MS);
+  });
+
+  it('fits inside the ring, with slack for composite latency', () => {
+    expect(GRID_SPAN_MS).toBeLessThan(BUFFER_MS);
+  });
+});
+
+describe('nextIdleDelayMs', () => {
+  /** Deterministic uniforms for the inverse-CDF draw. */
+  const seq = (...xs: number[]): (() => number) => {
+    let i = 0;
+    return () => xs[i++ % xs.length];
+  };
+
+  it('never draws outside the configured range', () => {
+    // Including the endpoints of the uniform, where the inverse CDF blows up:
+    // u=0 gives the floor exactly, u->1 gives infinity and must be clamped.
+    for (const u of [0, 0.001, 0.5, 0.999, 0.999999]) {
+      const d = nextIdleDelayMs(seq(u));
+      expect(d).toBeGreaterThanOrEqual(IDLE_MIN_MS);
+      expect(d).toBeLessThanOrEqual(IDLE_MAX_MS);
+    }
+    expect(nextIdleDelayMs(seq(0))).toBe(IDLE_MIN_MS);
+  });
+
+  it('is memoryless past the floor, not uniform', () => {
+    // The property the distribution was chosen for: a constant hazard rate, so
+    // the player cannot learn the rhythm. Under a uniform draw the median would
+    // sit at the midpoint of the range; under this one it sits far below it.
+    const draws: number[] = [];
+    let state = 12345;
+    for (let i = 0; i < 20_000; i++) {
+      // xorshift, so the assertion below is deterministic across machines.
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      draws.push(nextIdleDelayMs(() => ((state >>> 0) % 1_000_000) / 1_000_000));
+    }
+    draws.sort((a, b) => a - b);
+    const median = draws[Math.floor(draws.length / 2)];
+    const mean = draws.reduce((a, b) => a + b, 0) / draws.length;
+    const midpoint = (IDLE_MIN_MS + IDLE_MAX_MS) / 2;
+
+    expect(median).toBeLessThan(midpoint);
+    // Mean of a shifted exponential is floor + scale, pulled down a little by
+    // the clamp at the ceiling.
+    expect(mean).toBeGreaterThan(IDLE_MIN_MS + IDLE_MEAN_EXTRA_MS * 0.8);
+    expect(mean).toBeLessThan(IDLE_MIN_MS + IDLE_MEAN_EXTRA_MS * 1.1);
+    // And the tail is real: some looks genuinely wait the full ceiling.
+    expect(draws.filter((d) => d === IDLE_MAX_MS).length).toBeGreaterThan(0);
+  });
+
+  it('cannot fire faster than the companion is allowed to speak', () => {
+    // An idle look sooner than MIN_SPEAK_GAP_MS would be composited, sent, and
+    // dropped by the service for nothing.
+    expect(IDLE_MIN_MS).toBeGreaterThan(MIN_SPEAK_GAP_MS);
   });
 });

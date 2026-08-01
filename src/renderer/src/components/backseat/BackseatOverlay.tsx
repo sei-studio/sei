@@ -84,6 +84,12 @@ export function BackseatOverlay(): React.ReactElement | null {
     const offLine = sei.onBackseatLine((l) => {
       if (l.characterId !== characterId) return;
       setLines((prev) => [...prev, l].slice(-VISIBLE_LINES));
+      // The companion just spoke, so push the scheduled look back a full fresh
+      // interval. Main enforces MIN_SPEAK_GAP_MS regardless, but without this
+      // the very next idle tick is composed, sent, and dropped for nothing.
+      // (The player's own echoed line is a real turn boundary too: it means a
+      // reply is imminent.)
+      capture.current?.noteSpoke();
     });
     void sei.backseatGetState(characterId).then((s) => {
       if (s) {

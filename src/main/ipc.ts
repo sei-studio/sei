@@ -1408,7 +1408,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const tick = z
       .object({
         characterId: IdSchema,
-        kind: z.enum(['user', 'gate', 'jolt']),
+        kind: z.enum(['user', 'jolt', 'idle']),
         grid: z.string().max(8_000_000),
         capturedAt: z.number(),
         text: z.string().max(4000).optional(),
@@ -1420,17 +1420,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // Fire and forget: the renderer must not block its capture loop on a turn
     // that takes a second or more.
     void backseat.handleTick(tick).catch(() => {});
-  });
-  ipcMain.handle(IpcChannel.backseat.gate, async (_event, argsRaw: unknown) => {
-    const args = z
-      .object({
-        characterId: IdSchema,
-        grid: z.string().max(8_000_000),
-        transcript: z.string().max(4000).optional(),
-      })
-      .parse(argsRaw);
-    const backseat = await import('./backseat/backseatService');
-    return await backseat.askGate(args.characterId, args.grid, args.transcript);
   });
   // macOS system-audio tap (260728): the overlay renderer cannot hear the
   // system on macOS (Chromium loopback is Windows-only, measured), so main

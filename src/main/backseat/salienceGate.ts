@@ -1,7 +1,28 @@
 /**
- * Backseat salience gate (260728) — the second of the three tick triggers.
+ * Backseat salience gate (260728) — PARKED 260801, nothing calls this.
  *
- * Every GATE_INTERVAL_MS the renderer hands over a fresh image grid and this
+ * It was retired rather than retuned, and the reason is measurement, not taste.
+ * Run over 61 real grids from Valorant footage, the small VLM's yes-bias turned
+ * out to be intrinsic rather than a prompt problem: the structured variant
+ * returned "static" on 0 of 61 grids. The successor idea — have it narrate
+ * instead of judge, and wake on narration novelty — was measured against its own
+ * resampling ceiling (0.749) and an unrelated-grid floor (0.623) and scored
+ * 0.660 for narrations three seconds apart. That is 0.037 of real temporal
+ * signal against 0.25 of pure resampling noise. Prose, prose with cell labels,
+ * six separate images, and structured JSON were all tried. None separate.
+ *
+ * A randomised timer (nextIdleDelayMs) does the same job for free and, unlike a
+ * gate, cannot be wrong in a way that is invisible. See
+ * .planning/backseat-v2-260801.md for the full numbers.
+ *
+ * The file stays because the measurement apparatus around it (logprob reading
+ * on DeepInfra, the quantile window) is the expensive part to rebuild, and
+ * salienceGate.test.ts still pins it. Nothing imports it; deleting it is safe
+ * the day that stops being useful.
+ *
+ * ── What it did ─────────────────────────────────────────────────────────
+ *
+ * Every 6 s the renderer handed over a fresh image grid and this
  * module asks a small VLM one question: did something significant happen across
  * these six frames? A yes becomes a tick; the expensive companion turn only
  * runs behind it.

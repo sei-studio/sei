@@ -11,29 +11,33 @@
  *   renderer  owns PIXELS AND SOUND. It runs getDisplayMedia, keeps the ring
  *             buffer, scores every frame, composites the image grid, records
  *             the rolling clip, runs local STT over the game audio, and raises
- *             the two local triggers. It decides nothing about what the
- *             companion says.
- *   main      owns the SESSION AND EVERY MODEL CALL: the salience gate (a small
- *             VLM on DeepInfra), the companion turn (Haiku), clip files,
- *             analytics, and the continuity rows. It never sees a raw frame,
- *             only finished grids. (On macOS it also SUPPLIES the sound: it
- *             spawns the bundled ScreenCaptureKit tap and relays raw PCM to the
- *             overlay renderer — see `backseat:pcm` below — because Chromium
- *             loopback is Windows-only.)
+ *             every wake. It decides nothing about what the companion says.
+ *   main      owns the SESSION AND THE MODEL CALL: the companion turn (Haiku),
+ *             clip files, analytics, and the continuity rows. It never sees a
+ *             raw frame, only finished grids. (On macOS it also SUPPLIES the
+ *             sound: it spawns the bundled ScreenCaptureKit tap and relays raw
+ *             PCM to the overlay renderer — see `backseat:pcm` below — because
+ *             Chromium loopback is Windows-only.)
  *
  * Audio never reaches the big model as audio (260728). Screen sound exists for
- * exactly two consumers, both local: the GAIN signal (frame selection + the
- * jolt trigger) and the STT TRANSCRIPT (the same packaged Whisper model voice
- * calls use). The transcript of the grid's window rides each tick as text, for
- * both the salience gate and the companion turn.
+ * exactly two consumers, both local: the GAIN signal (the jolt trigger) and the
+ * STT TRANSCRIPT (the same packaged Whisper model voice calls use). The
+ * transcript of the grid's window rides each tick as text.
  *
  * The unit of work is a TICK: one image grid plus the reason it fired. Ticks
  * are raised three ways, in descending priority (see BackseatTickKind):
  *
  *   1. 'user'     the player said or typed something. Always answered.
- *   2. 'gate'     the every-6s salience gate said the grid is interesting.
- *   3. 'jolt'     a very large local audio/colour discontinuity, no model in
- *                 the loop. Deliberately rare — see JOLT_* below.
+ *   2. 'jolt'     a large local audio/colour discontinuity. No model in the
+ *                 loop — see JOLT_* below.
+ *   3. 'idle'     the scheduled look: a randomised IDLE_* timer, nothing more.
+ *
+ * 260801: there used to be a fourth source, a small VLM on DeepInfra asked
+ * every 6 s whether the grid was interesting. It is gone. Measured on real
+ * footage it had a strong yes-bias, and the narration-novelty scheme meant to
+ * replace it carried 0.037 of real signal against 0.25 of resampling noise
+ * (.planning/backseat-v2-260801.md). A dice roll is cheaper and no worse, and
+ * unlike a gate it cannot be wrong in a way that is invisible.
  *
  * Both text mode and voice mode use the SAME chat thread and the same
  * per-character memory as every other surface; backseat is a lens on the
@@ -43,9 +47,9 @@
 // ── Ring buffer ───────────────────────────────────────────────────────────
 //
 // There are TWO independent buffers, and conflating them was the first design's
-// mistake. The frame ring only ever needs enough closed one-second buckets to
-// build a grid, plus slack for the latency between a trigger firing and the
-// composite being requested. That is GRID_FRAMES + a few seconds, NOT 15.
+// mistake. The frame ring only ever needs to reach back far enough to build a
+// grid, plus slack for the latency between a trigger firing and the composite
+// being requested. That is GRID_OFFSETS_S[0] + a few seconds, NOT 15.
 //
 // The 15 seconds belongs solely to CLIP capture (the Outplayed-style "save that
 // bit" feature), which is served by MediaRecorder and nothing else. So clipping
@@ -53,9 +57,9 @@
 // path disappears and the retained window shrinks to BUFFER_MS.
 
 /**
- * Frames the ring keeps: one grid's worth (6 s) plus 3 s of slack, so a trigger
- * that fires and then waits on a gate round trip still finds its own moment in
- * the buffer rather than a window that has already rolled past it.
+ * How far back the frame ring reaches: one grid's span (6 s) plus 3 s of slack,
+ * so a tick that fires and then waits on a composite still finds its own moment
+ * in the buffer rather than a window that has already rolled past it.
  */
 export const BUFFER_MS = 9_000;
 /** Length of a saved clip. Only meaningful when clipping is enabled. */
@@ -66,7 +70,7 @@ export const CLIP_MS = 15_000;
  * They are the single most expensive thing in the pipeline: two MediaRecorders
  * continuously encoding 720p60 for the whole session, purely so that a rare
  * save_clip call has something to harvest. Everything else backseat does (the
- * grid, both local triggers, the gate) is unaffected by turning this off, so
+ * grid, both local triggers, the schedule) is unaffected by turning this off, so
  * this is the first dial to reach for if capture is costing too much.
  */
 export const CLIPS_ENABLED = true;
@@ -108,8 +112,53 @@ export const GRID_H = CELL_H * GRID_ROWS; // 1008
  *  blow the cap and get the grid downscaled behind our back. */
 export const GRID_VISUAL_TOKENS = Math.ceil(GRID_W / 28) * Math.ceil(GRID_H / 28); // 1548
 
-/** The window a grid spans: GRID_FRAMES buckets of one second each. */
-export const GRID_SPAN_MS = GRID_FRAMES * 1000; // 6000
+// ── Frame spacing: logarithmic, not uniform (260801) ──────────────────────
+//
+// Six frames at 1 Hz cannot show a sequence. A dodge-then-fire is roughly
+// 600 ms end to end, so at one sample a second it is either one frame or none,
+// and the companion's "you dodged then fired" was never recoverable from the
+// pixels it was given. Worse, the frames were not even at 1 Hz: the old worker
+// picked each cell by running argmax over audio gain inside a one-second
+// bucket, so consecutive cells landed 40 ms to 1.9 s apart while the prompt
+// claimed "about a second apart". Every temporal inference sat on a false clock.
+//
+// The offsets below are geometric, ratio 2, measured back from the moment the
+// grid is composited. Three consequences, all wanted:
+//
+//   • the same six-second reach as before, so context is not lost;
+//   • the last three cells are all inside the final second, which is where an
+//     action-then-consequence pair actually lives;
+//   • the gaps halve toward the present, which the prompt states, and which is
+//     itself a hint that the bottom of the grid is where to look.
+//
+// Verified on real footage before it was built: on a Valorant grid the HUD
+// round timer reads 1:13 / 1:10 / 1:08 / 1:07 / 1:07 / 1:07 across the cells —
+// exactly the 3.0 / 1.5 / 0.75 / sub-second deltas — and the ammo counter reads
+// 5 / 1 / 6 / 6 / 5 / 4, resolving fire-through-cover, reload, emerge, aim,
+// fire into three distinct states inside the last 600 ms.
+export const GRID_OFFSETS_S = [6.0, 3.0, 1.5, 0.75, 0.375, 0.1875];
+
+/**
+ * Ring sample rate. Uniform 10 Hz: the tightest gap in the table above is
+ * 187 ms (0.375 -> 0.1875), so 100 ms sampling resolves every cell with at most
+ * 50 ms of placement error. One cell-sized JPEG per sample, ~90 resident over
+ * BUFFER_MS (~3 MB) at 10 encodes/second, replacing the old 1/second.
+ *
+ * A tiered scheme (ImageBitmaps for the recent cells, JPEGs for the old) was
+ * considered and rejected: ~18 MB of bitmaps to save 9 encodes/second of a
+ * 602x336 JPEG, and two retention paths where one will do.
+ */
+export const SAMPLE_INTERVAL_MS = 100;
+
+/**
+ * How far a sample may sit from its target offset before the cell is left
+ * black instead. At 10 Hz nothing inside the buffer ever exceeds 50 ms, so in
+ * practice this only fires for cells older than the session itself.
+ */
+export const SAMPLE_TOLERANCE_MS = 500;
+
+/** The window a grid spans: its oldest cell. */
+export const GRID_SPAN_MS = GRID_OFFSETS_S[0] * 1000; // 6000
 
 // ── Audio: gain + transcript, never the model's ears ──────────────────────
 //
@@ -158,22 +207,53 @@ export const TICK_TRANSCRIPT_MAX_CHARS = 600;
 
 // ── Cadence ───────────────────────────────────────────────────────────────
 
-/** How often the salience gate looks at a fresh grid. */
-export const GATE_INTERVAL_MS = 6_000;
+// ── The scheduled look ────────────────────────────────────────────────────
+//
+// The steady-state wake. No model decides this and nothing about the screen
+// feeds into it: the companion simply glances up every so often, sees whatever
+// is there, and stays quiet if nothing happened. Its opening line (tickNote's
+// 'idle' branch) is what sets the bar for speaking, not the schedule.
+
+/** Never sooner than this after the last look. */
+export const IDLE_MIN_MS = 12_000;
+/** Mean of the exponential tail ADDED to the floor. */
+export const IDLE_MEAN_EXTRA_MS = 16_000;
+/** Never later than this. ~5% of draws land exactly here. */
+export const IDLE_MAX_MS = 60_000;
+
+/**
+ * How long to wait before the next scheduled look: a shifted exponential,
+ * clamped to [IDLE_MIN_MS, IDLE_MAX_MS], mean ~28 s.
+ *
+ * The distribution matters more than the numbers. Past the floor an
+ * exponential has a CONSTANT hazard rate, which is the formal way of saying
+ * the wait is memoryless: however long it has already been quiet, the next
+ * look is no more imminent than it was a moment ago, so the player cannot
+ * learn the rhythm. A uniform draw over the same range has exactly the
+ * opposite property — the longer the silence runs, the more overdue the next
+ * line becomes — which is the metronome feel this is avoiding.
+ *
+ * `rand` is injected so tests and the offline sim can seed it.
+ */
+export function nextIdleDelayMs(rand: () => number = Math.random): number {
+  // -ln(1-u) is the inverse CDF of Exp(1); scaling gives the mean we want.
+  const extra = -Math.log(1 - rand()) * IDLE_MEAN_EXTRA_MS;
+  return Math.min(IDLE_MIN_MS + extra, IDLE_MAX_MS);
+}
 
 /**
  * Floor between two companion lines, whatever raised them. Backseat is a
  * commentator, not a stream of consciousness: without this a jolt landing on
- * the heels of a gate tick produces two lines about the same moment.
+ * the heels of an idle tick produces two lines about the same moment.
  * A 'user' tick ignores it — being talked to always earns an answer.
  */
 export const MIN_SPEAK_GAP_MS = 8_000;
 
 /**
- * Refractory period for the local jolt trigger. The gate already covers the
- * steady state; a jolt exists to catch the thing that happened 300 ms after
- * the last gate call, so it needs to be rare enough that it never becomes the
- * dominant source of ticks.
+ * Refractory period for the local jolt trigger. The idle schedule covers the
+ * steady state; a jolt exists to put a look ON the moment that matters rather
+ * than up to a minute later, so it needs to be rare enough that it never
+ * becomes the dominant source of ticks.
  */
 export const JOLT_REFRACTORY_MS = 20_000;
 
@@ -222,7 +302,9 @@ export interface BackseatSource {
   appIcon?: string;
 }
 
-export type BackseatTickKind = 'user' | 'gate' | 'jolt';
+/** Descending priority. A tick preempts an in-flight turn of strictly lower
+ *  priority and is dropped otherwise; see backseatService.handleTick. */
+export type BackseatTickKind = 'user' | 'jolt' | 'idle';
 
 /**
  * One unit of work sent renderer -> main. `grid` is a JPEG data URL of the
@@ -290,10 +372,6 @@ export const BACKSEAT_ERR_NO_SOURCE = 'BACKSEAT_NO_SOURCE';
  *   backseatGetState(characterId): Promise<BackseatState | null>
  *   backseatTick(tick: BackseatTick): Promise<void>
  *     Raise a tick. Main decides whether it becomes a spoken line.
- *   backseatGate(characterId, grid, transcript?): Promise<boolean>
- *     Ask the small VLM whether this grid (plus what the audio said over it)
- *     is interesting. Resolves false on any error, so a gate outage degrades
- *     to "quiet", never to "chatty".
  *   backseatAudioStart(): Promise<{sampleRate, channels} | null>
  *     macOS only: spawn the bundled system-audio tap and start relaying PCM to
  *     this window on backseat:pcm. Null when the tap cannot run (not macOS,
