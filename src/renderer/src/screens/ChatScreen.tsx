@@ -808,7 +808,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         </div>
 
         {/* ── Floating composer (hovers over the chat window) ── */}
-        <div className={styles.composerDock}>
+        {/* data-chat-composer: MiniTile measures this dock to float above it. */}
+        <div className={styles.composerDock} data-chat-composer>
           {showTyping ? (
             <div className={styles.typingLine} aria-live="polite">
               {t('{name} is typing…', { name: companionName })}

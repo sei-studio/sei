@@ -560,6 +560,25 @@ export const UserConfigSchema = z.object({
    */
   call_convo_starters: z.boolean().optional().default(true),
   /**
+   * 260730 — call backdrop mode, per character id: true = open the call in the
+   * character's scene (or, for characters with no scene, on their art) instead
+   * of the avatar-tile view. Toggled from the call's own controls, not
+   * Settings, and remembered so the next call opens the way you left it.
+   *
+   * SPARSE ON PURPOSE. An absent key means "never chosen", which is not the
+   * same as false: a character with a custom scene opens in it by default,
+   * everyone else opens on the tiles. Writing a value for every character on
+   * first call would flatten that.
+   *
+   * Keyed by the DIALED character (participants[0]) so a group call inherits
+   * the preference for whoever was called.
+   *
+   * No `.default({})`: the field stays OPTIONAL on the output type so the
+   * onboarding paths that build a whole fresh config need not mention it, and
+   * so "no preferences yet" and "an empty map" stay the same thing.
+   */
+  call_backdrop: z.record(z.boolean()).optional(),
+  /**
    * 260705: the chat presence side panel is OPEN by default; closing it is a
    * sticky preference that survives companion switches and app restarts
    * (hydrated into useUiStore.chatPanelHidden like realistic_typing).

@@ -1,47 +1,47 @@
 /**
- * MiniTile — the bottom-right picture-in-picture tile (260730).
+ * MiniTile — the bottom-right return tile (260730).
  *
  * When a game surface (chess or Draw!) or a voice call is live but its screen
- * is not the one on view, a small rectangular tile floats in the bottom-right
- * corner so the session stays visible and one click away:
+ * is not the one on view, a small fixed-size tile floats in the bottom-right
+ * corner so the session stays one click away. Discord-activity style: it is a
+ * static card, not a live preview.
  *
- *   game — the live game shrunk small (the 2D chess board / a repaint of the
- *          draw canvas), with a "<" button in the top-left that re-opens the
- *          hosting screen. The game area's split-size pref restores its
- *          previous size, so "<" is a true re-expand, not a fresh open.
- *   call — the AI participants' portraits (never the player's own) on the
- *          same tinted background as the chat profile panel (dominant portrait
- *          color washed over --bg2); click returns to the fullscreen call view.
+ *   game — the game's own picker art (lib/games.ts tile image).
+ *   call — the AI participants' portraits (never the player's own).
  *
- * A live game tile REPLACES the call tile when both are away: the call
- * already shows its cluster inside the game surface's own chrome row, so the
- * game view is the richer thing to come back through.
+ * The ONLY interactive element is the labeled back button in the top-left
+ * ("‹ Chess", "‹ Call"); the rest of the tile is inert. A live game tile
+ * replaces the call tile when both are away: the call already shows its
+ * cluster inside the game surface's own chrome row.
  *
  * In chat with the profile panel open, the tile shifts left by the panel's
- * width so it overlays the chat column but never the panel. Every tile
- * darkens toward its edges (inset vignette) so it reads as a window into the
- * other surface rather than a piece of the current one.
+ * width so it overlays the chat column but never the panel. In chat it also
+ * measures the floating composer dock ([data-chat-composer]) and floats just
+ * above it, so it never covers the message box (260730).
+ *
+ * Suppressed entirely while a game surface is in in-app fullscreen: the game
+ * owns every pixel there and its chrome row already carries the call cluster.
+ * Likewise the CALL tile never shows on a screen whose live game surface is on
+ * view (chess/MC dashboard in the viewed chat, the live Draw! route): those
+ * surfaces show the call cluster in their own chrome row, and the tile was
+ * landing on top of their chat column (260730).
  *
  * Minecraft sessions deliberately get NO tile: their "game window" is the
  * player's own Minecraft outside the app; the icon-rail badge stays the
  * ambient indicator there. Chess replays get none either (nothing is live).
  */
 
-import React, { useEffect, useRef } from 'react';
-import { CANVAS_W } from '@shared/drawIpc';
+import React from 'react';
 import { useUiStore, type View } from '../lib/stores/useUiStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/useChessStore';
 import { useDrawStore } from '../lib/stores/useDrawStore';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
-import { ChessBoard } from './chess/ChessBoard';
-import { paintStrokes } from './draw/drawRender';
+import { GAMES } from '../lib/games';
 import { PixelPortrait } from './PixelPortrait';
 import { BackIcon } from './icons';
 import { pickPalette } from '../lib/portraitPalettes';
-import { portraitSrc } from '../lib/portraitSrc';
-import { useDominantColor } from '../lib/useDominantColor';
 import { useT } from '../lib/i18n';
 import styles from './MiniTile.module.css';
 
@@ -75,9 +75,46 @@ function isDrawLive(phase: string | undefined): boolean {
   return phase === 'pick' || phase === 'drawing' || phase === 'turn-end';
 }
 
+/**
+ * Bottom offset that clears the chat composer. When the chat screen is on
+ * view its floating composer dock spans the column bottom, exactly where the
+ * tile sits; measure it ([data-chat-composer]) and float the tile just above.
+ * ResizeObserver tracks the dock growing (multiline draft, reply bar, typing
+ * line) so the tile rides up with it. `key` is the viewed chat's characterId,
+ * null when no composer is on screen.
+ */
+function useComposerClearance(key: string | null): number {
+  const [bottom, setBottom] = React.useState(EDGE_PX);
+  React.useLayoutEffect(() => {
+    if (key === null) {
+      setBottom(EDGE_PX);
+      return;
+    }
+    const el = document.querySelector('[data-chat-composer]');
+    if (!(el instanceof HTMLElement)) {
+      setBottom(EDGE_PX);
+      return;
+    }
+    const update = (): void => {
+      const top = el.getBoundingClientRect().top;
+      setBottom(Math.max(EDGE_PX, window.innerHeight - top + 10));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener('resize', update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [key]);
+  return bottom;
+}
+
 export function MiniTile(): React.ReactElement | null {
   const view = useUiStore((s) => s.view);
   const chatPanelHidden = useUiStore((s) => s.chatPanelHidden);
+  const gameFullscreen = useUiStore((s) => s.gameFullscreen);
   const participants = useVoiceStore((s) => s.participants);
   const callStatus = useVoiceStore((s) => s.status);
   const characters = useDataStore((s) => s.characters);
@@ -85,14 +122,18 @@ export function MiniTile(): React.ReactElement | null {
   const chessState = useChessStore((s) => s);
   const drawGames = useDrawStore((s) => s.games);
   const mcLaunch = useMcDashboardStore((s) => s.launch);
+  const bottom = useComposerClearance(
+    view.kind === 'chat' && !gameFullscreen ? view.characterId : null,
+  );
 
   if (!TILE_VIEWS.has(view.kind)) return null;
+  // In-app fullscreen: the game surface owns every pixel (rail, chat and top
+  // bar are gone) and its chrome row already carries the call cluster.
+  if (gameFullscreen) return null;
 
   // The first roster character with a live game surface whose hosting screen
   // is not on view. Chess (and the MC dashboard) live in the chat screen; the
-  // Draw! game is its own route. A real game object is required (not just
-  // isChessOpen's panel intent): without one the board renders null and the
-  // tile would collapse to an empty sliver.
+  // Draw! game is its own route.
   let away: AwayGame | null = null;
   for (const c of characters) {
     if (chessState.games[c.id]) {
@@ -108,15 +149,6 @@ export function MiniTile(): React.ReactElement | null {
     }
   }
 
-  const callExists =
-    participants.length > 0 && (callStatus === 'live' || callStatus === 'connecting');
-  const showCall = !away && callExists && view.kind !== 'voice-call';
-
-  if (!away && !showCall) return null;
-
-  // In chat with the profile panel showing, sit left of the panel instead of
-  // on top of it. The panel force-collapses to 0 while the viewed chat hosts
-  // its own game surface, so no push is needed there.
   const viewedId = view.kind === 'chat' ? view.characterId : null;
   const viewedHostsGame =
     viewedId !== null &&
@@ -124,13 +156,38 @@ export function MiniTile(): React.ReactElement | null {
       isChessReplayOpen(chessState, viewedId) ||
       summons[viewedId]?.kind === 'online' ||
       mcLaunch[viewedId] === true);
+  // A game surface on view already shows the call cluster in its own chrome
+  // row (GameSurface in chat, GameChromeRow on the Draw! route), so the call
+  // tile would only duplicate it on top of the game's chat column.
+  const onViewGameSurface =
+    viewedHostsGame ||
+    (view.kind === 'draw' && isDrawLive(drawGames[view.characterId]?.phase));
+
+  const callExists =
+    participants.length > 0 && (callStatus === 'live' || callStatus === 'connecting');
+  const showCall = !away && callExists && view.kind !== 'voice-call' && !onViewGameSurface;
+
+  if (!away && !showCall) return null;
+
+  // In chat with the profile panel showing, sit left of the panel instead of
+  // on top of it. The panel force-collapses to 0 while the viewed chat hosts
+  // its own game surface, so no push is needed there.
   const pushed = viewedId !== null && !chatPanelHidden && !viewedHostsGame;
   const right = pushed ? PANEL_W + EDGE_PX : EDGE_PX;
 
   return away ? (
-    <GameTile characterId={away.characterId} game={away.game} right={right} />
+    <GameTile characterId={away.characterId} game={away.game} right={right} bottom={bottom} />
   ) : (
-    <CallTile right={right} />
+    <CallTile right={right} bottom={bottom} />
+  );
+}
+
+function BackChip({ label, onClick }: { label: string; onClick: () => void }): React.ReactElement {
+  return (
+    <button type="button" className={styles.backBtn} onClick={onClick}>
+      <BackIcon size={12} />
+      <span>{label}</span>
+    </button>
   );
 }
 
@@ -138,80 +195,26 @@ function GameTile({
   characterId,
   game,
   right,
-}: AwayGame & { right: number }): React.ReactElement {
+  bottom,
+}: AwayGame & { right: number; bottom: number }): React.ReactElement {
   const t = useT();
   const navigate = useUiStore((s) => s.navigate);
+  const def = GAMES.find((g) => g.id === game);
   const open = (): void => {
     navigate(game === 'draw' ? { kind: 'draw', characterId } : { kind: 'chat', characterId });
   };
 
   return (
-    <div
-      className={styles.tile}
-      style={{ right }}
-      role="button"
-      tabIndex={0}
-      onClick={open}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          open();
-        }
-      }}
-      aria-label={t('Back to game')}
-      title={t('Back to game')}
-    >
-      <div className={game === 'chess' ? styles.chessBox : styles.drawBox}>
-        {game === 'chess' ? <ChessBoard characterId={characterId} /> : <DrawMini characterId={characterId} />}
-      </div>
-      <div className={styles.vignette} aria-hidden="true" />
-      <button
-        type="button"
-        className={styles.backBtn}
-        onClick={(e) => {
-          e.stopPropagation();
-          open();
-        }}
-        aria-label={t('Back to game')}
-        title={t('Back to game')}
-      >
-        <BackIcon size={12} />
-      </button>
+    <div className={styles.tile} style={{ right, bottom }}>
+      {def?.image ? (
+        <img src={def.image} alt="" aria-hidden="true" className={styles.art} />
+      ) : null}
+      <BackChip label={t(def?.name ?? 'Back to game')} onClick={open} />
     </div>
   );
 }
 
-/**
- * Static repaint of the draw canvas from the last pushed state. During the
- * character's drawing turn `strokes` may run ahead of the hand-speed playback
- * the full screen shows; for a glanceable thumbnail, current-and-complete
- * beats faithfully-paced.
- */
-function DrawMini({ characterId }: { characterId: string }): React.ReactElement {
-  const state = useDrawStore((s) => s.games[characterId]);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (w === 0) return;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    paintStrokes(ctx, state?.strokes ?? [], {
-      background: '#ffffff',
-      scale: (w * dpr) / CANVAS_W,
-    });
-  }, [state]);
-
-  return <canvas ref={canvasRef} className={styles.drawCanvas} />;
-}
-
-function CallTile({ right }: { right: number }): React.ReactElement {
+function CallTile({ right, bottom }: { right: number; bottom: number }): React.ReactElement {
   const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const participants = useVoiceStore((s) => s.participants);
@@ -220,35 +223,12 @@ function CallTile({ right }: { right: number }): React.ReactElement {
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
 
-  // Same wash as the chat profile panel: the primary participant's dominant
-  // portrait color at 20% over --bg2 (ChatScreen §4.5).
-  const primary = characters.find((c) => c.id === participants[0]);
-  const tint = useDominantColor(
-    portraitSrc(primary?.portrait_image ?? null),
-    primary?.cloud_updated_at ?? null,
-  );
-  const background = tint ? `color-mix(in srgb, ${tint} 20%, var(--bg2))` : 'var(--bg2)';
-
   const open = (): void => {
     if (participants[0]) navigate({ kind: 'voice-call', characterId: participants[0] });
   };
 
   return (
-    <div
-      className={styles.tile}
-      style={{ right, background }}
-      role="button"
-      tabIndex={0}
-      onClick={open}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          open();
-        }
-      }}
-      aria-label={t('Return to call')}
-      title={t('Return to call')}
-    >
+    <div className={styles.tile} style={{ right, bottom }}>
       <div className={styles.callRow}>
         {participants.map((id) => {
           const c = characters.find((x) => x.id === id);
@@ -272,7 +252,7 @@ function CallTile({ right }: { right: number }): React.ReactElement {
           );
         })}
       </div>
-      <div className={styles.vignette} aria-hidden="true" />
+      <BackChip label={t('Call')} onClick={open} />
     </div>
   );
 }

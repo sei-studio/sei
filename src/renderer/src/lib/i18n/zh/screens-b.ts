@@ -304,11 +304,11 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Let the cast decide, or beyond the binary.': '交给召唤决定，或超越二元性别。',
 
   // ── UniqueCastingScreen ───────────────────────────────────────────
-  'Casting their soul…': '正在铸造他们的灵魂…',
-  'Giving them a face…': '正在赋予他们容貌…',
-  'Weaving their skin…': '正在编织他们的皮肤…',
-  'Teaching them who they are…': '正在教会他们认识自己…',
-  'Binding to your world…': '正在与你的世界绑定…',
+  'Finding someone for you…': '正在为你寻找合适的人……',
+  'Seeing their face…': '正在看清 TA 的样子……',
+  "Sorting out what they'll wear…": '正在准备 TA 的装扮……',
+  'Hearing their story…': '正在听 TA 讲自己的故事……',
+  'Bringing them over…': '正在把 TA 带过来……',
   'Sign in to continue': '请登录后继续',
   'Meeting a unique companion needs a Sei account. Sign in and try again.':
     '遇见独特伙伴需要 Sei 账户。请登录后重试。',

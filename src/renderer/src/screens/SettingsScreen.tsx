@@ -787,13 +787,14 @@ export function SettingsScreen(): React.ReactElement {
             </div>
 
             {/* 260706: full questionnaire retake (age feel / what you're
-                looking for / art style), prefilled, returning here. */}
+                looking for / art style), prefilled, returning here. 260731:
+                Sui asks it, in her scene, rather than a form. */}
             <div className={styles.row}>
               <span className={styles.label}>{t('Companion preferences')}</span>
               <Button
                 kind="ghost"
                 size="sm"
-                onClick={() => navigate({ kind: 'profile-questions', next: 'settings', mode: 'all' })}
+                onClick={() => navigate({ kind: 'sui-prefs', next: 'settings' })}
               >
                 {t('Update my preferences')}
               </Button>

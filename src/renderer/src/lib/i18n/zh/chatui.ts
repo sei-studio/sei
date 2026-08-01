@@ -52,6 +52,8 @@ export const ZH_CHATUI: Record<string, string> = {
   'Unmute': '取消静音',
   'Deafen': '拒听',
   'Undeafen': '取消拒听',
+  'Show the scene': '显示场景',
+  'Show the call view': '显示通话界面',
   'Hang up': '挂断',
 
   // McDashboardPanel

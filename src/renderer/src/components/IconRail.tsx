@@ -12,8 +12,8 @@
  *      Each socket carries a top-right activity badge when the character is
  *      on a voice call (phone) or in a live game session (controller) — see
  *      avatarActivityBadge below.
- *   5. Round + button — always visible; opens the awaken flow, or a
- *      "Party full" explainer when every companion slot is taken (260728)
+ *   5. Round + button — opens the awaken flow; hidden once every companion
+ *      slot is taken (260731b)
  *   6. Flex spacer
  *   7. Credits/Cloud icon — StarIcon (4-point) in BOTH states for consistent
  *      rail iconography; only the click target differs:
@@ -330,9 +330,6 @@ export function IconRail(): React.ReactElement {
   // finish signing in we complete the switch automatically (see effect below).
   const [pendingCloudAfterSignIn, setPendingCloudAfterSignIn] = useState(false);
   const [hoverTip, setHoverTip] = useState<TooltipState | null>(null);
-  // 260728: the + socket is always rendered; a click while every companion
-  // slot is taken opens this explainer instead of the awaken flow.
-  const [showPartyFull, setShowPartyFull] = useState(false);
 
   // Flip the AI backend to cloud-proxy (the canonical switch SettingsScreen
   // uses), refresh the credits store so the rail swaps to the Playtime icon +
@@ -483,27 +480,33 @@ export function IconRail(): React.ReactElement {
               setHover={setHoverTip}
             />
           ))}
-          {/* 260728: ALWAYS rendered. It used to unmount when the counted set
-              reached MAX_COMPANION_SLOTS, and any state where the count and the
-              visible roster disagreed made the button silently vanish with no
-              way to tell why ("+ is missing" report). A permanent entry point
-              with a "party full" dialog on click is discoverable in every
-              state, and chars:save stays the authoritative backstop. */}
-          <button
-            type="button"
-            className={`${styles.circleButton} ${view.kind === 'awaken' || view.kind === 'add-character' ? styles.circleActive : ''}`}
-            onClick={() => {
-              if (homeCharacters.length >= MAX_COMPANION_SLOTS) setShowPartyFull(true);
-              else navigate({ kind: 'awaken' });
-            }}
-            aria-label={t('Awaken a companion')}
-            onMouseEnter={(e) => attachHover(e.currentTarget, t('Awaken'), setHoverTip)}
-            onMouseLeave={() => setHoverTip(null)}
-            onFocus={(e) => attachHover(e.currentTarget, t('Awaken'), setHoverTip)}
-            onBlur={() => setHoverTip(null)}
-          >
-            <PlusIcon size={18} />
-          </button>
+          {/* Hidden once the party is full (260731b), which reverts the 260728
+              "always rendered" rule. That rule was written for a real bug — the
+              button vanished in states where the COUNTED set and the VISIBLE
+              roster disagreed, so it read as broken rather than as full — and it
+              paid for discoverability with a dead-end click and a dialog.
+
+              The two sets cannot disagree here: sortedCharacters IS
+              homeCharacters capped at MAX_COMPANION_SLOTS, so the moment the
+              count reaches the cap the rail is showing exactly that many
+              circles. A full rail with no + is then self-explanatory, which the
+              button plus an apology never was. chars:save remains the
+              authoritative backstop, and the World tab's slots indicator still
+              spells out "Party full" in words. */}
+          {homeCharacters.length < MAX_COMPANION_SLOTS ? (
+            <button
+              type="button"
+              className={`${styles.circleButton} ${view.kind === 'awaken' || view.kind === 'add-character' ? styles.circleActive : ''}`}
+              onClick={() => navigate({ kind: 'awaken' })}
+              aria-label={t('Awaken a companion')}
+              onMouseEnter={(e) => attachHover(e.currentTarget, t('Awaken'), setHoverTip)}
+              onMouseLeave={() => setHoverTip(null)}
+              onFocus={(e) => attachHover(e.currentTarget, t('Awaken'), setHoverTip)}
+              onBlur={() => setHoverTip(null)}
+            >
+              <PlusIcon size={18} />
+            </button>
+          ) : null}
         </div>
 
         <div className={styles.spacer} />
@@ -560,26 +563,6 @@ export function IconRail(): React.ReactElement {
         >
           {hoverTip.label}
         </div>
-      ) : null}
-
-      {showPartyFull ? (
-        <ModalShell
-          title={t('Party full')}
-          onClose={() => setShowPartyFull(false)}
-          scrimClose
-        >
-          <p className={styles.cloudPromptBody}>
-            {t(
-              'All {n} companion slots are taken. Release a companion from their page to make room for a new one.',
-              { n: MAX_COMPANION_SLOTS },
-            )}
-          </p>
-          <ModalFooter>
-            <Button kind="primary" size="md" onClick={() => setShowPartyFull(false)}>
-              {t('Got it')}
-            </Button>
-          </ModalFooter>
-        </ModalShell>
       ) : null}
 
       {showCloudPrompt ? (

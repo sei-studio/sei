@@ -333,6 +333,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // all the edit surfaces hide behind one predicate.
   const isNonEditableKind = character.kind !== 'custom';
   const viewOnly = isDefault || isForeignOwned || isNonEditableKind;
+  // 260731 — publishing keys on OWNERSHIP, not editability. An Awakened
+  // ('unique') companion is view-only because its persona was cast rather than
+  // written, but it is still the user's to share, so it gets the same
+  // public/private toggle a hand-made one does. Only bundled defaults (D-22,
+  // refused at the IPC boundary anyway) and foreign-owned World characters are
+  // excluded. Kept separate from `viewOnly` so the edit surfaces stay hidden.
+  const canShare = !isDefault && !isForeignOwned;
   const isWorldPreview = isForeignOwned && !addedWorldIds.has(character.id);
   const isAddedFromWorld = isForeignOwned && addedWorldIds.has(character.id);
   // World-preview / removed-default entries aren't in the library yet — no
@@ -375,7 +382,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     }
     if (!character.shared) {
       const hasDescription = (character.description ?? '').trim().length > 0;
-      if (!hasDescription) {
+      // The description gate only applies where the user can actually satisfy
+      // it. A non-editable kind has no editor to open, so demanding one would
+      // be a dead end; an Awakened companion is always cast with a description
+      // anyway (buildDescription in uniqueGeneration), so this is a fallback.
+      if (!hasDescription && !viewOnly) {
         // Description is edited in the modal now — open it at Basic and resume
         // the publish when the modal closes with a description present.
         setNeedsDescription(true);
@@ -662,9 +673,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               {/* Reset memory moved into the deploy row's settings (gear) menu. */}
             </div>
 
-            {/* Public/private share toggle (own chars only), in its own box
-                under the stat boxes. */}
-            {!viewOnly ? (
+            {/* Public/private share toggle (own chars only, Awakened ones
+                included — see canShare), in its own box under the stat boxes. */}
+            {canShare ? (
               <div className={styles.shareBox}>
                 <Toggle
                   on={character.shared}
