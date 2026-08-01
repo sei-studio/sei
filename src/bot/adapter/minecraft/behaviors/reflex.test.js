@@ -17,6 +17,7 @@ import {
   closestApproach,
   scanThreats,
   resolveReflexThresholds,
+  inFieldOfView,
 } from './reflex.js'
 
 function makeBot() {
@@ -137,6 +138,82 @@ describe('scanThreats (classification + priority)', () => {
     const th = resolveReflexThresholds({ creeper_flee_enter_blocks: 12 })
     const threat = scanThreats(bot, cfg().adapter.minecraft, th)
     expect(threat?.kind).toBe('creeper')
+  })
+})
+
+describe('inFieldOfView + scanThreats sight gate (head direction, not body)', () => {
+  // mineflayer convention (same as gaze.js aimAt): yaw 0 faces -z, pitch
+  // positive is up. cos(60°) = cos of the default 120°-total half-angle.
+  const COS60 = Math.cos(Math.PI / 3)
+  const eye = (yaw = 0, pitch = 0) => ({ yaw, pitch, position: { x: 0, y: 0, z: 0 } })
+
+  it('target straight ahead is in view; directly behind is not', () => {
+    expect(inFieldOfView(eye(), { x: 0, y: 1.62, z: -5 }, COS60)).toBe(true)
+    expect(inFieldOfView(eye(), { x: 0, y: 1.62, z: 5 }, COS60)).toBe(false)
+  })
+
+  it('target 90° off the look direction is outside a 120° cone', () => {
+    expect(inFieldOfView(eye(), { x: 5, y: 1.62, z: 0 }, COS60)).toBe(false)
+    // ...but inside once the head turns toward it (yaw -PI/2 faces +x... check:
+    // viewDir.x = -sin(-PI/2) = 1).
+    expect(inFieldOfView(eye(-Math.PI / 2), { x: 5, y: 1.62, z: 0 }, COS60)).toBe(true)
+  })
+
+  it('fails OPEN when the entity has no yaw/pitch (no head data → cannot gate)', () => {
+    expect(inFieldOfView({ position: { x: 0, y: 0, z: 0 } }, { x: 0, y: 0, z: 5 }, COS60)).toBe(true)
+  })
+
+  it('a melee mob behind the bot is not a threat; the same mob in front is', () => {
+    const bot = makeBot()
+    bot.entity.yaw = 0
+    bot.entity.pitch = 0
+    bot.entities[2] = { id: 2, name: 'zombie', position: { x: 0, y: 0, z: 3 } } // behind
+    expect(scanThreats(bot, cfg().adapter.minecraft)).toBeNull()
+    bot.entities[2].position = { x: 0, y: 0, z: -3 } // in front
+    expect(scanThreats(bot, cfg().adapter.minecraft)?.kind).toBe('melee')
+  })
+
+  it('a calm creeper behind the bot is invisible; a FUSING one panics at any facing (the hiss)', () => {
+    const bot = makeBot()
+    bot.entity.yaw = 0
+    bot.entity.pitch = 0
+    bot.entities[7] = { id: 7, name: 'creeper', position: { x: 0, y: 0, z: 5 } } // behind, in band
+    expect(scanThreats(bot, cfg().adapter.minecraft)).toBeNull()
+    bot.entities[7].metadata = { 16: 1 } // fuse lit — audio cue, sight gate exempt
+    const threat = scanThreats(bot, cfg().adapter.minecraft)
+    expect(threat?.kind).toBe('creeper')
+    expect(threat?.panic).toBe(true)
+  })
+
+  it('an arrow flying in from behind never triggers a dodge', () => {
+    const bot = makeBot()
+    bot.entity.yaw = 0
+    bot.entity.pitch = 0
+    // Dead-on collision course, but from +z (behind a yaw-0 bot).
+    bot.entities[2] = { id: 2, name: 'arrow', position: { x: 0, y: 0, z: 5 }, velocity: { x: 0, y: 0, z: -1 } }
+    expect(scanThreats(bot, cfg().adapter.minecraft)).toBeNull()
+    bot.entities[2].position = { x: 0, y: 0, z: -5 } // same arrow, in front
+    bot.entities[2].velocity = { x: 0, y: 0, z: 1 }
+    expect(scanThreats(bot, cfg().adapter.minecraft)?.kind).toBe('arrow')
+  })
+
+  it('a skeleton drawing its bow behind the bot never arms the pre-emptive sidestep', () => {
+    const bot = makeBot()
+    bot.entity.yaw = 0
+    bot.entity.pitch = 0
+    bot.entities[3] = { id: 3, name: 'skeleton', position: { x: 0, y: 0, z: 10 }, metadata: { 8: 1 } }
+    expect(scanThreats(bot, cfg().adapter.minecraft)).toBeNull()
+    bot.entities[3].position = { x: 0, y: 0, z: -10 }
+    expect(scanThreats(bot, cfg().adapter.minecraft)?.kind).toBe('arrow')
+  })
+
+  it('reflex_fov_deg: 360 disables the gate entirely', () => {
+    const bot = makeBot()
+    bot.entity.yaw = 0
+    bot.entity.pitch = 0
+    bot.entities[2] = { id: 2, name: 'zombie', position: { x: 0, y: 0, z: 3 } } // behind
+    const threat = scanThreats(bot, cfg().adapter.minecraft, resolveReflexThresholds({ reflex_fov_deg: 360 }))
+    expect(threat?.kind).toBe('melee')
   })
 })
 
