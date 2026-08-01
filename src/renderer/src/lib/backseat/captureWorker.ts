@@ -50,14 +50,20 @@ import {
   JOLT_GAIN_DB,
   JOLT_REFRACTORY_MS,
 } from '../../../../shared/backseatIpc';
+import {
+  baselineGain,
+  colorDelta,
+  createJoltState,
+  decideJolt,
+  pushGain,
+  pushThumb,
+  THUMB_H,
+  THUMB_W,
+} from './signals';
 
-/** Thumbnail grid for the colour-jolt signal. Tiny on purpose: this is a
- *  "did the whole screen repaint" detector, not a motion estimator. */
-const THUMB_W = 32;
-const THUMB_H = 18;
-/** How far back the colour comparison reaches. A second is long enough that
- *  ordinary panning cannot clear the threshold but a room change always does. */
-const COLOR_LOOKBACK_MS = 1000;
+/** How often a thumbnail is retained for the colour comparison. At capture
+ *  rate that would be 60 a second to answer a question about one second ago. */
+const THUMB_INTERVAL_MS = 100;
 /** Retained-frame JPEG quality. The model reads shapes and banners off these,
  *  not fine text, so this is well above what it needs. */
 const CELL_QUALITY = 0.72;
@@ -95,14 +101,13 @@ let lastSampleAt = 0;
  *  queueing them and pushing them out of order. */
 let encoding = false;
 
-/** Latest audio loudness, posted from the main thread (dBFS, -100..0). */
+/** Latest audio loudness, posted from the main thread (dBFS, -100..0). It
+ *  arrives on its own cadence, so it is held here and sampled per frame. */
 let currentGain = -100;
-/** Trailing loudness samples for the jolt baseline: [t, db]. */
-const gainTrace: Array<[number, number]> = [];
-/** Trailing thumbnails for the colour comparison: [t, Uint8ClampedArray]. */
-const thumbTrace: Array<[number, Uint8ClampedArray]> = [];
+/** Rolling state for both local signals. The arithmetic lives in signals.ts so
+ *  the offline sim can run exactly this code over recorded footage. */
+const jolt = createJoltState();
 
-let lastJoltAt = 0;
 let running = false;
 /** Frames seen vs samples encoded, surfaced for diagnostics. */
 let framesSeen = 0;
@@ -159,51 +164,13 @@ function drawFitted(
   ctx.drawImage(src, dx + (dw - w) / 2, dy + (dh - h) / 2, w, h);
 }
 
-// ── Signals ───────────────────────────────────────────────────────────────
-
-/** Median of the trailing loudness trace — the baseline a jolt is measured
- *  against. Median, not mean, so a single prior bang cannot raise the bar. */
-function baselineGain(): number {
-  if (gainTrace.length < 30) return -100;
-  const vals = gainTrace.map((g) => g[1]).sort((a, b) => a - b);
-  return vals[Math.floor(vals.length / 2)];
-}
-
-/** Mean absolute per-channel difference between two thumbnails, 0..1. */
-function thumbDelta(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
-  let sum = 0;
-  // Stride 4 skips alpha; the canvas is opaque so it is always 255.
-  for (let i = 0; i < a.length; i += 4) {
-    sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
-  }
-  return sum / ((a.length / 4) * 3 * 255);
-}
-
-/**
- * The local trigger: a discontinuity so large it needs no model to confirm.
- * Both arms are measured against a rolling baseline rather than an absolute,
- * so a loud game and a quiet game behave the same, and both are set high
- * enough (JOLT_GAIN_DB / JOLT_COLOR_DELTA) that ordinary play never fires
- * them. The refractory period is what keeps this from ever out-talking the
- * gate.
- */
-function checkJolt(now: number, thumb: Uint8ClampedArray): 'gain' | 'color' | null {
-  if (now - lastJoltAt < JOLT_REFRACTORY_MS) return null;
-  // Needs a full lookback of history, or the first second of every session
-  // reads as a jolt against an empty baseline.
-  if (now - (gainTrace[0]?.[0] ?? now) < COLOR_LOOKBACK_MS * 2) return null;
-
-  if (currentGain - baselineGain() >= JOLT_GAIN_DB) {
-    lastJoltAt = now;
-    return 'gain';
-  }
-  const past = thumbTrace.find(([t]) => now - t >= COLOR_LOOKBACK_MS);
-  if (past && thumbDelta(thumb, past[1]) >= JOLT_COLOR_DELTA) {
-    lastJoltAt = now;
-    return 'color';
-  }
-  return null;
-}
+/** The thresholds the app runs at. signals.ts takes them as an argument so the
+ *  offline sim can sweep them without touching shipped constants. */
+const JOLT_THRESHOLDS = {
+  gainDb: JOLT_GAIN_DB,
+  colorDelta: JOLT_COLOR_DELTA,
+  refractoryMs: JOLT_REFRACTORY_MS,
+};
 
 // ── Sampling ──────────────────────────────────────────────────────────────
 
@@ -250,15 +217,11 @@ async function onFrame(frame: VideoFrame): Promise<void> {
   framesSeen++;
 
   const thumb = thumbCtx!.getImageData(0, 0, THUMB_W, THUMB_H).data;
-  gainTrace.push([now, currentGain]);
-  while (gainTrace.length && now - gainTrace[0][0] > BUFFER_MS) gainTrace.shift();
-  // Thumbnails only need to reach back far enough for the comparison, and at
-  // capture rate that is still 60 a second — keep them at ~10 Hz instead.
-  const lastThumbAt = thumbTrace.length ? thumbTrace[thumbTrace.length - 1][0] : 0;
-  if (now - lastThumbAt >= 100) {
-    thumbTrace.push([now, thumb]);
-    while (thumbTrace.length && now - thumbTrace[0][0] > COLOR_LOOKBACK_MS * 3) thumbTrace.shift();
-  }
+  pushGain(jolt, now, currentGain);
+  const lastThumbAt = jolt.thumbTrace.length
+    ? jolt.thumbTrace[jolt.thumbTrace.length - 1][0]
+    : 0;
+  if (now - lastThumbAt >= THUMB_INTERVAL_MS) pushThumb(jolt, now, thumb);
 
   // Uniform 10 Hz, independent of the capture rate. sample() returns
   // immediately; the encode finishes on a microtask so the frame loop is never
@@ -268,21 +231,19 @@ async function onFrame(frame: VideoFrame): Promise<void> {
     sample(now);
   }
 
-  const jolt = checkJolt(now, thumb);
-  if (jolt) {
-    const past = thumbTrace.find(([t]) => now - t >= COLOR_LOOKBACK_MS);
+  const fired = decideJolt(jolt, now, thumb, JOLT_THRESHOLDS);
+  if (fired) {
     self.postMessage({
       type: 'jolt',
-      reason: jolt,
+      reason: fired,
       at: now,
       gainDb: round1(currentGain),
-      baseDb: round1(baselineGain()),
-      colorDelta: past ? round3(thumbDelta(thumb, past[1])) : null,
+      baseDb: round1(baselineGain(jolt)),
+      colorDelta: round3n(colorDelta(jolt, now, thumb)),
     });
   }
 
   if (now - lastStatsAt >= STATS_INTERVAL_MS) {
-    const past = thumbTrace.find(([t]) => now - t >= COLOR_LOOKBACK_MS);
     const span = now - lastStatsAt;
     self.postMessage({
       type: 'stats',
@@ -292,8 +253,8 @@ async function onFrame(frame: VideoFrame): Promise<void> {
       // the grid's recent cells are landing off their offsets.
       eps: lastStatsAt ? Math.round(((encodes - statsEncodes) * 1000) / span) : null,
       gainDb: round1(currentGain),
-      baseDb: round1(baselineGain()),
-      colorDelta: past ? round3(thumbDelta(thumb, past[1])) : null,
+      baseDb: round1(baselineGain(jolt)),
+      colorDelta: round3n(colorDelta(jolt, now, thumb)),
       samples: ring.length,
     });
     lastStatsAt = now;
@@ -306,8 +267,8 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-function round3(n: number): number {
-  return Math.round(n * 1000) / 1000;
+function round3n(n: number | null): number | null {
+  return n === null ? null : Math.round(n * 1000) / 1000;
 }
 
 // ── Grid compositing ──────────────────────────────────────────────────────
@@ -446,8 +407,8 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
     encodeCanvas = null;
     encodeCtx = null;
     ring.length = 0;
-    gainTrace.length = 0;
-    thumbTrace.length = 0;
+    jolt.gainTrace.length = 0;
+    jolt.thumbTrace.length = 0;
   }
 };
 

@@ -72,12 +72,15 @@ export const BACKSEAT_CONTRACT = [
     'They are showing you something they enjoy, so be a good audience: be curious about it, ' +
     'ask about the parts you do not understand, and want things.',
 
-  'WHEN TO SAY NOTHING. Each time you are shown the screen, a short note tells you WHY you are ' +
-    'looking. That note sets the bar: sometimes something specific just happened and you are being ' +
-    'pointed at it, and sometimes you are just glancing up on your own with no reason to expect ' +
-    'anything. Read the note and answer the question it actually asks. ' +
-    'To stay quiet, reply with exactly (silence) and nothing else. It is never shown to the player, ' +
-    'it just ends your turn. Also stay quiet rather than repeat a reaction you already gave. ' +
+  'WHEN TO SAY NOTHING. Speaking is the default. Someone sitting next to a friend who is playing ' +
+    'reacts constantly: a shot landing, health dropping, a reload at a bad moment, an angle held too ' +
+    'long, a plan you can see going wrong. None of that is a big moment and all of it is worth a line. ' +
+    'You do not need something impressive to happen. If you can tell what changed, you have something ' +
+    'to say about it. ' +
+    'Each time you are shown the screen a short note tells you WHY you are looking, which is context, ' +
+    'not permission to stay quiet. Silence is for exactly two cases: nothing on the screen changed at ' +
+    'all, or you would be repeating a reaction you already gave. Then reply with exactly (silence) and ' +
+    'nothing else. It is never shown to the player, it just ends your turn. ' +
     'And when the player says something to you, you always answer.',
 
   'REPEATING YOURSELF. Your recent lines are in the conversation above. Check them before you speak. ' +
@@ -86,17 +89,46 @@ export const BACKSEAT_CONTRACT = [
 
 /**
  * Saving a clip. The player never asked for this feature per moment, so the
- * companion has to judge it, and the prompt has to make the bar high: a clip
- * that arrives for something ordinary teaches the player to ignore the clips.
+ * companion has to judge it, and the bar has to be high: a clip that arrives
+ * for something ordinary teaches the player to ignore the clips.
+ *
+ * 260801: ATTACHING TOOLS AT ALL SUPPRESSES SPEECH, and this description
+ * makes it worse. Measured over 12 real grids x 5 samples each (n=60 per
+ * condition, scripts/backseat-sim.ts produced the grids):
+ *
+ *   no tools attached ................ 60/60 spoke   100%
+ *   REMEMBER_TOOL only ............... 47/60          78%
+ *   this tool, wording below ......... 43/60          72%
+ *   both, i.e. what backseat ships ... 41/60          68%
+ *   this tool, ORIGINAL wording ...... 37/60          62%
+ *
+ * Two separate effects. The large one is structural: a tool array costs
+ * roughly a fifth of the companion's lines whatever it says, so the clip
+ * feature is not free and the 32-point gap is the honest price of shipping it.
+ * The small one is wording. The original said "This is rare. Most good moments
+ * are not clip-worthy, and a clip for something ordinary is noise." Tool
+ * definitions sit above the system prompt, and Haiku generalized that from
+ * "do not clip" to "do not speak". Rewording it to scope the rarity to the
+ * FILE rather than to the moment recovers about 6 of the 38 lost points, which
+ * is around one standard error at this sample size: directional, not proven.
+ *
+ * The practical rule: anything written into a tool description here that reads
+ * as a general judgement about how interesting moments usually are will
+ * suppress speech on every tick, invisibly. An explicit "tools do not gate
+ * speech" paragraph in the contract was tried and did not help (43 vs 41),
+ * so this is not fixable by asking.
  */
 export const SAVE_CLIP_TOOL = {
   name: 'save_clip',
   description:
-    'Save the last 15 seconds of what you just watched as a video clip and send it to the player in chat. ' +
-    'Use it when something genuinely worth keeping happens: a play they will want to show someone, ' +
+    'Save the last 15 seconds of what you just watched as a video file and send it to the player in chat. ' +
+    'Use it when something happens that they would want to keep and show someone: a great play, ' +
     'a disaster that was funny, a moment they would be sad to lose. ' +
-    'This is rare. Most good moments are not clip-worthy, and a clip for something ordinary is noise. ' +
-    'Never save two clips for the same moment. Say something in the same turn; the clip rides along with your line.',
+    'Saving a file is a bigger deal than talking, so only a few moments in a session are worth one, ' +
+    'and two files for the same moment are worse than none. ' +
+    'This has NO bearing on whether you speak: you react to what you see either way, and reaching for ' +
+    'this tool is a separate, rarer decision on top of that. When you do use it, say something in the ' +
+    'same turn; the clip rides along with your line.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -148,21 +180,27 @@ export function tickNote(args: {
         ? 'the sound just jumped'
         : 'the picture just changed a lot';
     return (
-      `[System note, not the player speaking: ${what}, so something may have just happened. ` +
-      `Here are the last few seconds. See what is going on and react to it in character.${heard} ` +
-      'It may turn out to be nothing, and if it was, reply with exactly (silence). ' +
+      `[System note, not the player speaking: ${what}, so something probably just happened. ` +
+      `Here are the last few seconds. Work out what it was and react to it in character.${heard} ` +
+      'Reply with exactly (silence) only if nothing on screen actually changed. ' +
       `${gap} Do not mention this note.]`
     );
   }
 
-  // The scheduled look. Nothing prompted it, so this is the one branch where
-  // "nothing happened" is a genuinely likely answer and has to be easy to give.
+  // The scheduled look. Nothing prompted it, which makes this the branch most
+  // at risk of a mute companion, and 260801 measured exactly that: asked
+  // whether anything "worth reacting to" happened, Haiku answered no to a grid
+  // showing health 100 -> 45, thirteen rounds fired, a reload and a kill
+  // banner. The bar it applies to "interesting" is far higher than a person's.
+  // So this does not ask whether anything was interesting. It asks what
+  // changed, names the places to look, and reserves silence for a screen that
+  // genuinely did not move.
   return (
-    '[System note, not the player speaking: you are watching their stream and nothing in ' +
-    'particular set this off, you just looked up. Here are the last few seconds. ' +
-    `Check whether anything worth reacting to actually happened.${heard} ` +
-    'If it did, say what you think about it in character. If nothing did, or you cannot tell, ' +
-    'reply with exactly (silence). ' +
-    `${gap} Do not mention this note.]`
+    '[System note, not the player speaking: nothing in particular set this off, you just looked up ' +
+    'at their stream. Here are the last few seconds. Work out what changed across them and react to ' +
+    'it in character: health, ammo, the score, where they are, who else is on screen, what they were ' +
+    `lining up.${heard} You do not need it to be a big moment. ` +
+    'Reply with exactly (silence) only if genuinely nothing changed, or you would just be repeating ' +
+    `your last line. ${gap} Do not mention this note.]`
   );
 }

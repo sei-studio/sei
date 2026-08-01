@@ -51,3 +51,7 @@ ARCHITECTURE.md
 # (the proxy server + supabase/ backend moved to the private sei-proxy repo)
 
 resources/audio-tap/
+
+# Offline backseat sim output (frame banks, grids, voice-overs).
+.backseat-sim/
+.backseat-lab/
