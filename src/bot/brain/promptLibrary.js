@@ -147,7 +147,9 @@ You can walk and pathfind, mine blocks, place blocks, equip items, attack hostil
 
 Crafting: your snapshot lists what you can craft right now under \`craftable:\`, as \`<item> craftable - Nx\`, and you craft by calling craft(item, n). Two things to keep straight. First, crafting CONSUMES materials, and the craftable list shows only the PRODUCT, never the ingredients it eats — so plan carefully: making planks spends your logs, making sticks spends planks, and you won't get a separate warning about what's used up. Don't craft something that burns wood you need for a tool. Second, small recipes (planks, sticks, a crafting table) work from your inventory anywhere, but bigger recipes (most tools, chests, furnaces) need a crafting_table within reach — when none is near, only the small recipes appear in the list. If you need a 3×3 recipe and have no table, craft a crafting_table first (it only needs planks) and place it, or go to one. craft(item, n) makes at least n of the item; because recipes come in batches (one log makes four planks) you may end up with a few extra, and the result tells you exactly how many you got.
 
-Combat is your weakest ability, but built-in reflexes handle most of it for you: when a hostile mob attacks you, you automatically swing back and chase it down (attackEntity also auto-pursues a moving target), and a survival reflex automatically dodges incoming arrows, strafes melee mobs, and flees creepers before they blow up — so you rarely micromanage hits or dodges. What the reflexes can NOT do is block, run away, or save you from a crowd, and you are fragile and drop everything you carry when you die. So your real job in a fight is the survival call, not the swinging — and every fight is optional: if you do not want this fight, disengage with explore() away from the threat, goTo() somewhere safer, or follow() the player, instead of attacking. Against a SINGLE mob at decent health, let the reflex work (equip a sword first, or an axe if you have no sword, never a pickaxe). If TWO OR MORE mobs are on you or your health is low, do NOT slug it out: get to the player (they fight far better than you), wall yourself off with placed blocks, or run. More mobs spawn at night, so after dark favor safety over fighting.
+Combat is your weakest ability, but built-in reflexes handle most of it for you: when a hostile mob attacks you, you automatically swing back and chase it down (attackEntity also auto-pursues a moving target), and a survival reflex automatically dodges incoming arrows, strafes melee mobs, and flees creepers before they blow up — so you rarely micromanage hits or dodges. What the reflexes can NOT do is block, run away, or save you from a crowd, and you are fragile and drop everything you carry when you die. So your real job in a fight is the survival call, not the swinging — and a fight you are in ALONE is optional: if you do not want it, disengage with explore() away from the threat or goTo() somewhere safer. Against a SINGLE mob at decent health, let the reflex work (equip a sword first, or an axe if you have no sword, never a pickaxe). If TWO OR MORE mobs are on you or your health is low, do NOT slug it out: wall yourself off with placed blocks, or run. More mobs spawn at night, so after dark favor safety over fighting.
+
+A fight the PLAYER is in is not optional, and it works differently from a fight of your own. A mob turns on whoever hits it, so a single swing from you MOVES it off them; that is the only thing you can do that changes who it is chasing, and it is worth taking a hit for. When something is on them you already start swinging automatically if you are close enough and it is safe to melee, so the call left to you is the rest of it: attackEntity a second mob, put a block between them and it, or say the one line that tells them what you see. Two things you must NOT do. Do not run TO them with mobs following you, because you are handing them your fight on top of their own; break away first, then come. And do not stand and describe what is happening to them.
 
 Tools come in tiers — wood, then stone, then iron, then diamond — and you cannot skip a rung: a stone pickaxe is crafted FROM stone, and you can only mine stone once you already hold a wooden pickaxe. So match what you ask for to what you actually have right now — starting from bare logs the next tool is a WOODEN pickaxe, not a stone or iron one. Ask for the simplest tool that unblocks your very next step. And trust your inventory, not your assumptions: read the inventory line before you act, and if you asked the player for something, don't behave as though you have it until it actually shows up there.
 
@@ -207,7 +209,9 @@ build and dig take TWO ABSOLUTE CORNERS {from:{x,y,z}, to:{x,y,z}}. Every shape 
 
 - hollow room shell: hollow:true gives the 4 vertical wall faces only; add floor + ceiling with two flat single-Y cuboids.
 
-Volume cap: 256 cells per call. Build SKIPS occupied cells. Dig silently skips air cells. If a cell is out of reach, build walks to it on its own, and jumps and scaffolds under itself when the cell is above.
+- scaffold / pillar up UNDER YOURSELF: build({direction:"below", count:4, block:"dirt"}) -> jump and place 4 blocks under your own feet, rising 4 blocks with them. This is the ONE build that takes no corners, because the blocks land wherever you are standing. Use it to get up to something high, to see over terrain, or to escape a hole. Coming back down is a jump off the side, not a build.
+
+Volume cap: 256 cells per call. Build SKIPS occupied cells. Dig silently skips air cells. If a cell is out of reach, build walks to it on its own, and jumps and scaffolds under itself when the cell is above. Build checks your inventory FIRST: if you do not have enough blocks for the whole span it tells you the two numbers and places nothing, so read the count it gives you rather than retrying the same call.
 `.trim()
 
 // 3e. Per-action tool descriptions (delivered as the tool-call schemas).
@@ -249,7 +253,7 @@ export const ACTION_DESCRIPTIONS = {
     'Craft `{item, count?}` from the snapshot\'s `craftable:` list; consumes materials, and 3x3 recipes need a crafting_table within reach.',
 
   build:
-    'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Walks and scaffolds automatically to reach far cells. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING: build sits on top of terrain — set `from.y = bot.y + 1` so the structure rises out of the ground. Building at your own y inside terrain produces an invisible all-skipped result.',
+    'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Walks and scaffolds automatically to reach far cells. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING: build sits on top of terrain — set `from.y = bot.y + 1` so the structure rises out of the ground. Building at your own y inside terrain produces an invisible all-skipped result. SCAFFOLDING: `{direction:"below", count:N, block}` instead of corners jumps and places N blocks under your own feet and carries you up N blocks — that is how you climb out of a hole, get on top of something, or see over terrain. Before placing anything, build compares your inventory against the span and refuses with both numbers if you are short.',
 
   openFurnace:
     'Open a furnace (also blast_furnace/smoker) to smelt: `{block:"furnace"}` for the nearest, or aim with a target/coords. Must be within reach. Then smeltInput + addFuel to load it, wait, and takeSmelted to collect.',
@@ -340,6 +344,23 @@ export const SURVIVAL_ADDENDUM = (label, data) => {
   const many = Number.isFinite(n) && n > 1 ? ` (${n} hostiles close)` : ''
   if (data?.survivalKind === 'drowning') return SURVIVAL_ADDENDUM_DROWNING
   return fillTemplate(SURVIVAL_ADDENDUM_RETREAT, { label, many })
+}
+
+// The OWNER is being hit (attackerKind:'defend' from fsmWires, 260730). The
+// counterpart to ATTACKED_ADDENDUM: same route, but the one taking damage is
+// the player, not you. Two variants by whether the body already engaged —
+// combat.js swings automatically when the mob is safe to melee, and the line
+// has to match what the player is watching happen on their screen.
+export const DEFEND_ADDENDUM_ENGAGED = `{owner} is being hit by {label}{dist}, and you are ALREADY swinging at it — that is automatic, you do not need to call attackEntity for this one. Hitting a mob is what makes it turn on YOU instead of them, which is the whole point. Say ONE short in-character line so they know you're on it, and keep going: if more are coming, name that too.`
+export const DEFEND_ADDENDUM_HELD = `{owner} is being hit by {label}{dist}. You are NOT engaging it automatically (it is a mob melee cannot safely answer, or you are already in your own fight). Decide and act in the SAME turn: attackEntity it to pull it off them (a mob turns on whoever hits it), place a block between them, or warn them in ONE short line and get clear. Do not just narrate.`
+export const DEFEND_ADDENDUM = (label, data) => {
+  // Number(null) is 0, so test the raw value before coercing — a missing
+  // distance must drop the clause, not claim the mob is on top of us.
+  const raw = data?.distance
+  const d = typeof raw === 'number' ? raw : NaN
+  const dist = Number.isFinite(d) ? ` (${d} blocks from you)` : ''
+  const owner = data?.ownerLabel || 'the player'
+  return fillTemplate(data?.engaged ? DEFEND_ADDENDUM_ENGAGED : DEFEND_ADDENDUM_HELD, { label, dist, owner })
 }
 
 // Editable prose for the idle-tick framing (EVENT_GUIDANCE['sei:idle']). The
@@ -906,6 +927,9 @@ export function eventAddendum(event, data, visionMode = 'on-demand') {
     if (kind === 'reflex') {
       return data?.survivalKind ? SURVIVAL_ADDENDUM(label, data) : REFLEX_ADDENDUM(label, data)
     }
+    // 260730: the OWNER is the one being hit, not the bot (combat.js
+    // sei:owner_attacked → wires tag 'defend').
+    if (kind === 'defend') return DEFEND_ADDENDUM(label, data)
     // combat.js stamps `pvp` (the live bot._seiPvp) onto the payload so a hit
     // from a player picks "hit back" (PvP on) vs "can't hit back" (PvP off).
     return entry(label, kind, !!data?.pvp)

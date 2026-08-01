@@ -1,6 +1,23 @@
+import pkg from 'mineflayer-pathfinder'
 import { stopFollow, startFollow } from './follow.js'
 import { createThrottle } from '../../../brain/debounce.js'
 import { HOSTILE_MOBS } from './hostiles.js'
+
+const { goals } = pkg
+
+// Melee reach the server will accept a swing at. Matches attack.js's REACH.
+const REACH = 3.5
+// Pursuit goal range while closing on a mob during a DEFEND engagement. Under
+// REACH so pathfinder parks the bot inside swing range on a moving target.
+const DEFEND_FOLLOW_RANGE = 2
+
+/**
+ * Mobs the bot must NEVER auto-engage in melee to defend the player: closing
+ * on a creeper is how you set it off, and the survival reflex is already
+ * running the other way (reflex.js creeper-flee). The event still fires, so the
+ * model can warn the player or place a block; it just does not walk into it.
+ */
+const NO_MELEE_DEFEND = new Set(['creeper', 'ghast', 'blaze', 'elder_guardian', 'ravager', 'warden'])
 
 function resolveAttacker(bot, source) {
   // Trust an identified source first — including players. The previous
@@ -29,6 +46,10 @@ export function startCombat(bot, config) {
   let _target = null
   let _attackLoop = null
   let _exitTimer = null
+  // Defend-engagement state: whether the current engagement may WALK to its
+  // target, and which entity id owns bot._seiOffensiveTarget because of it.
+  let _pursue = false
+  let _pursueTargetId = null
 
   // ── Per-bot runtime flags (NOT persisted; reset each session) ──────────────
   // Goal / control ownership rules these flags participate in:
@@ -60,8 +81,104 @@ export function startCombat(bot, config) {
   const throttleMs = Number.isFinite(mc.attack_react_throttle_ms) ? mc.attack_react_throttle_ms : 3500
   if (throttleMs > 0) bot._seiAttackThrottle = createThrottle(throttleMs)
 
-  function startAttacking(target) {
+  // ── Defending the owner (260730) ──────────────────────────────────────────
+  // Until now this listener returned immediately unless the bot ITSELF was
+  // hurt, so the owner being swarmed produced no event, no reaction, and no
+  // help: the companion found out only if the player said something out loud.
+  // That is the whole of the "why do the mobs never go for Sui" report — in a
+  // live session the mobs were as often nearer to her as to the player, and
+  // she had no idea any of it was happening.
+  //
+  // Vanilla targeting is the reason a swing is the fix rather than positioning:
+  // a mob that gets hit runs HurtByTargetGoal and switches to whoever hit it.
+  // So one landed swing MOVES the aggro, and nothing else the bot can do
+  // does. Automatic (like retaliation) rather than model-driven, because a
+  // model round trip is 2-4s of the player taking hits, and the event still
+  // fires so the turn can escalate, warn, or run.
+  const defendOwner = mc.defend_owner !== false
+  const defendRadius = Number.isFinite(mc.defend_radius_blocks) ? mc.defend_radius_blocks : 16
+  if (throttleMs > 0) bot._seiDefendThrottle = createThrottle(throttleMs)
+
+  function ownerNames() {
+    return [config?.player_username, config?.player_display_name]
+      .filter((s) => typeof s === 'string' && s.length > 0)
+      .map((s) => s.toLowerCase())
+  }
+
+  /** Is this hurt entity the owner's player entity? */
+  function isOwner(entity) {
+    const name = entity?.username ?? entity?.name
+    if (!name) return false
+    return ownerNames().includes(String(name).toLowerCase())
+  }
+
+  function handleOwnerHurt(owner, source) {
+    const target = resolveAttacker(bot, source)
+    // No identifiable attacker, or another player hitting them (their fight,
+    // and hitting a player needs the PvP opt-in anyway) — stay out of it.
+    if (!target) return
+    if (target === bot.entity || target.id === bot.entity?.id) return // our own spar
+    if (!HOSTILE_MOBS.has(target.name)) return
+
+    const me = bot.entity?.position
+    const at = target.position
+    let dist = null
+    try { if (me && at) dist = me.distanceTo(at) } catch (_) { dist = null }
+    if (dist == null || dist > defendRadius) return // too far to be our fight
+
+    const payload = {
+      attacker: target,
+      attackerLabel: target.name ?? 'a mob',
+      attackerKind: 'defend',
+      ownerLabel: config?.player_display_name || owner?.username || 'the player',
+      distance: Math.round(dist),
+      // The model needs to know whether the body already did something, so its
+      // line matches what the player is watching happen.
+      engaged: false,
+    }
+
+    // Engage: swing at the mob so its aggro moves off the player. Skipped for
+    // the mobs melee cannot safely answer (NO_MELEE_DEFEND), while the bot is
+    // paused/AFK, while a safety reflex owns the body, or when a fight of our
+    // own is already running (that one is the more urgent of the two).
+    const canMelee =
+      defendOwner &&
+      !bot._seiPaused &&
+      !NO_MELEE_DEFEND.has(target.name) &&
+      !bot._seiReflexActive && !bot._seiSurvivalActive && !bot._seiCriticalRetreat &&
+      (_target == null || _target.id === target.id)
+    if (canMelee) {
+      payload.engaged = true
+      if (_target?.id !== target.id) {
+        stopFollow()
+        _pursueTargetId = target.id
+        // Claim the deliberate-target flag so reflex.js stops kiting the mob we
+        // are walking INTO (same contract attack.js uses).
+        bot._seiOffensiveTarget = target.id
+        startAttacking(target, { pursue: true })
+      }
+      clearTimeout(_exitTimer)
+      _exitTimer = setTimeout(stopAttacking, 4000)
+    }
+
+    if (bot._seiDefendThrottle) {
+      bot._seiDefendThrottle.throttle(`defend:${target.name}`, payload, (p) => bot.emit('sei:owner_attacked', p))
+    } else {
+      bot.emit('sei:owner_attacked', payload)
+    }
+  }
+
+  /**
+   * @param {object} target
+   * @param {{ pursue?: boolean }} [opts] — `pursue` walks the bot into swing
+   *   range instead of only facing + swinging from where it stands. OFF for
+   *   retaliation (the bot was hit, so the attacker is already in reach, and
+   *   moving would walk off the knockback stagger); ON for defending the owner,
+   *   where the mob is on THEM and closing the gap is the entire point.
+   */
+  function startAttacking(target, { pursue = false } = {}) {
     _target = target
+    _pursue = pursue
     clearInterval(_attackLoop)
     clearTimeout(_exitTimer)
 
@@ -83,6 +200,20 @@ export function startCombat(bot, config) {
       if (!Number.isFinite(vel.x) || !Number.isFinite(vel.y) || !Number.isFinite(vel.z)) return
       if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return
 
+      // Defend pursuit: close the gap when the mob is out of swing range. A
+      // swing from further away is silently dropped by the server, so without
+      // this a "defend the player" engagement is the bot standing still
+      // waving at a zombie 6 blocks away. Never touches the goal while a
+      // safety reflex owns it (creeper flee / survival takeover) or during a
+      // player-knockback stagger — the same ownership rules as attack.js.
+      if (_pursue && !bot._seiReflexActive && !bot._seiSurvivalActive &&
+          !bot._seiCriticalRetreat && !inStagger()) {
+        try {
+          const d = pos.distanceTo(live.position)
+          if (d > REACH) bot.pathfinder?.setGoal?.(new goals.GoalFollow(live, DEFEND_FOLLOW_RANGE), true)
+        } catch (_) {}
+      }
+
       try {
         // Zombies face their target — inverting their yaw is cheaper and more reliable
         // than computing ours from bot position (which may still be stale).
@@ -93,17 +224,31 @@ export function startCombat(bot, config) {
     }, 250)
   }
 
+  function inStagger() {
+    return bot._seiStaggerUntil != null && Date.now() < bot._seiStaggerUntil
+  }
+
   function stopAttacking() {
     clearInterval(_attackLoop)
     clearTimeout(_exitTimer)
     _attackLoop = null
     _target = null
+    // Release the deliberate-target flag so reflex.js resumes its own kiting,
+    // and only if it is still OURS (a later engagement's flag must survive).
+    if (_pursue && bot._seiOffensiveTarget === _pursueTargetId) bot._seiOffensiveTarget = null
+    _pursue = false
+    _pursueTargetId = null
     try { bot.pathfinder?.stop() } catch (_) {}
     startFollow(bot, config)
   }
 
   bot.on('entityHurt', (entity, source) => {
-    if (entity !== bot.entity) return
+    if (entity !== bot.entity) {
+      // 260725 play/pause: a frozen bot does not come to anyone's rescue.
+      if (bot._seiPaused) return
+      if (isOwner(entity)) handleOwnerHurt(entity, source)
+      return
+    }
     // 260725 play/pause: while the player has the game paused the bot takes
     // hits like an AFK player. No retaliation, and no sei:attacked either —
     // the FSM hold would only bank it and fire a stale panic on resume.

@@ -14,6 +14,7 @@ import { nextMilestone, readProgressionState } from './progression.js'
 // em-dash + y=<currentY> channels byte-stable; only the elapsed
 // trailer changes from `(Xs)` to `started=Xs ago` (locked in CONTEXT.md).
 import { getInFlightLineForSnapshot } from '../../../brain/inflight.js'
+import { tallyAggro, aggroLine, AGGRO_PAIR_RANGE } from './aggro.js'
 
 const MAX_ENTITIES = 6
 
@@ -298,6 +299,22 @@ export function composeSnapshot(bot, opts = {}) {
       // (otherwise it can read them as two different people).
       const liveName = owner?.username && owner.username !== pinUsername ? ` (in-game ${owner.username})` : ''
       lines.push(`owner ${pinUsername}${liveName}: @${ox},${oy},${oz}${dist != null ? ` (${dist} blocks away)` : ''}`)
+      // Who the hostiles are on (260731). Only worth printing when the two of
+      // us are close enough for it to be ONE fight — see AGGRO_PAIR_RANGE. Not
+      // line-of-sight filtered like `nearby entities`: a zombie hitting the
+      // player from behind a corner is still on the player, and a tally that
+      // silently omits it reads as "nothing is happening". Best-effort.
+      if (dist != null && dist <= AGGRO_PAIR_RANGE) {
+        try {
+          const tally = tallyAggro({
+            mobs: Object.values(bot.entities ?? {}),
+            selfPos: me.position,
+            ownerPos: ownerEnt.position,
+          })
+          const line = aggroLine({ tally, ownerLabel: pinUsername })
+          if (line) lines.push(line)
+        } catch { /* an inference line never breaks a snapshot tick */ }
+      }
     } else {
       lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)`)
     }
