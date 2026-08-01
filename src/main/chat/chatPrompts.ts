@@ -25,6 +25,8 @@ import {
   renderLanguageDirective,
 } from '../../bot/brain/promptLibrary.js';
 import type { ChatLanguage } from '../../shared/chatLanguage';
+import { audioTagDirective } from '../voice/audioTags';
+import { renderGamesDirective } from '../../shared/games';
 
 export interface BuildSystemArgs {
   persona: Persona;
@@ -123,6 +125,18 @@ export interface BuildSystemArgs {
    * DATA, never instructions. ''/absent = no block.
    */
   knowledge?: string;
+  /**
+   * 260730: a frozen clock string (from clockNow()) for game surfaces. The
+   * status block is the LAST system block, so in the cache prefix (tools →
+   * system → messages) it sits ABOVE every message: when the minute rolls over
+   * mid-session, everything cached after it — including a game's whole
+   * incrementally-cached tool thread — re-bills at write price. Chat turns are
+   * minutes apart so a live clock costs only the status tail there, but a
+   * game's tool loop runs many hops across many minutes on a growing thread.
+   * Game surfaces pin the clock at session start so the system prefix stays
+   * byte-stable for the whole game. Ignored for surface 'chat'.
+   */
+  pinnedClock?: string;
 }
 
 /**
@@ -158,6 +172,13 @@ export function groupCallNote(peers: string[]): string {
 }
 
 export type SystemBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
+
+/** "Fri 3 Jul 2026, 10:34" — for `pinnedClock`: game surfaces stamp this once
+ *  at session start so the status block (and the cache prefix above their tool
+ *  threads) stays byte-stable for the whole game. */
+export function clockNow(): string {
+  return formatNow();
+}
 
 /** "Fri 3 Jul 2026, 10:34" — current local time for the per-turn status block. */
 function formatNow(): string {
@@ -207,7 +228,15 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
         ? ''
         : 'Player messages are prefixed with the time they were sent, like "[3 Jul 10:34]". ' +
           'Use it to notice gaps — a new day or a long silence deserves acknowledgment, not mid-conversation continuity. ' +
-          'Never copy the format: your own replies must not contain timestamps.'),
+          'Never copy the format: your own replies must not contain timestamps.\n\n' +
+          // What the two of you can play (260730). Static text, injected the
+          // same way the launch tool's description is: nothing per-character,
+          // nothing generated. It lives HERE, in the existing static block,
+          // rather than in one of its own, so it costs tokens and not a cache
+          // breakpoint (the budget is 4 and all four are spoken for). Game
+          // surfaces skip it for the same reason they skip the Minecraft
+          // status block: they are already inside a game.
+          renderGamesDirective()),
   }];
 
   // Persona block carries the cache boundary. Same renderer as the MC bot; the
@@ -225,6 +254,15 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   personaParts.push(
     args.voiceCall === true ? VOICE_PUNCTUATION_DIRECTIVE : renderPunctuationDirective(args.punctuation),
   );
+  // Performance directions (260730). Empty today and therefore not pushed: the
+  // shipped TTS model reads `[laughs]` aloud instead of performing it, so
+  // audioTagDirective() returns '' and the character is never told the ability
+  // exists. Stripping runs regardless (splitReply, speechTextFor). See
+  // voice/audioTags.ts for the measurements and for what a model swap costs.
+  if (args.voiceCall === true) {
+    const tags = audioTagDirective();
+    if (tags) personaParts.push(tags);
+  }
   blocks.push({ type: 'text', text: personaParts.join('\n\n') });
 
   // 260725 Knowledge — user-uploaded reference material. Sits between persona
@@ -289,8 +327,10 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
     type: 'text',
     text: isGame
       ? // A game surface has no launch tool and is not about Minecraft, so the
-        // clock is the only fact here that still applies to it.
-        `The current date and time is ${formatNow()}.`
+        // clock is the only fact here that still applies to it. Pinned per
+        // session when the caller provides it — a live clock here re-bills the
+        // surface's whole cached tool thread on every minute rollover.
+        `The current date and time is ${args.pinnedClock ?? formatNow()}.`
       : `The current date and time is ${formatNow()}.\n` +
         `${connLine}\n` +
         (args.openWorldDetected
@@ -298,7 +338,7 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
             'Only call launch when the player clearly asks you to play or join right now. ' +
             'A question like "are you in the game?" or "can you see my world?" is NOT a request to join — just answer it in words; do not launch.'
           : 'World status: no open Minecraft world is detected — the player has none open to LAN, so launch would fail. ' +
-            'Do not call launch. If they want to play, walk them through opening their world to LAN in your own words. ' +
+            'Do not call launch. If they want to play Minecraft, walk them through opening their world to LAN in your own words. ' +
             'You cannot see their screen, so describe the steps, do not quote any status text.'),
   });
 
@@ -318,7 +358,9 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   //     system prompt is a cache hit; a minute rollover misses only this tail.
   // markLastMessageCached() adds the fourth breakpoint (the transcript) per
   // turn — exactly Anthropic's 4-breakpoint budget (3 when persona IS the
-  // stable block, i.e. no memory or summary yet).
+  // stable block, i.e. no memory or summary yet). All four are spoken for, so
+  // new STATIC prompt text joins an existing block (as # GAMES does) rather
+  // than becoming a block of its own.
   const statusIdx = blocks.length - 1;
   const stableIdx = statusIdx - 1; // persona at minimum (blocks[1]); the last pre-status block
   blocks[1].cache_control = { type: 'ephemeral' };
@@ -358,7 +400,8 @@ export const LAUNCH_TOOL = {
     'Join the player in Minecraft and start playing alongside them — this pulls you out of chat and into their world. ' +
     'ONLY call this when the player clearly asks you to play or join right now (e.g. "let\'s play", "come in", "join me"). ' +
     'Do NOT call it to answer a question about connection status, or just because a world is open. ' +
-    'Currently only "minecraft" is supported. It begins joining immediately; if the player has no LAN world open you will be told so, and should ask them to open one. ' +
+    'Minecraft is the only game you can start yourself; the others in # GAMES are opened by the player, so suggest those in words instead of calling this. ' +
+    'It begins joining immediately; if the player has no LAN world open you will be told so, and should ask them to open one. ' +
     'Whenever you do call it, acknowledge in the same turn that you\'re hopping in.',
   input_schema: {
     type: 'object' as const,

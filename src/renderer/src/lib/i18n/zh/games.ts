@@ -1,7 +1,8 @@
 /** Game surfaces (chess + Draw!). See ../zh.ts for the dictionary rules. */
 export const ZH_GAMES: Record<string, string> = {
-  // ── Mini tile (bottom-right picture-in-picture) ───────────────────────────
+  // ── Mini tile (bottom-right return tile) ──────────────────────────────────
   'Back to game': '返回游戏',
+  'Draw!': '你画我猜！',
   // ── Chess: launch screen ──────────────────────────────────────────────────
   'Chess': '国际象棋',
   'Chess with {name}': '与{name}下棋',
@@ -112,7 +113,7 @@ export const ZH_GAMES: Record<string, string> = {
   // ── Draw!: gallery ────────────────────────────────────────────────────────
   'you': '你',
   'Saving...': '正在保存...',
-  'Save to Desktop': '保存到桌面',
+  'Save to Downloads': '保存到下载文件夹',
   'Play again': '再玩一局',
   'Saved to {path}': '已保存到 {path}',
   'Saved!': '已保存！',
