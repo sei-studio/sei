@@ -285,17 +285,100 @@ than a new process or native npm dep.
 
 ---
 
+## Stage 0 results (260731) — measured, not assumed
+
+Run on `~/Downloads/valorant-clips.mp4` (3:07, 1280x720@60 with audio, an exact
+match for CAPTURE_W/H/FPS so lab grids are pixel-identical to the worker's).
+61 anchors, ~1.4k prompt tokens per narration, whole study cost well under $1.
+
+### Log spacing is validated. Stage 1 is a GO.
+
+The Valorant HUD supplies free ground truth. In the grid at t=60 the round timer
+reads 1:13, 1:10, 1:08, 1:07, 1:07, 1:07 across the cells: exactly the 3.0 /
+1.5 / 0.75 / sub-second deltas of the offset table. In the grid at t=102 the
+ammo counter reads 5, 1, 6, 6, 5, 4, which is fire-through-cover, reload in
+smoke, emerge, spot, aim, fire. Three distinct states inside the final 600 ms,
+all of which collapse to a single frame under the current 1 Hz sampling.
+
+Observed cost: log spacing wastes its dense tail when the player is idle (three
+near-duplicate cells) and earns it back entirely during an engagement. That is
+the right way to be wrong, because idle is exactly when we do not want to talk.
+
+### Novelty-on-narration does NOT work. Stage 3's wake half is a NO-GO as specified.
+
+Calibrated against a "same input, resampled at temp 0.8" ceiling, which is the
+control that makes the rest interpretable:
+
+| pair | embed cosine |
+|---|---|
+| same input, resampled, order preserved (ceiling) | 0.749 |
+| same input, all six frames REVERSED | 0.706 |
+| 3 s apart, temp 0 | 0.660 |
+| unrelated moments >30 s apart (floor) | 0.623 |
+
+Two readings, both decisive:
+
+1. **The usable dynamic range is ~0.13, and sampling noise eats most of it.**
+   Narrations 3 s apart separate from unrelated moments by 0.037. Re-running the
+   SAME input moves the score by 0.25. Any threshold in that band is measuring
+   the narrator's word-choice lottery, not what happened.
+2. **Order sensitivity is only ~35%** ((ceiling - reversed) / (ceiling - floor)).
+   Reversing all six frames perturbs the narration LESS than moving forward
+   three seconds in the same firefight. Real, but far too weak to build on.
+
+Root cause is upstream of the metric: narrations are stereotyped permutations of
+"fires / reloads / uses an ability / gets a kill", and partly hallucinated (a
+"teleportation ability" that never happens; a kill placed at the end of a grid
+where it is plainly in the oldest cell). A better embedder cannot rescue an
+input that carries no signal.
+
+Also measured and rejected:
+
+- **Lexical TF-IDF cosine is unusable.** Median novelty 0.81, fires on 100% of
+  ticks at every threshold. Short stereotyped sentences share almost no rare
+  terms, so everything reads as novel.
+- **Burned-in cell indices did not help** in aggregate (order sensitivity gap
+  0.083 -> 0.093). Two hand-picked examples looked much better, which is exactly
+  how anecdote misleads. Drop the labelling idea from Stage 1 unless something
+  else motivates it.
+- **Multi-image (six separate images, order in the token stream, no grid)**
+  improves ordering somewhat at the SAME token cost (81.6k vs 86.8k prompt
+  tokens for 61 calls) but runs 3-6x slower in wall clock (2.9 s vs 0.5 s per
+  call). NOT calibrated against its own resampling ceiling, so "somewhat" is
+  not yet a number. Parked, not rejected.
+
+### Revised direction
+
+- **Stage 1 proceeds as planned**, minus the cell-labelling sub-idea.
+- **Stage 3 splits.** The narration LOG is still worth building: feeding the main
+  model a timeline and turning discarded ticks into memory are valuable
+  independently of novelty, and nothing above argues against them. The novelty
+  WAKE is not viable on prose narration and should not be built yet.
+- **The salience gate stays** as the wake path for now. The migration flag in
+  Stage 2 is still the right shape, but the default stays `salience`.
+- **Priority shifts to Stages 4 and 5.** The local visual and audio signals
+  measure real physical events rather than a model's prose, they are free, and
+  they are now the most promising route to "when to talk".
+- **Open question for a later pass:** whether a structured narration
+  (`{scene, actions, events, outcome}`, PROMPT_JSON in the lab, written but not
+  yet run) separates where prose does not. Field-wise comparison is the one
+  remaining untested hypothesis and it is cheap.
+
+
+---
+
 ## Progress
 
 Tick these in the same commit as the code that satisfies them, so `git log` and this
 list can never disagree.
 
-- [ ] Stage 0a: lab harness written
-- [ ] Stage 0b: Tier 1 separation report (method screen + narration format)
-- [ ] Stage 0c: Tier 2 separation report on real CSGO footage **(blocked: need clip)**
-- [ ] Stage 1: log-spaced frames
+- [x] Stage 0a: lab harness written (`scripts/backseat-lab.mjs`)
+- [x] Stage 0b: method screen done — see Stage 0 results
+- [x] Stage 0c: Tier 2 run on real Valorant footage — novelty-on-prose REJECTED
+- [ ] Stage 1: log-spaced frames (validated; drop the cell-label sub-idea)
 - [ ] Stage 2: wake-source scaffolding
-- [ ] Stage 3: narrator + narrationLog + novelty
+- [ ] Stage 3a: narrator + narrationLog (timeline/memory value only)
+- [ ] ~~Stage 3b: novelty wake~~ — rejected by Stage 0, salience gate stays
 - [ ] Stage 4: visual signals
 - [ ] Stage 5: audio signals
 - [ ] Retire `salienceGate.ts` after a live session on the novelty path
