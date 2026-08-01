@@ -12,11 +12,18 @@
 // The predicate is pure, so this pins the exact conditions rather than a
 // scripted session: WHICH turns are gated, and what counts as the player
 // having answered.
+//
+// 260731 — the floor is now OFF by default (IDLE_SAY_GAP_MS === 0), because
+// timestamps alone cannot tell a reworded repeat from a new thought and it was
+// killing invitations to play together. The mechanics below are still pinned
+// against an EXPLICIT gap so restoring it is a one-constant change; the last
+// two cases pin the disabled default itself.
 
 import { describe, it, expect } from 'vitest'
 import { shouldSuppressIdleSay, IDLE_SAY_GAP_MS } from './orchestrator.js'
 
 const NOW = 1_800_000_000_000
+const GAP = 45_000
 const said = (secondsAgo, text = 'all good on your end now?') => ({ at: NOW - secondsAgo * 1000, text })
 
 describe('shouldSuppressIdleSay', () => {
@@ -26,15 +33,17 @@ describe('shouldSuppressIdleSay', () => {
       lastSelf: said(10),
       lastPlayer: null,
       now: NOW,
+      gapMs: GAP,
     })).toBe(true)
   })
 
   it('lets it speak once the gap has passed — an unanswered line gets to stand, not to be forever', () => {
     expect(shouldSuppressIdleSay({
       triggerEvent: 'sei:idle',
-      lastSelf: said(IDLE_SAY_GAP_MS / 1000 + 1),
+      lastSelf: said(GAP / 1000 + 1),
       lastPlayer: null,
       now: NOW,
+      gapMs: GAP,
     })).toBe(false)
   })
 
@@ -44,6 +53,7 @@ describe('shouldSuppressIdleSay', () => {
       lastSelf: said(10),
       lastPlayer: { at: NOW - 2000, text: 'almost done' },
       now: NOW,
+      gapMs: GAP,
     })).toBe(false)
   })
 
@@ -55,6 +65,7 @@ describe('shouldSuppressIdleSay', () => {
       lastSelf: said(10),
       lastPlayer: { at: NOW - 30_000, text: 'gimme a sec' },
       now: NOW,
+      gapMs: GAP,
     })).toBe(true)
   })
 
@@ -64,6 +75,7 @@ describe('shouldSuppressIdleSay', () => {
       lastSelf: said(3),
       lastPlayer: null,
       now: NOW,
+      gapMs: GAP,
     })).toBe(true)
   })
 
@@ -78,6 +90,7 @@ describe('shouldSuppressIdleSay', () => {
         lastSelf: said(1),
         lastPlayer: null,
         now: NOW,
+        gapMs: GAP,
       })).toBe(false)
     })
   }
@@ -86,6 +99,22 @@ describe('shouldSuppressIdleSay', () => {
     expect(shouldSuppressIdleSay({
       triggerEvent: 'sei:idle',
       lastSelf: null,
+      lastPlayer: null,
+      now: NOW,
+      gapMs: GAP,
+    })).toBe(false)
+  })
+
+  // 260731: the shipped configuration. Restoring the floor means giving
+  // IDLE_SAY_GAP_MS a non-zero value again, and nothing else.
+  it('is DISABLED in the shipped configuration', () => {
+    expect(IDLE_SAY_GAP_MS).toBe(0)
+  })
+
+  it('a zero gap never gags anything, including the case it was written for', () => {
+    expect(shouldSuppressIdleSay({
+      triggerEvent: 'sei:idle',
+      lastSelf: said(4, 'that means everything to me, actually'),
       lastPlayer: null,
       now: NOW,
     })).toBe(false)
