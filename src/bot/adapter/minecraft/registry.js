@@ -84,13 +84,25 @@ const DigSchema = z.object({
 
 // Cuboid build schema. Schema-layer cell cap prevents any expensive side
 // effect from running with an out-of-bounds cuboid.
+//
+// 260730: `direction:'below'` is the SCAFFOLDING mode — place blocks under
+// your own feet and rise with them. It is the one build whose coordinates are
+// not knowable in advance (the block lands wherever the bot is standing when
+// the jump clears), so it takes `count` instead of two corners; `from`/`to`
+// are optional purely to make room for it.
 const BuildSchema = z.object({
-  from: Vec3Shape,
-  to: Vec3Shape,
+  from: Vec3Shape.optional(),
+  to: Vec3Shape.optional(),
+  direction: z.enum(['below']).optional(),
+  count: z.number().int().min(1).max(24).optional(),
   block: z.string().min(1),
   hollow: z.boolean().optional().default(false),
 }).refine(
-  ({ from, to }) => {
+  (a) => a.direction === 'below' || (a.from != null && a.to != null),
+  { message: 'specify two corners {from,to}, or direction:"below" with count to pillar up' }
+).refine(
+  ({ from, to, direction }) => {
+    if (direction === 'below' || from == null || to == null) return true
     const dx = Math.abs(to.x - from.x) + 1
     const dy = Math.abs(to.y - from.y) + 1
     const dz = Math.abs(to.z - from.z) + 1
@@ -133,6 +145,36 @@ function isCoordsAtKnownPlayer(bot, x, y, z) {
  */
 export function createDefaultRegistry({ visionEnabled = false } = {}) {
   const registry = createRegistry()
+
+  // 260730: follow is a MODE, and any other action ENDS it. `_target` in
+  // follow.js is module-level state that a 1s tick keeps re-installing as a
+  // GoalFollow whenever the body is idle, so a stale target does not just sit
+  // there — it actively yanks the bot back mid-task, and it survives the thing
+  // it was following becoming unreachable (live: the player died, the bot kept
+  // trailing a corpse-position it could not path to and dug itself into a hole
+  // it then could not leave). goTo and explore have cleared it since 260607;
+  // every other acting action now does too, via one wrapper here so a NEW
+  // action inherits the rule instead of having to remember it.
+  //
+  // Exempt, and why:
+  //   follow            — sets the target; clearing it first would be a no-op fight
+  //   goTo, explore     — self-managed: explore's up/down early returns
+  //                       deliberately do NOT move the bot, so they must not
+  //                       drop follow either (see its handler)
+  //   find, readSign,
+  //   look, setPvp      — pure queries / a config toggle. They do not move the
+  //                       body, so "look at that" while trailing keeps trailing.
+  const FOLLOW_EXEMPT = new Set(['follow', 'goTo', 'explore', 'find', 'readSign', 'look', 'setPvp'])
+  const registerRaw = registry.register.bind(registry)
+  registry.register = (name, schema, handler, description = '') => {
+    const wrapped = FOLLOW_EXEMPT.has(name)
+      ? handler
+      : (args, bot, config) => {
+        setFollowTarget(null)
+        return handler(args, bot, config)
+      }
+    return registerRaw(name, schema, wrapped, description)
+  }
 
   registry.register(
     'goTo',
