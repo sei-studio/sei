@@ -1,0 +1,56 @@
+/* CallBackdrop — character art as the call's backdrop. Solo fills the window;
+ * a group splits into equal columns. See the component header for why the art
+ * is painted `cover` in both cases. */
+
+.root {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--window);
+  /* Bottom layer of the call stage's stacking context: everything readable
+     sits above it (see VoiceCallScreen.module.css .stageBackdrop). */
+  z-index: 0;
+}
+
+.pane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  background-size: cover;
+  background-repeat: no-repeat;
+  /* background-position is set inline: the vertical drag moves it. */
+  transition: filter 180ms var(--ease);
+  /* The art is scenery, not a control: no text selection, no ghost drag image. */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Only offer the grab cursor when there is actually somewhere to pan to. */
+.paneDraggable {
+  cursor: grab;
+}
+
+.paneDraggable:active {
+  cursor: grabbing;
+}
+
+/* Group split: with the portraits gone, dimming is what says who is talking. */
+.paneDim {
+  filter: brightness(0.45) saturate(0.7);
+}
+
+/* Natural-size probe for the drag math. Present in the DOM, never seen. */
+.probe {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* No uploaded art: the procedural portrait as wallpaper. Kept crisp rather
+ * than smoothed, so a 12x12 sprite reads as pixel art instead of a blur. */
+.fallbackSprite {
+  image-rendering: pixelated;
+}

@@ -60,6 +60,7 @@ import {
   playMuteClick,
   type StopFn,
 } from '../voice/callTones';
+import { warm as warmPitchBus } from '../voice/pitchBus';
 
 export type CallStatus =
   | 'idle'
@@ -77,8 +78,15 @@ interface VoiceState {
   status: CallStatus;
   /** Any companion audio currently playing (drives the minimized "on call" pulse). */
   speaking: boolean;
-  /** WHICH companion is speaking right now (null when silent). Per-companion
-   * speaking state for the call UIs: a pfp is lit when its id === speakingId. */
+  /**
+   * WHICH companion is speaking right now (null when silent). Per-companion
+   * speaking state for the call UIs: a pfp is lit when its id === speakingId.
+   *
+   * Set from the first AUDIBLE sample of a clip, not from the moment it reaches
+   * the audio queue's playhead (260730). For a streamed clip the playhead comes
+   * first by an entire TTS round trip, so every ring, caption and talking
+   * animation in the app used to start before the voice did.
+   */
   speakingId: string | null;
   /** True while the player's own mic has live speech — lights the SAME ring on
    * the caller's avatar that companions get while speaking. */
@@ -104,6 +112,18 @@ interface VoiceState {
    * a non-blocking prompt offering the local backup-model install. Edge-fired
    * once per call by dictation; dismissing hides it for the rest of the call. */
   sttFallbackPrompt: boolean;
+  /**
+   * 260730 — hold the companion's first line while a call scene plays its
+   * intro. The scene raises this on mount and drops it when the character has
+   * finished walking on, so she starts talking where she stopped rather than
+   * from off-screen.
+   *
+   * It reuses the buffer the 'connecting' window already fills, so nothing new
+   * races it: lines keep arriving and keep queueing, the flush just happens
+   * later. Held lines are never lost, and `setIntroHold(true)` arms a cap so a
+   * scene that somehow never reports arrival cannot mute the call.
+   */
+  introHold: boolean;
 
   /** Dial the first companion, OR add another to a call already open. */
   startCall: (characterId: string) => Promise<void>;
@@ -118,6 +138,8 @@ interface VoiceState {
   acceptSttFallback: () => Promise<void>;
   /** Dismiss the local-backup offer for the rest of this call. */
   dismissSttFallback: () => void;
+  /** 260730: hold (or release) the companion's first line for a scene intro. */
+  setIntroHold: (hold: boolean) => void;
 }
 
 /** Non-reactive session internals (torn down in endCall). */
@@ -134,6 +156,8 @@ let pendingTts = 0;
  * speakerOriginSeq), threaded through the flush into speakAndCapture. */
 let pendingCompanionLines: Array<{ characterId: string; text: string; seq: number; ctx: SpokenLineContext }> = [];
 const MAX_PENDING_COMPANION_LINES = 12;
+/** Auto-release for a scene intro hold that never reports arrival. */
+let introHoldTimer = 0;
 /** 260725 turn-failure retry: while runCompanionTurnInner has a player send in
  * flight for a speaker, this maps speakerId → its director sequence. The chat
  * store's real-failure path asks (via the voiceBridge onTurnFailed hook)
@@ -203,6 +227,28 @@ const CHAIN_GAP_NEXT_MS = 450;
 const IDLE_NUDGE_MIN_MS = 5_000;
 const IDLE_NUDGE_MAX_MS = 60_000;
 const IDLE_TICK_MS = 1_000;
+// 260730: an UNANSWERED QUESTION is not the same silence. When the companion's
+// last spoken line ended in a question mark, the quiet that follows is the
+// player not answering, and the ordinary 5-60s window leaves the question
+// hanging long past the point a person would have followed up. That case gets
+// its own much tighter window and its own note in main (see sendVoiceIdleTurn):
+// one gentle, unpressured follow-up.
+const QUESTION_NUDGE_MIN_MS = 5_000;
+const QUESTION_NUDGE_MAX_MS = 15_000;
+/** The last line spoken on the call ended in a question mark. */
+let idleAwaitingAnswer = false;
+/** A follow-up already went out for that question. One is a nudge; a second one
+ * on the same unanswered question is nagging, so the normal window (and its
+ * backoff) takes over until the player says something. */
+let idleQuestionNudged = false;
+/** True when the next nudge should be the gentle follow-up to a question. */
+function idleQuestionMode(): boolean {
+  return idleAwaitingAnswer && !idleQuestionNudged && idleQuietStreak === 0;
+}
+/** Ends in '?' (or the full-width '？'), ignoring trailing quotes/space. */
+function endsWithQuestion(line: string): boolean {
+  return /[?？]["'”’)\]\s]*$/.test(line.trim());
+}
 /** When the conversation last was busy — the quiet stretch is measured from here. */
 let idleQuietSince = 0;
 /** The current sampled quiet threshold; resampled for every new quiet stretch. */
@@ -222,6 +268,13 @@ const IDLE_BACKOFF_CAP = 8;
 // 260725: proactiveness is a runtime-only Minecraft mode now (never read from
 // character metadata), so every call runs the one laid-back nudge window.
 function sampleIdleTarget(): number {
+  // The tight window applies only to the FIRST nudge after the question
+  // (streak 0). If that follow-up also goes unanswered, the normal window and
+  // its backoff take over — asking again every 10 seconds is the pressuring
+  // behavior this is meant to avoid, not the point of it.
+  if (idleQuestionMode()) {
+    return QUESTION_NUDGE_MIN_MS + Math.random() * (QUESTION_NUDGE_MAX_MS - QUESTION_NUDGE_MIN_MS);
+  }
   return IDLE_NUDGE_MIN_MS + Math.random() * (IDLE_NUDGE_MAX_MS - IDLE_NUDGE_MIN_MS);
 }
 
@@ -288,9 +341,9 @@ function asParticipants(ids: string[]): Participant[] {
   return ids.map((id) => ({ id, name: nameOf(id) }));
 }
 
-/** Playback rate (preservesPitch off) for a companion's TTS clips — the
- * playback half of the pitch shift; main slows the synthesis to match so the
- * net pace stays normal (see shared/voicePitch.ts). */
+/** Pitch shift for a companion's TTS clips, as a frequency multiplier (1 = as
+ * recorded). Applied locally at playback and pace-preserving, so synthesis is
+ * asked for nothing (see shared/voicePitch.ts, lib/voice/pitchBus.ts). */
 function pitchRateOf(characterId: string): number {
   const character = useDataStore.getState().characters.find((c) => c.id === characterId);
   return voicePitchRate(character ?? { id: characterId, metadata: {} });
@@ -307,6 +360,11 @@ const REMOTE_END_MAX_WAIT_MS = 12_000;
  * the first word; the greeting LLM call now runs DURING the ring (see startCall),
  * so a shorter ring lands the first word ~2s after dialing instead of ~8s. */
 const MIN_RING_MS = 1300;
+/** How long the ring will wait for the mic before starting anyway (260730 — see
+ * ringNow in startCall). Normally getUserMedia resolves in well under this; the
+ * wait only bites on a first-run permission prompt or a busy device, where a
+ * silent dial would read as a broken call button. */
+const RING_WITHOUT_MIC_MS = 600;
 // 260706 (tasks 2/3): the call stays OUTGOING (ringing, no stopwatch) until the
 // companion's first line is actually ready — "connected" should never begin on
 // dead air. We poll for the buffered greeting up to this cap, then connect
@@ -315,6 +373,13 @@ const GREETING_READY_CAP_MS = 5000;
 // Once connected, hold a beat before the first word — a real "pickup" pause, and
 // it gives the greeting's TTS first-byte a moment to land.
 const CONNECT_SPEAK_DELAY_MS = 1000;
+/**
+ * 260730: hard cap on a call scene's intro hold. The scene backs its arrival
+ * callback with its own timer, and this backs THAT: a bug in scene data (a
+ * walk that never ends) must degrade to a slightly late greeting, never to a
+ * companion who picks up and says nothing.
+ */
+const INTRO_HOLD_CAP_MS = 8000;
 /**
  * Shortest line that still goes down the STREAMING TTS path (see
  * speakCompanionLine). Below this the clip is fetched whole and played from one
@@ -465,16 +530,21 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       typeof sei.voiceTtsStream === 'function' && typeof sei.onVoiceTtsChunk === 'function';
     // 260726: a TINY line does not stream. Streaming exists to cut time-to-
     // first-audio on a long clip, and its cost is that playback starts on a
-    // buffer that is still filling. Every pitched character plays at
-    // playbackRate > 1 (Sui: 1.25) with preservesPitch off, so the renderer
-    // drains that buffer FASTER than the network fills it; on a clip of a few
-    // hundred ms there is never a lead to absorb a hiccup, and the underruns
-    // land at the only two places available — the first frames and the last
-    // ones before endOfStream. Symptom: "are you" and "you" came out choppy at
-    // both ends while full sentences were clean. Under the threshold the whole
-    // clip is fetched, then played from one Blob with its silence padding
-    // already baked in: no MSE, no underrun, and the latency given up is only
-    // the tail of an already-short synthesis.
+    // buffer that is still filling. On a clip of a few hundred ms there is
+    // never a lead to absorb a network hiccup, and the underruns land at the
+    // only two places available — the first frames and the last ones before
+    // endOfStream. Symptom: "are you" and "you" came out choppy at both ends
+    // while full sentences were clean. Under the threshold the whole clip is
+    // fetched, then played from one Blob with its silence padding already baked
+    // in: no MSE, no underrun, and the latency given up is only the tail of an
+    // already-short synthesis.
+    //
+    // 260731: what made this ACUTE was pitched playback — every pitched
+    // character ran playbackRate > 1 (Sui: 1.224) with preservesPitch off, so
+    // the renderer drained the buffer faster than the network filled it. The
+    // shift is local and pace-preserving now (pitchBus.ts), so clips play at
+    // rate 1 and the drain is back to real time. The threshold stays: a short
+    // clip has no lead to spare either way, and the latency it trades is small.
     const worthStreaming = text.length >= STREAM_MIN_CHARS;
     if (canStream && worthStreaming && queue) {
       const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId));
@@ -501,12 +571,29 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       return;
     }
 
+    // Reserve the slot NOW, fill it when the clip lands (260729). This path used
+    // to enqueue on RESOLVE, which put the line's position in the reply at the
+    // mercy of its synthesis time: a short line emitted first was heard after a
+    // long one emitted later, because the long one streams and takes its slot
+    // instantly. Live: "oh." / "so you're still tweaking me." played backwards,
+    // and a five-line reply came out shuffled. `blob: true` keeps the safe
+    // fetch-whole playback that STREAM_MIN_CHARS chose (see above); only the
+    // bookkeeping moves.
+    const slot = queue?.enqueueStream(characterId, text, pitchRateOf(characterId), { blob: true });
     void sei
       .voiceTts({ characterId, text, ...ctx })
       .then((buf) => {
-        if (session === mySession) queue?.enqueue(buf, characterId, text, pitchRateOf(characterId));
+        if (session !== mySession) {
+          slot?.fail();
+          return;
+        }
+        slot?.push(buf);
+        slot?.end();
       })
-      .catch((err) => surfaceTtsError(String((err as Error)?.message ?? '')))
+      .catch((err) => {
+        slot?.fail();
+        surfaceTtsError(String((err as Error)?.message ?? ''));
+      })
       .finally(settleTts);
   }
 
@@ -852,6 +939,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       return k !== 'online' && k !== 'connecting';
     });
     idleNudgeInFlight = true;
+    // Read BEFORE the turn runs and spend it here: main gets a different note
+    // for a follow-up, and only one follow-up goes out per question.
+    const awaitingAnswer = idleQuestionMode();
+    if (awaitingAnswer) idleQuestionNudged = true;
     const mySeq = directorSeq;
     let spoke = false;
     try {
@@ -862,7 +953,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const peers = s.participants.filter((id) => id !== speakerId).map(nameOf);
       const quietSeconds = Math.round((Date.now() - idleQuietSince) / 1000);
       const result = await sei
-        .voiceIdleNudge?.({ characterId: speakerId, quietSeconds, peers })
+        .voiceIdleNudge?.({ characterId: speakerId, quietSeconds, peers, awaitingAnswer })
         ?.catch(() => null);
       if (session !== mySession || mySeq !== directorSeq) return; // superseded while generating
       if (get().status !== 'live' || !get().participants.includes(speakerId)) return;
@@ -903,6 +994,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     const mySeq = ++directorSeq; // cancels any in-flight companion chain
     clearTurnCapture(); // a fresh utterance supersedes any pending turn capture
     lastReactorId = null; // fresh utterance: reset the chain's spread memory
+    // Whatever they said, the question is no longer hanging (260730).
+    idleAwaitingAnswer = false;
+    idleQuestionNudged = false;
     set({ lastHeard: text });
     // 260708: EVERY participant gets a real turn for every player utterance —
     // in-game or not. In-game recipients route to their game brain, which
@@ -952,8 +1046,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // record = a generation the renderer never dispatched (an in-world say()
       // routed up), which is current by definition.
       const originSeq = speakerOriginSeq.get(characterId) ?? directorSeq;
-      // Lines can arrive before the (first) line opens: buffer and flush on live.
-      if (s.status === 'connecting') {
+      // Lines can arrive before the (first) line opens, or while a call scene
+      // is still walking the companion on (introHold): buffer, and flush when
+      // the gate lifts. Anything outside those two states has no call to speak
+      // into and is dropped.
+      if (s.status === 'connecting' || (s.status === 'live' && s.introHold)) {
         if (pendingCompanionLines.length < MAX_PENDING_COMPANION_LINES) {
           pendingCompanionLines.push({ characterId, text, seq: originSeq, ctx });
         }
@@ -1059,6 +1156,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     connectingDetail: null,
     liveAt: null,
     sttFallbackPrompt: false,
+    introHold: false,
 
     startCall: async (characterId) => {
       const prev = get();
@@ -1069,6 +1167,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         return;
       }
 
+      // 260730: this used to prime the shared AudioContext here, before the mic
+      // work below. That turned out to be backwards. The context opened at dial
+      // is precisely the one the mic's echo-cancellation reroute then tears
+      // down, so priming early guaranteed it was caught by the switch. The
+      // context is now created by the first call sound instead, which happens
+      // after the mic is up (see ringNow), and callTones waits for the output
+      // to be genuinely rendering before it schedules anything.
       const mySession = ++session;
       directorSeq++; // fresh call: invalidate any stale chain token
       clearTurnCapture();
@@ -1103,7 +1208,30 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       });
 
       silenceDressing();
-      stopRing = startRingtone();
+      // The ring waits for the MIC, not for the dial (260730). Opening a
+      // capture stream with echoCancellation reconfigures the page's audio
+      // OUTPUT: Chromium reroutes playback through the echo canceller so it can
+      // subtract it from the mic, and whatever was scheduled across that switch
+      // is dropped. The mic opens a few hundred ms into dialing, which is
+      // exactly the ring's first bar — heard as "the chime is cut off at the
+      // start, only audible after a second". It survived the earlier
+      // shared-AudioContext fix because the switch happens on EVERY dial, warm
+      // context or not, which is why it was broken "always" and not just on the
+      // first call of a session.
+      const ringNow = (): void => {
+        if (session !== mySession || stopRing) return;
+        stopRing = startRingtone();
+        // The pitch shifter is built here for the SAME reason the ring is:
+        // it lives on the same shared context, and a worklet created across
+        // the echo-canceller reroute comes up attached to an output being
+        // torn down. Fire-and-forget, and seconds ahead of the first TTS
+        // clip; if it is somehow not ready when one lands, that clip plays
+        // unshifted rather than waiting (see pitchBus.ts).
+        warmPitchBus();
+      };
+      // If the mic is slow (a first-run permission prompt, a busy device), ring
+      // anyway rather than leave the dial silent: a clipped ring beats none.
+      const ringFallback = window.setTimeout(ringNow, RING_WITHOUT_MIC_MS);
 
       void sei.voiceCallSetActive({ characterId, active: true }).catch(() => {});
 
@@ -1120,15 +1248,21 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       queue = createAudioQueue(
         (speaking, cid, text) => {
           if (session !== mySession) return;
-          // Advance the caption to the line that just STARTED playing, so it flows
-          // in step with the audio (each line shows as it's spoken) instead of
-          // jumping to the last-enqueued line. The previous line stays up during the
-          // brief gap between clips (speaking=false) until the next one begins.
-          set({
-            speaking,
-            speakingId: speaking ? cid : null,
-            ...(speaking && text ? { lastSpoken: text, lastSpokenId: cid } : {}),
-          });
+          // Only the STOP is published from here. A slot reaching the playhead
+          // is not a sound: for a streamed clip the TTS request has not even
+          // been sent yet, so lighting the ring (and the caption, and the call
+          // scene's mouth) here put all three ahead of the audio by a whole
+          // synthesis round trip. The start is published from onAudible below.
+          if (!speaking) set({ speaking: false, speakingId: null });
+          // Track whether the floor was handed back with a question on it
+          // (260730) — read by sampleIdleTarget and sent to main with the
+          // nudge. Set from the line that actually REACHES the playhead, so a
+          // question that was cut off by a barge-in never counts as asked.
+          if (speaking && text) {
+            const asks = endsWithQuestion(text);
+            if (asks !== idleAwaitingAnswer) idleQuestionNudged = false;
+            idleAwaitingAnswer = asks;
+          }
           // Hold still tracks the SLOT, not the audio: the synthesis gap before
           // a clip's first byte must keep the stiffer barge bar, or a noise in
           // that gap trips the much lower normal speech threshold instead. The
@@ -1136,8 +1270,16 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           dictation?.setHold(speaking);
           if (!speaking) maybeFinishRemoteEnd();
         },
-        () => {
+        (cid, text) => {
           if (session !== mySession) return;
+          // First audible sample of this clip: the companion is talking NOW.
+          // Everything the player can see of that lands together here, so the
+          // caption advances with the voice rather than ahead of it.
+          set({
+            speaking: true,
+            speakingId: cid,
+            ...(text ? { lastSpoken: text, lastSpokenId: cid } : {}),
+          });
           dictation?.armBargeGrace();
         },
       );
@@ -1197,6 +1339,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       try {
         dictation = await createDictation({
           language: chatLanguage,
+          // Output path settled — safe to schedule the ring (see ringNow).
+          onMicReady: () => {
+            window.clearTimeout(ringFallback);
+            ringNow();
+          },
           // Mode matrix (sttPolicy.ts): cloud users without the local-fallback
           // opt-in run 'none' (Scribe-only, no model download); everyone else
           // runs 'eager' (today's race). BYOK with stt_engine 'whisper' drops
@@ -1300,6 +1447,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // greeting about to play immediately resets it anyway) and ticks for the
       // life of the call — the session guard kills the chain at hang-up.
       idleQuietSince = now;
+      idleAwaitingAnswer = false; // module state: never inherit the last call's
+      idleQuestionNudged = false;
       idleTargetMs = sampleIdleTarget();
       idleQuietStreak = 0;
       window.setTimeout(() => idleTick(mySession), IDLE_TICK_MS);
@@ -1308,7 +1457,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // pickup pause, and a head start for the greeting's TTS first byte.
       await wait(CONNECT_SPEAK_DELAY_MS);
       if (session !== mySession) return;
-      flushPendingCompanionLines();
+      // A call scene still walking the companion on keeps the lines buffered;
+      // its setIntroHold(false) does this flush instead.
+      if (!get().introHold) flushPendingCompanionLines();
     },
 
     addParticipant: (characterId) => {
@@ -1369,7 +1520,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       set({
         participants: next,
         callCharacterId: next[0],
-        ...(get().speakingId === characterId ? { speaking: false, speakingId: null } : {}),
+        ...(get().speakingId === characterId
+          ? { speaking: false, speakingId: null }
+          : {}),
       });
     },
 
@@ -1409,6 +1562,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       directorSendSeq.clear();
       directorSendFailed.clear();
       reconnectingCount = 0;
+      window.clearTimeout(introHoldTimer);
       set({
         participants: [],
         callCharacterId: null,
@@ -1424,6 +1578,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         connectingDetail: null,
         liveAt: null,
         sttFallbackPrompt: false,
+        introHold: false,
       });
       useUiStore.getState().endCall();
     },
@@ -1445,6 +1600,23 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     },
 
     dismissSttFallback: () => set({ sttFallbackPrompt: false }),
+
+    setIntroHold: (hold) => {
+      window.clearTimeout(introHoldTimer);
+      if (hold) {
+        set({ introHold: true });
+        introHoldTimer = window.setTimeout(
+          () => get().setIntroHold(false),
+          INTRO_HOLD_CAP_MS,
+        );
+        return;
+      }
+      if (!get().introHold) return;
+      set({ introHold: false });
+      // Releasing IS the flush the connect path skipped. Only once live: a
+      // release while still ringing must not jump the pickup.
+      if (get().status === 'live') flushPendingCompanionLines();
+    },
   };
 });
 

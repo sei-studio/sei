@@ -7,6 +7,11 @@
  * shapes with large hit areas (mic toggle, deafen toggle, red hang-up pill)
  * instead of the old thin outline circles.
  *
+ * 260730: an optional fourth pill, the backdrop toggle (mountain), sits between
+ * deafen and hang-up. It is opt-in via props because only the fullscreen call
+ * view has a backdrop to switch to — GameSurface's cluster passes neither prop
+ * and renders the original three.
+ *
  * Mute + deafen live in useUiStore (shared across call surfaces); hang-up is
  * useVoiceStore.endCall (the real teardown). `onHangUp` runs after the call
  * ends so each surface can route (the fullscreen view navigates back to chat;
@@ -21,6 +26,7 @@ import {
   MicOffIcon,
   HeadphonesIcon,
   HeadphonesOffIcon,
+  MountainIcon,
   PhoneOffIcon,
 } from '../icons';
 import { useT } from '../../lib/i18n';
@@ -31,9 +37,27 @@ export interface CallControlsProps {
   size?: 'lg' | 'sm';
   /** Runs after endCall() so the host surface can route away. */
   onHangUp?: () => void;
+  /**
+   * Backdrop toggle (260730). Omit both and the button is not rendered — only
+   * the fullscreen call view has a backdrop to switch to, so the in-game
+   * cluster keeps the three controls it always had.
+   */
+  backdrop?: boolean;
+  onToggleBackdrop?: () => void;
+  /**
+   * Painted over character art rather than an app surface, so the pills drop
+   * the theme-tinted fill for a fixed dark scrim (see the CSS).
+   */
+  onArt?: boolean;
 }
 
-export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): React.ReactElement {
+export function CallControls({
+  size = 'lg',
+  onHangUp,
+  backdrop,
+  onToggleBackdrop,
+  onArt,
+}: CallControlsProps): React.ReactElement {
   const t = useT();
   const muted = useUiStore((s) => s.callMuted);
   const setMuted = useUiStore((s) => s.setCallMuted);
@@ -45,8 +69,12 @@ export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): Reac
   const btn = small ? `${styles.pillBtn} ${styles.pillBtnSm}` : styles.pillBtn;
   const iconPx = small ? 16 : 22;
 
+  const row = [styles.controls, small ? styles.controlsSm : '', onArt ? styles.controlsOnArt : '']
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className={small ? `${styles.controls} ${styles.controlsSm}` : styles.controls}>
+    <div className={row}>
       <button
         type="button"
         className={muted ? `${btn} ${styles.pillBtnToggled}` : btn}
@@ -68,6 +96,19 @@ export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): Reac
       >
         {deafened ? <HeadphonesOffIcon size={iconPx} /> : <HeadphonesIcon size={iconPx} />}
       </button>
+
+      {onToggleBackdrop ? (
+        <button
+          type="button"
+          className={backdrop ? `${btn} ${styles.pillBtnToggled}` : btn}
+          onClick={onToggleBackdrop}
+          aria-pressed={backdrop}
+          aria-label={backdrop ? t('Show the call view') : t('Show the scene')}
+          title={backdrop ? t('Show the call view') : t('Show the scene')}
+        >
+          <MountainIcon size={iconPx} />
+        </button>
+      ) : null}
 
       <button
         type="button"

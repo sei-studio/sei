@@ -383,3 +383,111 @@
   background: var(--accent);
   transition: width 200ms var(--ease);
 }
+
+/* ── Backdrop mode (260730) ────────────────────────────────────────────────
+ * The character fills the window (their scene, or their art) instead of
+ * sitting in an avatar tile. The stage keeps its flex column so the caption
+ * lines and the STT-fallback offer still stack, but they move to the bottom:
+ * the middle of the window now has a picture in it. */
+
+.stageBackdrop {
+  justify-content: flex-end;
+  gap: var(--space-md);
+  /* Clear the chrome bar so a caption never sits under the controls. */
+  padding-bottom: 132px;
+  /* The art is an absolutely-positioned child, and positioned elements paint
+     ABOVE static in-flow siblings — without a stacking context of our own the
+     backdrop would cover the captions it sits behind. Isolating lets the
+     z-indexes below mean what they say (the install/picker scrims keep 5/6). */
+  isolation: isolate;
+}
+
+/* Layers inside that stacking context: the art sits at 0 (set on the backdrop
+ * components themselves), everything readable at 1, the chrome bar at 2. */
+
+/* The STT-fallback offer is actionable, so it stays above the art and out of
+ * the hover chrome. Positioned unconditionally — harmless in the tile view. */
+.fallbackPrompt {
+  position: relative;
+  z-index: 1;
+}
+
+/* Captions stay visible over the art (they are an accessibility aid, not
+ * chrome), so they carry their own legibility panel. */
+.captionsOnArt {
+  position: relative;
+  z-index: 1;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--window) 78%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+/* The one bar: name, status, controls. Hidden until the pointer nears the
+ * bottom edge (or something in it takes focus). `display` transitions with
+ * allow-discrete so it is genuinely gone — an invisible bar over the art would
+ * still swallow the drag that pans it.
+ *
+ * NO panel behind it: a box cuts a rectangle out of the picture the mode exists
+ * to show (260730). The pills carry their own fill, and the drop-shadow is what
+ * separates them and the text from whatever they happen to land on. */
+.artChrome {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-xl);
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  z-index: 2;
+  filter: drop-shadow(0 2px 10px rgb(0 0 0 / 0.45));
+  opacity: 0;
+  transition:
+    opacity 140ms var(--ease),
+    display 140ms var(--ease) allow-discrete;
+}
+
+.artChromeShown {
+  display: flex;
+  opacity: 1;
+}
+
+@starting-style {
+  .artChromeShown {
+    opacity: 0;
+  }
+}
+
+.artChromeText {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+/* Fixed white, for the same reason the pills go theme-independent on art: the
+ * theme's text colour is chosen against the app's own surface, not against
+ * whatever picture is behind it. The parent's drop-shadow does the separating. */
+.artChromeName {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: white;
+}
+
+.artChromeStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: rgb(255 255 255 / 0.78);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A failed call still says so in red — .subtitleError alone loses the cascade
+ * to the rule above (same specificity, declared earlier). */
+.artChromeStatus.subtitleError {
+  color: var(--red);
+}

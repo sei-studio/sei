@@ -11,7 +11,7 @@
 
 import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
-import type { LanHost, LanHostWarning, UniqueGender } from '@shared/ipc';
+import type { LanHost, LanHostWarning } from '@shared/ipc';
 
 export type View =
   | { kind: 'loading' }
@@ -53,35 +53,39 @@ export type View =
   | { kind: 'settings' }
   | { kind: 'credits' }
   | { kind: 'coming-soon' }
-  // 260703 procgen — the "unique companion" (system-generated) flow. All four
-  // are renderer-only full-page surfaces (rail hidden), routed from the
+  // 260703 procgen — the "unique companion" (system-generated) flow. All are
+  // renderer-only full-page surfaces (rail hidden), routed from the
   // add-companion chooser or the App-level first-sign-in questionnaire gate:
   //   - profile-questions : the companion questionnaire (age + dynamics +
-  //                          art style). `next` decides where Finish lands:
-  //                          'home' (App gate and mid-onboarding),
-  //                          'unique-gender' (Awaken cast gate), 'awaken' /
-  //                          'settings' ("Update my preferences" entries —
-  //                          cancel also returns there). `mode`: 'missing'
-  //                          asks only unanswered
-  //                          questions; 'all' is a full retake prefilled
-  //                          with current answers.
-  //   - unique-gender     : the single per-slot gender question.
-  //   - unique-casting    : the full-screen generation/ritual progress screen.
+  //                          art style) as a FORM. `next` decides where Finish
+  //                          lands: 'home' (App gate and mid-onboarding),
+  //                          'meet' (Awaken cast gate), 'awaken' / 'settings'.
+  //                          `mode`: 'missing' asks only unanswered questions;
+  //                          'first-fill' is a brand-new profile. 260731: the
+  //                          'all' retake moved to sui-prefs, so this is now
+  //                          only the GATE surface (fill the gaps, then get on
+  //                          with the thing you asked for).
+  //   - sui-meet          : "meet my companion", run by Sui — the gender
+  //                          question, her walk-off, and the casting bar
+  //                          (replaced unique-gender + unique-casting, 260731).
   //   - unique-reveal     : the "meet <name>" moment after a successful gen.
   | {
       kind: 'profile-questions';
-      next: 'home' | 'unique-gender' | 'awaken' | 'settings';
-      // 'missing' asks only unanswered questions; 'all' is a full retake
-      // prefilled with current answers; 'first-fill' behaves like 'missing' for
-      // question selection but, on Finish, continues a brand-new user straight
-      // into the "meet your unique companion" flow (gender step) so their first
-      // companion gets cast instead of dropping them on an empty Home. A
-      // "Later" dismiss on the first step never triggers that continuation.
-      mode: 'missing' | 'all' | 'first-fill';
+      next: 'home' | 'meet' | 'awaken' | 'settings';
+      // 'missing' asks only unanswered questions; 'first-fill' selects the
+      // same questions but, on Finish, continues a brand-new user straight
+      // into the "meet my companion" scene so their first companion gets cast
+      // instead of dropping them on an empty Home. A "Later" dismiss on the
+      // first step never triggers that continuation. (The full retake is
+      // sui-prefs, 260731.)
+      mode: 'missing' | 'first-fill';
     }
-  | { kind: 'unique-gender' }
-  | { kind: 'unique-casting'; gender: UniqueGender }
+  | { kind: 'sui-meet' }
   | { kind: 'unique-reveal'; characterId: string }
+  // 260731 — "update my preferences", asked by Sui in the onboarding scene
+  // rather than as a form. `next` is the surface the entry link lives on, and
+  // where leaving the scene returns to.
+  | { kind: 'sui-prefs'; next: 'awaken' | 'settings' }
   // quick/260525-sbo Task 6 — FTC 16 CFR §425.5 in-app receipt after a
   // first-time subscription activation. Auto-navigated by useCreditsStore
   // when the plan moves up into a paid tier (once per
@@ -253,6 +257,21 @@ interface UiState {
    * UserConfig.call_convo_starters; App.tsx hydrates. ON by default. */
   convoStartersEnabled: boolean;
   /**
+   * 260730 — call backdrop mode, per character: true = show the character's
+   * scene (or their art) instead of the avatar tiles. Keyed by the DIALED
+   * character's id, which is also the key a group call uses, so "how I like
+   * calling Sui" survives inviting someone else along.
+   *
+   * A character absent from the map has no stored preference, and the default
+   * depends on them: someone with a custom scene opens in it, everyone else
+   * opens on the familiar avatar view. That is why this is a sparse map and
+   * not a boolean per character defaulted to false — writing false for every
+   * character on first call would erase the distinction.
+   *
+   * Persisted via UserConfig.call_backdrop; App.tsx hydrates.
+   */
+  callBackdropByCharacter: Record<string, boolean>;
+  /**
    * 260724 — custom app background. `backgroundImage` is the portrait path ref
    * ('_bg.png', served via sei-portrait://) or null when no background is set;
    * opacity (0..1, how visible the image is through the theme's window color)
@@ -310,6 +329,10 @@ interface UiState {
   setCallOverlayEnabled: (v: boolean) => void;
   /** Set the conversation-starters toggle (quiet calls, companion starts a topic). */
   setConvoStartersEnabled: (v: boolean) => void;
+  /** 260730: replace the whole per-character backdrop map (App.tsx hydration). */
+  setCallBackdropPrefs: (prefs: Record<string, boolean>) => void;
+  /** 260730: remember how this character's calls should open. */
+  setCallBackdropFor: (characterId: string, on: boolean) => void;
   /** 260724: set the custom background image ref; bumps the cache-buster. */
   setBackgroundImage: (ref: string | null) => void;
   /** 260724: set the background sliders (opacity 0..1, brightness 0.2..1). */
@@ -345,6 +368,9 @@ export const useUiStore = create<UiState>((set) => ({
   callCaptions: false,
   callOverlayEnabled: false,
   convoStartersEnabled: true,
+  // Empty = nobody has a stored preference yet; each character falls back to
+  // whether they have a scene. App.tsx hydrates from persisted config.
+  callBackdropByCharacter: {},
   // Custom background: none until App.tsx hydrates from persisted config.
   backgroundImage: null,
   backgroundOpacity: 0.5,
@@ -379,5 +405,8 @@ export const useUiStore = create<UiState>((set) => ({
   setCallCaptions: (v) => set({ callCaptions: v }),
   setCallOverlayEnabled: (v) => set({ callOverlayEnabled: v }),
   setConvoStartersEnabled: (v) => set({ convoStartersEnabled: v }),
+  setCallBackdropPrefs: (prefs) => set({ callBackdropByCharacter: prefs }),
+  setCallBackdropFor: (characterId, on) =>
+    set((s) => ({ callBackdropByCharacter: { ...s.callBackdropByCharacter, [characterId]: on } })),
   endCall: () => set({ callMuted: false, callDeafened: false }),
 }));

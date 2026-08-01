@@ -45,7 +45,35 @@ import { sttPolicy } from '../lib/voice/sttPolicy';
 import { UserIcon, PlusIcon } from '../components/icons';
 import { ChatTopBar } from '../components/ChatTopBar';
 import { CallControls } from '../components/call/CallControls';
+import { CallSceneHost } from '../components/call/CallSceneHost';
+import { CallBackdrop } from '../components/call/CallBackdrop';
+import { hasCallScene, resolveCallScene } from '../lib/callScenes';
+import type { UserConfig } from '@shared/characterSchema';
 import styles from './VoiceCallScreen.module.css';
+
+/**
+ * Remember how this character's calls should open. Re-reads config first: a
+ * snapshot taken at mount would write back stale values for everything else in
+ * it (main only takes renderer-owned keys, but the map itself must be fresh so
+ * a toggle on another character in the same session is not lost).
+ */
+async function persistBackdropPref(characterId: string, on: boolean): Promise<void> {
+  try {
+    const cfg = await sei.getConfig();
+    const next: UserConfig = {
+      ...cfg,
+      call_backdrop: { ...(cfg.call_backdrop ?? {}), [characterId]: on },
+    };
+    await sei.saveConfig(next);
+  } catch (err) {
+    // A preference that fails to stick is not worth interrupting a call over.
+    // eslint-disable-next-line no-console
+    console.error('[VoiceCallScreen] saveConfig (call_backdrop) failed', err);
+  }
+}
+
+/** How close to the bottom edge the pointer must be to reveal the controls. */
+const CHROME_PROXIMITY_PX = 132;
 
 /** mm:ss (h:mm:ss past the hour) for the live-call duration readout. */
 function formatDuration(ms: number): string {
@@ -215,6 +243,47 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
   const companionName = character?.name ?? t('Companion');
   const isGroup = participants.length > 1;
+
+  // ── Backdrop mode (260730) ───────────────────────────────────────────────
+  // Two views of the same call: the avatar tiles, or the character filling the
+  // window — their custom scene if they have one, otherwise their art.
+  //
+  // The preference is keyed on the DIALED character (participants[0], or this
+  // screen's character before the call exists) so inviting someone along does
+  // not change which view you get, and an absent key means "never chosen":
+  // characters with a scene open in it, everyone else opens on the tiles.
+  const backdropPrefs = useUiStore((s) => s.callBackdropByCharacter);
+  const setCallBackdropFor = useUiStore((s) => s.setCallBackdropFor);
+  const prefKey = participants[0] ?? characterId;
+  const dialed = characters.find((c) => c.id === prefKey);
+  const backdropOn = backdropPrefs[prefKey] ?? hasCallScene(dialed);
+  // Scenes stage ONE actor, so a group call always falls back to split art.
+  const scene = isGroup ? null : resolveCallScene(dialed);
+  const backdropCharacters = participants
+    .map((id) => characters.find((c) => c.id === id))
+    .filter((c): c is NonNullable<typeof c> => c !== undefined);
+  // Nothing to show is not a mode: with no scene and no known character, stay
+  // on the tiles rather than render an empty window.
+  const backdropShown = backdropOn && (scene !== null || backdropCharacters.length > 0);
+
+  const toggleBackdrop = (): void => {
+    const next = !backdropOn;
+    setCallBackdropFor(prefKey, next);
+    void persistBackdropPref(prefKey, next);
+  };
+
+  // In backdrop mode the chrome gets out of the art's way and comes back when
+  // the pointer nears the bottom edge — the same reveal GameSurface uses for
+  // its in-game row. Always revealed while not live, so a call that is ringing
+  // or has failed can always be hung up.
+  const [nearBottom, setNearBottom] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  const chromeRevealed = !backdropShown || nearBottom || focusWithin || status !== 'live';
+  const onStagePointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (!backdropShown) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setNearBottom(rect.bottom - e.clientY <= CHROME_PROXIMITY_PX);
+  };
   // Header title: the companion's name on a solo call, "Group call" with 2+.
   const title = isGroup ? t('Group call') : companionName;
   // Avatar size shrinks as the roster grows so every companion + the user + the
@@ -241,6 +310,11 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           : liveAt !== null
             ? formatDuration(nowTick - liveAt)
             : '00:00';
+
+  // The live dot in front of the status line. Shared by both layouts so the
+  // tile view and the backdrop bar can never drift apart.
+  const statusDot =
+    status !== 'error' ? <span className={styles.subtitleDot} aria-hidden="true" /> : null;
 
   // Install gate overlay: consent question, live progress, or failure. The
   // call UI behind it stays in its idle pose until the gate opens.
@@ -371,13 +445,36 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           picker mid-call. ── */}
       <ChatTopBar characterId={characterId} />
 
-      <div className={styles.stage}>
+      <div
+        className={backdropShown ? `${styles.stage} ${styles.stageBackdrop}` : styles.stage}
+        onPointerMove={onStagePointerMove}
+        onPointerLeave={() => setNearBottom(false)}
+        onFocusCapture={() => setFocusWithin(true)}
+        onBlurCapture={() => setFocusWithin(false)}
+      >
+        {/* Backdrop mode: the character fills the window instead of sitting in
+            a tile. Her custom scene when she has one, her art otherwise, and
+            split art for a group (a scene stages a single actor). Behind
+            everything else on the stage. */}
+        {backdropShown ? (
+          scene ? (
+            <CallSceneHost scene={scene} characterId={prefKey} />
+          ) : (
+            <CallBackdrop
+              characters={backdropCharacters}
+              theme={theme}
+              speakingId={speakingId}
+            />
+          )
+        ) : null}
+
         {installOverlay}
         {pickerOverlay}
 
         {/* Participant cluster (260706): every companion on the call, lit while
           speaking and dimmed while idle (per-companion speaking state), plus the
           user's own avatar beside them, and a "＋" tile to add another. */}
+      {backdropShown ? null : (
       <div className={styles.cluster}>
         {participants.map((id) => {
           const c = characters.find((x) => x.id === id);
@@ -454,18 +551,34 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           </div>
         ) : null}
       </div>
+      )}
 
-      <h1 className={styles.name}>{title}</h1>
-      <span className={status === 'error' ? `${styles.subtitle} ${styles.subtitleError}` : styles.subtitle}>
-        {status !== 'error' ? <span className={styles.subtitleDot} aria-hidden="true" /> : null}
-        {subtitle}
-      </span>
+      {backdropShown ? null : (
+        <>
+          <h1 className={styles.name}>{title}</h1>
+          <span
+            className={
+              status === 'error' ? `${styles.subtitle} ${styles.subtitleError}` : styles.subtitle
+            }
+          >
+            {statusDot}
+            {subtitle}
+          </span>
+        </>
+      )}
 
       {/* Captions — opt-in (Appearance & feel → Call captions, default off).
           Not rendered at all when off so the reserved min-height collapses and
-          the controls sit closer to the name. */}
+          the controls sit closer to the name. Deliberately NOT hidden with the
+          rest of the chrome in backdrop mode: captions are an accessibility
+          aid, and one you have to hover to read is not one. */}
       {captionsOn ? (
-        <div className={styles.captions} aria-live="polite">
+        <div
+          className={
+            backdropShown ? `${styles.captions} ${styles.captionsOnArt}` : styles.captions
+          }
+          aria-live="polite"
+        >
           {lastSpoken ? <p className={styles.captionCompanion}>{lastSpoken}</p> : null}
           {lastHeard ? (
             <p className={styles.captionUser}>{t('You: {text}', { text: lastHeard })}</p>
@@ -495,11 +608,48 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         </div>
       ) : null}
 
-      {/* Shared mute / deafen / hang-up pills (also used, smaller, by
-          GameSurface's in-game call cluster). */}
-      <div className={styles.controls}>
-        <CallControls onHangUp={() => navigate({ kind: 'chat', characterId })} />
-      </div>
+      {/* Shared mute / deafen / backdrop / hang-up pills (also used, smaller and
+          without the backdrop toggle, by GameSurface's in-game call cluster). */}
+      {backdropShown ? null : (
+        <div className={styles.controls}>
+          <CallControls
+            onHangUp={() => navigate({ kind: 'chat', characterId })}
+            backdrop={backdropOn}
+            onToggleBackdrop={toggleBackdrop}
+          />
+        </div>
+      )}
+
+      {/* Backdrop mode: name, status and controls collapse into one bar that
+          stays out of the art's way and returns when the pointer nears the
+          bottom edge (or anything in it takes focus, so the keyboard can still
+          reach it). Always shown while not live — a ringing or failed call
+          must never be un-hangupable. */}
+      {backdropShown ? (
+        <div
+          className={`${styles.artChrome} ${chromeRevealed ? styles.artChromeShown : ''}`}
+        >
+          <div className={styles.artChromeText}>
+            <span className={styles.artChromeName}>{title}</span>
+            <span
+              className={
+                status === 'error'
+                  ? `${styles.artChromeStatus} ${styles.subtitleError}`
+                  : styles.artChromeStatus
+              }
+            >
+              {statusDot}
+              {subtitle}
+            </span>
+          </div>
+          <CallControls
+            onHangUp={() => navigate({ kind: 'chat', characterId })}
+            backdrop={backdropOn}
+            onToggleBackdrop={toggleBackdrop}
+            onArt
+          />
+        </div>
+      ) : null}
       </div>
     </div>
   );
