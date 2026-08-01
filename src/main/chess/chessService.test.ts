@@ -3,8 +3,9 @@
  *   - the AI move enters the presentation hold, presents as pendingAiMove
  *     when the turn ends, and only commits on ackReveal (the renderer quiet gate)
  *   - an illegal play() gets a retry tool_result, not a broken board
- *   - a player chat during the hold NEVER re-decides: the reply turn knows
- *     the queued move and may revise it (play) or hold it back (wait)
+ *   - a player chat during the hold NEVER re-decides: the reply turn is told
+ *     the queued move but is text-only (260730: play()/wait() revision on
+ *     reply turns was dropped; a stray play() gets a terminal refusal)
  *   - a silent play() is a legitimate turn (no forced table-talk hop)
  *   - consecutive player messages coalesce into one reply turn
  *   - the move prompt states the player's last move in plain words
@@ -264,11 +265,12 @@ describe('chess session lifecycle', () => {
     expect(calls).toBe(2);
   });
 
-  it('a chat during the hold never re-decides: the reply turn revises the queued move via play()', async () => {
+  it('a chat during the hold never re-decides: the reply turn is text-only and the queued move survives a stray play()', async () => {
     const moveSystems: string[] = [];
     createSpy.mockImplementation(
       async (params: PromptParams) => {
         const sys = promptText(params);
+        const msgs = JSON.stringify(params.messages);
         if (sys.includes('The moves you are considering')) {
           moveSystems.push(sys);
           return {
@@ -280,11 +282,12 @@ describe('chess session lifecycle', () => {
           };
         }
         if (sys.includes('your move is already chosen')) {
-          // Second hop of the same reply turn (after the revision tool_result):
-          // end with no further tools.
-          if (JSON.stringify(params.messages).includes('queued move is now')) {
-            return { content: [], usage: {} };
+          // Second hop of the same reply turn (after the terminal refusal):
+          // end with no further tools, as the note instructs.
+          if (msgs.includes('does nothing on this turn')) {
+            return { content: [{ type: 'text', text: 'anyway, we will see' }], usage: {} };
           }
+          // The model tries to revise anyway (the old 260714 behavior).
           return {
             content: [
               { type: 'text', text: 'changed my mind' },
@@ -301,91 +304,27 @@ describe('chess session lifecycle', () => {
     await playerMove(CHAR, 'e2e4');
     await waitFor(() => (pushed.some((s) => s.pendingAiMove?.san === 'e5') ? true : undefined));
 
-    // Player chats BEFORE the ack: the reply turn sees the queued move and
-    // updates it in place. No rollback, no rerun.
+    // Player chats BEFORE the ack: the reply turn is told the queued move,
+    // its stray play() is refused terminally, and the move stays e5.
     const res = await handlePlayerChat({ characterId: CHAR, text: 'that is a mistake' });
     expect(res).not.toBeNull();
     expect(res!.replies.map((r) => r.text)).toContain('changed my mind');
+    expect(res!.replies.map((r) => r.text)).toContain('anyway, we will see');
 
-    const revised = await waitFor(() =>
-      pushed.slice().reverse().find((s) => s.pendingAiMove?.san === 'c5'),
-    );
-    expect(revised.history).toHaveLength(1); // nothing committed yet
-    // The decision ran exactly once; the revision rode the reply turn.
+    // The decision ran exactly once and was never revised.
     expect(moveSystems).toHaveLength(1);
-    // The reply prompt named the queued move.
+    const last = lastState();
+    expect(last.pendingAiMove?.san).toBe('e5');
+    expect(last.history).toHaveLength(1); // nothing committed yet
+    // The reply prompt named the queued move (so the reply cannot contradict
+    // it) and asked for text only.
     const replyCall = createSpy.mock.calls.find((c) =>
       promptText(c[0] as PromptParams).includes('your move is already chosen'),
     );
     expect(promptText(replyCall![0] as PromptParams)).toContain('e5');
+    expect(promptText(replyCall![0] as PromptParams)).toContain('NO tool call is needed or possible');
 
-    const acked = await ackReveal(CHAR, revised.pendingAiMove!.uci);
-    expect(acked.history.map((h) => h.san)).toEqual(['e4', 'c5']);
-  });
-
-  it('wait() holds the move back (pendingAiMove retracts) until a later play() releases it', async () => {
-    createSpy.mockImplementation(
-      async (params: PromptParams) => {
-        const sys = promptText(params);
-        const msgs = JSON.stringify(params.messages);
-        if (sys.includes('The moves you are considering')) {
-          return {
-            content: [{ type: 'tool_use', id: 'mv1', name: 'play', input: { move: 'e5' } }],
-            usage: {},
-          };
-        }
-        if (sys.includes('HOLDING your move back')) {
-          if (msgs.includes('It lands once this exchange goes quiet')) {
-            return { content: [], usage: {} };
-          }
-          return {
-            content: [
-              { type: 'text', text: 'alright, now i move' },
-              { type: 'tool_use', id: 'rel1', name: 'play', input: { move: 'e5' } },
-            ],
-            usage: {},
-          };
-        }
-        if (sys.includes('your move is already chosen')) {
-          if (msgs.includes('You hold')) {
-            return { content: [], usage: {} };
-          }
-          return {
-            content: [
-              { type: 'text', text: 'fine, i will wait' },
-              { type: 'tool_use', id: 'w1', name: 'wait', input: {} },
-            ],
-            usage: {},
-          };
-        }
-        return { content: [{ type: 'text', text: 'hi back' }], usage: {} };
-      },
-    );
-
-    await startChess(CHAR, { playerColor: 'w' });
-    await playerMove(CHAR, 'e2e4');
-    await waitFor(() => (pushed.some((s) => s.pendingAiMove?.san === 'e5') ? true : undefined));
-
-    // "don't move yet" → wait(): the published move retracts, nothing commits.
-    const r1 = await handlePlayerChat({ characterId: CHAR, text: 'wait, dont move yet' });
-    expect(r1!.replies.map((r) => r.text)).toContain('fine, i will wait');
-    const retracted = await waitFor(() => {
-      const last = pushed[pushed.length - 1];
-      return last.pendingAiMove === null && last.history.length === 1 ? last : undefined;
-    });
-    expect(retracted.aiThinking).toBe(true); // still its turn, still pondering
-
-    // A stale ack for the retracted move must be ignored.
-    const staleAck = await ackReveal(CHAR, 'e7e5');
-    expect(staleAck.history).toHaveLength(1);
-
-    // "ok go" → the reply turn releases with play(); the move re-presents.
-    const r2 = await handlePlayerChat({ characterId: CHAR, text: 'ok go' });
-    expect(r2!.replies.map((r) => r.text)).toContain('alright, now i move');
-    const back = await waitFor(() =>
-      pushed.slice().reverse().find((s) => s.pendingAiMove?.san === 'e5'),
-    );
-    const acked = await ackReveal(CHAR, back.pendingAiMove!.uci);
+    const acked = await ackReveal(CHAR, last.pendingAiMove!.uci);
     expect(acked.history.map((h) => h.san)).toEqual(['e4', 'e5']);
   });
 
@@ -798,8 +737,12 @@ describe('prompt truth and pacing (260722 commentary fixes)', () => {
     }
   });
 
-  it('a held hold tells the model the game is paused and the player cannot move', async () => {
-    const heldSystems: string[] = [];
+  it('a stray wait() on a reply turn gets the terminal refusal and never touches the queued move', async () => {
+    // 260730: wait() is no longer a tool at all. A model that recalls it from
+    // an older game hits the unknown-tool fallthrough, which must read as
+    // FINAL (the live "not available right now" wording read as transient and
+    // produced retry loops) and must leave the presented move in place.
+    const notes: string[] = [];
     createSpy.mockImplementation(
       async (params: PromptParams) => {
         const sys = promptText(params);
@@ -810,12 +753,11 @@ describe('prompt truth and pacing (260722 commentary fixes)', () => {
             usage: {},
           };
         }
-        if (sys.includes('HOLDING your move back')) {
-          heldSystems.push(sys);
-          return { content: [], usage: {} };
-        }
         if (sys.includes('your move is already chosen')) {
-          if (msgs.includes('You hold')) return { content: [], usage: {} };
+          if (msgs.includes('does nothing on this turn')) {
+            notes.push(msgs);
+            return { content: [], usage: {} };
+          }
           return {
             content: [{ type: 'tool_use', id: 'w1', name: 'wait', input: {} }],
             usage: {},
@@ -829,19 +771,13 @@ describe('prompt truth and pacing (260722 commentary fixes)', () => {
     await playerMove(CHAR, 'e2e4');
     await waitFor(() => (pushed.some((s) => s.pendingAiMove?.san === 'e5') ? true : undefined));
     await handlePlayerChat({ characterId: CHAR, text: 'wait, dont move yet' });
-    await waitFor(() => {
-      const last = pushed[pushed.length - 1];
-      return last.pendingAiMove === null && last.history.length === 1 ? true : undefined;
-    });
-    // The next reply turn runs against the held-hold prompt: it must state the
-    // pause unambiguously (the "play your move and i'll release it" fix).
-    await handlePlayerChat({ characterId: CHAR, text: 'its your move...' });
-    expect(heldSystems.length).toBeGreaterThanOrEqual(1);
-    const sys = heldSystems[0];
-    expect(sys).toContain('it is YOUR turn');
-    expect(sys).toContain('CANNOT move');
-    expect(sys).toContain('call play() NOW');
-    expect(sys).toContain('Never tell them to play or to move');
+    // The refusal reached the model, was terminal, and the move never retracted.
+    expect(notes.length).toBe(1);
+    expect(notes[0]).toContain('Do not call it again');
+    const last = lastState();
+    expect(last.pendingAiMove?.san).toBe('e5');
+    const acked = await ackReveal(CHAR, last.pendingAiMove!.uci);
+    expect(acked.history.map((h) => h.san)).toEqual(['e4', 'e5']);
   });
 
   it('a decided move presents immediately: no artificial delay after the decision', async () => {
@@ -947,7 +883,8 @@ describe('continuity, caching and the coordinate ban (260724)', () => {
     const shapes = new Set(reqs.map((r) => (r.tools ?? []).map((t) => t.name).join(',')));
     expect(shapes.size).toBe(1);
     expect([...shapes][0]).toContain('play');
-    expect([...shapes][0]).toContain('wait');
+    // 260730: wait() is gone (reply turns are text-only).
+    expect([...shapes][0]).not.toContain('wait');
   });
 
   it('drops a spoken line containing a square or notation, and keeps ordinary chess talk', async () => {
