@@ -70,6 +70,10 @@ export function createConvoMemory() {
       formatPlayerBlock,
       formatSelfBlock,
       lastSelf: () => selfLines.length > 0 ? selfLines[selfLines.length - 1] : null,
+      // 260730: the pair of these two answers "has the player said anything
+      // since I last spoke?", which is what separates a reply from talking to
+      // yourself. See shouldSuppressIdleSay in orchestrator.js.
+      lastPlayer: () => playerLines.length > 0 ? playerLines[playerLines.length - 1] : null,
       get playerSize() { return playerLines.length },
       get selfSize() { return selfLines.length },
       _internal: { playerLines, selfLines },

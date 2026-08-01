@@ -224,6 +224,55 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
   return norm(candidateLine) === norm(lastSelf.text)
 }
 
+/**
+ * How long an UNPROMPTED line holds the floor: an idle-tick turn may not speak
+ * again this soon after the bot's last line unless the player has said
+ * something in between (260730).
+ *
+ * Sized off the live evidence rather than taste. Proactive tier idles every 5s
+ * (IDLE_CADENCE_MS[2]), so a session where the player is busy in their own
+ * window produced a spoken line every ~10s: "just let me know when you're
+ * sorted" / "cool, i'm just chilling here" / "all good on your end now?" /
+ * "cool, i'm here whenever you are" — four ways to say the same thing inside
+ * 30 seconds, and on a voice call every one of them is spoken out loud over
+ * whatever the player is doing. 45s means an unanswered line gets to stand.
+ */
+export const IDLE_SAY_GAP_MS = 45_000
+
+/**
+ * Suppress an idle-tick say() that talks over the bot's own last line.
+ *
+ * Idle ticks exist so a self-directed character resumes its GOAL quickly; the
+ * fast cadence is about acting, not about filling silence. A tick that fires
+ * while the player has not answered the last thing said produces a reworded
+ * repeat, which is the "commenting twice" the prompt's `your_recent_messages`
+ * block asks for and Haiku does not honour. Enforce it mechanically, the same
+ * way postProcessSay enforces the other say() rules.
+ *
+ * Only idle-class triggers are gated. A reply to the player, a reaction to
+ * being hit, a death, an action result — all of those are prompted by
+ * something that just happened and may speak whenever they like. Note the
+ * caller passes the CURRENT ITERATION's trigger, so a player line folded into
+ * a running idle loop is a chat turn here, not an idle one.
+ *
+ * @param {Object} args
+ * @param {string} args.triggerEvent — loop._currentIterationTrigger ?? loop._triggerEvent
+ * @param {{at:number,text:string}|null} args.lastSelf   — convoMemory.recentChat.lastSelf()
+ * @param {{at:number,text:string}|null} args.lastPlayer — convoMemory.recentChat.lastPlayer()
+ * @param {number} [args.now=Date.now()]
+ * @param {number} [args.gapMs=IDLE_SAY_GAP_MS]
+ * @returns {boolean} true = suppress, false = allow
+ */
+export function shouldSuppressIdleSay({ triggerEvent, lastSelf, lastPlayer, now = Date.now(), gapMs = IDLE_SAY_GAP_MS }) {
+  if (triggerEvent !== 'sei:idle' && triggerEvent !== 'sei:loop_end') return false
+  if (!lastSelf || !lastSelf.at) return false
+  if ((now - lastSelf.at) >= gapMs) return false
+  // The player answered (or said anything at all) after that line — this is a
+  // conversation, not a monologue, even though an idle tick carried it.
+  if (lastPlayer && lastPlayer.at >= lastSelf.at) return false
+  return true
+}
+
 // System prompt assembly: combined BASELINE_INSTRUCTIONS (game-agnostic,
 // brain/prompts.js) + adapter.actionRules() (game-specific, adapter/prompts.js).
 // Joined with a blank line so each side can be edited independently.
@@ -828,10 +877,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // emitted:false — an empty say() does NOT consume the one-per-turn slot.
       return { emitted: false, content: 'say: nothing sent (empty after cleanup)' }
     }
+    const lastSelf = convoMemory.recentChat.lastSelf?.() ?? null
     const suppressed = shouldSuppressLoopEndSay({
       triggerEvent: loop._triggerEvent,
       candidateLine: line,
-      lastSelf: convoMemory.recentChat.lastSelf?.() ?? null,
+      lastSelf,
     })
     if (suppressed) {
       logger.info?.(`[sei/orch] dedupeSay suppressed loop_end duplicate (loop=${loop.id}): ${line.slice(0, 80)}`)
@@ -840,6 +890,26 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // the player-message silence guard (the line IS already in chat).
       loop._spokeThisLoop = true
       return { emitted: true, content: 'said (suppressed duplicate of your last line)' }
+    }
+    // 260730: unprompted-chatter floor. An idle tick may not talk over the
+    // bot's own last line while the player has said nothing back. The
+    // CURRENT ITERATION's trigger is what counts — a player line folded into
+    // a running idle loop is a chat turn and is never gated here.
+    if (shouldSuppressIdleSay({
+      triggerEvent: loop._currentIterationTrigger ?? loop._triggerEvent,
+      lastSelf,
+      lastPlayer: convoMemory.recentChat.lastPlayer?.() ?? null,
+    })) {
+      const ago = lastSelf?.at ? Math.round((Date.now() - lastSelf.at) / 1000) : '?'
+      logger.info?.(`[sei/orch] idleSay suppressed — spoke ${ago}s ago, player has not answered (loop=${loop.id}): ${line.slice(0, 80)}`)
+      // Consumes the slot like the dedupe above: the turn had its chance to
+      // speak. The tool_result says WHY, so the model can act instead of
+      // retrying the same line next iteration.
+      loop._spokeThisLoop = true
+      return {
+        emitted: true,
+        content: 'not sent — you already said something and they have not answered yet. Stay quiet and let them come back to you, or do something useful instead of talking.',
+      }
     }
     // 260703: track per-loop speech so a player-message loop can refuse to
     // end silently (see the end_loop deferral in the dispatch predicates).
@@ -3605,6 +3675,19 @@ function maybeWarnByteCap(loop, warned) {
       })()
 
       if (toolUses.length === 0) {
+        // 260730: preempt-abort raced call completion. handlePreempt CLAIMED
+        // the player's line and aborted the controller, but the HTTP response
+        // had already resolved, so no AbortError ever threw. Without this
+        // fold the claimed message sits in pendingInterrupt until teardown
+        // re-enqueues it into a whole fresh loop (full reseed + new call —
+        // the measured 4-7s reply lag behind idle turns), or until the next
+        // 10s action_tick on a keep-alive loop. Fold it into THIS loop and
+        // answer now, exactly like the abort path does.
+        if (pendingInterrupt && !pendingAttack) {
+          await repairAfterAbort(loop)
+          replaceAbortController(loop)
+          continue
+        }
         if (iterationKeepsLoopAlive && loop.inFlight) {
           // R1 — text-only on a keep-alive iteration WITH an in_flight
           // long-runner still running: keep the loop alive. The body keeps
@@ -4334,7 +4417,18 @@ function maybeWarnByteCap(loop, warned) {
     // the loop is suspended on a long-runner (no call in flight), the FSM is
     // free and the normal dispatch path handles the event — and must NOT have
     // its action aborted here.
-    if (!loop || !loop._llmCallInFlight) return false
+    //
+    // 260730 exception: an idle-class loop (sei:idle / sei:loop_end chatter)
+    // is discardable by definition, so a player line or attack may cut it at
+    // ANY stage — snapshot build, quick tool dispatch, between hops — not
+    // only while a call is parked. Aborting the controller makes the loop's
+    // next callPersonality throw immediately; the abort-catch then folds the
+    // player's line into this loop (repairAfterAbort) with the thread cache
+    // intact, instead of the line waiting out the whole idle turn. A loop
+    // suspended on a long-runner still takes the normal path (FSM is free).
+    if (!loop) return false
+    const idleClass = loop._triggerEvent === 'sei:idle' || loop._triggerEvent === 'sei:loop_end'
+    if (!loop._llmCallInFlight && !(idleClass && !loop.inFlight)) return false
     if (event === 'sei:chat_received') {
       const chatText = (data && (data.text ?? data.message)) ?? ''
       // 260610: ACCUMULATE, don't overwrite. Two player messages can land
