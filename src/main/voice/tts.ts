@@ -21,10 +21,11 @@
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
 import { loadConfig } from '../configStore';
-import { VOICE_PITCH_MAX, VOICE_PITCH_MIN, ttsSpeedFor, voicePitchRate, voiceStabilityFor } from '../../shared/voicePitch';
+import { voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
 import { characterLanguage, clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
 import { toSpokenRegister, toSpokenUtterance } from './spokenRegister';
+import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from './audioTags';
 import { resolveVoiceId, isPoolVoiceId } from './voiceAssign';
 import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previewCache';
 import { NO_VOICE_ID } from '../../shared/voiceIds';
@@ -148,14 +149,17 @@ function spokenTextFor(text: string, language: ChatLanguage): string {
 }
 
 /**
- * The full chat-register → spoken-register conversion for one clip: shorthand
- * expansion (English only) then utterance form — sentence casing and the
- * terminal full stop the texting register drops (see toSpokenUtterance for why
- * that is prosody and not formality). Every language gets the second half; the
- * stop mark itself is per-script.
+ * The full chat-register → spoken-register conversion for one clip: bracketed
+ * stage directions removed (see audioTags.ts — the shipped model READS `[laughs]`
+ * aloud as a word rather than performing it), then shorthand expansion (English
+ * only), then utterance form — sentence casing and the terminal full stop the
+ * texting register drops (see toSpokenUtterance for why that is prosody and not
+ * formality). Every language gets tag-stripping and utterance form; the stop
+ * mark itself is per-script.
  */
 function speechTextFor(text: string, language: ChatLanguage): string {
-  return toSpokenUtterance(spokenTextFor(text, language), language);
+  const untagged = stripAudioTags(text, SUPPORTS_AUDIO_TAGS);
+  return toSpokenUtterance(spokenTextFor(untagged, language), language);
 }
 
 // Delivery calmness (260724): voiceStabilityFor moved to shared/voicePitch.ts
@@ -186,16 +190,24 @@ const TTS_NEXT_TEXT: Record<ChatLanguage, string> = {
 /** Keep the conditioning tail short (and under the proxy's 1000-char field cap). */
 const TTS_PREVIOUS_TEXT_MAX = 500;
 /**
- * Below this many characters a clip carries NO conditioning at all. The bleed
- * that started this (a greeting rendered as "yo what's up, eh", the head of
- * next_text spoken aloud) needed one ingredient above all: so little primary
- * text that the context fields outweighed it. The same tiny clips are the ones
- * that render as clipped fragments when told they continue a prior utterance.
- * Mirrors STREAM_MIN_CHARS in the voice store, which routes the same clips
- * around the streaming path — both thresholds encode "this clip is too small
- * to survive extra machinery".
+ * Below this many characters a clip carries no NEXT_TEXT. The floor is about
+ * one specific failure and only one: a greeting rendered as "yo what's up, eh",
+ * the head of next_text SPOKEN ALOUD. That needs so little primary text that
+ * the trailing context outweighs it, so it is a next_text problem end to end.
+ *
+ * 260730: previous_text is no longer gated by it (and the floor itself went
+ * 24 → 10). previous_text never bled — it is behind the clip, not in front of
+ * it, so there is no head for the model to run into — and gating it was the
+ * direct cause of the "starts squeaky, then calms down" report: a call opens on
+ * its shortest lines, all of them fell under the floor, and a clip told nothing
+ * about what preceded it is synthesized as an isolated exclamation (high onset,
+ * wide excursion, no declination) which then takes the character's pitch shift
+ * on top. Long sentences carry their own falling contour, so the same shift
+ * reads as calm and the call seemed to settle as it went on. It deliberately no
+ * longer mirrors STREAM_MIN_CHARS (24) in the voice store — that one picks a
+ * PLAYBACK route and says nothing about how a clip is rendered.
  */
-const TTS_CONTEXT_MIN_CHARS = 24;
+const TTS_NEXT_TEXT_MIN_CHARS = 10;
 
 /**
  * Utterance-context conditioning, scoped to ONE reply.
@@ -224,10 +236,13 @@ function ttsContextFor(
   prev: string | undefined,
   more: boolean,
 ): Record<string, string> {
-  if (text.trim().length < TTS_CONTEXT_MIN_CHARS) return {};
+  // previous_text at ANY length (260730 — see TTS_NEXT_TEXT_MIN_CHARS): the
+  // shortest clips are the ones that most need to know what they follow, and
+  // they are exactly what the old shared floor withheld it from.
+  const withNext = more && text.trim().length >= TTS_NEXT_TEXT_MIN_CHARS;
   return {
     ...(prev ? { previous_text: prev.slice(-TTS_PREVIOUS_TEXT_MAX) } : {}),
-    ...(more ? { next_text: TTS_NEXT_TEXT[language] ?? TTS_NEXT_TEXT.en } : {}),
+    ...(withNext ? { next_text: TTS_NEXT_TEXT[language] ?? TTS_NEXT_TEXT.en } : {}),
   };
 }
 
@@ -236,13 +251,16 @@ function ttsContextFor(
  * knobs as flat fields — see synthesize). `style: 0` rides along with any
  * stability pin so a nonzero per-voice style default can't re-dramatize the
  * delivery that stability just flattened.
+ *
+ * 260731: `speed` is gone. It existed only to slow a clip so the renderer's
+ * pitched playback landed at normal pace, and it was the unreliable half of
+ * that pair — a conditioning hint, not arithmetic, and a short utterance gives
+ * the model no room to express it. Pitch is shifted locally now
+ * (renderer lib/voice/pitchBus.ts) and synthesis is asked for its natural pace.
  */
-function voiceSettingsFor(speed?: number, stability?: number): Record<string, number> | undefined {
-  if (speed === undefined && stability === undefined) return undefined;
-  return {
-    ...(speed !== undefined ? { speed } : {}),
-    ...(stability !== undefined ? { stability, style: 0 } : {}),
-  };
+function voiceSettingsFor(stability?: number): Record<string, number> | undefined {
+  if (stability === undefined) return undefined;
+  return { stability, style: 0 };
 }
 
 async function getJwtOrNull(): Promise<string | null> {
@@ -300,17 +318,14 @@ async function fetchAudio(
  * Route a (text, voiceId) pair to a resolved ElevenLabs key or the proxy
  * (see resolveElevenLabsRoute — the dev env key and the BYOK stored key are
  * the 'direct' branch; BYOK with no key throws VOICE_NOT_CONFIGURED).
- * `speed` (< 1 for pitched-up characters) slows the synthesis so the
- * renderer's pitched playback lands at normal pace — see
- * shared/voicePitch.ts. `stability` (high for calm characters — see
- * voiceStabilityFor) flattens delivery. The proxy relays both into
- * voice_settings; an older deployed proxy strips the fields (speech then
- * runs fast / expressive until the proxy ships, never an error).
+ * `stability` (high for calm characters — see voiceStabilityFor) flattens
+ * delivery. The proxy relays it into voice_settings; an older deployed proxy
+ * strips the field (speech then runs expressive until the proxy ships, never
+ * an error). Pitch is NOT a synthesis parameter — see voiceSettingsFor.
  */
 async function synthesize(
   text: string,
   voiceId: string,
-  speed?: number,
   language: ChatLanguage = 'en',
   stability?: number,
   routeArg?: ElevenLabsRoute,
@@ -321,7 +336,7 @@ async function synthesize(
   // speech still auto-detects, never an error — same forward-compat stance
   // as `speed`.
   const langField = language !== 'en' ? { language_code: language } : {};
-  const settings = voiceSettingsFor(speed, stability);
+  const settings = voiceSettingsFor(stability);
   const route = routeArg ?? (await resolveElevenLabsRoute());
   if (route.kind === 'direct') {
     return fetchAudio(
@@ -339,7 +354,7 @@ async function synthesize(
   return fetchAudio(
     `${PROXY_BASE_URL}/tts/speech`,
     { Authorization: `Bearer ${jwt}` },
-    { text, voice_id: voiceId, ...langField, ...(context ?? {}), ...(speed !== undefined ? { speed } : {}), ...(stability !== undefined ? { stability } : {}) },
+    { text, voice_id: voiceId, ...langField, ...(context ?? {}), ...(stability !== undefined ? { stability } : {}) },
   );
 }
 
@@ -411,7 +426,7 @@ export async function voiceTts(args: {
   const prev = args.prev ? speechTextFor(args.prev, language) : undefined;
   const context = ttsContextFor(text, language, prev, args.more === true);
   const buf = await synthesize(
-    text, voiceId, ttsSpeedFor(voicePitchRate(character)), language, voiceStabilityFor(character), route, context,
+    text, voiceId, language, voiceStabilityFor(character), route, context,
   );
   return buf;
 }
@@ -456,13 +471,12 @@ export async function voiceTtsStream(
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
   // BYOK with no key: same pre-flight sentinel as synthesize (see there).
   if (route.kind === 'unconfigured') throw new Error(NOT_CONFIGURED_BYOK);
-  // Pace compensation for pitched playback (see synthesize / shared/voicePitch.ts).
-  const speed = ttsSpeedFor(voicePitchRate(character));
-  // Delivery calmness (see voiceStabilityFor — same relay stance as speed).
+  // Delivery calmness (see voiceStabilityFor). Pitch is not a synthesis
+  // parameter — the renderer shifts it locally (see voiceSettingsFor).
   const stability = voiceStabilityFor(character);
   // Language pin for non-English (see synthesize — same forward-compat stance).
   const langField = language !== 'en' ? { language_code: language } : {};
-  const settings = voiceSettingsFor(speed, stability);
+  const settings = voiceSettingsFor(stability);
   // Utterance-context conditioning (see ttsContextFor) — keeps a multi-line
   // reply from dropping pitch between its own sentences. `prev` is normalized
   // like the clip itself (see voiceTts).
@@ -485,7 +499,7 @@ export async function voiceTtsStream(
     const jwt = await getJwtOrNull();
     if (!jwt) throw new Error('VOICE_NO_SESSION: sign in to use voice calls');
     headers = { Authorization: `Bearer ${jwt}` };
-    body = { text, voice_id: voiceId, ...langField, ...context, ...(speed !== undefined ? { speed } : {}), ...(stability !== undefined ? { stability } : {}) };
+    body = { text, voice_id: voiceId, ...langField, ...context, ...(stability !== undefined ? { stability } : {}) };
   }
 
   const ctrl = new AbortController();
@@ -584,34 +598,31 @@ const PREVIEW_LINES: Record<ChatLanguage, string> = {
  * userData cache for free (params ride into the cache key via the hashed text
  * argument, so the no-params key is unchanged and old entries stay valid).
  *
- * `pitch` is the playground's playback rate: synthesis gets the matching pace
- * compensation (ttsSpeedFor), and the RENDERER plays the clip at
- * playbackRate = pitch with preservesPitch off — same split as live calls
- * (shared/voicePitch.ts). `calmness` maps to ElevenLabs stability.
+ * 260731: `pitch` is gone. It used to ask for a pace compensation the renderer
+ * cancelled by resampling; the shift is local now (lib/voice/pitchBus.ts), so
+ * pitch changes nothing about these bytes and keying the cache on it would
+ * re-synthesize the same clip once per slider position. `calmness` maps to
+ * ElevenLabs stability and still does change them.
  */
 export async function voicePreviewTts(args: {
   voiceId: string;
-  pitch?: number;
   calmness?: number;
 }): Promise<ArrayBuffer> {
   const { voiceId } = args;
   if (!isPoolVoiceId(voiceId)) throw new Error('VOICE_TTS_FAILED: unknown voice');
-  const pitch =
-    typeof args.pitch === 'number' && Number.isFinite(args.pitch) && args.pitch !== 1
-      ? Math.min(VOICE_PITCH_MAX, Math.max(VOICE_PITCH_MIN, args.pitch))
-      : undefined;
   const calmness =
     typeof args.calmness === 'number' && Number.isFinite(args.calmness)
       ? Math.min(1, Math.max(0, args.calmness))
       : undefined;
   const language = await ttsLanguage();
   const line = PREVIEW_LINES[language] ?? PREVIEW_LINES.en;
-  const paramTag =
-    pitch !== undefined || calmness !== undefined ? `\n#pitch=${pitch ?? 1};calm=${calmness ?? ''}` : '';
+  // The tag shape is unchanged so entries cached before 260731 at pitch 1 stay
+  // valid; only the pitch component of the key is gone.
+  const paramTag = calmness !== undefined ? `\n#pitch=1;calm=${calmness}` : '';
   const key = previewCacheKey(voiceId, line + paramTag);
   const cached = await readCachedPreview(key);
   if (cached) return cached;
-  const buf = await synthesize(line, voiceId, pitch !== undefined ? ttsSpeedFor(pitch) : undefined, language, calmness);
+  const buf = await synthesize(line, voiceId, language, calmness);
   await writeCachedPreview(key, buf);
   return buf;
 }

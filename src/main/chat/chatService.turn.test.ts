@@ -532,7 +532,7 @@ describe('streamed voice turn: spoken text keeps its punctuation and carries rep
     setCallActive(CHAR, true);
     // Two sentences land in ONE delta (so the first KNOWS another follows), then
     // an unterminated tail that flushes after finalMessage.
-    streamSpy.mockReturnValue(fakeStream(['hey. i got the iron. ', 'want me to smelt it?']));
+    streamSpy.mockReturnValue(fakeStream(['thanks for that. i got the iron. ', 'want me to smelt it?']));
     const emitReply = vi.fn();
     const d: ChatDeps = { ...deps(), emitReply };
 
@@ -543,10 +543,33 @@ describe('streamed voice turn: spoken text keeps its punctuation and carries rep
     expect(emitted).toEqual([
       // The trailing period SURVIVES on a call (splitReply `spoken`): it is the
       // terminal intonation, not texting formality.
-      ['hey.', { prev: undefined, more: true }],
-      ['i got the iron.', { prev: 'hey.', more: false }],
+      ['thanks for that.', { prev: undefined, more: true }],
+      ['i got the iron.', { prev: 'thanks for that.', more: false }],
       ['want me to smelt it?', { prev: 'i got the iron.', more: false }],
     ]);
+  });
+
+  it('merges a short lead-in into the sentence it introduces, in one clip', async () => {
+    setCallActive(CHAR, true);
+    // Live 260729: "oh." went out as its own clip. Split off it is a separate
+    // synthesis request that lands as a complete little statement, unrelated to
+    // the sentence it opens (and too short to carry any conditioning).
+    streamSpy.mockReturnValue(fakeStream(['oh. ', "so you're still tweaking me."]));
+    const emitReply = vi.fn();
+
+    await sendChatMessage({ characterId: CHAR, text: "i'm the developer", voiceCall: true }, { ...deps(), emitReply });
+
+    expect(emitReply.mock.calls.map(([, msg]) => msg.text)).toEqual(["oh. so you're still tweaking me."]);
+  });
+
+  it('speaks a short line that has nothing after it, rather than holding it', async () => {
+    setCallActive(CHAR, true);
+    streamSpy.mockReturnValue(fakeStream(['ok.']));
+    const emitReply = vi.fn();
+
+    await sendChatMessage({ characterId: CHAR, text: 'later', voiceCall: true }, { ...deps(), emitReply });
+
+    expect(emitReply.mock.calls.map(([, msg]) => msg.text)).toEqual(['ok.']);
   });
 
   it('never asserts `more` from text it does not have yet', async () => {
@@ -554,7 +577,8 @@ describe('streamed voice turn: spoken text keeps its punctuation and carries rep
     // One sentence per delta: at the moment each is emitted, nothing further is
     // known, and a false `more` would send next_text on what turns out to be the
     // last line and take its terminal fall away. Unknown means false.
-    streamSpy.mockReturnValue(fakeStream(['sure. ', 'give me a sec. ']));
+    // Both are over MERGE_SHORT_SENTENCE_CHARS, so each is its own clip.
+    streamSpy.mockReturnValue(fakeStream(['sure thing man. ', 'give me a sec. ']));
     const emitReply = vi.fn();
 
     await sendChatMessage({ characterId: CHAR, text: 'can you help', voiceCall: true }, { ...deps(), emitReply });

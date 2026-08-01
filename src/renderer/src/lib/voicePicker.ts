@@ -87,11 +87,12 @@ export function assetPathFor(voiceId: string, lang: string): string {
  * non-default values are ever stored (persisted to character.metadata as
  * voicePitch / voiceStability).
  *
- *   - pitch:    playback rate in [0.85, 1.4]; 1 = as recorded. Main
- *               synthesizes with pace compensation, so playing the preview at
- *               playbackRate = pitch with preservesPitch off shifts pitch
- *               only, keeping the speaking pace.
- *   - calmness: ElevenLabs stability in [0, 1]; higher is steadier.
+ *   - pitch:    frequency multiplier in [0.85, 1.4]; 1 = as recorded. A local,
+ *               pace-preserving shift applied at playback (lib/voice/pitchBus.ts),
+ *               so it never reaches synthesis and a preview can be shifted
+ *               without re-synthesizing.
+ *   - calmness: ElevenLabs stability in [0, 1]; higher is steadier. This one
+ *               does change the synthesized bytes.
  */
 export interface VoiceParams {
   pitch?: number;

@@ -12,9 +12,15 @@
  * ~-45 dBFS) makes the line sound continuously "open" instead — the
  * transition disappears rather than the noise becoming noticeable.
  *
- * Both return a stop() that fully tears down their AudioContext; callers own
- * lifecycle (useVoiceStore: ring while 'connecting', ambience while 'live').
+ * Both return a stop() that drops their own nodes; callers own lifecycle
+ * (useVoiceStore: ring while 'connecting', ambience while 'live'). Neither
+ * closes the AudioContext, which is shared and long-lived — see voiceAudio.ts.
+ *
+ * 260731: the context, its scheduling leads and the whenSteady gate moved to
+ * voiceAudio.ts when the TTS pitch shifter needed all three. Nothing about them
+ * changed; this file just stopped being their only user.
  */
+import { sharedContext as audio, startTime, whenSteady } from './voiceAudio';
 
 export type StopFn = () => void;
 
@@ -30,7 +36,14 @@ const RING_PERIOD_MS = QUARTER_MS * 4;
 
 /** Schedule one soft sine "ding" — THE call instrument (ring + hang-up share
  * it so the call's sounds feel like one device). */
-function ding(ctx: AudioContext, freq: number, at: number, dur: number, gain = RING_GAIN): void {
+function ding(
+  ctx: AudioContext,
+  freq: number,
+  at: number,
+  dur: number,
+  gain = RING_GAIN,
+  out: AudioNode = ctx.destination,
+): void {
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
   osc.type = 'sine';
@@ -39,42 +52,39 @@ function ding(ctx: AudioContext, freq: number, at: number, dur: number, gain = R
   g.gain.linearRampToValueAtTime(gain, at + 0.015);
   g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
   osc.connect(g);
-  g.connect(ctx.destination);
+  g.connect(out);
   osc.start(at);
   osc.stop(at + dur + 0.05);
 }
 
-/** Play a one-shot through a throwaway AudioContext that closes itself. */
-function oneShot(build: (ctx: AudioContext) => number): void {
-  let ctx: AudioContext;
-  try {
-    ctx = new AudioContext();
-  } catch {
-    return;
-  }
-  const totalMs = build(ctx);
-  window.setTimeout(() => void ctx.close().catch(() => {}), totalMs + 150);
+/**
+ * Play a one-shot on the shared context (which stays open — see audio()),
+ * once the output is genuinely rendering. The connected chime fires moments
+ * after the ring stops, still inside the window where a device switch can be
+ * settling, so it gets the same gate; on a healthy context whenSteady costs
+ * ~100ms, which nothing here is tight enough to notice.
+ */
+function oneShot(build: (ctx: AudioContext, t: number) => void): void {
+  const ctx = audio();
+  if (!ctx) return;
+  whenSteady(ctx, () => build(ctx, startTime(ctx)));
 }
 
 /** Connected: one quick rising eighth-note pair, D → A — the line opening. */
 export function playConnectedChime(): void {
-  oneShot((ctx) => {
-    const t = ctx.currentTime + 0.02;
+  oneShot((ctx, t) => {
     ding(ctx, D5, t, 0.16);
     ding(ctx, A5, t + 0.13, 0.32);
-    return 550;
   });
 }
 
 /** Hang-up chime: the pickup figure mirrored — A → D falling. Plays for BOTH
- * hang-up paths (player button and the companion's end_call), from its own
- * context so call teardown can't clip it. */
+ * hang-up paths (player button and the companion's end_call); it outlives call
+ * teardown because the shared context is never closed with the call. */
 export function playHangupChime(): void {
-  oneShot((ctx) => {
-    const t = ctx.currentTime + 0.02;
+  oneShot((ctx, t) => {
     ding(ctx, A5, t, 0.16);
     ding(ctx, D5, t + 0.13, 0.36);
-    return 600;
   });
 }
 
@@ -82,8 +92,7 @@ export function playHangupChime(): void {
  * filtered darker for mute and brighter for unmute so the direction is felt
  * without any melodic content competing with the call chimes. */
 export function playMuteClick(muted: boolean): void {
-  oneShot((ctx) => {
-    const t = ctx.currentTime + 0.01;
+  oneShot((ctx, t) => {
     const len = Math.floor(ctx.sampleRate * 0.014);
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const data = buf.getChannelData(0);
@@ -100,48 +109,56 @@ export function playMuteClick(muted: boolean): void {
     bp.connect(ng);
     ng.connect(ctx.destination);
     src.start(t);
-    return 120;
   });
 }
 
 export function startRingtone(): StopFn {
-  let ctx: AudioContext;
-  try {
-    ctx = new AudioContext();
-  } catch {
-    return () => {};
-  }
+  const ctx = audio();
+  if (!ctx) return () => {};
   let timer: number | null = null;
   let stopped = false;
+  // The ring's own bus: stopping used to close the context, which is no longer
+  // ours to close (it is shared and stays open). Muting the bus silences the
+  // notes already scheduled for the rest of the bar just as abruptly, and each
+  // oscillator stops itself.
+  const bus = ctx.createGain();
+  bus.connect(ctx.destination);
 
   // One 4/4 bar per loop: D, F#, D, rest — quarter notes.
   const ring = (): void => {
     if (stopped) return;
-    const t = ctx.currentTime + 0.02;
-    ding(ctx, D5, t, 0.45);
-    ding(ctx, FSHARP5, t + QUARTER_MS / 1000, 0.45);
-    ding(ctx, D5, t + (2 * QUARTER_MS) / 1000, 0.45);
+    const t = startTime(ctx);
+    ding(ctx, D5, t, 0.45, RING_GAIN, bus);
+    ding(ctx, FSHARP5, t + QUARTER_MS / 1000, 0.45, RING_GAIN, bus);
+    ding(ctx, D5, t + (2 * QUARTER_MS) / 1000, 0.45, RING_GAIN, bus);
     timer = window.setTimeout(ring, RING_PERIOD_MS);
   };
-  ring();
+  // The FIRST bar waits for the output to be real (see whenSteady) — it is the
+  // one that lands in the mic's echo-cancellation reroute and gets eaten.
+  // Later bars are already past it and schedule straight off the loop timer.
+  whenSteady(ctx, () => {
+    if (!stopped) ring();
+  });
 
   return () => {
     if (stopped) return;
     stopped = true;
     if (timer !== null) window.clearTimeout(timer);
-    void ctx.close().catch(() => {});
+    try {
+      bus.gain.setValueAtTime(0, ctx.currentTime);
+    } catch {
+      /* context gone */
+    }
+    // Outlive the longest scheduled note, then drop the node.
+    window.setTimeout(() => bus.disconnect(), RING_PERIOD_MS + 500);
   };
 }
 
 const AMBIENCE_GAIN = 0.0055;
 
 export function startAmbience(): StopFn {
-  let ctx: AudioContext;
-  try {
-    ctx = new AudioContext();
-  } catch {
-    return () => {};
-  }
+  const ctx = audio();
+  if (!ctx) return () => {};
   // 2s of brown-ish noise (integrated white), looped. Loop-point click is
   // below audibility at this gain; the low-pass kills the hiss edge.
   const seconds = 2;
@@ -177,6 +194,18 @@ export function startAmbience(): StopFn {
     } catch {
       /* context already closing */
     }
-    window.setTimeout(() => void ctx.close().catch(() => {}), 200);
+    // The context is shared and outlives the call: stop the source and drop the
+    // nodes instead of closing it (closing would take the next call's chime
+    // back to a cold device — the bug voiceAudio.ts's shared context avoids).
+    window.setTimeout(() => {
+      try {
+        src.stop();
+      } catch {
+        /* already stopped */
+      }
+      gain.disconnect();
+      lp.disconnect();
+      src.disconnect();
+    }, 200);
   };
 }

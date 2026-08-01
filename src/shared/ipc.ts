@@ -1337,7 +1337,7 @@ export interface RendererApi {
   drawChat(characterId: string, text: string): Promise<void>;
   /** Answer to a draw:snapshot-request. */
   drawSnapshot(requestId: string, dataUrl: string): Promise<void>;
-  /** Write the gallery PNG to the Desktop; resolves with the saved path. */
+  /** Write the gallery PNG to Downloads; resolves with the saved path. */
   drawSaveGallery(characterId: string, pngDataUrl: string): Promise<string>;
   /** Close the game. Unfinished games are recorded 'abandoned'. */
   drawEnd(characterId: string): Promise<void>;
@@ -1484,6 +1484,13 @@ export interface RendererApi {
     characterId: string;
     quietSeconds: number;
     peers: string[];
+    /**
+     * 260730: the companion's last spoken line ended in a question and the
+     * player has not answered. The renderer fires these on a much tighter
+     * 5-15s window and main swaps the start-a-topic note for a gentle
+     * follow-up. At most one per question.
+     */
+    awaitingAnswer?: boolean;
   }): Promise<{ messages: ChatMessage[]; endCall?: boolean }>;
   /**
    * Subscribe to main-initiated call hang-ups: the companion called
@@ -1495,15 +1502,16 @@ export interface RendererApi {
   voiceListVoices(): Promise<VoiceInfo[]>;
   /**
    * Speak the canned preview line in an arbitrary pool voice (picker).
-   * Playground params (260725): `pitch` is a playback rate (clamped to
-   * VOICE_PITCH_MIN..MAX in shared/voicePitch.ts) — main synthesizes with the
-   * matching pace compensation, so the clip must be PLAYED at
-   * playbackRate = pitch with preservesPitch off to land at normal pace with
-   * only the pitch shifted. `calmness` is ElevenLabs stability (clamped 0..1).
-   * Omitted params keep the request byte-identical to the pre-playground
-   * shape, so existing disk-cache entries stay valid.
+   * `calmness` is ElevenLabs stability (clamped 0..1); omitting it keeps the
+   * request byte-identical to the pre-playground shape, so existing disk-cache
+   * entries stay valid.
+   *
+   * The playground's OTHER slider, pitch, is deliberately not here (260731):
+   * it is applied locally at playback (renderer lib/voice/pitchBus.ts) and
+   * changes nothing about the synthesized bytes, so sending it would only
+   * fragment the preview cache.
    */
-  voicePreview(args: { voiceId: string; pitch?: number; calmness?: number }): Promise<ArrayBuffer>;
+  voicePreview(args: { voiceId: string; calmness?: number }): Promise<ArrayBuffer>;
   /**
    * Whether voice samples can synthesize right now (signed-in session, a dev
    * TTS key, or a stored BYOK ElevenLabs key). The picker disables sample

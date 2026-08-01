@@ -112,13 +112,44 @@ describe('voiceTts', () => {
     }
   });
 
-  it('drops conditioning entirely on a clip too short to outweigh it', async () => {
+  it('drops NEXT_text on a clip too short to outweigh it, but keeps previous_text', async () => {
     fetchSpy.mockImplementation(async () => okAudio());
     // Mid-reply on both sides, but three characters of primary text: this is
-    // the shape that got next_text SPOKEN ("yo what's up, eh").
+    // the shape that got next_text SPOKEN ("yo what's up, eh"). previous_text
+    // has no head to run into, so it rides at any length (260730) — and a clip
+    // this small is precisely the one that needs to know what it follows.
     await voiceTts({ characterId: 'c1', text: 'you', prev: LONG, more: true });
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual({ text: 'You.', voice_id: VOICE });
+    expect(JSON.parse(init.body as string)).toEqual({
+      text: 'You.',
+      voice_id: VOICE,
+      previous_text: LONG_SPOKEN,
+    });
+  });
+
+  it('gives previous_text to a short opening clip: the squeaky-call fix', async () => {
+    // 260730: previous_text used to share next_text's floor, so a call's
+    // OPENING lines — its shortest — were rendered knowing nothing about what
+    // came before them: isolated exclamations, high onset, no declination,
+    // then the character's pitch shift on top. The call seemed to "calm down"
+    // only because its lines got longer. Nothing is withheld now.
+    fetchSpy.mockImplementation(async () => okAudio());
+    await voiceTts({ characterId: 'c1', text: 'oh', prev: LONG });
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.text).toBe('Oh.');
+    expect(body.previous_text).toBe(LONG_SPOKEN);
+    expect(body.next_text).toBeUndefined(); // nothing follows, and it is tiny
+  });
+
+  it('never sends a bracketed stage direction to be read aloud', async () => {
+    // Measured: eleven_flash_v2_5 SPEAKS "[laughs]" rather than performing it
+    // (see voice/audioTags.ts), so an unprompted tag is a word in the
+    // character's mouth. Stripped here as well as out of the chat bubble.
+    fetchSpy.mockImplementation(async () => okAudio());
+    await voiceTts({ characterId: 'c1', text: '[laughs] no way that actually worked' });
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string).text).toBe('No way that actually worked.');
   });
 
   /**

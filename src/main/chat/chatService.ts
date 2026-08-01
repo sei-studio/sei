@@ -21,6 +21,7 @@ import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_C
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isCallActive } from '../voice/callState';
+import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
@@ -169,6 +170,14 @@ export function splitReply(
   const parts = text
     .split(/\n+/)
     .map((s) => s.trim())
+    // Bracketed stage directions never reach a bubble (260730). They are not a
+    // thing the model is offered — the shipped TTS model reads `[laughs]` aloud
+    // as a word instead of performing it, so audioTags.ts keeps the vocabulary
+    // switched off — but models write them unprompted, and on a call the SAME
+    // text is the caption and the clip. Removed here so a stray one cannot be
+    // read on screen, and again at the synthesis boundary so it cannot be
+    // spoken (speechTextFor), the same belt-and-braces as the markdown strip.
+    .map((s) => stripAudioTags(s, SUPPORTS_AUDIO_TAGS))
     // 260705: casual texters (the default) drop a single trailing period per
     // bubble — how people actually text. ONLY a lone period: an ellipsis
     // ("hm...") carries tone and is kept, and ? / ! always stay. 'deliberate'
@@ -178,6 +187,24 @@ export function splitReply(
     .filter(Boolean);
   return parts.length ? parts : ['…'];
 }
+
+/**
+ * A sentence this short does not become its own spoken clip (260729). "oh.",
+ * "um.", "wait." are lead-ins, not utterances: split off on their own they are
+ * synthesized as a separate request, which lands as a complete little statement
+ * with a full stop and no relation to the sentence it introduces, and (being
+ * under TTS_CONTEXT_MIN_CHARS) carries no utterance conditioning either. Held
+ * and prepended to the next sentence, ElevenLabs renders "Oh. So you're still
+ * tweaking me." as ONE connected arc, which is what it is.
+ *
+ * The cost is latency, and it is why this is 10 and not 20: when a reply OPENS
+ * with an interjection, first audio waits for the next sentence to finish
+ * generating. Kept to interjections, that is a few hundred ms on a clip that
+ * would itself have been a few hundred ms of audio. A short sentence with
+ * nothing after it never waits — the trailing flush emits it as soon as the
+ * stream ends.
+ */
+const MERGE_SHORT_SENTENCE_CHARS = 10;
 
 /**
  * Voice streaming (260706): pull COMPLETE sentences off the front of a growing
@@ -599,6 +626,8 @@ export async function sendChatMessage(
     const isStreaming = isVoice;
     const streamedReplies: ChatMessage[] = [];
     let streamBuf = '';
+    /** A sub-threshold sentence waiting to ride out with the next one. */
+    let shortLeadIn = '';
     /**
      * The line emitted just before this one, WITHIN this reply (260729). It
      * rides out with each push as `speech.prev` so TTS can condition the clip's
@@ -693,16 +722,31 @@ export async function sendChatMessage(
             // lands as a complete sentence, and if another does follow, IT gets
             // `prev` so its own opening still continues cleanly.
             for (let i = 0; i < sentences.length; i++) {
-              await emitStreamedBubble(sentences[i], i < sentences.length - 1 || streamBuf.trim().length > 0);
+              // A lead-in too short to stand alone rides with the next sentence
+              // (see MERGE_SHORT_SENTENCE_CHARS). Held unconditionally, not just
+              // when more text is already buffered: at the instant "oh." is
+              // extracted the buffer is usually empty, and the sentence it
+              // introduces arrives a delta later.
+              const s = shortLeadIn ? `${shortLeadIn} ${sentences[i]}` : sentences[i];
+              shortLeadIn = '';
+              if (s.length <= MERGE_SHORT_SENTENCE_CHARS) {
+                shortLeadIn = s;
+                continue;
+              }
+              await emitStreamedBubble(s, i < sentences.length - 1 || streamBuf.trim().length > 0);
             }
           }
         }
         res = await stream.finalMessage();
         // This hop's trailing partial (a final sentence with no boundary punct,
-        // or the whole reply when the model ends without terminal punctuation).
+        // or the whole reply when the model ends without terminal punctuation),
+        // carrying any held lead-in — which is also how a reply that is NOTHING
+        // but a short line ("ok.") gets spoken: the hold ends with the stream.
         // Nothing more is known to follow: a further hop may still speak, but
         // only after a tool round trip, which is a new utterance by then.
-        if (streamBuf.trim()) await emitStreamedBubble(streamBuf, false);
+        const tail = [shortLeadIn, streamBuf.trim()].filter(Boolean).join(' ');
+        if (tail) await emitStreamedBubble(tail, false);
+        shortLeadIn = '';
         streamBuf = '';
       } else {
         res = await client.messages.create(params, opts);
@@ -1244,7 +1288,7 @@ export async function sendVoiceIdleTurn(
   /** 260708: live LAN truth + single-shot launch honor (see
    * sendCompanionVoiceTurn) — an idle nudge that says "i'll hop in" must
    * actually join instead of hanging. */
-  opts: { openWorldDetected?: boolean; onLaunch?: () => void } = {},
+  opts: { openWorldDetected?: boolean; onLaunch?: () => void; awaitingAnswer?: boolean } = {},
 ): Promise<{ messages: ChatMessage[]; endCall?: boolean }> {
   // The nudge can race a hang-up (the renderer timer fires as the call ends).
   // Without this guard the turn still runs a full paid LLM round-trip and
@@ -1266,11 +1310,21 @@ export async function sendVoiceIdleTurn(
     // 260725: proactiveness is no longer a per-character dial, so every
     // companion gets the take-it-or-leave-it nudge with silence sanctioned.
     const quiet = Math.max(1, Math.round(quietSeconds));
-    const note =
-      `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
-      'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
-      'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
-      'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
+    // 260730: two nudges, not one. The generic "start a topic" note read wrong
+    // after the companion had just ASKED something — the reply that follows a
+    // question is an answer, and a fresh topic on top of the unanswered one
+    // drops it. The follow-up note is deliberately unpressured: no "still
+    // there?", no repeating the question at them, and silence is still a fine
+    // answer. Fires at most once per question (see the renderer's idle clock).
+    const note = opts.awaitingAnswer
+      ? `[System note — not the player speaking: you asked them something and they have not answered for about ${quiet} seconds. ` +
+        'You can follow up in one short spoken line: put it a different way, offer an easy option, say it is fine either way, or let it go and move on. ' +
+        'Or reply with exactly (silence), which is never spoken and just ends your turn. ' +
+        'Keep it light and unbothered. Do not repeat the question as it was, do not press them for an answer, and do not ask if they are still there. Do not mention this note.]'
+      : `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
+        'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
+        'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
+        'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
     foldUserNote(messages, note);
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);

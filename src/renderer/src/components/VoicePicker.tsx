@@ -16,16 +16,18 @@
  * assets (voice-previews/), so pool rows play instantly, offline, with no
  * sign-in. The live TTS path (main-side disk cache + session Map here) is the
  * fallback for voice ids without a bundled file (the legacy "Current voice"
- * row), for a bundled asset that fails to load, and for ANY voice once the
- * playground params are non-default (the bundled clips are recorded at engine
- * defaults). One sample plays at a time; starting a second stops the first.
- * When TTS is unavailable (signed out, no dev key) bundled samples keep
- * playing.
+ * row), for a bundled asset that fails to load, and for a non-default CALMNESS
+ * (the bundled clips are recorded at engine defaults). One sample plays at a
+ * time; starting a second stops the first. When TTS is unavailable (signed out,
+ * no dev key) bundled samples keep playing.
  *
- * Playground (260725): a "Tune the voice" panel with Pitch (playback rate,
- * pace-compensated by main so only the pitch shifts) and Calmness (ElevenLabs
- * stability) sliders. Tuned previews fetch via sei.voicePreview and play at
- * playbackRate = pitch with preservesPitch off, per the synthesis contract.
+ * Playground (260725): a "Tune the voice" panel with Pitch and Calmness
+ * (ElevenLabs stability) sliders.
+ *
+ * 260731: pitch is applied locally at playback (lib/voice/pitchBus.ts) and no
+ * longer reaches synthesis, so it no longer forces a live TTS fetch — a
+ * pitch-only tune previews from the BUNDLED clip through the shifter: instant,
+ * offline, no sign-in, no spend. Only calmness still changes the bytes.
  */
 
 import React, { useEffect, useId, useRef, useState } from 'react';
@@ -43,6 +45,7 @@ import {
   type VoiceGroup,
   type VoiceParams,
 } from '../lib/voicePicker';
+import { attach as attachPitch, warm as warmPitchBus, whenReady as pitchReady } from '../lib/voice/pitchBus';
 import { useT } from '../lib/i18n';
 import { PlayIcon, StopIcon } from './icons';
 import styles from './VoicePicker.module.css';
@@ -75,6 +78,8 @@ export function VoicePicker({
 
   // Non-reactive playback internals.
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  /** Tears the playing clip out of the pitch bus (null when unshifted). */
+  const detachRef = useRef<(() => void) | null>(null);
   const cacheRef = useRef<Map<string, ArrayBuffer>>(new Map());
   const aliveRef = useRef(true);
   /** Conversation language for bundled samples; 'en' until the config loads. */
@@ -85,6 +90,9 @@ export function VoicePicker({
     // Re-arm on every (re)mount — StrictMode dev runs mount → cleanup → mount
     // on the SAME instance, and the ref keeps its false from the first cleanup.
     aliveRef.current = true;
+    // Build the pitch shifter while the player is still reading the voice list,
+    // so the first sample they play is already shifted (see toggleSample).
+    warmPitchBus();
     void sei
       .voiceListVoices()
       .then((v) => {
@@ -134,6 +142,8 @@ export function VoicePicker({
       } catch {
         /* already torn down */
       }
+      detachRef.current?.();
+      detachRef.current = null;
       audioRef.current = null;
     }
     setPlayingId(null);
@@ -142,22 +152,25 @@ export function VoicePicker({
   // ── Playground params (effective values; absent key = engine default) ────
   const pitch = params.pitch ?? PITCH_DEFAULT;
   const calmness = params.calmness ?? CALMNESS_DEFAULT;
-  const tuned = pitch !== PITCH_DEFAULT || calmness !== CALMNESS_DEFAULT;
+  /** Whether the SYNTHESIS differs from the bundled clips. Pitch is not part of
+   * this any more (260731): it is a playback effect, so a pitch-only tune can
+   * still preview from the bundled asset. */
+  const tuned = calmness !== CALMNESS_DEFAULT;
   /** The playground needs a concrete voice — Auto / No voice can't preview. */
   const tunable = value !== null && value !== NO_VOICE_ID;
 
   /**
-   * Start playback of `url` at `rate` (preservesPitch off — the synthesis
-   * contract makes playbackRate a pure pitch shift for TTS clips; bundled
-   * clips always play at rate 1). Resolves true once playback starts, false
-   * when the source fails to load or play, so callers can fall back.
+   * Start playback of `url` shifted to `rate` (1 = as recorded), through the
+   * same pitch bus live calls use, so the sample is exactly what the player
+   * will hear. Resolves true once playback starts, false when the source fails
+   * to load or play, so callers can fall back.
    */
   function startAudio(url: string, voiceId: string, rate: number): Promise<boolean> {
     return new Promise((resolve) => {
       const el = new Audio(url);
-      el.preservesPitch = false;
-      el.playbackRate = rate;
+      const detachPitch = attachPitch(el, rate);
       audioRef.current = el;
+      detachRef.current = detachPitch;
       el.addEventListener(
         'ended',
         () => {
@@ -184,13 +197,15 @@ export function VoicePicker({
     });
   }
 
-  /** Live TTS preview with the current params, session-cached per combo. */
+  /** Live TTS preview with the current params, session-cached per combo. Pitch
+   * is not part of the key: it does not change the bytes any more, only how
+   * they are played back. */
   async function playTts(voiceId: string): Promise<void> {
-    const key = `${voiceId}|${pitch}|${calmness}`;
+    const key = `${voiceId}|${calmness}`;
     let buf = cacheRef.current.get(key);
     if (!buf) {
       setLoadingId(voiceId);
-      buf = await sei.voicePreview({ voiceId, pitch, calmness });
+      buf = await sei.voicePreview({ voiceId, calmness });
       cacheRef.current.set(key, buf);
     }
     if (!aliveRef.current) return;
@@ -207,10 +222,17 @@ export function VoicePicker({
     stopPlayback();
     setError(null);
     try {
+      // Unlike a call, a sample CAN wait for the shifter: the whole point of
+      // pressing play here is to hear the slider, so a sample that starts
+      // 200ms later is better than one that ignores it. Bounded, and a false
+      // just means the sample plays at its recorded pitch.
+      if (pitch !== PITCH_DEFAULT) await pitchReady();
+      if (!aliveRef.current) return;
       if (!tuned && voices.some((v) => v.id === voiceId)) {
-        // Pool voice at engine defaults: bundled sample asset — instant,
-        // offline, no sign-in. A load/play failure falls through to live TTS.
-        const ok = await startAudio(assetPathFor(voiceId, langRef.current), voiceId, PITCH_DEFAULT);
+        // Pool voice at default calmness: bundled sample asset — instant,
+        // offline, no sign-in, shifted locally to the chosen pitch. A load/play
+        // failure falls through to live TTS.
+        const ok = await startAudio(assetPathFor(voiceId, langRef.current), voiceId, pitch);
         if (ok || !aliveRef.current) return;
       }
       await playTts(voiceId);

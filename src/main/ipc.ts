@@ -1505,6 +1505,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         characterId: IdSchema,
         quietSeconds: z.number().nonnegative().max(3600),
         peers: z.array(z.string()).default([]),
+        awaitingAnswer: z.boolean().default(false),
       })
       .parse(argsRaw);
     const { sendVoiceIdleTurn } = await import('./chat/chatService');
@@ -1512,6 +1513,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // voice.companionTurn handler below for the full story).
     const idleWorldOpen = deps.getLanState().kind === 'open';
     return await sendVoiceIdleTurn(args.characterId, args.quietSeconds, args.peers, {
+      awaitingAnswer: args.awaitingAnswer,
       openWorldDetected: idleWorldOpen,
       onLaunch: idleWorldOpen
         ? () => {
@@ -1634,13 +1636,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.voice.preview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
-    // Playground params (260725): pitch/calmness are optional and re-clamped
-    // inside voicePreviewTts, so a stale renderer sending junk can only get a
-    // valid preview, never a bad upstream request.
+    // Playground params (260725): calmness is optional and re-clamped inside
+    // voicePreviewTts, so a stale renderer sending junk can only get a valid
+    // preview, never a bad upstream request. `pitch` was dropped from the
+    // payload at 260731 (it is applied at playback now) and zod strips unknown
+    // keys, so a renderer still sending it is a no-op rather than an error.
     const args = z
       .object({
         voiceId: z.string().min(1).max(64),
-        pitch: z.number().finite().optional(),
         calmness: z.number().finite().optional(),
       })
       .parse(argsRaw);

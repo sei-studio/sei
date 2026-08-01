@@ -1,15 +1,22 @@
 /**
- * Companion voice pitch (260707).
+ * Companion voice pitch (260707; local shift since 260731).
  *
- * ElevenLabs has no pitch parameter, so a "high, clearly AI" voice is built
- * from two halves that must stay in ratio:
- *   - synthesis asks ElevenLabs for voice_settings.speed ≈ 1/rate, so the
- *     clip comes back slower-paced (main: src/main/voice/tts.ts), and
- *   - playback runs the clip at `rate` with preservesPitch OFF, which raises
- *     pitch and pace together (renderer: lib/voice/audioQueue.ts) — the two
- *     cancel on pace and only the pitch lift remains.
- * Both halves derive from voicePitchRate() here (shared/ is importable from
- * main AND renderer) so they cannot drift.
+ * ElevenLabs has no pitch parameter, so a "high, clearly AI" voice is a shift
+ * we apply ourselves. It is ONE thing now: the renderer plays the clip through
+ * a duration-preserving pitch shifter at `rate`
+ * (lib/voice/pitchBus.ts). Synthesis is asked for nothing.
+ *
+ * It used to be TWO halves that had to cancel — synthesis asked for
+ * `voice_settings.speed ≈ 1/rate` so the clip came back slow, and playback ran
+ * it at `playbackRate = rate` with preservesPitch OFF, which raised pitch and
+ * pace together. The halves did not cancel reliably: the resample is exact
+ * arithmetic, while `speed` is a model conditioning hint that a short utterance
+ * gives the model almost no room to express. So "oh." and "yeah?" came back
+ * barely slowed and played a full `rate` too fast. That was structural, and it
+ * is why the compensation is gone rather than tuned.
+ *
+ * `rate` is unchanged in meaning and storage (a frequency multiplier; 1 = as
+ * recorded), so no character metadata migrated.
  */
 import type { Character } from './characterSchema';
 
@@ -25,21 +32,27 @@ export const SUI_CHARACTER_ID = 'bbf5b66f-2f0f-4918-a953-a2cf66d5a586';
 export const SUI_DEFAULT_PITCH_RATE = 1.224;
 
 /**
- * The pitch range the voice playground offers (260725). Bounded by the band
- * where ttsSpeedFor's pace compensation stays inside ElevenLabs' accepted
- * speed range [0.7, 1.2]: rate ∈ [1/1.2, 1/0.7] ≈ [0.834, 1.428]. Inside the
- * band a pitch change never alters speaking pace; outside it the compensation
- * saturates and speech audibly speeds up or slows down, so the UI must not
- * offer it. Slightly inset for margin.
+ * The pitch range the voice playground offers (260725).
+ *
+ * These numbers were chosen for a constraint that no longer exists: the old
+ * pace compensation had to stay inside ElevenLabs' accepted speed range
+ * [0.7, 1.2], i.e. rate ∈ [1/1.2, 1/0.7] ≈ [0.834, 1.428], and past the band it
+ * saturated and speech audibly ran fast. The local shifter has no such band, so
+ * the range is now only a taste judgement: roughly -2.8 to +5.9 semitones,
+ * which is as far as a voice moves before it stops sounding like a person.
+ *
+ * They are kept AS THEY WERE on purpose. Every stored voicePitch was picked by
+ * ear against this scale, and widening the ends in the same change that
+ * replaces the engine would mean two things moved at once.
  */
 export const VOICE_PITCH_MIN = 0.85;
 export const VOICE_PITCH_MAX = 1.4;
 
 /**
- * Playback rate for a character's TTS clips. metadata.voicePitch when it's a
- * sane number (clamped so bad synced metadata can't garble a call; it
- * round-trips through cloud sync verbatim, like metadata.voiceId), else Sui's
- * baked-in lift, else 1 (as recorded).
+ * Pitch shift for a character's TTS clips, as a frequency multiplier.
+ * metadata.voicePitch when it's a sane number (clamped so bad synced metadata
+ * can't garble a call; it round-trips through cloud sync verbatim, like
+ * metadata.voiceId), else Sui's baked-in lift, else 1 (as recorded).
  */
 export function voicePitchRate(character: Pick<Character, 'id' | 'metadata'>): number {
   const v = character.metadata?.voicePitch;
@@ -63,15 +76,4 @@ export function voiceStabilityFor(character: Pick<Character, 'id' | 'metadata'>)
   const v = character.metadata?.voiceStability;
   if (typeof v === 'number' && Number.isFinite(v)) return Math.min(1, Math.max(0, v));
   return character.id === SUI_CHARACTER_ID ? SUI_DEFAULT_STABILITY : undefined;
-}
-
-/**
- * The ElevenLabs voice_settings.speed that cancels `rate`'s pace change.
- * undefined at rate 1 (send no voice_settings — keeps the request byte-stable
- * for unpitched characters). ElevenLabs accepts 0.7..1.2 only, so past rate
- * ~1.43 the pace compensation saturates and speech drifts faster again.
- */
-export function ttsSpeedFor(rate: number): number | undefined {
-  if (rate === 1) return undefined;
-  return Math.min(1.2, Math.max(0.7, 1 / rate));
 }
