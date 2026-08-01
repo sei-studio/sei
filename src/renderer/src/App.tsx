@@ -30,6 +30,7 @@ import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { OnboardApp, type OnboardResult } from './onboard/OnboardApp';
+import { SuiPrefsScene } from './onboard/SuiPrefsScene';
 import { TutorialOverlay } from './components/tutorial/TutorialOverlay';
 import { useTutorialStore, type TutorialStep } from './lib/stores/useTutorialStore';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
@@ -42,8 +43,7 @@ import { ChatScreen } from './screens/ChatScreen';
 import { VoiceCallScreen } from './screens/VoiceCallScreen';
 import { DrawScreen } from './components/draw/DrawScreen';
 import { ProfileQuestionsScreen } from './screens/ProfileQuestionsScreen';
-import { UniqueGenderScreen } from './screens/UniqueGenderScreen';
-import { UniqueCastingScreen } from './screens/UniqueCastingScreen';
+import { SuiMeetScene } from './onboard/SuiMeetScene';
 import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { CallMiniBar } from './components/call/CallMiniBar';
 import { MiniTile } from './components/MiniTile';
@@ -458,6 +458,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
           // Conversation starters on quiet calls (default ON).
           useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
+          // Per-character call backdrop mode (sparse: absent = never chosen).
+          useUiStore.getState().setCallBackdropPrefs(cfg.call_backdrop ?? {});
           // Sticky chat side-panel visibility (default shown).
           useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
           // Product analytics opt-out (default OFF = analytics on).
@@ -645,6 +647,8 @@ export function App(): React.ReactElement {
         useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
         // Conversation starters on quiet calls (default ON when absent).
         useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
+        // Per-character call backdrop mode (sparse: absent = never chosen).
+        useUiStore.getState().setCallBackdropPrefs(cfg.call_backdrop ?? {});
         // Sticky chat side-panel visibility (default shown).
         useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
         // Product analytics opt-out (default OFF = analytics on). Without this
@@ -884,6 +888,14 @@ export function App(): React.ReactElement {
     );
   }
 
+  // 260731 — the two in-app scenes Sui also fronts. Same stage, same reasons
+  // for bypassing MacosWindow: the art is the window. Unlike the first-run
+  // ritual these keep the macOS traffic lights (a routine surface should not
+  // take the OS chrome away mid-session) and their corner X leaves the scene
+  // rather than quitting Sei.
+  if (view.kind === 'sui-prefs') return <SuiPrefsScene next={view.next} />;
+  if (view.kind === 'sui-meet') return <SuiMeetScene />;
+
   // The IconRail is suppressed on the full-page entry surfaces (onboarding /
   // sign-in / skin setup). MacosWindow needs the same signal so its top-bar
   // hairline can span the full width (including under the macOS traffic lights)
@@ -895,8 +907,6 @@ export function App(): React.ReactElement {
     // 260703 procgen — the unique-companion flow + first-sign-in questionnaire
     // are full-page ritual surfaces (like onboarding), so the rail is hidden.
     view.kind === 'profile-questions' ||
-    view.kind === 'unique-gender' ||
-    view.kind === 'unique-casting' ||
     view.kind === 'unique-reveal' ||
     // 260728 — a game surface asked for in-app fullscreen. No view test is
     // needed: the flag is set and cleared by the mounted game surface itself
@@ -1065,10 +1075,6 @@ export function App(): React.ReactElement {
                       }
                     }}
                   />
-                )}
-                {view.kind === 'unique-gender' && <UniqueGenderScreen />}
-                {view.kind === 'unique-casting' && (
-                  <UniqueCastingScreen gender={view.gender} />
                 )}
                 {view.kind === 'unique-reveal' && (
                   <UniqueRevealScreen characterId={view.characterId} />

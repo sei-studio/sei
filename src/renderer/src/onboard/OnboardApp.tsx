@@ -31,195 +31,32 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
-import { t, useLangStore, useT, type UiLanguage } from '../lib/i18n';
+import { t, useT } from '../lib/i18n';
 import { OnboardScene, type SuiPose } from './OnboardScene';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import type { AuthState, UniqueGender } from '@shared/ipc';
-import type { UserConfig, UserPreferences } from '@shared/characterSchema';
-import chibiF from '../assets/art-styles/chibi-female.jpg';
-import chibiM from '../assets/art-styles/chibi-male.jpg';
-import animeF from '../assets/art-styles/anime-female.jpg';
-import animeM from '../assets/art-styles/anime-male.jpg';
-import celF from '../assets/art-styles/celshaded-female.jpg';
-import celM from '../assets/art-styles/celshaded-male.jpg';
-import cartoonF from '../assets/art-styles/cartoon-female.jpg';
-import cartoonM from '../assets/art-styles/cartoon-male.jpg';
-import threeDF from '../assets/art-styles/3d-female.jpg';
-import threeDM from '../assets/art-styles/3d-male.jpg';
+import type { UserConfig } from '@shared/characterSchema';
+import {
+  ContinueHint,
+  CornerControls,
+  fadeThemeClass,
+  fmtNodes,
+  useEnterAdvances,
+  useSuiVoice,
+  useTypewriter,
+  useVoicePrefs,
+} from './suiStage';
+import {
+  AGE_OPTIONS,
+  ArtPicker,
+  DynPicker,
+  GENDER_OPTIONS,
+  PillPicker,
+  type AgeRange,
+  type ArtStyle,
+  type Dynamic,
+} from './suiQuestions';
 import styles from './onboard.module.css';
-
-/* ── Corner controls (260730) ────────────────────────────────────────────
-   One always-visible row in the top-right: [volume] [language] [quit].
-   Chrome-less by design — bare ink on the sky, no boxes. Each control's
-   dropdown opens on HOVER (only two languages, so a popup would be
-   overkill): the globe reveals two text items (EN / 中文), the speaker
-   reveals a minimal vertical volume slider. Clicking the speaker toggles
-   mute; clicking a language flips the live UI language and persists
-   config.ui_language so the rest of onboarding, and every character created
-   after it, follows. The X quits the whole app (appQuit): a bare window
-   close on macOS left Sei sitting in the dock with no window. */
-
-export interface VoicePrefs {
-  volume: number;
-  muted: boolean;
-}
-
-const VOICE_PREFS_KEY = 'sei.onboard.voice';
-
-function loadVoicePrefs(): VoicePrefs {
-  try {
-    const raw = localStorage.getItem(VOICE_PREFS_KEY);
-    if (raw) {
-      const v = JSON.parse(raw) as Partial<VoicePrefs>;
-      if (typeof v.volume === 'number' && Number.isFinite(v.volume) && typeof v.muted === 'boolean') {
-        return { volume: Math.min(1, Math.max(0, v.volume)), muted: v.muted };
-      }
-    }
-  } catch {
-    /* fall through to defaults */
-  }
-  // Voice ON by default.
-  return { volume: 0.85, muted: false };
-}
-
-function VolumeIcon({ muted }: { muted: boolean }): React.ReactElement {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" />
-      {muted ? (
-        <path d="m15 9 5 6M20 9l-5 6" />
-      ) : (
-        <>
-          <path d="M14.5 9.5a3.6 3.6 0 0 1 0 5" />
-          <path d="M17 7a7 7 0 0 1 0 10" />
-        </>
-      )}
-    </svg>
-  );
-}
-
-function CornerControls(props: {
-  prefs: VoicePrefs;
-  onPrefs: (next: VoicePrefs) => void;
-}): React.ReactElement {
-  const { prefs, onPrefs } = props;
-  const tt = useT();
-  const lang = useLangStore((s) => s.lang);
-  const setLang = useLangStore((s) => s.setLang);
-  const [open, setOpen] = useState<'vol' | 'lang' | null>(null);
-  const pick = (next: UiLanguage): void => {
-    setOpen(null);
-    if (next === lang) return;
-    setLang(next);
-    void (async () => {
-      try {
-        const cfg = await sei.getConfig();
-        await sei.saveConfig({ ...cfg, ui_language: next });
-      } catch {
-        /* live flip already happened; persistence retries on Settings */
-      }
-    })();
-  };
-  return (
-    <div className={styles.corner} onClick={(e) => e.stopPropagation()}>
-      <div
-        className={styles.cornerItem}
-        onMouseEnter={() => setOpen('vol')}
-        onMouseLeave={() => setOpen((o) => (o === 'vol' ? null : o))}
-      >
-        <button
-          type="button"
-          className={styles.cornerBtn}
-          aria-label={prefs.muted ? tt('Unmute voice') : tt('Mute voice')}
-          onClick={() => onPrefs({ ...prefs, muted: !prefs.muted })}
-        >
-          <VolumeIcon muted={prefs.muted} />
-        </button>
-        {open === 'vol' ? (
-          <div className={styles.volDrop}>
-            <input
-              className={styles.volRange}
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={prefs.muted ? 0 : prefs.volume}
-              aria-label={tt('Voice volume')}
-              // Dragging the slider always unmutes — a muted slider that
-              // moves silently reads as broken.
-              onChange={(e) => onPrefs({ volume: Number(e.target.value), muted: false })}
-            />
-          </div>
-        ) : null}
-      </div>
-      <div
-        className={styles.cornerItem}
-        onMouseEnter={() => setOpen('lang')}
-        onMouseLeave={() => setOpen((o) => (o === 'lang' ? null : o))}
-      >
-        <button
-          type="button"
-          className={styles.cornerBtn}
-          aria-label={tt('Language')}
-          aria-expanded={open === 'lang'}
-          // Click also toggles the menu — hover opens it, but a click that
-          // does nothing reads as broken.
-          onClick={() => setOpen((o) => (o === 'lang' ? null : 'lang'))}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-          </svg>
-        </button>
-        {open === 'lang' ? (
-          <div className={styles.langMenu} role="menu">
-            <button
-              type="button"
-              role="menuitem"
-              className={lang === 'en' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
-              onClick={() => pick('en')}
-            >
-              EN
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className={lang === 'zh' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
-              onClick={() => pick('zh')}
-            >
-              中文
-            </button>
-          </div>
-        ) : null}
-      </div>
-      {/* An svg X (not a text ×): a glyph sits on the font baseline, which
-          left it riding higher than the icon boxes beside it. */}
-      <button type="button" className={styles.cornerBtn} aria-label={tt('Quit Sei')} onClick={() => void sei.appQuit()}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-          <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" />
-        </svg>
-      </button>
-    </div>
-  );
-}
-
-/** Render a translated template with React nodes in {placeholder} slots.
- * Node substitution can't ride t()'s string params, and concatenating
- * separately translated fragments is banned, so the whole sentence stays ONE
- * dictionary key and the nodes are spliced in afterwards. The English key
- * itself renders correctly through the same path (split leaves the literal
- * text around each placeholder intact). */
-function fmtNodes(template: string, nodes: Record<string, React.ReactNode>): React.ReactNode {
-  return template.split(/(\{[a-z]+\})/i).map((part, i) => {
-    const m = /^\{([a-z]+)\}$/i.exec(part);
-    if (!m) return part;
-    return <React.Fragment key={i}>{nodes[m[1]] ?? part}</React.Fragment>;
-  });
-}
-
-type AgeRange = NonNullable<UserPreferences['companion_age_range']>;
-type ArtStyle = NonNullable<UserPreferences['art_style']>;
-type Dynamic = NonNullable<UserPreferences['companion_dynamics']>[number];
 
 /* ── Script ──────────────────────────────────────────────────────────────── */
 
@@ -266,27 +103,6 @@ const SCRIPT: Record<LineId, string> = {
   ready: 'Welcome back! Everything is in place. You ready?',
 };
 
-const DYN_OPTIONS: Array<{ value: Dynamic; label: string }> = [
-  { value: 'partner-in-crime', label: 'A partner in crime' },
-  { value: 'caretaker', label: 'Someone to look after me' },
-  { value: 'protege', label: 'Someone to look after' },
-  { value: 'chill-friend', label: 'A chill friend' },
-  { value: 'challenger', label: 'Someone who pushes me' },
-];
-const AGE_OPTIONS: Array<{ value: AgeRange; label: string }> = [
-  { value: 'young-adult', label: 'Young adult' },
-  { value: 'adult', label: 'Adult' },
-  { value: 'mature', label: 'Mature' },
-  { value: 'elder', label: 'Elder' },
-  { value: 'timeless', label: 'Timeless' },
-];
-const ART_OPTIONS: Array<{ value: ArtStyle; label: string; imgs: [string, string] }> = [
-  { value: 'chibi', label: 'Round chibi', imgs: [chibiF, chibiM] },
-  { value: 'anime', label: 'Anime', imgs: [animeF, animeM] },
-  { value: 'celshaded', label: 'Cel-shaded', imgs: [celF, celM] },
-  { value: 'cartoon', label: 'Cartoon', imgs: [cartoonF, cartoonM] },
-  { value: '3d', label: '3D', imgs: [threeDF, threeDM] },
-];
 /** Text-only lines (no controls, advance on click/Enter) that get the idle
  * continue hint after 5s without input. 'ahh' auto-advances and 'ready' has a
  * button, so neither belongs here. */
@@ -299,12 +115,6 @@ const HINT_LINES: LineId[] = [
   'allDone',
   'dots',
   'skippedThird',
-];
-
-const GENDER_OPTIONS: Array<{ value: UniqueGender; label: string }> = [
-  { value: 'female', label: 'Feminine' },
-  { value: 'male', label: 'Masculine' },
-  { value: 'other', label: 'Androgynous' },
 ];
 
 /* ── Machine ─────────────────────────────────────────────────────────────── */
@@ -327,70 +137,6 @@ interface Answers {
   gender: UniqueGender;
   skipCreation: boolean;
   returning: boolean;
-}
-
-const CHAR_MS = 24;
-// Breath at the end of a sentence (260729). `paused` is exposed so the talk
-// flap can close the mouth for the beat instead of flapping through it.
-const FULL_STOP_PAUSE_MS = 340;
-
-/** Typewriter — chars appear over time; skip() completes instantly. */
-function useTypewriter(text: string): {
-  shown: string;
-  done: boolean;
-  paused: boolean;
-  skip: () => void;
-} {
-  const [n, setN] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const skipRef = useRef(false);
-  // Render-phase reset: when the line changes, `n` still holds the previous
-  // line's count until an effect runs, and slicing the NEW text by the OLD
-  // count flashed the whole next line for one frame (260729). Resetting
-  // during render (the sanctioned derive-from-props pattern) means no commit
-  // ever renders the new text with the stale count.
-  const prevTextRef = useRef(text);
-  if (prevTextRef.current !== text) {
-    prevTextRef.current = text;
-    setN(0);
-    setPaused(false);
-  }
-  useEffect(() => {
-    skipRef.current = false;
-    setN(0);
-    setPaused(false);
-    if (text.length === 0) return undefined;
-    let i = 0;
-    let t: ReturnType<typeof setTimeout> | null = null;
-    const step = (): void => {
-      if (skipRef.current) return;
-      i += 1;
-      setN(i);
-      if (i >= text.length) {
-        setPaused(false);
-        return;
-      }
-      // The pause lands after a sentence-ending stop that has a word after it
-      // (mid-ellipsis dots don't qualify: only the one before the space does).
-      const atStop = '.!?'.includes(text[i - 1]) && text[i] === ' ';
-      setPaused(atStop);
-      t = setTimeout(step, atStop ? FULL_STOP_PAUSE_MS : CHAR_MS);
-    };
-    t = setTimeout(step, CHAR_MS);
-    return () => {
-      if (t) clearTimeout(t);
-    };
-  }, [text]);
-  return {
-    shown: text.slice(0, n),
-    done: n >= text.length,
-    paused,
-    skip: () => {
-      skipRef.current = true;
-      setPaused(false);
-      setN(text.length);
-    },
-  };
 }
 
 export interface OnboardResult {
@@ -660,50 +406,19 @@ export function OnboardApp({
   const tw = useTypewriter(lineText);
 
   // ── Sui's voice-over (260730) ──────────────────────────────────────────
-  // ENGLISH ONLY. Pre-generated ElevenLabs clips (her live call voice:
-  // tnVKC6NjwhdRxoQIfKue, synthesized at speed 1/1.3 / stability 0.75)
-  // bundled under public/voice/onboard/<line>.en.mp3. Playback mirrors
-  // calls: rate 1.3 with preservesPitch OFF cancels the synthesis slowdown
-  // and leaves only the pitch lift (see shared/voicePitch.ts). Regenerate
-  // the clips (and keep these two numbers in step) if her cloud row's voice
-  // settings change. The two {name} lines (iSee/job) were generated
-  // name-free, so the clip never has to speak a name the player typed.
-  // 'dots' is silent by design. Chinese was tried on both flash_v2_5 and
-  // multilingual_v2 and cut (260730): her English voice carries a marked
-  // accent into Chinese, so the zh onboarding is text-only on purpose.
-  const uiLang = useLangStore((s) => s.lang);
-  const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(loadVoicePrefs);
-  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
-  const effVolume = voicePrefs.muted ? 0 : voicePrefs.volume;
-  useEffect(() => {
-    try {
-      localStorage.setItem(VOICE_PREFS_KEY, JSON.stringify(voicePrefs));
-    } catch {
-      /* volume just won't persist */
-    }
-    // Live-apply to the playing clip so mute/slider act mid-sentence.
-    if (voiceAudioRef.current) voiceAudioRef.current.volume = effVolume;
-  }, [voicePrefs, effVolume]);
-  useEffect(() => {
-    if (!line || line === 'dots' || uiLang !== 'en') return undefined;
-    const clip = line === 'ready' && genCharacterIdRef.current ? 'readyGen' : line;
-    const audio = new Audio(`./voice/onboard/${clip}.en.mp3`);
-    audio.playbackRate = 1.3;
-    audio.preservesPitch = false;
-    audio.volume = effVolume;
-    voiceAudioRef.current = audio;
-    void audio.play().catch(() => {
-      /* missing clip or autoplay refusal: text carries the line */
-    });
-    return () => {
-      audio.pause();
-      if (voiceAudioRef.current === audio) voiceAudioRef.current = null;
-    };
-    // effVolume deliberately not a dep: volume changes apply live above
-    // without restarting the clip. uiLang IS one: a language flip restarts
-    // the line (matching the typewriter, which also restarts).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [line, uiLang]);
+  // The clips and the playback contract live in suiStage/useSuiVoice, shared
+  // with the in-app scenes. Two script facts stay here: the two {name} lines
+  // (iSee/job) were generated name-free, so the clip never has to speak a name
+  // the player typed, and 'dots' is silent by design.
+  const { prefs: voicePrefs, setPrefs: setVoicePrefs, volume: effVolume } = useVoicePrefs();
+  useSuiVoice(
+    !line || line === 'dots'
+      ? null
+      : line === 'ready' && genCharacterIdRef.current
+        ? 'readyGen'
+        : line,
+    effVolume,
+  );
   useEffect(() => {
     if (!line) return;
     // The panic sequence holds the shock face straight through the
@@ -791,17 +506,7 @@ export function OnboardApp({
   }, [line, tw, name, goLine, walkOff, complete]);
 
   // Enter advances any line that advances on click.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Enter') return;
-      const target = e.target as HTMLElement | null;
-      // Let form fields own Enter (auth panel, name input handles its own).
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON')) return;
-      advance();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [advance]);
+  useEnterAdvances(advance);
 
   // ── Auth phase: already signed in? (relaunch mid-onboarding) ───────────
   useEffect(() => {
@@ -940,14 +645,7 @@ export function OnboardApp({
               {tw.shown}
               {!tw.done ? <span className={styles.caret} /> : null}
             </p>
-            {hintOn && tw.done ? (
-              <div className={styles.continueHint}>
-                <MouseIcon />{' '}
-                {fmtNodes(tt('or {enter} to continue'), {
-                  enter: <span className={styles.hintGlyph}>&#x21B5;</span>,
-                })}
-              </div>
-            ) : null}
+            {hintOn && tw.done ? <ContinueHint /> : null}
             {tw.done ? <LineControls
               line={line}
               name={name}
@@ -1033,22 +731,6 @@ export function OnboardApp({
         <div className={phase.k === 'fade' ? `${styles.fade} ${styles.fadeOn} ${fadeThemeClass()}` : styles.fade} />
       </div>
     </div>
-  );
-}
-
-function fadeThemeClass(): string {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? styles.fadeDark : styles.fadeLight;
-}
-
-/** The "click" half of the continue hint: a mouse with the left button shaded. */
-function MouseIcon(): React.ReactElement {
-  return (
-    <svg className={styles.hintMouse} viewBox="0 0 16 22" aria-label={t('Click')}>
-      <rect x="1" y="1" width="14" height="20" rx="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8 1 A7 7 0 0 0 1 8 L 8 8 Z" fill="currentColor" />
-      <line x1="8" y1="1" x2="8" y2="8" stroke="currentColor" strokeWidth="1.2" />
-      <line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
   );
 }
 
@@ -1140,76 +822,44 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
     case 'qDyn':
       return (
         <DynPicker
-          answersRef={answersRef}
-          onDone={() => goLine('qAge')}
+          onDone={(picked) => {
+            answersRef.current.dynamics = picked;
+            goLine('qAge');
+          }}
           onBack={() => goLine('fiveQs')}
         />
       );
     case 'qAge':
       return (
-        <div className={styles.choices}>
-          {AGE_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              className={styles.pill}
-              onClick={() => {
-                answersRef.current.age = o.value;
-                goLine('qArt');
-              }}
-            >
-              {tt(o.label)}
-            </button>
-          ))}
-          <button className={styles.quietLink} onClick={() => goLine('qDyn')}>
-            {tt('Back')}
-          </button>
-        </div>
+        <PillPicker
+          options={AGE_OPTIONS}
+          onPick={(value) => {
+            answersRef.current.age = value;
+            goLine('qArt');
+          }}
+          onBack={() => goLine('qDyn')}
+        />
       );
     case 'qArt':
       return (
-        <div className={styles.choicesCol}>
-          <div className={styles.artRow}>
-            {ART_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                className={styles.artTile}
-                aria-label={tt(o.label)}
-                onClick={() => {
-                  answersRef.current.art = o.value;
-                  goLine('qGender');
-                }}
-              >
-                <span className={styles.artImgs}>
-                  <img src={o.imgs[0]} alt="" draggable={false} />
-                  <img src={o.imgs[1]} alt="" draggable={false} />
-                </span>
-              </button>
-            ))}
-          </div>
-          <button className={styles.quietLink} onClick={() => goLine('qAge')}>
-            {tt('Back')}
-          </button>
-        </div>
+        <ArtPicker
+          onPick={(value) => {
+            answersRef.current.art = value;
+            goLine('qGender');
+          }}
+          onBack={() => goLine('qAge')}
+        />
       );
     case 'qGender':
       return (
-        <div className={styles.choices}>
-          {GENDER_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              className={styles.pill}
-              onClick={() => {
-                answersRef.current.gender = o.value;
-                goLine('allDone');
-              }}
-            >
-              {tt(o.label)}
-            </button>
-          ))}
-          <button className={styles.quietLink} onClick={() => goLine('qArt')}>
-            {tt('Back')}
-          </button>
-        </div>
+        <PillPicker
+          options={GENDER_OPTIONS}
+          onPick={(value) => {
+            answersRef.current.gender = value;
+            goLine('allDone');
+          }}
+          onBack={() => goLine('qArt')}
+        />
       );
     case 'ready':
       return (
@@ -1222,67 +872,6 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
     default:
       return null;
   }
-}
-
-/** Rank-by-click multi-select for the dynamics question. "Surprise me" is a
- * selectable state (mutually exclusive with the ranked picks), and BOTH paths
- * confirm through the same Done button — a single-click Surprise-me that
- * advanced instantly read as a misclick trap (260729). */
-function DynPicker(props: {
-  answersRef: React.MutableRefObject<Answers>;
-  onDone: () => void;
-  onBack: () => void;
-}): React.ReactElement {
-  const tt = useT();
-  const [picked, setPicked] = useState<Dynamic[]>([]);
-  const [surprise, setSurprise] = useState(false);
-  const toggle = (v: Dynamic): void => {
-    setSurprise(false);
-    setPicked((cur) => (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]));
-  };
-  return (
-    <div className={styles.choicesCol}>
-      <div className={styles.choices}>
-        {DYN_OPTIONS.map((o) => {
-          const rank = picked.indexOf(o.value);
-          return (
-            <button
-              key={o.value}
-              className={rank >= 0 ? `${styles.pill} ${styles.pillPicked}` : styles.pill}
-              onClick={() => toggle(o.value)}
-            >
-              {rank >= 0 ? <span className={styles.rankBadge}>{rank + 1}</span> : null}
-              {tt(o.label)}
-            </button>
-          );
-        })}
-        <button
-          className={surprise ? `${styles.pill} ${styles.pillPicked}` : styles.pill}
-          onClick={() => {
-            setSurprise((s) => !s);
-            setPicked([]);
-          }}
-        >
-          {tt('Surprise me')}
-        </button>
-      </div>
-      <div className={styles.choices}>
-        <button
-          className={styles.pill}
-          disabled={!surprise && picked.length === 0}
-          onClick={() => {
-            props.answersRef.current.dynamics = surprise ? [] : picked;
-            props.onDone();
-          }}
-        >
-          {tt('Done')}
-        </button>
-        <button className={styles.quietLink} onClick={props.onBack}>
-          {tt('Back')}
-        </button>
-      </div>
-    </div>
-  );
 }
 
 /* ── Auth panel ──────────────────────────────────────────────────────────── */

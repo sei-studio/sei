@@ -256,13 +256,27 @@
   inset: 0;
 }
 
-/* The front copy of Sui: identical twin rendered AFTER the grass, visible
-   only in the rightmost 10% of the stage. There she overlaps the tufts; in
-   the other 90% the behind-grass copy shows through instead. */
+/* The front copy of Sui: identical twin rendered AFTER the grass, revealed
+   only in the bands where she reads as standing in front of the field.
+   Bands are measured from the RIGHT edge, the side she walks in from, and
+   they are stage-fixed — she slides THROUGH them on the walk, so each one
+   describes a stretch of her entrance and not a part of her body:
+
+     first 10%   (x >= 90%)   front   the tall tufts at the very edge, which
+                                      would otherwise slice her on entry
+     10-30%      (70-90%)     behind  where she comes to rest: the tufts
+                                      overlap her boots and she reads as
+                                      standing IN the field rather than on it
+     after 30%   (x < 70%)    front   the open field she crosses to get there
+
+   A union of two bands is not something clip-path: inset() can express, and
+   polygon() reaches it only through a degenerate zero-area bridge, so the
+   reveal is a hard-stop mask instead. One element, exact percentages, and no
+   third copy of the sprite to keep in lockstep with the other two. */
 .suiFrontClip {
   position: absolute;
   inset: 0;
-  clip-path: inset(0 0 0 90%);
+  mask-image: linear-gradient(to right, #000 0 70%, transparent 70% 90%, #000 90% 100%);
   pointer-events: none;
 }
 
@@ -320,9 +334,21 @@
   position: absolute;
   top: 13%;
   left: 7%;
-  /* Wide enough that the five art-style tiles sit in ONE row at the 1000px
-     window floor. */
-  width: 68%;
+  /* The percentage keeps the column clear of Sui, who stands in the right third
+     of the stage. The px cap is what keeps it READABLE: at the 1180px default
+     68% alone ran to ~800px, so her lines and the choice pills stretched most of
+     the way across the field, and on a wide window it only got worse.
+
+     Capped in px rather than by a smaller percentage because the floor is a
+     fixed object — the five art-style tiles must stay on ONE row, which at the
+     tile size in .artImgs img is 596px (5 x 108 + 4 x 14 gaps). A percentage
+     tight enough to look right at 1180px would put that row on two lines in a
+     smaller window.
+
+     260731b: this was the prefs scene's own modifier for a day. Every scene that
+     renders a dialogue wants it, and none of them has anything wider than that
+     tile row to place, so it folded into the base rule. */
+  width: min(68%, 610px);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -542,11 +568,23 @@
   border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
+/* 260731: down from 58x78 so the five tiles still fit one row inside the
+   narrowed dialogue column. Aspect ratio held. */
 .artImgs img {
-  width: 58px;
-  height: 78px;
+  width: 53px;
+  height: 71px;
   object-fit: cover;
   display: block;
+}
+
+/* Selected art style. The first-run flow never needed one (nothing is
+   prefilled there), but the in-app retake opens on the player's stored answer
+   and has to show it. A flat outline ring, not a shadow: the FLAT rule above
+   holds here too, and an outline is the one ring that costs no layout. */
+.artTilePicked .artImgs {
+  border-color: #ffffff;
+  outline: 3px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 2px;
 }
 
 /* ── Panels (sign-in / local setup / progress) ─────────────────────────── */
@@ -783,6 +821,16 @@
   20% { width: 46%; }
   60% { width: 76%; }
   100% { width: 94%; }
+}
+
+/* Determinate variant: the casting scene knows real stage progress (gen:progress
+   events), so its fill is driven by an inline width instead of the blind
+   keyframe creep above. Same bar, no animation. */
+.progressFillDet {
+  height: 100%;
+  border-radius: 999px;
+  background: #ffffff;
+  transition: width 260ms linear;
 }
 
 /* ── Fade ──────────────────────────────────────────────────────────────── */

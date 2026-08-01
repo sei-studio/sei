@@ -39,6 +39,49 @@ export const ZH_ONBOARD: Record<string, string> = {
   "Welcome back! Everything is all set, and someone's waiting to meet you. You ready?":
     '欢迎回来！都安排好啦，还有一位正等着见你呢。准备好了吗？',
 
+  /* ── "Update my preferences", asked by Sui (SuiPrefsScene, 260731) ────
+     The straight version of the first-run questions: no five-questions gag,
+     no skipped third. qDyn's wording is shared with the first-run script
+     above, so it needs no entry of its own. */
+  'Welcome back! So you want to update your preferences!': '欢迎回来！你想改一下你的偏好，对吧！',
+  "Got it. Second! We AI can live for a very long time. Which age range best fits what you're looking for?":
+    '记下啦。第二题！我们 AI 可是能活很久很久的。你想找的伙伴，大概多大合适呀？',
+  'I see! Finally, take a look at these portraits. Which one do you like the most?':
+    '原来如此！最后一题，看看这几张画像，你最喜欢哪一张？',
+  "I've saved your preferences. Come back anytime!": '你的偏好我记好啦。随时再来找我哦！',
+  'See you': '再见啦',
+
+  /* ── "Meet my companion", run by Sui (SuiMeetScene, 260731) ──────────── */
+  'So! Are you ready to meet your first companion?': '好！你准备好认识你的第一位伙伴了吗？',
+  'So! Are you ready to meet your second companion?': '好！你准备好认识你的第二位伙伴了吗？',
+  'So! Are you ready to meet your third companion?': '好！你准备好认识你的第三位伙伴了吗？',
+  'So! Are you ready to meet your final companion?': '好！你准备好认识你最后一位伙伴了吗？',
+  "I'm ready": '我准备好啦',
+  'Not yet': '还没有',
+  'I have three companions who are ready to be awakened! Which one would you like to meet?':
+    '我这里有三位随时可以唤醒的伙伴！你想见哪一位呀？',
+  'Got it. Let me go get them!': '好嘞。我这就去把 TA 带来！',
+  'Finding someone for you…': '正在为你寻找合适的人……',
+  'Seeing their face…': '正在看清 TA 的样子……',
+  "Sorting out what they'll wear…": '正在准备 TA 的装扮……',
+  'Hearing their story…': '正在听 TA 讲自己的故事……',
+  'Bringing them over…': '正在把 TA 带过来……',
+  'Sign in to continue': '请先登录',
+  'Meeting a unique companion needs a Sei account. Sign in and try again.':
+    '要认识专属伙伴需要一个 Sei 账号。请登录后重试。',
+  'Your slots are full': '你的位置已经满啦',
+  'Free up one of your companion slots, then cast again.': '先腾出一个伙伴位置，再来唤醒吧。',
+  'That’s enough casting for today': '今天就唤醒到这里吧',
+  'You’ve reached today’s limit. Come back tomorrow to meet someone new.':
+    '今天的次数用完啦。明天再来认识新伙伴吧。',
+  'The cast didn’t take': '这次唤醒没成功',
+  'Something went wrong weaving your companion. Let’s try once more.':
+    '编织你的伙伴时出了点问题。我们再试一次吧。',
+  'Couldn’t reach the aether': '连不上服务器',
+  'Check your connection and try the ritual again.': '检查一下网络，然后再试一次。',
+  'Image generation failed. Continuing without a portrait.': '画像生成失败，先不带画像继续。',
+  'Skin generation failed. Continuing with the default skin.': '皮肤生成失败，先使用默认皮肤继续。',
+
   /* ── Questionnaire chips ──────────────────────────────────────────── */
   'A partner in crime': '一起闯祸的搭档',
   'Someone to look after me': '会照顾我的人',
@@ -56,7 +99,7 @@ export const ZH_ONBOARD: Record<string, string> = {
   Cartoon: '卡通',
   Feminine: '女性化',
   Masculine: '男性化',
-  Androgynous: '中性',
+  Nonbinary: '非二元',
 
   /* ── Dialogue controls ────────────────────────────────────────────── */
   // 'Yes'/'No' (the newQ choices since 260730) live in games.ts ('是'/'否'),

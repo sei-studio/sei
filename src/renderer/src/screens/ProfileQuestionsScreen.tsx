@@ -12,12 +12,17 @@
  * src/main/uniqueGeneration.ts). "Surprise me" is exclusive — selecting it
  * locks the other tiles and saves an empty ranking.
  *
+ * This is the GATE surface only (260731): it asks the questions a flow needs
+ * answered before it can proceed. The full retake ("Update my preferences")
+ * moved to SuiPrefsScene, where Sui asks the same three questions in the scene
+ * the player first answered them in.
+ *
  * Modes (260706):
- *   - 'missing' — asks ONLY the unanswered questions (fresh onboarding asks
- *     all three; a profile completed before a new question shipped, or
- *     abandoned partway, re-asks just the gaps). Used by every gate flow.
- *   - 'all'     — full retake, every question prefilled with the current
- *     answer. Used by the "Update my preferences" entries (Awaken, Settings).
+ *   - 'missing'    — asks ONLY the unanswered questions (a profile completed
+ *     before a new question shipped, or abandoned partway, re-asks just the
+ *     gaps).
+ *   - 'first-fill' — same question selection, but Finish continues a brand-new
+ *     user into the "meet my companion" scene rather than returning to `next`.
  *
  * Submit persists ONLY the questions that were shown, via sei.prefsSave —
  * a partial patch that main merges over the stored answers under the config
@@ -84,8 +89,8 @@ const STYLE_OPTIONS: Array<{ value: ArtStyle; label: string; sub: string; imgs: 
 const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
 
 export interface ProfileQuestionsScreenProps {
-  next: 'home' | 'unique-gender' | 'awaken' | 'settings';
-  mode: 'missing' | 'all' | 'first-fill';
+  next: 'home' | 'meet' | 'awaken' | 'settings';
+  mode: 'missing' | 'first-fill';
   /**
    * Called when the user dismisses the questionnaire with "Later" on the first
    * step (first-sign-in Home gate only). Lets the App gate record the deferral
@@ -111,8 +116,8 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
   const goTo = (view: ProfileQuestionsScreenProps['next']): void => {
     if (view === 'home') {
       navigate({ kind: 'home' });
-    } else if (view === 'unique-gender') {
-      navigate({ kind: 'unique-gender' });
+    } else if (view === 'meet') {
+      navigate({ kind: 'sui-meet' });
     } else if (view === 'awaken') {
       navigate({ kind: 'awaken' });
     } else {
@@ -122,11 +127,11 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
 
   // Where a completed run lands. 'first-fill' (a brand-new user walked through
   // the questionnaire by the Home gate) continues straight into the unique
-  // companion flow at the gender step so their first companion gets cast,
-  // rather than dropping them on an empty Home.
+  // companion flow so their first companion gets cast, rather than dropping
+  // them on an empty Home.
   const finish = (): void => {
     if (mode === 'first-fill') {
-      navigate({ kind: 'unique-gender' });
+      navigate({ kind: 'sui-meet' });
       return;
     }
     goTo(next);
@@ -137,7 +142,7 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
   // (onboarding is already submitted), so cancel just continues onward — the
   // missing answers are re-asked at "Meet my companion".
   const cancel = (): void => {
-    if (next === 'unique-gender' || next === 'awaken') {
+    if (next === 'meet' || next === 'awaken') {
       navigate({ kind: 'awaken' });
     } else if (next === 'settings') {
       navigate({ kind: 'settings' });
@@ -146,9 +151,9 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
     }
   };
 
-  // Resolve which questions to ask + prefill current answers. 'all' shows
-  // every question; 'missing' only the unanswered ones (and routes straight
-  // onward if nothing is missing — e.g. a stale gate).
+  // Resolve which questions to ask + prefill current answers: only the
+  // unanswered ones, routing straight onward if nothing is missing (e.g. a
+  // stale gate).
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -170,7 +175,7 @@ export function ProfileQuestionsScreen({ next, mode, onDefer }: ProfileQuestions
           setRanking(profile.companion_dynamics);
         }
       }
-      const asked = mode === 'all' ? [...PREF_QUESTIONS] : missing;
+      const asked = missing;
       if (asked.length === 0) {
         finish();
         return;

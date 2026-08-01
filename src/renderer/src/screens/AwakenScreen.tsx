@@ -86,13 +86,13 @@ export function AwakenScreen(): React.ReactElement {
       // questionnaire abandoned partway, or completed before a newer
       // question shipped, asks exactly the gaps before casting.
       if (prefs.missing.length > 0) {
-        navigate({ kind: 'profile-questions', next: 'unique-gender', mode: 'missing' });
+        navigate({ kind: 'profile-questions', next: 'meet', mode: 'missing' });
         return;
       }
     } catch {
-      // Fail open — proceed to the gender step; the pipeline can still run.
+      // Fail open — proceed to Sui's scene; the pipeline can still run.
     }
-    navigate({ kind: 'unique-gender' });
+    navigate({ kind: 'sui-meet' });
   };
 
   // The existing custom wizard, gated on the daily creation quota.
@@ -163,13 +163,13 @@ export function AwakenScreen(): React.ReactElement {
       </div>
       {/* 260706: retake entry — the full questionnaire, prefilled, returning
           here. Signed-in only (the questionnaire is a cloud-user concept,
-          same as the match hero). */}
+          same as the match hero). 260731: Sui asks it, in her scene. */}
       {authKind === 'signed_in' ? (
         <div className={styles.foot}>
           <button
             type="button"
             className={styles.prefsLink}
-            onClick={() => navigate({ kind: 'profile-questions', next: 'awaken', mode: 'all' })}
+            onClick={() => navigate({ kind: 'sui-prefs', next: 'awaken' })}
           >
             {t('Update my preferences')}
           </button>

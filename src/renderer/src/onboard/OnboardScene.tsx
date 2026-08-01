@@ -4,7 +4,8 @@
  * Layer stack (all art 1500x1000):
  *   layer1  flat sky, always present (also the backdrop of the sign-in phase)
  *   layer2  ground + haze — slides up from the bottom with the grass
- *   (Sui sits here: on the ground, behind the tufts)
+ *   (Sui sits here: on the ground, behind the tufts — but see .suiFrontClip,
+ *    which brings her back in front of them over two bands of the stage)
  *   layer3/4/5  grass tuft variations — cycled to make the grass sway
  *
  * SCALE LOCK: the layers AND the Sui sprite live inside one fixed-aspect
@@ -202,12 +203,11 @@ export function OnboardScene(props: OnboardSceneProps): React.ReactElement {
               moves, so that is never visible.
 
               She is rendered TWICE: this behind-grass copy, and a duplicate
-              after the tufts clipped to the rightmost 10% of the stage
-              (.suiFrontClip), so she rises above the tall right-edge grass
-              there while the rest of her stays tucked into the field. The
-              copies share the exact same classes, so their transitions and
-              animations run in lockstep; only this one carries the
-              transitionend handler (the duplicate would fire it twice). */}
+              after the tufts, masked to the two stage bands where she belongs
+              in front of it (.suiFrontClip owns the band geometry). The copies
+              share the exact same classes, so their transitions and animations
+              run in lockstep; only this one carries the transitionend handler
+              (the duplicate would fire it twice). */}
           {renderSui(true)}
           {LAYERS.grass.map((src, i) => (
             <img
