@@ -213,6 +213,55 @@ AND at `launchSummon`, so stale pause/mode never survives into a new summon).
 (**default 30**, in `src/bot/config.js`) to stop single-layer runaway.
 > The old planning-era CLAUDE.md said 20 — that was wrong; the value is 30.
 
+**Auto-equip on dig (260731).** `behaviors/toolSelect.js` picks and equips the
+best tool the bot owns before EVERY swing in `digAction`, so `dig`, `gather`,
+`digCuboid` and `digIn` all inherit it. Before this nothing on the dig path
+equipped anything: `bot.dig()` swung whatever was in hand, and mineflayer's
+`canDigBlock` only checks diggability + reach (it has never looked at the held
+item), so `dig.js`'s "unbreakable or **wrong tool**" branch could not fire.
+Live, that produced two compounding failures: bare-handed stone is 7500ms
+against the old flat 8000ms timeout, so it lost the race under any latency
+("timeout digging stone" ×3, then `dug stone` the moment the model happened to
+call equip); and stone mined without a pickaxe **drops nothing**, so a gather
+could never accumulate. Three details are load-bearing: bare hand is a real
+CANDIDATE (otherwise an ms-only comparison equips whatever junk item sits first
+in the inventory, since non-tools dig at exactly hand speed); a tool that makes
+the block DROP outranks a faster one that does not; and the dig timeout is now
+DERIVED from the expected dig time (`estMs * 2 + 2000`, clamped to
+8000..`MAX_TIMEOUT_MS` 30000) instead of a flat 8s. When nothing in the
+inventory can harvest the block the dig still runs and the result string SAYS
+the drop was lost, the same "tell the model" pattern as `weakWeaponNote`. The
+`dig`/`gather` tool descriptions now tell the model NOT to call equip first.
+
+**The curiosity mandate (260731).** `CURIOSITY_CLAUSE` in `promptLibrary.js` is
+appended to all three gameplay `PROACTIVENESS_DIRECTIVES`. Before it, the only
+"stay genuinely curious about the player" text in the repo lived in
+`CHAT_PROACTIVENESS_DIRECTIVES`, which the Minecraft surface never loads, so
+the gameplay tiers were ~500 words of setGoal / progression order / teammate
+coordination and nothing about the human. Live, asked point-blank to get to
+know the player, the character asked one question, got a real answer, wrote a
+`remember()`, and walked off to a crafting table — correct for a prompt where
+advancing the goal is the standing order every tick and following up on a
+person is written down nowhere. `renderFrontierBlock` lost "on the way to
+**beating the game**" (the loudest objective in the prompt; the first act of a
+session was `setGoal("Reach iron tier")`) and gained shared-activity framing.
+**What none of this says is that the progression does not matter** — told that,
+the model stops working and the world goes still, which is worse company than a
+grinder. The project is the SETTING; both halves are the job.
+
+**Say-suppression (260731).** `IDLE_SAY_GAP_MS` is now **0 = disabled**. The
+45s floor compared TIMESTAMPS only, so it could not tell a reworded repeat from
+a new thought and killed both: inside one session it swallowed an answer to
+something the player had just revealed about themselves (4s) and two
+invitations to play together (7s, 21s). The text-comparing dedupe
+(`shouldSuppressLoopEndSay`) is still on and is the one that catches an actual
+repeat. `shouldSuppressIdleSay` and its tests are kept; restoring the floor is
+a one-constant change. Related, same date: `ATTACKED_ADDENDUM_MOB` now REQUIRES
+a line naming what is attacking you (it previously offered only tactics, so a
+skeleton fight happened in complete silence and the player found out by asking
+"are u ok?"), and the mid-action check-in's blanket "call NO say()" now exempts
+taking damage.
+
 **Memory.** Per-character memory directory.
 - **Writes are LLM-driven:** the model calls `remember()` / `forget()` to
   maintain an append-only `MEMORY.md`; `PLAYER.md` tracks the other player.
