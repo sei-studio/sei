@@ -48,6 +48,12 @@ export const Priority = Object.freeze({
   P3_IDLE: 3,
 })
 
+// 260730 idle backoff (see idleDelay). The cap is a full minute of quiet, which
+// is the reactive tier's base cadence — the slowest the FSM has ever polled a
+// live session, so nothing downstream is being asked to tolerate a new gap.
+export const IDLE_BACKOFF_CAP_MS = 60_000
+export const IDLE_BACKOFF_MAX_DOUBLINGS = 6
+
 /**
  * Priority tier for a 'sei:attacked' event, keyed on attackerKind.
  *
@@ -62,11 +68,17 @@ export const Priority = Object.freeze({
  * dispatch + attack/reflex prompt framing (which keys on attackerKind) is
  * unchanged.
  *
+ * 260730: attackerKind 'defend' (the OWNER is being hit — combat.js) rides the
+ * same conversation tier for the same reason. The bot is not in danger, and
+ * the physical response (auto-engage) already ran without asking the model, so
+ * the turn is narration plus an optional escalation, never a panic.
+ *
  * @param {{ attackerKind?: string }} [data]
  * @returns {number}
  */
 export function attackedPriority(data) {
-  return data?.attackerKind === 'reflex' ? Priority.P1_CHAT : Priority.P0_SAFETY
+  const kind = data?.attackerKind
+  return (kind === 'reflex' || kind === 'defend') ? Priority.P1_CHAT : Priority.P0_SAFETY
 }
 
 /**
@@ -120,21 +132,51 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   // real elapsed time. An idle tick does NOT count as activity — that's what
   // lets the quiet window grow across back-to-back idles.
   let lastActivityAt = Date.now()
+  // 260730: how many idle ticks have fired since the last genuine event. The
+  // delay doubles per consecutive tick (capped, see idleDelay) so a quiet world
+  // stops being polled at the base cadence forever.
+  let idleStreak = 0
+
+  /**
+   * Idle delay for the NEXT tick: base cadence, doubled once per consecutive
+   * idle tick since the last real event, capped at IDLE_BACKOFF_CAP_MS.
+   *
+   * The base cadence is per proactiveness tier and the agentic tier's is 5s
+   * (IDLE_CADENCE_MS in brain/prompts.js) so a self-directed character resumes
+   * its goal almost immediately after finishing a step. That is the right
+   * number for RESUMING WORK and the wrong one for an empty world: with
+   * nothing to resume it re-asked Haiku every 5s for the whole session, and
+   * since an idle turn is nudged to speak, the player heard a new line every
+   * ~10s (260730 voice-call log). Backing off restores the fast first tick —
+   * the one that matters for resuming — and lets the rest decay.
+   *
+   * The cap never SHORTENS a slower tier: reactive (60s) and passive (10min)
+   * come back unchanged, because their base already clears the cap.
+   */
+  function idleDelay() {
+    const base = typeof idleFallbackMs === 'function' ? idleFallbackMs() : idleFallbackMs
+    const grown = base * Math.pow(2, Math.min(idleStreak, IDLE_BACKOFF_MAX_DOUBLINGS))
+    return Math.min(grown, Math.max(base, IDLE_BACKOFF_CAP_MS))
+  }
 
   function resetIdleTimer() {
     clearTimeout(idleTimer)
     if (disposed || holdPredicate) return
-    const delay = typeof idleFallbackMs === 'function' ? idleFallbackMs() : idleFallbackMs
     idleTimer = setTimeout(() => {
+      idleStreak += 1
       enqueue(Priority.P3_IDLE, 'sei:idle', { quietMs: Date.now() - lastActivityAt })
-    }, delay)
+    }, idleDelay())
   }
 
   function enqueue(priority, event, data) {
     if (disposed) return
     // Any genuine event (everything except a self-fired idle tick) marks "the
-    // world did something just now" and resets the quiet clock above.
-    if (event !== 'sei:idle') lastActivityAt = Date.now()
+    // world did something just now" and resets the quiet clock above — and the
+    // idle backoff with it, so the next lull starts fast again.
+    if (event !== 'sei:idle') {
+      lastActivityAt = Date.now()
+      idleStreak = 0
+    }
     // Dedupe idempotent ticks. sei:loop_end and sei:idle are "settle" prompts
     // — only the next one matters. Without this guard, multiple back-to-back
     // higher-priority loops (joined → chat → ...) each leave a loop_end in
@@ -177,7 +219,10 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
         // parking the dispatch thread, which — for a player-chat turn that is
         // being answered — is exactly the preemption we must not do for a mere
         // heads-up. Only a REAL attack keeps the immediate-abort fast-path.
-        (event === 'sei:attacked' && data?.attackerKind !== 'reflex'))
+        // 'defend' (the owner is being hit) is a heads-up too — the auto-engage
+        // already happened in combat.js, so nothing is waiting on this call.
+        (event === 'sei:attacked' &&
+          data?.attackerKind !== 'reflex' && data?.attackerKind !== 'defend'))
     ) {
       let claimed = false
       try { claimed = !!onPreempt(event, data) } catch (err) {

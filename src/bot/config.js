@@ -31,10 +31,23 @@ const MinecraftAdapterSchema = z.object({
   // before it can speak/act — the combat livelock (Sui frozen + silent while
   // taking damage) seen in the 2026-06-19 playlogs. 0 disables (test escape).
   attack_react_throttle_ms: z.number().int().min(0).default(3500),
+  // 260730 — defending the owner. Until this, entityHurt was ignored unless the
+  // BOT was the one hurt, so a player being swarmed produced no event and no
+  // help; the companion only found out if the player said so out loud. That is
+  // the "why is Sui never pulling any aggro" report: hostile targeting picks
+  // the nearest player and she was as often the nearest one, but nothing ever
+  // made her HIT a mob, and hitting is what moves aggro (a mob retargets
+  // whoever hurt it). When on, a hostile hitting the owner within
+  // defend_radius_blocks starts an automatic engagement (combat.js) and fires
+  // sei:owner_attacked for the narration turn. Radius is the bot's distance to
+  // the MOB, not to the owner: past it, the fight is not close enough to be
+  // ours and walking in would only drag more of the world along.
+  defend_owner: z.boolean().default(true),
+  defend_radius_blocks: z.number().min(0).default(16),
   // Reflex evasion micro-controller (Phase 17, D-05). A ~20 Hz physicsTick
   // survival loop (behaviors/reflex.js) that evades incoming damage BEFORE it
   // lands — arrow sidestep, creeper goal-owning flee, melee circle-strafe. It
-  // runs entirely on the adapter side (never enters fsm.js). These seven keys
+  // runs entirely on the adapter side (never enters fsm.js). These eight keys
   // are read via the `mc = config?.adapter?.minecraft ?? config ?? {}` slice.
   reflex_enabled: z.boolean().default(true),
   // physicsTick fires at 20 TPS; 50 ms documents the cadence (the loop binds to
@@ -55,6 +68,13 @@ const MinecraftAdapterSchema = z.object({
   // Melee kite band centre (blocks): strafe to hold ~2.5-4 blocks just outside
   // a melee mob's reach. Non-int → no `.int()`.
   melee_kite_blocks: z.number().min(0).default(4.5),
+  // Reflex sight cone (degrees, TOTAL width) around the bot's head-look
+  // direction (yaw+pitch — the head, not body facing). Threats outside the
+  // cone never trigger a reflex, matching a human player who cannot react to
+  // a mob behind them. 120° ≈ the default Minecraft screen plus a little
+  // peripheral. Exception: a fusing creeper (the audible hiss) panics at any
+  // facing. 360 disables the gate.
+  reflex_fov_deg: z.number().min(0).max(360).default(120),
   // Head-look ("gaze", behaviors/gaze.js): cosmetic, LLM-uninvolved tracking of
   // the owner — full yaw+pitch when idle and within range, pitch-only tracking
   // while moving toward them (follow/goTo) so the pathfinder keeps yaw.
@@ -157,6 +177,11 @@ export const ConfigSchema = z.object({
     // measured — e.g. Marv). Drives PUNCTUATION_DIRECTIVES in the cached
     // system prefix AND the splitChatMessages trailing-period behavior.
     punctuation: z.enum(['casual', 'deliberate']).default('casual'),
+    // 260730: per-character language pin (character.metadata.language,
+    // stamped at creation under the Chinese UI). When set it beats the
+    // profile-wide chat_language below in rebuildPersonalitySystem. Optional:
+    // absent = no pin.
+    language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
   }),
   anthropic: z.object({
     // Phase 13-15 (D-40 sub-delivery a): api_key is no longer strictly required

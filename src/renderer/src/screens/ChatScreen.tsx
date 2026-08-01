@@ -29,6 +29,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useT, uiLanguage } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -98,9 +99,12 @@ function fmtTimestamp(ts: number): string {
   )}:${pad2(d.getMinutes())}`;
 }
 
-/** "17 Apr 2026" — day-separator label. */
+/** "17 Apr 2026" — day-separator label ("2026年4月17日" in Chinese). */
 function fmtDay(ts: number): string {
   const d = new Date(ts);
+  if (uiLanguage() === 'zh') {
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  }
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
@@ -118,6 +122,7 @@ function dayKey(ts: number): number {
 const LOAD_OLDER_THRESHOLD_PX = 120;
 
 export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const openModal = useUiStore((s) => s.openModal);
   const setChatReturnId = useUiStore((s) => s.setChatReturnId);
@@ -274,8 +279,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   const theme: 'light' | 'dark' = resolvedScheme();
 
-  const companionName = character?.name ?? 'Companion';
-  const userName = userProfile?.preferredName?.trim() || 'You';
+  const companionName = character?.name ?? t('Companion');
+  const userName = userProfile?.preferredName?.trim() || t('You');
   // Panel kind line: the character's one-line description with the leading
   // "<Name>, " appositive and trailing period stripped ("A wolf-person"),
   // replacing the generic "Companion" label. Long descriptions (hand-written
@@ -311,7 +316,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   const presence = character
     ? presenceOf(character, summon)
-    : ({ category: 'idle', label: 'Idle' } as const);
+    : ({ category: 'idle', label: t('Idle') } as const);
   const online = summon?.kind === 'online';
   const connecting = summon?.kind === 'connecting';
   const nowVerb = presence.category === 'in-game' ? actionVerb(action) : null;
@@ -396,8 +401,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         type="button"
         className={styles.rowActionBtn}
         onClick={() => onCopy(m)}
-        aria-label="Copy message"
-        data-tip={copiedId === m.id ? 'Copied' : 'Copy'}
+        aria-label={t('Copy message')}
+        data-tip={copiedId === m.id ? t('Copied') : t('Copy')}
         data-tip-edge="right"
       >
         <CopyIcon size={15} />
@@ -406,8 +411,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         type="button"
         className={styles.rowActionBtn}
         onClick={() => onReply(m)}
-        aria-label="Reply"
-        data-tip="Reply"
+        aria-label={t('Reply')}
+        data-tip={t('Reply')}
         data-tip-edge="right"
       >
         <ReplyIcon size={15} />
@@ -488,7 +493,13 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // is disabled while dragging (no animation fighting).
   const [gameSplit, setGameSplit] = useState<number | null>(() => readGameLayout().split);
   const [splitDragging, setSplitDragging] = useState(false);
-  const chatHidden = gameOpen && gameExpanded;
+  // In-app fullscreen (260728) hides the chat too, on top of whatever the
+  // expand "V" was set to, and restores that state on exit rather than
+  // clobbering it. It is not persisted into the layout preference: fullscreen
+  // is a thing you do for a moment, the split is a thing you keep.
+  const gameFullscreen = useUiStore((s) => s.gameFullscreen);
+  const setGameFullscreen = useUiStore((s) => s.setGameFullscreen);
+  const chatHidden = gameOpen && (gameExpanded || gameFullscreen);
   // 260725: the sizing is a user PREFERENCE, not per-view state. It used to
   // reset on unmount (and on a DM switch), so opening a profile and coming
   // back dropped a full-window game straight back to the half split. Persist
@@ -581,8 +592,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       } ${chatHidden ? styles.gameExpanded : ''} ${splitDragging ? styles.splitDragging : ''}`}
     >
       {/* ── Top bar: identical structure across chat, games and calls
-          (260721) — the shared ChatTopBar. ── */}
-      <ChatTopBar characterId={characterId} />
+          (260721) — the shared ChatTopBar. Game fullscreen hides it too
+          (260729): fullscreen means the game gets every pixel the app window
+          has, and the bar's own buttons (call, end) live in the game's bottom
+          chrome row, so nothing up here is load-bearing while it is hidden. ── */}
+      {!(gameOpen && gameFullscreen) ? <ChatTopBar characterId={characterId} /> : null}
 
       <div className={styles.content}>
         <div className={styles.mainCol} ref={mainColRef}>
@@ -595,20 +609,31 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             style={gameAreaStyle}
             aria-label={
               chessReplayOpen
-                ? 'Chess replay'
+                ? t('Chess replay')
                 : chessOpen
-                ? 'Chess'
+                ? t('Chess')
                 : mcDashOpen
-                  ? 'Minecraft dashboard'
-                  : 'Minecraft'
+                  ? t('Minecraft dashboard')
+                  : t('Minecraft')
             }
             aria-hidden={!gameOpen}
           >
             {gameOpen ? (
               <GameSurface
-                expanded={gameExpanded}
+                characterId={characterId}
+                expanded={chatHidden}
                 unread={gameUnread}
-                onToggle={() => setGameExpanded((v) => !v)}
+                // The "V" always means "show me the chat again", so while
+                // fullscreen is hiding it, pressing V leaves fullscreen rather
+                // than toggling a state with no visible effect.
+                onToggle={() => {
+                  if (gameFullscreen) {
+                    setGameFullscreen(false);
+                    setGameExpanded(false);
+                    return;
+                  }
+                  setGameExpanded((v) => !v);
+                }}
                 onEnd={onGameEnd}
                 confirmEnd={confirmGameEnd}
               >
@@ -633,7 +658,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               className={styles.splitHandle}
               role="separator"
               aria-orientation="horizontal"
-              aria-label="Resize game area"
+              aria-label={t('Resize game area')}
               tabIndex={0}
               onPointerDown={onSplitPointerDown}
               onPointerMove={onSplitPointerMove}
@@ -655,7 +680,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           {loading ? <ChatSkeleton /> : null}
           {!loading && visibleMessages.length === 0 && !showTyping ? (
             <div className={styles.empty}>
-              This is the beginning of your conversation with {companionName}. Say hi.
+              {t('This is the beginning of your conversation with {name}. Say hi.', {
+                name: companionName,
+              })}
             </div>
           ) : null}
           {loading ? null : visibleMessages.map((m, i, arr) => {
@@ -676,7 +703,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                         <GamepadIcon size={18} />
                       </span>
                       <span>{m.text}</span>
-                      <span className={styles.replayHint}>Watch replay</span>
+                      <span className={styles.replayHint}>{t('Watch replay')}</span>
                     </button>
                   );
                 }
@@ -764,7 +791,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             ) : (
               <div className={styles.rowCont}>
                 <span aria-hidden="true" />
-                <div className={styles.msgText}>{m.text}</div>
+                <div className={styles.msgText}>
+                  {m.text}
+                </div>
                 {rowActions(m)}
               </div>
             );
@@ -779,10 +808,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         </div>
 
         {/* ── Floating composer (hovers over the chat window) ── */}
-        <div className={styles.composerDock}>
+        {/* data-chat-composer: MiniTile measures this dock to float above it. */}
+        <div className={styles.composerDock} data-chat-composer>
           {showTyping ? (
             <div className={styles.typingLine} aria-live="polite">
-              {companionName} is typing…
+              {t('{name} is typing…', { name: companionName })}
             </div>
           ) : null}
           {replyTo ? (
@@ -796,8 +826,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 type="button"
                 className={styles.replyClose}
                 onClick={() => setReplyTo(null)}
-                aria-label="Cancel reply"
-                title="Cancel reply"
+                aria-label={t('Cancel reply')}
+                title={t('Cancel reply')}
               >
                 ×
               </button>
@@ -805,30 +835,30 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           ) : null}
           {copiedId ? (
             <div className={styles.copiedToast} aria-live="polite">
-              Copied to clipboard
+              {t('Copied to clipboard')}
             </div>
           ) : null}
-          <div className={styles.composer}>
+          <div className={styles.composer} data-tutorial="composer">
             <textarea
               ref={inputRef}
               className={styles.input}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={`Message ${companionName}…`}
+              placeholder={t('Message {name}…', { name: companionName })}
               // 260705: mirror the chat:send Zod cap — an over-limit paste would
               // otherwise be rejected pre-persist and show unfixable "try again" copy.
               maxLength={CHAT_TEXT_MAX}
               rows={1}
-              aria-label={`Message ${companionName}`}
+              aria-label={t('Message {name}', { name: companionName })}
             />
             {draft.trim() !== '' ? (
               <button
                 type="button"
                 className={styles.sendBtn}
                 onClick={doSend}
-                aria-label="Send"
-                title="Send"
+                aria-label={t('Send')}
+                title={t('Send')}
               >
                 <SendIcon size={18} />
               </button>
@@ -847,7 +877,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             ? ({ '--pres-tint': panelTint } as React.CSSProperties)
             : undefined
         }
-        aria-label={showingUser ? 'You' : `${companionName} details`}
+        aria-label={showingUser ? t('You') : t('{name} details', { name: companionName })}
         aria-hidden={!panelOpen}
       >
         <div className={styles.presInner}>
@@ -881,8 +911,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               type="button"
               className={styles.presClose}
               onClick={() => setPanelOpen(false)}
-              aria-label="Close profile"
-              title="Close profile"
+              aria-label={t('Close profile')}
+              title={t('Close profile')}
             >
               ×
             </button>
@@ -894,18 +924,20 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 ? userProfile?.handle && <IdTag id={userProfile.handle} size="sm" />
                 : character?.public_id && <IdTag id={character.public_id} size="sm" />}
             </div>
-            <div className={styles.presKind}>{showingUser ? 'Human' : kindLine}</div>
+            <div className={styles.presKind}>
+              {showingUser ? t('Human') : kindLine === 'Companion' ? t('Companion') : kindLine}
+            </div>
             {!showingUser ? <Presence category={presence.category} label={presence.label} /> : null}
             {!showingUser && nowVerb ? <div className={styles.presNow}>{nowVerb}</div> : null}
             {!showingUser ? (
               <div className={styles.presActions}>
                 {online ? (
                   <Button kind="danger" fullWidth onClick={onDisconnect}>
-                    Disconnect
+                    {t('Disconnect')}
                   </Button>
                 ) : connecting ? (
                   <Button kind="ghost" fullWidth disabled>
-                    Connecting…
+                    {t('Connecting…')}
                   </Button>
                 ) : (
                   <Button
@@ -913,14 +945,14 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                     fullWidth
                     onClick={() => openModal({ kind: 'games-picker', characterId })}
                   >
-                    Play
+                    {t('Play')}
                   </Button>
                 )}
                 <Button kind="ghost" fullWidth onClick={onVoiceCall}>
-                  Call
+                  {t('Call')}
                 </Button>
                 <Button kind="ghost" fullWidth onClick={onProfile}>
-                  Profile
+                  {t('Profile')}
                 </Button>
               </div>
             ) : null}

@@ -10,6 +10,7 @@
  * reset is in flight so a stray input can't abort a partial wipe.
  */
 import React, { useState } from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
@@ -26,6 +27,7 @@ export function ResetAllMemoriesConfirmModal({
   onCancel,
   onConfirm,
 }: ResetAllMemoriesConfirmModalProps): React.ReactElement {
+  const t = useT();
   const [submitting, setSubmitting] = useState(false);
 
   const handleConfirm = async (): Promise<void> => {
@@ -38,25 +40,29 @@ export function ResetAllMemoriesConfirmModal({
     }
   };
 
-  const companions = characterCount === 1 ? '1 companion' : `all ${characterCount} companions`;
-
   return (
     <ModalShell
-      title="Reset all companion memories?"
+      title={t('Reset all companion memories?')}
       onClose={onCancel}
       escClose={!submitting}
       scrimClose={!submitting}
     >
       <p className={styles.body}>
-        This permanently wipes saved chat history and playtime for {companions} on this device.
-        Persona, portrait, and skin are kept. This can’t be undone.
+        {characterCount === 1
+          ? t(
+              'This permanently wipes saved chat history and playtime for 1 companion on this device. Persona, portrait, and skin are kept. This can’t be undone.',
+            )
+          : t(
+              'This permanently wipes saved chat history and playtime for all {count} companions on this device. Persona, portrait, and skin are kept. This can’t be undone.',
+              { count: characterCount },
+            )}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel} disabled={submitting}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="danger" size="md" onClick={handleConfirm} disabled={submitting}>
-          {submitting ? 'Resetting…' : 'Reset all memories'}
+          {submitting ? t('Resetting…') : t('Reset all memories')}
         </Button>
       </ModalFooter>
     </ModalShell>

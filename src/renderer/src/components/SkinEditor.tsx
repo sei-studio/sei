@@ -43,6 +43,7 @@ import { sei } from '../lib/ipcClient';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useWizardStore } from '../lib/stores/useWizardStore';
 import { classifyRendererError } from '../lib/errors';
+import { useT } from '../lib/i18n';
 import type { Character } from '@shared/characterSchema';
 import { effectiveMcUsername } from '@shared/characterSchema';
 import { Button } from './Button';
@@ -122,6 +123,7 @@ export function SkinEditor({
   previewCaption,
   onEditSkin,
 }: SkinEditorProps): React.ReactElement {
+  const t = useT();
   const sectionClass = compact ? `${styles.section} ${styles.sectionCompact}` : styles.section;
   // ── Source-of-skin switch + staged PNG bytes ─────────────────────────────
   const [tab, setTab] = useState<'upload' | 'search'>('search');
@@ -262,7 +264,7 @@ export function SkinEditor({
     setUsernameDraft(v);
     // Empty is allowed (means "use fallback") — only flag if non-empty AND invalid.
     if (v.length > 0 && !MC_NAME_RE.test(v)) {
-      setUsernameError('Letters, digits, and underscores only, max 16 characters.');
+      setUsernameError(t('Letters, digits, and underscores only, max 16 characters.'));
     } else {
       setUsernameError(null);
     }
@@ -342,12 +344,12 @@ export function SkinEditor({
       <SkinPreview3d pngDataUrl={previewUrl} personaName={character.name} />
       {skinsSetUp === false ? (
         <div className={styles.setupOverlay}>
-          <div className={styles.setupOverlayTitle}>Skin setup not complete</div>
+          <div className={styles.setupOverlayTitle}>{t('Skin setup not complete')}</div>
           <p className={styles.setupOverlayBody}>
-            Your skin won’t show in Minecraft until you set up skins on this computer.
+            {t('Your skin won’t show in Minecraft until you set up skins on this computer.')}
           </p>
           <Button kind="accent" size="sm" onClick={() => openWizard(true)}>
-            Set up skins
+            {t('Set up skins')}
           </Button>
         </div>
       ) : null}
@@ -368,7 +370,7 @@ export function SkinEditor({
           {previewCaption ? <span className={styles.skinCaption}>{previewCaption}</span> : null}
           {onEditSkin ? (
             <Button kind="ghost" size="sm" onClick={onEditSkin}>
-              Edit skin
+              {t('Edit skin')}
             </Button>
           ) : null}
         </div>
@@ -379,7 +381,7 @@ export function SkinEditor({
   return (
     <section className={sectionClass}>
       <div className={styles.header}>
-        <div className={styles.eyebrow}>Skin &amp; username</div>
+        <div className={styles.eyebrow}>{t('Skin & username')}</div>
       </div>
 
       <div className={styles.cols}>
@@ -387,35 +389,34 @@ export function SkinEditor({
 
         <div className={styles.right}>
           {/* In-game username field ─────────────────────────────────────── */}
-          <div className={styles.fieldEyebrow}>In-game username</div>
+          <div className={styles.fieldEyebrow}>{t('In-game username')}</div>
           <TextField
             value={usernameDraft}
             onChange={onUsernameChange}
             placeholder={character.name}
             disabled={mode === 'applying' || botActiveForThisPersona}
-            aria-label="In-game username"
+            aria-label={t('In-game username')}
             aria-invalid={!!usernameError}
           />
           {usernameError ? (
             <p className={styles.errorCopy}>{usernameError}</p>
           ) : (
             <p className={styles.hint}>
-              This is the name other players see above the bot. Any text works in offline LAN
-              worlds.
+              {t('This is the name other players see above the bot. Any text works in offline LAN worlds.')}
             </p>
           )}
           {!usernameError && usernameCollision ? (
             <p className={styles.warnCopy}>
-              {`${usernameCollision.name} also joins as "${resolvedMcName}". In a world, two
-              characters with the same in-game name share one inventory and location: connect one
-              after the other and the second inherits the first's items and spot. Give one a
-              different name to keep them separate.`}
+              {t(
+                '{other} also joins as "{name}". In a world, two characters with the same in-game name share one inventory and location: connect one after the other and the second inherits the first\'s items and spot. Give one a different name to keep them separate.',
+                { other: usernameCollision.name, name: resolvedMcName },
+              )}
             </p>
           ) : null}
 
           {/* Skin source radio switch ─────────────────────────────────── */}
-          <div className={styles.fieldEyebrow}>Skin source</div>
-          <div className={styles.sourceTabs} role="radiogroup" aria-label="Skin source">
+          <div className={styles.fieldEyebrow}>{t('Skin source')}</div>
+          <div className={styles.sourceTabs} role="radiogroup" aria-label={t('Skin source')}>
             <label className={styles.sourceTabLabel}>
               <input
                 type="radio"
@@ -424,7 +425,7 @@ export function SkinEditor({
                 onChange={() => setTab('upload')}
                 disabled={mode === 'applying' || botActiveForThisPersona}
               />{' '}
-              Upload PNG
+              {t('Upload PNG')}
             </label>
             <label className={styles.sourceTabLabel}>
               <input
@@ -434,7 +435,7 @@ export function SkinEditor({
                 onChange={() => setTab('search')}
                 disabled={mode === 'applying' || botActiveForThisPersona}
               />{' '}
-              Search MC
+              {t('Search MC')}
             </label>
           </div>
 
@@ -472,7 +473,7 @@ export function SkinEditor({
               onClick={() => void onApply()}
               disabled={applyDisabled}
             >
-              {mode === 'applying' ? 'Applying...' : 'Apply skin'}
+              {mode === 'applying' ? t('Applying...') : t('Apply skin')}
             </Button>
             <button
               type="button"
@@ -481,17 +482,17 @@ export function SkinEditor({
               disabled={mode === 'applying' || botActiveForThisPersona}
             >
               {removeDone
-                ? 'Skin removed'
+                ? t('Skin removed')
                 : removeArmed
-                  ? 'Click again to remove'
-                  : 'Remove skin'}
+                  ? t('Click again to remove')
+                  : t('Remove skin')}
             </button>
           </div>
 
           {/* Inline status copy band ───────────────────────────────────── */}
           {botActiveForThisPersona ? (
             <p className={styles.warnCopy}>
-              Stop the bot before changing skin. Skin applies on next connect.
+              {t('Stop the bot before changing skin. Skin applies on next connect.')}
             </p>
           ) : null}
           {error ? <p className={styles.errorCopy}>{error}</p> : null}
@@ -502,11 +503,11 @@ export function SkinEditor({
             already picked one.
           */}
           {!stagedPng && !botActiveForThisPersona && mode !== 'applying' && !error && character.skin.source === 'none' ? (
-            <p className={styles.hint}>Pick an upload or search a username first.</p>
+            <p className={styles.hint}>{t('Pick an upload or search a username first.')}</p>
           ) : null}
           {successToast ? (
             <p className={styles.successCopy}>
-              {"Skin applied. It'll show up the next time the bot connects."}
+              {t("Skin applied. It'll show up the next time the bot connects.")}
             </p>
           ) : null}
         </div>

@@ -264,3 +264,64 @@ describe('createPriorityQueue setHold (game pause, 260725)', () => {
     vi.useRealTimers()
   })
 })
+
+// 260730 — consecutive idle ticks back off.
+//
+// The agentic tier's idle cadence is 5s (IDLE_CADENCE_MS[2]) so a self-directed
+// character resumes its GOAL almost immediately after finishing a step. That is
+// the right number for resuming work and the wrong one for an empty world: with
+// nothing to resume it re-asked the model every 5s for a whole session, and
+// since an idle turn is nudged to speak, the player heard a new line about
+// every 10s. Backing off keeps the fast FIRST tick (the one that matters) and
+// lets the rest decay to the cap.
+//
+// Advances carry 100ms of slack: landing EXACTLY on a timer boundary fires the
+// timer but does not always drain the setImmediate the dispatch rides on.
+describe('idle backoff across consecutive ticks (260730)', () => {
+  it('doubles the delay per unanswered tick and resets on a real event', async () => {
+    vi.useFakeTimers()
+    const onDispatch = vi.fn()
+    const q = createPriorityQueue({ onDispatch, idleFallbackMs: 1000 })
+    const idles = () => onDispatch.mock.calls.filter((c) => c[0] === 'sei:idle').length
+
+    await vi.advanceTimersByTimeAsync(1100)   // t=1100 — first tick at the base cadence
+    expect(idles()).toBe(1)
+    await vi.advanceTimersByTimeAsync(1000)   // t=2100 — the second is due at 3000, not 2000
+    expect(idles()).toBe(1)
+    await vi.advanceTimersByTimeAsync(1000)   // t=3100
+    expect(idles()).toBe(2)
+    await vi.advanceTimersByTimeAsync(3000)   // t=6100 — the third is due at 7000
+    expect(idles()).toBe(2)
+    await vi.advanceTimersByTimeAsync(1000)   // t=7100
+    expect(idles()).toBe(3)
+
+    // A real event resets the streak: the next lull ticks at the base again.
+    q.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true })
+    await vi.advanceTimersByTimeAsync(10)
+    const before = idles()
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(idles()).toBe(before + 1)
+
+    q.dispose()
+    vi.useRealTimers()
+  })
+
+  it('never stretches a cadence that is already slower than the cap', async () => {
+    vi.useFakeTimers()
+    const onDispatch = vi.fn()
+    // The reactive tier's 60s base already equals IDLE_BACKOFF_CAP_MS, so its
+    // ticks must stay 60s apart however long the quiet runs.
+    const q = createPriorityQueue({ onDispatch, idleFallbackMs: 60_000 })
+    const idles = () => onDispatch.mock.calls.filter((c) => c[0] === 'sei:idle').length
+
+    await vi.advanceTimersByTimeAsync(60_100)
+    expect(idles()).toBe(1)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(idles()).toBe(2)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(idles()).toBe(3)
+
+    q.dispose()
+    vi.useRealTimers()
+  })
+})

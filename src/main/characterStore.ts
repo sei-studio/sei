@@ -26,6 +26,7 @@ import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
 import { paths } from './paths';
 import { expandPersona, fetchServerExpansionSystem, type ExpansionProgress } from './personaExpansion';
+import { characterLanguage } from '../shared/chatLanguage';
 import { loadApiKey, getAiBackendKind } from './apiKeyStore';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
@@ -330,6 +331,9 @@ export async function expandAndSaveCharacter(
     // progress bar. Undefined for callers that don't pass one (the call still
     // streams internally; it just emits no ticks).
     onProgress,
+    // 260730: a character stamped zh at creation (Chinese UI) gets its persona
+    // written in Chinese; regeneration-on-edit keeps the language.
+    ...(characterLanguage(validated.metadata) === 'zh' ? { language: 'zh' as const } : {}),
   };
   if (backendKind === 'cloud-proxy') {
     const { getClient } = await import('./auth/supabaseClient');

@@ -11,6 +11,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
@@ -26,17 +27,20 @@ export function UnbindConfirmModal({
   onCancel,
   onConfirm,
 }: UnbindConfirmModalProps): React.ReactElement {
+  const t = useT();
   return (
-    <ModalShell title={`Unbind ${characterName}?`} onClose={onCancel}>
+    <ModalShell title={t('Unbind {name}?', { name: characterName })} onClose={onCancel}>
       <p className={styles.body}>
-        {characterName} will be released from your party. Their memories stay with them.
+        {t('{name} will be released from your party. Their memories stay with them.', {
+          name: characterName,
+        })}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="danger" size="md" onClick={onConfirm}>
-          Unbind {characterName}
+          {t('Unbind {name}', { name: characterName })}
         </Button>
       </ModalFooter>
     </ModalShell>

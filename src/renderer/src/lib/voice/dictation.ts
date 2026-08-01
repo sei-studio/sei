@@ -110,9 +110,22 @@ const PRE_ROLL_FRAMES = 3;
 // has to clear it) and ~10 dB over a quiet room floor, but above the transient
 // noise that was self-triggering. Ceiling comes from the tuning history above:
 // 0.065 was high enough that real speech never reached it.
-const BARGE_ABS_MIN = 0.04;
+// Lowered 0.04 -> 0.03 (260728, "interrupting on an open laptop mic takes
+// shouting"): a built-in mic at arm's length reads several dB quieter than a
+// headset mic, so ordinary speech was hovering AT the 0.04 bar and only a
+// raised voice held above it for the full BARGE_CONFIRM_MS run. 0.03 keeps
+// ~8 dB over a quiet room floor; the 260726 transient problem is guarded by
+// the level gate AND the 400ms sustained-run gate together, so the duration
+// gate carries more of the load now. If in-ear transients chop clips again,
+// raise BARGE_CONFIRM_MS before re-raising this.
+const BARGE_ABS_MIN = 0.03;
 const BARGE_NOISE_FACTOR = 5; // bar is also ≥ noiseFloor * this
-const BARGE_RESIDUE_FACTOR = 3; // bar is residue * this — speech must clear it
+// Lowered 3 -> 2.5 (260728, same laptop report): on open speakers the residue
+// term dominates the bar, and 3x the echo EMA (~9.5 dB over it) demanded a
+// shout from an arm's-length mic. 2.5x (~8 dB) still clears the residue's own
+// frame-to-frame wobble — single echo peaks reset the sustained-run gate and
+// never survive 400ms — while genuine speech over the companion lands.
+const BARGE_RESIDUE_FACTOR = 2.5; // bar is residue * this — speech must clear it
 // Residue EMA rates: rise fast so the first frames of a clip (and the grace
 // window) capture how loud its echo really is; decay slow so brief pauses
 // inside a clip don't collapse the bar mid-sentence.
@@ -125,6 +138,23 @@ const RESIDUE_DECAY = 0.02;
 // after each clip starts playing (setHold(true)); genuine barge-in over a
 // longer clip still lands once the window passes.
 const BARGE_GRACE_MS = 600;
+// 260730: the grace window is per PLAYBACK RUN, not per clip.
+//
+// What AEC needs to converge on is the output path, and that does not change
+// between the lines of one reply — only the first clip after real quiet starts
+// cold. Charging every clip a full 600ms was survivable while the queue went
+// IDLE between short lines (those gaps dropped the hold, so the player's speech
+// opened a normal utterance and interrupted that way), but reserving each
+// clip's slot at emit time (audioQueue `blob`, 260729) closed the gaps: the
+// hold now spans the whole reply, and every line inside it re-armed the full
+// window. On ~1.2s lines that left ~600ms of interruptible audio per line
+// against a 400ms confirm, with `bargeRunMs` zeroed at every boundary — which
+// is "talking over her does nothing" for a multi-line reply.
+//
+// So only the FIRST audible clip of a hold run gets the full window; every
+// later clip in the same unbroken run gets the short one, which is enough for
+// the boundary transient and not enough to eat the interrupt.
+const BARGE_REGRACE_MS = 150;
 // 260706: barge-in must be SUSTAINED, not a single frame. Playing the call out
 // loud (speakers, not headphones) leaks the companion's own voice past echo
 // cancellation; a lone loud frame of that residue used to trip a barge-in and
@@ -217,6 +247,16 @@ export async function createDictation(opts: {
    * fall back on. Edge-fired ONCE per dictation session — the owner uses it
    * to offer the local backup-model install, not to count failures. */
   onCloudSttFailure?: () => void;
+  /**
+   * The mic stream is open (260730). Fires once, as soon as getUserMedia
+   * resolves and BEFORE the model load below, because opening a mic with
+   * echoCancellation reconfigures the page's whole audio OUTPUT path: Chromium
+   * has to route playback through the echo canceller so it can subtract it from
+   * the capture, and everything already scheduled at that moment is dropped.
+   * The call's ringtone starts on this rather than at dial for exactly that
+   * reason — see startRingtone's caller.
+   */
+  onMicReady?: () => void;
 }): Promise<Dictation> {
   const useLocalModel = (opts.localModel ?? 'eager') !== 'none';
   let nextId = 1;
@@ -285,6 +325,9 @@ export async function createDictation(opts: {
     opts.onStatus('error', 'microphone permission denied');
     throw err;
   }
+  // Output path is now settled (see onMicReady): anything the caller wants to
+  // PLAY can be scheduled from here without the AEC switch swallowing it.
+  opts.onMicReady?.();
 
   try {
     await ready;
@@ -321,9 +364,25 @@ export async function createDictation(opts: {
 
   let muted = false;
   let hold = false;
-  /** When the current companion clip started playing (setHold(true)); basis for
-   * the barge-in grace window that stops a clip's own onset from self-barging. */
+  /** When the current companion clip became AUDIBLE (armBargeGrace); basis for
+   * the barge-in grace window that stops a clip's own onset from self-barging.
+   * Deliberately NOT set by setHold: a reserved slot waiting on synthesis is
+   * silence, and silence has no onset echo to protect against (260730). */
   let holdSince = 0;
+  /** How long the current grace window runs — full on a cold start, short at a
+   * clip boundary inside one playback run (see BARGE_REGRACE_MS). */
+  let graceMs = BARGE_GRACE_MS;
+  /** A clip in THIS hold run has already been audible, so AEC is converged on
+   * this output path and the next clip needs the short window only. */
+  let holdRunArmed = false;
+  /** Diagnostics for one hold run: the loudest frame the player produced while
+   * the companion held the floor, and the bar it was measured against. Logged
+   * once per run so "interrupting does nothing" is answerable from a session
+   * log instead of by theory — a peak far under the bar is a threshold
+   * problem, a peak over it is a timing/grace problem. */
+  let holdPeakRms = 0;
+  let holdPeakBar = 0;
+  let holdBarged = false;
   /** Running length of continuous over-the-barge-bar energy during hold; a real
    * barge-in only fires once this clears BARGE_CONFIRM_MS (see there). */
   let bargeRunMs = 0;
@@ -492,8 +551,12 @@ export async function createDictation(opts: {
     if (hold && !inSpeech) {
       preRoll.push(frame.slice());
       if (preRoll.length > PRE_ROLL_FRAMES) preRoll.shift();
-      const inGrace = performance.now() - holdSince < BARGE_GRACE_MS;
+      const inGrace = performance.now() - holdSince < graceMs;
       const bar = Math.max(BARGE_ABS_MIN, noiseFloor * BARGE_NOISE_FACTOR, holdResidue * BARGE_RESIDUE_FACTOR);
+      if (rms > holdPeakRms) {
+        holdPeakRms = rms;
+        holdPeakBar = bar;
+      }
       // Residue calibration: during the grace window EVERY frame is presumed
       // to be the clip's own echo (AEC hasn't converged; the player barging in
       // this early is indistinguishable anyway), so the EMA tracks it even
@@ -517,6 +580,7 @@ export async function createDictation(opts: {
         bargeRunMs += frameMs;
         if (bargeRunMs >= BARGE_CONFIRM_MS) {
           bargeRunMs = 0;
+          holdBarged = true;
           openSpeech(frameMs);
           opts.onBargeIn?.();
         }
@@ -600,16 +664,38 @@ export async function createDictation(opts: {
     setHold(h) {
       // Hold going up mid-speech no longer kills the utterance: with barge-in
       // the common case is the player already talking when the companion's
-      // next queued clip starts — their words must survive it. Re-arm the
-      // barge-in grace window on each clip start so its onset can't self-barge.
-      if (h) holdSince = performance.now();
-      bargeRunMs = 0; // any hold transition restarts the sustained-barge count
+      // next queued clip starts — their words must survive it.
+      //
+      // 260730: this no longer arms the grace window or resets the run. A slot
+      // takes the playhead before its audio exists (a streamed clip's whole
+      // synthesis round trip, and since the `blob` reservation every short
+      // clip's too), so arming here spent the window on silence and then
+      // armBargeGrace spent a second one on the audio. Both together, once per
+      // line of a reply, is what made a multi-line reply uninterruptible. The
+      // stiffer BAR still applies from here — that part is the point of the
+      // slot-level hold (a noise in the synthesis gap must not trip the much
+      // lower normal speech threshold).
+      if (h && !hold) {
+        holdPeakRms = 0;
+        holdPeakBar = 0;
+        holdBarged = false;
+      }
+      if (!h && hold && holdPeakRms > 0) {
+        // One line per companion turn: what the mic heard while she had the
+        // floor, versus what it had to clear. See holdPeakRms.
+        console.log(
+          `[sei/voice] barge ${holdBarged ? 'FIRED' : 'none'} — peak ${holdPeakRms.toFixed(3)} ` +
+            `vs bar ${holdPeakBar.toFixed(3)} (residue ${holdResidue.toFixed(3)}, floor ${noiseFloor.toFixed(3)})`,
+        );
+      }
+      if (!h) holdRunArmed = false; // playback stopped: the next run starts cold
       hold = h;
     },
     armBargeGrace() {
-      // Only ever EXTENDS protection: hold is already true here (the clip owns
-      // the playhead), so this just restarts the window from the moment sound
-      // actually began. Silence before this point can no longer eat it.
+      // Real audio just started. The first clip of a run gets the full window
+      // (AEC is converging on it); the rest of the run gets the short one.
+      graceMs = holdRunArmed ? BARGE_REGRACE_MS : BARGE_GRACE_MS;
+      holdRunArmed = true;
       holdSince = performance.now();
       bargeRunMs = 0;
     },

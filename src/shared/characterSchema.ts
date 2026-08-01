@@ -290,9 +290,14 @@ export function effectiveMcUsername(c: Pick<Character, 'username' | 'name'>): st
  *   - signed in: own / legacy null-owner chars shown; foreign-owned chars
  *     (owner set, !== current user) shown only when added from World
  *     (addedWorldIds);
- *   - signed out: only legacy null-owner chars shown — a cached copy of
- *     someone else's public character (owner stamped) can't be a party member
- *     because a signed-out user can't invite from World.
+ *   - signed out: legacy null-owner chars shown, PLUS foreign-owned chars the
+ *     user explicitly invited (addedWorldIds). 260728: the invite check was
+ *     added for the fresh-onboarding Sui seed — a local-only (BYOK) profile now
+ *     starts with Sui in added_world_ids, and an explicit invite recorded in
+ *     the user's own config is a party membership regardless of auth. A merely
+ *     CACHED copy of someone else's public character (owner stamped, never
+ *     invited) still never reads as a party member — that was the 260706 bug
+ *     this branch exists to prevent.
  */
 export function countsAsHomeSlot(
   c: Pick<Character, 'id' | 'is_default' | 'owner'>,
@@ -307,7 +312,7 @@ export function countsAsHomeSlot(
     }
     return true;
   }
-  return c.owner == null;
+  return c.owner == null || opts.addedWorldIds.has(c.id);
 }
 
 /**
@@ -439,6 +444,18 @@ export const UserConfigSchema = z.object({
    * (src/bot/brain/promptLibrary.js — the bot can't import this module).
    */
   chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
+  /**
+   * 260730: APP UI language. 'zh' switches every renderer surface to Chinese
+   * AND stamps characters created while it is active with
+   * metadata.language 'zh', which makes their AI surfaces (persona
+   * generation, chat, games, the Minecraft bot) run on Chinese prompts.
+   * Distinct from chat_language above, which is the auto-detected
+   * CONVERSATION language for voice calls. Optional and NOT defaulted
+   * (absent ≡ 'en' everywhere it is read) so the many manual UserConfig
+   * literals don't all need to spell it out — same convention as
+   * chat_language.
+   */
+  ui_language: z.enum(['en', 'zh']).optional(),
   /** Plan 07: Linux basic_text safeStorage warning Banner dismissal (Pitfall A2). */
   linuxBasicTextWarnDismissed: z.boolean().default(false),
   /**
@@ -543,6 +560,25 @@ export const UserConfigSchema = z.object({
    */
   call_convo_starters: z.boolean().optional().default(true),
   /**
+   * 260730 — call backdrop mode, per character id: true = open the call in the
+   * character's scene (or, for characters with no scene, on their art) instead
+   * of the avatar-tile view. Toggled from the call's own controls, not
+   * Settings, and remembered so the next call opens the way you left it.
+   *
+   * SPARSE ON PURPOSE. An absent key means "never chosen", which is not the
+   * same as false: a character with a custom scene opens in it by default,
+   * everyone else opens on the tiles. Writing a value for every character on
+   * first call would flatten that.
+   *
+   * Keyed by the DIALED character (participants[0]) so a group call inherits
+   * the preference for whoever was called.
+   *
+   * No `.default({})`: the field stays OPTIONAL on the output type so the
+   * onboarding paths that build a whole fresh config need not mention it, and
+   * so "no preferences yet" and "an empty map" stay the same thing.
+   */
+  call_backdrop: z.record(z.boolean()).optional(),
+  /**
    * 260705: the chat presence side panel is OPEN by default; closing it is a
    * sticky preference that survives companion switches and app restarts
    * (hydrated into useUiStore.chatPanelHidden like realistic_typing).
@@ -558,6 +594,20 @@ export const UserConfigSchema = z.object({
    * backward-compatible — they're treated as not-pending and never forced in.
    */
   skin_setup_pending: z.boolean().optional().default(false),
+  /**
+   * In-flight tutorial (260730). The post-onboarding tour used to be
+   * deliberately unpersisted, which meant a mid-tour quit silently dropped
+   * the rest of the tour AND the one-shot unique-reveal "say hello" page.
+   * Now the renderer writes the current step here on every advance and
+   * clears it (null) when the tour finishes or is skipped; boot resumes an
+   * armed tour at the same step/screen. `characterId` null = reduced tour.
+   * Steps are validated loosely (string) so an old client never chokes on a
+   * step name added later; the resume path maps unknown steps to a safe one.
+   */
+  tutorial_state: z
+    .object({ step: z.string(), characterId: z.string().nullable() })
+    .nullable()
+    .optional(),
   /**
    * Bundled defaults (sui / lyra / clawd) the user has "removed from library".
    * The on-disk JSON for these chars stays so the World tab can still surface

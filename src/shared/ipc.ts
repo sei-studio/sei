@@ -28,6 +28,18 @@ import type { ErrorClass } from './errorClasses';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
+import type {
+  DrawAiStroke,
+  DrawGameState,
+  DrawSnapshotRequest,
+  DrawStroke,
+} from './drawIpc';
+export type {
+  DrawAiStroke,
+  DrawGameState,
+  DrawSnapshotRequest,
+  DrawStroke,
+} from './drawIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 export type {
   McDashboardSnapshot,
@@ -377,10 +389,32 @@ export interface CallOverlayState {
   participants: CallOverlayParticipant[];
 }
 
+/**
+ * Where a spoken line sits inside its OWN reply (260729). Feeds ElevenLabs'
+ * utterance conditioning (main/voice/tts.ts ttsContextFor), which is scoped to
+ * one reply: the first line has no `prev`, the last has no `more`, so prosody
+ * resets at reply boundaries instead of bleeding across turns. Mirrors the
+ * renderer-side SpokenLineContext (lib/voice/voiceBridge.ts) structurally.
+ */
+export interface SpokenLineContext {
+  /** The line of this same reply spoken immediately before this one. */
+  prev?: string;
+  /** Another line of this same reply is known to follow this one. */
+  more?: boolean;
+}
+
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
 export interface ChatMessagePush {
   characterId: string;
   message: ChatMessage;
+  /**
+   * Voice calls (260729): set on the per-sentence pushes of a STREAMED reply,
+   * which is the only path a live call takes. The renderer speaks these pushes,
+   * and without this it had no way to know a sentence's place in its reply (the
+   * prev/more bookkeeping lives in the blocking reveal loop a streamed reply
+   * skips), so every clip was synthesized context-free.
+   */
+  speech?: SpokenLineContext;
 }
 
 /** In-app user profile surfaced to the chat + settings. */
@@ -715,12 +749,12 @@ export type SignUpResult =
   // signups never hits it.
   | { ok: false; code: 'weak_password' | 'invalid_email' | 'network' | 'under_13'; message: string }
   | { ok: false; code: 'cooldown'; message: string; retryAfterMs: number }
-  // No-silent-failure (260605): an already-registered email no longer returns a
-  // neutral "check your email" that sends nothing. We surface it honestly so the
-  // user can sign in instead. `provider` (when known) names the existing sign-in
-  // method (e.g. 'Google') so the renderer can steer them to the right button.
-  // This intentionally trades the previous enumeration resistance for honesty,
-  // per the product owner's explicit "cannot silently fail" directive.
+  // 260729: NO LONGER PRODUCED. The 260605 honest already-registered surface
+  // leaked account existence to anyone typing an address into signup, so an
+  // already-registered email now silently sends a password-reset link and
+  // returns the same neutral `{ ok: true, requiresVerification: true }` a new
+  // signup gets (see alreadyRegisteredResult in authHandlers.ts). The variant
+  // stays in the union so renderer branches keep compiling; they are dead.
   | { ok: false; code: 'already_registered'; message: string; provider?: string };
 
 export type OAuthResult =
@@ -1132,6 +1166,13 @@ export interface RendererApi {
   charsSetShared(args: { id: string; shared: boolean }): Promise<void>;
 
   /**
+   * 260729 — save the character's full portrait art to disk. Opens a native
+   * save dialog; resolves the written path, or null when the user cancels or
+   * the character has no portrait art.
+   */
+  charsExportPortrait(characterId: string): Promise<string | null>;
+
+  /**
    * Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY,
    * local rolling-24h log — all backends, BYOK included). Called before
    * entering the new-character flow so a maxed-out user sees a "come back
@@ -1277,6 +1318,35 @@ export interface RendererApi {
   /** First-run engine model download progress (status 'preparing'). */
   onChessDownload(cb: (p: ChessDownloadProgress) => void): Unsubscribe;
 
+  // --- Draw! minigame (260727) --- see src/shared/drawIpc.ts for the state
+  // model, the word-visibility rule and the AI stroke playback protocol.
+  /** Open the surface at the setup screen. Rejects with DRAW_ERR_MC_ACTIVE while summoned. */
+  drawOpen(characterId: string): Promise<DrawGameState>;
+  /** Start a game with the chosen round count (1-5). */
+  drawStart(characterId: string, rounds: number): Promise<DrawGameState>;
+  /** Back to the setup screen, keeping the last round count preselected. */
+  drawNewGame(characterId: string): Promise<DrawGameState>;
+  /** Choose one of `wordChoices` and begin the player's drawing turn. */
+  drawPickWord(characterId: string, word: string): Promise<DrawGameState>;
+  drawGetState(characterId: string): Promise<DrawGameState | null>;
+  /** The player lifted the pen. Ignored unless it is their turn to draw. */
+  drawStroke(characterId: string, stroke: DrawStroke): Promise<void>;
+  /** Stroke eraser: remove one whole stroke. */
+  drawErase(characterId: string, strokeId: string): Promise<void>;
+  /** A chat line. Also the guess channel while the character is drawing. */
+  drawChat(characterId: string, text: string): Promise<void>;
+  /** Answer to a draw:snapshot-request. */
+  drawSnapshot(requestId: string, dataUrl: string): Promise<void>;
+  /** Write the gallery PNG to Downloads; resolves with the saved path. */
+  drawSaveGallery(characterId: string, pngDataUrl: string): Promise<string>;
+  /** Close the game. Unfinished games are recorded 'abandoned'. */
+  drawEnd(characterId: string): Promise<void>;
+  /** Resume a game paused by a usage limit (260730): re-arms the turn clock. */
+  drawResume(characterId: string): Promise<void>;
+  onDrawState(cb: (state: DrawGameState) => void): Unsubscribe;
+  onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
+  onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
+
   // --- Minecraft dashboard (260721) --- see src/shared/mcDashboardIpc.ts for
   // the snapshot model. Character-scoped; live only while summoned.
   /** Latest telemetry snapshot, or null when there is no live session. */
@@ -1414,6 +1484,13 @@ export interface RendererApi {
     characterId: string;
     quietSeconds: number;
     peers: string[];
+    /**
+     * 260730: the companion's last spoken line ended in a question and the
+     * player has not answered. The renderer fires these on a much tighter
+     * 5-15s window and main swaps the start-a-topic note for a gentle
+     * follow-up. At most one per question.
+     */
+    awaitingAnswer?: boolean;
   }): Promise<{ messages: ChatMessage[]; endCall?: boolean }>;
   /**
    * Subscribe to main-initiated call hang-ups: the companion called
@@ -1425,15 +1502,16 @@ export interface RendererApi {
   voiceListVoices(): Promise<VoiceInfo[]>;
   /**
    * Speak the canned preview line in an arbitrary pool voice (picker).
-   * Playground params (260725): `pitch` is a playback rate (clamped to
-   * VOICE_PITCH_MIN..MAX in shared/voicePitch.ts) — main synthesizes with the
-   * matching pace compensation, so the clip must be PLAYED at
-   * playbackRate = pitch with preservesPitch off to land at normal pace with
-   * only the pitch shifted. `calmness` is ElevenLabs stability (clamped 0..1).
-   * Omitted params keep the request byte-identical to the pre-playground
-   * shape, so existing disk-cache entries stay valid.
+   * `calmness` is ElevenLabs stability (clamped 0..1); omitting it keeps the
+   * request byte-identical to the pre-playground shape, so existing disk-cache
+   * entries stay valid.
+   *
+   * The playground's OTHER slider, pitch, is deliberately not here (260731):
+   * it is applied locally at playback (renderer lib/voice/pitchBus.ts) and
+   * changes nothing about the synthesized bytes, so sending it would only
+   * fragment the preview cache.
    */
-  voicePreview(args: { voiceId: string; pitch?: number; calmness?: number }): Promise<ArrayBuffer>;
+  voicePreview(args: { voiceId: string; calmness?: number }): Promise<ArrayBuffer>;
   /**
    * Whether voice samples can synthesize right now (signed-in session, a dev
    * TTS key, or a stored BYOK ElevenLabs key). The picker disables sample
@@ -1537,7 +1615,13 @@ export interface RendererApi {
   signOut(): Promise<void>;
   deleteAccount(): Promise<DeleteAccountResult>;
   exportData(): Promise<ExportDataResult>;
-  resendVerification(): Promise<ResendVerificationResult>;
+  /**
+   * Resend the signup verification email. Pass `email` when the caller is NOT
+   * signed in (a fresh unverified signup has no session): the onboarding
+   * verify panel sends the address it just signed up with. Without it, falls
+   * back to the signed-in user's address (the Settings Banner path).
+   */
+  resendVerification(args?: { email?: string }): Promise<ResendVerificationResult>;
   /**
    * Send a password-reset email. Neutral success (anti-enumeration): returns
    * { ok:true } whether or not the address is registered. The email links to the
@@ -1852,6 +1936,12 @@ export interface RendererApi {
   windowMaximizeToggle(): Promise<void>;
   /** Close the window (quits the app on the last window). */
   windowClose(): Promise<void>;
+  /**
+   * Quit the entire app (260730). The onboarding X uses this instead of
+   * windowClose: on macOS closing the last window leaves the app running in
+   * the dock, which reads as a broken exit during first-run.
+   */
+  appQuit(): Promise<void>;
   /** Current maximized state — seeds the restore/maximize icon on mount. */
   windowIsMaximized(): Promise<boolean>;
   /** Fires on every maximize/unmaximize so the icon can swap live. */
@@ -1864,6 +1954,20 @@ export interface RendererApi {
   windowFullscreenToggle(): Promise<boolean>;
   /** Current fullscreen state — seeds the fullscreen button icon on mount. */
   windowIsFullscreen(): Promise<boolean>;
+  /**
+   * Show/hide the native macOS traffic lights (260728). The first-run Sui
+   * onboarding scene hides them (it renders no window chrome at all) and
+   * restores them when the ritual completes. No-op on Windows/Linux — the
+   * renderer simply doesn't mount its custom controls on that surface.
+   */
+  windowSetButtonsVisible(visible: boolean): Promise<void>;
+  /**
+   * Factory reset (260728): stops every bot/session, deletes ALL local state
+   * (profiles incl. configs/characters/memories/keys, session, caches) except
+   * the anti-abuse device-id/signup trackers, then relaunches the app fresh.
+   * The renderer never sees this resolve on success — the app restarts.
+   */
+  factoryReset(): Promise<void>;
   /**
    * Fires when the active account profile scope changes at runtime (sign-in,
    * sign-out, or account swap) once main has torn down the old bot, switched
@@ -2059,6 +2163,9 @@ export const IpcChannel = {
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
     setShared: 'chars:set-shared',
+    // 260729 — save a copy of the character's full portrait art to disk via a
+    // native save dialog (the profile page's expand-art popup).
+    exportPortrait: 'chars:export-portrait',
     // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
     // Renderer calls this before entering the new-character flow.
     checkCreateQuota: 'chars:check-create-quota',
@@ -2164,6 +2271,30 @@ export const IpcChannel = {
     /** Push: ChessDownloadProgress during the one-time model download. */
     download: 'chess:download',
   },
+  // Draw! minigame (260727) — sketch guessing. Protocol details in
+  // src/shared/drawIpc.ts. `snapshot` is the renderer ANSWERING the
+  // snapshotRequest push, which is why it is an invoke and not a push.
+  draw: {
+    open: 'draw:open',
+    start: 'draw:start',
+    newGame: 'draw:new-game',
+    pickWord: 'draw:pick-word',
+    getState: 'draw:get-state',
+    stroke: 'draw:stroke',
+    erase: 'draw:erase',
+    chat: 'draw:chat',
+    snapshot: 'draw:snapshot',
+    saveGallery: 'draw:save-gallery',
+    end: 'draw:end',
+    /** Invoke: resume after a usage-limit pause (260730). */
+    resume: 'draw:resume',
+    /** Push: full DrawGameState on every change. */
+    state: 'draw:state',
+    /** Push: DrawAiStroke, one per stroke the character draws. */
+    aiStroke: 'draw:ai-stroke',
+    /** Push: DrawSnapshotRequest — rasterize the canvas and answer. */
+    snapshotRequest: 'draw:snapshot-request',
+  },
   // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
   // Protocol details in src/shared/mcDashboardIpc.ts.
   mcdash: {
@@ -2260,6 +2391,11 @@ export const IpcChannel = {
     // https/mailto before dispatching to shell.openExternal (T-11-12-01). The
     // host allowlist was removed 260725; see externalUrlValidator.ts.
     openExternal: 'app:open-external',
+    // 260728: wipe all local state back to a fresh install + relaunch.
+    factoryReset: 'app:factory-reset',
+    // 260730: quit the whole app (onboarding's X). window:close alone leaves
+    // the app alive in the macOS dock with no window.
+    quit: 'app:quit',
   },
   // Frameless window controls (custom titlebar on Windows/Linux). macOS keeps
   // its native traffic lights and never calls these, but the channels are
@@ -2272,6 +2408,8 @@ export const IpcChannel = {
     maximizedChanged: 'window:maximized-changed', // push: main → renderer
     fullscreenToggle: 'window:fullscreen-toggle', // game-surface fullscreen button
     isFullscreen: 'window:is-fullscreen',
+    // 260728 onboarding: hide/show the mac traffic lights around the Sui scene.
+    setButtonsVisible: 'window:set-buttons-visible',
   },
   // Skin pipeline.
   skin: {

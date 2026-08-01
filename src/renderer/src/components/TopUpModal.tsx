@@ -19,6 +19,7 @@
  * Structural template: ModalShell + ModalFooter.
  */
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
@@ -35,6 +36,7 @@ export interface TopUpModalProps {
 }
 
 export function TopUpModal({ onClose, onProceed }: TopUpModalProps): React.ReactElement {
+  const t = useT();
   const checkoutStatus = useCreditsStore((s) => s.checkoutStatus);
   const packages = useCreditsStore((s) => s.topUpPackages);
   const busy = checkoutStatus !== 'idle';
@@ -48,10 +50,11 @@ export function TopUpModal({ onClose, onProceed }: TopUpModalProps): React.React
   return (
     // Stacked tier (1100) so it layers above the hard-stop popup when opened
     // from there. ESC and the footer button dismiss it.
-    <ModalShell title="Buy extra credits" width={440} tier="stacked" onClose={onClose}>
+    <ModalShell title={t('Buy extra credits')} width={440} tier="stacked" onClose={onClose}>
       <p className={styles.body}>
-        Extra credits do not expire and do not reset. Your companions use your weekly
-        allowance first, then these.
+        {t(
+          'Extra credits do not expire and do not reset. Your companions use your weekly allowance first, then these.',
+        )}
       </p>
 
       <div className={styles.packs}>
@@ -67,7 +70,7 @@ export function TopUpModal({ onClose, onProceed }: TopUpModalProps): React.React
                 disabled={busy}
                 onClick={() => handleBuy(pkg.kind)}
               >
-                Buy
+                {t('Buy')}
               </Button>
             </div>
           </div>
@@ -76,7 +79,7 @@ export function TopUpModal({ onClose, onProceed }: TopUpModalProps): React.React
 
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onClose}>
-          Close
+          {t('Close')}
         </Button>
       </ModalFooter>
     </ModalShell>

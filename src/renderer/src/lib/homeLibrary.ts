@@ -9,10 +9,10 @@
  *     UNLESS the id is in UserConfig.added_world_ids (invited from World).
  *   - legacy null-owner chars → shown for everyone.
  *   - own chars (owner === currentUserId) → shown.
- *   - signed out + owner-stamped chars → hidden. (A signed-out user can't
- *     invite from World, so a cached copy of someone else's public character
- *     must never read as a party member — 260706: IconRail used to diverge
- *     here and showed them.)
+ *   - signed out + owner-stamped chars → hidden UNLESS explicitly invited
+ *     (added_world_ids — 260728, the fresh-onboarding Sui seed). A merely
+ *     cached copy of someone else's public character must never read as a
+ *     party member — 260706: IconRail used to diverge here and showed them.
  */
 import type { Character } from '@shared/characterSchema';
 import { countsAsHomeSlot } from '@shared/characterSchema';

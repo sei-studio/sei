@@ -211,7 +211,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       return appended;
     };
 
-    offChatMessage = sei.onChatMessage?.(({ characterId, message }) => {
+    offChatMessage = sei.onChatMessage?.(({ characterId, message, speech }) => {
       // System rows ("joined your world", play/call records) are UI facts, not
       // someone typing: they land at once and never sit behind the queue.
       if (message.role !== 'companion') {
@@ -243,8 +243,15 @@ export const useChatStore = create<ChatState>((set, get) => {
           // player had just dialed. An unstamped line is a text bubble, never
           // audio; a stamped line still only plays while its character is on
           // the call (the voice store's participants check).
+          // `speech` (260729) places the line inside its own reply for TTS
+          // conditioning. Main supplies it on a streamed voice reply's
+          // per-sentence pushes — the ONLY path a live call takes, so this is
+          // where a call's prosody context comes from; the reveal loop in
+          // send() below is the blocking path's equivalent. Absent (an in-world
+          // say() routed up, a system row) means a standalone line, which is
+          // what an empty context already says.
           if (revealPushed(characterId, message) && message.voice === true) {
-            notifyCompanionText(characterId, message.text);
+            notifyCompanionText(characterId, message.text, speech ?? {});
           }
         })
         .catch(() => {

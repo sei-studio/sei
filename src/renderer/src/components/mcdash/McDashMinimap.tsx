@@ -15,6 +15,7 @@ import {
   mcDashCellPalette,
   type McDashMap,
 } from '@shared/mcDashboardIpc';
+import { useT } from '../../lib/i18n';
 import styles from './McDashMinimap.module.css';
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -33,6 +34,7 @@ export interface McDashMinimapProps {
 }
 
 export function McDashMinimap({ map, yaw, sizePx }: McDashMinimapProps): React.ReactElement {
+  const t = useT();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const cells = useMemo(() => (map ? decodeMcDashCells(map.cells) : null), [map]);
@@ -71,10 +73,10 @@ export function McDashMinimap({ map, yaw, sizePx }: McDashMinimapProps): React.R
           width={map.size}
           height={map.size}
           className={styles.canvas}
-          aria-label="Minimap around the companion"
+          aria-label={t('Minimap around the companion')}
         />
       ) : (
-        <div className={styles.empty}>Surveying...</div>
+        <div className={styles.empty}>{t('Surveying...')}</div>
       )}
       {map ? (
         <svg

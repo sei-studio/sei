@@ -10,6 +10,7 @@
 import React, { useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
+import { t as tBare, useT } from '../lib/i18n';
 import { Button } from './Button';
 
 /** Renderer-side budget, under main's BACKGROUND_MAX_BYTES (4 MB). */
@@ -31,6 +32,7 @@ export function BackgroundImagePicker({
   onChange,
 }: BackgroundImagePickerProps): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
 
@@ -40,7 +42,7 @@ export function BackgroundImagePicker({
     e.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      setError('Pick an image file (PNG/JPG/WebP).');
+      setError(t('Pick an image file (PNG/JPG/WebP).'));
       return;
     }
     setBusy(true);
@@ -51,7 +53,7 @@ export function BackgroundImagePicker({
       const ref = await sei.userApplyBackground({ bytesBase64: bytesToBase64(bytes), format });
       onChange(ref);
     } catch (err) {
-      setError(prettifyError((err as Error).message ?? 'Failed to set the background.'));
+      setError(prettifyError((err as Error).message ?? t('Failed to set the background.')));
     } finally {
       URL.revokeObjectURL(objectUrl);
       setBusy(false);
@@ -66,7 +68,7 @@ export function BackgroundImagePicker({
       await sei.userRemoveBackground();
       onChange(null);
     } catch (err) {
-      setError((err as Error).message ?? 'Failed to remove the background.');
+      setError((err as Error).message ?? t('Failed to remove the background.'));
     } finally {
       setBusy(false);
     }
@@ -80,7 +82,7 @@ export function BackgroundImagePicker({
       {src ? (
         <img
           src={src}
-          alt="Background preview"
+          alt={t('Background preview')}
           style={{
             width: 72,
             height: 40,
@@ -97,7 +99,7 @@ export function BackgroundImagePicker({
             color: 'var(--muted)',
           }}
         >
-          None
+          {t('None')}
         </span>
       )}
       <input
@@ -108,11 +110,11 @@ export function BackgroundImagePicker({
         style={{ display: 'none' }}
       />
       <Button kind="ghost" size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
-        {busy ? 'Working…' : value ? 'Change' : 'Upload'}
+        {busy ? t('Working…') : value ? t('Change') : t('Upload')}
       </Button>
       {value ? (
         <Button kind="ghost" size="sm" disabled={busy} onClick={() => void onRemove()}>
-          Remove
+          {t('Remove')}
         </Button>
       ) : null}
       {error ? (
@@ -128,7 +130,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Could not decode the picked file as an image.'));
+    img.onerror = () => reject(new Error(tBare('Could not decode the picked file as an image.')));
     img.src = src;
   });
 }
@@ -170,7 +172,7 @@ async function imageToBackgroundBytes(
     }
   }
   if (smallest) return smallest;
-  throw new Error('Could not encode the image.');
+  throw new Error(tBare('Could not encode the image.'));
 }
 
 function drawScaled(img: HTMLImageElement, scale: number): HTMLCanvasElement {
@@ -203,9 +205,9 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 function prettifyError(msg: string): string {
-  if (msg.includes('BACKGROUND_TOO_LARGE_DIM')) return 'Picture is too big (max 4096x4096).';
-  if (msg.includes('BACKGROUND_TOO_LARGE')) return 'File too large (max 4MB after resize).';
-  if (msg.includes('BACKGROUND_TOO_SHORT')) return 'File looks empty.';
-  if (msg.includes('BACKGROUND_BAD_MAGIC')) return 'Only PNG, JPEG, or WebP images are accepted.';
+  if (msg.includes('BACKGROUND_TOO_LARGE_DIM')) return tBare('Picture is too big (max 4096x4096).');
+  if (msg.includes('BACKGROUND_TOO_LARGE')) return tBare('File too large (max 4MB after resize).');
+  if (msg.includes('BACKGROUND_TOO_SHORT')) return tBare('File looks empty.');
+  if (msg.includes('BACKGROUND_BAD_MAGIC')) return tBare('Only PNG, JPEG, or WebP images are accepted.');
   return msg;
 }

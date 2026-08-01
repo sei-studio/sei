@@ -7,6 +7,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import styles from './IdTag.module.css';
 
 export interface IdTagProps {
@@ -17,11 +18,12 @@ export interface IdTagProps {
 }
 
 export function IdTag({ id, size = 'sm' }: IdTagProps): React.ReactElement {
+  const t = useT();
   return (
     <span
       className={`${styles.tag} ${size === 'md' ? styles.md : styles.sm}`}
-      aria-label={`Public ID ${id}`}
-      title={`Public ID · #${id}`}
+      aria-label={t('Public ID {id}', { id })}
+      title={t('Public ID · #{id}', { id })}
     >
       #{id}
     </span>

@@ -1,0 +1,80 @@
+/* MiniTile — bottom-right return tile (Summoning Terminal).
+ * A fixed-size static card (Discord-activity style): game picker art or the
+ * call portraits, with the labeled back chip as the only interactive element.
+ * The inline `right` offset moves the tile left of the chat profile panel
+ * when that panel is open. */
+
+.tile {
+  position: fixed;
+  /* `bottom` is inline (composer clearance in chat); this is the fallback. */
+  bottom: 14px;
+  /* Above app chrome and tooltips (200), below the ModalShell tiers (1000+). */
+  z-index: 600;
+  width: 224px;
+  height: 126px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg2);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  transition:
+    right 300ms var(--ease),
+    bottom 200ms var(--ease);
+}
+
+.art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* "‹ Chess" return chip, top-left, the tile's only control. */
+.backBtn {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px 0 5px;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.backBtn:hover {
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.backBtn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Call tile: portraits only (never the player's own), centered. */
+.callRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+}
+
+.portrait {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.speaking {
+  box-shadow: 0 0 0 2px var(--accent);
+}

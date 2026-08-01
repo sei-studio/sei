@@ -19,6 +19,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
@@ -30,6 +31,7 @@ export interface OfflineRetryModalProps {
 }
 
 export function OfflineRetryModal({ onDismiss }: OfflineRetryModalProps): React.ReactElement {
+  const t = useT();
   const refreshTosStatus = useAuthStore((s) => s.refreshTosStatus);
   const [retrying, setRetrying] = useState(false);
   const [retryFailed, setRetryFailed] = useState(false);
@@ -58,22 +60,23 @@ export function OfflineRetryModal({ onDismiss }: OfflineRetryModalProps): React.
   }, []);
 
   return (
-    <ModalShell title="You're offline" onClose={onDismiss}>
+    <ModalShell title={t("You're offline")} onClose={onDismiss}>
       <p className={styles.body}>
-        Sei couldn&rsquo;t reach the cloud to check your account. You can keep playing locally
-        &mdash; cloud features like character sync will reconnect once you&rsquo;re back online.
+        {t(
+          'Sei couldn’t reach the cloud to check your account. You can keep playing locally — cloud features like character sync will reconnect once you’re back online.',
+        )}
       </p>
       {retryFailed ? (
         <p className={styles.errorText} role="alert">
-          Still can&rsquo;t connect. Check your internet connection and try again.
+          {t('Still can’t connect. Check your internet connection and try again.')}
         </p>
       ) : null}
       <ModalFooter>
         <Button kind="ghost" size="md" onClick={onDismiss} disabled={retrying}>
-          Continue offline
+          {t('Continue offline')}
         </Button>
         <Button kind="primary" size="md" onClick={() => void retry()} disabled={retrying}>
-          {retrying ? 'Retrying…' : 'Retry'}
+          {retrying ? t('Retrying…') : t('Retry')}
         </Button>
       </ModalFooter>
     </ModalShell>

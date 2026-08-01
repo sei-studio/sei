@@ -13,13 +13,13 @@
  * utterance conditioning (main/voice/tts.ts ttsContextFor), which is scoped to
  * one reply: the first line has no `prev`, the last has no `more`, and a
  * single-line reply has neither, so prosody resets at reply boundaries.
+ *
+ * Re-exported from the IPC contract (260729): main now supplies it directly on
+ * a streamed reply's per-sentence pushes (ChatMessagePush.speech), so the shape
+ * crosses the bridge and must not be declared twice.
  */
-export interface SpokenLineContext {
-  /** The line of this same reply spoken immediately before this one. */
-  prev?: string;
-  /** Another line of this same reply follows this one. */
-  more?: boolean;
-}
+export type { SpokenLineContext } from '@shared/ipc';
+import type { SpokenLineContext } from '@shared/ipc';
 
 interface VoiceHooks {
   /** A companion chat message landed (send() reply or chat:message push).

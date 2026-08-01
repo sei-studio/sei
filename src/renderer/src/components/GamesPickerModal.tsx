@@ -22,6 +22,7 @@ import { openGame, requestGameLaunch, type LaunchGameId } from '../lib/gameLaunc
 import { GAMES, type GameDef } from '../lib/games';
 import { MCBlock, GamepadIcon, InfoIcon, PlusIcon } from './icons';
 import { FeedbackModal } from './FeedbackModal';
+import { useT } from '../lib/i18n';
 import styles from './GamesPickerModal.module.css';
 
 export interface GamesPickerModalProps {
@@ -45,7 +46,8 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
   const openModal = useUiStore((s) => s.openModal);
   const closeModal = useUiStore((s) => s.closeModal);
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
-  const companionName = character?.name ?? 'your companion';
+  const t = useT();
+  const companionName = character?.name ?? t('your companion');
 
   // ── Hover-only info popup ─────────────────────────────────────────────
   const [popup, setPopup] = useState<InfoPopup | null>(null);
@@ -118,7 +120,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
     // the cross-launch confirm first; otherwise openGame mounts the picked
     // surface in the chat's game area (chess card / Minecraft launch panel,
     // or the live dashboard when the bot is already online).
-    if (g.id === 'chess' || g.id === 'minecraft') {
+    if (g.id === 'chess' || g.id === 'minecraft' || g.id === 'draw') {
       const id = g.id as LaunchGameId;
       closeModal();
       requestGameLaunch(characterId, { id, name: g.name }, () => openGame(characterId, id));
@@ -139,10 +141,10 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
         if (e.target === e.currentTarget) closeModal();
       }}
     >
-      <div className={styles.modal}>
+      <div className={styles.modal} data-tutorial="games-modal">
         <div className={styles.header}>
           <h2 id="games-picker-title" className={styles.title}>
-            Play together
+            {t('Play together')}
           </h2>
         </div>
         <div className={styles.grid}>
@@ -173,14 +175,14 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
                     )}
                   </span>
                 )}
-                <span className={styles.tileName}>{g.name}</span>
+                <span className={styles.tileName}>{t(g.name)}</span>
               </button>
-              {g.soon ? <span className={styles.soonTag}>SOON</span> : null}
+              {g.soon ? <span className={styles.soonTag}>{t('SOON')}</span> : null}
               {g.available ? (
                 <span
                   className={styles.infoHint}
                   tabIndex={0}
-                  aria-label={`About ${g.name}`}
+                  aria-label={t('About {name}', { name: t(g.name) })}
                   onMouseEnter={(e) => scheduleInfo(g, e.currentTarget)}
                   onMouseLeave={hideInfo}
                   onFocus={(e) => scheduleInfo(g, e.currentTarget)}
@@ -206,17 +208,17 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
             />
           ) : null}
           <div className={styles.infoPopBody}>
-            <span className={styles.infoPopTitle}>{popup.game.name}</span>
+            <span className={styles.infoPopTitle}>{t(popup.game.name)}</span>
             <p className={styles.infoPopText}>{popup.game.description(companionName)}</p>
           </div>
         </div>
       ) : null}
       {suggestOpen ? (
         <FeedbackModal
-          title="Suggest a game"
+          title={t('Suggest a game')}
           framing=""
-          fieldLabel="Game"
-          placeholder="What game should we add?"
+          fieldLabel={t('Game')}
+          placeholder={t('What game should we add?')}
           onClose={() => setSuggestOpen(false)}
         />
       ) : null}

@@ -22,6 +22,7 @@ import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { sei } from '../lib/ipcClient';
+import { t } from '../lib/i18n';
 
 export function CallOverlayPusher(): null {
   const participants = useVoiceStore((s) => s.participants);
@@ -59,14 +60,14 @@ export function CallOverlayPusher(): null {
                   const c = chars.find((x) => x.id === id);
                   return {
                     id,
-                    name: c?.name ?? 'Companion',
+                    name: c?.name ?? t('Companion'),
                     portrait: c?.portrait_image ?? null,
                     speaking: speakingId === id,
                   };
                 }),
                 {
                   id: 'player',
-                  name: profile?.preferredName?.trim() || 'You',
+                  name: profile?.preferredName?.trim() || t('You'),
                   portrait: profile?.profilePicture ?? null,
                   speaking: userSpeaking && !muted,
                 },

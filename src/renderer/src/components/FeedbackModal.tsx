@@ -13,6 +13,7 @@
 
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { TextField } from './TextField';
@@ -47,6 +48,7 @@ export function FeedbackModal({
   fieldLabel = 'Feedback',
   placeholder = 'What should we improve?',
 }: FeedbackModalProps): React.ReactElement {
+  const t = useT();
   const [email, setEmail] = useState('');
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -80,11 +82,11 @@ export function FeedbackModal({
 
   if (done) {
     return (
-      <ModalShell title="Feedback sent" onClose={onClose} scrimClose width={440}>
-        <p className={styles.framing}>Thank you. We read all comments within 24 hrs.</p>
+      <ModalShell title={t('Feedback sent')} onClose={onClose} scrimClose width={440}>
+        <p className={styles.framing}>{t('Thank you. We read all comments within 24 hrs.')}</p>
         <ModalFooter>
           <Button kind="accent" size="md" onClick={onClose}>
-            Close
+            {t('Close')}
           </Button>
         </ModalFooter>
       </ModalShell>
@@ -92,23 +94,23 @@ export function FeedbackModal({
   }
 
   return (
-    <ModalShell title={title} onClose={onClose} scrimClose width={440}>
-      {framing ? <p className={styles.framing}>{framing}</p> : null}
+    <ModalShell title={t(title)} onClose={onClose} scrimClose width={440}>
+      {framing ? <p className={styles.framing}>{t(framing)}</p> : null}
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="feedback-email">
-            Email (optional, leave blank to stay anonymous)
+            {t('Email (optional, leave blank to stay anonymous)')}
           </label>
           <TextField
             value={email}
             onChange={setEmail}
             placeholder="you@example.com"
-            aria-label="Email, optional"
+            aria-label={t('Email, optional')}
           />
         </div>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="feedback-body">
-            {fieldLabel}
+            {t(fieldLabel)}
           </label>
           <TextField
             value={body}
@@ -116,21 +118,21 @@ export function FeedbackModal({
             multiline
             rows={5}
             autoFocus
-            placeholder={placeholder}
-            aria-label={fieldLabel}
+            placeholder={t(placeholder)}
+            aria-label={t(fieldLabel)}
           />
         </div>
         {error ? (
           <p className={styles.errorText} role="alert">
-            {error}
+            {t(error)}
           </p>
         ) : null}
         <ModalFooter>
           <Button kind="ghost" size="md" onClick={onClose} type="button">
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button kind="accent" size="md" type="submit" disabled={!canSubmit}>
-            {submitting ? 'Sending…' : 'Submit'}
+            {submitting ? t('Sending…') : t('Submit')}
           </Button>
         </ModalFooter>
       </form>

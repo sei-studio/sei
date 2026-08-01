@@ -27,6 +27,8 @@ interface ButtonProps {
   style?: React.CSSProperties;
   className?: string;
   title?: string;
+  /** Tutorial spotlight anchor (260728) — see components/tutorial. */
+  'data-tutorial'?: string;
 }
 
 export function Button({
@@ -64,6 +66,10 @@ export function Button({
       aria-label={rest['aria-label']}
       aria-disabled={rest['aria-disabled']}
       aria-pressed={rest['aria-pressed']}
+      // Must reach the real DOM: the tutorial finds its spotlight targets via
+      // document.querySelector('[data-tutorial=...]'). Declaring the prop
+      // without forwarding it left the say-hello step highlighting nothing.
+      data-tutorial={rest['data-tutorial']}
     >
       {icon}
       {children}

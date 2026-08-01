@@ -28,6 +28,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -37,6 +38,7 @@ import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useChatStore, chatPreviewFor } from '../lib/stores/useChatStore';
 import { lastInteractionAt } from '../lib/lastInteraction';
 import { isHomeCharacter } from '../lib/homeLibrary';
+import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import { presenceOf, useMinuteTick } from '../lib/presence';
 import { actionVerb } from '../lib/actionVerb';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -135,6 +137,7 @@ export function CharactersScreen(): React.ReactElement {
  * on the daily creation quota then route to the awaken view.
  */
 function HomeGrid(): React.ReactElement {
+  const t = useT();
   const characters = useDataStore((s) => s.characters);
   const recentlyDeletedIds = useDataStore((s) => s.recentlyDeletedIds);
   const summons = useDataStore((s) => s.summons);
@@ -287,7 +290,7 @@ function HomeGrid(): React.ReactElement {
 
   return (
     <div className={homeStyles.root}>
-      <section className={homeStyles.panels} aria-label="Party">
+      <section className={homeStyles.panels} aria-label={t('Party')}>
         {slotCharacters.map((c) => {
           const isPlaceholder = placeholderIds.has(c.id);
           const preview = isPlaceholder ? null : chatPreviewFor(chatState, c.id);
@@ -321,11 +324,11 @@ function HomeGrid(): React.ReactElement {
                     preview.text
                   ) : (
                     <>
-                      <b>{preview.role === 'user' ? 'You' : c.name}:</b> {preview.text}
+                      <b>{preview.role === 'user' ? t('You') : c.name}:</b> {preview.text}
                     </>
                   );
               } else if (isNew) {
-                lastline = 'Matched with you recently.';
+                lastline = t('Matched with you recently.');
               }
             }
           }
@@ -336,7 +339,8 @@ function HomeGrid(): React.ReactElement {
               className={`${homeStyles.panel} ${isPlaceholder ? homeStyles.panelMuted : ''}`}
               role="button"
               tabIndex={0}
-              aria-label={`Open ${c.name}`}
+              aria-label={t('Open {name}', { name: c.name })}
+              data-tutorial={c.id === DEFAULT_CHARACTER_UUIDS.sui ? 'sui-card' : undefined}
               onClick={() => {
                 void handleOpen(c.id);
               }}
@@ -362,7 +366,7 @@ function HomeGrid(): React.ReactElement {
                   <span className={homeStyles.name}>{c.name}</span>
                 </div>
                 {isPlaceholder ? (
-                  <span className={homeStyles.cloudNote}>Stored in cloud</span>
+                  <span className={homeStyles.cloudNote}>{t('Stored in cloud')}</span>
                 ) : (
                   <Presence category={pres.category} label={pres.label} />
                 )}
@@ -381,7 +385,7 @@ function HomeGrid(): React.ReactElement {
                             void handleOpen(c.id);
                           }}
                         >
-                          {isNew ? 'Say hello' : 'Message'}
+                          {isNew ? t('Say hello') : t('Message')}
                         </Button>
                         <Button
                           kind="ghost"
@@ -391,7 +395,7 @@ function HomeGrid(): React.ReactElement {
                             handleSummon(c.id);
                           }}
                         >
-                          Play
+                          {t('Play')}
                         </Button>
                       </div>
                     </div>
@@ -411,7 +415,8 @@ function HomeGrid(): React.ReactElement {
             className={`${homeStyles.panel} ${homeStyles.dormant}`}
             role="button"
             tabIndex={0}
-            aria-label="Awaken a companion"
+            aria-label={t('Awaken a companion')}
+            data-tutorial={i === 0 ? 'empty-slot' : undefined}
             onClick={() => {
               void handleAwaken();
             }}
@@ -437,7 +442,7 @@ function HomeGrid(): React.ReactElement {
                 stagger={slotIdx * 700}
                 className={homeStyles.dormantMark}
               />
-              <span className={homeStyles.awakenLabel}>Awaken</span>
+              <span className={homeStyles.awakenLabel}>{t('Awaken')}</span>
             </div>
           </div>
           );
@@ -462,6 +467,7 @@ function HomeGrid(): React.ReactElement {
  * no in-grid invite action).
  */
 function WorldGrid(): React.ReactElement {
+  const t = useT();
   const entries = useBrowseStore((s) => s.entries);
   const query = useBrowseStore((s) => s.query);
   const loading = useBrowseStore((s) => s.loading);
@@ -532,7 +538,7 @@ function WorldGrid(): React.ReactElement {
         (c.persona.source ?? '').length > 120
           ? (c.persona.source ?? '').slice(0, 120).trimEnd() + '…'
           : (c.persona.source ?? ''),
-      creatorLabel: 'by Sei',
+      creatorLabel: t('by Sei'),
       // Builtins carry their vanity code in the bundled JSON (#0001-#0003),
       // matching the cloud rows — surface it like any other World card.
       publicId: c.public_id ?? null,
@@ -721,34 +727,36 @@ function WorldGrid(): React.ReactElement {
           <input
             className={styles.searchField}
             type="search"
-            placeholder="Search companions…"
+            placeholder={t('Search companions…')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search world companions"
+            aria-label={t('Search world companions')}
           />
         </div>
         <select
           className={styles.sortSelect}
           value={worldSort}
           onChange={(e) => setWorldSort(e.target.value as 'alpha' | 'recent')}
-          aria-label="Sort companions"
+          aria-label={t('Sort companions')}
         >
-          <option value="alpha">A–Z</option>
-          <option value="recent">Newest</option>
+          <option value="alpha">{t('A–Z')}</option>
+          <option value="recent">{t('Newest')}</option>
         </select>
         <span className={styles.slots}>
-          {partyFull ? 'Party full' : `${slotsOpen}/${MAX_COMPANION_SLOTS} slots open`}
+          {partyFull
+            ? t('Party full')
+            : t('{open}/{max} slots open', { open: slotsOpen, max: MAX_COMPANION_SLOTS })}
         </span>
       </header>
       <div className={styles.scroll}>
       {error ? (
         <div className={styles.error} role="alert">
-          Couldn&apos;t load World. {error}
+          {t("Couldn't load World. {error}", { error })}
         </div>
       ) : null}
       {entries.length === 0 && defaultEntries.length === 0 && !loading && !error ? (
         <div className={styles.empty}>
-          No public companions yet. Be the first to share one.
+          {t('No public companions yet. Be the first to share one.')}
         </div>
       ) : null}
       <div className={styles.grid} ref={gridRef}>
@@ -775,7 +783,7 @@ function WorldGrid(): React.ReactElement {
       {hasMoreToShow && !loading ? (
         <div className={styles.loadMoreRow}>
           <Button kind="ghost" onClick={() => setVisibleRows((r) => r + ROWS_PER_BATCH)}>
-            Load more
+            {t('Load more')}
           </Button>
         </div>
       ) : null}

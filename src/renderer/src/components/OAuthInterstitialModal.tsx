@@ -29,6 +29,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import type { OAuthResult } from '@shared/ipc';
@@ -84,6 +85,7 @@ export function OAuthInterstitialModal({
   onResult,
   onCancel,
 }: OAuthInterstitialModalProps): React.ReactElement {
+  const t = useT();
   const [phase, setPhase] = useState<Phase>({ kind: 'waiting', secondsLeft: 60 });
   const inFlightRef = useRef(false);
 
@@ -142,7 +144,7 @@ export function OAuthInterstitialModal({
   // Single title across all phases — waiting + success show the "in-browser"
   // heading; error phases swap to the failure-mode heading.
   const titleText =
-    phase.kind === 'error' ? ERROR_COPY[phase.reason].heading : 'Continue in your browser';
+    phase.kind === 'error' ? t(ERROR_COPY[phase.reason].heading) : t('Continue in your browser');
 
   // Tier 'stacked' (z 1100) sits above SignInModal. ESC + click-outside are
   // SUPPRESSED (escClose false, scrimClose default false, no onClose) while the
@@ -152,33 +154,34 @@ export function OAuthInterstitialModal({
       {phase.kind === 'waiting' ? (
         <>
           <p className={styles.body}>
-            We&apos;ve opened a browser tab to finish signing in with Google. Come back when
-            you&apos;re done; this window updates automatically.
+            {t(
+              "We've opened a browser tab to finish signing in with Google. Come back when you're done; this window updates automatically.",
+            )}
           </p>
           <p className={styles.countdown} aria-live="polite">
-            This will close on its own in {phase.secondsLeft}s.
+            {t('This will close on its own in {seconds}s.', { seconds: phase.secondsLeft })}
           </p>
           <ModalFooter>
             <Button kind="ghost" size="md" onClick={onCancelClick}>
-              Cancel sign-in
+              {t('Cancel sign-in')}
             </Button>
           </ModalFooter>
         </>
       ) : null}
 
       {phase.kind === 'success' ? (
-        <p className={styles.success}>Signed in. One moment…</p>
+        <p className={styles.success}>{t('Signed in. One moment…')}</p>
       ) : null}
 
       {phase.kind === 'error' ? (
         <>
-          <p className={styles.body}>{ERROR_COPY[phase.reason].body}</p>
+          <p className={styles.body}>{t(ERROR_COPY[phase.reason].body)}</p>
           <ModalFooter>
             <Button kind="quiet" size="md" onClick={onCancelClick}>
-              Cancel sign-in
+              {t('Cancel sign-in')}
             </Button>
             <Button kind="ghost" size="md" onClick={onTryAgain}>
-              Try again
+              {t('Try again')}
             </Button>
           </ModalFooter>
         </>

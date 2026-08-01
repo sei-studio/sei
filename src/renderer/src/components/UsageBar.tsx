@@ -18,6 +18,7 @@ import { sei } from '../lib/ipcClient';
 import { PercentBar } from './PercentBar';
 import { Button } from './Button';
 import { RefreshIcon } from './icons';
+import { t, useT } from '../lib/i18n';
 import styles from './UsageBar.module.css';
 
 /** Cumulative playtime ms → "3h 17m". */
@@ -28,7 +29,7 @@ export function formatPlayed(ms: number): string {
 
 /** Bar hover tooltip: total time played across every companion on this profile. */
 export function usageTooltip(totalPlaytimeMs: number): string {
-  return `Played ${formatPlayed(totalPlaytimeMs)} total`;
+  return t('Played {time} total', { time: formatPlayed(totalPlaytimeMs) });
 }
 
 export interface UsageBarProps {
@@ -37,6 +38,8 @@ export interface UsageBarProps {
 }
 
 export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
+  // Subscribes to the language so usageTooltip's bare t() re-evaluates on toggle.
+  const t = useT();
   const usagePct = useCreditsStore((s) => s.usage_pct);
   const overLimit = useCreditsStore((s) => s.over_limit);
   const refresh = useCreditsStore((s) => s.refresh);
@@ -59,7 +62,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   }, []);
 
   const tooltip = snapshotFailed
-    ? "Couldn't check your account right now. Refresh to try again."
+    ? t("Couldn't check your account right now. Refresh to try again.")
     : usageTooltip(totalPlaytimeMs);
 
   return (
@@ -74,7 +77,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
           value={snapshotFailed ? 0 : usagePct}
           size={size}
           overLimit={!snapshotFailed && overLimit}
-          label={snapshotFailed ? 'usage unavailable' : `${Math.round(usagePct)} percent used`}
+          label={snapshotFailed ? t('usage unavailable') : t('{pct} percent used', { pct: Math.round(usagePct) })}
         />
       </div>
       {/* Quiet refresh — immediate creditsGet() on top of any polling caller. */}
@@ -83,8 +86,8 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
         size="sm"
         icon={<RefreshIcon size={14} />}
         disabled={loading}
-        title="Refresh"
-        aria-label="Refresh plan usage"
+        title={t('Refresh')}
+        aria-label={t('Refresh plan usage')}
         onClick={() => {
           void refresh();
           void sei.getConfig().then((c) => setTotalPlaytimeMs(c.total_playtime_ms ?? 0));

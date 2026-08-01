@@ -28,6 +28,47 @@ export function stampLastToolCacheControl(tools) {
 }
 
 /**
+ * 260730: moving cache breakpoint for the loop conversation. Without it, every
+ * iteration re-bills the ENTIRE accumulated thread at full input price — the
+ * one quadratic cost in a long action chain (measured live: the uncached share
+ * of a call grew 1.2k → 13k tokens across a 9-minute session while the cached
+ * prefix stayed flat).
+ *
+ * The marker goes on the last block of the last ASSISTANT turn, never the last
+ * message: the final user turn is volatile (buildAnthropicPayload strips its
+ * snapshot block the moment it stops being last — D-43 — so its bytes change
+ * on the next call), while everything up to and including the last assistant
+ * turn is already in final form and re-sent verbatim. Each call therefore
+ * cache-reads the whole prior thread and pays full price only for the newest
+ * turn-and-a-half. Thinking blocks are skipped as a stamp target (cache_control
+ * is not accepted there); with tool calls present the last block is a tool_use
+ * anyway. Known cache-buster: demoteOlderImages rewrites an old frame block in
+ * place when a new one arrives, costing one full re-bill — rare and accepted.
+ *
+ * Returns the ORIGINAL array untouched when there is no assistant turn to
+ * stamp (the fresh-loop seed call); callers use that to fall back to the tools
+ * marker so the 4-breakpoint budget is never exceeded. Never mutates input.
+ */
+export function stampThreadCacheControl(messages) {
+  if (!Array.isArray(messages)) return messages
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m?.role !== 'assistant' || !Array.isArray(m.content)) continue
+    for (let j = m.content.length - 1; j >= 0; j--) {
+      const b = m.content[j]
+      if (!b || b.type === 'thinking' || b.type === 'redacted_thinking') continue
+      const content = m.content.slice()
+      content[j] = { ...b, cache_control: { type: 'ephemeral' } }
+      const out = messages.slice()
+      out[i] = { ...m, content }
+      return out
+    }
+    return messages
+  }
+  return messages
+}
+
+/**
  * Build SDK constructor options. When `config.anthropic.cloudMode` is set, the
  * client is configured to route through the Sei Fly.io proxy with the user's
  * Supabase JWT as a Bearer token. Otherwise the legacy BYOK path (apiKey) is
@@ -154,10 +195,17 @@ export function createAnthropicClient(config) {
    */
   async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking, path, model: modelOverride, onSay, spokenSay }) {
     logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks })
-    // 260502-h6i: stamp cache_control on the LAST tool entry so the cache
-    // boundary lands at the end of the tools array (system → tools is now
-    // cached; cache_read can rise above 0).
-    const _tools = stampLastToolCacheControl(tools)
+    // Breakpoint budget is 4 (Anthropic hard limit): the system tail carries
+    // one and the seed turn two (cuboid grammar + heartbeat). The fourth is
+    // the moving thread marker on continuation calls (260730); a seed-only
+    // call has no assistant turn to stamp, so it keeps the fourth on the last
+    // tool entry as before (260502-h6i). Tools render before system in the
+    // cache prefix, so the system marker covers them on continuation calls —
+    // dropping their own marker there loses only the fallback for a
+    // mid-session system-prefix change (mode switch), which aborts the loop
+    // anyway.
+    const _messages = stampThreadCacheControl(messages)
+    const _tools = _messages === messages ? stampLastToolCacheControl(tools) : tools
     // Extended thinking: when enabled, the model emits private `thinking`
     // blocks BEFORE any text/tool_use. They are never relayed to chat but
     // MUST be preserved in conversation history when the same assistant turn
@@ -171,7 +219,7 @@ export function createAnthropicClient(config) {
       max_tokens: maxTokens,
       system: systemBlocks,
       tools: _tools,
-      messages,
+      messages: _messages,
     }
     if (thinking) req.thinking = thinking
 

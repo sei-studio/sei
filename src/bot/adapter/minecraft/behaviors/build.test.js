@@ -137,6 +137,25 @@ describe('buildAction — walks to out-of-reach cells (260709)', () => {
     expect(r).toMatch(/built NOTHING/)
   })
 
+  // 260730: both of these used to be discovered only AFTER the builder had
+  // walked the span and placed what it could, which spends minutes of the
+  // session producing a result the block counts predicted before it started.
+  it('refuses up front when there are not enough blocks, naming both numbers', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.inventory.items = () => [{ name: 'oak_planks', count: 4 }]
+    const walkMock = vi.fn(async () => 'reached')
+    const r = await buildAction(
+      { from: { x: -38, y: 68, z: -32 }, to: { x: -32, y: 70, z: -26 }, block: 'oak_planks', hollow: true },
+      bot, {}, { goTo: walkMock },
+    )
+    expect(r).toContain('you only have 4 oak_planks')
+    expect(r).toContain('needs 72')
+    // Nothing was attempted: no walking, no placing.
+    expect(placeBlockAction).not.toHaveBeenCalled()
+    expect(walkMock).not.toHaveBeenCalled()
+  })
+
   it('passes the abort signal to the walk step', async () => {
     const { bot, blocks } = makeWorld()
     wirePlaceMock(bot, blocks)
@@ -149,5 +168,75 @@ describe('buildAction — walks to out-of-reach cells (260709)', () => {
     expect(r).toMatch(/^aborted after \d+ placed of \d+ cells$/)
     expect(walkMock.mock.calls[0][6]).toBe(ac.signal)
     expect(walkMock.mock.calls[0][5]).toBe(WALK_TIMEOUT_MS)
+  })
+})
+
+// 260730 — scaffolding is build's `below` direction: the one build whose cells
+// are not knowable in advance, because each block lands wherever the bot is
+// standing when the jump clears. Pins the rise, the up-front material check,
+// and the partial-progress result.
+describe('buildAction — direction:"below" pillars up under the bot', () => {
+  // Fake jump: setControlState('jump') leaves the ground, and the place that
+  // lands mid-air fills the vacated cell and stands the bot on top of it. The
+  // real timing (lead height, refire) is exercised against the live server;
+  // here we only pin the loop's contract.
+  function pillarBot(stock = 8) {
+    const blocks = new Map()
+    for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) blocks.set(`${x},63,${z}`, 'stone')
+    const bot = {
+      entity: { position: new Vec3(0.5, 64, 0.5), eyeHeight: 1.62, onGround: true, yaw: 0 },
+      inventory: { items: () => (stock > 0 ? [{ name: 'dirt', count: stock }] : []) },
+      blockAt(p) {
+        const name = blocks.get(`${p.x},${p.y},${p.z}`)
+        return name ? { name, position: p } : { name: 'air', position: p }
+      },
+      equip: async () => {},
+      look: async () => {},
+      setControlState(control, on) {
+        if (control !== 'jump' || !on) return
+        bot.entity.onGround = false
+        bot.entity.position = new Vec3(0.5, Math.floor(bot.entity.position.y) + 1.2, 0.5)
+      },
+      async placeBlock(ref) {
+        if (stock <= 0) throw new Error('out of blocks')
+        stock--
+        const cellY = ref.position.y + 1
+        blocks.set(`0,${cellY},0`, 'dirt')
+        bot.entity.position = new Vec3(0.5, cellY + 1, 0.5)
+        bot.entity.onGround = true
+        return undefined
+      },
+    }
+    return { bot, blocks }
+  }
+
+  it('rises exactly `count` blocks and reports where it ended up', async () => {
+    const { bot, blocks } = pillarBot()
+    const r = await buildAction({ direction: 'below', count: 3, block: 'dirt' }, bot, {})
+    expect(r).toBe('pillared up 3 blocks (standing at y=67)')
+    expect(blocks.get('0,64,0')).toBe('dirt')
+    expect(blocks.get('0,65,0')).toBe('dirt')
+    expect(blocks.get('0,66,0')).toBe('dirt')
+  })
+
+  it('refuses up front when it cannot reach the requested height', async () => {
+    const { bot } = pillarBot(2)
+    const r = await buildAction({ direction: 'below', count: 5, block: 'dirt' }, bot, {})
+    expect(r).toContain('you only have 2 dirt')
+    expect(r).toContain('pillar up 2')
+    expect(bot.entity.position.y).toBe(64)
+  })
+
+  it('reports how far it got when the climb is aborted partway', async () => {
+    const { bot } = pillarBot()
+    const ac = new AbortController()
+    const place = bot.placeBlock.bind(bot)
+    bot.placeBlock = async (ref) => {
+      const out = await place(ref)
+      if (bot.entity.position.y >= 65) ac.abort() // one block up, then interrupted
+      return out
+    }
+    const r = await buildAction({ direction: 'below', count: 4, block: 'dirt' }, bot, { signal: ac.signal })
+    expect(r).toBe('aborted after pillaring up 1 of 4')
   })
 })

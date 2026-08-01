@@ -12,7 +12,8 @@
  *      Each socket carries a top-right activity badge when the character is
  *      on a voice call (phone) or in a live game session (controller) — see
  *      avatarActivityBadge below.
- *   5. Round + button — navigates to add-character
+ *   5. Round + button — opens the awaken flow; hidden once every companion
+ *      slot is taken (260731b)
  *   6. Flex spacer
  *   7. Credits/Cloud icon — StarIcon (4-point) in BOTH states for consistent
  *      rail iconography; only the click target differs:
@@ -61,6 +62,7 @@ import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useChessStore } from '../lib/stores/useChessStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
+import { useT } from '../lib/i18n';
 
 /**
  * Tooltip hover state lifted to the IconRail component so it can render a
@@ -101,6 +103,8 @@ interface RailButtonProps {
   onHoverStart?: () => void;
   setHover: SetHover;
   children: React.ReactNode;
+  /** Tutorial spotlight anchor (260728) — see components/tutorial. */
+  dataTutorial?: string;
 }
 
 function RailButton({
@@ -113,6 +117,7 @@ function RailButton({
   onHoverStart,
   setHover,
   children,
+  dataTutorial,
 }: RailButtonProps): React.ReactElement {
   const cls = [
     styles.railButton,
@@ -127,6 +132,7 @@ function RailButton({
       aria-label={title}
       className={cls}
       type="button"
+      data-tutorial={dataTutorial}
       onMouseEnter={(e) => {
         if (title) attachHover(e.currentTarget, title, setHover);
         onHoverStart?.();
@@ -222,6 +228,7 @@ function AvatarButton({
   theme,
   setHover,
 }: AvatarButtonProps): React.ReactElement {
+  const t = useT();
   const palette = useMemo(
     () => pickPalette(characterId + characterName, theme),
     [characterId, characterName, theme],
@@ -236,9 +243,9 @@ function AvatarButton({
   // Screen readers get the live activity as a suffix on the avatar's name.
   const ariaLabel =
     activity === 'call'
-      ? `${characterName}, on a call`
+      ? t('{name}, on a call', { name: characterName })
       : activity === 'game'
-        ? `${characterName}, playing a game`
+        ? t('{name}, playing a game', { name: characterName })
         : characterName;
   return (
     <button
@@ -291,6 +298,7 @@ function AvatarButton({
 }
 
 export function IconRail(): React.ReactElement {
+  const t = useT();
   const view = useUiStore((s) => s.view);
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
@@ -408,7 +416,7 @@ export function IconRail(): React.ReactElement {
 
   return (
     <>
-      <nav className={styles.rail} aria-label="Primary">
+      <nav className={styles.rail} aria-label={t('Primary')}>
         <div className={styles.cluster}>
           <RailButton
             active={homeActive}
@@ -416,8 +424,9 @@ export function IconRail(): React.ReactElement {
               setHomeTab('home');
               navigate({ kind: 'home' });
             }}
-            title="Home"
+            title={t('Home')}
             setHover={setHoverTip}
+            dataTutorial="rail-home"
           >
             <RosterIcon size={22} />
           </RailButton>
@@ -425,7 +434,7 @@ export function IconRail(): React.ReactElement {
           <RailButton
             active={worldActive}
             onClick={handleCompassClick}
-            title="World"
+            title={t('World')}
             // Warm the World grid's first page while the pointer is still on
             // the icon, so the public characters are already loaded by the time
             // the tab opens instead of popping in after the local/default ones.
@@ -471,23 +480,33 @@ export function IconRail(): React.ReactElement {
               setHover={setHoverTip}
             />
           ))}
-          {/* Hidden while the party is full: chars:save rejects a 5th companion,
-              so offering the entry point would only lead to that error. Reappears
-              reactively when a slot opens up. */}
-          {homeCharacters.length < MAX_COMPANION_SLOTS && (
+          {/* Hidden once the party is full (260731b), which reverts the 260728
+              "always rendered" rule. That rule was written for a real bug — the
+              button vanished in states where the COUNTED set and the VISIBLE
+              roster disagreed, so it read as broken rather than as full — and it
+              paid for discoverability with a dead-end click and a dialog.
+
+              The two sets cannot disagree here: sortedCharacters IS
+              homeCharacters capped at MAX_COMPANION_SLOTS, so the moment the
+              count reaches the cap the rail is showing exactly that many
+              circles. A full rail with no + is then self-explanatory, which the
+              button plus an apology never was. chars:save remains the
+              authoritative backstop, and the World tab's slots indicator still
+              spells out "Party full" in words. */}
+          {homeCharacters.length < MAX_COMPANION_SLOTS ? (
             <button
               type="button"
               className={`${styles.circleButton} ${view.kind === 'awaken' || view.kind === 'add-character' ? styles.circleActive : ''}`}
               onClick={() => navigate({ kind: 'awaken' })}
-              aria-label="Awaken a companion"
-              onMouseEnter={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
+              aria-label={t('Awaken a companion')}
+              onMouseEnter={(e) => attachHover(e.currentTarget, t('Awaken'), setHoverTip)}
               onMouseLeave={() => setHoverTip(null)}
-              onFocus={(e) => attachHover(e.currentTarget, 'Awaken', setHoverTip)}
+              onFocus={(e) => attachHover(e.currentTarget, t('Awaken'), setHoverTip)}
               onBlur={() => setHoverTip(null)}
             >
               <PlusIcon size={18} />
             </button>
-          )}
+          ) : null}
         </div>
 
         <div className={styles.spacer} />
@@ -500,7 +519,7 @@ export function IconRail(): React.ReactElement {
             <RailButton
               active={view.kind === 'credits'}
               onClick={() => navigate({ kind: 'credits' })}
-              title={usageKnown ? `Usage: ${Math.max(0, Math.min(100, Math.round(usagePct)))}%` : 'Plan'}
+              title={usageKnown ? t('Usage: {pct}%', { pct: Math.max(0, Math.min(100, Math.round(usagePct))) }) : t('Plan')}
               setHover={setHoverTip}
             >
               <StarIcon size={22} />
@@ -508,7 +527,7 @@ export function IconRail(): React.ReactElement {
           ) : aiBackendKind === 'local' ? (
             <RailButton
               onClick={handleCloudClick}
-              title="Switch to cloud"
+              title={t('Switch to cloud')}
               setHover={setHoverTip}
             >
               {/* Same StarIcon as the cloud-proxy branch — consistent rail
@@ -520,7 +539,7 @@ export function IconRail(): React.ReactElement {
           <RailButton
             active={view.kind === 'settings'}
             onClick={() => navigate({ kind: 'settings' })}
-            title="Settings"
+            title={t('Settings')}
             setHover={setHoverTip}
           >
             <SettingsIcon size={22} />
@@ -548,16 +567,16 @@ export function IconRail(): React.ReactElement {
 
       {showCloudPrompt ? (
         <ModalShell
-          title="Switch to cloud?"
+          title={t('Switch to cloud?')}
           onClose={() => setShowCloudPrompt(false)}
           scrimClose
         >
           <p className={styles.cloudPromptBody}>
-            Sign in to use Sei&apos;s hosted AI. You keep your local characters either way.
+            {t("Sign in to use Sei's hosted AI. You keep your local characters either way.")}
           </p>
           <ModalFooter>
             <Button kind="quiet" size="md" onClick={() => setShowCloudPrompt(false)}>
-              Not now
+              {t('Not now')}
             </Button>
             <Button
               kind="primary"
@@ -569,7 +588,7 @@ export function IconRail(): React.ReactElement {
                 setPendingCloudAfterSignIn(true);
               }}
             >
-              Continue
+              {t('Continue')}
             </Button>
           </ModalFooter>
         </ModalShell>

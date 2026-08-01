@@ -179,6 +179,18 @@ describe('splitReply — blank line → separate messages (task 8)', () => {
       'as always.',
     ]);
   });
+
+  // 260729: on a voice call these bubbles ARE the text handed to TTS, and
+  // ElevenLabs reads the terminal period as "this thought ended" — stripping it
+  // rendered every statement with continuation prosody (no closing pitch fall).
+  // `spoken` turns the strip off regardless of the character's texting register.
+  it('spoken (voice call) keeps the trailing period a casual character would drop', () => {
+    expect(splitReply('done.', 'casual', true)).toEqual(['done.']);
+    expect(splitReply('i grabbed the iron.\n\nwant me to smelt it?', 'casual', true)).toEqual([
+      'i grabbed the iron.',
+      'want me to smelt it?',
+    ]);
+  });
 });
 
 describe('toMessages — every row flows through the same-role merge (Finding 1)', () => {

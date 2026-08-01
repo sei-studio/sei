@@ -9,8 +9,12 @@
  *             (chat hidden; chevron flips to "^" to restore). While chat is
  *             hidden, ChatScreen sets `unread` when a companion message lands
  *             and this button carries the red dot.
- *           - the app-window fullscreen button (window:fullscreen-toggle IPC);
- *             icon swaps between enter/exit states.
+ *           - the IN-APP fullscreen button (260728): hides the IconRail AND
+ *             the chat, so the game gets every pixel the app window has. It
+ *             used to toggle the OS window's fullscreen, which was the wrong
+ *             verb: a game wants the whole app, not the whole display, and
+ *             taking over the display is awkward to undo. State lives in
+ *             useUiStore.gameFullscreen; icon swaps between enter/exit.
  *
  *   center  - the in-game call cluster (260722, replacing the CallDock strip):
  *             participant profile pics (click one to return to the fullscreen
@@ -34,55 +38,65 @@
  * (e.g. chess consumes var(--game-chrome-h, 56px)).
  *
  * The expand STATE lives in ChatScreen (it drives the game/chat heights via a
- * root class); fullscreen state is the OS window's and is re-read on resize so
- * an Esc exit keeps the icon honest.
+ * root class); the fullscreen flag lives in useUiStore because the IconRail it
+ * hides is App.tsx's, not this component's.
  */
 
 import React, { useEffect, useState } from 'react';
-import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { startOrOpenCall } from '../lib/callLaunch';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from './PixelPortrait';
-import { BackIcon, FullscreenIcon, ExitFullscreenIcon, UserIcon } from './icons';
+import { BackIcon, FullscreenIcon, ExitFullscreenIcon, PhoneIcon, UserIcon } from './icons';
 import { CallControls } from './call/CallControls';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { Button } from './Button';
+import { useT } from '../lib/i18n';
 import confirmStyles from './confirmModal.module.css';
 import styles from './GameSurface.module.css';
 
 /** Pointer proximity band above the surface bottom that reveals the chrome. */
-const CHROME_PROXIMITY_PX = 72;
+export const CHROME_PROXIMITY_PX = 72;
 
-export interface GameSurfaceProps {
-  /** True while the game covers the chat column. */
-  expanded: boolean;
-  /** True while chat is hidden and an unseen companion message is waiting. */
-  unread: boolean;
-  /** Toggle the expand-over-chat state. */
-  onToggle: () => void;
+export interface GameChromeRowProps {
+  /** Who the game is with: the phone button dials them. */
+  characterId: string;
+  /** The host decides when the row shows (pointer proximity, focus, ...). */
+  revealed: boolean;
   /** The mounted surface's end action (end game / stop session / dismiss). */
   onEnd: () => void;
   /** True while a session is live: the end "x" asks for confirmation first. */
   confirmEnd: boolean;
-  /** The mounted game panel. */
-  children: React.ReactNode;
+  /**
+   * The expand-over-chat control, for surfaces that sit above a chat column.
+   * Omitted on full-page games (Draw!), where there is no chat to cover.
+   */
+  expand?: { expanded: boolean; unread: boolean; onToggle: () => void };
 }
 
-export function GameSurface({
-  expanded,
-  unread,
-  onToggle,
+/**
+ * The universal bottom button row every game surface carries (260729): expand
+ * (where a chat column exists), in-app fullscreen, the call cluster, and the
+ * unified end "x". Extracted from GameSurface so the full-page Draw! route can
+ * mount the SAME row instead of inventing its own corner buttons.
+ *
+ * The phone chip appears in FULLSCREEN only (260729): every game surface now
+ * carries the shared ChatTopBar outside fullscreen (Draw! included), and its
+ * phone button is THE way to start a call. The chip exists solely because
+ * fullscreen hides that bar; showing it alongside the bar read as a second,
+ * redundant call button.
+ */
+export function GameChromeRow({
+  characterId,
+  revealed,
   onEnd,
   confirmEnd,
-  children,
-}: GameSurfaceProps): React.ReactElement {
+  expand,
+}: GameChromeRowProps): React.ReactElement {
+  const t = useT();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
-  // Hover-reveal state for the bottom chrome row.
-  const [nearBottom, setNearBottom] = useState(false);
-  const [focusWithin, setFocusWithin] = useState(false);
 
   // In-game call cluster: the live call session, if any.
   const navigate = useUiStore((s) => s.navigate);
@@ -93,91 +107,57 @@ export function GameSurface({
   const callActive =
     participants.length > 0 && (callStatus === 'live' || callStatus === 'connecting');
 
-  // Seed + track the OS fullscreen state. A resize fires on enter/leave
-  // (including Esc / the native control), so re-reading there keeps the icon
-  // in sync without a dedicated push channel.
-  useEffect(() => {
-    let alive = true;
-    const read = (): void => {
-      void sei
-        .windowIsFullscreen()
-        .then((v) => alive && setFullscreen(v))
-        .catch(() => {
-          /* older preload without the bridge — button stays in enter state */
-        });
-    };
-    read();
-    window.addEventListener('resize', read);
-    return () => {
-      alive = false;
-      window.removeEventListener('resize', read);
-    };
-  }, []);
+  // In-app fullscreen. The flag's on-unmount cleanup stays with the HOST
+  // surface (GameSurface / DrawScreen), which owns the flag's lifetime.
+  const fullscreen = useUiStore((s) => s.gameFullscreen);
+  const setFullscreen = useUiStore((s) => s.setGameFullscreen);
 
-  const toggleLabel = expanded ? (unread ? 'Show chat, new messages' : 'Show chat') : 'Hide chat';
-
-  // Reveal: pointer near the bottom, keyboard focus inside the surface, an
-  // unread dot waiting (a hidden dot is no signal), or a call dialing (the
-  // just-started in-place call needs visible feedback).
-  const revealed = nearBottom || focusWithin || unread || callStatus === 'connecting';
+  const toggleLabel = expand?.expanded
+    ? expand.unread
+      ? t('Show chat, new messages')
+      : t('Show chat')
+    : t('Hide chat');
 
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
 
   return (
-    <div
-      className={styles.surface}
-      onPointerMove={(e) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        setNearBottom(r.bottom - e.clientY <= CHROME_PROXIMITY_PX);
-      }}
-      onPointerLeave={() => setNearBottom(false)}
-      onFocusCapture={() => setFocusWithin(true)}
-      onBlurCapture={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusWithin(false);
-      }}
-    >
-      <div className={styles.content}>{children}</div>
-
+    <>
       {/* Bottom chrome row: left cluster + centered call cluster + end "x".
           pointer-events pass through the empty parts so the game stays
           clickable under the transparent strip. */}
       <div className={revealed ? `${styles.chrome} ${styles.chromeRevealed}` : styles.chrome}>
         <div className={styles.chromeSide}>
-          <button
-            type="button"
-            className={styles.chromeBtn}
-            onClick={onToggle}
-            aria-label={toggleLabel}
-            title={expanded ? 'Show chat' : 'Hide chat'}
-          >
-            <span
-              className={expanded ? `${styles.chev} ${styles.chevExpanded}` : styles.chev}
-              aria-hidden="true"
+          {expand ? (
+            <button
+              type="button"
+              className={styles.chromeBtn}
+              onClick={expand.onToggle}
+              aria-label={toggleLabel}
+              title={expand.expanded ? t('Show chat') : t('Hide chat')}
             >
-              <BackIcon size={14} />
-            </span>
-            {unread ? <span className={styles.unreadDot} aria-hidden="true" /> : null}
-          </button>
+              <span
+                className={expand.expanded ? `${styles.chev} ${styles.chevExpanded}` : styles.chev}
+                aria-hidden="true"
+              >
+                <BackIcon size={14} />
+              </span>
+              {expand.unread ? <span className={styles.unreadDot} aria-hidden="true" /> : null}
+            </button>
+          ) : null}
           <button
             type="button"
             className={styles.chromeBtn}
-            onClick={() =>
-              void sei
-                .windowFullscreenToggle()
-                .then(setFullscreen)
-                .catch(() => {
-                  /* bridge missing — leave the window as is */
-                })
-            }
-            aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            onClick={() => setFullscreen(!fullscreen)}
+            aria-label={fullscreen ? t('Exit fullscreen') : t('Enter fullscreen')}
+            title={fullscreen ? t('Exit fullscreen') : t('Fullscreen')}
           >
             {fullscreen ? <ExitFullscreenIcon size={14} /> : <FullscreenIcon size={14} />}
           </button>
         </div>
 
-        {/* Centered call cluster: participant pics + compact pill controls. */}
+        {/* Centered call cluster: participant pics + compact pill controls
+            while a call runs; the phone that STARTS one otherwise. */}
         {callActive ? (
           <div className={styles.callCluster}>
             {participants.map((id) => {
@@ -190,8 +170,8 @@ export function GameSurface({
                   type="button"
                   className={speaking ? `${styles.tile} ${styles.tileSpeaking}` : styles.tile}
                   onClick={() => navigate({ kind: 'voice-call', characterId: participants[0] })}
-                  aria-label={`Return to call with ${c?.name ?? 'Companion'}`}
-                  title="Return to call"
+                  aria-label={t('Return to call with {name}', { name: c?.name ?? t('Companion') })}
+                  title={t('Return to call')}
                 >
                   {c ? (
                     <PixelPortrait
@@ -209,6 +189,18 @@ export function GameSurface({
             })}
             <CallControls size="sm" />
           </div>
+        ) : fullscreen ? (
+          <div className={styles.callCluster}>
+            <button
+              type="button"
+              className={styles.chromeBtn}
+              onClick={() => startOrOpenCall(characterId)}
+              aria-label={t('Voice call')}
+              title={t('Voice call')}
+            >
+              <PhoneIcon size={14} />
+            </button>
+          </div>
         ) : null}
 
         {/* Right: the unified end control. */}
@@ -216,19 +208,19 @@ export function GameSurface({
           type="button"
           className={`${styles.chromeBtn} ${styles.endBtn}`}
           onClick={() => (confirmEnd ? setConfirmOpen(true) : onEnd())}
-          aria-label="End game"
-          title="End game"
+          aria-label={t('End game')}
+          title={t('End game')}
         >
           ×
         </button>
       </div>
 
       {confirmOpen ? (
-        <ModalShell title="End game" onClose={() => setConfirmOpen(false)} scrimClose>
-          <p className={confirmStyles.body}>This will end the game.</p>
+        <ModalShell title={t('End game')} onClose={() => setConfirmOpen(false)} scrimClose>
+          <p className={confirmStyles.body}>{t('This will end the game.')}</p>
           <ModalFooter>
             <Button kind="quiet" size="md" onClick={() => setConfirmOpen(false)}>
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button
               kind="danger"
@@ -238,11 +230,78 @@ export function GameSurface({
                 onEnd();
               }}
             >
-              End game
+              {t('End game')}
             </Button>
           </ModalFooter>
         </ModalShell>
       ) : null}
+    </>
+  );
+}
+
+export interface GameSurfaceProps {
+  /** Who the game is with (threads through to the chrome's call buttons). */
+  characterId: string;
+  /** True while the game covers the chat column. */
+  expanded: boolean;
+  /** True while chat is hidden and an unseen companion message is waiting. */
+  unread: boolean;
+  /** Toggle the expand-over-chat state. */
+  onToggle: () => void;
+  /** The mounted surface's end action (end game / stop session / dismiss). */
+  onEnd: () => void;
+  /** True while a session is live: the end "x" asks for confirmation first. */
+  confirmEnd: boolean;
+  /** The mounted game panel. */
+  children: React.ReactNode;
+}
+
+export function GameSurface({
+  characterId,
+  expanded,
+  unread,
+  onToggle,
+  onEnd,
+  confirmEnd,
+  children,
+}: GameSurfaceProps): React.ReactElement {
+  // Hover-reveal state for the bottom chrome row.
+  const [nearBottom, setNearBottom] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  const callStatus = useVoiceStore((s) => s.status);
+
+  // In-app fullscreen. The surface OWNS the flag: it clears it on unmount, so
+  // ending a game or navigating away can never leave the IconRail hidden.
+  const setFullscreen = useUiStore((s) => s.setGameFullscreen);
+  useEffect(() => () => setFullscreen(false), [setFullscreen]);
+
+  // Reveal: pointer near the bottom, keyboard focus inside the surface, an
+  // unread dot waiting (a hidden dot is no signal), or a call dialing (the
+  // just-started in-place call needs visible feedback).
+  const revealed = nearBottom || focusWithin || unread || callStatus === 'connecting';
+
+  return (
+    <div
+      className={styles.surface}
+      onPointerMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        setNearBottom(r.bottom - e.clientY <= CHROME_PROXIMITY_PX);
+      }}
+      onPointerLeave={() => setNearBottom(false)}
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusWithin(false);
+      }}
+    >
+      <div className={styles.content}>{children}</div>
+
+      <GameChromeRow
+        characterId={characterId}
+        revealed={revealed}
+        onEnd={onEnd}
+        confirmEnd={confirmEnd}
+        expand={{ expanded, unread, onToggle }}
+      />
     </div>
   );
 }

@@ -113,10 +113,8 @@ describe.skipIf(!hasModel)('chess e2e with the real CCE engine', () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sei-chess-e2e-'));
     _setUserDataOverride(dir);
     pushed = [];
-    // Present decisions instantly; keep idle ticks out of the run.
-    CHESS_TIMING.prethinkFloorMs = 0;
-    CHESS_TIMING.prethinkCapMs = 0;
-    CHESS_TIMING.obviousExtraMs = 0;
+    // Keep idle ticks out of the run (decisions present instantly since
+    // 260729 — the prethink delay is gone from the service).
     CHESS_TIMING.idleMinMs = 300_000;
     CHESS_TIMING.idleMaxMs = 300_000;
     initChessService({

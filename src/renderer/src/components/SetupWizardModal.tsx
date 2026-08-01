@@ -24,6 +24,7 @@
  */
 
 import React, { useEffect, useRef } from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { StatusPill } from './StatusPill';
 import { ModalShell } from './ModalShell';
@@ -36,6 +37,7 @@ import { WARN_COPY } from '../lib/errors';
 import styles from './SetupWizardModal.module.css';
 
 export function SetupWizardModal(): React.ReactElement | null {
+  const t = useT();
   const open = useWizardStore((s) => s.open);
   const step = useWizardStore((s) => s.step);
   const closeWizard = useWizardStore((s) => s.closeWizard);
@@ -86,7 +88,7 @@ export function SetupWizardModal(): React.ReactElement | null {
       width={680}
       panelClassName={styles.wizardPanel}
       onClose={closeWizard}
-      aria-label="Set up Minecraft skins"
+      aria-label={t('Set up Minecraft skins')}
     >
       {/* key on step so React unmounts/remounts on transition → CSS crossfade applies */}
       <div key={step} ref={contentRef} className={styles.stepContent}>
@@ -136,18 +138,19 @@ function renderStep(step: WizardStep): React.ReactElement {
 /* -------------------------------------------------------------------------- */
 
 function WelcomeStep(): React.ReactElement {
+  const t = useT();
   const isReentry = useWizardStore((s) => s.isReentry);
   const runDetection = useWizardStore((s) => s.runDetection);
   const closeWizard = useWizardStore((s) => s.closeWizard);
   return (
     <WizardStepShell
       stepNumber={null}
-      heading="Set up Minecraft skins"
+      heading={t('Set up Minecraft skins')}
       footer={
         <>
           {isReentry ? (
             <Button kind="quiet" size="md" onClick={closeWizard}>
-              Back to settings
+              {t('Back to settings')}
             </Button>
           ) : (
             // First-launch onboarding: the skip control belongs in the footer
@@ -156,43 +159,45 @@ function WelcomeStep(): React.ReactElement {
             // than the primary CTA. closeWizard routes the onboarding page to
             // home (SkinSetupScreen finalizes on open→closed).
             <Button kind="quiet" size="md" onClick={closeWizard}>
-              Set up later
+              {t('Set up later')}
             </Button>
           )}
           <Button kind="accent" size="md" onClick={() => void runDetection()}>
-            Begin
+            {t('Begin')}
           </Button>
         </>
       }
     >
       <p>
-        Sei can give each companion a custom skin and username inside your Minecraft
-        world. We&apos;ll install a small mod (CustomSkinLoader) into your Minecraft
-        profile. Takes about a minute.
+        {t(
+          "Sei can give each companion a custom skin and username inside your Minecraft world. We'll install a small mod (CustomSkinLoader) into your Minecraft profile. Takes about a minute.",
+        )}
       </p>
     </WizardStepShell>
   );
 }
 
 function DetectingStep(): React.ReactElement {
+  const t = useT();
   const closeWizard = useWizardStore((s) => s.closeWizard);
   return (
     <WizardStepShell
       stepNumber={1}
-      heading="Looking for Minecraft installs"
+      heading={t('Looking for Minecraft installs')}
       footer={
         <>
           <span />
           <Button kind="quiet" size="md" onClick={closeWizard}>
-            Cancel
+            {t('Cancel')}
           </Button>
         </>
       }
     >
       <div role="status" aria-live="polite">
         <p>
-          Scanning your Minecraft launcher and CurseForge instances. This stays on
-          your computer.
+          {t(
+            'Scanning your Minecraft launcher and CurseForge instances. This stays on your computer.',
+          )}
         </p>
       </div>
     </WizardStepShell>
@@ -200,17 +205,18 @@ function DetectingStep(): React.ReactElement {
 }
 
 function NoneFoundStep(): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const closeWizard = useWizardStore((s) => s.closeWizard);
   const runDetection = useWizardStore((s) => s.runDetection);
   return (
     <WizardStepShell
       stepNumber={null}
-      heading="We couldn't find Minecraft"
+      heading={t("We couldn't find Minecraft")}
       footer={
         <>
           <Button kind="quiet" size="md" onClick={() => void runDetection()}>
-            Try again
+            {t('Try again')}
           </Button>
           <Button
             kind="primary"
@@ -220,21 +226,22 @@ function NoneFoundStep(): React.ReactElement {
               navigate({ kind: 'settings' });
             }}
           >
-            Open settings
+            {t('Open settings')}
           </Button>
         </>
       }
     >
       <p>
-        Sei looked in the usual places and didn&apos;t find a Minecraft install.
-        Install Minecraft from minecraft.net or the CurseForge app, then re-run
-        this wizard from Settings.
+        {t(
+          "Sei looked in the usual places and didn't find a Minecraft install. Install Minecraft from minecraft.net or the CurseForge app, then re-run this wizard from Settings.",
+        )}
       </p>
     </WizardStepShell>
   );
 }
 
 function PickInstallsStep(): React.ReactElement {
+  const t = useT();
   const installs = useWizardStore((s) => s.installs);
   const selectedIds = useWizardStore((s) => s.selectedIds);
   const toggleSelected = useWizardStore((s) => s.toggleSelected);
@@ -243,11 +250,11 @@ function PickInstallsStep(): React.ReactElement {
   return (
     <WizardStepShell
       stepNumber={2}
-      heading="Pick which installs to enable"
+      heading={t('Pick which installs to enable')}
       footer={
         <>
           <Button kind="quiet" size="md" onClick={() => gotoStep('welcome')}>
-            Back
+            {t('Back')}
           </Button>
           <Button
             kind="primary"
@@ -255,14 +262,15 @@ function PickInstallsStep(): React.ReactElement {
             disabled={selectedIds.size === 0}
             onClick={() => void runInstall()}
           >
-            Continue
+            {t('Continue')}
           </Button>
         </>
       }
     >
       <p>
-        Sei will install Fabric Loader and CustomSkinLoader into each install you
-        select. Already-modded CurseForge instances get only the mod jar.
+        {t(
+          'Sei will install Fabric Loader and CustomSkinLoader into each install you select. Already-modded CurseForge instances get only the mod jar.',
+        )}
       </p>
       <McInstallList
         installs={installs}
@@ -274,6 +282,7 @@ function PickInstallsStep(): React.ReactElement {
 }
 
 function InstallingStep(): React.ReactElement {
+  const t = useT();
   const installs = useWizardStore((s) => s.installs);
   const selectedIds = useWizardStore((s) => s.selectedIds);
   const progress = useWizardStore((s) => s.progress);
@@ -283,20 +292,21 @@ function InstallingStep(): React.ReactElement {
   return (
     <WizardStepShell
       stepNumber={3}
-      heading="Setting up your installs"
+      heading={t('Setting up your installs')}
       footer={
         <>
           <span />
           <Button kind="quiet" size="md" onClick={() => void cancelInstall()}>
-            Cancel
+            {t('Cancel')}
           </Button>
         </>
       }
     >
       <div role="status" aria-live="polite">
         <p>
-          Downloading Fabric Loader and CustomSkinLoader. Don&apos;t close Minecraft
-          if it&apos;s open.
+          {t(
+            "Downloading Fabric Loader and CustomSkinLoader. Don't close Minecraft if it's open.",
+          )}
         </p>
         <InstallProgressList
           installs={selected}
@@ -309,6 +319,7 @@ function InstallingStep(): React.ReactElement {
 }
 
 function OneFailedStep(): React.ReactElement {
+  const t = useT();
   const installs = useWizardStore((s) => s.installs);
   const selectedIds = useWizardStore((s) => s.selectedIds);
   const progress = useWizardStore((s) => s.progress);
@@ -321,8 +332,8 @@ function OneFailedStep(): React.ReactElement {
   const failedInstall = failedResult
     ? installs.find((i) => i.id === failedResult.installId)
     : null;
-  const failedName = failedInstall?.label ?? 'One install';
-  const failedMessage = failedResult?.message ?? 'an unknown error';
+  const failedName = failedInstall?.label ?? t('One install');
+  const failedMessage = failedResult?.message ?? t('an unknown error');
 
   // Bring failed install rows to the top of the InstallProgressList.
   const selected = installs.filter((i) => selectedIds.has(i.id));
@@ -335,14 +346,14 @@ function OneFailedStep(): React.ReactElement {
   return (
     <WizardStepShell
       stepNumber={null}
-      heading="One install couldn't finish"
+      heading={t("One install couldn't finish")}
       footer={
         <>
           <Button kind="quiet" size="md" onClick={() => void runInstall()}>
-            Try again
+            {t('Try again')}
           </Button>
           <Button kind="primary" size="md" onClick={() => gotoStep('done')}>
-            Continue anyway
+            {t('Continue anyway')}
           </Button>
         </>
       }
@@ -350,8 +361,10 @@ function OneFailedStep(): React.ReactElement {
       <p>
         {/* Strip any trailing period from the message — the sentence adds its
             own, and "wizard.. The other" read as a typo (260709 report). */}
-        {failedName} hit an error: {(failedMessage ?? '').replace(/\.+$/, '')}. The other installs
-        are ready. You can re-run setup for this one later from Settings.
+        {t(
+          '{name} hit an error: {message}. The other installs are ready. You can re-run setup for this one later from Settings.',
+          { name: failedName, message: (failedMessage ?? '').replace(/\.+$/, '') },
+        )}
       </p>
       <InstallProgressList
         installs={reordered}
@@ -363,6 +376,7 @@ function OneFailedStep(): React.ReactElement {
 }
 
 function DoneStep(): React.ReactElement {
+  const t = useT();
   const installs = useWizardStore((s) => s.installs);
   const selectedIds = useWizardStore((s) => s.selectedIds);
   const results = useWizardStore((s) => s.results);
@@ -405,27 +419,33 @@ function DoneStep(): React.ReactElement {
   return (
     <WizardStepShell
       stepNumber={4}
-      heading={anyFailed ? 'Setup finished with issues' : 'All set'}
+      heading={anyFailed ? t('Setup finished with issues') : t('All set')}
       footer={
         <>
           <span />
           <Button kind="accent" size="md" onClick={closeWizard}>
-            Finish setup
+            {t('Finish setup')}
           </Button>
         </>
       }
     >
       <div style={{ marginBottom: 'var(--space-md)' }}>
         {anyFailed ? (
-          <StatusPill tone="warn" label="Some installs skipped" />
+          <StatusPill tone="warn" label={t('Some installs skipped')} />
         ) : (
-          <StatusPill tone="green" label="All set" />
+          <StatusPill tone="green" label={t('All set')} />
         )}
       </div>
       <p>
         {anyFailed
-          ? `Some installs didn't finish, but the rest are ready. Open Minecraft, pick the ${profileName} profile from the launcher dropdown, and start your world. You can re-run setup for the others from Settings.`
-          : `Open Minecraft, pick the ${profileName} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.`}
+          ? t(
+              "Some installs didn't finish, but the rest are ready. Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. You can re-run setup for the others from Settings.",
+              { profile: profileName },
+            )
+          : t(
+              'Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.',
+              { profile: profileName },
+            )}
       </p>
 
       {summaries.length > 0 ? (
@@ -436,14 +456,23 @@ function DoneStep(): React.ReactElement {
               <div key={install.id} style={{ marginBottom: 'var(--space-md)' }}>
                 <h4>{install.label}</h4>
                 <p>
-                  Linked {summary.linked} mod{summary.linked === 1 ? '' : 's'}
                   {summary.excluded > 0
-                    ? `, excluded ${summary.excluded} (wrong MC version or unreadable metadata).`
-                    : '.'}
+                    ? summary.linked === 1
+                      ? t(
+                          'Linked 1 mod, excluded {excluded} (wrong MC version or unreadable metadata).',
+                          { excluded: summary.excluded },
+                        )
+                      : t(
+                          'Linked {count} mods, excluded {excluded} (wrong MC version or unreadable metadata).',
+                          { count: summary.linked, excluded: summary.excluded },
+                        )
+                    : summary.linked === 1
+                      ? t('Linked 1 mod.')
+                      : t('Linked {count} mods.', { count: summary.linked })}
                 </p>
                 {summary.excludedJars.length > 0 ? (
                   <details>
-                    <summary>Show excluded mods</summary>
+                    <summary>{t('Show excluded mods')}</summary>
                     <ul className={styles.modLinkExclusionList}>
                       {summary.excludedJars.map((j) => {
                         // 260518-o1k T8: tooltips on the unparseable /
@@ -463,14 +492,14 @@ function DoneStep(): React.ReactElement {
                           <li key={j.name} title={tooltip}>
                             {j.name}:{' '}
                             {j.reason === 'mc-version-mismatch' && j.declaredMc
-                              ? `targets MC ${j.declaredMc}`
+                              ? t('targets MC {version}', { version: j.declaredMc })
                               : j.reason === 'mc-version-mismatch'
-                                ? 'wrong MC version'
+                                ? t('wrong MC version')
                                 : j.reason === 'unparseable'
-                                  ? 'metadata unreadable'
+                                  ? t('metadata unreadable')
                                   : j.reason === 'no-metadata'
-                                    ? 'no mod metadata'
-                                    : 'read error'}
+                                    ? t('no mod metadata')
+                                    : t('read error')}
                           </li>
                         );
                       })}

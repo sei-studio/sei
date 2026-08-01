@@ -10,6 +10,7 @@
 
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { TextField } from './TextField';
@@ -50,6 +51,7 @@ export function ReportCompanionModal({
   characterPublicId,
   onClose,
 }: ReportCompanionModalProps): React.ReactElement {
+  const t = useT();
   const [selected, setSelected] = useState<string[]>([]);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -92,13 +94,15 @@ export function ReportCompanionModal({
 
   if (done) {
     return (
-      <ModalShell title="Report sent" onClose={onClose} scrimClose width={440}>
+      <ModalShell title={t('Report sent')} onClose={onClose} scrimClose width={440}>
         <p className={styles.framing}>
-          Thank you. We review reports within 24 hours and remove companions that break the rules.
+          {t(
+            'Thank you. We review reports within 24 hours and remove companions that break the rules.',
+          )}
         </p>
         <ModalFooter>
           <Button kind="accent" size="md" onClick={onClose}>
-            Close
+            {t('Close')}
           </Button>
         </ModalFooter>
       </ModalShell>
@@ -106,8 +110,8 @@ export function ReportCompanionModal({
   }
 
   return (
-    <ModalShell title={`Report ${characterName}`} onClose={onClose} scrimClose width={440}>
-      <p className={styles.framing}>What is wrong with this companion? Select all that apply.</p>
+    <ModalShell title={t('Report {name}', { name: characterName })} onClose={onClose} scrimClose width={440}>
+      <p className={styles.framing}>{t('What is wrong with this companion? Select all that apply.')}</p>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.reasons}>
           {REASONS.map((r) => (
@@ -117,34 +121,34 @@ export function ReportCompanionModal({
                 checked={selected.includes(r.key)}
                 onChange={() => toggle(r.key)}
               />
-              {r.label}
+              {t(r.label)}
             </label>
           ))}
         </div>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="report-comment">
-            Details {selected.includes('other') ? '(required for Other)' : '(optional)'}
+            {selected.includes('other') ? t('Details (required for Other)') : t('Details (optional)')}
           </label>
           <TextField
             value={comment}
             onChange={setComment}
             multiline
             rows={3}
-            placeholder="Anything that helps us review faster"
-            aria-label="Report details"
+            placeholder={t('Anything that helps us review faster')}
+            aria-label={t('Report details')}
           />
         </div>
         {error ? (
           <p className={styles.errorText} role="alert">
-            {error}
+            {t(error)}
           </p>
         ) : null}
         <ModalFooter>
           <Button kind="ghost" size="md" onClick={onClose} type="button">
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button kind="danger" size="md" type="submit" disabled={!canSubmit}>
-            {submitting ? 'Sending…' : 'Submit report'}
+            {submitting ? t('Sending…') : t('Submit report')}
           </Button>
         </ModalFooter>
       </form>

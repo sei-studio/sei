@@ -13,6 +13,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
@@ -28,18 +29,20 @@ export function DeleteConfirmModal({
   onCancel,
   onConfirm,
 }: DeleteConfirmModalProps): React.ReactElement {
+  const t = useT();
   return (
-    <ModalShell title={`Unbind ${characterName}?`} onClose={onCancel}>
+    <ModalShell title={t('Unbind {name}?', { name: characterName })} onClose={onCancel}>
       <p className={styles.body}>
-        This permanently removes their persona, description, and saved memory. You can&apos;t undo
-        this.
+        {t(
+          "This permanently removes their persona, description, and saved memory. You can't undo this.",
+        )}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onCancel}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="danger" size="md" onClick={onConfirm}>
-          Unbind {characterName}
+          {t('Unbind {name}', { name: characterName })}
         </Button>
       </ModalFooter>
     </ModalShell>

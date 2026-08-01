@@ -23,11 +23,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from './lib/ipcClient';
 import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
+import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
 import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
 import { OnboardingScreen } from './screens/OnboardingScreen';
+import { OnboardApp, type OnboardResult } from './onboard/OnboardApp';
+import { SuiPrefsScene } from './onboard/SuiPrefsScene';
+import { TutorialOverlay } from './components/tutorial/TutorialOverlay';
+import { useTutorialStore, type TutorialStep } from './lib/stores/useTutorialStore';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
 import { AwakenScreen } from './screens/AwakenScreen';
@@ -36,11 +41,12 @@ import { ComingSoonScreen } from './screens/ComingSoonScreen';
 import { CharacterPage } from './screens/CharacterPage';
 import { ChatScreen } from './screens/ChatScreen';
 import { VoiceCallScreen } from './screens/VoiceCallScreen';
+import { DrawScreen } from './components/draw/DrawScreen';
 import { ProfileQuestionsScreen } from './screens/ProfileQuestionsScreen';
-import { UniqueGenderScreen } from './screens/UniqueGenderScreen';
-import { UniqueCastingScreen } from './screens/UniqueCastingScreen';
+import { SuiMeetScene } from './onboard/SuiMeetScene';
 import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { CallMiniBar } from './components/call/CallMiniBar';
+import { MiniTile } from './components/MiniTile';
 import { CallOverlayPusher } from './components/CallOverlayPusher';
 import { CrossLaunchConfirmModal } from './components/CrossLaunchConfirmModal';
 import { GamesPickerModal } from './components/GamesPickerModal';
@@ -76,6 +82,7 @@ import { ImportLocalProfileModal } from './components/ImportLocalProfileModal';
 import type { PeekLocalProfileResult } from '../../shared/ipc';
 
 export function App(): React.ReactElement {
+  const t = useT();
   const view = useUiStore((s) => s.view);
   // ui-A7: developer-console visibility toggle. Default OFF — LogsBar only
   // mounts when the Settings → Show developer console toggle is flipped.
@@ -108,6 +115,8 @@ export function App(): React.ReactElement {
   // (IconRail, drag strip, chat) can adapt without prop drilling.
   const backgroundImage = useUiStore((s) => s.backgroundImage);
   const backgroundOpacity = useUiStore((s) => s.backgroundOpacity);
+  // In-app game fullscreen (260728): the mounted game surface owns this flag.
+  const gameFullscreen = useUiStore((s) => s.gameFullscreen);
   useEffect(() => {
     const root = document.documentElement;
     if (backgroundImage) {
@@ -406,8 +415,9 @@ export function App(): React.ReactElement {
   //    Main pushes app:scope-changed AFTER it has torn down the bot, switched
   //    the local data scope, and seeded the new profile. We reload the new
   //    profile's config + characters and re-route:
-  //      • sign-out (account → local) → AuthChoice (the sign-in chooser), so a
-  //        user signing out can re-auth as someone else (fix 260605);
+  //      • sign-out (account → local) → the scene's sign-in panel (260729,
+  //        signin variant): re-auth as someone else, "I'm new here" for the
+  //        full scene, or continue locally;
   //      • otherwise a profile with no mc_username is treated as a fresh install
   //        → onboarding (the signed-in onboarding flow only asks MC username +
   //        preferred name); a profile with an mc_username → home.
@@ -436,6 +446,8 @@ export function App(): React.ReactElement {
           const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
           setThemeMode(mode);
           applyTheme(mode);
+          // App UI language follows the incoming profile's config (260730).
+          useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
           useUiStore.getState().setDevConsoleVisible(!!cfg.dev_console_visible);
           // Appearance & feel: seed the "Realistic typing" pacing toggle
           // (default ON) so useChatStore.send() reads the right value.
@@ -446,6 +458,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
           // Conversation starters on quiet calls (default ON).
           useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
+          // Per-character call backdrop mode (sparse: absent = never chosen).
+          useUiStore.getState().setCallBackdropPrefs(cfg.call_backdrop ?? {});
           // Sticky chat side-panel visibility (default shown).
           useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
           // Product analytics opt-out (default OFF = analytics on).
@@ -460,18 +474,16 @@ export function App(): React.ReactElement {
         // Replace the previous profile's character list + library state.
         try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
         try { await useLibraryStateStore.getState().refresh(); } catch { /* no hidden defaults */ }
-        // Sign-out (account → local): return to the sign-in chooser, NOT
-        // onboarding. After signing out the user may want to authenticate as a
-        // different account, so the next screen must be AuthChoice (email /
-        // Google / continue-locally). Routing straight to onboarding here —
-        // which this handler does for a local scope with no mc_username — would
-        // skip the chooser and force the local-only MC-username → API-key flow
-        // on someone who only meant to re-auth. AuthChoice's "Continue locally"
-        // still reaches the local path (→ home if an API key is saved, else
-        // onboarding). This handler wins the navigation race against the
-        // authState push because app:scope-changed is emitted after the async
-        // scope teardown, so the sign-out routing must live here. (Fix 260605.)
-        if (ev.reason === 'sign-out') { navigate({ kind: 'auth-choice' }); return; }
+        // Sign-out (account → local): straight to the scene's sign-in panel
+        // (260729; replaced AuthChoice here). Same signin variant as the boot
+        // route below — a signing-out user usually just wants to switch
+        // accounts, so no cutscene; re-auth, "I'm new here" (full scene), and
+        // continue-locally are all on the panel, covering the old "must show
+        // the chooser" concern (fix 260605). This handler wins the navigation
+        // race against the authState push because app:scope-changed is
+        // emitted after the async scope teardown, so the sign-out routing
+        // must live here.
+        if (ev.reason === 'sign-out') { navigate({ kind: 'onboard', signin: true }); return; }
         // Re-seed the credits store now that the scope has ACTUALLY switched.
         // The authState-keyed effect above already reset()+init()'d it from the
         // SYNCHRONOUS signed_in push — which fires BEFORE this async scope switch
@@ -487,6 +499,11 @@ export function App(): React.ReactElement {
           useCreditsStore.getState().reset();
           await useCreditsStore.getState().init();
         } catch { /* keep last */ }
+        // 260728 Sui onboarding: while the first-run scene is driving (view
+        // 'onboard'), it owns navigation — the sign-in that just landed came
+        // from the scene's own panel, and the scene continues into setup +
+        // generation itself. The data reloads above still ran.
+        if (useUiStore.getState().view.kind === 'onboard') return;
         // Onboarded but skin-setup still pending → resume the dedicated step.
         if (onboardedName && skinPending) { navigate({ kind: 'skin-setup' }); return; }
         // Onboarded account → home, on the HOME tab (which shows the welcome
@@ -517,7 +534,7 @@ export function App(): React.ReactElement {
             if (peek.hasData) { setImportOffer(peek); return; }
           } catch { /* fall through to onboarding */ }
         }
-        navigate({ kind: 'onboarding', isReonboard: false });
+        navigate({ kind: 'onboard' });
       })();
     });
   }, [navigate, setThemeMode, runQuestionnaireGate]);
@@ -534,13 +551,62 @@ export function App(): React.ReactElement {
       skinPending = cfg.skin_setup_pending === true;
     } catch { /* onboarding */ }
     try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
-    if (!onboardedName) { navigate({ kind: 'onboarding', isReonboard: false }); return; }
+    if (!onboardedName) { navigate({ kind: 'onboard' }); return; }
     if (skinPending) { navigate({ kind: 'skin-setup' }); return; }
     useUiStore.getState().setHomeTab('home');
     navigate({ kind: 'home' });
   }
 
   // ── Initial bootstrap: config → characters → first view (with floor) ──
+  /**
+   * Resume a tour the user quit mid-way (config.tutorial_state, 260730).
+   * Re-arms the store at the saved step and navigates to that step's screen,
+   * so a quit during the tutorial comes back to the SAME place — including
+   * the otherwise one-shot unique-reveal "say hello" page. Returns false
+   * (caller falls through to its normal destination) when nothing is armed.
+   */
+  const resumeSavedTutorial = useCallback(async (): Promise<boolean> => {
+    try {
+      const ts = (await sei.getConfig()).tutorial_state;
+      if (!ts) return false;
+      // 'tiles' resumes at 'games': the tiles step needs the games modal
+      // open, and only the games click reopens it. Unknown step names (from
+      // a newer client's config) degrade to the nearest safe start.
+      const STEP_MAP: Record<string, TutorialStep> = {
+        meet: 'meet',
+        sayhi: 'sayhi',
+        texting: 'texting',
+        games: 'games',
+        tiles: 'games',
+        terminal: 'terminal',
+        settings: 'settings',
+        sui: 'sui',
+        bye: 'bye',
+      };
+      let step: TutorialStep = STEP_MAP[ts.step] ?? (ts.characterId ? 'meet' : 'terminal');
+      let characterId = ts.characterId;
+      if (characterId && !useDataStore.getState().characters.some((c) => c.id === characterId)) {
+        // The companion is gone (deleted mid-tour): degrade to the reduced tour.
+        characterId = null;
+      }
+      if (!characterId && ['meet', 'sayhi', 'texting', 'games'].includes(step)) step = 'terminal';
+      useTutorialStore.getState().resume(characterId, step);
+      if ((step === 'meet' || step === 'sayhi') && characterId) {
+        navigate({ kind: 'unique-reveal', characterId });
+      } else if ((step === 'texting' || step === 'games') && characterId) {
+        navigate({ kind: 'chat', characterId });
+      } else if (step === 'settings') {
+        navigate({ kind: 'settings' });
+      } else {
+        useUiStore.getState().setHomeTab('home');
+        navigate({ kind: 'home' });
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, [navigate]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -564,6 +630,8 @@ export function App(): React.ReactElement {
         const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
         setThemeMode(mode);
         applyTheme(mode);
+        // App UI language (260730): hydrate before the first localized render.
+        useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
         // ui-A7: seed the developer-console visibility from persisted config
         // BEFORE the first render of any view that mounts LogsBar — the
         // gate below reads useUiStore.devConsoleVisible directly.
@@ -579,6 +647,8 @@ export function App(): React.ReactElement {
         useUiStore.getState().setCallOverlayEnabled(cfg.call_overlay_enabled === true);
         // Conversation starters on quiet calls (default ON when absent).
         useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
+        // Per-character call backdrop mode (sparse: absent = never chosen).
+        useUiStore.getState().setCallBackdropPrefs(cfg.call_backdrop ?? {});
         // Sticky chat side-panel visibility (default shown).
         useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
         // Product analytics opt-out (default OFF = analytics on). Without this
@@ -643,25 +713,35 @@ export function App(): React.ReactElement {
       const currentAuth = useAuthStore.getState().state;
       if (currentAuth.kind === 'signed_in') {
         // 260603: a signed-in account that hasn't onboarded yet (no
-        // preferred_name in its profile) is a fresh account → onboarding.
-        // Onboarded-but-skin-pending → resume the dedicated skin-setup step.
-        // Otherwise home, on the Home tab (which shows the welcome message).
+        // preferred_name in its profile) is a fresh account → the Sui
+        // onboarding scene (260728; it skips its sign-in step when a session
+        // is already live). Onboarded-but-skin-pending → resume the dedicated
+        // skin-setup step. Otherwise home, on the Home tab.
         if (!onboardedName) {
-          navigate({ kind: 'onboarding', isReonboard: false });
+          navigate({ kind: 'onboard' });
         } else if (skinPending) {
           navigate({ kind: 'skin-setup' });
+        } else if (await resumeSavedTutorial()) {
+          // Quit mid-tutorial last time: back to the same step and screen.
         } else {
           useUiStore.getState().setHomeTab('home');
           navigate({ kind: 'home' });
         }
+      } else if (!onboardedName) {
+        // Fresh install (nothing configured on the local profile) → the Sui
+        // onboarding scene, which owns sign-in/sign-up/continue-locally.
+        navigate({ kind: 'onboard' });
       } else {
-        navigate({ kind: 'auth-choice' });
+        // Signed-out profile that HAS onboarded: the scene mounted directly
+        // at its sign-in panel (260729; replaced AuthChoice). No cutscene —
+        // a local BYOK launch stays one "Continue locally" click.
+        navigate({ kind: 'onboard', signin: true });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [navigate, setThemeMode]);
+  }, [navigate, setThemeMode, resumeSavedTutorial]);
 
   // Skin setup runs the first time the Minecraft surface is opened (260725,
   // maybeOfferSkinSetup in lib/gameLaunch.ts) — onboarding no longer arms
@@ -676,8 +756,8 @@ export function App(): React.ReactElement {
   //    Downward (signed_in → local): BL-04 fix — sign-out from Settings or a
   //    successful delete-account flips authState to 'local' but the user was
   //    parked on the Settings view, whose Account panel is now hidden,
-  //    leaving them stranded. Route them back to AuthChoice so the next step
-  //    (re-sign-in, or proceed as local) is reachable.
+  //    leaving them stranded. Route them to the Sui onboarding scene so the
+  //    next step (re-sign-in, or proceed as local) is reachable.
   //
   //    ITEM 16 (quick/260523-t8d): the previous unconditional
   //    "authState.kind === 'local' && view.kind === 'settings' → auth-choice"
@@ -711,7 +791,9 @@ export function App(): React.ReactElement {
     ) {
       // Only bounce on the actual downward transition — direct navigation to
       // Settings from IconRail while ALREADY in local mode is allowed.
-      navigate({ kind: 'auth-choice' });
+      // 260729: lands on the scene's sign-in panel, same destination as the
+      // scope-changed sign-out route above.
+      navigate({ kind: 'onboard', signin: true });
     }
     prevAuthKindRef.current = authState.kind;
   }, [authState, view.kind, navigate, setHomeTab]);
@@ -729,6 +811,7 @@ export function App(): React.ReactElement {
   //    `scopeSwitchPendingRef` suppresses this effect during that window so the
   //    two paths never fight. A sign-out clears the checked-ref so a different
   //    account is re-checked next time.
+  const tutorialActive = useTutorialStore((s) => s.active);
   useEffect(() => {
     if (authState.kind !== 'signed_in') {
       prefsCheckedForUserRef.current = null;
@@ -736,18 +819,82 @@ export function App(): React.ReactElement {
     }
     if (view.kind !== 'home') return;
     if (scopeSwitchPendingRef.current) return; // wait for onScopeChanged
+    // 260728: never interrupt Sui's tour with the questionnaire (a user who
+    // skipped companion creation has unanswered prefs; the Awaken gate — or
+    // this effect on the next Home render after the tour — re-asks).
+    if (tutorialActive) return;
     let cancelled = false;
     void runQuestionnaireGate(authState.user.id, { isCancelled: () => cancelled });
     return () => {
       cancelled = true;
     };
-  }, [authState, view.kind, runQuestionnaireGate]);
+  }, [authState, view.kind, tutorialActive, runQuestionnaireGate]);
+
+  // ── Sui onboarding completion (260728): route + arm the tutorial. ─────
+  const handleOnboardComplete = useCallback(
+    (res: OnboardResult) => {
+      void (async () => {
+        // The scene saved config + possibly generated a companion; pull the
+        // fresh state before landing anywhere.
+        try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
+        try { await useLibraryStateStore.getState().refresh(); } catch { /* none */ }
+        // Re-fetch ToS status: the store's cached value was read at the
+        // signed_in transition, racing the signup path's fire-and-forget
+        // acceptance insert, and a stale `false` mounts the blocking legal
+        // modal over the tutorial (260729).
+        void useAuthStore.getState().refreshTosStatus();
+        if (res.tutorial) {
+          useTutorialStore.getState().start(res.characterId);
+          if (res.characterId) {
+            // Land on the character reveal page (portrait + "Say hello"); the
+            // tour's say-hi step spotlights that button.
+            navigate({ kind: 'unique-reveal', characterId: res.characterId });
+          } else {
+            setHomeTab('home');
+            navigate({ kind: 'home' });
+          }
+        } else if (await resumeSavedTutorial()) {
+          // A BYOK profile boots through the sign-in scene ("Continue
+          // locally"), so its mid-tour quit resumes HERE, not in the boot
+          // routing above.
+        } else {
+          setHomeTab('home');
+          navigate({ kind: 'home' });
+        }
+      })();
+    },
+    [navigate, setHomeTab, resumeSavedTutorial],
+  );
 
   // B5: LoadingScreen is gone — the renderer routes directly to the initial
   // view in the bootstrap effect above. The 'loading' view variant is a
   // transient state before that effect resolves; render nothing for a frame
   // rather than mounting the prior boot pulse.
   if (view.kind === 'loading') return <></>;
+
+  // 260728: the Sui onboarding scene is chromeless — no MacosWindow drag
+  // strip, no version tag, no rail; the mac traffic lights hide over IPC
+  // while it is mounted (OnboardApp's own effect).
+  if (view.kind === 'onboard') {
+    // key: a signin-variant mount must not reuse a full-scene instance's
+    // state (and vice versa) if the view flips between them.
+    return (
+      <OnboardApp
+        key={view.signin ? 'signin' : 'full'}
+        startAtSignIn={view.signin === true}
+        onStartFresh={() => navigate({ kind: 'onboard' })}
+        onComplete={handleOnboardComplete}
+      />
+    );
+  }
+
+  // 260731 — the two in-app scenes Sui also fronts. Same stage, same reasons
+  // for bypassing MacosWindow: the art is the window. Unlike the first-run
+  // ritual these keep the macOS traffic lights (a routine surface should not
+  // take the OS chrome away mid-session) and their corner X leaves the scene
+  // rather than quitting Sei.
+  if (view.kind === 'sui-prefs') return <SuiPrefsScene next={view.next} />;
+  if (view.kind === 'sui-meet') return <SuiMeetScene />;
 
   // The IconRail is suppressed on the full-page entry surfaces (onboarding /
   // sign-in / skin setup). MacosWindow needs the same signal so its top-bar
@@ -760,9 +907,11 @@ export function App(): React.ReactElement {
     // 260703 procgen — the unique-companion flow + first-sign-in questionnaire
     // are full-page ritual surfaces (like onboarding), so the rail is hidden.
     view.kind === 'profile-questions' ||
-    view.kind === 'unique-gender' ||
-    view.kind === 'unique-casting' ||
-    view.kind === 'unique-reveal';
+    view.kind === 'unique-reveal' ||
+    // 260728 — a game surface asked for in-app fullscreen. No view test is
+    // needed: the flag is set and cleared by the mounted game surface itself
+    // (see useUiStore.gameFullscreen), so it cannot outlive the game.
+    gameFullscreen;
 
   // ── Custom background (260724) ────────────────────────────────────────
   // The image (plus its brightness dim) is painted WINDOW-WIDE by
@@ -819,7 +968,7 @@ export function App(): React.ReactElement {
           {authState.kind === 'signed_in' && !authState.user.emailVerified ? (
             <Banner
               kind="warn"
-              message="Verify your email to publish companions or buy credits. Check your inbox for a link from Sei."
+              message={t('Verify your email to publish companions or buy credits. Check your inbox for a link from Sei.')}
             />
           ) : null}
           {/*
@@ -834,7 +983,7 @@ export function App(): React.ReactElement {
             <Banner
               kind="warn"
               /* signed_in-gated by the conditional above */
-              message="Your system has no keyring, so Sei is storing your sign-in less securely. Install gnome-keyring or kwallet for full protection."
+              message={t('Your system has no keyring, so Sei is storing your sign-in less securely. Install gnome-keyring or kwallet for full protection.')}
               onDismiss={() => {
                 // Optimistic local dismiss + best-effort persistence.
                 setWarnings((w) => ({ ...w, sessionDismissed: true }));
@@ -852,7 +1001,7 @@ export function App(): React.ReactElement {
           {warnings.keychainFallbackPlaintext && !warnings.keychainDismissed ? (
             <Banner
               kind="warn"
-              message={ERROR_COPY.KEYCHAIN_FALLBACK_PLAINTEXT}
+              message={t(ERROR_COPY.KEYCHAIN_FALLBACK_PLAINTEXT)}
               onDismiss={() => setWarnings((w) => ({ ...w, keychainDismissed: true }))}
             />
           ) : null}
@@ -908,6 +1057,7 @@ export function App(): React.ReactElement {
                 {view.kind === 'voice-call' && (
                   <VoiceCallScreen characterId={view.characterId} />
                 )}
+                {view.kind === 'draw' && <DrawScreen characterId={view.characterId} />}
                 {view.kind === 'settings' && <SettingsScreen />}
                 {view.kind === 'credits' && <CreditsScreen />}
                 {view.kind === 'receipt' && <ReceiptScreen />}
@@ -926,10 +1076,6 @@ export function App(): React.ReactElement {
                     }}
                   />
                 )}
-                {view.kind === 'unique-gender' && <UniqueGenderScreen />}
-                {view.kind === 'unique-casting' && (
-                  <UniqueCastingScreen gender={view.gender} />
-                )}
                 {view.kind === 'unique-reveal' && (
                   <UniqueRevealScreen characterId={view.characterId} />
                 )}
@@ -940,6 +1086,10 @@ export function App(): React.ReactElement {
                   chrome row; elsewhere the icon-rail badge is the ambient
                   call indicator. */}
               <CallMiniBar />
+              {/* 260730 — bottom-right picture-in-picture tile: a live game
+                  or call that is not on screen floats here (game replaces
+                  call when both are away). */}
+              <MiniTile />
               {/*
                 LogsBar — quick task 260508-mun item 5. Hidden during
                 onboarding and auth-choice (pre-app surfaces).
@@ -1036,8 +1186,14 @@ export function App(): React.ReactElement {
         first-time users that bypassed the signup checkbox, and any user signed
         in before a TOS_VERSION bump). On accept, refreshTosStatus() flips
         tosAccepted → true and this conditional unmounts.
+        260729: suppressed while Sui's tutorial runs. Onboarding already
+        handled ToS (signup checkbox / the scene's own gate); this modal
+        appearing there was a stale cache read racing the fire-and-forget
+        acceptance insert, and it sat over the tour and froze it.
+        handleOnboardComplete re-fetches the status, so a genuinely
+        unaccepted user still gets the gate right after the tour.
       */}
-      {authState.kind === 'signed_in' && tosAccepted === false ? (
+      {authState.kind === 'signed_in' && tosAccepted === false && !tutorialActive ? (
         <AcceptToSModal
           onAccepted={() => {
             // Mirror main's privacy re-consent (tos:accept clears
@@ -1097,6 +1253,13 @@ export function App(): React.ReactElement {
       {passwordRecovery && authState.kind === 'signed_in' ? (
         <SetNewPasswordModal onClose={() => setPasswordRecovery(false)} />
       ) : null}
+      {/*
+        260728 — Sui's post-onboarding tour. Unconditional mount: the
+        component returns null unless useTutorialStore.active. Sits above
+        every modal (z 4000) because the games-popup step spotlights the open
+        GamesPickerModal.
+      */}
+      <TutorialOverlay />
     </>
   );
 }

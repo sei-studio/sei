@@ -14,12 +14,16 @@ const signUpMock = vi.fn();
 // handler fails open to the generic (provider-less) already-registered message;
 // per-test overrides report a provider list (e.g. ['google']).
 const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
+// 260729 silent forgot-password: signUp on a registered email quietly sends a
+// reset link instead of surfacing already_registered. Default resolves ok.
+const resetPasswordForEmailMock = vi.fn().mockResolvedValue({ data: {}, error: null });
 
 vi.mock('./supabaseClient', () => ({
   getClient: () => ({
     auth: {
       signInWithPassword: (...args: unknown[]) => signInWithPasswordMock(...args),
       signUp: (...args: unknown[]) => signUpMock(...args),
+      resetPasswordForEmail: (...args: unknown[]) => resetPasswordForEmailMock(...args),
     },
     rpc: (...args: unknown[]) => rpcMock(...args),
   }),
@@ -50,6 +54,7 @@ beforeEach(() => {
   signInWithPasswordMock.mockReset();
   signUpMock.mockReset();
   rpcMock.mockReset().mockResolvedValue({ data: null, error: null });
+  resetPasswordForEmailMock.mockReset().mockResolvedValue({ data: {}, error: null });
   checkSignupCooldownMock.mockReset().mockResolvedValue({ allowed: true, retryAfterMs: 0 });
   recordSignupAttemptMock.mockReset().mockResolvedValue(undefined);
   // Default: signup-guard fetch returns 200 (allowed). Tests override per-case.
@@ -134,24 +139,20 @@ describe('signUpWithPassword', () => {
     expect(r).toEqual({ ok: true, requiresVerification: false });
   });
 
-  it('260605 no-silent-failure: surfaces "User already registered" honestly (case b)', async () => {
-    // The explicit Supabase "already registered" error is no longer masked as a
-    // neutral success — we tell the user the account exists so signup can't
-    // silently send nothing. The provider lookup (getClient().rpc) is absent in
-    // this mock → fails open to the generic (provider-less) message.
+  it('260729 silent forgot-password: "User already registered" error returns neutral success and sends a reset (case b)', async () => {
+    // Anti-enumeration: the explicit Supabase "already registered" error is
+    // indistinguishable in-app from a fresh signup. The legitimate owner gets
+    // a password-reset link in their inbox instead.
     signUpMock.mockResolvedValue({
       data: { session: null },
       error: { message: 'User already registered' },
     });
     const r = await signUpWithPassword({ email: 'a@b.com', password: 'longenough', dobYear: 1990, dobMonth: 6, dobDay: 15 });
-    expect(r).toEqual({
-      ok: false,
-      code: 'already_registered',
-      message: 'An account with this email already exists. Sign in instead.',
-    });
+    expect(r).toEqual({ ok: true, requiresVerification: true });
+    expect(resetPasswordForEmailMock).toHaveBeenCalledWith('a@b.com', expect.anything());
   });
 
-  it('260605 no-silent-failure: surfaces already-registered obfuscation (empty identities) honestly (case a)', async () => {
+  it('260729 silent forgot-password: already-registered obfuscation (empty identities) returns neutral success and sends a reset (case a)', async () => {
     // Supabase's enumeration-resistance: signUp on an already-registered email
     // with email-confirm enabled returns success with user.identities = [].
     signUpMock.mockResolvedValue({
@@ -159,28 +160,22 @@ describe('signUpWithPassword', () => {
       error: null,
     });
     const r = await signUpWithPassword({ email: 'a@b.com', password: 'longenough', dobYear: 1990, dobMonth: 6, dobDay: 15 });
-    expect(r).toEqual({
-      ok: false,
-      code: 'already_registered',
-      message: 'An account with this email already exists. Sign in instead.',
-    });
+    expect(r).toEqual({ ok: true, requiresVerification: true });
+    expect(resetPasswordForEmailMock).toHaveBeenCalledWith('a@b.com', expect.anything());
   });
 
-  it('260605: names the provider when the existing account is OAuth-only (Google)', async () => {
-    // With a working provider lookup that reports a Google-only account, the
-    // message steers the user to Continue with Google.
+  it('260729 silent forgot-password: OAuth-only account still gets neutral success, but NO reset email', async () => {
+    // sendPasswordReset refuses OAuth-only accounts (a reset link would graft
+    // a password identity onto a Google account). Accepted cost of staying
+    // silent: no email goes out, and the response stays indistinguishable.
     signUpMock.mockResolvedValue({
       data: { session: null, user: { id: 'u1', identities: [] } },
       error: null,
     });
     rpcMock.mockResolvedValue({ data: ['google'], error: null });
     const r = await signUpWithPassword({ email: 'a@b.com', password: 'longenough', dobYear: 1990, dobMonth: 6, dobDay: 15 });
-    expect(r).toEqual({
-      ok: false,
-      code: 'already_registered',
-      provider: 'Google',
-      message: 'You already have a Sei account with this email via Google. Use “Continue with Google” to sign in.',
-    });
+    expect(r).toEqual({ ok: true, requiresVerification: true });
+    expect(resetPasswordForEmailMock).not.toHaveBeenCalled();
   });
 
   it('maps "Password should be at least 8 characters" to weak_password', async () => {

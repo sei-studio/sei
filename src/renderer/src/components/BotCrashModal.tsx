@@ -13,6 +13,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -25,35 +26,46 @@ export interface BotCrashModalProps {
 }
 
 export function BotCrashModal({ characterId }: BotCrashModalProps): React.ReactElement {
+  const t = useT();
   const closeModal = useUiStore((s) => s.closeModal);
   const analyticsOptOut = useUiStore((s) => s.analyticsOptOut);
-  const name = useDataStore(
-    (s) => s.characters.find((c) => c.id === characterId)?.name ?? 'Your companion',
-  );
+  const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
+  const name = rawName ?? t('Your companion');
   const onSummonAgain = (): void => {
     closeModal();
     void attemptSummon(characterId);
   };
+  // Keep the <strong> around the name: translate with the {name} placeholder
+  // intact, then split on it and re-insert the styled node.
+  const [bodyBefore, bodyAfter] = t(
+    'Something went wrong and {name} disconnected. Sorry about that.',
+  ).split('{name}');
   return (
     <ModalShell
-      title="Connection lost"
+      title={t('Connection lost')}
       width={480}
       scrimClose
       onClose={closeModal}
-      aria-label="Connection lost"
+      aria-label={t('Connection lost')}
     >
       <p className={styles.body}>
-        Something went wrong and <strong>{name}</strong> disconnected. Sorry about that.{' '}
+        {bodyBefore}
+        <strong>{name}</strong>
+        {bodyAfter}{' '}
         {analyticsOptOut
-          ? 'Crash reports are turned off, so nothing was sent. You can turn them on in Settings to help us fix issues like this.'
-          : 'A crash report was sent automatically and we will work on a fix. You can turn off crash reports in Settings.'}
+          ? t(
+              'Crash reports are turned off, so nothing was sent. You can turn them on in Settings to help us fix issues like this.',
+            )
+          : t(
+              'A crash report was sent automatically and we will work on a fix. You can turn off crash reports in Settings.',
+            )}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeModal}>
-          Close
+          {t('Close')}
         </Button>
         <Button kind="primary" size="md" onClick={onSummonAgain}>
-          Summon again
+          {t('Summon again')}
         </Button>
       </ModalFooter>
     </ModalShell>

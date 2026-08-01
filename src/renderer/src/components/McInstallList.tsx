@@ -10,6 +10,7 @@
 import React from 'react';
 import type { McInstall } from '@shared/ipc';
 import { McInstallRow } from './McInstallRow';
+import { useT } from '../lib/i18n';
 import styles from './McInstallList.module.css';
 
 export interface McInstallListProps {
@@ -23,8 +24,9 @@ export function McInstallList({
   selectedIds,
   onToggle,
 }: McInstallListProps): React.ReactElement {
+  const t = useT();
   return (
-    <div className={styles.list} role="group" aria-label="Detected Minecraft installs">
+    <div className={styles.list} role="group" aria-label={t('Detected Minecraft installs')}>
       {installs.map((install) => (
         <McInstallRow
           key={install.id}

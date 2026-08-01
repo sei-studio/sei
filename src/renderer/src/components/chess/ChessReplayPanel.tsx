@@ -25,6 +25,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useChessStore, boardUiFor, replayKeyFor } from '../../lib/stores/useChessStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
+import { useT } from '../../lib/i18n';
 import { FlipIcon } from '../icons';
 import { ChessBoard3D } from './ChessBoard3D';
 import { capturedMaterial } from './chessUtil';
@@ -36,13 +37,14 @@ export interface ChessReplayPanelProps {
 }
 
 export function ChessReplayPanel({ characterId }: ChessReplayPanelProps): React.ReactElement | null {
+  const t = useT();
   const replayKey = replayKeyFor(characterId);
   const game = useChessStore((s) => s.games[replayKey] ?? null);
   const ui = useChessStore((s) => boardUiFor(s, replayKey));
   const setUi = useChessStore((s) => s.setUi);
 
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
-  const name = character?.name ?? 'Companion';
+  const name = character?.name ?? t('Companion');
 
   // Viewed position: scrubbed frame, else the final position.
   const viewedFen = useMemo(() => {
@@ -101,7 +103,7 @@ export function ChessReplayPanel({ characterId }: ChessReplayPanelProps): React.
   if (!game) return null;
 
   return (
-    <div className={styles.panel} aria-label={`Chess replay with ${name}`}>
+    <div className={styles.panel} aria-label={t('Chess replay with {name}', { name })}>
       <div className={styles.stage}>
         <div className={styles.boardFill}>
           <ChessBoard3D characterId={replayKey} companionName={name} />
@@ -110,13 +112,13 @@ export function ChessReplayPanel({ characterId }: ChessReplayPanelProps): React.
         <div className={styles.hud}>
           {/* Top-left: flip, stacked above the opponent captures. */}
           <div className={styles.hudTopLeft}>
-            <div className={styles.hudControls} role="group" aria-label="Replay controls">
+            <div className={styles.hudControls} role="group" aria-label={t('Replay controls')}>
               <button
                 type="button"
                 className={styles.ctrlBtn}
                 onClick={() => setUi(replayKey, { flip: !(ui.flip ?? false) })}
-                aria-label="Flip board"
-                data-tip="Flip board"
+                aria-label={t('Flip board')}
+                data-tip={t('Flip board')}
                 data-tip-edge="left"
               >
                 <FlipIcon size={16} />
@@ -127,7 +129,7 @@ export function ChessReplayPanel({ characterId }: ChessReplayPanelProps): React.
                 <CapturedRow
                   pieces={capturedStrips.top.pieces}
                   diff={capturedStrips.top.diff}
-                  label={capturedStrips.top.label}
+                  label={t(capturedStrips.top.label)}
                 />
               </div>
             ) : null}
@@ -140,7 +142,7 @@ export function ChessReplayPanel({ characterId }: ChessReplayPanelProps): React.
                 <CapturedRow
                   pieces={capturedStrips.bottom.pieces}
                   diff={capturedStrips.bottom.diff}
-                  label={capturedStrips.bottom.label}
+                  label={t(capturedStrips.bottom.label)}
                 />
               </div>
             </div>
@@ -150,7 +152,7 @@ export function ChessReplayPanel({ characterId }: ChessReplayPanelProps): React.
           <div className={styles.hudTopRight}>
             <div className={styles.moves} ref={listRef}>
               {game.history.length === 0 ? (
-                <div className={styles.movesEmpty}>No moves</div>
+                <div className={styles.movesEmpty}>{t('No moves')}</div>
               ) : (
                 pairs(game.history.length).map(([wi, bi], n) => (
                   <div key={n} className={styles.moveRow}>
@@ -175,7 +177,7 @@ export function ChessReplayPanel({ characterId }: ChessReplayPanelProps): React.
                 className={styles.backToLive}
                 onClick={() => setUi(replayKey, { viewPly: null })}
               >
-                Final position
+                {t('Final position')}
               </button>
             ) : null}
           </div>

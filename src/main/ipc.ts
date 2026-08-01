@@ -32,6 +32,7 @@ import {
   type BotStatus,
   type ChatPreview,
   type ChatMessage,
+  type SpokenLineContext,
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { loadConfig, saveConfig } from './configStore';
@@ -182,7 +183,7 @@ export interface IpcHandlerDeps {
    * renderer (the `chat:message` channel, no re-persist). Backs the streaming
    * voice turn's per-sentence emit. Wired in index.ts to pushChatMessage.
    */
-  pushChatMessage?: (characterId: string, message: ChatMessage) => void;
+  pushChatMessage?: (characterId: string, message: ChatMessage, speech?: SpokenLineContext) => void;
   /**
    * Voice calls (260705): a call that was actually LIVE just ended (renderer
    * reports how long audio flowed). Posts the "You and X called for Y" system
@@ -1171,6 +1172,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         if (handled) return handled;
       }
     }
+    // Draw! (260729): same routing while a Draw! game is live — a chat-screen
+    // message or a line dictated on a live voice call lands in the game as a
+    // guess/table talk. The character's side comes back over the draw:state
+    // push (and as spoken voice pushes on a call), so `replies` stays empty.
+    {
+      const draw = await import('./draw/drawService');
+      const handled = await draw.handlePlayerChat({
+        characterId: args.characterId,
+        text: args.text,
+      });
+      if (handled) return handled;
+    }
     // Fresh world-detection pass before the prompt is built (260703): the
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
     // Skipped mid-call — a live voice call cannot be opening a world, and this
@@ -1196,7 +1209,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         },
         // Voice streaming (260706): push each streamed sentence to the renderer
         // the instant it completes, so TTS starts on sentence 1.
-        emitReply: (id, message) => deps.pushChatMessage?.(id, message),
+        // `speech` carries the sentence's place in its reply, which is what
+        // TTS conditions the clip's opening and closing contour on (260729).
+        emitReply: (id, message, speech) => deps.pushChatMessage?.(id, message, speech),
       },
     );
   });
@@ -1255,6 +1270,96 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const args = z.object({ characterId: IdSchema, uci: z.string().min(4).max(5) }).parse(argsRaw);
     const chess = await import('./chess/chessService');
     return await chess.ackReveal(args.characterId, args.uci);
+  });
+
+  // ── Draw! minigame (260727) ───────────────────────────────────────────────
+  // Thin wrappers over src/main/draw/drawService (module state initialized
+  // from index.ts via initDrawService). All character-scoped except `snapshot`,
+  // which is keyed by the requestId main handed out.
+  const PointSchema = z.object({ x: z.number().finite(), y: z.number().finite() });
+  const StrokeSchema = z.object({
+    id: z.string().min(1).max(64),
+    // Bounded so a runaway pointer handler cannot post an unbounded array
+    // across the bridge; the renderer decimates before sending.
+    points: z.array(PointSchema).min(2).max(4000),
+  });
+
+  ipcMain.handle(IpcChannel.draw.open, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    return await draw.openDraw(id);
+  });
+  ipcMain.handle(IpcChannel.draw.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, rounds: z.number().int().min(1).max(5) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    return await draw.startDraw(args.characterId, args.rounds);
+  });
+  ipcMain.handle(IpcChannel.draw.newGame, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    return await draw.newDrawGame(id);
+  });
+  ipcMain.handle(IpcChannel.draw.pickWord, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, word: z.string().min(1).max(64) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    return draw.pickDrawWord(args.characterId, args.word);
+  });
+  ipcMain.handle(IpcChannel.draw.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    return draw.getDrawState(id);
+  });
+  ipcMain.handle(IpcChannel.draw.stroke, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, stroke: StrokeSchema }).parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    draw.playerStroke(args.characterId, args.stroke);
+  });
+  ipcMain.handle(IpcChannel.draw.erase, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, strokeId: z.string().min(1).max(64) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    draw.playerErase(args.characterId, args.strokeId);
+  });
+  ipcMain.handle(IpcChannel.draw.chat, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, text: z.string().min(1).max(2000) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    await draw.playerChat(args.characterId, args.text);
+  });
+  ipcMain.handle(IpcChannel.draw.snapshot, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        requestId: z.string().min(1).max(64),
+        // A 1000x700 black-on-white doodle PNG is a few KB; the ceiling is a
+        // sanity bound, not a target.
+        dataUrl: z.string().max(8_000_000),
+      })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    draw.receiveSnapshot(args.requestId, args.dataUrl);
+  });
+  ipcMain.handle(IpcChannel.draw.saveGallery, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, pngDataUrl: z.string().max(64_000_000) })
+      .parse(argsRaw);
+    const draw = await import('./draw/drawService');
+    return await draw.saveGallery(args.characterId, args.pngDataUrl);
+  });
+  ipcMain.handle(IpcChannel.draw.resume, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    draw.resumeDraw(id);
+  });
+  ipcMain.handle(IpcChannel.draw.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    await draw.endDraw(id);
   });
 
   // ── Minecraft dashboard (260721) ──────────────────────────────────────────
@@ -1400,6 +1505,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         characterId: IdSchema,
         quietSeconds: z.number().nonnegative().max(3600),
         peers: z.array(z.string()).default([]),
+        awaitingAnswer: z.boolean().default(false),
       })
       .parse(argsRaw);
     const { sendVoiceIdleTurn } = await import('./chat/chatService');
@@ -1407,6 +1513,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // voice.companionTurn handler below for the full story).
     const idleWorldOpen = deps.getLanState().kind === 'open';
     return await sendVoiceIdleTurn(args.characterId, args.quietSeconds, args.peers, {
+      awaitingAnswer: args.awaitingAnswer,
       openWorldDetected: idleWorldOpen,
       onLaunch: idleWorldOpen
         ? () => {
@@ -1529,13 +1636,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.voice.preview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
-    // Playground params (260725): pitch/calmness are optional and re-clamped
-    // inside voicePreviewTts, so a stale renderer sending junk can only get a
-    // valid preview, never a bad upstream request.
+    // Playground params (260725): calmness is optional and re-clamped inside
+    // voicePreviewTts, so a stale renderer sending junk can only get a valid
+    // preview, never a bad upstream request. `pitch` was dropped from the
+    // payload at 260731 (it is applied at playback now) and zod strips unknown
+    // keys, so a renderer still sending it is a no-op rather than an error.
     const args = z
       .object({
         voiceId: z.string().min(1).max(64),
-        pitch: z.number().finite().optional(),
         calmness: z.number().finite().optional(),
       })
       .parse(argsRaw);
@@ -1707,6 +1815,56 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await saveCharacterRaw({ ...char, shared: true });
     trackAnalytics('character_shared', { character_id: char.id });
   });
+
+  // 260729 — save a copy of the character's full portrait art to disk (the
+  // profile page's expand-art popup). Resolves the portrait ref the same way
+  // the renderer's portraitSrc does: https URL (cloud), renderer-relative
+  // bundled asset, or a bare '<uuid>.png' in the profile's portraits dir.
+  ipcMain.handle(
+    IpcChannel.chars.exportPortrait,
+    async (_event, idArg: unknown): Promise<string | null> => {
+      const id = IdSchema.parse(idArg);
+      const char = await getCharacter(id);
+      const ref = char?.portrait_image;
+      if (!char || !ref) return null;
+
+      const { readFile, writeFile } = await import('node:fs/promises');
+      const path = await import('node:path');
+      let bytes: Buffer;
+      if (/^https?:/i.test(ref)) {
+        const res = await fetch(ref);
+        if (!res.ok) throw new Error(`Could not fetch the art (${res.status}).`);
+        bytes = Buffer.from(await res.arrayBuffer());
+      } else if (ref.includes('/')) {
+        // Bundled default portrait ('./img/x.png'): the file ships with the
+        // renderer build (out/renderer when packaged, public/ in dev).
+        const rel = ref.replace(/^\.\//, '');
+        const base = app.isPackaged
+          ? path.join(app.getAppPath(), 'out', 'renderer')
+          : path.join(app.getAppPath(), 'src', 'renderer', 'public');
+        bytes = await readFile(path.join(base, rel));
+      } else {
+        bytes = await readFile(path.join(paths.portraitsDir(), ref));
+      }
+
+      const { dialog } = await import('electron');
+      const safe =
+        char.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'companion';
+      let dir: string;
+      try {
+        dir = app.getPath('desktop');
+      } catch {
+        dir = app.getPath('downloads');
+      }
+      const picked = await dialog.showSaveDialog({
+        defaultPath: path.join(dir, `${safe}.png`),
+        filters: [{ name: 'PNG image', extensions: ['png'] }],
+      });
+      if (picked.canceled || !picked.filePath) return null;
+      await writeFile(picked.filePath, bytes);
+      return picked.filePath;
+    },
+  );
 
   // Phase 11 plan 17 — list the UUIDs of the signed-in user's cloud characters.
   // Drives the renderer's "LOCAL ONLY" chip: a character is "local only" when
@@ -2177,9 +2335,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { exportData } = await import('./auth/authHandlers');
     return await exportData();
   });
-  ipcMain.handle(IpcChannel.auth.resendVerification, async () => {
+  ipcMain.handle(IpcChannel.auth.resendVerification, async (_e, argsRaw: unknown) => {
+    // Optional { email }: the onboarding verify panel passes the just-signed-up
+    // address explicitly, because an unverified signup has no session for the
+    // handler's signed-in fallback to read (260729).
+    const email =
+      argsRaw !== null &&
+      typeof argsRaw === 'object' &&
+      typeof (argsRaw as { email?: unknown }).email === 'string'
+        ? (argsRaw as { email: string }).email
+        : undefined;
     const { resendVerification } = await import('./auth/authHandlers');
-    return await resendVerification();
+    return await resendVerification(email);
   });
   ipcMain.handle(IpcChannel.auth.sendPasswordReset, async (_e, argsRaw: unknown) => {
     const args = SendPasswordResetSchema.parse(argsRaw);
@@ -2724,6 +2891,39 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.window.isFullscreen, async (event): Promise<boolean> => {
     return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
+  });
+
+  // === Onboarding chrome toggle (260728) ===
+  // The Sui scene renders without any window chrome; on macOS that means the
+  // native traffic lights have to actually hide. No-op elsewhere (Windows'
+  // custom controls simply aren't mounted on that surface).
+  ipcMain.handle(IpcChannel.window.setButtonsVisible, async (event, visible: unknown): Promise<void> => {
+    if (process.platform !== 'darwin') return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.setWindowButtonVisibility(visible === true);
+  });
+
+  // === App quit (260730) — onboarding's X ===
+  // A plain window close on macOS leaves the app alive in the dock with no
+  // window, which reads as a broken exit during first-run. app.quit() runs the
+  // normal before-quit shutdown chain.
+  ipcMain.handle(IpcChannel.app.quit, async (): Promise<void> => {
+    app.quit();
+  });
+
+  // === Factory reset (260728) — Settings danger zone ===
+  ipcMain.handle(IpcChannel.app.factoryReset, async (): Promise<void> => {
+    const { runFactoryReset } = await import('./factoryReset');
+    await runFactoryReset({
+      stopEverything: async () => {
+        // Bots first (a live bot rewrites its memory dir on shutdown), then
+        // the game sessions. All idempotent; the before-quit chain re-runs
+        // them harmlessly after the wipe.
+        try { await deps.supervisor.shutdown(); } catch { /* best-effort */ }
+        try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
+        try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
+      },
+    });
   });
 
   // === Phase 13 — Proxy + billing + credits (PROXY-11 + D-57) ===

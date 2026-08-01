@@ -15,6 +15,7 @@
 
 import React from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './DmcaContactModal.module.css';
@@ -30,6 +31,7 @@ export interface DmcaContactModalProps {
 }
 
 export function DmcaContactModal({ onClose }: DmcaContactModalProps): React.ReactElement {
+  const t = useT();
   const openDirectory = (): void => {
     void sei.openExternal(DIRECTORY_LISTING_URL);
   };
@@ -38,10 +40,11 @@ export function DmcaContactModal({ onClose }: DmcaContactModalProps): React.Reac
   };
 
   return (
-    <ModalShell title="DMCA Designated Agent" onClose={onClose} scrimClose>
+    <ModalShell title={t('DMCA Designated Agent')} onClose={onClose} scrimClose>
       <p className={styles.lede}>
-        To report copyright infringement on a Sei companion, send a written DMCA notice to our
-        designated agent at:
+        {t(
+          'To report copyright infringement on a Sei companion, send a written DMCA notice to our designated agent at:',
+        )}
       </p>
       <p className={styles.email}>
         <a
@@ -55,21 +58,21 @@ export function DmcaContactModal({ onClose }: DmcaContactModalProps): React.Reac
         </a>
       </p>
       <p className={styles.note}>
-        Our agent&apos;s full statutory contact details (name, mailing address, phone) are published
-        in the public US Copyright Office Designated Agent Directory and on our Terms of Service
-        page.
+        {t(
+          "Our agent's full statutory contact details (name, mailing address, phone) are published in the public US Copyright Office Designated Agent Directory and on our Terms of Service page.",
+        )}
       </p>
       <div className={styles.links}>
         <Button kind="ghost" size="md" onClick={openDirectory}>
-          Open USCO directory listing
+          {t('Open USCO directory listing')}
         </Button>
         <Button kind="ghost" size="md" onClick={() => void sei.openExternal(TERMS_URL)}>
-          Open Terms §7
+          {t('Open Terms §7')}
         </Button>
       </div>
       <ModalFooter>
         <Button kind="primary" size="md" onClick={onClose}>
-          Close
+          {t('Close')}
         </Button>
       </ModalFooter>
     </ModalShell>

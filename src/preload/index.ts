@@ -60,6 +60,9 @@ const api: RendererApi = {
   // Phase 11 D-16 — public/private toggle.
   charsSetShared: (args) => ipcRenderer.invoke(IpcChannel.chars.setShared, args),
 
+  // 260729 — save full portrait art to disk (native save dialog).
+  charsExportPortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.exportPortrait, id),
+
   // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
   checkCreateQuota: () => ipcRenderer.invoke(IpcChannel.chars.checkCreateQuota),
 
@@ -119,6 +122,27 @@ const api: RendererApi = {
   chessEnd: (characterId) => ipcRenderer.invoke(IpcChannel.chess.end, characterId),
   chessAckReveal: (characterId, uci) =>
     ipcRenderer.invoke(IpcChannel.chess.ackReveal, { characterId, uci }),
+
+  // Draw! minigame (260727) — see src/shared/drawIpc.ts.
+  drawOpen: (characterId) => ipcRenderer.invoke(IpcChannel.draw.open, characterId),
+  drawStart: (characterId, rounds) =>
+    ipcRenderer.invoke(IpcChannel.draw.start, { characterId, rounds }),
+  drawNewGame: (characterId) => ipcRenderer.invoke(IpcChannel.draw.newGame, characterId),
+  drawPickWord: (characterId, word) =>
+    ipcRenderer.invoke(IpcChannel.draw.pickWord, { characterId, word }),
+  drawGetState: (characterId) => ipcRenderer.invoke(IpcChannel.draw.getState, characterId),
+  drawStroke: (characterId, stroke) =>
+    ipcRenderer.invoke(IpcChannel.draw.stroke, { characterId, stroke }),
+  drawErase: (characterId, strokeId) =>
+    ipcRenderer.invoke(IpcChannel.draw.erase, { characterId, strokeId }),
+  drawChat: (characterId, text) => ipcRenderer.invoke(IpcChannel.draw.chat, { characterId, text }),
+  drawSnapshot: (requestId, dataUrl) =>
+    ipcRenderer.invoke(IpcChannel.draw.snapshot, { requestId, dataUrl }),
+  drawSaveGallery: (characterId, pngDataUrl) =>
+    ipcRenderer.invoke(IpcChannel.draw.saveGallery, { characterId, pngDataUrl }),
+  drawEnd: (characterId) => ipcRenderer.invoke(IpcChannel.draw.end, characterId),
+  drawResume: (characterId) => ipcRenderer.invoke(IpcChannel.draw.resume, characterId),
+
   onChessState(cb) {
     const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
     ipcRenderer.on(IpcChannel.chess.state, handler);
@@ -128,6 +152,21 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
     ipcRenderer.on(IpcChannel.chess.download, handler);
     return () => ipcRenderer.off(IpcChannel.chess.download, handler);
+  },
+  onDrawState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.draw.state, handler);
+    return () => ipcRenderer.off(IpcChannel.draw.state, handler);
+  },
+  onDrawAiStroke(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.draw.aiStroke, handler);
+    return () => ipcRenderer.off(IpcChannel.draw.aiStroke, handler);
+  },
+  onDrawSnapshotRequest(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, r: Parameters<typeof cb>[0]) => cb(r);
+    ipcRenderer.on(IpcChannel.draw.snapshotRequest, handler);
+    return () => ipcRenderer.off(IpcChannel.draw.snapshotRequest, handler);
   },
 
   // Minecraft dashboard (260721)
@@ -208,7 +247,7 @@ const api: RendererApi = {
   signOut: () => ipcRenderer.invoke(IpcChannel.auth.signout),
   deleteAccount: () => ipcRenderer.invoke(IpcChannel.auth.deleteAccount),
   exportData: () => ipcRenderer.invoke(IpcChannel.auth.exportData),
-  resendVerification: () => ipcRenderer.invoke(IpcChannel.auth.resendVerification),
+  resendVerification: (args) => ipcRenderer.invoke(IpcChannel.auth.resendVerification, args),
   sendPasswordReset: (args) => ipcRenderer.invoke(IpcChannel.auth.sendPasswordReset, args),
   updatePassword: (args) => ipcRenderer.invoke(IpcChannel.auth.updatePassword, args),
   setCaptchaToken: (token: string | null) =>
@@ -381,6 +420,7 @@ const api: RendererApi = {
   windowMinimize: () => ipcRenderer.invoke(IpcChannel.window.minimize),
   windowMaximizeToggle: () => ipcRenderer.invoke(IpcChannel.window.maximizeToggle),
   windowClose: () => ipcRenderer.invoke(IpcChannel.window.close),
+  appQuit: () => ipcRenderer.invoke(IpcChannel.app.quit),
   windowIsMaximized: () => ipcRenderer.invoke(IpcChannel.window.isMaximized),
   windowFullscreenToggle: () => ipcRenderer.invoke(IpcChannel.window.fullscreenToggle),
   windowIsFullscreen: () => ipcRenderer.invoke(IpcChannel.window.isFullscreen),
@@ -394,6 +434,13 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.app.scopeChanged, handler);
     return () => ipcRenderer.off(IpcChannel.app.scopeChanged, handler);
   },
+
+  // --- Onboarding chrome toggle (260728) ---
+  windowSetButtonsVisible: (visible: boolean) =>
+    ipcRenderer.invoke(IpcChannel.window.setButtonsVisible, visible),
+
+  // --- Factory reset (260728) ---
+  factoryReset: () => ipcRenderer.invoke(IpcChannel.app.factoryReset),
 };
 
 contextBridge.exposeInMainWorld('sei', api);

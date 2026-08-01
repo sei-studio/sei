@@ -20,6 +20,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 import styles from './SkinPreview3d.module.css';
 
 export interface SkinPreview3dProps {
@@ -54,6 +55,7 @@ export function SkinPreview3d({
   personaName,
   className,
 }: SkinPreview3dProps): React.ReactElement {
+  const t = useT();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<SkinViewerLike | null>(null);
   const [fallback, setFallback] = useState<boolean>(false);
@@ -139,14 +141,14 @@ export function SkinPreview3d({
     };
   }, []);
 
-  const ariaLabel = `3D preview of ${personaName}'s skin`;
+  const ariaLabel = t("3D preview of {name}'s skin", { name: personaName });
   const frameClass = [styles.frame, className].filter(Boolean).join(' ');
 
   // ── Loading state: empty card frame with the "Loading preview…" copy. ───
   if (!pngDataUrl) {
     return (
       <div className={frameClass}>
-        <span className={styles.loadingHint}>Loading preview...</span>
+        <span className={styles.loadingHint}>{t('Loading preview...')}</span>
       </div>
     );
   }
@@ -163,7 +165,7 @@ export function SkinPreview3d({
           alt={ariaLabel}
         />
         <span className={styles.fallbackHint}>
-          3D preview unavailable. Showing 2D thumbnail.
+          {t('3D preview unavailable. Showing 2D thumbnail.')}
         </span>
       </div>
     );

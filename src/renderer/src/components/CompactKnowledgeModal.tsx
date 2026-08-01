@@ -7,6 +7,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
@@ -24,21 +25,24 @@ export function CompactKnowledgeModal({
   onCompact,
   onCancel,
 }: CompactKnowledgeModalProps): React.ReactElement {
+  const t = useT();
   return (
-    <ModalShell title="Compact memory?" onClose={onCancel} width={440}>
+    <ModalShell title={t('Compact memory?')} onClose={onCancel} width={440}>
       <p className={styles.body}>
-        We detected a large amount of files ({totalKb} KB), which can slow down the AI's
-        responses on calls and in games. We can compress them for you if you'd like.
+        {t(
+          "We detected a large amount of files ({kb} KB), which can slow down the AI's responses on calls and in games. We can compress them for you if you'd like.",
+          { kb: totalKb },
+        )}
       </p>
       <p className={styles.body}>
-        Only Sei's copy is compressed. The original files on your computer are not changed.
+        {t("Only Sei's copy is compressed. The original files on your computer are not changed.")}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onKeep}>
-          Keep files as they are
+          {t('Keep files as they are')}
         </Button>
         <Button kind="accent" size="md" onClick={onCompact}>
-          Compress and create
+          {t('Compress and create')}
         </Button>
       </ModalFooter>
     </ModalShell>

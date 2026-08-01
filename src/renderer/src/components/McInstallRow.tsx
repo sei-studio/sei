@@ -15,6 +15,7 @@ import React from 'react';
 import type { McInstall } from '@shared/ipc';
 import { StatusPill, type StatusPillTone } from './StatusPill';
 import { WARN_COPY } from '../lib/errors';
+import { t, useT } from '../lib/i18n';
 import styles from './McInstallRow.module.css';
 
 export interface McInstallRowProps {
@@ -64,7 +65,7 @@ function pillFor(install: McInstall): PillSpec {
     // bug). The lunarCaption below already explains the Limited state.
     return {
       tone: 'warn',
-      label: 'Limited',
+      label: t('Limited'),
     };
   }
 
@@ -75,22 +76,22 @@ function pillFor(install: McInstall): PillSpec {
       const loaderName = install.loader === 'fabric' ? 'Fabric' : 'Forge';
       return {
         tone: 'green',
-        label: 'Sei enabled',
+        label: t('Sei enabled'),
         secondary: `${loaderName} ${install.loader_version} · CSL ${install.csl_version}`,
       };
     }
     if (!install.csl_installed) {
       return {
         tone: 'red',
-        label: 'Mod missing',
-        secondary: 'Re-run setup to reinstall.',
+        label: t('Mod missing'),
+        secondary: t('Re-run setup to reinstall.'),
       };
     }
     // Edge case: enabled + csl_installed but missing loader info — flag as drift.
     return {
       tone: 'warn',
-      label: 'Version drift',
-      secondary: 'Re-run setup to update.',
+      label: t('Version drift'),
+      secondary: t('Re-run setup to update.'),
     };
   }
 
@@ -99,7 +100,7 @@ function pillFor(install: McInstall): PillSpec {
     // No secondary — the path is on its own line (see the lunar note above).
     return {
       tone: 'muted',
-      label: 'Vanilla launcher',
+      label: t('Vanilla launcher'),
     };
   }
   return {
@@ -110,6 +111,8 @@ function pillFor(install: McInstall): PillSpec {
 }
 
 export function McInstallRow({ install, selected, onToggle }: McInstallRowProps): React.ReactElement {
+  // Subscribes to the language so pillFor's bare t() re-evaluates on toggle.
+  const t = useT();
   const pill = pillFor(install);
   const checkboxId = `mc-install-${install.id}`;
   // 260518-o1k T7: Lunar rows are read-only — surfaced for transparency
@@ -153,7 +156,7 @@ export function McInstallRow({ install, selected, onToggle }: McInstallRowProps)
         // Stop propagation so the row's onClick doesn't double-toggle when the
         // user clicks the checkbox itself.
         onClick={(e) => e.stopPropagation()}
-        aria-label={`Enable Sei for ${install.label}`}
+        aria-label={t('Enable Sei for {name}', { name: install.label })}
         tabIndex={-1}
       />
       <div className={styles.text}>
@@ -161,8 +164,9 @@ export function McInstallRow({ install, selected, onToggle }: McInstallRowProps)
         <div className={styles.path}>{install.path}</div>
         {install.kind === 'lunar' ? (
           <div className={styles.lunarCaption}>
-            Sei can join the same server, but Lunar doesn&rsquo;t support custom
-            skin mods, so the bot will appear with a default Mojang skin.
+            {t(
+              "Sei can join the same server, but Lunar doesn't support custom skin mods, so the bot will appear with a default Mojang skin.",
+            )}
           </div>
         ) : null}
         {/* 260518-o1k T8: pre-1.14 MC inline warning (vanilla only).
@@ -171,7 +175,7 @@ export function McInstallRow({ install, selected, onToggle }: McInstallRowProps)
             proceed. */}
         {install.kind === 'vanilla' && isPre114(install.mc_version) ? (
           <div className={styles.warning}>
-            {WARN_COPY.MC_VERSION_PRE_1_14.replace('{version}', install.mc_version!)}
+            {t(WARN_COPY.MC_VERSION_PRE_1_14, { version: install.mc_version! })}
           </div>
         ) : null}
       </div>

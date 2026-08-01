@@ -11,11 +11,20 @@
 
 import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
-import type { LanHost, LanHostWarning, UniqueGender } from '@shared/ipc';
+import type { LanHost, LanHostWarning } from '@shared/ipc';
 
 export type View =
   | { kind: 'loading' }
   | { kind: 'auth-choice' }
+  // First-run Sui onboarding scene (260728): the full-window animated ritual
+  // (OnboardApp). Fresh installs and fresh accounts land here; the legacy
+  // 'onboarding' QuestionShell flow below remains for Settings re-onboard.
+  // signin (260729): mount directly at the sign-in panel on the empty sky —
+  // no walk-in, no dialogue. Used wherever an already-onboarded profile
+  // needs to (re)auth: BOOT while signed out, and sign-out from Settings
+  // (both replaced AuthChoice). One click to proceed, like the old chooser;
+  // the panel's "I'm new here" link remounts the full scene.
+  | { kind: 'onboard'; signin?: boolean }
   | { kind: 'onboarding'; isReonboard: boolean }
   // Full-screen Minecraft skin setup page (wizard inline). Legacy resume
   // surface: onboarding no longer arms UserConfig.skin_setup_pending (260725,
@@ -36,38 +45,47 @@ export type View =
   // surfaces (the IconRail stays visible, unlike the full-page entry flows).
   | { kind: 'chat'; characterId: string }
   | { kind: 'voice-call'; characterId: string }
+  // 260727 Draw! — the sketch-guessing minigame. A full-page surface (rail
+  // hidden) because it is deliberately its own visual world: a white page in
+  // a handdrawn register, canvas beside chat, rather than the chat screen's
+  // top/bottom game split.
+  | { kind: 'draw'; characterId: string }
   | { kind: 'settings' }
   | { kind: 'credits' }
   | { kind: 'coming-soon' }
-  // 260703 procgen — the "unique companion" (system-generated) flow. All four
-  // are renderer-only full-page surfaces (rail hidden), routed from the
+  // 260703 procgen — the "unique companion" (system-generated) flow. All are
+  // renderer-only full-page surfaces (rail hidden), routed from the
   // add-companion chooser or the App-level first-sign-in questionnaire gate:
   //   - profile-questions : the companion questionnaire (age + dynamics +
-  //                          art style). `next` decides where Finish lands:
-  //                          'home' (App gate and mid-onboarding),
-  //                          'unique-gender' (Awaken cast gate), 'awaken' /
-  //                          'settings' ("Update my preferences" entries —
-  //                          cancel also returns there). `mode`: 'missing'
-  //                          asks only unanswered
-  //                          questions; 'all' is a full retake prefilled
-  //                          with current answers.
-  //   - unique-gender     : the single per-slot gender question.
-  //   - unique-casting    : the full-screen generation/ritual progress screen.
+  //                          art style) as a FORM. `next` decides where Finish
+  //                          lands: 'home' (App gate and mid-onboarding),
+  //                          'meet' (Awaken cast gate), 'awaken' / 'settings'.
+  //                          `mode`: 'missing' asks only unanswered questions;
+  //                          'first-fill' is a brand-new profile. 260731: the
+  //                          'all' retake moved to sui-prefs, so this is now
+  //                          only the GATE surface (fill the gaps, then get on
+  //                          with the thing you asked for).
+  //   - sui-meet          : "meet my companion", run by Sui — the gender
+  //                          question, her walk-off, and the casting bar
+  //                          (replaced unique-gender + unique-casting, 260731).
   //   - unique-reveal     : the "meet <name>" moment after a successful gen.
   | {
       kind: 'profile-questions';
-      next: 'home' | 'unique-gender' | 'awaken' | 'settings';
-      // 'missing' asks only unanswered questions; 'all' is a full retake
-      // prefilled with current answers; 'first-fill' behaves like 'missing' for
-      // question selection but, on Finish, continues a brand-new user straight
-      // into the "meet your unique companion" flow (gender step) so their first
-      // companion gets cast instead of dropping them on an empty Home. A
-      // "Later" dismiss on the first step never triggers that continuation.
-      mode: 'missing' | 'all' | 'first-fill';
+      next: 'home' | 'meet' | 'awaken' | 'settings';
+      // 'missing' asks only unanswered questions; 'first-fill' selects the
+      // same questions but, on Finish, continues a brand-new user straight
+      // into the "meet my companion" scene so their first companion gets cast
+      // instead of dropping them on an empty Home. A "Later" dismiss on the
+      // first step never triggers that continuation. (The full retake is
+      // sui-prefs, 260731.)
+      mode: 'missing' | 'first-fill';
     }
-  | { kind: 'unique-gender' }
-  | { kind: 'unique-casting'; gender: UniqueGender }
+  | { kind: 'sui-meet' }
   | { kind: 'unique-reveal'; characterId: string }
+  // 260731 — "update my preferences", asked by Sui in the onboarding scene
+  // rather than as a form. `next` is the surface the entry link lives on, and
+  // where leaving the scene returns to.
+  | { kind: 'sui-prefs'; next: 'awaken' | 'settings' }
   // quick/260525-sbo Task 6 — FTC 16 CFR §425.5 in-app receipt after a
   // first-time subscription activation. Auto-navigated by useCreditsStore
   // when the plan moves up into a paid tier (once per
@@ -122,7 +140,7 @@ export type Modal =
   | {
       kind: 'cross-launch';
       characterId: string;
-      fromId: 'chess' | 'minecraft';
+      fromId: 'chess' | 'minecraft' | 'draw';
       fromName: string;
       toName: string;
     };
@@ -239,6 +257,21 @@ interface UiState {
    * UserConfig.call_convo_starters; App.tsx hydrates. ON by default. */
   convoStartersEnabled: boolean;
   /**
+   * 260730 — call backdrop mode, per character: true = show the character's
+   * scene (or their art) instead of the avatar tiles. Keyed by the DIALED
+   * character's id, which is also the key a group call uses, so "how I like
+   * calling Sui" survives inviting someone else along.
+   *
+   * A character absent from the map has no stored preference, and the default
+   * depends on them: someone with a custom scene opens in it, everyone else
+   * opens on the familiar avatar view. That is why this is a sparse map and
+   * not a boolean per character defaulted to false — writing false for every
+   * character on first call would erase the distinction.
+   *
+   * Persisted via UserConfig.call_backdrop; App.tsx hydrates.
+   */
+  callBackdropByCharacter: Record<string, boolean>;
+  /**
    * 260724 — custom app background. `backgroundImage` is the portrait path ref
    * ('_bg.png', served via sei-portrait://) or null when no background is set;
    * opacity (0..1, how visible the image is through the theme's window color)
@@ -252,6 +285,22 @@ interface UiState {
   backgroundOpacity: number;
   backgroundBrightness: number;
   backgroundBust: number;
+  /**
+   * 260728 — IN-APP fullscreen for a game surface. Not the OS window's
+   * fullscreen (that is what this button used to do, and it was the wrong
+   * verb: a game does not need the whole display, it needs the whole app).
+   * True means "give the mounted game every pixel the app has": the IconRail
+   * goes (App.tsx folds this into railHidden) and, for the games hosted in the
+   * chat screen's game area, the chat below goes too (ChatScreen folds it into
+   * chatHidden).
+   *
+   * Session-only and OWNED BY THE MOUNTED SURFACE: whichever game surface is
+   * on screen sets it, and clears it on unmount. That is what keeps the rail
+   * from staying hidden after the game is gone, and it is why there is no
+   * "which view is this" test in railHidden. Any future game surface gets the
+   * behaviour by doing the same two things.
+   */
+  gameFullscreen: boolean;
 
   navigate: (view: View) => void;
   openModal: (modal: Modal) => void;
@@ -280,11 +329,16 @@ interface UiState {
   setCallOverlayEnabled: (v: boolean) => void;
   /** Set the conversation-starters toggle (quiet calls, companion starts a topic). */
   setConvoStartersEnabled: (v: boolean) => void;
+  /** 260730: replace the whole per-character backdrop map (App.tsx hydration). */
+  setCallBackdropPrefs: (prefs: Record<string, boolean>) => void;
+  /** 260730: remember how this character's calls should open. */
+  setCallBackdropFor: (characterId: string, on: boolean) => void;
   /** 260724: set the custom background image ref; bumps the cache-buster. */
   setBackgroundImage: (ref: string | null) => void;
   /** 260724: set the background sliders (opacity 0..1, brightness 0.2..1). */
   setBackgroundOpacity: (v: number) => void;
   setBackgroundBrightness: (v: number) => void;
+  setGameFullscreen: (v: boolean) => void;
   /** #6: hang up / dismiss the call (resets mute + deafen). */
   endCall: () => void;
 }
@@ -314,11 +368,15 @@ export const useUiStore = create<UiState>((set) => ({
   callCaptions: false,
   callOverlayEnabled: false,
   convoStartersEnabled: true,
+  // Empty = nobody has a stored preference yet; each character falls back to
+  // whether they have a scene. App.tsx hydrates from persisted config.
+  callBackdropByCharacter: {},
   // Custom background: none until App.tsx hydrates from persisted config.
   backgroundImage: null,
   backgroundOpacity: 0.5,
   backgroundBrightness: 1,
   backgroundBust: 0,
+  gameFullscreen: false,
 
   // Leaving Home (any non-'home' view) dismisses the greeting for the session.
   navigate: (view) =>
@@ -336,6 +394,7 @@ export const useUiStore = create<UiState>((set) => ({
     set((s) => ({ backgroundImage: ref, backgroundBust: s.backgroundBust + 1 })),
   setBackgroundOpacity: (v) => set({ backgroundOpacity: v }),
   setBackgroundBrightness: (v) => set({ backgroundBrightness: v }),
+  setGameFullscreen: (v) => set({ gameFullscreen: v }),
   setRealisticTyping: (v) => set({ realisticTyping: v }),
   setAnalyticsOptOut: (v) => set({ analyticsOptOut: v }),
   setChatPanelHidden: (v) => set({ chatPanelHidden: v }),
@@ -346,5 +405,8 @@ export const useUiStore = create<UiState>((set) => ({
   setCallCaptions: (v) => set({ callCaptions: v }),
   setCallOverlayEnabled: (v) => set({ callOverlayEnabled: v }),
   setConvoStartersEnabled: (v) => set({ convoStartersEnabled: v }),
+  setCallBackdropPrefs: (prefs) => set({ callBackdropByCharacter: prefs }),
+  setCallBackdropFor: (characterId, on) =>
+    set((s) => ({ callBackdropByCharacter: { ...s.callBackdropByCharacter, [characterId]: on } })),
   endCall: () => set({ callMuted: false, callDeafened: false }),
 }));

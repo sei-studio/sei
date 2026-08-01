@@ -22,6 +22,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useChessStore, boardUiFor } from '../../lib/stores/useChessStore';
+import { useT } from '../../lib/i18n';
 import type { ChessColor } from '@shared/chessIpc';
 import {
   piecesOf,
@@ -55,6 +56,7 @@ export function ChessBoard3D({
   characterId,
   companionName,
 }: ChessBoard3DProps): React.ReactElement | null {
+  const t = useT();
   const game = useChessStore((s) => s.games[characterId]);
   const ui = useChessStore((s) => boardUiFor(s, characterId));
   const revealed = useChessStore((s) => s.revealed[characterId] ?? null);
@@ -346,10 +348,10 @@ export function ChessBoard3D({
 
   const sideToMove = displayFen.split(' ')[1] === 'b' ? 'b' : 'w';
   const turnLabel = game.aiThinking
-    ? `${companionName} is thinking…`
+    ? t('{name} is thinking…', { name: companionName })
     : sideToMove === game.playerColor
-      ? 'Your move'
-      : `${companionName}'s move`;
+      ? t('Your move')
+      : t("{name}'s move", { name: companionName });
 
   return (
     <div
@@ -364,7 +366,7 @@ export function ChessBoard3D({
       }}
       onContextMenu={(e) => e.preventDefault()}
       role="application"
-      aria-label="Chess board"
+      aria-label={t('Chess board')}
     >
       <div className={styles.topCenter}>
         {game.status === 'active' ? (
@@ -375,7 +377,7 @@ export function ChessBoard3D({
             {turnLabel}
           </div>
         ) : null}
-        <div className={styles.eloTag}>Elo ~{game.aiElo}</div>
+        <div className={styles.eloTag}>{t('Elo ~{elo}', { elo: game.aiElo })}</div>
       </div>
 
       {/* Promotion picker */}
@@ -389,7 +391,7 @@ export function ChessBoard3D({
             }}
           />
           <div className={styles.promoCard} onPointerDown={(e) => e.stopPropagation()}>
-            <div className={styles.promoTitle}>Promote to</div>
+            <div className={styles.promoTitle}>{t('Promote to')}</div>
             <div className={styles.promoRow}>
               {PROMO_PIECES.map((piece) => (
                 <button
@@ -397,7 +399,7 @@ export function ChessBoard3D({
                   type="button"
                   className={styles.promoBtn}
                   onClick={() => pickPromotion(piece)}
-                  aria-label={`Promote to ${PROMO_NAMES[piece]}`}
+                  aria-label={t(`Promote to ${PROMO_NAMES[piece]}`)}
                 >
                   <Piece code={`${playerColor}${piece}`} />
                 </button>

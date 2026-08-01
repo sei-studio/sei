@@ -6,6 +6,12 @@
  *  1. Provider tiles.
  *  2. API key.
  *
+ * Fresh-onboard completion (260728): Sui is seeded into a party slot
+ * (fire-and-forget chars:add-to-library — removable any time), and a
+ * brand-new signed-in profile continues from the questionnaire into the
+ * unique-companion flow ('first-fill' → gender question → casting) so the
+ * ritual ends on a first companion, not an empty Home.
+ *
  * The conversation-language step was removed (260725): the language is now
  * auto-detected from the player's voice (ElevenLabs Scribe STT → main's
  * voice/languageAutoSwitch.ts persists UserConfig.chat_language). Onboarding
@@ -39,6 +45,10 @@ import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import type { UserConfig } from '@shared/characterSchema';
+import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
+import { useDataStore } from '../lib/stores/useDataStore';
+import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { useT } from '../lib/i18n';
 import styles from './OnboardingScreen.module.css';
 
 export interface OnboardingScreenProps {
@@ -54,6 +64,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   // D-03: signed-in users skip Provider tiles + API-key entry, leaving just
   // the Name step. Local users get Name → Provider → API key.
   const STEPS = signedIn ? 1 : 3;
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const themeMode = useUiStore((s) => s.themeMode);
@@ -193,18 +204,42 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       // tier with a weekly allowance already available, so onboarding goes
       // straight on instead of detouring through a claim step.
       if (!isReonboard) {
+        // 260728: every fresh profile starts with Sui in one of the four party
+        // slots (removable any time — she is an ordinary World invite, so the
+        // character page offers Release). Fire-and-forget: chars:add-to-library
+        // pulls her cloud row + art and writes added_world_ids, then the data +
+        // library stores refresh so Home/IconRail show her the moment the user
+        // lands there. Offline or fetch failure just means no Sui — never a
+        // blocked onboarding.
+        void sei
+          .charsAddToLibrary(DEFAULT_CHARACTER_UUIDS.sui)
+          .then(async () => {
+            await useDataStore.getState().loadCharacters();
+            await useLibraryStateStore.getState().refresh();
+          })
+          .catch(() => {
+            /* best-effort seed */
+          });
         // Fresh onboarding, signed-in: the companion questionnaire runs HERE,
         // inside the onboarding ritual (260706 — it used to ambush after the
-        // user had already landed on Home). mode 'missing' asks only the
-        // unanswered questions, so a re-install whose cloud prefs are complete
-        // skips straight through, and one whose prefs predate a newer question
-        // answers just the gap. Fail-open to home — the Home and Awaken
-        // gates re-ask if this read failed.
+        // user had already landed on Home). 260728: a BRAND-NEW profile (no
+        // completed questionnaire at all) runs it as 'first-fill', which
+        // continues past Finish into the unique-companion flow — the gender
+        // question, then the casting screen — so onboarding lands the user on
+        // their first companion instead of an empty Home. A profile that
+        // already completed but is missing a newer question stays a 'missing'
+        // top-up that returns to Home (mirrors App.tsx's Home gate). Fail-open
+        // to home — the Home and Awaken gates re-ask if this read failed.
         if (signedIn) {
           try {
             const prefs = await sei.prefsGet();
             if (prefs.missing.length > 0) {
-              navigate({ kind: 'profile-questions', next: 'home', mode: 'missing' });
+              const firstFill = !prefs.profile?.completed_at;
+              navigate({
+                kind: 'profile-questions',
+                next: 'home',
+                mode: firstFill ? 'first-fill' : 'missing',
+              });
               return;
             }
           } catch {
@@ -250,13 +285,13 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   if (step === 0) {
     return (
       <QuestionShell
-        title="What should they call you?"
+        title={t('What should they call you?')}
         stepCount={STEPS}
         currentStep={step}
         onBack={isReonboard || !signedIn ? back : undefined}
         backDisabled={signedIn && !isReonboard}
         onNext={next}
-        nextLabel={signedIn ? 'Finish' : undefined}
+        nextLabel={signedIn ? t('Finish') : undefined}
         nextKind={signedIn ? 'accent' : undefined}
         nextDisabled={!validate()}
       >
@@ -267,7 +302,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
           onEnter={() => {
             if (validate()) void next();
           }}
-          aria-label="Name"
+          aria-label={t('Name')}
         />
         {signedIn && error ? (
           <div className={styles.error} role="alert">
@@ -282,7 +317,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   if (step === 1) {
     return (
       <QuestionShell
-        title="Which model provider?"
+        title={t('Which model provider?')}
         stepCount={STEPS}
         currentStep={step}
         onBack={back}
@@ -315,12 +350,12 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   const providerLabel = PROVIDER_LABELS[provider] ?? 'API';
   return (
     <QuestionShell
-      title={`Paste your ${providerLabel} API key.`}
+      title={t('Paste your {provider} API key.', { provider: providerLabel })}
       stepCount={STEPS}
       currentStep={step}
       onBack={back}
       onNext={next}
-      nextLabel="Finish"
+      nextLabel={t('Finish')}
       nextKind="accent"
       nextDisabled={!validate()}
     >
@@ -337,7 +372,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         onEnter={() => {
           if (validate()) void next();
         }}
-        aria-label="API key"
+        aria-label={t('API key')}
         aria-invalid={!!error}
       />
       {error ? (

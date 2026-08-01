@@ -1,0 +1,88 @@
+/* CallScene — the painted call backdrop a character walks into.
+ *
+ * Geometry only: every colour, size and duration in here that could differ
+ * between scenes comes from the descriptor as an inline style. The rules below
+ * are the ones every scene shares.
+ *
+ * SCALE LOCK: `.stage` keeps the art's exact aspect, covers the window and is
+ * anchored to the bottom edge, so the backdrop layers and the character sprite
+ * share ONE scale factor. See the component header. */
+
+.root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  /* Bottom layer of the call stage's stacking context: everything readable
+     sits above it (see VoiceCallScreen.module.css .stageBackdrop). */
+  z-index: 0;
+}
+
+.stage {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  /* Width and aspect-ratio are set inline from the descriptor:
+     `max(100vw, <aspect>*100vh)`, which is the narrowest box that still covers
+     the window from either direction. */
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* The stage IS the art's aspect, so fill is exact: no crop, no skew. */
+  object-fit: fill;
+  /* NO opacity transition — cycled frames swap 1<->0 instantly. */
+  pointer-events: none;
+}
+
+.actor {
+  position: absolute;
+  transition-property: transform;
+  /* Duration AND curve are set inline. The curve moved to JS (ENTRANCE_EASING
+     in lib/callScenes.ts) because frontSwitchDelayMs has to invert it to find
+     the moment she passes the foreground; one copy, not two. */
+  will-change: transform;
+  pointer-events: none;
+}
+
+.actor > * {
+  position: absolute;
+  inset: 0;
+}
+
+.actorImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Walk bob. steps(1) makes it a hard SNAP — down on the stand frame, popped up
+ * on the stride frame, cutting in the same instant the sprite swaps — so the
+ * bounce is drawn rather than tweened. Period (two walk frames) and amplitude
+ * come from the descriptor. */
+.actorBobbing {
+  animation-name: actorBob;
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+}
+
+@keyframes actorBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(var(--bob, -2%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actorBobbing {
+    animation: none;
+  }
+}

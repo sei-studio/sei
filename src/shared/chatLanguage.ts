@@ -72,3 +72,27 @@ export function detectedToChatLanguage(raw: unknown): ChatLanguage | null {
   const base = raw.toLowerCase().split(/[-_]/)[0];
   return DETECTED_CODE_MAP[base] ?? null;
 }
+
+/**
+ * 260730: per-CHARACTER language, stamped into `character.metadata.language`
+ * at creation from the app's UI language ('zh' UI → 'zh' characters). When
+ * set, it PINS every AI surface for that character (persona generation, chat,
+ * voice, chess, Draw!, the Minecraft bot) to that language, overriding the
+ * auto-detected conversation language above. Absent/invalid → null, meaning
+ * "no pin, follow chat_language". Read defensively like everything else on
+ * metadata (free-form record, may hold junk from older clients).
+ */
+export function characterLanguage(metadata: unknown): ChatLanguage | null {
+  const raw = (metadata as { language?: unknown } | null | undefined)?.language;
+  return (CHAT_LANGUAGE_CODES as string[]).includes(raw as string)
+    ? (raw as ChatLanguage)
+    : null;
+}
+
+/**
+ * The language an AI surface should run in for a character: the character's
+ * own pin when present, else the auto-detected conversation language.
+ */
+export function surfaceLanguage(metadata: unknown, chatLanguageRaw: unknown): ChatLanguage {
+  return characterLanguage(metadata) ?? clampChatLanguage(chatLanguageRaw);
+}

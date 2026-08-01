@@ -39,12 +39,14 @@ import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
 import { ResetAllMemoriesConfirmModal } from '../components/ResetAllMemoriesConfirmModal';
+import { FactoryResetConfirmModal } from '../components/FactoryResetConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { BackgroundImagePicker } from '../components/BackgroundImagePicker';
 import { InfoTip } from '../components/InfoTip';
 import { CopyIcon } from '../components/icons';
+import { useLangStore, useT, type UiLanguage } from '../lib/i18n';
 import type { UserConfig } from '@shared/characterSchema';
 import type { WizardState } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
@@ -85,6 +87,10 @@ export function SettingsScreen(): React.ReactElement {
   // a relaunch preserves the choice.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
   const setDevConsoleVisible = useUiStore((s) => s.setDevConsoleVisible);
+  // App UI language (260730): its own Settings section.
+  const lang = useLangStore((s) => s.lang);
+  const setLang = useLangStore((s) => s.setLang);
+  const t = useT();
   // Appearance & feel: "Realistic typing" pacing toggle (default ON). Persisted
   // via UserConfig.realistic_typing; the chat store + bot read it for reading /
   // typing delays.
@@ -190,6 +196,8 @@ export function SettingsScreen(): React.ReactElement {
   // WR-10: capture the account email at modal-open time so the modal can
   // remain mounted across the SIGNED_OUT transition that fires mid-flow.
   const [deleteAccountState, setDeleteAccountState] = useState<{ email: string } | null>(null);
+  // 260728: factory reset (danger zone) confirm popup.
+  const [factoryResetOpen, setFactoryResetOpen] = useState(false);
   // Plan 11-18 — re-open entry for the one-shot migration modal.
   const [migrateModalOpen, setMigrateModalOpen] = useState<boolean>(false);
   // Plan 12-14 — DMCA Designated Agent info modal. Visible to BOTH signed-in
@@ -232,20 +240,20 @@ export function SettingsScreen(): React.ReactElement {
     if (res.ok) {
       setExportStatus({ savedPath: res.savedPath });
     } else if (res.code !== 'cancelled') {
-      setExportStatus({ error: "Couldn't prepare your export. Try again in a moment." });
+      setExportStatus({ error: t("Couldn't prepare your export. Try again in a moment.") });
     }
   };
 
   const accountEmail = authState.kind === 'signed_in' ? authState.user.email : '';
   const resendStatusText =
     resendStatus === 'sending'
-      ? 'Sending…'
+      ? t('Sending…')
       : resendStatus === 'sent'
-        ? `We sent a new verification link to ${accountEmail}.`
+        ? t('We sent a new verification link to {email}.', { email: accountEmail })
         : resendStatus === 'rate-limited'
-          ? 'Hold on, wait a minute before requesting another link.'
+          ? t('Hold on, wait a minute before requesting another link.')
           : resendStatus === 'error'
-            ? "Couldn't resend. Try again in a moment."
+            ? t("Couldn't resend. Try again in a moment.")
             : '';
 
   useEffect(() => {
@@ -302,7 +310,7 @@ export function SettingsScreen(): React.ReactElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig failed', err);
-      setSaveError('Failed to save. Try again.');
+      setSaveError(t('Failed to save. Try again.'));
     }
   };
 
@@ -315,7 +323,7 @@ export function SettingsScreen(): React.ReactElement {
   const onSaveKey = async (): Promise<void> => {
     const trimmed = keyDraft.trim();
     if (!trimmed) {
-      setKeyError('API key cannot be empty.');
+      setKeyError(t('API key cannot be empty.'));
       return;
     }
     try {
@@ -328,7 +336,7 @@ export function SettingsScreen(): React.ReactElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveApiKey failed', err);
-      setKeyError('Failed to save key. Try again.');
+      setKeyError(t('Failed to save key. Try again.'));
     }
   };
 
@@ -343,7 +351,7 @@ export function SettingsScreen(): React.ReactElement {
   const onSaveElevenKey = async (): Promise<void> => {
     const trimmed = elevenKeyDraft.trim();
     if (!trimmed) {
-      setElevenKeyError('Key cannot be empty.');
+      setElevenKeyError(t('Key cannot be empty.'));
       return;
     }
     try {
@@ -356,7 +364,7 @@ export function SettingsScreen(): React.ReactElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] voiceElevenKeySet failed', err);
-      setElevenKeyError('Failed to save key. Try again.');
+      setElevenKeyError(t('Failed to save key. Try again.'));
     }
   };
 
@@ -374,7 +382,7 @@ export function SettingsScreen(): React.ReactElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] voiceElevenKeySet (clear) failed', err);
-      setElevenKeyError('Failed to remove key. Try again.');
+      setElevenKeyError(t('Failed to remove key. Try again.'));
     }
   };
 
@@ -391,7 +399,26 @@ export function SettingsScreen(): React.ReactElement {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (stt_engine) failed', err);
       setCfg(cfg);
-      setSaveError('Failed to save. Try again.');
+      setSaveError(t('Failed to save. Try again.'));
+    }
+  };
+
+  // App UI language (260730). Optimistic store flip (every subscribed
+  // component re-renders immediately), then persist through the same
+  // saveConfig path as the toggles; roll back on failure.
+  const onSelectLanguage = async (next: UiLanguage): Promise<void> => {
+    if (next === lang) return;
+    const prev = lang;
+    setLang(next);
+    if (!cfg) return;
+    try {
+      const updated: UserConfig = { ...cfg, ui_language: next };
+      await sei.saveConfig(updated);
+      setCfg(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (ui_language) failed', err);
+      setLang(prev);
     }
   };
 
@@ -460,7 +487,7 @@ export function SettingsScreen(): React.ReactElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (provider) failed', err);
-      setSaveError('Failed to save provider. Try again.');
+      setSaveError(t('Failed to save provider. Try again.'));
     }
   };
 
@@ -597,7 +624,7 @@ export function SettingsScreen(): React.ReactElement {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (vision) failed', err);
       setCfg(cfg);
-      setSaveError('Failed to save. Try again.');
+      setSaveError(t('Failed to save. Try again.'));
     }
   };
 
@@ -630,7 +657,7 @@ export function SettingsScreen(): React.ReactElement {
         await refreshCharacter(c.id);
       } catch (err) {
         if (firstError === null) {
-          firstError = err instanceof Error ? err.message : 'Failed to reset some memories.';
+          firstError = err instanceof Error ? err.message : t('Failed to reset some memories.');
         }
       }
       setResetAllProgress({ done: i + 1, total: snapshot.length });
@@ -650,21 +677,25 @@ export function SettingsScreen(): React.ReactElement {
   // Version value: "v{x}" alone, or "v{x} · <status>" after a check.
   const versionSuffix =
     updateStatus === 'checking'
-      ? ' · checking…'
+      ? ` · ${t('checking…')}`
       : updateStatus === 'up-to-date'
-        ? ' · up to date'
+        ? ` · ${t('up to date')}`
         : updateStatus === 'available'
-          ? ' · update available'
+          ? ` · ${t('update available')}`
           : updateStatus === 'error'
-            ? ' · check failed'
+            ? ` · ${t('check failed')}`
             : '';
   const versionValue = appVersion ? `v${appVersion}${versionSuffix}` : '–';
 
+  // (The literal 'Reset all memories…' key below is what D-FIX.3 greps for.)
   const resetAllLabel = resetAllDone
-    ? 'All memories reset'
+    ? t('All memories reset')
     : resetAllProgress
-      ? `Resetting ${resetAllProgress.done} of ${resetAllProgress.total}…`
-      : 'Reset all memories…';
+      ? t('Resetting {done} of {total}…', {
+          done: resetAllProgress.done,
+          total: resetAllProgress.total,
+        })
+      : t('Reset all memories…');
 
   return (
     <div className={styles.root}>
@@ -673,7 +704,7 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── Profile ─────────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>Profile</h3>
+          <h3 className={styles.groupTitle}>{t('Profile') /* >Profile< */}</h3>
           <div className={styles.profileRow} onBlur={onPreferredBlur}>
             <PortraitImagePicker
               variant="avatar"
@@ -686,8 +717,8 @@ export function SettingsScreen(): React.ReactElement {
               <TextField
                 value={preferredDraft}
                 onChange={setPreferredDraft}
-                placeholder="Your name"
-                aria-label="Name"
+                placeholder={t('Your name')}
+                aria-label={t('Name')}
               />
             </span>
           </div>
@@ -696,13 +727,13 @@ export function SettingsScreen(): React.ReactElement {
         {/* ── Account (signed-in only) ────────────────────────── */}
         {authState.kind === 'signed_in' ? (
           <div className={styles.group}>
-            <h3 className={styles.groupTitle}>Account</h3>
+            <h3 className={styles.groupTitle}>{t('Account') /* >Account< */}</h3>
 
             <div className={styles.row}>
-              <span className={styles.label}>Email</span>
+              <span className={styles.label}>{t('Email')}</span>
               <span className={styles.monoValue}>{authState.user.email}</span>
               <Button kind="ghost" size="sm" onClick={() => setSignOutModalOpen(true)}>
-                Sign out
+                {t('Sign out')}
               </Button>
             </div>
             {resendStatus !== 'idle' ? (
@@ -710,14 +741,14 @@ export function SettingsScreen(): React.ReactElement {
             ) : null}
             {!authState.user.emailVerified ? (
               <div className={styles.row}>
-                <span className={styles.label}>Verify email</span>
+                <span className={styles.label}>{t('Verify email')}</span>
                 <Button
                   kind="quiet"
                   size="sm"
                   onClick={() => void onResendVerification()}
                   disabled={resendStatus === 'sending'}
                 >
-                  Resend verification
+                  {t('Resend verification')}
                 </Button>
               </div>
             ) : null}
@@ -730,14 +761,14 @@ export function SettingsScreen(): React.ReactElement {
                 support workflows, not the long Supabase UUID. Falls back to the
                 UUID only until the profile loads (or if no handle is assigned). */}
             <div className={styles.row}>
-              <span className={styles.label}>Account ID</span>
+              <span className={styles.label}>{t('Account ID')}</span>
               <span className={styles.idValue}>
                 <span className={styles.monoValue}>{userHandle ?? authState.user.id}</span>
                 <button
                   type="button"
                   className={styles.copyBtn}
-                  aria-label="Copy account ID"
-                  data-tip={uuidCopied ? 'Copied' : 'Copy'}
+                  aria-label={t('Copy account ID')}
+                  data-tip={uuidCopied ? t('Copied') : t('Copy')}
                   onClick={() => {
                     void navigator.clipboard
                       .writeText(userHandle ?? authState.user.id)
@@ -756,33 +787,34 @@ export function SettingsScreen(): React.ReactElement {
             </div>
 
             {/* 260706: full questionnaire retake (age feel / what you're
-                looking for / art style), prefilled, returning here. */}
+                looking for / art style), prefilled, returning here. 260731:
+                Sui asks it, in her scene, rather than a form. */}
             <div className={styles.row}>
-              <span className={styles.label}>Companion preferences</span>
+              <span className={styles.label}>{t('Companion preferences')}</span>
               <Button
                 kind="ghost"
                 size="sm"
-                onClick={() => navigate({ kind: 'profile-questions', next: 'settings', mode: 'all' })}
+                onClick={() => navigate({ kind: 'sui-prefs', next: 'settings' })}
               >
-                Update my preferences
+                {t('Update my preferences')}
               </Button>
             </div>
 
             <div className={styles.row}>
-              <span className={styles.label}>Migrate local companions</span>
+              <span className={styles.label}>{t('Migrate local companions')}</span>
               <Button kind="ghost" size="sm" onClick={() => setMigrateModalOpen(true)}>
-                Migrate
+                {t('Migrate')}
               </Button>
             </div>
 
             <div className={styles.row}>
-              <span className={styles.label}>Export data</span>
+              <span className={styles.label}>{t('Export data')}</span>
               <Button kind="ghost" size="sm" onClick={() => void onExport()}>
-                Export as JSON
+                {t('Export as JSON')}
               </Button>
             </div>
             {exportStatus?.savedPath ? (
-              <p className={styles.helper}>Saved to {exportStatus.savedPath}</p>
+              <p className={styles.helper}>{t('Saved to {path}', { path: exportStatus.savedPath })}</p>
             ) : null}
             {exportStatus?.error ? (
               <p className={`${styles.helper} ${styles.helperError}`}>{exportStatus.error}</p>
@@ -795,7 +827,7 @@ export function SettingsScreen(): React.ReactElement {
             language is auto-detected from the player's voice (Scribe STT →
             main's voice/languageAutoSwitch.ts). */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>AI</h3>
+          <h3 className={styles.groupTitle}>{t('AI') /* >AI< */}</h3>
 
           {/* Backend switch — signed-in only (main rejects cloud-proxy for
               signed-out callers; a signed-out user is always local). Selecting
@@ -808,13 +840,17 @@ export function SettingsScreen(): React.ReactElement {
           {authState.kind === 'signed_in' && aiBackendKind !== null ? (
             <div className={styles.row}>
               <span className={styles.label}>
-                Backend
+                {t('Backend')}
                 <InfoTip
-                  label="About the AI backend"
+                  label={t('About the AI backend')}
                   text={
                     isCloud
-                      ? 'Switching to your own API key turns off managed billing and routes Sei through the key stored on this device. Your subscription keeps renewing until you cancel it.'
-                      : 'Cloud turns off your local API key and routes Sei through our managed cloud. Switch back any time.'
+                      ? t(
+                          'Switching to your own API key turns off managed billing and routes Sei through the key stored on this device. Your subscription keeps renewing until you cancel it.',
+                        )
+                      : t(
+                          'Cloud turns off your local API key and routes Sei through our managed cloud. Switch back any time.',
+                        )
                   }
                 />
               </span>
@@ -822,8 +858,8 @@ export function SettingsScreen(): React.ReactElement {
                 aria-label="AI backend"
                 value={backendSegValue}
                 options={[
-                  { value: 'cloud', label: 'Cloud' },
-                  { value: 'mykey', label: 'My key' },
+                  { value: 'cloud', label: t('Cloud') },
+                  { value: 'mykey', label: t('My key') },
                 ]}
                 onChange={(v) => {
                   const target = v === 'cloud' ? 'cloud-proxy' : 'local';
@@ -835,8 +871,8 @@ export function SettingsScreen(): React.ReactElement {
           {switchNotice !== null ? (
             <p className={styles.helper} role="status">
               {switchNotice === 'switched-to-cloud'
-                ? 'Switched. Your running bot now routes through Sei’s managed cloud.'
-                : 'Switched. Your running bot now uses your own API key.'}
+                ? t('Switched. Your running bot now routes through Sei’s managed cloud.')
+                : t('Switched. Your running bot now uses your own API key.')}
             </p>
           ) : null}
 
@@ -844,7 +880,7 @@ export function SettingsScreen(): React.ReactElement {
           {aiBackendKind === 'local' ? (
             <>
               <div className={styles.row}>
-                <span className={styles.label}>Provider</span>
+                <span className={styles.label}>{t('Provider')}</span>
                 <ProviderSelect
                   value={currentProvider}
                   onChange={(p) => void onChangeProvider(p)}
@@ -852,7 +888,7 @@ export function SettingsScreen(): React.ReactElement {
                 />
               </div>
               <div className={styles.row}>
-                <span className={styles.label}>API key</span>
+                <span className={styles.label}>{t('API key')}</span>
                 {editingKey ? (
                   <span className={styles.editor}>
                     <TextField
@@ -862,22 +898,22 @@ export function SettingsScreen(): React.ReactElement {
                       placeholder="sk-…"
                       autoFocus
                       onEnter={() => void onSaveKey()}
-                      aria-label="API key"
+                      aria-label={t('API key')}
                     />
                     <Button kind="primary" size="sm" onClick={() => void onSaveKey()}>
-                      Save
+                      {t('Save')}
                     </Button>
                     <Button kind="quiet" size="sm" onClick={onCancelKey}>
-                      Cancel
+                      {t('Cancel')}
                     </Button>
                   </span>
                 ) : (
                   <>
                     <span className={styles.monoValue}>
-                      {hasKey ? '•'.repeat(API_KEY_BULLET_LEN) : 'Not set'}
+                      {hasKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
                     </span>
                     <Button kind="ghost" size="sm" onClick={() => setEditingKey(true)}>
-                      {hasKey ? 'Update' : 'Set'}
+                      {hasKey ? t('Update') : t('Set')}
                     </Button>
                   </>
                 )}
@@ -889,10 +925,12 @@ export function SettingsScreen(): React.ReactElement {
                   UX as the API key row. */}
               <div className={styles.row}>
                 <span className={styles.label}>
-                  ElevenLabs key
+                  {t('ElevenLabs key')}
                   <InfoTip
-                    label="About the ElevenLabs key"
-                    text="sorry :( i'm working to support other voice models. for now, tts only supports elevenlabs."
+                    label={t('About the ElevenLabs key')}
+                    text={t(
+                      "sorry :( i'm working to support other voice models. for now, tts only supports elevenlabs.",
+                    )}
                   />
                 </span>
                 {editingElevenKey ? (
@@ -901,29 +939,29 @@ export function SettingsScreen(): React.ReactElement {
                       value={elevenKeyDraft}
                       onChange={setElevenKeyDraft}
                       type="password"
-                      placeholder="Your ElevenLabs key"
+                      placeholder={t('Your ElevenLabs key')}
                       autoFocus
                       onEnter={() => void onSaveElevenKey()}
-                      aria-label="ElevenLabs key"
+                      aria-label={t('ElevenLabs key')}
                     />
                     <Button kind="primary" size="sm" onClick={() => void onSaveElevenKey()}>
-                      Save
+                      {t('Save')}
                     </Button>
                     <Button kind="quiet" size="sm" onClick={onCancelElevenKey}>
-                      Cancel
+                      {t('Cancel')}
                     </Button>
                   </span>
                 ) : (
                   <>
                     <span className={styles.monoValue}>
-                      {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : 'Not set'}
+                      {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
                     </span>
                     <Button kind="ghost" size="sm" onClick={() => setEditingElevenKey(true)}>
-                      {hasElevenKey ? 'Update' : 'Set'}
+                      {hasElevenKey ? t('Update') : t('Set')}
                     </Button>
                     {hasElevenKey ? (
                       <Button kind="quiet" size="sm" onClick={() => void onRemoveElevenKey()}>
-                        Remove
+                        {t('Remove')}
                       </Button>
                     ) : null}
                   </>
@@ -934,21 +972,21 @@ export function SettingsScreen(): React.ReactElement {
               {/* Voice recognition (260725): what transcribes your mic on
                   calls. Applies from the next call. */}
               <div className={styles.row}>
-                <span className={styles.label}>Voice recognition</span>
+                <span className={styles.label}>{t('Voice recognition')}</span>
                 <Seg
-                  aria-label="Voice recognition"
+                  aria-label={t('Voice recognition')}
                   value={sttEngine}
                   options={[
-                    { value: 'scribe', label: 'ElevenLabs Scribe' },
-                    { value: 'whisper', label: 'Local Whisper' },
+                    { value: 'scribe', label: t('ElevenLabs Scribe') },
+                    { value: 'whisper', label: t('Local Whisper') },
                   ]}
                   onChange={(v) => void onSelectSttEngine(v)}
                 />
               </div>
               <p className={styles.helper}>
                 {sttEngine === 'whisper'
-                  ? 'Free and offline. Downloads a small model on first call.'
-                  : 'Better accuracy. Uses your ElevenLabs key.'}
+                  ? t('Free and offline. Downloads a small model on first call.')
+                  : t('Better accuracy. Uses your ElevenLabs key.')}
               </p>
             </>
           ) : null}
@@ -956,7 +994,7 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── Minecraft ───────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>Minecraft</h3>
+          <h3 className={styles.groupTitle}>{t('Minecraft') /* >Minecraft< */}</h3>
           <SkinSetupRow />
           {/* Looking (vision): Off / On-demand / Continuous. Every move writes
               straight through. Continuous uses more of the weekly allowance;
@@ -964,35 +1002,64 @@ export function SettingsScreen(): React.ReactElement {
               here. The mode explanation lives behind the (i) tip. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Visual gameplay
+              {t('Visual gameplay')}
               <InfoTip
-                label="About visual gameplay"
-                text="Companions usually play from lightweight snapshots of the world, but can pull a full render of what's around them when they need to see it, for example when building or navigating."
+                label={t('About visual gameplay')}
+                text={t(
+                  "Companions usually play from lightweight snapshots of the world, but can pull a full render of what's around them when they need to see it, for example when building or navigating.",
+                )}
               />
             </span>
             <Seg
-              aria-label="Visual gameplay mode"
+              aria-label={t('Visual gameplay mode')}
               value={visionMode}
               options={[
-                { value: 'off', label: 'Off' },
-                { value: 'on-demand', label: 'On-demand' },
-                { value: 'continuous', label: 'Continuous' },
+                { value: 'off', label: t('Off') },
+                { value: 'on-demand', label: t('On-demand') },
+                { value: 'continuous', label: t('Continuous') },
               ]}
               onChange={onSelectVisionMode}
             />
           </div>
         </div>
 
-        {/* ── Theme (260724) — named themes + custom background ── */}
+        {/* ── Language (260730) — app UI language, its own section ── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>Theme</h3>
+          <h3 className={styles.groupTitle}>{t('Language')}</h3>
           <div className={styles.row}>
-            <span className={styles.label}>Theme</span>
+            <span className={styles.label}>
+              {t('App language')}
+              <InfoTip
+                label={t('About the app language')}
+                text={t(
+                  'Switches the whole app to this language. Companions you create while it is on speak it too.',
+                )}
+              />
+            </span>
+            <Seg
+              aria-label={t('App language')}
+              value={lang}
+              options={[
+                { value: 'en', label: 'EN' },
+                { value: 'zh', label: '中文' },
+              ]}
+              onChange={(v) => void onSelectLanguage(v as UiLanguage)}
+            />
+          </div>
+        </div>
+
+        {/* ── Theme (260724) — named themes + custom background ── */}
+        <div className={styles.group} data-tutorial="theme-group">
+          <h3 className={styles.groupTitle}>{t('Theme')}</h3>
+          <div className={styles.row}>
+            <span className={styles.label}>{t('Theme')}</span>
             {/* Swatch circles instead of a Seg; System was retired from the UI
                 (a legacy 'system' mode still resolves, and highlights the
-                theme it currently resolves to until the user picks one). */}
+                theme it currently resolves to until the user picks one).
+                Labels are pre-translated so the map param can stay `t` (the
+                structure test pins the literal data-tip={t.label}). */}
             <div className={styles.swatchRow} role="radiogroup" aria-label="Theme">
-              {THEME_SWATCHES.map((t) => {
+              {THEME_SWATCHES.map((s) => ({ ...s, label: t(s.label) })).map((t) => {
                 const active =
                   themeMode === t.value ||
                   (themeMode === 'system' &&
@@ -1028,10 +1095,12 @@ export function SettingsScreen(): React.ReactElement {
               main content panel. The two sliders only appear once set. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Background
+              {t('Background')}
               <InfoTip
-                label="About custom backgrounds"
-                text="Shows your own picture behind the app, under the theme colors. Use the sliders to blend it in."
+                label={t('About custom backgrounds')}
+                text={t(
+                  'Shows your own picture behind the app, under the theme colors. Use the sliders to blend it in.',
+                )}
               />
             </span>
             <BackgroundImagePicker
@@ -1043,7 +1112,7 @@ export function SettingsScreen(): React.ReactElement {
           {backgroundImage ? (
             <>
               <div className={styles.row}>
-                <span className={styles.label}>Background visibility</span>
+                <span className={styles.label}>{t('Background visibility')}</span>
                 <input
                   className={styles.slider}
                   type="range"
@@ -1051,7 +1120,7 @@ export function SettingsScreen(): React.ReactElement {
                   max={100}
                   step={1}
                   value={Math.round(backgroundOpacity * 100)}
-                  aria-label="Background visibility"
+                  aria-label={t('Background visibility')}
                   onChange={(e) => setBackgroundOpacity(Number(e.target.value) / 100)}
                   onMouseUp={commitBackgroundSliders}
                   onTouchEnd={commitBackgroundSliders}
@@ -1060,7 +1129,7 @@ export function SettingsScreen(): React.ReactElement {
                 <span className={styles.monoValue}>{Math.round(backgroundOpacity * 100)}%</span>
               </div>
               <div className={styles.row}>
-                <span className={styles.label}>Background brightness</span>
+                <span className={styles.label}>{t('Background brightness')}</span>
                 <input
                   className={styles.slider}
                   type="range"
@@ -1068,7 +1137,7 @@ export function SettingsScreen(): React.ReactElement {
                   max={100}
                   step={1}
                   value={Math.round(backgroundBrightness * 100)}
-                  aria-label="Background brightness"
+                  aria-label={t('Background brightness')}
                   onChange={(e) => setBackgroundBrightness(Number(e.target.value) / 100)}
                   onMouseUp={commitBackgroundSliders}
                   onTouchEnd={commitBackgroundSliders}
@@ -1082,18 +1151,20 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── Appearance ──────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>Appearance</h3>
+          <h3 className={styles.groupTitle}>{t('Appearance') /* >Appearance< */}</h3>
           {/* Appearance & feel: "Realistic typing" pacing. On by default. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Realistic typing
+              {t('Realistic typing')}
               <InfoTip
-                label="About realistic typing"
-                text="Pauses to read your message, then paces typing to a human speed, in chat and in-game. Off replies instantly."
+                label={t('About realistic typing')}
+                text={t(
+                  'Pauses to read your message, then paces typing to a human speed, in chat and in-game. Off replies instantly.',
+                )}
               />
             </span>
             <Toggle
-              aria-label="Realistic typing"
+              aria-label={t('Realistic typing')}
               on={realisticTyping}
               onChange={(v) => void onToggleRealisticTyping(v)}
             />
@@ -1102,14 +1173,14 @@ export function SettingsScreen(): React.ReactElement {
               <LogsBar /> on this flag. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Developer console
+              {t('Developer console')}
               <InfoTip
-                label="About the developer console"
-                text="Useful for debugging skin and bot issues."
+                label={t('About the developer console')}
+                text={t('Useful for debugging skin and bot issues.')}
               />
             </span>
             <Toggle
-              aria-label="Show developer console"
+              aria-label={t('Show developer console')}
               on={devConsoleVisible}
               onChange={(v) => void onToggleDevConsole(v)}
             />
@@ -1118,14 +1189,16 @@ export function SettingsScreen(): React.ReactElement {
               stops all analytics immediately. See privacy.html. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Usage analytics
+              {t('Usage analytics')}
               <InfoTip
-                label="About usage analytics"
-                text="Shares anonymous usage data (feature counts, versions, errors) to help improve Sei. Never your chats, characters, or personal info. Turn off any time."
+                label={t('About usage analytics')}
+                text={t(
+                  'Shares anonymous usage data (feature counts, versions, errors) to help improve Sei. Never your chats, characters, or personal info. Turn off any time.',
+                )}
               />
             </span>
             <Toggle
-              aria-label="Usage analytics"
+              aria-label={t('Usage analytics')}
               on={!analyticsOptOut}
               onChange={(v) => void onToggleAnalytics(v)}
             />
@@ -1134,14 +1207,16 @@ export function SettingsScreen(): React.ReactElement {
               screen. Off by default. Calls read as audio, not subtitles. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Call captions
+              {t('Call captions')}
               <InfoTip
-                label="About call captions"
-                text="Shows live captions during voice calls: what the companion said and what Sei heard you say."
+                label={t('About call captions')}
+                text={t(
+                  'Shows live captions during voice calls: what the companion said and what Sei heard you say.',
+                )}
               />
             </span>
             <Toggle
-              aria-label="Call captions"
+              aria-label={t('Call captions')}
               on={callCaptions}
               onChange={() => void onToggleCallCaptions()}
             />
@@ -1150,14 +1225,16 @@ export function SettingsScreen(): React.ReactElement {
               bottom-right during a call, lit while speaking. Off by default. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Call overlay
+              {t('Call overlay')}
               <InfoTip
-                label="About the call overlay"
-                text="During a voice call, floats your companions' avatars on top of every app in the bottom-right corner, lit while they speak. Good for streaming."
+                label={t('About the call overlay')}
+                text={t(
+                  "During a voice call, floats your companions' avatars on top of every app in the bottom-right corner, lit while they speak. Good for streaming.",
+                )}
               />
             </span>
             <Toggle
-              aria-label="Call overlay"
+              aria-label={t('Call overlay')}
               on={callOverlayEnabled}
               onChange={() => void onToggleCallOverlay()}
             />
@@ -1166,14 +1243,16 @@ export function SettingsScreen(): React.ReactElement {
               bring up a topic on its own. On by default. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Conversation starters
+              {t('Conversation starters')}
               <InfoTip
-                label="About conversation starters"
-                text="When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak."
+                label={t('About conversation starters')}
+                text={t(
+                  'When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak.',
+                )}
               />
             </span>
             <Toggle
-              aria-label="Conversation starters"
+              aria-label={t('Conversation starters')}
               on={convoStartersEnabled}
               onChange={() => void onToggleConvoStarters()}
             />
@@ -1182,9 +1261,9 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── About ───────────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>About</h3>
+          <h3 className={styles.groupTitle}>{t('About') /* >About< */}</h3>
           <div className={styles.row}>
-            <span className={styles.label}>Version</span>
+            <span className={styles.label}>{t('Version')}</span>
             <span className={styles.value}>{versionValue}</span>
             <Button
               kind="ghost"
@@ -1195,53 +1274,55 @@ export function SettingsScreen(): React.ReactElement {
                 void sei.checkForUpdates();
               }}
             >
-              Check now
+              {t('Check now')}
             </Button>
           </div>
           {/* Advanced updates: opt into the beta channel. Off by default so a
               normal user is never moved onto a pre-release build. */}
           <div className={styles.row}>
             <span className={styles.label}>
-              Advanced updates
+              {t('Advanced updates')}
               <InfoTip
-                label="About advanced updates"
-                text="Get beta releases early, before they roll out to everyone. Betas are less tested and may have rough edges. Leave this off for the stable version."
+                label={t('About advanced updates')}
+                text={t(
+                  'Get beta releases early, before they roll out to everyone. Betas are less tested and may have rough edges. Leave this off for the stable version.',
+                )}
               />
             </span>
             <Toggle
-              aria-label="Advanced updates"
+              aria-label={t('Advanced updates')}
               on={advancedUpdates}
               onChange={(v) => void onToggleAdvancedUpdates(v)}
             />
           </div>
           <div className={styles.row}>
-            <span className={styles.label}>Terms of Service</span>
+            <span className={styles.label}>{t('Terms of Service')}</span>
             <Button
               kind="ghost"
               size="sm"
               onClick={() => void sei.openExternal('https://sei.gg/terms.html')}
             >
-              Open
+              {t('Open')}
             </Button>
           </div>
           <div className={styles.row}>
-            <span className={styles.label}>Privacy Policy</span>
+            <span className={styles.label}>{t('Privacy Policy')}</span>
             <Button
               kind="ghost"
               size="sm"
               onClick={() => void sei.openExternal('https://sei.gg/privacy.html')}
             >
-              Open
+              {t('Open')}
             </Button>
           </div>
           <div className={styles.row}>
-            <span className={styles.label}>Report copyright infringement (DMCA)</span>
+            <span className={styles.label}>{t('Report copyright infringement (DMCA)')}</span>
             <Button kind="ghost" size="sm" onClick={() => setDmcaModalOpen(true)}>
-              Open
+              {t('Open')}
             </Button>
           </div>
           <p className={styles.helper}>
-            Photo credits: Minecraft artwork by Mojang Studios. Movie night photo by{' '}
+            {t('Photo credits: Minecraft artwork by Mojang Studios. Movie night photo by')}{' '}
             <button
               type="button"
               className={styles.creditLink}
@@ -1253,15 +1334,15 @@ export function SettingsScreen(): React.ReactElement {
             >
               American Retirement Homes
             </button>{' '}
-            (CC licensed).
+            {t('(CC licensed).')}
           </p>
         </div>
 
         {/* ── Danger ──────────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>Danger</h3>
+          <h3 className={styles.groupTitle}>{t('Danger') /* >Danger< */}</h3>
           <div className={styles.row}>
-            <span className={styles.label}>Reset all companion memories</span>
+            <span className={styles.label}>{t('Reset all companion memories')}</span>
             <Button
               kind="danger"
               size="sm"
@@ -1272,8 +1353,9 @@ export function SettingsScreen(): React.ReactElement {
             </Button>
           </div>
           <p className={styles.helper}>
-            Wipes saved chat history and playtime for every companion on this device. Persona,
-            portrait, and skin are kept.
+            {t(
+              'Wipes saved chat history and playtime for every companion on this device. Persona, portrait, and skin are kept.',
+            )}
           </p>
           {resetAllError ? (
             <p className={`${styles.helper} ${styles.helperError}`} role="alert">
@@ -1283,7 +1365,7 @@ export function SettingsScreen(): React.ReactElement {
           {authState.kind === 'signed_in' ? (
             <>
               <div className={styles.row}>
-                <span className={styles.label}>Delete account</span>
+                <span className={styles.label}>{t('Delete account')}</span>
                 <Button
                   kind="danger"
                   size="sm"
@@ -1293,14 +1375,25 @@ export function SettingsScreen(): React.ReactElement {
                     }
                   }}
                 >
-                  Delete account…
+                  {t('Delete account…')}
                 </Button>
               </div>
               <p className={styles.helper}>
-                Permanently deletes your cloud data within 30 days. Local files stay.
+                {t('Permanently deletes your cloud data within 30 days. Local files stay.')}
               </p>
             </>
           ) : null}
+          <div className={styles.row}>
+            <span className={styles.label}>{t('Factory reset')}</span>
+            <Button kind="danger" size="sm" onClick={() => setFactoryResetOpen(true)}>
+              {t('Factory reset…')}
+            </Button>
+          </div>
+          <p className={styles.helper}>
+            {t(
+              'Erases everything on this device and restarts Sei like a fresh install. Cloud data stays on your account.',
+            )}
+          </p>
         </div>
       </div>
 
@@ -1345,6 +1438,9 @@ export function SettingsScreen(): React.ReactElement {
         />
       ) : null}
       {dmcaModalOpen ? <DmcaContactModal onClose={() => setDmcaModalOpen(false)} /> : null}
+      {factoryResetOpen ? (
+        <FactoryResetConfirmModal onCancel={() => setFactoryResetOpen(false)} />
+      ) : null}
     </div>
   );
 }
@@ -1356,6 +1452,7 @@ export function SettingsScreen(): React.ReactElement {
  * pill state (enabled-install count) refreshes whenever the wizard closes.
  */
 function SkinSetupRow(): React.ReactElement {
+  const t = useT();
   const openWizard = useWizardStore((s) => s.openWizard);
   // Re-read the persisted wizard state whenever the wizard CLOSES so a
   // completed "Re-run setup" flips the label without reopening Settings.
@@ -1380,14 +1477,16 @@ function SkinSetupRow(): React.ReactElement {
   return (
     <div className={styles.row}>
       <span className={styles.label}>
-        Custom skins
+        {t('Custom skins')}
         <InfoTip
-          label="About custom skins"
-          text="Give your companion a Minecraft skin so it looks right in your world. This runs a quick one-time setup for your Minecraft install."
+          label={t('About custom skins')}
+          text={t(
+            'Give your companion a Minecraft skin so it looks right in your world. This runs a quick one-time setup for your Minecraft install.',
+          )}
         />
       </span>
       <Button kind="ghost" size="sm" onClick={() => openWizard(true)}>
-        {enabledCount > 0 ? 'Re-run setup' : 'Run setup'}
+        {enabledCount > 0 ? t('Re-run setup') : t('Run setup')}
       </Button>
     </div>
   );

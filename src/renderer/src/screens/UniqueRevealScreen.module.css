@@ -1,6 +1,6 @@
 /* UniqueRevealScreen — the "meet <name>" moment. Reuses CharacterPage's
  * full-bleed layout: the portrait bleeds off the right behind a left→right
- * scrim, and a left content panel carries the reveal copy (eyebrow, name +
+ * scrim, and a left content panel carries the reveal copy (name +
  * IdTag, intro, CTAs) instead of the profile page's crumb / tabs / stats /
  * deploy. The layout scaffolding is copied (not imported) so the two screens
  * stay independently editable. Tokens only. */
@@ -94,14 +94,6 @@
   to {
     transform: none;
   }
-}
-
-/* Mono micro-label (see .u-lbl). Sentence case; no uppercase transform. */
-.eyebrow {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
 }
 
 .nameRow {

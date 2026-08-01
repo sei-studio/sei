@@ -22,20 +22,22 @@
  * The move decision is atomic and never aborted or re-run. Once play() lands
  * the decision enters a HOLD (s.hold) and the contention moves entirely to
  * presentation:
- *   decide -> prethink (sampled human think time; Maia entropy + eval
- *   closeness, log-normal skew) -> present (commentary bubbles +
- *   pendingAiMove push) -> renderer reveals after its quiet gate (2s after
- *   the last utterance finishes printing/speaking) -> ack -> commit.
- * A player chat during the hold runs as a normal P1 turn that KNOWS the
- * queued move: it can update it (play() again), or hold it back entirely
- * (wait(), after which only player messages and idle ticks wake the move). A
- * hard cap (reply cycles / wall clock) force-commits so chat spam cannot
- * stall the game; wait() disarms the cap deliberately.
+ *   decide -> present immediately (commentary bubbles + pendingAiMove push;
+ *   the sampled "human think" prethink delay was removed 260729) -> renderer
+ *   reveals after its quiet gate (2s after the last utterance finishes
+ *   printing/speaking) -> ack -> commit.
+ * A player chat during the hold runs as a normal P1 reply turn that KNOWS the
+ * queued move but can neither change nor delay it: reply turns are TEXT-ONLY
+ * (260730: the play()-revision and wait() hold-back path was dropped — a live
+ * game logged 17 rejected play()/wait() calls whose retries doubled every
+ * reply turn, and the model spoke its confusion out loud). A hard cap (reply
+ * cycles / wall clock) force-commits so chat spam cannot stall the game.
  */
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
+import { raiseUsageLimitPopup } from '../chat/usageLimit';
 import { Chess } from 'chess.js';
 import type { ChatMessage, ChatSendResult, LogBatch } from '../../shared/ipc';
 import type {
@@ -50,8 +52,9 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
-import { buildSystemBlocks, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
+import { buildSystemBlocks, clockNow, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import {
   splitReply,
@@ -65,7 +68,7 @@ import * as chatStore from '../chat/chatStore';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { createPriorityQueue, Priority } from '../../bot/brain/fsm.js';
 import { isCallActive } from '../voice/callState';
-import { clampChatLanguage } from '../../shared/chatLanguage';
+import { surfaceLanguage } from '../../shared/chatLanguage';
 import { ensureModel, modelReady } from './modelStore';
 import { getOrCreateChessProfile, type ChessProfile } from './chessProfile';
 import { createChessLog, NULL_CHESS_LOG, type ChessLog } from './chessLog';
@@ -94,8 +97,6 @@ interface CandidateOut {
     tags: string[];
     line: { sans: string[]; sentence: string } | null;
   }>;
-  /** Human-difficulty signals for the prethink sampler (cce-1 `think`). */
-  think?: { top1P: number; entropy: number; evalGapCp: number | null };
 }
 
 /** Minimal typed view of the fsm.js priority queue. */
@@ -116,14 +117,11 @@ interface ChatBufferEntry {
 interface HoldState {
   move: { uci: string; san: string };
   decidedAt: number;
-  /** Move-turn table talk, buffered until prethink elapses. */
+  /** Move-turn table talk, pushed at presentation. */
   commentary: ChatMessage[];
   /** Commentary pushed + pendingAiMove published to the renderer. */
   presented: boolean;
-  /** wait(): the move only wakes on player messages or idle ticks. */
-  held: boolean;
   replyCycles: number;
-  prethinkTimer: NodeJS.Timeout | null;
   capTimer: NodeJS.Timeout | null;
 }
 
@@ -142,6 +140,12 @@ interface Session {
   profile: ChessProfile;
   history: ChessMoveRecord[];
   startedAt: number;
+  /**
+   * Clock string pinned at session start (chatPrompts.clockNow), passed as
+   * pinnedClock so a minute rollover during a hold's reply cycles cannot
+   * invalidate the cached system prefix mid-exchange.
+   */
+  clock: string;
   turnCtrl: AbortController | null;
   /** Bumps ONLY when the session ends; in-flight turns treat a bump as abort. */
   turnSeq: number;
@@ -183,9 +187,8 @@ interface Session {
   lastMacro: string;
   /**
    * When the AI started thinking about the current move (the player's move
-   * landed / warm-up concluded it moves first). The prethink sampler subtracts
-   * the decide latency already elapsed from this, so the TOTAL apparent think
-   * time stays inside prethinkCapMs. Null while it is not deciding.
+   * landed / warm-up concluded it moves first). Diagnostic only since 260729:
+   * logged as decideLatency when the move presents. Null while not deciding.
    */
   thinkingSince: number | null;
   /**
@@ -199,24 +202,14 @@ interface Session {
 
 /**
  * Presentation timing. Exported and mutable for tests only; not user copy.
- * prethink = sampled "human think" delay between the LLM decision returning
- * and the commentary/move presenting. postthink (the 2s quiet gate after the
- * last utterance) lives renderer-side in useAiMoveReveal's settle window.
+ * A decided move presents immediately (the sampled prethink delay was removed
+ * 260729); postthink (the 2s quiet gate after the last utterance) lives
+ * renderer-side in useAiMoveReveal's settle window.
  */
 export const CHESS_TIMING = {
-  /** Instant answers are allowed (260722: the floor read as lag, not thought). */
-  prethinkFloorMs: 0,
-  /**
-   * Hard ceiling on the APPARENT think time (decide latency + sampled delay).
-   * The sampler subtracts the time the LLM/engine already took from this
-   * budget, so the player never waits more than ~10s after their move.
-   */
-  prethinkCapMs: 10_000,
-  /** Obvious move (recapture / dominant Maia top-1): floor + rand * this. */
-  obviousExtraMs: 900,
-  /** Force-commit after this many reply cycles during a (non-held) hold. */
+  /** Force-commit after this many reply cycles during a hold. */
   capReplyCycles: 4,
-  /** Force-commit wall clock since the decision (disarmed by wait()). */
+  /** Force-commit wall clock since the decision. */
   capMs: 45_000,
   idleMinMs: 25_000,
   idleMaxMs: 90_000,
@@ -323,6 +316,7 @@ export async function startChess(
     profile,
     history: [],
     startedAt: Date.now(),
+    clock: clockNow(),
     turnCtrl: null,
     turnSeq: 0,
     candidateCache: null,
@@ -362,6 +356,22 @@ export async function startChess(
   }) as ChessQueue;
   sessions.set(characterId, s);
   push(s);
+
+  // Analytics (260728): a game surface must report its own playtime, or it is
+  // invisible — `minutes` used to mean Minecraft only. Lazy import so the
+  // module graph (and the tests) never depend on analytics being initialized;
+  // capture() is a no-op when it is not. No board state, no chat, no persona.
+  void (async () => {
+    try {
+      const { capture } = await import('../analytics');
+      capture('chess_game_started', {
+        character_id: characterId,
+        player_color: playerColor,
+        ai_elo: profile.elo,
+        profile_source: profile.source,
+      });
+    } catch { /* analytics is never load-bearing */ }
+  })();
 
   // Warm the engine (first run downloads the model with progress pushes).
   void (async () => {
@@ -483,7 +493,7 @@ export async function endChess(characterId: string): Promise<void> {
 /**
  * The renderer's quiet gate passed: commentary finished presenting and held
  * 2s of table silence with the pending move on deck. Commit it. Stale acks
- * (move revised, wait() retracted it, game over) are ignored; the snapshot
+ * (already committed via the cap, game over) are ignored; the snapshot
  * reconciles the renderer either way.
  */
 export async function ackReveal(characterId: string, uci: string): Promise<ChessGameState> {
@@ -492,7 +502,6 @@ export async function ackReveal(characterId: string, uci: string): Promise<Chess
   if (
     s.status !== 'active' ||
     !s.hold ||
-    s.hold.held ||
     !s.hold.presented ||
     s.pendingAiMove?.uci !== uci
   ) {
@@ -508,9 +517,9 @@ export async function ackReveal(characterId: string, uci: string): Promise<Chess
  * A player chat message while a game is open. Returns null when chess should
  * NOT handle it (no session / game over) so ipc falls through to the normal
  * chat path. The message lands in the chat log immediately, then rides the
- * session queue at P1: consecutive sends coalesce into one reply turn, and a
- * turn during the presentation hold can update or hold back the queued move
- * (it never re-decides from scratch).
+ * session queue at P1: consecutive sends coalesce into one reply turn. A turn
+ * during the presentation hold is told the queued move (so the reply cannot
+ * contradict it) but can neither change nor delay it, and never re-decides.
  */
 export async function handlePlayerChat(args: {
   characterId: string;
@@ -642,7 +651,12 @@ async function dispatchYourMove(s: Session): Promise<void> {
       if ((err as Error).message === CHAT_ABORTED) return;
       console.error(`[sei/chess] AI turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
       s.log.line(`move turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
-      if (attempt === 0 && isConnectionError(err)) {
+      // Usage limit (260730): raise the popup, skip the retry (it would 402
+      // again), and fall through to fallbackPlay — the ENGINE picks the move
+      // for free, so the game stays alive and playable; after a top up the
+      // next turn simply talks again. Nothing here ends the session.
+      const limited = await raiseUsageLimitPopup(err);
+      if (!limited && attempt === 0 && isConnectionError(err)) {
         await new Promise((r) => setTimeout(r, 1500));
         if (s.status !== 'active') return;
         continue;
@@ -668,6 +682,7 @@ async function dispatchChat(s: Session, nudge: boolean): Promise<void> {
     replies = await runChessLlmTurn(s, { kind: 'chat-reply', voiceCall });
   } catch (err) {
     if ((err as Error).message !== CHAT_ABORTED) {
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei/chess] chat reply failed: ${describeErr(err)}`);
     }
   }
@@ -677,9 +692,8 @@ async function dispatchChat(s: Session, nudge: boolean): Promise<void> {
   // pushed copies, so every gameplay reply rendered twice (260721).
   for (const e of entries) e.resolve({ replies, streamed: true });
 
-  // Conversation cap: chat can delay the queued move only so far, unless the
-  // character itself chose to hold (wait() disarms the cap on purpose).
-  if (s.status === 'active' && s.hold && !s.hold.held) {
+  // Conversation cap: chat can delay the queued move only so far.
+  if (s.status === 'active' && s.hold) {
     s.hold.replyCycles++;
     if (s.hold.replyCycles >= CHESS_TIMING.capReplyCycles) {
       await forceCommit(s);
@@ -691,14 +705,14 @@ async function dispatchIdle(s: Session): Promise<void> {
   if (s.status !== 'active') return;
   if (s.chatBuffer.length > 0) return; // a reply turn is about to run anyway
   // Never chatter while a decided move is presenting (it would reset the
-  // reveal's quiet gate). A held move is the exception: the idle tick is its
-  // reminder channel. While deciding, the turn itself is about to speak.
-  if (s.aiThinking && !(s.hold && s.hold.held)) return;
+  // reveal's quiet gate). While deciding, the turn itself is about to speak.
+  if (s.aiThinking) return;
   let replies: ChatMessage[] = [];
   try {
     replies = await runChessLlmTurn(s, { kind: 'idle', voiceCall: isCallActive(s.characterId) });
   } catch (err) {
     if ((err as Error).message !== CHAT_ABORTED) {
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei/chess] idle turn failed: ${describeErr(err)}`);
     }
     return;
@@ -719,46 +733,11 @@ function sampleIdleDelayMs(s: Session): number {
 
 // ── the presentation hold ────────────────────────────────────────────────────
 
-/**
- * Sampled "human think" delay before the decision presents. Obvious moves
- * (recaptures, a dominant Maia top-1) answer near-instantly; hard choices
- * (high human-policy entropy, close candidate evals) draw from a log-normal
- * so most thinks are quick with the occasional genuine tank — the skew Allie
- * (arXiv 2410.03893) observed in real human clocks.
- */
-function samplePrethinkMs(s: Session): number {
-  const T = CHESS_TIMING;
-  // The player has been waiting since the AI started deciding (engine +
-  // LLM latency IS think time from their side of the table). Whatever is
-  // left of the prethink budget bounds the sampled delay: total apparent
-  // thinking never exceeds prethinkCapMs, and zero (instant) is fine.
-  const elapsed = s.thinkingSince == null ? 0 : Date.now() - s.thinkingSince;
-  const budget = Math.max(0, T.prethinkCapMs - elapsed);
-  const t = s.candidateCache?.out.think;
-  if (isRecapture(s) || (t?.top1P ?? 0) > 0.7) {
-    return Math.min(budget, T.prethinkFloorMs + Math.random() * T.obviousExtraMs);
-  }
-  const closeness = t?.evalGapCp == null ? 0.5 : 1 - Math.min(t.evalGapCp / 200, 1);
-  const difficulty = 0.6 * (t?.entropy ?? 0.5) + 0.4 * closeness;
-  const median = 1000 + 6000 * difficulty;
-  const sampled = median * Math.exp(0.5 * gaussian());
-  return Math.min(budget, Math.max(T.prethinkFloorMs, sampled));
-}
-
-function gaussian(): number {
-  const u = Math.random() || 1e-9;
-  const v = Math.random() || 1e-9;
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-/** The decided move recaptures on the square the player just captured on. */
-function isRecapture(s: Session): boolean {
-  const last = s.history[s.history.length - 1];
-  if (!last || !last.san.includes('x') || !s.hold) return false;
-  return s.hold.move.uci.slice(2, 4) === last.uci.slice(2, 4);
-}
-
-/** Enter the hold for a decided move and schedule its presentation. */
+/** Enter the hold for a decided move. Presentation is the CALLER's job once
+ * the turn's commentary is final (it used to be the prethink timer's; the
+ * sampled "human think" delay was removed 260729, so the real engine + LLM
+ * latency is the only wait the player sees). The cap timer still force-commits
+ * an unpresented hold, so an aborted turn cannot strand the move. */
 function beginHold(s: Session, move: { uci: string; san: string }, commentary: ChatMessage[]): void {
   clearHoldTimers(s);
   s.hold = {
@@ -766,20 +745,13 @@ function beginHold(s: Session, move: { uci: string; san: string }, commentary: C
     decidedAt: Date.now(),
     commentary,
     presented: false,
-    held: false,
     replyCycles: 0,
-    prethinkTimer: null,
     capTimer: null,
   };
-  const prethinkMs = samplePrethinkMs(s);
   s.log.line(
-    `decided ${move.san} (${move.uci}) prethink=${Math.round(prethinkMs)}ms ` +
+    `decided ${move.san} (${move.uci}) ` +
       `decideLatency=${s.thinkingSince == null ? '?' : Date.now() - s.thinkingSince}ms commentaryLines=${commentary.length}`,
   );
-  s.hold.prethinkTimer = setTimeout(() => {
-    if (s.hold) s.hold.prethinkTimer = null;
-    void presentHold(s);
-  }, prethinkMs);
   armCapTimer(s);
 }
 
@@ -787,22 +759,20 @@ function armCapTimer(s: Session): void {
   if (!s.hold) return;
   if (s.hold.capTimer) clearTimeout(s.hold.capTimer);
   s.hold.capTimer = setTimeout(() => {
-    if (s.status === 'active' && s.hold && !s.hold.held) void forceCommit(s);
+    if (s.status === 'active' && s.hold) void forceCommit(s);
   }, CHESS_TIMING.capMs);
 }
 
 function clearHoldTimers(s: Session): void {
   if (!s.hold) return;
-  if (s.hold.prethinkTimer) clearTimeout(s.hold.prethinkTimer);
   if (s.hold.capTimer) clearTimeout(s.hold.capTimer);
-  s.hold.prethinkTimer = null;
   s.hold.capTimer = null;
 }
 
 /** Push the buffered commentary + publish pendingAiMove for the reveal gate. */
 async function presentHold(s: Session): Promise<void> {
   const d = requireDeps();
-  if (s.status !== 'active' || !s.hold || s.hold.presented || s.hold.held) return;
+  if (s.status !== 'active' || !s.hold || s.hold.presented) return;
   s.hold.presented = true;
   const lines = s.hold.commentary.splice(0);
   for (const msg of lines) {
@@ -812,7 +782,7 @@ async function presentHold(s: Session): Promise<void> {
     s.lastActivityAt = Date.now();
     s.spoke = true;
   }
-  if (s.status !== 'active' || !s.hold || s.hold.held) return;
+  if (s.status !== 'active' || !s.hold) return;
   s.pendingAiMove = s.hold.move;
   s.log.line(`presented ${s.hold.move.san} (pendingAiMove published, ${lines.length} commentary line(s))`);
   push(s);
@@ -908,6 +878,27 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
     `game over: ${result.winner === null ? 'draw' : `${colorName(result.winner)} wins`} ` +
       `(${result.reason}) plies=${s.history.length} durationMs=${durationMs}`,
   );
+
+  // Analytics (260728): `duration_ms` is the SHARED contract every timed
+  // surface emits, so the dashboard can sum playtime across Minecraft, chess
+  // and calls with one query. Fired for abandoned games too (that time was
+  // still spent); `reason` distinguishes them. See the games rule in CLAUDE.md.
+  void (async () => {
+    try {
+      const { capture } = await import('../analytics');
+      capture('chess_game_ended', {
+        character_id: s.characterId,
+        duration_ms: durationMs,
+        plies: s.history.length,
+        reason: result.reason,
+        // 'player' | 'ai' | 'draw' — never the raw colour, which would need
+        // playerColor to interpret.
+        outcome: result.winner === null ? 'draw' : result.winner === s.playerColor ? 'player' : 'ai',
+        ai_elo: s.profile.elo,
+        spoke: s.spoke,
+      });
+    } catch { /* analytics is never load-bearing */ }
+  })();
   // Transcript event ("You and X played chess. You won in N moves.") — same
   // shape the Minecraft/watch sessions append, rendered with the gamepad icon.
   // Abandoned games leave no row ONLY when nothing happened at all (no moves
@@ -918,9 +909,12 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
     const plyCount = s.history.length;
     void (async () => {
       let name = 'your companion';
+      let rowLanguage: 'zh' | undefined;
       try {
         const c = await getCharacter(s.characterId);
         if (c?.name) name = c.name;
+        const { characterLanguage } = await import('../../shared/chatLanguage');
+        if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
       } catch { /* generic name */ }
       // Replay payload: SAN/UCI only (the renderer rebuilds per-ply FENs from
       // the start position), so a long game stays a few hundred bytes in the
@@ -937,7 +931,7 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
       const ev: ChatMessage = {
         id: randomUUID(),
         role: 'system',
-        text: chessSummaryText(name, s.playerColor, result, plyCount, durationMs),
+        text: chessSummaryText(name, s.playerColor, result, plyCount, durationMs, rowLanguage),
         ts: Date.now(),
         event: { kind: 'play', game: 'Chess', durationMs, ...(chess ? { chess } : {}) },
       } as ChatMessage;
@@ -968,34 +962,20 @@ export function chessSummaryText(
   result: ChessResult,
   plyCount: number,
   durationMs: number,
+  language?: 'en' | 'zh',
 ): string {
   if (result.reason === 'abandoned') {
-    return `You and ${name} left a chess game unfinished.`;
+    return language === 'zh'
+      ? `你和${name}有一局国际象棋没有下完。`
+      : `You and ${name} left a chess game unfinished.`;
   }
-  const moves = Math.ceil(plyCount / 2);
-  const inMoves = moves > 0 ? ` in ${moves} move${moves === 1 ? '' : 's'}` : '';
-  const afterMoves = moves > 0 ? ` after ${moves} move${moves === 1 ? '' : 's'}` : '';
-  // Sub-minute games skip the duration (a move count says it better).
-  const opener =
-    durationMs >= 60_000
-      ? `You and ${name} played chess for ${formatChessDuration(durationMs)}.`
-      : `You and ${name} played chess.`;
-  if (result.winner === null) {
-    return `${opener} The game ended in a draw${afterMoves}.`;
-  }
-  return result.winner === playerColor
-    ? `${opener} You won${inMoves}.`
-    : `${opener} ${name} won${inMoves}.`;
-}
-
-/** Human phrase for a game length (mirrors the watch play-row phrasing). */
-function formatChessDuration(ms: number): string {
-  if (ms < 3_600_000) {
-    const m = Math.max(1, Math.round(ms / 60_000));
-    return `${m} minute${m === 1 ? '' : 's'}`;
-  }
-  const h = Math.max(1, Math.round(ms / 3_600_000));
-  return `${h} hour${h === 1 ? '' : 's'}`;
+  // One shape for every game surface, results deliberately omitted: see the
+  // note in src/main/chat/playSummary.ts. playerColor / result / plyCount are
+  // kept in the signature because the ChessReplayData on the same row still
+  // carries them for the replay card.
+  void playerColor;
+  void plyCount;
+  return playSummaryText(name, language === 'zh' ? '国际象棋' : 'Chess', durationMs, language);
 }
 
 /** Log-friendly error description including status and the cause chain. */
@@ -1034,6 +1014,7 @@ async function fallbackPlay(s: Session): Promise<void> {
   if (!pick) throw new Error('no candidates');
   s.log.line(`fallback: playing first candidate ${pick.san} (no valid play() from the model)`);
   beginHold(s, { uci: pick.uci, san: pick.san }, []);
+  await presentHold(s);
 }
 
 // ── the LLM turn ─────────────────────────────────────────────────────────────
@@ -1041,12 +1022,11 @@ async function fallbackPlay(s: Session): Promise<void> {
 const PLAY_TOOL = {
   name: 'play',
   description:
-    'Play your chess move, or revise a move you already queued this turn. ' +
+    'Play your chess move. Only works on the turn that asks you to move; on every other turn the game handles your move ' +
+    'by itself and you only talk. ' +
     'Give the move in standard notation (SAN like "Nf3", "exd5", "O-O", or a from-to square pair like "e2e4"). ' +
     'Pick from the candidate moves you are considering; you may try a different legal move if your character truly would, ' +
     'but your candidates already reflect how well you see the board. If the move is illegal you will be told and must try again. ' +
-    'When a move is already queued, calling this with a different move changes your decision, and calling it with the same move ' +
-    'releases one you were holding back. The game state above says which situation you are in. ' +
     'If you want to say any table talk, say it BEFORE calling this, in the same turn; staying silent is also fine.',
   input_schema: {
     type: 'object' as const,
@@ -1055,15 +1035,6 @@ const PLAY_TOOL = {
     },
     required: ['move'],
   },
-};
-
-const WAIT_TOOL = {
-  name: 'wait',
-  description:
-    'Hold your queued move back instead of letting it land, for example because the player asked for a moment. ' +
-    'While you hold, the game is PAUSED on your turn: the player CANNOT move or act on the board until you call play() again in a later turn. ' +
-    'Use it for a short pause in the conversation, never to let the player act first (they cannot). New messages and quiet moments will remind you.',
-  input_schema: { type: 'object' as const, properties: {}, required: [] },
 };
 
 const PROPOSE_DRAW_TOOL = {
@@ -1100,7 +1071,6 @@ const FORFEIT_TOOL = {
  */
 const CHESS_TOOLS = [
   PLAY_TOOL,
-  WAIT_TOOL,
   PROPOSE_DRAW_TOOL,
   FORFEIT_TOOL,
   REMEMBER_TOOL,
@@ -1293,20 +1263,10 @@ async function buildChessTurnBlock(
 
   const holdLines = (): void => {
     if (!s.hold) return;
-    if (s.hold.held) {
-      lines.push(
-        `Game state: it is YOUR turn, and you are HOLDING your move back (you called wait()). Your chosen move (${s.hold.move.san}) has NOT been played; nothing is on the board yet. ` +
-          `While you hold, the game is PAUSED: ${playerName} CANNOT move, respond on the board, or do anything at all until your move lands. Holding never lets them act first; chess does not work that way. ` +
-          `If ${playerName} asks you to move, says it is your turn, or wants the game to continue, call play() NOW (same move or a different one). ` +
-          'Keep waiting only if the pause itself is still what they want. Never tell them to play or to move: they cannot until you do. Do not say your held move in chat.',
-      );
-    } else {
-      lines.push(
-        `Game state: it is YOUR turn and your move is already chosen (${s.hold.move.san}). It has not appeared on the board yet, but it lands BY ITSELF moments after this conversation goes quiet; you do not need to do anything. ` +
-          'To change your decision, call play() again with your new move. ' +
-          `If ${playerName} asks you to hold on, or you want to keep it back for now, call wait(). Do not announce the move in chat; the board will show it.`,
-      );
-    }
+    lines.push(
+      `Game state: it is YOUR turn and your move is already chosen (${s.hold.move.san}). It has not appeared on the board yet, but it lands BY ITSELF moments after this conversation goes quiet; you do not need to do anything and NO tool call is needed or possible. ` +
+        'Just reply in text. Do not announce the move in chat; the board will show it.',
+    );
   };
 
   if (kind === 'chat-reply' || kind === 'idle') {
@@ -1316,17 +1276,14 @@ async function buildChessTurnBlock(
       else {
         lines.push(
           playersTurn
-            ? `Game state: it is ${playerName}'s move. Your last move is already on the board and nothing of yours is pending or held. Reply to their message.`
-            : 'Game state: it is YOUR move, but first just reply to their message; you will pick your move right after.',
+            ? `Game state: it is ${playerName}'s move. Your last move is already on the board and nothing of yours is pending. Reply to their message.`
+            : 'Game state: it is YOUR move, but first just reply to their message in text; the game will ask you to pick your move right after this reply. No tool call now.',
         );
       }
     } else {
       const sec = Math.max(1, Math.round(quietSec ?? 0));
       lines.push(
-        `Nothing has happened for about ${sec} seconds. ` +
-          (s.hold?.held
-            ? 'You are still holding your move back.'
-            : `${playerName} is thinking about their move.`),
+        `Nothing has happened for about ${sec} seconds. ${playerName} is thinking about their move.`,
       );
       if (s.hold) holdLines();
       lines.push(
@@ -1424,10 +1381,11 @@ async function readMemoryTail(id: string): Promise<string> {
 /**
  * Run one chess LLM turn. kind:
  *   'move'       — it is the AI's move: optional commentary + the play/draw/
- *                  forfeit loop. Commentary is BUFFERED into the hold and only
- *                  presents after the prethink delay.
- *   'chat-reply' — answer player chat with the game as context. During a hold
- *                  it can revise (play), hold (wait) or accept a draw.
+ *                  forfeit loop. Commentary is BUFFERED into the hold and
+ *                  presents with the move as soon as the turn loop ends.
+ *   'chat-reply' — answer player chat with the game as context. Text-only:
+ *                  it is told any queued move but cannot change or delay it
+ *                  (it may still accept a standing draw offer).
  *   'idle'       — quiet-table tick; a line is optional, silence expected.
  *   'game-over'  — react to the finished game.
  * Returns the persisted commentary messages (for 'move', the buffered ones).
@@ -1453,6 +1411,8 @@ async function runChessLlmTurn(
     name: character.name,
     preferredName: config.preferred_name ?? '',
     proactiveness: 1,
+    // Not the Discord-like chat surface: live game, board/canvas beside chat.
+    surface: 'game',
     punctuation: character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual',
     memory,
     summary,
@@ -1460,10 +1420,13 @@ async function runChessLlmTurn(
     openWorldDetected: false,
     inGame: false,
     voiceCall: opts.voiceCall,
-    language: clampChatLanguage(config.chat_language),
+    // 260730: character-pinned language wins over the auto-detected one.
+    language: surfaceLanguage(character.metadata, config.chat_language),
     // STATIC for the whole game, so it rides inside the cached region. The
     // volatile per-turn view goes in the messages tail below, never here.
     extraStable: chessContractBlock(s, playerName),
+    // Session-pinned clock: keeps the system prefix byte-stable across a game.
+    pinnedClock: s.clock,
   } as Parameters<typeof buildSystemBlocks>[0]);
   const turnBlock = await buildChessTurnBlock(s, opts.kind, playerName, quietSec);
 
@@ -1507,8 +1470,8 @@ async function runChessLlmTurn(
   // is stated in the turn block instead, where it costs nothing to vary.
   const tools = CHESS_TOOLS;
 
-  // Move-turn table talk presents only after the prethink delay; everything
-  // else speaks immediately.
+  // Move-turn table talk presents together with the move at the end of the
+  // turn loop; everything else speaks immediately.
   const deferSpeech = opts.kind === 'move';
   // Backstop for the "keep it short" contract: a turn may not spill more than a
   // couple of bubbles no matter what the model does. A live game-over turn wrote
@@ -1557,10 +1520,6 @@ async function runChessLlmTurn(
       s.spoke = true;
     }
   };
-
-  // Set when a hold-turn released a held move (play() after wait()); the
-  // presentation restarts after the reply finishes.
-  let presentAfterTurn = false;
 
   try {
     const { client, model } = await buildChatSdk();
@@ -1623,48 +1582,15 @@ async function runChessLlmTurn(
             beginHold(s, picked, []); // commentary attached after the loop
             note = `You play ${picked.san}. It will land on the board in a moment; do not call play() again this turn, and do not announce the move in chat.`;
           }
-        } else if (tu.name === 'play' && opts.kind !== 'move' && s.hold) {
-          const raw = String((tu.input as { move?: string })?.move ?? '').trim();
-          const picked = tryParseMove(s, raw);
-          if (!picked) {
-            note = `"${raw}" is not a legal move for you here. Your queued move is still ${s.hold.move.san}. Do not mention this correction in chat.`;
-          } else {
-            const wasHeld = s.hold.held;
-            const changed = s.hold.move.uci !== picked.uci;
-            s.hold.move = picked;
-            if (s.hold.presented) {
-              // Re-publish so the renderer re-arms its reveal on the new move.
-              s.pendingAiMove = picked;
-              push(s);
-            } else if (changed) {
-              // Unshown commentary was written for the old move; drop it.
-              s.hold.commentary = [];
-            }
-            if (wasHeld) {
-              s.hold.held = false;
-              s.hold.replyCycles = 0;
-              s.hold.decidedAt = Date.now();
-              armCapTimer(s);
-              presentAfterTurn = true;
-              note = `You will play ${picked.san}. It lands once this exchange goes quiet. Do not announce the move in chat.`;
-            } else {
-              note = changed
-                ? `Your queued move is now ${picked.san}. Do not announce it in chat.`
-                : `Your queued move stays ${picked.san}.`;
-            }
-          }
-        } else if (tu.name === 'wait' && opts.kind !== 'move' && s.hold) {
-          s.hold.held = true;
-          s.hold.replyCycles = 0;
-          clearHoldTimers(s);
-          if (s.hold.presented) {
-            s.hold.presented = false;
-            s.pendingAiMove = null;
-            push(s);
-          } else {
-            s.hold.commentary = [];
-          }
-          note = `You hold ${s.hold.move.san} back. Nothing will play until you call play() again in a later turn.`;
+        } else if (tu.name === 'play' && opts.kind !== 'move') {
+          // 260730: reply/idle turns are text-only. The old revise-the-queued-
+          // move path is gone, and the note is TERMINAL on purpose: the live
+          // failure was a transient-sounding rejection ("not available right
+          // now") that the model retried across hops, doubling every reply
+          // turn and speaking its confusion out loud.
+          note = s.hold
+            ? `Your move (${s.hold.move.san}) is already chosen and lands by itself; play() does nothing on this turn and never will. Do not call it again. Reply in text, or say nothing.`
+            : 'play() does nothing on this turn and never will: the game asks for your move in a separate turn right after this reply. Do not call it again. Reply in text, or say nothing.';
         } else if (tu.name === 'propose_draw' && (opts.kind === 'move' || s.drawOffer === 'player')) {
           if (s.drawOffer === 'player') {
             note = 'You accept the draw. The game ends now; say your closing line if you have not.';
@@ -1708,7 +1634,9 @@ async function runChessLlmTurn(
             note = 'Nothing saved; the text was empty.';
           }
         } else {
-          note = `The tool "${tu.name}" is not available right now.`;
+          // Terminal, never transient-sounding: "not available right now" read
+          // as retryable and produced retry loops (see the play() note above).
+          note = `The tool "${tu.name}" does nothing on this turn and never will. Do not call it again. Reply in text, or say nothing.`;
         }
         turnLog.push(`tool: ${tu.name}(${truncateForLog(JSON.stringify(tu.input ?? {}), 200)})`);
         turnLog.push(`  -> ${truncateForLog(note, 300)}`);
@@ -1733,11 +1661,11 @@ async function runChessLlmTurn(
         // The model never produced a valid play() — keep the game moving.
         await fallbackPlay(s);
       } else if (s.hold) {
-        // Attach the buffered table talk to the hold; prethink presents it.
+        // Attach the buffered table talk to the hold and present right away
+        // (260729: no prethink delay — commentary is final once the loop ends).
         s.hold.commentary = spoken.slice();
+        await presentHold(s);
       }
-    } else if (presentAfterTurn) {
-      await presentHold(s);
     }
 
     void foldIfDue(s.characterId, character.persona.expanded).catch(() => {});

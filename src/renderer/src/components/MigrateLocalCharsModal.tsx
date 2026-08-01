@@ -26,6 +26,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useCloudCharactersStore } from '../lib/stores/useCloudCharactersStore';
@@ -52,6 +53,7 @@ interface UploadResult {
 type Phase = 'loading' | 'idle' | 'submitting' | 'results';
 
 export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps): React.ReactElement {
+  const t = useT();
   const [chars, setChars] = useState<LocalCharRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [phase, setPhase] = useState<Phase>('loading');
@@ -146,20 +148,21 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
   return (
     // Dismissal is button-only — Esc/scrim never close (escClose + scrimClose
     // omitted). The user must hit "Maybe later" or "Done" to dismiss.
-    <ModalShell title="Upload local companions?" width={460} escClose={false}>
+    <ModalShell title={t('Upload local companions?')} width={460} escClose={false}>
       <p className={styles.body}>
-        These companions are saved on this machine only. Upload any to your cloud party to use
-        them on other devices.
+        {t(
+          'These companions are saved on this machine only. Upload any to your cloud party to use them on other devices.',
+        )}
       </p>
-      <p className={styles.body}>Memory currently cannot be transferred to other devices.</p>
+      <p className={styles.body}>{t('Memory currently cannot be transferred to other devices.')}</p>
 
-      {phase === 'loading' && <p className={styles.status}>Loading…</p>}
+      {phase === 'loading' && <p className={styles.status}>{t('Loading…')}</p>}
 
       {phase === 'idle' && !cloudListOk && (
         <p className={styles.warnBanner}>
-          Couldn&apos;t fetch your cloud party, so we can&apos;t tell which of these are already
-          synced. Uploading is safe (duplicates are ignored), but some rows may already be in your
-          cloud party.
+          {t(
+            "Couldn't fetch your cloud party, so we can't tell which of these are already synced. Uploading is safe (duplicates are ignored), but some rows may already be in your cloud party.",
+          )}
         </p>
       )}
 
@@ -178,11 +181,11 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
                 </label>
               </li>
             ))}
-            {chars.length === 0 && <li className={styles.empty}>No local-only companions.</li>}
+            {chars.length === 0 && <li className={styles.empty}>{t('No local-only companions.')}</li>}
           </ul>
           <ModalFooter>
             <Button kind="quiet" size="md" onClick={handleDismiss}>
-              Maybe later
+              {t('Maybe later')}
             </Button>
             <Button
               kind="primary"
@@ -190,13 +193,13 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
               onClick={() => void handleUpload()}
               disabled={selected.size === 0}
             >
-              Upload selected
+              {t('Upload selected')}
             </Button>
           </ModalFooter>
         </>
       )}
 
-      {phase === 'submitting' && <p className={styles.status}>Uploading…</p>}
+      {phase === 'submitting' && <p className={styles.status}>{t('Uploading…')}</p>}
 
       {phase === 'results' && (
         <>
@@ -215,7 +218,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
           </ul>
           <ModalFooter>
             <Button kind="primary" size="md" onClick={handleResultsDone}>
-              Done
+              {t('Done')}
             </Button>
           </ModalFooter>
         </>

@@ -3,8 +3,10 @@
  *
  * TTS clips arrive per say()-line / chat bubble; this queue plays them in
  * arrival order through a single HTMLAudioElement so overlapping replies never
- * talk over each other. `onSpeakingChange` drives both the UI (avatar pulse)
- * and the dictation half-duplex hold (barge-in listening while audible).
+ * talk over each other. `onSpeakingChange` reports the PLAYHEAD (which slot is
+ * occupied) and drives the dictation half-duplex hold; `onAudible` reports the
+ * first real sample and is what every visible sign of speech follows. The two
+ * are a whole TTS round trip apart on a streamed clip — see onAudible.
  *
  * 260705 streaming: enqueueStream() reserves a queue slot BEFORE the audio
  * exists and plays it through MediaSource as chunks arrive from the proxy's
@@ -16,7 +18,14 @@
  *
  * clear() (barge-in) drops everything without killing the queue; stop() is
  * the permanent end-of-call teardown.
+ *
+ * 260731 pitch: `rate` used to be an HTMLAudioElement playbackRate with
+ * preservesPitch off, paid for by a matching slowdown asked of ElevenLabs at
+ * synthesis. It is now a true pitch shift applied locally (see pitchBus.ts) and
+ * the clip arrives at its natural pace. The parameter name and meaning are
+ * unchanged — 1 is as recorded, >1 is higher.
  */
+import * as defaultPitchBus from './pitchBus';
 
 export interface TtsStreamHandle {
   /** Append encoded audio/mpeg bytes as they arrive. */
@@ -31,13 +40,31 @@ export interface AudioQueue {
   /** Enqueue a complete encoded clip (audio/mpeg bytes) spoken by `characterId`.
    * `text` is the line being spoken, reported back via onSpeakingChange when this
    * clip reaches the playhead so captions track the audio (not the enqueue order).
-   * `rate` (default 1) plays the clip with preservesPitch OFF, so >1 raises both
-   * pitch and pace — the per-character voice-pitch knob (ElevenLabs has no pitch
-   * parameter, so the shift happens here at playback). */
+   * `rate` (default 1) is the per-character voice-pitch knob: >1 speaks higher,
+   * at the SAME pace (ElevenLabs has no pitch parameter, so the shift happens
+   * here at playback — see pitchBus.ts).
+   *
+   * This takes its slot at CALL time, which for a clip fetched whole is AFTER
+   * its synthesis finished — so it lands behind any line enqueued in the
+   * meantime. That REORDERED live replies (260729): every line under
+   * STREAM_MIN_CHARS takes the fetch-whole path, so "oh." was emitted first and
+   * heard last, behind the long sentence that reserved its slot instantly. A
+   * caller whose clip belongs at a fixed position must reserve with
+   * `enqueueStream(..., { blob: true })` instead. */
   enqueue(buf: ArrayBuffer, characterId: string, text?: string, rate?: number): void;
   /** Reserve the next slot for a clip (spoken by `characterId`) that will stream in.
-   * `text` is the line being spoken, `rate` the pitch/pace shift (see enqueue). */
-  enqueueStream(characterId: string, text?: string, rate?: number): TtsStreamHandle;
+   * `text` is the line being spoken, `rate` the pitch/pace shift (see enqueue).
+   *
+   * `opts.blob` reserves the slot but plays the finished clip from ONE Blob
+   * instead of through MediaSource (260729) — for a clip fetched whole, which
+   * must still hold its place in the reply. See the reordering note on
+   * `enqueue`. */
+  enqueueStream(
+    characterId: string,
+    text?: string,
+    rate?: number,
+    opts?: { blob?: boolean },
+  ): TtsStreamHandle;
   /** True while a clip is playing (or queued clips remain). */
   speaking(): boolean;
   /** Barge-in: stop playback and drop everything queued; queue stays usable. */
@@ -56,8 +83,10 @@ type StreamItem = {
   characterId: string;
   /** The line being spoken — surfaced to captions when this clip starts playing. */
   text?: string;
-  /** Pitch/pace shift applied at playback (preservesPitch off; 1 = as recorded). */
+  /** Pitch shift applied at playback (pace unchanged; 1 = as recorded). */
   rate: number;
+  /** Play from one Blob once complete, never through MediaSource (see enqueueStream). */
+  blob: boolean;
   chunks: ArrayBuffer[];
   ended: boolean;
   failed: boolean;
@@ -106,6 +135,15 @@ function buildSilenceMp3(frames = 4): ArrayBuffer {
 }
 const SILENCE_MP3 = buildSilenceMp3();
 
+/**
+ * The pitch shifter, injectable so the queue's own tests stay in jsdom (there
+ * is no AudioContext there, and stubbing Web Audio to test a barge-in fade
+ * would be testing the stub). Production always takes the default.
+ */
+export interface PitchBus {
+  attach(el: HTMLAudioElement, rate: number): (() => void) | null;
+}
+
 export function createAudioQueue(
   onSpeakingChange: (speaking: boolean, characterId: string | null, text?: string) => void,
   /**
@@ -117,8 +155,14 @@ export function createAudioQueue(
    * on the call's first line the round trip is the coldest of the session and
    * used to consume the entire window in silence, leaving the greeting
    * interruptible from its first spoken word. Fires once per clip.
+   *
+   * It carries the speaker and the line because it is also the only honest
+   * "sound is coming out NOW" signal, and every visible sign of speech — the
+   * avatar ring, the caption, a call scene's talking animation — has to agree
+   * with it rather than with the slot (260730).
    */
-  onAudible?: () => void,
+  onAudible?: (characterId: string, text?: string) => void,
+  pitchBus: PitchBus = defaultPitchBus,
 ): AudioQueue {
   const pending: Item[] = [];
   let current: HTMLAudioElement | null = null;
@@ -136,13 +180,16 @@ export function createAudioQueue(
     playNext();
   }
 
-  /** Apply the clip's pitch/pace shift. preservesPitch OFF makes playbackRate a
-   * true pitch shift (rate 1.25 ≈ +4 semitones and 25% faster) — the "clearly
-   * AI" voice knob; ElevenLabs itself has no pitch parameter. */
-  function applyRate(el: HTMLAudioElement, rate: number): void {
-    if (rate === 1) return;
-    el.preservesPitch = false;
-    el.playbackRate = rate;
+  /**
+   * Route the clip through the pitch shifter — rate 1.224 (Sui) speaks +3.5
+   * semitones higher at the pace it was synthesized. Returns the detach to run
+   * with the element's other teardown, or null when the shift did not apply
+   * (rate 1, or the worklet is not up), in which case the element plays
+   * normally. See pitchBus.ts for why unshifted is the fallback and not the
+   * old resample.
+   */
+  function applyPitch(el: HTMLAudioElement, rate: number): (() => void) | null {
+    return pitchBus.attach(el, rate);
   }
 
   function playBuffer(buf: ArrayBuffer, characterId: string, rate: number, text?: string): void {
@@ -150,13 +197,16 @@ export function createAudioQueue(
     const url = URL.createObjectURL(new Blob([buf, SILENCE_MP3], { type: 'audio/mpeg' }));
     const el = new Audio(url);
     el.muted = outputMuted;
-    applyRate(el, rate);
+    const detachPitch = applyPitch(el, rate);
     current = el;
-    currentCleanup = () => URL.revokeObjectURL(url);
+    currentCleanup = () => {
+      detachPitch?.();
+      URL.revokeObjectURL(url);
+    };
     const done = (): void => finishCurrent(el);
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
-    markAudibleOnPlay(el);
+    markAudibleOnPlay(el, characterId, text);
     onSpeakingChange(true, characterId, text);
     void el.play().catch(() => done());
   }
@@ -165,20 +215,22 @@ export function createAudioQueue(
    * only: a streamed clip that stalls waiting for chunks fires 'playing' again
    * on resume, and re-arming the grace there would make a choppy clip
    * progressively harder to interrupt. */
-  function markAudibleOnPlay(el: HTMLAudioElement): void {
+  function markAudibleOnPlay(el: HTMLAudioElement, characterId: string, text?: string): void {
     if (!onAudible) return;
     el.addEventListener(
       'playing',
       () => {
-        if (current === el) onAudible();
+        if (current === el) onAudible(characterId, text);
       },
       { once: true },
     );
   }
 
   function playStream(item: StreamItem): void {
-    // Degraded path (no MSE for mpeg): collect-then-play.
-    if (!canStreamMpeg()) {
+    // Collect-then-play: the degraded path (no MSE for mpeg), and also every
+    // `blob` reservation — a clip fetched whole holds its slot here and plays
+    // from one Blob when it lands, which is what MSE-free playback already did.
+    if (!canStreamMpeg() || item.blob) {
       const playCollected = (): void => {
         if (item.dropped) return; // cleared while waiting
         const total = item.chunks.reduce((n, c) => n + c.byteLength, 0);
@@ -213,7 +265,7 @@ export function createAudioQueue(
     const url = URL.createObjectURL(ms);
     const el = new Audio(url);
     el.muted = outputMuted;
-    applyRate(el, item.rate);
+    const detachPitch = applyPitch(el, item.rate);
     current = el;
     let sb: SourceBuffer | null = null;
     const backlog: ArrayBuffer[] = [...item.chunks];
@@ -288,11 +340,12 @@ export function createAudioQueue(
       item.onChunk = null;
       item.onEnd = null;
       item.dropped = true;
+      detachPitch?.();
       URL.revokeObjectURL(url);
     };
     el.addEventListener('ended', done, { once: true });
     el.addEventListener('error', done, { once: true });
-    markAudibleOnPlay(el);
+    markAudibleOnPlay(el, item.characterId, item.text);
     onSpeakingChange(true, item.characterId, item.text);
     void el.play().catch(() => done());
   }
@@ -388,12 +441,13 @@ export function createAudioQueue(
       pending.push({ kind: 'buffer', buf, characterId, text, rate });
       if (!busy) playNext();
     },
-    enqueueStream(characterId, text, rate = 1) {
+    enqueueStream(characterId, text, rate = 1, opts) {
       const item: StreamItem = {
         kind: 'stream',
         characterId,
         text,
         rate,
+        blob: opts?.blob === true,
         chunks: [],
         ended: false,
         failed: false,

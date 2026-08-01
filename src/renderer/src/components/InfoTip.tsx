@@ -9,6 +9,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import styles from './InfoTip.module.css';
 
 export interface InfoTipProps {
@@ -19,9 +20,10 @@ export interface InfoTipProps {
 }
 
 export function InfoTip({ text, label = 'More info' }: InfoTipProps): React.ReactElement {
+  const t = useT();
   return (
     <span className={styles.wrap}>
-      <button type="button" className={styles.dot} aria-label={label}>
+      <button type="button" className={styles.dot} aria-label={t(label)}>
         i
       </button>
       <span className={styles.tip} role="tooltip">

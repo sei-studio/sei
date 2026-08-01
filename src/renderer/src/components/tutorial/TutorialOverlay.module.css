@@ -1,0 +1,148 @@
+/**
+ * TutorialOverlay styles (260728). Sits above every app surface INCLUDING
+ * modals (the games-popup step highlights the open GamesPickerModal through
+ * the spotlight hole), hence the very high z-index. Sui's corner + bubble use
+ * the onboarding scene's handwritten register, not app tokens — the tour is
+ * her voice, not the terminal's.
+ */
+
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  opacity: 1;
+  transition: opacity 400ms ease;
+  pointer-events: none; /* children opt back in */
+}
+
+.closing {
+  opacity: 0;
+}
+
+.scrim,
+.scrimFull,
+.holeCover {
+  position: fixed;
+  pointer-events: auto;
+}
+
+.scrim,
+.scrimFull {
+  background: rgba(6, 8, 14, 0.62);
+}
+
+.scrimFull {
+  inset: 0;
+}
+
+.holeCover {
+  background: transparent;
+}
+
+.ring {
+  position: fixed;
+  border-radius: 12px;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2px var(--accent, #7fb0ff),
+    0 0 22px 2px rgba(127, 176, 255, 0.55);
+  transition: top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease;
+}
+
+.ringSecondary {
+  box-shadow:
+    0 0 0 2px rgba(127, 176, 255, 0.75),
+    0 0 16px 2px rgba(127, 176, 255, 0.35);
+}
+
+.skip {
+  position: fixed;
+  bottom: 24px;
+  right: 20px;
+  /* Above Sui's corner (no z-index, later in the DOM) so it stays visible
+     and clickable when she slides to the right side. */
+  z-index: 5;
+  pointer-events: auto;
+  appearance: none;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.65);
+  font-family: var(--mono, monospace);
+  font-size: 13px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.skip:hover {
+  color: #ffffff;
+}
+
+.suiCorner {
+  position: fixed;
+  left: 16px;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: none;
+  /* "Walking" to the other corner is a transform slide: translate animates
+     smoothly where left/right never could (260729). */
+  transition: transform 700ms ease-in-out;
+}
+
+/* Bottom-right stance: slide the whole corner across (100% = own width, so
+   this lands at 16px from the right edge) and mirror the layout — bubble on
+   the left of the sprite, speech tail on the other corner. */
+.suiCornerRight {
+  transform: translateX(calc(100vw - 100% - 32px));
+  flex-direction: row-reverse;
+}
+
+.suiCornerRight .bubble {
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 4px;
+}
+
+.suiSprite {
+  position: relative;
+  width: 460px;
+  aspect-ratio: 1241 / 828;
+  flex: none;
+  margin-bottom: -28px;
+}
+
+.suiSprite img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.bubble {
+  pointer-events: auto;
+  /* The doubled sprite leaves less room; never push past the far edge. */
+  max-width: min(440px, calc(100vw - 560px));
+  margin-bottom: 34px;
+  padding: 14px 20px;
+  border-radius: 18px;
+  border-bottom-left-radius: 4px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #23283a;
+  font-family: 'Architects Daughter', 'Comic Sans MS', cursive;
+  font-size: 19px;
+  line-height: 1.4;
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  user-select: none;
+}
+
+.caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #23283a;
+  opacity: 0.6;
+}

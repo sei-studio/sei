@@ -4,7 +4,7 @@
  * introduces it using the same full-bleed layout as CharacterPage: the portrait
  * bleeds off the RIGHT edge behind a left-to-right scrim, and a left content
  * panel carries the reveal copy. That panel drops the profile page's crumb /
- * tabs / stats / deploy row and instead shows a "Say hello to" eyebrow, the
+ * tabs / stats / deploy row and instead shows the
  * name + public_id tag (when the cloud row has assigned one), a short intro
  * pulled from the character's description (falling back to the first sentences
  * of persona.source), and two CTAs:
@@ -22,6 +22,7 @@ import { Button } from '../components/Button';
 import { IdTag } from '../components/IdTag';
 import { pickPalette } from '../lib/portraitPalettes';
 import type { Character } from '@shared/characterSchema';
+import { useT } from '../lib/i18n';
 import styles from './UniqueRevealScreen.module.css';
 
 /** First 2 sentences (max ~240 chars) of a longer blob, for the fallback intro. */
@@ -37,6 +38,7 @@ export interface UniqueRevealScreenProps {
 }
 
 export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const [character, setCharacter] = useState<Character | null>(null);
   const [loadError, setLoadError] = useState<boolean>(false);
@@ -72,11 +74,11 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
     return (
       <div className={styles.fallback}>
         <div className={styles.fallbackCol}>
-          <div className={styles.heading}>Your companion is ready</div>
-          <p className={styles.intro}>They’re waiting in your party.</p>
+          <div className={styles.heading}>{t('Your companion is ready')}</div>
+          <p className={styles.intro}>{t('They’re waiting in your party.')}</p>
           <div className={styles.actions}>
             <Button kind="accent" size="lg" onClick={() => navigate({ kind: 'home' })}>
-              Go home
+              {t('Go home')}
             </Button>
           </div>
         </div>
@@ -85,13 +87,8 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
   }
 
   if (!character) {
-    return (
-      <div className={styles.fallback}>
-        <div className={styles.fallbackCol}>
-          <div className={styles.eyebrow}>Casting complete</div>
-        </div>
-      </div>
-    );
+    // Brief pre-load state — a blank fallback beats a stray label flashing in.
+    return <div className={styles.fallback} />;
   }
 
   const theme: 'light' | 'dark' = resolvedScheme();
@@ -124,7 +121,6 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
       </div>
 
       <main className={styles.content}>
-        <div className={styles.eyebrow}>Say hello to</div>
         <div className={styles.nameRow}>
           <h1 className={styles.heading}>{character.name}</h1>
           {character.public_id ? <IdTag id={character.public_id} size="md" /> : null}
@@ -134,10 +130,10 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
 
         <div className={styles.actions}>
           <Button kind="quiet" size="lg" onClick={() => navigate({ kind: 'home' })}>
-            Later
+            {t('Later')}
           </Button>
-          <Button kind="accent" size="lg" onClick={sayHello}>
-            Say hello
+          <Button kind="accent" size="lg" onClick={sayHello} data-tutorial="say-hello">
+            {t('Say hello')}
           </Button>
         </div>
       </main>

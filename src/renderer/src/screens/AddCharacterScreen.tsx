@@ -27,6 +27,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { sei } from '../lib/ipcClient';
+import { uiLanguage } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -173,7 +174,12 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         // prompt, so the editor opens in Advanced for this character.
         // (No proactiveness key anymore — it is a runtime-only Minecraft
         // mode since 260725, never saved per character.)
-        metadata: { prompt_mode: expandPrompt ? 'standard' : 'advanced' },
+        metadata: {
+          prompt_mode: expandPrompt ? 'standard' : 'advanced',
+          // 260730: a character created under the Chinese UI is a Chinese
+          // character: persona generation and every AI surface pin to zh.
+          ...(uiLanguage() === 'zh' ? { language: 'zh' } : {}),
+        },
         created: new Date().toISOString(),
         last_launched: null,
         playtime_ms: 0,

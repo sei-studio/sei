@@ -257,7 +257,6 @@
   transform: translateY(-50%);
   background: var(--surface-2);
   color: var(--text);
-  border: 1px solid var(--border-strong);
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.04em;

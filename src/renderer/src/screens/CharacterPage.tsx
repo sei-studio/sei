@@ -21,6 +21,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT, t as tGlobal } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -42,18 +43,19 @@ import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ReportCompanionModal } from '../components/ReportCompanionModal';
 import { formatDate } from '../lib/formatDate';
 import { requestGameLaunch, openGame } from '../lib/gameLaunch';
-import { BackIcon, GearIcon, RotateIcon } from '../components/icons';
+import { BackIcon, GearIcon, RotateIcon, FullscreenIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
+import { portraitSrc } from '../lib/portraitSrc';
 import type { Character } from '@shared/characterSchema';
 import styles from './CharacterPage.module.css';
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '-';
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m`;
+  if (ms < 60_000) return tGlobal('{n}s', { n: Math.floor(ms / 1000) });
+  if (ms < 3_600_000) return tGlobal('{n}m', { n: Math.floor(ms / 60_000) });
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return m > 0 ? tGlobal('{h}h {m}m', { h, m }) : tGlobal('{n}h', { n: h });
 }
 
 export interface CharacterPageProps {
@@ -71,8 +73,9 @@ type CharacterTab = 'description' | 'game';
  * the user is never stranded.
  */
 function CharacterPageSkeleton({ onBack }: { onBack: () => void }): React.ReactElement {
+  const t = useT();
   return (
-    <div className={styles.root} aria-busy="true" aria-label="Loading companion">
+    <div className={styles.root} aria-busy="true" aria-label={t('Loading companion')}>
       <div className={styles.portraitLayer} aria-hidden="true">
         <div className={styles.skelPortrait} />
         <div className={styles.dScrim} />
@@ -80,7 +83,7 @@ function CharacterPageSkeleton({ onBack }: { onBack: () => void }): React.ReactE
       <main className={styles.content}>
         <div className={styles.crumb}>
           <Button kind="quiet" size="sm" icon={<BackIcon size={13} />} onClick={onBack}>
-            Back
+            {t('Back')}
           </Button>
         </div>
         <div className={styles.skelTitle} aria-hidden="true" />
@@ -104,6 +107,7 @@ function CharacterPageSkeleton({ onBack }: { onBack: () => void }): React.ReactE
 }
 
 export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const characters = useDataStore((s) => s.characters);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
@@ -173,6 +177,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // edit modal at Basic, and resume the publish once the modal closes with a
   // description present.
   const [needsDescription, setNeedsDescription] = useState<boolean>(false);
+  // 260729 — full-art popup (the corner expand button over the portrait).
+  const [artOpen, setArtOpen] = useState<boolean>(false);
+  const [artSaving, setArtSaving] = useState<boolean>(false);
+  const [artSavedTo, setArtSavedTo] = useState<string | null>(null);
 
   // ── Exit animation (mirror of the enter slide) ────────────────────────────
   // The page enters with a slide (.content → detailIn) + portrait rise (.dPic →
@@ -292,11 +300,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         <div className={styles.notFound}>
           <p>
             {prepareError
-              ? "Couldn't load this companion. You may be offline, or the companion may have been deleted."
-              : 'Companion not found.'}
+              ? t(
+                  "Couldn't load this companion. You may be offline, or the companion may have been deleted.",
+                )
+              : t('Companion not found.')}
           </p>
           <Button kind="primary" size="md" onClick={() => navigate({ kind: 'home' })}>
-            Back to home
+            {t('Back to home')}
           </Button>
         </div>
       );
@@ -323,6 +333,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // all the edit surfaces hide behind one predicate.
   const isNonEditableKind = character.kind !== 'custom';
   const viewOnly = isDefault || isForeignOwned || isNonEditableKind;
+  // 260731 — publishing keys on OWNERSHIP, not editability. An Awakened
+  // ('unique') companion is view-only because its persona was cast rather than
+  // written, but it is still the user's to share, so it gets the same
+  // public/private toggle a hand-made one does. Only bundled defaults (D-22,
+  // refused at the IPC boundary anyway) and foreign-owned World characters are
+  // excluded. Kept separate from `viewOnly` so the edit surfaces stay hidden.
+  const canShare = !isDefault && !isForeignOwned;
   const isWorldPreview = isForeignOwned && !addedWorldIds.has(character.id);
   const isAddedFromWorld = isForeignOwned && addedWorldIds.has(character.id);
   // World-preview / removed-default entries aren't in the library yet — no
@@ -365,7 +382,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     }
     if (!character.shared) {
       const hasDescription = (character.description ?? '').trim().length > 0;
-      if (!hasDescription) {
+      // The description gate only applies where the user can actually satisfy
+      // it. A non-editable kind has no editor to open, so demanding one would
+      // be a dead end; an Awakened companion is always cast with a description
+      // anyway (buildDescription in uniqueGeneration), so this is a fallback.
+      if (!hasDescription && !viewOnly) {
         // Description is edited in the modal now — open it at Basic and resume
         // the publish when the modal closes with a description present.
         setNeedsDescription(true);
@@ -494,7 +515,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       setAddError(
         err instanceof Error && err.message
           ? err.message
-          : "Couldn't add this companion. Please try again.",
+          : t("Couldn't add this companion. Please try again."),
       );
     }
   };
@@ -518,10 +539,28 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         <div className={styles.dScrim} />
       </div>
 
+      {/* Expand the full art (260729) — only when there is real portrait art
+          to show (the procedural sprite has nothing to save). */}
+      {portraitSrc(character.portrait_image) ? (
+        <button
+          type="button"
+          className={styles.artExpandBtn}
+          onClick={() => {
+            setArtSavedTo(null);
+            setArtOpen(true);
+          }}
+          aria-label={t('View full art')}
+          data-tip={t('View full art')}
+          data-tip-edge="right"
+        >
+          <FullscreenIcon size={16} />
+        </button>
+      ) : null}
+
       <main className={`${styles.content} ${leaving ? styles.contentLeaving : ''}`}>
         <div className={styles.crumb}>
           <Button kind="quiet" size="sm" icon={<BackIcon size={13} />} onClick={closePage}>
-            Back
+            {t('Back')}
           </Button>
         </div>
 
@@ -533,9 +572,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               type="button"
               className={styles.reportLink}
               onClick={() => setShowReport(true)}
-              aria-label={`Report ${character.name}`}
+              aria-label={t('Report {name}', { name: character.name })}
             >
-              Report
+              {t('Report')}
             </button>
           ) : null}
         </div>
@@ -549,7 +588,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             className={tab === 'description' ? styles.tabActive : styles.tab}
             onClick={() => setTab('description')}
           >
-            Description
+            {t('Description')}
           </button>
           <button
             type="button"
@@ -558,7 +597,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             className={tab === 'game' ? styles.tabActive : styles.tab}
             onClick={() => setTab('game')}
           >
-            Game
+            {t('Game')}
           </button>
         </div>
 
@@ -571,12 +610,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               // quote read as unstyled).
               <div className={styles.persona}>
                 <div className={styles.personaHead}>
-                  <span className="u-lbl">Description</span>
+                  <span className="u-lbl">{t('Description')}</span>
                 </div>
                 <div className={styles.personaBody}>
                   {character.description?.trim() ||
                     character.persona.source?.trim() ||
-                    'No description provided.'}
+                    t('No description provided.')}
                 </div>
               </div>
             ) : (
@@ -584,7 +623,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 <div className={styles.persona}>
                   <div className={styles.personaHead}>
                     <span className="u-lbl">
-                      {paneTab === 'persona' ? 'Persona' : 'Description'}
+                      {paneTab === 'persona' ? t('Persona') : t('Description')}
                     </span>
                     <button
                       type="button"
@@ -593,7 +632,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                         setPaneTab(paneTab === 'persona' ? 'description' : 'persona')
                       }
                       aria-label={
-                        paneTab === 'persona' ? 'Switch to description' : 'Switch to persona'
+                        paneTab === 'persona' ? t('Switch to description') : t('Switch to persona')
                       }
                     >
                       <RotateIcon size={13} />
@@ -602,7 +641,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                   <div className={styles.personaBody}>
                     {paneTab === 'persona'
                       ? character.persona.source || '–'
-                      : character.description?.trim() || 'No description yet.'}
+                      : character.description?.trim() || t('No description yet.')}
                   </div>
                 </div>
                 {/* Editing lives on the deploy-row gear — for a character you
@@ -619,24 +658,24 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                     invited) it's their creation date, not a bond, so label it
                     "Created"; it flips to "Bonded" once you invite them. */}
                 <div className={`u-lbl ${styles.statEyebrow}`}>
-                  {isPreview ? 'Created' : 'Bonded'}
+                  {isPreview ? t('Created') : t('Bonded')}
                 </div>
                 <div className={styles.statValue}>{formatDate(character.created)}</div>
               </div>
               <div className={styles.stat}>
-                <div className={`u-lbl ${styles.statEyebrow}`}>Played</div>
+                <div className={`u-lbl ${styles.statEyebrow}`}>{t('Played')}</div>
                 <div className={styles.statValue}>{fmtMs(character.playtime_ms)}</div>
               </div>
               <div className={styles.stat}>
-                <div className={`u-lbl ${styles.statEyebrow}`}>Last launch</div>
+                <div className={`u-lbl ${styles.statEyebrow}`}>{t('Last launch')}</div>
                 <div className={styles.statValue}>{formatDate(character.last_launched)}</div>
               </div>
               {/* Reset memory moved into the deploy row's settings (gear) menu. */}
             </div>
 
-            {/* Public/private share toggle (own chars only), in its own box
-                under the stat boxes. */}
-            {!viewOnly ? (
+            {/* Public/private share toggle (own chars only, Awakened ones
+                included — see canShare), in its own box under the stat boxes. */}
+            {canShare ? (
               <div className={styles.shareBox}>
                 <Toggle
                   on={character.shared}
@@ -647,12 +686,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                   }
                   aria-label={
                     character.shared
-                      ? 'Companion is public. Turn off to make private.'
-                      : 'Companion is private. Turn on to make public.'
+                      ? t('Companion is public. Turn off to make private.')
+                      : t('Companion is private. Turn on to make public.')
                   }
                 />
                 <span className={styles.shareLabel}>
-                  {character.shared ? 'Public: others can invite' : 'Private'}
+                  {character.shared ? t('Public: others can invite') : t('Private')}
                 </span>
               </div>
             ) : null}
@@ -664,7 +703,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               onChanged={() => void refreshCharacter(id)}
               viewOnly
               compact
-              previewCaption="This is how they appear in your world."
+              previewCaption={t('This is how they appear in your world.')}
               onEditSkin={viewOnly ? undefined : () => openEdit('appearance')}
             />
           </div>
@@ -687,7 +726,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 void onAddToLibraryClick();
               }}
             >
-              Invite to party
+              {t('Invite to party')}
             </Button>
           ) : (
             <>
@@ -696,8 +735,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 size="lg"
                 className={styles.deployBig}
                 onClick={handleChatClick}
+                data-tutorial="chat-cta"
               >
-                Chat
+                {t('Chat')}
               </Button>
               <Button
                 kind="accent"
@@ -705,7 +745,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 className={styles.deployBig}
                 onClick={handlePlayClick}
               >
-                Play
+                {t('Play')}
               </Button>
               <div className={styles.settingsWrap} ref={settingsRef}>
                 {/* 260725: EVERY character gets the settings menu (it used to
@@ -718,7 +758,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                   size="lg"
                   aria-haspopup="menu"
                   aria-expanded={settingsOpen}
-                  aria-label="Companion settings"
+                  aria-label={t('Companion settings')}
                   onClick={() => setSettingsOpen((o) => !o)}
                 >
                   <GearIcon size={18} />
@@ -727,7 +767,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                   <div
                     className={styles.settingsMenu}
                     role="menu"
-                    aria-label="Companion settings"
+                    aria-label={t('Companion settings')}
                   >
                     {!viewOnly ? (
                       <button
@@ -739,7 +779,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                           openEdit('basic');
                         }}
                       >
-                        Edit companion
+                        {t('Edit companion')}
                       </button>
                     ) : null}
                     <button
@@ -751,7 +791,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                         setKnowledgeOpen(true);
                       }}
                     >
-                      Knowledge
+                      {t('Knowledge')}
                     </button>
                     <button
                       type="button"
@@ -762,7 +802,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                         onResetMemoryClick();
                       }}
                     >
-                      Reset memory
+                      {t('Reset memory')}
                     </button>
                     <button
                       type="button"
@@ -773,7 +813,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                         setReleaseConfirmOpen(true);
                       }}
                     >
-                      Unbind
+                      {t('Unbind')}
                     </button>
                   </div>
                 ) : null}
@@ -790,7 +830,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           onClose={onEditClose}
           notice={
             needsDescription
-              ? `Going public needs a description. Add one, then close this window to continue publishing ${character.name}.`
+              ? t(
+                  'Going public needs a description. Add one, then close this window to continue publishing {name}.',
+                  { name: character.name },
+                )
               : undefined
           }
         />
@@ -848,6 +891,48 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           }}
         />
       ) : null}
+      {artOpen ? (
+        <ModalShell
+          title={null}
+          width={720}
+          escClose
+          scrimClose
+          onClose={() => setArtOpen(false)}
+          aria-label={t('{name} full art', { name: character.name })}
+        >
+          <img
+            className={styles.artModalImg}
+            src={portraitSrc(character.portrait_image) ?? undefined}
+            alt={t('{name} full art', { name: character.name })}
+            draggable={false}
+          />
+          {artSavedTo ? (
+            <p className={styles.artSavedNote}>{t('Saved to {path}', { path: artSavedTo })}</p>
+          ) : null}
+          <ModalFooter>
+            <Button kind="quiet" size="md" onClick={() => setArtOpen(false)}>
+              {t('Close')}
+            </Button>
+            <Button
+              kind="accent"
+              size="md"
+              disabled={artSaving}
+              onClick={() => {
+                setArtSaving(true);
+                setArtSavedTo(null);
+                sei
+                  .charsExportPortrait(id)
+                  .then((p) => setArtSavedTo(p))
+                  .catch(() => setArtSavedTo(null))
+                  .finally(() => setArtSaving(false));
+              }}
+            >
+              {artSaving ? t('Saving...') : t('Save')}
+            </Button>
+          </ModalFooter>
+        </ModalShell>
+      ) : null}
+
       {shareConfirm ? (
         <ModalShell
           title={null}
@@ -855,22 +940,22 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           escClose={sharePhase !== 'working'}
           scrimClose={sharePhase !== 'working'}
           onClose={closeShareModal}
-          aria-label="Sharing"
+          aria-label={t('Sharing')}
         >
           {sharePhase === 'working' ? (
             <>
               <h3 className={styles.confirmTitle}>
-                {shareConfirm === 'going_public' ? 'Publishing…' : 'Updating…'}
+                {shareConfirm === 'going_public' ? t('Publishing…') : t('Updating…')}
               </h3>
               <p className={styles.confirmBody}>
                 {shareConfirm === 'going_public'
-                  ? 'Uploading your companion and checking it against our content guidelines.'
-                  : 'Making your companion private.'}
+                  ? t('Uploading your companion and checking it against our content guidelines.')
+                  : t('Making your companion private.')}
               </p>
               <div
                 className={styles.progressTrack}
                 role="progressbar"
-                aria-label={shareConfirm === 'going_public' ? 'Publishing' : 'Updating'}
+                aria-label={shareConfirm === 'going_public' ? t('Publishing') : t('Updating')}
               >
                 <div className={styles.progressIndeterminate} />
               </div>
@@ -879,31 +964,33 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             <>
               <h3 className={`${styles.confirmTitle} ${styles.confirmTitleOk}`}>
                 {shareConfirm === 'going_public'
-                  ? 'Your companion is now public'
-                  : 'Your companion is now private'}
+                  ? t('Your companion is now public')
+                  : t('Your companion is now private')}
               </h3>
               <p className={styles.confirmBody}>
                 {shareConfirm === 'going_public'
-                  ? 'Other players can find and invite it from the World tab.'
-                  : 'It is no longer visible in the World tab.'}
+                  ? t('Other players can find and invite it from the World tab.')
+                  : t('It is no longer visible in the World tab.')}
               </p>
               <ModalFooter>
                 <Button kind="primary" size="md" onClick={closeShareModal}>
-                  Done
+                  {t('Done')}
                 </Button>
               </ModalFooter>
             </>
           ) : sharePhase === 'error' ? (
             <>
               <h3 className={`${styles.confirmTitle} ${styles.confirmTitleError}`}>
-                {shareConfirm === 'going_public' ? "Couldn't publish" : "Couldn't update sharing"}
+                {shareConfirm === 'going_public'
+                  ? t("Couldn't publish")
+                  : t("Couldn't update sharing")}
               </h3>
               <p className={`${styles.confirmBody} ${styles.confirmErrorBody}`} role="alert">
-                {shareError ?? 'Something went wrong. Please try again.'}
+                {shareError ?? t('Something went wrong. Please try again.')}
               </p>
               <ModalFooter>
                 <Button kind="quiet" size="md" onClick={closeShareModal}>
-                  Close
+                  {t('Close')}
                 </Button>
                 <Button
                   kind={shareConfirm === 'going_public' ? 'accent' : 'primary'}
@@ -912,7 +999,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                     void onConfirmShareToggle();
                   }}
                 >
-                  Try again
+                  {t('Try again')}
                 </Button>
               </ModalFooter>
             </>
@@ -920,17 +1007,17 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             <>
               <h3 className={styles.confirmTitle}>
                 {shareConfirm === 'going_public'
-                  ? 'Allow other players to invite your companion?'
-                  : 'Make this companion private?'}
+                  ? t('Allow other players to invite your companion?')
+                  : t('Make this companion private?')}
               </h3>
               <p className={styles.confirmBody}>
                 {shareConfirm === 'going_public'
-                  ? 'Companion memory will not be shared.'
-                  : 'Other players will no longer be able to invite your companion. Are you sure?'}
+                  ? t('Companion memory will not be shared.')
+                  : t('Other players will no longer be able to invite your companion. Are you sure?')}
               </p>
               <ModalFooter>
                 <Button kind="quiet" size="md" onClick={closeShareModal}>
-                  Cancel
+                  {t('Cancel')}
                 </Button>
                 <Button
                   kind={shareConfirm === 'going_public' ? 'accent' : 'primary'}
@@ -939,7 +1026,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                     void onConfirmShareToggle();
                   }}
                 >
-                  {shareConfirm === 'going_public' ? 'Make public' : 'Make private'}
+                  {shareConfirm === 'going_public' ? t('Make public') : t('Make private')}
                 </Button>
               </ModalFooter>
             </>

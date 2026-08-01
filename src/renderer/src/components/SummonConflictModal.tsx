@@ -11,10 +11,25 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
 import styles from './SummonConflictModal.module.css';
+
+/** Substitute {token} placeholders in a translated string with React nodes,
+ * so the styled name/username spans survive translation without concatenating
+ * sentence fragments. */
+function richText(text: string, nodes: Record<string, React.ReactNode>): React.ReactNode[] {
+  return text.split(/(\{\w+\})/g).map((part, i) => {
+    const m = /^\{(\w+)\}$/.exec(part);
+    return m && m[1] in nodes ? (
+      <React.Fragment key={i}>{nodes[m[1]]}</React.Fragment>
+    ) : (
+      part
+    );
+  });
+}
 
 export interface SummonConflictModalProps {
   attemptedName: string;
@@ -27,28 +42,36 @@ export function SummonConflictModal({
   conflictName,
   username,
 }: SummonConflictModalProps): React.ReactElement {
+  const t = useT();
   const closeModal = useUiStore((s) => s.closeModal);
   return (
     <ModalShell
-      title="Name already in use"
+      title={t('Name already in use')}
       width={420}
       scrimClose
       onClose={closeModal}
-      aria-label="Name already in use"
+      aria-label={t('Name already in use')}
     >
       <p className={styles.body}>
-        <strong>{attemptedName}</strong> wants to join as{' '}
-        <span className={styles.username}>{username}</span>, but{' '}
-        <strong>{conflictName}</strong> is already in the world under that name.
-        Minecraft won&apos;t let two players share a username.
+        {richText(
+          t(
+            "{attempted} wants to join as {username}, but {conflict} is already in the world under that name. Minecraft won't let two players share a username.",
+          ),
+          {
+            attempted: <strong>{attemptedName}</strong>,
+            username: <span className={styles.username}>{username}</span>,
+            conflict: <strong>{conflictName}</strong>,
+          },
+        )}
       </p>
       <p className={styles.hint}>
-        Give one of them a different in-game username (on its companion page,
-        under Skin) and try again.
+        {t(
+          'Give one of them a different in-game username (on its companion page, under Skin) and try again.',
+        )}
       </p>
       <ModalFooter>
         <Button kind="accent" size="md" onClick={closeModal}>
-          Got it
+          {t('Got it')}
         </Button>
       </ModalFooter>
     </ModalShell>

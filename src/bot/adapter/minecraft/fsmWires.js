@@ -71,6 +71,30 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:attacked', onSeiAttacked)
 
+  // ── Owner under attack (260730) ─────────────────────────────────────────
+  // combat.js emits sei:owner_attacked when a hostile mob hits the PLAYER
+  // within range of the bot. It rides the onAttacked route tagged
+  // attackerKind:'defend', which lands it at P1_CHAT (attackedPriority) — the
+  // bot is not the one in danger, and the swing that pulls the mob's aggro
+  // already happened in combat.js, so this turn is narration plus an optional
+  // escalation, never a panic that preempts the player's own reply.
+  const onSeiOwnerAttacked = (payload) => {
+    if (!payload) return
+    try {
+      handlers.onAttacked?.({
+        attacker: payload.attacker ?? null,
+        attackerLabel: payload.attackerLabel ?? payload.attacker?.name ?? 'a mob',
+        attackerKind: 'defend',
+        ownerLabel: payload.ownerLabel ?? 'the player',
+        distance: typeof payload.distance === 'number' ? payload.distance : null,
+        engaged: !!payload.engaged,
+      })
+    } catch (err) {
+      console.error?.(`[sei/wires] onOwnerAttacked handler threw: ${err && err.message}`)
+    }
+  }
+  bot.on('sei:owner_attacked', onSeiOwnerAttacked)
+
   // ── Reflex (proactive threat warning) ───────────────────────────────
   // reflex.js (behaviors/reflex.js) emits sei:reflex once per engagement when
   // the survival loop evades a creeper/arrow/melee threat. We translate it onto
@@ -171,6 +195,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   return function dispose() {
     try { bot.off?.('sei:chat_received', onSeiChat) } catch {}
     try { bot.off?.('sei:attacked', onSeiAttacked) } catch {}
+    try { bot.off?.('sei:owner_attacked', onSeiOwnerAttacked) } catch {}
     try { bot.off?.('sei:reflex', onSeiReflex) } catch {}
     try { bot.off?.('sei:survival', onSeiSurvival) } catch {}
     try { bot.off?.('sei:death', onSeiDeath) } catch {}

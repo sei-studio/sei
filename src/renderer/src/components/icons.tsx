@@ -648,6 +648,25 @@ export const HeadphonesOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
+/** MountainIcon — voice-call backdrop toggle (scene / character art vs the
+ * plain avatar view). Sits beside mute + deafen, so it matches their weight. */
+export const MountainIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M2.5 19h19L14 6.5l-3.6 6-2.2-3z" />
+    <circle cx={17.5} cy={7} r={1.9} />
+  </svg>
+);
+
 /** SendIcon — chat composer send button (paper-plane). */
 export const SendIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg

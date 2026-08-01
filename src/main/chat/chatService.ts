@@ -11,18 +11,20 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, ChatSendResult, LanState } from '../../shared/ipc';
+import type { ChatMessage, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
+import { raiseUsageLimitPopup } from './usageLimit';
 import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isCallActive } from '../voice/callState';
+import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
-import { clampChatLanguage } from '../../shared/chatLanguage';
+import { surfaceLanguage } from '../../shared/chatLanguage';
 import * as chatStore from './chatStore';
 import {
   drainThoughts,
@@ -57,8 +59,11 @@ export interface ChatDeps {
    * streaming voice turn to emit each sentence the moment it completes, so TTS
    * starts on sentence 1 while the rest still generates. Wired to pushChatMessage
    * in index.ts; absent → the turn falls back to the blocking, all-at-once path.
+   *
+   * `speech` places the line inside its own reply for TTS utterance conditioning
+   * (260729) — the streamed path's equivalent of the reveal loop's prev/more.
    */
-  emitReply?: (characterId: string, message: ChatMessage) => void;
+  emitReply?: (characterId: string, message: ChatMessage, speech?: SpokenLineContext) => void;
 }
 
 // 260725: doubled 6000 -> 12000 alongside the bot-side compaction trigger
@@ -143,23 +148,63 @@ async function honorRememberCalls(characterId: string, content: Anthropic.Messag
  * written one-thought-per-line as a single wall of text — a model prompted to
  * "keep lines short like texting" separates thoughts with single newlines, not
  * blank ones). One line → one bubble, matching the bot's in-game
- * splitChatMessages. Purely visual: voice TTS streams off the raw reply by
- * sentence, not off these bubbles. Empty chunks are dropped; a reply with no
- * content collapses to a single "…" so the turn is never message-less.
+ * splitChatMessages. Empty chunks are dropped; a reply with no content collapses
+ * to a single "…" so the turn is never message-less.
+ *
+ * `spoken` is set on a VOICE CALL, and it turns the trailing-period strip off.
+ * The bubbles this returns are ALSO the text handed to TTS on a call (both the
+ * streamed emit and persistReplies), so the strip was deleting the one mark
+ * ElevenLabs reads as "this thought ended" — 260729: a one-sentence spoken reply
+ * came out with no terminal pitch fall, sounding cut off mid-sentence. On a call
+ * the line is speech being transcribed, not a text message, so it keeps its
+ * punctuation everywhere: in the clip, in the caption and in the transcript.
+ * (The comment that used to sit here claimed this function was "purely visual"
+ * because "voice TTS streams off the raw reply by sentence". It does not: the
+ * streamed sentence is bubbled through here first.)
  */
-export function splitReply(text: string, punctuation: 'casual' | 'deliberate' = 'casual'): string[] {
+export function splitReply(
+  text: string,
+  punctuation: 'casual' | 'deliberate' = 'casual',
+  spoken = false,
+): string[] {
   const parts = text
     .split(/\n+/)
     .map((s) => s.trim())
+    // Bracketed stage directions never reach a bubble (260730). They are not a
+    // thing the model is offered — the shipped TTS model reads `[laughs]` aloud
+    // as a word instead of performing it, so audioTags.ts keeps the vocabulary
+    // switched off — but models write them unprompted, and on a call the SAME
+    // text is the caption and the clip. Removed here so a stray one cannot be
+    // read on screen, and again at the synthesis boundary so it cannot be
+    // spoken (speechTextFor), the same belt-and-braces as the markdown strip.
+    .map((s) => stripAudioTags(s, SUPPORTS_AUDIO_TAGS))
     // 260705: casual texters (the default) drop a single trailing period per
     // bubble — how people actually text. ONLY a lone period: an ellipsis
     // ("hm...") carries tone and is kept, and ? / ! always stay. 'deliberate'
     // characters (character.metadata.punctuation) keep their full stops.
     // Mirrors splitChatMessages in src/bot/brain/orchestrator.js.
-    .map((s) => (punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')))
+    .map((s) => (spoken || punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')))
     .filter(Boolean);
   return parts.length ? parts : ['…'];
 }
+
+/**
+ * A sentence this short does not become its own spoken clip (260729). "oh.",
+ * "um.", "wait." are lead-ins, not utterances: split off on their own they are
+ * synthesized as a separate request, which lands as a complete little statement
+ * with a full stop and no relation to the sentence it introduces, and (being
+ * under TTS_CONTEXT_MIN_CHARS) carries no utterance conditioning either. Held
+ * and prepended to the next sentence, ElevenLabs renders "Oh. So you're still
+ * tweaking me." as ONE connected arc, which is what it is.
+ *
+ * The cost is latency, and it is why this is 10 and not 20: when a reply OPENS
+ * with an interjection, first audio waits for the next sentence to finish
+ * generating. Kept to interjections, that is a few hundred ms on a clip that
+ * would itself have been a few hundred ms of audio. A short sentence with
+ * nothing after it never waits — the trailing flush emits it as soon as the
+ * stream ends.
+ */
+const MERGE_SHORT_SENTENCE_CHARS = 10;
 
 /**
  * Voice streaming (260706): pull COMPLETE sentences off the front of a growing
@@ -383,7 +428,9 @@ async function prepareChatTurn(
     voicePeers: opts.voicePeers,
     // 260709: conversation language — read per turn (loadConfig above), so a
     // Settings change applies from the very next message with no restart.
-    language: clampChatLanguage(config.chat_language),
+    // 260730: a character created under the Chinese UI carries
+    // metadata.language, which pins its surfaces regardless of auto-detect.
+    language: surfaceLanguage(character.metadata, config.chat_language),
   });
   // Voice: only the last N rows go to the model (VOICE_RECENT_CAP). Slice the raw
   // transcript BEFORE toMessages so role-merge + first-must-be-user still hold.
@@ -450,7 +497,8 @@ async function persistReplies(
   // Silence-filler drop is voice-only (see SILENCE_FILLER_RE): typed chat never
   // prompts the "(silence)" convention, so a filler-shaped line there is a real
   // reply and persisting it beats silently losing the turn.
-  const parts = splitReply(replyText, punctuation);
+  // A voice reply keeps its terminal punctuation (see splitReply `spoken`).
+  const parts = splitReply(replyText, punctuation, opts?.voice === true);
   const replies: ChatMessage[] = (opts?.voice
     ? parts.map(stripPeerImpersonation).filter((text) => text && !isSilenceFiller(text))
     : parts)
@@ -578,13 +626,30 @@ export async function sendChatMessage(
     const isStreaming = isVoice;
     const streamedReplies: ChatMessage[] = [];
     let streamBuf = '';
-    const emitStreamedBubble = async (raw: string): Promise<void> => {
-      for (const raw_b of splitReply(raw, prep.punctuation)) {
-        // The silence-filler and peer-impersonation drops stay VOICE-scoped
-        // (matching persistReplies): typed chat never prompts the "(silence)"
-        // convention, so a filler-shaped line there is a real reply.
-        const b = isVoice ? stripPeerImpersonation(raw_b) : raw_b;
-        if (!b || (isVoice && isSilenceFiller(b))) continue;
+    /** A sub-threshold sentence waiting to ride out with the next one. */
+    let shortLeadIn = '';
+    /**
+     * The line emitted just before this one, WITHIN this reply (260729). It
+     * rides out with each push as `speech.prev` so TTS can condition the clip's
+     * opening on it (previous_text — see voice/tts.ts ttsContextFor). The
+     * renderer cannot supply it on this path: its own prev/more bookkeeping
+     * lives in the blocking reveal loop, which a streamed reply skips
+     * entirely, so every clip on a live call was reaching ElevenLabs with no
+     * context at all and each sentence opened as a fresh utterance.
+     */
+    let prevSpoken: string | undefined;
+    /** `moreAfter`: text of this same reply is ALREADY known to follow. */
+    const emitStreamedBubble = async (raw: string, moreAfter: boolean): Promise<void> => {
+      // The silence-filler and peer-impersonation drops stay VOICE-scoped
+      // (matching persistReplies): typed chat never prompts the "(silence)"
+      // convention, so a filler-shaped line there is a real reply. Resolved up
+      // front, not inside the loop, because `more` needs to know which of these
+      // is genuinely the last one going out.
+      const parts = splitReply(raw, prep.punctuation, isVoice)
+        .map((b) => (isVoice ? stripPeerImpersonation(b) : b))
+        .filter((b) => b && !(isVoice && isSilenceFiller(b)));
+      for (let i = 0; i < parts.length; i++) {
+        const b = parts[i];
         const msg: ChatMessage = {
           id: randomUUID(),
           role: 'companion',
@@ -595,7 +660,8 @@ export async function sendChatMessage(
         };
         streamedReplies.push(msg);
         await chatStore.appendMessage(args.characterId, msg);
-        deps.emitReply?.(args.characterId, msg);
+        deps.emitReply?.(args.characterId, msg, { prev: prevSpoken, more: i < parts.length - 1 || moreAfter });
+        prevSpoken = b;
       }
     };
 
@@ -646,13 +712,41 @@ export async function sendChatMessage(
             streamBuf += ev.delta.text;
             const { sentences, rest } = takeSentences(streamBuf);
             streamBuf = rest;
-            for (const s of sentences) await emitStreamedBubble(s);
+            // `more` is only ever asserted from text we ALREADY hold: another
+            // extracted sentence, or a partial left in the buffer. Mid-stream we
+            // cannot know whether the model is about to write a further
+            // sentence, and guessing the wrong way is the expensive direction —
+            // a false `more` sends next_text on what turns out to be the last
+            // line and takes its terminal fall away, which is the very bug this
+            // change exists to fix. Unknown therefore means false: the clip
+            // lands as a complete sentence, and if another does follow, IT gets
+            // `prev` so its own opening still continues cleanly.
+            for (let i = 0; i < sentences.length; i++) {
+              // A lead-in too short to stand alone rides with the next sentence
+              // (see MERGE_SHORT_SENTENCE_CHARS). Held unconditionally, not just
+              // when more text is already buffered: at the instant "oh." is
+              // extracted the buffer is usually empty, and the sentence it
+              // introduces arrives a delta later.
+              const s = shortLeadIn ? `${shortLeadIn} ${sentences[i]}` : sentences[i];
+              shortLeadIn = '';
+              if (s.length <= MERGE_SHORT_SENTENCE_CHARS) {
+                shortLeadIn = s;
+                continue;
+              }
+              await emitStreamedBubble(s, i < sentences.length - 1 || streamBuf.trim().length > 0);
+            }
           }
         }
         res = await stream.finalMessage();
         // This hop's trailing partial (a final sentence with no boundary punct,
-        // or the whole reply when the model ends without terminal punctuation).
-        if (streamBuf.trim()) await emitStreamedBubble(streamBuf);
+        // or the whole reply when the model ends without terminal punctuation),
+        // carrying any held lead-in — which is also how a reply that is NOTHING
+        // but a short line ("ok.") gets spoken: the hold ends with the stream.
+        // Nothing more is known to follow: a further hop may still speak, but
+        // only after a tool round trip, which is a new utterance by then.
+        const tail = [shortLeadIn, streamBuf.trim()].filter(Boolean).join(' ');
+        if (tail) await emitStreamedBubble(tail, false);
+        shortLeadIn = '';
         streamBuf = '';
       } else {
         res = await client.messages.create(params, opts);
@@ -804,6 +898,9 @@ export async function sendChatMessage(
 
     return { replies, launch, ...(endCallRequested ? { endCall: true } : {}), ...(isStreaming ? { streamed: true } : {}) };
   } catch (err) {
+    // Usage limit (260730): a 402/429 from the proxy raises the HardStopModal
+    // instead of hiding behind the generic "sorry" fallback.
+    void raiseUsageLimitPopup(err);
     // Interrupt/supersede surfaces as a typed sentinel so the renderer can tell
     // it apart from a real failure (and NOT show the "sorry" fallback).
     if (isAbortError(err) || ctrl.signal.aborted || superseded()) {
@@ -1029,6 +1126,7 @@ export async function sendVoiceGreetingTurn(
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.
     if (!isAbortError(err)) {
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);
     }
     return [];
@@ -1158,6 +1256,8 @@ export async function sendCompanionVoiceTurn(
     return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
   } catch (err) {
     if (!isAbortError(err)) {
+      // Usage limit (260730): raise the popup; useVoiceStore hangs up on it.
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei] companion voice turn failed: ${(err as Error).message}`);
     }
     return [];
@@ -1188,7 +1288,7 @@ export async function sendVoiceIdleTurn(
   /** 260708: live LAN truth + single-shot launch honor (see
    * sendCompanionVoiceTurn) — an idle nudge that says "i'll hop in" must
    * actually join instead of hanging. */
-  opts: { openWorldDetected?: boolean; onLaunch?: () => void } = {},
+  opts: { openWorldDetected?: boolean; onLaunch?: () => void; awaitingAnswer?: boolean } = {},
 ): Promise<{ messages: ChatMessage[]; endCall?: boolean }> {
   // The nudge can race a hang-up (the renderer timer fires as the call ends).
   // Without this guard the turn still runs a full paid LLM round-trip and
@@ -1210,11 +1310,21 @@ export async function sendVoiceIdleTurn(
     // 260725: proactiveness is no longer a per-character dial, so every
     // companion gets the take-it-or-leave-it nudge with silence sanctioned.
     const quiet = Math.max(1, Math.round(quietSeconds));
-    const note =
-      `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
-      'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
-      'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
-      'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
+    // 260730: two nudges, not one. The generic "start a topic" note read wrong
+    // after the companion had just ASKED something — the reply that follows a
+    // question is an answer, and a fresh topic on top of the unanswered one
+    // drops it. The follow-up note is deliberately unpressured: no "still
+    // there?", no repeating the question at them, and silence is still a fine
+    // answer. Fires at most once per question (see the renderer's idle clock).
+    const note = opts.awaitingAnswer
+      ? `[System note — not the player speaking: you asked them something and they have not answered for about ${quiet} seconds. ` +
+        'You can follow up in one short spoken line: put it a different way, offer an easy option, say it is fine either way, or let it go and move on. ' +
+        'Or reply with exactly (silence), which is never spoken and just ends your turn. ' +
+        'Keep it light and unbothered. Do not repeat the question as it was, do not press them for an answer, and do not ask if they are still there. Do not mention this note.]'
+      : `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
+        'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
+        'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
+        'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
     foldUserNote(messages, note);
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
@@ -1242,6 +1352,7 @@ export async function sendVoiceIdleTurn(
     return { messages: spoken, ...(endCall ? { endCall: true } : {}) };
   } catch (err) {
     if (!isAbortError(err)) {
+      void raiseUsageLimitPopup(err);
       console.warn(`[sei] voice idle turn failed: ${(err as Error).message}`);
     }
     return { messages: [] };

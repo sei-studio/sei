@@ -243,9 +243,10 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(awaken.includes("setUpgradeFraming('meet your unique companion')")).toBe(true);
     // Backend gate: local (BYOK) users are also routed to sign-in.
     expect(awaken.includes("!== 'cloud-proxy'")).toBe(true);
-    // Questionnaire gate → profile-questions with the unique-gender next hop.
-    expect(awaken.includes("next: 'unique-gender'")).toBe(true);
-    expect(awaken.includes("navigate({ kind: 'unique-gender' })")).toBe(true);
+    // Questionnaire gate → profile-questions with the meet next hop; an
+    // answered profile goes straight into Sui's meet scene (260731).
+    expect(awaken.includes("next: 'meet'")).toBe(true);
+    expect(awaken.includes("navigate({ kind: 'sui-meet' })")).toBe(true);
     // The other two origins: custom wizard (quota-gated) + World tab.
     expect(awaken.includes('checkCreateQuota')).toBe(true);
     expect(awaken.includes("navigate({ kind: 'add-character' })")).toBe(true);

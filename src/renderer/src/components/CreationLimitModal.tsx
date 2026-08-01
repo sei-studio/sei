@@ -11,6 +11,7 @@
  * blocking hard-stop like HardStopModal. Renders through ModalShell.
  */
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './CreationLimitModal.module.css';
@@ -25,6 +26,7 @@ export function CreationLimitModal({
   resetsAt,
   onClose,
 }: CreationLimitModalProps): React.ReactElement {
+  const t = useT();
   const resetHint = ((): string | null => {
     if (!resetsAt) return null;
     const t = new Date(resetsAt);
@@ -37,14 +39,14 @@ export function CreationLimitModal({
   })();
 
   return (
-    <ModalShell title="Daily limit reached" onClose={onClose} scrimClose>
+    <ModalShell title={t('Daily limit reached')} onClose={onClose} scrimClose>
       <p className={styles.body}>
-        You&rsquo;ve reached your limit for companion creation today. Come back tomorrow.
+        {t('You’ve reached your limit for companion creation today. Come back tomorrow.')}
       </p>
-      {resetHint ? <p className={styles.hint}>Resets {resetHint}</p> : null}
+      {resetHint ? <p className={styles.hint}>{t('Resets {when}', { when: resetHint })}</p> : null}
       <ModalFooter>
         <Button kind="primary" onClick={onClose}>
-          Got it
+          {t('Got it')}
         </Button>
       </ModalFooter>
     </ModalShell>

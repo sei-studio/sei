@@ -9,6 +9,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { Button } from './Button';
 import {
@@ -31,21 +32,22 @@ export function CrossLaunchConfirmModal({
   fromName,
   toName,
 }: CrossLaunchConfirmModalProps): React.ReactElement {
+  const t = useT();
   return (
-    <ModalShell title="Switch games" onClose={cancelCrossLaunch} scrimClose>
+    <ModalShell title={t('Switch games')} onClose={cancelCrossLaunch} scrimClose>
       <p className={confirmStyles.body}>
-        {fromName} is still running. End it and start {toName}?
+        {t('{from} is still running. End it and start {to}?', { from: fromName, to: toName })}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={cancelCrossLaunch}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button
           kind="primary"
           size="md"
           onClick={() => void confirmCrossLaunch(characterId, fromId)}
         >
-          End and start
+          {t('End and start')}
         </Button>
       </ModalFooter>
     </ModalShell>

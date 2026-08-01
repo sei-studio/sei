@@ -76,3 +76,48 @@ describe('follow is ended by explicit relocates', () => {
     expect(getFollowTargetLabel()).toBe(null)
   })
 })
+
+// 260730: follow is a MODE, and any acting action ends it. Before this only
+// goTo/explore/unfollow did, so a dig or a gather left the 1s tick re-installing
+// GoalFollow toward a target that could be stale or unreachable — live, the
+// player died and the bot kept trailing a position it could not path to, and
+// dug itself into a hole. The clear happens in a wrapper at registration, so a
+// NEW action inherits it; only queries and self-managed relocates are exempt.
+describe('every acting action ends follow mode', () => {
+  beforeEach(() => {
+    setFollowTarget({ kind: 'player', username: 'Ceshi' })
+  })
+
+  for (const [name, args] of [
+    ['dig', { block: 'stone' }],
+    ['gather', { name: 'oak_log' }],
+    ['build', { from: { x: 0, y: 64, z: 0 }, to: { x: 1, y: 64, z: 1 }, block: 'dirt' }],
+    ['equip', { item: 'stone_pickaxe', destination: 'hand' }],
+    ['sleep', { block: 'bed' }],
+    ['activateItem', {}],
+  ]) {
+    it(`${name} clears the follow target`, async () => {
+      const registry = createDefaultRegistry()
+      // Handlers need a live world; the clear runs BEFORE dispatch, so a
+      // rejection here is expected and irrelevant to the contract.
+      await registry.execute(name, args, fakeBot(), {}).catch(() => {})
+      expect(getFollowTargetLabel()).toBe(null)
+    })
+  }
+
+  it('pure queries leave it intact: looking something up is not relocating', async () => {
+    const registry = createDefaultRegistry()
+    // An unknown term short-circuits find before it touches the world.
+    await registry.execute('find', { name: 'zzzznotathing' }, fakeBot(), {}).catch(() => {})
+    expect(getFollowTargetLabel()).toBe('Ceshi')
+  })
+
+  it('follow itself still sets the target', async () => {
+    const registry = createDefaultRegistry()
+    setFollowTarget(null)
+    const bot = fakeBot()
+    bot.players = { Shawn: { entity: { position: { x: 1, y: 64, z: 1 } }, username: 'Shawn' } }
+    await registry.execute('follow', { player: 'Shawn' }, bot, {}).catch(() => {})
+    expect(getFollowTargetLabel()).toBe('Shawn')
+  })
+})

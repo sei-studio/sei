@@ -22,6 +22,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { useT } from '../lib/i18n';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useWizardStore } from '../lib/stores/useWizardStore';
@@ -61,6 +62,7 @@ export interface McSetupModalProps {
 }
 
 export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps): React.ReactElement {
+  const t = useT();
   const [tab, setTab] = useState<McSetupTab>(initialTab);
   const lan = useDataStore((s) => s.lan);
   const closeModal = useUiStore((s) => s.closeModal);
@@ -117,8 +119,8 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
   };
 
   return (
-    <ModalShell title={null} width={520} onClose={onClose} aria-label="Minecraft setup">
-      <div className={styles.tabs} role="tablist" aria-label="Minecraft setup topics">
+    <ModalShell title={null} width={520} onClose={onClose} aria-label={t('Minecraft setup')}>
+      <div className={styles.tabs} role="tablist" aria-label={t('Minecraft setup topics')}>
         <button
           type="button"
           role="tab"
@@ -126,7 +128,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
           className={tab === 'world' ? `${styles.tab} ${styles.tabActive}` : styles.tab}
           onClick={() => setTab('world')}
         >
-          Connecting to world
+          {t('Connecting to world')}
         </button>
         <button
           type="button"
@@ -135,18 +137,18 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
           className={tab === 'skin' ? `${styles.tab} ${styles.tabActive}` : styles.tab}
           onClick={() => setTab('skin')}
         >
-          Viewing AI skin
+          {t('Viewing AI skin')}
         </button>
       </div>
 
       {tab === 'world' ? (
         <>
-          <StatusPill tone={pillTone(lan.kind)} label={pillLabel(lan.kind)} />
+          <StatusPill tone={pillTone(lan.kind)} label={t(pillLabel(lan.kind))} />
           <ol className={styles.steps}>
             {STEPS.map((step, i) => (
               <li key={i} className={styles.step}>
                 <span className={styles.stepNumber}>{String(i + 1).padStart(2, '0')}</span>
-                <span className={styles.stepBody}>{step}</span>
+                <span className={styles.stepBody}>{t(step)}</span>
               </li>
             ))}
           </ol>
@@ -157,20 +159,20 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
                 <span />
                 <span />
               </span>
-              Searching for an open LAN world…
+              {t('Searching for an open LAN world…')}
             </div>
           ) : null}
         </>
       ) : (
         <>
           <p className={styles.skinBody}>
-            Companions have their own Minecraft skins, so they look right when they join your
-            world. Seeing those skins in your game takes a quick one-time setup for your
-            Minecraft install. You can also run it later from Settings under Custom skins.
+            {t(
+              'Companions have their own Minecraft skins, so they look right when they join your world. Seeing those skins in your game takes a quick one-time setup for your Minecraft install. You can also run it later from Settings under Custom skins.',
+            )}
           </p>
           <div>
             <Button kind="accent" size="md" onClick={onOpenSkinSetup}>
-              Open skin setup
+              {t('Open skin setup')}
             </Button>
           </div>
         </>
@@ -178,7 +180,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
 
       <ModalFooter>
         <Button kind="primary" size="md" onClick={onClose}>
-          Close
+          {t('Close')}
         </Button>
       </ModalFooter>
     </ModalShell>

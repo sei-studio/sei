@@ -18,6 +18,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useChessStore, boardUiFor } from '../../lib/stores/useChessStore';
+import { useT } from '../../lib/i18n';
 import type { ChessColor } from '@shared/chessIpc';
 import {
   FILES,
@@ -48,6 +49,7 @@ const ANIM_MS = 320;
 const pct = (n: number): string => `${n * 12.5}%`;
 
 export function ChessBoard({ characterId }: ChessBoardProps): React.ReactElement | null {
+  const t = useT();
   const game = useChessStore((s) => s.games[characterId]);
   const ui = useChessStore((s) => boardUiFor(s, characterId));
   const revealed = useChessStore((s) => s.revealed[characterId] ?? null);
@@ -371,7 +373,7 @@ export function ChessBoard({ characterId }: ChessBoardProps): React.ReactElement
       onPointerCancel={onPointerCancel}
       onContextMenu={(e) => e.preventDefault()}
       role="application"
-      aria-label="Chess board"
+      aria-label={t('Chess board')}
     >
       <div className={styles.squares}>{squares}</div>
       <div className={styles.layer}>{highlights}</div>
@@ -492,9 +494,11 @@ export function ChessBoard({ characterId }: ChessBoardProps): React.ReactElement
                 style={{ left: pct(col), top: pct(row) }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => pickPromotion(piece)}
-                aria-label={`Promote to ${
-                  piece === 'q' ? 'queen' : piece === 'n' ? 'knight' : piece === 'r' ? 'rook' : 'bishop'
-                }`}
+                aria-label={t(
+                  `Promote to ${
+                    piece === 'q' ? 'queen' : piece === 'n' ? 'knight' : piece === 'r' ? 'rook' : 'bishop'
+                  }`,
+                )}
               >
                 <Piece code={`${playerColor}${piece}`} />
               </button>

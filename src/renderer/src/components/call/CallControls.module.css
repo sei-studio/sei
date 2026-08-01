@@ -40,6 +40,32 @@
   background: color-mix(in srgb, var(--text) 16%, transparent);
 }
 
+/* ── Over character art (260730) ───────────────────────────────────────────
+ * The backdrop call view paints these on top of an arbitrary picture, and the
+ * theme-tinted fills above assume they are on the app's own surface: a
+ * near-white icon in a 9%-white pill vanishes on Sui's pale sky, and inverting
+ * for light theme only moves the problem to dark art.
+ *
+ * So this variant is deliberately THEME-INDEPENDENT, the same documented
+ * exception BackseatOverlay takes for painting over someone else's game: a
+ * fixed dark scrim with white icons, the treatment every video player uses for
+ * exactly this reason. Radii, sizes and the hang-up red still come from the
+ * shared rules and tokens. */
+.controlsOnArt .pillBtn {
+  background: rgb(0 0 0 / 0.42);
+  color: white;
+}
+
+.controlsOnArt .pillBtn:hover {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.controlsOnArt .pillBtnToggled,
+.controlsOnArt .pillBtnToggled:hover {
+  background: white;
+  color: rgb(0 0 0 / 0.82);
+}
+
 /* Toggled ON (muted / deafened): inverted fill so the state reads instantly
  * (Discord's lit toggle), same in both themes. */
 .pillBtnToggled {
@@ -67,4 +93,15 @@
 .pillBtnHangup:hover {
   background: var(--red-strong);
   color: var(--accent-text);
+}
+
+/* Hang-up keeps its red on art too: the scrim rule above is more specific than
+ * the plain .pillBtnHangup, so the variant has to say so again. */
+.controlsOnArt .pillBtnHangup {
+  background: var(--red);
+  color: var(--accent-text);
+}
+
+.controlsOnArt .pillBtnHangup:hover {
+  background: var(--red-strong);
 }

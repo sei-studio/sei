@@ -139,13 +139,16 @@ const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'call_captions',
   'call_overlay_enabled',
   'call_convo_starters',
+  'call_backdrop',
   'chat_panel_hidden',
   'skin_setup_pending',
+  'tutorial_state',
   'has_been_welcomed',
   'feedback_reward_claimed',
   'vision_mode',
   'stt_engine',
   'stt_local_fallback',
+  'ui_language',
 ];
 
 /**

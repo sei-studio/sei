@@ -15,8 +15,19 @@ export const WALK_TIMEOUT_MS = 6000 // walk-closer step per out-of-reach cell (b
 const REACH = 4.5
 const JUMP_PLACE_WINDOW_MS = 800 // airborne budget to land the scaffold place
 const LANDING_MAX_MS = 800       // max wait to settle on the new block
-const SCAFFOLD_ATTEMPTS = 3      // re-jumps per layer before giving up
-const REFIRE_MS = 150            // min gap between place packets within one jump
+const SCAFFOLD_ATTEMPTS = 4      // re-jumps per layer before giving up
+const REFIRE_MS = 120            // min gap between place packets within one jump
+// 260730 jump timing. bot.placeBlock does not send the place packet the moment
+// it is called: it aims at the block and waits a tick first, so a fire at the
+// instant the feet clear the cell (feetY >= cellY + 1) lands the packet ~1-2
+// ticks LATER, by which time the bot is at or past the apex and often already
+// falling back into the cell — the server then rejects the block because the
+// player's hitbox intersects it. That is the "it takes a few tries" behavior.
+// So we fire one tick EARLY (a jump rises ~0.35 blocks in the tick after 0.75)
+// and let the packet arrive while the bot is genuinely clear. An early packet
+// that still arrives too soon is simply refused and refired; the loop reads
+// success from the WORLD, never from the promise, so a wasted packet is free.
+const PLACE_LEAD_Y = 0.75
 const FACE_UP = new Vec3(0, 1, 0)
 
 // 6 neighbor offsets in placement priority: floor first, then horizontal,
@@ -114,19 +125,23 @@ export function withinReach(bot, c) {
 async function jumpPlace(bot, refBlock, col, cellY) {
   const targetCell = new Vec3(col.x, cellY, col.z)
   const deadline = Date.now() + JUMP_PLACE_WINDOW_MS
-  let inFlight = false
   let lastFire = 0
   while (Date.now() < deadline) {
     const cur = bot.blockAt(targetCell)
     if (cur && !isAir(cur.name)) return true
     const now = Date.now()
     const feetY = bot.entity?.position?.y ?? 0
-    if (!inFlight && bot.entity?.onGround === false && feetY >= cellY + 1 && now - lastFire >= REFIRE_MS) {
+    // 260730: gate on the refire clock ONLY. The old code also held an
+    // `inFlight` flag until placeBlock's promise settled — but a REJECTED place
+    // does not settle until its own block-update wait times out (seconds), so
+    // one early miss silently blocked every retry for the rest of the jump and
+    // the whole attempt was wasted. Rising + past the lead height is the whole
+    // condition now; the world check above is still the only success signal.
+    if (bot.entity?.onGround === false && feetY >= cellY + PLACE_LEAD_Y && now - lastFire >= REFIRE_MS) {
       lastFire = now
-      inFlight = true
       // Fire-and-forget: a missed place rejects seconds later via placeBlock's
       // own block-update wait; we don't await it — the world check confirms.
-      Promise.resolve(bot.placeBlock(refBlock, FACE_UP)).catch(() => {}).finally(() => { inFlight = false })
+      Promise.resolve(bot.placeBlock(refBlock, FACE_UP)).catch(() => {})
     }
     await new Promise(r => setTimeout(r, 20))
   }
@@ -202,6 +217,34 @@ export async function buildAction(args, bot, config, deps = {}) {
   const invCount = () => bot.inventory.items().filter(i => i.name === args.block).reduce((n, i) => n + i.count, 0)
   if (invCount() === 0) return `no ${args.block} in inventory`
 
+  // 260730: scaffolding is build's `below` direction. Placing blocks UNDER
+  // yourself is the one build that has no fixed coordinates — where it goes
+  // depends on where you are standing when the block lands — so it cannot be
+  // expressed as a from/to span, and asking the model to compute the column it
+  // is standing in was a coin flip. `{direction:'below', count:N}` pillars up N
+  // blocks using the same jump+place scaffolding the cuboid path already uses
+  // to reach high cells.
+  if (args.direction === 'below') {
+    const n = args.count ?? 1
+    const have = invCount()
+    if (have < n) {
+      return `you only have ${have} ${args.block}, and pillaring up ${n} needs ${n}. Get more ${args.block} first, or pillar up ${have}.`
+    }
+    const startY = Math.floor(bot.entity?.position?.y ?? 0)
+    // scaffoldUp climbs while floor(y) < targetY - 1, so targetY = start + n + 1
+    // leaves the feet exactly n blocks higher.
+    const r = await scaffoldUp(bot, args.block, startY + n + 1, config)
+    const endY = Math.floor(bot.entity?.position?.y ?? startY)
+    const rose = endY - startY
+    if (r === 'aborted') return `aborted after pillaring up ${rose} of ${n}`
+    if (r !== 'ok') {
+      return rose > 0
+        ? `pillared up ${rose} of ${n}, then stopped: ${r}`
+        : `could not pillar up: ${r}`
+    }
+    return `pillared up ${rose} block${rose === 1 ? '' : 's'} (standing at y=${endY})`
+  }
+
   const cells = enumerateBuildCells(args.from, args.to, args.hollow === true)
   const total = cells.length
   // Material check (260617): how many cells actually need a block placed (the
@@ -209,6 +252,19 @@ export async function buildAction(args, bot, config, deps = {}) {
   // so explicitly — the old path returned "0 placed" with no hint that the real
   // problem was too few blocks (the log: a 84-cell wall attempted with 4 dirt).
   const needed = cells.reduce((n, c) => n + (isOccupied(bot, c) ? 0 : 1), 0)
+
+  // 260730: decide BEFORE moving. Both of these used to be discovered only
+  // after the builder had walked the span, scaffolded, and placed what it
+  // could — minutes of the session spent to produce a result the block counts
+  // predicted up front.
+  if (needed === 0 && total > 0) {
+    return `built NOTHING: all ${total} cells of that span are ALREADY solid — you are building into terrain (or at your own feet level). Pick a clear span and set from.y = your y + 1.`
+  }
+  const have = invCount()
+  if (have < needed) {
+    return `you only have ${have} ${args.block}, and that span needs ${needed} (${total} cells, ${total - needed} already solid). Gather more ${args.block} (or ask the player for some), or build a smaller span you can finish.`
+  }
+
   let placed = 0, skippedSolid = 0, skippedFail = 0
   const skipped = () => skippedSolid + skippedFail
 

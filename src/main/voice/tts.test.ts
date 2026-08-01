@@ -65,7 +65,9 @@ describe('voiceTts', () => {
     // Opening clip (no previous_text yet) carries NO conditioning at all — see
     // ttsContextFor: next_text on a conversation-opening line is what bled the
     // continuation string into the greeting's audio.
-    expect(JSON.parse(init.body as string)).toEqual({ text: 'hello there', voice_id: VOICE });
+    // Utterance form (260729): the clip text carries the sentence capital and
+    // the full stop the texting register drops — see toSpokenUtterance.
+    expect(JSON.parse(init.body as string)).toEqual({ text: 'Hello there.', voice_id: VOICE });
   });
 
   it('direct route (dev env / BYOK key): talks to ElevenLabs directly with the pinned model', async () => {
@@ -75,7 +77,7 @@ describe('voiceTts', () => {
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toContain(`api.elevenlabs.io/v1/text-to-speech/${VOICE}/stream`);
     expect((init.headers as Record<string, string>)['xi-api-key']).toBe('dev-key');
-    expect(JSON.parse(init.body as string)).toEqual({ text: 'hi', model_id: 'eleven_flash_v2_5' });
+    expect(JSON.parse(init.body as string)).toEqual({ text: 'Hi.', model_id: 'eleven_flash_v2_5' });
   });
 
   // Utterance conditioning is scoped to ONE reply (ttsContextFor): `prev` is
@@ -84,6 +86,8 @@ describe('voiceTts', () => {
   // reply boundary, and a line too short to carry the extra context gets none.
   const LONG = 'this line is long enough to carry context';
   const LONG_2 = 'and here is the second line of that same reply';
+  /** What each of those reaches ElevenLabs as (utterance form, 260729). */
+  const LONG_SPOKEN = 'This line is long enough to carry context.';
 
   it('takes previous_text from the caller, not from any cross-turn memory', async () => {
     fetchSpy.mockImplementation(async () => okAudio());
@@ -92,7 +96,8 @@ describe('voiceTts', () => {
     const bodies = fetchSpy.mock.calls.map(([, i]) => JSON.parse((i as RequestInit).body as string));
     expect(bodies[0].previous_text).toBeUndefined(); // first line of the reply
     expect(bodies[0].next_text).toBe(NEXT_TEXT); // another line follows
-    expect(bodies[1].previous_text).toBe(LONG); // the sibling before it
+    // previous_text is conditioning, so it is normalized like the clip itself.
+    expect(bodies[1].previous_text).toBe(LONG_SPOKEN); // the sibling before it
     expect(bodies[1].next_text).toBeUndefined(); // last line of the reply
   });
 
@@ -107,13 +112,63 @@ describe('voiceTts', () => {
     }
   });
 
-  it('drops conditioning entirely on a clip too short to outweigh it', async () => {
+  it('drops NEXT_text on a clip too short to outweigh it, but keeps previous_text', async () => {
     fetchSpy.mockImplementation(async () => okAudio());
     // Mid-reply on both sides, but three characters of primary text: this is
-    // the shape that got next_text SPOKEN ("yo what's up, eh").
+    // the shape that got next_text SPOKEN ("yo what's up, eh"). previous_text
+    // has no head to run into, so it rides at any length (260730) — and a clip
+    // this small is precisely the one that needs to know what it follows.
     await voiceTts({ characterId: 'c1', text: 'you', prev: LONG, more: true });
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual({ text: 'you', voice_id: VOICE });
+    expect(JSON.parse(init.body as string)).toEqual({
+      text: 'You.',
+      voice_id: VOICE,
+      previous_text: LONG_SPOKEN,
+    });
+  });
+
+  it('gives previous_text to a short opening clip: the squeaky-call fix', async () => {
+    // 260730: previous_text used to share next_text's floor, so a call's
+    // OPENING lines — its shortest — were rendered knowing nothing about what
+    // came before them: isolated exclamations, high onset, no declination,
+    // then the character's pitch shift on top. The call seemed to "calm down"
+    // only because its lines got longer. Nothing is withheld now.
+    fetchSpy.mockImplementation(async () => okAudio());
+    await voiceTts({ characterId: 'c1', text: 'oh', prev: LONG });
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.text).toBe('Oh.');
+    expect(body.previous_text).toBe(LONG_SPOKEN);
+    expect(body.next_text).toBeUndefined(); // nothing follows, and it is tiny
+  });
+
+  it('never sends a bracketed stage direction to be read aloud', async () => {
+    // Measured: eleven_flash_v2_5 SPEAKS "[laughs]" rather than performing it
+    // (see voice/audioTags.ts), so an unprompted tag is a word in the
+    // character's mouth. Stripped here as well as out of the chat bubble.
+    fetchSpy.mockImplementation(async () => okAudio());
+    await voiceTts({ characterId: 'c1', text: '[laughs] no way that actually worked' });
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string).text).toBe('No way that actually worked.');
+  });
+
+  /**
+   * 260729: the companion writes in texting register ("no period at the end of
+   * a sentence"), and ElevenLabs takes its intonation from the punctuation, so
+   * a finished statement was being synthesized with continuation prosody: no
+   * terminal pitch fall, the reply sounding cut off mid-sentence. `?` and `!`
+   * survive the texting register, which is why questions always sounded
+   * finished. Repaired at the synthesis boundary so it also covers speech the
+   * voice-call prompt never saw (a typed reply mirrored onto a call, an
+   * in-world say() routed up).
+   */
+  it('gives an unpunctuated statement a full stop, and leaves a question alone', async () => {
+    fetchSpy.mockImplementation(async () => okAudio());
+    await voiceTts({ characterId: 'c1', text: 'i already grabbed the iron' });
+    await voiceTts({ characterId: 'c1', text: 'you nearby?' });
+    const bodies = fetchSpy.mock.calls.map(([, i]) => JSON.parse((i as RequestInit).body as string));
+    expect(bodies[0].text).toBe('I already grabbed the iron.');
+    expect(bodies[1].text).toBe('You nearby?');
   });
 
   it('clips text to the proxy request cap (2500 chars, proxy v35)', async () => {
@@ -128,7 +183,8 @@ describe('voiceTts', () => {
     fetchSpy.mockResolvedValue(okAudio());
     await voiceTts({ characterId: 'c1', text: 'x'.repeat(5000) });
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect((JSON.parse(init.body as string) as { text: string }).text.length).toBe(5000);
+    // 5000 + the appended full stop (utterance form runs before the cap).
+    expect((JSON.parse(init.body as string) as { text: string }).text.length).toBe(5001);
   });
 
   it('BYOK with no stored key → VOICE_NOT_CONFIGURED without touching the network', async () => {

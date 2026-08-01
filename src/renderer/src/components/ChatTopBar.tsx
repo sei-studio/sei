@@ -24,6 +24,7 @@ import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from './PixelPortrait';
 import { GamepadIcon, PhoneIcon, BackIcon, UserIcon } from './icons';
 import { IdTag } from './IdTag';
+import { useT } from '../lib/i18n';
 import styles from './ChatTopBar.module.css';
 
 export interface ChatTopBarProps {
@@ -36,10 +37,11 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
   const setChatReturnId = useUiStore((s) => s.setChatReturnId);
   const onCallView = useUiStore((s) => s.view.kind === 'voice-call');
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
+  const t = useT();
 
   const theme: 'light' | 'dark' =
     (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light';
-  const companionName = character?.name ?? 'Companion';
+  const companionName = character?.name ?? t('Companion');
   const palette = useMemo(
     () => pickPalette((character?.id ?? '') + (character?.name ?? ''), theme),
     [character?.id, character?.name, theme],
@@ -70,8 +72,8 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
         type="button"
         className={styles.backBtn}
         onClick={onBack}
-        aria-label="Back"
-        data-tip="Back"
+        aria-label={t('Back')}
+        data-tip={t('Back')}
       >
         <BackIcon size={20} />
       </button>
@@ -92,7 +94,7 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
         type="button"
         className={styles.nameToggle}
         onClick={onProfile}
-        aria-label={`Open ${companionName}'s profile`}
+        aria-label={t("Open {name}'s profile", { name: companionName })}
       >
         <span className={styles.headerName}>{companionName}</span>
         {character?.public_id ? <IdTag id={character.public_id} size="sm" /> : null}
@@ -102,9 +104,10 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
           type="button"
           className={styles.iconBtn}
           onClick={() => openModal({ kind: 'games-picker', characterId })}
-          aria-label="Play together"
-          data-tip="Play together"
+          aria-label={t('Play together')}
+          data-tip={t('Play together')}
           data-tip-edge="right"
+          data-tutorial="games-btn"
         >
           <GamepadIcon size={18} />
         </button>
@@ -112,9 +115,10 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
           type="button"
           className={onCallView ? `${styles.iconBtn} ${styles.iconBtnActive}` : styles.iconBtn}
           onClick={onPhone}
-          aria-label={onCallView ? 'Back to chat' : 'Voice call'}
-          data-tip={onCallView ? 'Back to chat' : 'Voice call'}
+          aria-label={onCallView ? t('Back to chat') : t('Voice call')}
+          data-tip={onCallView ? t('Back to chat') : t('Voice call')}
           data-tip-edge="right"
+          data-tutorial="call-btn"
         >
           <PhoneIcon size={18} />
         </button>

@@ -13,6 +13,7 @@
  *      detect the shape from raw error messages.
  */
 import type { ErrorClass } from '@shared/errorClasses';
+import { t } from './i18n';
 
 /**
  * Plain-English error copy. Verbatim from UI-SPEC §"Plain-English error copy".
@@ -83,32 +84,32 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   const lower = msg.toLowerCase();
 
   if (/keychain|safestorage|encryption.*unavailable|decrypt/i.test(lower)) {
-    return { class: 'KEYCHAIN_LOCKED', copy: ERROR_COPY.KEYCHAIN_LOCKED };
+    return { class: 'KEYCHAIN_LOCKED', copy: t(ERROR_COPY.KEYCHAIN_LOCKED) };
   }
   if (/invalid.*api.*key|401|unauthorized|x-api-key/i.test(lower)) {
-    return { class: 'INVALID_API_KEY', copy: ERROR_COPY.INVALID_API_KEY };
+    return { class: 'INVALID_API_KEY', copy: t(ERROR_COPY.INVALID_API_KEY) };
   }
   if (/429|rate.?limit|throttl/i.test(lower)) {
-    return { class: 'RATE_LIMITED', copy: ERROR_COPY.RATE_LIMITED };
+    return { class: 'RATE_LIMITED', copy: t(ERROR_COPY.RATE_LIMITED) };
   }
   if (/enotfound|enetunreach|getaddrinfo|dns|offline|fetch failed/i.test(lower)) {
-    return { class: 'NETWORK_OFFLINE', copy: ERROR_COPY.NETWORK_OFFLINE };
+    return { class: 'NETWORK_OFFLINE', copy: t(ERROR_COPY.NETWORK_OFFLINE) };
   }
   if (/unsupported_mc_version|unsupported.*version|version.*not.*support|incompatible.*version/i.test(lower)) {
-    return { class: 'UNSUPPORTED_MC_VERSION', copy: ERROR_COPY.UNSUPPORTED_MC_VERSION };
+    return { class: 'UNSUPPORTED_MC_VERSION', copy: t(ERROR_COPY.UNSUPPORTED_MC_VERSION) };
   }
   // Word-bounded \blan\b (mirrors main's classifyChildError, 260720): a bare
   // /lan/ matched incidental substrings like "userland" in a node deprecation
   // warning and mislabeled unrelated crashes as LAN_NOT_OPEN.
   if (/\blan\b|multicast|no minecraft lan|open to lan|econnreset|connection reset|kicked/i.test(lower)) {
-    return { class: 'LAN_NOT_OPEN', copy: ERROR_COPY.LAN_NOT_OPEN };
+    return { class: 'LAN_NOT_OPEN', copy: t(ERROR_COPY.LAN_NOT_OPEN) };
   }
   if (/timeout|did not signal ready/i.test(lower)) {
-    return { class: 'BOT_START_TIMEOUT', copy: ERROR_COPY.BOT_START_TIMEOUT };
+    return { class: 'BOT_START_TIMEOUT', copy: t(ERROR_COPY.BOT_START_TIMEOUT) };
   }
   // Generic fallback
   return {
     class: 'BOT_CRASH',
-    copy: `Something went wrong. ${msg ? msg + '.' : ''} Try again.`,
+    copy: t('Something went wrong. {detail}Try again.', { detail: msg ? msg + '. ' : '' }),
   };
 }

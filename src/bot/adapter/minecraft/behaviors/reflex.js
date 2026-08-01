@@ -33,6 +33,41 @@ function dist3(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
 }
 
+// Player eye offset above entity.position (feet). The FOV gate measures angles
+// from the eyes, not the feet, so a mob on a ledge above/below reads correctly.
+const EYE_HEIGHT = 1.62
+
+/**
+ * Sight gate: is `targetPos` inside the bot's head-look cone? Reflexes should
+ * mirror a human player, who reacts to what is on screen, not to threats behind
+ * them. Uses the bot entity's yaw/pitch — in mineflayer that IS the head/look
+ * direction (bot.look()/lookAt() set it; gaze.js aims with the same values), so
+ * this is head direction, not body facing.
+ *
+ * View-vector convention matches gaze.js aimAt (yaw = atan2(-dx,-dz), pitch
+ * positive = up): viewDir = (-sin(yaw)cos(pitch), sin(pitch), -cos(yaw)cos(pitch)).
+ *
+ * `cosHalfFov` is cos(fov/2) precomputed by the caller. Fails OPEN (returns
+ * true) when yaw/pitch are missing/non-finite — no head data means we cannot
+ * gate, and a blind spot bug must never make the bot ignore every threat.
+ * Pure function (plain {x,y,z} math) so it is unit-testable in isolation.
+ */
+export function inFieldOfView(me, targetPos, cosHalfFov) {
+  const yaw = me?.yaw
+  const pitch = me?.pitch
+  if (!Number.isFinite(yaw) || !Number.isFinite(pitch)) return true
+  const dx = targetPos.x - me.position.x
+  const dy = targetPos.y - (me.position.y + EYE_HEIGHT)
+  const dz = targetPos.z - me.position.z
+  const len = Math.hypot(dx, dy, dz)
+  if (len === 0) return true // on top of us: no meaningful direction, count as seen
+  const cp = Math.cos(pitch)
+  const vx = -Math.sin(yaw) * cp
+  const vy = Math.sin(pitch)
+  const vz = -Math.cos(yaw) * cp
+  return (dx * vx + dy * vy + dz * vz) / len >= cosHalfFov
+}
+
 /**
  * Closest-approach (point-to-line) test for an arrow's ray.
  *
@@ -83,6 +118,7 @@ export function resolveReflexThresholds(mc, personaWeights) {
     creeper_flee_enter_blocks: num(mc?.creeper_flee_enter_blocks, 8),
     creeper_flee_exit_blocks: num(mc?.creeper_flee_exit_blocks, 12),
     melee_kite_blocks: num(mc?.melee_kite_blocks, 4.5),
+    reflex_fov_deg: num(mc?.reflex_fov_deg, 120),
   }
 }
 
@@ -110,11 +146,22 @@ function arrowSideHint(arrowPos, arrowVel, botPos) {
  * single D-06 override point either way — a future per-persona hook still only
  * has to recompute `TH` once, at whatever cadence it needs, and thread it
  * through here.
+ *
+ * SIGHT GATE: every threat class except a fusing creeper must be inside the
+ * head-look cone (`inFieldOfView`, reflex_fov_deg total) to register — a human
+ * player reacts to what is on screen, not to a mob behind them. The one
+ * exception is the creeper fuse/ignite telegraph, which is an AUDIO cue (the
+ * hiss) that players react to at any facing. Note the flee hysteresis in
+ * tick() runs off `_fleeId`, not this scan, so once a threat is noticed the
+ * bot stays aware of it even if it then leaves the cone.
  */
 export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
   const me = bot.entity
   const botPos = me?.position
   if (!botPos) return null
+
+  // deg * PI/360 = half-angle in radians.
+  const cosHalfFov = Math.cos(((th.reflex_fov_deg ?? 120) * Math.PI) / 360)
 
   let best = null
   let bestRank = Infinity
@@ -130,6 +177,9 @@ export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
     if (e.name === 'arrow') {
       const v = e.velocity
       if (!v || (!v.x && !v.y && !v.z)) continue // grounded/stale arrow keeps its
+      // Sight gate before the ray math: an arrow flying in from behind is
+      // invisible to a human player and never triggers a dodge.
+      if (!inFieldOfView(me, e.position, cosHalfFov)) continue
       const { missDist, ahead } = closestApproach(e.position, v, botPos)
       if (ahead && missDist < th.arrow_miss_threshold) {
         consider({ kind: 'arrow', entity: e, sideHint: arrowSideHint(e.position, v, botPos) }, RANK.arrow)
@@ -144,8 +194,9 @@ export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
       const md = e.metadata
       const panic = md != null && (Number(md[16]) === 1 || Boolean(md[18]))
       if (panic) {
+        // Fuse/ignite is the hiss — audible at any facing, so NOT sight-gated.
         consider({ kind: 'creeper', entity: e, panic: true }, RANK.creeperPanic)
-      } else if (dist <= th.creeper_flee_enter_blocks) {
+      } else if (dist <= th.creeper_flee_enter_blocks && inFieldOfView(me, e.position, cosHalfFov)) {
         consider({ kind: 'creeper', entity: e, panic: false }, RANK.creeper)
       }
       continue
@@ -159,8 +210,10 @@ export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
       // distance to land hits, not dodge laterally off its pursuit line (the
       // skeleton-kite bug). The REAL incoming-arrow dodge (the `arrow` branch
       // above) stays active always — dodging a live arrow while charging is fine.
+      // The bow-draw telegraph is purely visual, so a skeleton drawing behind
+      // the bot's back never arms the pre-emptive sidestep.
       const committed = bot._seiOffensiveTarget != null && bot._seiOffensiveTarget === e.id
-      if (!committed && dist <= th.arrow_watch_blocks) {
+      if (!committed && dist <= th.arrow_watch_blocks && inFieldOfView(me, e.position, cosHalfFov)) {
         const md = e.metadata
         if (md != null && (Number(md[8]) & 0x01) === 1) {
           const v = me.velocity ?? { x: 0, y: 0, z: 1 }
@@ -185,7 +238,11 @@ export function scanThreats(bot, mc, th = resolveReflexThresholds(mc)) {
       (lock != null && e.id === lock.id && (Date.now() - lock.at) < PVP_OPPONENT_TTL_MS) ||
       e.id === bot._seiOffensiveTarget
     )
-    if ((HOSTILE_MOBS.has(e.name) || isPvpOpponent) && dist <= th.melee_kite_blocks + 2) {
+    // Sight-gated like the rest: a zombie sneaking up from behind lands its
+    // first hit (combat retaliation then turns the bot around) instead of the
+    // bot pre-kiting a mob it could not have seen.
+    if ((HOSTILE_MOBS.has(e.name) || isPvpOpponent) && dist <= th.melee_kite_blocks + 2 &&
+        inFieldOfView(me, e.position, cosHalfFov)) {
       consider({ kind: 'melee', entity: e }, RANK.melee)
     }
   }

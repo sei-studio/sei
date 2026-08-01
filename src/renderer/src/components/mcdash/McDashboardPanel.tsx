@@ -38,6 +38,7 @@ import { useSkinServerBase, extractMcVersion, mcItemIconUrl, mcSkinUrl } from '.
 import { effectiveMcUsername } from '@shared/characterSchema';
 import type { McDashItem } from '@shared/mcDashboardIpc';
 import type { McGameMode } from '@shared/ipc';
+import { useT } from '../../lib/i18n';
 import styles from './McDashboardPanel.module.css';
 
 export interface McDashboardPanelProps {
@@ -140,7 +141,8 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
   const lan = useDataStore((s) => s.lan);
   const assetBase = useSkinServerBase();
-  const name = character?.name ?? 'Companion';
+  const t = useT();
+  const name = character?.name ?? t('Companion');
 
   // 260725 runtime controls: absent entry == the per-summon defaults
   // (unpaused, proactive). Never persisted; the store drops the entry when
@@ -183,10 +185,10 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
   for (const it of snapshot?.items ?? []) bySlot.set(it.slot, it);
 
   return (
-    <div className={styles.panel} aria-label={`${name}'s Minecraft dashboard`}>
+    <div className={styles.panel} aria-label={t("{name}'s Minecraft dashboard", { name })}>
       {/* ── Header bar (vanilla gray strip) ── */}
       <header className={styles.head}>
-        <span className={styles.headTitle}>{name} in Minecraft</span>
+        <span className={styles.headTitle}>{t('{name} in Minecraft', { name })}</span>
       </header>
 
       {snapshot ? (
@@ -194,15 +196,15 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
           {/* ── Status window (260725): full-width strip translating what the
               AI is doing right now (activityLabel in the bot: "gathering oak
               logs...", "thinking", "idling"; "paused" is renderer state). ── */}
-          <section className={`${styles.dialog} ${styles.statusDialog}`} aria-label="Status">
-            <span className={styles.statusTitle}>Status</span>
+          <section className={`${styles.dialog} ${styles.statusDialog}`} aria-label={t('Status')}>
+            <span className={styles.statusTitle}>{t('Status')}</span>
             <span className={styles.statusText} aria-live="polite">
-              {paused ? 'Paused' : sentenceCase(snapshot.activity || 'idling')}
+              {paused ? t('Paused') : sentenceCase(snapshot.activity || 'idling')}
             </span>
           </section>
 
           {/* ── Inventory dialog (the classic light-gray window) ── */}
-          <section className={styles.dialog} aria-label={`${name}'s inventory`}>
+          <section className={styles.dialog} aria-label={t("{name}'s inventory", { name })}>
             <div className={styles.topRow}>
               <div className={styles.armorCol}>
                 {ARMOR_SLOTS.map((s) => {
@@ -224,7 +226,7 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
               </div>
             </div>
 
-            <div className={styles.invTitle}>Inventory</div>
+            <div className={styles.invTitle}>{t('Inventory')}</div>
             <div className={styles.invGrid}>
               {MAIN_SLOTS.map((s) => {
                 const it = bySlot.get(s);
@@ -248,12 +250,12 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
 
           {/* ── Map dialog (gray GUI framing around the minimap). The old
               activity line moved to the dedicated status window above. ── */}
-          <section className={styles.dialog} aria-label="Minimap">
+          <section className={styles.dialog} aria-label={t('Minimap')}>
             <McDashMinimap map={snapshot.map} yaw={snapshot.yaw} sizePx={MINIMAP_PX} />
             <div className={styles.posLine}>
               {Math.round(snapshot.pos.x)} {Math.round(snapshot.pos.y)}{' '}
               {Math.round(snapshot.pos.z)}
-              <span className={styles.dim}> {prettyDimension(snapshot.dimension)}</span>
+              <span className={styles.dim}> {t(prettyDimension(snapshot.dimension))}</span>
             </div>
           </section>
 
@@ -264,7 +266,7 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
               hovered/focused button's description. ── */}
           <section
             className={`${styles.dialog} ${styles.controlsDialog}`}
-            aria-label="Companion controls"
+            aria-label={t('Companion controls')}
           >
             <button
               type="button"
@@ -273,9 +275,9 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
               onClick={() => storeSetPaused(characterId, !paused)}
               {...hintHandlers('pause')}
             >
-              Pause
+              {t('Pause')}
             </button>
-            <div className={styles.invTitle}>Mode</div>
+            <div className={styles.invTitle}>{t('Mode')}</div>
             <button
               type="button"
               className={mode === 'reactive' ? `${styles.mcButton} ${styles.mcButtonOn}` : styles.mcButton}
@@ -283,7 +285,7 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
               onClick={() => storeSetMode(characterId, 'reactive')}
               {...hintHandlers('reactive')}
             >
-              Reactive
+              {t('Reactive')}
             </button>
             <button
               type="button"
@@ -292,10 +294,10 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
               onClick={() => storeSetMode(characterId, 'proactive')}
               {...hintHandlers('proactive')}
             >
-              Proactive
+              {t('Proactive')}
             </button>
             <div className={styles.controlsHint} aria-live="polite">
-              {controlHint ? CONTROL_DESCRIPTIONS[controlHint] : ''}
+              {controlHint ? t(CONTROL_DESCRIPTIONS[controlHint]) : ''}
             </div>
             <button
               type="button"
@@ -303,12 +305,12 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
               onClick={disconnect}
               {...hintHandlers('disconnect')}
             >
-              Disconnect
+              {t('Disconnect')}
             </button>
           </section>
         </div>
       ) : (
-        <div className={styles.waiting}>Waiting for {name}...</div>
+        <div className={styles.waiting}>{t('Waiting for {name}...', { name })}</div>
       )}
     </div>
   );

@@ -15,6 +15,7 @@
 
 import React, { useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { UploadIcon } from './icons';
 import styles from './KnowledgeDropZone.module.css';
 
@@ -53,6 +54,7 @@ export function KnowledgeDropZone({
   cornerAction,
   compact = false,
 }: KnowledgeDropZoneProps): React.ReactElement {
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -94,7 +96,7 @@ export function KnowledgeDropZone({
         ref={rootRef}
         role="button"
         tabIndex={disabled ? -1 : 0}
-        aria-label="Upload knowledge files"
+        aria-label={t('Upload knowledge files')}
         className={[
           styles.zone,
           compact ? styles.compact : '',
@@ -132,10 +134,10 @@ export function KnowledgeDropZone({
           </span>
           <p className={styles.secondary}>
             {busy
-              ? 'Reading files…'
+              ? t('Reading files…')
               : dragOver
-                ? 'Drop to upload'
-                : '.md, .txt, .text, .docx (max 512 KB each)'}
+                ? t('Drop to upload')
+                : t('.md, .txt, .text, .docx (max 512 KB each)')}
           </p>
         </div>
       </div>

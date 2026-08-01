@@ -29,6 +29,7 @@
 import React from 'react';
 import type { LanHost, LanHostWarning } from '@shared/ipc';
 import { sei } from '../lib/ipcClient';
+import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -64,24 +65,38 @@ const TITLES: Record<LanHostWarning, string> = {
   lunar: 'Lunar Client detected',
 };
 
+/** Substitute {token} placeholders in a translated string with React nodes,
+ * so styled spans (the bold companion name) survive translation without
+ * concatenating sentence fragments. */
+function richText(text: string, nodes: Record<string, React.ReactNode>): React.ReactNode[] {
+  return text.split(/(\{\w+\})/g).map((part, i) => {
+    const m = /^\{(\w+)\}$/.exec(part);
+    return m && m[1] in nodes ? (
+      <React.Fragment key={i}>{nodes[m[1]]}</React.Fragment>
+    ) : (
+      part
+    );
+  });
+}
+
 export function LanHostWarningModal({
   characterId,
   warning,
   host,
   fromChat,
 }: LanHostWarningModalProps): React.ReactElement {
+  const t = useT();
   const closeModal = useUiStore((s) => s.closeModal);
-  const name = useDataStore(
-    (s) => s.characters.find((c) => c.id === characterId)?.name ?? 'Your companion',
-  );
+  const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
+  const name = rawName ?? t('Your companion');
   const [dontShowAgain, setDontShowAgain] = React.useState(false);
 
-  const title = TITLES[warning];
+  const title = t(TITLES[warning]);
   const modCount = host.forgeModCount;
-  const withMods =
-    warning === 'modded' && modCount != null && modCount > 0 ? ` with ${modCount} mods` : '';
+  const hasMods = warning === 'modded' && modCount != null && modCount > 0;
   // Only the vanilla and modded warnings persist; lunar stays session-scoped.
   const showDontShowAgain = warning === 'vanilla' || warning === 'modded';
+  const strongName = { name: <strong>{name}</strong> };
 
   const onSummonAnyway = (): void => {
     acknowledgeHostWarning(warning);
@@ -107,35 +122,53 @@ export function LanHostWarningModal({
       {warning === 'lunar' ? (
         <>
           <p className={styles.body}>
-            Your world is hosted from Lunar Client. <strong>{name}</strong> can join and play
-            normally, but Lunar does not load the skin mod, so {name} may appear with a default
-            Minecraft skin.
+            {richText(
+              t(
+                'Your world is hosted from Lunar Client. {name} can join and play normally, but Lunar does not load the skin mod, so {name} may appear with a default Minecraft skin.',
+              ),
+              strongName,
+            )}
           </p>
           <p className={styles.hint}>
-            To see custom skins, host the world from an install set up in skin setup (Settings).
+            {t(
+              'To see custom skins, host the world from an install set up in skin setup (Settings).',
+            )}
           </p>
         </>
       ) : warning === 'vanilla' ? (
         <>
           <p className={styles.body}>
-            Your world is running vanilla Minecraft without Sei&apos;s skin mod.{' '}
-            <strong>{name}</strong> can join and play normally, but will appear with a default
-            Minecraft skin.
+            {richText(
+              t(
+                "Your world is running vanilla Minecraft without Sei's skin mod. {name} can join and play normally, but will appear with a default Minecraft skin.",
+              ),
+              strongName,
+            )}
           </p>
           <p className={styles.hint}>
-            To see custom skins, run skin setup (Settings) and host the world from the Sei
-            profile.
+            {t(
+              'To see custom skins, run skin setup (Settings) and host the world from the Sei profile.',
+            )}
           </p>
         </>
       ) : (
         <>
           <p className={styles.body}>
-            Your world is running {loaderLabel(host)}{withMods}. <strong>{name}</strong> joins as a
-            vanilla player: client-side mods like minimaps are fine, but mods that add new blocks
-            or items may stop {name} from joining.
+            {richText(
+              hasMods
+                ? t(
+                    'Your world is running {loader} with {count} mods. {name} joins as a vanilla player: client-side mods like minimaps are fine, but mods that add new blocks or items may stop {name} from joining.',
+                    { loader: t(loaderLabel(host)), count: modCount as number },
+                  )
+                : t(
+                    'Your world is running {loader}. {name} joins as a vanilla player: client-side mods like minimaps are fine, but mods that add new blocks or items may stop {name} from joining.',
+                    { loader: t(loaderLabel(host)) },
+                  ),
+              strongName,
+            )}
           </p>
           <p className={styles.hint}>
-            If the join fails, try a world without server-side mods.
+            {t('If the join fails, try a world without server-side mods.')}
           </p>
         </>
       )}
@@ -146,15 +179,15 @@ export function LanHostWarningModal({
             checked={dontShowAgain}
             onChange={(e) => setDontShowAgain(e.target.checked)}
           />
-          <span>Don&apos;t show this again</span>
+          <span>{t("Don't show this again")}</span>
         </label>
       ) : null}
       <ModalFooter>
         <Button kind="ghost" size="md" onClick={closeModal}>
-          Cancel
+          {t('Cancel')}
         </Button>
         <Button kind="accent" size="md" onClick={onSummonAnyway}>
-          Summon anyway
+          {t('Summon anyway')}
         </Button>
       </ModalFooter>
     </ModalShell>
