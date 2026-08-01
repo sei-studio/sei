@@ -236,8 +236,23 @@ export function shouldSuppressLoopEndSay({ triggerEvent, candidateLine, lastSelf
  * "cool, i'm here whenever you are" — four ways to say the same thing inside
  * 30 seconds, and on a voice call every one of them is spoken out loud over
  * whatever the player is doing. 45s means an unanswered line gets to stand.
+ *
+ * 260731 — DISABLED (0 = off). The floor was sized against a repeat, but it
+ * only ever compared TIMESTAMPS, so it could not tell a reworded repeat from a
+ * new thought and killed both. Live, inside one session it swallowed "that
+ * means everything to me, actually" (4s), "ready to start working toward stone
+ * tools together?" (7s) and "come mine some stone with me?" (21s) — an answer
+ * to something the player had just said about themselves, and two invitations
+ * to play together, which is the single behaviour the companion most needs.
+ * Stacked on top of the two OTHER silence gates (shouldSuppressLoopEndSay, and
+ * the mid-action tick's "call NO say()"), the net effect was a companion that
+ * only ever spoke when spoken to.
+ *
+ * The dedupe that catches an actual repeat is shouldSuppressLoopEndSay, which
+ * compares TEXT and is still on. The predicate below is kept (and still tested)
+ * so the floor can be restored by setting a non-zero gap here.
  */
-export const IDLE_SAY_GAP_MS = 45_000
+export const IDLE_SAY_GAP_MS = 0
 
 /**
  * Suppress an idle-tick say() that talks over the bot's own last line.
@@ -264,6 +279,7 @@ export const IDLE_SAY_GAP_MS = 45_000
  * @returns {boolean} true = suppress, false = allow
  */
 export function shouldSuppressIdleSay({ triggerEvent, lastSelf, lastPlayer, now = Date.now(), gapMs = IDLE_SAY_GAP_MS }) {
+  if (!(gapMs > 0)) return false                    // gap 0 = floor disabled
   if (triggerEvent !== 'sei:idle' && triggerEvent !== 'sei:loop_end') return false
   if (!lastSelf || !lastSelf.at) return false
   if ((now - lastSelf.at) >= gapMs) return false

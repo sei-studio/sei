@@ -2,9 +2,14 @@
 import { Vec3 } from 'vec3'
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { goTo } from './pathfind.js'
+import { equipBestTool, harvestNote } from './toolSelect.js'
 import { firstLine, truncate } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 8000
+// Hard ceiling on the derived timeout below. Anything that needs longer than
+// this with the best tool we own (obsidian bare-handed is ~250s) is not worth
+// standing still for — the timeout is the give-up.
+export const MAX_TIMEOUT_MS = 30000
 const PICKUP_TIMEOUT_MS = 3000
 export const DIG_REACH = 4.5  // mineflayer's effective reach for breaking blocks
 
@@ -119,11 +124,28 @@ export async function digAction(args, bot, config) {
   if (blockName === 'air' || blockName === 'cave_air' || blockName === 'void_air') {
     return `no block at ${bx},${by},${bz} (target was ${blockName})`
   }
+  // 260731: the old message here said "unbreakable or wrong tool", but
+  // mineflayer's canDigBlock only checks diggability + reach — it has never
+  // looked at the held item, so the tool half of that sentence was a lie the
+  // model kept acting on.
   if (typeof bot.canDigBlock === 'function' && !bot.canDigBlock(block)) {
-    return `cannot break ${blockName} at ${bx},${by},${bz} (unbreakable or wrong tool)`
+    return `cannot break ${blockName} at ${bx},${by},${bz} (unbreakable)`
   }
 
-  const timeoutMs = args.timeout_ms ?? config?.dig_timeout_ms ?? DEFAULT_TIMEOUT_MS
+  // Auto-equip the best tool we own for this block (see toolSelect.js). Runs
+  // before every swing, including each cell of a cuboid and each block of a
+  // gather; it no-ops when the right thing is already in hand, so the cost of
+  // the common case is one digTime comparison per inventory item.
+  const { ms: estMs, harvest } = await equipBestTool(bot, block, config)
+  if (signal?.aborted) return 'aborted'
+
+  // Derive the timeout from the ACTUAL expected dig time rather than trusting a
+  // flat 8s. Bare-handed stone is 7500ms and used to lose the race under any
+  // latency; a diamond pickaxe on the same block wants nowhere near 8s.
+  const derived = Number.isFinite(estMs)
+    ? Math.min(MAX_TIMEOUT_MS, Math.max(DEFAULT_TIMEOUT_MS, Math.ceil(estMs * 2) + 2000))
+    : DEFAULT_TIMEOUT_MS
+  const timeoutMs = args.timeout_ms ?? config?.dig_timeout_ms ?? derived
 
   // Capture position before the block disappears — drop spawns at this location.
   const dropPos = { x: bx, y: by, z: bz }
@@ -152,7 +174,7 @@ export async function digAction(args, bot, config) {
         const r = await goTo(bot, dropPos.x, ly, dropPos.z, 0, PICKUP_TIMEOUT_MS)
         if (r !== 'reached') pickupNote = ' (pickup walk did not reach)'
       } catch {}
-      return `dug ${blockName}${pickupNote}`
+      return `dug ${blockName}${pickupNote}${harvest ? '' : harvestNote(blockName)}`
     })
     .catch((err) => {
       // Distinguish target-already-changed from generic dig failures.

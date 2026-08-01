@@ -183,3 +183,41 @@ describe('CJK matching', () => {
     expect(saysWord('快猜呀', '灯塔')).toBe(false);
   });
 });
+
+// 260731 — the word-slip guard is SCRIPT-AGNOSTIC. It used to decide "is there
+// anything left in this line" with `[^a-z0-9]`, which reads any line written
+// outside the Latin alphabet as EMPTY; saysWord then read that emptiness as
+// "the drawer typed their own word". A player typing Chinese while DRAWING had
+// their line dropped and was told "You can't type this word! You're drawing
+// it, not guessing it." — for a line that never contained the word. Reported
+// live. The same misfire muted the character's own non-English lines mid
+// drawing turn and then corrected it for something it had not done.
+describe('word-slip guard across scripts', () => {
+  it('lets a non-Latin line through when the answer is English', () => {
+    expect(saysWord('是笔吗', 'pencil')).toBe(false);
+    expect(saysWord('그게 뭐야', 'pencil')).toBe(false);
+    expect(saysWord('これは何ですか', 'pencil')).toBe(false);
+    expect(saysWord('это карандаш', 'pencil')).toBe(false);
+  });
+
+  it('lets a line through that carries no letters at all', () => {
+    expect(saysWord('???', 'pencil')).toBe(false);
+    expect(saysWord('🎨🎨', 'pencil')).toBe(false);
+  });
+
+  it('leaves those lines untouched rather than nulling them', () => {
+    expect(redactWord('是笔吗', 'pencil')).toBe('是笔吗');
+    expect(redactWord('그게 뭐야', 'pencil')).toBe('그게 뭐야');
+  });
+
+  it('still catches the answer when it is mixed into a non-Latin line', () => {
+    expect(saysWord('是 pencil 吗', 'pencil')).toBe(true);
+  });
+
+  it('non-Han scripts survive a Chinese answer too', () => {
+    // The CJK branch had the mirror bug: Han + a-z0-9 only, so a hangul or
+    // kana line in a Chinese game was read as empty the same way.
+    expect(saysWord('그게 뭐야', '灯塔')).toBe(false);
+    expect(redactWord('그게 뭐야', '灯塔')).toBe('그게 뭐야');
+  });
+});

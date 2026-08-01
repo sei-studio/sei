@@ -199,6 +199,58 @@ export function findWordMatch(
   return null;
 }
 
+const REGEX_ESCAPE_RE = /[.*+?^${}()|[\]\\]/g;
+
+/**
+ * The tolerant pattern that finds `word` inside a raw line, or null when the
+ * word carries nothing matchable. A FRESH RegExp every call: the pattern is
+ * /g, and a shared instance would carry `lastIndex` between .test() calls and
+ * answer differently on alternating lines.
+ *
+ * Shared by redactWord and saysWord (260731) so the two can never disagree
+ * about what counts as saying the word. saysWord used to derive its answer
+ * from redactWord's RETURN VALUE instead, which conflated "said the word"
+ * with "nothing salvageable left" — see hasContent below for what that cost.
+ */
+function wordPattern(word: string): RegExp | null {
+  if (hasCjk(word)) {
+    // CJK: no word boundaries exist, so match every contiguous occurrence
+    // (tolerating separators between the characters, mirroring the Latin
+    // pattern's tolerance). Chars are regex-escaped individually.
+    const chars = [...normalizeCjk(word)];
+    if (chars.length === 0) return null;
+    const esc = (c: string): string => c.replace(REGEX_ESCAPE_RE, '\\$&');
+    return new RegExp(chars.map(esc).join('[^㐀-䶿一-鿿a-z0-9]*'), 'gi');
+  }
+  const target = tokenize(word);
+  if (target.length === 0) return null;
+  // Tolerant: plurals on either side, any separator between the two words of a
+  // two-word answer.
+  const esc = (t: string): string => t.replace(REGEX_ESCAPE_RE, '\\$&');
+  const wordPat = target.map((t) => `${esc(t)}(?:es|s)?`).join('[^a-z0-9]*');
+  return new RegExp(`\\b${wordPat}\\b`, 'gi');
+}
+
+/**
+ * Whether a redacted line still carries something worth sending: any LETTER OR
+ * DIGIT IN ANY SCRIPT, once the redaction markers are removed.
+ *
+ * 260731: this test used to be `.replace(/[^a-z0-9]/gi, '').length === 0` (and,
+ * on the CJK branch, the same with Han added). Both read every line written
+ * outside their own alphabet as EMPTY, so a player typing Chinese, Korean,
+ * Japanese, or nothing but emoji while DRAWING had their line dropped and was
+ * told "You can't type this word! You're drawing it, not guessing it." — the
+ * word never appeared and the pattern never matched; the line simply had no
+ * ASCII letters in it. The same misfire hit the character's own lines mid
+ * drawing turn (drawService's word-slip guard), so a character that drifted
+ * into another language was silently muted and then corrected for something it
+ * had not done. Unicode property escapes are the whole fix: `\p{L}` covers
+ * every script this game will ever see.
+ */
+function hasContent(redacted: string): boolean {
+  return /[\p{L}\p{N}]/u.test(redacted.replace(/\[\.\.\.\]/g, ''));
+}
+
 /**
  * Redact the answer from a line the DRAWER is about to say, so a slip never
  * hands the round away. Returns null when the line is nothing but the answer
@@ -208,31 +260,11 @@ export function findWordMatch(
  * character is told plainly never to say the word.
  */
 export function redactWord(text: string, word: string): string | null {
-  if (hasCjk(word)) {
-    // CJK: no word boundaries exist, so redact every contiguous occurrence
-    // (tolerating separators between the characters, mirroring the Latin
-    // pattern's tolerance). Chars are regex-escaped individually.
-    const chars = [...normalizeCjk(word)];
-    if (chars.length === 0) return text;
-    const esc = (c: string): string => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(chars.map(esc).join('[^㐀-䶿一-鿿a-z0-9]*'), 'gi');
-    const out = text.replace(re, '[...]').trim();
-    if (out.replace(/\[\.\.\.\]/g, '').replace(/[^㐀-䶿一-鿿a-z0-9]/gi, '').length === 0) return null;
-    return out;
-  }
-  const target = tokenize(word);
-  if (target.length === 0) return text;
-
-  // Operate on the raw text so the player's line keeps its own punctuation:
-  // build a tolerant pattern (plurals, any separator between the two words)
-  // and blank out what it hits.
-  const esc = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const wordPat = target.map((t) => `${esc(t)}(?:es|s)?`).join('[^a-z0-9]*');
-  const re = new RegExp(`\\b${wordPat}\\b`, 'gi');
-
+  const re = wordPattern(word);
+  if (!re) return text;
   const out = text.replace(re, '[...]').trim();
   // Nothing left but the redaction marker and punctuation: drop the line.
-  if (out.replace(/\[\.\.\.\]/g, '').replace(/[^a-z0-9]/gi, '').length === 0) return null;
+  if (!hasContent(out)) return null;
   return out;
 }
 
@@ -243,7 +275,12 @@ export function redactWord(text: string, word: string): string | null {
  * because the line is now dropped whole rather than patched: a "[...]" in the
  * middle of a sentence still told the guesser exactly where the answer went,
  * and it read as a bug rather than as the game protecting itself.
+ *
+ * 260731: asks the PATTERN, not redactWord's return value. A line that leaves
+ * nothing salvageable is a different condition from a line that says the word,
+ * and only the second one deserves the word-slip notice.
  */
 export function saysWord(text: string, word: string): boolean {
-  return redactWord(text, word) !== text.trim();
+  const re = wordPattern(word);
+  return re ? re.test(text) : false;
 }
