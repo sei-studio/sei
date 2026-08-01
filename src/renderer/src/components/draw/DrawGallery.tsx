@@ -1,8 +1,8 @@
 /**
  * DrawGallery — the end-of-game sheet: a row per player, one cell per round,
  * word under each drawing, and a save button that writes the same layout to
- * the Desktop as a PNG (composed on canvas, not screenshotted, so the file is
- * identical everywhere).
+ * the Downloads folder as a PNG (composed on canvas, not screenshotted, so the
+ * file is identical everywhere).
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -165,7 +165,7 @@ export function DrawGallery({
         <button type="button" className={styles.handBtn} onClick={() => void save()} disabled={saving}>
           <SquiggleHighlight seed="save-hl" />
           <SquiggleFrame seed="save-btn" />
-          <span className={styles.btnLabel}>{saving ? t('Saving...') : t('Save to Desktop')}</span>
+          <span className={styles.btnLabel}>{saving ? t('Saving...') : t('Save to Downloads')}</span>
         </button>
         <button type="button" className={styles.handBtn} data-on="true" onClick={onPlayAgain}>
           <SquiggleHighlight seed="again-hl" />

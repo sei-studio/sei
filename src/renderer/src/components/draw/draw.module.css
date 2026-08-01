@@ -927,7 +927,7 @@
 }
 
 /* ── the "Saved!" popup (260728) ──────────────────────────────────────────
-   Confirmation after "Save to Desktop": the saved tile itself, on paper, with
+   Confirmation after "Save to Downloads": the saved tile itself, on paper, with
    an x to close. The backdrop is the same paper at partial opacity rather than
    a grey scrim: grey is an ink this surface does not own. */
 .savePopupOverlay {

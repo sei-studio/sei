@@ -233,7 +233,7 @@ export const DRAW_ERR_MC_ACTIVE = 'DRAW_MC_SESSION_ACTIVE';
  *   drawSnapshot(requestId: string, dataUrl: string): Promise<void>
  *     Answer to a draw:snapshot-request.
  *   drawSaveGallery(characterId: string, pngDataUrl: string): Promise<string>
- *     Write the gallery PNG to the Desktop; resolves with the saved path.
+ *     Write the gallery PNG to Downloads; resolves with the saved path.
  *   drawEnd(characterId: string): Promise<void>
  *     Close the game. An unfinished game is recorded as abandoned.
  *   onDrawState(cb: (s: DrawGameState) => void): () => void

@@ -82,7 +82,7 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
-import { buildSystemBlocks, REMEMBER_TOOL } from '../chat/chatPrompts';
+import { buildSystemBlocks, clockNow, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
@@ -385,6 +385,13 @@ interface Session {
   /** In-flight turn-end reaction call, so teardown can abort it. */
   endCtrl: AbortController | null;
   startedAt: number;
+  /**
+   * Clock string pinned at session start (chatPrompts.clockNow). Passed as
+   * pinnedClock so the system blocks stay byte-stable across the game: a live
+   * minute-granular clock there sits above the drawing thread in the cache
+   * prefix and re-bills the whole cached thread on every minute rollover.
+   */
+  clock: string;
   /** finishGame has already run for this session; it must never run twice. */
   finished: boolean;
   playerName: string;
@@ -566,6 +573,7 @@ async function newSession(characterId: string, rounds = 3): Promise<Session> {
     draw: freshDraw(),
     endCtrl: null,
     startedAt: Date.now(),
+    clock: clockNow(),
     finished: false,
     playerName: (config.preferred_name ?? '').trim() || 'You',
     aiName: character?.name ?? 'Companion',
@@ -759,8 +767,8 @@ export function resumeDraw(characterId: string): void {
 }
 
 /**
- * Write the gallery PNG the renderer composed to the Desktop. Returns the
- * saved path. The filename carries the character and a local timestamp so a
+ * Write the gallery PNG the renderer composed to the Downloads folder. Returns
+ * the saved path. The filename carries the character and a local timestamp so a
  * second game never silently overwrites the first.
  */
 export async function saveGallery(characterId: string, pngDataUrl: string): Promise<string> {
@@ -780,10 +788,10 @@ export async function saveGallery(characterId: string, pngDataUrl: string): Prom
 
   let dir: string;
   try {
-    dir = app.getPath('desktop');
-  } catch {
-    // No desktop on this platform/profile (headless, some Linux setups).
     dir = app.getPath('downloads');
+  } catch {
+    // No downloads dir on this platform/profile (headless, some Linux setups).
+    dir = app.getPath('desktop');
   }
   const file = path.join(dir, `draw-${who}-${stamp}.png`);
   await writeFile(file, Buffer.from(base64, 'base64'));
@@ -1953,6 +1961,9 @@ async function prepareCall(s: Session): Promise<{
     voiceCall: false,
     // 260730: character-pinned language wins over the auto-detected one.
     language: surfaceLanguage(character.metadata, config.chat_language),
+    // Session-pinned clock: keeps the system prefix (and the cached drawing
+    // thread below it) from re-billing on every minute rollover.
+    pinnedClock: s.clock,
     extraStable: drawContractBlock({
       playerName: s.playerName,
       rounds: s.rounds,
