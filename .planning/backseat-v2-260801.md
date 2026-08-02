@@ -401,6 +401,37 @@ banner. 0 lines in 14 looks. The note now asks what CHANGED and names where to
 look; the contract restores speaking as the default and lets the note carry the
 bar. 5 lines in 13 looks, about one per 37 s.
 
+### The review video
+
+`scripts/backseat-render.ts` renders the clip back out at 1920x1080 with the
+monitored state drawn beside it: the log-spaced grid that was actually sent to
+the model, the gain trace against its rolling baseline and the +18 dB
+threshold, the colour delta against 0.34, the STT transcript, and the wake
+state (which source last fired, what it decided, how long until the next
+scheduled look). Every wake is labelled on the frame with the mechanism that
+produced it and the score that cleared the threshold, which is what makes 5b
+reviewable by watching rather than by reading a table.
+
+It reads `voiceover.json`, `signals.csv` and `grids/*.jpg` and recomputes
+nothing, so it cannot disagree with `voiceover.md`. Frames are generated with
+sharp and piped as raw RGBA into ffmpeg, which composites the source video into
+the left panel, so no PNG sequence hits disk.
+
+The transcript comes from `scripts/backseat-transcribe.ts`, which runs the same
+model the app packages (`onnx-community/whisper-tiny.en`) over the PCM the sim
+already extracted. It is offline and was NOT fed to the model during the run,
+and the panel says so. Two things about that model did not work and should not
+be retried: passing the whole 187 s array with `chunk_length_s` returns empty
+text, and `return_timestamps: true` returns an empty `chunks` array. Six-second
+windows work, with a repeat-collapse pass because whisper-tiny loops on gunfire
+(one window came back as "I'm coming" repeated 110 times).
+
+```
+npx tsx scripts/backseat-transcribe.ts
+npx tsx scripts/backseat-render.ts            # ~15 min, writes review.mp4
+npx tsx scripts/backseat-render.ts --limit 30 --fps 10   # quick look
+```
+
 ### Still owed
 
 - **5b:** confirm which of the 7 jolts are real, ideally on unedited footage.
