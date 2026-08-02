@@ -5,15 +5,16 @@
  * questions as a form, in the app's dark chrome. It is the same three
  * questions here, in the scene the player already answered them in, so
  * changing your mind reads as going back to Sui rather than opening a
- * settings page.
+ * settings page. (That form is gone entirely as of 260802.)
  *
  * The script is NOT the first-run one. That one is a gag (she promises five
  * questions, asks first / second / fourth / last, then realizes she skipped
  * the third and panics) and it only lands once. A returning player gets the
  * straight version: a greeting, three numbered questions, a confirmation.
  *
- * ProfileQuestionsScreen stays for the GATE flows ('missing' / 'first-fill'),
- * which are a different thing: filling gaps before a cast, not a retake.
+ * Filling GAPS is a different thing from a retake, and it lives somewhere
+ * else: SuiMeetScene asks whatever is still unanswered on the way into a cast,
+ * because that is the one moment the answers are actually needed.
  *
  * Saving is the same partial-patch write the form used (sei.prefsSave), fired
  * once after the third answer — so backing out of the scene early changes

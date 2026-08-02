@@ -1,12 +1,13 @@
 /**
  * suiQuestions — the companion-preference questions as Sui asks them (260731).
  *
- * The same three questions ProfileQuestionsScreen asks as a form (age feel /
- * what you're looking for / art style) plus the per-cast gender question, in
- * the scene's register: pills and portrait tiles under her dialogue rather
- * than tiles in a shell. Shared by the first-run ritual (OnboardApp) and the
- * in-app "update my preferences" scene (SuiPrefsScene), so a wording or option
- * change lands in both.
+ * The three companion-preference questions (age feel / what you're looking for
+ * / art style) plus the per-cast gender question, in the scene's register:
+ * pills and portrait tiles under her dialogue. Shared by the first-run ritual
+ * (OnboardApp), the "update my preferences" retake (SuiPrefsScene) and the
+ * gap-filling ask inside the meet scene (SuiMeetScene), so a wording or option
+ * change lands in all three. They used to have a fourth home, a form called
+ * ProfileQuestionsScreen that gates opened uninvited; it was deleted 260802.
  *
  * Prefill matters here in a way it does not during onboarding: the in-app
  * retake must show what the player already chose, so every picker takes an

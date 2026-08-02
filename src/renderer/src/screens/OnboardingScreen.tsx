@@ -220,32 +220,12 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
           .catch(() => {
             /* best-effort seed */
           });
-        // Fresh onboarding, signed-in: the companion questionnaire runs HERE,
-        // inside the onboarding ritual (260706 — it used to ambush after the
-        // user had already landed on Home). 260728: a BRAND-NEW profile (no
-        // completed questionnaire at all) runs it as 'first-fill', which
-        // continues past Finish into the unique-companion flow — the gender
-        // question, then the casting screen — so onboarding lands the user on
-        // their first companion instead of an empty Home. A profile that
-        // already completed but is missing a newer question stays a 'missing'
-        // top-up that returns to Home (mirrors App.tsx's Home gate). Fail-open
-        // to home — the Home and Awaken gates re-ask if this read failed.
-        if (signedIn) {
-          try {
-            const prefs = await sei.prefsGet();
-            if (prefs.missing.length > 0) {
-              const firstFill = !prefs.profile?.completed_at;
-              navigate({
-                kind: 'profile-questions',
-                next: 'home',
-                mode: firstFill ? 'first-fill' : 'missing',
-              });
-              return;
-            }
-          } catch {
-            /* fall through to home */
-          }
-        }
+        // 260802: the companion questionnaire used to be tacked on HERE, at
+        // the end of this flow, routing to ProfileQuestionsScreen before Home.
+        // That screen and every unprompted route to it are gone — finishing a
+        // setup flow is not the same as asking for a companion, and the answers
+        // only ever fed companion generation. Sui asks for whatever is missing
+        // inside her meet scene, at the moment it is actually needed.
         // Analytics (260707): onboarding finished (fresh profile completing
         // the name/setup flow), the activation entry point.
         sei.track('onboarding_completed');

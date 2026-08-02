@@ -53,33 +53,20 @@ export type View =
   | { kind: 'settings' }
   | { kind: 'credits' }
   | { kind: 'coming-soon' }
-  // 260703 procgen — the "unique companion" (system-generated) flow. All are
-  // renderer-only full-page surfaces (rail hidden), routed from the
-  // add-companion chooser or the App-level first-sign-in questionnaire gate:
-  //   - profile-questions : the companion questionnaire (age + dynamics +
-  //                          art style) as a FORM. `next` decides where Finish
-  //                          lands: 'home' (App gate and mid-onboarding),
-  //                          'meet' (Awaken cast gate), 'awaken' / 'settings'.
-  //                          `mode`: 'missing' asks only unanswered questions;
-  //                          'first-fill' is a brand-new profile. 260731: the
-  //                          'all' retake moved to sui-prefs, so this is now
-  //                          only the GATE surface (fill the gaps, then get on
-  //                          with the thing you asked for).
-  //   - sui-meet          : "meet my companion", run by Sui — the gender
-  //                          question, her walk-off, and the casting bar
-  //                          (replaced unique-gender + unique-casting, 260731).
+  // 260703 procgen — the "unique companion" (system-generated) flow. Both are
+  // renderer-only full-page surfaces (rail hidden), routed from Awaken:
+  //   - sui-meet          : "meet my companion", run by Sui — any unanswered
+  //                          preference questions, the gender question, her
+  //                          walk-off, and the casting bar (replaced
+  //                          unique-gender + unique-casting, 260731).
   //   - unique-reveal     : the "meet <name>" moment after a successful gen.
-  | {
-      kind: 'profile-questions';
-      next: 'home' | 'meet' | 'awaken' | 'settings';
-      // 'missing' asks only unanswered questions; 'first-fill' selects the
-      // same questions but, on Finish, continues a brand-new user straight
-      // into the "meet my companion" scene so their first companion gets cast
-      // instead of dropping them on an empty Home. A "Later" dismiss on the
-      // first step never triggers that continuation. (The full retake is
-      // sui-prefs, 260731.)
-      mode: 'missing' | 'first-fill';
-    }
+  //
+  // 260802: there was a third, `profile-questions` — the questionnaire as a
+  // dark-chrome FORM, routed here by whichever gate noticed a gap first (a
+  // Home gate on sign-in, the Awaken cast gate, the tail of onboarding). It
+  // is deleted, gates and all. The questionnaire is only ever asked by Sui
+  // now, in a scene the player chose to open: sui-meet when the cast needs an
+  // answer it does not have, or sui-prefs when they came to change one.
   | { kind: 'sui-meet' }
   | { kind: 'unique-reveal'; characterId: string }
   // 260731 — "update my preferences", asked by Sui in the onboarding scene
