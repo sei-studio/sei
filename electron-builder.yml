@@ -189,8 +189,28 @@ win:
   files:
     - "!node_modules/onnxruntime-node/bin/napi-v3/{darwin,linux}/**"
     - "!node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
-  # NO signtoolOptions / NO azureSignOptions per RESEARCH §Resolved Q2 (ship unsigned v1).
-  # SmartScreen "unknown publisher" warning is accepted UX for v1; documented in plan 11 release notes.
+  # Windows ships UNSIGNED for now (RESEARCH §Resolved Q2). SmartScreen's
+  # "unknown publisher" warning is the accepted UX.
+  #
+  # publisherName: null is LOAD-BEARING, not decoration. Leaving it unset does
+  # NOT mean "no publisher" — electron-builder falls back to the common name of
+  # whatever signing certificate it can resolve from the environment
+  # (windowsSignToolManager.computedPublisherName → certInfo.commonName) and
+  # writes that into the app-update.yml baked into the app. In 260803 the mac
+  # CSC_LINK secret was in scope on the Windows CI leg, so v0.4.x-v0.5.2 shipped
+  # declaring an APPLE Developer ID as the Windows publisher. A non-null
+  # publisherName makes every client run Get-AuthenticodeSignature and reject
+  # anything that is not Status=Valid; Windows has no trust path to Apple's
+  # root, so all of them deleted their fully-downloaded installer and hung the
+  # update UI at 100%. Explicit null makes the client skip verification, which
+  # is the only correct setting for an unsigned build.
+  #
+  # When real Windows signing lands: set publisherName to the FULL DN of the new
+  # certificate (a full DN is compared key-by-key; a bare CN only warns), and set
+  # the WIN_PUBLISHER_NAME repo variable to the same string so the release
+  # workflow's "Verify Windows update signature contract" step enforces it.
+  signtoolOptions:
+    publisherName: null
 
 nsis:
   oneClick: false                          # show Welcome / Choose Path
