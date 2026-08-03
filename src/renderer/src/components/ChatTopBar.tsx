@@ -177,7 +177,9 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
                 <span className={styles.tipNew}>NEW</span>
               </div>
               <p className={styles.tipTitle}>Stream anything with Backseat (beta)</p>
-              <p className={styles.tipBody}>Try streaming your game or doomscrolling together!</p>
+              <p className={styles.tipBody}>
+                Try streaming your game, watching a movie, or doomscrolling together!
+              </p>
               <button
                 type="button"
                 className={styles.tipBtn}
