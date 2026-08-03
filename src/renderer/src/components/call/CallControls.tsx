@@ -19,22 +19,17 @@
  * sharing stops. Hanging up stops it too: the share cannot outlive the call it
  * belongs to.
  *
- * 260803: the one-time discovery tip anchored to that button. Backseat is in
- * beta and the button is the fourth glyph in a row of call controls, so it read
- * as more call plumbing. The tip is shown once ever and then never again. The
- * predicate, and the reasoning behind "never again", live in
- * lib/backseatTipPref.
+ * The one-time discovery tip is NOT here (260803). It was, briefly, pointing at
+ * this button. But you cannot reach these controls without already being on a
+ * call, and a notice about a feature is worth nothing to someone who has
+ * already got as far as the call controls. It moved to the chat header, next to
+ * the Backseat button, which is where a player actually starts.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
-import {
-  backseatTipDone,
-  dismissBackseatTip,
-  shouldShowBackseatTip,
-} from '../../lib/backseatTipPref';
 import {
   MicIcon,
   MicOffIcon,
@@ -75,18 +70,6 @@ export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): Reac
   const btn = small ? `${styles.pillBtn} ${styles.pillBtnSm}` : styles.pillBtn;
   const iconPx = small ? 16 : 22;
 
-  // One-time tip. `done` is read once at mount (localStorage), then flipped in
-  // memory by "Got it" so the popover leaves without a re-read. Starting a
-  // share no longer counts as done (see backseatTipPref): the predicate hides
-  // the card while sharing, and if they stop, an undismissed tip is still owed.
-  const [tipDone, setTipDone] = useState(backseatTipDone);
-  const showTip = shouldShowBackseatTip({
-    done: tipDone,
-    sharing,
-    hasTarget: !!shareTarget,
-    size,
-  });
-
   return (
     <div className={small ? `${styles.controls} ${styles.controlsSm}` : styles.controls}>
       <button
@@ -111,53 +94,23 @@ export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): Reac
         {deafened ? <HeadphonesOffIcon size={iconPx} /> : <HeadphonesIcon size={iconPx} />}
       </button>
 
-      {/* Wrapped so the tip can anchor to the button itself rather than to the
-          row, which would drift as the row's width changes. */}
-      <div className={styles.shareWrap}>
-        <button
-          type="button"
-          className={sharing ? `${btn} ${styles.pillBtnToggled}` : btn}
-          onClick={() => {
-            if (sharing) {
-              void stopSharing();
-              return;
-            }
-            if (shareTarget) openModal({ kind: 'share-screen', characterId: shareTarget });
-          }}
-          disabled={!sharing && (!shareTarget || startingShare)}
-          aria-pressed={sharing}
-          aria-label={sharing ? 'Stop sharing your screen' : 'Share your screen'}
-          title={sharing ? 'Stop sharing' : 'Share your screen'}
-        >
-          {sharing ? <ScreenShareOffIcon size={iconPx} /> : <ScreenShareIcon size={iconPx} />}
-        </button>
-
-        {/* No aria-live role on the card: it holds a focusable "Got it", and a
-            live region wrapping interactive content reads badly. */}
-        {showTip ? (
-          <div className={styles.tip}>
-            <div className={styles.tipHead}>
-              <span className={styles.tipIcon} aria-hidden="true">
-                <ScreenShareIcon size={18} />
-              </span>
-              <span className={styles.tipNew}>NEW</span>
-            </div>
-            <p className={styles.tipTitle}>Stream anything with Backseat (beta)</p>
-            <p className={styles.tipBody}>Try streaming your game or doomscrolling together!</p>
-            <button
-              type="button"
-              className={styles.tipBtn}
-              onClick={() => {
-                dismissBackseatTip();
-                setTipDone(true);
-              }}
-            >
-              Got it
-            </button>
-            <span className={styles.tipTail} aria-hidden="true" />
-          </div>
-        ) : null}
-      </div>
+      <button
+        type="button"
+        className={sharing ? `${btn} ${styles.pillBtnToggled}` : btn}
+        onClick={() => {
+          if (sharing) {
+            void stopSharing();
+            return;
+          }
+          if (shareTarget) openModal({ kind: 'share-screen', characterId: shareTarget });
+        }}
+        disabled={!sharing && (!shareTarget || startingShare)}
+        aria-pressed={sharing}
+        aria-label={sharing ? 'Stop sharing your screen' : 'Share your screen'}
+        title={sharing ? 'Stop sharing' : 'Share your screen'}
+      >
+        {sharing ? <ScreenShareOffIcon size={iconPx} /> : <ScreenShareIcon size={iconPx} />}
+      </button>
 
       <button
         type="button"

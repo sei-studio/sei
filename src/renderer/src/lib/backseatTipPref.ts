@@ -1,9 +1,13 @@
 /**
  * backseatTipPref (260803) : the one-time "Backseat is here" tip's memory.
  *
- * Backseat is in beta and effectively undiscoverable: it is one more button in
- * a row of call controls that already has three. The tip points at that button
- * once, and then never again.
+ * Backseat is in beta and effectively undiscoverable. The tip points at the
+ * Backseat button in the CHAT HEADER once, and then never again.
+ *
+ * The header and not the call controls (260803). It pointed at the share pill
+ * there first, which was the wrong end of the funnel: those controls only exist
+ * once you are on a call, and someone already on a call does not need to be
+ * told a call feature exists. The chat screen is where a player starts.
  *
  * WHY localStorage and not config.json. This is the established shape for a
  * one-time renderer UI flag (see gameLayoutPref, voice/modelPrefetch): reads
@@ -27,14 +31,39 @@
  * The key carries a version for the same reason. Bumping it re-announces to
  * everyone, including anyone the previous rule had already silenced, without
  * asking them to clear anything by hand.
+ *
+ * PER ACCOUNT, NOT PER MACHINE (260803). localStorage is one bucket for the
+ * whole app: it belongs to the renderer's origin, and unlike every per-account
+ * store in main it is not moved when the profile scope changes. So the key
+ * carries the scope, which is the signed-in account's UUID or 'local' when
+ * signed out, exactly as `paths.setActiveScope` uses it. Without that, signing
+ * into a second account on the same machine would inherit the first account's
+ * dismissal and the new account would never be told the feature exists, which
+ * is the same failure the share-retires-it rule had.
+ *
+ * The scope is read from useAuthStore, the renderer's mirror of main's
+ * AuthState, so it changes with the account within one session and needs no
+ * new IPC. Its `user.id` IS the profile scope main partitions on.
  */
 
-const KEY = 'sei.backseatTipDone.v2';
+import { useAuthStore } from './stores/useAuthStore';
 
-/** True once the player has dismissed the tip with "Got it". */
+const KEY_BASE = 'sei.backseatTipDone.v2';
+
+/** The active profile scope: the account UUID, or 'local' when signed out. */
+function scope(): string {
+  const state = useAuthStore.getState().state;
+  return state.kind === 'signed_in' ? state.user.id : 'local';
+}
+
+function key(): string {
+  return `${KEY_BASE}.${scope()}`;
+}
+
+/** True once the player has dismissed the tip with "Got it", on THIS account. */
 export function backseatTipDone(): boolean {
   try {
-    return localStorage.getItem(KEY) === '1';
+    return localStorage.getItem(key()) === '1';
   } catch {
     // No storage (private mode): treat it as not-done. The tip is dismissable
     // in-session either way, so the worst case is that it returns next launch.
@@ -45,7 +74,7 @@ export function backseatTipDone(): boolean {
 /** Record that the tip is finished with. Idempotent, best effort. */
 function setDone(): void {
   try {
-    localStorage.setItem(KEY, '1');
+    localStorage.setItem(key(), '1');
   } catch {
     /* private mode / quota: the tip just won't stay dismissed */
   }
@@ -58,23 +87,30 @@ export function dismissBackseatTip(): void {
 
 /**
  * Whether to render the tip right now. Pure so the predicate can be tested
- * without a DOM; CallControls passes its live values.
+ * without a DOM; ChatTopBar passes its live values.
  *
- * `size` is here because CallControls renders at two sizes and only the
- * fullscreen one (lg) gets the tip. See the popover's comment in
- * CallControls.tsx.
+ * Every suppression here is about not talking over something else. The header
+ * is shared by the chat screen and the call view, and on the call view the
+ * player is already past the point the tip is for. A modal (including the
+ * source picker the button itself opens) means the header is behind a scrim.
+ * The tutorial has its own Backseat step with its own spotlight, and two
+ * pointers at one button is worse than either alone.
  */
 export function shouldShowBackseatTip(input: {
   /** backseatTipDone() at mount, or true once dismissed this session. */
   done: boolean;
+  /** The header is on the chat screen, not the fullscreen call view. */
+  onChatScreen: boolean;
   /** A share is already running. */
   sharing: boolean;
-  /** The share button has a companion to share with (it is disabled without). */
-  hasTarget: boolean;
-  size: 'lg' | 'sm';
+  /** Any modal is open over the screen. */
+  modalOpen: boolean;
+  /** The guided tour is running. */
+  tutorialActive: boolean;
 }): boolean {
   if (input.done) return false;
+  if (!input.onChatScreen) return false;
   if (input.sharing) return false;
-  if (!input.hasTarget) return false;
-  return input.size === 'lg';
+  if (input.modalOpen) return false;
+  return !input.tutorialActive;
 }

@@ -997,10 +997,30 @@ and not `VoiceCallScreen`, because that screen can unmount mid-dial (the player
 is free to go back to chat while it rings) and a consumer that unmounts with it
 drops the share silently.
 
-A one-time tip points at the share pill, retired by "Got it" or by any
-successful share, on the reasoning that someone who has already found the
-feature reads the tip as the app not noticing. localStorage, not `config.json`,
-which carries a stale-wholesale-save hazard not worth a cosmetic flag.
+A one-time tip hangs under that header button with its tail pointing up at it.
+It went through three wrong versions first, all of them found by using it rather
+than by review:
+
+1. **It pointed at the share pill in the call controls.** Wrong end of the
+   funnel: those controls only exist once you are on a call, so the notice could
+   only reach people who had already got past the thing it was announcing.
+2. **Any successful share retired it,** on the reasoning that someone who found
+   the feature reads the tip as the app not noticing. That silenced precisely
+   the audience a beta notice is for: everyone who had used backseat in an
+   earlier build wrote the flag on their first share and was never told. "Got
+   it" is now the only thing that retires it. It costs one click and never
+   renders over a running share, so showing it to someone who already knows is
+   nearly free, while the other error means it reaches nobody.
+3. **The flag was per machine, not per account.** localStorage belongs to the
+   renderer's origin and, unlike every per-account store in main, is not moved
+   when the profile scope changes, so a second account on the same machine
+   inherited the first's dismissal. The key now carries the scope (`user.id`, or
+   `local`), read from `useAuthStore`, and the header re-reads it when the scope
+   changes since an account switch need not remount it.
+
+localStorage and not `config.json`, which carries a stale-wholesale-save hazard
+not worth a cosmetic flag. The key also carries a version, so bumping it
+re-announces to anyone the earlier rules had already silenced.
 
 The tutorial gains one step, between the games tiles and the home terminal. That
 position is forced: `games` and `tiles` both happen on the chat screen with the
@@ -1046,9 +1066,11 @@ re-measuring on footage where every transition is a swipe.
 
 ### Still owed
 
-- **Everything visual is unverified.** How the icon reads at 18 px, the tip's
-  placement and tail in all four themes, and the tutorial spotlight actually
-  landing. All argued from the code, none watched.
+- **The tutorial spotlight has not been watched landing.** Argued from the
+  routes, not seen. The icon and the tip card were checked by rasterising the
+  real paths and screenshotting the real CSS in headless Chrome, which is what
+  turned up both the speck-sized star and the corner blob; the tutorial has no
+  equivalent static rendering.
 - **The two swipes at 00:50 and 00:53 are not separable by amplitude** from the
   video's own motion in that stretch. The lower floor catches them; on other
   footage that content would fire too.

@@ -800,14 +800,18 @@ The design and its measurements are committed at
   install gate can hold the dial for minutes or refuse it. The arm carries a
   180 s deadline, is re-checked against the wall clock before firing (timers
   lag across sleep), and is dropped on `status === 'error'`. A one-time
-  localStorage tip (`lib/backseatTipPref`) points at the share pill once, on the
-  FULLSCREEN controls only (the docked `sm` cluster has ~40px of chrome and a
-  game or the shared picture right above it). **"Got it" is the only thing that
-  retires it.** Sharing used to as well, on the reasoning that someone who found
-  the feature does not need telling; live, that silenced exactly the people the
-  beta notice was for, since anyone who used backseat in an earlier build wrote
-  the flag on their first share. The key carries a version so bumping it
-  re-announces without anyone clearing storage by hand.
+  localStorage tip (`lib/backseatTipPref`) hangs under the CHAT HEADER's
+  Backseat button, tail pointing up at it. Not the call controls: those only
+  exist once you are on a call, and a notice about a feature is worth nothing to
+  someone already that far in. **"Got it" is the only thing that retires it.**
+  Sharing used to as well, on the reasoning that someone who found the feature
+  does not need telling; live, that silenced exactly the people the beta notice
+  was for, since anyone who used backseat in an earlier build wrote the flag on
+  their first share. **The key carries both a version and the PROFILE SCOPE**
+  (`user.id`, or `local`): localStorage is one bucket for the whole app and is
+  NOT moved when the scope changes, so without the scope a second account on the
+  same machine inherits the first's dismissal. Bumping the version re-announces
+  to everyone without anyone clearing storage by hand.
 - **UI (260803, 260804).** Entry is the share pill in `CallControls`; the picker
   is `ShareScreenModal` (a `ModalShell`, **Window / Entire screen as two tabs**
   since 260804 — stacked sections put the screens below the fold behind however
