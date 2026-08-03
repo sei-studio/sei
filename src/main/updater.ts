@@ -42,11 +42,12 @@ import {
 } from './updatePolicy';
 import { loadUpdateState, saveUpdateState } from './updateStateStore';
 import { refreshNotices } from './notices';
+import { updaterLog } from './updaterLog';
 
-const logger = {
-  info: (m: string) => console.log(`[sei] ${m}`),
-  warn: (m: string) => console.warn(`[sei] ${m}`),
-};
+// Tees to the console AND <userData>/logs/updater.log. Was console-only until
+// 260803, which is why a week of failed Windows updates left no trace on disk
+// (see updaterLog.ts for the full story).
+const logger = updaterLog;
 
 const VERSION_URL = 'https://sei.gg/version.json';
 /**
@@ -110,6 +111,12 @@ type AutoUpdater = {
   autoInstallOnAppQuit: boolean;
   /** When true, GitHub pre-releases are eligible (the beta channel). */
   allowPrerelease: boolean;
+  /**
+   * electron-updater's own logger. Defaults to bare `console`, which is
+   * invisible in a packaged build — every reason an update failed used to be
+   * written there and nowhere else. Always assign this.
+   */
+  logger: unknown;
   checkForUpdates: () => Promise<unknown>;
   downloadUpdate: () => Promise<unknown>;
   quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void;
@@ -301,6 +308,13 @@ function ensureAutoUpdater(): AutoUpdater | null {
     autoUpdater = null;
     return null;
   }
+
+  // FIRST, before any other configuration: electron-updater logs the reason it
+  // rejects a download (bad signature, checksum mismatch, failed rename) to its
+  // own logger and to nothing else. Left at the default `console` those lines
+  // are lost in a packaged build. 260803: that cost eight days on a Windows
+  // update failure whose single explanatory line existed and was unreachable.
+  autoUpdater.logger = updaterLog;
 
   // We branch download per level, so never auto-download; install pending
   // updates on the next quit by default (mandatory on-restart timing).

@@ -56,13 +56,48 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SEI_PROXY_URL: ${{ secrets.SEI_PROXY_URL }}
-          # macOS Developer ID signing + notarytool. Empty on Win/Linux; harmless.
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # macOS Developer ID signing + notarytool. MUST be scoped to the mac
+          # leg — the old comment claimed these were "empty on Win/Linux;
+          # harmless" and that was wrong in the one way that mattered.
+          #
+          # 260803: CSC_LINK is a GENERIC electron-builder cert variable, not a
+          # mac one. On windows-latest, electron-builder imported the Apple
+          # Developer ID .p12 as the WINDOWS signing cert, signed the NSIS
+          # installer with it, and derived `publisherName: 'Developer ID
+          # Application: Shang Wang (7485LZ74DA)'` into the app-update.yml baked
+          # into the app. Windows has no trust path to Apple's root, so on every
+          # client Get-AuthenticodeSignature returned UnknownError rather than
+          # Valid; electron-updater's verifier gates the publisher comparison on
+          # Status === 0, fell through to "signed with incorrect certificate",
+          # and DELETED each fully-downloaded installer. Every Windows
+          # auto-update since has failed at 100%. See the guard step below.
+          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
+          # Belt and braces: stop electron-builder picking up any cert from the
+          # runner's own store on the non-mac legs.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.os == 'macos-latest' && 'true' || 'false' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Windows signing via Azure Trusted Signing. Entirely opt-in: with the
+          # secrets/variables below unset the build stays unsigned and declares
+          # no publisherName, which is a working configuration (clients skip
+          # signature verification). Signing turns on the moment all six are
+          # present — no code change required. electron-builder reads the three
+          # AZURE_* credentials from the environment (Entra ID service
+          # principal); the account/profile/endpoint are passed as config
+          # overrides below because `azureSignOptions.publisherName` is a
+          # REQUIRED field, so a half-filled block in electron-builder.yml would
+          # declare a publisher for an unsigned build — exactly the failure this
+          # workflow now guards against.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_ENDPOINT: ${{ vars.AZURE_ENDPOINT }}
+          AZURE_CODE_SIGNING_ACCOUNT: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+          WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
         shell: bash
         run: |
           # macOS code-signs every file in app.asar.unpacked; the prismarine-viewer
@@ -74,7 +109,25 @@ jobs:
             sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=524288 2>/dev/null || true
             ulimit -n 524288 2>/dev/null || ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
           fi
-          npm run ${{ matrix.build_cmd }}
+
+          extra=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # All-or-nothing: a partial Azure config must never produce a build
+            # that declares a publisher it cannot actually sign as.
+            if [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_CLIENT_SECRET" ] \
+               && [ -n "$AZURE_ENDPOINT" ] && [ -n "$AZURE_CODE_SIGNING_ACCOUNT" ] \
+               && [ -n "$AZURE_CERT_PROFILE" ] && [ -n "$WIN_PUBLISHER_NAME" ]; then
+              echo "Windows: signing via Azure Trusted Signing as '$WIN_PUBLISHER_NAME'"
+              extra+=( "-c.win.azureSignOptions.publisherName=$WIN_PUBLISHER_NAME" )
+              extra+=( "-c.win.azureSignOptions.endpoint=$AZURE_ENDPOINT" )
+              extra+=( "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_CODE_SIGNING_ACCOUNT" )
+              extra+=( "-c.win.azureSignOptions.certificateProfileName=$AZURE_CERT_PROFILE" )
+            else
+              echo "Windows: Azure Trusted Signing not configured — building UNSIGNED (auto-update still works; SmartScreen will warn)."
+            fi
+          fi
+
+          npm run ${{ matrix.build_cmd }} -- "${extra[@]}"
 
       - name: Verify cloud config baked into bundle
         # v0.2.0 shipped with empty SUPABASE_URL/ANON because the build-time
@@ -110,6 +163,79 @@ jobs:
             exit 1
           fi
           echo "✓ cloud config baked in ($host + anon key in dist/main, no KusArt key)"
+
+      - name: Verify Windows update signature contract
+        # 260803: v0.4.x-v0.5.2 shipped a Windows app-update.yml carrying
+        # `publisherName: 'Developer ID Application: Shang Wang (7485LZ74DA)'`,
+        # leaked from the mac CSC_LINK secret (see the Build step). Because a
+        # non-null publisherName makes electron-updater run
+        # Get-AuthenticodeSignature and REJECT anything that is not Status=Valid,
+        # every Windows client deleted its fully-downloaded installer and froze
+        # the update UI at 100%. It was undetectable from the build: the
+        # installer packaged, uploaded and installed fine — only auto-update
+        # broke, and only on the NEXT release.
+        #
+        # This step reproduces the client's own check on the runner. Two modes:
+        #   WIN_PUBLISHER_NAME unset  → build must be UNSIGNED and carry NO
+        #                               publisherName (verification skipped
+        #                               client-side; today's intended state).
+        #   WIN_PUBLISHER_NAME set    → installer must be signed, chain to a
+        #                               trusted root (Status=Valid), and the
+        #                               app-update.yml publisherName must match
+        #                               it exactly.
+        # Set the repo variable only once real Windows signing is in place.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
+        run: |
+          $cfg = 'release/win-unpacked/resources/app-update.yml'
+          if (-not (Test-Path $cfg)) { Write-Output "::error::$cfg not found"; exit 1 }
+          $yml = Get-Content $cfg -Raw
+          Write-Output "app-update.yml:`n$yml"
+
+          $declared = $null
+          if ($yml -match '(?m)^\s*publisherName:\s*(.+?)\s*$') {
+            $declared = $Matches[1].Trim(("'", '"') -join '')
+          }
+
+          # Hard stop on the exact regression, whatever else is configured.
+          if ($declared -and $declared -like '*Developer ID Application*') {
+            Write-Output "::error::app-update.yml publisherName is an APPLE Developer ID ('$declared'). Windows cannot build a trust chain to Apple's root, so every client will reject and delete its download. The mac CSC_LINK secret has leaked into the Windows build again."
+            exit 1
+          }
+
+          $exe = Get-ChildItem release -Filter 'Sei-win-*.exe' | Select-Object -First 1
+          if (-not $exe) { Write-Output '::error::no Sei-win-*.exe in release/'; exit 1 }
+          $sig = Get-AuthenticodeSignature -LiteralPath $exe.FullName
+          Write-Output "installer: $($exe.Name)  status=$($sig.Status)  subject=$($sig.SignerCertificate.Subject)"
+
+          $expected = $env:WIN_PUBLISHER_NAME
+          if ([string]::IsNullOrWhiteSpace($expected)) {
+            if ($declared) {
+              Write-Output "::error::app-update.yml declares publisherName '$declared' but the WIN_PUBLISHER_NAME repo variable is unset. An unsigned build MUST NOT declare a publisher, or clients will verify against it and reject every update."
+              exit 1
+            }
+            if ($sig.Status -eq 'Valid') {
+              Write-Output "::warning::installer is validly signed but no publisherName is declared. Set the WIN_PUBLISHER_NAME repo variable to enable update signature verification."
+            }
+            Write-Output '✓ unsigned Windows build declares no publisherName (client skips signature verification)'
+            exit 0
+          }
+
+          if ($sig.Status -ne 'Valid') {
+            Write-Output "::error::WIN_PUBLISHER_NAME is set but the installer signature is '$($sig.Status)', not Valid. electron-updater rejects anything that is not Valid BEFORE it compares the publisher name."
+            exit 1
+          }
+          if ($declared -ne $expected) {
+            Write-Output "::error::app-update.yml publisherName '$declared' does not match WIN_PUBLISHER_NAME '$expected'."
+            exit 1
+          }
+          if ($sig.SignerCertificate.Subject -notlike "*$expected*") {
+            Write-Output "::error::signing cert subject '$($sig.SignerCertificate.Subject)' does not contain the declared publisherName '$expected'."
+            exit 1
+          }
+          Write-Output "✓ Windows installer signed and Valid; publisherName '$expected' matches the cert"
 
       - name: Collect release assets (installers + auto-update feed)
         # CRITICAL: electron-updater needs the *.yml feed files, the macOS *.zip
