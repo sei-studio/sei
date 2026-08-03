@@ -560,13 +560,10 @@ export const ZH_MODALS: Record<string, string> = {
     'Sei {latest} 已就绪。你当前的版本是 {current}。',
   'Later': '以后再说',
   'Update now': '立即更新',
-  'Downloading update': '正在下载更新',
-  'Downloading the latest version…': '正在下载最新版本…',
+  'Downloading update…': '正在后台下载更新…',
   'Downloading update, {percent} percent': '正在下载更新，{percent}%',
   'Update ready': '更新已就绪',
-  'Update downloaded. Restarting…': '更新已下载。正在重启…',
-  'Update downloaded. It’ll apply the next time you restart Sei.':
-    '更新已下载。下次重启 Sei 时将自动应用。',
+  'Restart Sei to apply it.': '重启 Sei 即可应用。',
   'Restart now': '立即重启',
   'Applying the update. Sei will restart in a moment…':
     '正在应用更新。Sei 稍后将重启…',

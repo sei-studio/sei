@@ -61,6 +61,7 @@ import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
 import { UpdatePopup, type UpdatePopupState } from './components/UpdatePopup';
+import { UpdatePill, type UpdatePillState } from './components/UpdatePill';
 import { NoticesInboxModal } from './components/NoticesInboxModal';
 import { useNoticesStore } from './lib/stores/useNoticesStore';
 import { Banner } from './components/Banner';
@@ -129,14 +130,16 @@ export function App(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const modal = useUiStore((s) => s.modal);
-  // In-app updater (quick/260604-uoy). A single discriminated state drives the
-  // UpdatePopup across every updater stage (optional-available → downloading →
-  // downloaded/forced, plus the standalone post-update what's-new). null = no
-  // popup. The subscriptions below funnel each main-pushed event into the
-  // matching state; dismissable states (available-optional / whats-new) clear
-  // to null on Later/Got it, while downloading/downloaded/forced are
-  // non-dismissable (a restart is in flight).
+  // In-app updater (quick/260604-uoy). Two surfaces, split by whether the state
+  // needs a decision RIGHT NOW (260801):
+  //   • updatePopup — modal: the optional-update offer (changelog + consent),
+  //     the post-update what's-new, and the critical apply:'now' restart.
+  //   • updatePill — corner card, never blocks: download progress, then
+  //     "ready, restart to apply". Downloading used to be a scrimmed modal, so
+  //     both the consented download AND the silent mandatory patch download
+  //     locked the user out of the app until they finished.
   const [updatePopup, setUpdatePopup] = useState<UpdatePopupState | null>(null);
+  const [updatePill, setUpdatePill] = useState<UpdatePillState | null>(null);
   // Plan 11-18 (D-20) — one-shot local→cloud migration prompt. Auto-mounts
   // the first time a user is signed_in + ToS-accepted + has at least one
   // local-only character + has not yet seen this prompt. Re-openable from
@@ -313,10 +316,10 @@ export function App(): React.ReactElement {
   }, [authState, tosAccepted]);
 
   // ── In-app updater subscriptions (quick/260604-uoy). ──────────────────────
-  //    Wired ONCE at mount. Each main-pushed event maps to a UpdatePopup state.
-  //    onUpdateAvailable fires only for OPTIONAL updates (mandatory ones
-  //    download silently); progress/downloaded reflect an in-flight download;
-  //    whats-new is the post-update changelog on the next launch.
+  //    Wired ONCE at mount. onUpdateAvailable fires only for OPTIONAL updates
+  //    (mandatory ones download without asking) and opens the modal; progress /
+  //    downloaded drive the non-blocking pill; whats-new is the post-update
+  //    changelog on the next launch.
   useEffect(() => {
     const unsubs = [
       sei.onUpdateAvailable((info) => {
@@ -328,24 +331,32 @@ export function App(): React.ReactElement {
         });
       }),
       sei.onUpdateProgress((ev) => {
-        setUpdatePopup({ kind: 'downloading', percent: ev.percent });
+        // Background: the pill, not the popup. Fires for the consented download
+        // AND for the silent mandatory one, which is why it must never block.
+        setUpdatePill({ kind: 'downloading', percent: ev.percent });
       }),
       sei.onUpdateDownloaded((ev) => {
         if (ev.forced) {
           // apply:'now' mandatory — main restarts automatically after a brief
           // delay; show the non-dismissable critical overlay until it does.
+          setUpdatePill(null);
           setUpdatePopup({ kind: 'forced' });
-        } else if (ev.onRestart) {
-          // Mandatory on-restart — transition the (foreground) download bar to a
-          // dismissable "ready, restart to apply" popup so it can't hang at 100%.
-          // Applies on next quit regardless; "Restart now" just does it sooner.
-          setUpdatePopup({ kind: 'downloaded-on-restart' });
-        } else {
-          // Optional/consented flow — show "restarting…" then ask main to
-          // quit-and-install.
-          setUpdatePopup({ kind: 'downloaded' });
-          void sei.installUpdate();
+          return;
         }
+        // Everything else (consented optional + mandatory on-restart) is on
+        // disk and applies on the next quit via autoInstallOnAppQuit. Offer the
+        // restart, never take it: the user may be mid-game or on a call, and
+        // the accepted download may have been started minutes ago.
+        setUpdatePill({ kind: 'ready' });
+      }),
+      sei.onUpdateError(() => {
+        // A download that dies mid-flight stops pushing progress, and the
+        // downloading pill has no dismiss (there is nothing to decide while it
+        // works), so without this it would sit at whatever percent it reached
+        // for the rest of the session. Clear it and say nothing: the user did
+        // not ask for a mandatory download, and Settings owns the error copy
+        // for the check they DID ask for.
+        setUpdatePill(null);
       }),
       sei.onWhatsNew((ev) => {
         setUpdatePopup({ kind: 'whats-new', version: ev.version, changelog: ev.changelog });
@@ -1049,19 +1060,21 @@ export function App(): React.ReactElement {
         <UpdatePopup
           state={updatePopup}
           onUpdateNow={() => {
-            // 'downloaded-on-restart' reuses the primary action as "Restart
-            // now" → quit-and-install the already-downloaded update.
-            if (updatePopup.kind === 'downloaded-on-restart') {
-              void sei.installUpdate();
-              return;
-            }
-            // Consent to download the optional update; switch the popup to the
-            // downloading state immediately so the user sees the bar before the
-            // first progress tick arrives.
-            setUpdatePopup({ kind: 'downloading', percent: 0 });
+            // Consent to download the optional update. The modal closes right
+            // away and the corner pill takes over at 0%, so the user is back in
+            // the app before the first progress tick arrives.
+            setUpdatePopup(null);
+            setUpdatePill({ kind: 'downloading', percent: 0 });
             void sei.downloadUpdate();
           }}
           onDismiss={() => setUpdatePopup(null)}
+        />
+      ) : null}
+      {updatePill ? (
+        <UpdatePill
+          state={updatePill}
+          onRestart={() => void sei.installUpdate()}
+          onDismiss={() => setUpdatePill(null)}
         />
       ) : null}
       {/* Notices inbox (260725). Self-mounting: the store decides visibility, so

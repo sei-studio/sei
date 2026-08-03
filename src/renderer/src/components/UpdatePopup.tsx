@@ -6,14 +6,14 @@
  *
  *   - available-optional → minor/major update detected; shows the changelog up
  *     front with [Update now] / [Later]. "Update now" → sei.downloadUpdate().
- *   - downloading → PercentBar progress while the accepted update downloads.
- *   - downloaded → brief "restarting…" then the parent invokes installUpdate().
- *   - downloaded-on-restart → mandatory patch finished downloading; dismissable
- *     "Update ready — restart to apply" with [Later] / [Restart now] so the
- *     download bar can't hang at 100% (applies on next quit regardless).
  *   - forced → non-dismissable "Applying the update — restarting…" (apply:'now'
  *     mandatory path; main restarts automatically after a short delay).
  *   - whats-new → post-update changelog with [Got it].
+ *
+ * The download itself is NOT here (260801): progress and the "ready, restart to
+ * apply" prompt moved to UpdatePill, a corner card that doesn't block the app.
+ * `forced` is the one updater state that still takes over the window, because
+ * main quits and installs a few seconds later either way.
  *
  * Follows the existing modal pattern (AutoRenewalConsentModal): a fixed scrim
  * + a sharp-cornered card built from design tokens (never literal hex/px),
@@ -30,15 +30,11 @@ import React from 'react';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
-import { PercentBar } from './PercentBar';
 import styles from './UpdatePopup.module.css';
 
 /** The discriminated state the popup renders. */
 export type UpdatePopupState =
   | { kind: 'available-optional'; currentVersion: string; latestVersion: string; changelog?: string }
-  | { kind: 'downloading'; percent: number }
-  | { kind: 'downloaded' }
-  | { kind: 'downloaded-on-restart' }
   | { kind: 'forced' }
   | { kind: 'whats-new'; version: string; changelog: string };
 
@@ -101,14 +97,11 @@ function renderChangelog(text: string): React.ReactNode {
 
 export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps): React.ReactElement {
   const t = useT();
-  const dismissable =
-    state.kind === 'available-optional' ||
-    state.kind === 'whats-new' ||
-    state.kind === 'downloaded-on-restart';
+  const dismissable = state.kind === 'available-optional' || state.kind === 'whats-new';
 
-  // ESC dismisses only the dismissable states; forced/downloading/downloaded
-  // never close on ESC (the restart is in flight / about to be). ModalShell
-  // owns the keydown listener; escClose is gated on `dismissable`.
+  // ESC dismisses only the dismissable states; `forced` never closes on ESC
+  // (the restart is already in flight). ModalShell owns the keydown listener;
+  // escClose is gated on `dismissable`.
 
   let body: React.ReactNode;
   let footer: React.ReactNode = null;
@@ -137,46 +130,6 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps)
           </Button>
           <Button kind="primary" size="md" onClick={() => onUpdateNow?.()}>
             {t('Update now')}
-          </Button>
-        </>
-      );
-      break;
-
-    case 'downloading':
-      title = t('Downloading update');
-      body = (
-        <>
-          <p className={styles.body}>{t('Downloading the latest version…')}</p>
-          <PercentBar
-            value={state.percent}
-            label={t('Downloading update, {percent} percent', {
-              percent: Math.round(state.percent),
-            })}
-            size="md"
-          />
-        </>
-      );
-      break;
-
-    case 'downloaded':
-      title = t('Update ready');
-      body = <p className={styles.body}>{t('Update downloaded. Restarting…')}</p>;
-      break;
-
-    case 'downloaded-on-restart':
-      title = t('Update ready');
-      body = (
-        <p className={styles.body}>
-          {t('Update downloaded. It’ll apply the next time you restart Sei.')}
-        </p>
-      );
-      footer = (
-        <>
-          <Button kind="quiet" size="md" onClick={() => onDismiss?.()}>
-            {t('Later')}
-          </Button>
-          <Button kind="primary" size="md" onClick={() => onUpdateNow?.()}>
-            {t('Restart now')}
           </Button>
         </>
       );
