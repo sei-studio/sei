@@ -151,9 +151,10 @@ const api: RendererApi = {
   backseatTick: (tick) => ipcRenderer.invoke(IpcChannel.backseat.tick, tick),
   backseatAudioStart: () => ipcRenderer.invoke(IpcChannel.backseat.audioStart),
   backseatAudioStop: () => ipcRenderer.invoke(IpcChannel.backseat.audioStop),
-  backseatOcrStart: (language) => ipcRenderer.invoke(IpcChannel.backseat.ocrStart, language),
-  backseatOcrFrame: (jpeg) => ipcRenderer.invoke(IpcChannel.backseat.ocrFrame, jpeg),
-  backseatOcrStop: () => ipcRenderer.invoke(IpcChannel.backseat.ocrStop),
+  backseatShareLabel: (sourceId) =>
+    ipcRenderer.invoke(IpcChannel.backseat.shareLabel, sourceId),
+  backseatInterrupt: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.backseat.interrupt, characterId),
   backseatSetPaused: (characterId, paused) =>
     ipcRenderer.invoke(IpcChannel.backseat.setPaused, { characterId, paused }),
   backseatSaveClip: (characterId, requestId, webmBase64) =>

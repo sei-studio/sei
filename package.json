@@ -18,10 +18,9 @@
     "dist:linux": "electron-vite build && electron-builder --linux",
     "postinstall": "node scripts/postinstall.mjs",
     "build:audiotap": "bash scripts/build-mac-audio-tap.sh",
-    "build:macocr": "bash scripts/build-mac-ocr.sh",
-    "predev": "bash scripts/build-mac-audio-tap.sh && bash scripts/build-mac-ocr.sh",
-    "predist": "bash scripts/build-mac-audio-tap.sh && bash scripts/build-mac-ocr.sh",
-    "predist:mac": "bash scripts/build-mac-audio-tap.sh && bash scripts/build-mac-ocr.sh"
+    "predev": "bash scripts/build-mac-audio-tap.sh",
+    "predist": "bash scripts/build-mac-audio-tap.sh",
+    "predist:mac": "bash scripts/build-mac-audio-tap.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
@@ -43,7 +42,6 @@
     "semver": "^7.8.0",
     "skinview3d": "3.4.2",
     "soulcaster": "file:./vendor/soulcaster",
-    "tesseract.js": "^7.0.0",
     "three": "^0.185.1",
     "yauzl": "^3.3.0",
     "zod": "^3.22.4",

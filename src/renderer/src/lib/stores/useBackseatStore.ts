@@ -121,7 +121,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         return false;
       }
       try {
-        capture = await startCapture(characterId, source.id);
+        capture = await startCapture(characterId, source.id, source.name);
       } catch (err) {
         // Capture failed after main accepted the session, so unwind it rather
         // than leaving a session with no pictures.

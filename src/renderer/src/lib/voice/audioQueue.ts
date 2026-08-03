@@ -42,6 +42,16 @@ export interface AudioQueue {
   speaking(): boolean;
   /** Barge-in: stop playback and drop everything queued; queue stays usable. */
   clear(): void;
+  /**
+   * Provisional barge-in (260804): duck the current clip almost to silence
+   * without stopping it, so it can be brought back if the noise that triggered
+   * this turns out not to have been a word.
+   *
+   * This is what lets the barge-in trigger be a hair-trigger. A false clear()
+   * destroys the line; a false duck costs a couple of hundred milliseconds of
+   * volume and is inaudible once the clip resumes.
+   */
+  duck(ducked: boolean): void;
   /** Deafen (260705): silence the output without pausing it — clips keep
    * "playing" (order/timing preserved) so undeafening rejoins live. */
   setOutputMuted(muted: boolean): void;
@@ -128,6 +138,11 @@ export function createAudioQueue(
   let busy = false;
   let stopped = false;
   let outputMuted = false;
+  /** Provisional barge-in: the current clip is playing at DUCK_VOLUME pending a
+   *  transcript that says a word was actually spoken. Sticky across clips —
+   *  while the player might be talking, the next clip must not start at full
+   *  volume either. */
+  let ducked = false;
 
   function finishCurrent(el: HTMLAudioElement): void {
     if (current !== el) return;
@@ -150,6 +165,9 @@ export function createAudioQueue(
     const url = URL.createObjectURL(new Blob([buf, SILENCE_MP3], { type: 'audio/mpeg' }));
     const el = new Audio(url);
     el.muted = outputMuted;
+    // A clip enqueued while a provisional barge-in is open must not start at
+    // full volume: the player may still be mid-sentence.
+    el.volume = ducked ? DUCK_VOLUME : 1;
     applyRate(el, rate);
     current = el;
     currentCleanup = () => URL.revokeObjectURL(url);
@@ -213,6 +231,9 @@ export function createAudioQueue(
     const url = URL.createObjectURL(ms);
     const el = new Audio(url);
     el.muted = outputMuted;
+    // A clip enqueued while a provisional barge-in is open must not start at
+    // full volume: the player may still be mid-sentence.
+    el.volume = ducked ? DUCK_VOLUME : 1;
     applyRate(el, item.rate);
     current = el;
     let sb: SourceBuffer | null = null;
@@ -330,6 +351,43 @@ export function createAudioQueue(
   const BARGE_FADE_MS = 140;
   const FADE_STEP_MS = 16;
 
+  /**
+   * Duck level and ramp (260804).
+   *
+   * Not zero. At exactly 0 an undeafened resume is a hard edge back to full
+   * volume, and more importantly a duck that turns out to be wrong should read
+   * as the companion briefly dropping her voice, not as a dropout. 0.08 is
+   * about -22 dB: unmistakably "she stopped" from across a room, and quiet
+   * enough that the echo the mic picks up collapses to near the noise floor,
+   * which is what lets the VAD track the player's speech on normal thresholds
+   * while she is still technically playing.
+   *
+   * The ramp is short because the whole point is speed: this is the part of the
+   * barge-in the player actually perceives, and it now happens roughly three
+   * times sooner than the old hard cut did.
+   */
+  const DUCK_VOLUME = 0.08;
+  const DUCK_RAMP_MS = 60;
+
+  let duckRamp = 0;
+  function rampVolume(el: HTMLAudioElement, to: number): void {
+    clearTimeout(duckRamp);
+    const from = el.volume;
+    if (from === to) return;
+    const t0 = performance.now();
+    const step = (): void => {
+      if (current !== el) return;
+      const k = Math.min(1, (performance.now() - t0) / DUCK_RAMP_MS);
+      try {
+        el.volume = from + (to - from) * k;
+      } catch {
+        return;
+      }
+      if (k < 1) duckRamp = window.setTimeout(step, FADE_STEP_MS);
+    };
+    step();
+  }
+
   function fadeThenTeardown(el: HTMLAudioElement, cleanup: (() => void) | null, ms: number): void {
     const teardown = (): void => {
       try {
@@ -431,9 +489,18 @@ export function createAudioQueue(
     },
     clear() {
       if (stopped) return;
+      // The barge is confirmed, so the duck is spent: whatever is enqueued next
+      // is the reply to what the player just said and plays at full volume.
+      ducked = false;
+      clearTimeout(duckRamp);
       // Barge-in: the short fade reads as a human stopping mid-sentence
       // instead of an audio glitch (see fadeThenTeardown).
       haltPlayback(BARGE_FADE_MS);
+    },
+    duck(next) {
+      if (stopped || next === ducked) return;
+      ducked = next;
+      if (current) rampVolume(current, next ? DUCK_VOLUME : 1);
     },
     setOutputMuted(m) {
       outputMuted = m;
@@ -441,6 +508,7 @@ export function createAudioQueue(
     },
     stop() {
       stopped = true;
+      clearTimeout(duckRamp);
       // End-of-call teardown stays a hard cut: nothing may keep playing after
       // the call object is gone (HMR / hang-up chime timing rely on this).
       haltPlayback(0);

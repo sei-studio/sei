@@ -168,16 +168,13 @@ mac:
   # notarization pass covers it (USER-ACTION: on the first mac dist, verify
   # with `codesign -dv --verbose Sei.app/Contents/Resources/audio-tap/sei-audio-tap`).
   #
-  # 260803 backseat: the Vision screen-text helper (native/mac-ocr, built by
-  # scripts/build-mac-ocr.sh, also UNIVERSAL). It reads what is written on the
-  # shared screen roughly ten times faster and far more accurately than the
-  # tesseract.js worker it replaces on macOS; every other platform keeps that
-  # worker. Same signing story as the tap above.
+  # (A second helper, native/mac-ocr, shipped here between 260803 and 260804 to
+  # read the text on the shared screen. It worked and was still removed: the
+  # window title answers the question that was actually hurting, for no
+  # per-frame cost. See the note in src/shared/backseatIpc.ts.)
   extraResources:
     - from: resources/audio-tap
       to: audio-tap
-    - from: resources/mac-ocr
-      to: mac-ocr
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
     # Voice calls (260707): the TCC prompt string macOS shows the first time Sei

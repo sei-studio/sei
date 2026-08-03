@@ -33,25 +33,25 @@
  * Frames are still examined at capture rate for two signals, both cheap enough
  * to run on every single frame: the audio gain, and a 32x18 thumbnail whose
  * frame-to-frame distance is the colour-jolt trigger.
+ *
+ * 260804: that thumbnail now has a second job. It is retained with each ring
+ * sample, and the compositor uses it to drop cells that show the same picture
+ * as the cell before them, so a still screen produces a one-cell grid rather
+ * than six copies of itself. See composite() and GRID_DUPLICATE_DELTA.
  */
 
 import {
   BUFFER_MS,
-  CAPTURE_H,
-  CAPTURE_W,
   CELL_W,
   CELL_H,
   GRID_W,
   GRID_H,
-  GRID_COLS,
-  GRID_FRAMES,
+  GRID_DUPLICATE_DELTA,
   GRID_OFFSETS_S,
-  PREV_GRID_H,
-  PREV_GRID_W,
+  gridLayout,
+  PREV_GRID_SCALE,
   SAMPLE_INTERVAL_MS,
   SAMPLE_TOLERANCE_MS,
-  SCREEN_TEXT_INTERVAL_MS,
-  SCREEN_TEXT_JPEG_QUALITY,
   JOLT_COLOR_FLOOR,
   JOLT_COLOR_MAD,
   JOLT_GAIN_DB,
@@ -59,6 +59,7 @@ import {
 } from '../../../../shared/backseatIpc';
 import {
   baselineGain,
+  blockMaxDelta,
   colorDelta,
   colorThreshold,
   createJoltState,
@@ -68,14 +69,6 @@ import {
   THUMB_H,
   THUMB_W,
 } from './signals';
-
-/** postMessage WITH a transfer list. The renderer tsconfig types `self` as a
- *  Window, whose postMessage signature is (message, targetOrigin); this is the
- *  worker one. */
-const postTransfer = self.postMessage.bind(self) as (
-  message: unknown,
-  transfer: Transferable[],
-) => void;
 
 /** How often a thumbnail is retained for the colour comparison. At capture
  *  rate that would be 60 a second to answer a question about one second ago. */
@@ -89,6 +82,10 @@ interface Sample {
   /** Capture time of the frame this was encoded from. */
   at: number;
   jpeg: Blob;
+  /** The 32x18 thumbnail of the same frame, kept so the compositor can tell
+   *  whether two cells are the same picture without decoding their JPEGs. It is
+   *  a copy: the live thumbnail buffer is overwritten on the next frame. */
+  thumb: Uint8ClampedArray;
 }
 
 // ── Worker state ──────────────────────────────────────────────────────────
@@ -110,11 +107,6 @@ let gridCtx: OffscreenCanvasRenderingContext2D | null = null;
  *  next tick as the companion's memory of what it last looked at. */
 let smallCanvas: OffscreenCanvas | null = null;
 let smallCtx: OffscreenCanvasRenderingContext2D | null = null;
-/** Full-resolution surface for the OCR pass. The ring's cells are 602x336 and
- *  no HUD text survives that downscale, so screen text has to be read off a
- *  frame at capture resolution or not at all. */
-let ocrCanvas: OffscreenCanvas | null = null;
-let ocrCtx: OffscreenCanvasRenderingContext2D | null = null;
 
 /** Samples, oldest first, spanning at most BUFFER_MS. */
 const ring: Sample[] = [];
@@ -129,12 +121,6 @@ let encoding = false;
 /** Latest audio loudness, posted from the main thread (dBFS, -100..0). It
  *  arrives on its own cadence, so it is held here and sampled per frame. */
 let currentGain = -100;
-/** When a frame was last handed to the OCR worker, and whether it is still
- *  working on one. Single-flight rather than queued: a recognition takes about
- *  a second, and a backlog would only ever hold pictures of a screen that has
- *  already moved on. */
-let lastOcrAt = 0;
-let ocrBusy = false;
 /** Rolling state for both local signals. The arithmetic lives in signals.ts so
  *  the offline sim can run exactly this code over recorded footage. */
 const jolt = createJoltState();
@@ -165,12 +151,13 @@ function ensureCanvases(): void {
   encodeCtx = encodeCanvas.getContext('2d', { alpha: false });
   thumbCanvas = new OffscreenCanvas(THUMB_W, THUMB_H);
   thumbCtx = thumbCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+  // Allocated at the LARGEST layout and resized down per composite: the grid is
+  // variable-size now (duplicates are dropped), and reallocating a canvas per
+  // tick would churn GPU memory for nothing.
   gridCanvas = new OffscreenCanvas(GRID_W, GRID_H);
   gridCtx = gridCanvas.getContext('2d', { alpha: false });
-  smallCanvas = new OffscreenCanvas(PREV_GRID_W, PREV_GRID_H);
+  smallCanvas = new OffscreenCanvas(GRID_W * PREV_GRID_SCALE, GRID_H * PREV_GRID_SCALE);
   smallCtx = smallCanvas.getContext('2d', { alpha: false });
-  ocrCanvas = new OffscreenCanvas(CAPTURE_W, CAPTURE_H);
-  ocrCtx = ocrCanvas.getContext('2d', { alpha: false });
 }
 
 /**
@@ -215,7 +202,7 @@ const JOLT_THRESHOLDS = {
  * synchronous, so the JPEG is of the frame that was live at `at` even though
  * the encode itself finishes later and the frame loop has moved on.
  */
-function sample(at: number): void {
+function sample(at: number, thumb: Uint8ClampedArray): void {
   if (encoding) return;
   encoding = true;
   try {
@@ -224,10 +211,14 @@ function sample(at: number): void {
     encoding = false;
     return;
   }
+  // Copied here, synchronously with the pixel copy above, so the thumbnail and
+  // the JPEG are of the same instant. getImageData hands back a live view that
+  // the next frame overwrites.
+  const thumbCopy = new Uint8ClampedArray(thumb);
   void encodeCanvas!
     .convertToBlob({ type: 'image/jpeg', quality: CELL_QUALITY })
     .then((jpeg) => {
-      ring.push({ at, jpeg });
+      ring.push({ at, jpeg, thumb: thumbCopy });
       while (ring.length && at - ring[0].at > BUFFER_MS) ring.shift();
       encodes++;
     })
@@ -242,15 +233,9 @@ async function onFrame(frame: VideoFrame): Promise<void> {
   const now = Date.now();
   const srcW = frame.displayWidth;
   const srcH = frame.displayHeight;
-  // Whether this frame is also the one the OCR pass reads. Decided before the
-  // draw so the full-resolution copy is taken from the same frame, and gated on
-  // ocrBusy so a slow recognition simply means fewer readings rather than a
-  // queue of stale ones.
-  const wantOcr = !ocrBusy && now - lastOcrAt >= SCREEN_TEXT_INTERVAL_MS;
   try {
     drawFitted(cellCtx!, frame, srcW, srcH, 0, 0, CELL_W, CELL_H);
     thumbCtx!.drawImage(frame, 0, 0, THUMB_W, THUMB_H);
-    if (wantOcr) drawFitted(ocrCtx!, frame, srcW, srcH, 0, 0, CAPTURE_W, CAPTURE_H);
   } finally {
     // A VideoFrame holds a hardware buffer; not closing it stalls the whole
     // pipeline within a few dozen frames.
@@ -270,24 +255,7 @@ async function onFrame(frame: VideoFrame): Promise<void> {
   // stalled by it.
   if (now - lastSampleAt >= SAMPLE_INTERVAL_MS) {
     lastSampleAt = now;
-    sample(now);
-  }
-
-  if (wantOcr) {
-    lastOcrAt = now;
-    ocrBusy = true;
-    // A JPEG rather than an ImageBitmap (260803): the frame now has two possible
-    // destinations, the macOS Vision helper in MAIN and the tesseract.js worker
-    // in this renderer, and only one of them can be reached with a bitmap.
-    // Encoded bytes cross both boundaries, and the buffer is transferred so the
-    // encode is still not copied.
-    void ocrCanvas!
-      .convertToBlob({ type: 'image/jpeg', quality: SCREEN_TEXT_JPEG_QUALITY })
-      .then((blob) => blob.arrayBuffer())
-      .then((jpeg) => postTransfer({ type: 'ocr-frame', jpeg, at: now }, [jpeg]))
-      .catch(() => {
-        ocrBusy = false;
-      });
+    sample(now, thumb);
   }
 
   const fired = decideJolt(jolt, now, thumb, JOLT_THRESHOLDS);
@@ -352,49 +320,70 @@ function nearest(target: number): Sample | null {
 }
 
 /**
- * Build the 3x2 grid, one cell per entry in GRID_OFFSETS_S, oldest in the
- * top-left, filled row-first — the arrangement IG-VLM (arXiv 2403.18406) found
- * best, and the one the prompt describes to the model.
+ * Build the grid: one cell per entry in GRID_OFFSETS_S, oldest in the top-left,
+ * filled row-first — the arrangement IG-VLM (arXiv 2403.18406) found best, and
+ * the one the prompt describes to the model.
  *
  * Every cell is resolved independently against wall-clock time rather than by
  * position in the ring, so a capture hiccup shifts nothing: an offset with no
- * sample within SAMPLE_TOLERANCE_MS leaves its cell black. A missing cell is
+ * sample within SAMPLE_TOLERANCE_MS is simply not drawn. A missing cell is
  * honest; a shifted one silently lies about the timeline, which is the failure
  * this whole redesign exists to fix.
  *
- * `offsets` reports what was ACTUALLY achieved, in seconds before capturedAt,
- * with null for a black cell. Nothing downstream depends on it — it is there so
- * a session log can show whether the spacing held.
+ * 260804: consecutive cells showing the SAME PICTURE collapse to one, and the
+ * canvas shrinks to whatever the survivors need (GRID_DUPLICATE_DELTA,
+ * gridLayout). The oldest of each run is the one kept: within a run the frames
+ * are by definition interchangeable, so nothing is lost visually, and keeping
+ * the first preserves when the state began.
+ *
+ * `ages` is what was ACTUALLY drawn, in seconds before capturedAt, oldest
+ * first, one entry per cell. Unlike the old `offsets` this is load-bearing: it
+ * goes to the model, because a variable-size grid cannot be described once in
+ * the cached contract.
  */
 async function composite(): Promise<{
   dataUrl: string;
   smallUrl: string;
   capturedAt: number;
-  offsets: Array<number | null>;
+  ages: number[];
+  dropped: number;
 } | null> {
   if (!ring.length) return null;
   const now = Date.now();
-  gridCtx!.fillStyle = '#000';
-  gridCtx!.fillRect(0, 0, GRID_W, GRID_H);
 
-  const picked: Array<Sample | null> = [];
+  const picked: Sample[] = [];
   for (const offsetS of GRID_OFFSETS_S) {
-    const hit = nearest(now - offsetS * 1000);
-    picked.push(hit && Math.abs(hit.at - (now - offsetS * 1000)) <= SAMPLE_TOLERANCE_MS ? hit : null);
+    const target = now - offsetS * 1000;
+    const hit = nearest(target);
+    if (!hit || Math.abs(hit.at - target) > SAMPLE_TOLERANCE_MS) continue;
+    // The same sample can win two adjacent offsets when the ring is thin; that
+    // is a duplicate by identity, before any pixel comparison.
+    if (picked.length && picked[picked.length - 1].at === hit.at) continue;
+    // A picture identical to the one already in the previous cell adds a cell
+    // and no information. Compared against the last KEPT frame rather than the
+    // last examined one, so a slow drift across three cells still collapses
+    // only while it stays under the bar.
+    if (picked.length && blockMaxDelta(picked[picked.length - 1].thumb, hit.thumb) <= GRID_DUPLICATE_DELTA) {
+      continue;
+    }
+    picked.push(hit);
   }
-  const newestAt = picked.reduce((m, s) => (s && s.at > m ? s.at : m), 0);
   // Every offset missed: the ring holds only samples older than the whole
   // table, so there is no honest grid to build.
-  if (!newestAt) return null;
+  if (!picked.length) return null;
 
-  for (let i = 0; i < GRID_FRAMES; i++) {
-    const hit = picked[i];
-    if (!hit) continue;
+  const { cols, w, h } = gridLayout(picked.length);
+  gridCanvas!.width = w;
+  gridCanvas!.height = h;
+  gridCtx!.fillStyle = '#000';
+  gridCtx!.fillRect(0, 0, w, h);
+
+  for (let i = 0; i < picked.length; i++) {
     let bmp: ImageBitmap | null = null;
     try {
-      bmp = await createImageBitmap(hit.jpeg);
-      const col = i % GRID_COLS;
-      const row = Math.floor(i / GRID_COLS);
+      bmp = await createImageBitmap(picked[i].jpeg);
+      const col = i % cols;
+      const row = Math.floor(i / cols);
       gridCtx!.drawImage(bmp, col * CELL_W, row * CELL_H, CELL_W, CELL_H);
     } catch {
       /* leave the cell black */
@@ -403,7 +392,10 @@ async function composite(): Promise<{
     }
   }
 
-  smallCtx!.drawImage(gridCanvas!, 0, 0, PREV_GRID_W, PREV_GRID_H);
+  const newestAt = picked[picked.length - 1].at;
+  smallCanvas!.width = Math.round(w * PREV_GRID_SCALE);
+  smallCanvas!.height = Math.round(h * PREV_GRID_SCALE);
+  smallCtx!.drawImage(gridCanvas!, 0, 0, smallCanvas!.width, smallCanvas!.height);
   const [blob, small] = await Promise.all([
     gridCanvas!.convertToBlob({ type: 'image/jpeg', quality: GRID_QUALITY }),
     smallCanvas!.convertToBlob({ type: 'image/jpeg', quality: GRID_QUALITY }),
@@ -412,7 +404,8 @@ async function composite(): Promise<{
     dataUrl: `data:image/jpeg;base64,${await b64(blob)}`,
     smallUrl: `data:image/jpeg;base64,${await b64(small)}`,
     capturedAt: newestAt,
-    offsets: picked.map((s) => (s ? Math.round(newestAt - s.at) / 1000 : null)),
+    ages: picked.map((s) => Math.round(newestAt - s.at) / 1000),
+    dropped: GRID_OFFSETS_S.length - picked.length,
   };
 }
 
@@ -456,7 +449,6 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
     | { type: 'start'; readable: ReadableStream<VideoFrame> }
     | { type: 'gain'; db: number }
     | { type: 'composite'; requestId: string }
-    | { type: 'ocr-done' }
     | { type: 'stop' };
 
   if (msg.type === 'start') {
@@ -466,13 +458,6 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
   }
   if (msg.type === 'gain') {
     currentGain = msg.db;
-    return;
-  }
-  // The OCR worker has finished (or failed) the frame it was given, so the
-  // cadence may hand it another. The controller relays this rather than the OCR
-  // worker talking here directly, because only the controller knows both.
-  if (msg.type === 'ocr-done') {
-    ocrBusy = false;
     return;
   }
   if (msg.type === 'composite') {
@@ -491,9 +476,6 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
     encodeCtx = null;
     smallCanvas = null;
     smallCtx = null;
-    ocrCanvas = null;
-    ocrCtx = null;
-    ocrBusy = false;
     ring.length = 0;
     jolt.gainTrace.length = 0;
     jolt.thumbTrace.length = 0;

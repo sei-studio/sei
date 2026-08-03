@@ -28,14 +28,11 @@ import {
   CAPTURE_W,
   JOLT_GAIN_DB,
   nextIdleDelayMs,
-  SCREEN_TEXT_STALE_MS,
+  SHARE_LABEL_INTERVAL_MS,
   STT_SAMPLE_RATE,
-  TICK_SCREEN_TEXT_MAX_WORDS,
   type BackseatTickKind,
-  type OcrLine,
 } from '../../../../shared/backseatIpc';
 import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
-import { shapeScreenText } from './screenText';
 import { createSttStream, type SttStream } from './sttStream';
 
 /**
@@ -72,8 +69,10 @@ interface Grid {
   smallUrl: string;
   /** Capture time of the NEWEST cell, not of the composite. */
   capturedAt: number;
-  /** Achieved offsets per cell, seconds before capturedAt; null = black cell. */
-  offsets: Array<number | null>;
+  /** Age of each drawn cell in seconds before capturedAt, oldest first. */
+  ages: number[];
+  /** How many of the six offsets were dropped as duplicates or missing. */
+  dropped: number;
 }
 
 export interface CaptureHandle {
@@ -355,6 +354,7 @@ function startAudioPipeline(
 export async function startCapture(
   characterId: string,
   sourceId: string,
+  sourceName: string,
 ): Promise<CaptureHandle> {
   stopCapture();
   const { stream, audioSource } = await openStream(sourceId);
@@ -367,8 +367,7 @@ export async function startCapture(
 
   const worker = new Worker(new URL('./captureWorker.ts', import.meta.url), { type: 'module' });
 
-  // The session's language, read once. It picks the OCR recognition language as
-  // well as the STT one, so it has to be known before either starts.
+  // The session's language, read once, for the STT ring.
   let language = 'en';
   try {
     const cfg = (await sei.getConfig()) as { chat_language?: string } | null;
@@ -377,54 +376,33 @@ export async function startCapture(
     /* English is the right default */
   }
 
-  // ── Screen text ─────────────────────────────────────────────────────────
-  // What the player is READING, which a 602x336 grid cell cannot show. Two
-  // engines behind one shaping (screenText.ts), so the reading the model gets
-  // has the same structure whichever ran:
+  // ── What is being shared ────────────────────────────────────────────────
+  // One short line naming the surface, re-read on a slow timer because titles
+  // move under a fixed source id (a browser tab switch changes the screen
+  // completely). The pick-time name is the seed so the very first tick, which
+  // can fire before the first poll lands, is not unlabelled.
   //
-  //   macOS      the bundled Vision helper, which lives in MAIN because there
-  //              is no browser API for it. ~100 ms on a native 720p frame, and
-  //              it reads whole phrases (visionOcr.ts records the comparison).
-  //   elsewhere  tesseract.js, in a worker of its OWN: it is synchronous WASM
-  //              taking around a second, and running it beside the frame loop
-  //              would stall the ring and put every grid cell off its offset.
-  let nativeOcr = false;
-  try {
-    nativeOcr = await sei.backseatOcrStart(language);
-  } catch {
-    nativeOcr = false;
-  }
-  const ocr = nativeOcr
-    ? null
-    : new Worker(new URL('./ocrWorker.ts', import.meta.url), { type: 'module' });
-  console.log(`[backseat] screen text engine: ${nativeOcr ? 'macOS Vision' : 'tesseract'}`);
-
-  /** The most recent reading, with the capture time of the frame it came from.
-   *  A tick reads this rather than waiting on a recognition. */
-  let screenText: { at: number; text: string } | null = null;
-  const acceptReading = (at: number, lines: OcrLine[], ms: number): void => {
-    const text = shapeScreenText(lines, TICK_SCREEN_TEXT_MAX_WORDS);
-    screenText = text ? { at, text } : null;
-    console.log(`[backseat] screen text (${ms}ms): ${text || '-'}`);
+  // 260804: this replaces the OCR pass that used to occupy this slot. That
+  // read the words ON the screen; this names the screen. The second turned out
+  // to be the one carrying the context the companion was missing, and it costs
+  // one window enumeration every five seconds instead of a recognition pass on
+  // every other frame.
+  let shareLabel: string | null = sourceName || null;
+  const pollShareLabel = (): void => {
+    void sei
+      .backseatShareLabel(sourceId)
+      .then((label) => {
+        if (label && label !== shareLabel) {
+          shareLabel = label;
+          console.log(`[backseat] sharing: ${label}`);
+        }
+      })
+      .catch(() => {
+        /* a missed poll keeps the last good label */
+      });
   };
-  if (ocr) {
-    ocr.onmessage = (e: MessageEvent): void => {
-      const m = e.data as
-        | { type: 'lines'; at: number; lines: OcrLine[]; ms: number }
-        | { type: 'error'; at: number; message: string };
-      if (m.type === 'lines') acceptReading(m.at, m.lines, m.ms);
-      else console.warn(`[backseat] ocr failed: ${m.message}`);
-      // Either way the worker is free, so the capture loop may hand it another.
-      worker.postMessage({ type: 'ocr-done' });
-    };
-  }
-  /** What a tick carries, or undefined when there is no fresh reading. Stale
-   *  text is dropped rather than sent: a menu the player closed five looks ago
-   *  is worse than no text at all. */
-  const tickScreenText = (): string | undefined => {
-    if (!screenText) return undefined;
-    return Date.now() - screenText.at <= SCREEN_TEXT_STALE_MS ? screenText.text : undefined;
-  };
+  pollShareLabel();
+  const labelTimer = window.setInterval(pollShareLabel, SHARE_LABEL_INTERVAL_MS);
 
   // MediaStreamTrackProcessor hands the worker a transferable stream of frames,
   // which is what keeps capture alive while the player is in a fullscreen game
@@ -563,12 +541,13 @@ export async function startCapture(
       text?: string;
       joltReason?: 'gain' | 'color';
       transcript?: string;
-      screenText?: string;
     } = {},
   ): Promise<void> => {
     if (stopped) return;
     console.log(
-      `[backseat] tick ${kind}: cells at -${grid.offsets.map((o) => (o === null ? 'x' : o.toFixed(2))).join('/')}s`,
+      `[backseat] tick ${kind}: ${grid.ages.length} cell(s) at -${grid.ages
+        .map((a) => a.toFixed(2))
+        .join('/')}s` + (grid.dropped ? `, ${grid.dropped} dropped as duplicates` : ''),
     );
     try {
       await sei.backseatTick({
@@ -577,6 +556,8 @@ export async function startCapture(
         grid: grid.dataUrl,
         gridSmall: grid.smallUrl,
         capturedAt: grid.capturedAt,
+        frameAges: grid.ages,
+        ...(shareLabel ? { shareLabel } : {}),
         ...extra,
       });
     } catch (err) {
@@ -597,7 +578,6 @@ export async function startCapture(
           colorDelta: number | null;
           colorThr: number | null;
         }
-      | { type: 'ocr-frame'; jpeg: ArrayBuffer; at: number }
       | {
           type: 'stats';
           fps: number | null;
@@ -628,32 +608,6 @@ export async function startCapture(
       );
       return;
     }
-    if (msg.type === 'ocr-frame') {
-      if (paused || stopped) {
-        worker.postMessage({ type: 'ocr-done' });
-        return;
-      }
-      if (ocr) {
-        // Straight through, transferred again: the controller is only here
-        // because two workers cannot address each other directly.
-        ocr.postMessage({ type: 'frame', jpeg: msg.jpeg, at: msg.at }, [msg.jpeg]);
-        return;
-      }
-      // Native path: main owns the helper process. Timed here rather than in
-      // the helper so the number includes the IPC round trip, which is what the
-      // cadence actually has to fit inside.
-      const started = Date.now();
-      void sei
-        .backseatOcrFrame(msg.jpeg)
-        .then((lines) => {
-          if (lines) acceptReading(msg.at, lines, Date.now() - started);
-        })
-        .catch(() => {
-          /* a missed reading is a tick without text, never a broken session */
-        })
-        .finally(() => worker.postMessage({ type: 'ocr-done' }));
-      return;
-    }
     if (msg.type === 'jolt') {
       console.log(
         `[backseat] JOLT ${msg.reason}: gain ${msg.gainDb}dB vs base ${msg.baseDb}dB, ` +
@@ -671,7 +625,6 @@ export async function startCapture(
         await sendTick('jolt', grid, {
           joltReason: msg.reason,
           transcript,
-          screenText: tickScreenText(),
         });
       })();
     }
@@ -716,7 +669,7 @@ export async function startCapture(
           // milliseconds longer for the stt to catch up").
           const transcript = await tickTranscript();
           if (paused || stopped) return;
-          await sendTick('idle', grid, { transcript, screenText: tickScreenText() });
+          await sendTick('idle', grid, { transcript });
         } catch {
           /* a missed look is a missed comment, never a broken session */
         } finally {
@@ -758,6 +711,7 @@ export async function startCapture(
       if (stopped) return;
       stopped = true;
       window.clearTimeout(idleTimer);
+      window.clearInterval(labelTimer);
       pipeline.stop();
       stt.stop();
       window.clearTimeout(staggerTimer);
@@ -773,12 +727,6 @@ export async function startCapture(
         }
       });
       worker.postMessage({ type: 'stop' });
-      if (ocr) {
-        ocr.postMessage({ type: 'stop' });
-        window.setTimeout(() => ocr.terminate(), 250);
-      } else {
-        void sei.backseatOcrStop().catch(() => {});
-      }
       // Give the worker a beat to close its bitmaps before the thread dies.
       window.setTimeout(() => worker.terminate(), 250);
       stream.getTracks().forEach((t) => t.stop());
@@ -818,7 +766,7 @@ export async function startCapture(
       // What the game said around the moment they reacted to — the flush
       // window reaches back far enough to cover a held grid's span.
       const transcript = await tickTranscript();
-      await sendTick('user', grid, { text, transcript, screenText: tickScreenText() });
+      await sendTick('user', grid, { text, transcript });
     },
     noteSpoke: () => {
       if (!stopped) scheduleIdle();

@@ -112,6 +112,51 @@ export const GRID_H = CELL_H * GRID_ROWS; // 1008
  *  blow the cap and get the grid downscaled behind our back. */
 export const GRID_VISUAL_TOKENS = Math.ceil(GRID_W / 28) * Math.ceil(GRID_H / 28); // 1548
 
+// ── Dropping duplicate frames (260804) ────────────────────────────────────
+//
+// The grid was always six cells, so a screen that had not moved was sent as six
+// copies of one picture. The companion noticed and said so, which is the
+// clearest possible signal that it was reading the repetition as meaningful:
+// asked what was happening it wanted to know why it had been shown "six
+// identical YouTube frames". It was a fair question. Six identical cells claim
+// six sampled moments and carry the information of one, at 1548 tokens.
+//
+// So consecutive cells that are the same picture collapse to one, and the grid
+// is built at whatever size the survivors need. A paused video costs 264 tokens
+// instead of 1548; a firefight still costs the full six.
+//
+// The comparison is deliberately conservative: it is the LARGEST change over a
+// 4x3 split of the 32x18 thumbnail (signals.blockMaxDelta, the same measure the
+// colour jolt arm uses), so a change that covers only a corner of the screen
+// still counts as a difference. Anything at or under this is JPEG noise on a
+// still image. Erring toward keeping a frame is right — a redundant cell costs
+// tokens, a dropped one costs the sequence.
+
+/** At or below this largest-block distance two frames are the same picture. */
+export const GRID_DUPLICATE_DELTA = 0.02;
+
+/**
+ * Rows and columns for a grid of `n` frames, and what it costs.
+ *
+ * Near-square wherever there is a choice, for the reason the six-cell layout is
+ * 2x3 and not 3x2: a wide canvas of 16:9 cells is mostly cell and barely grid,
+ * and the vision model reads a squarer arrangement more reliably. Three across
+ * is not an option at any count, because 3 * 602 = 1806 px is past Haiku's
+ * 1568 px long edge and would be downscaled server side.
+ */
+export function gridLayout(n: number): { cols: number; rows: number; w: number; h: number } {
+  const count = Math.max(1, Math.min(GRID_FRAMES, Math.round(n)));
+  const cols = count <= 3 ? 1 : 2;
+  const rows = Math.ceil(count / cols);
+  return { cols, rows, w: CELL_W * cols, h: CELL_H * rows };
+}
+
+/** Visual-token cost of a layout, by Anthropic's ceil(w/28)*ceil(h/28). */
+export function gridVisualTokens(n: number): number {
+  const { w, h } = gridLayout(n);
+  return Math.ceil(w / 28) * Math.ceil(h / 28);
+}
+
 // ── The previous grid, carried as memory (260802) ─────────────────────────
 //
 // Chat history is text, and the service rebuilds every turn's messages from the
@@ -239,67 +284,26 @@ export const TICK_TRANSCRIPT_MS = GRID_SPAN_MS + 2_000;
  *  (closest to the moment the tick is about). */
 export const TICK_TRANSCRIPT_MAX_CHARS = 600;
 
-// ── Screen text (260802) ──────────────────────────────────────────────────
+// ── What is being shared (260804) ─────────────────────────────────────────
 //
-// The grid shows the model what the screen LOOKED like. It cannot show it what
-// the screen SAID: a cell is 602x336, so a quest log, a chat box, subtitles, a
-// menu or anything the player is reading is illegible at any vision quality we
-// can afford to send. A second local pass over the FULL-resolution frame
-// recovers that as text, the same way the Whisper ring recovers the audio.
+// One short line naming the surface: the shared window's current title, or on a
+// whole-screen share the title of whatever is frontmost. Read in main (see
+// backseat/shareLabel.ts) because only main can see the window list.
 //
-// Structured like the transcript ring and for the same reason: OCR takes on the
-// order of a second, so it runs continuously on its own slow cadence and a tick
-// reads whatever the latest result is. Transcribing on demand would put that
-// second in front of every tick.
+// This replaces SCREEN TEXT, and the trade is worth writing down. Screen text
+// was a full OCR pass over every frame — a bundled Swift Vision helper on
+// macOS, tesseract.js everywhere else — and it worked: whole phrases at ~72 ms,
+// 94 of 94 frames. What it did not do was answer the question that was actually
+// hurting, which is "what am I even looking at". A HUD full of numbers does not
+// tell you the difference between a game and a stream of that game, and the
+// title does, in four words, for no per-frame cost at all. So the OCR path is
+// gone (260804) rather than kept alongside: it was the most expensive local
+// work in the pipeline, and the cheap string was the one carrying the meaning.
 
-/** How often the OCR pass runs. Far slower than anything else in the pipeline:
- *  text on screen changes on human timescales, and this is the most expensive
- *  local work backseat does. */
-export const SCREEN_TEXT_INTERVAL_MS = 2_000;
-/** A reading older than this is dropped rather than sent: better no text than
- *  text describing a menu the player closed. */
-export const SCREEN_TEXT_STALE_MS = 10_000;
-/**
- * How much the frame is upscaled before OCR, on the TESSERACT path only.
- * Measured, not guessed: HUD text at 720p is around 12 px tall, well under what
- * Tesseract reads comfortably, and 2x is where map callouts and counters start
- * surviving on the Valorant clip. 3x found nothing more and cost roughly twice
- * the time (scripts/backseat-ocr.ts records the probe).
- *
- * The macOS Vision path (native/mac-ocr) does NOT use this: it reads the same
- * text off the native 1280x720 frame, which is most of why it is ten times
- * faster.
- */
-export const SCREEN_TEXT_SCALE = 2;
-/**
- * JPEG quality for the frame handed to OCR, against GRID_QUALITY's 0.72 for the
- * cells. Higher on purpose: this frame is read for characters rather than for
- * shapes, and JPEG ringing around small glyphs is exactly what costs a
- * recognition its confidence.
- */
-export const SCREEN_TEXT_JPEG_QUALITY = 0.92;
-/**
- * One line of text as an OCR engine reports it, `confidence` 0..100.
- *
- * Shared because two engines produce it in two processes: the macOS Vision
- * helper (main, src/main/backseat/visionOcr.ts) and tesseract.js (renderer
- * worker). Both feed the SAME shaping in screenText.ts, which is what keeps the
- * reading the model sees identical in structure whichever path ran.
- */
-export interface OcrLine {
-  text: string;
-  confidence: number;
-}
-/**
- * Word cap on the text a tick carries, the context-management dial.
- *
- * A HUD is a dozen words and costs nothing. A wall of prose — a patch note, an
- * article, a wiki page — is thousands, and would dwarf everything else in the
- * prompt including the grid. 80 words is about 110 tokens, enough to carry what
- * a screen is about, and shapeScreenText marks the truncation so the model
- * knows it is reading an opening rather than the whole thing.
- */
-export const TICK_SCREEN_TEXT_MAX_WORDS = 80;
+/** How often the label is re-read. Titles change on human timescales (a tab
+ *  switch, a new video), and this crosses an IPC boundary into a window
+ *  enumeration, so it is deliberately far slower than anything else here. */
+export const SHARE_LABEL_INTERVAL_MS = 5_000;
 
 // ── Cadence ───────────────────────────────────────────────────────────────
 
@@ -414,7 +418,7 @@ export type BackseatTickKind = 'user' | 'jolt' | 'idle';
 
 /**
  * One unit of work sent renderer -> main. `grid` is a JPEG data URL of the
- * composited 3x2 image; `text` is the player's line on a 'user' tick.
+ * composited grid; `text` is the player's line on a 'user' tick.
  *
  * `capturedAt` is when the grid's LAST frame was taken, not when the tick was
  * sent. On a 'user' tick those differ by however long the player kept talking,
@@ -441,12 +445,22 @@ export interface BackseatTick {
    */
   transcript?: string;
   /**
-   * What was WRITTEN on the screen, from the local OCR pass over the full-
-   * resolution frame, already confidence-filtered and word-capped. Absent when
-   * the screen had no legible text or the last reading went stale. Unreliable
-   * by nature, and the prompt says so.
+   * What the shared surface is called right now: the window title, or on a
+   * whole-screen share the frontmost window's title. Absent when it could not
+   * be read. This is the model's only cheap answer to "am I watching a game or
+   * a film", so it rides every tick.
    */
-  screenText?: string;
+  shareLabel?: string;
+  /**
+   * How old each frame in the grid is, in seconds before `capturedAt`, oldest
+   * first — one entry per cell ACTUALLY drawn, after duplicates were dropped.
+   *
+   * It has to be sent now that the grid is variable-size. When every grid was
+   * the same six cells at the same six offsets, the layout could be stated once
+   * in the cached contract; a grid that may be one cell or six, at whichever
+   * offsets survived deduplication, has to describe itself per tick.
+   */
+  frameAges: number[];
 }
 
 /** A line in the overlay's mini chat: the companion's, or the player's own. */

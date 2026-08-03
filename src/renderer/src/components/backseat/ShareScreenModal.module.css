@@ -30,13 +30,38 @@
   padding-right: var(--space-xs);
 }
 
-.groupLabel {
+/* Window / Entire screen (260804). These were stacked sections; the window list
+   is however many windows the player has open, so the screens under it were
+   reliably below the fold. */
+.tabs {
+  display: flex;
+  gap: var(--space-xs);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: var(--space-xs) var(--space-sm);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted-2);
+  color: var(--muted);
+  /* Sits on the container's border, so the active underline replaces it rather
+     than doubling it. */
+  margin-bottom: -1px;
+  transition: color 120ms var(--ease), border-color 120ms var(--ease);
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tabOn {
+  color: var(--text);
+  border-bottom-color: var(--accent);
 }
 
 .grid {

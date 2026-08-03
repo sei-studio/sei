@@ -719,29 +719,153 @@ your screen and stand in your Minecraft world at the same time, so
 `activeGameFor` still reports a live share even though nothing launches one from
 the picker any more.
 
+## Round four (260804), from the first live session
+
+The first real session with round three's build produced a log with **zero
+`user` ticks in 168 seconds** and a report that there appeared to be two
+companions.
+
+### There were two companions
+
+Not a figure of speech. Backseat runs a turn loop with the grid attached; the
+voice director runs one with the microphone attached. Both write to the same
+chat thread and both speak through the same call, and neither has ever known
+about the other. Round three deleted the overlay, which was the only surface
+that raised a `user` tick, so the last thread connecting the player to the
+screen-watching companion went with it. What was left was exactly what was
+reported: one companion who could see the screen and never heard a word, and
+one who could hear and had no idea what was on screen, taking turns.
+
+`dispatchUserTurn` now routes the utterance to `capture.sendUserTick` for a
+companion that is sharing, and skips its ordinary voice turn. The share is the
+more informed of the two loops (grid, audio transcript and window title on top
+of everything the voice turn has), so it is the one that wins. Anyone else on
+the call is unaffected. The grid is latched at `onSpeechActive(true)` rather
+than at the end of the sentence, because someone reacting to a moment is
+describing the moment they reacted to.
+
+Two supporting changes fell out of it. A `user` tick gets `max_tokens` 400
+instead of 160, because it is now the only answer the player gets. And a
+confirmed barge-in calls `backseatInterrupt`, because clearing the audio queue
+only silences what is already synthesised.
+
+### The log also proved the cache layout works, and that a field was being eaten
+
+`cacheRead=9017` from the second tick on, `cacheWrite` near zero. That closes
+the item this document has been carrying since 260801 as unverifiable offline.
+
+Reading the same path to check it turned up something else. The zod schema for
+`backseat:tick` in `main/ipc.ts` never declared `gridSmall`, and zod strips what
+it does not name. The previous-grid memory added on 260802 has therefore been
+shipping, documented, and reaching the model **never** — invisible because a
+null `prevGrid` is a legal state on the first tick of every session. Declared
+now, along with the two new fields.
+
+### The OCR pass is gone, and it was working
+
+Screen text was measured, tuned, and good: whole phrases at ~72 ms, 94 of 94
+frames, 23 words a frame against Tesseract's 6. It was removed anyway, on the
+grounds that it answered the wrong question. A HUD full of numbers does not tell
+you whether you are watching a game or a stream of that game, and the window
+title does, in four words, for one enumeration every five seconds instead of a
+recognition pass on every other frame. `shareLabel` carries the shared window's
+CURRENT title — re-read, not pinned, because a browser tab switch changes the
+screen completely under a fixed source id — or on a whole-screen share the
+frontmost window's.
+
+Deleted with it: `native/mac-ocr`, `visionOcr.ts`, `ocrWorker.ts`,
+`screenText.ts`, `scripts/backseat-ocr.ts`, the three OCR IPC channels, the
+tesseract.js dependency and the second signed Mach-O in the mac bundle. That
+also retires two items this document was carrying (Windows native OCR, and the
+unbundled tesseract fallback) and most of a third (the lockfile).
+
+### Six identical frames
+
+The companion asked why it had been shown "six identical YouTube frames", which
+is the clearest possible evidence that it was reading the repetition as
+meaningful. It was a fair question: six identical cells claim six sampled
+moments and carry the information of one, at 1548 tokens.
+
+Consecutive cells that are the same picture now collapse to one and the canvas
+is sized to the survivors. The test is `blockMaxDelta` over the 32x18 thumbnail
+already kept for the colour arm, at 0.02, so a change covering one corner of the
+screen still counts. Measured on a synthetic frozen-then-moving clip: the frozen
+stretch produces a **one-cell grid, 264 visual tokens against 1548**, and the
+moving stretch still produces six. On the Valorant clip one look in ten dropped
+frames, which is the right answer for footage that never stops moving.
+
+Because the grid is variable-size, `frameAges` rides each tick and `tickNote`
+states the ages per look. A fixed 2x3 could be described once in the cached
+contract; this cannot.
+
+### Interrupting her
+
+The interrupt was purely energy: sustained loudness over an adaptive bar, and on
+trip it CLEARED the queue. One gate serving two contradictory masters, which is
+why six rounds of tuning across three reports moved the numbers and never
+resolved it. Trip easily and speaker echo destroys a line for nothing; trip
+reluctantly and interrupting takes shouting.
+
+Two stages with opposite temperaments resolves it, and the second stage is
+dictation, which is what was asked for:
+
+1. **Duck** on one frame over a low bar. ~130 ms, against ~400 ms, and with no
+   600 ms grace-window blind spot at the start of every clip. Reversible, which
+   is the whole reason the bar can be that low.
+2. **Commit** only when the ~400 ms collected since the duck transcribes to a
+   real word. A cough, a keyboard, a door, her own echo: all come back empty or
+   junk, and the clip resumes.
+
+Perceived interrupt is roughly three times faster. The commit is slower
+(~500-800 ms against 400 ms) and that is the right trade, because by then she
+has been silent for hundreds of milliseconds and nobody hears a decision.
+Sustained energy survives only as a slow fallback for when transcription cannot
+answer at all.
+
+`hasSpokenWord` is stricter than the junk filter used on finished utterances,
+because it runs on 400 ms of audio where every engine invents. Its
+repeated-letter rule is scoped to Latin script: 等等 is a word, and two tests
+written before the code was read caught both that and `(music)` slipping
+through.
+
+### Also
+
+The picker's Window and Entire screen lists are two tabs. Stacked, the screens
+sat below however many windows the player had open, which is always.
+
+### What round three got wrong that this fixes
+
+Restructuring `HOW YOU TALK` to give a spoken-to turn a longer answer moved the
+length rule out of the opening sentence and into a conditional. Measured
+immediately: median words went 20 to 36.5 and the lines went back to narration.
+The rule is unconditional again and the exception lives in `THEY CAN TALK BACK`.
+Same ten looks after the fix: **median 17.5 words (12-29), 10/10 asking, 0 em
+dashes.** Conditional instructions are weaker than unconditional ones, and the
+opening sentence of a paragraph is worth more than the last.
+
 ### Still owed
 
 - **5b:** confirm which jolts are real, ideally on unedited footage. The colour
   arm now fires mid-scene, which is what was asked for, but whether those five
   moments are the RIGHT five is a judgement no threshold sweep can make.
-- **The cache change is unverified.** The sim cannot check it: its stub prefix
-  is ~1.1k tokens and Haiku will not cache below 2048. It has to be read off a
-  live session's `cacheRead=` / `cacheWrite=` log lines. The previous grid adds
-  396 uncached input tokens per tick, which those lines will also show.
 - **Every line is now a question (10/10).** Fixed, and possibly overfixed. The
   contract says not all of them need to be; if a live session reads as an
   interrogation, `SAY SOMETHING THEY CAN ANSWER` is the dial.
-- **Windows has no native OCR.** `Windows.Media.Ocr` is the equivalent of the
-  Vision helper and would close the same gap on the other platform. Until then
-  Windows runs the tesseract.js fallback, which is measurably much worse.
-- **`tesseract.js` is declared in the worktree's package.json but the lockfile
-  is not regenerated.** It was installed into the shared `node_modules` without
-  touching either checkout's manifest, because a plain `npm install` in a
-  worktree tries a full rebuild and dies on the `gl` native override. `npm
-  install` in the primary checkout is owed before this branch merges.
-- **The tesseract fallback is not bundled.** Like the Whisper model it
-  downloads on first use. It matters less than it did (macOS never reaches it),
-  but it is still the Windows path.
+- **`tesseract.js` is off the manifest but still in the shared
+  `node_modules`.** Nothing imports it. `npm install` in the primary checkout is
+  owed before this branch merges, to drop it from the lockfile.
+- **The frontmost-window read is a heuristic.** `desktopCapturer` is backed by
+  `CGWindowListCopyWindowInfo` with `kCGWindowListOptionOnScreenOnly`, which
+  returns windows front to back, so the first entry that is not ours is the
+  frontmost. That is a documented ordering of the underlying API and not of
+  Electron's wrapper. A wrong answer costs one slightly-off line.
+- **The two-stage barge-in has not been heard.** Everything above is measured
+  on the word gate and reasoned about the timing; how the duck-then-resume
+  actually SOUNDS when it is wrong is the thing to listen for. If a false duck
+  is audible as a dropout, `DUCK_VOLUME` and `DUCK_RAMP_MS` are the dials.
+- **A spoken turn has no retry.** The voice director retries a failed turn and
+  shows "Reconnecting"; the backseat path does not, so a failed turn is a
+  dropped answer rather than a broken call.
 - **The removed overlay is not re-verified live.** Capture running in the main
   window behind a fullscreen game is argued from `backgroundThrottling: false`
   and the worker frame pump, both of which were already true, but it has not

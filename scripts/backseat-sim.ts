@@ -47,18 +47,14 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   CELL_H,
   CELL_W,
-  GRID_COLS,
-  GRID_FRAMES,
-  GRID_H,
+  GRID_DUPLICATE_DELTA,
   GRID_OFFSETS_S,
-  GRID_W,
+  gridLayout,
   IDLE_MAX_MS,
   IDLE_MIN_MS,
   JOLT_COLOR_FLOOR,
-  PREV_GRID_H,
   PREV_GRID_MAX_AGE_MS,
-  PREV_GRID_W,
-  SCREEN_TEXT_STALE_MS,
+  PREV_GRID_SCALE,
   JOLT_COLOR_MAD,
   JOLT_GAIN_DB,
   JOLT_REFRACTORY_MS,
@@ -71,6 +67,7 @@ import {
 } from '../src/shared/backseatIpc';
 import {
   baselineGain,
+  blockMaxDelta,
   colorDelta,
   colorThreshold,
   createJoltState,
@@ -132,6 +129,10 @@ const TH = {
   colorFloor: Number(opt('colorfloor', String(JOLT_COLOR_FLOOR))),
   refractoryMs: Number(opt('refractory', String(JOLT_REFRACTORY_MS))),
 };
+/** What the tick claims is being shared (260804). Live this is the window
+ *  title; here the clip's filename is the closest honest stand-in, and --label
+ *  overrides it for testing how much the label actually steers a run. */
+const SHARE_LABEL = opt('label', path.parse(VIDEO).name);
 const OUT = path.resolve(opt('out', path.join('.backseat-sim', path.parse(VIDEO).name)));
 const PREP = path.join(OUT, 'prep');
 
@@ -241,9 +242,25 @@ interface JoltEvent {
  * opposite (it resets whenever the companion speaks) which is why that one is
  * walked sequentially in stage C.
  */
+/** The 32x18 RGBA thumbnails, loaded once. Shared between the signal timeline
+ *  and the compositor, which needs them to drop duplicate cells exactly the way
+ *  captureWorker does (it keeps one alongside every ring sample). */
+let thumbBytes: Buffer | null = null;
+const THUMB_STRIDE = THUMB_W * THUMB_H * 4;
+function thumbAtIndex(i: number): Uint8ClampedArray | null {
+  if (!thumbBytes) thumbBytes = readFileSync(path.join(PREP, 'thumbs.raw'));
+  if (i < 0 || (i + 1) * THUMB_STRIDE > thumbBytes.length) return null;
+  return new Uint8ClampedArray(
+    thumbBytes.buffer.slice(
+      thumbBytes.byteOffset + i * THUMB_STRIDE,
+      thumbBytes.byteOffset + (i + 1) * THUMB_STRIDE,
+    ),
+  );
+}
+
 function signalTimeline(durationMs: number): { steps: Step[]; jolts: JoltEvent[] } {
-  const thumbBytes = readFileSync(path.join(PREP, 'thumbs.raw'));
-  const stride = THUMB_W * THUMB_H * 4;
+  if (!thumbBytes) thumbBytes = readFileSync(path.join(PREP, 'thumbs.raw'));
+  const stride = THUMB_STRIDE;
   const pcmBuf = readFileSync(path.join(PREP, 'audio.f32'));
   const pcm = new Float32Array(
     pcmBuf.buffer.slice(pcmBuf.byteOffset, pcmBuf.byteOffset + pcmBuf.byteLength),
@@ -311,93 +328,70 @@ function signalTimeline(durationMs: number): { steps: Step[]; jolts: JoltEvent[]
 // ── Grid compositing ──────────────────────────────────────────────────────
 
 let frameFiles: string[] = [];
-function frameAt(t: number): string | null {
+function frameIndexAt(t: number): number | null {
   // ffmpeg numbers from 1, and frame N covers [(N-1)*interval, N*interval).
   const idx = Math.round(t / SAMPLE_INTERVAL_MS);
-  const f = frameFiles[idx];
-  if (!f) return null;
+  if (!frameFiles[idx]) return null;
   // The nearest available frame is at most half an interval away by
   // construction, so the tolerance only ever rejects times outside the clip.
-  return Math.abs(idx * SAMPLE_INTERVAL_MS - t) <= SAMPLE_TOLERANCE_MS ? f : null;
+  return Math.abs(idx * SAMPLE_INTERVAL_MS - t) <= SAMPLE_TOLERANCE_MS ? idx : null;
 }
 
-/** The same grid captureWorker.composite() builds: one cell per offset,
- *  row-first, black where no frame is available. */
+/**
+ * The same grid captureWorker.composite() builds: one cell per offset,
+ * row-first, with consecutive duplicates dropped and the canvas sized to the
+ * survivors (260804).
+ *
+ * The duplicate test is the shipped one, blockMaxDelta over the same 32x18
+ * thumbnails against the same GRID_DUPLICATE_DELTA, which is the whole point of
+ * the sim: what it drops here is what the app drops.
+ */
 async function buildGrid(
   now: number,
-): Promise<{ jpeg: Buffer; small: Buffer; offsets: Array<number | null> } | null> {
-  const picked = GRID_OFFSETS_S.map((o) => {
+): Promise<{ jpeg: Buffer; small: Buffer; ages: number[]; offsets: number[]; dropped: number } | null> {
+  const picked: Array<{ file: string; at: number; offset: number }> = [];
+  for (const o of GRID_OFFSETS_S) {
     const target = now - o * 1000;
-    return target < 0 ? null : frameAt(target);
-  });
-  if (picked.every((p) => p === null)) return null;
-
-  const composites = [];
-  for (let i = 0; i < GRID_FRAMES; i++) {
-    if (!picked[i]) continue;
-    composites.push({
-      input: picked[i] as string,
-      left: (i % GRID_COLS) * CELL_W,
-      top: Math.floor(i / GRID_COLS) * CELL_H,
-    });
+    if (target < 0) continue;
+    const idx = frameIndexAt(target);
+    if (idx === null) continue;
+    const at = idx * SAMPLE_INTERVAL_MS;
+    if (picked.length && picked[picked.length - 1].at === at) continue;
+    const prev = thumbAtIndex(Math.round(picked[picked.length - 1]?.at / SAMPLE_INTERVAL_MS));
+    const cur = thumbAtIndex(idx);
+    if (picked.length && prev && cur && blockMaxDelta(prev, cur) <= GRID_DUPLICATE_DELTA) continue;
+    picked.push({ file: frameFiles[idx], at, offset: o });
   }
-  const jpeg = await sharp({
-    create: { width: GRID_W, height: GRID_H, channels: 3, background: '#000' },
-  })
-    .composite(composites)
+  if (!picked.length) return null;
+
+  const { cols, w, h } = gridLayout(picked.length);
+  const jpeg = await sharp({ create: { width: w, height: h, channels: 3, background: '#000' } })
+    .composite(
+      picked.map((p, i) => ({
+        input: p.file,
+        left: (i % cols) * CELL_W,
+        top: Math.floor(i / cols) * CELL_H,
+      })),
+    )
     .jpeg({ quality: GRID_QUALITY })
     .toBuffer();
 
   // The half-size copy the app's worker also produces, which rides along with
   // the NEXT turn as the companion's memory of what it last looked at.
   const small = await sharp(jpeg)
-    .resize(PREV_GRID_W, PREV_GRID_H)
+    .resize(Math.round(w * PREV_GRID_SCALE), Math.round(h * PREV_GRID_SCALE))
     .jpeg({ quality: GRID_QUALITY })
     .toBuffer();
 
-  const newest = now - GRID_OFFSETS_S[GRID_OFFSETS_S.length - 1] * 1000;
+  const newest = picked[picked.length - 1].at;
   return {
     jpeg,
     small,
-    offsets: GRID_OFFSETS_S.map((o, i) =>
-      picked[i] === null ? null : Math.round(newest - (now - o * 1000)) / 1000,
-    ),
+    ages: picked.map((p) => Math.round(newest - p.at) / 1000),
+    // Which entries of the offset table survived, for the render's strip.
+    offsets: picked.map((p) => p.offset),
+    dropped: GRID_OFFSETS_S.length - picked.length,
   };
-}
-
-// ── Screen text ───────────────────────────────────────────────────────────
-
-interface Reading {
-  t: number;
-  text: string;
-}
-let readings: Reading[] | null = null;
-
-/**
- * What the OCR pass had most recently read at `at`, or undefined.
- *
- * Reads scripts/backseat-ocr.ts's output rather than running Tesseract inline,
- * for the same reason the transcript is precomputed: it takes about a second a
- * frame and it does not depend on anything the model does. The staleness rule
- * is the app's (SCREEN_TEXT_STALE_MS), so a tick here carries exactly what a
- * live tick would have carried.
- */
-function screenTextAt(at: number): string | undefined {
-  if (readings === null) {
-    const f = path.join(OUT, 'screentext.json');
-    readings = existsSync(f)
-      ? (JSON.parse(readFileSync(f, 'utf8')) as { readings: Reading[] }).readings
-      : [];
-    if (!readings.length) {
-      console.warn('[sim] no screentext.json: run scripts/backseat-ocr.ts first for screen text');
-    }
-  }
-  let best: Reading | undefined;
-  for (const r of readings) {
-    if (r.t > at) break;
-    if (at - r.t <= SCREEN_TEXT_STALE_MS) best = r;
-  }
-  return best?.text || undefined;
 }
 
 // ── Stage C: the wake schedule and the turns ──────────────────────────────
@@ -407,13 +401,13 @@ interface Turn {
   kind: BackseatTickKind;
   joltReason?: 'gain' | 'color';
   signal?: { gainDb: number; baseDb: number; colorDelta: number | null; colorThr: number };
-  offsets: Array<number | null>;
+  ages: number[];
+  offsets: number[];
+  dropped: number;
   /** Filename of this turn's grid under <out>/grids. Recorded rather than left
    *  to position, because the render used to index a sorted readdir and a
    *  leftover file from an earlier run silently shifted every grid it drew. */
   grid?: string;
-  /** What the OCR pass had read off the screen at this moment, if anything. */
-  screenText?: string;
   reply: string;
   spoke: boolean;
   usage?: { input: number; cacheRead: number; cacheWrite: number; output: number };
@@ -592,18 +586,18 @@ async function runTurn(
   lastSpokeAt: number,
   kind: BackseatTickKind,
   jolt: JoltEvent | undefined,
-  grid: { jpeg: Buffer; small: Buffer; offsets: Array<number | null> },
+  grid: { jpeg: Buffer; small: Buffer; ages: number[]; offsets: number[]; dropped: number },
   prevGrid: { small: Buffer; at: number } | null,
 ): Promise<Turn> {
-  const screenText = screenTextAt(at);
   const prevAge = prevGrid ? at - prevGrid.at : Infinity;
   const prev = prevAge <= PREV_GRID_MAX_AGE_MS ? prevGrid : null;
   const note = tickNote({
     kind,
     joltReason: jolt?.reason,
     secondsSinceLastLine: Number.isFinite(lastSpokeAt) ? (at - lastSpokeAt) / 1000 : null,
-    sourceName: 'the game',
-    screenText,
+    sourceName: SHARE_LABEL,
+    shareLabel: SHARE_LABEL,
+    frameAges: grid.ages,
     secondsSincePrevGrid: prev ? prevAge / 1000 : undefined,
   });
 
@@ -674,8 +668,9 @@ async function runTurn(
     signal: jolt
       ? { gainDb: jolt.gainDb, baseDb: jolt.baseDb, colorDelta: jolt.colorDelta, colorThr: jolt.colorThr }
       : undefined,
+    ages: grid.ages,
     offsets: grid.offsets,
-    screenText,
+    dropped: grid.dropped,
     reply,
     spoke,
     usage: {
@@ -760,7 +755,10 @@ function writeReports(turns: Turn[], durationMs: number): void {
   for (const t of turns) {
     const label = t.kind === 'jolt' ? `jolt:${t.joltReason}` : t.kind;
     lines.push(`**[${clock(t.t)}] ${label}** ${t.spoke ? `"${t.reply}"` : '_(NO LINE)_'}`);
-    if (t.screenText) lines.push(`> screen text: ${t.screenText}`);
+    lines.push(
+      `> ${t.ages.length} frame(s) at -${t.ages.map((a) => a.toFixed(2)).join('/')}s` +
+        (t.dropped ? `, ${t.dropped} dropped as duplicates` : ''),
+    );
     lines.push('');
   }
 
@@ -795,7 +793,10 @@ function writeReports(turns: Turn[], durationMs: number): void {
   }
 
   writeFileSync(path.join(OUT, 'voiceover.md'), lines.join('\n'));
-  writeFileSync(path.join(OUT, 'voiceover.json'), JSON.stringify({ video: VIDEO, TH, seed: SEED, turns }, null, 2));
+  writeFileSync(
+    path.join(OUT, 'voiceover.json'),
+    JSON.stringify({ video: VIDEO, TH, seed: SEED, shareLabel: SHARE_LABEL, turns }, null, 2),
+  );
   console.log(
     `\n[sim] ${turns.length} looks, ${spoken.length} spoke, ${mute} did not. ` +
       `tokens: in ${totals.input}, cacheRead ${totals.cacheRead}, cacheWrite ${totals.cacheWrite}`,

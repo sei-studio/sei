@@ -1410,10 +1410,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         characterId: IdSchema,
         kind: z.enum(['user', 'jolt', 'idle']),
         grid: z.string().max(8_000_000),
+        // 260804: this was MISSING, and zod strips what it does not declare, so
+        // the previous-grid memory added on 260802 never reached the service —
+        // every look was the companion's first. The absence was invisible
+        // because a null prevGrid is a legal state (the first tick of every
+        // session). Anything the service reads off a tick must be declared here.
+        gridSmall: z.string().max(4_000_000).optional(),
         capturedAt: z.number(),
+        frameAges: z.array(z.number()).max(16).default([]),
         text: z.string().max(4000).optional(),
         joltReason: z.enum(['gain', 'color']).optional(),
         transcript: z.string().max(4000).optional(),
+        shareLabel: z.string().max(200).optional(),
       })
       .parse(tickRaw);
     const backseat = await import('./backseat/backseatService');
@@ -1434,27 +1442,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { stopAudioTap } = await import('./backseat/audioTap');
     stopAudioTap();
   });
-  // Screen text (260803): same shape as the audio tap, and for the same reason.
-  // macOS Vision reads a 720p game frame roughly ten times faster and far more
-  // accurately than the tesseract.js worker, but there is no browser API for
-  // it, so main spawns a bundled Swift helper. `false` from ocrStart is the
-  // renderer's signal to use its own worker instead.
-  ipcMain.handle(IpcChannel.backseat.ocrStart, async (_event, langRaw: unknown) => {
-    const language = z.string().max(32).optional().catch(undefined).parse(langRaw);
-    const { startVisionOcr } = await import('./backseat/visionOcr');
-    return await startVisionOcr(language);
+  // What is on the shared surface right now (260804), read from the window
+  // list because only main can see it. Polled by the capture controller, so the
+  // handler stays cheap: zero-size thumbnails, no state.
+  ipcMain.handle(IpcChannel.backseat.shareLabel, async (_event, idRaw: unknown) => {
+    const sourceId = z.string().max(300).parse(idRaw);
+    const { readShareLabel } = await import('./backseat/shareLabel');
+    return await readShareLabel(sourceId);
   });
-  ipcMain.handle(IpcChannel.backseat.ocrFrame, async (_event, jpegRaw: unknown) => {
-    if (!(jpegRaw instanceof ArrayBuffer) && !ArrayBuffer.isView(jpegRaw)) return null;
-    const bytes = jpegRaw instanceof ArrayBuffer
-      ? new Uint8Array(jpegRaw)
-      : new Uint8Array(jpegRaw.buffer, jpegRaw.byteOffset, jpegRaw.byteLength);
-    const { recognizeFrame } = await import('./backseat/visionOcr');
-    return await recognizeFrame(bytes);
-  });
-  ipcMain.handle(IpcChannel.backseat.ocrStop, async () => {
-    const { stopVisionOcr } = await import('./backseat/visionOcr');
-    stopVisionOcr();
+  // The player started talking over a line that is still generating. Killing it
+  // here is what stops the companion answering the question they interrupted
+  // her to ask AND finishing the thought they cut off.
+  ipcMain.handle(IpcChannel.backseat.interrupt, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const backseat = await import('./backseat/backseatService');
+    backseat.interruptBackseat(id);
   });
   ipcMain.handle(IpcChannel.backseat.setPaused, async (_event, argsRaw: unknown) => {
     const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);

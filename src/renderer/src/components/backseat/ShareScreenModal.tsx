@@ -39,6 +39,12 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
   const [sources, setSources] = useState<BackseatSource[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  // Two tabs rather than two stacked sections (260804). The window list is as
+  // long as the player has windows open, so the one or two screens underneath
+  // it were below the fold and effectively hidden. Windows lead because they
+  // are the better share: one app, no notifications, no second monitor of
+  // nothing.
+  const [tab, setTab] = useState<'window' | 'screen'>('window');
 
   useEffect(() => {
     let alive = true;
@@ -70,7 +76,16 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
 
   const screens = (sources ?? []).filter((s) => s.kind === 'screen');
   const windows = (sources ?? []).filter((s) => s.kind === 'window');
+  const shown = tab === 'window' ? windows : screens;
   const error = listError ?? shareError;
+
+  // Switching tabs drops the selection: the Share button must never act on a
+  // source the player can no longer see.
+  const pickTab = (next: 'window' | 'screen'): void => {
+    if (next === tab) return;
+    setTab(next);
+    setSelected(null);
+  };
 
   return (
     <ModalShell
@@ -81,47 +96,50 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
     >
       <div className={styles.root}>
         <p className={styles.sub}>
-          Pick a window or a whole screen. Sound is shared too, so {companionName} can hear it.
+          Sound is shared too, so {companionName} can hear it.
         </p>
+
+        <div className={styles.tabs} role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'window'}
+            className={`${styles.tab} ${tab === 'window' ? styles.tabOn : ''}`}
+            onClick={() => pickTab('window')}
+          >
+            Window
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'screen'}
+            className={`${styles.tab} ${tab === 'screen' ? styles.tabOn : ''}`}
+            onClick={() => pickTab('screen')}
+          >
+            Entire screen
+          </button>
+        </div>
 
         <div className={styles.list}>
           {sources === null ? (
             <p className={styles.empty}>Looking for what you have open...</p>
-          ) : sources.length === 0 ? (
-            <p className={styles.empty}>Nothing to share yet. Open something and come back.</p>
+          ) : shown.length === 0 ? (
+            <p className={styles.empty}>
+              {tab === 'window'
+                ? 'No windows open to share. Open something and come back.'
+                : 'No screens available to share.'}
+            </p>
           ) : (
-            <>
-              {windows.length > 0 ? (
-                <>
-                  <span className={styles.groupLabel}>Windows</span>
-                  <div className={styles.grid}>
-                    {windows.map((s) => (
-                      <SourceTile
-                        key={s.id}
-                        source={s}
-                        selected={selected === s.id}
-                        onPick={() => setSelected(s.id)}
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : null}
-              {screens.length > 0 ? (
-                <>
-                  <span className={styles.groupLabel}>Screens</span>
-                  <div className={styles.grid}>
-                    {screens.map((s) => (
-                      <SourceTile
-                        key={s.id}
-                        source={s}
-                        selected={selected === s.id}
-                        onPick={() => setSelected(s.id)}
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : null}
-            </>
+            <div className={styles.grid}>
+              {shown.map((s) => (
+                <SourceTile
+                  key={s.id}
+                  source={s}
+                  selected={selected === s.id}
+                  onPick={() => setSelected(s.id)}
+                />
+              ))}
+            </div>
           )}
         </div>
 

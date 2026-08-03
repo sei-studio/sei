@@ -30,12 +30,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 
-import {
-  GRID_OFFSETS_S,
-  JOLT_GAIN_DB,
-  SCREEN_TEXT_STALE_MS,
-  TICK_SCREEN_TEXT_MAX_WORDS,
-} from '../src/shared/backseatIpc';
+import { GRID_OFFSETS_S, JOLT_GAIN_DB } from '../src/shared/backseatIpc';
 
 // ---------------------------------------------------------------- args / io
 
@@ -58,12 +53,16 @@ interface Turn {
   /** colorThr is the bar at that instant: it moves with the screen, so the
    *  delta on its own says nothing about whether it should have fired. */
   signal?: { gainDb: number; baseDb: number; colorDelta: number; colorThr: number };
-  offsets: Array<number | null>;
+  /** Ages of the cells actually drawn, oldest first, after duplicates were
+   *  dropped (260804). Variable-length: a still screen is one cell. */
+  ages: number[];
+  /** Which entries of GRID_OFFSETS_S survived deduplication. */
+  offsets: number[];
+  dropped: number;
   /** Filename under <out>/grids. Written by the sim per turn, because indexing
    *  a sorted readdir by turn position broke the moment a previous run left a
    *  file behind that the new one did not overwrite. */
   grid?: string;
-  screenText?: string;
   reply: string;
   spoke: boolean;
 }
@@ -71,6 +70,7 @@ const vo = JSON.parse(readFileSync(path.join(OUT, 'voiceover.json'), 'utf8')) as
   video: string;
   TH: { gainDb: number; colorMad: number; colorFloor: number; refractoryMs: number };
   seed: number;
+  shareLabel?: string;
   turns: Turn[];
 };
 const VIDEO = vo.video;
@@ -99,24 +99,6 @@ const transcript = existsSync(path.join(OUT, 'transcript.json'))
     }).chunks
   : [];
 
-/** The rolling OCR readings, exactly as a live tick would have received them
- *  (scripts/backseat-ocr.ts, same engine and same shaping as the app). */
-const readings = existsSync(path.join(OUT, 'screentext.json'))
-  ? (JSON.parse(readFileSync(path.join(OUT, 'screentext.json'), 'utf8')) as {
-      readings: Array<{ t: number; text: string }>;
-    }).readings
-  : [];
-
-/** What the OCR pass had most recently read at `now`, under the app's own
- *  staleness rule. Undefined means a tick here would have carried no text. */
-function screenTextAt(now: number): { t: number; text: string } | undefined {
-  let best: { t: number; text: string } | undefined;
-  for (const r of readings) {
-    if (r.t > now) break;
-    if (r.text && now - r.t <= SCREEN_TEXT_STALE_MS) best = r;
-  }
-  return best;
-}
 
 const dumped = readdirSync(path.join(OUT, 'grids'))
   .filter((f) => f.endsWith('.jpg'))
@@ -141,14 +123,15 @@ const H = 1080;
 
 const VID = { x: 24, y: 72, w: 1280, h: 720 };
 // The audio transcript moved to the left column (260802) to make room under the
-// grid for the screen text, which is where it belongs: one panel for what the
-// screen SAID and one for what it was SHOWING, side by side with the picture.
+// grid for the panel that says what the tick actually carried alongside the
+// picture. 260804: that panel used to hold the OCR reading; it now holds the
+// window title and the frame count, which is what replaced it.
 const SAY = { x: 24, y: 812, w: 872, h: 244 };
 const TXT = { x: 920, y: 812, w: 384, h: 244 };
 const COL = { x: 1328, w: 568 };
 
 const GRID = { y: 72, h: 536, img: { w: 568, h: 476, y: 100 }, strip: { y: 576, h: 20 } };
-const SCR = { y: 618, h: 144 };
+const SHARE = { y: 618, h: 144 };
 const GAIN = { y: 772, h: 136, plot: { y: 800, h: 104 } };
 const CLR = { y: 918, h: 138, plot: { y: 946, h: 104 } };
 /** The memory image, insetted into the bottom-right of the grid. */
@@ -535,7 +518,10 @@ function frameSvg(now: number): string {
   );
   GRID_OFFSETS_S.forEach((off, i) => {
     const x = sx + (1 - off / span) * sw;
-    const on = last && last.offsets[i] !== null;
+    // A cell is lit when the last look actually CARRIED a frame at this
+    // offset. Read off the surviving offsets rather than by index: with
+    // duplicates dropped, the cells no longer line up with the table.
+    const on = !!last && last.offsets.includes(off);
     s.push(
       `<circle cx="${x.toFixed(1)}" cy="${GRID.strip.y + 8}" r="${i === GRID_OFFSETS_S.length - 1 ? 4 : 3}" fill="${on ? (last && flash ? kindColor(last) : C.ink) : C.faint}"/>`,
     );
@@ -545,7 +531,7 @@ function frameSvg(now: number): string {
     txt(sx + sw, GRID.strip.y + 24, 'now', { size: 11, color: C.faint, anchor: 'end', mono: true }),
   );
   s.push(
-    txt(sx + sw / 2, GRID.strip.y + 24, 'gaps halve toward the present', {
+    txt(sx + sw / 2, GRID.strip.y + 24, 'gaps halve toward the present, duplicates dropped', {
       size: 11,
       color: C.faint,
       anchor: 'middle',
@@ -639,48 +625,40 @@ function frameSvg(now: number): string {
   }
   if (!heard.length) s.push(txt(TXT.x + 16, TXT.y + 56, 'no speech', { size: 14, color: C.faint }));
 
-  // --- screen text, directly under the grid it was read from
-  s.push(panel(COL.x, SCR.y, COL.w, SCR.h, flash && last?.screenText ? kindColor(last) : C.edge));
-  s.push(label(COL.x + 16, SCR.y + 22, 'SCREEN TEXT'));
+  // --- what the tick said it was looking at, directly under the grid
+  s.push(panel(COL.x, SHARE.y, COL.w, SHARE.h, flash && last ? kindColor(last) : C.edge));
+  s.push(label(COL.x + 16, SHARE.y + 22, 'SHARING'));
   s.push(
-    txt(COL.x + COL.w - 16, SCR.y + 22, `tesseract, 2x, max ${TICK_SCREEN_TEXT_MAX_WORDS}w`, {
+    txt(COL.x + COL.w - 16, SHARE.y + 22, 'window title', {
       size: 11,
       color: C.faint,
       anchor: 'end',
     }),
   );
-  const reading = screenTextAt(now);
-  if (reading) {
+  let sy = SHARE.y + 48;
+  for (const ln of wrap(vo.shareLabel ?? '(unlabelled)', COL.w - 32, 16, 0.52).slice(0, 2)) {
+    s.push(txt(COL.x + 16, sy, ln, { size: 16, color: C.ink }));
+    sy += 22;
+  }
+  // Deduplication, which is the other thing that changed about what the model
+  // is handed: a still screen is now one cell rather than six copies of one.
+  if (last) {
     s.push(
-      txt(COL.x + 16, SCR.y + 44, `read at ${clock(reading.t)}`, {
-        size: 11,
-        color: C.faint,
-        mono: true,
-      }),
+      txt(
+        COL.x + 16,
+        SHARE.y + SHARE.h - 42,
+        `${last.ages.length} frame${last.ages.length === 1 ? '' : 's'} sent` +
+          (last.dropped ? `, ${last.dropped} dropped as duplicates` : ', none duplicated'),
+        { size: 13, color: last.dropped ? kindColor(last) : C.dim, mono: true },
+      ),
     );
-    // Whether THIS reading is the one the last look carried, which is the
-    // honest thing to show: the OCR pass runs on its own slow cadence, so a
-    // tick sends whatever had most recently been read, not a fresh pass.
-    const sent = !!last && last.screenText === reading.text;
-    if (sent) {
-      s.push(
-        txt(COL.x + COL.w - 16, SCR.y + 44, `sent with the ${clock(last.t)} look`, {
-          size: 11,
-          color: last ? kindColor(last) : C.dim,
-          anchor: 'end',
-          mono: true,
-        }),
-      );
-    }
-    let sy = SCR.y + 66;
-    for (const ln of wrap(reading.text, COL.w - 32, 15, 0.52)) {
-      if (sy > SCR.y + SCR.h - 8) break;
-      s.push(txt(COL.x + 16, sy, ln, { size: 15, color: sent ? C.ink : C.dim, mono: true }));
-      sy += 20;
-    }
-  } else {
     s.push(
-      txt(COL.x + 16, SCR.y + 66, 'nothing legible on screen', { size: 15, color: C.faint }),
+      txt(
+        COL.x + 16,
+        SHARE.y + SHARE.h - 20,
+        `-${last.ages.map((a) => a.toFixed(2)).join(' / -')}s`,
+        { size: 12, color: C.faint, mono: true },
+      ),
     );
   }
 

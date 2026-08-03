@@ -160,7 +160,103 @@ const BARGE_GRACE_MS = 600;
 // breath or a click is one or two frames and now always resets the run; real
 // speech holds. Pairs with the BARGE_ABS_MIN raise above — level gate first,
 // duration gate second, so a transient has to be both loud AND sustained.
-const BARGE_CONFIRM_MS = 400;
+// Raised 400 -> 1400 (260804), and it is no longer the main path. Read the
+// block below first: sustained energy is now the FALLBACK that fires when
+// transcription cannot answer, so it is tuned to be slow and certain rather
+// than fast and occasionally wrong. 1400ms is eleven consecutive over-bar
+// frames, which no burst of speaker echo has ever produced.
+const BARGE_CONFIRM_MS = 1400;
+
+/**
+ * ── Barge-in, two stages (260804) ────────────────────────────────────────
+ *
+ * The old design had one gate: sustained energy over an adaptive bar, and on
+ * trip it CLEARED the queue. That single gate had to serve two contradictory
+ * masters. Trip too easily and speaker echo cuts the companion off mid-word,
+ * destroying a line for nothing; trip too reluctantly and interrupting her
+ * takes shouting. Six rounds of tuning across three reports moved the numbers
+ * around and never resolved it, because the conflict is structural: energy
+ * cannot tell speech from a door closing, and a cleared queue cannot be undone.
+ *
+ * Splitting it resolves both at once, because the two stages can have opposite
+ * temperaments:
+ *
+ *   1. DUCK, on almost any noise. One frame over a low bar. The companion drops
+ *      to near-silence in ~130ms, which is what the player actually perceives
+ *      as being able to interrupt her. It is REVERSIBLE, so being wrong is
+ *      nearly free, which is exactly why the bar can be this low.
+ *   2. COMMIT, only on a WORD. The audio collected since the duck goes to the
+ *      same STT that transcribes every utterance, and the barge is confirmed
+ *      only if a real word comes back. A cough, a keyboard, a door, the
+ *      companion's own echo: all transcribe to nothing or to junk, and the clip
+ *      comes back up as though nothing happened.
+ *
+ * So the trigger is dictation, not gain, which is the whole point: what decides
+ * whether the companion stops talking is now whether the player SAID something.
+ *
+ * Latency, honestly. Perceived interrupt: ~130ms, against ~400ms before, and
+ * with no 600ms grace-window blind spot at the start of every clip. Commit:
+ * BARGE_WORD_MS of speech plus one short STT pass, so roughly 500-800ms —
+ * slower than the old 400ms commit. That is the right trade, because by then
+ * she has already been silent for hundreds of milliseconds; the commit is only
+ * what decides whether the line is discarded, and nobody hears a decision.
+ */
+
+/** Speech collected before the confirming transcription is fired. Long enough
+ *  to hold one short word ("wait", "no", "hey") — Whisper on less than this
+ *  hallucinates, which is the same floor MIN_UTTERANCE_MS exists for. */
+const BARGE_WORD_MS = 400;
+/** Level bar for the DUCK, against BARGE_ABS_MIN's for the commit fallback.
+ *  ~-34 dBFS: under a quiet word at a laptop mic, over a still room. */
+const DUCK_ABS_MIN = 0.02;
+/** Duck bar is also this multiple of the measured echo residue, against
+ *  BARGE_RESIDUE_FACTOR's 2.5. Lower because a false duck is recoverable. */
+const DUCK_RESIDUE_FACTOR = 1.6;
+/** Continuous over-bar energy before ducking. One frame: the whole value of
+ *  this stage is that it happens before anything can be confirmed. */
+const DUCK_CONFIRM_MS = 120;
+/** How long a duck may stay unconfirmed. Past this the transcription has
+ *  either failed or is slower than the feature can wait for, and the decision
+ *  falls back to energy: still loud means still talking. */
+const BARGE_SUSPECT_MAX_MS = 1800;
+
+/**
+ * Does a transcript contain a word the player actually said?
+ *
+ * Deliberately stricter than the junk filter used on finished utterances. This
+ * runs on ~400ms of audio, where every STT engine is at its most inventive, and
+ * a false positive here cuts off a line that was doing nothing wrong. Requiring
+ * a letter or CJK run of at least two characters rejects the whole observed
+ * vocabulary of onset artifacts: "", ".", "-", "you", "[BLANK_AUDIO]", "hhh",
+ * "MM", and bare punctuation. ("you" survives the length test and is a real
+ * word, so it is named explicitly: it is Whisper's single most common output
+ * for a fragment of noise.)
+ */
+export function hasSpokenWord(text: string): boolean {
+  const clean = text
+    // Engines annotate non-speech in brackets AND in parentheses: "[BLANK_AUDIO]",
+    // "[silence]", "(music)", "(wind blowing)". Stripping both leaves nothing,
+    // which is the correct answer for all of them.
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, ' ')
+    .replace(/[^\p{L}\p{N}\s']/gu, ' ')
+    .trim()
+    .toLowerCase();
+  if (!clean) return false;
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (!words.length) return false;
+  if (words.length === 1) {
+    const w = words[0];
+    if (w === 'you' || w === 'the' || w === 'a') return false;
+    // A single repeated LETTER is breath ("hhhh", "mmmm"), not speech. Scoped
+    // to Latin script on purpose: a repeated CJK character is an ordinary word
+    // (等等, 慢慢), and rejecting it would make barge-in silently impossible in
+    // Chinese and Japanese, which is exactly the class of bug the adaptive
+    // energy bar was fixed for in 260725.
+    if (/^[a-z]+$/.test(w) && /^(.)\1*$/.test(w)) return false;
+    return w.length >= 2;
+  }
+  return true;
+}
 
 /**
  * AudioWorklet processor (issue: ScriptProcessorNode is deprecated). Batches
@@ -201,10 +297,19 @@ registerProcessor('sei-vad-capture', SeiVadCapture);
 export async function createDictation(opts: {
   onUtterance: (text: string) => void;
   onStatus: (status: DictationStatus, detail?: string) => void;
-  /** Player spoke over the companion (speech opened during hold). The owner
-   * should stop companion playback — which releases the hold — and this same
-   * utterance then flows through onUtterance as usual. */
+  /** CONFIRMED barge-in: a word was transcribed from speech that opened during
+   * hold. The owner should stop companion playback — which releases the hold —
+   * and this same utterance then flows through onUtterance as usual. */
   onBargeIn?: () => void;
+  /** PROVISIONAL barge-in (260804): something crossed the low bar during hold
+   * and may be the player. The owner should DUCK playback, not stop it — this
+   * fires on coughs and doors too, and is retracted by onBargeAbort when the
+   * confirming transcription comes back without a word. See the two-stage
+   * block above BARGE_WORD_MS. */
+  onBargeSuspect?: () => void;
+  /** The provisional barge-in was not speech. Bring playback back up. Only ever
+   * fires after onBargeSuspect and never after onBargeIn. */
+  onBargeAbort?: () => void;
   /** Fires true when the player's live mic speech opens and false when it ends —
    * drives the "you're talking" ring on the caller's own avatar (same lit ring
    * the companions get while speaking). Edge-emitted, so it only fires on change. */
@@ -337,9 +442,18 @@ export async function createDictation(opts: {
   /** When the current companion clip started playing (setHold(true)); basis for
    * the barge-in grace window that stops a clip's own onset from self-barging. */
   let holdSince = 0;
-  /** Running length of continuous over-the-barge-bar energy during hold; a real
-   * barge-in only fires once this clears BARGE_CONFIRM_MS (see there). */
+  /** Running length of continuous over-the-barge-bar energy during hold; the
+   * fallback commit fires once this clears BARGE_CONFIRM_MS (see there). */
   let bargeRunMs = 0;
+  /** Running length over the lower DUCK bar, which is what opens stage one. */
+  let duckRunMs = 0;
+  /**
+   * Stage one is open: playback is ducked and this utterance is provisional
+   * until a transcript decides it. Null whenever the barge machinery is idle,
+   * which is also true of every utterance that began outside hold — those were
+   * never in doubt.
+   */
+  let suspect: { since: number; asked: boolean } | null = null;
   /** EMA of the echo residue reaching the mic while companion audio plays —
    * the basis of the adaptive barge bar (see BARGE_RESIDUE_FACTOR). Carries
    * across clips: the playback device and volume don't change mid-call. */
@@ -363,7 +477,16 @@ export async function createDictation(opts: {
   /** Provisional end-of-utterance transcription (EAGER_SILENCE_MS). Identity-
    * free lifecycle: `cancelled` kills it when speech resumes; `wanted` marks
    * that the utterance finalized before the transcript arrived. */
-  type Eager = { id: number; cancelled: boolean; wanted: boolean; done: boolean; text: string | null };
+  type Eager = {
+    id: number;
+    cancelled: boolean;
+    wanted: boolean;
+    done: boolean;
+    text: string | null;
+    /** Set when the utterance finalized while still a provisional barge-in: the
+     *  eager transcript is then also the thing that decides it. */
+    decide?: (text: string) => void;
+  };
   let eager: Eager | null = null;
 
   function cancelEager(): void {
@@ -430,6 +553,14 @@ export async function createDictation(opts: {
     speechMs = 0;
     utterance = [];
     cancelEager();
+    // Abandoning an utterance that was still provisional (mute, teardown, a
+    // hold transition) leaves playback ducked with nothing coming to un-duck
+    // it. `settle` clears `suspect` before it calls in here, so its own abort
+    // does not double-fire.
+    if (suspect) {
+      suspect = null;
+      opts.onBargeAbort?.();
+    }
     emitSpeech(false);
   }
 
@@ -437,6 +568,15 @@ export async function createDictation(opts: {
     const frames = utterance;
     const pendingEager = eager;
     eager = null; // ownership transfers below; resetUtterance must not cancel it
+    // The utterance ended before stage two could answer, so the real transcript
+    // below decides the barge instead of a separate confirming pass.
+    const wasSuspect = suspect !== null;
+    suspect = null;
+    const decideBarge = (text: string): void => {
+      if (!wasSuspect) return; // never provisional, or already committed
+      if (hasSpokenWord(text)) opts.onBargeIn?.();
+      else opts.onBargeAbort?.();
+    };
     inSpeech = false;
     silenceMs = 0;
     speechMs = 0;
@@ -447,6 +587,8 @@ export async function createDictation(opts: {
         pendingEager.cancelled = true;
         inflight.delete(pendingEager.id);
       }
+      // Too short to be a word at all, so it was a transient: un-duck.
+      if (wasSuspect) opts.onBargeAbort?.();
       return;
     }
     if (pendingEager) {
@@ -454,13 +596,16 @@ export async function createDictation(opts: {
       // it fired are the silence run, which adds no words. Use it instead of
       // re-transcribing (its ~0.5–1s of Whisper work overlapped the wait).
       if (pendingEager.done) {
+        decideBarge(pendingEager.text ?? '');
         if (pendingEager.text) opts.onUtterance(pendingEager.text);
       } else {
         pendingEager.wanted = true;
+        pendingEager.decide = decideBarge;
       }
       return;
     }
     postTranscribe(frames, (text) => {
+      decideBarge(text);
       if (text) opts.onUtterance(text);
     });
   }
@@ -468,6 +613,42 @@ export async function createDictation(opts: {
   function speechMsOf(frames: Float32Array[]): number {
     const samples = frames.reduce((n, f) => n + f.length, 0);
     return (samples / SAMPLE_RATE) * 1000;
+  }
+
+  /** Stage two. Fires one transcription over the audio collected since the
+   *  duck, and lets the answer decide whether the companion actually stops. */
+  function confirmBarge(rms: number): void {
+    const s = suspect;
+    if (!s) return;
+    const settle = (real: boolean): void => {
+      if (suspect !== s) return; // superseded (utterance ended, mute, teardown)
+      suspect = null;
+      if (real) {
+        opts.onBargeIn?.();
+        return;
+      }
+      // Not speech. Retract the duck and go back to listening under hold — the
+      // frames collected are discarded rather than transcribed again, because
+      // the pass that just ran already read them and found nothing.
+      opts.onBargeAbort?.();
+      resetUtterance();
+    };
+
+    if (performance.now() - s.since >= BARGE_SUSPECT_MAX_MS) {
+      // Transcription never answered. Decide on energy: the level bar here is
+      // the stiff one, so still being over it after nearly two seconds is a
+      // person talking, not a transient.
+      settle(rms >= Math.max(BARGE_ABS_MIN, holdResidue * BARGE_RESIDUE_FACTOR));
+      return;
+    }
+    if (s.asked || speechMsOf(utterance) < BARGE_WORD_MS) return;
+    s.asked = true;
+    // Copied, because the utterance keeps growing while this runs and the
+    // arbiter transfers what it is given.
+    postTranscribe(
+      utterance.map((f) => f.slice()),
+      (text) => settle(hasSpokenWord(text)),
+    );
   }
 
   function openSpeech(frameMs: number): void {
@@ -519,17 +700,45 @@ export async function createDictation(opts: {
       }
       // Grace window: for the first BARGE_GRACE_MS of a clip, ignore threshold
       // crossings — that early audio is almost always the clip's own onset
-      // echoing back before AEC converges, not the player barging in. After the
-      // window, a genuine barge-in over a longer clip still opens normally.
+      // echoing back before AEC converges, not the player barging in.
+      //
+      // 260804: the grace applies only to the sustained-energy FALLBACK. Stage
+      // one is allowed to duck during it, because a duck is reversible and the
+      // window was itself a bug: for its first 600ms every clip was completely
+      // uninterruptible, which on short lines is the whole clip. A false duck
+      // caused by a clip's own onset is retracted a few hundred milliseconds
+      // later by the transcription, and the player hears a wobble at worst.
+      const duckBar = Math.max(
+        DUCK_ABS_MIN,
+        noiseFloor * BARGE_NOISE_FACTOR,
+        holdResidue * DUCK_RESIDUE_FACTOR,
+      );
+      if (rms >= duckBar) {
+        duckRunMs += frameMs;
+        if (duckRunMs >= DUCK_CONFIRM_MS) {
+          duckRunMs = 0;
+          bargeRunMs = 0;
+          // Open the utterance for real: from here the normal in-speech path
+          // below collects frames, and `suspect` is what marks the collection
+          // as unconfirmed.
+          openSpeech(frameMs);
+          suspect = { since: performance.now(), asked: false };
+          opts.onBargeSuspect?.();
+          return;
+        }
+      } else {
+        duckRunMs = 0;
+      }
+      // Sustained-energy fallback. It exists for the case transcription cannot
+      // serve: no local model AND a cloud pass that is slow or failing. Slower
+      // and stiffer than the duck by design — see BARGE_CONFIRM_MS.
       const overBar = rms >= bar && !inGrace;
       if (overBar) {
-        // Sustained-energy gate: only a CONTINUOUS run past the bar is a real
-        // barge-in. A single echo peak from the companion's own clip (common on
-        // speakers) bumps the run but falls back below the bar next frame,
-        // resetting it — so it never cuts the clip off. Genuine speech holds.
         bargeRunMs += frameMs;
         if (bargeRunMs >= BARGE_CONFIRM_MS) {
           bargeRunMs = 0;
+          duckRunMs = 0;
+          suspect = null;
           openSpeech(frameMs);
           opts.onBargeIn?.();
         }
@@ -551,6 +760,7 @@ export async function createDictation(opts: {
 
     utterance.push(frame.slice());
     speechMs += frameMs;
+    if (suspect) confirmBarge(rms);
     const endThreshold = Math.max(START_RMS_FLOOR * 0.7, noiseFloor * 2);
     if (rms < endThreshold) {
       silenceMs += frameMs;
@@ -563,6 +773,7 @@ export async function createDictation(opts: {
           e.done = true;
           e.text = text;
           if (e.wanted) {
+            e.decide?.(text);
             if (text) opts.onUtterance(text);
             return;
           }
@@ -582,6 +793,14 @@ export async function createDictation(opts: {
           // messages fine.
           if (eager === e && inSpeech) {
             eager = null; // consumed — resetUtterance's cancelEager is a no-op
+            // Still provisional: this transcript is the best evidence there is,
+            // so decide the barge on it rather than letting resetUtterance
+            // un-duck a genuine interruption.
+            if (suspect) {
+              suspect = null;
+              if (hasSpokenWord(text)) opts.onBargeIn?.();
+              else opts.onBargeAbort?.();
+            }
             resetUtterance();
             if (text) opts.onUtterance(text);
           }
@@ -617,6 +836,7 @@ export async function createDictation(opts: {
       // barge-in grace window on each clip start so its onset can't self-barge.
       if (h) holdSince = performance.now();
       bargeRunMs = 0; // any hold transition restarts the sustained-barge count
+      duckRunMs = 0;
       hold = h;
     },
     armBargeGrace() {
@@ -625,6 +845,7 @@ export async function createDictation(opts: {
       // actually began. Silence before this point can no longer eat it.
       holdSince = performance.now();
       bargeRunMs = 0;
+      duckRunMs = 0;
     },
     speechActive: () => inSpeech,
     stop() {

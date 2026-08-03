@@ -587,7 +587,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   written path (null on failure) precisely so the popup cannot claim a save
   that did not happen.
 
-## Backseat (260728, rebuilt 260801-260803)
+## Backseat (260728, rebuilt 260801-260804)
 
 The companion watches a screen the player shares and talks about it live.
 **Started from the CALL CONTROLS**, not from the games picker: sharing a screen
@@ -604,8 +604,8 @@ The design and its measurements are committed at
 
 - **Authority split.** The renderer owns pixels and sound: `getDisplayMedia`,
   the ring buffer, grid compositing, the rolling clip recorders, local STT, and
-  two of the three wakes. Main owns the session, EVERY model call, and (on
-  macOS) both native helpers. Contract: `src/shared/backseatIpc.ts`.
+  two of the three wakes. Main owns the session, EVERY model call, the window
+  title, and (on macOS) the audio tap. Contract: `src/shared/backseatIpc.ts`.
 - **Capture runs in the MAIN window (260803).** It used to run in a separate
   always-on-top overlay, because Chromium clamps timers in a hidden or occluded
   renderer and a session runs entirely while the player is inside a fullscreen
@@ -633,11 +633,14 @@ The design and its measurements are committed at
   40 ms to 1.9 s apart while the prompt claimed a second. The clip's own HUD
   proved the fix: one grid's ammo counter reads 5/1/6/6/5/4, resolving a
   reload-and-re-engage that 1 Hz sampling renders as a single frame.
-- **The image grid is IG-VLM (arXiv 2403.18406), reproduced exactly.** SIX
+- **The image grid is IG-VLM (arXiv 2403.18406), reproduced exactly.** Up to SIX
   frames in ONE image, 3 rows x 2 columns, filled row-first. N=6 beat
   4/9/12/16/20 in the paper and near-square grids beat wide ones. The prompt
   describes layout, ordering AND the uneven spacing (`BACKSEAT_CONTRACT`);
   without that the model reads six unrelated pictures instead of six seconds.
+  (Fewer than six when duplicates were dropped, see below; the layout stays
+  near-square at every count and never goes three cells wide, because
+  3 * 602 = 1806 px is past Haiku's 1568 px long edge.)
 - **Grid size is pinned to Haiku, and there is a test for it.** Haiku 4.5 is a
   STANDARD-tier vision model: long edge <= 1568 px AND <= 1568 visual tokens, at
   `ceil(w/28) * ceil(h/28)`. The largest legal 32:27 grid is **1204x1008 (cells
@@ -650,27 +653,30 @@ The design and its measurements are committed at
   AFTER the cache breakpoint, so it never invalidates the prefix. It exists to
   make repetition visible to the model, which became the dominant failure mode
   the moment silence was removed.
-- **Screen text: macOS Vision, tesseract.js as the floor (260802, 260803).** A
-  602x336 cell cannot be read, so anything the player is READING (subtitles, a
-  quest log, a menu, a browser, a price) is invisible to the companion no matter
-  how good the vision model is. A second local pass over the FULL-resolution
-  frame recovers it. macOS runs a bundled Swift helper over
-  `VNRecognizeTextRequest` (`native/mac-ocr`, `src/main/backseat/visionOcr.ts`),
-  everywhere else falls back to a tesseract.js worker. **Measured on the same
-  four Valorant frames: Vision returns whole phrases where Tesseract returns
-  fragments** ("A Site / 1:17 / SIGNATURE ABILITY CHARGED / 410 / 2,150" against
-  "A Site ne i 410 (OPERATOR 100 1"), at ~72 ms on a native 1280x720 frame
-  against ~1000 ms on a 2x upscale Tesseract needs and Vision does not. Over the
-  whole clip: 94/94 frames produced text at 23 words a frame, against 6.
-  `usesLanguageCorrection` is OFF deliberately (this is proper nouns and
-  scoreboard tokens, not prose) and `minimumTextHeight` is dropped to 0.008
-  (the 1/32 default discards most of a HUD). Both engines emit LINES, shaped by
-  one pure module (`screenText.ts`, tested) that filters on confidence, strips
-  junk tokens, collapses repeats and caps at `TICK_SCREEN_TEXT_MAX_WORDS`
-  keeping the FRONT (a screen's headline is at the top; the transcript's
-  opposite rule keeps the tail, because speech is ordered in time). The reading
-  rides the CURRENT tick only: it is never stored with a grid, and the previous
-  grid carries no text.
+- **The share label replaced OCR (260804).** Every tick carries `shareLabel`:
+  the shared window's CURRENT title, or on a whole-screen share the frontmost
+  window's (`src/main/backseat/shareLabel.ts`, polled every 5 s because a tab
+  switch changes the screen under a fixed source id). It costs one window
+  enumeration and it is the model's only cheap answer to "am I watching a game
+  or a film", which was the thing it kept getting wrong.
+  **What it replaced was working, and was removed anyway.** 260802-260803 ran a
+  full OCR pass over every other frame: a bundled Swift `VNRecognizeTextRequest`
+  helper on macOS, tesseract.js elsewhere. It was good — whole phrases at ~72 ms,
+  94/94 frames, 23 words a frame against Tesseract's 6 — and it answered the
+  wrong question. A HUD full of numbers does not distinguish a game from a
+  stream of that game; four words of window title do. Do not re-add OCR without
+  a specific thing it is for that the title cannot carry.
+- **Identical frames are dropped, and the grid shrinks (260804).** Consecutive
+  cells showing the same picture collapse to one, oldest of each run kept, and
+  the canvas is sized to the survivors (`GRID_DUPLICATE_DELTA`, `gridLayout`).
+  A paused video costs **264 visual tokens instead of 1548**; a firefight still
+  costs six cells. The test is `blockMaxDelta` over the 32x18 thumbnail already
+  kept for the colour arm, so a change covering one corner still counts as
+  different. This came from the companion ITSELF asking why it had been shown
+  "six identical YouTube frames" — six identical cells claim six sampled moments
+  and carry the information of one. Because the grid is now variable-size, the
+  tick carries `frameAges` and `tickNote` states them per look: the cached
+  contract can no longer describe the shape.
 - **Audio is gain + transcript, never the model's ears (260728).** Screen sound
   has exactly two consumers, both local: the GAIN jolt arm and a STREAMING STT
   TRANSCRIPT. No audio bytes ever reach a remote model. Whatever the platform
@@ -768,12 +774,44 @@ The design and its measurements are committed at
   persists a user tick's text to the shared chat thread, and `runTurn` drops
   that just-appended tail from history because the canonical copy goes inline
   with the grid attached.
-- **UI (260803).** Entry is the share pill in `CallControls`; the picker is
-  `ShareScreenModal` (a `ModalShell`); the live view is the preview plus a
-  demoted avatar strip inside `VoiceCallScreen`. There is no overlay window, no
-  games tile, no text mode (there is nowhere to type) and no pause button (the
-  share toggle is it). `useBackseatStore.active` still feeds the IconRail
-  activity badge and the cross-launch gate.
+- **UI (260803, 260804).** Entry is the share pill in `CallControls`; the picker
+  is `ShareScreenModal` (a `ModalShell`, **Window / Entire screen as two tabs**
+  since 260804 — stacked sections put the screens below the fold behind however
+  many windows the player had open); the live view is the preview plus a demoted
+  avatar strip inside `VoiceCallScreen`. There is no overlay window, no games
+  tile, no text mode (there is nowhere to type) and no pause button (the share
+  toggle is it). `useBackseatStore.active` still feeds the IconRail activity
+  badge and the cross-launch gate.
+- **THERE IS ONE CONVERSATION, NOT TWO (260804).** While a companion is sharing,
+  `dispatchUserTurn` routes the player's utterance to `capture.sendUserTick`
+  and SKIPS that companion's ordinary voice turn; anyone else on the call still
+  takes one. Without this there were literally two turn loops running against
+  the same chat thread and the same call: backseat's, which had the grid and no
+  microphone, and the director's, which had the microphone and no grid. The
+  player got a companion who could see their screen and never heard them,
+  talking over one who could hear them and could not see. Nothing was broken in
+  either loop — there were two of them and neither knew. **Anything that gives a
+  companion a turn has to check `useBackseatStore.sharingFor` first.** The share
+  is the more informed loop, so it is always the one that wins.
+- **Barge-in is decided by a WORD, not by loudness (260804).** Two stages, with
+  deliberately opposite temperaments. Stage one DUCKS the companion to 8% on one
+  frame over a low bar (~130 ms, against ~400 ms before, and with no 600 ms
+  grace-window blind spot at the start of every clip); it is reversible, which
+  is the entire reason the bar can be that low. Stage two transcribes the
+  ~400 ms collected since the duck and COMMITS only if `hasSpokenWord` says a
+  real word came back, otherwise it un-ducks and the clip carries on. Six rounds
+  of threshold tuning across three separate "cannot interrupt her" / "she cuts
+  herself off" reports never resolved that conflict, because it is structural:
+  energy cannot tell a cough from a word, and a cleared queue cannot be undone.
+  Sustained energy survives only as a slow fallback (`BARGE_CONFIRM_MS`, now
+  1400 ms) for when transcription cannot answer at all. `hasSpokenWord` is
+  stricter than the finished-utterance junk filter — it runs on 400 ms of audio
+  where every engine invents — and it is **scoped to Latin script for the
+  repeated-letter rule**, because 等等 is a word and rejecting it would make
+  barge-in silently impossible in Chinese.
+  A confirmed barge also calls `backseatInterrupt`: clearing the queue only
+  silences what is already synthesised, and the turn behind it would otherwise
+  land its line a second later.
 - **Session log rides the bot log pipeline (260728).** `backseatLog.ts` mirrors
   chessLog: every diagnostic goes through `slog()` to BOTH the terminal and a
   per-session logRouter (`backseat-<characterId>-<ts>.log` + batched IPC into
@@ -788,9 +826,18 @@ The design and its measurements are committed at
   scripts/backseat-sim.ts [--dry]` runs the real clip through the real
   `signals.ts`, the real offsets and the real prompts and writes a voice-over;
   `scripts/backseat-render.ts` turns that run into a review video with the grid,
-  the screen text, and both signal plots beside the footage. The sim CANNOT
+  the share label, and both signal plots beside the footage. The sim CANNOT
   check prompt caching: its stub prefix is ~1.1k tokens and Haiku will not cache
-  below 2048, so cache hits have to be read off a live session's log.
+  below 2048, so cache hits have to be read off a live session's log. **Caching
+  is confirmed live (260803 session): `cacheRead=9017` steady from the second
+  tick, `cacheWrite` near zero.**
+- **Anything the service reads off a tick MUST be in the zod schema in
+  `main/ipc.ts`.** Zod strips undeclared keys, so a field the renderer sends and
+  the schema does not name arrives as `undefined` with no error anywhere.
+  `gridSmall` was in exactly that state from 260802 to 260804: the previous-grid
+  memory shipped, was documented, and never once reached the model, and it was
+  invisible because a null `prevGrid` is a legal state on the first tick of
+  every session.
 - **Continuity + analytics** follow the contracts below: `REMEMBER_TOOL` honored
   inline (single-shot turns, no tool loop), one `event: {kind:'play'}` row at
   `endBackseat` plus `foldIfDue`, and `backseat_started` / `backseat_ended` with
@@ -946,8 +993,7 @@ src/
     apiKeyStore.ts      safeStorage key + getAiBackendKind()
     configStore.ts      <userData>/config.json (Zod-validated, atomic)
     characterStore.ts   local character library
-    backseat/           screen-watch session, salience gate, tick arbitration
-    backseatOverlay.ts  always-on-top overlay window (OWNS the capture renderer)
+    backseat/           screen-watch session, tick arbitration, share label
     auth/               Supabase, PKCE loopback OAuth, session, jwtBridge
     cloud/              proxyClient, credits/billing, cloud character sync, moderation
     updater.ts          electron-updater driver (packaged builds only)

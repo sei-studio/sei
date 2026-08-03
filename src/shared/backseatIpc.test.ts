@@ -18,6 +18,8 @@ import {
   GRID_SPAN_MS,
   GRID_VISUAL_TOKENS,
   GRID_W,
+  gridLayout,
+  gridVisualTokens,
   CAPTURE_H,
   CAPTURE_W,
   IDLE_MAX_MS,
@@ -80,6 +82,48 @@ describe('backseat image grid', () => {
 
   it('spans back to its oldest offset', () => {
     expect(GRID_SPAN_MS).toBe(GRID_OFFSETS_S[0] * 1000);
+  });
+});
+
+describe('gridLayout (duplicate frames dropped, 260804)', () => {
+  it('agrees with the fixed constants at a full six frames', () => {
+    // The six-cell case is still the one GRID_W/GRID_H describe, so the
+    // variable-size path must not have quietly redefined the full grid.
+    const full = gridLayout(6);
+    expect(full).toEqual({ cols: GRID_COLS, rows: GRID_ROWS, w: GRID_W, h: GRID_H });
+    expect(gridVisualTokens(6)).toBe(GRID_VISUAL_TOKENS);
+  });
+
+  it('never exceeds what Haiku can see at any frame count', () => {
+    for (let n = 1; n <= GRID_FRAMES; n++) {
+      const { w, h } = gridLayout(n);
+      expect(Math.max(w, h)).toBeLessThanOrEqual(STANDARD_MAX_LONG_EDGE);
+      expect(gridVisualTokens(n)).toBeLessThanOrEqual(STANDARD_MAX_TOKENS);
+    }
+  });
+
+  it('holds every frame it was asked for', () => {
+    for (let n = 1; n <= GRID_FRAMES; n++) {
+      const { cols, rows } = gridLayout(n);
+      expect(cols * rows).toBeGreaterThanOrEqual(n);
+      // And wastes at most one cell: a layout with a whole empty row would be
+      // paying tokens for black pixels.
+      expect(cols * rows - n).toBeLessThan(cols);
+    }
+  });
+
+  it('gets cheaper as frames are dropped, which is the point', () => {
+    // The saving is the reason this exists: a still screen was costing a full
+    // grid to say nothing. Each step down must actually cost less.
+    for (let n = 2; n <= GRID_FRAMES; n++) {
+      expect(gridVisualTokens(n)).toBeGreaterThanOrEqual(gridVisualTokens(n - 1));
+    }
+    expect(gridVisualTokens(1)).toBeLessThan(GRID_VISUAL_TOKENS / 4);
+  });
+
+  it('clamps rather than throwing on nonsense counts', () => {
+    expect(gridLayout(0)).toEqual(gridLayout(1));
+    expect(gridLayout(99)).toEqual(gridLayout(GRID_FRAMES));
   });
 });
 

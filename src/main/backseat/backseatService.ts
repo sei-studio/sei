@@ -281,13 +281,6 @@ export async function endBackseat(characterId: string): Promise<void> {
   } catch {
     /* tap never ran */
   }
-  try {
-    const { stopVisionOcr } = await import('./visionOcr');
-    stopVisionOcr();
-  } catch {
-    /* the native path never ran */
-  }
-
   void (async () => {
     try {
       const { capture } = await import('../analytics');
@@ -326,6 +319,27 @@ export async function endBackseat(characterId: string): Promise<void> {
     slog(s, `play row failed: ${(err as Error).message}`, true);
   }
   void s.log.close().catch(() => {});
+}
+
+/**
+ * The player started talking over a line that is still generating (260804).
+ *
+ * Without this the barge-in only silences what has already been synthesised:
+ * the turn behind it keeps running and its line arrives a second later, which
+ * is the companion finishing the sentence the player interrupted. The abort is
+ * enough on its own — runTurn checks `s.inflight !== ctrl` after the call and
+ * returns without speaking or persisting.
+ *
+ * Deliberately NOT a phase change. The session stays live and the next tick,
+ * which is almost always the player's own words, runs normally.
+ */
+export function interruptBackseat(characterId: string): void {
+  const s = sessions.get(characterId);
+  if (!s || !s.inflight) return;
+  slog(s, `${s.inflightKind ?? 'idle'} turn aborted: the player started talking`);
+  s.inflight.abort();
+  s.inflight = null;
+  s.inflightKind = null;
 }
 
 /** Drop every session (renderer death/reload — capture cannot outlive it). */
@@ -547,7 +561,8 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     secondsSinceLastLine: s.lastSpokeAt ? (Date.now() - s.lastSpokeAt) / 1000 : null,
     sourceName: s.state.sourceName,
     transcript: tick.transcript,
-    screenText: tick.screenText,
+    shareLabel: tick.shareLabel,
+    frameAges: tick.frameAges,
     secondsSincePrevGrid: prev ? prevAge / 1000 : undefined,
   });
   const strip = (d: string): string => d.replace(/^data:image\/\w+;base64,/, '');
@@ -567,8 +582,11 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     {
       model,
       // Two short lines. A cap this low is itself a register control: it is
-      // hard to write a paragraph in 160 tokens.
-      max_tokens: 160,
+      // hard to write a paragraph in 160 tokens. 260804: a tick the player
+      // SPOKE gets room for a real answer, because this is now the only turn
+      // they get — the director routes their utterance here rather than running
+      // a second, screenless one alongside it.
+      max_tokens: tick.kind === 'user' ? 400 : 160,
       system,
       tools: [SAVE_CLIP_TOOL, REMEMBER_TOOL],
       messages: messages as never,
