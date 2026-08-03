@@ -1424,13 +1424,37 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // macOS system-audio tap (260728): the overlay renderer cannot hear the
   // system on macOS (Chromium loopback is Windows-only, measured), so main
   // spawns the bundled ScreenCaptureKit helper and relays PCM back to it.
-  ipcMain.handle(IpcChannel.backseat.audioStart, async () => {
+  ipcMain.handle(IpcChannel.backseat.audioStart, async (event) => {
     const { startAudioTap } = await import('./backseat/audioTap');
-    return await startAudioTap();
+    // PCM goes back to the renderer that asked, which is by definition the one
+    // running capture (260803, replacing a send to the removed overlay window).
+    return await startAudioTap(event.sender);
   });
   ipcMain.handle(IpcChannel.backseat.audioStop, async () => {
     const { stopAudioTap } = await import('./backseat/audioTap');
     stopAudioTap();
+  });
+  // Screen text (260803): same shape as the audio tap, and for the same reason.
+  // macOS Vision reads a 720p game frame roughly ten times faster and far more
+  // accurately than the tesseract.js worker, but there is no browser API for
+  // it, so main spawns a bundled Swift helper. `false` from ocrStart is the
+  // renderer's signal to use its own worker instead.
+  ipcMain.handle(IpcChannel.backseat.ocrStart, async (_event, langRaw: unknown) => {
+    const language = z.string().max(32).optional().catch(undefined).parse(langRaw);
+    const { startVisionOcr } = await import('./backseat/visionOcr');
+    return await startVisionOcr(language);
+  });
+  ipcMain.handle(IpcChannel.backseat.ocrFrame, async (_event, jpegRaw: unknown) => {
+    if (!(jpegRaw instanceof ArrayBuffer) && !ArrayBuffer.isView(jpegRaw)) return null;
+    const bytes = jpegRaw instanceof ArrayBuffer
+      ? new Uint8Array(jpegRaw)
+      : new Uint8Array(jpegRaw.buffer, jpegRaw.byteOffset, jpegRaw.byteLength);
+    const { recognizeFrame } = await import('./backseat/visionOcr');
+    return await recognizeFrame(bytes);
+  });
+  ipcMain.handle(IpcChannel.backseat.ocrStop, async () => {
+    const { stopVisionOcr } = await import('./backseat/visionOcr');
+    stopVisionOcr();
   });
   ipcMain.handle(IpcChannel.backseat.setPaused, async (_event, argsRaw: unknown) => {
     const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);

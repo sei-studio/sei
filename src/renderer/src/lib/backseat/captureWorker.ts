@@ -51,6 +51,7 @@ import {
   SAMPLE_INTERVAL_MS,
   SAMPLE_TOLERANCE_MS,
   SCREEN_TEXT_INTERVAL_MS,
+  SCREEN_TEXT_JPEG_QUALITY,
   JOLT_COLOR_FLOOR,
   JOLT_COLOR_MAD,
   JOLT_GAIN_DB,
@@ -275,10 +276,15 @@ async function onFrame(frame: VideoFrame): Promise<void> {
   if (wantOcr) {
     lastOcrAt = now;
     ocrBusy = true;
-    // Transferred, not copied: the bitmap is the full frame and it crosses two
-    // thread boundaries (here to the controller, controller to the OCR worker).
-    void createImageBitmap(ocrCanvas!)
-      .then((bitmap) => postTransfer({ type: 'ocr-frame', bitmap, at: now }, [bitmap]))
+    // A JPEG rather than an ImageBitmap (260803): the frame now has two possible
+    // destinations, the macOS Vision helper in MAIN and the tesseract.js worker
+    // in this renderer, and only one of them can be reached with a bitmap.
+    // Encoded bytes cross both boundaries, and the buffer is transferred so the
+    // encode is still not copied.
+    void ocrCanvas!
+      .convertToBlob({ type: 'image/jpeg', quality: SCREEN_TEXT_JPEG_QUALITY })
+      .then((blob) => blob.arrayBuffer())
+      .then((jpeg) => postTransfer({ type: 'ocr-frame', jpeg, at: now }, [jpeg]))
       .catch(() => {
         ocrBusy = false;
       });

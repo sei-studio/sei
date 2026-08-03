@@ -81,7 +81,12 @@ import {
   THUMB_W,
 } from '../src/renderer/src/lib/backseat/signals';
 import { rmsDb } from '../src/renderer/src/lib/backseat/pcm';
-import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, tickNote } from '../src/main/backseat/backseatPrompts';
+import {
+  BACKSEAT_CONTRACT,
+  SAVE_CLIP_TOOL,
+  stripDashes,
+  tickNote,
+} from '../src/main/backseat/backseatPrompts';
 
 // ── Simulation constants ──────────────────────────────────────────────────
 
@@ -637,11 +642,14 @@ async function runTurn(
     messages: messages as never,
   });
 
-  const reply = res.content
-    .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-    .trim();
+  // Through stripDashes, the same post-process the service runs, so the
+  // voice-over reads exactly what a live session would say.
+  const reply = stripDashes(
+    res.content
+      .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n'),
+  );
   // 260802: silence is no longer offered, so this is an instruction being
   // ignored rather than a normal outcome. Still parsed, because the service
   // still parses it (a stray "(silence)" must never reach a voice call), and

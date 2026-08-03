@@ -719,6 +719,45 @@ export const MinimizeIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
+/** ScreenShareIcon — a monitor with an arrow leaving it (start sharing). */
+export const ScreenShareIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 5h18v11H3z" />
+    <path d="M8 20h8" />
+    <path d="M12 9v5" />
+    <path d="M9.5 11.5 12 9l2.5 2.5" />
+  </svg>
+);
+
+/** ScreenShareOffIcon — the same monitor, struck through (stop sharing). */
+export const ScreenShareOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 5h18v11H3z" />
+    <path d="M8 20h8" />
+    <path d="m4 4 16 16" />
+  </svg>
+);
+
 /** FullscreenIcon — corner arrows pointing out (enter app fullscreen). */
 export const FullscreenIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg

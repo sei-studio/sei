@@ -340,11 +340,17 @@ sources, and not a test of how any particular companion sounds.
 - [x] 5b. Thresholds retuned (`260802`): block-max + dual lookback + MAD-relative
       bar + per-arm refractory. Which events are the RIGHT ones is still open.
 - [x] 6. Voice-over run (`4cfe922`); cache hit rates NOT obtainable offline
-- [ ] Mark `.planning/backseat-redesign-260731.md` superseded; commit this file as `.planning/backseat-v2-260801.md`
-- [ ] Update CLAUDE.md "Backseat (260728)" to match
+- [x] Mark `.planning/backseat-redesign-260731.md` superseded; commit this file as `.planning/backseat-v2-260801.md` (`95c7267`)
+- [x] Update CLAUDE.md "Backseat (260728)" to match (`260803` — the section had
+      gone stale two rounds back and described the gate, the argmax ring and the
+      overlay; rewritten whole)
 - [ ] Mirror to `sei-studio/backseat`
 - [x] 260802 round two: silence removed, screen text (OCR) added, colour arm
       made sensitive, previous grid carried as memory, video rebuilt
+- [x] 260803 round three: lines stop narrating (0/10 -> 10/10 asking, median 35
+      -> 20 words, em dashes stripped), OCR moved to macOS Vision, prompts
+      widened past games, overlay window and games tile deleted, sharing moved
+      to the call controls
 
 Checkboxes are ticked in the same commit as the code that satisfies them, so
 `git log` and this list cannot disagree.
@@ -576,6 +582,143 @@ npx tsx scripts/backseat-sim.ts               # the voice-over
 npx tsx scripts/backseat-render.ts            # ~15 min, writes review.mp4
 ```
 
+## Round three (260803), from the second review
+
+Four notes, and the last one is the largest change to this feature since it
+shipped.
+
+### The lines were narration
+
+Removing silence fixed how often the companion spoke and revealed what it was
+saying: "you just got caught", "you just used a skill", "health is dropping."
+Every one of those is true and every one of them describes a screen the player
+is looking at. The note back was exact: *"OBVIOUSLY I know that, I don't need
+you to tell me what I see."*
+
+So the contract gained two paragraphs and lost the assumption underneath it.
+`THE POINT OF A LINE` says the screen is the thing you have in common, not the
+subject, and that the line should carry what the player does NOT have: an
+opinion, a question, a want, a memory. `SAY SOMETHING THEY CAN ANSWER` says the
+line should leave them something to reply to, and that WHICH of those a
+companion reaches for is a matter of personality rather than of the moment.
+
+Abstract instruction alone did not move it. What did was four BAD/GOOD contrast
+pairs written into the contract, one of them deliberately not a game:
+
+```
+BAD:  "You just got caught out in the open with no cover."
+GOOD: "Why were you out there with nothing to hide behind?"
+BAD:  "She just told him she is leaving and he did not argue."
+GOOD: "He was never going to fight for her, was he."
+```
+
+Measured over the same ten looks, before and after:
+
+```
+                        260802        260803
+lines that ask anything    0/10         10/10
+median words                ~35            20
+em dashes                  8/10          0/10
+```
+
+The em dashes are not a prompt result. "Do not use em dashes" had been in the
+contract since 260802 and Haiku ignored it, so `stripDashes` now removes them
+after the fact, replacing each with a full stop or a comma. That matters more
+here than in chat because these lines are SPOKEN, and a dash is not a sound.
+
+10/10 asking a question is itself worth watching. The contract says not every
+line needs a question mark, and the model overshot from one extreme to the
+other. If it reads as an interrogation in a live session, that paragraph is the
+dial.
+
+### OCR got a lot better
+
+The note was "I think OCR can get a lot better than this. Basic OCR." It was
+right, and the fix was to stop using Tesseract on macOS.
+
+Vision (`VNRecognizeTextRequest`) was probed against the shipped tesseract.js
+path on identical frames:
+
+```
+0:14  tesseract  "Orange 50 NG IN"
+      vision     "B Orange / 5 / SPIKE PLANTED / 50 100 / 1,550"
+0:40  tesseract  "A Site ne i 410 (OPERATOR 100 1"
+      vision     "A Site / 1:17 / SIGNATURE ABILITY CHARGED / 410 / 2,150"
+1:28  tesseract  "KILLED BY vio COMBAT 46 55 Team Clin In Deteader Side Spawn"
+      vision     "Sova / KILLED BY / Sova / OUTGOING / 105 / COMBAT REPORT /
+                  INCOMING / 46 / Karasu / In Defender Side Spawn Team /
+                  (Eliminated) / 190 / KILLED / 146"
+
+      ~1000 ms/frame at a 2x upscale      ~72 ms/frame at native 720p
+```
+
+Over the whole clip: 94 of 94 frames produced text at a mean of 23 words,
+against 6. It is ten times faster, an order of magnitude more accurate, and it
+does not need the upscale Tesseract could not work without.
+
+It ships the same way the audio tap does, which is the whole reason it was
+cheap: a small Swift binary (`native/mac-ocr`), built universal by
+`scripts/build-mac-ocr.sh`, spawned by main and spoken to over stdio with a
+length-prefixed frame in and a JSON line out. tesseract.js stays as the fallback
+for Windows and Linux, where the same job wants `Windows.Media.Ocr` and does not
+have it yet.
+
+Two settings were measured rather than defaulted. `usesLanguageCorrection` is
+OFF: this is proper nouns, callouts and scoreboard tokens rather than prose, and
+correction rewrites exactly the names a companion needs verbatim.
+`minimumTextHeight` drops to 0.008, because the 1/32 default discards most of a
+HUD. The confidence floor did not need to move: over 94 frames Vision's
+confidence is effectively trinary, 959 lines came back at 100 and every one of
+the 76 below 60 was garbage, so the existing bar of 60 separates them exactly.
+
+The unit also changed from the WORD to the LINE. Both engines report lines and
+the old shaping threw that away, which invented phrases: "A Site" at the top of
+the screen and "1,550" at the bottom became "A Site SPIKE PLANTED 1,550", a
+sentence nobody wrote. Lines are now joined with ` / ` so the model can see
+where one ends.
+
+On the question asked alongside it, whether OCR text is stored with each grid:
+it never was. The reading rides the CURRENT tick only, and the previous-grid
+memory is an image with no text attached. There was nothing to drop.
+
+### It is not only for games
+
+The contract said "game" throughout, which quietly narrowed the companion to
+sports commentary over a film. Every noun is now about what is on SCREEN: a
+film, a show, a video, a stream, something being made or read or shopped for.
+The idle note no longer names health, ammo and the score as the places to look.
+This is why one of the BAD/GOOD pairs above is a scene from a drama.
+
+### The UI is Discord's, and the overlay is gone
+
+The biggest structural change. Backseat was a tile in "Play together" that
+opened its own always-on-top window. It is now a share button in the call
+controls.
+
+- The **overlay window is deleted** (`src/main/backseatOverlay.ts`,
+  `BackseatOverlay.tsx`, the `?backseat=1` branch in `main.tsx`). With it went
+  text mode, which had nowhere to live, and the pause button, which the share
+  toggle replaces.
+- The **"Backseat" tile is deleted**. Sharing your screen is not a game and does
+  not belong in a grid beside chess.
+- **Capture moved into the main window.** The overlay existed because Chromium
+  clamps timers in an occluded renderer and a session runs behind a fullscreen
+  game. That reason no longer stands alone: the main window already sets
+  `backgroundThrottling: false` for exactly this, and the frame pump is a
+  `MediaStreamTrackProcessor` in a worker, immune either way. `useBackseatStore`
+  owns the capture handle now, which collapsed a two-window state mirror and a
+  push fan-out into one path.
+- **The call window shows the share.** The preview fills the stage and the
+  avatars demote to a small strip with the compact controls, the same move the
+  game surfaces make, so "something else is the main thing now" looks the same
+  everywhere in the app.
+- Sharing **requires a call and ends with one**: hanging up stops it.
+
+What survived unchanged is the cross-launch gate. A companion still cannot watch
+your screen and stand in your Minecraft world at the same time, so
+`activeGameFor` still reports a live share even though nothing launches one from
+the picker any more.
+
 ### Still owed
 
 - **5b:** confirm which jolts are real, ideally on unedited footage. The colour
@@ -585,16 +728,22 @@ npx tsx scripts/backseat-render.ts            # ~15 min, writes review.mp4
   is ~1.1k tokens and Haiku will not cache below 2048. It has to be read off a
   live session's `cacheRead=` / `cacheWrite=` log lines. The previous grid adds
   396 uncached input tokens per tick, which those lines will also show.
-- **Reply length.** 24-55 words against a contract asking for one or two short
-  lines. If that is too much, `max_tokens` (160) and the HOW YOU TALK paragraph
-  are the dials, not the silence option.
-- **Em dashes.** Haiku writes them despite the contract forbidding them. A
-  post-process strip is probably the honest fix.
+- **Every line is now a question (10/10).** Fixed, and possibly overfixed. The
+  contract says not all of them need to be; if a live session reads as an
+  interrogation, `SAY SOMETHING THEY CAN ANSWER` is the dial.
+- **Windows has no native OCR.** `Windows.Media.Ocr` is the equivalent of the
+  Vision helper and would close the same gap on the other platform. Until then
+  Windows runs the tesseract.js fallback, which is measurably much worse.
 - **`tesseract.js` is declared in the worktree's package.json but the lockfile
   is not regenerated.** It was installed into the shared `node_modules` without
   touching either checkout's manifest, because a plain `npm install` in a
   worktree tries a full rebuild and dies on the `gl` native override. `npm
   install` in the primary checkout is owed before this branch merges.
-- **Screen text is not bundled.** Like the Whisper model it downloads on first
-  use. Worth deciding whether that is acceptable for a feature that runs
-  silently in the background.
+- **The tesseract fallback is not bundled.** Like the Whisper model it
+  downloads on first use. It matters less than it did (macOS never reaches it),
+  but it is still the Windows path.
+- **The removed overlay is not re-verified live.** Capture running in the main
+  window behind a fullscreen game is argued from `backgroundThrottling: false`
+  and the worker frame pump, both of which were already true, but it has not
+  been watched in a real session. The signals log line every 10 s is what to
+  check.

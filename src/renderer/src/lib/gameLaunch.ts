@@ -57,10 +57,12 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
   if (draw && draw.phase !== 'gallery' && draw.phase !== 'setup') {
     return { id: 'draw', name: 'Draw!' };
   }
-  // Backseat has no panel of its own in the app: the session IS the overlay
-  // window, so "active" is simply whether main reports a live session.
+  // A screen share is not launched from the picker any more (260803: it is a
+  // call control), but it still counts as active here, because the gate's real
+  // job is the one exclusion that is physical: a companion cannot be watching
+  // your screen and standing in your Minecraft world at the same time.
   if (useBackseatStore.getState().active[characterId]) {
-    return { id: 'backseat', name: 'Backseat' };
+    return { id: 'backseat', name: 'Screen share' };
   }
   const summon = useDataStore.getState().summons[characterId]?.kind;
   if (summon === 'online' || summon === 'connecting') {
@@ -128,9 +130,8 @@ async function maybeOfferSkinSetup(): Promise<void> {
  * cross-launch confirm has already ended it by the time this runs.
  */
 export function openGame(characterId: string, gameId: LaunchGameId): void {
-  // Backseat opens no surface here at all. Its entry point is the share picker
-  // inside the games popup, and once started its only UI is the always-on-top
-  // overlay window, so there is nothing to mount in the app.
+  // A screen share has no surface to open here. Nothing routes to it any more
+  // either: its entry point is the call controls' share button, not a tile.
   if (gameId === 'backseat') return;
 
   // Draw! is a full-page route of its own rather than a panel in the chat

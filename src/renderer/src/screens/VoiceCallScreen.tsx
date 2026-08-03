@@ -25,6 +25,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
+import { useBackseatStore } from '../lib/stores/useBackseatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { isHomeCharacter } from '../lib/homeLibrary';
@@ -209,6 +210,24 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
     void startCall(characterId);
   }, [gate, characterId, startCall]);
 
+  // Screen share (260803). While it runs, this window shows the picture and the
+  // people shrink to a strip under it, the same demotion the game surfaces do.
+  const shareStream = useBackseatStore((s) => s.stream);
+  const shareSourceName = useBackseatStore((s) => s.sourceName);
+  const sharing = shareStream !== null;
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    // srcObject rather than a src: the preview is a second sink on the same
+    // live tracks capture is already reading, not a copy of anything.
+    el.srcObject = shareStream;
+    if (shareStream) void el.play().catch(() => {});
+    return () => {
+      el.srcObject = null;
+    };
+  }, [shareStream]);
+
   const theme: 'light' | 'dark' = resolvedScheme();
 
   const companionName = character?.name ?? 'Companion';
@@ -360,10 +379,87 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           picker mid-call. ── */}
       <ChatTopBar characterId={characterId} />
 
-      <div className={styles.stage}>
+      <div className={sharing ? `${styles.stage} ${styles.stageSharing}` : styles.stage}>
         {installOverlay}
         {pickerOverlay}
 
+        {sharing ? (
+          <>
+            {/* The shared picture is the content now. */}
+            <div className={styles.share}>
+              <video ref={videoRef} className={styles.shareVideo} autoPlay muted playsInline />
+              <span className={styles.shareLabel}>
+                <span className={styles.shareDot} aria-hidden="true" />
+                Sharing {shareSourceName ?? 'your screen'}
+              </span>
+            </div>
+
+            {/* Captions stay available while sharing: with the avatars this
+                small, they are the only visible trace of what was said. */}
+            {captionsOn && (lastSpoken || lastHeard) ? (
+              <div className={styles.captions} aria-live="polite">
+                {lastSpoken ? <p className={styles.captionCompanion}>{lastSpoken}</p> : null}
+                {lastHeard ? <p className={styles.captionUser}>You: {lastHeard}</p> : null}
+              </div>
+            ) : null}
+
+            {/* The demoted call cluster: small round tiles, no names, the same
+                compact pills the in-game chrome row uses. */}
+            <div className={styles.miniBar}>
+              <div className={styles.miniTiles}>
+                {participants.map((id) => {
+                  const c = characters.find((x) => x.id === id);
+                  const isSpeaking = speakingId === id;
+                  const pal = pickPalette((c?.id ?? '') + (c?.name ?? ''), theme);
+                  return (
+                    <span
+                      key={id}
+                      className={`${styles.miniTile} ${
+                        isSpeaking
+                          ? styles.miniTileSpeaking
+                          : isGroup
+                            ? styles.miniTileIdle
+                            : ''
+                      }`}
+                      title={c?.name ?? 'Companion'}
+                    >
+                      {c ? (
+                        <PixelPortrait
+                          seed={c.id + c.name}
+                          palette={pal}
+                          size={34}
+                          portraitImage={c.portrait_image}
+                          style={{ width: '100%', height: '100%' }}
+                        />
+                      ) : (
+                        <UserIcon size={16} />
+                      )}
+                    </span>
+                  );
+                })}
+                <span
+                  className={`${styles.miniTile} ${
+                    userSpeaking && !muted ? styles.miniTileSpeaking : muted ? styles.miniTileIdle : ''
+                  }`}
+                  title={userName}
+                >
+                  {userAvatarSrc ? (
+                    <img
+                      src={userAvatarSrc}
+                      alt=""
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <UserIcon size={16} />
+                  )}
+                </span>
+              </div>
+              <CallControls size="sm" onHangUp={() => navigate({ kind: 'chat', characterId })} />
+              <span className={styles.miniSubtitle}>{subtitle}</span>
+            </div>
+          </>
+        ) : (
+          <>
         {/* Participant cluster (260706): every companion on the call, lit while
           speaking and dimmed while idle (per-companion speaking state), plus the
           user's own avatar beside them, and a "＋" tile to add another. */}
@@ -486,6 +582,8 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
       <div className={styles.controls}>
         <CallControls onHangUp={() => navigate({ kind: 'chat', characterId })} />
       </div>
+          </>
+        )}
       </div>
     </div>
   );

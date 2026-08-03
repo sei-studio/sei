@@ -139,7 +139,10 @@ export type Modal =
       fromId: 'chess' | 'minecraft' | 'draw' | 'backseat';
       fromName: string;
       toName: string;
-    };
+    }
+  // 260803 — the screen-share source picker, opened from the call controls.
+  // Not a games-picker panel any more: sharing is a call feature, not a game.
+  | { kind: 'share-screen'; characterId: string };
 
 /**
  * B4 — which tab CharactersScreen should open on. The compass icon in the

@@ -54,15 +54,11 @@ export const GAMES: GameDef[] = [
       `Take turns sketching and guessing with ${name}. ` +
       `Whoever is guessing types in the chat, and any sentence with the word in it counts.`,
   },
-  {
-    id: 'backseat',
-    name: 'Backseat',
-    available: true,
-    image: './img/game-backseat.svg',
-    description: (name) =>
-      `Share a window and ${name} watches you play, reacting as it happens and ` +
-      `saying what they want to see you try next. Works with any game.`,
-  },
+  // 260803: the "Backseat" tile is gone. Sharing your screen is not a game and
+  // it does not belong in a grid beside chess: it is something you do on a
+  // call, so it moved to the call controls' share button (CallControls.tsx),
+  // where it works the way Discord's does. The session type still exists
+  // everywhere else, including the cross-launch gate.
   {
     id: 'focus',
     name: 'Focus',

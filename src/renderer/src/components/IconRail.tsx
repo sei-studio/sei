@@ -183,9 +183,10 @@ export interface ActivityBadgeStores {
    * store's snapshots are telemetry keyed off this same session. */
   summons: Readonly<Record<string, { kind: string } | undefined>>;
   /** useBackseatStore.active — characterId → true while watching a screen
-   * share (260728). Backseat mounts no panel in the app (its whole UI is the
-   * always-on-top overlay window), so this flag is the ONLY signal the rail
-   * has that the character is busy. */
+   * share (260728). The share mounts no panel in the chat game area: it is
+   * drawn inside the call view (260803; before that, its own always-on-top
+   * window), so this flag is the ONLY signal the rail has that the character
+   * is busy with one. */
   backseat?: Readonly<Record<string, boolean | undefined>>;
 }
 

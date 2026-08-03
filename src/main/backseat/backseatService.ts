@@ -55,7 +55,7 @@ import { clampChatLanguage } from '../../shared/chatLanguage';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import * as chatStore from '../chat/chatStore';
 import type { LogBatch } from '../../shared/ipc';
-import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, tickNote } from './backseatPrompts';
+import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, stripDashes, tickNote } from './backseatPrompts';
 import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
 
 /**
@@ -172,12 +172,6 @@ function slog(s: Session, msg: string, warn = false): void {
   s.log.line(msg);
 }
 
-/** Overlay-renderer console lines (signals, jolts, gate scheduling) forwarded
- *  by backseatOverlay's console-message hook into the session log. */
-export function appendOverlayLog(characterId: string, message: string): void {
-  sessions.get(characterId)?.log.line(message);
-}
-
 export function getBackseatState(characterId: string): BackseatState | null {
   return sessions.get(characterId)?.state ?? null;
 }
@@ -221,11 +215,9 @@ export async function startBackseat(
   };
   sessions.set(characterId, s);
   slog(s, `session start: mode=${mode}, source="${sourceName}"`);
-  // The overlay window is not decoration: it is the renderer that owns the
-  // capture pipeline, because it is the only one guaranteed to stay visible
-  // (and therefore unthrottled) while the player is in a fullscreen game.
-  const { openBackseatOverlay } = await import('../backseatOverlay');
-  openBackseatOverlay({ characterId, sourceId, mode });
+  // 260803: main no longer opens a window here. The renderer starts capture
+  // itself right after this resolves (useBackseatStore.share), which is what
+  // lets the share be a call control rather than a launch.
   push(s);
 
   void (async () => {
@@ -284,16 +276,16 @@ export async function endBackseat(characterId: string): Promise<void> {
     `session end: ${Math.round(durationMs / 1000)}s, ${lineCount} line(s) said`,
   );
   try {
-    const { closeBackseatOverlay } = await import('../backseatOverlay');
-    closeBackseatOverlay();
-  } catch {
-    /* the window may already be gone */
-  }
-  try {
     const { stopAudioTap } = await import('./audioTap');
     stopAudioTap();
   } catch {
     /* tap never ran */
+  }
+  try {
+    const { stopVisionOcr } = await import('./visionOcr');
+    stopVisionOcr();
+  } catch {
+    /* the native path never ran */
   }
 
   void (async () => {
@@ -601,11 +593,15 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
 
   await honorRemember(s, res.content);
 
-  const replyText = res.content
-    .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-    .trim();
+  // stripDashes because asking did not work: the contract has forbidden em
+  // dashes since 260802 and the model still writes them in most lines, and
+  // these lines are spoken aloud where a dash has no sound.
+  const replyText = stripDashes(
+    res.content
+      .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n'),
+  );
 
   // 260802: silence is no longer an outcome the prompts offer, so reaching here
   // means the model ignored an explicit instruction (or returned nothing at

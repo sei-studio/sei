@@ -30,9 +30,12 @@ import {
   nextIdleDelayMs,
   SCREEN_TEXT_STALE_MS,
   STT_SAMPLE_RATE,
+  TICK_SCREEN_TEXT_MAX_WORDS,
   type BackseatTickKind,
+  type OcrLine,
 } from '../../../../shared/backseatIpc';
 import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
+import { shapeScreenText } from './screenText';
 import { createSttStream, type SttStream } from './sttStream';
 
 /**
@@ -74,6 +77,13 @@ interface Grid {
 }
 
 export interface CaptureHandle {
+  /**
+   * The shared stream, for the preview in the call window (260803). Handing the
+   * same MediaStream to a <video> costs nothing: a track feeds any number of
+   * sinks, which is already how the clip recorders and the frame processor
+   * coexist. The preview is a consumer, never the source of anything.
+   */
+  stream: MediaStream;
   stop: () => void;
   setPaused: (paused: boolean) => void;
   /** Latch a grid ending now, to ride along with the message being composed. */
@@ -356,26 +366,58 @@ export async function startCapture(
   }
 
   const worker = new Worker(new URL('./captureWorker.ts', import.meta.url), { type: 'module' });
-  // Screen text runs in its OWN worker: Tesseract is synchronous WASM and takes
-  // around a second, which next to the frame loop would stall the ring and put
-  // every grid cell off its offset.
-  const ocr = new Worker(new URL('./ocrWorker.ts', import.meta.url), { type: 'module' });
+
+  // The session's language, read once. It picks the OCR recognition language as
+  // well as the STT one, so it has to be known before either starts.
+  let language = 'en';
+  try {
+    const cfg = (await sei.getConfig()) as { chat_language?: string } | null;
+    if (cfg?.chat_language) language = cfg.chat_language;
+  } catch {
+    /* English is the right default */
+  }
+
+  // ── Screen text ─────────────────────────────────────────────────────────
+  // What the player is READING, which a 602x336 grid cell cannot show. Two
+  // engines behind one shaping (screenText.ts), so the reading the model gets
+  // has the same structure whichever ran:
+  //
+  //   macOS      the bundled Vision helper, which lives in MAIN because there
+  //              is no browser API for it. ~100 ms on a native 720p frame, and
+  //              it reads whole phrases (visionOcr.ts records the comparison).
+  //   elsewhere  tesseract.js, in a worker of its OWN: it is synchronous WASM
+  //              taking around a second, and running it beside the frame loop
+  //              would stall the ring and put every grid cell off its offset.
+  let nativeOcr = false;
+  try {
+    nativeOcr = await sei.backseatOcrStart(language);
+  } catch {
+    nativeOcr = false;
+  }
+  const ocr = nativeOcr
+    ? null
+    : new Worker(new URL('./ocrWorker.ts', import.meta.url), { type: 'module' });
+  console.log(`[backseat] screen text engine: ${nativeOcr ? 'macOS Vision' : 'tesseract'}`);
+
   /** The most recent reading, with the capture time of the frame it came from.
    *  A tick reads this rather than waiting on a recognition. */
   let screenText: { at: number; text: string } | null = null;
-  ocr.onmessage = (e: MessageEvent): void => {
-    const m = e.data as
-      | { type: 'text'; at: number; text: string; ms: number }
-      | { type: 'error'; at: number; message: string };
-    if (m.type === 'text') {
-      screenText = m.text ? { at: m.at, text: m.text } : null;
-      console.log(`[backseat] screen text (${m.ms}ms): ${m.text || '-'}`);
-    } else {
-      console.warn(`[backseat] ocr failed: ${m.message}`);
-    }
-    // Either way the worker is free, so the capture loop may hand it another.
-    worker.postMessage({ type: 'ocr-done' });
+  const acceptReading = (at: number, lines: OcrLine[], ms: number): void => {
+    const text = shapeScreenText(lines, TICK_SCREEN_TEXT_MAX_WORDS);
+    screenText = text ? { at, text } : null;
+    console.log(`[backseat] screen text (${ms}ms): ${text || '-'}`);
   };
+  if (ocr) {
+    ocr.onmessage = (e: MessageEvent): void => {
+      const m = e.data as
+        | { type: 'lines'; at: number; lines: OcrLine[]; ms: number }
+        | { type: 'error'; at: number; message: string };
+      if (m.type === 'lines') acceptReading(m.at, m.lines, m.ms);
+      else console.warn(`[backseat] ocr failed: ${m.message}`);
+      // Either way the worker is free, so the capture loop may hand it another.
+      worker.postMessage({ type: 'ocr-done' });
+    };
+  }
   /** What a tick carries, or undefined when there is no fresh reading. Stale
    *  text is dropped rather than sent: a menu the player closed five looks ago
    *  is worse than no text at all. */
@@ -400,13 +442,6 @@ export async function startCapture(
   // The transcript ring runs for the whole session; the same 16 kHz mono PCM
   // drives the gain signal in ~32 ms windows, so every frame the worker sees
   // has a loudness reading about as fresh as the old analyser gave it.
-  let language = 'en';
-  try {
-    const cfg = (await sei.getConfig()) as { chat_language?: string } | null;
-    if (cfg?.chat_language) language = cfg.chat_language;
-  } catch {
-    /* English is the right default */
-  }
   const stt: SttStream = createSttStream({ language });
   const pipeline = startAudioPipeline(audioSource, stream, (pcm) => {
     stt.push(pcm);
@@ -562,7 +597,7 @@ export async function startCapture(
           colorDelta: number | null;
           colorThr: number | null;
         }
-      | { type: 'ocr-frame'; bitmap: ImageBitmap; at: number }
+      | { type: 'ocr-frame'; jpeg: ArrayBuffer; at: number }
       | {
           type: 'stats';
           fps: number | null;
@@ -582,9 +617,10 @@ export async function startCapture(
       return;
     }
     if (msg.type === 'stats') {
-      // Every 10 s, so "are the signals alive" is answerable from the console
-      // (forwarded to the terminal in dev by backseatOverlay.ts). gain vs base
-      // is what the gain jolt arms on; colorDelta is what the colour arm sees.
+      // Every 10 s, so "are the signals alive" is answerable from the devtools
+      // console of the main window (260803: capture runs here now, so these are
+      // reachable without the overlay's console relay). gain vs base is what the
+      // gain jolt arms on; colorDelta is what the colour arm sees.
       console.log(
         `[backseat] signals: ${msg.fps ?? '?'}fps, ${msg.eps ?? '?'} encodes/s, ${msg.samples} samples, ` +
           `gain ${msg.gainDb}dB vs base ${msg.baseDb}dB (jolt at +${JOLT_GAIN_DB}), ` +
@@ -593,14 +629,29 @@ export async function startCapture(
       return;
     }
     if (msg.type === 'ocr-frame') {
-      // Straight through, transferred again: the controller is only here
-      // because two workers cannot address each other directly.
       if (paused || stopped) {
-        msg.bitmap.close();
         worker.postMessage({ type: 'ocr-done' });
         return;
       }
-      ocr.postMessage({ type: 'frame', bitmap: msg.bitmap, at: msg.at }, [msg.bitmap]);
+      if (ocr) {
+        // Straight through, transferred again: the controller is only here
+        // because two workers cannot address each other directly.
+        ocr.postMessage({ type: 'frame', jpeg: msg.jpeg, at: msg.at }, [msg.jpeg]);
+        return;
+      }
+      // Native path: main owns the helper process. Timed here rather than in
+      // the helper so the number includes the IPC round trip, which is what the
+      // cadence actually has to fit inside.
+      const started = Date.now();
+      void sei
+        .backseatOcrFrame(msg.jpeg)
+        .then((lines) => {
+          if (lines) acceptReading(msg.at, lines, Date.now() - started);
+        })
+        .catch(() => {
+          /* a missed reading is a tick without text, never a broken session */
+        })
+        .finally(() => worker.postMessage({ type: 'ocr-done' }));
       return;
     }
     if (msg.type === 'jolt') {
@@ -702,6 +753,7 @@ export async function startCapture(
   });
 
   const handle: CaptureHandle = {
+    stream,
     stop: () => {
       if (stopped) return;
       stopped = true;
@@ -721,8 +773,12 @@ export async function startCapture(
         }
       });
       worker.postMessage({ type: 'stop' });
-      ocr.postMessage({ type: 'stop' });
-      window.setTimeout(() => ocr.terminate(), 250);
+      if (ocr) {
+        ocr.postMessage({ type: 'stop' });
+        window.setTimeout(() => ocr.terminate(), 250);
+      } else {
+        void sei.backseatOcrStop().catch(() => {});
+      }
       // Give the worker a beat to close its bitmaps before the thread dies.
       window.setTimeout(() => worker.terminate(), 250);
       stream.getTracks().forEach((t) => t.stop());

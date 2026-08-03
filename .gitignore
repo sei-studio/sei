@@ -50,7 +50,9 @@ ARCHITECTURE.md
 
 # (the proxy server + supabase/ backend moved to the private sei-proxy repo)
 
+# Compiled Swift helpers (built by scripts/build-mac-*.sh on predev/predist).
 resources/audio-tap/
+resources/mac-ocr/
 
 # Offline backseat sim output (frame banks, grids, voice-overs).
 .backseat-sim/

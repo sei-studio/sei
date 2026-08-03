@@ -260,13 +260,36 @@ export const SCREEN_TEXT_INTERVAL_MS = 2_000;
  *  text describing a menu the player closed. */
 export const SCREEN_TEXT_STALE_MS = 10_000;
 /**
- * How much the frame is upscaled before OCR. Measured, not guessed: HUD text at
- * 720p is around 12 px tall, well under what Tesseract reads comfortably, and
- * 2x is where map callouts and counters start surviving on the Valorant clip.
- * 3x found nothing more and cost roughly twice the time
- * (scripts/backseat-ocr.ts records the probe).
+ * How much the frame is upscaled before OCR, on the TESSERACT path only.
+ * Measured, not guessed: HUD text at 720p is around 12 px tall, well under what
+ * Tesseract reads comfortably, and 2x is where map callouts and counters start
+ * surviving on the Valorant clip. 3x found nothing more and cost roughly twice
+ * the time (scripts/backseat-ocr.ts records the probe).
+ *
+ * The macOS Vision path (native/mac-ocr) does NOT use this: it reads the same
+ * text off the native 1280x720 frame, which is most of why it is ten times
+ * faster.
  */
 export const SCREEN_TEXT_SCALE = 2;
+/**
+ * JPEG quality for the frame handed to OCR, against GRID_QUALITY's 0.72 for the
+ * cells. Higher on purpose: this frame is read for characters rather than for
+ * shapes, and JPEG ringing around small glyphs is exactly what costs a
+ * recognition its confidence.
+ */
+export const SCREEN_TEXT_JPEG_QUALITY = 0.92;
+/**
+ * One line of text as an OCR engine reports it, `confidence` 0..100.
+ *
+ * Shared because two engines produce it in two processes: the macOS Vision
+ * helper (main, src/main/backseat/visionOcr.ts) and tesseract.js (renderer
+ * worker). Both feed the SAME shaping in screenText.ts, which is what keeps the
+ * reading the model sees identical in structure whichever path ran.
+ */
+export interface OcrLine {
+  text: string;
+  confidence: number;
+}
 /**
  * Word cap on the text a tick carries, the context-management dial.
  *

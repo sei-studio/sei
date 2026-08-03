@@ -46,6 +46,7 @@ import type {
   BackseatSource,
   BackseatState,
   BackseatTick,
+  OcrLine,
 } from './backseatIpc';
 export type {
   BackseatLine,
@@ -53,6 +54,7 @@ export type {
   BackseatSource,
   BackseatState,
   BackseatTick,
+  OcrLine,
 } from './backseatIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 export type {
@@ -1386,6 +1388,13 @@ export interface RendererApi {
    *  onBackseatPcm. Null when the tap cannot run on this machine. */
   backseatAudioStart(): Promise<{ sampleRate: number; channels: number } | null>;
   backseatAudioStop(): Promise<void>;
+  /** macOS only: start the bundled Vision screen-text helper (260803). False
+   *  anywhere it cannot run, which puts the renderer on tesseract.js instead. */
+  backseatOcrStart(language?: string): Promise<boolean>;
+  /** Read one full-resolution JPEG frame. Null when the native path is not
+   *  running or did not answer; the caller treats that as no reading. */
+  backseatOcrFrame(jpeg: ArrayBuffer): Promise<OcrLine[] | null>;
+  backseatOcrStop(): Promise<void>;
   backseatSetPaused(characterId: string, paused: boolean): Promise<void>;
   /** Answer to a backseat:clip-request; null when no segment was available. */
   backseatSaveClip(characterId: string, requestId: string, webmBase64: string | null): Promise<void>;
@@ -2346,6 +2355,12 @@ export const IpcChannel = {
     /** macOS system-audio tap lifecycle (main spawns the bundled helper). */
     audioStart: 'backseat:audio-start',
     audioStop: 'backseat:audio-stop',
+    /** macOS Vision screen-text lifecycle + one-frame recognition (260803).
+     *  ocrStart answers false wherever the native path cannot run, and the
+     *  renderer falls back to its tesseract.js worker. */
+    ocrStart: 'backseat:ocr-start',
+    ocrFrame: 'backseat:ocr-frame',
+    ocrStop: 'backseat:ocr-stop',
     /** Push: raw tap PCM to the overlay renderer (ArrayBuffer payload). */
     pcm: 'backseat:pcm',
     /** Push: full BackseatState on every change. */

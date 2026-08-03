@@ -21,7 +21,6 @@ import path from 'node:path';
 import { app } from 'electron';
 import { IpcChannel } from '../../shared/ipc';
 import { TAP_SAMPLE_RATE, TAP_CHANNELS } from '../../shared/backseatIpc';
-import { sendToBackseatOverlay } from '../backseatOverlay';
 
 /** How long to wait for the helper's "ready" line before calling it dead.
  *  SCK setup is normally well under a second; a hang here is a TCC refusal. */
@@ -47,7 +46,9 @@ function helperPath(): string {
  * format once audio actually flows, or null when the tap cannot run here —
  * the renderer treats null as "no system audio on this machine".
  */
-export async function startAudioTap(): Promise<{ sampleRate: number; channels: number } | null> {
+export async function startAudioTap(
+  sender: Electron.WebContents,
+): Promise<{ sampleRate: number; channels: number } | null> {
   if (process.platform !== 'darwin') return null;
   stopAudioTap();
 
@@ -114,7 +115,13 @@ export async function startAudioTap(): Promise<{ sampleRate: number; channels: n
         pendingBytes = 0;
         // Copy into a fresh ArrayBuffer: Buffer pools share backing stores,
         // and structured clone would otherwise ship the whole pool slab.
-        sendToBackseatOverlay(IpcChannel.backseat.pcm, new Uint8Array(batch).buffer);
+        //
+        // 260803: back to whichever renderer ASKED for the tap, rather than to
+        // a named overlay window that no longer exists. The requester is by
+        // definition the one running capture.
+        if (!sender.isDestroyed()) {
+          sender.send(IpcChannel.backseat.pcm, new Uint8Array(batch).buffer);
+        }
       }
     });
 

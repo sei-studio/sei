@@ -26,11 +26,6 @@ import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
-import {
-  initBackseatOverlay,
-  closeBackseatOverlay,
-  sendToBackseatOverlay,
-} from './backseatOverlay';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater } from './updater';
 import { initNotices } from './notices';
@@ -131,7 +126,6 @@ function sweepVoiceCalls(): void {
   clearAllCalls();
   // The overlay belongs to the call the (now-gone) renderer was driving.
   closeCallOverlay();
-  closeBackseatOverlay();
   // Backseat capture lives entirely in the renderer (getDisplayMedia, the
   // ring buffer, the recorders), so a renderer that navigated or died has
   // taken the session's eyes with it. Leaving the session open would keep
@@ -682,10 +676,6 @@ async function bootstrap(): Promise<void> {
   // target so it can load the overlay-mode bundle.
   initCallOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
 
-  // Backseat overlay (260728): same idea, but that window is interactive and it
-  // OWNS the screen-share capture, so it needs the same bundle target.
-  initBackseatOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
-
   // 3. LAN watcher (D-21 — single instance for the whole app session)
   lanWatcherHandle = watchLan({
     onUpdate: broadcastLan,
@@ -835,24 +825,22 @@ async function bootstrap(): Promise<void> {
   // harvested clip cross to main.
   {
     const { initBackseatService } = await import('./backseat/backseatService');
-    // Lines and clip requests go to the OVERLAY window: it owns the capture
-    // pipeline and draws the mini chat, and it is the window that stays alive
-    // while the player is in a game. STATE goes to BOTH windows — the main
-    // window's useBackseatStore needs the 'ended' push, or stopping from the
-    // overlay leaves the IconRail's game badge lit forever (260728 live). Chat
-    // messages still take the ordinary chat channel so the transcript is
-    // complete.
+    // 260803: every push goes to the MAIN window, because there is no other
+    // one. The always-on-top overlay is gone: sharing is a call feature now and
+    // its capture runs in the main renderer, which already has
+    // backgroundThrottling off for exactly this reason (windowChrome.ts). That
+    // collapses what used to be a fan-out to two windows, one of which owned
+    // capture and one of which owned the badge. Chat messages still take the
+    // ordinary chat channel so the transcript is complete.
+    const toRenderer = (channel: string, payload: unknown): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+    };
     initBackseatService({
-      pushState: (state) => {
-        sendToBackseatOverlay(IpcChannel.backseat.state, state);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(IpcChannel.backseat.state, state);
-        }
-      },
+      pushState: (state) => toRenderer(IpcChannel.backseat.state, state),
       pushLine: (characterId, line) =>
-        sendToBackseatOverlay(IpcChannel.backseat.line, { characterId, ...line }),
+        toRenderer(IpcChannel.backseat.line, { characterId, ...line }),
       requestClip: (characterId, requestId) =>
-        sendToBackseatOverlay(IpcChannel.backseat.clipRequest, { characterId, requestId }),
+        toRenderer(IpcChannel.backseat.clipRequest, { characterId, requestId }),
       pushChatMessage,
       isCallActive,
       // Session logs ride the same batched channel as bot/chess/draw logs, so

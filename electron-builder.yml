@@ -167,9 +167,17 @@ mac:
   # picks Mach-O executables in Resources up for hardened signing, and the
   # notarization pass covers it (USER-ACTION: on the first mac dist, verify
   # with `codesign -dv --verbose Sei.app/Contents/Resources/audio-tap/sei-audio-tap`).
+  #
+  # 260803 backseat: the Vision screen-text helper (native/mac-ocr, built by
+  # scripts/build-mac-ocr.sh, also UNIVERSAL). It reads what is written on the
+  # shared screen roughly ten times faster and far more accurately than the
+  # tesseract.js worker it replaces on macOS; every other platform keeps that
+  # worker. Same signing story as the tap above.
   extraResources:
     - from: resources/audio-tap
       to: audio-tap
+    - from: resources/mac-ocr
+      to: mac-ocr
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
     # Voice calls (260707): the TCC prompt string macOS shows the first time Sei

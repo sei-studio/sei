@@ -1,8 +1,9 @@
 /**
- * Backseat share picker — swaps into the games popup's existing frame, so it
- * inherits the modal's padding and background and only styles its own body.
+ * Screen-share source picker (260803) — the body of a ModalShell, so the shell
+ * owns the scrim, the panel, the title and the footer and this styles only the
+ * source list. Before 260803 the same list swapped into the games popup's
+ * frame, which is why it has never carried a surface of its own.
  */
-
 .root {
   display: flex;
   flex-direction: column;
@@ -10,46 +11,6 @@
   min-height: 0;
   /* The popup is a fixed frame; the source list is what scrolls. */
   max-height: 68vh;
-}
-
-.header {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-sm);
-}
-
-.back {
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  margin-top: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
-  background: transparent;
-  color: var(--text-2);
-  font-family: var(--sans);
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 120ms var(--ease), color 120ms var(--ease);
-}
-
-.back:hover {
-  background: var(--accent-soft);
-  color: var(--text);
-}
-
-.headings {
-  min-width: 0;
-}
-
-.title {
-  margin: 0;
-  font-family: var(--display);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--heading);
 }
 
 .sub {
@@ -156,55 +117,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.footer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  padding-top: var(--space-sm);
-  border-top: 1px solid var(--border);
-}
-
-.modes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-sm);
-}
-
-.mode {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  background: var(--surface-2);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 120ms var(--ease), background 120ms var(--ease);
-}
-
-.mode:hover {
-  border-color: var(--accent);
-}
-
-.modeOn {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.modeName {
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.modeHint {
-  font-family: var(--sans);
-  font-size: 11px;
-  color: var(--muted);
 }
 
 .error {
