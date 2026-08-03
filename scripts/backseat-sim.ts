@@ -38,7 +38,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import sharp from 'sharp';
@@ -54,7 +54,12 @@ import {
   GRID_W,
   IDLE_MAX_MS,
   IDLE_MIN_MS,
-  JOLT_COLOR_DELTA,
+  JOLT_COLOR_FLOOR,
+  PREV_GRID_H,
+  PREV_GRID_MAX_AGE_MS,
+  PREV_GRID_W,
+  SCREEN_TEXT_STALE_MS,
+  JOLT_COLOR_MAD,
   JOLT_GAIN_DB,
   JOLT_REFRACTORY_MS,
   MIN_SPEAK_GAP_MS,
@@ -67,6 +72,7 @@ import {
 import {
   baselineGain,
   colorDelta,
+  colorThreshold,
   createJoltState,
   decideJolt,
   pushGain,
@@ -117,7 +123,8 @@ const DRY = flag('dry');
 const SEED = Number(opt('seed', '7'));
 const TH = {
   gainDb: Number(opt('gain', String(JOLT_GAIN_DB))),
-  colorDelta: Number(opt('color', String(JOLT_COLOR_DELTA))),
+  colorMad: Number(opt('colormad', String(JOLT_COLOR_MAD))),
+  colorFloor: Number(opt('colorfloor', String(JOLT_COLOR_FLOOR))),
   refractoryMs: Number(opt('refractory', String(JOLT_REFRACTORY_MS))),
 };
 const OUT = path.resolve(opt('out', path.join('.backseat-sim', path.parse(VIDEO).name)));
@@ -206,6 +213,9 @@ interface Step {
   gainDb: number;
   baseDb: number;
   colorDelta: number | null;
+  /** The bar the colour arm had to clear at this instant. It moves with the
+   *  screen (signals.colorThreshold), so the delta alone means nothing. */
+  colorThr: number;
 }
 interface JoltEvent {
   t: number;
@@ -213,6 +223,7 @@ interface JoltEvent {
   gainDb: number;
   baseDb: number;
   colorDelta: number | null;
+  colorThr: number;
 }
 
 /**
@@ -265,11 +276,15 @@ function signalTimeline(durationMs: number): { steps: Step[]; jolts: JoltEvent[]
 
     const delta = colorDelta(st, t, thumb);
     const base = baselineGain(st);
+    // Read before decideJolt, which is what folds this sample into the colour
+    // baseline; reading after would report a bar the decision never saw.
+    const bar = colorThreshold(st, TH);
     steps.push({
       t,
       gainDb: Math.round(st.currentGain * 10) / 10,
       baseDb: Math.round(base * 10) / 10,
       colorDelta: delta === null ? null : Math.round(delta * 1000) / 1000,
+      colorThr: Math.round(bar * 1000) / 1000,
     });
 
     const fired = decideJolt(st, t, thumb, TH);
@@ -280,6 +295,7 @@ function signalTimeline(durationMs: number): { steps: Step[]; jolts: JoltEvent[]
         gainDb: steps[steps.length - 1].gainDb,
         baseDb: steps[steps.length - 1].baseDb,
         colorDelta: steps[steps.length - 1].colorDelta,
+        colorThr: steps[steps.length - 1].colorThr,
       });
     }
     pushThumb(st, t, thumb);
@@ -302,7 +318,9 @@ function frameAt(t: number): string | null {
 
 /** The same grid captureWorker.composite() builds: one cell per offset,
  *  row-first, black where no frame is available. */
-async function buildGrid(now: number): Promise<{ jpeg: Buffer; offsets: Array<number | null> } | null> {
+async function buildGrid(
+  now: number,
+): Promise<{ jpeg: Buffer; small: Buffer; offsets: Array<number | null> } | null> {
   const picked = GRID_OFFSETS_S.map((o) => {
     const target = now - o * 1000;
     return target < 0 ? null : frameAt(target);
@@ -325,13 +343,56 @@ async function buildGrid(now: number): Promise<{ jpeg: Buffer; offsets: Array<nu
     .jpeg({ quality: GRID_QUALITY })
     .toBuffer();
 
+  // The half-size copy the app's worker also produces, which rides along with
+  // the NEXT turn as the companion's memory of what it last looked at.
+  const small = await sharp(jpeg)
+    .resize(PREV_GRID_W, PREV_GRID_H)
+    .jpeg({ quality: GRID_QUALITY })
+    .toBuffer();
+
   const newest = now - GRID_OFFSETS_S[GRID_OFFSETS_S.length - 1] * 1000;
   return {
     jpeg,
+    small,
     offsets: GRID_OFFSETS_S.map((o, i) =>
       picked[i] === null ? null : Math.round(newest - (now - o * 1000)) / 1000,
     ),
   };
+}
+
+// ── Screen text ───────────────────────────────────────────────────────────
+
+interface Reading {
+  t: number;
+  text: string;
+}
+let readings: Reading[] | null = null;
+
+/**
+ * What the OCR pass had most recently read at `at`, or undefined.
+ *
+ * Reads scripts/backseat-ocr.ts's output rather than running Tesseract inline,
+ * for the same reason the transcript is precomputed: it takes about a second a
+ * frame and it does not depend on anything the model does. The staleness rule
+ * is the app's (SCREEN_TEXT_STALE_MS), so a tick here carries exactly what a
+ * live tick would have carried.
+ */
+function screenTextAt(at: number): string | undefined {
+  if (readings === null) {
+    const f = path.join(OUT, 'screentext.json');
+    readings = existsSync(f)
+      ? (JSON.parse(readFileSync(f, 'utf8')) as { readings: Reading[] }).readings
+      : [];
+    if (!readings.length) {
+      console.warn('[sim] no screentext.json: run scripts/backseat-ocr.ts first for screen text');
+    }
+  }
+  let best: Reading | undefined;
+  for (const r of readings) {
+    if (r.t > at) break;
+    if (at - r.t <= SCREEN_TEXT_STALE_MS) best = r;
+  }
+  return best?.text || undefined;
 }
 
 // ── Stage C: the wake schedule and the turns ──────────────────────────────
@@ -340,8 +401,14 @@ interface Turn {
   t: number;
   kind: BackseatTickKind;
   joltReason?: 'gain' | 'color';
-  signal?: { gainDb: number; baseDb: number; colorDelta: number | null };
+  signal?: { gainDb: number; baseDb: number; colorDelta: number | null; colorThr: number };
   offsets: Array<number | null>;
+  /** Filename of this turn's grid under <out>/grids. Recorded rather than left
+   *  to position, because the render used to index a sorted readdir and a
+   *  leftover file from an earlier run silently shifted every grid it drew. */
+  grid?: string;
+  /** What the OCR pass had read off the screen at this moment, if anything. */
+  screenText?: string;
   reply: string;
   spoke: boolean;
   usage?: { input: number; cacheRead: number; cacheWrite: number; output: number };
@@ -358,17 +425,20 @@ async function run(): Promise<void> {
 
   console.log(
     `[sim] ${path.basename(VIDEO)}, ${clock(durationMs)}, ` +
-      `thresholds gain +${TH.gainDb}dB / color ${TH.colorDelta}, seed ${SEED}`,
+      `thresholds gain +${TH.gainDb}dB / color median+${TH.colorMad}*MAD ` +
+      `(floor ${TH.colorFloor}), seed ${SEED}`,
   );
 
   const { steps, jolts } = signalTimeline(durationMs);
   writeFileSync(
     path.join(OUT, 'signals.csv'),
-    'ms,gain_db,base_db,jump_db,color_delta\n' +
+    'ms,gain_db,base_db,jump_db,color_delta,color_thr\n' +
       steps
         .map((s) =>
-          [s.t, s.gainDb, s.baseDb, Math.round((s.gainDb - s.baseDb) * 10) / 10, s.colorDelta ?? '']
-            .join(','),
+          [
+            s.t, s.gainDb, s.baseDb, Math.round((s.gainDb - s.baseDb) * 10) / 10,
+            s.colorDelta ?? '', s.colorThr,
+          ].join(','),
         )
         .join('\n'),
   );
@@ -380,9 +450,12 @@ async function run(): Promise<void> {
   }
 
   // ── The wake schedule ───────────────────────────────────────────────────
+  clearGrids();
   const rand = rng(SEED);
   const turns: Turn[] = [];
   let lastSpokeAt = -Infinity;
+  /** The half-size grid from the last turn that produced a line. */
+  let prevGrid: { small: Buffer; at: number } | null = null;
   let nextIdleAt = nextIdleDelayMs(rand);
   let joltIdx = 0;
   const client = new Anthropic({ apiKey: requireKey() });
@@ -426,10 +499,15 @@ async function run(): Promise<void> {
       continue;
     }
     const turn = await runTurn(
-      client, spokenLines, at, lastSpokeAt, kind, useJolt ? nextJolt : undefined, grid,
+      client, spokenLines, at, lastSpokeAt, kind, useJolt ? nextJolt : undefined, grid, prevGrid,
     );
+    // Only a turn that produced a line updates the memory, matching the
+    // service: the prompt calls it "what you were looking at when you last
+    // spoke", and that has to stay true.
+    if (turn.spoke) prevGrid = { small: grid.small, at };
     turns.push(turn);
-    writeFileSync(path.join(gridsDir(), `${turns.length.toString().padStart(3, '0')}-${kind}.jpg`), grid.jpeg);
+    turn.grid = `${turns.length.toString().padStart(3, '0')}-${kind}.jpg`;
+    writeFileSync(path.join(gridsDir(), turn.grid), grid.jpeg);
     if (turn.spoke) {
       lastSpokeAt = at + TURN_MS;
       // The companion just spoke, so the scheduled look is pushed back a full
@@ -446,6 +524,14 @@ function gridsDir(): string {
   const d = path.join(OUT, 'grids');
   mkdirSync(d, { recursive: true });
   return d;
+}
+
+/** Clear the grid dumps from any previous run. They are keyed by turn number
+ *  and wake kind, so a run with a different wake sequence leaves orphans behind
+ *  that nothing overwrites. */
+function clearGrids(): void {
+  const d = gridsDir();
+  for (const f of readdirSync(d)) if (f.endsWith('.jpg')) rmSync(path.join(d, f));
 }
 
 /**
@@ -501,13 +587,19 @@ async function runTurn(
   lastSpokeAt: number,
   kind: BackseatTickKind,
   jolt: JoltEvent | undefined,
-  grid: { jpeg: Buffer; offsets: Array<number | null> },
+  grid: { jpeg: Buffer; small: Buffer; offsets: Array<number | null> },
+  prevGrid: { small: Buffer; at: number } | null,
 ): Promise<Turn> {
+  const screenText = screenTextAt(at);
+  const prevAge = prevGrid ? at - prevGrid.at : Infinity;
+  const prev = prevAge <= PREV_GRID_MAX_AGE_MS ? prevGrid : null;
   const note = tickNote({
     kind,
     joltReason: jolt?.reason,
     secondsSinceLastLine: Number.isFinite(lastSpokeAt) ? (at - lastSpokeAt) / 1000 : null,
     sourceName: 'the game',
+    screenText,
+    secondsSincePrevGrid: prev ? prevAge / 1000 : undefined,
   });
 
   const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
@@ -523,15 +615,15 @@ async function runTurn(
       type: 'ephemeral',
     };
   }
+  const image = (buf: Buffer): unknown => ({
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/jpeg', data: buf.toString('base64') },
+  });
   messages.push({
     role: 'user',
-    content: [
-      {
-        type: 'image',
-        source: { type: 'base64', media_type: 'image/jpeg', data: grid.jpeg.toString('base64') },
-      },
-      { type: 'text', text: note },
-    ],
+    // Previous grid first, current second, note last — the same order and the
+    // same side of the cache breakpoint as backseatService.runTurn.
+    content: [...(prev ? [image(prev.small)] : []), image(grid.jpeg), { type: 'text', text: note }],
   });
 
   const res = await client.messages.create({
@@ -550,9 +642,12 @@ async function runTurn(
     .map((b) => b.text)
     .join('\n')
     .trim();
+  // 260802: silence is no longer offered, so this is an instruction being
+  // ignored rather than a normal outcome. Still parsed, because the service
+  // still parses it (a stray "(silence)" must never reach a voice call), and
+  // still counted, because the count is the measurement of whether the
+  // always-speak contract actually lands.
   const spoke = !!reply && !/^\(?silence\)?\.?$/i.test(reply);
-  // Only spoken lines join the transcript, matching the service: a turn that
-  // resolves to silence is never persisted, so the next turn never sees it.
   if (spoke) spokenLines.push(reply);
 
   const u = res.usage as unknown as {
@@ -562,14 +657,17 @@ async function runTurn(
     cache_creation_input_tokens?: number;
   };
   const label = kind === 'jolt' ? `jolt:${jolt?.reason}` : kind;
-  console.log(`[${clock(at)}] ${label} -> ${spoke ? `"${reply.replace(/\n/g, ' ')}"` : '(silence)'}`);
+  console.log(`[${clock(at)}] ${label} -> ${spoke ? `"${reply.replace(/\n/g, ' ')}"` : '(NO LINE)'}`);
 
   return {
     t: at,
     kind,
     joltReason: jolt?.reason,
-    signal: jolt ? { gainDb: jolt.gainDb, baseDb: jolt.baseDb, colorDelta: jolt.colorDelta } : undefined,
+    signal: jolt
+      ? { gainDb: jolt.gainDb, baseDb: jolt.baseDb, colorDelta: jolt.colorDelta, colorThr: jolt.colorThr }
+      : undefined,
     offsets: grid.offsets,
+    screenText,
     reply,
     spoke,
     usage: {
@@ -610,14 +708,26 @@ function reportSignals(steps: Step[], jolts: JoltEvent[]): void {
   };
   console.log('\n[sim] signal distributions over the whole clip');
   row('gain jump', jumps, TH.gainDb);
-  row('color delta', deltas, TH.colorDelta);
+  // The colour row's "over" count is against the MOVING bar, one comparison per
+  // step, which is the only meaningful version of that number now.
+  const overColor = steps.filter(
+    (s) => s.colorDelta !== null && s.colorDelta >= s.colorThr,
+  ).length;
+  const bars = steps.map((s) => s.colorThr);
+  console.log(
+    `  ${'color delta'.padEnd(12)} p50 ${pct(deltas, 0.5).toFixed(3).padStart(8)}  ` +
+      `p95 ${pct(deltas, 0.95).toFixed(3).padStart(8)}  ` +
+      `p99 ${pct(deltas, 0.99).toFixed(3).padStart(8)}  ` +
+      `max ${Math.max(...deltas).toFixed(3).padStart(8)}  ` +
+      `bar p50 ${pct(bars, 0.5).toFixed(3)}  over ${overColor}/${deltas.length}`,
+  );
 
   console.log(`\n[sim] ${jolts.length} jolt(s) raised (refractory ${TH.refractoryMs / 1000}s)`);
   for (const j of jolts) {
     console.log(
       `  [${clock(j.t)}] ${j.reason.padEnd(5)} ` +
         `gain ${j.gainDb} vs base ${j.baseDb} (jump ${(j.gainDb - j.baseDb).toFixed(1)}), ` +
-        `colorDelta ${j.colorDelta ?? 'n/a'}`,
+        `colorDelta ${j.colorDelta ?? 'n/a'} vs bar ${j.colorThr}`,
     );
   }
   if (!jolts.length) {
@@ -627,17 +737,22 @@ function reportSignals(steps: Step[], jolts: JoltEvent[]): void {
 
 function writeReports(turns: Turn[], durationMs: number): void {
   const spoken = turns.filter((t) => t.spoke);
+  const mute = turns.length - spoken.length;
   const lines = [
     `# Backseat voice-over: ${path.basename(VIDEO)}`,
     '',
-    `Clip ${clock(durationMs)}. ${turns.length} looks, ${spoken.length} lines, ` +
-      `${turns.length - spoken.length} silent.`,
-    `Thresholds: gain +${TH.gainDb} dB, colour ${TH.colorDelta}. Seed ${SEED}. Model ${MODEL}.`,
+    `Clip ${clock(durationMs)}. ${turns.length} looks, ${spoken.length} lines` +
+      // Not "silent": the prompts no longer offer silence, so a look with no
+      // line is an instruction being ignored and should read as one.
+      (mute ? `, ${mute} produced NO LINE despite the always-speak contract.` : '.'),
+    `Thresholds: gain +${TH.gainDb} dB, colour median+${TH.colorMad}*MAD (floor ${TH.colorFloor}). ` +
+      `Seed ${SEED}. Model ${MODEL}.`,
     '',
   ];
   for (const t of turns) {
     const label = t.kind === 'jolt' ? `jolt:${t.joltReason}` : t.kind;
-    lines.push(`**[${clock(t.t)}] ${label}** ${t.spoke ? `"${t.reply}"` : '_(silence)_'}`);
+    lines.push(`**[${clock(t.t)}] ${label}** ${t.spoke ? `"${t.reply}"` : '_(NO LINE)_'}`);
+    if (t.screenText) lines.push(`> screen text: ${t.screenText}`);
     lines.push('');
   }
 
@@ -674,7 +789,7 @@ function writeReports(turns: Turn[], durationMs: number): void {
   writeFileSync(path.join(OUT, 'voiceover.md'), lines.join('\n'));
   writeFileSync(path.join(OUT, 'voiceover.json'), JSON.stringify({ video: VIDEO, TH, seed: SEED, turns }, null, 2));
   console.log(
-    `\n[sim] ${turns.length} looks, ${spoken.length} spoke. ` +
+    `\n[sim] ${turns.length} looks, ${spoken.length} spoke, ${mute} did not. ` +
       `tokens: in ${totals.input}, cacheRead ${totals.cacheRead}, cacheWrite ${totals.cacheWrite}`,
   );
   console.log(`[sim] -> ${OUT}`);

@@ -37,6 +37,8 @@
 
 import {
   BUFFER_MS,
+  CAPTURE_H,
+  CAPTURE_W,
   CELL_W,
   CELL_H,
   GRID_W,
@@ -44,15 +46,20 @@ import {
   GRID_COLS,
   GRID_FRAMES,
   GRID_OFFSETS_S,
+  PREV_GRID_H,
+  PREV_GRID_W,
   SAMPLE_INTERVAL_MS,
   SAMPLE_TOLERANCE_MS,
-  JOLT_COLOR_DELTA,
+  SCREEN_TEXT_INTERVAL_MS,
+  JOLT_COLOR_FLOOR,
+  JOLT_COLOR_MAD,
   JOLT_GAIN_DB,
   JOLT_REFRACTORY_MS,
 } from '../../../../shared/backseatIpc';
 import {
   baselineGain,
   colorDelta,
+  colorThreshold,
   createJoltState,
   decideJolt,
   pushGain,
@@ -60,6 +67,14 @@ import {
   THUMB_H,
   THUMB_W,
 } from './signals';
+
+/** postMessage WITH a transfer list. The renderer tsconfig types `self` as a
+ *  Window, whose postMessage signature is (message, targetOrigin); this is the
+ *  worker one. */
+const postTransfer = self.postMessage.bind(self) as (
+  message: unknown,
+  transfer: Transferable[],
+) => void;
 
 /** How often a thumbnail is retained for the colour comparison. At capture
  *  rate that would be 60 a second to answer a question about one second ago. */
@@ -90,6 +105,15 @@ let thumbCanvas: OffscreenCanvas | null = null;
 let thumbCtx: OffscreenCanvasRenderingContext2D | null = null;
 let gridCanvas: OffscreenCanvas | null = null;
 let gridCtx: OffscreenCanvasRenderingContext2D | null = null;
+/** Half-size copy of the finished grid, kept by main and sent back with the
+ *  next tick as the companion's memory of what it last looked at. */
+let smallCanvas: OffscreenCanvas | null = null;
+let smallCtx: OffscreenCanvasRenderingContext2D | null = null;
+/** Full-resolution surface for the OCR pass. The ring's cells are 602x336 and
+ *  no HUD text survives that downscale, so screen text has to be read off a
+ *  frame at capture resolution or not at all. */
+let ocrCanvas: OffscreenCanvas | null = null;
+let ocrCtx: OffscreenCanvasRenderingContext2D | null = null;
 
 /** Samples, oldest first, spanning at most BUFFER_MS. */
 const ring: Sample[] = [];
@@ -104,6 +128,12 @@ let encoding = false;
 /** Latest audio loudness, posted from the main thread (dBFS, -100..0). It
  *  arrives on its own cadence, so it is held here and sampled per frame. */
 let currentGain = -100;
+/** When a frame was last handed to the OCR worker, and whether it is still
+ *  working on one. Single-flight rather than queued: a recognition takes about
+ *  a second, and a backlog would only ever hold pictures of a screen that has
+ *  already moved on. */
+let lastOcrAt = 0;
+let ocrBusy = false;
 /** Rolling state for both local signals. The arithmetic lives in signals.ts so
  *  the offline sim can run exactly this code over recorded footage. */
 const jolt = createJoltState();
@@ -136,6 +166,10 @@ function ensureCanvases(): void {
   thumbCtx = thumbCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
   gridCanvas = new OffscreenCanvas(GRID_W, GRID_H);
   gridCtx = gridCanvas.getContext('2d', { alpha: false });
+  smallCanvas = new OffscreenCanvas(PREV_GRID_W, PREV_GRID_H);
+  smallCtx = smallCanvas.getContext('2d', { alpha: false });
+  ocrCanvas = new OffscreenCanvas(CAPTURE_W, CAPTURE_H);
+  ocrCtx = ocrCanvas.getContext('2d', { alpha: false });
 }
 
 /**
@@ -168,7 +202,8 @@ function drawFitted(
  *  offline sim can sweep them without touching shipped constants. */
 const JOLT_THRESHOLDS = {
   gainDb: JOLT_GAIN_DB,
-  colorDelta: JOLT_COLOR_DELTA,
+  colorMad: JOLT_COLOR_MAD,
+  colorFloor: JOLT_COLOR_FLOOR,
   refractoryMs: JOLT_REFRACTORY_MS,
 };
 
@@ -206,9 +241,15 @@ async function onFrame(frame: VideoFrame): Promise<void> {
   const now = Date.now();
   const srcW = frame.displayWidth;
   const srcH = frame.displayHeight;
+  // Whether this frame is also the one the OCR pass reads. Decided before the
+  // draw so the full-resolution copy is taken from the same frame, and gated on
+  // ocrBusy so a slow recognition simply means fewer readings rather than a
+  // queue of stale ones.
+  const wantOcr = !ocrBusy && now - lastOcrAt >= SCREEN_TEXT_INTERVAL_MS;
   try {
     drawFitted(cellCtx!, frame, srcW, srcH, 0, 0, CELL_W, CELL_H);
     thumbCtx!.drawImage(frame, 0, 0, THUMB_W, THUMB_H);
+    if (wantOcr) drawFitted(ocrCtx!, frame, srcW, srcH, 0, 0, CAPTURE_W, CAPTURE_H);
   } finally {
     // A VideoFrame holds a hardware buffer; not closing it stalls the whole
     // pipeline within a few dozen frames.
@@ -231,6 +272,18 @@ async function onFrame(frame: VideoFrame): Promise<void> {
     sample(now);
   }
 
+  if (wantOcr) {
+    lastOcrAt = now;
+    ocrBusy = true;
+    // Transferred, not copied: the bitmap is the full frame and it crosses two
+    // thread boundaries (here to the controller, controller to the OCR worker).
+    void createImageBitmap(ocrCanvas!)
+      .then((bitmap) => postTransfer({ type: 'ocr-frame', bitmap, at: now }, [bitmap]))
+      .catch(() => {
+        ocrBusy = false;
+      });
+  }
+
   const fired = decideJolt(jolt, now, thumb, JOLT_THRESHOLDS);
   if (fired) {
     self.postMessage({
@@ -240,6 +293,7 @@ async function onFrame(frame: VideoFrame): Promise<void> {
       gainDb: round1(currentGain),
       baseDb: round1(baselineGain(jolt)),
       colorDelta: round3n(colorDelta(jolt, now, thumb)),
+      colorThr: round3n(colorThreshold(jolt, JOLT_THRESHOLDS)),
     });
   }
 
@@ -255,6 +309,9 @@ async function onFrame(frame: VideoFrame): Promise<void> {
       gainDb: round1(currentGain),
       baseDb: round1(baselineGain(jolt)),
       colorDelta: round3n(colorDelta(jolt, now, thumb)),
+      // The bar the colour arm has to clear right now. It moves with the
+      // screen, so a log line reporting the delta alone says nothing.
+      colorThr: round3n(colorThreshold(jolt, JOLT_THRESHOLDS)),
       samples: ring.length,
     });
     lastStatsAt = now;
@@ -305,6 +362,7 @@ function nearest(target: number): Sample | null {
  */
 async function composite(): Promise<{
   dataUrl: string;
+  smallUrl: string;
   capturedAt: number;
   offsets: Array<number | null>;
 } | null> {
@@ -339,15 +397,26 @@ async function composite(): Promise<{
     }
   }
 
-  const blob = await gridCanvas!.convertToBlob({ type: 'image/jpeg', quality: GRID_QUALITY });
-  const buf = new Uint8Array(await blob.arrayBuffer());
-  let bin = '';
-  for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+  smallCtx!.drawImage(gridCanvas!, 0, 0, PREV_GRID_W, PREV_GRID_H);
+  const [blob, small] = await Promise.all([
+    gridCanvas!.convertToBlob({ type: 'image/jpeg', quality: GRID_QUALITY }),
+    smallCanvas!.convertToBlob({ type: 'image/jpeg', quality: GRID_QUALITY }),
+  ]);
   return {
-    dataUrl: `data:image/jpeg;base64,${btoa(bin)}`,
+    dataUrl: `data:image/jpeg;base64,${await b64(blob)}`,
+    smallUrl: `data:image/jpeg;base64,${await b64(small)}`,
     capturedAt: newestAt,
     offsets: picked.map((s) => (s ? Math.round(newestAt - s.at) / 1000 : null)),
   };
+}
+
+async function b64(blob: Blob): Promise<string> {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  // Chunked: String.fromCharCode(...buf) blows the argument limit on a grid.
+  const CH = 0x8000;
+  for (let i = 0; i < buf.length; i += CH) bin += String.fromCharCode(...buf.subarray(i, i + CH));
+  return btoa(bin);
 }
 
 // ── Message plumbing ──────────────────────────────────────────────────────
@@ -381,6 +450,7 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
     | { type: 'start'; readable: ReadableStream<VideoFrame> }
     | { type: 'gain'; db: number }
     | { type: 'composite'; requestId: string }
+    | { type: 'ocr-done' }
     | { type: 'stop' };
 
   if (msg.type === 'start') {
@@ -390,6 +460,13 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
   }
   if (msg.type === 'gain') {
     currentGain = msg.db;
+    return;
+  }
+  // The OCR worker has finished (or failed) the frame it was given, so the
+  // cadence may hand it another. The controller relays this rather than the OCR
+  // worker talking here directly, because only the controller knows both.
+  if (msg.type === 'ocr-done') {
+    ocrBusy = false;
     return;
   }
   if (msg.type === 'composite') {
@@ -406,9 +483,15 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
     running = false;
     encodeCanvas = null;
     encodeCtx = null;
+    smallCanvas = null;
+    smallCtx = null;
+    ocrCanvas = null;
+    ocrCtx = null;
+    ocrBusy = false;
     ring.length = 0;
     jolt.gainTrace.length = 0;
     jolt.thumbTrace.length = 0;
+    jolt.colorTrace.length = 0;
   }
 };
 

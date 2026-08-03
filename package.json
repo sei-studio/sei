@@ -42,6 +42,7 @@
     "semver": "^7.8.0",
     "skinview3d": "3.4.2",
     "soulcaster": "file:./vendor/soulcaster",
+    "tesseract.js": "^7.0.0",
     "three": "^0.185.1",
     "yauzl": "^3.3.0",
     "zod": "^3.22.4",

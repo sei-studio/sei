@@ -337,11 +337,14 @@ sources, and not a test of how any particular companion sounds.
 - [x] 3. Cache layout: breakpoint off the image and onto the history tail, anchored history window (`c36f378`) — NOT yet verified, see below
 - [x] 4. `signals.ts` extracted, worker calls into it (`4cfe922`)
 - [x] 5a. `backseat-sim.ts` + `--dry` on the clip with current thresholds (`4cfe922`)
-- [ ] 5b. Candidate events confirmed with you, thresholds retuned
+- [x] 5b. Thresholds retuned (`260802`): block-max + dual lookback + MAD-relative
+      bar + per-arm refractory. Which events are the RIGHT ones is still open.
 - [x] 6. Voice-over run (`4cfe922`); cache hit rates NOT obtainable offline
 - [ ] Mark `.planning/backseat-redesign-260731.md` superseded; commit this file as `.planning/backseat-v2-260801.md`
 - [ ] Update CLAUDE.md "Backseat (260728)" to match
 - [ ] Mirror to `sei-studio/backseat`
+- [x] 260802 round two: silence removed, screen text (OCR) added, colour arm
+      made sensitive, previous grid carried as memory, video rebuilt
 
 Checkboxes are ticked in the same commit as the code that satisfies them, so
 `git log` and this list cannot disagree.
@@ -432,12 +435,166 @@ npx tsx scripts/backseat-render.ts            # ~15 min, writes review.mp4
 npx tsx scripts/backseat-render.ts --limit 30 --fps 10   # quick look
 ```
 
+## Round two (260802), from reviewing the video
+
+Four changes, all driven by watching the run rather than by reasoning about it.
+
+### Silence is gone
+
+68% was not tasteful restraint. The clearest example in the clip is the 02:50
+scheduled look: a smoke going down mid-site, ammo 4 of 8, and the model said
+nothing. This contract has now been through three positions on silence (260728
+sanctioned it and got a mute companion; 260801 delegated it to the per-tick
+note and got 68%), and two attempts is enough to conclude there is no wording
+Haiku applies at a person's bar rather than its own much higher one.
+
+So every look produces a line. `BACKSEAT_CONTRACT`'s "WHEN TO SAY NOTHING"
+became "YOU ALWAYS SAY SOMETHING", and each `tickNote` branch lost its
+`(silence)` escape and gained an instruction for the case that escape used to
+cover: when the screen has not changed, talk about the situation rather than
+forcing a reaction to a change that did not happen.
+
+Silence still exists, but only as a MECHANICAL decision taken before the model
+is called: `MIN_SPEAK_GAP_MS` drops a jolt or scheduled look that lands within
+8 s of a line. A rule that never looks at a moment cannot misjudge one.
+
+`isSilenceFiller` STAYS in `backseatService`. Without it a stray "(silence)"
+would be spoken aloud in a voice call. It is now logged as
+`turn <kind>: NO LINE despite always-speak`, an anomaly worth counting rather
+than the expected path.
+
+**Result: 10 looks, 10 lines, 0 silent.** Two side effects worth watching:
+replies grew from roughly 20 to 24-55 words against a contract asking for one
+or two short lines, and Haiku still writes em dashes despite being told not to.
+
+### Screen text
+
+New: a second local pass, alongside the Whisper ring, reading the words off the
+screen. `tesseract.js` in its own worker (`ocrWorker.ts`), because Tesseract is
+synchronous WASM taking about a second and running it beside the frame loop
+would stall the ring. Model files download on first use and cache in the
+browser, exactly like the Whisper model. Shaping is pure and shared with the
+sim (`screenText.ts`): confidence floor 60, punctuation and stray single
+letters dropped, capped at `TICK_SCREEN_TEXT_MAX_WORDS` = 80 with an explicit
+truncation marker so a page of prose does not dwarf the prompt.
+
+Settings were measured, not defaulted. Over four moments of the clip, three
+scales x two page-segmentation modes:
+
+```
+PSM.AUTO at any scale ....... 0-11 words, usually nothing
+SPARSE_TEXT at 1x ........... 20-27 raw words, nothing legible survives
+SPARSE_TEXT at 2x ........... 24-40 raw, recovers "A Short", "Site", "550"
+SPARSE_TEXT at 3x ........... 41-47 raw, no better, ~2x the time
+```
+
+AUTO fails because a game screen is not a page. The 2x upscale matters because
+HUD text at 720p is around 12 px tall.
+
+**What it actually produces on Valorant** is a real mix, and the review video
+shows it unedited: map callouts ("A Site", "A Short", "A Rafters"), kill-feed
+lines ("SPIKE CARRIER KILLED VANDAL", "Pyramid: KILLED"), weapon names, credits
+and the round timer, interleaved with garbage ("DB BektW", "ELEE A"). Mean 6
+words a frame, 93 of 94 frames produced something. The contract therefore tells
+the model this reading is unreliable in a specific way and to use it only to
+recognise things it can also see. The value case is not this footage: it is a
+player reading a quest log, a browser or subtitles, where the grid is useless
+and the words are the whole point.
+
+### Colour: block-max, dual lookback, and a bar that moves
+
+The complaint was that colour fired on the compilation's edit cuts and never
+within a scene. Three changes, in order of how much each mattered:
+
+1. **Block max over a 4x3 split** instead of a mean over the whole thumbnail.
+   Averaging is what made a localised change invisible: one block going fully
+   white moves the global mean by 1/12, below any usable threshold. Both
+   numbers are pinned in `signals.test.ts`.
+2. **Two lookbacks, 1.0 s and 2.5 s, take the max.** A doorway takes one to
+   three seconds and never looks like more than panning inside any single
+   second. (The old single lookback also did not do what it said: the trace was
+   pruned at 3x the lookback and the lookup took the first entry at least a
+   second old, which is always the oldest one held, so the real comparison was
+   against ~3 s ago. `thumbAt` resolves a target age properly now.)
+3. **The threshold became `median + 4 x MAD` over a 15 s window**, floored at
+   0.2, replacing the fixed 0.34. This is the change that actually made the arm
+   work, and the measurement is unambiguous: with block-max the clip's colour
+   delta has a MEDIAN of 0.313 and a p95 of 0.520. At a fixed 0.34 the arm was
+   over threshold on 38% of steps and every "event" it raised was really the
+   refractory period expiring, six of them spaced almost exactly 20 s apart. No
+   absolute number can be both sensitive in a calm game and quiet in a shooter.
+
+**The refractory is now per arm.** Shared, whichever arm fired first swallowed
+the other's next 20 seconds, and a more sensitive colour arm immediately began
+eating confirmed kills: a colour jolt at 01:41 suppressed the +18.9 dB spike at
+01:55, the clearest real event in the footage.
+
+Before: 3 colour (all on cuts) + 3 gain. After: **5 colour, all mid-scene, plus
+all 4 gain events.** Three of the five colour jolts clear the bar only
+narrowly (0.484 vs 0.475, 0.491 vs 0.487, 0.513 vs 0.490), which is visible in
+the video and is the thing to judge. `JOLT_COLOR_MAD` is the dial: 5 makes
+colour rare again (1 event on this clip) and is a one-line revert.
+
+### The companion remembers the last grid
+
+Chat history is text and the service rebuilds messages from the chat store,
+which has never held an image, so each look used to be the companion's entire
+visual world. With silence removed, repetition becomes the dominant failure
+mode and that gap is what makes it unavoidable.
+
+The renderer now emits a half-size copy of every grid; main holds the one from
+the turn that last produced a line and sends it back with the next tick.
+602x504 is 396 visual tokens against the full grid's 1548, all six cells
+present, unmistakably older and smaller. It sits AFTER the cache breakpoint as
+plain input: moving it above would change the message array's shape every tick
+and invalidate the whole prefix to save 396 tokens. Dropped past
+`PREV_GRID_MAX_AGE_MS` (3 min), so a picture from before a pause is never sent.
+
+"When it last spoke" was already in `tickNote` and is now accurate rather than
+approximately so, since every look updates it.
+
+### The video, second edition
+
+Same artefact, rebuilt against the new run. The audio transcript moved to the
+left column beside the companion, freeing the space under the grid for the
+SCREEN TEXT panel, which shows the reading, when it was taken, and whether it
+was the one a given look carried. The colour plot's dashed threshold now MOVES,
+because the threshold moves. The memory image is drawn as an inset in the grid,
+captioned with the look it came from.
+
+One real bug came out of building it: the sim named grid dumps by turn number
+and wake kind, so a run with a different wake sequence left orphans behind, and
+the renderer indexed a sorted `readdir` by turn position. Every grid it drew was
+shifted. The sim now clears the directory and records each turn's filename, and
+the renderer refuses to guess when the counts disagree.
+
+```
+npx tsx scripts/backseat-ocr.ts               # screen text, ~5 min, cached
+npx tsx scripts/backseat-transcribe.ts        # game audio, cached
+npx tsx scripts/backseat-sim.ts --dry         # signals only, no model calls
+npx tsx scripts/backseat-sim.ts               # the voice-over
+npx tsx scripts/backseat-render.ts            # ~15 min, writes review.mp4
+```
+
 ### Still owed
 
-- **5b:** confirm which of the 7 jolts are real, ideally on unedited footage.
+- **5b:** confirm which jolts are real, ideally on unedited footage. The colour
+  arm now fires mid-scene, which is what was asked for, but whether those five
+  moments are the RIGHT five is a judgement no threshold sweep can make.
 - **The cache change is unverified.** The sim cannot check it: its stub prefix
   is ~1.1k tokens and Haiku will not cache below 2048. It has to be read off a
-  live session's `cacheRead=` / `cacheWrite=` log lines.
-- **Speech rate at 68% is not a designed number**, it is what the tool array
-  happens to cost. If live use wants it lower, the dial should be an explicit
-  one (the idle distribution, MIN_SPEAK_GAP_MS) rather than a tool description.
+  live session's `cacheRead=` / `cacheWrite=` log lines. The previous grid adds
+  396 uncached input tokens per tick, which those lines will also show.
+- **Reply length.** 24-55 words against a contract asking for one or two short
+  lines. If that is too much, `max_tokens` (160) and the HOW YOU TALK paragraph
+  are the dials, not the silence option.
+- **Em dashes.** Haiku writes them despite the contract forbidding them. A
+  post-process strip is probably the honest fix.
+- **`tesseract.js` is declared in the worktree's package.json but the lockfile
+  is not regenerated.** It was installed into the shared `node_modules` without
+  touching either checkout's manifest, because a plain `npm install` in a
+  worktree tries a full rebuild and dies on the `gl` native override. `npm
+  install` in the primary checkout is owed before this branch merges.
+- **Screen text is not bundled.** Like the Whisper model it downloads on first
+  use. Worth deciding whether that is acceptable for a feature that runs
+  silently in the background.

@@ -23,10 +23,44 @@ export const THUMB_W = 32;
 export const THUMB_H = 18;
 
 /**
- * How far back the colour comparison reaches. A second is long enough that
- * ordinary panning cannot clear the threshold but a room change always does.
+ * How far back the colour comparison reaches, and why there are two (260802).
+ *
+ * A single one-second lookback misses the change it most needs to catch. A hard
+ * scene cut repaints everything between one frame and the next, so it clears any
+ * threshold at any lookback; walking through a doorway takes one to three
+ * seconds, and inside any single one-second window it never looks like more than
+ * ordinary panning. Reviewing the Valorant run showed exactly that split: the
+ * colour arm fired on the compilation's edit cuts and on nothing inside a scene.
+ *
+ * So the delta is the LARGER of the distance to ~1 s ago and to ~2.5 s ago. The
+ * short arm keeps cuts and full-screen abilities instant; the long arm is what
+ * sees a transition that was always too gradual for the short one.
+ *
+ * (The old single COLOR_LOOKBACK_MS was 1000 and did not do what it said: the
+ * trace was pruned at 3x the lookback and the lookup took the FIRST entry at
+ * least a second old, which is always the oldest one retained. The effective
+ * comparison was therefore against ~3 s ago, not 1 s. `thumbAt` below resolves
+ * a target age properly, so these numbers now mean what they say.)
  */
-export const COLOR_LOOKBACK_MS = 1000;
+export const COLOR_LOOKBACKS_MS = [1000, 2500];
+
+/**
+ * The colour delta is a MAX OVER BLOCKS, not a mean over the frame (260802).
+ *
+ * Averaging per-pixel distance across the whole thumbnail is what made this arm
+ * only see scene cuts. A change has to cover most of the screen to survive the
+ * average, so a doorway, a new room filling half the frame, a full-screen
+ * banner or a kill feed are all divided down into the noise floor. Splitting the
+ * 32x18 thumbnail into a 4x3 grid and taking the largest block's distance means
+ * a change is measured against the area it actually covers: a cut lights all
+ * twelve blocks, a localised event lights one, and both become visible.
+ *
+ * 4x3 over a 32x18 thumbnail is 8x6 = 48 pixels per block, small enough to
+ * localise and large enough that a handful of noisy pixels cannot carry a block
+ * on their own.
+ */
+export const COLOR_BLOCK_COLS = 4;
+export const COLOR_BLOCK_ROWS = 3;
 
 /**
  * How much loudness history the gain baseline is drawn from. Independent of
@@ -35,8 +69,12 @@ export const COLOR_LOOKBACK_MS = 1000;
  */
 export const GAIN_BASELINE_MS = 9_000;
 
-/** Thumbnails are only kept long enough to reach back past the lookback. */
-const THUMB_TRACE_MS = COLOR_LOOKBACK_MS * 3;
+/** The furthest back any colour comparison reaches. */
+const MAX_LOOKBACK_MS = Math.max(...COLOR_LOOKBACKS_MS);
+
+/** Thumbnails are kept a second past the longest lookback, so the sample
+ *  nearest that target is always still resident. */
+const THUMB_TRACE_MS = MAX_LOOKBACK_MS + 1_000;
 
 /**
  * Minimum history before either arm may fire. Without it the first moments of
@@ -48,26 +86,54 @@ const THUMB_TRACE_MS = COLOR_LOOKBACK_MS * 3;
  * different amounts of history in the two. The whole point of sharing this
  * code is that they agree.
  */
-const WARMUP_MS = COLOR_LOOKBACK_MS * 2;
+const WARMUP_MS = MAX_LOOKBACK_MS + 500;
+
+/**
+ * How much colour-delta history the colour baseline is drawn from. Longer than
+ * the gain baseline because it is estimating a spread rather than a level, and
+ * a shooter's deltas swing hard between a firefight and a walk.
+ */
+export const COLOR_BASELINE_MS = 15_000;
 
 export interface JoltState {
   /** Trailing loudness samples: [t, dBFS]. */
   gainTrace: Array<[number, number]>;
   /** Trailing thumbnails: [t, RGBA bytes]. */
   thumbTrace: Array<[number, Uint8ClampedArray]>;
+  /** Trailing colour deltas: [t, delta]. The colour arm's own baseline. */
+  colorTrace: Array<[number, number]>;
   /** Latest loudness reading, whatever the source most recently reported. */
   currentGain: number;
-  lastJoltAt: number;
+  /**
+   * Refractory clocks, one PER ARM (260802).
+   *
+   * They used to share one. Measured on the Valorant clip that meant whichever
+   * arm happened to fire first swallowed the other's next 20 seconds, and with
+   * the colour arm made more sensitive it started eating confirmed kills: a
+   * colour jolt at 01:41 suppressed the +18.9 dB gain spike at 01:55, which is
+   * the single clearest real event in the footage. The two arms answer
+   * different questions ("the scene changed" and "something loud happened"), so
+   * neither has any business silencing the other.
+   */
+  lastGainAt: number;
+  lastColorAt: number;
 }
 
 export function createJoltState(): JoltState {
-  // -Infinity, not 0. The refractory check is `now - lastJoltAt`, so a 0 here
+  // -Infinity, not 0. The refractory check is `now - lastGainAt`, so a 0 here
   // means "a jolt just fired at the epoch" and silences the first
   // refractoryMs of any clock that starts near zero. Harmless in the app,
   // where `now` is Date.now(), and fatal for the offline sim's virtual clock,
   // which starts at 0 — the kind of latent coupling to wall time that only
   // shows up once the same code has to run in two places.
-  return { gainTrace: [], thumbTrace: [], currentGain: -100, lastJoltAt: -Infinity };
+  return {
+    gainTrace: [],
+    thumbTrace: [],
+    colorTrace: [],
+    currentGain: -100,
+    lastGainAt: -Infinity,
+    lastColorAt: -Infinity,
+  };
 }
 
 /** Record a loudness reading. Called at capture rate in the app. */
@@ -111,7 +177,13 @@ export function gainJump(st: JoltState): number {
   return st.currentGain - baselineGain(st);
 }
 
-/** Mean absolute per-channel difference between two RGBA thumbnails, 0..1. */
+/**
+ * Mean absolute per-channel difference between two RGBA thumbnails, 0..1.
+ *
+ * Kept because it is the honest whole-frame number and the block version is
+ * defined against it, but it is NOT what the jolt arm reads any more: see
+ * COLOR_BLOCK_COLS for why averaging over the frame was the bug.
+ */
 export function thumbDelta(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
   let sum = 0;
   // Stride 4 skips alpha; the source is opaque so it is always 255.
@@ -122,31 +194,147 @@ export function thumbDelta(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
 }
 
 /**
- * Distance between `thumb` and the screen COLOR_LOOKBACK_MS ago, or null when
- * the trace does not reach back that far yet.
+ * Per-block mean distance, COLOR_BLOCK_ROWS x COLOR_BLOCK_COLS of them, in
+ * row-major order. Exported so the offline sim can report WHERE a colour jolt
+ * came from rather than only that one fired.
+ */
+export function blockDeltas(a: Uint8ClampedArray, b: Uint8ClampedArray): number[] {
+  const out: number[] = [];
+  const bw = Math.floor(THUMB_W / COLOR_BLOCK_COLS);
+  const bh = Math.floor(THUMB_H / COLOR_BLOCK_ROWS);
+  for (let br = 0; br < COLOR_BLOCK_ROWS; br++) {
+    for (let bc = 0; bc < COLOR_BLOCK_COLS; bc++) {
+      let sum = 0;
+      let n = 0;
+      // The last block in each direction absorbs the remainder, so a thumbnail
+      // whose size is not divisible by the block count still covers every pixel.
+      const x1 = bc === COLOR_BLOCK_COLS - 1 ? THUMB_W : (bc + 1) * bw;
+      const y1 = br === COLOR_BLOCK_ROWS - 1 ? THUMB_H : (br + 1) * bh;
+      for (let y = br * bh; y < y1; y++) {
+        for (let x = bc * bw; x < x1; x++) {
+          const i = (y * THUMB_W + x) * 4;
+          sum +=
+            Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+          n++;
+        }
+      }
+      out.push(n ? sum / (n * 3 * 255) : 0);
+    }
+  }
+  return out;
+}
+
+/** The largest block distance between two thumbnails, 0..1. */
+export function blockMaxDelta(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
+  return Math.max(...blockDeltas(a, b));
+}
+
+/**
+ * The retained thumbnail closest to `ageMs` before `now`, or null when the
+ * trace does not reach back that far.
+ *
+ * Nearest, not first-past-the-post. The old lookup took the first entry at
+ * least the lookback old, which in a pruned trace is always the OLDEST one
+ * held, so the comparison drifted to whatever the retention happened to be.
+ */
+export function thumbAt(st: JoltState, now: number, ageMs: number): Uint8ClampedArray | null {
+  const target = now - ageMs;
+  let best: Uint8ClampedArray | null = null;
+  let bestGap = Infinity;
+  let reaches = false;
+  for (const [t, thumb] of st.thumbTrace) {
+    if (t <= target) reaches = true;
+    const gap = Math.abs(t - target);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = thumb;
+    }
+  }
+  // Only answer once the trace actually spans the target: without this the
+  // first moments of a session compare against a sample barely older than the
+  // current one and report a near-zero delta as if it meant something.
+  return reaches ? best : null;
+}
+
+/**
+ * How much the screen has changed: the largest block distance against EITHER
+ * lookback in COLOR_LOOKBACKS_MS, or null while the trace is still short.
+ *
+ * Taking the max over both windows rather than one fixed window is what lets a
+ * gradual transition register: it is small in every one-second slice and large
+ * across two and a half seconds, and only the second measurement sees it.
  */
 export function colorDelta(
   st: JoltState,
   now: number,
   thumb: Uint8ClampedArray,
 ): number | null {
-  const past = st.thumbTrace.find(([t]) => now - t >= COLOR_LOOKBACK_MS);
-  return past ? thumbDelta(thumb, past[1]) : null;
+  let best: number | null = null;
+  for (const ageMs of COLOR_LOOKBACKS_MS) {
+    const past = thumbAt(st, now, ageMs);
+    if (!past) continue;
+    const d = blockMaxDelta(thumb, past);
+    if (best === null || d > best) best = d;
+  }
+  return best;
+}
+
+/** Median absolute deviation: the median distance from the median. Robust to
+ *  the very outliers this is trying to detect, which a standard deviation is
+ *  not — one big change would inflate sigma and hide the next one. */
+export function mad(xs: number[]): number {
+  if (!xs.length) return NaN;
+  const m = median(xs);
+  return median(xs.map((x) => Math.abs(x - m)));
+}
+
+/** Record a colour delta. Null deltas (trace too short) are not recorded. */
+export function pushColor(st: JoltState, now: number, delta: number | null): void {
+  if (delta === null) return;
+  st.colorTrace.push([now, delta]);
+  while (st.colorTrace.length && now - st.colorTrace[0][0] > COLOR_BASELINE_MS) {
+    st.colorTrace.shift();
+  }
+}
+
+/**
+ * The colour delta a jolt has to beat right now: `median + k * MAD` over the
+ * trailing window, floored so a near-static screen cannot jolt on noise.
+ *
+ * This replaced a fixed 0.34 (260802) because a fixed number cannot be right
+ * for two games at once, and measurement showed how badly. Over the Valorant
+ * clip the block-max delta has a MEDIAN of 0.313 and a p95 of 0.520: continuous
+ * camera movement in a shooter sits exactly where a room change sits in a calm
+ * game. At 0.34 the arm was over threshold on 38% of steps and every "event" it
+ * raised was really just the refractory period expiring, six of them spaced
+ * almost exactly 20 s apart. Any absolute number low enough to catch a doorway
+ * in a quiet game is a number this footage clears constantly.
+ *
+ * Measuring against the screen's OWN recent behaviour fixes both ends: in a
+ * frantic scene the bar rises with the noise, and in a calm one it drops far
+ * enough that walking into a different room is a large change again.
+ */
+export function colorThreshold(st: JoltState, th: JoltThresholds): number {
+  if (st.colorTrace.length < 8) return th.colorFloor;
+  const xs = st.colorTrace.map((c) => c[1]);
+  return Math.max(th.colorFloor, median(xs) + th.colorMad * mad(xs));
 }
 
 export interface JoltThresholds {
   /** dB above the trailing median. */
   gainDb: number;
-  /** thumbDelta, 0..1. */
-  colorDelta: number;
+  /** How many MADs above the trailing median colour delta counts as a jolt. */
+  colorMad: number;
+  /** Absolute floor for the colour threshold, 0..1. */
+  colorFloor: number;
   /** Minimum gap between two jolts. */
   refractoryMs: number;
 }
 
 /**
  * The local wake: a discontinuity large enough that no model is needed to
- * confirm it. Returns the arm that fired and stamps the refractory period, or
- * null.
+ * confirm it. Returns the arm that fired and stamps THAT arm's refractory
+ * period, or null.
  *
  * Order matters only in that gain is checked first; the two are not ranked
  * against each other in any principled way, and a moment loud AND bright
@@ -158,16 +346,24 @@ export function decideJolt(
   thumb: Uint8ClampedArray,
   th: JoltThresholds,
 ): 'gain' | 'color' | null {
-  if (now - st.lastJoltAt < th.refractoryMs) return null;
+  const delta = colorDelta(st, now, thumb);
+  // The bar is read BEFORE the current sample joins the trace, so a change
+  // cannot raise the threshold it is about to be judged against, and the trace
+  // is updated BEFORE any early return, so the baseline keeps tracking the
+  // screen through a refractory period. Get either of those backwards and the
+  // first decision after a jolt is made against a 20-second-old idea of what
+  // this screen normally does.
+  const bar = colorThreshold(st, th);
+  pushColor(st, now, delta);
+
   if (!warmedUp(st, now)) return null;
 
-  if (gainJump(st) >= th.gainDb) {
-    st.lastJoltAt = now;
+  if (now - st.lastGainAt >= th.refractoryMs && gainJump(st) >= th.gainDb) {
+    st.lastGainAt = now;
     return 'gain';
   }
-  const delta = colorDelta(st, now, thumb);
-  if (delta !== null && delta >= th.colorDelta) {
-    st.lastJoltAt = now;
+  if (now - st.lastColorAt >= th.refractoryMs && delta !== null && delta >= bar) {
+    st.lastColorAt = now;
     return 'color';
   }
   return null;

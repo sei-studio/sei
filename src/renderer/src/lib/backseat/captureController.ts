@@ -26,9 +26,9 @@ import {
   CAPTURE_FPS,
   CAPTURE_H,
   CAPTURE_W,
-  JOLT_COLOR_DELTA,
   JOLT_GAIN_DB,
   nextIdleDelayMs,
+  SCREEN_TEXT_STALE_MS,
   STT_SAMPLE_RATE,
   type BackseatTickKind,
 } from '../../../../shared/backseatIpc';
@@ -65,6 +65,8 @@ interface Rolling {
 /** A composited grid as the worker returns it. */
 interface Grid {
   dataUrl: string;
+  /** The same grid at PREV_GRID_SCALE, for main to send back next tick. */
+  smallUrl: string;
   /** Capture time of the NEWEST cell, not of the composite. */
   capturedAt: number;
   /** Achieved offsets per cell, seconds before capturedAt; null = black cell. */
@@ -354,6 +356,33 @@ export async function startCapture(
   }
 
   const worker = new Worker(new URL('./captureWorker.ts', import.meta.url), { type: 'module' });
+  // Screen text runs in its OWN worker: Tesseract is synchronous WASM and takes
+  // around a second, which next to the frame loop would stall the ring and put
+  // every grid cell off its offset.
+  const ocr = new Worker(new URL('./ocrWorker.ts', import.meta.url), { type: 'module' });
+  /** The most recent reading, with the capture time of the frame it came from.
+   *  A tick reads this rather than waiting on a recognition. */
+  let screenText: { at: number; text: string } | null = null;
+  ocr.onmessage = (e: MessageEvent): void => {
+    const m = e.data as
+      | { type: 'text'; at: number; text: string; ms: number }
+      | { type: 'error'; at: number; message: string };
+    if (m.type === 'text') {
+      screenText = m.text ? { at: m.at, text: m.text } : null;
+      console.log(`[backseat] screen text (${m.ms}ms): ${m.text || '-'}`);
+    } else {
+      console.warn(`[backseat] ocr failed: ${m.message}`);
+    }
+    // Either way the worker is free, so the capture loop may hand it another.
+    worker.postMessage({ type: 'ocr-done' });
+  };
+  /** What a tick carries, or undefined when there is no fresh reading. Stale
+   *  text is dropped rather than sent: a menu the player closed five looks ago
+   *  is worse than no text at all. */
+  const tickScreenText = (): string | undefined => {
+    if (!screenText) return undefined;
+    return Date.now() - screenText.at <= SCREEN_TEXT_STALE_MS ? screenText.text : undefined;
+  };
 
   // MediaStreamTrackProcessor hands the worker a transferable stream of frames,
   // which is what keeps capture alive while the player is in a fullscreen game
@@ -495,7 +524,12 @@ export async function startCapture(
   const sendTick = async (
     kind: BackseatTickKind,
     grid: Grid,
-    extra: { text?: string; joltReason?: 'gain' | 'color'; transcript?: string } = {},
+    extra: {
+      text?: string;
+      joltReason?: 'gain' | 'color';
+      transcript?: string;
+      screenText?: string;
+    } = {},
   ): Promise<void> => {
     if (stopped) return;
     console.log(
@@ -506,6 +540,7 @@ export async function startCapture(
         characterId,
         kind,
         grid: grid.dataUrl,
+        gridSmall: grid.smallUrl,
         capturedAt: grid.capturedAt,
         ...extra,
       });
@@ -525,7 +560,9 @@ export async function startCapture(
           gainDb: number;
           baseDb: number;
           colorDelta: number | null;
+          colorThr: number | null;
         }
+      | { type: 'ocr-frame'; bitmap: ImageBitmap; at: number }
       | {
           type: 'stats';
           fps: number | null;
@@ -533,6 +570,7 @@ export async function startCapture(
           gainDb: number;
           baseDb: number;
           colorDelta: number | null;
+          colorThr: number | null;
           samples: number;
         };
     if (msg.type === 'grid') {
@@ -550,8 +588,19 @@ export async function startCapture(
       console.log(
         `[backseat] signals: ${msg.fps ?? '?'}fps, ${msg.eps ?? '?'} encodes/s, ${msg.samples} samples, ` +
           `gain ${msg.gainDb}dB vs base ${msg.baseDb}dB (jolt at +${JOLT_GAIN_DB}), ` +
-          `colorDelta ${msg.colorDelta ?? 'n/a'} (jolt at ${JOLT_COLOR_DELTA})`,
+          `colorDelta ${msg.colorDelta ?? 'n/a'} (jolt at ${msg.colorThr ?? 'n/a'})`,
       );
+      return;
+    }
+    if (msg.type === 'ocr-frame') {
+      // Straight through, transferred again: the controller is only here
+      // because two workers cannot address each other directly.
+      if (paused || stopped) {
+        msg.bitmap.close();
+        worker.postMessage({ type: 'ocr-done' });
+        return;
+      }
+      ocr.postMessage({ type: 'frame', bitmap: msg.bitmap, at: msg.at }, [msg.bitmap]);
       return;
     }
     if (msg.type === 'jolt') {
@@ -568,7 +617,11 @@ export async function startCapture(
         }
         // On a gain jolt the transcript is literally what the loud thing said.
         const transcript = await tickTranscript();
-        await sendTick('jolt', grid, { joltReason: msg.reason, transcript });
+        await sendTick('jolt', grid, {
+          joltReason: msg.reason,
+          transcript,
+          screenText: tickScreenText(),
+        });
       })();
     }
   };
@@ -612,7 +665,7 @@ export async function startCapture(
           // milliseconds longer for the stt to catch up").
           const transcript = await tickTranscript();
           if (paused || stopped) return;
-          await sendTick('idle', grid, { transcript });
+          await sendTick('idle', grid, { transcript, screenText: tickScreenText() });
         } catch {
           /* a missed look is a missed comment, never a broken session */
         } finally {
@@ -668,6 +721,8 @@ export async function startCapture(
         }
       });
       worker.postMessage({ type: 'stop' });
+      ocr.postMessage({ type: 'stop' });
+      window.setTimeout(() => ocr.terminate(), 250);
       // Give the worker a beat to close its bitmaps before the thread dies.
       window.setTimeout(() => worker.terminate(), 250);
       stream.getTracks().forEach((t) => t.stop());
@@ -707,7 +762,7 @@ export async function startCapture(
       // What the game said around the moment they reacted to — the flush
       // window reaches back far enough to cover a held grid's span.
       const transcript = await tickTranscript();
-      await sendTick('user', grid, { text, transcript });
+      await sendTick('user', grid, { text, transcript, screenText: tickScreenText() });
     },
     noteSpoke: () => {
       if (!stopped) scheduleIdle();

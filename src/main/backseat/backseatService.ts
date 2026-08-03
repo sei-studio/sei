@@ -36,6 +36,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage } from '../../shared/ipc';
 import {
   MIN_SPEAK_GAP_MS,
+  PREV_GRID_MAX_AGE_MS,
   type BackseatLine,
   type BackseatMode,
   type BackseatState,
@@ -117,6 +118,16 @@ interface Session {
    * -1 until the first turn reads the history length.
    */
   historyAnchor: number;
+  /**
+   * The half-size copy of the grid the companion was looking at when it last
+   * spoke, and when that was (260802). Sent alongside the next grid so the
+   * model can tell what has moved on since its own last line.
+   *
+   * Held here rather than fetched from anywhere because there is nowhere to
+   * fetch it from: the chat store has only ever held text, so without this the
+   * companion's memory of what it has SEEN is exactly one image deep.
+   */
+  prevGrid: { data: string; at: number } | null;
   /** Per-session log into the in-app console + a rolling file (backseatLog). */
   log: BackseatLog;
 }
@@ -205,6 +216,7 @@ export async function startBackseat(
     clips: new Map(),
     clipCooldownUntil: 0,
     historyAnchor: -1,
+    prevGrid: null,
     log,
   };
   sessions.set(characterId, s);
@@ -529,16 +541,31 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   // The player's own line is a real user message; a gate/jolt tick is not, so
   // it is framed as a system note. Either way the grid is attached to the same
   // turn, and images go BEFORE text (Anthropic's documented ordering).
+  // The previous grid, when there is a usable one. It goes FIRST, so the model
+  // reads the old picture and then the new one in that order, and it sits after
+  // the cache breakpoint as plain input: moving it above the breakpoint would
+  // change the message array's shape every tick and invalidate the entire
+  // prefix to save 396 tokens.
+  const prevAge = s.prevGrid ? Date.now() - s.prevGrid.at : Infinity;
+  const prev = prevAge <= PREV_GRID_MAX_AGE_MS ? s.prevGrid : null;
+
   const note = tickNote({
     kind: tick.kind,
     joltReason: tick.joltReason,
     secondsSinceLastLine: s.lastSpokeAt ? (Date.now() - s.lastSpokeAt) / 1000 : null,
     sourceName: s.state.sourceName,
     transcript: tick.transcript,
+    screenText: tick.screenText,
+    secondsSincePrevGrid: prev ? prevAge / 1000 : undefined,
   });
-  const base64 = tick.grid.replace(/^data:image\/\w+;base64,/, '');
+  const strip = (d: string): string => d.replace(/^data:image\/\w+;base64,/, '');
+  const image = (data: string): unknown => ({
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/jpeg', data },
+  });
   const content: unknown[] = [
-    { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+    ...(prev ? [image(strip(prev.data))] : []),
+    image(strip(tick.grid)),
     { type: 'text', text: tick.kind === 'user' ? `${note}\n\n${tick.text ?? ''}` : note },
   ];
   messages.push({ role: 'user', content: content as never });
@@ -580,13 +607,16 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     .join('\n')
     .trim();
 
-  // Silence is the normal outcome. Note this does NOT reset lastSpokeAt, so a
-  // quiet turn does not start a new gap; the companion stays as available as
-  // it was before the tick.
+  // 260802: silence is no longer an outcome the prompts offer, so reaching here
+  // means the model ignored an explicit instruction (or returned nothing at
+  // all). The parse STAYS, because without it a stray "(silence)" would be
+  // spoken aloud in a voice call, but it is now an anomaly worth counting
+  // rather than the expected path — if this line shows up often in a session
+  // log, the contract is not landing and the fix is the prompt, not the parse.
   if (!replyText || isSilenceFiller(replyText)) {
     slog(
       s,
-      `turn ${tick.kind}: silence` +
+      `turn ${tick.kind}: NO LINE despite always-speak` +
         (replyText ? ` ("${replyText.slice(0, 60)}")` : ' (empty reply)'),
     );
     s.clipCooldownUntil = 0;
@@ -612,6 +642,10 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   }
 
   s.lastSpokeAt = Date.now();
+  // What the companion was looking at when it wrote this line, for the next
+  // turn to compare against. Set only on a turn that produced a line, so the
+  // prompt's "what you were looking at when you last spoke" stays true.
+  if (tick.gridSmall) s.prevGrid = { data: tick.gridSmall, at: tick.capturedAt };
   const parts = splitReply(replyText, character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual')
     .filter((t) => t && !isSilenceFiller(t));
   if (!parts.length) return;

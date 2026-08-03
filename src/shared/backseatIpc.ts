@@ -112,6 +112,40 @@ export const GRID_H = CELL_H * GRID_ROWS; // 1008
  *  blow the cap and get the grid downscaled behind our back. */
 export const GRID_VISUAL_TOKENS = Math.ceil(GRID_W / 28) * Math.ceil(GRID_H / 28); // 1548
 
+// ── The previous grid, carried as memory (260802) ─────────────────────────
+//
+// Chat history is text, and the service rebuilds every turn's messages from the
+// chat store, which has never held an image. So until now each look was the
+// companion's entire visual world: it could read its own last LINE but had no
+// idea what it had been looking at when it wrote it. With silence removed and
+// every look producing a line, that gap becomes the main failure mode, because
+// the only way to avoid repeating yourself about an unchanged screen is to know
+// what the screen looked like last time.
+//
+// The previous grid therefore rides along with the current one, at HALF linear
+// size: 602x504 is 396 visual tokens against the full grid's 1548, all six
+// cells still present, and unmistakably the older and smaller of the two images
+// so it cannot be confused for now. The renderer produces it at composite time,
+// so the main process never has to touch pixels to build a prompt.
+//
+// It sits AFTER the cache breakpoint, as plain input. Putting it in the history
+// to earn a cache read would change the message array's shape on every tick and
+// invalidate the whole prefix, which costs far more than the 396 tokens it
+// would save.
+
+export const PREV_GRID_SCALE = 0.5;
+export const PREV_GRID_W = GRID_W * PREV_GRID_SCALE; // 602
+export const PREV_GRID_H = GRID_H * PREV_GRID_SCALE; // 504
+export const PREV_GRID_VISUAL_TOKENS =
+  Math.ceil(PREV_GRID_W / 28) * Math.ceil(PREV_GRID_H / 28); // 396
+/**
+ * Past this age the previous grid is dropped rather than sent. The scheduled
+ * look tops out at IDLE_MAX_MS, so anything older than a few minutes means the
+ * session was paused, and a picture from before a pause is a picture of a
+ * different moment entirely.
+ */
+export const PREV_GRID_MAX_AGE_MS = 180_000;
+
 // ── Frame spacing: logarithmic, not uniform (260801) ──────────────────────
 //
 // Six frames at 1 Hz cannot show a sequence. A dodge-then-fire is roughly
@@ -205,6 +239,45 @@ export const TICK_TRANSCRIPT_MS = GRID_SPAN_MS + 2_000;
  *  (closest to the moment the tick is about). */
 export const TICK_TRANSCRIPT_MAX_CHARS = 600;
 
+// ── Screen text (260802) ──────────────────────────────────────────────────
+//
+// The grid shows the model what the screen LOOKED like. It cannot show it what
+// the screen SAID: a cell is 602x336, so a quest log, a chat box, subtitles, a
+// menu or anything the player is reading is illegible at any vision quality we
+// can afford to send. A second local pass over the FULL-resolution frame
+// recovers that as text, the same way the Whisper ring recovers the audio.
+//
+// Structured like the transcript ring and for the same reason: OCR takes on the
+// order of a second, so it runs continuously on its own slow cadence and a tick
+// reads whatever the latest result is. Transcribing on demand would put that
+// second in front of every tick.
+
+/** How often the OCR pass runs. Far slower than anything else in the pipeline:
+ *  text on screen changes on human timescales, and this is the most expensive
+ *  local work backseat does. */
+export const SCREEN_TEXT_INTERVAL_MS = 2_000;
+/** A reading older than this is dropped rather than sent: better no text than
+ *  text describing a menu the player closed. */
+export const SCREEN_TEXT_STALE_MS = 10_000;
+/**
+ * How much the frame is upscaled before OCR. Measured, not guessed: HUD text at
+ * 720p is around 12 px tall, well under what Tesseract reads comfortably, and
+ * 2x is where map callouts and counters start surviving on the Valorant clip.
+ * 3x found nothing more and cost roughly twice the time
+ * (scripts/backseat-ocr.ts records the probe).
+ */
+export const SCREEN_TEXT_SCALE = 2;
+/**
+ * Word cap on the text a tick carries, the context-management dial.
+ *
+ * A HUD is a dozen words and costs nothing. A wall of prose — a patch note, an
+ * article, a wiki page — is thousands, and would dwarf everything else in the
+ * prompt including the grid. 80 words is about 110 tokens, enough to carry what
+ * a screen is about, and shapeScreenText marks the truncation so the model
+ * knows it is reading an opening rather than the whole thing.
+ */
+export const TICK_SCREEN_TEXT_MAX_WORDS = 80;
+
 // ── Cadence ───────────────────────────────────────────────────────────────
 
 // ── The scheduled look ────────────────────────────────────────────────────
@@ -258,21 +331,31 @@ export const MIN_SPEAK_GAP_MS = 8_000;
 export const JOLT_REFRACTORY_MS = 20_000;
 
 /**
- * Jolt thresholds, deliberately set very high (the spec's "really high, not
- * sure how it'll work"). Both are measured against a rolling baseline over the
- * buffer, not against absolutes, so a loud game and a quiet game behave alike.
+ * Jolt thresholds. Both arms are measured against a rolling baseline rather
+ * than an absolute, so a loud game and a quiet game behave alike.
  *
- *   JOLT_GAIN_DB       jump over the trailing median loudness. 18 dB is a
- *                      roughly 8x amplitude step: an explosion in a quiet room,
- *                      not gunfire during a firefight.
- *   JOLT_COLOR_DELTA   mean per-channel distance between the current 32x18 luma
- *                      /chroma thumbnail and the one a second ago, 0..1. 0.34
- *                      is an almost total repaint of the screen: indoors to
- *                      outdoors on a CS map, a full-screen ability, a map
- *                      opening. Ordinary camera movement sits far below it.
+ *   JOLT_GAIN_DB      jump over the trailing median loudness. 18 dB is a
+ *                     roughly 8x amplitude step: an explosion in a quiet room,
+ *                     not gunfire during a firefight.
+ *   JOLT_COLOR_MAD    how many median absolute deviations above the trailing
+ *                     MEDIAN colour delta counts as a change. See
+ *                     signals.colorThreshold for why this is not a fixed
+ *                     number any more: at a fixed 0.34 the arm was over
+ *                     threshold on 38% of the Valorant clip's steps and every
+ *                     event it raised was the refractory period expiring.
+ *   JOLT_COLOR_FLOOR  absolute floor under that, so a menu screen sitting
+ *                     still (median ~0, MAD ~0) cannot jolt on compression
+ *                     noise.
+ *
+ * 260802: the colour arm also changed shape underneath these — it is now the
+ * largest change over a 4x3 split of the thumbnail, against the better of a
+ * 1.0 s and a 2.5 s lookback, rather than a mean over the whole frame against
+ * one lookback. Both changes exist because the arm only ever fired on hard
+ * scene cuts and never on a change within a scene.
  */
 export const JOLT_GAIN_DB = 18;
-export const JOLT_COLOR_DELTA = 0.34;
+export const JOLT_COLOR_MAD = 4;
+export const JOLT_COLOR_FLOOR = 0.2;
 
 // ── Session shape ─────────────────────────────────────────────────────────
 
@@ -319,6 +402,9 @@ export interface BackseatTick {
   characterId: string;
   kind: BackseatTickKind;
   grid: string;
+  /** The same grid at PREV_GRID_SCALE. Main holds onto it and sends it back
+   *  with the NEXT tick as "what you were looking at last time". */
+  gridSmall?: string;
   capturedAt: number;
   /** The player's message on a 'user' tick. Absent otherwise. */
   text?: string;
@@ -331,6 +417,13 @@ export interface BackseatTick {
    * prompts frame it that way.
    */
   transcript?: string;
+  /**
+   * What was WRITTEN on the screen, from the local OCR pass over the full-
+   * resolution frame, already confidence-filtered and word-capped. Absent when
+   * the screen had no legible text or the last reading went stale. Unreliable
+   * by nature, and the prompt says so.
+   */
+  screenText?: string;
 }
 
 /** A line in the overlay's mini chat: the companion's, or the player's own. */

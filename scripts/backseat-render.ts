@@ -30,7 +30,12 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 
-import { GRID_OFFSETS_S, JOLT_COLOR_DELTA, JOLT_GAIN_DB } from '../src/shared/backseatIpc';
+import {
+  GRID_OFFSETS_S,
+  JOLT_GAIN_DB,
+  SCREEN_TEXT_STALE_MS,
+  TICK_SCREEN_TEXT_MAX_WORDS,
+} from '../src/shared/backseatIpc';
 
 // ---------------------------------------------------------------- args / io
 
@@ -50,14 +55,21 @@ interface Turn {
   t: number;
   kind: 'user' | 'jolt' | 'idle';
   joltReason?: 'gain' | 'color';
-  signal?: { gainDb: number; baseDb: number; colorDelta: number };
+  /** colorThr is the bar at that instant: it moves with the screen, so the
+   *  delta on its own says nothing about whether it should have fired. */
+  signal?: { gainDb: number; baseDb: number; colorDelta: number; colorThr: number };
   offsets: Array<number | null>;
+  /** Filename under <out>/grids. Written by the sim per turn, because indexing
+   *  a sorted readdir by turn position broke the moment a previous run left a
+   *  file behind that the new one did not overwrite. */
+  grid?: string;
+  screenText?: string;
   reply: string;
   spoke: boolean;
 }
 const vo = JSON.parse(readFileSync(path.join(OUT, 'voiceover.json'), 'utf8')) as {
   video: string;
-  TH: { gainDb: number; colorDelta: number; refractoryMs: number };
+  TH: { gainDb: number; colorMad: number; colorFloor: number; refractoryMs: number };
   seed: number;
   turns: Turn[];
 };
@@ -69,13 +81,14 @@ const steps = readFileSync(path.join(OUT, 'signals.csv'), 'utf8')
   .split('\n')
   .slice(1)
   .map((line) => {
-    const [ms, gain, base, jump, color] = line.split(',');
+    const [ms, gain, base, jump, color, colorThr] = line.split(',');
     return {
       ms: Number(ms),
       gain: Number(gain),
       base: Number(base),
       jump: Number(jump),
       color: color === '' ? null : Number(color),
+      colorThr: Number(colorThr),
     };
   });
 const STEP_MS = steps.length > 1 ? steps[1].ms - steps[0].ms : 100;
@@ -86,9 +99,37 @@ const transcript = existsSync(path.join(OUT, 'transcript.json'))
     }).chunks
   : [];
 
-const gridFiles = readdirSync(path.join(OUT, 'grids'))
+/** The rolling OCR readings, exactly as a live tick would have received them
+ *  (scripts/backseat-ocr.ts, same engine and same shaping as the app). */
+const readings = existsSync(path.join(OUT, 'screentext.json'))
+  ? (JSON.parse(readFileSync(path.join(OUT, 'screentext.json'), 'utf8')) as {
+      readings: Array<{ t: number; text: string }>;
+    }).readings
+  : [];
+
+/** What the OCR pass had most recently read at `now`, under the app's own
+ *  staleness rule. Undefined means a tick here would have carried no text. */
+function screenTextAt(now: number): { t: number; text: string } | undefined {
+  let best: { t: number; text: string } | undefined;
+  for (const r of readings) {
+    if (r.t > now) break;
+    if (r.text && now - r.t <= SCREEN_TEXT_STALE_MS) best = r;
+  }
+  return best;
+}
+
+const dumped = readdirSync(path.join(OUT, 'grids'))
   .filter((f) => f.endsWith('.jpg'))
   .sort();
+/** Grid file per turn index. Falls back to sorted order for runs made before
+ *  the sim recorded the name, which is only safe when the counts match. */
+const gridFiles: string[] = vo.turns.map((t, i) => t.grid ?? dumped[i]);
+if (!vo.turns.every((t) => t.grid) && dumped.length !== vo.turns.length) {
+  throw new Error(
+    `grids/ holds ${dumped.length} files for ${vo.turns.length} turns and the run did not record ` +
+      'filenames. Re-run scripts/backseat-sim.ts; leftovers from an earlier run shift every grid.',
+  );
+}
 
 const gainJolts = vo.turns.filter((t) => t.joltReason === 'gain').map((t) => t.t);
 const colorJolts = vo.turns.filter((t) => t.joltReason === 'color').map((t) => t.t);
@@ -99,13 +140,19 @@ const W = 1920;
 const H = 1080;
 
 const VID = { x: 24, y: 72, w: 1280, h: 720 };
-const SAY = { x: 24, y: 812, w: 1280, h: 244 };
+// The audio transcript moved to the left column (260802) to make room under the
+// grid for the screen text, which is where it belongs: one panel for what the
+// screen SAID and one for what it was SHOWING, side by side with the picture.
+const SAY = { x: 24, y: 812, w: 872, h: 244 };
+const TXT = { x: 920, y: 812, w: 384, h: 244 };
 const COL = { x: 1328, w: 568 };
 
 const GRID = { y: 72, h: 536, img: { w: 568, h: 476, y: 100 }, strip: { y: 576, h: 20 } };
-const GAIN = { y: 618, h: 140, plot: { y: 646, h: 108 } };
-const CLR = { y: 774, h: 140, plot: { y: 802, h: 108 } };
-const TXT = { y: 930, h: 126 };
+const SCR = { y: 618, h: 144 };
+const GAIN = { y: 772, h: 136, plot: { y: 800, h: 104 } };
+const CLR = { y: 918, h: 138, plot: { y: 946, h: 104 } };
+/** The memory image, insetted into the bottom-right of the grid. */
+const PREV = { w: 148, h: 124 };
 
 const WINDOW_MS = 10_000; // how much history the two traces show
 
@@ -139,7 +186,9 @@ const kindDetail = (t: Turn): string => {
   if (!t.signal) return '';
   return t.joltReason === 'gain'
     ? `${(t.signal.gainDb - t.signal.baseDb >= 0 ? '+' : '')}${(t.signal.gainDb - t.signal.baseDb).toFixed(1)} dB over baseline (threshold +${JOLT_GAIN_DB})`
-    : `delta ${t.signal.colorDelta.toFixed(3)} (threshold ${JOLT_COLOR_DELTA})`;
+    // The bar is quoted alongside the delta because it moves: 0.49 is a jolt on
+    // a calm screen and nothing at all during a firefight.
+    : `delta ${t.signal.colorDelta.toFixed(3)} vs bar ${t.signal.colorThr.toFixed(3)}`;
 };
 
 // ---------------------------------------------------------------- svg helpers
@@ -260,6 +309,30 @@ async function gridFor(index: number): Promise<Buffer> {
   return buf;
 }
 
+/** The inset's caption and frame, as their own overlay. Composited after the
+ *  grid image rather than drawn into the page SVG, which the grid would cover. */
+function prevCaption(at: number): Buffer {
+  const w = PREV.w + 6;
+  const h = PREV.h + 22;
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+      `<rect x="0" y="0" width="${w}" height="${h}" rx="3" fill="#0b0d11" fill-opacity="0.9" stroke="${C.faint}" stroke-width="1"/>` +
+      `<text x="4" y="14" font-family="Helvetica Neue, Helvetica, Arial" font-size="11" font-weight="700" fill="${C.ink}">ALSO SENT: ${clock(at)} LOOK</text>` +
+      '</svg>',
+  );
+}
+
+const prevCache = new Map<number, Buffer>();
+async function prevGridFor(index: number): Promise<Buffer> {
+  const hit = prevCache.get(index);
+  if (hit) return hit;
+  const buf = await sharp(path.join(OUT, 'grids', gridFiles[index]))
+    .resize(PREV.w, PREV.h, { fit: 'fill' })
+    .toBuffer();
+  prevCache.set(index, buf);
+  return buf;
+}
+
 function frameSvg(now: number): string {
   const lastIdx = (() => {
     let k = -1;
@@ -357,7 +430,7 @@ function frameSvg(now: number): string {
       s.push(txt(VID.x + 24, VID.y + 67, detail, { size: 13, color: kindColor(last), mono: true }));
     }
     // what the model did with this look, once it is clear
-    const verdict = last.spoke ? '-> spoke' : '-> (silence)';
+    const verdict = last.spoke ? '-> spoke' : '-> NO LINE';
     s.push(
       `<rect x="${VID.x + 16}" y="${VID.y + (detail ? 78 : 50)}" width="${16 + verdict.length * 7}" height="24" rx="4" fill="#0b0d11" opacity="0.75"/>`,
     );
@@ -386,10 +459,13 @@ function frameSvg(now: number): string {
         color: C.dim,
       }),
     );
-    const lines = wrap(`"${spoken.reply}"`, SAY.w - 48, 26, 0.49).slice(0, 3);
-    lines.forEach((ln, i) => s.push(txt(SAY.x + 22, SAY.y + 104 + i * 34, ln, { size: 26 })));
+    // Four lines at 21px rather than three at 26: with silence removed the
+    // replies got noticeably longer (24 to 55 words against a contract asking
+    // for one or two short lines), and a panel that clips them would hide that.
+    const lines = wrap(`"${spoken.reply}"`, SAY.w - 48, 21, 0.49).slice(0, 4);
+    lines.forEach((ln, i) => s.push(txt(SAY.x + 22, SAY.y + 96 + i * 28, ln, { size: 21 })));
   } else {
-    s.push(txt(SAY.x + 22, SAY.y + 104, 'nothing said yet', { size: 26, color: C.faint }));
+    s.push(txt(SAY.x + 22, SAY.y + 96, 'nothing said yet', { size: 21, color: C.faint }));
   }
 
   // last look outcome + wake state, along the bottom of the panel
@@ -398,7 +474,9 @@ function frameSvg(now: number): string {
     `<line x1="${SAY.x + 20}" y1="${foot - 34}" x2="${SAY.x + SAY.w - 20}" y2="${foot - 34}" stroke="${C.edge}" stroke-width="1"/>`,
   );
   if (last) {
-    const verdict = last.spoke ? 'spoke' : 'chose (silence)';
+    // 260802: silence is no longer an option the prompts offer, so a look with
+    // no line is an instruction being ignored, not a judgement call.
+    const verdict = last.spoke ? 'spoke' : 'NO LINE (contract says always speak)';
     s.push(
       txt(
         SAY.x + 22,
@@ -435,6 +513,18 @@ function frameSvg(now: number): string {
       `<rect x="${COL.x + 2}" y="${GRID.img.y}" width="${GRID.img.w - 4}" height="${GRID.img.h - 4}" fill="#0b0d11"/>`,
     );
   }
+
+  // The memory image: the previous look's grid, at half size, which rides along
+  // with this one so the companion can tell what has moved on since its own
+  // last line. Drawn as an inset because it IS an inset in the prompt: a
+  // smaller, older picture next to the current one.
+  const prevIdx = (() => {
+    for (let i = lastIdx - 1; i >= 0; i--) if (vo.turns[i].spoke) return i;
+    return -1;
+  })();
+  // Its caption is NOT drawn here: the grid image is composited over this SVG
+  // afterwards, so anything drawn inside the image's rectangle disappears under
+  // it. See prevCaption(), which is composited on top instead.
 
   // the log-spaced offset strip: where the six cells were taken from
   const sx = COL.x + 16;
@@ -493,50 +583,106 @@ function frameSvg(now: number): string {
   s.push(panel(COL.x, CLR.y, COL.w, CLR.h));
   s.push(label(COL.x + 16, CLR.y + 22, 'COLOUR DELTA'));
   s.push(
-    txt(COL.x + COL.w - 16, CLR.y + 22, `${(cur.color ?? 0).toFixed(3)}   thr ${JOLT_COLOR_DELTA}`, {
-      size: 12,
-      color: (cur.color ?? 0) >= JOLT_COLOR_DELTA ? C.color : C.dim,
-      anchor: 'end',
-      mono: true,
-    }),
+    txt(
+      COL.x + COL.w - 16,
+      CLR.y + 22,
+      `${(cur.color ?? 0).toFixed(3)}   bar ${cur.colorThr.toFixed(3)}`,
+      {
+        size: 12,
+        color: (cur.color ?? 0) >= cur.colorThr ? C.color : C.dim,
+        anchor: 'end',
+        mono: true,
+      },
+    ),
+  );
+  s.push(
+    txt(COL.x + 168, CLR.y + 22, `median + ${vo.TH.colorMad} MAD`, { size: 10, color: C.faint }),
   );
   s.push(
     plot({
       y: CLR.plot.y,
       h: CLR.plot.h,
       lo: 0,
-      hi: 0.6,
+      hi: 0.9,
       color: C.color,
       now,
-      axis: ['0', '0.6'],
+      axis: ['0', '0.9'],
       marks: colorJolts,
       series: win.map((p) => ({ ms: p.ms, v: p.color })),
-      threshold: win.map((p) => ({ ms: p.ms, v: JOLT_COLOR_DELTA })),
+      // The dashed line MOVES here, unlike the gain panel's fixed offset from
+      // its baseline. That is the change: a fixed bar could not be both
+      // sensitive in a calm game and quiet in a frantic one.
+      threshold: win.map((p) => ({ ms: p.ms, v: p.colorThr })),
     }),
   );
 
-  // --- transcript panel
-  s.push(panel(COL.x, TXT.y, COL.w, TXT.h));
-  s.push(label(COL.x + 16, TXT.y + 22, 'GAME AUDIO TRANSCRIPT'));
+  // --- game audio transcript (left column, beside the companion)
+  s.push(panel(TXT.x, TXT.y, TXT.w, TXT.h));
+  s.push(label(TXT.x + 16, TXT.y + 28, 'GAME AUDIO'));
   s.push(
-    txt(COL.x + COL.w - 16, TXT.y + 22, 'whisper-tiny.en, offline', {
+    txt(TXT.x + TXT.w - 16, TXT.y + 28, 'whisper-tiny.en, offline', {
       size: 11,
       color: C.faint,
       anchor: 'end',
     }),
   );
-  const heard = transcript.filter((c) => c.to > now - 14_000 && c.from <= now).slice(-3);
-  let ty = TXT.y + 46;
+  const heard = transcript.filter((c) => c.to > now - 14_000 && c.from <= now).slice(-4);
+  let ty = TXT.y + 56;
   for (const c of heard) {
     const live = c.from <= now && c.to > now;
-    for (const ln of wrap(c.text, COL.w - 90, 14, 0.52).slice(0, 2)) {
-      if (ty > TXT.y + TXT.h - 8) break;
-      s.push(txt(COL.x + 16, ty, clock(c.from), { size: 12, color: C.faint, mono: true }));
-      s.push(txt(COL.x + 62, ty, ln, { size: 14, color: live ? C.ink : C.dim }));
+    for (const ln of wrap(c.text, TXT.w - 90, 14, 0.52).slice(0, 2)) {
+      if (ty > TXT.y + TXT.h - 10) break;
+      s.push(txt(TXT.x + 16, ty, clock(c.from), { size: 12, color: C.faint, mono: true }));
+      s.push(txt(TXT.x + 62, ty, ln, { size: 14, color: live ? C.ink : C.dim }));
       ty += 20;
     }
   }
-  if (!heard.length) s.push(txt(COL.x + 16, TXT.y + 46, 'no speech', { size: 14, color: C.faint }));
+  if (!heard.length) s.push(txt(TXT.x + 16, TXT.y + 56, 'no speech', { size: 14, color: C.faint }));
+
+  // --- screen text, directly under the grid it was read from
+  s.push(panel(COL.x, SCR.y, COL.w, SCR.h, flash && last?.screenText ? kindColor(last) : C.edge));
+  s.push(label(COL.x + 16, SCR.y + 22, 'SCREEN TEXT'));
+  s.push(
+    txt(COL.x + COL.w - 16, SCR.y + 22, `tesseract, 2x, max ${TICK_SCREEN_TEXT_MAX_WORDS}w`, {
+      size: 11,
+      color: C.faint,
+      anchor: 'end',
+    }),
+  );
+  const reading = screenTextAt(now);
+  if (reading) {
+    s.push(
+      txt(COL.x + 16, SCR.y + 44, `read at ${clock(reading.t)}`, {
+        size: 11,
+        color: C.faint,
+        mono: true,
+      }),
+    );
+    // Whether THIS reading is the one the last look carried, which is the
+    // honest thing to show: the OCR pass runs on its own slow cadence, so a
+    // tick sends whatever had most recently been read, not a fresh pass.
+    const sent = !!last && last.screenText === reading.text;
+    if (sent) {
+      s.push(
+        txt(COL.x + COL.w - 16, SCR.y + 44, `sent with the ${clock(last.t)} look`, {
+          size: 11,
+          color: last ? kindColor(last) : C.dim,
+          anchor: 'end',
+          mono: true,
+        }),
+      );
+    }
+    let sy = SCR.y + 66;
+    for (const ln of wrap(reading.text, COL.w - 32, 15, 0.52)) {
+      if (sy > SCR.y + SCR.h - 8) break;
+      s.push(txt(COL.x + 16, sy, ln, { size: 15, color: sent ? C.ink : C.dim, mono: true }));
+      sy += 20;
+    }
+  } else {
+    s.push(
+      txt(COL.x + 16, SCR.y + 66, 'nothing legible on screen', { size: 15, color: C.faint }),
+    );
+  }
 
   s.push('</svg>');
   return s.join('');
@@ -545,12 +691,25 @@ function frameSvg(now: number): string {
 async function frame(now: number): Promise<Buffer> {
   let lastIdx = -1;
   for (let i = 0; i < vo.turns.length; i++) if (vo.turns[i].t <= now) lastIdx = i;
-  const base = sharp(Buffer.from(frameSvg(now)));
-  if (lastIdx >= 0 && gridFiles[lastIdx]) {
-    base.composite([
-      { input: await gridFor(lastIdx), top: GRID.img.y, left: COL.x + 2 },
-    ]);
+  let prevIdx = -1;
+  for (let i = lastIdx - 1; i >= 0; i--) {
+    if (vo.turns[i].spoke) {
+      prevIdx = i;
+      break;
+    }
   }
+  const base = sharp(Buffer.from(frameSvg(now)));
+  const layers: sharp.OverlayOptions[] = [];
+  if (lastIdx >= 0 && gridFiles[lastIdx]) {
+    layers.push({ input: await gridFor(lastIdx), top: GRID.img.y, left: COL.x + 2 });
+  }
+  if (lastIdx >= 0 && prevIdx >= 0 && gridFiles[prevIdx]) {
+    const top = GRID.img.y + GRID.img.h - PREV.h - 14;
+    const left = COL.x + GRID.img.w - PREV.w - 12;
+    layers.push({ input: prevCaption(vo.turns[prevIdx].t), top: top - 19, left: left - 3 });
+    layers.push({ input: await prevGridFor(prevIdx), top, left });
+  }
+  if (layers.length) base.composite(layers);
   return base.raw().toBuffer();
 }
 
