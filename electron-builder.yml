@@ -30,6 +30,29 @@ directories:
 
 # Inclusive: pack the whole repo, then carve out planning docs, dev-only
 # tooling, build outputs, personal/user state, and gitignored items.
+#
+# 260803 — READ THIS BEFORE ADDING AN EXCLUSION HERE. electron-builder builds
+# TWO filters and this top-level list only reaches ONE of them:
+#
+#   * the NODE MODULE matcher (getNodeModuleFileMatcher in
+#     app-builder-lib/out/fileMatcher.js) takes the "!" patterns from BOTH this
+#     list and the platform-specific `files:` blocks. Every node_modules
+#     exclusion below therefore works, which is why the bedrock / gl / three /
+#     onnxruntime prunes are measurably effective.
+#   * the MAIN APP matcher (getMainFileMatchers, the one that decides which
+#     PROJECT files land in app.asar) ends up with ONLY the platform-specific
+#     block plus electron-builder's own defaults. Everything here is silently
+#     dropped from it. Confirmed by reading `release/builder-debug.yml`
+#     (`arm64.firstOrDefaultFilePatterns` against `arm64.nodeModuleFilePatterns`)
+#     and by inspecting the SHIPPED v0.6.0-beta.3 app.asar, which contains
+#     .planning/, docs/, scripts/, CLAUDE.md and README.md despite all five
+#     being excluded here since the first release.
+#
+# So a `!vendor/**` or `!docs/**` written here alone does nothing to the app
+# tree. Project-tree exclusions are duplicated into the mac and win `files:`
+# blocks below, under the "app-tree exclusions" heading, and THAT is the copy
+# that actually removes them. Keep the two in sync; if a third platform target
+# is ever revived, it needs the same block.
 files:
   - "**/*"
   # build outputs that get regenerated
@@ -38,6 +61,12 @@ files:
   # planning + docs (project history, not shipped)
   - "!.planning/**"
   - "!docs/**"
+  # demo/ holds the marketing capture tooling; `frames/` and `out/` are local
+  # recording output (612MB on the machine this was measured on) and only the
+  # scripts and fixtures are committed. It must appear in BOTH lists: with the
+  # exclusion in the platform block alone it was still packed in full, which is
+  # the cleanest evidence that these two matchers are genuinely separate.
+  - "!demo/**"
   - "!ARCHITECTURE.md"
   - "!RELEASE-NOTES.md"
   - "!README.md"
@@ -60,9 +89,101 @@ files:
   - "!.env*"
   # sibling working copies / forks
   - "!mineflayer/**"
+  # 260803 vendor: stop shipping vendor/ TWICE. Every vendored package is a
+  # `file:` dependency, so electron-builder already copies its dereferenced tree
+  # to node_modules/<name>, which asarUnpack then unpacks. The literal vendor/
+  # directory is ALSO swept up by the leading `**/*` glob and packed inside
+  # app.asar as a second, real-bytes copy that asarUnpack does not cover.
+  # Measured against the shipped /Applications/Sei.app v0.6.0-beta.3: app.asar
+  # was 388.8MB, of which 303.3MB / 383 files was the redundant vendor/ tree,
+  # sitting alongside a fully separate app.asar.unpacked/node_modules/cce-1.
+  # This exclusion is safe precisely because exclusion globs are matched against
+  # the DESTINATION path and never the source realpath (see
+  # app-builder-lib/out/util/filter.js + NodeModuleCopyHelper.js), so it cannot
+  # reach the copied node_modules/<name> trees. No runtime code references a
+  # vendor/ path either; every consumer uses a bare specifier
+  # (`await import('cce-1')` in src/main/chess/chessService.ts,
+  # `await import('img2skin/src/pipeline.js')` and `await import('soulcaster')`
+  # in src/main/uniqueGeneration.ts, `import ... from 'soulcaster'` in
+  # src/main/voice/voiceAssign.ts). vendor/ stays committed to the repo so
+  # `npm ci` still resolves the file: deps; this only stops packaging the copy.
+  # Expect app.asar to drop from ~389MB to ~85MB, which also hands headroom back
+  # to the dmg file-count sizing constraint described in the mac section below.
+  - "!vendor/**"
   # source maps + node_modules trim
   - "!**/*.map"
   - "!**/node_modules/*/{test,tests,__tests__,*.md,*.markdown,LICENSE*,license*}"
+  # 260803 bedrock: minecraft-data ships the complete Bedrock Edition data tree
+  # (329MB / 398 files) and nothing in this app speaks Bedrock. It CANNOT be
+  # dropped wholesale: minecraft-data/index.js (lines 6, 103, 111) and
+  # lib/supportsFeature.js (line 3) EAGERLY require
+  # bedrock/common/{protocolVersions,versions,legacy,features}.json at module
+  # load time, so a blanket `bedrock/**` glob makes `require('minecraft-data')`
+  # throw and kills the bot utilityProcess on every summon. Every bedrock
+  # VERSION directory begins with a digit (0.14 through 1.26.30) while only
+  # `common` and `latest` begin with a letter, so the [0-9] character class
+  # prunes exactly the version dirs and leaves the eagerly-required common/
+  # files in place. The `**/` prefix also catches the nested copy under
+  # mineflayer-utils.
+  - "!**/minecraft-data/minecraft-data/data/bedrock/[0-9]*/**"
+  # 260803 headless-gl: `gl` is 208MB unpacked, and the only runtime artifact is
+  # build/Release/webgl.node (2.3MB) plus src/javascript/**, index.js and
+  # package.json. `bindings('webgl')` (node_modules/bindings/bindings.js lines
+  # 36-58) walks a FIXED ordered list of 13 candidate paths and returns on the
+  # first one that requires successfully; there is no directory scan, and the
+  # winner is always candidate #3, build/Release/webgl.node. Nothing ever looks
+  # in bin/ (that copy is written by @electron/rebuild's legacy node-pre-gyp
+  # compat step and is unreachable). Everything excluded below is node-gyp build
+  # residue: the ANGLE source checkout, the intermediate object trees, and the
+  # generated makefiles / project files.
+  #
+  # DO NOT broaden any of this to "!node_modules/gl/build/Release/**". On
+  # Windows, gl's binding.gyp copies libEGL.dll, libGLESv2.dll and
+  # d3dcompiler_47.dll into build/Release and they are required at load time.
+  # That mistake builds clean and tests green on macOS, and only surfaces as a
+  # LoadLibrary failure inside the bot utilityProcess on an end user's Windows
+  # machine. Keeping the exclusions narrow (named subdirectories plus
+  # object-file extensions) makes that failure impossible.
+  #
+  # The lists deliberately cover both toolchains: make (*.a, obj.target, .deps)
+  # and MSVC (*.lib/.obj/.pdb/.ilk/.exp/.iobj/.ipdb/.tlog, build/Release/obj).
+  # The half that does not apply is a harmless no-op on each platform. gl/deps
+  # holds the prebuilt Windows DLLs and import libs that binding.gyp copies at
+  # compile time, so it is Windows-only content and is excluded in the mac
+  # section below rather than here.
+  - "!node_modules/gl/angle/**"
+  - "!node_modules/gl/bin/**"
+  - "!node_modules/gl/node_modules/**"
+  - "!node_modules/gl/src/native/**"
+  - "!node_modules/gl/build/Release/obj.target/**"
+  - "!node_modules/gl/build/Release/obj/**"
+  - "!node_modules/gl/build/Release/.deps/**"
+  - "!node_modules/gl/build/Release/*.{a,o,lib,obj,pdb,ilk,exp,iobj,ipdb,tlog}"
+  - "!node_modules/gl/build/angle/**"
+  - "!node_modules/gl/build/{Makefile,binding.Makefile,gyp-mac-tool,config.gypi}"
+  - "!node_modules/gl/build/*.{mk,vcxproj,sln,filters}"
+  # 260803 three: drop the build variants no code path can reach. Root three
+  # (0.185.1) has an exports map, so the app resolves to build/three.module.js
+  # (+ three.core.js) and build/three.cjs; the ./webgpu and ./tsl subpaths have
+  # zero importers, which makes the webgpu/tsl bundles and every *.min.js dead
+  # weight. The nested 0.128.0 under prismarine-viewer has NO exports field, so
+  # Node uses `main: build/three.js` and can never reach three.module.js or
+  # three.min.js. The nested 0.156.1 under skinview3d DOES have an exports
+  # field, which shadows `main` and does not export ./build/*, so three.js,
+  # three.min.js and three.module.min.js there are unreachable (only three.cjs
+  # and three.module.js are used). The renderer's copies are Vite-bundled into
+  # dist/renderer (electron.vite.config.ts applies externalizeDepsPlugin to main
+  # and preload only), so nothing loads three from node_modules at runtime.
+  # Together with the gl residue above this is about 209MB and 1,870 files.
+  - "!node_modules/three/build/*.min.js"
+  - "!node_modules/three/build/three.webgpu.js"
+  - "!node_modules/three/build/three.webgpu.nodes.js"
+  - "!node_modules/three/build/three.tsl.js"
+  - "!node_modules/prismarine-viewer/node_modules/three/build/three.min.js"
+  - "!node_modules/prismarine-viewer/node_modules/three/build/three.module.js"
+  - "!node_modules/skinview3d/node_modules/three/build/three.js"
+  - "!node_modules/skinview3d/node_modules/three/build/three.min.js"
+  - "!node_modules/skinview3d/node_modules/three/build/three.module.min.js"
   # 260710 chess: onnxruntime-node ships prebuilds for EVERY platform (~208MB
   # total). Each per-OS section below excludes the two foreign OS trees
   # (static globs — no ${os} macro in `files`, so per-OS overrides carry it).
@@ -101,10 +222,21 @@ mac:
   # overflowed the mounted volume with "No space left on device". The fix is the
   # texture prune below (mac `files`): mac builds keep only the 1.20.1 / 1.21.1
   # / 1.21.4 texture sets (~9.4k files, the versions players actually run),
-  # which brings the count under the sizing slack. The tradeoff: on macOS, a
-  # LAN world older than 1.20 loses POV vision (povRenderer degrades to
-  # CANT_SEE) and dashboard item icons (mcAssets 404s → text labels). Windows
-  # ships the full tree and is unaffected.
+  # which brings the count under the sizing slack. (260803: the win `files` list
+  # now applies the same prune, for install time rather than volume sizing, so
+  # the tradeoff below is no longer mac-only.)
+  #
+  # The tradeoff: on a world older than 1.20, POV vision is unavailable
+  # (povRenderer reports CANT_SEE) and dashboard item icons fall back to text
+  # labels (mcAssets 404s). CANT_SEE is enforced by an explicit atlas-existence
+  # pre-check in povRenderer.js, and that pre-check is what makes the
+  # degradation graceful rather than fatal: prismarine-viewer's supported-version
+  # list is hardcoded in viewer/lib/version.js, so setVersion() still SUCCEEDS
+  # for, say, a 1.16 world and it is the later loadTexture() that rejects. That
+  # rejection has no .catch, so without the pre-check it escapes to the
+  # unhandledRejection handler in src/bot/index.js, which calls process.exit(1)
+  # and kills the whole bot process. Do not remove the pre-check while these
+  # texture exclusions are in place.
   #
   # The zip stays: it is the macOS auto-update payload (latest-mac.yml +
   # app-update.yml reference it). The dmg is the manual download — drag to
@@ -155,8 +287,52 @@ mac:
   # (see the DMG RE-ENABLED note above) — the file-count cut is what makes the
   # dmg target buildable again. Keep 1.20.1 / 1.21.1 / 1.21.4; the second line
   # drops the orphaned per-version atlas PNGs that sit beside the folders.
+  # 260803 chess: cce-1 bundles its OWN nested onnxruntime-node (259MB on disk,
+  # a different ABI generation from the top-level @huggingface/transformers
+  # copy: napi-v6, not napi-v3; darwin 75MB / linux 57MB / win32 128MB), so the
+  # per-OS globs above never matched it and every
+  # platform build shipped all three prebuild trees. The destination path is
+  # node_modules/cce-1/... and NOT vendor/cce-1/... because electron-builder
+  # copies the dereferenced `file:` dependency tree there, and exclusion globs
+  # match the destination path. Dropping linux + win32 saves ~184MB on mac;
+  # darwin/ only has an arm64 prebuild, so the x64 mac build has no chess
+  # inference either way and this changes nothing for it.
+  # 260803 headless-gl: gl/deps is the prebuilt Windows DLL + import-lib payload
+  # that binding.gyp copies into build/Release at compile time. It is dead
+  # weight on macOS, so it is pruned here rather than at the top level.
   files:
+    # ── app-tree exclusions ───────────────────────────────────────────────
+    # Duplicated verbatim in the win block. These are copies of top-level
+    # `files:` entries that never reach the main app matcher (see the long
+    # note above that list); this is the copy that actually keeps them out of
+    # app.asar. Measured on mac arm64: vendor/ 30.6MB, .planning/ 10.2MB,
+    # docs/ 7.9MB, demo/ 2.4MB, scripts/ 0.4MB. `!.env*` is the one that
+    # matters beyond size: a LOCAL `dist:mac` was packing the developer's own
+    # .env into app.asar. CI never had one, so no shipped build carried it,
+    # but nothing was stopping the next hand-built artifact from doing so.
+    # src/ stays: the bot ships as raw ESM source and is forked from there.
+    - "!vendor/**"
+    - "!.planning/**"
+    - "!docs/**"
+    - "!demo/**"
+    - "!scripts/**"
+    - "!test/**"
+    - "!.claude/**"
+    - "!.github/**"
+    - "!logs/**"
+    - "!memory/**"
+    - "!ARCHITECTURE.md"
+    - "!RELEASE-NOTES.md"
+    - "!README.md"
+    - "!CLAUDE.md"
+    - "!tsconfig*.json"
+    - "!electron.vite.config.ts"
+    - "!config.json"
+    - "!config.example.json"
+    - "!.env*"
     - "!node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
+    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**"
+    - "!node_modules/gl/deps/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
   # 260728 backseat: the bundled ScreenCaptureKit system-audio tap
@@ -202,9 +378,51 @@ win:
       arch: [x64]
   # 260710 chess: drop mac + linux onnxruntime prebuilds (and win arm64) from
   # the x64-only windows build (~170MB saved).
+  # 260803 chess: same treatment for cce-1's nested onnxruntime-node copy, which
+  # the globs above never reached (it lives one level deeper and is a different
+  # ABI generation, napi-v6 rather than napi-v3), so every windows build was
+  # shipping the darwin and linux prebuilds too. The destination path is
+  # node_modules/cce-1/... and NOT vendor/cce-1/... because electron-builder
+  # copies the dereferenced `file:` dependency tree there, and exclusion globs
+  # match the destination path. Dropping darwin + linux saves ~130MB; the
+  # win32/arm64 line mirrors the arm64 exclusion above (this target is
+  # `arch: [x64]` only) for a further ~64MB.
+  # 260803 install time: prune prismarine-viewer textures exactly as the mac
+  # section does. This is the single biggest win on windows: 32,465 texture
+  # files drop to 9,391, removing 23,074 files and about 134 seconds of NSIS
+  # install time, almost all of which was per-file overhead rather than bytes.
+  # The cost is the same as on mac (no POV vision, text item labels, on worlds
+  # older than 1.20); see the tradeoff note in the mac section, including why
+  # the atlas-existence pre-check in povRenderer.js must stay.
   files:
+    # ── app-tree exclusions ───────────────────────────────────────────────
+    # Kept identical to the mac block; see the comment there for why the
+    # top-level `files:` copy of these does nothing on its own.
+    - "!vendor/**"
+    - "!.planning/**"
+    - "!docs/**"
+    - "!demo/**"
+    - "!scripts/**"
+    - "!test/**"
+    - "!.claude/**"
+    - "!.github/**"
+    - "!logs/**"
+    - "!memory/**"
+    - "!ARCHITECTURE.md"
+    - "!RELEASE-NOTES.md"
+    - "!README.md"
+    - "!CLAUDE.md"
+    - "!tsconfig*.json"
+    - "!electron.vite.config.ts"
+    - "!config.json"
+    - "!config.example.json"
+    - "!.env*"
     - "!node_modules/onnxruntime-node/bin/napi-v3/{darwin,linux}/**"
     - "!node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
+    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**"
+    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}/**"
+    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
   # Windows ships UNSIGNED for now (RESEARCH §Resolved Q2). SmartScreen's
   # "unknown publisher" warning is the accepted UX.
   #
