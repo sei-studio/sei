@@ -1066,6 +1066,10 @@ if (!gotLock) {
   app.on('before-quit', async (e) => {
     if (!supervisor && !lanWatcherHandle && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
     e.preventDefault();
+    // Close any open text-chat session BEFORE the flush below — quitting
+    // mid-conversation is the normal way a chat ends, and an event captured
+    // after shutdownAnalytics() would never be sent.
+    try { await (await import('./chat/chatSession')).endAllChatSessions(); } catch { /* best-effort */ }
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }

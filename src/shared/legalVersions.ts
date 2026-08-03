@@ -27,5 +27,14 @@
 // active profile's config (reenableAnalyticsOnConsent in src/main/analytics.ts);
 // the Settings "Usage analytics" toggle remains the ongoing opt-out.
 // TOS_VERSION unchanged — terms.html was not touched.
+// 260801: PRIVACY bumped for three additions, all in privacy.html §1 + §3 +
+// §10 with the Effective Date moved to 2026-08-01. (1) A new "Companion
+// library (cloud)" bullet — the signed-in client now mirrors which
+// someone-else-made companions are in your library to the character_library
+// table, so a library follows the account instead of one machine. (2) Product
+// analytics now carry the app display language (ui_language) and the companion
+// identifier an event refers to. (3) Text chat is instrumented like every other
+// surface, so events carry message counts. TOS_VERSION unchanged — terms.html
+// was not touched.
 export const TOS_VERSION = '2026-06-03';
-export const PRIVACY_VERSION = '2026-07-20';
+export const PRIVACY_VERSION = '2026-08-01';

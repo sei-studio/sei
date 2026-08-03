@@ -152,6 +152,7 @@ export async function reconcileLocalOwnershipOnSignIn(
     try {
       const cfg = await loadConfig();
       await saveConfig({ ...cfg, added_world_ids: Array.from(addedWorldIds) });
+      void (await import('./librarySync')).syncLibraryRoster('unpublish-cleanup');
     } catch (err) {
       console.warn(
         `[sei] reconcile: persisting added_world_ids after unpublish cleanup failed: ${(err as Error).message}`,

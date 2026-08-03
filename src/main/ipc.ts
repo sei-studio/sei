@@ -864,6 +864,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const added = (cfg.added_default_ids ?? []).filter((x) => x !== id);
       if (added.length !== (cfg.added_default_ids ?? []).length) {
         await saveConfig({ ...cfg, added_default_ids: added });
+        void (await import('./cloud/librarySync')).syncLibraryRoster('default-removed');
       }
       return;
     }
@@ -891,6 +892,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!alreadyOnHome) {
       const added = [...(cfg.added_default_ids ?? []), id];
       await saveConfig({ ...cfg, added_default_ids: added });
+      void (await import('./cloud/librarySync')).syncLibraryRoster('default-invited');
     }
   });
 
@@ -951,6 +953,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!added.has(id)) {
       added.add(id);
       await saveConfig({ ...cfg, added_world_ids: Array.from(added) });
+      void (await import('./cloud/librarySync')).syncLibraryRoster('world-added');
     }
   });
 
@@ -970,6 +973,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const added = (cfg.added_world_ids ?? []).filter((x) => x !== id);
     if (added.length !== (cfg.added_world_ids ?? []).length) {
       await saveConfig({ ...cfg, added_world_ids: added });
+      void (await import('./cloud/librarySync')).syncLibraryRoster('world-removed');
     }
     // Wipe local cache files via the same hand-rolled deletion the reconcile
     // sweep uses (skips the cloud-mirror enqueue inside characterStore.
@@ -1190,6 +1194,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // ran on the latency-critical path before every spoken reply (260706).
     if (!inCall) {
       try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
+    }
+    // Analytics (260801): the ONLY chat-session choke point. Everything routed
+    // above this line belongs to another surface that emits its own timed
+    // event — chess and Draw! have already declined, and a mid-call line is
+    // covered by voice_call_ended — so counting here can never double-bill
+    // playtime. See chat/chatSession.ts for the session model.
+    if (!inCall) {
+      const { noteChatMessage } = await import('./chat/chatSession');
+      noteChatMessage(args.characterId);
     }
     return await sendChatMessage(
       // voiceCall (260705): while a call is open the reply is spoken aloud, so
@@ -2080,6 +2093,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // configStore.saveConfigFromRenderer.
     const { saveConfigFromRenderer } = await import('./configStore');
     await saveConfigFromRenderer(cfg);
+    // Keep the analytics ui_language property current — both surfaces that
+    // write it (Settings and the onboarding Sui stage) save through here.
+    if ('ui_language' in (cfgArg as Record<string, unknown>)) {
+      const { setUiLanguage } = await import('./analytics');
+      setUiLanguage(cfg.ui_language);
+    }
     // Item 7: mirror the user's preferred name into the public profiles table
     // so Browse shows "by <name>" on their published characters. Fire-and-forget
     // (don't add a network round-trip to every config save, e.g. theme toggles)

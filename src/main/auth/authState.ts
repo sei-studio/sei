@@ -357,6 +357,14 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
             identifyUser(nextUserId);
             capture('signed_in');
           } catch { /* best-effort */ }
+          // Roster mirror (260801): reconcile the whole Home roster, not just
+          // the deltas the four library IPC handlers report. This is the pass
+          // that backfills an install whose roster predates the
+          // character_library table, and the safety net for every other writer
+          // (the one-shot config migrations, onboarding's Sui seed, the
+          // unpublish reconcile sweep) — none of which has to know this
+          // mirror exists.
+          void (await import('../cloud/librarySync')).syncLibraryRoster('sign-in');
         } else {
           // Sign-out transition: mark it, then detach from the account so
           // subsequent events revert to the anonymous install id.
