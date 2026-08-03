@@ -26,7 +26,7 @@
  * lib/backseatTipPref.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
@@ -76,13 +76,10 @@ export function CallControls({ size = 'lg', onHangUp }: CallControlsProps): Reac
   const iconPx = small ? 16 : 22;
 
   // One-time tip. `done` is read once at mount (localStorage), then flipped in
-  // memory by "Got it" so the popover leaves without a re-read. It also flips
-  // the moment a share starts, because share() writes the same flag: someone
-  // who just found the feature should not be left reading an ad for it.
+  // memory by "Got it" so the popover leaves without a re-read. Starting a
+  // share no longer counts as done (see backseatTipPref): the predicate hides
+  // the card while sharing, and if they stop, an undismissed tip is still owed.
   const [tipDone, setTipDone] = useState(backseatTipDone);
-  useEffect(() => {
-    if (sharing) setTipDone(true);
-  }, [sharing]);
   const showTip = shouldShowBackseatTip({
     done: tipDone,
     sharing,

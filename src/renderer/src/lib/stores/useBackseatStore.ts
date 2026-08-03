@@ -41,7 +41,6 @@
 import { create } from 'zustand';
 import type { BackseatSource, BackseatState } from '../../../../shared/backseatIpc';
 import { startCapture, stopCapture, type CaptureHandle } from '../backseat/captureController';
-import { markBackseatShared } from '../backseatTipPref';
 import { sei } from '../ipcClient';
 
 /**
@@ -183,10 +182,6 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         error: null,
         active: { ...get().active, [characterId]: true },
       });
-      // Every successful share funnels through here, from either entry point,
-      // which makes this the one place that can record "this player has found
-      // backseat" for the one-time discovery tip (lib/backseatTipPref).
-      markBackseatShared();
       return true;
     },
 

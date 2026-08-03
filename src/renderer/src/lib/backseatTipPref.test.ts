@@ -10,21 +10,17 @@
  *      companion to share with, while not already sharing).
  *   2. Each suppression condition alone is enough to hide it: dismissed,
  *      already sharing, no share target, and the small (docked) size.
- *   3. "Got it" persists, and so does a successful share. The two write the
- *      SAME flag, so a player who found the feature is never told about it.
+ *   3. "Got it" persists, and is the ONLY thing that does. Sharing must NOT
+ *      retire the tip: the people most owed a beta notice are the ones who
+ *      already used the feature in an earlier build (revised 260803).
  *   4. A storage read/write that throws (private mode) degrades to "not done"
  *      rather than crashing the call controls.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  backseatTipDone,
-  dismissBackseatTip,
-  markBackseatShared,
-  shouldShowBackseatTip,
-} from './backseatTipPref';
+import { backseatTipDone, dismissBackseatTip, shouldShowBackseatTip } from './backseatTipPref';
 
-const KEY = 'sei.backseatTipDone';
+const KEY = 'sei.backseatTipDone.v2';
 
 /** Minimal in-memory localStorage: the module only uses getItem/setItem. */
 function fakeStorage(opts?: { throws?: boolean }): Storage {
@@ -96,10 +92,19 @@ describe('backseatTipDone persistence', () => {
     expect(backseatTipDone()).toBe(true);
   });
 
-  it('is true after a successful share, without any dismissal', () => {
-    markBackseatShared();
-    expect(backseatTipDone()).toBe(true);
-    expect(shouldShowBackseatTip({ ...base, done: backseatTipDone() })).toBe(false);
+  it('is NOT retired by a share, only by "Got it"', () => {
+    // The regression this pins: an earlier version wrote the same flag from
+    // useBackseatStore.share(), so everyone who had used backseat before the
+    // tip existed was silenced by their own first share and never saw it.
+    // Nothing outside this module may write the flag.
+    expect(backseatTipDone()).toBe(false);
+    expect(shouldShowBackseatTip({ ...base, sharing: true })).toBe(false);
+    expect(shouldShowBackseatTip({ ...base, sharing: false })).toBe(true);
+  });
+
+  it('ignores a flag left by the previous key, so the notice re-announces', () => {
+    localStorage.setItem('sei.backseatTipDone', '1');
+    expect(backseatTipDone()).toBe(false);
   });
 
   it('degrades to not-done when storage is unavailable', () => {

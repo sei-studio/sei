@@ -750,9 +750,16 @@ export const ScreenShareIcon: React.FC<IconProps> = ({ size = 22 }) => (
  * did there. Backseat had a recognizable mark and the mark outlived its tile;
  * a plain share glyph in the header would not have read as the same feature.
  *
- * Proportions are carried over from the tile rather than re-invented: the body
- * is ~1.55:1, the stand is ~0.22 of the body height, and the star sits at 0.93
- * of the half-width, just above the top edge.
+ * Proportions are carried over from the tile rather than re-invented, with one
+ * deliberate exception: the body is ~1.55:1 and the stand is ~0.22 of the body
+ * height, but the STAR is drawn larger than the tile's. The tile's ratio (star
+ * radius ~0.16 of the monitor width) was set for a 480px card; at 18px in a
+ * header it came out under 4px across, which is smaller than the stroke weight
+ * around it and read as a speck rather than a sparkle. It is now ~0.21, about
+ * 35% wider, and shifted up and right by half a unit so it clears the body's
+ * top-right corner. Growing it in place instead merged the two into a blob at
+ * the corner, which cost the monitor its silhouette at 18px; the point of
+ * keeping the tile's mark is that the monitor is still read first.
  */
 export const BackseatIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg
@@ -772,7 +779,7 @@ export const BackseatIcon: React.FC<IconProps> = ({ size = 18 }) => (
     <path d="M10.5 13.5V8" />
     <path d="M8.5 10 10.5 8l2 2" />
     <path
-      d="M18.5 2.8 19.2 4.7 21.1 5.4 19.2 6 18.5 8 17.8 6 15.9 5.4 17.8 4.7Z"
+      d="M19.2 0.8 20.2 3.3 22.7 4.3 20.2 5.3 19.2 7.8 18.2 5.3 15.7 4.3 18.2 3.3Z"
       fill="currentColor"
       stroke="none"
     />

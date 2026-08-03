@@ -13,19 +13,25 @@
  * writes back a whole config it read earlier can revert unrelated fields), and
  * a cosmetic tip is not worth exposing every other setting to that.
  *
- * ONE flag covers two ways of being done with the tip:
- *   - the player pressed "Got it";
- *   - the player shared a screen, by any route, at any time.
- * The second is the important one. The tip's only job is to say the feature
- * exists; someone who has already used it does not need to be told, and would
- * read the tip as the app not noticing what they just did. useBackseatStore's
- * share() sets the flag on every successful start, so this holds for the call
- * controls and the chat header alike.
+ * "GOT IT" IS THE ONLY THING THAT RETIRES IT (revised 260803). The first
+ * version also retired the tip on any successful share, reasoning that someone
+ * who had already found the feature would read the tip as the app not noticing
+ * what they just did. Tried live, that was wrong in the one case that matters
+ * most: everybody who used backseat in an earlier build had the flag written
+ * the first time they shared, and so was never shown the announcement of the
+ * thing they had been using. A beta notice is for exactly those people. It
+ * costs one click to dismiss and it does not render over a running share, so
+ * the cost of showing it to someone who already knows is close to nothing,
+ * while the cost of the other error is that the notice reaches nobody.
+ *
+ * The key carries a version for the same reason. Bumping it re-announces to
+ * everyone, including anyone the previous rule had already silenced, without
+ * asking them to clear anything by hand.
  */
 
-const KEY = 'sei.backseatTipDone';
+const KEY = 'sei.backseatTipDone.v2';
 
-/** True once the tip has been dismissed or the player has ever shared. */
+/** True once the player has dismissed the tip with "Got it". */
 export function backseatTipDone(): boolean {
   try {
     return localStorage.getItem(KEY) === '1';
@@ -47,11 +53,6 @@ function setDone(): void {
 
 /** "Got it" was pressed. */
 export function dismissBackseatTip(): void {
-  setDone();
-}
-
-/** A share started successfully, so the feature has been found. */
-export function markBackseatShared(): void {
   setDone();
 }
 

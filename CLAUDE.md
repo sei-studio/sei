@@ -800,8 +800,14 @@ The design and its measurements are committed at
   install gate can hold the dial for minutes or refuse it. The arm carries a
   180 s deadline, is re-checked against the wall clock before firing (timers
   lag across sleep), and is dropped on `status === 'error'`. A one-time
-  localStorage tip (`lib/backseatTipPref`) points at the share pill once and is
-  retired by "Got it" OR by any successful share.
+  localStorage tip (`lib/backseatTipPref`) points at the share pill once, on the
+  FULLSCREEN controls only (the docked `sm` cluster has ~40px of chrome and a
+  game or the shared picture right above it). **"Got it" is the only thing that
+  retires it.** Sharing used to as well, on the reasoning that someone who found
+  the feature does not need telling; live, that silenced exactly the people the
+  beta notice was for, since anyone who used backseat in an earlier build wrote
+  the flag on their first share. The key carries a version so bumping it
+  re-announces without anyone clearing storage by hand.
 - **UI (260803, 260804).** Entry is the share pill in `CallControls`; the picker
   is `ShareScreenModal` (a `ModalShell`, **Window / Entire screen as two tabs**
   since 260804 — stacked sections put the screens below the fold behind however
