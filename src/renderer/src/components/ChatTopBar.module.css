@@ -126,3 +126,115 @@
 .iconBtnActive {
   color: var(--accent);
 }
+
+/* ── One-time Backseat tip (260803) ─────────────────────────────────────────
+ * A small card under the Backseat button with a tail pointing up at it. The
+ * header is the top of the window, so it can only hang downward, over the
+ * message list.
+ *
+ * Colors are tokens (--surface-2 / --text / --muted / --accent), so each of the
+ * four named themes gets its own. The card is positioned, and .header is not,
+ * so it already paints above the in-flow message list; the z-index is only to
+ * keep it above ChatScreen's own positioned bits (its jump-to-latest pill is
+ * z-index 3). It stays far below the tutorial scrim (4000), which does not
+ * matter in practice because the predicate hides the card while the tour runs.
+ */
+.backseatWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.tip {
+  position: absolute;
+  /* Clear of the button plus the tail. */
+  top: calc(100% + 12px);
+  /* Anchored to the button's RIGHT edge, not centred: the button sits near the
+   * window's right edge, and a centred 250px card would overflow it. */
+  right: -8px;
+  width: 250px;
+  box-sizing: border-box;
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  text-align: left;
+  z-index: 20;
+}
+
+/* The tail: a rotated square straddling the card's TOP edge, so its two
+ * visible sides keep the card's border and its fill keeps the card's surface
+ * in every theme. Sits under the button it points at. */
+.tipTail {
+  position: absolute;
+  bottom: 100%;
+  right: 20px;
+  width: 10px;
+  height: 10px;
+  margin: 0 0 -6px 0;
+  transform: rotate(45deg);
+  background: var(--surface-2);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+
+.tipHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.tipIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.tipNew {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.tipTitle {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tipBody {
+  margin: 4px 0 var(--space-sm);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.tipBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms var(--ease);
+}
+
+.tipBtn:hover {
+  background: var(--accent-strong);
+}

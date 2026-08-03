@@ -202,6 +202,8 @@ export const ZH_ONBOARD: Record<string, string> = {
     '这里是和 TA 一起玩游戏的地方。来，点点看。',
   "Just click a tile to launch the game. I'm working hard to add new games. Remember to check every week!":
     '点一下卡片就能开始游戏。我正在努力添加新游戏，记得每周都来看看哦！',
+  'This is Backseat, a new feature. You can share your game, movie, or even work for your companion to watch live! I recommend doomscrolling together, hehe.':
+    '这是 Backseat，一个新功能。你可以把游戏、电影，甚至工作画面实时分享给伙伴看！我推荐一起刷视频，嘿嘿。',
   'This is your main terminal. You can connect with up to four AIs here. Just click an empty slot to awaken.':
     '这里是你的主界面，最多可以同时连接四位 AI。点击空位就能唤醒新伙伴。',
   "This is settings. You can change the app's colors and add a custom background here. Make yourself at home!":

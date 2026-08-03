@@ -30,6 +30,10 @@ export type TutorialStep =
   | 'texting'
   | 'games'
   | 'tiles'
+  // 260803: sits between 'tiles' and 'terminal' on purpose, because it needs
+  // the chat header, which is still on screen behind the games popup. It is
+  // also now the step that leaves for Home, which 'tiles' used to do.
+  | 'backseat'
   | 'terminal'
   | 'settings'
   | 'sui'

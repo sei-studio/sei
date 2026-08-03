@@ -10,6 +10,15 @@
  *   view (spec: "ending the game returns the call to its normal fullscreen
  *   surface").
  *
+ *   Pending share (260803): the chat header's Backseat button arms a share and
+ *   routes into a call; this starts it once that call is actually live. It
+ *   belongs here rather than on VoiceCallScreen because that screen can unmount
+ *   before the call connects: dialing takes seconds, longer behind the voice
+ *   module's install gate, and the player is free to go back to chat while it
+ *   rings (the call keeps running). A consumer that unmounts with it would drop
+ *   the share silently. This watchdog is mounted on every view and already
+ *   watches exactly the two values the decision needs.
+ *
  * On non-chat views with a call running there is deliberately no floating
  * call UI: the icon-rail activity badge is the ambient indicator, and
  * clicking the character (or the chat top bar's phone) returns to the call.
@@ -22,6 +31,7 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { useChessStore, isChessOpen } from '../../lib/stores/useChessStore';
 import { useMcDashboardStore } from '../../lib/stores/useMcDashboardStore';
 import { useDrawStore, isDrawActive } from '../../lib/stores/useDrawStore';
+import { useBackseatStore } from '../../lib/stores/useBackseatStore';
 
 export function CallMiniBar(): null {
   const view = useUiStore((s) => s.view);
@@ -32,19 +42,24 @@ export function CallMiniBar(): null {
   const chessState = useChessStore((s) => s);
   const mcDashState = useMcDashboardStore((s) => s);
   const drawState = useDrawStore((s) => s);
+  const backseatActive = useBackseatStore((s) => s.active);
+  const pendingShare = useBackseatStore((s) => s.pendingShare);
+  const clearPendingShare = useBackseatStore((s) => s.clearPendingShare);
+  const consumePendingShare = useBackseatStore((s) => s.consumePendingShare);
 
   const callExists = participants.length > 0 && (status === 'live' || status === 'connecting');
   const awayFromCall = callExists && view.kind !== 'voice-call';
 
   // Any OPEN game surface among the call's participants (chess panel or a
-  // game, the Minecraft dashboard or launch panel, a Draw! game in play).
-  // Surface-open (not game-live) on purpose: a resigned
+  // game, the Minecraft dashboard or launch panel, a Draw! game in play, a
+  // backseat session). Surface-open (not game-live) on purpose: a resigned
   // chess game still shows its result screen, and the call should only
   // reclaim the screen once the surface is actually gone (the unified end
   // "x").
   const gameActive = participants.some((id) => {
     if (isChessOpen(chessState, id)) return true;
     if (isDrawActive(drawState, id)) return true;
+    if (backseatActive[id] === true) return true;
     const online = summons[id]?.kind === 'online';
     // The Minecraft dashboard is always open while the bot is online (no
     // hide/minimize, 260721); offline, the launch panel counts while open.
@@ -61,6 +76,23 @@ export function CallMiniBar(): null {
       navigate({ kind: 'voice-call', characterId: participants[0] });
     }
   }, [gameActive, awayFromCall, participants, navigate]);
+
+  // Armed share → live call. 'live' and not 'connecting': the capture pipeline
+  // and the call's turn loop are the same conversation (useVoiceStore routes a
+  // player utterance THROUGH the share), so starting the share against a call
+  // that has not finished connecting would attach the grid to a session that is
+  // still being built. A dial that ends in 'error' will never reach 'live', so
+  // the arm is dropped there rather than left to time out.
+  useEffect(() => {
+    if (!pendingShare) return;
+    if (status === 'error') {
+      clearPendingShare();
+      return;
+    }
+    if (status !== 'live') return;
+    if (!participants.includes(pendingShare.characterId)) return;
+    void consumePendingShare(pendingShare.characterId);
+  }, [pendingShare, status, participants, clearPendingShare, consumePendingShare]);
 
   return null;
 }

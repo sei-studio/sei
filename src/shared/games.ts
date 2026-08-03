@@ -38,7 +38,10 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
   { id: 'minecraft', name: 'Minecraft', available: true, selfLaunch: true },
   { id: 'chess', name: 'Chess', available: true },
   { id: 'draw', name: 'Draw!', available: true },
-  { id: 'backseat', name: 'Backseat', available: false },
+  // 260803: no "Backseat" entry. Sharing your screen is not a game and it does
+  // not belong in a grid beside chess, so it lives on the call controls' share
+  // button instead. The companion still knows it can be shown a screen: that is
+  // in the voice primer, where it can say something useful about it.
   { id: 'stardew', name: 'Stardew Valley', available: false },
   { id: 'dontstarve', name: "Don't Starve Together", available: false },
   { id: 'focus', name: 'Focus', available: false },

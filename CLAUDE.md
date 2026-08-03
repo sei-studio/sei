@@ -764,178 +764,298 @@ onboarding grass field); everyone else's backdrop is their own art.
   anything sitting on top: `CallControls`' `onArt` variant (fixed dark scrim,
   white icons, hang-up keeps its red) and white chrome text. The theme's own
   colours are chosen against the app's surface, so on art they fail one way in
-  light and the other way in dark. Same documented exception BackseatOverlay
-  takes for painting over someone else's game.
+  light and the other way in dark. Same reasoning the share view uses when it
+  paints its own chrome over someone else's screen.
 
-## Backseat (260728)
+## Backseat (260728, rebuilt 260801-260804)
 
-The companion watches a window the player shares and comments on it live,
-launched from the "Play together" tiles. **Mutually exclusive with a Minecraft
-summon, chess and Draw!** (the shared `lib/gameLaunch.ts` gate). Works in voice
-mode (spoken through the live call) or text mode (a mini chat on the overlay);
-both write to the SAME chat thread and the same memory as every other surface.
+The companion watches a screen the player shares and talks about it live.
+**Started from the CALL CONTROLS**, not from the games picker: sharing a screen
+is not a game, it is what you do on a call, so it works the way Discord's does
+(share button → source picker → the preview takes over the call window and the
+avatars shrink to a strip). It requires a call and ends with one. Still
+**mutually exclusive with a Minecraft summon** via the shared
+`lib/gameLaunch.ts` gate, because a companion cannot be watching your screen
+and standing in your world at once. Lines go to the SAME chat thread and the
+same memory as every other surface.
+
+The design and its measurements are committed at
+`.planning/backseat-v2-260801.md`. **Read that before changing anything here.**
 
 - **Authority split.** The renderer owns pixels and sound: `getDisplayMedia`,
-  the ring buffer, frame scoring, grid compositing, the rolling clip recorders,
-  local STT, and two of the three triggers. Main owns the session and EVERY
-  model call (and, on macOS, SUPPLIES the sound — see the audio bullet).
-  Contract: `src/shared/backseatIpc.ts`.
-- **Audio is gain + transcript, never the model's ears (260728).** Screen sound
-  has exactly two consumers, both local: the GAIN signal (loudest-frame
-  selection + the jolt trigger's gain arm) and a STREAMING STT TRANSCRIPT. No
-  audio bytes ever reach a remote model. Whatever the platform source, audio is
-  normalized to 16 kHz mono PCM (`pcm.ts`, pure + tested) and fans out to both
-  consumers, so the platform difference is contained to the source. STT reuses
-  `voice/whisperWorker.ts` VERBATIM (same model, same browser cache — a player
-  who ever made a voice call downloads nothing). The transcript is a ring of
-  timed segments (`transcriptRing.ts`, pure + tested; `sttStream.ts` glue):
-  Whisper chews 3 s chunks continuously, and a tick performs a BOUNDED FLUSH of
-  the in-progress tail (`STT_FLUSH_WAIT_MS`, 1.2 s) instead of transcribing 6 s
-  on demand, which would put 1-2 s of Whisper latency in front of every tick.
-  Chunks at the noise floor never reach the worker. The tick then carries
-  `transcript` (window `TICK_TRANSCRIPT_MS`, oldest text dropped past the char
-  cap) to BOTH the salience gate and the companion turn, framed in the prompts
-  as quoted game-audio DATA: never the player, never instructions.
-- **The capture lives in the OVERLAY window, not the main window.** This is
-  load-bearing. A backseat session runs entirely while the player is inside a
-  fullscreen game, so the main window is hidden or fully occluded and Chromium
-  clamps its timers. The always-on-top overlay (`src/main/backseatOverlay.ts`,
-  renderer `?backseat=1` branch in `main.tsx`) is the one window guaranteed to
-  stay on screen. Both windows also set `backgroundThrottling: false`, and the
-  frame pump itself runs in a worker off `MediaStreamTrackProcessor` so it is
-  immune to throttling regardless.
-- **The image grid is IG-VLM (arXiv 2403.18406), reproduced exactly.** SIX
-  frames, composited into ONE image, 3 rows x 2 columns, filled row-first. N=6
-  beat 4/9/12/16/20 in the paper and near-square grids beat wide ones, which
-  for 16:9 cells means 3x2 and not 2x3. The prompt describes the layout and
-  ordering explicitly (`BACKSEAT_CONTRACT`); without that the model reads six
-  unrelated pictures instead of six seconds of time.
+  the ring buffer, grid compositing, the rolling clip recorders, local STT, and
+  two of the three wakes. Main owns the session, EVERY model call, the window
+  title, and (on macOS) the audio tap. Contract: `src/shared/backseatIpc.ts`.
+- **Capture runs in the MAIN window (260803).** It used to run in a separate
+  always-on-top overlay, because Chromium clamps timers in a hidden or occluded
+  renderer and a session runs entirely while the player is inside a fullscreen
+  game. That reason no longer holds alone: the main window sets
+  `backgroundThrottling: false` (`windowChrome.ts`) and the frame pump is a
+  `MediaStreamTrackProcessor` in a worker, which is throttle-immune regardless.
+  Deleting the overlay removed a second renderer, a duplicated state copy, and
+  a push fan-out. `useBackseatStore` now OWNS the capture handle for the app.
+- **Four wakes, `user > start > jolt > idle`, strict priority (260801, 260803).** Higher
+  preempts lower; nothing is ever queued, because a queued reaction describes a
+  moment that has passed and reads as confusion rather than lateness. `user`
+  always answers. `jolt` is a local gain or colour discontinuity, no model
+  involved. `idle` is a shifted-exponential timer over [12 s, 60 s], memoryless
+  on purpose so the player cannot learn its rhythm, reset whenever the
+  companion speaks. `MIN_SPEAK_GAP_MS` (8 s) drops jolt and idle, never user.
+  `start` fires ONCE per session, `START_LOOK_MS` (1.8 s) after the share opens,
+  because showing someone your screen is an opening move and the session used to
+  answer it with silence (nothing has jolted yet, and the idle floor is 12 s).
+  Not zero: at 10 Hz the frame ring has no history to composite yet, and the
+  picker is still dismissing over the thing being shared. It sits BELOW `user`
+  so a player who speaks during the opening look is answered, not talked over.
+- **The small VLM salience gate is GONE (260801).** It was replaced by the idle
+  schedule, not repaired. Measured end to end, the narration-novelty scheme
+  meant to fix it carried almost no signal (0.037 of real temporal separation
+  against 0.25 of pure resampling noise) and the gate itself said yes to
+  everything. `salienceGate.ts` is parked in-tree, unreferenced.
+- **Log-spaced frames (260801).** A uniform 10 Hz JPEG ring, and the grid takes
+  the nearest sample to each of `GRID_OFFSETS_S = [6, 3, 1.5, .75, .375, .1875]`
+  seconds ago. The old rule (one frame per second, chosen by loudest audio) is
+  what caused "no sense of sequence": consecutive cells landed anywhere from
+  40 ms to 1.9 s apart while the prompt claimed a second. The clip's own HUD
+  proved the fix: one grid's ammo counter reads 5/1/6/6/5/4, resolving a
+  reload-and-re-engage that 1 Hz sampling renders as a single frame.
+- **The image grid is IG-VLM (arXiv 2403.18406), reproduced exactly.** Up to SIX
+  frames in ONE image, 3 rows x 2 columns, filled row-first. N=6 beat
+  4/9/12/16/20 in the paper and near-square grids beat wide ones. The prompt
+  describes layout, ordering AND the uneven spacing (`BACKSEAT_CONTRACT`);
+  without that the model reads six unrelated pictures instead of six seconds.
+  (Fewer than six when duplicates were dropped, see below; the layout stays
+  near-square at every count and never goes three cells wide, because
+  3 * 602 = 1806 px is past Haiku's 1568 px long edge.)
 - **Grid size is pinned to Haiku, and there is a test for it.** Haiku 4.5 is a
   STANDARD-tier vision model: long edge <= 1568 px AND <= 1568 visual tokens, at
-  `ceil(w/28) * ceil(h/28)` tokens. The largest legal 32:27 grid is **1204x1008
-  (cells 602x336) = 1548 tokens**. Oversize is not an error, it is a silent
-  server-side downscale, so `backseatIpc.test.ts` asserts both the cap and that
-  we are not leaving budget on the table.
+  `ceil(w/28) * ceil(h/28)`. The largest legal 32:27 grid is **1204x1008 (cells
+  602x336) = 1548 tokens**. Oversize is a silent server-side downscale rather
+  than an error, so `backseatIpc.test.ts` asserts both the cap and that we are
+  not leaving budget on the table.
+- **The companion remembers the last grid (260802).** From the second look on,
+  the turn carries the PREVIOUS grid at half size (`PREV_GRID_*`, 396 visual
+  tokens) ahead of the current one, plus how long ago it was taken. It sits
+  AFTER the cache breakpoint, so it never invalidates the prefix. It exists to
+  make repetition visible to the model, which became the dominant failure mode
+  the moment silence was removed.
+- **The share label replaced OCR (260804).** Every tick carries `shareLabel`:
+  the shared window's CURRENT title, or on a whole-screen share the frontmost
+  window's (`src/main/backseat/shareLabel.ts`, polled every 5 s because a tab
+  switch changes the screen under a fixed source id). It costs one window
+  enumeration and it is the model's only cheap answer to "am I watching a game
+  or a film", which was the thing it kept getting wrong.
+  **What it replaced was working, and was removed anyway.** 260802-260803 ran a
+  full OCR pass over every other frame: a bundled Swift `VNRecognizeTextRequest`
+  helper on macOS, tesseract.js elsewhere. It was good — whole phrases at ~72 ms,
+  94/94 frames, 23 words a frame against Tesseract's 6 — and it answered the
+  wrong question. A HUD full of numbers does not distinguish a game from a
+  stream of that game; four words of window title do. Do not re-add OCR without
+  a specific thing it is for that the title cannot carry.
+- **Identical frames are dropped, and the grid shrinks (260804).** Consecutive
+  cells showing the same picture collapse to one, oldest of each run kept, and
+  the canvas is sized to the survivors (`GRID_DUPLICATE_DELTA`, `gridLayout`).
+  A paused video costs **264 visual tokens instead of 1548**; a firefight still
+  costs six cells. The test is `blockMaxDelta` over the 32x18 thumbnail already
+  kept for the colour arm, so a change covering one corner still counts as
+  different. This came from the companion ITSELF asking why it had been shown
+  "six identical YouTube frames" — six identical cells claim six sampled moments
+  and carry the information of one. Because the grid is now variable-size, the
+  tick carries `frameAges` and `tickNote` states them per look: the cached
+  contract can no longer describe the shape.
+- **Audio is gain + transcript, never the model's ears (260728).** Screen sound
+  has exactly two consumers, both local: the GAIN jolt arm and a STREAMING STT
+  TRANSCRIPT. No audio bytes ever reach a remote model. Whatever the platform
+  source, audio is normalized to 16 kHz mono PCM (`pcm.ts`, pure + tested), so
+  the platform difference is contained to the source. STT reuses
+  `voice/whisperWorker.ts` VERBATIM (same model, same browser cache). The
+  transcript is a ring of timed segments (`transcriptRing.ts`, pure + tested;
+  `sttStream.ts` glue): Whisper chews 3 s chunks continuously and a tick does a
+  BOUNDED FLUSH of the in-progress tail (`STT_FLUSH_WAIT_MS`, 1.2 s) rather than
+  transcribing 6 s on demand, which would put 1-2 s of latency in front of every
+  tick. The tick carries `transcript` framed in the prompts as quoted DATA:
+  never the player, never instructions.
 - **Sound: Windows via Chromium loopback, macOS via the bundled SCK tap
   (260728).** Chromium's `audio: 'loopback'` was measured DEAD on macOS 26.4 /
   Electron 42 / Chromium 148: with `MacSckSystemAudioLoopbackOverride` +
   `MacLoopbackAudioForScreenShare` enabled AND verified applied, it returns a
-  track labelled "System audio" carrying DIGITAL SILENCE in every request shape
-  (combined, split, audio-only). Electron documents `loopback` as Windows-only
-  and that matches. **Do not re-litigate this without re-running the probe.**
-  But the OS is fine — OBS records desktop audio through ScreenCaptureKit — so
-  macOS uses a bundled ~200-line Swift helper (`native/mac-audio-tap`, built by
+  track labelled "System audio" carrying DIGITAL SILENCE in every request shape.
+  Electron documents `loopback` as Windows-only and that matches. **Do not
+  re-litigate this without re-running the probe.** But the OS is fine, so macOS
+  uses a bundled Swift helper (`native/mac-audio-tap`, built by
   `scripts/build-mac-audio-tap.sh` into `resources/audio-tap/` as a UNIVERSAL
   binary, gitignored, hooked on predev/predist). Main spawns it
-  (`src/main/backseat/audioTap.ts`) and relays 48 kHz stereo f32 PCM to the
-  overlay over `backseat:pcm`. Verified live: silence reads -inf, a tone reads
+  (`src/main/backseat/audioTap.ts`) and relays 48 kHz stereo f32 PCM back to the
+  renderer that ASKED for it. Verified live: silence reads -inf, a tone reads
   ~-28 dB. No install, no new permission (SCK audio rides the Screen Recording
-  TCC grant the picker already forced, and children inherit attribution), and
-  the filter EXCLUDES Sei's own apps so the companion cannot hear its own TTS
-  (Windows loopback cannot exclude; the companion occasionally transcribing its
-  own just-said line is the accepted cost there). The helper exits on stdin EOF
-  (orphan guard). Clips keep audio on macOS by regenerating a real track from
-  the tap PCM via MediaStreamTrackGenerator. Source order:
+  TCC grant the picker already forced), and the filter EXCLUDES Sei's own apps
+  so the companion cannot hear its own TTS (Windows loopback cannot exclude;
+  transcribing its own line occasionally is the accepted cost there). The helper
+  exits on stdin EOF (orphan guard). Clips keep audio on macOS by regenerating a
+  real track from the tap PCM via MediaStreamTrackGenerator. Source order:
   Windows loopback → mac tap → virtual output device (`findLoopbackDevice`) →
-  video-only, where the frame heuristic falls back to last-frame-of-second and
-  the gain jolt arm never fires; the colour arm and gate are purely visual and
-  unaffected.
-- **TWO buffers, not one (260728).** Conflating them was the first design's
-  mistake. The frame ring only needs one grid's worth plus latency slack, so
-  `BUFFER_MS` is **9 s**. The 15 s belongs solely to clip capture, which is
-  `CLIP_MS` and lives entirely in MediaRecorder. Clipping is the most expensive
-  thing in the pipeline (two recorders encoding 720p60 for the whole session for
-  a rare `save_clip`), so it sits behind `CLIPS_ENABLED` and vanishes completely
-  when off. That is the first dial to turn if capture costs too much.
-- **The ring buffer does not hold 900 frames.** "15 s at 60 fps, one frame per
-  second by loudest gain" read literally is several GB or 60 JPEG encodes a
-  second. It does not have to be: the selection rule is a running argmax, so
-  `captureWorker.ts` keeps exactly ONE frame per one-second bucket alive (the
-  best so far, as an ImageBitmap), discards every loser immediately, and encodes
-  the winner once at the bucket boundary. 1 encode/second, ~15 JPEGs resident,
-  and still every frame examined. Full-rate 60 fps video is kept only by
-  MediaRecorder, which is the only consumer that needs it.
-- **The turn must not re-gate (260728).** Every look the companion turn gets is
-  PRE-FILTERED: the gate or a jolt already judged it eventful, or the player
-  spoke. The first contract still sanctioned silence as "the normal outcome" on
-  top of that, and Haiku took it: five gate TICKs in a live session, five
-  silent turns, a companion that only answered direct messages. The contract's
-  WHEN TO SAY NOTHING and the gate tick note now default to speaking, with
-  `(silence)` reserved for filter misses and repeats. Rate control belongs to
-  the gate quantile + `MIN_SPEAK_GAP_MS`, never to a second model-side mood
-  filter.
-- **The player's typed line is real conversation (260728).** `handleTick`
-  persists a user tick's text to the shared chat thread (so the main window
-  shows it and the next turn's `history` carries the player's side) and echoes
-  it into the overlay mini chat as a `BackseatLine` with `who: 'player'`
-  (right-aligned, dimmed). `runTurn` drops that just-appended tail from history
-  because the canonical copy goes inline with the grid attached. Before this,
-  nothing persisted the player's overlay messages at all: the transcript read
-  as the companion talking to itself.
-- **State pushes go to BOTH windows (260728).** Lines and clip requests go to
-  the overlay only, but `pushState` also mirrors to the main window:
-  `useBackseatStore` subscribes and clears `active` on the `'ended'` push.
-  Before that, stopping from the overlay's own square button left the IconRail
-  game badge lit until an unrelated launch gate or reload reconciled it.
-- **Session log rides the bot log pipeline (260728).** `backseatLog.ts` mirrors
-  chessLog: every diagnostic (gate scores/skips, tick arbitration, turn
-  outcomes, the overlay renderer's `[backseat]` console lines forwarded via
-  `appendOverlayLog`) goes through `slog()` to BOTH the terminal and a
-  per-session logRouter (`backseat-<characterId>-<ts>.log` + batched IPC into
-  the in-app LogsBar). A `console.log` that skips `slog` is invisible in-app.
-- **Dev grid dumps.** Unpackaged runs overwrite
-  `<userData>/backseat-debug/grid-<kind>-latest.jpg` on every gate call and
-  tick (the dir is logged at session start), so what the models are actually
-  shown can be inspected by eye.
-- **Three triggers, arbitrated in one place** (`backseatService.handleTick`):
-  1. `user` — the player spoke or typed. ALWAYS answered, and preempts an
-     in-flight gate/jolt turn. Typing arms a grid on the first keystroke
-     (idempotent + single-flight, so a burst composites once) and it ships with
-     the finished sentence; a latch older than 30 s is recomposited instead.
-  2. `gate` — a small VLM on DeepInfra reads a fresh grid every 6 s.
-  3. `jolt` — a local audio/colour discontinuity, no model involved. Thresholds
-     are deliberately extreme (18 dB over the trailing median, 0.34 mean thumb
-     delta) with a 20 s refractory, so it catches what lands between gate calls
-     without ever out-talking the gate.
-  Gate and jolt are DROPPED, never queued, when a turn is running or the
-  companion spoke < 8 s ago: a queued reaction describes a moment that has
-  passed, which reads as confusion rather than lateness.
-- **Gate model + logprob shape are MEASURED, not assumed (260728).** Live test
-  against a matched pair of real grids (six identical frames vs six different
-  ones): `Qwen/Qwen3-VL-30B-A3B-Instruct` correct on both (~520 ms, ~1240 img
-  tokens, ~$0.00019/call = ~$0.11/hr at the 6 s cadence); `gemma-3-4b-it` says
-  yes to everything; `gemma-3-12b-it` says no to everything.
-  `Qwen/Qwen2.5-VL-7B-Instruct` is NOT on DeepInfra at all (404).
-  Critically: **DeepInfra honours `logprobs` but ignores `top_logprobs`**, so
-  only the chosen token's logprob comes back. The first parser read
-  `top_logprobs` only and fell through to a hard 0/1; measured, the model
-  emitted "no" for BOTH grids, so the gate would have been **permanently
-  silent** while the continuous scores separated cleanly (0.018 vs 0.148,
-  stable over repeats). `scoreFromLogprobs` now derives p(yes) from the chosen
-  token and there is a regression test pinning the real response shape.
-- **The gate threshold is LEARNED, not written down** (`salienceGate.ts`). The
-  target is ~1/4 of grids positive, and a fixed cutoff cannot reach it: small
-  VLMs say yes to almost anything and their verbalized confidence is nearly
-  constant regardless of correctness. So the gate reads the yes-token LOGPROB
-  and takes the cutoff from the upper quartile of a rolling 40-score window, per
-  session. A frantic shooter and a slow strategy game each get gated on their
-  own most-eventful moments. Fails CLOSED on any error: an outage makes the
-  companion quiet, never chatty.
+  video-only, where the gain arm never fires and the colour arm still does.
+- **The jolt thresholds are RELATIVE, and per-arm (260802).** The colour arm is
+  a block-max over a 4x3 split of the thumbnail (a whole-frame mean erases any
+  localised change at any threshold), read at TWO lookbacks (1.0 s and 2.5 s,
+  max taken), against a bar of `median + JOLT_COLOR_MAD * MAD` with a floor.
+  No absolute number can work: on the test clip the block-max delta's own
+  median is 0.313, so a fixed 0.34 fires continuously in a shooter and never in
+  a calm game. Gain and colour hold SEPARATE refractory clocks, because the
+  moment colour got sensitive it started swallowing confirmed gain events, and
+  since 260803 separate PERIODS too: gain keeps `JOLT_REFRACTORY_MS` (20 s) and
+  colour uses `signals.COLOR_REFRACTORY_MS` (**6 s**). A run of scene changes is
+  a run of different subjects; a run of loudness spikes is one scene. Measured
+  on a Reels recording with six verified swipes, every gap under 20 s: the
+  shared period meant the refractory clock, not the picture, chose which were
+  noticed. The 6 s floor is set by `COLOR_LOOKBACKS_MS`, since a change stays
+  inside the 2.5 s window for 2.5 s after it ends and a shorter period
+  double-counts it (measured: 5 s re-fired, 3 s re-fired).
+  `JOLT_COLOR_MAD` is the one-line sensitivity dial. Kernels live in
+  `signals.ts` as pure functions over explicit state, which is what lets the
+  offline sim run the SAME code rather than a re-implementation.
+- **TWO buffers, not one (260728).** The frame ring needs one grid plus latency
+  slack, so `BUFFER_MS` is **9 s**. The 15 s belongs solely to clip capture
+  (`CLIP_MS`, MediaRecorder). Clipping is the most expensive thing in the
+  pipeline (two recorders encoding 720p60 all session for a rare `save_clip`),
+  so it sits behind `CLIPS_ENABLED` and vanishes when off. First dial to turn if
+  capture costs too much.
+- **THE COMPANION ALWAYS SPEAKS, and the reason is three failed attempts
+  (260802).** The contract has been through three positions on silence. 260728
+  sanctioned it as "the normal outcome" and produced a mute companion (five
+  ticks, five silent turns). 260801 delegated the decision to the per-tick note
+  and measured 68%. Reviewing that run, the silences were not taste, they were
+  error. So the option is GONE: every look produces a line, and silence is a
+  MECHANICAL decision made before the model is called (`MIN_SPEAK_GAP_MS`), a
+  rule that cannot misjudge a moment because it never looks at one.
+  `isSilenceFiller` still parses, because a stray `(silence)` must never be
+  spoken aloud, but it now logs as an anomaly.
+- **Lines must not NARRATE (260803).** Speaking every time exposed what the
+  lines actually were: "you just got caught", "you just used a skill", "health
+  is dropping". All true, all describing a screen the player is looking at.
+  `THE POINT OF A LINE` and `SAY SOMETHING THEY CAN ANSWER` fix it by spending
+  the line on what the player does NOT have (an opinion, a question, a want),
+  and they carry BAD/GOOD contrast pairs, which moved the needle where abstract
+  instruction did not: 0/10 lines asked anything before, 10/10 after, and the
+  median dropped from ~35 words to 20.
+- **Em dashes are STRIPPED, not asked away (260803).** "Do not use em dashes"
+  sat in the contract for a day and Haiku wrote one in eight of ten lines.
+  `stripDashes` in `backseatPrompts.ts` fixes it after the fact, replacing with
+  a full stop or comma. It matters here more than in chat because these lines
+  are SPOKEN, and a dash is not a sound.
+- **Attaching TOOLS suppresses speech.** Measured, n=60 per condition: 100% of
+  turns produce a line with no tools, 78% with `REMEMBER_TOOL` alone, 68% with
+  the pair backseat ships. A tool description that reads as a general judgement
+  about how interesting moments usually are leaks from "do not use the tool" to
+  "do not speak", and asking the model not to do that does not help. **Suspect
+  this first whenever any surface goes quiet.**
 - **Clips.** `save_clip` writes the last 15 s to
   `<profileRoot>/clips/<characterId>/` and attaches it to the chat line that
   asked for it (`ChatMessage.clip`, rendered by `ClipCard`). A WebM segment is
-  only decodable from its own header, so the tail of a chunk list is not a
-  clip: two recorders staggered by half a period mean the longest-running one
-  always yields a complete file containing the requested window. The honest
-  cost is that a saved clip runs 15-30 s rather than exactly 15.
-- **Three UI panels.** (1) `BackseatSourcePicker` swaps into the games popup's
-  existing frame rather than opening a second dialog. (2) the voice-mode
-  overlay: status dot plus pause/stop revealed on hover, whole surface
-  draggable. (3) text mode adds an always-shown translucent mini chat above the
-  controls. `BackseatOverlay.module.css` is a **deliberate exception** to the
-  tokens.css rule for BACKGROUNDS only: it paints over someone else's game, so
-  opaque `--surface` would punch an app-coloured rectangle into their screen.
-  Accent, radii and type still come from tokens.
+  only decodable from its own header, so the tail of a chunk list is not a clip:
+  two recorders staggered by half a period mean the longest-running one always
+  yields a complete file containing the requested window. The honest cost is
+  that a saved clip runs 15-30 s rather than exactly 15.
+- **Cache layout is the cost model, not hygiene.** Every tick carries a fresh
+  1548-token image at a 12-60 s cadence. The fourth breakpoint therefore sits on
+  the last HISTORY message, not on the image message (which is unique forever
+  and can never be read back), and the history window is ANCHORED rather than
+  slid, so appending a line does not change `message[0]` and invalidate the
+  whole prefix. Same trick as the Minecraft brain's `cachedSystemBlocks`
+  identity: a breakpoint is worth exactly whether the bytes above it are
+  byte-identical next time.
+- **The player's typed line is real conversation (260728).** `handleTick`
+  persists a user tick's text to the shared chat thread, and `runTurn` drops
+  that just-appended tail from history because the canonical copy goes inline
+  with the grid attached. **On a call that row carries `voice: true`** like
+  every other call line: it is spoken, so a chat row would be a caption. This
+  was missed when user turns started routing through backseat and the player's
+  own half of the call filled the transcript.
+- **TWO entry points (260803).** The share pill in `CallControls` (needs a call
+  already) and the **Backseat button in `ChatTopBar`** (does not). The second
+  exists because the first is unreachable without already knowing the feature
+  is there. From the header, confirming a source arms a **pending share** in
+  `useBackseatStore` and routes to the call; `CallMiniBar` starts the capture
+  when the call reaches `live`. It cannot be inline: the ~40 MB voice module's
+  install gate can hold the dial for minutes or refuse it. The arm carries a
+  180 s deadline, is re-checked against the wall clock before firing (timers
+  lag across sleep), and is dropped on `status === 'error'`. A one-time
+  localStorage tip (`lib/backseatTipPref`) hangs under the CHAT HEADER's
+  Backseat button, tail pointing up at it. Not the call controls: those only
+  exist once you are on a call, and a notice about a feature is worth nothing to
+  someone already that far in. **"Got it" is the only thing that retires it.**
+  Sharing used to as well, on the reasoning that someone who found the feature
+  does not need telling; live, that silenced exactly the people the beta notice
+  was for, since anyone who used backseat in an earlier build wrote the flag on
+  their first share. **The key carries both a version and the PROFILE SCOPE**
+  (`user.id`, or `local`): localStorage is one bucket for the whole app and is
+  NOT moved when the scope changes, so without the scope a second account on the
+  same machine inherits the first's dismissal. Bumping the version re-announces
+  to everyone without anyone clearing storage by hand.
+- **UI (260803, 260804).** Entry is the share pill in `CallControls`; the picker
+  is `ShareScreenModal` (a `ModalShell`, **Window / Entire screen as two tabs**
+  since 260804 — stacked sections put the screens below the fold behind however
+  many windows the player had open); the live view is the preview plus a demoted
+  avatar strip inside `VoiceCallScreen`. There is no overlay window, no games
+  tile, no text mode (there is nowhere to type) and no pause button (the share
+  toggle is it). `useBackseatStore.active` still feeds the IconRail activity
+  badge and the cross-launch gate.
+- **THERE IS ONE CONVERSATION, NOT TWO (260804).** While a companion is sharing,
+  `dispatchUserTurn` routes the player's utterance to `capture.sendUserTick`
+  and SKIPS that companion's ordinary voice turn; anyone else on the call still
+  takes one. Without this there were literally two turn loops running against
+  the same chat thread and the same call: backseat's, which had the grid and no
+  microphone, and the director's, which had the microphone and no grid. The
+  player got a companion who could see their screen and never heard them,
+  talking over one who could hear them and could not see. Nothing was broken in
+  either loop — there were two of them and neither knew. **Anything that gives a
+  companion a turn has to check `useBackseatStore.sharingFor` first.** The share
+  is the more informed loop, so it is always the one that wins.
+- **Barge-in is decided by a WORD, not by loudness (260804).** Two stages, with
+  deliberately opposite temperaments. Stage one DUCKS the companion to 8% on one
+  frame over a low bar (~130 ms, against ~400 ms before, and with no 600 ms
+  grace-window blind spot at the start of every clip); it is reversible, which
+  is the entire reason the bar can be that low. Stage two transcribes the
+  ~400 ms collected since the duck and COMMITS only if `hasSpokenWord` says a
+  real word came back, otherwise it un-ducks and the clip carries on. Six rounds
+  of threshold tuning across three separate "cannot interrupt her" / "she cuts
+  herself off" reports never resolved that conflict, because it is structural:
+  energy cannot tell a cough from a word, and a cleared queue cannot be undone.
+  Sustained energy survives only as a slow fallback (`BARGE_CONFIRM_MS`, now
+  1400 ms) for when transcription cannot answer at all. `hasSpokenWord` is
+  stricter than the finished-utterance junk filter — it runs on 400 ms of audio
+  where every engine invents — and it is **scoped to Latin script for the
+  repeated-letter rule**, because 等等 is a word and rejecting it would make
+  barge-in silently impossible in Chinese.
+  A confirmed barge also calls `backseatInterrupt`: clearing the queue only
+  silences what is already synthesised, and the turn behind it would otherwise
+  land its line a second later.
+- **Session log rides the bot log pipeline (260728).** `backseatLog.ts` mirrors
+  chessLog: every diagnostic goes through `slog()` to BOTH the terminal and a
+  per-session logRouter (`backseat-<characterId>-<ts>.log` + batched IPC into
+  the in-app LogsBar). A `console.log` that skips `slog` is invisible in-app.
+  Renderer-side capture diagnostics are now plain console lines in the main
+  window, reachable in devtools.
+- **Dev grid dumps.** Unpackaged runs overwrite
+  `<userData>/backseat-debug/grid-<kind>-latest.jpg` on every tick (the dir is
+  logged at session start), so what the model is actually shown can be checked
+  by eye.
+- **Verify offline, never by launching Electron.** `npx tsx
+  scripts/backseat-sim.ts [--dry]` runs the real clip through the real
+  `signals.ts`, the real offsets and the real prompts and writes a voice-over;
+  `scripts/backseat-render.ts` turns that run into a review video with the grid,
+  the share label, and both signal plots beside the footage. The sim CANNOT
+  check prompt caching: its stub prefix is ~1.1k tokens and Haiku will not cache
+  below 2048, so cache hits have to be read off a live session's log. **Caching
+  is confirmed live (260803 session): `cacheRead=9017` steady from the second
+  tick, `cacheWrite` near zero.**
+- **Anything the service reads off a tick MUST be in the zod schema in
+  `main/ipc.ts`.** Zod strips undeclared keys, so a field the renderer sends and
+  the schema does not name arrives as `undefined` with no error anywhere.
+  `gridSmall` was in exactly that state from 260802 to 260804: the previous-grid
+  memory shipped, was documented, and never once reached the model, and it was
+  invisible because a null `prevGrid` is a legal state on the first tick of
+  every session.
 - **Continuity + analytics** follow the contracts below: `REMEMBER_TOOL` honored
   inline (single-shot turns, no tool loop), one `event: {kind:'play'}` row at
   `endBackseat` plus `foldIfDue`, and `backseat_started` / `backseat_ended` with
@@ -949,10 +1069,16 @@ both write to the SAME chat thread and the same memory as every other surface.
 at `sei-studio/backseat` (AGPL-3.0) with a plain-language architecture README.
 Changes here should be mirrored there when the design moves.
 
-**Owed:** the gate currently needs `SEI_GATE_DEV_KEY` (see `.env.example`).
-Production should route it through the proxy the way TTS does, so no DeepInfra
-key ships in the client. Until then packaged builds run on the user and jolt
-triggers only.
+**Owed:** (1) only two clips have ever been measured against, one of them an
+EDITED MONTAGE whose colour jolts are partly its edit cuts. The colour arm's
+6 s period and 0.15 floor are justified by argument plus those two, not by a
+corpus. (2) On the Reels recording the two swipes at 00:50 and 00:53 are NOT
+separable by amplitude from the video's own motion in the same stretch (peaks
+0.187 / 0.179 against 0.176 / 0.177); the lower floor catches them but is
+buying sensitivity, not discrimination. (3) the mac audio tap is a bundled binary
+that has never been through a signed mac `dist` — verify it with `codesign` on
+the first one. (4) `salienceGate.ts` and its `SEI_GATE_*` env knobs are parked
+unreferenced rather than deleted; either revive them or remove them.
 
 ## Instrumenting a game or timed surface (REQUIRED)
 
@@ -1114,8 +1240,7 @@ src/
     apiKeyStore.ts      safeStorage key + getAiBackendKind()
     configStore.ts      <userData>/config.json (Zod-validated, atomic)
     characterStore.ts   local character library
-    backseat/           screen-watch session, salience gate, tick arbitration
-    backseatOverlay.ts  always-on-top overlay window (OWNS the capture renderer)
+    backseat/           screen-watch session, tick arbitration, share label
     auth/               Supabase, PKCE loopback OAuth, session, jwtBridge
     cloud/              proxyClient, credits/billing, cloud character sync, moderation
     updater.ts          electron-updater driver (packaged builds only)

@@ -491,3 +491,117 @@
 .artChromeStatus.subtitleError {
   color: var(--red);
 }
+
+/* ── Screen share (260803) ────────────────────────────────────────────────
+   While sharing, the call window becomes what Discord's does: the picture is
+   the content and the people shrink to a strip under it. Same move the game
+   surfaces make (GameSurface's chromeRow), so a shared screen and a chess
+   board demote the call cluster the same way and the app has one idea of
+   "something else is the main thing now".
+
+   The stage keeps its flex column; these override the spacing so the video
+   gets the room rather than the 2xl padding around the avatar pose. */
+.stageSharing {
+  gap: var(--space-md);
+  padding: var(--space-md);
+  justify-content: stretch;
+}
+
+.share {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-strong);
+  /* Deliberately near-black rather than surface-2: this is a letterboxed
+     picture, and the bars have to read as bars and not as a panel. */
+  background: #0b0d0f;
+  overflow: hidden;
+}
+
+.shareVideo {
+  width: 100%;
+  height: 100%;
+  /* contain, never cover: a cropped share hides the thing they wanted shown. */
+  object-fit: contain;
+  display: block;
+}
+
+/* What is being shared, over the top-left corner of the picture. */
+.shareLabel {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - var(--space-lg));
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.shareDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* The demoted call cluster: one row, small round tiles, no names, controls
+   inline beside them. */
+.miniBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+.miniTiles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.miniTile {
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 220ms var(--ease), border-color 140ms var(--ease);
+}
+
+.miniTileSpeaking {
+  border-color: var(--accent);
+  animation: speakRing 1.2s var(--ease) infinite;
+}
+
+.miniTileIdle {
+  filter: brightness(0.55) saturate(0.85);
+}
+
+.miniSubtitle {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: var(--space-xs);
+}

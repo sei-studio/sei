@@ -159,6 +159,22 @@ mac:
     - "!node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
+  # 260728 backseat: the bundled ScreenCaptureKit system-audio tap
+  # (native/mac-audio-tap, built by scripts/build-mac-audio-tap.sh into a
+  # UNIVERSAL binary — one file serves both arch builds). Chromium loopback
+  # audio is Windows-only, so this helper is how macOS backseat hears the game.
+  # It lands at Contents/Resources/audio-tap/sei-audio-tap; electron-osx-sign
+  # picks Mach-O executables in Resources up for hardened signing, and the
+  # notarization pass covers it (USER-ACTION: on the first mac dist, verify
+  # with `codesign -dv --verbose Sei.app/Contents/Resources/audio-tap/sei-audio-tap`).
+  #
+  # (A second helper, native/mac-ocr, shipped here between 260803 and 260804 to
+  # read the text on the shared screen. It worked and was still removed: the
+  # window title answers the question that was actually hurting, for no
+  # per-frame cost. See the note in src/shared/backseatIpc.ts.)
+  extraResources:
+    - from: resources/audio-tap
+      to: audio-tap
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
     # Voice calls (260707): the TCC prompt string macOS shows the first time Sei

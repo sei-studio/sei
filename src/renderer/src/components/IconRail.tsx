@@ -60,6 +60,7 @@ import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useChessStore } from '../lib/stores/useChessStore';
+import { useBackseatStore } from '../lib/stores/useBackseatStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
 import { useT } from '../lib/i18n';
@@ -182,6 +183,12 @@ export interface ActivityBadgeStores {
    * The authoritative "online MC bot session" signal; the mc dashboard
    * store's snapshots are telemetry keyed off this same session. */
   summons: Readonly<Record<string, { kind: string } | undefined>>;
+  /** useBackseatStore.active — characterId → true while watching a screen
+   * share (260728). The share mounts no panel in the chat game area: it is
+   * drawn inside the call view (260803; before that, its own always-on-top
+   * window), so this flag is the ONLY signal the rail has that the character
+   * is busy with one. */
+  backseat?: Readonly<Record<string, boolean | undefined>>;
 }
 
 export function avatarActivityBadge(
@@ -195,7 +202,8 @@ export function avatarActivityBadge(
   const chess = s.chessGames[characterId];
   const chessLive = chess != null && chess.status !== 'ended';
   const mcOnline = s.summons[characterId]?.kind === 'online';
-  return chessLive || mcOnline ? 'game' : null;
+  const watching = s.backseat?.[characterId] === true;
+  return chessLive || mcOnline || watching ? 'game' : null;
 }
 
 /**
@@ -309,6 +317,7 @@ export function IconRail(): React.ReactElement {
   const callStatus = useVoiceStore((s) => s.status);
   const callParticipants = useVoiceStore((s) => s.participants);
   const chessGames = useChessStore((s) => s.games);
+  const backseatActive = useBackseatStore((s) => s.active);
   const authState = useAuthStore((s) => s.state);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
@@ -472,6 +481,7 @@ export function IconRail(): React.ReactElement {
                 callParticipants,
                 chessGames,
                 summons,
+                backseat: backseatActive,
               })}
               // Phase 18/19: the rail avatar opens the in-app chat (the new
               // primary surface), not the read-only character profile.

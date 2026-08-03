@@ -738,6 +738,92 @@ export const MinimizeIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
+/** ScreenShareIcon — a monitor with an arrow leaving it (start sharing). */
+export const ScreenShareIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 5h18v11H3z" />
+    <path d="M8 20h8" />
+    <path d="M12 9v5" />
+    <path d="M9.5 11.5 12 9l2.5 2.5" />
+  </svg>
+);
+
+/**
+ * BackseatIcon (260803): the screen-share monitor with a four-point sparkle at
+ * its top right.
+ *
+ * This is deliberately the deleted games tile's art (img/game-backseat.svg,
+ * removed with the tile in ff098b0), re-drawn at icon scale: the monitor body,
+ * stand and up-arrow are the same shapes ScreenShareIcon uses, and the star is
+ * the tile's star, filled, still overlapping the monitor's top edge the way it
+ * did there. Backseat had a recognizable mark and the mark outlived its tile;
+ * a plain share glyph in the header would not have read as the same feature.
+ *
+ * Proportions are carried over from the tile rather than re-invented, with one
+ * deliberate exception: the body is ~1.55:1 and the stand is ~0.22 of the body
+ * height, but the STAR is drawn larger than the tile's. The tile's ratio (star
+ * radius ~0.16 of the monitor width) was set for a 480px card; at 18px in a
+ * header it came out under 4px across, which is smaller than the stroke weight
+ * around it and read as a speck rather than a sparkle. It is now ~0.21, about
+ * 35% wider, and shifted up and right by half a unit so it clears the body's
+ * top-right corner. Growing it in place instead merged the two into a blob at
+ * the corner, which cost the monitor its silhouette at 18px; the point of
+ * keeping the tile's mark is that the monitor is still read first.
+ */
+export const BackseatIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="2" y="6" width="17" height="11" rx="1.5" />
+    <path d="M10.5 17v2.5" />
+    <path d="M7.5 19.5h6" />
+    <path d="M10.5 13.5V8" />
+    <path d="M8.5 10 10.5 8l2 2" />
+    <path
+      d="M19.2 0.8 20.2 3.3 22.7 4.3 20.2 5.3 19.2 7.8 18.2 5.3 15.7 4.3 18.2 3.3Z"
+      fill="currentColor"
+      stroke="none"
+    />
+  </svg>
+);
+
+/** ScreenShareOffIcon — the same monitor, struck through (stop sharing). */
+export const ScreenShareOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 5h18v11H3z" />
+    <path d="M8 20h8" />
+    <path d="m4 4 16 16" />
+  </svg>
+);
+
 /** FullscreenIcon — corner arrows pointing out (enter app fullscreen). */
 export const FullscreenIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg
