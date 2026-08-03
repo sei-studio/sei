@@ -194,13 +194,41 @@ jobs:
           $yml = Get-Content $cfg -Raw
           Write-Output "app-update.yml:`n$yml"
 
-          $declared = $null
-          if ($yml -match '(?m)^\s*publisherName:\s*(.+?)\s*$') {
-            $declared = $Matches[1].Trim(("'", '"') -join '')
+          # publisherName is a LIST in app-update.yml, because electron-updater's
+          # verifier takes an array of acceptable names. electron-builder writes
+          #
+          #   publisherName:
+          #     - CN=Shang Wang, O=Shang Wang, L=Los Angeles, S=ca, C=US
+          #
+          # The first cut of this step matched `publisherName:\s*(.+?)$`, and in
+          # .NET `\s` spans newlines, so it captured "- CN=Shang Wang, ..." with
+          # the sequence dash attached and failed a build whose signature was
+          # perfectly valid. Parse both shapes line by line instead, and keep the
+          # whole list: an array with more than one entry is legal and every
+          # entry must be checked.
+          # Only POSITIVE -match below: -notmatch's effect on $Matches is not
+          # worth relying on, and this step gets one shot per 40-minute build.
+          $lines = $yml -split '\r?\n'
+          $declaredNames = @()
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^\s*publisherName:\s*(.*)$') {
+              $inline = $Matches[1].Trim()
+              if ($inline) {
+                $declaredNames = @($inline)
+              } else {
+                for ($j = $i + 1; $j -lt $lines.Count; $j++) {
+                  if ($lines[$j] -match '^\s*-\s*(.+?)\s*$') { $declaredNames += $Matches[1] } else { break }
+                }
+              }
+              break
+            }
           }
+          $declaredNames = @($declaredNames | ForEach-Object { $_.Trim().Trim(("'", '"') -join '') } | Where-Object { $_ })
+          $declared = $declaredNames -join ' | '
+          Write-Output "parsed publisherName entries: $($declaredNames.Count) [$declared]"
 
           # Hard stop on the exact regression, whatever else is configured.
-          if ($declared -and $declared -like '*Developer ID Application*') {
+          if ($declaredNames | Where-Object { $_ -like '*Developer ID Application*' }) {
             Write-Output "::error::app-update.yml publisherName is an APPLE Developer ID ('$declared'). Windows cannot build a trust chain to Apple's root, so every client will reject and delete its download. The mac CSC_LINK secret has leaked into the Windows build again."
             exit 1
           }
@@ -212,7 +240,7 @@ jobs:
 
           $expected = $env:WIN_PUBLISHER_NAME
           if ([string]::IsNullOrWhiteSpace($expected)) {
-            if ($declared) {
+            if ($declaredNames.Count -gt 0) {
               Write-Output "::error::app-update.yml declares publisherName '$declared' but the WIN_PUBLISHER_NAME repo variable is unset. An unsigned build MUST NOT declare a publisher, or clients will verify against it and reject every update."
               exit 1
             }
@@ -227,8 +255,12 @@ jobs:
             Write-Output "::error::WIN_PUBLISHER_NAME is set but the installer signature is '$($sig.Status)', not Valid. electron-updater rejects anything that is not Valid BEFORE it compares the publisher name."
             exit 1
           }
-          if ($declared -ne $expected) {
-            Write-Output "::error::app-update.yml publisherName '$declared' does not match WIN_PUBLISHER_NAME '$expected'."
+          # Every declared name must be one the client can actually verify, so
+          # compare the whole list rather than just asking whether it contains
+          # the expected one. electron-updater accepts a build if ANY entry
+          # matches, which would let a stale extra entry pass unnoticed.
+          if ($declaredNames.Count -ne 1 -or $declaredNames[0] -cne $expected) {
+            Write-Output "::error::app-update.yml publisherName [$declared] is not exactly WIN_PUBLISHER_NAME '$expected'. electron-updater compares every DN component with a strict equality check, so this must match verbatim, case included."
             exit 1
           }
           if ($sig.SignerCertificate.Subject -notlike "*$expected*") {
