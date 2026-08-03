@@ -117,6 +117,23 @@ by `llm.provider` in `src/bot/config.js`:
   **server-minted** Polar checkout/portal URLs (the write-scoped billing token
   never reaches the client). Also `cloudCharacterClient.ts`, `syncQueue.ts`
   (offline-first character sync), `moderationGate.ts`, `cacheOnDemand.ts`.
+- **Roster mirror (260801)** — `src/main/cloud/librarySync.ts` mirrors which
+  FOREIGN characters are in the user's Home roster
+  (`UserConfig.added_default_ids` + `added_world_ids`) into the cloud
+  `character_library` table. `characters.owner` records who AUTHORED a row,
+  which is a different question from who HAS it, so before this nothing
+  server-side knew an account had adopted Sui or a shared character, and
+  analytics could only infer it from `character_id` event properties — blind to
+  a character that is only ever texted, and to anyone opted out. It reconciles
+  the WHOLE SET rather than hooking each write: membership is written from at
+  least six places (four library IPC handlers, the unpublish reconcile sweep,
+  two one-shot config migrations, onboarding), and a per-write hook would be
+  silently wrong the day a seventh appears. So callers just
+  `void syncLibraryRoster('reason')` after their config write, and the sign-in
+  pass is both the backfill for installs predating the table and the safety net
+  for every writer that never learned the mirror exists. Own characters are
+  deliberately NOT recorded (already covered by `characters.owner`). Never
+  throws; single-flight; signed-out/offline/RLS-rejected all mean "next time".
 - **Pre-flight credit gate** — before forking a *cloud* bot, `botSupervisor.ts`
   consults the credit ledger and refuses the summon when depleted (showing the
   "add playtime" surface). It **fails open** on any error and is skipped
@@ -635,6 +652,22 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   the file is actually on disk — `useDrawStore.saveGallery` resolves the
   written path (null on failure) precisely so the popup cannot claim a save
   that did not happen.
+- **A single drawing saves too (260801, ported from the web).** Clicking a
+  gallery cell composes `composeCellPng` — the same square sheet, pen and
+  credit line as the game tile, carrying ONE drawing large with the caption
+  "according to {name}, this is a {word}." on two lines, the word on the
+  highlighter. The game tile is a set of thumbnails, so the one round somebody
+  actually wants to post came out of it at a fraction of the resolution. Two
+  details are load-bearing: the caption arrives from the component ALREADY
+  localized but with `{word}` still in it (the composer has to know where the
+  word sits to put the highlighter behind it alone, and `t` lives in React);
+  and the drawer is named, not "you", because the file is made to leave this
+  machine — the same reason the exported game tile's rows use real names while
+  the on-screen sheet says "you". The popup is now shared: the whole-game save
+  opens it as a confirmation ("Saved!"), a clicked cell opens it as a preview
+  with the save still to offer. An empty round is inert, not a button that
+  does nothing, and the affordance on a played one is the cursor alone (a
+  hover tint would be a second ink).
 
 ## Call scenes + the backdrop toggle (260730)
 
@@ -957,7 +990,33 @@ Rules that follow from the existing implementations:
   (`public/app.js`). That is the only dashboard change needed.
 
 Current members: `bot_session_ended` (Minecraft), `chess_game_ended`,
-`voice_call_ended`, `draw_game_ended`, `backseat_ended`.
+`voice_call_ended`, `draw_game_ended`, `backseat_ended`, `chat_session_ended`.
+
+**Text chat counts too (260801).** Chat was the last surface with no
+instrumentation at all, so playtime meant "everything except the thing people
+do most" and a user who only ever texted had an empty character list on the
+dashboard. `src/main/chat/chatSession.ts` models a session as a run of messages
+closed by a 5 minute idle gap, NOT as ChatScreen mount/unmount: a chat window
+left open in the background is not playtime, and the chat screen HOSTS the
+other surfaces, so mounted time would double-count every chess game, Draw!
+round and call against the chat clock. The overlap is excluded structurally —
+`noteChatMessage` is called from exactly one place in the `chat:send` handler,
+past the point where chess and Draw! have declined the message and with
+`inCall` false, so a line typed into a live game or spoken on a call is only
+ever counted by that surface. `duration_ms` spans first message to LAST
+message, never the idle tail, so a one-message session honestly reports 0 ms
+and `messages` carries the shape. `endAllChatSessions()` runs on `before-quit`
+BEFORE `shutdownAnalytics()`, because quitting mid-conversation is the normal
+way a chat ends.
+
+**Every event carries `ui_language` (260801).** `commonProps()` in
+`src/main/analytics.ts` stamps the APP UI language (not the per-character
+`chat_language`) on every event and `$set`s it on the person. Before this the
+only cloud-side trace of a non-English user was `characters.metadata.language`,
+which is written at character CREATION — so anyone using only the bundled
+defaults was invisible. Cached, not read per event (commonProps is sync);
+`setUiLanguage()` is refreshed from the `config:save` IPC handler, the single
+path both Settings and the onboarding Sui stage write it through.
 
 ### The play row is ONE sentence, shared (260728)
 
@@ -1151,6 +1210,22 @@ policy functions only. A side-channel `GET https://sei.gg/version.json` carries
 `{ version, apply, changelog }` to decide ask-first vs silent install. On macOS
 updates install from the zip artifact.
 
+**The download never blocks the app (260801).** Two renderer surfaces, split by
+whether the state needs a decision right now: `UpdatePopup` is the modal (the
+optional-update offer with its changelog, the post-update what's-new, and the
+`apply:'now'` restart), `UpdatePill` is a corner card that never takes the
+pointer (download progress, then "ready, restart to apply"). Before the split,
+`app:update-progress` drove the popup into a scrimmed `downloading` state with
+no dismiss path, so a routine MANDATORY patch, which updater.ts deliberately
+downloads without asking, locked the user out of the app until it finished.
+The consented flow no longer auto-installs either: the accepted download may
+land minutes later with the user mid-game, so `autoInstallOnAppQuit` applies it
+on the next quit and the pill only OFFERS the restart. `forced` is the one
+state that still takes the window, because main quits a few seconds later
+regardless. The `downloading` pill has no dismiss (nothing to decide while it
+works), so `App.tsx` must clear it on `app:update-error` or a dead download
+pins it at whatever percent it reached.
+
 ---
 
 ## Critical pitfalls
@@ -1159,6 +1234,25 @@ updates install from the zip artifact.
   wall-clock timeout (`adapter.minecraft.pathfinder_timeout_ms`, default 12s).
   No exceptions.
 - **Single-layer iteration runaway** → bounded by `iteration_cap` (default 30).
+- **A nested timeout only wins if it is sized against the outer one** →
+  connect.js armed a flat 20s guard at `createBot` while `botSupervisor.ts`
+  arms `SUMMON_TIMEOUT_MS` (30s) at `fork`, and the comment claimed ~10s of
+  margin. The real margin is 10s minus process boot minus the status ping (up
+  to 5s), which a cold packaged Windows start eats whole, so the child's
+  SPECIFIC error never reached main and every stalled join surfaced as a bare
+  `ready_timeout`. Measured 260801: a user whose world was open and answering
+  pings was told to go check that their LAN world was open. Fixed by shipping
+  the supervisor's deadline itself (`summonDeadlineAt`, absolute epoch ms —
+  same machine, same clock, and it cannot drift out of step with the constant
+  the way a duplicated budget would) in the init payload; `connectTimeoutFor`
+  sizes the guard to land inside it with `REPORT_MARGIN_MS` (3s) to spare, and
+  floors at 5s so a slow boot never invents a failure on a healthy handshake.
+  The error text now distinguishes "the status ping ANSWERED, so the world is
+  reachable and the JOIN stalled" from "never resolved a version", and
+  `ERROR_COPY.BOT_START_TIMEOUT` leads with the retry that actually works
+  instead of sending the player to verify the one thing already known to be
+  fine. Anything else nested inside a supervisor deadline owes the same
+  treatment.
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists
