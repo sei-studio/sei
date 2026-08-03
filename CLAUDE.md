@@ -716,7 +716,15 @@ The design and its measurements are committed at
   No absolute number can work: on the test clip the block-max delta's own
   median is 0.313, so a fixed 0.34 fires continuously in a shooter and never in
   a calm game. Gain and colour hold SEPARATE refractory clocks, because the
-  moment colour got sensitive it started swallowing confirmed gain events.
+  moment colour got sensitive it started swallowing confirmed gain events, and
+  since 260803 separate PERIODS too: gain keeps `JOLT_REFRACTORY_MS` (20 s) and
+  colour uses `signals.COLOR_REFRACTORY_MS` (**6 s**). A run of scene changes is
+  a run of different subjects; a run of loudness spikes is one scene. Measured
+  on a Reels recording with six verified swipes, every gap under 20 s: the
+  shared period meant the refractory clock, not the picture, chose which were
+  noticed. The 6 s floor is set by `COLOR_LOOKBACKS_MS`, since a change stays
+  inside the 2.5 s window for 2.5 s after it ends and a shorter period
+  double-counts it (measured: 5 s re-fired, 3 s re-fired).
   `JOLT_COLOR_MAD` is the one-line sensitivity dial. Kernels live in
   `signals.ts` as pure functions over explicit state, which is what lets the
   offline sim run the SAME code rather than a re-implementation.
@@ -773,7 +781,21 @@ The design and its measurements are committed at
 - **The player's typed line is real conversation (260728).** `handleTick`
   persists a user tick's text to the shared chat thread, and `runTurn` drops
   that just-appended tail from history because the canonical copy goes inline
-  with the grid attached.
+  with the grid attached. **On a call that row carries `voice: true`** like
+  every other call line: it is spoken, so a chat row would be a caption. This
+  was missed when user turns started routing through backseat and the player's
+  own half of the call filled the transcript.
+- **TWO entry points (260803).** The share pill in `CallControls` (needs a call
+  already) and the **Backseat button in `ChatTopBar`** (does not). The second
+  exists because the first is unreachable without already knowing the feature
+  is there. From the header, confirming a source arms a **pending share** in
+  `useBackseatStore` and routes to the call; `CallMiniBar` starts the capture
+  when the call reaches `live`. It cannot be inline: the ~40 MB voice module's
+  install gate can hold the dial for minutes or refuse it. The arm carries a
+  180 s deadline, is re-checked against the wall clock before firing (timers
+  lag across sleep), and is dropped on `status === 'error'`. A one-time
+  localStorage tip (`lib/backseatTipPref`) points at the share pill once and is
+  retired by "Got it" OR by any successful share.
 - **UI (260803, 260804).** Entry is the share pill in `CallControls`; the picker
   is `ShareScreenModal` (a `ModalShell`, **Window / Entire screen as two tabs**
   since 260804 — stacked sections put the screens below the fold behind however
@@ -851,13 +873,16 @@ The design and its measurements are committed at
 at `sei-studio/backseat` (AGPL-3.0) with a plain-language architecture README.
 Changes here should be mirrored there when the design moves.
 
-**Owed:** (1) the test footage is an EDITED MONTAGE, so some detected jolts are
-cuts rather than gameplay; unedited footage is needed to confirm which of the
-colour events are real. (2) Windows has no native OCR path yet;
-`Windows.Media.Ocr` is the equivalent of the Vision helper and would close a
-real quality gap. (3) `tesseract.js` is declared but the lockfile is not
-regenerated (a plain `npm install` in a worktree dies on the `gl` native
-override, so it must be run in the primary checkout).
+**Owed:** (1) only two clips have ever been measured against, one of them an
+EDITED MONTAGE whose colour jolts are partly its edit cuts. The colour arm's
+6 s period and 0.15 floor are justified by argument plus those two, not by a
+corpus. (2) On the Reels recording the two swipes at 00:50 and 00:53 are NOT
+separable by amplitude from the video's own motion in the same stretch (peaks
+0.187 / 0.179 against 0.176 / 0.177); the lower floor catches them but is
+buying sensitivity, not discrimination. (3) `tesseract.js` is off the manifest
+but still in the shared `node_modules`; `npm install` in the PRIMARY checkout is
+owed before this branch merges (a plain install in a worktree dies on the `gl`
+native override).
 
 ## Instrumenting a game or timed surface (REQUIRED)
 

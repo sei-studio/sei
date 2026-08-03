@@ -25,12 +25,42 @@
  * a live session" for the IconRail activity badge and the cross-launch gate
  * (lib/gameLaunch), which still holds, because a companion cannot be watching
  * your screen and standing in your Minecraft world at the same time.
+ *
+ * 260803: the PENDING SHARE. The chat header's Backseat button opens the same
+ * picker with no call running, so "Share" has to start a call AND a share. It
+ * cannot do both inline: dialing needs the ~40 MB voice module, whose
+ * install/consent gate lives on VoiceCallScreen, so the call is seconds to
+ * minutes away and may never happen at all if the player declines. So the
+ * picker only ARMS the share here and routes to the call; whoever sees the call
+ * reach 'live' consumes it (CallMiniBar, the app-level call watchdog: it is
+ * mounted on every view, so a player who navigates away mid-dial still gets the
+ * share they asked for). The arm carries a deadline and self-clears, because
+ * the common ending for this state is a call that never happens.
  */
 
 import { create } from 'zustand';
 import type { BackseatSource, BackseatState } from '../../../../shared/backseatIpc';
 import { startCapture, stopCapture, type CaptureHandle } from '../backseat/captureController';
+import { markBackseatShared } from '../backseatTipPref';
 import { sei } from '../ipcClient';
+
+/**
+ * How long an armed share waits for its call. The voice-module download alone
+ * is capped at 180s (voice/modelPrefetch), so a shorter window would drop the
+ * share of anyone installing on a slow connection. It is not longer because the
+ * cost of a stale arm is a surprise share on some LATER call with the same
+ * companion, and that window should stay small. Missing the deadline is cheap:
+ * the share button is right there in the call controls.
+ */
+export const PENDING_SHARE_TTL_MS = 180_000;
+
+/** A share the player asked for before there was a call to put it on. */
+export interface PendingShare {
+  characterId: string;
+  source: BackseatSource;
+  /** Epoch ms after which this must not fire. */
+  expiresAt: number;
+}
 
 interface BackseatStore {
   /** characterId -> true while a session is live. */
@@ -45,10 +75,18 @@ interface BackseatStore {
   starting: boolean;
   /** Why the last share attempt failed, for the picker to show. */
   error: string | null;
+  /** A share waiting for its call to go live; null when nothing is armed. */
+  pendingShare: PendingShare | null;
 
   /** Start sharing `source` with `characterId`. Throws nothing: failures land
    *  in `error` so the picker can stay open and let them try another window. */
   share: (characterId: string, source: BackseatSource) => Promise<boolean>;
+  /** Remember a share to start once a call with `characterId` goes live. */
+  armPendingShare: (characterId: string, source: BackseatSource) => void;
+  /** Drop the armed share (call failed, deadline passed, or it just fired). */
+  clearPendingShare: () => void;
+  /** Start the armed share if it is still valid. Returns whether it started. */
+  consumePendingShare: (characterId: string) => Promise<boolean>;
   /** Stop sharing, tearing down capture and the session in main. */
   stopSharing: () => Promise<void>;
   /** Mark a session started (used by the cross-launch gate's launch thunk). */
@@ -67,6 +105,10 @@ let capture: CaptureHandle | null = null;
 /** Push unsubscribers, torn down on HMR dispose (see useChessStore). */
 let offState: (() => void) | null = null;
 let offLine: (() => void) | null = null;
+
+/** Deadline timer for the armed share. Held outside the store for the same
+ *  reason `capture` is: it is a handle, not something anyone renders. */
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** The armed-grid + send path, for whoever is showing the share UI. */
 export function backseatCapture(): CaptureHandle | null {
@@ -101,6 +143,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
     sourceName: null,
     starting: false,
     error: null,
+    pendingShare: null,
 
     share: async (characterId, source) => {
       if (get().starting) return false;
@@ -140,7 +183,41 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         error: null,
         active: { ...get().active, [characterId]: true },
       });
+      // Every successful share funnels through here, from either entry point,
+      // which makes this the one place that can record "this player has found
+      // backseat" for the one-time discovery tip (lib/backseatTipPref).
+      markBackseatShared();
       return true;
+    },
+
+    armPendingShare: (characterId, source) => {
+      get().clearPendingShare();
+      const expiresAt = Date.now() + PENDING_SHARE_TTL_MS;
+      pendingTimer = setTimeout(() => {
+        pendingTimer = null;
+        // The call never came (declined install, backed out, dial failed).
+        set({ pendingShare: null });
+      }, PENDING_SHARE_TTL_MS);
+      set({ pendingShare: { characterId, source, expiresAt } });
+    },
+
+    clearPendingShare: () => {
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = null;
+      if (get().pendingShare) set({ pendingShare: null });
+    },
+
+    consumePendingShare: async (characterId) => {
+      const pending = get().pendingShare;
+      if (!pending || pending.characterId !== characterId) return false;
+      // The timer normally clears a stale arm, but timers lag across a machine
+      // sleep, so the deadline is re-checked against the clock before firing.
+      const expired = Date.now() >= pending.expiresAt;
+      // Clear FIRST either way: the consumer runs off a store subscription, and
+      // an arm still readable while share() awaits would fire a second time.
+      get().clearPendingShare();
+      if (expired) return false;
+      return get().share(pending.characterId, pending.source);
     },
 
     stopSharing: async () => {
@@ -205,5 +282,7 @@ if (import.meta.hot) {
     offLine?.();
     offState = null;
     offLine = null;
+    if (pendingTimer) clearTimeout(pendingTimer);
+    pendingTimer = null;
   });
 }

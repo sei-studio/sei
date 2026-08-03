@@ -739,6 +739,46 @@ export const ScreenShareIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
+/**
+ * BackseatIcon (260803): the screen-share monitor with a four-point sparkle at
+ * its top right.
+ *
+ * This is deliberately the deleted games tile's art (img/game-backseat.svg,
+ * removed with the tile in ff098b0), re-drawn at icon scale: the monitor body,
+ * stand and up-arrow are the same shapes ScreenShareIcon uses, and the star is
+ * the tile's star, filled, still overlapping the monitor's top edge the way it
+ * did there. Backseat had a recognizable mark and the mark outlived its tile;
+ * a plain share glyph in the header would not have read as the same feature.
+ *
+ * Proportions are carried over from the tile rather than re-invented: the body
+ * is ~1.55:1, the stand is ~0.22 of the body height, and the star sits at 0.93
+ * of the half-width, just above the top edge.
+ */
+export const BackseatIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="2" y="6" width="17" height="11" rx="1.5" />
+    <path d="M10.5 17v2.5" />
+    <path d="M7.5 19.5h6" />
+    <path d="M10.5 13.5V8" />
+    <path d="M8.5 10 10.5 8l2 2" />
+    <path
+      d="M18.5 2.8 19.2 4.7 21.1 5.4 19.2 6 18.5 8 17.8 6 15.9 5.4 17.8 4.7Z"
+      fill="currentColor"
+      stroke="none"
+    />
+  </svg>
+);
+
 /** ScreenShareOffIcon — the same monitor, struck through (stop sharing). */
 export const ScreenShareOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg

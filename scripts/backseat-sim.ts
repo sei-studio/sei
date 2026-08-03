@@ -69,11 +69,14 @@ import {
   baselineGain,
   blockMaxDelta,
   colorDelta,
+  COLOR_LOOKBACKS_MS,
+  COLOR_REFRACTORY_MS,
   colorThreshold,
   createJoltState,
   decideJolt,
   pushGain,
   pushThumb,
+  thumbAt,
   THUMB_H,
   THUMB_W,
 } from '../src/renderer/src/lib/backseat/signals';
@@ -128,7 +131,29 @@ const TH = {
   colorMad: Number(opt('colormad', String(JOLT_COLOR_MAD))),
   colorFloor: Number(opt('colorfloor', String(JOLT_COLOR_FLOOR))),
   refractoryMs: Number(opt('refractory', String(JOLT_REFRACTORY_MS))),
+  colorRefractoryMs: Number(opt('colorrefractory', String(COLOR_REFRACTORY_MS))),
 };
+/**
+ * Ground-truth event times in seconds, `--marks 0,14,28,34,50,53,64`.
+ *
+ * A colour or gain distribution says whether the arm CAN fire; it does not say
+ * whether it fired on the thing a human would have looked up at. Supplying the
+ * moments by hand and scoring against them is the only way to tell a detector
+ * that found the events from one that produced the same count of jolts
+ * somewhere else in the clip.
+ */
+const MARKS = opt('marks', '')
+  .split(',')
+  .filter((s) => s.trim() !== '')
+  .map((s) => Number(s.trim()) * 1000)
+  .filter((n) => Number.isFinite(n));
+/** How late a jolt may be and still count as that mark. A transition takes a
+ *  few hundred ms and the 2.5 s lookback only reaches full size once the whole
+ *  slide is behind it, so a hit is legitimately late; the window is one-sided
+ *  for that reason (a jolt BEFORE the mark cannot have been caused by it). */
+const MARK_LATE_MS = Number(opt('marktol', '3500'));
+const MARK_EARLY_MS = 700;
+
 /** What the tick claims is being shared (260804). Live this is the window
  *  title; here the clip's filename is the closest honest stand-in, and --label
  *  overrides it for testing how much the label actually steers a run. */
@@ -222,6 +247,14 @@ interface Step {
   /** The bar the colour arm had to clear at this instant. It moves with the
    *  screen (signals.colorThreshold), so the delta alone means nothing. */
   colorThr: number;
+  /**
+   * The same block-max distance against EACH lookback separately, in
+   * COLOR_LOOKBACKS_MS order (260803). colorDelta is their max, which hides
+   * which window actually saw the change, and that is the question every
+   * lookback-table decision turns on: a hard cut is equal in both, a slide
+   * transition is carried by the long one alone.
+   */
+  perLookback: Array<number | null>;
 }
 interface JoltEvent {
   t: number;
@@ -301,12 +334,20 @@ function signalTimeline(durationMs: number): { steps: Step[]; jolts: JoltEvent[]
     // Read before decideJolt, which is what folds this sample into the colour
     // baseline; reading after would report a bar the decision never saw.
     const bar = colorThreshold(st, TH);
+    // Recomputed rather than returned by colorDelta: this is a reporting-only
+    // breakdown and signals.ts has no use for it, so it stays out of the
+    // shipping path.
+    const perLookback = COLOR_LOOKBACKS_MS.map((ageMs) => {
+      const past = thumbAt(st, t, ageMs);
+      return past ? Math.round(blockMaxDelta(thumb, past) * 1000) / 1000 : null;
+    });
     steps.push({
       t,
       gainDb: Math.round(st.currentGain * 10) / 10,
       baseDb: Math.round(base * 10) / 10,
       colorDelta: delta === null ? null : Math.round(delta * 1000) / 1000,
       colorThr: Math.round(bar * 1000) / 1000,
+      perLookback,
     });
 
     const fired = decideJolt(st, t, thumb, TH);
@@ -431,12 +472,15 @@ async function run(): Promise<void> {
   const { steps, jolts } = signalTimeline(durationMs);
   writeFileSync(
     path.join(OUT, 'signals.csv'),
-    'ms,gain_db,base_db,jump_db,color_delta,color_thr\n' +
+    `ms,gain_db,base_db,jump_db,color_delta,color_thr,` +
+      COLOR_LOOKBACKS_MS.map((ms) => `d_${ms}`).join(',') +
+      '\n' +
       steps
         .map((s) =>
           [
             s.t, s.gainDb, s.baseDb, Math.round((s.gainDb - s.baseDb) * 10) / 10,
             s.colorDelta ?? '', s.colorThr,
+            ...s.perLookback.map((d) => d ?? ''),
           ].join(','),
         )
         .join('\n'),
@@ -725,7 +769,10 @@ function reportSignals(steps: Step[], jolts: JoltEvent[]): void {
       `bar p50 ${pct(bars, 0.5).toFixed(3)}  over ${overColor}/${deltas.length}`,
   );
 
-  console.log(`\n[sim] ${jolts.length} jolt(s) raised (refractory ${TH.refractoryMs / 1000}s)`);
+  console.log(
+    `\n[sim] ${jolts.length} jolt(s) raised ` +
+      `(refractory gain ${TH.refractoryMs / 1000}s, color ${TH.colorRefractoryMs / 1000}s)`,
+  );
   for (const j of jolts) {
     console.log(
       `  [${clock(j.t)}] ${j.reason.padEnd(5)} ` +
@@ -736,6 +783,52 @@ function reportSignals(steps: Step[], jolts: JoltEvent[]): void {
   if (!jolts.length) {
     console.log('  none. Both arms are dead at these thresholds on this footage.');
   }
+  if (MARKS.length) reportMarks(steps, jolts);
+}
+
+/**
+ * Score the run against hand-marked event times (260803).
+ *
+ * Two separate questions, and they are worth keeping apart because a dial can
+ * fix one without touching the other:
+ *
+ *   PEAK   what the colour delta actually reached around the mark, and how that
+ *          compares to the bar in force there. A miss with peak < bar is a
+ *          threshold problem; a miss with peak >= bar is a refractory problem,
+ *          because the sample cleared the bar and was suppressed anyway.
+ *   FIRED  whether a jolt was raised in the window. This is the outcome; the
+ *          peak is the diagnosis.
+ */
+function reportMarks(steps: Step[], jolts: JoltEvent[]): void {
+  console.log(`\n[sim] ground truth: ${MARKS.length} mark(s), window -${MARK_EARLY_MS / 1000}s / +${MARK_LATE_MS / 1000}s`);
+  const matched = new Set<number>();
+  let hits = 0;
+  for (const m of MARKS) {
+    const win = steps.filter((s) => s.t >= m - MARK_EARLY_MS && s.t <= m + MARK_LATE_MS);
+    const peak = win.reduce<Step | null>(
+      (a, s) => (s.colorDelta !== null && (!a || s.colorDelta > (a.colorDelta ?? -1)) ? s : a),
+      null,
+    );
+    const j = jolts.find((x) => x.t >= m - MARK_EARLY_MS && x.t <= m + MARK_LATE_MS);
+    if (j) {
+      matched.add(j.t);
+      hits++;
+    }
+    const clears = peak?.colorDelta != null && peak.colorDelta >= peak.colorThr;
+    const why = j ? '' : clears ? '  (peak CLEARED the bar: suppressed)' : '  (peak below the bar)';
+    console.log(
+      `  [${clock(m)}] ${j ? `HIT  ${j.reason} at ${clock(j.t)} (+${((j.t - m) / 1000).toFixed(1)}s)` : 'MISS'.padEnd(24)}` +
+        `  peak ${peak?.colorDelta ?? 'n/a'} at ${peak ? clock(peak.t) : '--:--'}` +
+        ` vs bar ${peak?.colorThr ?? 'n/a'}` +
+        ` [${peak?.perLookback.map((d) => (d === null ? '-' : d.toFixed(3))).join(' / ') ?? ''}]` +
+        why,
+    );
+  }
+  const extra = jolts.filter((j) => !matched.has(j.t));
+  console.log(
+    `  ${hits}/${MARKS.length} marks hit, ${extra.length} jolt(s) unmatched` +
+      (extra.length ? `: ${extra.map((j) => `${clock(j.t)} ${j.reason}`).join(', ')}` : ''),
+  );
 }
 
 function writeReports(turns: Turn[], durationMs: number): void {

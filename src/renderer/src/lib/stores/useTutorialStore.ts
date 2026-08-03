@@ -4,8 +4,8 @@
  * Armed by App.tsx when the Sui onboarding scene completes (OnboardApp's
  * onComplete). Two shapes:
  *   full     — a companion was generated: starts on their page ('meet') and
- *              walks say-hi → chat surface → games → home terminal → settings
- *              → Sui → goodbye.
+ *              walks say-hi → chat surface → games → backseat → home terminal
+ *              → settings → Sui → goodbye.
  *   reduced  — local mode / generation skipped or failed: no companion page
  *              to tour, so it starts at the home terminal step.
  *
@@ -22,6 +22,10 @@ export type TutorialStep =
   | 'texting'
   | 'games'
   | 'tiles'
+  // 260803: sits between 'tiles' and 'terminal' on purpose, because it needs
+  // the chat header, which is still on screen behind the games popup. It is
+  // also now the step that leaves for Home, which 'tiles' used to do.
+  | 'backseat'
   | 'terminal'
   | 'settings'
   | 'sui'

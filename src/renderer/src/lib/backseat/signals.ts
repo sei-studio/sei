@@ -58,6 +58,24 @@ export const COLOR_LOOKBACKS_MS = [1000, 2500];
  * 4x3 over a 32x18 thumbnail is 8x6 = 48 pixels per block, small enough to
  * localise and large enough that a handful of noisy pixels cannot carry a block
  * on their own.
+ *
+ * A finer split was measured and rejected (260803). On a screen recording of
+ * Instagram Reels in a browser the portrait video occupies about a sixth of a
+ * landscape screen's width, far narrower than one 4x3 block, so a swipe to the
+ * next reel reads only 0.18 to 0.28 while ordinary motion inside a video reads
+ * up to 0.22: in isolation the two are not separable. Splitting 8x6 instead
+ * separates them well by itself, 3.7% of background samples above the weakest
+ * swipe peak against 18.0% at 4x3, because more ROWS means a block can sit
+ * entirely inside the reel column and see the whole vertical translation.
+ *
+ * Running it end to end made the detector WORSE, 3 of 6 verified swipes against
+ * 5 of 6 at 4x3. The bar is median + k*MAD over the arm's OWN recent output, so
+ * it scales by exactly the factor the signal does and the extra separation is
+ * handed straight back; what does not come back is the variance, because a
+ * 12-pixel block is noisier sample to sample, and a MAD inflated by one swipe
+ * then hid the next (the bar reached 0.805 at 00:14 against a peak of 0.625).
+ * A self-referential threshold makes the split a scale choice rather than a
+ * sensitivity one, so the useful dials are the refractory and the floor.
  */
 export const COLOR_BLOCK_COLS = 4;
 export const COLOR_BLOCK_ROWS = 3;
@@ -94,6 +112,51 @@ const WARMUP_MS = MAX_LOOKBACK_MS + 500;
  * a shooter's deltas swing hard between a firefight and a walk.
  */
 export const COLOR_BASELINE_MS = 15_000;
+
+/**
+ * The colour arm's own refractory period, shorter than the gain arm's (260803).
+ *
+ * It lives here rather than beside JOLT_REFRACTORY_MS in backseatIpc because
+ * its lower bound is a property of the lookback table above, not a taste
+ * setting. A transition stays inside the 2.5 s window for 2.5 s after it
+ * finishes, so the delta is still elevated well after the event, and a
+ * refractory shorter than that plus margin counts one change twice. Measured on
+ * the Reels recording: at 5 s the 00:28 swipe fired again at 00:32, at 3 s
+ * again at 00:30. 6 s is 2.4x the longest lookback and produced no repeats.
+ *
+ * The upper bound is what the arm is for. It answers "the picture is showing
+ * something else now", and two of those in a row are two different subjects,
+ * not one event seen twice. The Reels recording has six swipes, confirmed by
+ * reading the reel id out of the URL bar frame by frame, and their gaps are 14,
+ * 6, 16, 3 and 11 s: EVERY gap is under the 20 s the two arms used to share, so
+ * at 20 s the refractory clock decided which swipes were noticed rather than
+ * the picture did, and at most 3 of the 6 could fire however sensitive the
+ * threshold was made. Measured on that clip, 2/6 at 20 s and 3/6 at 6 s with no
+ * other change; with the floor moved too (see JOLT_COLOR_FLOOR) 5/6, while
+ * either change alone reaches only 3/6. The two are complementary because they
+ * fix different misses: the refractory fixes swipes whose delta CLEARED the bar
+ * and was suppressed, the floor fixes swipes whose delta never reached it.
+ *
+ * The gain arm keeps the longer period and there is no measurement here saying
+ * it should move. A loudness spike is loudness inside a scene that is still
+ * going, and one firefight produces many; there is no equivalent boundary that
+ * makes the next spike a different subject.
+ *
+ * This is a wake, not a line. MIN_SPEAK_GAP_MS governs how often the companion
+ * is allowed to actually say something and is unchanged, so a shorter
+ * refractory buys a look at the right moment, not more talking. It also means
+ * the 3 s gap in this clip can never produce two lines whatever this is set to.
+ *
+ * The cost was measured on the other clip to hand. On the Valorant montage the
+ * colour arm goes from 5 jolts to 11 over 3:07, one per 17 s against one per
+ * 37 s; the four gain jolts are unchanged and all five original colour jolts
+ * survive, so the six new ones are additions rather than displacements. That
+ * footage is an edited compilation whose extra fires are its edit cuts, which
+ * are real scene changes, and the curve is flat past this point: 10 s gives 13
+ * jolts and 8 s gives 14, so the last 4 s of period buys 2 jolts there and a
+ * whole marked swipe here.
+ */
+export const COLOR_REFRACTORY_MS = 6_000;
 
 export interface JoltState {
   /** Trailing loudness samples: [t, dBFS]. */
@@ -327,8 +390,18 @@ export interface JoltThresholds {
   colorMad: number;
   /** Absolute floor for the colour threshold, 0..1. */
   colorFloor: number;
-  /** Minimum gap between two jolts. */
+  /** Minimum gap between two GAIN jolts. The colour arm has its own, below. */
   refractoryMs: number;
+  /**
+   * Minimum gap between two COLOUR jolts. Defaults to COLOR_REFRACTORY_MS,
+   * which is where the reasoning is; it is a field at all so the offline sim
+   * can sweep it without editing this file.
+   *
+   * Optional rather than required so the one caller that builds this from the
+   * shared constants keeps compiling, and so the two arms are not accidentally
+   * re-coupled by a caller that fills in the same number for both.
+   */
+  colorRefractoryMs?: number;
 }
 
 /**
@@ -358,11 +431,17 @@ export function decideJolt(
 
   if (!warmedUp(st, now)) return null;
 
+  // Two clocks and two periods. The per-arm clocks stop the arms silencing each
+  // other; the per-arm periods are because "the picture changed" recurs on a
+  // different timescale from "something was loud", and one number for both made
+  // the colour arm's rate a property of the gain arm's taste.
+  const colorRefractory = th.colorRefractoryMs ?? COLOR_REFRACTORY_MS;
+
   if (now - st.lastGainAt >= th.refractoryMs && gainJump(st) >= th.gainDb) {
     st.lastGainAt = now;
     return 'gain';
   }
-  if (now - st.lastColorAt >= th.refractoryMs && delta !== null && delta >= bar) {
+  if (now - st.lastColorAt >= colorRefractory && delta !== null && delta >= bar) {
     st.lastColorAt = now;
     return 'color';
   }

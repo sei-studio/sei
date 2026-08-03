@@ -8,6 +8,12 @@
  *   - back:  chat → home; call view → back to that chat (the call keeps
  *            running; GameSurface's chrome row / the icon-rail badge carry it).
  *   - controller: opens the games picker, including mid-call.
+ *   - backseat: opens the screen-share source picker (260803). It is here
+ *            because backseat's only other entry point is the share button in
+ *            the call controls, which you cannot reach without already being on
+ *            a call, so nobody who had not already found the feature ever saw
+ *            it. From here, confirming a source starts the call as well (the
+ *            picker arms a pending share; see ShareScreenModal).
  *   - phone: no call → start one. With a game surface open the call starts IN
  *            PLACE (260722, startOrOpenCall: this screen stays, GameSurface's
  *            chrome row shows the compact controls); otherwise the fullscreen
@@ -22,7 +28,7 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { startOrOpenCall } from '../lib/callLaunch';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from './PixelPortrait';
-import { GamepadIcon, PhoneIcon, BackIcon, UserIcon } from './icons';
+import { GamepadIcon, PhoneIcon, BackIcon, UserIcon, BackseatIcon } from './icons';
 import { IdTag } from './IdTag';
 import styles from './ChatTopBar.module.css';
 
@@ -108,6 +114,17 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
           data-tutorial="games-btn"
         >
           <GamepadIcon size={18} />
+        </button>
+        <button
+          type="button"
+          className={styles.iconBtn}
+          onClick={() => openModal({ kind: 'share-screen', characterId })}
+          aria-label="Backseat (beta)"
+          data-tip="Backseat (beta)"
+          data-tip-edge="right"
+          data-tutorial="backseat-btn"
+        >
+          <BackseatIcon size={18} />
         </button>
         <button
           type="button"

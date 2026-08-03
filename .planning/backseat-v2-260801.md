@@ -871,3 +871,152 @@ opening sentence of a paragraph is worth more than the last.
   and the worker frame pump, both of which were already true, but it has not
   been watched in a real session. The signals log line every 10 s is what to
   check.
+
+---
+
+## Round five (260803), from the second live session
+
+The session was Instagram Reels rather than a game, which is the first time the
+surface has been exercised on something that is not play, and it broke in ways
+a shooter never would.
+
+### The player's own half of the call was in the chat thread
+
+`handleTick` persisted the user row with no `voice` flag. That flag has existed
+since 260705 and already means exactly the right thing (kept for the model,
+hidden from the transcript, which shows the "You and X called for Y" row
+instead); the companion's own reply three hundred lines below sets it. It was
+missed when round four started routing spoken turns through backseat, so every
+transcribed utterance became a visible chat message. One condition, on the row
+that was already being written.
+
+### She did not know what scrolling is
+
+The reactions to individual reels were good. What failed was the format. The
+companion repeatedly asked why the player was "just scrolling" and remarked on
+them moving on from clips, because a swipe and a player who cannot settle on
+anything produce an identical grid. No amount of looking harder resolves that:
+it has to be stated.
+
+Stated in prose, it did not take. The first version of `SCROLLING SHORT VIDEOS`
+banned asking why they moved on, and the very next sim run opened **three of six
+lines with "you went from X to Y"** ("Okay, so you went from comparing skate
+clips to scrolling through Instagram posts... Are you looking for inspiration or
+just procrastinating?"). Adding two BAD/GOOD pairs naming that exact
+construction took it to **0 of 6**, which is the same lesson as round three:
+prose sets policy, pairs set form, and the form was the failure.
+
+**The pairs are not about scrolling.** Ablated over eleven Valorant looks, same
+seed and the same eleven moments:
+
+| | median words | lines opening "you went from" |
+|---|---|---|
+| without the paragraph | 27 | 5 / 11 |
+| with it | 21 | 1 / 11 |
+
+Naming the one construction the model actually reaches for beat the general ban
+on narration that has been two paragraphs below it since round three. Worth
+remembering the next time a contract rule is not holding: the fix may be to name
+the sentence rather than to restate the rule.
+
+`VOICE_CALL_PRIMER` gains the same fact as general context (what a share usually
+is, and that a short-video feed is unrelated clips), plus an instruction to say
+so and invite the player to play or share when there is nothing to talk about.
+The companion cannot start either itself, so a flat stretch of call is only
+fixable by asking.
+
+### The colour arm could not see a swipe, for two independent reasons
+
+Ground truth first: the recording has **six** swipes, not the seven estimated by
+eye, verified by reading the reel id out of the URL bar frame by frame (two of
+the marks are the same reel). Gaps between them: 14, 6, 16, 3, 11 s.
+
+Baseline was 2 of 6. The extended sim now separates *why* each mark missed, and
+the answer was two different failures in equal measure:
+
+- **00:14 and 00:34 cleared the bar and were suppressed.** `JOLT_REFRACTORY_MS`
+  was 20 s shared by both arms, and every gap here is under it, so the
+  refractory clock rather than the picture decided which swipes were noticed.
+- **00:50 and 00:53 never reached the bar.** `JOLT_COLOR_FLOOR` 0.2 was sized to
+  "a big change" rather than to noise; a still screen measures 0.001 to 0.002.
+
+They are complementary, and neither alone gets past 3 of 6:
+
+| | refractory 20 s | refractory 6 s |
+|---|---|---|
+| floor 0.20 | 2/6 | 3/6 |
+| floor 0.15 | 2/6 | **5/6** |
+
+So the colour arm gets its own period, `COLOR_REFRACTORY_MS = 6_000`, and the
+floor moves to 0.15. The period lives in `signals.ts` and not beside the other
+thresholds because its lower bound is a property of `COLOR_LOOKBACKS_MS`: a
+change stays inside the 2.5 s window for 2.5 s after it ends, and 5 s and 3 s
+both re-fired on the tail of the 00:28 swipe. The upper bound is the argument
+that consecutive scene changes are consecutive different subjects, whereas
+consecutive loudness spikes are one scene, which is why gain keeps 20 s.
+
+The remaining miss (00:34) fails by ~200 ms, exactly 6.0 s after the previous
+swipe. Extra fires: one marginal jolt at the first sample past warmup, and one
+at 01:10 which is a real hard cut *inside* a reel's own video, verified by the
+URL not changing.
+
+### Measured and rejected: a finer block split
+
+8x6 instead of 4x3 is a far better separator in isolation (3.7% of background
+samples above the weakest swipe peak, against 18.0%), because more rows let a
+block sit inside the narrow reel column. End to end it was **worse, 3/6 against
+5/6**. The bar is `median + k*MAD` over the arm's own output, so it scales by
+the same factor the signal does and hands the separation straight back; the
+variance does not come back, and a MAD inflated by one swipe then hid the next.
+A self-referential threshold makes the block split a scale choice, not a
+sensitivity one.
+
+### Valorant cost
+
+Colour jolts 5 to 11 over 3:07, one per 17 s against one per 37 s. The four gain
+jolts are unchanged and all five original colour jolts survive, so these are
+additions rather than displacements, and the steps-over-bar count is identical
+(81/1863) which proves nothing got more sensitive: the same over-bar samples
+now convert. The curve is flat past this point (10 s gives 13, 8 s gives 14), so
+the last 4 s of period costs 2 jolts there and buys a whole marked swipe here.
+`MIN_SPEAK_GAP_MS` collapses three of the new pairs, so it is not 1:1 in lines.
+Honest tension: that footage is an edited montage and its extra fires are edit
+cuts, which are real scene changes, but the colour arm is now about as frequent
+a wake there as the idle schedule.
+
+### Backseat was undiscoverable
+
+The share pill is the fourth glyph in a row of call controls, and you cannot
+reach it without already being on a call. So there is now a **Backseat button in
+`ChatTopBar`**, using the deleted games tile's own mark (monitor plus sparkle,
+recovered from `ff098b0^`) so the feature keeps the identity it had. From there
+"Share" has to produce a call as well, which cannot be done inline: the voice
+module's install gate can hold the dial for minutes or refuse it. The picker
+arms a **pending share** and `CallMiniBar` consumes it at `live`. `CallMiniBar`
+and not `VoiceCallScreen`, because that screen can unmount mid-dial (the player
+is free to go back to chat while it rings) and a consumer that unmounts with it
+drops the share silently.
+
+A one-time tip points at the share pill, retired by "Got it" or by any
+successful share, on the reasoning that someone who has already found the
+feature reads the tip as the app not noticing. localStorage, not `config.json`,
+which carries a stale-wholesale-save hazard not worth a cosmetic flag.
+
+The tutorial gains one step, between the games tiles and the home terminal. That
+position is forced: `games` and `tiles` both happen on the chat screen with the
+picker as a modal over it, so the header is mounted and measurable there, while
+Home has no such button and the step would degrade silently to a bare scrim.
+`tiles` now only closes the popup; the navigation to Home moved down one step.
+
+### Still owed
+
+- **Everything visual is unverified.** How the icon reads at 18 px, the tip's
+  placement and tail in all four themes, and the tutorial spotlight actually
+  landing. All argued from the code, none watched.
+- **The two swipes at 00:50 and 00:53 are not separable by amplitude** from the
+  video's own motion in that stretch. The lower floor catches them; on other
+  footage that content would fire too.
+- **Two clips is not a corpus.** The 6 s period and the 0.15 floor are argument
+  plus two measurements.
+- Everything under round four's "Still owed" that is not listed here still
+  stands.

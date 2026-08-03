@@ -455,8 +455,24 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   // chat thread (so the main window shows it and the NEXT turn's history has
   // the player's side), and echo it into the overlay's mini chat. Without this
   // the transcript read like the companion talking to itself (260728 live).
+  //
+  // The row is voice-flagged on a call, exactly as the companion's own reply
+  // below is. That was missing, and it became visible the moment user turns
+  // started routing through here: a spoken utterance is transcribed, so a chat
+  // row is a CAPTION of something already said aloud, and the thread filled
+  // with the player's own half of the call (reported live). `voice` is
+  // the existing answer to that (see ChatMessage.voice): the row is still
+  // persisted, and the model still reads it as history, it is only hidden from
+  // the transcript, which shows the "You and X called for Y" summary instead.
   if (isUser && tick.text) {
-    const msg: ChatMessage = { id: randomUUID(), role: 'user', text: tick.text, ts: Date.now() };
+    const onCall = requireDeps().isCallActive?.(s.characterId) === true;
+    const msg: ChatMessage = {
+      id: randomUUID(),
+      role: 'user',
+      text: tick.text,
+      ts: Date.now(),
+      ...(onCall ? { voice: true } : {}),
+    };
     try {
       await chatStore.appendMessage(s.characterId, msg);
     } catch (err) {

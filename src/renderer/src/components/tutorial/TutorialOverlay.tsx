@@ -57,6 +57,19 @@ const STEPS: Record<TutorialStep, StepDef> = {
   texting: { targets: ['composer', 'call-btn'], interactive: false, advanceOnClick: true },
   games: { targets: ['games-btn'], interactive: true, advanceOnClick: false },
   tiles: { targets: ['games-modal'], interactive: false, advanceOnClick: true },
+  // 260803. Ordering matters and was worked out from the routes, not guessed:
+  // 'games' and 'tiles' both happen on the CHAT screen (the games picker is a
+  // modal over it), so the chat header, and the backseat button in it, is
+  // still mounted. 'tiles' used to close that modal and navigate to Home in one
+  // advance; that navigation moved down to this step, so 'tiles' now only
+  // closes the popup and the chat header is uncovered and measurable here.
+  // Putting this step after 'terminal' instead would have pointed the spotlight
+  // at a button that does not exist on Home, which degrades silently to a full
+  // scrim with no highlight.
+  //
+  // Blocked, like 'texting' and 'tiles': the button opens the share-screen
+  // picker, and a tour that lands the player in a source list is over.
+  backseat: { targets: ['backseat-btn'], interactive: false, advanceOnClick: true },
   // The Home party-wall panels are edge-to-edge, so the default PAD would
   // bleed the ring onto the character panel left of the empty slot; pad 0
   // keeps the highlight inside the slot.
@@ -129,6 +142,8 @@ export function TutorialOverlay(): React.ReactElement | null {
       texting: "Here's where you can text and call them. Looks familiar, right?",
       games: 'This is how you play games together. Here, try clicking it.',
       tiles: "Just click a tile to launch the game. I'm working hard to add new games. Remember to check every week!",
+      backseat:
+        'This is Backseat, a new feature. You can share your game, movie, or even work for your companion to watch live! I recommend doomscrolling together, hehe.',
       terminal:
         'This is your main terminal. You can connect with up to four AIs here. Just click an empty slot to awaken.',
       settings:
@@ -221,7 +236,13 @@ export function TutorialOverlay(): React.ReactElement | null {
         setStep('games');
         break;
       case 'tiles':
+        // Close the popup only. The next step spotlights the chat header
+        // underneath it, so the navigation to Home that used to happen here
+        // moved to that step.
         closeModal();
+        setStep('backseat');
+        break;
+      case 'backseat':
         setHomeTab('home');
         navigate({ kind: 'home' });
         setStep('terminal');

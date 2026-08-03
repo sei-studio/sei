@@ -5,6 +5,7 @@ import {
   colorDelta,
   colorThreshold,
   COLOR_LOOKBACKS_MS,
+  COLOR_REFRACTORY_MS,
   createJoltState,
   decideJolt,
   mad,
@@ -18,6 +19,12 @@ import {
   thumbDelta,
   warmedUp,
 } from './signals';
+import {
+  JOLT_COLOR_FLOOR,
+  JOLT_COLOR_MAD,
+  JOLT_GAIN_DB,
+  JOLT_REFRACTORY_MS,
+} from '../../../../shared/backseatIpc';
 
 /** A flat RGBA thumbnail of one colour, the shape getImageData returns. */
 const solid = (r: number, g: number, b: number): Uint8ClampedArray => {
@@ -33,7 +40,19 @@ const solid = (r: number, g: number, b: number): Uint8ClampedArray => {
 
 const BLACK = solid(0, 0, 0);
 const WHITE = solid(255, 255, 255);
-const TH = { gainDb: 18, colorMad: 4, colorFloor: 0.2, refractoryMs: 20_000 };
+/**
+ * The SHIPPED thresholds, imported rather than restated. These used to be
+ * copied literals and drifted from the constants they were meant to stand for;
+ * importing them means a test that passes is a statement about what the app
+ * does. colorRefractoryMs is left off on purpose so the default path through
+ * decideJolt is the one under test.
+ */
+const TH = {
+  gainDb: JOLT_GAIN_DB,
+  colorMad: JOLT_COLOR_MAD,
+  colorFloor: JOLT_COLOR_FLOOR,
+  refractoryMs: JOLT_REFRACTORY_MS,
+};
 
 /** BLACK with the top-left block of a 4x3 split turned white: a localised
  *  change, the case the colour arm used to be blind to. */
@@ -256,7 +275,65 @@ describe('decideJolt', () => {
     pushGain(st, 3200, -60 + TH.gainDb);
     expect(decideJolt(st, 3200, BLACK, TH)).toBe('gain');
     expect(decideJolt(st, 3300, BLACK, TH)).toBeNull();
-    expect(decideJolt(st, 3100 + TH.refractoryMs, WHITE, TH)).toBe('color');
+    expect(decideJolt(st, 3100 + COLOR_REFRACTORY_MS, WHITE, TH)).toBe('color');
+  });
+
+  it('frees the colour arm on ITS period, well before the gain arm is free', () => {
+    // 260803. The two arms used to share one period, and a run of scene changes
+    // is exactly what that could not represent: on a screen recording of six
+    // Reels swipes the gaps were 14, 6, 16, 3 and 11 s, every one of them under
+    // the 20 s both arms held, so the clock decided which swipes were noticed
+    // rather than the picture did (2 of 6 fired; at 6 s with the lower floor,
+    // 5 of 6).
+    const st = warm();
+    pushGain(st, 3100, -60);
+    expect(decideJolt(st, 3100, WHITE, TH)).toBe('color');
+    // The white screen settles in and becomes the new normal.
+    for (let t = 3100; t <= 3100 + COLOR_REFRACTORY_MS; t += 100) {
+      pushGain(st, t, -60);
+      pushThumb(st, t, WHITE);
+    }
+    expect(COLOR_REFRACTORY_MS).toBeLessThan(TH.refractoryMs);
+    // A second, different scene one tick short of the colour period: held.
+    expect(decideJolt(st, 3100 + COLOR_REFRACTORY_MS - 100, BLACK, TH)).toBeNull();
+    // At the period it is a second wake, even though the GAIN arm would still
+    // be silent this far in.
+    expect(decideJolt(st, 3100 + COLOR_REFRACTORY_MS, BLACK, TH)).toBe('color');
+  });
+
+  it('will not count one transition twice, which is what bounds the period below', () => {
+    // A transition sits inside the 2.5 s lookback for 2.5 s after it finishes,
+    // so the delta stays elevated well past the event. Measured on the Reels
+    // recording: at a 5 s period the 00:28 swipe fired again at 00:32, at 3 s
+    // again at 00:30. The period has to clear the longest lookback with margin.
+    expect(COLOR_REFRACTORY_MS).toBeGreaterThan(Math.max(...COLOR_LOOKBACKS_MS) * 2);
+
+    const st = warm();
+    pushGain(st, 3100, -60);
+    expect(decideJolt(st, 3100, WHITE, TH)).toBe('color');
+    pushThumb(st, 3100, WHITE);
+    // WHITE stays on screen: nothing further has happened, but for the next
+    // 2.5 s the lookbacks still reach back into BLACK and read a full repaint.
+    for (let t = 3200; t < 3100 + COLOR_REFRACTORY_MS; t += 100) {
+      pushGain(st, t, -60);
+      expect(decideJolt(st, t, WHITE, TH)).toBeNull();
+      pushThumb(st, t, WHITE);
+    }
+    // By the time the arm is free the lookbacks have caught up, so the same
+    // unchanged screen does not re-fire.
+    expect(decideJolt(st, 3100 + COLOR_REFRACTORY_MS, WHITE, TH)).toBeNull();
+  });
+
+  it('uses COLOR_REFRACTORY_MS unless a caller overrides it', () => {
+    // The field exists so the offline sim can sweep the period; the default is
+    // what the app gets, because the app builds JoltThresholds without it.
+    const st = warm();
+    pushGain(st, 3100, -60);
+    expect(decideJolt(st, 3100, WHITE, TH)).toBe('color');
+    pushThumb(st, 3100, WHITE);
+    // A second later, well inside the 6 s default and well outside a 0.5 s one.
+    expect(decideJolt(st, 4100, BLACK, TH)).toBeNull();
+    expect(decideJolt(st, 4100, BLACK, { ...TH, colorRefractoryMs: 500 })).toBe('color');
   });
 
   it('never fires the gain arm with no audio source', () => {

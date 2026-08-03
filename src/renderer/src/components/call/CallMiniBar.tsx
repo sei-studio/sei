@@ -10,6 +10,15 @@
  *   view (spec: "ending the game returns the call to its normal fullscreen
  *   surface").
  *
+ *   Pending share (260803): the chat header's Backseat button arms a share and
+ *   routes into a call; this starts it once that call is actually live. It
+ *   belongs here rather than on VoiceCallScreen because that screen can unmount
+ *   before the call connects: dialing takes seconds, longer behind the voice
+ *   module's install gate, and the player is free to go back to chat while it
+ *   rings (the call keeps running). A consumer that unmounts with it would drop
+ *   the share silently. This watchdog is mounted on every view and already
+ *   watches exactly the two values the decision needs.
+ *
  * On non-chat views with a call running there is deliberately no floating
  * call UI: the icon-rail activity badge is the ambient indicator, and
  * clicking the character (or the chat top bar's phone) returns to the call.
@@ -34,6 +43,9 @@ export function CallMiniBar(): null {
   const mcDashState = useMcDashboardStore((s) => s);
   const drawState = useDrawStore((s) => s);
   const backseatActive = useBackseatStore((s) => s.active);
+  const pendingShare = useBackseatStore((s) => s.pendingShare);
+  const clearPendingShare = useBackseatStore((s) => s.clearPendingShare);
+  const consumePendingShare = useBackseatStore((s) => s.consumePendingShare);
 
   const callExists = participants.length > 0 && (status === 'live' || status === 'connecting');
   const awayFromCall = callExists && view.kind !== 'voice-call';
@@ -64,6 +76,23 @@ export function CallMiniBar(): null {
       navigate({ kind: 'voice-call', characterId: participants[0] });
     }
   }, [gameActive, awayFromCall, participants, navigate]);
+
+  // Armed share → live call. 'live' and not 'connecting': the capture pipeline
+  // and the call's turn loop are the same conversation (useVoiceStore routes a
+  // player utterance THROUGH the share), so starting the share against a call
+  // that has not finished connecting would attach the grid to a session that is
+  // still being built. A dial that ends in 'error' will never reach 'live', so
+  // the arm is dropped there rather than left to time out.
+  useEffect(() => {
+    if (!pendingShare) return;
+    if (status === 'error') {
+      clearPendingShare();
+      return;
+    }
+    if (status !== 'live') return;
+    if (!participants.includes(pendingShare.characterId)) return;
+    void consumePendingShare(pendingShare.characterId);
+  }, [pendingShare, status, participants, clearPendingShare, consumePendingShare]);
 
   return null;
 }

@@ -350,10 +350,16 @@ export function nextIdleDelayMs(rand: () => number = Math.random): number {
 export const MIN_SPEAK_GAP_MS = 8_000;
 
 /**
- * Refractory period for the local jolt trigger. The idle schedule covers the
- * steady state; a jolt exists to put a look ON the moment that matters rather
- * than up to a minute later, so it needs to be rare enough that it never
- * becomes the dominant source of ticks.
+ * Refractory period for the GAIN arm of the local jolt trigger. The idle
+ * schedule covers the steady state; a jolt exists to put a look ON the moment
+ * that matters rather than up to a minute later, so it needs to be rare enough
+ * that it never becomes the dominant source of ticks.
+ *
+ * 260803: this used to be both arms. The colour arm now has its own and much
+ * shorter one, signals.COLOR_REFRACTORY_MS, which is where that reasoning is.
+ * The short version: scene changes come in runs (six swipes through Reels,
+ * every gap under 20 s) and each one is a different subject, while loudness
+ * spikes come in runs inside ONE scene and are the same subject.
  */
 export const JOLT_REFRACTORY_MS = 20_000;
 
@@ -379,10 +385,23 @@ export const JOLT_REFRACTORY_MS = 20_000;
  * 1.0 s and a 2.5 s lookback, rather than a mean over the whole frame against
  * one lookback. Both changes exist because the arm only ever fired on hard
  * scene cuts and never on a change within a scene.
+ *
+ * 260803: the floor moved 0.2 -> 0.15. It only binds when the moving part of
+ * the bar is below it, which is to say on a calm screen, and 0.2 turned out to
+ * be sized to "a big change" rather than to noise: metered over a still stretch
+ * of a screen recording the block-max delta reads 0.001 to 0.002, so 0.15 still
+ * sits about 75x above what compression actually produces. It was blocking two
+ * real swipes on the Reels recording whose peaks were 0.187 and 0.179 while the
+ * moving bar there sat at the floor. Honest caveat: at that point in that clip
+ * the video's own motion also reaches 0.176, so this pair is not separable by
+ * amplitude and the floor is buying sensitivity, not discrimination. It is
+ * inert on anything busy, where median + k*MAD sits far above it: on the
+ * Valorant montage the count of steps over the bar is identical at 0.2 and 0.15
+ * (81 of 1863), so this change is scoped to calm screens by construction.
  */
 export const JOLT_GAIN_DB = 18;
 export const JOLT_COLOR_MAD = 4;
-export const JOLT_COLOR_FLOOR = 0.2;
+export const JOLT_COLOR_FLOOR = 0.15;
 
 // ── Session shape ─────────────────────────────────────────────────────────
 
