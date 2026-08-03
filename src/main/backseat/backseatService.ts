@@ -16,6 +16,9 @@
  *   'user'  the player spoke. Being spoken to and ignored is the one failure
  *           they definitely notice, so it preempts anything and ignores
  *           MIN_SPEAK_GAP_MS.
+ *   'start' the share just opened, once per session. Below 'user' rather than
+ *           equal to it, so a player who says something while the first look
+ *           is still running gets answered instead of talked over.
  *   'jolt'  something measurable changed on screen or in the sound. Preempts a
  *           scheduled look, because a reaction to the thing that just happened
  *           beats an idle glance at the same six seconds.
@@ -62,7 +65,7 @@ import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backse
  * Tick priority. Strictly ordered: a tick preempts an in-flight turn only when
  * its priority is higher, and is dropped otherwise.
  */
-const PRIORITY: Record<BackseatTick['kind'], number> = { user: 3, jolt: 2, idle: 1 };
+const PRIORITY: Record<BackseatTick['kind'], number> = { user: 4, start: 3, jolt: 2, idle: 1 };
 
 const MEMORY_BUDGET_BYTES = 12000;
 /** Transcript window. Backseat turns are frequent and short, so the same

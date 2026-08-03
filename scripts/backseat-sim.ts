@@ -59,6 +59,7 @@ import {
   JOLT_GAIN_DB,
   JOLT_REFRACTORY_MS,
   MIN_SPEAK_GAP_MS,
+  START_LOOK_MS,
   nextIdleDelayMs,
   SAMPLE_INTERVAL_MS,
   SAMPLE_TOLERANCE_MS,
@@ -454,7 +455,7 @@ interface Turn {
   usage?: { input: number; cacheRead: number; cacheWrite: number; output: number };
 }
 
-const PRIORITY: Record<BackseatTickKind, number> = { user: 3, jolt: 2, idle: 1 };
+const PRIORITY: Record<BackseatTickKind, number> = { user: 4, start: 3, jolt: 2, idle: 1 };
 
 async function run(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
@@ -505,7 +506,30 @@ async function run(): Promise<void> {
   /** The session transcript: companion lines only, since nobody types. */
   const spokenLines: string[] = [];
 
-  let t = 0;
+  // The opening look (260803). The app fires this START_LOOK_MS after the share
+  // opens; here the clip's t=0 IS the share opening, so it lands at the same
+  // offset off the same ring. Straight through, with no speak-gap or preemption
+  // check: it is the first tick of the session, so there is nothing to gate it
+  // against and nothing in flight.
+  {
+    const grid = await buildGrid(START_LOOK_MS);
+    if (grid) {
+      const turn = await runTurn(
+        client, spokenLines, START_LOOK_MS, lastSpokeAt, 'start', undefined, grid, prevGrid,
+      );
+      if (turn.spoke) {
+        prevGrid = { small: grid.small, at: START_LOOK_MS };
+        lastSpokeAt = START_LOOK_MS + TURN_MS;
+      }
+      turns.push(turn);
+      turn.grid = `${turns.length.toString().padStart(3, '0')}-start.jpg`;
+      writeFileSync(path.join(gridsDir(), turn.grid), grid.jpeg);
+    } else {
+      console.log(`[${clock(START_LOOK_MS)}] start skipped (ring too short)`);
+    }
+  }
+
+  let t = START_LOOK_MS;
   while (t <= durationMs) {
     // Whichever comes first: the next scheduled look or the next jolt.
     while (joltIdx < jolts.length && jolts[joltIdx].t < t) joltIdx++;

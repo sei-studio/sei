@@ -28,6 +28,7 @@ import {
   CAPTURE_W,
   JOLT_GAIN_DB,
   nextIdleDelayMs,
+  START_LOOK_MS,
   SHARE_LABEL_INTERVAL_MS,
   STT_SAMPLE_RATE,
   type BackseatTickKind,
@@ -681,6 +682,38 @@ export async function startCapture(
   };
   scheduleIdle();
 
+  // ── The opening look (260803) ───────────────────────────────────────────
+  // Sharing a screen is the player making an opening move, and the session used
+  // to answer it with silence: nothing has jolted yet and the idle floor is
+  // 12 s, so pressing Share and waiting looked like the companion had not
+  // noticed. One look, START_LOOK_MS in, once per session.
+  //
+  // It is scheduled here rather than raised by whoever called startCapture
+  // because both entry points (the call controls, and the chat header's pending
+  // share) land in exactly this function, and because the delay exists to let
+  // the frame ring fill: the grid is composited from history that does not
+  // exist yet at t=0.
+  //
+  // No idleBusy guard and no reschedule: it cannot collide with the idle timer,
+  // whose floor is far beyond it, and if the player says something first that
+  // tick outranks this one in main's ladder.
+  const startTimer = window.setTimeout(() => {
+    if (paused || stopped) return;
+    void (async () => {
+      try {
+        const grid = await composite();
+        if (!grid) {
+          console.warn('[backseat] opening look skipped: no grid yet');
+          return;
+        }
+        if (paused || stopped) return;
+        await sendTick('start', grid, { transcript: await tickTranscript() });
+      } catch {
+        /* a missed opening line is not a broken session */
+      }
+    })();
+  }, START_LOOK_MS);
+
   // ── Clip requests from main ─────────────────────────────────────────────
   const offClip = sei.onBackseatClipRequest(({ characterId: id, requestId }) => {
     if (id !== characterId || stopped) return;
@@ -711,6 +744,7 @@ export async function startCapture(
       if (stopped) return;
       stopped = true;
       window.clearTimeout(idleTimer);
+      window.clearTimeout(startTimer);
       window.clearInterval(labelTimer);
       pipeline.stop();
       stt.stop();

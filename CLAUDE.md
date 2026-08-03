@@ -614,13 +614,19 @@ The design and its measurements are committed at
   `MediaStreamTrackProcessor` in a worker, which is throttle-immune regardless.
   Deleting the overlay removed a second renderer, a duplicated state copy, and
   a push fan-out. `useBackseatStore` now OWNS the capture handle for the app.
-- **Three wakes, `user > jolt > idle`, strict priority (260801).** Higher
+- **Four wakes, `user > start > jolt > idle`, strict priority (260801, 260803).** Higher
   preempts lower; nothing is ever queued, because a queued reaction describes a
   moment that has passed and reads as confusion rather than lateness. `user`
   always answers. `jolt` is a local gain or colour discontinuity, no model
   involved. `idle` is a shifted-exponential timer over [12 s, 60 s], memoryless
   on purpose so the player cannot learn its rhythm, reset whenever the
   companion speaks. `MIN_SPEAK_GAP_MS` (8 s) drops jolt and idle, never user.
+  `start` fires ONCE per session, `START_LOOK_MS` (1.8 s) after the share opens,
+  because showing someone your screen is an opening move and the session used to
+  answer it with silence (nothing has jolted yet, and the idle floor is 12 s).
+  Not zero: at 10 Hz the frame ring has no history to composite yet, and the
+  picker is still dismissing over the thing being shared. It sits BELOW `user`
+  so a player who speaks during the opening look is answered, not talked over.
 - **The small VLM salience gate is GONE (260801).** It was replaced by the idle
   schedule, not repaired. Measured end to end, the narration-novelty scheme
   meant to fix it carried almost no signal (0.037 of real temporal separation

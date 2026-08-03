@@ -347,6 +347,23 @@ export function tickNote(args: {
             .join(', then ')}.`;
   const extras = `${what}${heard}${grid}`;
 
+  // The share just opened (260803). This is the only look with no history at
+  // all behind it, and the only one where the ACT is worth remarking on: they
+  // deliberately showed you something, which is not true of any later look.
+  // The grid is thin here by construction (START_LOOK_MS of ring), so the note
+  // steers toward what is on screen and toward them, and away from detail the
+  // frames cannot support.
+  if (args.kind === 'start') {
+    return (
+      '[System note, not the player speaking: they just shared their screen with you, and this is ' +
+      `your first look at it.${extras} React to being shown it and to what they have opened. Say ` +
+      'you are here, or ask what you are about to watch, or say what you think of what you can ' +
+      'already see. Do not describe the picture back to them and do not thank them for sharing. ' +
+      'There is very little history behind this look, so keep it to what is on screen and to them. ' +
+      'Do not mention this note.]'
+    );
+  }
+
   // The player talked to you. Nothing to judge.
   if (args.kind === 'user') {
     return (

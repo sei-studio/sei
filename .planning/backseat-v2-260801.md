@@ -1008,6 +1008,42 @@ picker as a modal over it, so the header is mounted and measurable there, while
 Home has no such button and the step would degrade silently to a bare scrim.
 `tiles` now only closes the popup; the navigation to Home moved down one step.
 
+### The session used to open with silence
+
+Sharing a screen is the player's opening move, and nothing answered it: no jolt
+has fired that early and the idle floor is 12 s, so pressing Share and waiting
+looked like the companion had not noticed. There is now a fourth wake, `start`,
+fired once per session `START_LOOK_MS` (1.8 s) after capture opens, with its own
+note (they just showed you this, react to being shown it and to what is on
+screen, do not describe it back and do not thank them).
+
+The delay is bounded on both sides. At zero the frame ring is empty and there is
+nothing to composite, and the picker is still dismissing over the very thing
+being shared; 1.8 s at 10 Hz resolves the three sub-second offsets and leaves the
+older cells as honest holes, so the first grid is small but real. Priority sits
+below `user` and above `jolt`: a player who speaks during the opening look
+should be answered rather than talked over.
+
+It is scheduled inside `startCapture`, which is where both entry points land, so
+the call-controls path and the chat header's pending share get it identically.
+Three sim runs opened with "Oh, is this someone you know, or are you just
+scrolling?", "Okay, so you're looking at someone doing like a slackline or rope
+walk situation? That looks genuinely sketchy." and "Okay, so what's this? Is this
+someone you follow, or are we just scrolling?"
+
+### Correction: "you went from" is reduced, not eliminated
+
+The 0-of-6 figure above was ONE sample. Across three runs of the Reels clip (18
+lines) the construction appears in **4**, against 3 of 6 before the paragraph:
+roughly 22% against 50%. The Valorant ablation (n=11 per arm, 5/11 to 1/11,
+median 27 words to 21) remains the stronger evidence, because both arms saw the
+same eleven moments. The honest summary is that naming the sentence roughly
+halves it and does not remove it.
+
+Two of the three surviving cases are the 01:10 look, where the screen really
+does change application, so a line about the change is defensible there. Worth
+re-measuring on footage where every transition is a swipe.
+
 ### Still owed
 
 - **Everything visual is unverified.** How the icon reads at 18 px, the tip's

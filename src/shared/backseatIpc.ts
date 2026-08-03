@@ -25,12 +25,15 @@
  * transcript of the grid's window rides each tick as text.
  *
  * The unit of work is a TICK: one image grid plus the reason it fired. Ticks
- * are raised three ways, in descending priority (see BackseatTickKind):
+ * are raised four ways, in descending priority (see BackseatTickKind):
  *
  *   1. 'user'     the player said or typed something. Always answered.
- *   2. 'jolt'     a large local audio/colour discontinuity. No model in the
+ *   2. 'start'    the share just opened. Fires once per session, START_LOOK_MS
+ *                 in, so the companion reacts to being shown something instead
+ *                 of sitting silent until the first idle timer.
+ *   3. 'jolt'     a large local audio/colour discontinuity. No model in the
  *                 loop — see JOLT_* below.
- *   3. 'idle'     the scheduled look: a randomised IDLE_* timer, nothing more.
+ *   4. 'idle'     the scheduled look: a randomised IDLE_* timer, nothing more.
  *
  * 260801: there used to be a fourth source, a small VLM on DeepInfra asked
  * every 6 s whether the grid was interesting. It is gone. Measured on real
@@ -433,7 +436,25 @@ export interface BackseatSource {
 
 /** Descending priority. A tick preempts an in-flight turn of strictly lower
  *  priority and is dropped otherwise; see backseatService.handleTick. */
-export type BackseatTickKind = 'user' | 'jolt' | 'idle';
+export type BackseatTickKind = 'user' | 'start' | 'jolt' | 'idle';
+
+/**
+ * How long after the share opens the first look is taken (260803).
+ *
+ * The session used to begin with silence: nothing had jolted yet and the idle
+ * schedule's floor is 12 s, so a player who pressed Share and waited got a
+ * companion who appeared not to have noticed. Showing someone your screen is
+ * itself the opening move, and it deserves an answer.
+ *
+ * The value is bounded on both sides. Below it, the frame ring is still empty
+ * and there is nothing to composite: at 10 Hz, 1.8 s of history resolves the
+ * three offsets under a second and leaves the older cells as honest holes, so
+ * the first grid is small but real. Above it, the moment has passed. It is
+ * deliberately not zero for a second reason: the picker closes over the screen
+ * being shared, and a grid taken instantly is a grid of the app's own modal
+ * still dismissing.
+ */
+export const START_LOOK_MS = 1_800;
 
 /**
  * One unit of work sent renderer -> main. `grid` is a JPEG data URL of the

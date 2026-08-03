@@ -1408,7 +1408,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const tick = z
       .object({
         characterId: IdSchema,
-        kind: z.enum(['user', 'jolt', 'idle']),
+        kind: z.enum(['user', 'start', 'jolt', 'idle']),
         grid: z.string().max(8_000_000),
         // 260804: this was MISSING, and zod strips what it does not declare, so
         // the previous-grid memory added on 260802 never reached the service —
