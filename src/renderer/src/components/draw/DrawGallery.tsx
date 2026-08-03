@@ -3,6 +3,12 @@
  * word under each drawing, and a save button that writes the same layout to
  * the Downloads folder as a PNG (composed on canvas, not screenshotted, so the
  * file is identical everywhere).
+ *
+ * A CELL is clickable too (260801, ported from the web version): one drawing
+ * opens as its own share tile, enlarged, with the same save. The whole-game
+ * tile is a set of thumbnails, so the single round somebody actually wants to
+ * post came out of it at a fraction of the resolution. The affordance is the
+ * cursor alone: a hover tint would be a second ink on a one-ink surface.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -16,12 +22,19 @@ import { paintStrokes } from './drawRender';
  * around them, and that has to stay true at thumbnail size.
  */
 const CELL_PEN_CSS = 3.5;
-import { PLAYER_LABEL, composeGalleryPng, galleryByRound } from './galleryExport';
+import { PLAYER_LABEL, composeCellPng, composeGalleryPng, galleryByRound } from './galleryExport';
 import { SquiggleFrame, SquiggleHighlight, SquiggleUnderline } from './Squiggle';
 import styles from './draw.module.css';
 
 /** One drawing, painted at cell size. */
-function GalleryCell({ entry }: { entry: DrawGalleryEntry | undefined }): React.ReactElement {
+function GalleryCell({
+  entry,
+  onOpen,
+}: {
+  entry: DrawGalleryEntry | undefined;
+  /** Open this drawing as its own tile. Omitted for an empty (unplayed) cell. */
+  onOpen: () => void;
+}): React.ReactElement {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
 
@@ -73,8 +86,24 @@ function GalleryCell({ entry }: { entry: DrawGalleryEntry | undefined }): React.
     <figure className={styles.cell}>
       <div
         ref={artRef}
-        className={styles.cellArt}
+        className={`${styles.cellArt} ${entry ? styles.cellArtClick : ''}`}
         style={{ aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
+        // An empty round has nothing to open, so it stays inert rather than
+        // being a button that does nothing.
+        role={entry ? 'button' : undefined}
+        tabIndex={entry ? 0 : undefined}
+        aria-label={entry ? entry.word : undefined}
+        onClick={entry ? onOpen : undefined}
+        onKeyDown={
+          entry
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpen();
+                }
+              }
+            : undefined
+        }
       >
         <SquiggleFrame seed={seed} />
         <canvas ref={ref} className={styles.cellCanvas} />
@@ -112,9 +141,19 @@ export function DrawGallery({
   onClose,
 }: DrawGalleryProps): React.ReactElement {
   const t = useT();
-  const [saving, setSaving] = useState(false);
-  /** The just-saved tile, shown in the confirmation popup until dismissed. */
-  const [savedPng, setSavedPng] = useState<string | null>(null);
+  /**
+   * What is in flight, if anything. One flag for all three actions so they
+   * can't overlap, but it names WHICH one: composing a cell's tile must not
+   * flip the save button's label to "Saving..." when nothing is being written.
+   */
+  const [busy, setBusy] = useState<null | 'save' | 'open'>(null);
+  /**
+   * The tile in the popup, and whether it is already on disk. The whole-game
+   * tile saves first and opens the popup as a confirmation ("Saved!"); a
+   * clicked cell opens the popup as a PREVIEW with the save still to offer,
+   * because the click was to look at the drawing, not to write a file.
+   */
+  const [popup, setPopup] = useState<{ png: string; saved: boolean } | null>(null);
   const columns = Math.max(1, state.rounds);
   const playerEntries = useMemo(
     () => galleryByRound(state.gallery, 'player', columns),
@@ -126,46 +165,92 @@ export function DrawGallery({
   );
 
   const save = async (): Promise<void> => {
-    if (saving) return;
-    setSaving(true);
+    if (busy) return;
+    setBusy('save');
     try {
       const png = await composeGalleryPng(state);
       if (!png) return;
       // The popup only opens on a WRITTEN file: "Saved!" over a failed save
       // would be a lie, and the store surfaces the error line instead.
       const file = await onSave(png);
-      if (file) setSavedPng(png);
+      if (file) setPopup({ png, saved: true });
     } finally {
-      setSaving(false);
+      setBusy(null);
+    }
+  };
+
+  /** Compose one drawing's tile and show it. The save is the popup's job. */
+  const openCell = async (entry: DrawGalleryEntry, name: string): Promise<void> => {
+    if (busy) return;
+    setBusy('open');
+    try {
+      // `{word}` is deliberately NOT substituted here: composeCellPng needs to
+      // know where the word sits so the highlighter goes behind it alone.
+      // {a} is the English article only; a translation that has no use for one
+      // simply leaves the placeholder out of its string.
+      const caption = t('according to {name}, this is {a} {word}.', {
+        name,
+        a: /^[aeiou]/i.test(entry.word) ? 'an' : 'a',
+      });
+      const png = await composeCellPng(entry, caption);
+      if (png) setPopup({ png, saved: false });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Write the previewed tile out. Only reachable from an unsaved popup. */
+  const savePopupPng = async (): Promise<void> => {
+    if (!popup || popup.saved || busy) return;
+    setBusy('save');
+    try {
+      const file = await onSave(popup.png);
+      if (file) setPopup({ png: popup.png, saved: true });
+    } finally {
+      setBusy(null);
     }
   };
 
   // The big "DRAW!" header and the separate score line are gone (260729, from
   // the web version): the drawings get the space, and the score lives in the
   // row names, which is where the eye already goes to compare the two rows.
+  // The second field is the drawer's real name for the exported tile: the sheet
+  // on screen says "you", but a file made to be posted has to name the person
+  // (same reasoning as composeGalleryPng's row labels).
   const rows = [
-    [`${t(PLAYER_LABEL)} ${state.scores.player}`, playerEntries] as const,
-    [`${state.aiName} ${state.scores.ai}`, aiEntries] as const,
+    [
+      `${t(PLAYER_LABEL)} ${state.scores.player}`,
+      (state.playerName ?? '').trim() || t(PLAYER_LABEL),
+      playerEntries,
+    ] as const,
+    [`${state.aiName} ${state.scores.ai}`, state.aiName, aiEntries] as const,
   ];
 
   return (
     <div className={styles.gallery}>
-      {rows.map(([name, entries]) => (
-        <section key={name} className={styles.galleryRow}>
-          <h2 className={styles.rowName}>{name}</h2>
+      {rows.map(([label, name, entries]) => (
+        <section key={label} className={styles.galleryRow}>
+          <h2 className={styles.rowName}>{label}</h2>
           <div className={styles.cells} style={{ ['--cols' as string]: String(columns) }}>
             {Array.from({ length: columns }, (_, i) => (
-              <GalleryCell key={`${name}-${i}`} entry={entries[i]} />
+              <GalleryCell
+                key={`${label}-${i}`}
+                entry={entries[i]}
+                onOpen={() => {
+                  const entry = entries[i];
+                  if (entry) void openCell(entry, name);
+                }}
+              />
             ))}
           </div>
         </section>
       ))}
 
       <div className={styles.galleryActions}>
-        <button type="button" className={styles.handBtn} onClick={() => void save()} disabled={saving}>
+        <button type="button" className={styles.handBtn} onClick={() => void save()} disabled={busy !== null}>
           <SquiggleHighlight seed="save-hl" />
           <SquiggleFrame seed="save-btn" />
-          <span className={styles.btnLabel}>{saving ? t('Saving...') : t('Save to Downloads')}</span>
+          <span className={styles.btnLabel}>{busy === 'save' ? t('Saving...') : t('Save to Downloads')}</span>
         </button>
         <button type="button" className={styles.handBtn} data-on="true" onClick={onPlayAgain}>
           <SquiggleHighlight seed="again-hl" />
@@ -179,25 +264,41 @@ export function DrawGallery({
       </div>
       {savedTo ? <p className={styles.savedNote}>{t('Saved to {path}', { path: savedTo })}</p> : null}
 
-      {savedPng ? (
+      {popup ? (
         <div className={styles.savePopupOverlay}>
           <div className={styles.savePopup}>
             <SquiggleFrame seed="save-popup" />
-            <h2 className={styles.savePopupTitle}>{t('Saved!')}</h2>
+            {popup.saved ? <h2 className={styles.savePopupTitle}>{t('Saved!')}</h2> : null}
             <div className={styles.savePopupArt}>
               <SquiggleFrame seed="save-popup-art" />
-              <img className={styles.savePopupImg} src={savedPng} alt={t('The saved picture')} />
+              <img className={styles.savePopupImg} src={popup.png} alt={t('The saved picture')} />
             </div>
-            <button
-              type="button"
-              className={styles.handBtn}
-              onClick={() => setSavedPng(null)}
-              aria-label={t('Close')}
-            >
-              <SquiggleHighlight seed="save-popup-x-hl" shape="ellipse" />
-              <SquiggleFrame seed="save-popup-x" shape="ellipse" />
-              <span className={styles.btnLabel}>x</span>
-            </button>
+            <div className={styles.savePopupActions}>
+              {popup.saved ? null : (
+                <button
+                  type="button"
+                  className={styles.handBtn}
+                  onClick={() => void savePopupPng()}
+                  disabled={busy !== null}
+                >
+                  <SquiggleHighlight seed="save-popup-save-hl" />
+                  <SquiggleFrame seed="save-popup-save" />
+                  <span className={styles.btnLabel}>
+                    {busy === 'save' ? t('Saving...') : t('Save to Downloads')}
+                  </span>
+                </button>
+              )}
+              <button
+                type="button"
+                className={styles.handBtn}
+                onClick={() => setPopup(null)}
+                aria-label={t('Close')}
+              >
+                <SquiggleHighlight seed="save-popup-x-hl" shape="ellipse" />
+                <SquiggleFrame seed="save-popup-x" shape="ellipse" />
+                <span className={styles.btnLabel}>x</span>
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

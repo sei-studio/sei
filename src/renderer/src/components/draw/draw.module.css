@@ -888,6 +888,12 @@
   color: var(--ink);
 }
 
+/* A played round opens as its own share tile (260801, from the web version).
+   The cursor is the whole affordance: a hover tint would be a second ink. */
+.cellArtClick {
+  cursor: pointer;
+}
+
 .cellCanvas {
   display: block;
   width: 100%;
@@ -926,10 +932,12 @@
   flex: 0 0 auto;
 }
 
-/* ── the "Saved!" popup (260728) ──────────────────────────────────────────
-   Confirmation after "Save to Downloads": the saved tile itself, on paper, with
-   an x to close. The backdrop is the same paper at partial opacity rather than
-   a grey scrim: grey is an ink this surface does not own. */
+/* ── the tile popup (260728) ──────────────────────────────────────────────
+   Two jobs: confirmation after "Save to Downloads" (the saved tile itself, on
+   paper, with an x to close), and the preview of a clicked gallery cell, where
+   the save button is still in the row. The backdrop is the same paper at
+   partial opacity rather than a grey scrim: grey is an ink this surface does
+   not own. */
 .savePopupOverlay {
   position: absolute;
   inset: 0;
@@ -970,6 +978,13 @@
   display: block;
   width: min(38vh, 46vw, 380px);
   height: auto;
+}
+
+.savePopupActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 @media (max-width: 900px) {
