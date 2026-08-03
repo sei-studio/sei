@@ -553,6 +553,11 @@ async function bootstrapWithInit(initData) {
     apiKey,
     lanPort,
     lanMotd,             // LAN world MOTD (level name) for world labeling; may be absent
+    // 260801: epoch ms at which the supervisor's summon watchdog fires. Sized
+    // by main so the connect guard below can report a specific failure a beat
+    // BEFORE the generic one lands. Absent on older main → connect.js falls
+    // back to its flat CONNECT_TIMEOUT_MS.
+    summonDeadlineAt,    // number | undefined
     userDataDir,
     mc_username,         // Minecraft username collected in onboarding
     preferred_name,      // seeds player_username for player-recognition
@@ -781,6 +786,14 @@ async function bootstrapWithInit(initData) {
   // orchestrator can append it to the cached system prefix. Best-effort.
   try {
     config._seiKnowledge = typeof knowledge === 'string' ? knowledge : ''
+  } catch {}
+
+  // 260801: the supervisor's watchdog deadline, read by connect.js to size its
+  // connect guard so a stalled join names its own cause. Stashed post-parse
+  // like _seiKnowledge — ConfigSchema strips unknown keys.
+  try {
+    config._seiSummonDeadlineAt =
+      Number.isFinite(summonDeadlineAt) ? Number(summonDeadlineAt) : null
   } catch {}
 
   // Voice calls (260707): stash whether this bot is spawning into an open call

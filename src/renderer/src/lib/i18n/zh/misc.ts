@@ -1,8 +1,8 @@
 /** Filled by the localization sweep. See ../zh.ts for the dictionary rules. */
 export const ZH_MISC: Record<string, string> = {
   // ── lib/errors.ts (ERROR_COPY / WARN_COPY / fallback) ──────────────────
-  "Couldn't start the bot in 30s. Make sure your LAN world is still open and try again.":
-    '30 秒内未能启动伙伴。请确认你的局域网世界仍然开着，然后重试。',
+  "Couldn't finish joining your world in time. Press Summon to try again.":
+    '未能及时加入你的世界。请再次点击召唤重试。',
   "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.":
     '没有检测到开放的局域网世界。在 Minecraft 中按 Esc，选择「对局域网开放」，然后点击「创建局域网世界」。',
   'Your Anthropic API key was rejected. Open Settings → re-run onboarding to paste a fresh key.':
