@@ -395,6 +395,18 @@ export function App(): React.ReactElement {
       sei.onWhatsNew((ev) => {
         setUpdatePopup({ kind: 'whats-new', version: ev.version, changelog: ev.changelog });
       }),
+      sei.onUpdateError(() => {
+        // 260803: this subscription did not exist, and it wedged the app. The
+        // `downloading` and `downloaded` popups deliberately have no footer and
+        // no ESC (a restart is in flight), so with nothing listening for the
+        // error they stayed up behind a scrim FOREVER once a download failed.
+        // Windows users saw it as "stuck at 100%" and had to force-quit.
+        // Clear only those two transient states: an available/whats-new popup
+        // is dismissable and must survive an unrelated background check error.
+        setUpdatePopup((prev) =>
+          prev && (prev.kind === 'downloading' || prev.kind === 'downloaded') ? null : prev,
+        );
+      }),
       // Notices ride the update check's cadence in main, so their subscription
       // belongs here too. init() both listens and does the race-proof pull; the
       // store opens the inbox itself for a notice that has never been announced.
