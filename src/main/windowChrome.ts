@@ -54,6 +54,14 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Backseat (260728): while the player is in a fullscreen game, Sei's
+      // window is hidden or fully occluded, and Chromium then clamps timers in
+      // that renderer to roughly once a second. Backseat's whole job happens in
+      // exactly that state — the audio meter, the gate cadence and the rolling
+      // clip recorders all live there — so throttling has to be off. The frame
+      // pump itself is already immune (it runs in a worker off
+      // MediaStreamTrackProcessor), but its companions are not.
+      backgroundThrottling: false,
     },
     ...platformChrome,
   });

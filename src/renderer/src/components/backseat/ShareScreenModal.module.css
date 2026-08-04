@@ -1,0 +1,152 @@
+/**
+ * Screen-share source picker (260803) — the body of a ModalShell, so the shell
+ * owns the scrim, the panel, the title and the footer and this styles only the
+ * source list. Before 260803 the same list swapped into the games popup's
+ * frame, which is why it has never carried a surface of its own.
+ */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: 0;
+  /* The popup is a fixed frame; the source list is what scrolls. */
+  max-height: 68vh;
+}
+
+.sub {
+  margin: var(--space-xs) 0 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-right: var(--space-xs);
+}
+
+/* Window / Entire screen (260804). These were stacked sections; the window list
+   is however many windows the player has open, so the screens under it were
+   reliably below the fold. */
+.tabs {
+  display: flex;
+  gap: var(--space-xs);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: var(--space-xs) var(--space-sm);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  /* Sits on the container's border, so the active underline replaces it rather
+     than doubling it. */
+  margin-bottom: -1px;
+  transition: color 120ms var(--ease), border-color 120ms var(--ease);
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tabOn {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-sm);
+}
+
+.empty {
+  margin: var(--space-lg) 0;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+.tile:hover {
+  border-color: var(--accent);
+}
+
+.tileOn {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.thumbWrap {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg4);
+}
+
+.thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.thumbBlank {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tileName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.appIcon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.tileText {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text);
+  /* Window titles run long and are not worth two lines in a grid this dense. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--red);
+}

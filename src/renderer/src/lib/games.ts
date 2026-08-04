@@ -64,16 +64,8 @@ const TILES: Record<string, { image?: string; description: (companionName: strin
         { name },
       ),
   },
-  backseat: {
-    // Preview of the feature living on v0.5-backseat; the tile ships ahead of
-    // the code so the picker says what is coming next.
-    image: './img/game-backseat.svg',
-    description: (name) =>
-      t(
-        'Share a window and {name} watches you play, reacting as it happens and saying what they want to see you try next. Works with any game.',
-        { name },
-      ),
-  },
+  // No `backseat` tile (260803): the shared catalog dropped it for the reason
+  // written there, and its art now lives on as the header button's icon.
   stardew: {
     image: './img/game-stardew.jpg',
     description: (name) =>

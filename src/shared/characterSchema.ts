@@ -241,8 +241,8 @@ export const UserPreferencesPatchSchema = UserPreferencesSchema.pick({
 export type UserPreferencesPatch = z.infer<typeof UserPreferencesPatchSchema>;
 
 /**
- * The individually answerable questionnaire questions, in ASK ORDER (the
- * ProfileQuestionsScreen renders its steps in this order). `null` means
+ * The individually answerable questionnaire questions, in ASK ORDER (every
+ * surface that asks them walks this list in order). `null` means
  * unanswered — note companion_dynamics uses `[]` for an explicit "Surprise
  * me", which counts as answered.
  */
@@ -251,9 +251,10 @@ export type PrefQuestion = (typeof PREF_QUESTIONS)[number];
 
 /**
  * Which questions the given profile has NOT answered yet. Drives the
- * "ask only what's missing" flows: a questionnaire completed before a new
- * question shipped (or abandoned partway) re-asks just the gaps — at
- * onboarding, and again when the user taps "Meet my companion".
+ * "ask only what's missing" ask: a questionnaire completed before a new
+ * question shipped (or abandoned partway) re-asks just the gaps, when the
+ * user taps "Meet my companion" and Sui needs an answer she does not have.
+ * Nothing ELSE may use this to interrupt someone (260802).
  */
 export function missingPrefQuestions(profile: UserPreferences | null | undefined): PrefQuestion[] {
   if (!profile) return [...PREF_QUESTIONS];

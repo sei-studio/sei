@@ -62,6 +62,19 @@ if (!app.isPackaged) {
 // handler is attached in bootstrap() once userData/paths are resolved.
 registerPortraitScheme();
 
+// Backseat (260728): ask Chromium for the macOS system-audio loopback path.
+// MEASURED NOT TO WORK on macOS 26.4 / Electron 42 / Chromium 148 — the track
+// is created and labelled "System audio" but carries digital silence, in every
+// request shape. Electron documents `loopback` as Windows-only and that matches
+// reality. The switches are left in because they cost nothing, they are the
+// documented path, and the day Chromium fixes it macOS gains audio with no code
+// change. Until then macOS falls back to a virtual audio device if the player
+// has one (see captureController.findLoopbackDevice), else video-only.
+app.commandLine.appendSwitch(
+  'enable-features',
+  'MacSckSystemAudioLoopbackOverride,MacLoopbackAudioForScreenShare',
+);
+
 const logger = {
   info: (m: string) => console.log(`[sei] ${m}`),
   warn: (m: string) => console.warn(`[sei] ${m}`),
@@ -113,6 +126,13 @@ function sweepVoiceCalls(): void {
   clearAllCalls();
   // The overlay belongs to the call the (now-gone) renderer was driving.
   closeCallOverlay();
+  // Backseat capture lives entirely in the renderer (getDisplayMedia, the
+  // ring buffer, the recorders), so a renderer that navigated or died has
+  // taken the session's eyes with it. Leaving the session open would keep
+  // main waiting on ticks that can never arrive.
+  void import('./backseat/backseatService')
+    .then((m) => m.clearAllBackseat())
+    .catch(() => {});
 }
 
 /**
@@ -808,6 +828,36 @@ async function bootstrap(): Promise<void> {
     });
   }
 
+  // Backseat (260728): the companion watches a shared window and comments.
+  // Mutually exclusive with Minecraft, same as chess and Draw!. Everything the
+  // renderer captures stays in the renderer; only finished image grids and the
+  // harvested clip cross to main.
+  {
+    const { initBackseatService } = await import('./backseat/backseatService');
+    // 260803: every push goes to the MAIN window, because there is no other
+    // one. The always-on-top overlay is gone: sharing is a call feature now and
+    // its capture runs in the main renderer, which already has
+    // backgroundThrottling off for exactly this reason (windowChrome.ts). That
+    // collapses what used to be a fan-out to two windows, one of which owned
+    // capture and one of which owned the badge. Chat messages still take the
+    // ordinary chat channel so the transcript is complete.
+    const toRenderer = (channel: string, payload: unknown): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+    };
+    initBackseatService({
+      pushState: (state) => toRenderer(IpcChannel.backseat.state, state),
+      pushLine: (characterId, line) =>
+        toRenderer(IpcChannel.backseat.line, { characterId, ...line }),
+      requestClip: (characterId, requestId) =>
+        toRenderer(IpcChannel.backseat.clipRequest, { characterId, requestId }),
+      pushChatMessage,
+      isCallActive,
+      // Session logs ride the same batched channel as bot/chess/draw logs, so
+      // the in-app developer console (LogsBar) shows [backseat] lines live.
+      pushLog: broadcastLog,
+    });
+  }
+
   // Minecraft dashboard (260721): push deps for src/main/mcDashboard.
   initMcDashboardService({
     pushSnapshot: (s) => {
@@ -1066,6 +1116,10 @@ if (!gotLock) {
   app.on('before-quit', async (e) => {
     if (!supervisor && !lanWatcherHandle && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
     e.preventDefault();
+    // Close any open text-chat session BEFORE the flush below — quitting
+    // mid-conversation is the normal way a chat ends, and an event captured
+    // after shutdownAnalytics() would never be sent.
+    try { await (await import('./chat/chatSession')).endAllChatSessions(); } catch { /* best-effort */ }
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }

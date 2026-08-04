@@ -5,10 +5,11 @@
  * origins (create my own / invite from World) stacked on the right.
  *
  * Gates (moved verbatim from the old HomeGrid handlers):
- *   - Meet my companion → signed-in + cloud backend required, else SignInModal with
- *     the "meet your unique companion" framing; then the first-sign-in
- *     questionnaire gate (prefsGet) routes to profile-questions or straight to
- *     the unique-gender step. Config/prefs reads fail OPEN.
+ *   - Meet my companion → signed-in + cloud backend required, else SignInModal
+ *     with the "meet your unique companion" framing; then straight into Sui's
+ *     meet scene. Config reads fail OPEN. (260802: the questionnaire gate that
+ *     used to sit here, bouncing the player out to a form and back, is gone —
+ *     Sui asks for any missing answers inside the scene, mid-conversation.)
  *   - Create your own → daily creation quota (checkCreateQuota) shows
  *     CreationLimitModal when blocked, else the add-character wizard.
  *   - Invite from World → Home's World tab.
@@ -58,8 +59,8 @@ export function AwakenScreen(): React.ReactElement {
 
   // Flagship "Be matched" path. Cloud + signed-in only: a signed-out user OR a
   // local-mode (BYOK) user is routed to the sign-in modal (framed for this
-  // action). When eligible, run the first-sign-in questionnaire gate if it
-  // hasn't been answered yet, then land on the per-slot gender question.
+  // action). When eligible, straight into Sui's scene: she owns the whole
+  // conversation from there, questionnaire gaps included.
   const handleBegin = async (): Promise<void> => {
     if (authKind !== 'signed_in') {
       setUpgradeFraming('meet your unique companion');
@@ -79,18 +80,6 @@ export function AwakenScreen(): React.ReactElement {
       setUpgradeFraming('meet your unique companion');
       setShowSignIn(true);
       return;
-    }
-    try {
-      const prefs = await sei.prefsGet();
-      // 260706: gate on MISSING answers, not just never-completed — a
-      // questionnaire abandoned partway, or completed before a newer
-      // question shipped, asks exactly the gaps before casting.
-      if (prefs.missing.length > 0) {
-        navigate({ kind: 'profile-questions', next: 'meet', mode: 'missing' });
-        return;
-      }
-    } catch {
-      // Fail open — proceed to Sui's scene; the pipeline can still run.
     }
     navigate({ kind: 'sui-meet' });
   };

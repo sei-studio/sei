@@ -17,15 +17,39 @@
  * On success the scene hands off to the reveal exactly as the old casting
  * screen did. Failures surface over the sky with the same copy (CAST_ERROR_COPY)
  * and the same two ways out.
+ *
+ * ── The preference questions live HERE now (260802) ──────────────────────
+ * The cast needs the questionnaire answered — it is the generation seed — and
+ * the app used to collect it by AMBUSH: a Home gate that opened
+ * ProfileQuestionsScreen (a dark-chrome form) the moment a signed-in user with
+ * gaps landed anywhere near Home, plus a matching gate on this flow's entry
+ * that bounced the player out to that same form and back. Nobody asked for
+ * either. That screen is gone, and so is every unprompted route to it: the
+ * questionnaire is now asked in exactly two places, both of which the player
+ * clicked on purpose — "Update my preferences" (SuiPrefsScene) and here.
+ *
+ * So when answers are missing, Sui asks for them BETWEEN the greeting and the
+ * casting question, on the same stage, without leaving: she says she needs a
+ * hand first, asks only the gaps (PREF_QUESTIONS order), saves once, and walks
+ * straight on into "which one would you like to meet?". No walk-off, no route
+ * change, no second scene — the whole point is that this reads as one
+ * conversation rather than a detour.
+ *
+ * The question lines are the prefs-scene wording with the ordinals removed
+ * ("First!" / "Second!" / "Finally"): a subset ask cannot promise a count, and
+ * a line that opens on "Second!" when it is the only question is worse than no
+ * line at all. Hence their own clips.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { isHomeCharacter } from '../lib/homeLibrary';
-import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
+import { MAX_COMPANION_SLOTS, PREF_QUESTIONS } from '@shared/characterSchema';
+import type { PrefQuestion, UserPreferencesPatch } from '@shared/characterSchema';
 import type { UniqueGender } from '@shared/ipc';
 import {
   CAST_ERROR_COPY,
@@ -41,10 +65,26 @@ import {
   useTypewriter,
   useVoicePrefs,
 } from './suiStage';
-import { GENDER_OPTIONS, PillPicker } from './suiQuestions';
+import {
+  AGE_OPTIONS,
+  ArtPicker,
+  DynPicker,
+  GENDER_OPTIONS,
+  PillPicker,
+} from './suiQuestions';
 import styles from './onboard.module.css';
 
-type LineId = 'ready' | 'which' | 'gotIt';
+type QuestionLineId = 'qAge' | 'qDyn' | 'qArt';
+type LineId = 'ready' | 'needQs' | QuestionLineId | 'which' | 'gotIt';
+
+/** Which line asks which stored answer. Keyed by PrefQuestion so the ask order
+ * is PREF_QUESTIONS' order and a question added there cannot be silently
+ * skipped here — the map stops compiling until it has a line. */
+const QUESTION_LINE: Record<PrefQuestion, QuestionLineId> = {
+  companion_age_range: 'qAge',
+  companion_dynamics: 'qDyn',
+  art_style: 'qArt',
+};
 
 /** The greeting counts which companion this is, and ASKS rather than tells:
  * the player arrives here from a tile, which is a click and not a decision, so
@@ -71,15 +111,24 @@ const READY_OPTIONS: Array<{ value: 'yes' | 'no'; label: string }> = [
 ];
 
 const SCRIPT: Record<Exclude<LineId, 'ready'>, string> = {
+  needQs: 'Before that, I need your help with a few questions!',
+  qAge: "We AI can live for a very long time. Which age range best fits what you're looking for?",
+  qDyn: 'What kind of people do you like having around? Pick as many as you want. Order matters.',
+  qArt: 'Take a look at these portraits. Which one do you like the most?',
   which: 'I have three companions who are ready to be awakened! Which one would you like to meet?',
   gotIt: 'Got it. Let me go get them!',
 };
 
 /** Own clip namespace — none of these lines exist in the first-run script, so
- * there is nothing to reuse. Cut 260731 through the same three steps as the
- * rest (public/voice/onboard/meet-<id>.en.mp3 — see useSuiVoice); a missing
- * clip stays a non-event, so a new line can ship ahead of its recording. */
+ * there is nothing to reuse. Cut 260731 (the four `meet-q*` / `meet-needQs`
+ * ones 260802) through the same three steps as the rest
+ * (public/voice/onboard/meet-<id>.en.mp3 — see useSuiVoice); a missing clip
+ * stays a non-event, so a new line can ship ahead of its recording. */
 const CLIP: Record<Exclude<LineId, 'ready'>, string> = {
+  needQs: 'meet-needQs',
+  qAge: 'meet-qAge',
+  qDyn: 'meet-qDyn',
+  qArt: 'meet-qArt',
   which: 'meet-which',
   gotIt: 'meet-gotIt',
 };
@@ -119,6 +168,38 @@ export function SuiMeetScene(): React.ReactElement {
     return READY_LINES[Math.min(Math.max(filled, 0), MAX_COMPANION_SLOTS - 1)];
   }, [characters, currentUserId, addedDefaultIds, addedWorldIds]);
 
+  // ── The questionnaire gaps ─────────────────────────────────────────────
+  // Read once at mount, which is several seconds of walk-in and greeting
+  // before the answer is needed. A failed read means NO questions: the cast
+  // seeds from whatever is stored and Sui asks next time, which is the same
+  // fail-open stance the old Awaken gate took. `asked` is the gaps latched at
+  // that read, so the questions cannot change under the player mid-run.
+  const [asked, setAsked] = useState<PrefQuestion[]>([]);
+  const [askIdx, setAskIdx] = useState(0);
+  // Only the answers she actually asked for, accumulated as a patch: main
+  // merges it over the stored profile, so an untouched question stays
+  // untouched. A ref because each answer is read inside the NEXT answer's
+  // handler, and a re-render is neither needed nor wanted mid-line.
+  const answersRef = useRef<UserPreferencesPatch>({});
+  const savingRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await sei.prefsGet();
+        if (cancelled) return;
+        // PREF_QUESTIONS order, so she asks them the way every other surface
+        // does rather than in whatever order the gaps came back.
+        setAsked(PREF_QUESTIONS.filter((q) => res.missing.includes(q)));
+      } catch {
+        /* fail open: no questions, straight to the cast */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── The cast ───────────────────────────────────────────────────────────
   // null until the player picks; the hook holds off until then.
   const [gender, setGender] = useState<UniqueGender | null>(null);
@@ -151,6 +232,54 @@ export function SuiMeetScene(): React.ReactElement {
     setPhase({ k: 'walkoff' });
     setSui('leaving');
   }, []);
+
+  /** "I'm ready" → the questions if there are any, else straight to the cast
+   * question. Both destinations are on this stage; she never leaves. */
+  const beginAsk = useCallback(() => {
+    if (asked.length === 0) {
+      goLine('which');
+      return;
+    }
+    setAskIdx(0);
+    goLine('needQs');
+  }, [asked.length, goLine]);
+
+  /** One answer in. Advances to the next gap, or writes the patch and hands
+   * the scene on to the casting question.
+   *
+   * The write is AWAITED before 'which': the cast starts on the gender pick a
+   * few seconds later and seeds itself from the stored profile, so a patch
+   * still in flight would cast against the old answers. A failed write is not
+   * worth stopping a companion over, so it falls through to the cast and the
+   * gaps are simply still there next time. */
+  const answer = useCallback(
+    <K extends PrefQuestion>(key: K, value: UserPreferencesPatch[K]) => {
+      answersRef.current[key] = value;
+      const next = askIdx + 1;
+      if (next < asked.length) {
+        setAskIdx(next);
+        goLine(QUESTION_LINE[asked[next]]);
+        return;
+      }
+      if (savingRef.current) return;
+      savingRef.current = true;
+      void (async () => {
+        try {
+          await sei.prefsSave(answersRef.current);
+          // Answered and stored: Back out of the casting question and in again
+          // must not re-ask what she just wrote down. (A FAILED write keeps
+          // them pending on purpose, so the second pass is a real retry.)
+          setAsked([]);
+        } catch {
+          /* cast anyway; she asks again next time */
+        } finally {
+          savingRef.current = false;
+          goLine('which');
+        }
+      })();
+    },
+    [askIdx, asked, goLine],
+  );
 
   const leftRef = useRef(false);
   const leave = useCallback(
@@ -199,22 +328,71 @@ export function SuiMeetScene(): React.ReactElement {
     return () => clearTimeout(timer);
   }, [line, tw.done, walkOff]);
 
+  // "Before that..." is a warning, not a question, and it is the one line here
+  // that carries no controls of its own — so it rolls into the first question
+  // by itself rather than sitting on screen waiting for a click nothing on it
+  // suggests. (A click still skips the beat; see clickAdvances.)
+  useEffect(() => {
+    if (line !== 'needQs' || !tw.done || asked.length === 0) return undefined;
+    const timer = setTimeout(() => goLine(QUESTION_LINE[asked[askIdx]]), 900);
+    return () => clearTimeout(timer);
+  }, [line, tw.done, asked, askIdx, goLine]);
+
   const advance = useCallback(() => {
     if (!line) return;
     if (!tw.done) {
       tw.skip();
       return;
     }
-    if (line === 'ready') goLine('which');
+    if (line === 'ready') beginAsk();
+    else if (line === 'needQs') goLine(QUESTION_LINE[asked[askIdx]]);
     else if (line === 'gotIt') walkOff();
-  }, [line, tw, goLine, walkOff]);
+  }, [line, tw, beginAsk, goLine, asked, askIdx, walkOff]);
 
   useEnterAdvances(advance);
 
   // The greeting is a question with two buttons now, so a click anywhere may
   // only finish the typewriter — answering it has to be deliberate. Enter
   // still takes the affirmative, the way it did when that was the only way on.
-  const clickAdvances = line === 'gotIt';
+  // "Before that..." carries no controls, so it advances on a click like any
+  // other text-only line.
+  const clickAdvances = line === 'gotIt' || line === 'needQs';
+
+  /** The pickers for whichever gap is being asked. Back walks the questions in
+   * reverse and, from the first one, all the way out to the greeting, where
+   * "Not yet" is still on offer. */
+  const questionControls = ((): React.ReactNode => {
+    if (!line || !(line === 'qAge' || line === 'qDyn' || line === 'qArt')) return null;
+    const back = (): void => {
+      if (askIdx === 0) {
+        goLine('ready');
+        return;
+      }
+      setAskIdx(askIdx - 1);
+      goLine(QUESTION_LINE[asked[askIdx - 1]]);
+    };
+    switch (line) {
+      case 'qAge':
+        return (
+          <PillPicker
+            options={AGE_OPTIONS}
+            onPick={(value) => answer('companion_age_range', value)}
+            onBack={back}
+          />
+        );
+      case 'qDyn':
+        return (
+          <DynPicker
+            initial={null}
+            // [] is the explicit "Surprise me" (vs null = never asked).
+            onDone={(picked) => answer('companion_dynamics', picked)}
+            onBack={back}
+          />
+        );
+      case 'qArt':
+        return <ArtPicker onPick={(value) => answer('art_style', value)} onBack={back} />;
+    }
+  })();
 
   return (
     <div className={styles.root}>
@@ -253,9 +431,10 @@ export function SuiMeetScene(): React.ReactElement {
             {tw.done && line === 'ready' ? (
               <PillPicker
                 options={READY_OPTIONS}
-                onPick={(value) => (value === 'yes' ? goLine('which') : leave('awaken'))}
+                onPick={(value) => (value === 'yes' ? beginAsk() : leave('awaken'))}
               />
             ) : null}
+            {tw.done ? questionControls : null}
             {tw.done && line === 'which' ? (
               <PillPicker
                 options={GENDER_OPTIONS}

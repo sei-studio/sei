@@ -21,6 +21,10 @@
  * Drawn on a plain canvas rather than screenshotting the DOM, so the export
  * does not depend on layout, scroll position or device pixel ratio, and the
  * file is the same on every machine.
+ *
+ * Two tiles live here: `composeGalleryPng` (the whole game) and
+ * `composeCellPng` (ONE drawing, opened by clicking a gallery cell). They share
+ * the sheet, the pen and the credit line so the two files read as a set.
  */
 
 import { CANVAS_H, CANVAS_W, type DrawGalleryEntry, type DrawGameState } from '@shared/drawIpc';
@@ -75,6 +79,7 @@ function squiggleFrame(
   w: number,
   h: number,
   seed: string,
+  amp?: number,
 ): void {
   ctx.save();
   ctx.translate(x, y);
@@ -82,7 +87,9 @@ function squiggleFrame(
   ctx.lineWidth = PEN;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (const side of squiggleRectPolylines(w, h, seed)) stroke(ctx, side);
+  // The default 1.8px wobble reads hand-drawn at cell size but disappears on a
+  // big frame, so callers drawing large pass a proportionally larger amp.
+  for (const side of squiggleRectPolylines(w, h, seed, amp ?? 1.8)) stroke(ctx, side);
   ctx.restore();
 }
 
@@ -232,6 +239,127 @@ export async function composeGalleryPng(state: DrawGameState): Promise<string> {
   ctx.font = `${BODY_PX}px ${HAND_FONT}`;
   ctx.textAlign = 'right';
   ctx.fillText(CREDIT, SIZE - PAD, SIZE - PAD);
+
+  return c.toDataURL('image/png');
+}
+
+/**
+ * ONE drawing as its own share tile (260801, ported from the web version),
+ * opened by clicking a gallery cell. Same square sheet, same pen, same credit
+ * as the whole-game tile, because a single round is the thing people actually
+ * want to post and cropping it out of the game tile loses half its resolution.
+ *
+ * The caption is passed in already localized and already carrying the drawer's
+ * name, with `{word}` left in it: the composer needs to know where the word
+ * sits to put the highlighter behind it (and only it), and i18n lives up in the
+ * React layer where `t` does.
+ */
+export async function composeCellPng(
+  entry: DrawGalleryEntry,
+  captionTemplate: string,
+): Promise<string> {
+  try {
+    await (document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
+  } catch {
+    /* font loading API unavailable — fall through with the fallback face */
+  }
+
+  const c = document.createElement('canvas');
+  c.width = SIZE;
+  c.height = SIZE;
+  const ctx = c.getContext('2d');
+  if (!ctx) return '';
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // ── caption: two centred lines, broken after the comma ───────────────────
+  const word = entry.word.toLowerCase();
+  const broken = /^(.*?[,，、])\s*(.*)$/.exec(captionTemplate);
+  const line1 = broken ? broken[1] : '';
+  const line2t = broken ? broken[2] : captionTemplate;
+  const [pre = '', post = ''] = line2t.split('{word}');
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  // Shrink to fit the WIDER line: the sentence is fixed but the word is the
+  // player's and the name is the user's, so neither length is under control.
+  let capPx = 76;
+  const widest = (): number => {
+    ctx.font = `${capPx}px ${HAND_FONT}`;
+    const l2 =
+      ctx.measureText(pre).width + ctx.measureText(word).width + ctx.measureText(post).width;
+    return Math.max(ctx.measureText(line1).width, l2);
+  };
+  while (capPx > 40 && widest() > SIZE - PAD * 2) capPx -= 2;
+  const preW = ctx.measureText(pre).width;
+  const wordW = ctx.measureText(word).width;
+  const line2W = preW + wordW + ctx.measureText(post).width;
+  const x2 = (SIZE - line2W) / 2;
+
+  // ── the drawing box, placed before the caption is ────────────────────────
+  // The caption used to hang from the top pad with the box hung off it, which
+  // left visibly more air below the text than above. The box is placed off a
+  // NOMINAL caption bottom instead, and the caption is then centred in the air
+  // actually left above the box, so its distance to the sheet top equals its
+  // distance to the frame.
+  const nomBase2 = PAD + 30 + capPx * 0.78 + capPx * 1.35;
+  const bandTop = nomBase2 + capPx * 0.5 + 40;
+  const footTop = SIZE - PAD - BODY_PX * 1.6;
+  const bandH = footTop - bandTop;
+  // Deliberately narrower than the sheet: a frame running pad to pad reads as a
+  // border on the tile rather than as a framed drawing.
+  const w = Math.min((SIZE - PAD * 2) * 0.78, (bandH * CANVAS_W) / CANVAS_H);
+  const h = (w * CANVAS_H) / CANVAS_W;
+  const x = (SIZE - w) / 2;
+  const y = bandTop + Math.max(0, (bandH - h) * 0.45);
+
+  // Caption block height: line1's cap top through line2's descender.
+  const blockH = capPx * (0.78 + 1.35 + 0.22);
+  const base1 = (y - blockH) / 2 + capPx * 0.78;
+  const base2 = base1 + capPx * 1.35;
+
+  // The highlighter goes down first, behind the WORD only (the full stop stays
+  // on plain paper). Bleed is modest: wider and the swipe swallows the tail of
+  // the word before it.
+  ctx.save();
+  ctx.translate(x2 + preW - 12, base2 - capPx * 0.74);
+  ctx.fillStyle = '#ffe500';
+  ctx.fill(
+    new Path2D(squiggleBlob(wordW + 24, capPx * 1.05, `cell-cap-hl-${entry.drawer}-${entry.round}`)),
+  );
+  ctx.restore();
+
+  ctx.fillStyle = '#000000';
+  ctx.textAlign = 'center';
+  ctx.fillText(line1, SIZE / 2, base1);
+  ctx.textAlign = 'left';
+  ctx.fillText(pre, x2, base2);
+  ctx.fillText(word, x2 + preW, base2);
+  ctx.fillText(post, x2 + preW + wordW, base2);
+
+  // ── the drawing ──────────────────────────────────────────────────────────
+  // amp 7: the wobble has to scale with the frame to still read as a pen.
+  squiggleFrame(ctx, x, y, w, h, `cell-pop-${entry.drawer}-${entry.round}`, 7);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  const scale = w / CANVAS_W;
+  paintStrokes(ctx, entry.strokes, {
+    translate: { x, y },
+    scale,
+    // The same 4 device px the game tile holds its pen at.
+    lineWidth: PEN / scale,
+  });
+  ctx.restore();
+
+  // ── footer ───────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#000000';
+  ctx.font = `${BODY_PX}px ${HAND_FONT}`;
+  ctx.textAlign = 'right';
+  ctx.fillText(CREDIT, SIZE - PAD, SIZE - PAD);
+  ctx.textAlign = 'left';
 
   return c.toDataURL('image/png');
 }

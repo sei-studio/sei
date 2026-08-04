@@ -58,6 +58,15 @@ export const ZH_ONBOARD: Record<string, string> = {
   'So! Are you ready to meet your final companion?': '好！你准备好认识你最后一位伙伴了吗？',
   "I'm ready": '我准备好啦',
   'Not yet': '还没有',
+  /* The gap-filling ask (260802): the same three questions as the prefs scene,
+     with the ordinals dropped, because she may be asking only one of them. */
+  'Before that, I need your help with a few questions!': '在那之前，有几个问题想请你帮个忙！',
+  "We AI can live for a very long time. Which age range best fits what you're looking for?":
+    '我们 AI 可是能活很久很久的。你想找的伙伴，大概多大合适呀？',
+  'What kind of people do you like having around? Pick as many as you want. Order matters.':
+    '你喜欢身边有什么样的人呀？想选几个都可以，顺序是有讲究的哦。',
+  'Take a look at these portraits. Which one do you like the most?':
+    '来看看这几张画像，你最喜欢哪一张？',
   'I have three companions who are ready to be awakened! Which one would you like to meet?':
     '我这里有三位随时可以唤醒的伙伴！你想见哪一位呀？',
   'Got it. Let me go get them!': '好嘞。我这就去把 TA 带来！',
@@ -193,6 +202,8 @@ export const ZH_ONBOARD: Record<string, string> = {
     '这里是和 TA 一起玩游戏的地方。来，点点看。',
   "Just click a tile to launch the game. I'm working hard to add new games. Remember to check every week!":
     '点一下卡片就能开始游戏。我正在努力添加新游戏，记得每周都来看看哦！',
+  'This is Backseat, a new feature. You can share your game, movie, or even work for your companion to watch live! I recommend doomscrolling together, hehe.':
+    '这是 Backseat，一个新功能。你可以把游戏、电影，甚至工作画面实时分享给伙伴看！我推荐一起刷视频，嘿嘿。',
   'This is your main terminal. You can connect with up to four AIs here. Just click an empty slot to awaken.':
     '这里是你的主界面，最多可以同时连接四位 AI。点击空位就能唤醒新伙伴。',
   "This is settings. You can change the app's colors and add a custom background here. Make yourself at home!":

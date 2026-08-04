@@ -25,8 +25,14 @@ import { isVoiceModelReady } from './voice/modelPrefetch';
 
 /**
  * True when this character has an open game surface: chess panel or game,
- * Minecraft bot online (dashboard) or the launch panel open, or a Draw! game
- * in play (its full-page route carries the same bottom chrome, 260729).
+ * Minecraft bot online (dashboard) or the launch panel open, or a Draw! game in
+ * play (its full-page route carries the same bottom chrome, 260729).
+ *
+ * A screen share is deliberately NOT one of these (260803). It used to be,
+ * because it was launched from the games picker and lived in its own window.
+ * Now it is started from the call controls and drawn inside the call view, so
+ * it is not a surface the phone button should start a call "in place" behind:
+ * there would be nothing to see it in.
  */
 export function isGameSurfaceOpen(characterId: string): boolean {
   if (isChessOpen(useChessStore.getState(), characterId)) return true;

@@ -18,7 +18,8 @@
 //   reads the THREE global) — set both before constructing anything, exactly as the package's
 //   own lib/headless.js does.
 //
-// VIS-08 graceful degradation: on missing bot.version, unsupported version, no loaded chunks
+// VIS-08 graceful degradation: on missing bot.version, unsupported version, a block-texture
+// atlas that this build does not ship (260803, see the atlasPresent guard), no loaded chunks
 // (unloaded world), a black/empty frame, OR the wall-clock timeout, return the sentinel
 // { ok: false, reason: 'cant_see' } — NEVER throw, NEVER hang the bot.
 //
@@ -28,8 +29,9 @@
 //   the GL-context / listener leak (15-RESEARCH.md Pitfall 5).
 
 import { createRequire } from 'module'
+import { statSync } from 'node:fs'
 import { writeFile, rename } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { skyColorForTime } from './skyColor.js'
 
 const require = createRequire(import.meta.url)
@@ -53,6 +55,87 @@ const THREE = globalThis.THREE
 // example imports 'node-canvas-webgl/lib').
 const { createCanvas } = require('node-canvas-webgl/lib')
 const { Viewer, WorldView } = require('prismarine-viewer/viewer')
+
+// ── Texture-atlas presence guard (260803) ───────────────────────────────────
+// The packaged builds PRUNE the bundled prismarine-viewer texture tree down to
+// the Minecraft versions players actually run (see the `files:` blocks in
+// electron-builder.yml). Pruning a texture folder does NOT make the viewer
+// consider that version unsupported, and the resulting failure was a full bot
+// crash rather than a degrade:
+//
+//   1. viewer/lib/version.js hardcodes supportedVersions; it never reads the
+//      textures directory. getVersion('1.16.5') maps through lastOfMajor to
+//      '1.16.4' and returns a version, so viewer.setVersion() returns TRUE and
+//      the CANT_SEE guard below never fires.
+//   2. worldrenderer.js setVersion -> updateTexturesData() calls
+//      loadTexture(`textures/1.16.4.png`).
+//   3. viewer/lib/utils.js loadTexture does
+//      loadImage(path.resolve(__dirname, '../../public/' + texture)).then(...)
+//      with NO .catch, and node-canvas's loadImage wires image.onerror = reject
+//      before setting src, so a pruned-away PNG yields a REJECTED promise with
+//      no handler.
+//   4. That rejection is asynchronous, so it escapes renderPov's try/catch and
+//      lands on the process-level handler in src/bot/index.js, which emits
+//      BOT_CRASH and process.exit(1).
+//
+// Net effect pre-fix: the FIRST POV render on a world whose atlas was pruned
+// killed the whole bot process. blocksStates/*.json is a separate directory and
+// is not pruned, so the atlas PNG is the sole trigger.
+//
+// The fix is to answer the question the viewer never asks: resolve the version
+// exactly as viewer.setVersion does, then confirm the atlas file it is about to
+// load actually exists BEFORE constructing the Viewer, and take the existing
+// CANT_SEE path if it does not. The path is anchored off prismarine-viewer's own
+// package.json so it is correct in dev and in the packaged app.asar.unpacked
+// layout alike, and it mirrors loadTexture's own `<pkgRoot>/public/textures/
+// <version>.png` convention. The check is synchronous (no new floating promise,
+// no per-frame async) and memoized per resolved version, so the every-60s idle
+// render path pays one statSync per version per process.
+//
+// A zero-byte or non-file entry is treated the same as a missing one: those are
+// the other shapes a truncated or half-copied install takes, and they reject in
+// exactly the same unhandled way. A genuinely corrupt but non-empty PNG is NOT
+// covered here; see the note on renderPov's catch block for why no defensive
+// .catch is added instead.
+const pvRoot = dirname(require.resolve('prismarine-viewer/package.json'))
+const { getVersion: pvGetVersion } = pvRequire('./viewer/lib/version')
+
+/** resolved viewer version -> atlas present on disk. One statSync per version. */
+const atlasPresentByVersion = new Map()
+
+/**
+ * The version string viewer.setVersion(botVersion) will settle on, or null when
+ * prismarine-viewer genuinely does not support the world's major version. Note
+ * setVersion's own null branch calls window.alert, which is a ReferenceError in
+ * headless Node; resolving up front means we degrade before provoking it.
+ */
+function resolveViewerVersion (botVersion) {
+  try {
+    return pvGetVersion(botVersion) || null
+  } catch {
+    return null
+  }
+}
+
+/** Is the block-texture atlas for this resolved viewer version on disk? */
+function atlasPresent (viewerVersion) {
+  if (atlasPresentByVersion.has(viewerVersion)) return atlasPresentByVersion.get(viewerVersion)
+  const atlasPath = join(pvRoot, 'public', 'textures', `${viewerVersion}.png`)
+  let present = false
+  try {
+    const st = statSync(atlasPath)
+    present = st.isFile() && st.size > 0
+  } catch {
+    present = false // ENOENT (pruned build) or an unreadable path
+  }
+  if (!present) {
+    try {
+      console.log(`[sei/vision] no block-texture atlas for viewer version "${viewerVersion}" (${atlasPath}); POV vision unavailable on this world`)
+    } catch { /* best-effort */ }
+  }
+  atlasPresentByVersion.set(viewerVersion, present)
+  return present
+}
 
 // ── Entity-model guard ──────────────────────────────────────────────────────
 // prismarine-viewer's entity models are frozen at ~1.16 (94 types in
@@ -269,6 +352,13 @@ export async function renderPov (bot, {
   // headless Node), so we never call it without a version string.
   if (!bot?.version || !bot?.entity?.position || !bot?.world) return CANT_SEE
 
+  // 260803 atlas guard (see the block comment above atlasPresent): an unsupported
+  // version OR a version whose atlas PNG was pruned out of this build degrades
+  // here, before the Viewer exists. Pre-fix the pruned case reached
+  // updateTexturesData and killed the bot process with an unhandled rejection.
+  const viewerVersion = resolveViewerVersion(bot.version)
+  if (!viewerVersion || !atlasPresent(viewerVersion)) return CANT_SEE
+
   // ONE deadline shared by every wait below (CLAUDE.md invariant): column
   // streaming + section meshing + atlas load together never exceed timeoutMs.
   const deadlineAt = Date.now() + timeoutMs
@@ -349,6 +439,21 @@ export async function renderPov (bot, {
     // Any unexpected failure degrades rather than crashing the bot (VIS-08) —
     // but log it: a silent catch here hid the three.js version-mismatch
     // regression behind an indistinguishable "can't see".
+    //
+    // 260803: this catch cannot cover prismarine-viewer's own texture load. The
+    // rejecting promise is created and dropped inside viewer/lib/utils.js
+    // loadTexture, so nothing on our side ever holds a reference to attach a
+    // .catch to. The only seams would be reassigning that module's exported
+    // loadTexture or node-canvas-webgl's loadImage, both of which are
+    // monkey-patching a dependency's internals; and a process-level
+    // unhandledRejection handler here would shadow the bot's real crash
+    // reporter in src/bot/index.js and silence genuine faults. So the guard
+    // above stays a precondition check rather than a rescue: it covers every
+    // shape the packaged-build prune produces (missing, empty, or non-file
+    // atlas). A non-empty but corrupt PNG would still reject unhandled; that is
+    // a build-integrity failure we have never observed, it is not made more
+    // likely by the prune, and no fix for it exists that does not reach into
+    // node_modules.
     try { console.error(`[sei/vision] renderPov failed: ${err && err.message}`) } catch { /* best-effort */ }
     return CANT_SEE
   } finally {

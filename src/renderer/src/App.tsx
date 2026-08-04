@@ -42,13 +42,13 @@ import { CharacterPage } from './screens/CharacterPage';
 import { ChatScreen } from './screens/ChatScreen';
 import { VoiceCallScreen } from './screens/VoiceCallScreen';
 import { DrawScreen } from './components/draw/DrawScreen';
-import { ProfileQuestionsScreen } from './screens/ProfileQuestionsScreen';
 import { SuiMeetScene } from './onboard/SuiMeetScene';
 import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { CallMiniBar } from './components/call/CallMiniBar';
 import { MiniTile } from './components/MiniTile';
 import { CallOverlayPusher } from './components/CallOverlayPusher';
 import { CrossLaunchConfirmModal } from './components/CrossLaunchConfirmModal';
+import { ShareScreenModal } from './components/backseat/ShareScreenModal';
 import { GamesPickerModal } from './components/GamesPickerModal';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { CreditsScreen } from './screens/CreditsScreen';
@@ -62,6 +62,7 @@ import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
 import { UpdatePopup, type UpdatePopupState } from './components/UpdatePopup';
+import { UpdatePill, type UpdatePillState } from './components/UpdatePill';
 import { NoticesInboxModal } from './components/NoticesInboxModal';
 import { useNoticesStore } from './lib/stores/useNoticesStore';
 import { Banner } from './components/Banner';
@@ -130,14 +131,16 @@ export function App(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const modal = useUiStore((s) => s.modal);
-  // In-app updater (quick/260604-uoy). A single discriminated state drives the
-  // UpdatePopup across every updater stage (optional-available → downloading →
-  // downloaded/forced, plus the standalone post-update what's-new). null = no
-  // popup. The subscriptions below funnel each main-pushed event into the
-  // matching state; dismissable states (available-optional / whats-new) clear
-  // to null on Later/Got it, while downloading/downloaded/forced are
-  // non-dismissable (a restart is in flight).
+  // In-app updater (quick/260604-uoy). Two surfaces, split by whether the state
+  // needs a decision RIGHT NOW (260801):
+  //   • updatePopup — modal: the optional-update offer (changelog + consent),
+  //     the post-update what's-new, and the critical apply:'now' restart.
+  //   • updatePill — corner card, never blocks: download progress, then
+  //     "ready, restart to apply". Downloading used to be a scrimmed modal, so
+  //     both the consented download AND the silent mandatory patch download
+  //     locked the user out of the app until they finished.
   const [updatePopup, setUpdatePopup] = useState<UpdatePopupState | null>(null);
+  const [updatePill, setUpdatePill] = useState<UpdatePillState | null>(null);
   // Plan 11-18 (D-20) — one-shot local→cloud migration prompt. Auto-mounts
   // the first time a user is signed_in + ToS-accepted + has at least one
   // local-only character + has not yet seen this prompt. Re-openable from
@@ -164,64 +167,20 @@ export function App(): React.ReactElement {
     sessionDismissed: false,
   });
 
-  // ── First-sign-in questionnaire gate state + shared runner ─────────────────
-  //    (260703 procgen, spec item 6; race fix 260706.) The gate decides, once a
-  //    signed-in user is on Home, whether to interpose the companion
-  //    questionnaire. Two call sites share the same runner + refs:
-  //      • the Home gate effect below (app relaunch / bootstrap path), and
-  //      • the onScopeChanged re-bootstrap handler (fresh sign-in path).
+  // ── The questionnaire is never interposed here (260802) ───────────────────
+  //    There used to be a first-sign-in gate in this file: once a signed-in
+  //    user landed on Home it read prefsGet and, on any gap, routed them to
+  //    ProfileQuestionsScreen before letting them near the app. It ran from two
+  //    places (this bootstrap path and the onScopeChanged sign-in path) and
+  //    carried a small pile of refs to keep those two from fighting.
   //
-  //    Why both: the sign-in path routes home via onScopeChanged, which is
-  //    emitted asynchronously AFTER the local data scope switch settles — well
-  //    after the synchronous auth:state push. A gate that fired off the auth
-  //    push alone would read the PRE-switch scope (wrong profile) and then get
-  //    clobbered back to Home by onScopeChanged's own navigate — exactly the
-  //    reported flash-skip. `scopeSwitchPendingRef` suppresses the premature
-  //    Home-gate run during that window; onScopeChanged clears it and runs the
-  //    gate itself against the settled scope.
-  //
-  //    `prefsCheckedForUserRef` records the user id we already routed so the
-  //    check never loops; it is stamped only AFTER prefsGet resolves so a
-  //    transient failure genuinely retries. A "Later" dismiss stamps it too (via
-  //    the screen's onDefer) so the questionnaire is not re-opened this session.
-  const prefsCheckedForUserRef = useRef<string | null>(null);
-  const prefsCheckInFlightRef = useRef(false);
-  const scopeSwitchPendingRef = useRef(false);
-  const runQuestionnaireGate = useCallback(
-    async (
-      uid: string,
-      opts?: { landHome?: boolean; isCancelled?: () => boolean },
-    ): Promise<void> => {
-      if (prefsCheckedForUserRef.current === uid || prefsCheckInFlightRef.current) return;
-      prefsCheckInFlightRef.current = true;
-      try {
-        const res = await sei.prefsGet();
-        prefsCheckedForUserRef.current = uid;
-        if (opts?.isCancelled?.()) return;
-        if (res.needed) {
-          // A brand-new user (no completed profile at all) is walked through as
-          // a 'first-fill' so Finish continues into the unique-companion flow.
-          // A profile that already completed but is missing a newer question is
-          // just a 'missing' top-up that returns to Home.
-          const firstFill = !res.profile?.completed_at;
-          navigate({
-            kind: 'profile-questions',
-            next: 'home',
-            mode: firstFill ? 'first-fill' : 'missing',
-          });
-        } else if (opts?.landHome) {
-          setHomeTab('home');
-          navigate({ kind: 'home' });
-        }
-      } catch {
-        // Best-effort — leave the ref unset so the next Home render retries.
-      } finally {
-        prefsCheckInFlightRef.current = false;
-      }
-    },
-    [navigate, setHomeTab],
-  );
-
+  //    All of it is gone, along with the screen. Nobody asked to be asked: the
+  //    questionnaire seeds companion generation, so it belongs to the moment
+  //    the player asks for a companion, not to the moment they sign in. It is
+  //    now asked in exactly two places, both deliberate — inside Sui's meet
+  //    scene when answers are missing (SuiMeetScene), and the "Update my
+  //    preferences" retake (SuiPrefsScene). A signed-in user with gaps simply
+  //    lands on Home.
   // ── Theme apply + system listener ─────────────────────────────────────
   useEffect(() => {
     applyTheme(themeMode);
@@ -358,10 +317,10 @@ export function App(): React.ReactElement {
   }, [authState, tosAccepted]);
 
   // ── In-app updater subscriptions (quick/260604-uoy). ──────────────────────
-  //    Wired ONCE at mount. Each main-pushed event maps to a UpdatePopup state.
-  //    onUpdateAvailable fires only for OPTIONAL updates (mandatory ones
-  //    download silently); progress/downloaded reflect an in-flight download;
-  //    whats-new is the post-update changelog on the next launch.
+  //    Wired ONCE at mount. onUpdateAvailable fires only for OPTIONAL updates
+  //    (mandatory ones download without asking) and opens the modal; progress /
+  //    downloaded drive the non-blocking pill; whats-new is the post-update
+  //    changelog on the next launch.
   useEffect(() => {
     const unsubs = [
       sei.onUpdateAvailable((info) => {
@@ -373,39 +332,35 @@ export function App(): React.ReactElement {
         });
       }),
       sei.onUpdateProgress((ev) => {
-        setUpdatePopup({ kind: 'downloading', percent: ev.percent });
+        // Background: the pill, not the popup. Fires for the consented download
+        // AND for the silent mandatory one, which is why it must never block.
+        setUpdatePill({ kind: 'downloading', percent: ev.percent });
       }),
       sei.onUpdateDownloaded((ev) => {
         if (ev.forced) {
           // apply:'now' mandatory — main restarts automatically after a brief
           // delay; show the non-dismissable critical overlay until it does.
+          setUpdatePill(null);
           setUpdatePopup({ kind: 'forced' });
-        } else if (ev.onRestart) {
-          // Mandatory on-restart — transition the (foreground) download bar to a
-          // dismissable "ready, restart to apply" popup so it can't hang at 100%.
-          // Applies on next quit regardless; "Restart now" just does it sooner.
-          setUpdatePopup({ kind: 'downloaded-on-restart' });
-        } else {
-          // Optional/consented flow — show "restarting…" then ask main to
-          // quit-and-install.
-          setUpdatePopup({ kind: 'downloaded' });
-          void sei.installUpdate();
+          return;
         }
+        // Everything else (consented optional + mandatory on-restart) is on
+        // disk and applies on the next quit via autoInstallOnAppQuit. Offer the
+        // restart, never take it: the user may be mid-game or on a call, and
+        // the accepted download may have been started minutes ago.
+        setUpdatePill({ kind: 'ready' });
+      }),
+      sei.onUpdateError(() => {
+        // A download that dies mid-flight stops pushing progress, and the
+        // downloading pill has no dismiss (there is nothing to decide while it
+        // works), so without this it would sit at whatever percent it reached
+        // for the rest of the session. Clear it and say nothing: the user did
+        // not ask for a mandatory download, and Settings owns the error copy
+        // for the check they DID ask for.
+        setUpdatePill(null);
       }),
       sei.onWhatsNew((ev) => {
         setUpdatePopup({ kind: 'whats-new', version: ev.version, changelog: ev.changelog });
-      }),
-      sei.onUpdateError(() => {
-        // 260803: this subscription did not exist, and it wedged the app. The
-        // `downloading` and `downloaded` popups deliberately have no footer and
-        // no ESC (a restart is in flight), so with nothing listening for the
-        // error they stayed up behind a scrim FOREVER once a download failed.
-        // Windows users saw it as "stuck at 100%" and had to force-quit.
-        // Clear only those two transient states: an available/whats-new popup
-        // is dismissable and must survive an unrelated background check error.
-        setUpdatePopup((prev) =>
-          prev && (prev.kind === 'downloading' || prev.kind === 'downloaded') ? null : prev,
-        );
       }),
       // Notices ride the update check's cadence in main, so their subscription
       // belongs here too. init() both listens and does the race-proof pull; the
@@ -439,12 +394,6 @@ export function App(): React.ReactElement {
   useEffect(() => {
     return sei.onScopeChanged((ev) => {
       void (async () => {
-        // The local data scope has now settled onto the (possibly new) account,
-        // so the Home questionnaire gate may safely read it. Clear the pending
-        // flag that suppressed the premature Home-gate run during the switch,
-        // and drop any stamp a premature run left so the gate re-decides here.
-        scopeSwitchPendingRef.current = false;
-        prefsCheckedForUserRef.current = null;
         // Onboarding completion is keyed on preferred_name (the "Name" field);
         // the Minecraft-username step was retired from the GUI (260605).
         let onboardedName = '';
@@ -520,21 +469,13 @@ export function App(): React.ReactElement {
         if (onboardedName && skinPending) { navigate({ kind: 'skin-setup' }); return; }
         // Onboarded account → home, on the HOME tab (which shows the welcome
         // message) — NOT the playtime/credits screen users reported landing on
-        // after sign-in and disliked. Route through the questionnaire gate so a
-        // signed-in account that never completed it (or is missing a newer
-        // question) is walked through BEFORE landing on Home. Running it here —
-        // after the scope settled — is what keeps the gate's navigate from being
-        // clobbered by this handler (the reported flash-skip). landHome makes
-        // the gate settle Home itself when nothing is needed, so there is no
-        // intermediate Home→questionnaire flash.
+        // after sign-in and disliked. Signing in is not a question-asking
+        // moment (260802): an unanswered questionnaire used to be interposed
+        // right here, and now simply waits for the player to ask for a
+        // companion, where Sui asks for it herself.
         if (onboardedName) {
-          const st = useAuthStore.getState().state;
-          if (st.kind === 'signed_in') {
-            void runQuestionnaireGate(st.user.id, { landHome: true });
-          } else {
-            useUiStore.getState().setHomeTab('home');
-            navigate({ kind: 'home' });
-          }
+          useUiStore.getState().setHomeTab('home');
+          navigate({ kind: 'home' });
           return;
         }
         // Fresh account. On FIRST sign-in only (never account→account), offer to
@@ -549,7 +490,7 @@ export function App(): React.ReactElement {
         navigate({ kind: 'onboard' });
       })();
     });
-  }, [navigate, setThemeMode, runQuestionnaireGate]);
+  }, [navigate, setThemeMode]);
 
   // Resolve the import-offer modal: re-read config (the import may have copied
   // preferred_name across) + reload characters, then route home-or-onboarding.
@@ -787,12 +728,6 @@ export function App(): React.ReactElement {
     // non-signed_in kind), never on initial mount.
     if (authState.kind === 'signed_in' && prev !== null && prev !== 'signed_in') {
       setHomeTab('home');
-      // A fresh sign-in triggers an async local-scope switch in main that ends
-      // with an app:scope-changed push. Suppress the Home questionnaire gate
-      // until that push lands (onScopeChanged clears this) so the gate reads the
-      // SETTLED scope, not the pre-switch one, and its navigate is not clobbered
-      // by onScopeChanged's own routing (the reported flash-skip).
-      scopeSwitchPendingRef.current = true;
     }
     if (authState.kind === 'signed_in' && (view.kind === 'auth-choice' || view.kind === 'loading')) {
       navigate({ kind: 'home' });
@@ -810,37 +745,7 @@ export function App(): React.ReactElement {
     prevAuthKindRef.current = authState.kind;
   }, [authState, view.kind, navigate, setHomeTab]);
 
-  // ── First-sign-in questionnaire gate (260703 procgen, spec item 6). ────────
-  //    Once a signed-in user lands on Home, run the shared gate (declared near
-  //    the top) which asks main whether the companion questionnaire is still
-  //    needed and, if so, routes to ProfileQuestionsScreen BEFORE they use Home
-  //    — mirroring how onboarding/skin-setup gate the home route.
-  //
-  //    This effect covers the app-relaunch / bootstrap path (a returning
-  //    signed-in user whose session is restored at launch: no scope switch, so
-  //    the pending guard is already clear). The fresh sign-in path is handled by
-  //    onScopeChanged, which runs the SAME gate once the scope has settled;
-  //    `scopeSwitchPendingRef` suppresses this effect during that window so the
-  //    two paths never fight. A sign-out clears the checked-ref so a different
-  //    account is re-checked next time.
   const tutorialActive = useTutorialStore((s) => s.active);
-  useEffect(() => {
-    if (authState.kind !== 'signed_in') {
-      prefsCheckedForUserRef.current = null;
-      return;
-    }
-    if (view.kind !== 'home') return;
-    if (scopeSwitchPendingRef.current) return; // wait for onScopeChanged
-    // 260728: never interrupt Sui's tour with the questionnaire (a user who
-    // skipped companion creation has unanswered prefs; the Awaken gate — or
-    // this effect on the next Home render after the tour — re-asks).
-    if (tutorialActive) return;
-    let cancelled = false;
-    void runQuestionnaireGate(authState.user.id, { isCancelled: () => cancelled });
-    return () => {
-      cancelled = true;
-    };
-  }, [authState, view.kind, tutorialActive, runQuestionnaireGate]);
 
   // ── Sui onboarding completion (260728): route + arm the tutorial. ─────
   const handleOnboardComplete = useCallback(
@@ -916,9 +821,8 @@ export function App(): React.ReactElement {
     view.kind === 'onboarding' ||
     view.kind === 'auth-choice' ||
     view.kind === 'skin-setup' ||
-    // 260703 procgen — the unique-companion flow + first-sign-in questionnaire
-    // are full-page ritual surfaces (like onboarding), so the rail is hidden.
-    view.kind === 'profile-questions' ||
+    // 260703 procgen — the unique-companion flow is a full-page ritual surface
+    // (like onboarding), so the rail is hidden.
     view.kind === 'unique-reveal' ||
     // 260728 — a game surface asked for in-app fullscreen. No view test is
     // needed: the flag is set and cleared by the mounted game surface itself
@@ -1074,20 +978,6 @@ export function App(): React.ReactElement {
                 {view.kind === 'credits' && <CreditsScreen />}
                 {view.kind === 'receipt' && <ReceiptScreen />}
                 {view.kind === 'coming-soon' && <ComingSoonScreen />}
-                {view.kind === 'profile-questions' && (
-                  <ProfileQuestionsScreen
-                    next={view.next}
-                    mode={view.mode}
-                    onDefer={() => {
-                      // "Later" on the first step: record the deferral so the
-                      // Home gate does not re-open the questionnaire this
-                      // session (it offers it again on the next launch).
-                      if (authState.kind === 'signed_in') {
-                        prefsCheckedForUserRef.current = authState.user.id;
-                      }
-                    }}
-                  />
-                )}
                 {view.kind === 'unique-reveal' && (
                   <UniqueRevealScreen characterId={view.characterId} />
                 )}
@@ -1153,6 +1043,11 @@ export function App(): React.ReactElement {
       {modal?.kind === 'games-picker' ? (
         <GamesPickerModal characterId={modal.characterId} />
       ) : null}
+      {/* 260803 — the screen-share source picker, opened from the call
+          controls' share button (the games-picker tile is gone). */}
+      {modal?.kind === 'share-screen' ? (
+        <ShareScreenModal characterId={modal.characterId} />
+      ) : null}
       {/* 260721 — launching a game while another one is active: confirm ends
           the previous session via its normal end path, then proceeds. */}
       {modal?.kind === 'cross-launch' ? (
@@ -1171,19 +1066,21 @@ export function App(): React.ReactElement {
         <UpdatePopup
           state={updatePopup}
           onUpdateNow={() => {
-            // 'downloaded-on-restart' reuses the primary action as "Restart
-            // now" → quit-and-install the already-downloaded update.
-            if (updatePopup.kind === 'downloaded-on-restart') {
-              void sei.installUpdate();
-              return;
-            }
-            // Consent to download the optional update; switch the popup to the
-            // downloading state immediately so the user sees the bar before the
-            // first progress tick arrives.
-            setUpdatePopup({ kind: 'downloading', percent: 0 });
+            // Consent to download the optional update. The modal closes right
+            // away and the corner pill takes over at 0%, so the user is back in
+            // the app before the first progress tick arrives.
+            setUpdatePopup(null);
+            setUpdatePill({ kind: 'downloading', percent: 0 });
             void sei.downloadUpdate();
           }}
           onDismiss={() => setUpdatePopup(null)}
+        />
+      ) : null}
+      {updatePill ? (
+        <UpdatePill
+          state={updatePill}
+          onRestart={() => void sei.installUpdate()}
+          onDismiss={() => setUpdatePill(null)}
         />
       ) : null}
       {/* Notices inbox (260725). Self-mounting: the store decides visibility, so

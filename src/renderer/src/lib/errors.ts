@@ -21,7 +21,13 @@ import { t } from './i18n';
  * src/shared/errorClasses.ts.
  */
 export const ERROR_COPY: Record<ErrorClass, string> = {
-  BOT_START_TIMEOUT: "Couldn't start the bot in 30s. Make sure your LAN world is still open and try again.",
+  // 260801: no longer tells the player to go check their LAN world. This class
+  // fires when the join STALLS, which happens after the world has already
+  // answered a status ping, so the old copy sent a user whose world was open
+  // and reachable off to verify the one thing already known to be fine.
+  // Retrying is the action that actually works (measured: it succeeded 21s
+  // later on the same world), so lead with it.
+  BOT_START_TIMEOUT: "Couldn't finish joining your world in time. Press Summon to try again.",
   LAN_NOT_OPEN: "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.",
   INVALID_API_KEY: "Your Anthropic API key was rejected. Open Settings → re-run onboarding to paste a fresh key.",
   RATE_LIMITED: "Anthropic is throttling requests. Wait a minute and try again.",

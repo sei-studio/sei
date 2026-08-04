@@ -381,14 +381,36 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
 export function markLastMessageCached(
   messages: Array<{ role: 'user' | 'assistant'; content: unknown }>,
 ): void {
-  const last = messages[messages.length - 1];
-  if (!last) return;
-  if (typeof last.content === 'string') {
-    last.content = [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }];
+  markMessageCached(messages, messages.length - 1);
+}
+
+/**
+ * The same breakpoint, at a chosen index rather than the end.
+ *
+ * markLastMessageCached is right when the last message repeats verbatim next
+ * turn, which is true of chat and voice (the transcript is append-only). It is
+ * exactly wrong for a surface whose final message is unique every time —
+ * backseat attaches a freshly composited ~1548-token image grid plus a per-tick
+ * note — because the breakpoint then pays the 1.25x write multiplier on content
+ * that can never be read back, while the genuinely stable transcript above it
+ * sits under no breakpoint at all and re-bills in full.
+ *
+ * Marking the last STABLE message instead puts the volatile tail after every
+ * breakpoint, where it costs plain input tokens and nothing more. Out-of-range
+ * indices are a no-op, as is a message whose content cannot carry a block.
+ */
+export function markMessageCached(
+  messages: Array<{ role: 'user' | 'assistant'; content: unknown }>,
+  index: number,
+): void {
+  const msg = messages[index];
+  if (!msg) return;
+  if (typeof msg.content === 'string') {
+    msg.content = [{ type: 'text', text: msg.content, cache_control: { type: 'ephemeral' } }];
     return;
   }
-  if (Array.isArray(last.content) && last.content.length) {
-    const tail = last.content[last.content.length - 1] as { cache_control?: unknown };
+  if (Array.isArray(msg.content) && msg.content.length) {
+    const tail = msg.content[msg.content.length - 1] as { cache_control?: unknown };
     if (tail && typeof tail === 'object') tail.cache_control = { type: 'ephemeral' };
   }
 }

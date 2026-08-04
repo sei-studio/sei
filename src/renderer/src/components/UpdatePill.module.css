@@ -1,0 +1,52 @@
+/* UpdatePill — bottom-right updater status card. Tokens only (no hex/px
+ * literals beyond layout offsets), same surface treatment as MiniTile. */
+
+.card {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  /* Above the MiniTile return card (600), below every ModalShell tier (1000+). */
+  z-index: 700;
+  width: 248px;
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  background: var(--bg2);
+  box-shadow: var(--shadow-pop);
+  animation: pill-in 220ms var(--ease-pop);
+}
+
+.title {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.body {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-top: var(--space-xs);
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

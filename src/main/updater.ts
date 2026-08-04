@@ -20,6 +20,10 @@
  *   B. Settings "Check for updates" — manual check, surfaces checking/
  *      not-available/available/error to the renderer.
  *   C. Optional accept — downloadUpdate(), progress ticks, then ready-to-install.
+ *      Both C and the mandatory on-restart tail are BACKGROUND on the renderer
+ *      side (260801): progress and the ready prompt render as a corner pill, and
+ *      nothing installs until the user says so or the app quits. Only
+ *      apply:'now' still takes the window.
  *   D. Post-update what's-new — on launch, show stashed/ fallback changelog.
  *
  * Source:
@@ -454,10 +458,13 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
  * flow drove the download:
  *   - mandatory + apply==='now'  → push downloaded{forced:true}, then
  *     quitAndInstall() after a brief overlay delay.
- *   - mandatory + apply==='on-restart' → nothing visible; autoInstallOnAppQuit
- *     applies it on the next quit.
- *   - optional (consented) → push downloaded{forced:false}; the renderer shows
- *     "restarting…" then invokes app:update-install → installDownloadedUpdate().
+ *   - mandatory + apply==='on-restart' → push downloaded{forced:false,
+ *     onRestart:true}; the renderer offers a restart from the corner pill.
+ *     autoInstallOnAppQuit applies it on the next quit either way.
+ *   - optional (consented) → push downloaded{forced:false}; same pill, same
+ *     deal. The renderer no longer auto-installs (260801): the user may have
+ *     accepted the download minutes ago and be mid-game by the time it lands,
+ *     so the restart is theirs to trigger via app:update-install.
  */
 async function handleUpdateDownloaded(): Promise<void> {
   const apply = mandatoryApply;
@@ -479,12 +486,12 @@ async function handleUpdateDownloaded(): Promise<void> {
     return;
   }
   // apply === 'on-restart' → surface a DISMISSABLE "ready, restart to apply"
-  // popup so the foreground download bar doesn't hang at 100% (it previously
-  // sent nothing here, leaving the renderer stuck in the 'downloading' state).
-  // The update still installs on the next quit via autoInstallOnAppQuit; the
-  // popup just adds a "Restart now" affordance.
+  // card so the download indicator doesn't hang at 100% (it previously sent
+  // nothing here, leaving the renderer stuck in the 'downloading' state). The
+  // update still installs on the next quit via autoInstallOnAppQuit; the card
+  // just adds a "Restart now" affordance.
   send(IpcChannel.app.updateDownloaded, { forced: false, onRestart: true });
-  logger.info('updater: mandatory update downloaded; applies on next quit (popup offers restart now)');
+  logger.info('updater: mandatory update downloaded; applies on next quit (pill offers restart now)');
 }
 
 /* -------------------------------------------------------------------------- */

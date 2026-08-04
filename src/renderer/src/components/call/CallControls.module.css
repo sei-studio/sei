@@ -46,8 +46,8 @@
  * near-white icon in a 9%-white pill vanishes on Sui's pale sky, and inverting
  * for light theme only moves the problem to dark art.
  *
- * So this variant is deliberately THEME-INDEPENDENT, the same documented
- * exception BackseatOverlay takes for painting over someone else's game: a
+ * So this variant is deliberately THEME-INDEPENDENT, the same reasoning the
+ * share view uses when it paints chrome over someone else's screen: a
  * fixed dark scrim with white icons, the treatment every video player uses for
  * exactly this reason. Radii, sizes and the hang-up red still come from the
  * shared rules and tokens. */

@@ -44,6 +44,28 @@ const SUMMON_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 10_000;
 
 /**
+ * 260801: the deadline this watchdog will enforce, shipped to the child in the
+ * init payload so its own connect guard can report a SPECIFIC failure before
+ * this generic one fires.
+ *
+ * Why it has to be sent rather than assumed: connect.js arms its 20s guard at
+ * `createBot`, but this timer is armed at `fork`. The comment there long
+ * claimed ~10s of margin; the real margin is 10s minus process boot minus the
+ * status ping (up to 5s). On a cold packaged Windows start, where boot pays
+ * module load plus a Defender scan of the asar-unpacked node_modules, boot
+ * alone can eat it, so the child's guard NEVER wins and every stalled join is
+ * reported as a bare `ready_timeout` with no cause. Measured live on 260801:
+ * a user whose world was open and answering status pings was told "make sure
+ * your LAN world is still open", which was the one thing already known to be
+ * fine.
+ *
+ * An absolute epoch timestamp is exact here (parent and child are the same
+ * machine and clock) and, unlike a duplicated budget constant in the bot,
+ * cannot drift out of step with SUMMON_TIMEOUT_MS.
+ */
+const summonDeadlineFrom = (startedAtMs: number): number => startedAtMs + SUMMON_TIMEOUT_MS;
+
+/**
  * Phase 13-15 (PROXY-07, D-40 sub-delivery a): Fly.io proxy base URL.
  * Read from env so dev/staging/prod can swap targets without a rebuild.
  * The default points at api.sei.gg — the Cloudflare-fronted edge for the
@@ -1055,6 +1077,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               lanPort,
               // World label for the memory registry / section headers (best-effort).
               lanMotd: opts.getLanMotd?.() ?? null,
+              // 260801: when this attempt's watchdog fires (epoch ms). The bot
+              // sizes its own connect guard to land just inside it so a stalled
+              // join reports WHY instead of being overwritten by the generic
+              // 30s timeout. See summonDeadlineFrom above.
+              summonDeadlineAt: summonDeadlineFrom(startedAtMs),
               // Profile-scoped root — the bot resolves memory under this dir, so it
               // must be the active account's profile (paths.profileRoot()), never
               // the device-global userData root.

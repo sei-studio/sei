@@ -28,6 +28,7 @@ import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore } from './stores/useChessStore';
 import { useDrawStore } from './stores/useDrawStore';
+import { useBackseatStore } from './stores/useBackseatStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
 import { useWizardStore } from './stores/useWizardStore';
 import { attemptSummon } from './summonFlow';
@@ -35,7 +36,7 @@ import { sei } from './ipcClient';
 import { t } from './i18n';
 
 /** The launchable games (the picker's coming-soon tiles are never active). */
-export type LaunchGameId = 'chess' | 'minecraft' | 'draw';
+export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat';
 
 export interface ActiveGameInfo {
   id: LaunchGameId;
@@ -57,6 +58,13 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
   if (draw && draw.phase !== 'gallery' && draw.phase !== 'setup') {
     return { id: 'draw', name: t('Draw!') };
   }
+  // A screen share is not launched from the picker any more (260803: it is a
+  // call control), but it still counts as active here, because the gate's real
+  // job is the one exclusion that is physical: a companion cannot be watching
+  // your screen and standing in your Minecraft world at the same time.
+  if (useBackseatStore.getState().active[characterId]) {
+    return { id: 'backseat', name: t('Screen share') };
+  }
   const summon = useDataStore.getState().summons[characterId]?.kind;
   if (summon === 'online' || summon === 'connecting') {
     return { id: 'minecraft', name: t('Minecraft') };
@@ -75,6 +83,10 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
   }
   if (id === 'draw') {
     await useDrawStore.getState().end(characterId);
+    return;
+  }
+  if (id === 'backseat') {
+    await useBackseatStore.getState().end(characterId);
     return;
   }
   // Minecraft: same instant-disconnect path the chat panel uses.
@@ -119,6 +131,10 @@ async function maybeOfferSkinSetup(): Promise<void> {
  * cross-launch confirm has already ended it by the time this runs.
  */
 export function openGame(characterId: string, gameId: LaunchGameId): void {
+  // A screen share has no surface to open here. Nothing routes to it any more
+  // either: its entry point is the call controls' share button, not a tile.
+  if (gameId === 'backseat') return;
+
   // Draw! is a full-page route of its own rather than a panel in the chat
   // game area, so it navigates instead of mounting an aside. Any stale chess
   // panel intent is dropped first so returning to chat later is clean.

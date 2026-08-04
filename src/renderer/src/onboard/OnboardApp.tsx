@@ -373,11 +373,40 @@ export function OnboardApp({
   }, [phase.k]);
 
   // Existing-account greeting: hold long enough to read, then hand off as a
-  // returning user (straight to Home, no tutorial, nothing written).
+  // returning user (straight to Home, no tutorial, no config written).
+  //
+  // The ONE thing this branch does write is the questionnaire (260801). They
+  // just answered all three of Sui's questions and then signed into an account
+  // whose stored answers have gaps; dropping the answers on the floor meant
+  // being asked all three again later. The answers are the freshest statement
+  // of what they want either way, and prefsSave is a partial patch, so nothing
+  // else on the account is touched. A failure is a non-event: Sui asks for
+  // whatever is still missing when they go to meet a companion.
   useEffect(() => {
     if (phase.k !== 'welcome-existing') return undefined;
-    const t = setTimeout(() => complete(false, null), 2400);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    const held = new Promise<void>((resolve) => setTimeout(resolve, 2400));
+    void (async () => {
+      const a = answersRef.current;
+      // skipCreation walks off before the questions, so there is nothing to
+      // carry — the same guard runCloudSetup uses.
+      if (!a.skipCreation) {
+        try {
+          await sei.prefsSave({
+            companion_age_range: a.age,
+            art_style: a.art,
+            companion_dynamics: a.dynamics,
+          });
+        } catch {
+          /* best-effort: the Home gate re-asks, which is the old behaviour */
+        }
+      }
+      await held;
+      if (!cancelled) complete(false, null);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [phase.k, complete]);
 
   // Re-entering the scene for the send-off: ground slides in → Sui walks in

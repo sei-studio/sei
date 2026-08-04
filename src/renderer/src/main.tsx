@@ -16,6 +16,9 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   void import('./components/chess/DevChessShot').then(({ DevChessShot }) => {
     root.render(<DevChessShot />);
   });
+  // 260803: the `?backseat=1` branch is gone with the backseat overlay window.
+  // Screen sharing is a call feature now and its capture runs in THIS window;
+  // see lib/stores/useBackseatStore.ts for why that is safe.
 } else if (new URLSearchParams(window.location.search).has('overlay')) {
   document.documentElement.style.background = 'transparent';
   document.body.style.background = 'transparent';

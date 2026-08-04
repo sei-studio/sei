@@ -83,14 +83,54 @@ export function humanizeReason(reason) {
 
 /**
  * 260508-nkk: wall-clock budget for the bot's mineflayer spawn handshake.
- * Mandated by CLAUDE.md "every external call has a timeout". 20s is below
- * the supervisor's 30s outer SUMMON_TIMEOUT_MS so the bot's structured
- * BOT_START_TIMEOUT lifecycle reaches main with ~10s margin before the
- * supervisor would otherwise fire its own generic timeout. mineflayer has
+ * Mandated by CLAUDE.md "every external call has a timeout". mineflayer has
  * no internal connect deadline — without this, a wrong-host / unreachable
  * LAN / stalled auth hangs silently inside its TCP retry loop.
+ *
+ * 260801: this is now the CEILING, not the budget. The original comment here
+ * claimed 20s "is below the supervisor's 30s outer SUMMON_TIMEOUT_MS so the
+ * bot's structured BOT_START_TIMEOUT reaches main with ~10s margin", which was
+ * wrong: this timer starts at createBot and the supervisor's starts at fork,
+ * so the true margin is 10s minus boot minus the status ping (up to 5s). The
+ * actual budget comes from connectTimeoutFor() below.
  */
 const CONNECT_TIMEOUT_MS = 20_000
+
+/**
+ * 260801: slack left between this guard firing and the supervisor's watchdog,
+ * for the lifecycle message to cross the MessagePort and be captured.
+ */
+const REPORT_MARGIN_MS = 3_000
+
+/**
+ * Floor for the connect guard. If boot was so slow that almost none of the
+ * summon budget is left, a deadline-derived timeout would be ~0 and would kill
+ * a perfectly healthy handshake on arrival. Better to run the floor and lose
+ * the race to the supervisor than to invent a failure.
+ */
+const MIN_CONNECT_TIMEOUT_MS = 5_000
+
+/**
+ * How long to give mineflayer's spawn handshake THIS attempt.
+ *
+ * The flat CONNECT_TIMEOUT_MS is armed at createBot, while the supervisor's
+ * 30s watchdog is armed at fork, so the child only reports first if boot plus
+ * the status ping fit in the 10s difference. On a cold packaged Windows start
+ * they do not, and the specific error is lost: on 260801 a user whose world
+ * was open and answering pings got the generic "make sure your LAN world is
+ * still open" instead of "reached the server, never finished joining".
+ *
+ * Given the supervisor's deadline we can size the guard to land just inside
+ * it regardless of how long boot took, which is what makes a stall
+ * diagnosable. With no deadline (older main) this is the old constant.
+ */
+function connectTimeoutFor(summonDeadlineAt, now = Date.now()) {
+  if (!Number.isFinite(summonDeadlineAt)) return CONNECT_TIMEOUT_MS
+  const remaining = summonDeadlineAt - now - REPORT_MARGIN_MS
+  return Math.max(MIN_CONNECT_TIMEOUT_MS, Math.min(CONNECT_TIMEOUT_MS, remaining))
+}
+
+export const __testables = { connectTimeoutFor, CONNECT_TIMEOUT_MS, REPORT_MARGIN_MS, MIN_CONNECT_TIMEOUT_MS }
 
 // Wall-clock budget for the pre-connect status ping (resolveServerVersion).
 // Short — a LAN status query on localhost answers in well under a second; if it
@@ -213,7 +253,7 @@ export async function resolveServerVersion({ host, port, timeoutMs = PING_TIMEOU
  * @param {(reason:string) => void} [opts.onEnd]   Called when the connection drops; humanized reason.
  * @param {(err:Error) => void} [opts.onError]     Called on connection-level errors.
  * @param {(err:Error) => void} [opts.onConnectTimeout]
- *   260508-nkk: invoked when CONNECT_TIMEOUT_MS elapses without the bot
+ *   260508-nkk: invoked when the connect budget (connectTimeoutFor) elapses without the bot
  *   firing its first 'spawn' event — i.e. mineflayer is silently stalled
  *   in handshake / TCP retry / Microsoft auth. The bot is also force-quit
  *   so it doesn't keep retrying in the background.
@@ -241,12 +281,30 @@ export function createBotInstance({
   // redundant noise). If it fires, force-quit the bot and notify the
   // boot composer through onConnectTimeout so the lifecycle layer can
   // emit BOT_START_TIMEOUT.
+  // 260801: sized against the supervisor's deadline (see connectTimeoutFor) so
+  // this specific error beats the generic 30s watchdog even on a slow boot.
+  const _connectBudgetMs = connectTimeoutFor(config?._seiSummonDeadlineAt)
+  const _bootMs = Math.round(process.uptime() * 1000)
+  logger.info?.(
+    `[sei] connect guard: ${_connectBudgetMs}ms (boot took ~${_bootMs}ms before this attempt)`,
+  )
   let _connectTimer = setTimeout(() => {
     if (_spawned) return
     _connectTimer = null
+    // Only claim the world was reachable when we actually proved it. A
+    // resolved version means resolveServerVersion's status ping ANSWERED;
+    // 'auto' means it failed and we fell back to in-handshake detection, where
+    // an unreachable host is still on the table.
+    const _pinged = version && version !== 'auto'
     const err = new Error(
-      `BOT_START_TIMEOUT: mineflayer.spawn did not fire within ${CONNECT_TIMEOUT_MS / 1000}s — ` +
-      `LAN host/port mismatch, server unreachable at ${host}:${port}, or auth stalled.`,
+      `BOT_START_TIMEOUT: mineflayer.spawn did not fire within ${_connectBudgetMs / 1000}s of ` +
+      `createBot (process boot took ~${_bootMs}ms first). ` +
+      (_pinged
+        ? `The server at ${host}:${port} answered a status ping and resolved to ${version}, so ` +
+          `the world is open and reachable; the JOIN stalled (login/configuration handshake ` +
+          `never reached 'spawn'). NOT a closed LAN world.`
+        : `The status ping did not resolve a version, so the world may be unreachable at ` +
+          `${host}:${port}, or the join stalled in handshake.`),
     )
     logger.error?.(`[sei] ${err.message}`)
     // Stop mineflayer from retrying so the utilityProcess can shut down
@@ -256,7 +314,7 @@ export function createBotInstance({
     try { onConnectTimeout?.(err) } catch (cbErr) {
       logger.warn?.(`[sei/connect] onConnectTimeout hook threw: ${cbErr && cbErr.message}`)
     }
-  }, CONNECT_TIMEOUT_MS)
+  }, _connectBudgetMs)
   const _clearConnectTimer = () => {
     if (_connectTimer != null) {
       clearTimeout(_connectTimer)

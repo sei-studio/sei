@@ -50,6 +50,20 @@ export default defineConfig(({ mode }) => {
       ...(env.POSTHOG_HOST
         ? { 'process.env.POSTHOG_HOST': JSON.stringify(env.POSTHOG_HOST) }
         : {}),
+      // Backseat salience gate dev credentials (260728). salienceGate.ts reads
+      // process.env.SEI_GATE_DEV_KEY at RUNTIME, and nothing exports .env into
+      // the dev process — so before this define existed, the key sat in .env
+      // while every dev run logged "no SEI_GATE_DEV_KEY" and gated closed.
+      // Injected in DEV ONLY: this is a real DeepInfra secret, and a packaged
+      // build must never bake it into the bundle (production is meant to route
+      // the gate through the proxy; until then packaged builds run on user and
+      // jolt triggers alone, which is the documented state).
+      ...(mode !== 'production' && env.SEI_GATE_DEV_KEY
+        ? { 'process.env.SEI_GATE_DEV_KEY': JSON.stringify(env.SEI_GATE_DEV_KEY) }
+        : {}),
+      ...(mode !== 'production' && env.SEI_GATE_MODEL
+        ? { 'process.env.SEI_GATE_MODEL': JSON.stringify(env.SEI_GATE_MODEL) }
+        : {}),
     },
   },
   preload: {

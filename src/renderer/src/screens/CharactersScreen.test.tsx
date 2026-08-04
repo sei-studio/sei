@@ -238,14 +238,15 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(app.includes("view.kind === 'awaken' && <AwakenScreen />")).toBe(true);
   });
 
-  it('Test 17: AwakenScreen keeps the unique-path gates (sign-in + cloud backend + prefs)', () => {
+  it('Test 17: AwakenScreen keeps the unique-path gates (sign-in + cloud backend)', () => {
     const awaken = readFileSync(AWAKEN, 'utf-8');
     expect(awaken.includes("setUpgradeFraming('meet your unique companion')")).toBe(true);
     // Backend gate: local (BYOK) users are also routed to sign-in.
     expect(awaken.includes("!== 'cloud-proxy'")).toBe(true);
-    // Questionnaire gate → profile-questions with the meet next hop; an
-    // answered profile goes straight into Sui's meet scene (260731).
-    expect(awaken.includes("next: 'meet'")).toBe(true);
+    // 260802: no questionnaire gate here. An eligible click goes straight into
+    // Sui's scene, which asks for any missing answers itself rather than
+    // bouncing the player out to a form and back.
+    expect(awaken.includes('prefsGet')).toBe(false);
     expect(awaken.includes("navigate({ kind: 'sui-meet' })")).toBe(true);
     // The other two origins: custom wizard (quota-gated) + World tab.
     expect(awaken.includes('checkCreateQuota')).toBe(true);

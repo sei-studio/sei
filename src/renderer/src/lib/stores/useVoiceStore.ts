@@ -43,6 +43,10 @@ import { sei } from '../ipcClient';
 import { useUiStore } from './useUiStore';
 import { useChatStore } from './useChatStore';
 import { useDataStore } from './useDataStore';
+// 260804: the director has to know whether the companion it is about to give a
+// turn to is already running one with the screen attached. One-way — the
+// backseat store knows nothing about calls.
+import { useBackseatStore, backseatCapture } from './useBackseatStore';
 import { voicePitchRate } from '@shared/voicePitch';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { t } from '../i18n';
@@ -1014,7 +1018,35 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // prompt gives every recipient the yield guidance, so a line meant for one
     // companion alone still gets one answer, not N. send() persists the player
     // row before routing, so no separate observe mirror is needed.
+    // 260804: a companion who is watching a shared screen answers THROUGH
+    // backseat, not through the standalone voice turn.
+    //
+    // The bug this fixes was two conversations at once. Backseat runs its own
+    // turn loop with the grid attached; the director runs its own with the
+    // microphone attached; both write to the same chat thread and both speak
+    // through the same call. So the player got a companion who could see their
+    // screen and never heard a word they said, talking over a companion who
+    // could hear them and had no idea what was on screen. Nothing was broken in
+    // either loop — there were simply two of them, and neither knew.
+    //
+    // The share is the more informed of the two (it has the grid, the audio
+    // transcript and the window title on top of everything the voice turn has),
+    // so the utterance is routed there and the duplicate voice turn is skipped.
+    // Anyone else on the call still takes a normal turn.
+    const sharingFor = useBackseatStore.getState().sharingFor;
+    const capture = sharingFor && parts.includes(sharingFor) ? backseatCapture() : null;
     for (const id of parts) {
+      if (capture && id === sharingFor) {
+        // Date the dispatch the way armTurnCapture would, so the reply arriving
+        // later through onCompanionText resolves to THIS turn rather than being
+        // read as a spontaneous line from an older one.
+        if (parts.length === 1) armTurnCapture(mySeq, id, 0);
+        else speakerOriginSeq.set(id, mySeq);
+        void capture.sendUserTick(text).catch(() => {
+          /* a dropped tick is a missed answer, never a broken call */
+        });
+        continue;
+      }
       // No director-side turn capture on a multi-recipient broadcast: the
       // capture slot is single and the replies stream back through
       // onCompanionText, which speaks and mirrors them regardless (the first
@@ -1369,6 +1401,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             // The director handles addressing, mirroring, and the reply chain.
             dispatchUserTurn(text);
           },
+          // Stage one (260804): something that might be the player crossed a low
+          // bar. Duck, do not clear — the seq is NOT bumped and no chain is
+          // cancelled, because this is retractable and half of these are a
+          // cough. The player perceives this as the interrupt; onBargeIn below
+          // is only the bookkeeping that follows a confirmed word.
+          onBargeSuspect: () => {
+            if (session !== mySession) return;
+            queue?.duck(true);
+          },
+          onBargeAbort: () => {
+            if (session !== mySession) return;
+            queue?.duck(false);
+          },
           onBargeIn: () => {
             // The player spoke over the companions: cut playback AND cancel any
             // in-flight banter chain right now. Bumping the director sequence
@@ -1382,6 +1427,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             directorSeq++;
             clearTurnCapture();
             queue?.clear();
+            // Kill the screen-share turn too. Clearing the queue only silences
+            // what is already synthesised; a backseat turn still generating
+            // would land its line a second later, which reads as the companion
+            // carrying on with the sentence she was interrupted in.
+            const sharing = useBackseatStore.getState().sharingFor;
+            if (sharing) void sei.backseatInterrupt?.(sharing).catch(() => {});
           },
           onSpeechActive: (active) => {
             // Light the caller's own avatar ring while they talk (same ring the
@@ -1391,6 +1442,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             // now so the STT request at utterance-end (and the TTS reply after)
             // lands on a warm connection. Throttled in main; fire-and-forget.
             if (active) void sei.voiceSttPrewarm?.().catch(() => {});
+            // Latch the screen as it looked when they STARTED talking, not as it
+            // looks when they stop. Someone reacting to a moment describes the
+            // moment they reacted to, and by the end of the sentence it is gone.
+            if (active) backseatCapture()?.armUserGrid();
             set({ userSpeaking: active && !useUiStore.getState().callMuted });
           },
         });

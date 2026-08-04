@@ -54,7 +54,32 @@ export const ZH_CHATUI: Record<string, string> = {
   'Undeafen': '取消拒听',
   'Show the scene': '显示场景',
   'Show the call view': '显示通话界面',
+  'Share your screen': '共享你的屏幕',
+  'Stop sharing': '停止共享',
+  'Stop sharing your screen': '停止共享你的屏幕',
   'Hang up': '挂断',
+
+  // Screen share (Backseat)
+  'Backseat (beta)': 'Backseat（测试版）',
+  'NEW': '新功能',
+  'Stream anything with Backseat (beta)': '用 Backseat（测试版）分享任何画面',
+  'Try streaming your game, watching a movie, or doomscrolling together!':
+    '试试分享你的游戏、一起看电影，或者一起刷视频！',
+  'Show {name} your screen': '把你的屏幕分享给{name}',
+  'Sound is shared too, so {name} can hear it.': '声音也会一起共享，{name} 能听到。',
+  'Sharing starts a voice call.': '开始共享会同时发起语音通话。',
+  'Window': '窗口',
+  'Entire screen': '整个屏幕',
+  'Looking for what you have open...': '正在查找你打开的内容...',
+  'No windows open to share. Open something and come back.':
+    '没有可共享的窗口。先打开一个再回来。',
+  'No screens available to share.': '没有可共享的屏幕。',
+  'Starting...': '正在开始...',
+  'Share': '共享',
+  'Your companion': '你的伙伴',
+  'Screen share': '屏幕共享',
+  'Sharing {what}': '正在共享{what}',
+  'your screen': '你的屏幕',
 
   // McDashboardPanel
   "{name}'s Minecraft dashboard": '{name}的 Minecraft 仪表盘',

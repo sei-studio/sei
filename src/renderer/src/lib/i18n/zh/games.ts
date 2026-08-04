@@ -118,4 +118,8 @@ export const ZH_GAMES: Record<string, string> = {
   'Saved to {path}': '已保存到 {path}',
   'Saved!': '已保存！',
   'The saved picture': '保存的图片',
+  // The caption on a single drawing's share tile. {word} is left in place by
+  // the caller so the composer can put the highlighter behind the word alone,
+  // and {a} is the English article, which Chinese simply drops.
+  'according to {name}, this is {a} {word}.': '据{name}说，这是{word}。',
 };

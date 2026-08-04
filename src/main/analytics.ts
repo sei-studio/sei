@@ -80,6 +80,7 @@ export async function initAnalytics(): Promise<void> {
     });
     installId = next.analytics_install_id ?? '';
     optedOut = next.analytics_opt_out === true;
+    setUiLanguage(next.ui_language);
   } catch (err) {
     logger.warn(`analytics: config init failed: ${(err as Error).message}`);
   }
@@ -111,6 +112,23 @@ export async function initAnalytics(): Promise<void> {
   }
 }
 
+/**
+ * Cached UserConfig.ui_language ('en' | 'zh'), the APP UI language — not the
+ * per-character conversation language. 260801: before this, the only trace of
+ * a non-English user anywhere in the cloud was `characters.metadata.language`,
+ * which is stamped at character CREATION, so anyone who only ever used the
+ * bundled defaults was invisible. Cached rather than read per event because
+ * commonProps() is synchronous and config is a locked file read; refreshed by
+ * setUiLanguage() from the config:save IPC handler, which is the only path
+ * either UI writes it through.
+ */
+let uiLanguage = 'en';
+
+/** Refresh the cached ui_language. Called after a renderer config save. */
+export function setUiLanguage(lang: string | undefined | null): void {
+  uiLanguage = lang === 'zh' ? 'zh' : 'en';
+}
+
 /** Properties attached to every event. All non-PII, all enum/scalar. */
 function commonProps(): Record<string, unknown> {
   return {
@@ -121,8 +139,11 @@ function commonProps(): Record<string, unknown> {
     os_release: os.release(),
     backend: backendKind,
     is_cloud: backendKind === 'cloud-proxy',
-    // Keep the person profile's latest platform/version/backend up to date.
-    $set: { client: CLIENT_TAG, app_version: appVersion, os: process.platform, backend: backendKind },
+    ui_language: uiLanguage,
+    // Keep the person profile's latest platform/version/backend/language up to
+    // date, so "how many users run the app in Chinese" is one person query
+    // rather than a scan over events.
+    $set: { client: CLIENT_TAG, app_version: appVersion, os: process.platform, backend: backendKind, ui_language: uiLanguage },
   };
 }
 
