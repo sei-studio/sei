@@ -545,13 +545,59 @@ export const UserConfigSchema = z.object({
    */
   call_captions: z.boolean().optional().default(false),
   /**
-   * "Call overlay" (Appearance & feel, 260706). When on, a live voice call
-   * shows an always-on-top row of companion avatars pinned to the bottom-right
-   * corner (Discord-style), each lit while that companion speaks and dimmed
-   * while idle, so a streamer can see who is talking without the Sei window
-   * focused. Off by default — it floats over every other app, so it is opt-in.
+   * DEPRECATED (260804) — the old boolean "Call overlay" toggle, superseded by
+   * `avatar_mode`. Kept so existing config.json files still parse and so
+   * `effectiveAvatarMode` can map an old `true` onto `'activity'`. Never
+   * written anymore (Settings writes `avatar_mode`); do not add new readers.
    */
   call_overlay_enabled: z.boolean().optional().default(false),
+  /**
+   * "Avatar" (Appearance & feel, 260804; grew out of the 260706 call overlay).
+   * When the always-on-top avatar overlay (companion tiles, optionally Live2D)
+   * is shown:
+   *   'off'      — never.
+   *   'activity' — while any companion has a live surface: a voice call, a
+   *                chess/Draw!/backseat session, or a Minecraft summon.
+   *   'always'   — whenever the app is open (falls back to the open chat's
+   *                companion when nothing is active).
+   * OPTIONAL with no default on purpose: an absent field means "never chosen",
+   * and `effectiveAvatarMode` derives the value from the deprecated boolean so
+   * users who had the old toggle on keep their overlay without a migration.
+   */
+  avatar_mode: z.enum(['off', 'activity', 'always']).optional(),
+  /**
+   * Per-character avatar display preferences (260804), sparse like
+   * `call_backdrop`: an absent character id means "defaults". These are USER
+   * preferences about how a companion's overlay tile renders on THIS profile,
+   * which is why they live here and not in `character.metadata` (metadata is
+   * cloud-synced verbatim and not editable on foreign characters).
+   *   frame         — tile shape; only 'circle' exists today, the enum is the
+   *                   growth point.
+   *   always_bright — true disables the talking indicator entirely: no idle
+   *                   dim, no speaking ring; the tile stays lit.
+   */
+  avatar_prefs: z
+    .record(
+      z.object({
+        frame: z.enum(['circle']).optional(),
+        always_bright: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  /**
+   * Avatar overlay geometry (260804), written by MAIN only (drag/resize
+   * persistence; deliberately not in RENDERER_SETTABLE_KEYS). `size` is the
+   * per-tile square edge in px; `x`/`y` are the window origin, absent until
+   * the user first drags it (absent = pinned to the bottom-right work-area
+   * corner, the pre-260804 behavior).
+   */
+  avatar_overlay: z
+    .object({
+      size: z.number().int().min(48).max(1024),
+      x: z.number().int().optional(),
+      y: z.number().int().optional(),
+    })
+    .optional(),
   /**
    * "Conversation starters" (260707). When on (the default), a live voice call
    * that has gone quiet for a while (5-60s, resampled each stretch) nudges a
@@ -783,3 +829,24 @@ export const UserConfigSchema = z.object({
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
+
+/** The avatar overlay's visibility levels (UserConfig.avatar_mode). */
+export type AvatarMode = 'off' | 'activity' | 'always';
+
+/** One character's entry in UserConfig.avatar_prefs. */
+export type AvatarPrefs = NonNullable<UserConfig['avatar_prefs']>[string];
+
+/**
+ * The avatar mode a config actually means, folding in the deprecated boolean:
+ * an explicit `avatar_mode` wins; otherwise the old "Call overlay" toggle maps
+ * onto its historical behavior (`true` ≈ shown during calls, the closest level
+ * being 'activity') so nobody's overlay disappears on update. Both hydration
+ * paths and Settings read the mode through this ONE function — never read
+ * `avatar_mode` or `call_overlay_enabled` directly.
+ */
+export function effectiveAvatarMode(cfg: {
+  avatar_mode?: AvatarMode;
+  call_overlay_enabled?: boolean;
+}): AvatarMode {
+  return cfg.avatar_mode ?? (cfg.call_overlay_enabled === true ? 'activity' : 'off');
+}

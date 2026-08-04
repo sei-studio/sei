@@ -767,6 +767,78 @@ onboarding grass field); everyone else's backdrop is their own art.
   light and the other way in dark. Same reasoning the share view uses when it
   paints its own chrome over someone else's screen.
 
+## Avatar overlay (260804, grew out of the 260706 "call overlay")
+
+The always-on-top overlay window is now the companion's desktop presence:
+static portrait tiles or a per-character Live2D model, shown per
+`avatar_mode` in UserConfig: `'off' | 'activity' | 'always'` ('activity' =
+any live surface: call, chess, Draw!, backseat, MC summon; 'always' falls
+back to the open chat's companion). The field is OPTIONAL with no default;
+**read it only through `effectiveAvatarMode`** (characterSchema), which folds
+the deprecated `call_overlay_enabled` boolean (`true` → `'activity'`) so old
+configs keep their overlay without a migration. The player's own tile is
+GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
+
+- **Window** (`src/main/callOverlay.ts`): click-through by default with
+  `setIgnoreMouseEvents(true, {forward: true})` so hover still reaches the
+  page (forward is Win/mac only; Linux stays display-only). Hovering asks
+  main for real clicks (`avatar:overlay-interactive`); the bottom-right hover
+  button is `-webkit-app-region: drag` (window is `movable`); corner handles
+  stream tile size over `avatar:overlay-resize`. Geometry persists in
+  `UserConfig.avatar_overlay`, written by MAIN only (not renderer-settable).
+  `setContentProtection(true)` keeps the overlay out of every screen capture
+  (including Sei's own backseat share). `backgroundThrottling: false` so
+  Live2D animates under a fullscreen game. Tile size is CSS off the window
+  height (`--tile`), so main's sizing and the renderer's layout cannot drift.
+- **Per-character prefs** (`UserConfig.avatar_prefs`, sparse like
+  call_backdrop): `frame` ('circle' only today) + `always_bright` (kills the
+  talking indicator: no idle dim, no ring). Deliberately NOT in
+  `character.metadata` — metadata cloud-syncs verbatim and is not editable on
+  foreign characters. Edited from the profile's third tab (CharacterPage →
+  Avatar → Static), which writes read-modify-write through `saveConfig`.
+- **Live2D store** (`src/main/avatar/avatarStore.ts`): a model ZIP imports
+  into `<profileRoot>/avatars/<id>/` (manifest.json + extracted tree),
+  LOCAL-ONLY — nothing rides metadata, a character adopted elsewhere just
+  falls back to the portrait tile. Import NORMALIZES the stored model3.json
+  because real VTuber exports ship expressions the settings never reference
+  and sometimes no EyeBlink group (both measured on the first test model):
+  it registers every `*.exp3.json`, ensures the EyeBlink group, maps
+  expression names → the closed `AvatarEmotion` set by bilingual filename
+  keywords (泪→sad, 害羞→shy, ...), and rejects traversal/junk entries. Zip
+  filenames decode GBK-first (VTube Studio on Chinese Windows; cp437 is the
+  spec fiction). Delete/remove-from-library/profile-import handle the dir
+  like `knowledge/`.
+- **Rendering** (`src/renderer/src/lib/live2d/`): pixi.js 7 +
+  `pixi-live2d-display-lipsyncpatch` (cubism4), ALL dynamically imported.
+  The proprietary Cubism 5 Core is fetched at build time by
+  `scripts/fetch-live2d-core.mjs` into `src/renderer/public/live2d/`
+  (gitignored — its license permits shipping it in the app, not committing
+  it); `loadCubismCore()` script-injects it before the plugin import. Models
+  load as in-memory `File[]` over IPC (`avatar:model-files`) — no custom
+  protocol, no file:// fetches. Idle life: SDK breath/sway/blink run free on
+  a motionless model (the EyeBlink group is why import guarantees it), plus
+  our saccade loop through the SDK focusController. The mouth is written
+  INSIDE a wrapped `motionManager.update` so the SDK layers blink/breath/
+  physics after it in the same frame.
+- **Lip sync**: TTS plays in the MAIN window, so `avatarLevelTap.ts` samples
+  the clip there (RMS envelope, ~25 Hz) and relays `{id, level}` via
+  `avatar:overlay-level`. **An element can only ever have ONE
+  MediaElementSourceNode** — the tap reuses pitchBus's node when the clip is
+  pitch-shifted (`pitchSourceFor`) and builds its own only otherwise, and it
+  is armed by the pusher ONLY while a shown participant is actually Live2D
+  (rerouting rate-1 clips through WebAudio is not free). No levels arriving
+  while `speaking` is true → the tile pseudo-envelopes rather than freezing.
+- **Expressions at speech time**: `classifyEmotion` (bilingual lexicon,
+  `lib/avatar/emotion.ts`) runs on the line at first-audible
+  (lastSpoken/lastSpokenId), ships in the overlay push, maps through the
+  manifest's emotion table, decays to neutral after 10 s. Deliberately not
+  LLM-driven in v1 (tags would touch every surface's prompt contract); the
+  upgrade replaces that one call site.
+- **Pusher** (`components/CallOverlayPusher.tsx`): mode + activity stores →
+  `computeAvatarIds` (pure, tested) → `voice:overlay-set`. Zod in
+  `main/ipc.ts` must name every participant field the overlay renders
+  (undeclared keys are STRIPPED — the backseat gridSmall lesson).
+
 ## Backseat (260728, rebuilt 260801-260804)
 
 The companion watches a screen the player shares and talks about it live.

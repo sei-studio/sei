@@ -12,6 +12,7 @@
 import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
 import type { LanHost, LanHostWarning } from '@shared/ipc';
+import type { AvatarMode, AvatarPrefs } from '@shared/characterSchema';
 
 export type View =
   | { kind: 'loading' }
@@ -237,11 +238,16 @@ interface UiState {
   /** Appearance & feel: live captions on the voice-call screen (persisted via
    * UserConfig.call_captions; App.tsx hydrates). Off by default. */
   callCaptions: boolean;
-  /** Appearance & feel: always-on-top call overlay (bottom-right companion
-   * circles). Persisted via UserConfig.call_overlay_enabled; App.tsx hydrates.
-   * Off by default (it floats over every app). Read by the overlay pusher in
-   * App.tsx to decide whether to spawn the overlay window during a call. */
-  callOverlayEnabled: boolean;
+  /** Appearance & feel (260804): when the always-on-top avatar overlay shows.
+   * Persisted via UserConfig.avatar_mode (App.tsx hydrates through
+   * effectiveAvatarMode, which folds in the deprecated call_overlay_enabled).
+   * 'off' by default (it floats over every app). Read by the overlay pusher
+   * in App.tsx to decide whether to spawn the overlay window. */
+  avatarMode: AvatarMode;
+  /** Per-character avatar tile preferences (260804), sparse: absent id =
+   * defaults (circle frame, talking indicator on). Persisted via
+   * UserConfig.avatar_prefs; App.tsx hydrates; the profile Avatar tab writes. */
+  avatarPrefsByCharacter: Record<string, AvatarPrefs>;
   /** Conversation starters (260707): a quiet stretch on a live call nudges a
    * companion to bring up a topic on its own. Persisted via
    * UserConfig.call_convo_starters; App.tsx hydrates. ON by default. */
@@ -315,8 +321,12 @@ interface UiState {
   setCallDeafened: (deafened: boolean) => void;
   /** Appearance & feel: set the call-captions toggle. */
   setCallCaptions: (v: boolean) => void;
-  /** Appearance & feel: set the always-on-top call-overlay toggle. */
-  setCallOverlayEnabled: (v: boolean) => void;
+  /** Appearance & feel: set the avatar overlay mode. */
+  setAvatarMode: (mode: AvatarMode) => void;
+  /** 260804: replace the whole per-character avatar-prefs map (App.tsx hydration). */
+  setAvatarPrefs: (prefs: Record<string, AvatarPrefs>) => void;
+  /** 260804: set one character's avatar tile preferences. */
+  setAvatarPrefsFor: (characterId: string, prefs: AvatarPrefs) => void;
   /** Set the conversation-starters toggle (quiet calls, companion starts a topic). */
   setConvoStartersEnabled: (v: boolean) => void;
   /** 260730: replace the whole per-character backdrop map (App.tsx hydration). */
@@ -356,7 +366,8 @@ export const useUiStore = create<UiState>((set) => ({
   callMuted: false,
   callDeafened: false,
   callCaptions: false,
-  callOverlayEnabled: false,
+  avatarMode: 'off',
+  avatarPrefsByCharacter: {},
   convoStartersEnabled: true,
   // Empty = nobody has a stored preference yet; each character falls back to
   // whether they have a scene. App.tsx hydrates from persisted config.
@@ -393,7 +404,10 @@ export const useUiStore = create<UiState>((set) => ({
   setCallMuted: (muted) => set({ callMuted: muted }),
   setCallDeafened: (deafened) => set({ callDeafened: deafened }),
   setCallCaptions: (v) => set({ callCaptions: v }),
-  setCallOverlayEnabled: (v) => set({ callOverlayEnabled: v }),
+  setAvatarMode: (mode) => set({ avatarMode: mode }),
+  setAvatarPrefs: (prefs) => set({ avatarPrefsByCharacter: prefs }),
+  setAvatarPrefsFor: (characterId, prefs) =>
+    set((s) => ({ avatarPrefsByCharacter: { ...s.avatarPrefsByCharacter, [characterId]: prefs } })),
   setConvoStartersEnabled: (v) => set({ convoStartersEnabled: v }),
   setCallBackdropPrefs: (prefs) => set({ callBackdropByCharacter: prefs }),
   setCallBackdropFor: (characterId, on) =>

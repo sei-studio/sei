@@ -246,6 +246,23 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.voice.overlayState, handler);
   },
   voiceOverlayGetState: () => ipcRenderer.invoke(IpcChannel.voice.overlayGet),
+  // Live2D avatar store + overlay window controls (260804)
+  avatarImport: (characterId, zipBytes) =>
+    ipcRenderer.invoke(IpcChannel.avatar.import, characterId, zipBytes),
+  avatarGet: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.get, characterId),
+  avatarRemove: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.remove, characterId),
+  avatarModelFiles: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.modelFiles, characterId),
+  avatarOverlayLevel: (characterId, level) =>
+    ipcRenderer.invoke(IpcChannel.avatar.overlayLevel, { id: characterId, level }),
+  onAvatarOverlayLevel(cb: (sample: { id: string; level: number }) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, sample: { id: string; level: number }) =>
+      cb(sample);
+    ipcRenderer.on(IpcChannel.avatar.overlayLevelState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.overlayLevelState, handler);
+  },
+  avatarOverlayInteractive: (interactive) =>
+    ipcRenderer.invoke(IpcChannel.avatar.overlayInteractive, interactive),
+  avatarOverlayResize: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayResize, args),
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),

@@ -1,30 +1,67 @@
-/* Always-on-top call overlay (260706, task 4). Lives in its own transparent,
-   click-through BrowserWindow pinned bottom-right; renders a row of companion
-   circles that light up while speaking and dim while idle. */
+/*
+ * Avatar overlay window styles (260706 as the call overlay; 260804 avatar
+ * rework). This window floats over arbitrary apps, so values are literal on
+ * purpose (tokens.css assumes the app's own surfaces behind them).
+ *
+ * Geometry contract with src/main/callOverlay.ts: the window is sized to
+ * PAD_X(14) * 2 + count * tile + (count - 1) * GAP(10) wide and
+ * tile + 2 * PAD_Y(16) tall. --tile is set inline from the window height, so
+ * every resize path (our corner handles, anything else) stays consistent.
+ */
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 16px 14px;
+  background: transparent;
+  overflow: hidden;
+}
 
 .row {
   display: flex;
+  justify-content: center;
   align-items: center;
-  justify-content: flex-end;
   gap: 10px;
   width: 100%;
   height: 100%;
-  padding: 0 14px;
-  background: transparent;
-  /* The window is transparent; nothing here paints a backdrop. */
 }
 
+/* ── Hover outline ─────────────────────────────────────────────────────── */
+
+.outline {
+  position: absolute;
+  inset: 5px;
+  border-radius: 14px;
+  border: 1px solid rgba(127, 176, 255, 0.85);
+  box-shadow:
+    0 0 8px rgba(127, 176, 255, 0.45),
+    inset 0 0 6px rgba(127, 176, 255, 0.18);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+
+.outlineOn {
+  opacity: 1;
+}
+
+/* ── Static portrait tile ──────────────────────────────────────────────── */
+
 .circle {
-  width: 76px;
-  height: 76px;
+  width: var(--tile, 76px);
+  height: var(--tile, 76px);
   border-radius: 50%;
   overflow: hidden;
   flex: 0 0 auto;
   background: #14161c;
   border: 2px solid rgba(255, 255, 255, 0.18);
-  /* Drop shadow so the circles read against any underlying app/game. */
+  /* Drop shadow so the tiles read against any underlying app/game. */
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
-  transition: filter 200ms ease, transform 200ms ease, border-color 200ms ease,
+  transition:
+    filter 200ms ease,
+    transform 200ms ease,
+    border-color 200ms ease,
     box-shadow 200ms ease;
 }
 
@@ -48,6 +85,78 @@
   filter: none;
   transform: scale(1.04);
   border-color: #7fb0ff;
-  box-shadow: 0 0 0 2px rgba(127, 176, 255, 0.55), 0 0 16px rgba(127, 176, 255, 0.5),
+  box-shadow:
+    0 0 0 2px rgba(127, 176, 255, 0.55),
+    0 0 16px rgba(127, 176, 255, 0.5),
     0 2px 10px rgba(0, 0, 0, 0.55);
+}
+
+/* "Always bright" (260804): the talking indicator is OFF — always lit, no
+ * ring, no dim, no scale dance. */
+.bright {
+  filter: none;
+  transform: none;
+}
+
+/* ── Live2D tile ───────────────────────────────────────────────────────── */
+
+.live2dTile {
+  width: var(--tile, 76px);
+  height: var(--tile, 76px);
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.live2dCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Hover chrome: resize handles + drag button ────────────────────────── */
+
+.handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  z-index: 3;
+  -webkit-app-region: no-drag;
+}
+
+.handle::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 2px;
+  background: rgba(127, 176, 255, 0.9);
+  box-shadow: 0 0 6px rgba(127, 176, 255, 0.6);
+}
+
+.tl { top: 0; left: 0; cursor: nwse-resize; }
+.br { bottom: 0; right: 0; cursor: nwse-resize; }
+.tr { top: 0; right: 0; cursor: nesw-resize; }
+.bl { bottom: 0; left: 0; cursor: nesw-resize; }
+
+/* Hold-to-drag button: -webkit-app-region: drag makes holding it move the
+ * whole window natively (the window is `movable`). Sits just inboard of the
+ * bottom-right RESIZE handle so both stay grabbable. */
+.dragBtn {
+  position: absolute;
+  right: 18px;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 22, 28, 0.92);
+  border: 1px solid rgba(127, 176, 255, 0.6);
+  box-shadow: 0 0 8px rgba(127, 176, 255, 0.35);
+  cursor: grab;
+  z-index: 4;
+  -webkit-app-region: drag;
+}
+
+.dragBtn svg {
+  fill: rgba(127, 176, 255, 0.95);
 }

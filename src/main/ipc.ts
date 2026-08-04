@@ -1003,6 +1003,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch (err) {
       console.warn(`[sei] removeFromLibrary knowledge dir ${id}: ${(err as Error).message}`);
     }
+    try {
+      await rm(paths.avatarsDir(id), { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[sei] removeFromLibrary avatar dir ${id}: ${(err as Error).message}`);
+    }
     // Drop from the character index so chars.list doesn't re-surface it.
     try {
       const { readFile, writeFile, mkdir } = await import('node:fs/promises');
@@ -1748,9 +1753,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // Always-on-top call overlay (260706): the main window pushes the overlay's
-  // desired state; main reconciles the overlay window (spawn/position/close) and
-  // forwards the state to it. Trusted, small payload from our own renderer.
+  // Always-on-top avatar overlay (260706 as the call overlay; 260804 avatar
+  // rework): the main window pushes the overlay's desired state; main
+  // reconciles the overlay window (spawn/position/close) and forwards the
+  // state to it. Trusted, small payload from our own renderer. REMEMBER: zod
+  // strips undeclared keys, so every field the overlay renders must be named
+  // here (the backseat gridSmall lesson).
   ipcMain.handle(IpcChannel.voice.overlaySet, async (_event, stateRaw: unknown): Promise<void> => {
     const state = z
       .object({
@@ -1762,6 +1770,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
               name: z.string(),
               portrait: z.string().nullable(),
               speaking: z.boolean(),
+              frame: z.enum(['circle']).optional(),
+              alwaysBright: z.boolean().optional(),
+              live2d: z.boolean().optional(),
+              emotion: z
+                .enum(['happy', 'sad', 'shy', 'angry', 'love', 'excited', 'surprised'])
+                .nullable()
+                .optional(),
             }),
           )
           .max(12),
@@ -1776,6 +1791,67 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.voice.overlayGet, async () => {
     const { getCallOverlayState } = await import('./callOverlay');
     return getCallOverlayState();
+  });
+
+  // ── Live2D avatar store + overlay window controls (260804) ─────────────
+
+  ipcMain.handle(IpcChannel.avatar.import, async (_event, idArg: unknown, zipArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    if (!(zipArg instanceof ArrayBuffer) && !ArrayBuffer.isView(zipArg)) {
+      throw new Error('avatar import expects zip bytes');
+    }
+    const bytes = zipArg instanceof ArrayBuffer ? Buffer.from(zipArg) : Buffer.from(zipArg.buffer, zipArg.byteOffset, zipArg.byteLength);
+    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
+    if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
+    return importAvatarZip(id, bytes);
+  });
+
+  ipcMain.handle(IpcChannel.avatar.get, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getAvatarManifest } = await import('./avatar/avatarStore');
+    return getAvatarManifest(id);
+  });
+
+  ipcMain.handle(IpcChannel.avatar.remove, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { removeAvatar } = await import('./avatar/avatarStore');
+    await removeAvatar(id);
+  });
+
+  ipcMain.handle(IpcChannel.avatar.modelFiles, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { readAvatarModelFiles } = await import('./avatar/avatarStore');
+    return readAvatarModelFiles(id);
+  });
+
+  // Mouth-level relay (main window → overlay window). ~25 Hz while a Live2D
+  // participant is audible; deliberately NOT persisted or validated beyond
+  // shape (it is a per-frame animation sample from our own renderer).
+  ipcMain.handle(IpcChannel.avatar.overlayLevel, async (_event, argsRaw: unknown) => {
+    const args = z.object({ id: z.string().max(64), level: z.number().min(0).max(1) }).parse(argsRaw);
+    const { forwardOverlayLevel } = await import('./callOverlay');
+    forwardOverlayLevel(args.id, args.level);
+  });
+
+  // Overlay window chrome hover: flip the window between click-through and
+  // interactive (drag button + corner resize handles need real clicks).
+  ipcMain.handle(IpcChannel.avatar.overlayInteractive, async (_event, onRaw: unknown) => {
+    const on = z.boolean().parse(onRaw);
+    const { setOverlayInteractive } = await import('./callOverlay');
+    setOverlayInteractive(on);
+  });
+
+  // Corner-resize stream from the overlay renderer ({size, anchor, commit?}).
+  ipcMain.handle(IpcChannel.avatar.overlayResize, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        size: z.number().min(48).max(1024),
+        anchor: z.enum(['tl', 'tr', 'bl', 'br']),
+        commit: z.boolean().optional(),
+      })
+      .parse(argsRaw);
+    const { resizeOverlay } = await import('./callOverlay');
+    await resizeOverlay(args.size, args.anchor, args.commit === true);
   });
 
   // Voice picker (creation flow, 260705): the curated pool + per-voice preview.

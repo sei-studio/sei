@@ -26,6 +26,7 @@
  * unchanged — 1 is as recorded, >1 is higher.
  */
 import * as defaultPitchBus from './pitchBus';
+import { tapClipLevel } from './avatarLevelTap';
 
 export interface TtsStreamHandle {
   /** Append encoded audio/mpeg bytes as they arrive. */
@@ -216,8 +217,12 @@ export function createAudioQueue(
     // full volume: the player may still be mid-sentence.
     el.volume = ducked ? DUCK_VOLUME : 1;
     const detachPitch = applyPitch(el, rate);
+    // Avatar lip sync (260804): sample this clip's level for the overlay.
+    // After applyPitch on purpose — the tap reuses the shifter's source node.
+    const detachTap = tapClipLevel(el, characterId);
     current = el;
     currentCleanup = () => {
+      detachTap?.();
       detachPitch?.();
       URL.revokeObjectURL(url);
     };
@@ -287,6 +292,9 @@ export function createAudioQueue(
     // full volume: the player may still be mid-sentence.
     el.volume = ducked ? DUCK_VOLUME : 1;
     const detachPitch = applyPitch(el, item.rate);
+    // Avatar lip sync (260804): sample this clip's level for the overlay.
+    // After applyPitch on purpose — the tap reuses the shifter's source node.
+    const detachTap = tapClipLevel(el, item.characterId);
     current = el;
     let sb: SourceBuffer | null = null;
     const backlog: ArrayBuffer[] = [...item.chunks];
@@ -361,6 +369,7 @@ export function createAudioQueue(
       item.onChunk = null;
       item.onEnd = null;
       item.dropped = true;
+      detachTap?.();
       detachPitch?.();
       URL.revokeObjectURL(url);
     };

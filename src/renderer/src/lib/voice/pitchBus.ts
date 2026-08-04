@@ -163,6 +163,15 @@ export function whenReady(timeoutMs = 1500): Promise<boolean> {
  * strength. A companion in their own voice is a smaller wrong than a companion
  * talking too fast.
  */
+/**
+ * The MediaElementSourceNode attach() built for `el`, if any (260804). The
+ * avatar level tap must observe the SAME node — an element can only ever have
+ * one source node, so it cannot build its own once the shifter owns it.
+ */
+export function pitchSourceFor(el: HTMLAudioElement): MediaElementAudioSourceNode | undefined {
+  return attached.get(el);
+}
+
 export function attach(el: HTMLAudioElement, rate: number): (() => void) | null {
   const ctx = sharedContext();
   if (!ctx || !node || rate === 1) return null;

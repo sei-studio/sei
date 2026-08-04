@@ -50,6 +50,7 @@ function localIndexPath(): string { return path.join(localCharsDir(), 'index.jso
 function localConfigPath(): string { return path.join(localRoot(), 'config.json'); }
 function localMemoryDir(id: string): string { return path.join(localRoot(), 'memory', id); }
 function localKnowledgeDir(id: string): string { return path.join(localRoot(), 'knowledge', id); }
+function localAvatarsDir(id: string): string { return path.join(localRoot(), 'avatars', id); }
 function localSkinPath(id: string): string { return path.join(localRoot(), 'skins', `${id}.png`); }
 function localPortraitPath(id: string): string { return path.join(localRoot(), 'portraits', `${id}.png`); }
 
@@ -165,6 +166,7 @@ export async function importLocalProfileInto(
       // target memory dir, which would otherwise make the dir move a no-op.
       await moveFileIfPresent(localMemoryDir(id), paths.memoryDir(id));
       await moveFileIfPresent(localKnowledgeDir(id), paths.knowledgeDir(id));
+      await moveFileIfPresent(localAvatarsDir(id), paths.avatarsDir(id));
       await moveFileIfPresent(localSkinPath(id), paths.skinPngPath(id));
       await moveFileIfPresent(localPortraitPath(id), paths.portraitPath(id));
       // Then write the character into the account (stamp ownership so the

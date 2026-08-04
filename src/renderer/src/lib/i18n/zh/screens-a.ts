@@ -105,6 +105,31 @@ export const ZH_SCREENS_A: Record<string, string> = {
   'Report': '举报',
   'Description': '简介',
   'Game': '游戏',
+  // Avatar tab (260804). 'Avatar' itself lives in common.ts (shared with Settings).
+  'Avatar type': '形象类型',
+  'Static': '静态',
+  'Live2D (beta)': 'Live2D（测试版）',
+  'How this companion looks on the floating avatar. Turn the avatar on in Settings.':
+    '这位伙伴在悬浮形象上的样子。请在设置中开启虚拟形象。',
+  'Frame': '边框',
+  'Circle': '圆形',
+  'Always bright': '始终明亮',
+  'Always bright keeps the picture lit and turns off the talking indicator.':
+    '始终明亮会让画面保持亮起，并关闭说话指示。',
+  'Give this companion a Live2D body on the floating avatar. Import a Live2D model as a .zip: it should contain a .model3.json, a .moc3, textures, and optionally expressions.':
+    '为这位伙伴的悬浮形象加上 Live2D 身体。导入 .zip 格式的 Live2D 模型：需要包含 .model3.json、.moc3、贴图，以及可选的表情文件。',
+  'Upload Live2D model (.zip)': '上传 Live2D 模型（.zip）',
+  'The model stays on this computer. It is never uploaded.':
+    '模型只保存在这台电脑上，不会被上传。',
+  'That file is not a .zip archive.': '这个文件不是 .zip 压缩包。',
+  'That archive is too large.': '这个压缩包太大了。',
+  'Could not read that model. It needs a .model3.json, a .moc3 and its textures.':
+    '无法读取这个模型。它需要 .model3.json、.moc3 和对应的贴图。',
+  'Importing...': '导入中...',
+  'Loading model...': '加载模型中...',
+  'This model could not be rendered.': '这个模型无法渲染。',
+  '{name}, {count} expressions': '{name}，{count} 个表情',
+  'Replace': '更换',
   'No description provided.': '暂无简介。',
   'Persona': '人设',
   'Switch to description': '切换到简介',

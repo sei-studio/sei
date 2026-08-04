@@ -1,0 +1,43 @@
+/** classifyEmotion (260804) — bilingual lexicon over spoken lines. */
+import { describe, it, expect } from 'vitest';
+import { classifyEmotion } from './emotion';
+
+describe('classifyEmotion', () => {
+  it('returns null for empty/neutral lines', () => {
+    expect(classifyEmotion(null)).toBeNull();
+    expect(classifyEmotion('')).toBeNull();
+    expect(classifyEmotion('   ')).toBeNull();
+    expect(classifyEmotion('I put the ore in the chest.')).toBeNull();
+    expect(classifyEmotion('我把矿石放进箱子了。')).toBeNull();
+  });
+
+  it('classifies English lines', () => {
+    expect(classifyEmotion('haha that was great!')).toBe('happy');
+    expect(classifyEmotion("I'm so sorry about that...")).toBe('sad');
+    expect(classifyEmotion('ugh, this creeper is so annoying')).toBe('angry');
+    expect(classifyEmotion('you are adorable')).toBe('love');
+    expect(classifyEmotion('wow, a diamond!')).toBe('excited');
+    expect(classifyEmotion('wait, what just happened')).toBe('surprised');
+    expect(classifyEmotion("oh no I'm blushing")).toBe('shy');
+  });
+
+  it('classifies Chinese lines', () => {
+    expect(classifyEmotion('哈哈太好了！')).toBe('happy');
+    expect(classifyEmotion('呜呜，好难过')).toBe('sad');
+    expect(classifyEmotion('哼，气死我了')).toBe('angry');
+    expect(classifyEmotion('你真可爱')).toBe('love');
+    expect(classifyEmotion('哇，是钻石！')).toBe('excited');
+    expect(classifyEmotion('欸，居然是这样')).toBe('surprised');
+    expect(classifyEmotion('人家会不好意思的啦')).toBe('shy');
+  });
+
+  it('does not match English keywords inside other words', () => {
+    // "mad" inside "made", "sad" inside "asadero" must not fire.
+    expect(classifyEmotion('I made a chest')).toBeNull();
+    expect(classifyEmotion('some asadero cheese')).toBeNull();
+  });
+
+  it('开心 reads as happy, not love (bare 心 is deliberately not a keyword)', () => {
+    expect(classifyEmotion('今天真开心')).toBe('happy');
+  });
+});

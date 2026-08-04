@@ -1,21 +1,32 @@
 /**
- * Always-on-top call overlay window (260706, task 4).
+ * Always-on-top avatar overlay window (260706 as the "call overlay"; 260804
+ * avatar rework).
  *
- * A small frameless, transparent, click-through BrowserWindow pinned to the
- * bottom-right of the primary display that shows the current voice call's
- * companion avatars (lit while speaking, dimmed while idle) on top of every
- * other app, Discord-style. Off by default; the main-window renderer pushes the
- * desired state (`voice:overlay-set`) whenever call membership, the speaking
- * companion, or the settings toggle changes, and this module reconciles the
- * window: it spawns/positions/tears it down and forwards the state to it.
+ * A frameless, transparent BrowserWindow showing the companions' avatar tiles
+ * (static portrait or Live2D) on top of every other app. The main-window
+ * renderer pushes the desired state (`voice:overlay-set`) whenever the avatar
+ * mode, activity surfaces, call membership or the speaking companion change,
+ * and this module reconciles the window: it spawns/positions/tears it down and
+ * forwards the state to it.
  *
  * The overlay loads the SAME renderer bundle with an `?overlay=1` marker, so
  * main.tsx mounts only the lightweight <CallOverlay/> (never the full App), and
  * it reuses the app's portrait resolution (relative assets + the sei-portrait://
  * protocol both resolve there because it shares the renderer origin).
+ *
+ * 260804 interaction model: the window is click-through by DEFAULT
+ * (`setIgnoreMouseEvents(true, {forward: true})` — `forward` keeps mousemove
+ * flowing to the page so hover chrome works; Windows/macOS only, Linux stays
+ * display-only). When the pointer is over overlay chrome (the drag button, a
+ * corner resize handle) the overlay renderer asks for real clicks
+ * (`setOverlayInteractive`), and back. Dragging is native: the drag button is
+ * `-webkit-app-region: drag` and the window is `movable`. Geometry persists in
+ * UserConfig.avatar_overlay (written HERE, main-owned — deliberately not
+ * renderer-settable).
  */
 import { BrowserWindow, screen, app } from 'electron';
 import { IpcChannel, type CallOverlayState } from '../shared/ipc';
+import { loadConfig, updateConfig } from './configStore';
 
 interface OverlayConfig {
   preloadPath: string;
@@ -27,12 +38,23 @@ let cfg: OverlayConfig | null = null;
 let overlayWin: BrowserWindow | null = null;
 let lastState: CallOverlayState | null = null;
 
-// Layout (kept in sync with CallOverlay.module.css). A circle per companion.
-const AVATAR = 76;
+// Chrome layout (kept in sync with CallOverlay.module.css). Tiles are square,
+// side `tileSize`; the paddings leave room for the hover outline + drag button
+// and do NOT scale with the tile.
+const DEFAULT_TILE = 76;
 const GAP = 10;
 const PAD_X = 14;
-const HEIGHT = 108;
-const MARGIN = 22; // gap from the screen edges
+const PAD_Y = 16; // per edge; window height = tileSize + 2 * PAD_Y
+const MARGIN = 22; // default gap from the screen edges (no stored position)
+const MIN_TILE = 48;
+const MAX_TILE = 1024;
+
+/** Tile size the window is currently laid out for (hydrated from config). */
+let tileSize = DEFAULT_TILE;
+/** Stored window origin (user has dragged/resized), null = default corner. */
+let storedPos: { x: number; y: number } | null = null;
+/** True once hydrateGeometry has read config (so we only read it once). */
+let geometryHydrated = false;
 
 /** Participant count the window is currently sized/positioned for. Position is
  * only recomputed when this changes (or the window is (re)created), never on the
@@ -40,10 +62,15 @@ const MARGIN = 22; // gap from the screen edges
 let lastCount = 0;
 /** Debounce handle for display-metrics-driven repositioning. */
 let repositionTimer: ReturnType<typeof setTimeout> | null = null;
+/** Debounce handle for persisting a native drag ('moved' events). */
+let movePersistTimer: ReturnType<typeof setTimeout> | null = null;
+/** True while resizeOverlay is applying bounds, so the 'moved' listener does
+ * not mistake a programmatic move for a user drag. */
+let applyingBounds = false;
 
 export function initCallOverlay(config: OverlayConfig): void {
   cfg = config;
-  // Reposition to the settled bottom-right when the display layout changes.
+  // Reposition to the settled work area when the display layout changes.
   // A Minecraft fullscreen transition fires several `display-metrics-changed`
   // events with TRANSIENT work areas (menu bar / dock animating in and out);
   // repositioning on each one made the overlay visibly slide to an intermediate
@@ -54,23 +81,81 @@ export function initCallOverlay(config: OverlayConfig): void {
     repositionTimer = setTimeout(() => {
       repositionTimer = null;
       if (overlayWin && !overlayWin.isDestroyed() && lastState) {
-        overlayWin.setBounds(desiredBounds(lastState.participants.length));
+        setBoundsProgrammatic(desiredBounds(lastState.participants.length));
       }
     }, 600);
   });
 }
 
-/** Bottom-right bounds sized to `count` avatars on the primary display. */
+/** One-time read of persisted geometry (size + optional dragged position). */
+async function hydrateGeometry(): Promise<void> {
+  if (geometryHydrated) return;
+  geometryHydrated = true;
+  try {
+    const config = await loadConfig();
+    const g = config.avatar_overlay;
+    if (g) {
+      tileSize = Math.min(MAX_TILE, Math.max(MIN_TILE, g.size));
+      if (typeof g.x === 'number' && typeof g.y === 'number') storedPos = { x: g.x, y: g.y };
+    }
+  } catch {
+    /* defaults */
+  }
+}
+
+/** Persist the current geometry (fire-and-forget, main-owned config field). */
+function persistGeometry(): void {
+  const pos = storedPos;
+  const size = Math.round(tileSize);
+  void updateConfig((current) => ({
+    ...current,
+    avatar_overlay: { size, ...(pos ? { x: Math.round(pos.x), y: Math.round(pos.y) } : {}) },
+  })).catch(() => {
+    /* geometry is a nicety; a failed write means default placement next run */
+  });
+}
+
+function windowSize(count: number): { width: number; height: number } {
+  return {
+    width: PAD_X * 2 + count * tileSize + Math.max(0, count - 1) * GAP,
+    height: tileSize + PAD_Y * 2,
+  };
+}
+
+/**
+ * Bounds sized to `count` tiles: at the stored (dragged) position clamped into
+ * the work area, or pinned bottom-right of the primary display when the user
+ * has never moved it. With a stored position the RIGHT edge stays fixed as the
+ * count changes, matching the default corner's growth direction.
+ */
 function desiredBounds(count: number): Electron.Rectangle {
   const area = screen.getPrimaryDisplay().workArea;
-  const width = PAD_X * 2 + count * AVATAR + Math.max(0, count - 1) * GAP;
-  const height = HEIGHT;
+  const { width, height } = windowSize(count);
+  if (storedPos) {
+    const x = Math.min(Math.max(storedPos.x, area.x), area.x + area.width - width);
+    const y = Math.min(Math.max(storedPos.y, area.y), area.y + area.height - height);
+    return { width, height, x, y };
+  }
   return {
     width,
     height,
     x: area.x + area.width - width - MARGIN,
     y: area.y + area.height - height - MARGIN,
   };
+}
+
+function setBoundsProgrammatic(bounds: Electron.Rectangle): void {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  applyingBounds = true;
+  try {
+    overlayWin.setBounds(bounds);
+  } finally {
+    // 'moved' fires async; release on the next macrotask so it is still
+    // flagged while Electron dispatches the events this setBounds caused.
+    setTimeout(() => {
+      applyingBounds = false;
+    }, 0);
+  }
 }
 
 /**
@@ -98,19 +183,31 @@ function pushState(): void {
   }
 }
 
+/** Default mouse policy: click-through, but keep forwarding pointer movement
+ * to the page so hover chrome can appear (forward: Windows/macOS only; on
+ * Linux the overlay is simply display-only). */
+function applyDefaultMousePolicy(win: BrowserWindow): void {
+  win.setIgnoreMouseEvents(true, { forward: true });
+}
+
 function ensureWindow(): BrowserWindow | null {
   if (overlayWin && !overlayWin.isDestroyed()) return overlayWin;
   if (!cfg) return null;
 
   const win = new BrowserWindow({
     width: 220,
-    height: HEIGHT,
+    height: tileSize + PAD_Y * 2,
     show: false,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
-    resizable: false,
-    movable: false,
+    // resizable so setBounds size changes are honored everywhere; the user
+    // resizes through the overlay's own corner handles (the window is
+    // click-through by default, so the OS's invisible frameless resize edges
+    // are inert except while chrome is hovered).
+    resizable: true,
+    // movable for the -webkit-app-region: drag button (hold to drag).
+    movable: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -122,18 +219,19 @@ function ensureWindow(): BrowserWindow | null {
     // becoming the app's key/main window, so spawning it can't reorder or hide
     // the main Sei window (the "app disappears when a call starts" report).
     ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),
-    title: 'Sei call overlay',
+    title: 'Sei avatar overlay',
     webPreferences: {
       preload: cfg.preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // A Live2D tile must keep animating while a fullscreen game occludes
+      // the window — same reasoning as the main window (windowChrome.ts).
+      backgroundThrottling: false,
     },
   });
 
-  // Float above fullscreen apps (a game/stream), across every workspace, and
-  // never intercept clicks — it is display-only, so pointer events pass through
-  // to whatever is underneath.
+  // Float above fullscreen apps (a game/stream), across every workspace.
   win.setAlwaysOnTop(true, 'screen-saver');
   // skipTransformProcessType is load-bearing: without it, setVisibleOnAllWorkspaces
   // transforms the app's process type (Foreground ↔ UIElement) on macOS, which
@@ -146,7 +244,11 @@ function ensureWindow(): BrowserWindow | null {
     visibleOnFullScreen: true,
     skipTransformProcessType: true,
   });
-  win.setIgnoreMouseEvents(true);
+  applyDefaultMousePolicy(win);
+  // The avatar never appears in screen captures — including Sei's own
+  // backseat share ("self is hidden from screenshare") and the player's
+  // OBS/Discord capture of a game. The overlay is for the PLAYER's eyes.
+  win.setContentProtection(true);
   keepAppForeground();
 
   const t = cfg.rendererUrlOrPath;
@@ -155,6 +257,21 @@ function ensureWindow(): BrowserWindow | null {
   } else {
     void win.loadFile(t, { search: 'overlay=1' });
   }
+
+  // Persist the position after a native drag (the app-region drag button).
+  // 'moved' also fires for programmatic setBounds, so applyingBounds guards
+  // reposition/resize paths from being mistaken for a user drag.
+  win.on('moved', () => {
+    if (applyingBounds || win.isDestroyed()) return;
+    if (movePersistTimer) clearTimeout(movePersistTimer);
+    movePersistTimer = setTimeout(() => {
+      movePersistTimer = null;
+      if (win.isDestroyed()) return;
+      const b = win.getBounds();
+      storedPos = { x: b.x, y: b.y };
+      persistGeometry();
+    }, 400);
+  });
 
   // Show without stealing focus once loaded, and seed it with the latest state.
   // `ready-to-show` is known to never fire for some transparent windows
@@ -184,9 +301,9 @@ function ensureWindow(): BrowserWindow | null {
 }
 
 /**
- * Reconcile the overlay from the renderer's pushed state. Shows iff the toggle
- * is on AND a call has at least one participant; otherwise tears the window
- * down. Repositions to fit the current participant count on every update.
+ * Reconcile the overlay from the renderer's pushed state. Shows iff the mode's
+ * visibility condition holds (folded into `enabled` renderer-side) AND there is
+ * at least one participant; otherwise tears the window down.
  */
 export function updateCallOverlay(state: CallOverlayState): void {
   lastState = state;
@@ -195,22 +312,25 @@ export function updateCallOverlay(state: CallOverlayState): void {
     closeCallOverlay();
     return;
   }
-  const existed = !!overlayWin && !overlayWin.isDestroyed();
-  const win = ensureWindow();
-  if (!win) return;
-  const count = state.participants.length;
-  // Only (re)position when the window is new or the avatar count changed. This
-  // push fires on every speaking-state change; running setBounds each time made
-  // the overlay jump during a Minecraft fullscreen transition (a speaking update
-  // landing while macOS reported a transient work area moved the window, then the
-  // next update moved it back). Otherwise it stays fixed bottom-right; genuine
-  // display changes are handled by the debounced listener in initCallOverlay.
-  if (!existed || count !== lastCount) {
-    win.setBounds(desiredBounds(count));
-    lastCount = count;
-  }
-  // If the page is already loaded, forward now; otherwise ready-to-show does it.
-  if (!win.webContents.isLoading()) pushState();
+  void hydrateGeometry().then(() => {
+    if (!lastState || !(lastState.enabled && lastState.participants.length > 0)) return;
+    const existed = !!overlayWin && !overlayWin.isDestroyed();
+    const win = ensureWindow();
+    if (!win) return;
+    const count = lastState.participants.length;
+    // Only (re)position when the window is new or the tile count changed. This
+    // push fires on every speaking-state change; running setBounds each time made
+    // the overlay jump during a Minecraft fullscreen transition (a speaking update
+    // landing while macOS reported a transient work area moved the window, then the
+    // next update moved it back). Otherwise it stays put; genuine display changes
+    // are handled by the debounced listener in initCallOverlay.
+    if (!existed || count !== lastCount) {
+      setBoundsProgrammatic(desiredBounds(count));
+      lastCount = count;
+    }
+    // If the page is already loaded, forward now; otherwise ready-to-show does it.
+    if (!win.webContents.isLoading()) pushState();
+  });
 }
 
 /**
@@ -225,13 +345,61 @@ export function getCallOverlayState(): CallOverlayState | null {
   return lastState;
 }
 
-/** Tear down the overlay window (call end, toggle off, renderer death, quit). */
+/** Relay a mouth-level sample (main window → overlay window). Per-frame
+ * animation data: no queueing, no persistence, dropped when no window. */
+export function forwardOverlayLevel(id: string, level: number): void {
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    overlayWin.webContents.send(IpcChannel.avatar.overlayLevelState, { id, level });
+  }
+}
+
+/** Pointer entered/left overlay chrome: give the window real clicks (drag
+ * button, corner handles) or restore the default click-through policy. */
+export function setOverlayInteractive(interactive: boolean): void {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  if (interactive) overlayWin.setIgnoreMouseEvents(false);
+  else applyDefaultMousePolicy(overlayWin);
+}
+
+/**
+ * Corner-resize from the overlay renderer: apply `size` (tile edge, px)
+ * keeping the `anchor` corner fixed. `commit` persists the geometry — the
+ * stream itself only moves the window.
+ */
+export async function resizeOverlay(
+  size: number,
+  anchor: 'tl' | 'tr' | 'bl' | 'br',
+  commit: boolean,
+): Promise<void> {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  const prev = overlayWin.getBounds();
+  tileSize = Math.min(MAX_TILE, Math.max(MIN_TILE, Math.round(size)));
+  const count = Math.max(1, lastState?.participants.length ?? 1);
+  const { width, height } = windowSize(count);
+  // Keep the anchored corner where it is: 'br' means the bottom-right corner
+  // stays fixed while the top-left moves, i.e. the user is dragging the TL
+  // handle. x moves for anchors on the right, y for anchors on the bottom.
+  const x = anchor === 'tr' || anchor === 'br' ? prev.x + prev.width - width : prev.x;
+  const y = anchor === 'bl' || anchor === 'br' ? prev.y + prev.height - height : prev.y;
+  const bounds = { x, y, width, height };
+  setBoundsProgrammatic(bounds);
+  if (commit) {
+    storedPos = { x: bounds.x, y: bounds.y };
+    persistGeometry();
+  }
+}
+
+/** Tear down the overlay window (mode off, no participants, renderer death, quit). */
 export function closeCallOverlay(): void {
   lastState = null;
   lastCount = 0;
   if (repositionTimer) {
     clearTimeout(repositionTimer);
     repositionTimer = null;
+  }
+  if (movePersistTimer) {
+    clearTimeout(movePersistTimer);
+    movePersistTimer = null;
   }
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.destroy();
   overlayWin = null;

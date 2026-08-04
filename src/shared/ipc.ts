@@ -389,23 +389,79 @@ export interface VoiceTtsChunkPush {
   error?: string;
 }
 
-/** One circle on the always-on-top call overlay (260706): a companion, or the
- * player themselves (id 'player', 260707 — same treatment as the AIs). */
+/**
+ * The closed emotion vocabulary the avatar system speaks (260804). Import maps
+ * a model's expression files onto these by filename keywords; at speech time
+ * the spoken line is classified into one (or null) and the overlay applies the
+ * mapped expression. Closed on purpose — a model with different expressions
+ * still maps INTO this set, so the classifier never has to know the model.
+ */
+export type AvatarEmotion = 'happy' | 'sad' | 'shy' | 'angry' | 'love' | 'excited' | 'surprised';
+
+/** One expression an imported Live2D model offers (its exp3 display name). */
+export interface AvatarExpressionInfo {
+  /** Expression name as registered in the normalized model3.json. */
+  name: string;
+  /** Relative path of the .exp3.json inside the avatar dir. */
+  file: string;
+}
+
+/** Manifest of a character's imported Live2D avatar model (260804), stored at
+ * `<profileRoot>/avatars/<characterId>/manifest.json` alongside the extracted
+ * model tree. LOCAL-ONLY: never cloud-synced (the bytes cannot follow), so a
+ * character without one simply falls back to the static portrait tile. */
+export interface AvatarManifest {
+  version: 1;
+  /** Display name (derived from the model3.json filename). */
+  name: string;
+  /** Relative path of the (normalized) .model3.json entry file. */
+  entry: string;
+  importedAt: string;
+  /** Total extracted bytes. */
+  bytes: number;
+  expressions: AvatarExpressionInfo[];
+  /** emotion → expression name, auto-mapped at import by filename keywords.
+   * Sparse: an unmapped emotion leaves the model on its neutral face. */
+  emotions: Partial<Record<AvatarEmotion, string>>;
+}
+
+/** One file of a Live2D model bundle, shipped renderer-ward over IPC so the
+ * renderer can build in-memory File objects (no file:// fetches, no custom
+ * protocol, arbitrary original filenames never become URLs). */
+export interface AvatarModelFile {
+  /** Posix-style path relative to the avatar dir (matches model3.json refs). */
+  path: string;
+  bytes: Uint8Array;
+}
+
+/** One tile on the always-on-top avatar overlay (260706 as the call overlay;
+ * 260804 companions only — the player's own tile is gone, the avatar is the
+ * AI's presence, not a mirror). */
 export interface CallOverlayParticipant {
   id: string;
   name: string;
-  /** The character's `portrait_image` ref (or the player's `profile_picture`),
-   * resolved overlay-side via portraitSrc. */
+  /** The character's `portrait_image` ref, resolved overlay-side via
+   * portraitSrc. Fallback when there is no Live2D model (or it fails). */
   portrait: string | null;
-  /** Lit with the speaking ring right now. Per-participant (not a single
-   * speaking id) so the player's ring lights independently of a companion's
-   * TTS, exactly like the tiles on the call screen. */
+  /** Lit with the speaking ring right now (and driving the Live2D mouth). */
   speaking: boolean;
+  /** Tile shape from UserConfig.avatar_prefs (260804). Default 'circle'. */
+  frame?: 'circle';
+  /** True disables the talking indicator: no idle dim, no speaking ring. */
+  alwaysBright?: boolean;
+  /** This character has an imported Live2D model; the overlay renders the
+   * live tile (falling back to the portrait until the model is up). */
+  live2d?: boolean;
+  /** Emotion classified from the line currently being spoken (260804), null
+   * when neutral/unknown. The Live2D tile maps it through the manifest's
+   * emotion table; the static tile ignores it. */
+  emotion?: AvatarEmotion | null;
 }
 
-/** State of the always-on-top call overlay window (main window → main → overlay).
- * `enabled` folds together the settings toggle AND an active call: the overlay
- * shows iff enabled and there is at least one participant. */
+/** State of the always-on-top avatar overlay window (main window → main →
+ * overlay). `enabled` folds together the avatar mode AND the mode's activity
+ * condition: the overlay shows iff enabled and there is at least one
+ * participant. */
 export interface CallOverlayState {
   enabled: boolean;
   participants: CallOverlayParticipant[];
@@ -1299,6 +1355,35 @@ export interface RendererApi {
    * subscribing closes that race so the overlay never stays blank.
    */
   voiceOverlayGetState(): Promise<CallOverlayState | null>;
+  /**
+   * Import a Live2D model zip for a character (260804). Main extracts,
+   * validates, normalizes (expression registration + EyeBlink group) and
+   * stores it under the profile's avatars dir; returns the manifest.
+   */
+  avatarImport(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarManifest>;
+  /** The character's imported avatar manifest, or null. */
+  avatarGet(characterId: string): Promise<AvatarManifest | null>;
+  /** Delete the character's imported Live2D model. */
+  avatarRemove(characterId: string): Promise<void>;
+  /** The model bundle files, for building in-memory File objects. */
+  avatarModelFiles(characterId: string): Promise<AvatarModelFile[]>;
+  /** Mouth-level sample for the audible companion (main window → overlay). */
+  avatarOverlayLevel(characterId: string, level: number): Promise<void>;
+  /** Subscribe (overlay window only) to relayed mouth-level samples. */
+  onAvatarOverlayLevel(cb: (sample: { id: string; level: number }) => void): Unsubscribe;
+  /** Overlay window only: pointer entered/left overlay chrome — make the
+   * window clickable / restore click-through. */
+  avatarOverlayInteractive(interactive: boolean): Promise<void>;
+  /**
+   * Overlay window only: corner-resize. Streams the desired tile size while
+   * dragging (anchor = the corner that stays fixed); `commit` persists the
+   * final geometry to config.
+   */
+  avatarOverlayResize(args: {
+    size: number;
+    anchor: 'tl' | 'tr' | 'bl' | 'br';
+    commit?: boolean;
+  }): Promise<void>;
   /**
    * Signal that the chat surface was opened for a character. Main decides whether
    * a first-meeting greeting fires (any companion kind, empty transcript, never
@@ -2434,6 +2519,27 @@ export const IpcChannel = {
     elevenKeySet: 'voice:eleven-key-set',
     /** Invoke: is a BYOK ElevenLabs key stored? → {present} (260725). */
     elevenKeyStatus: 'voice:eleven-key-status',
+  },
+  avatar: {
+    /** Invoke: import a Live2D model zip for a character → AvatarManifest. */
+    import: 'avatar:import',
+    /** Invoke: the character's avatar manifest → AvatarManifest | null. */
+    get: 'avatar:get',
+    /** Invoke: delete the character's imported Live2D model. */
+    remove: 'avatar:remove',
+    /** Invoke: the model bundle files for in-memory loading → AvatarModelFile[]. */
+    modelFiles: 'avatar:model-files',
+    /** Invoke (main window → main): mouth-level sample for the speaking
+     * companion ({id, level 0..1}), relayed to the overlay window. */
+    overlayLevel: 'avatar:overlay-level',
+    /** Push (main → overlay window): the relayed {id, level} samples. */
+    overlayLevelState: 'avatar:overlay-level-state',
+    /** Invoke (overlay window → main): pointer is over overlay chrome — stop
+     * ignoring mouse events (and back). */
+    overlayInteractive: 'avatar:overlay-interactive',
+    /** Invoke (overlay window → main): corner-resize stream/commit
+     * ({size, anchor, commit?}). */
+    overlayResize: 'avatar:overlay-resize',
   },
   user: {
     getProfile: 'user:get-profile',
