@@ -14,13 +14,16 @@
  * it reuses the app's portrait resolution (relative assets + the sei-portrait://
  * protocol both resolve there because it shares the renderer origin).
  *
- * 260804 interaction model: the window is click-through by DEFAULT
- * (`setIgnoreMouseEvents(true, {forward: true})` — `forward` keeps mousemove
- * flowing to the page so hover chrome works; Windows/macOS only, Linux stays
- * display-only). When the pointer is over overlay chrome (the drag button, a
- * corner resize handle) the overlay renderer asks for real clicks
- * (`setOverlayInteractive`), and back. Dragging is native: the drag button is
- * `-webkit-app-region: drag` and the window is `movable`. Geometry persists in
+ * Interaction model (260804; view/edit split 260805): the window is
+ * click-through by DEFAULT (`setIgnoreMouseEvents(true, {forward: true})` —
+ * `forward` keeps mousemove flowing to the page so hover chrome works;
+ * Windows/macOS only, Linux stays display-only). The overlay renderer asks
+ * for real clicks (`setOverlayInteractive`) while hovered (view mode's
+ * pencil button) and for the whole of edit mode. Edit mode resizes through
+ * `resizeOverlay` (corner handles + center-anchored wheel zoom) and moves
+ * either natively (the hold-to-drag button is `-webkit-app-region: drag`,
+ * the window is `movable`) or through the `moveOverlay` delta stream
+ * (drag-anywhere-on-the-tiles). Geometry persists in
  * UserConfig.avatar_overlay (written HERE, main-owned — deliberately not
  * renderer-settable).
  */
@@ -201,13 +204,14 @@ function ensureWindow(): BrowserWindow | null {
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
-    // resizable so setBounds size changes are honored everywhere; the user
-    // resizes ONLY through the overlay's own corner handles (single scalar →
-    // aspect always locked). While chrome is hovered the OS's invisible
-    // frameless resize edges would go live and allow a free-aspect resize, so
-    // 'will-resize' below vetoes every USER resize (it never fires for
-    // programmatic bounds changes).
-    resizable: true,
+    // NOT resizable: a frameless resizable window keeps invisible OS
+    // resize-frame regions along its edges — exactly where the corner handles
+    // sit — and a click there is window-frame interaction: macOS ACTIVATED the
+    // app ("clicking the corner opens up the app") and the frame region fought
+    // the handles' CSS resize cursor. All real resizing goes through setBounds
+    // (resizeOverlay), which ignores `resizable`; aspect stays locked because
+    // every path derives from the single tile scalar.
+    resizable: false,
     // movable for the -webkit-app-region: drag button (hold to drag).
     movable: true,
     minimizable: false,
@@ -259,13 +263,6 @@ function ensureWindow(): BrowserWindow | null {
   } else {
     void win.loadFile(t, { search: 'overlay=1' });
   }
-
-  // Aspect lock: the tile is square and the window derives from one scalar,
-  // so an OS edge-resize (possible while the hover chrome holds real clicks)
-  // must never distort it. This never fires for setBounds.
-  win.on('will-resize', (e) => {
-    e.preventDefault();
-  });
 
   // Persist the position after a native drag (the app-region drag button).
   // 'moved' also fires for programmatic setBounds, so applyingBounds guards
@@ -371,13 +368,14 @@ export function setOverlayInteractive(interactive: boolean): void {
 }
 
 /**
- * Corner-resize from the overlay renderer: apply `size` (tile edge, px)
- * keeping the `anchor` corner fixed. `commit` persists the geometry — the
- * stream itself only moves the window.
+ * Resize from the overlay renderer: apply `size` (tile edge, px) keeping the
+ * `anchor` corner fixed ('center' = wheel zoom, grows around the window
+ * center). `commit` persists the geometry — the stream itself only moves the
+ * window.
  */
 export async function resizeOverlay(
   size: number,
-  anchor: 'tl' | 'tr' | 'bl' | 'br',
+  anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center',
   commit: boolean,
 ): Promise<void> {
   if (!overlayWin || overlayWin.isDestroyed()) return;
@@ -388,14 +386,54 @@ export async function resizeOverlay(
   // Keep the anchored corner where it is: 'br' means the bottom-right corner
   // stays fixed while the top-left moves, i.e. the user is dragging the TL
   // handle. x moves for anchors on the right, y for anchors on the bottom.
-  const x = anchor === 'tr' || anchor === 'br' ? prev.x + prev.width - width : prev.x;
-  const y = anchor === 'bl' || anchor === 'br' ? prev.y + prev.height - height : prev.y;
+  const x =
+    anchor === 'center'
+      ? prev.x + Math.round((prev.width - width) / 2)
+      : anchor === 'tr' || anchor === 'br'
+        ? prev.x + prev.width - width
+        : prev.x;
+  const y =
+    anchor === 'center'
+      ? prev.y + Math.round((prev.height - height) / 2)
+      : anchor === 'bl' || anchor === 'br'
+        ? prev.y + prev.height - height
+        : prev.y;
   const bounds = { x, y, width, height };
   setBoundsProgrammatic(bounds);
   if (commit) {
     storedPos = { x: bounds.x, y: bounds.y };
     persistGeometry();
   }
+}
+
+/** Window origin at the start of an edit-mode drag-anywhere move. */
+let moveStartPos: { x: number; y: number } | null = null;
+
+/**
+ * Edit-mode drag-anywhere move stream. Deltas are screen-space from the
+ * pointer-down; anchoring them to a snapshotted origin keeps the drag 1:1
+ * even though the window moves under the pointer mid-stream.
+ */
+export function moveOverlay(phase: 'start' | 'move' | 'end', dx: number, dy: number): void {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  const b = overlayWin.getBounds();
+  if (phase === 'start') {
+    moveStartPos = { x: b.x, y: b.y };
+    return;
+  }
+  if (phase === 'move') {
+    if (!moveStartPos) moveStartPos = { x: b.x, y: b.y };
+    setBoundsProgrammatic({
+      x: Math.round(moveStartPos.x + dx),
+      y: Math.round(moveStartPos.y + dy),
+      width: b.width,
+      height: b.height,
+    });
+    return;
+  }
+  moveStartPos = null;
+  storedPos = { x: b.x, y: b.y };
+  persistGeometry();
 }
 
 /** Tear down the overlay window (mode off, no participants, renderer death, quit). */

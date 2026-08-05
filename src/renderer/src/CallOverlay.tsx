@@ -8,14 +8,21 @@
  * renders one tile per companion — static portrait (lit while speaking,
  * darkened while idle, unless "always bright") or the Live2D model.
  *
- * 260804 interaction: the window is click-through by default with pointer
- * events still FORWARDED (main sets ignoreMouseEvents {forward: true}), so
- * hover works. While the pointer is over the overlay we ask main for real
- * clicks (avatarOverlayInteractive) — that is what makes the drag button
- * (`-webkit-app-region: drag`) and the corner resize handles usable — and
- * hand them back on leave. Tile size is pure CSS off the window height
- * (main sizes the window; height = tile + 2*16px chrome padding), so every
- * resize path stays consistent by construction.
+ * 260804 interaction, split into VIEW and EDIT modes (260805):
+ *  - VIEW (default): the overlay is completely fixed — no dragging, no
+ *    resizing. Hover shows the outline and ONE pencil button; clicking the
+ *    pencil enters edit mode. The window is click-through by default with
+ *    pointer events still FORWARDED (main sets ignoreMouseEvents
+ *    {forward: true}) so hover works; while hovered we ask main for real
+ *    clicks (avatarOverlayInteractive) so the pencil is pressable.
+ *  - EDIT: the pencil becomes a tick (click to leave), the hold-to-drag
+ *    button (`-webkit-app-region: drag`) appears above it, corner handles
+ *    resize, the wheel zooms around the center, and dragging anywhere on the
+ *    tiles moves the window (screen-delta stream over avatar:overlay-move).
+ *    The window stays interactive for the whole mode, hover or not.
+ * Tile size is pure CSS off the window height (main sizes the window;
+ * height = tile + 2*16px chrome padding), so every resize path stays
+ * consistent by construction.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { AvatarEmotion, CallOverlayState } from '@shared/ipc';
@@ -49,6 +56,7 @@ function useTilePx(): number {
 export function CallOverlay(): React.ReactElement | null {
   const [state, setState] = useState<CallOverlayState | null>(null);
   const [hovered, setHovered] = useState(false);
+  const [editing, setEditing] = useState(false);
   /** Live2D tiles that failed to load — they fall back to the static tile. */
   const [live2dFailed, setLive2dFailed] = useState<Record<string, boolean>>({});
   const tilePx = useTilePx();
@@ -83,17 +91,14 @@ export function CallOverlay(): React.ReactElement | null {
     };
   }, []);
 
-  // Hover chrome + interactivity handoff. Entering asks main for real clicks
-  // (drag/resize need them); leaving restores click-through. Failure is
-  // harmless: without the flip the chrome shows but cannot be grabbed.
-  const onEnter = useCallback((): void => {
-    setHovered(true);
-    void sei.avatarOverlayInteractive?.(true).catch(() => {});
-  }, []);
-  const onLeave = useCallback((): void => {
-    setHovered(false);
-    void sei.avatarOverlayInteractive?.(false).catch(() => {});
-  }, []);
+  // Interactivity: real clicks while hovered (the pencil needs them) and for
+  // the whole of edit mode (leaving mid-edit must not drop the handles).
+  // Failure is harmless: the chrome shows but cannot be grabbed.
+  useEffect(() => {
+    void sei.avatarOverlayInteractive?.(hovered || editing).catch(() => {});
+  }, [hovered, editing]);
+  const onEnter = useCallback((): void => setHovered(true), []);
+  const onLeave = useCallback((): void => setHovered(false), []);
 
   // Corner resize: pointer-capture drag streaming the desired TILE size to
   // main (which recomputes window bounds keeping the opposite corner fixed).
@@ -135,6 +140,67 @@ export function CallOverlay(): React.ReactElement | null {
     [],
   );
 
+  // Edit mode: drag anywhere on the tiles to move the window. Screen-space
+  // deltas from pointer-down, rAF-throttled; main anchors them to the window
+  // origin it snapshotted at 'start', so the stream stays 1:1 while the
+  // window moves under the pointer.
+  const beginMove = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const startX = e.screenX;
+    const startY = e.screenY;
+    void sei.avatarOverlayMove?.({ phase: 'start' }).catch(() => {});
+    let dx = 0;
+    let dy = 0;
+    let raf = 0;
+    const onMove = (ev: PointerEvent): void => {
+      dx = ev.screenX - startX;
+      dy = ev.screenY - startY;
+      if (!raf) {
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          void sei.avatarOverlayMove?.({ phase: 'move', dx, dy }).catch(() => {});
+        });
+      }
+    };
+    const onUp = (): void => {
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+      if (raf) cancelAnimationFrame(raf);
+      void sei.avatarOverlayMove?.({ phase: 'end' }).catch(() => {});
+    };
+    el.setPointerCapture(e.pointerId);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+  }, []);
+
+  // Edit mode: wheel zooms the tile around the window center. The stream
+  // rides its own size accumulator (window-height feedback lags the IPC);
+  // commit fires when the wheel goes quiet.
+  const wheelSizeRef = useRef<number | null>(null);
+  const wheelCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onWheel = useCallback((e: React.WheelEvent): void => {
+    wheelSizeRef.current ??= Math.max(MIN_TILE, window.innerHeight - PAD_Y * 2);
+    const next = Math.min(
+      MAX_TILE,
+      Math.max(MIN_TILE, wheelSizeRef.current * Math.exp(-e.deltaY * 0.002)),
+    );
+    wheelSizeRef.current = next;
+    void sei.avatarOverlayResize?.({ size: next, anchor: 'center' }).catch(() => {});
+    if (wheelCommitTimer.current) clearTimeout(wheelCommitTimer.current);
+    wheelCommitTimer.current = setTimeout(() => {
+      wheelCommitTimer.current = null;
+      const size = wheelSizeRef.current;
+      wheelSizeRef.current = null;
+      if (size != null) {
+        void sei.avatarOverlayResize?.({ size, anchor: 'center', commit: true }).catch(() => {});
+      }
+    }, 350);
+  }, []);
+
   if (!state || !state.enabled || state.participants.length === 0) return null;
 
   return (
@@ -142,12 +208,16 @@ export function CallOverlay(): React.ReactElement | null {
       className={styles.stage}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
+      onWheel={editing ? onWheel : undefined}
       style={{ ['--tile' as string]: `${tilePx}px` }}
     >
-      {/* Thin glowing outline while hovered. */}
-      <div className={`${styles.outline} ${hovered ? styles.outlineOn : ''}`} />
+      {/* Thin glowing outline while hovered; solid for the whole edit mode. */}
+      <div className={`${styles.outline} ${hovered || editing ? styles.outlineOn : ''}`} />
 
-      <div className={styles.row}>
+      <div
+        className={`${styles.row} ${editing ? styles.rowEditing : ''}`}
+        onPointerDown={editing ? beginMove : undefined}
+      >
         {state.participants.map((p) => {
           const speaking = p.speaking;
           const useLive2d = p.live2d && !live2dFailed[p.id];
@@ -198,8 +268,9 @@ export function CallOverlay(): React.ReactElement | null {
         })}
       </div>
 
-      {/* Hover chrome: corner resize handles + the hold-to-drag button. */}
-      {hovered && (
+      {/* Edit-mode chrome: corner resize handles + the hold-to-drag button
+          (stacked above the mode button). */}
+      {editing && (
         <>
           <div className={`${styles.handle} ${styles.tl}`} onPointerDown={(e) => beginResize(e, 'tl')} />
           <div className={`${styles.handle} ${styles.tr}`} onPointerDown={(e) => beginResize(e, 'tr')} />
@@ -213,6 +284,37 @@ export function CallOverlay(): React.ReactElement | null {
             </svg>
           </div>
         </>
+      )}
+
+      {/* The mode button: pencil (enter edit) / tick (done). Shown on hover in
+          view mode, always while editing. */}
+      {(hovered || editing) && (
+        <button
+          type="button"
+          className={styles.modeBtn}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setEditing((v) => !v)}
+        >
+          {editing ? (
+            <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
+              <path
+                d="M2 6.5 L4.8 9.2 L10 3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : (
+            <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
+              <path
+                d="M8.6 1.6 L10.4 3.4 L4.2 9.6 L1.6 10.4 L2.4 7.8 Z"
+                fill="currentColor"
+              />
+            </svg>
+          )}
+        </button>
       )}
     </div>
   );

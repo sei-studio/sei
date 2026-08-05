@@ -783,14 +783,23 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
 
 - **Window** (`src/main/callOverlay.ts`): click-through by default with
   `setIgnoreMouseEvents(true, {forward: true})` so hover still reaches the
-  page (forward is Win/mac only; Linux stays display-only). Hovering asks
-  main for real clicks (`avatar:overlay-interactive`); the bottom-right hover
-  button (INSIDE the hover outline's bottom-right) is
-  `-webkit-app-region: drag` (window is `movable`); corner handles stream
-  tile size over `avatar:overlay-resize` — one scalar, so aspect is locked
-  by construction, and a `will-resize` veto keeps the OS's frameless edge
-  resize (live while chrome is hovered) from ever distorting it
-  ('will-resize' never fires for programmatic setBounds). Geometry persists in
+  page (forward is Win/mac only; Linux stays display-only). Interaction is
+  split into VIEW and EDIT modes (260805): view is completely fixed — hover
+  shows the outline plus ONE pencil button (inside the frame bottom-right);
+  clicking it enters edit mode, where the pencil becomes a tick, the
+  hold-to-drag button (`-webkit-app-region: drag`, window `movable`) stacks
+  above it, corner handles + a center-anchored wheel zoom stream tile size
+  over `avatar:overlay-resize`, and dragging anywhere on the tiles moves the
+  window via the `avatar:overlay-move` screen-delta stream (main snapshots
+  the origin at 'start' so the stream stays 1:1 while the window moves under
+  the pointer). Real clicks (`avatar:overlay-interactive`) are held while
+  hovered OR for the whole edit mode. The window is **`resizable: false`**:
+  a frameless resizable window keeps invisible OS resize-frame regions along
+  its edges — exactly where the corner handles sit — and a click there is
+  window-frame interaction (macOS ACTIVATED the app; the frame fought the
+  handles' CSS cursor). All programmatic resizing is setBounds, which
+  ignores `resizable`; everything derives from the single tile scalar, so
+  aspect is locked by construction. Geometry persists in
   `UserConfig.avatar_overlay`, written by MAIN only (not renderer-settable).
   `setContentProtection(true)` keeps the overlay out of every screen capture
   (including Sei's own backseat share). `backgroundThrottling: false` so
@@ -838,7 +847,9 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   VTube Studio extras like `items_pinned_to_model.json` match that sniff, so
   unsorted readdir order picked the wrong "settings" nondeterministically. Idle life: SDK breath/sway/blink run free on
   a motionless model (the EyeBlink group is why import guarantees it), plus
-  our saccade loop through the SDK focusController. The mouth is written
+  our gaze-wander loop through the SDK focusController (2.6-7.5 s cadence,
+  correlated small steps + rare larger glances — full-range jumps every few
+  hundred ms read as TWITCHING, the 260805 report). The mouth is written
   INSIDE a wrapped `motionManager.update` so the SDK layers blink/breath/
   physics after it in the same frame.
 - **Lip sync**: TTS plays in the MAIN window, so `avatarLevelTap.ts` samples

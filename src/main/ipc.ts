@@ -1841,17 +1841,31 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     setOverlayInteractive(on);
   });
 
-  // Corner-resize stream from the overlay renderer ({size, anchor, commit?}).
+  // Resize stream from the overlay renderer ({size, anchor, commit?}) —
+  // corner drags anchor the opposite corner, wheel zoom anchors 'center'.
   ipcMain.handle(IpcChannel.avatar.overlayResize, async (_event, argsRaw: unknown) => {
     const args = z
       .object({
         size: z.number().min(48).max(1024),
-        anchor: z.enum(['tl', 'tr', 'bl', 'br']),
+        anchor: z.enum(['tl', 'tr', 'bl', 'br', 'center']),
         commit: z.boolean().optional(),
       })
       .parse(argsRaw);
     const { resizeOverlay } = await import('./callOverlay');
     await resizeOverlay(args.size, args.anchor, args.commit === true);
+  });
+
+  // Edit-mode drag-anywhere move stream ({phase, dx?, dy?}).
+  ipcMain.handle(IpcChannel.avatar.overlayMove, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        phase: z.enum(['start', 'move', 'end']),
+        dx: z.number().finite().optional(),
+        dy: z.number().finite().optional(),
+      })
+      .parse(argsRaw);
+    const { moveOverlay } = await import('./callOverlay');
+    moveOverlay(args.phase, args.dx ?? 0, args.dy ?? 0);
   });
 
   // Voice picker (creation flow, 260705): the curated pool + per-voice preview.

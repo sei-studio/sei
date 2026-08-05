@@ -27,6 +27,11 @@
   height: 100%;
 }
 
+/* Edit mode: anywhere on the tiles drags the window. */
+.rowEditing {
+  cursor: move;
+}
+
 /* ── Hover outline ─────────────────────────────────────────────────────── */
 
 .outline {
@@ -142,16 +147,17 @@
 .tr { top: 0; right: 0; cursor: nesw-resize; }
 .bl { bottom: 0; left: 0; cursor: nesw-resize; }
 
-/* Hold-to-drag button: -webkit-app-region: drag makes holding it move the
- * whole window natively (the window is `movable`). Sits INSIDE the hover
- * outline's bottom-right corner (the outline is the frame the user sees),
- * clear of the corner RESIZE handle at the true corner. */
+/* Bottom-right chrome buttons, INSIDE the hover outline (the frame the user
+ * sees), clear of the corner RESIZE handle at the true corner. The MODE
+ * button (pencil/tick) holds the anchor spot; in edit mode the hold-to-drag
+ * button stacks directly above it. */
+.modeBtn,
 .dragBtn {
   position: absolute;
   right: 14px;
-  bottom: 14px;
   width: 20px;
   height: 20px;
+  padding: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -159,8 +165,27 @@
   background: rgba(20, 22, 28, 0.92);
   border: 1px solid rgba(127, 176, 255, 0.6);
   box-shadow: 0 0 8px rgba(127, 176, 255, 0.35);
-  cursor: grab;
   z-index: 4;
+}
+
+/* Pencil (view) / tick (edit): a real button, never a drag region. */
+.modeBtn {
+  bottom: 14px;
+  color: rgba(127, 176, 255, 0.95);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.modeBtn:hover {
+  border-color: rgba(127, 176, 255, 0.95);
+  box-shadow: 0 0 10px rgba(127, 176, 255, 0.55);
+}
+
+/* Hold-to-drag button: -webkit-app-region: drag makes holding it move the
+ * whole window natively (the window is `movable`). Edit mode only. */
+.dragBtn {
+  bottom: 40px;
+  cursor: grab;
   -webkit-app-region: drag;
 }
 

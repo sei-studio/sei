@@ -263,6 +263,7 @@ const api: RendererApi = {
   avatarOverlayInteractive: (interactive) =>
     ipcRenderer.invoke(IpcChannel.avatar.overlayInteractive, interactive),
   avatarOverlayResize: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayResize, args),
+  avatarOverlayMove: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayMove, args),
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),

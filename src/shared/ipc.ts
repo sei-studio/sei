@@ -1377,14 +1377,25 @@ export interface RendererApi {
    * window clickable / restore click-through. */
   avatarOverlayInteractive(interactive: boolean): Promise<void>;
   /**
-   * Overlay window only: corner-resize. Streams the desired tile size while
-   * dragging (anchor = the corner that stays fixed); `commit` persists the
-   * final geometry to config.
+   * Overlay window only: resize. Streams the desired tile size while dragging
+   * a corner (anchor = the corner that stays fixed) or wheel-zooming
+   * (anchor 'center' grows/shrinks around the window center); `commit`
+   * persists the final geometry to config.
    */
   avatarOverlayResize(args: {
     size: number;
-    anchor: 'tl' | 'tr' | 'bl' | 'br';
+    anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center';
     commit?: boolean;
+  }): Promise<void>;
+  /**
+   * Overlay window only: edit-mode drag-anywhere move. 'start' snapshots the
+   * window origin; 'move' streams screen-space deltas from that origin;
+   * 'end' persists the final position.
+   */
+  avatarOverlayMove(args: {
+    phase: 'start' | 'move' | 'end';
+    dx?: number;
+    dy?: number;
   }): Promise<void>;
   /**
    * Signal that the chat surface was opened for a character. Main decides whether
@@ -2542,6 +2553,8 @@ export const IpcChannel = {
     /** Invoke (overlay window → main): corner-resize stream/commit
      * ({size, anchor, commit?}). */
     overlayResize: 'avatar:overlay-resize',
+    /** Invoke (overlay window): edit-mode drag-anywhere move stream. */
+    overlayMove: 'avatar:overlay-move',
   },
   user: {
     getProfile: 'user:get-profile',

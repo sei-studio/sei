@@ -46,9 +46,20 @@ export interface Live2DViewProps {
  * for ~3 s; a long story holds it long after the last word.
  */
 const EXPRESSION_LINGER_FRACTION = 0.5;
-/** Saccade interval bounds (ms). */
-const SACCADE_MIN_MS = 600;
-const SACCADE_MAX_MS = 4_600;
+/** Gaze wander interval bounds (ms). Long on purpose: at 0.6-4.6 s with
+ * full-range jumps the head visibly TWITCHED between directions every few
+ * seconds; a calm idle looks mostly still. */
+const SACCADE_MIN_MS = 2_600;
+const SACCADE_MAX_MS = 7_500;
+/** Fraction of the previous gaze target kept each step — targets stay
+ * correlated, so consecutive looks are neighbors, not opposite corners. */
+const GAZE_KEEP = 0.35;
+/** Usual wander amplitude, and the rarer bigger glance. */
+const GAZE_STEP_X = 0.2;
+const GAZE_STEP_Y = 0.14;
+const GLANCE_CHANCE = 0.15;
+const GLANCE_STEP_X = 0.45;
+const GLANCE_STEP_Y = 0.28;
 /** Mouth smoothing per frame (fast attack, slower release). */
 const MOUTH_ATTACK = 0.5;
 const MOUTH_RELEASE = 0.18;
@@ -206,15 +217,21 @@ export function Live2DView({
         resizeObserver = new ResizeObserver(() => fit());
         resizeObserver.observe(host);
 
-        // Idle eye saccades: eyes+head wander via the SDK's spring-damped
-        // focus controller; amplitude stays modest so it reads as attention,
-        // not searching.
+        // Idle gaze wander via the SDK's spring-damped focus controller.
+        // Correlated small steps around center (each target keeps a fraction
+        // of the last), with an occasional larger glance — attention, not a
+        // head on a swivel.
+        let gazeX = 0;
+        let gazeY = 0;
         const saccade = (): void => {
           if (cancelled) return;
-          const fx = (Math.random() * 2 - 1) * 0.55;
-          const fy = (Math.random() * 1.7 - 1) * 0.4;
+          const glance = Math.random() < GLANCE_CHANCE;
+          const ax = glance ? GLANCE_STEP_X : GAZE_STEP_X;
+          const ay = glance ? GLANCE_STEP_Y : GAZE_STEP_Y;
+          gazeX = Math.max(-0.55, Math.min(0.55, gazeX * GAZE_KEEP + (Math.random() * 2 - 1) * ax));
+          gazeY = Math.max(-0.4, Math.min(0.3, gazeY * GAZE_KEEP + (Math.random() * 1.7 - 1) * ay));
           try {
-            model.internalModel.focusController.focus(fx, fy, false);
+            model.internalModel.focusController.focus(gazeX, gazeY, false);
           } catch {
             /* focus is a nicety */
           }
