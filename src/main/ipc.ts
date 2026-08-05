@@ -1770,7 +1770,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
               name: z.string(),
               portrait: z.string().nullable(),
               speaking: z.boolean(),
-              frame: z.enum(['circle']).optional(),
+              frame: z.enum(['circle', 'square']).optional(),
               alwaysBright: z.boolean().optional(),
               live2d: z.boolean().optional(),
               emotion: z

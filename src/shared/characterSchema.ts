@@ -571,16 +571,17 @@ export const UserConfigSchema = z.object({
    * preferences about how a companion's overlay tile renders on THIS profile,
    * which is why they live here and not in `character.metadata` (metadata is
    * cloud-synced verbatim and not editable on foreign characters).
-   *   frame         — tile shape; only 'circle' exists today, the enum is the
-   *                   growth point.
+   *   frame         — tile shape ('circle' | 'square').
    *   always_bright — true disables the talking indicator entirely: no idle
    *                   dim, no speaking ring; the tile stays lit.
    */
   avatar_prefs: z
     .record(
       z.object({
-        frame: z.enum(['circle']).optional(),
+        frame: z.enum(['circle', 'square']).optional(),
         always_bright: z.boolean().optional(),
+        /** Which profile sub-tab (Static / Live2D) was last chosen. */
+        tab: z.enum(['static', 'live2d']).optional(),
       }),
     )
     .optional(),

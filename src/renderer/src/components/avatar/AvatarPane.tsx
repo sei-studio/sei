@@ -34,9 +34,16 @@ type SubTab = 'static' | 'live2d';
 
 export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement {
   const t = useT();
-  const [sub, setSub] = useState<SubTab>('static');
   const prefs = useUiStore((s) => s.avatarPrefsByCharacter[characterId]);
   const setAvatarPrefsFor = useUiStore((s) => s.setAvatarPrefsFor);
+  // The chosen sub-tab is itself a per-character preference (avatar_prefs.tab):
+  // someone maintaining a Live2D model should land back on that tab.
+  const [sub, setSub] = useState<SubTab>(
+    () => useUiStore.getState().avatarPrefsByCharacter[characterId]?.tab ?? 'static',
+  );
+  useEffect(() => {
+    setSub(useUiStore.getState().avatarPrefsByCharacter[characterId]?.tab ?? 'static');
+  }, [characterId]);
   const manifest = useAvatarStore((s) => s.manifests[characterId]);
   const ensureManifest = useAvatarStore((s) => s.ensure);
   const setManifest = useAvatarStore((s) => s.setManifest);
@@ -108,15 +115,20 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
 
   return (
     <div className={styles.pane}>
-      <Seg<SubTab>
-        aria-label={t('Avatar type')}
-        options={[
-          { value: 'static', label: t('Static') },
-          { value: 'live2d', label: t('Live2D (beta)') },
-        ]}
-        value={sub}
-        onChange={setSub}
-      />
+      <div className={styles.subTabs}>
+        <Seg<SubTab>
+          aria-label={t('Avatar type')}
+          options={[
+            { value: 'static', label: t('Static') },
+            { value: 'live2d', label: t('Live2D (beta)') },
+          ]}
+          value={sub}
+          onChange={(next) => {
+            setSub(next);
+            void persistPrefs({ ...(prefs ?? {}), tab: next });
+          }}
+        />
+      </div>
 
       {sub === 'static' ? (
         <div className={styles.section}>
@@ -125,9 +137,12 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
           </p>
           <div className={styles.row}>
             <span className={styles.label}>{t('Frame')}</span>
-            <Seg<'circle'>
+            <Seg<'circle' | 'square'>
               aria-label={t('Frame')}
-              options={[{ value: 'circle', label: t('Circle') }]}
+              options={[
+                { value: 'circle', label: t('Circle') },
+                { value: 'square', label: t('Square') },
+              ]}
               value={prefs?.frame ?? 'circle'}
               onChange={(frame) => void persistPrefs({ ...(prefs ?? {}), frame })}
             />

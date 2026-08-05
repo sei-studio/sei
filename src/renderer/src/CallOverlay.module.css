@@ -65,6 +65,12 @@
     box-shadow 200ms ease;
 }
 
+/* Square frame variant (avatar_prefs.frame = 'square'): same tile, gently
+ * rounded corners instead of the full circle. */
+.squareFrame {
+  border-radius: 8px;
+}
+
 .circle img,
 .circle canvas,
 .circle svg {
@@ -137,12 +143,13 @@
 .bl { bottom: 0; left: 0; cursor: nesw-resize; }
 
 /* Hold-to-drag button: -webkit-app-region: drag makes holding it move the
- * whole window natively (the window is `movable`). Sits just inboard of the
- * bottom-right RESIZE handle so both stay grabbable. */
+ * whole window natively (the window is `movable`). Sits INSIDE the hover
+ * outline's bottom-right corner (the outline is the frame the user sees),
+ * clear of the corner RESIZE handle at the true corner. */
 .dragBtn {
   position: absolute;
-  right: 18px;
-  bottom: 0;
+  right: 14px;
+  bottom: 14px;
   width: 20px;
   height: 20px;
   border-radius: 50%;

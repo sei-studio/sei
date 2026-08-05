@@ -39,8 +39,13 @@ export interface Live2DViewProps {
   onStatus?: (status: 'loading' | 'ready' | 'error') => void;
 }
 
-/** How long an applied expression holds before decaying back to neutral. */
-const EXPRESSION_HOLD_MS = 10_000;
+/**
+ * An expression lives for 150% of its line: it holds while the line is spoken,
+ * then this fraction of the line's duration longer, then decays to neutral —
+ * unless a new line's emotion refreshes it first. A 2 s quip flashes its face
+ * for ~3 s; a long story holds it long after the last word.
+ */
+const EXPRESSION_LINGER_FRACTION = 0.5;
 /** Saccade interval bounds (ms). */
 const SACCADE_MIN_MS = 600;
 const SACCADE_MAX_MS = 4_600;
@@ -79,7 +84,6 @@ export function Live2DView({
   const manifestRef = useRef<AvatarManifest | null>(null);
   const speakingRef = useRef(speaking);
   speakingRef.current = speaking;
-  const emotionRef = useRef<AvatarEmotion | null>(null);
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
 
@@ -96,12 +100,14 @@ export function Live2DView({
 
     void (async () => {
       try {
-        const [, PIXI, plugin, manifest, rawFiles] = await Promise.all([
-          loadCubismCore(),
+        // The Core global must exist BEFORE the cubism4 plugin module is
+        // imported (loadCore's contract), so the plugin import is sequenced
+        // behind it; everything else loads in parallel.
+        const [PIXI, manifest, rawFiles, plugin] = await Promise.all([
           import('pixi.js'),
-          import('pixi-live2d-display-lipsyncpatch/cubism4'),
           sei.avatarGet(characterId),
           sei.avatarModelFiles(characterId),
+          loadCubismCore().then(() => import('pixi-live2d-display-lipsyncpatch/cubism4')),
         ]);
         if (cancelled) return;
         if (!manifest || rawFiles.length === 0) throw new Error('no avatar model');
@@ -128,7 +134,14 @@ export function Live2DView({
 
         // Build in-memory Files: the plugin's FileLoader resolves the
         // model3.json's relative refs via webkitRelativePath (not settable
-        // through the File constructor, hence defineProperty).
+        // through the File constructor, hence defineProperty). The TRUE entry
+        // goes FIRST: the loader picks its settings file with
+        // `find(name.endsWith("model.json") || name.endsWith("model3.json"))`,
+        // and VTube Studio exports ship extras like items_pinned_to_model.json
+        // that match that sniff — whichever readdir happened to list first won.
+        rawFiles.sort((a, b) =>
+          a.path === manifest.entry ? -1 : b.path === manifest.entry ? 1 : 0,
+        );
         const files = rawFiles.map((f) => {
           const name = f.path.split('/').pop() ?? f.path;
           const file = new File([f.bytes as BlobPart], name);
@@ -241,35 +254,61 @@ export function Live2DView({
     };
   }, [characterId, levelRef]);
 
-  // ── Expressions: apply on emotion change, decay to neutral ──────────────
+  // ── Expressions: apply on a line's emotion, decay at 150% of the line ────
+  // The emotion prop is per-LINE (the pusher classifies the audibly-playing
+  // line and sends null between lines), so an emotion CHANGE marks a new line
+  // and `speaking` falling marks its end. Nothing resets on emotion → null —
+  // the face outlives the line by EXPRESSION_LINGER_FRACTION of its duration.
+  const appliedRef = useRef<AvatarEmotion | null>(null);
+  const lineStartRef = useRef(0);
+  const prevSpeakingRef = useRef(false);
+  const decayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const model = modelRef.current;
-    emotionRef.current = emotion;
-    if (!model) return undefined;
-    const name = emotion ? manifestRef.current?.emotions?.[emotion] : undefined;
-    if (emotion && name) {
-      void model.expression(name).catch(() => {});
-      const timer = setTimeout(() => {
-        // Still on this emotion after the hold → decay to neutral.
-        if (emotionRef.current === emotion) {
-          try {
-            model.internalModel.motionManager.expressionManager?.resetExpression();
-          } catch {
-            /* gone */
-          }
-        }
-      }, EXPRESSION_HOLD_MS);
-      return () => clearTimeout(timer);
-    }
-    if (!emotion) {
+    const wasSpeaking = prevSpeakingRef.current;
+    prevSpeakingRef.current = speaking;
+    const resetToNeutral = (): void => {
+      appliedRef.current = null;
       try {
-        model.internalModel.motionManager.expressionManager?.resetExpression();
+        model?.internalModel.motionManager.expressionManager?.resetExpression();
       } catch {
         /* gone */
       }
+    };
+
+    if (speaking && !wasSpeaking) lineStartRef.current = Date.now();
+
+    if (emotion && emotion !== appliedRef.current) {
+      // A (new) line with an emotion: refresh, cancelling any pending decay.
+      if (decayTimerRef.current) clearTimeout(decayTimerRef.current);
+      decayTimerRef.current = null;
+      lineStartRef.current = Date.now();
+      const name = manifestRef.current?.emotions?.[emotion];
+      if (model && name) {
+        appliedRef.current = emotion;
+        void model.expression(name).catch(() => {});
+      }
     }
-    return undefined;
-  }, [emotion]);
+
+    if (!speaking && wasSpeaking && appliedRef.current) {
+      // Line over: linger for half of what the line took, then decay.
+      const lineMs = Math.max(0, Date.now() - lineStartRef.current);
+      if (decayTimerRef.current) clearTimeout(decayTimerRef.current);
+      decayTimerRef.current = setTimeout(
+        () => {
+          decayTimerRef.current = null;
+          resetToNeutral();
+        },
+        Math.round(lineMs * EXPRESSION_LINGER_FRACTION),
+      );
+    }
+  }, [emotion, speaking]);
+  useEffect(
+    () => () => {
+      if (decayTimerRef.current) clearTimeout(decayTimerRef.current);
+    },
+    [],
+  );
 
   return <div ref={hostRef} className={className} />;
 }

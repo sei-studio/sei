@@ -176,8 +176,13 @@ export function CallOverlay(): React.ReactElement | null {
             : speaking
               ? styles.speaking
               : styles.idle;
+          const frameClass = p.frame === 'square' ? styles.squareFrame : '';
           return (
-            <div key={p.id} className={`${styles.circle} ${indicator}`} title={p.name}>
+            <div
+              key={p.id}
+              className={`${styles.circle} ${frameClass} ${indicator}`}
+              title={p.name}
+            >
               {src ? (
                 <img src={src} alt="" />
               ) : (

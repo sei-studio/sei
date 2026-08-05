@@ -113,6 +113,7 @@ export const ZH_SCREENS_A: Record<string, string> = {
     '这位伙伴在悬浮形象上的样子。请在设置中开启虚拟形象。',
   'Frame': '边框',
   'Circle': '圆形',
+  'Square': '方形',
   'Always bright': '始终明亮',
   'Always bright keeps the picture lit and turns off the talking indicator.':
     '始终明亮会让画面保持亮起，并关闭说话指示。',

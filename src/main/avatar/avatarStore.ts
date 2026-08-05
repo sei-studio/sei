@@ -11,15 +11,25 @@
  * syncs to the cloud — a character adopted elsewhere simply has no avatar and
  * the overlay falls back to the static portrait tile.
  *
- * Import NORMALIZES the stored model3.json, because real-world VTuber exports
- * are sloppy in two specific ways (measured on the first test model):
+ * Import NORMALIZES the stored model, because real-world VTuber exports are
+ * sloppy in three specific ways (all measured on the first test model):
  *   1. `.exp3.json` expression files ship in the zip but are NOT referenced in
  *      `FileReferences.Expressions` — the renderer's loader only knows what
  *      the settings file names, so unreferenced expressions would not exist.
  *   2. The `EyeBlink` parameter group can be missing, which silently disables
  *      the SDK's automatic blink on a motionless model.
- * The stored copy is ours, so we fix both at import time and the renderer
- * loader stays dumb.
+ *   3. Filenames are Chinese with spaces ("【雪熊企划】雪熊少女.moc3",
+ *      "1 帽.exp3.json"). pixi-live2d-display's FileLoader compares
+ *      `encodeURI(webkitRelativePath)` against the RAW refs resolved from the
+ *      settings JSON, so ANY name encodeURI changes (non-ASCII, spaces) fails
+ *      its existence check and the model refuses to load. Measured live: the
+ *      moc3 itself "doesn't exist in given files". So every stored path is
+ *      renamed to an ASCII-safe slug and all refs are rewritten to match.
+ *      Display names (manifest.name, expression Names) keep the originals.
+ * The stored copy is ours, so we fix all three at import time and the renderer
+ * loader stays dumb. `getAvatarManifest` lazily re-runs the same normalization
+ * on a version-1 store (imported before the rename existed) so early imports
+ * heal in place.
  */
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -36,6 +46,8 @@ export const AVATAR_EXTRACTED_MAX_BYTES = 256 * 1024 * 1024;
 export const AVATAR_MAX_ENTRIES = 512;
 
 const MANIFEST_NAME = 'manifest.json';
+/** v2 = paths renamed ASCII-safe (v1 stores are lazily re-normalized). */
+export const MANIFEST_VERSION = 2;
 
 /* Per-character write serialization (chain lock, knowledgeStore pattern). */
 const locks = new Map<string, Promise<unknown>>();
@@ -154,34 +166,66 @@ function resolveRef(entryDir: string, ref: string): string {
     .join('/');
 }
 
-/**
- * Import a Live2D model zip for `characterId`. Extracts (with GBK filename
- * fallback), validates, normalizes and writes the model + manifest, replacing
- * any previous avatar. Throws Error with a human-readable message on any
- * validation failure; the previous avatar survives a failed import (the dir
- * is only replaced after the zip parsed and validated).
- */
-export async function importAvatarZip(characterId: string, zip: Buffer): Promise<AvatarManifest> {
-  if (zip.byteLength > AVATAR_ZIP_MAX_BYTES) {
-    throw new Error(`avatar zip too large (${zip.byteLength} bytes)`);
-  }
-  const archive = await JSZip.loadAsync(zip, { decodeFileName: decodeZipName });
+/** Sanitize one path segment to [A-Za-z0-9._-]: everything else (runs of it)
+ * becomes a single '_'. Leading dots are stripped so no name goes hidden. */
+function safeSegment(seg: string): string {
+  const cleaned = seg.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^\.+/, '');
+  return cleaned.length > 0 ? cleaned : '_';
+}
 
-  // ── Extract into memory, sanitized + capped ─────────────────────────────
-  const files: ExtractedFile[] = [];
-  let total = 0;
-  for (const entry of Object.values(archive.files)) {
-    if (entry.dir) continue;
-    const rel = sanitizeEntryPath(entry.name);
-    if (!rel || isJunkEntry(rel)) continue;
-    const bytes = Buffer.from(await entry.async('uint8array'));
-    total += bytes.byteLength;
-    if (total > AVATAR_EXTRACTED_MAX_BYTES) throw new Error('avatar zip expands too large');
-    files.push({ rel, bytes });
-    if (files.length > AVATAR_MAX_ENTRIES) throw new Error('avatar zip has too many files');
+/**
+ * Map every stored path to an ASCII-safe equivalent, consistently per
+ * directory (the same original dir always maps to the same safe dir) and
+ * collision-free per parent ("雪熊.png" and "企划.png" both slug to "_.png";
+ * the second becomes "_-2.png"). Exported for tests.
+ */
+export function buildSafePathMap(rels: string[]): Map<string, string> {
+  const map = new Map<string, string>();
+  // Keyed by ORIGINAL parent path: children of the same original dir dedupe
+  // against each other; distinct original dirs are themselves deduped a level
+  // up, so their children can never meet.
+  const perDir = new Map<string, { bySeg: Map<string, string>; used: Set<string> }>();
+  for (const rel of [...rels].sort()) {
+    const segs = rel.split('/');
+    let parent = '';
+    const safeSegs: string[] = [];
+    for (const seg of segs) {
+      let dir = perDir.get(parent);
+      if (!dir) {
+        dir = { bySeg: new Map(), used: new Set() };
+        perDir.set(parent, dir);
+      }
+      let safe = dir.bySeg.get(seg);
+      if (!safe) {
+        const base = safeSegment(seg);
+        safe = base;
+        if (dir.used.has(safe)) {
+          const dot = base.indexOf('.');
+          const stem = dot === -1 ? base : base.slice(0, dot);
+          const rest = dot === -1 ? '' : base.slice(dot);
+          for (let n = 2; dir.used.has(safe); n++) safe = `${stem}-${n}${rest}`;
+        }
+        dir.used.add(safe);
+        dir.bySeg.set(seg, safe);
+      }
+      safeSegs.push(safe);
+      parent = parent ? `${parent}/${seg}` : seg;
+    }
+    map.set(rel, safeSegs.join('/'));
   }
-  if (files.length === 0) throw new Error('avatar zip is empty');
-  const stripped = stripCommonRoot(files);
+  return map;
+}
+
+/**
+ * Validate + normalize an extracted (or previously stored) file set and write
+ * it as `characterId`'s avatar. Does NOT take the per-character lock — every
+ * caller wraps it (a nested chain-lock acquisition would deadlock).
+ */
+async function normalizeAndWrite(
+  characterId: string,
+  incoming: ExtractedFile[],
+): Promise<AvatarManifest> {
+  const stripped = stripCommonRoot(incoming);
   const byRel = new Map(stripped.map((f) => [f.rel, f]));
 
   // ── Locate + parse the model3.json ──────────────────────────────────────
@@ -234,27 +278,66 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
     const name = base.replace(/\.exp3\.json$/i, '');
     declared.set(f.rel, name);
   }
-  const relFromEntry = (rel: string): string =>
-    entryDir && rel.startsWith(`${entryDir}/`) ? rel.slice(entryDir.length + 1) : rel;
-  refs.Expressions = [...declared.entries()].map(([rel, name]) => ({
-    Name: name,
-    File: relFromEntry(rel),
-  }));
 
   const groups = (settings.Groups ??= []);
   if (!groups.some((g) => g?.Target === 'Parameter' && g?.Name === 'EyeBlink')) {
     groups.push({ Target: 'Parameter', Name: 'EyeBlink', Ids: ['ParamEyeLOpen', 'ParamEyeROpen'] });
   }
+
+  // ── Rename to ASCII-safe paths + rewrite every ref to match ─────────────
+  const safeMap = buildSafePathMap([...byRel.keys()]);
+  const safe = (rel: string): string => safeMap.get(rel) ?? rel;
+  const safeEntry = safe(entryFile.rel);
+  const safeEntryDir = safeEntry.includes('/')
+    ? safeEntry.slice(0, safeEntry.lastIndexOf('/'))
+    : '';
+  const fromSafeEntry = (safeRel: string): string =>
+    safeEntryDir && safeRel.startsWith(`${safeEntryDir}/`)
+      ? safeRel.slice(safeEntryDir.length + 1)
+      : safeRel;
+  /** Rewrite one settings ref (relative to the entry) onto the safe tree.
+   * A ref to a file that does not exist is left as-is — the loader treats
+   * optional refs as absent either way. */
+  const reRef = (ref: string | undefined): string | undefined => {
+    if (typeof ref !== 'string' || ref.length === 0) return ref;
+    const mapped = safeMap.get(resolveRef(entryDir, ref));
+    return mapped ? fromSafeEntry(mapped) : ref;
+  };
+
+  refs.Moc = reRef(refs.Moc);
+  if (refs.Textures) refs.Textures = refs.Textures.map((t) => reRef(t)!);
+  refs.Physics = reRef(refs.Physics);
+  refs.Pose = reRef(refs.Pose);
+  refs.DisplayInfo = reRef(refs.DisplayInfo);
+  if (typeof refs.UserData === 'string') refs.UserData = reRef(refs.UserData);
+  refs.Expressions = [...declared.entries()].map(([rel, name]) => ({
+    Name: name,
+    File: fromSafeEntry(safe(rel)),
+  }));
+  const motions = refs.Motions as
+    | Record<string, Array<{ File?: string; Sound?: string; [k: string]: unknown }>>
+    | undefined;
+  if (motions && typeof motions === 'object') {
+    for (const group of Object.values(motions)) {
+      if (!Array.isArray(group)) continue;
+      for (const m of group) {
+        if (m && typeof m === 'object') {
+          m.File = reRef(m.File);
+          m.Sound = reRef(m.Sound);
+        }
+      }
+    }
+  }
+
   const normalized = Buffer.from(JSON.stringify(settings, null, '\t'), 'utf8');
   byRel.get(entryFile.rel)!.bytes = normalized;
 
-  const expressions = [...declared.entries()].map(([rel, name]) => ({ name, file: rel }));
+  const expressions = [...declared.entries()].map(([rel, name]) => ({ name, file: safe(rel) }));
   const manifest: AvatarManifest = {
-    version: 1,
-    name: entryFile.rel
-      .slice(entryFile.rel.lastIndexOf('/') + 1)
-      .replace(/\.model3\.json$/i, ''),
-    entry: entryFile.rel,
+    version: MANIFEST_VERSION,
+    // Display name keeps the author's original (pretty) filename stem.
+    name: entryFile.rel.slice(entryFile.rel.lastIndexOf('/') + 1).replace(/\.model3\.json$/i, ''),
+    entry: safeEntry,
     importedAt: new Date().toISOString(),
     bytes: [...byRel.values()].reduce((n, f) => n + f.bytes.byteLength, 0),
     expressions,
@@ -262,27 +345,88 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   };
 
   // ── Replace the avatar dir atomically-ish (validated before we wipe) ────
-  return withLock(characterId, async () => {
-    const dir = paths.avatarsDir(characterId);
-    await rm(dir, { recursive: true, force: true });
-    for (const f of byRel.values()) {
-      const target = path.join(dir, ...f.rel.split('/'));
-      await mkdir(path.dirname(target), { recursive: true });
-      await writeFile(target, f.bytes);
-    }
-    // Manifest last: its presence is what "an avatar exists" means.
-    await writeFile(path.join(dir, MANIFEST_NAME), JSON.stringify(manifest, null, 2), 'utf8');
-    return manifest;
-  });
+  const dir = paths.avatarsDir(characterId);
+  await rm(dir, { recursive: true, force: true });
+  for (const [rel, f] of byRel) {
+    const target = path.join(dir, ...safe(rel).split('/'));
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, f.bytes);
+  }
+  // Manifest last: its presence is what "an avatar exists" means.
+  await writeFile(path.join(dir, MANIFEST_NAME), JSON.stringify(manifest, null, 2), 'utf8');
+  return manifest;
 }
 
-/** The character's avatar manifest, or null when none is imported. */
+/**
+ * Import a Live2D model zip for `characterId`. Extracts (with GBK filename
+ * fallback), validates, normalizes and writes the model + manifest, replacing
+ * any previous avatar. Throws Error with a human-readable message on any
+ * validation failure; the previous avatar survives a failed import (the dir
+ * is only replaced after the zip parsed and validated).
+ */
+export async function importAvatarZip(characterId: string, zip: Buffer): Promise<AvatarManifest> {
+  if (zip.byteLength > AVATAR_ZIP_MAX_BYTES) {
+    throw new Error(`avatar zip too large (${zip.byteLength} bytes)`);
+  }
+  const archive = await JSZip.loadAsync(zip, { decodeFileName: decodeZipName });
+
+  // ── Extract into memory, sanitized + capped ─────────────────────────────
+  const files: ExtractedFile[] = [];
+  let total = 0;
+  for (const entry of Object.values(archive.files)) {
+    if (entry.dir) continue;
+    const rel = sanitizeEntryPath(entry.name);
+    if (!rel || isJunkEntry(rel)) continue;
+    const bytes = Buffer.from(await entry.async('uint8array'));
+    total += bytes.byteLength;
+    if (total > AVATAR_EXTRACTED_MAX_BYTES) throw new Error('avatar zip expands too large');
+    files.push({ rel, bytes });
+    if (files.length > AVATAR_MAX_ENTRIES) throw new Error('avatar zip has too many files');
+  }
+  if (files.length === 0) throw new Error('avatar zip is empty');
+
+  return withLock(characterId, () => normalizeAndWrite(characterId, files));
+}
+
+/** Read the stored avatar tree back as ExtractedFiles (manifest excluded). */
+async function readStoredFiles(characterId: string): Promise<ExtractedFile[]> {
+  const dir = paths.avatarsDir(characterId);
+  const out: ExtractedFile[] = [];
+  async function walk(sub: string): Promise<void> {
+    const entries = await readdir(path.join(dir, sub), { withFileTypes: true });
+    for (const e of entries) {
+      const rel = sub ? `${sub}/${e.name}` : e.name;
+      if (e.isDirectory()) await walk(rel);
+      else if (rel !== MANIFEST_NAME) out.push({ rel, bytes: await readFile(path.join(dir, ...rel.split('/'))) });
+    }
+  }
+  await walk('');
+  return out;
+}
+
+/**
+ * The character's avatar manifest, or null when none is imported. A version-1
+ * store (imported before the ASCII-safe rename existed) is re-normalized in
+ * place — same pipeline as import, run over the stored tree — so it heals to
+ * version 2 the first time anything asks for it.
+ */
 export async function getAvatarManifest(characterId: string): Promise<AvatarManifest | null> {
+  let parsed: AvatarManifest;
   try {
     const raw = await readFile(path.join(paths.avatarsDir(characterId), MANIFEST_NAME), 'utf8');
-    const parsed = JSON.parse(raw) as AvatarManifest;
-    return parsed?.version === 1 && typeof parsed.entry === 'string' ? parsed : null;
+    parsed = JSON.parse(raw) as AvatarManifest;
   } catch {
+    return null;
+  }
+  if (typeof parsed?.entry !== 'string') return null;
+  if (parsed.version === MANIFEST_VERSION) return parsed;
+  if (parsed.version !== 1) return null;
+  try {
+    return await withLock(characterId, async () =>
+      normalizeAndWrite(characterId, await readStoredFiles(characterId)),
+    );
+  } catch {
+    // A store too broken to renormalize is a store that cannot render either.
     return null;
   }
 }

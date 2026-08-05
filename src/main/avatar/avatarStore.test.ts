@@ -27,6 +27,8 @@ import {
   removeAvatar,
   mapEmotions,
   sanitizeEntryPath,
+  buildSafePathMap,
+  MANIFEST_VERSION,
 } from './avatarStore';
 
 const REAL_ZIP = '/Users/ouen/Downloads/_雪熊企划_雪熊少女.zip';
@@ -83,6 +85,25 @@ describe('sanitizeEntryPath', () => {
     expect(sanitizeEntryPath('a/../evil.js')).toBeNull();
     expect(sanitizeEntryPath('/abs/path.png')).toBeNull();
     expect(sanitizeEntryPath('C:/windows/x.png')).toBeNull();
+  });
+});
+
+describe('buildSafePathMap', () => {
+  it('slugs non-ASCII and spaces to underscores, keeping extensions', () => {
+    const map = buildSafePathMap(['【雪熊企划】雪熊少女.moc3', '1 帽.exp3.json', 'plain.png']);
+    expect(map.get('【雪熊企划】雪熊少女.moc3')).toBe('_.moc3');
+    expect(map.get('1 帽.exp3.json')).toBe('1_.exp3.json');
+    expect(map.get('plain.png')).toBe('plain.png');
+    // Every output is loader-safe: encodeURI must be an identity.
+    for (const v of map.values()) expect(encodeURI(v)).toBe(v);
+  });
+
+  it('dedupes collisions within a directory and maps directories consistently', () => {
+    const map = buildSafePathMap(['雪熊.png', '企划.png', '目录/a.png', '目录/b.png']);
+    const [first, second] = [map.get('企划.png'), map.get('雪熊.png')];
+    expect(first).not.toBe(second);
+    expect(new Set([first, second])).toEqual(new Set(['_.png', '_-2.png']));
+    expect(map.get('目录/a.png')!.split('/')[0]).toBe(map.get('目录/b.png')!.split('/')[0]);
   });
 });
 
@@ -165,6 +186,76 @@ describe('importAvatarZip (synthetic)', () => {
     zip.file('m.moc3', Buffer.from([1]));
     const bytes = await zip.generateAsync({ type: 'nodebuffer' });
     await expect(importAvatarZip('char-4', bytes)).rejects.toThrow(/texture/);
+  });
+
+  it('stores every path ASCII-safe and rewrites settings refs to match', async () => {
+    const manifest = await importAvatarZip('char-safe', await syntheticZip());
+    expect(manifest.version).toBe(MANIFEST_VERSION);
+    const files = await readAvatarModelFiles('char-safe');
+    for (const f of files) {
+      expect(encodeURI(f.path)).toBe(f.path); // no non-ASCII, no spaces
+    }
+    // 生气.exp3.json was renamed on disk but keeps its pretty NAME.
+    const settings = JSON.parse(
+      Buffer.from(files.find((f) => f.path === manifest.entry)!.bytes).toString('utf8'),
+    );
+    const byPath = new Set(files.map((f) => f.path));
+    const angry = settings.FileReferences.Expressions.find(
+      (e: { Name: string }) => e.Name === '生气',
+    );
+    expect(angry).toBeDefined();
+    expect(byPath.has(angry.File)).toBe(true);
+    expect(encodeURI(angry.File)).toBe(angry.File);
+  });
+
+  it('lazily re-normalizes a version-1 store (raw filenames) on manifest read', async () => {
+    // Fabricate what the pre-rename import wrote: raw Chinese paths + v1 manifest.
+    const { mkdir: mkdirP, writeFile: writeP } = await import('node:fs/promises');
+    const storeDir = path.join(dir, 'profiles', 'local', 'avatars', 'char-v1');
+    await mkdirP(storeDir, { recursive: true });
+    const settings = {
+      Version: 3,
+      FileReferences: {
+        Moc: '雪熊少女.moc3',
+        Textures: ['雪熊少女.4096/texture_00.png'],
+        Expressions: [{ Name: '生气', File: '8 生气.exp3.json' }],
+      },
+      Groups: [{ Target: 'Parameter', Name: 'EyeBlink', Ids: ['ParamEyeLOpen'] }],
+    };
+    await writeP(path.join(storeDir, '雪熊少女.model3.json'), JSON.stringify(settings));
+    await writeP(path.join(storeDir, '雪熊少女.moc3'), Buffer.from([1]));
+    await mkdirP(path.join(storeDir, '雪熊少女.4096'), { recursive: true });
+    await writeP(path.join(storeDir, '雪熊少女.4096', 'texture_00.png'), Buffer.from([2]));
+    await writeP(path.join(storeDir, '8 生气.exp3.json'), JSON.stringify({ Type: 'Live2D Expression' }));
+    await writeP(
+      path.join(storeDir, 'manifest.json'),
+      JSON.stringify({
+        version: 1,
+        name: '雪熊少女',
+        entry: '雪熊少女.model3.json',
+        importedAt: new Date().toISOString(),
+        bytes: 4,
+        expressions: [{ name: '生气', file: '8 生气.exp3.json' }],
+        emotions: { angry: '生气' },
+      }),
+    );
+
+    const healed = await getAvatarManifest('char-v1');
+    expect(healed).not.toBeNull();
+    expect(healed!.version).toBe(MANIFEST_VERSION);
+    expect(encodeURI(healed!.entry)).toBe(healed!.entry);
+    const files = await readAvatarModelFiles('char-v1');
+    for (const f of files) expect(encodeURI(f.path)).toBe(f.path);
+    // Refs rewritten onto the renamed tree.
+    const healedSettings = JSON.parse(
+      Buffer.from(files.find((f) => f.path === healed!.entry)!.bytes).toString('utf8'),
+    );
+    const byPath = new Set(files.map((f) => f.path));
+    expect(byPath.has(healedSettings.FileReferences.Moc)).toBe(true);
+    expect(byPath.has(healedSettings.FileReferences.Textures[0])).toBe(true);
+    expect(healed!.emotions.angry).toBe('生气');
+    // Second read returns the healed manifest without re-running.
+    expect((await getAvatarManifest('char-v1'))!.version).toBe(MANIFEST_VERSION);
   });
 
   it('remove is idempotent and clears the manifest', async () => {

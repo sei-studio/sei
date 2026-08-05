@@ -13,7 +13,8 @@
  * 260804: the player's own tile is GONE — the overlay is the companion's
  * presence on the desktop, not a mirror. Which companions show is
  * computeAvatarIds (pure, tested): 'activity' = call members + live game/
- * share/summon characters; 'always' falls back to the open chat.
+ * share/summon characters; 'always' falls back to the most recently
+ * interacted companion (the Home wall's ordering).
  */
 import { useEffect } from 'react';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
@@ -25,6 +26,7 @@ import { useBackseatStore } from '../lib/stores/useBackseatStore';
 import { useAvatarStore } from '../lib/stores/useAvatarStore';
 import { computeAvatarIds } from '../lib/avatar/overlayParticipants';
 import { classifyEmotion } from '../lib/avatar/emotion';
+import { lastInteractionAt } from '../lib/lastInteraction';
 import { setAvatarLevelTapEnabled } from '../lib/voice/avatarLevelTap';
 import { sei } from '../lib/ipcClient';
 import { t } from '../lib/i18n';
@@ -32,7 +34,21 @@ import { t } from '../lib/i18n';
 export function CallOverlayPusher(): null {
   const mode = useUiStore((s) => s.avatarMode);
   const avatarPrefs = useUiStore((s) => s.avatarPrefsByCharacter);
-  const view = useUiStore((s) => s.view);
+  // The 'always' fallback: the last-interacted companion, same recency the
+  // Home wall sorts by. The selector returns a bare id string, so routine
+  // roster updates re-render this component only when the LEADER changes.
+  const lastInteractedId = useDataStore((s) => {
+    let best: string | null = null;
+    let bestAt = '';
+    for (const c of s.characters) {
+      const at = lastInteractionAt(c) ?? '';
+      if (at > bestAt) {
+        bestAt = at;
+        best = c.id;
+      }
+    }
+    return best;
+  });
   const participants = useVoiceStore((s) => s.participants);
   const callStatus = useVoiceStore((s) => s.status);
   const speakingId = useVoiceStore((s) => s.speakingId);
@@ -69,7 +85,7 @@ export function CallOverlayPusher(): null {
     mode,
     callParticipants: callActive ? participants : [],
     activityIds,
-    openChatId: view.kind === 'chat' ? view.characterId : null,
+    lastInteractedId,
   });
   const idsKey = ids.join(',');
 

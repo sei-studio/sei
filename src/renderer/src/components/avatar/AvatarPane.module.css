@@ -6,6 +6,18 @@
   gap: var(--space-md);
 }
 
+/* The Static / Live2D switch spans the pane, split evenly, labels centered. */
+.subTabs > div {
+  display: flex;
+  width: 100%;
+}
+
+.subTabs button {
+  flex: 1 1 0;
+  justify-content: center;
+  text-align: center;
+}
+
 .section {
   display: flex;
   flex-direction: column;

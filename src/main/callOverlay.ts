@@ -202,9 +202,11 @@ function ensureWindow(): BrowserWindow | null {
     transparent: true,
     backgroundColor: '#00000000',
     // resizable so setBounds size changes are honored everywhere; the user
-    // resizes through the overlay's own corner handles (the window is
-    // click-through by default, so the OS's invisible frameless resize edges
-    // are inert except while chrome is hovered).
+    // resizes ONLY through the overlay's own corner handles (single scalar →
+    // aspect always locked). While chrome is hovered the OS's invisible
+    // frameless resize edges would go live and allow a free-aspect resize, so
+    // 'will-resize' below vetoes every USER resize (it never fires for
+    // programmatic bounds changes).
     resizable: true,
     // movable for the -webkit-app-region: drag button (hold to drag).
     movable: true,
@@ -257,6 +259,13 @@ function ensureWindow(): BrowserWindow | null {
   } else {
     void win.loadFile(t, { search: 'overlay=1' });
   }
+
+  // Aspect lock: the tile is square and the window derives from one scalar,
+  // so an OS edge-resize (possible while the hover chrome holds real clicks)
+  // must never distort it. This never fires for setBounds.
+  win.on('will-resize', (e) => {
+    e.preventDefault();
+  });
 
   // Persist the position after a native drag (the app-region drag button).
   // 'moved' also fires for programmatic setBounds, so applyingBounds guards

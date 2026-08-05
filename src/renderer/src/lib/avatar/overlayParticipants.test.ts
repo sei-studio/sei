@@ -9,7 +9,7 @@ describe('computeAvatarIds', () => {
         mode: 'off',
         callParticipants: ['a'],
         activityIds: ['b'],
-        openChatId: 'c',
+        lastInteractedId: 'c',
       }),
     ).toEqual([]);
   });
@@ -20,40 +20,40 @@ describe('computeAvatarIds', () => {
         mode: 'activity',
         callParticipants: ['a', 'b'],
         activityIds: ['b', 'c'],
-        openChatId: null,
+        lastInteractedId: null,
       }),
     ).toEqual(['a', 'b', 'c']);
   });
 
-  it("'activity' with nothing active shows nothing, even with a chat open", () => {
+  it("'activity' with nothing active shows nothing, even with a recent companion", () => {
     expect(
       computeAvatarIds({
         mode: 'activity',
         callParticipants: [],
         activityIds: [],
-        openChatId: 'c',
+        lastInteractedId: 'c',
       }),
     ).toEqual([]);
   });
 
-  it("'always' falls back to the open chat's character when nothing is active", () => {
+  it("'always' falls back to the last-interacted companion when nothing is active", () => {
     expect(
       computeAvatarIds({
         mode: 'always',
         callParticipants: [],
         activityIds: [],
-        openChatId: 'c',
+        lastInteractedId: 'c',
       }),
     ).toEqual(['c']);
   });
 
-  it("'always' prefers activity over the open chat, and shows nothing on e.g. Home", () => {
+  it("'always' prefers activity over the fallback, and shows nothing on a fresh install", () => {
     expect(
       computeAvatarIds({
         mode: 'always',
         callParticipants: [],
         activityIds: ['m'],
-        openChatId: 'c',
+        lastInteractedId: 'c',
       }),
     ).toEqual(['m']);
     expect(
@@ -61,7 +61,7 @@ describe('computeAvatarIds', () => {
         mode: 'always',
         callParticipants: [],
         activityIds: [],
-        openChatId: null,
+        lastInteractedId: null,
       }),
     ).toEqual([]);
   });

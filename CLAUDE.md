@@ -773,7 +773,9 @@ The always-on-top overlay window is now the companion's desktop presence:
 static portrait tiles or a per-character Live2D model, shown per
 `avatar_mode` in UserConfig: `'off' | 'activity' | 'always'` ('activity' =
 any live surface: call, chess, Draw!, backseat, MC summon; 'always' falls
-back to the open chat's companion). The field is OPTIONAL with no default;
+back to the LAST-INTERACTED companion — the Home wall's `lastInteractionAt`
+recency, not the open chat, so switching chats never swaps the desk
+companion). The field is OPTIONAL with no default;
 **read it only through `effectiveAvatarMode`** (characterSchema), which folds
 the deprecated `call_overlay_enabled` boolean (`true` → `'activity'`) so old
 configs keep their overlay without a migration. The player's own tile is
@@ -783,16 +785,21 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   `setIgnoreMouseEvents(true, {forward: true})` so hover still reaches the
   page (forward is Win/mac only; Linux stays display-only). Hovering asks
   main for real clicks (`avatar:overlay-interactive`); the bottom-right hover
-  button is `-webkit-app-region: drag` (window is `movable`); corner handles
-  stream tile size over `avatar:overlay-resize`. Geometry persists in
+  button (INSIDE the hover outline's bottom-right) is
+  `-webkit-app-region: drag` (window is `movable`); corner handles stream
+  tile size over `avatar:overlay-resize` — one scalar, so aspect is locked
+  by construction, and a `will-resize` veto keeps the OS's frameless edge
+  resize (live while chrome is hovered) from ever distorting it
+  ('will-resize' never fires for programmatic setBounds). Geometry persists in
   `UserConfig.avatar_overlay`, written by MAIN only (not renderer-settable).
   `setContentProtection(true)` keeps the overlay out of every screen capture
   (including Sei's own backseat share). `backgroundThrottling: false` so
   Live2D animates under a fullscreen game. Tile size is CSS off the window
   height (`--tile`), so main's sizing and the renderer's layout cannot drift.
 - **Per-character prefs** (`UserConfig.avatar_prefs`, sparse like
-  call_backdrop): `frame` ('circle' only today) + `always_bright` (kills the
-  talking indicator: no idle dim, no ring). Deliberately NOT in
+  call_backdrop): `frame` ('circle' | 'square') + `always_bright` (kills the
+  talking indicator: no idle dim, no ring) + `tab` (which profile sub-tab,
+  Static or Live2D, was last chosen). Deliberately NOT in
   `character.metadata` — metadata cloud-syncs verbatim and is not editable on
   foreign characters. Edited from the profile's third tab (CharacterPage →
   Avatar → Static), which writes read-modify-write through `saveConfig`.
@@ -806,8 +813,18 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   expression names → the closed `AvatarEmotion` set by bilingual filename
   keywords (泪→sad, 害羞→shy, ...), and rejects traversal/junk entries. Zip
   filenames decode GBK-first (VTube Studio on Chinese Windows; cp437 is the
-  spec fiction). Delete/remove-from-library/profile-import handle the dir
-  like `knowledge/`.
+  spec fiction). **Every stored path is renamed ASCII-safe and all settings
+  refs (Moc/Textures/Physics/Pose/DisplayInfo/UserData/Expressions/Motions)
+  are rewritten to match** (`buildSafePathMap`): the plugin's FileLoader
+  compares `encodeURI(webkitRelativePath)` against RAW refs, so any name
+  encodeURI changes — non-ASCII, even a space — fails its existence check
+  and the model refuses to load (measured: the moc3 itself "doesn't exist").
+  Display names (manifest.name, expression Names) keep the originals, which
+  is what the emotion table keys on. manifest `version: 2` marks a renamed
+  store; `getAvatarManifest` lazily re-runs the same normalization over a
+  v1 store's on-disk tree so early imports heal in place.
+  Delete/remove-from-library/profile-import handle the dir like
+  `knowledge/`.
 - **Rendering** (`src/renderer/src/lib/live2d/`): pixi.js 7 +
   `pixi-live2d-display-lipsyncpatch` (cubism4), ALL dynamically imported.
   The proprietary Cubism 5 Core is fetched at build time by
@@ -815,7 +832,11 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   (gitignored — its license permits shipping it in the app, not committing
   it); `loadCubismCore()` script-injects it before the plugin import. Models
   load as in-memory `File[]` over IPC (`avatar:model-files`) — no custom
-  protocol, no file:// fetches. Idle life: SDK breath/sway/blink run free on
+  protocol, no file:// fetches — with the manifest's entry file sorted FIRST:
+  the loader picks its settings file by
+  `find(name.endsWith("model.json") || name.endsWith("model3.json"))`, and
+  VTube Studio extras like `items_pinned_to_model.json` match that sniff, so
+  unsorted readdir order picked the wrong "settings" nondeterministically. Idle life: SDK breath/sway/blink run free on
   a motionless model (the EyeBlink group is why import guarantees it), plus
   our saccade loop through the SDK focusController. The mouth is written
   INSIDE a wrapped `motionManager.update` so the SDK layers blink/breath/
@@ -831,7 +852,10 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
 - **Expressions at speech time**: `classifyEmotion` (bilingual lexicon,
   `lib/avatar/emotion.ts`) runs on the line at first-audible
   (lastSpoken/lastSpokenId), ships in the overlay push, maps through the
-  manifest's emotion table, decays to neutral after 10 s. Deliberately not
+  manifest's emotion table, and lives for 150% of its line: it holds while
+  the line plays and lingers half the line's duration after it ends
+  (EXPRESSION_LINGER_FRACTION), refreshed early by the next emotive line —
+  never a fixed clock, so a quip flashes and a story holds. Deliberately not
   LLM-driven in v1 (tags would touch every surface's prompt contract); the
   upgrade replaces that one call site.
 - **Pusher** (`components/CallOverlayPusher.tsx`): mode + activity stores →

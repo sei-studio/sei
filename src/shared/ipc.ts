@@ -411,7 +411,9 @@ export interface AvatarExpressionInfo {
  * model tree. LOCAL-ONLY: never cloud-synced (the bytes cannot follow), so a
  * character without one simply falls back to the static portrait tile. */
 export interface AvatarManifest {
-  version: 1;
+  /** Store format version (2 = ASCII-safe stored paths; v1 stores are lazily
+   * re-normalized by main on read). */
+  version: number;
   /** Display name (derived from the model3.json filename). */
   name: string;
   /** Relative path of the (normalized) .model3.json entry file. */
@@ -446,7 +448,7 @@ export interface CallOverlayParticipant {
   /** Lit with the speaking ring right now (and driving the Live2D mouth). */
   speaking: boolean;
   /** Tile shape from UserConfig.avatar_prefs (260804). Default 'circle'. */
-  frame?: 'circle';
+  frame?: 'circle' | 'square';
   /** True disables the talking indicator: no idle dim, no speaking ring. */
   alwaysBright?: boolean;
   /** This character has an imported Live2D model; the overlay renders the
