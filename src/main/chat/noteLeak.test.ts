@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isNoteLeak } from './noteLeak';
+import { isNoteLeak, stripThoughtTags } from './noteLeak';
 
 /**
  * Pinned against the 260807 live leak (Marv, backseat): both leaked lines are
@@ -60,6 +60,42 @@ describe('isNoteLeak', () => {
       '', // blank parts are not leaks
     ]) {
       expect(isNoteLeak(line, true)).toBe(false);
+    }
+  });
+});
+
+/**
+ * Pinned against the 260807 live leak (Sui, backseat/voice): five whole
+ * companion lines that were exactly "</final_thought>", each spoken by TTS and
+ * displayed in the caption window. The tag is the model's own emergent
+ * scratchpad markup — no prompt of ours names it — so the strip is mechanical.
+ */
+describe('stripThoughtTags', () => {
+  it('strips the live leak to nothing so the part drops', () => {
+    expect(stripThoughtTags('</final_thought>')).toBe('');
+  });
+
+  it('unwraps a real line the model wrapped in its own tags', () => {
+    expect(stripThoughtTags('<final_thought>okay that edit was clean</final_thought>')).toBe(
+      'okay that edit was clean',
+    );
+    expect(stripThoughtTags('<thinking>\nwhat map is this even\n</thinking>').trim()).toBe(
+      'what map is this even',
+    );
+  });
+
+  it('keeps non-tag angle brackets: hearts, comparisons, emoticons', () => {
+    for (const line of ['<3 that was adorable', 'so 5 < 8 obviously', 'ok :> fine', 'i mean a < b > c']) {
+      expect(stripThoughtTags(line)).toBe(line);
+    }
+  });
+
+  it('keeps ordinary spoken lines byte-identical', () => {
+    for (const line of [
+      "you're actually rickrolling me right now",
+      'wait what are you even searching for valorant clips for right now',
+    ]) {
+      expect(stripThoughtTags(line)).toBe(line);
     }
   });
 });

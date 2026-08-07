@@ -20,7 +20,7 @@ import { raiseUsageLimitPopup } from './usageLimit';
 import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
-import { isNoteLeak } from './noteLeak';
+import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
@@ -506,6 +506,7 @@ async function persistReplies(
   const replies: ChatMessage[] = (opts?.voice
     ? parts
         .map(stripPeerImpersonation)
+        .map(stripThoughtTags)
         .filter((text) => text && !isSilenceFiller(text))
         .filter((text) => {
           if (!isNoteLeak(text, opts?.rememberCalled === true)) return true;
@@ -657,7 +658,7 @@ export async function sendChatMessage(
       // front, not inside the loop, because `more` needs to know which of these
       // is genuinely the last one going out.
       const parts = splitReply(raw, prep.punctuation, isVoice)
-        .map((b) => (isVoice ? stripPeerImpersonation(b) : b))
+        .map((b) => (isVoice ? stripThoughtTags(stripPeerImpersonation(b)) : b))
         // Note-leak first tier only ("character note:" / "note to self"): a
         // streamed sentence can go out before the turn's tool_use blocks have
         // arrived, so the remember-aware second tier cannot apply here.

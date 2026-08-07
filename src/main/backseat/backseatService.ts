@@ -51,7 +51,7 @@ import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildSystemBlocks, markMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
-import { isNoteLeak } from '../chat/noteLeak';
+import { isNoteLeak, stripThoughtTags } from '../chat/noteLeak';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
@@ -708,7 +708,11 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   // call itself was honored above; only the leaked note is dropped.
   const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
   const parts: string[] = [];
-  for (const t of splitReply(replyText, character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual')) {
+  for (const raw of splitReply(replyText, character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual')) {
+    // stripThoughtTags before the empty check: a part that was ONLY the model's
+    // pseudo-XML ("</final_thought>", spoken and captioned live 260807) strips
+    // to nothing and drops here.
+    const t = stripThoughtTags(raw);
     if (!t || isSilenceFiller(t)) continue;
     if (isNoteLeak(t, rememberCalled)) {
       slog(s, `turn ${tick.kind}: note leak dropped ("${t.slice(0, 60)}")`);

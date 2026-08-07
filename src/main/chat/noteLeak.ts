@@ -44,6 +44,22 @@ const REMEMBER_SPEECH_NEXT = new Set([
 ]);
 
 /**
+ * Pseudo-XML scaffolding strip (260807). Same family, different register slip:
+ * Haiku sometimes wraps its reply in thinking-style tags of its own invention,
+ * and the closing tag lands as its own reply part. Live capture (backseat,
+ * 260807): five companion lines that were exactly "</final_thought>", each one
+ * spoken by TTS and shown in the caption window. No prompt of ours mentions
+ * the tag; it is the model's emergent scratchpad markup, so asking it to stop
+ * is not a fix. Word-shaped tags only: "<3", "a < b", ":>" all survive because
+ * a tag must open with a letter. Voice-scoped like the other gates — these
+ * lines are spoken and captioned, where markup is never content.
+ */
+const TAG_RE = /<\/?[a-z][a-z0-9_-]{0,40}(?:\s[^<>]{0,120})?>/gi;
+export function stripThoughtTags(part: string): string {
+  return part.replace(TAG_RE, '').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+/**
  * True when a reply part is the model's private note rather than a line to the
  * player. `rememberCalled` = a remember tool_use was present on this turn.
  */
