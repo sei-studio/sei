@@ -21,6 +21,8 @@
     "predev": "bash scripts/build-mac-audio-tap.sh && node scripts/fetch-live2d-core.mjs",
     "predist": "bash scripts/build-mac-audio-tap.sh && node scripts/fetch-live2d-core.mjs",
     "predist:mac": "bash scripts/build-mac-audio-tap.sh && node scripts/fetch-live2d-core.mjs",
+    "predist:win": "node scripts/fetch-live2d-core.mjs",
+    "predist:linux": "node scripts/fetch-live2d-core.mjs",
     "fetch:live2d": "node scripts/fetch-live2d-core.mjs"
   },
   "dependencies": {
