@@ -51,6 +51,16 @@ import { voicePitchRate } from '@shared/voicePitch';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { t } from '../i18n';
 import { createDictation, type Dictation } from '../voice/dictation';
+import {
+  classifyScreenEcho,
+  envelopeCorrelation,
+  finalScreenEcho,
+  MIN_ECHO_TOKENS,
+  normalizeTokens,
+  SELF_ECHO_OVERLAP,
+  textOverlap,
+  type MicEchoInfo,
+} from '../voice/echoGate';
 import { sttPolicy } from '../voice/sttPolicy';
 import { prefetchVoiceModel } from '../voice/modelPrefetch';
 import { registerVoiceHooks } from '../voice/voiceBridge';
@@ -149,6 +159,104 @@ interface VoiceState {
 /** Non-reactive session internals (torn down in endCall). */
 let dictation: Dictation | null = null;
 let queue: AudioQueue | null = null;
+
+/**
+ * Echo gate (260807) — see voice/echoGate.ts for the full story. Two
+ * references, checked in order:
+ *
+ *   1. The companion's OWN lines. Known verbatim with exact audible windows
+ *      (pushed from the queue's onAudible / stop callbacks below), so this is
+ *      pure text: a mic transcript whose words are mostly a fragment of a
+ *      line that was audible at the time is her voice coming back off the
+ *      speakers past AEC. Zero latency, works on plain calls with no share.
+ *   2. The shared screen's audio (backseat only): the tap's loudness contour
+ *      and the screen transcript ring, via the capture handle's echoProbe.
+ *      This is what nothing else in the stack can do — AEC has no reference
+ *      for another app's sound, so a reel at speaker volume used to speak AS
+ *      the player.
+ *
+ * Ambiguity (an active reference whose words are not chewed yet) is resolved
+ * by ONE bounded screen-STT flush and re-asking; the words get the last word,
+ * so a player talking OVER the reel stays the player at the cost of ~1s of
+ * added latency on exactly those utterances.
+ */
+interface AudibleLine {
+  text: string;
+  t0: number;
+  /** 0 while still audible. */
+  t1: number;
+}
+const audibleLines: AudibleLine[] = [];
+
+function noteAudibleLine(text: string): void {
+  audibleLines.push({ text, t0: Date.now(), t1: 0 });
+  while (audibleLines.length > 24) audibleLines.shift();
+}
+
+function closeAudibleLines(): void {
+  const now = Date.now();
+  for (const l of audibleLines) if (!l.t1) l.t1 = now;
+}
+
+async function micEchoCheck(info: MicEchoInfo): Promise<boolean> {
+  const { text, t0, t1, envelope, purpose } = info;
+  const micTokens = normalizeTokens(text).length;
+  if (!micTokens) return false;
+  // Barge fragments are ~400ms and rarely reach three tokens; two matching
+  // tokens is enough evidence to keep her line alive (a wrong abort only
+  // delays the interrupt to utterance end, a wrong commit destroys the line).
+  const minTokens = purpose === 'barge' ? 2 : MIN_ECHO_TOKENS;
+
+  // 1. Her own voice. Generous slack on the windows: the mic hears her a
+  // beat late, and Whisper's segment bounds are approximate.
+  const lines = audibleLines.filter((l) => l.t0 <= t1 + 500 && (!l.t1 || l.t1 >= t0 - 1_500));
+  for (const l of lines) {
+    if (micTokens >= minTokens && textOverlap(text, l.text) >= SELF_ECHO_OVERLAP) {
+      console.log(`[sei/voice] echo-gate: own voice off the speakers — "${text.slice(0, 60)}"`);
+      return true;
+    }
+  }
+
+  // 2. The shared screen's sound.
+  const cap = backseatCapture();
+  if (!cap?.echoProbe) return false;
+  const probe = cap.echoProbe(t0, t1);
+  const corr = envelopeCorrelation(envelope, probe.envelope, t0, t1);
+  const overlap = textOverlap(text, probe.transcript);
+  const verdict = classifyScreenEcho({
+    corr,
+    overlap,
+    micTokens,
+    minTokens,
+    refHasText: probe.transcript.length > 0,
+  });
+  if (verdict !== 'ambiguous') {
+    if (verdict === 'echo') {
+      console.log(
+        `[sei/voice] echo-gate: screen audio (r=${corr.r.toFixed(2)} overlap=${overlap.toFixed(2)}) — "${text.slice(0, 60)}"`,
+      );
+    }
+    return verdict === 'echo';
+  }
+  // The reference was live but its words are still in Whisper's throat: pull
+  // the tail and let the transcript decide. Bounded (STT_FLUSH_WAIT_MS), and
+  // for a barge the companion is already ducked while this runs.
+  await cap.echoFlush();
+  const again = cap.echoProbe(t0, t1);
+  const o2 = textOverlap(text, again.transcript);
+  const echo = finalScreenEcho({
+    corr,
+    overlap: o2,
+    micTokens,
+    refHasText: again.transcript.length > 0,
+  });
+  if (echo) {
+    console.log(
+      `[sei/voice] echo-gate: screen audio after flush (r=${corr.r.toFixed(2)} overlap=${o2.toFixed(2)}) — "${text.slice(0, 60)}"`,
+    );
+  }
+  return echo;
+}
 /** Session token — guards async completions from a superseded/ended call. */
 let session = 0;
 /** When each participant's audio went live — basis for their connectedMs row. */
@@ -549,11 +657,15 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // shift is local and pace-preserving now (pitchBus.ts), so clips play at
     // rate 1 and the drain is back to real time. The threshold stays: a short
     // clip has no lead to spare either way, and the latency it trades is small.
+    // `turn` is queue bookkeeping (drop a superseded turn's unplayed lines),
+    // never a synthesis parameter: main's TTS zod would strip it silently, but
+    // splitting here keeps the request honest.
+    const { turn, ...ttsCtx } = ctx;
     const worthStreaming = text.length >= STREAM_MIN_CHARS;
     if (canStream && worthStreaming && queue) {
-      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId));
+      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), { turn });
       void sei
-        .voiceTtsStream({ characterId, text, ...ctx })
+        .voiceTtsStream({ characterId, text, ...ttsCtx })
         .then(({ streamId }) => {
           if (session !== mySession) {
             handle.fail();
@@ -583,9 +695,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // and a five-line reply came out shuffled. `blob: true` keeps the safe
     // fetch-whole playback that STREAM_MIN_CHARS chose (see above); only the
     // bookkeeping moves.
-    const slot = queue?.enqueueStream(characterId, text, pitchRateOf(characterId), { blob: true });
+    const slot = queue?.enqueueStream(characterId, text, pitchRateOf(characterId), {
+      blob: true,
+      turn,
+    });
     void sei
-      .voiceTts({ characterId, text, ...ctx })
+      .voiceTts({ characterId, text, ...ttsCtx })
       .then((buf) => {
         if (session !== mySession) {
           slot?.fail();
@@ -1300,6 +1415,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // that gap trips the much lower normal speech threshold instead. The
           // grace window inside the hold is armed separately, below.
           dictation?.setHold(speaking);
+          // Echo gate: playback stopped, so every open audible window closes.
+          if (!speaking) closeAudibleLines();
           if (!speaking) maybeFinishRemoteEnd();
         },
         (cid, text) => {
@@ -1312,6 +1429,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             speakingId: cid,
             ...(text ? { lastSpoken: text, lastSpokenId: cid } : {}),
           });
+          // Echo gate: this exact text is now coming out of the speakers, so
+          // the mic hearing these words back is her, not the player.
+          if (text) noteAudibleLine(text);
           dictation?.armBargeGrace();
         },
       );
@@ -1401,6 +1521,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             // The director handles addressing, mirroring, and the reply chain.
             dispatchUserTurn(text);
           },
+          // Speakers-into-the-mic filter (260807): her own leaked TTS and the
+          // shared screen's audio must not become "the player said ...".
+          echoCheck: micEchoCheck,
           // Stage one (260804): something that might be the player crossed a low
           // bar. Duck, do not clear — the seq is NOT bumped and no chain is
           // cancelled, because this is retractable and half of these are a
@@ -1427,6 +1550,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             directorSeq++;
             clearTurnCapture();
             queue?.clear();
+            // The caption follows the voice (260806): an interrupted line's
+            // caption must vanish WITH the audio, not page on through its
+            // remaining chunks and linger. lastSpoken is only read by the
+            // caption/overlay surfaces, so clearing it here cannot affect the
+            // transcript or the turn itself.
+            set({ lastSpoken: '', lastSpokenId: null });
             // Kill the screen-share turn too. Clearing the queue only silences
             // what is already synthesised; a backseat turn still generating
             // would land its line a second later, which reads as the companion

@@ -54,6 +54,7 @@ export function CallOverlayPusher(): null {
   const speakingId = useVoiceStore((s) => s.speakingId);
   const lastSpoken = useVoiceStore((s) => s.lastSpoken);
   const lastSpokenId = useVoiceStore((s) => s.lastSpokenId);
+  const callMuted = useUiStore((s) => s.callMuted);
   const chessGames = useChessStore((s) => s.games);
   const drawGames = useDrawStore((s) => s.games);
   const backseatActive = useBackseatStore((s) => s.active);
@@ -81,6 +82,7 @@ export function CallOverlayPusher(): null {
   ];
 
   const callActive = callStatus === 'live' || callStatus === 'connecting';
+  const backseatLive = Object.keys(backseatActive).some((id) => backseatActive[id]);
   const ids = computeAvatarIds({
     mode,
     callParticipants: callActive ? participants : [],
@@ -103,11 +105,27 @@ export function CallOverlayPusher(): null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, idsKey, manifests]);
 
+  // The overlay's mute button relays through main; the mic's single source of
+  // truth stays HERE (useUiStore.callMuted, which dictation subscribes to).
+  useEffect(() => {
+    const off = sei.onAvatarMuteRequest?.(() => {
+      const ui = useUiStore.getState();
+      ui.setCallMuted(!ui.callMuted);
+    });
+    return () => off?.();
+  }, []);
+
   useEffect(() => {
     const chars = useDataStore.getState().characters;
     void sei
       .voiceOverlaySet?.({
         enabled: mode !== 'off',
+        // Call-surface extras (260806): gate the overlay's mute + captions
+        // buttons and feed the caption box.
+        onCall: callActive || backseatLive,
+        muted: callMuted,
+        lastSpoken: lastSpoken || null,
+        lastSpokenId,
         participants: ids.map((id) => {
           const c = chars.find((x) => x.id === id);
           const prefs = avatarPrefs[id];
@@ -131,7 +149,7 @@ export function CallOverlayPusher(): null {
         /* overlay is best-effort; a failed push never affects the app */
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, mode, speakingId, lastSpoken, lastSpokenId, avatarPrefs, manifests]);
+  }, [idsKey, mode, speakingId, lastSpoken, lastSpokenId, avatarPrefs, manifests, callActive, backseatLive, callMuted]);
 
   return null;
 }

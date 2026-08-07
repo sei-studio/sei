@@ -1,0 +1,104 @@
+/*
+ * Caption overlay window styles (260806). Floats over arbitrary apps, so
+ * values are literal on purpose (tokens.css assumes the app's own surfaces).
+ *
+ * Geometry contract with CaptionOverlay.tsx: the box is inset 8px from the
+ * window edges and padded 14px/10px — BOX_INSET / BOX_PAD_X / BOX_PAD_Y in
+ * the component read the same numbers to estimate text capacity. The
+ * line-height matches CAPTION_LINE_HEIGHT in captionChunks.ts.
+ */
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+.box {
+  position: absolute;
+  inset: 8px;
+  border-radius: 10px;
+  background: rgba(10, 12, 16, 0.72);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Edit mode: the same periwinkle frame as the avatar overlay, and dragging
+ * anywhere on the box moves it. */
+.boxEditing {
+  border: 1px solid rgba(127, 176, 255, 0.85);
+  box-shadow:
+    0 0 8px rgba(127, 176, 255, 0.45),
+    inset 0 0 6px rgba(127, 176, 255, 0.18);
+  cursor: move;
+}
+
+.text {
+  margin: 0;
+  color: #ffffff;
+  font-size: var(--cap-font, 18px);
+  /* Must match CAPTION_LINE_HEIGHT in captionChunks.ts. */
+  line-height: 1.35;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  user-select: none;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+/* ── Edit chrome: corner handles + font size buttons ───────────────────── */
+
+.handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  z-index: 3;
+}
+
+.handle::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 2px;
+  background: rgba(127, 176, 255, 0.9);
+  box-shadow: 0 0 6px rgba(127, 176, 255, 0.6);
+}
+
+.tl { top: -2px; left: -2px; cursor: nwse-resize; }
+.br { bottom: -2px; right: -2px; cursor: nwse-resize; }
+.tr { top: -2px; right: -2px; cursor: nesw-resize; }
+.bl { bottom: -2px; left: -2px; cursor: nesw-resize; }
+
+.fontBtns {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 6px;
+  z-index: 4;
+}
+
+.fontBtn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 22, 28, 0.92);
+  border: 1px solid rgba(127, 176, 255, 0.6);
+  box-shadow: 0 0 8px rgba(127, 176, 255, 0.35);
+  color: rgba(127, 176, 255, 0.95);
+  cursor: pointer;
+}
+
+.fontBtn:hover {
+  border-color: rgba(127, 176, 255, 0.95);
+  box-shadow: 0 0 10px rgba(127, 176, 255, 0.55);
+}

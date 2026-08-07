@@ -31,8 +31,11 @@
  *   2. 'start'    the share just opened. Fires once per session, START_LOOK_MS
  *                 in, so the companion reacts to being shown something instead
  *                 of sitting silent until the first idle timer.
- *   3. 'jolt'     a large local audio/colour discontinuity. No model in the
- *                 loop — see JOLT_* below.
+ *   3. 'jolt'     a large local discontinuity, no model in the loop (JOLT_*).
+ *                 A GAIN jolt fires at the moment; a colour discontinuity or a
+ *                 share-label change instead arms the SWITCH DWELL and the
+ *                 tick fires only once the new content has held for
+ *                 SWITCH_DWELL_MS (see that constant for why).
  *   4. 'idle'     the scheduled look: a randomised IDLE_* timer, nothing more.
  *
  * 260801: there used to be a fourth source, a small VLM on DeepInfra asked
@@ -305,8 +308,38 @@ export const TICK_TRANSCRIPT_MAX_CHARS = 600;
 
 /** How often the label is re-read. Titles change on human timescales (a tab
  *  switch, a new video), and this crosses an IPC boundary into a window
- *  enumeration, so it is deliberately far slower than anything else here. */
-export const SHARE_LABEL_INTERVAL_MS = 5_000;
+ *  enumeration — but a zero-thumbnail enumeration is a few ms, and since 260806
+ *  a label CHANGE also feeds the switch dwell below, whose 6 s promise is only
+ *  as accurate as this poll. 2.5 s keeps the dwell honest to within half its
+ *  own length while staying by far the slowest consumer in the pipeline. */
+export const SHARE_LABEL_INTERVAL_MS = 2_500;
+
+// ── The switch wake: react to the NEW thing, not the change (260806) ──────
+//
+// A colour jolt fires AT the discontinuity, and that timing is exactly wrong
+// for a content switch. Live on an Instagram Reels session the companion was
+// reliably one reel behind: the swipe fired the jolt, the grid composited at
+// that instant was five cells of the OLD reel and one sliver of the new, and
+// she reacted to what she could actually see — the reel the player had just
+// left. Every reaction landed on the previous subject, for the whole session.
+//
+// So a colour jolt no longer raises a tick directly. It (and a share-label
+// change: a tab switch, a different window, a new video title) arms a DWELL:
+// the wake fires only once the new content has been on screen for
+// SWITCH_DWELL_MS with no further change, and every further change restarts
+// the clock. Two things fall out, both wanted:
+//
+//   • the grid at fire time spans exactly the dwell, so every cell shows the
+//     new thing (the oldest may catch the tail of the old one, and the note
+//     says so);
+//   • a fast scroll through five reels produces NO wake until the player
+//     settles, instead of five reactions to five already-abandoned clips.
+//
+// The dwell equals GRID_SPAN_MS deliberately: shorter and the old content
+// still dominates the grid; longer and the reaction goes stale. GAIN jolts
+// stay immediate — a loudness spike is a moment inside a scene that is still
+// going, and reacting at the moment is the point.
+export const SWITCH_DWELL_MS = 6_000;
 
 // ── Cadence ───────────────────────────────────────────────────────────────
 
@@ -475,8 +508,17 @@ export interface BackseatTick {
   capturedAt: number;
   /** The player's message on a 'user' tick. Absent otherwise. */
   text?: string;
-  /** Why a jolt fired, for the prompt ("the screen changed colour completely"). */
-  joltReason?: 'gain' | 'color';
+  /**
+   * Why a jolt fired, for the prompt. 'gain' is a loudness spike, immediate.
+   * 'switch' is the dwell wake above: the content changed (colour
+   * discontinuity or a new share label) and then STAYED for SWITCH_DWELL_MS.
+   * 'color' is the pre-260806 immediate colour jolt; the renderer no longer
+   * sends it, but the prompt still knows how to read one.
+   */
+  joltReason?: 'gain' | 'color' | 'switch';
+  /** On a 'switch' jolt: how many seconds ago the last change signal landed,
+   *  so the note can say how long they have been on the new thing. */
+  sinceSwitchS?: number;
   /**
    * What the game audio said during (roughly) the grid's window, from the
    * local Whisper ring. Absent when there is no audio source or nothing was

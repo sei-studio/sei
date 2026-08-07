@@ -425,6 +425,13 @@ export interface AvatarManifest {
   /** emotion → expression name, auto-mapped at import by filename keywords.
    * Sparse: an unmapped emotion leaves the model on its neutral face. */
   emotions: Partial<Record<AvatarEmotion, string>>;
+  /**
+   * Persistent accessory toggles (260806): expression name → on. The
+   * emotion-UNMAPPED expressions are item toggles (hat, phone, coat...);
+   * a true entry keeps that expression's parameter deltas applied every
+   * frame, layered under the emotion expressions. Sparse; absent = off.
+   */
+  accessories?: Record<string, boolean>;
 }
 
 /** One file of a Live2D model bundle, shipped renderer-ward over IPC so the
@@ -460,13 +467,40 @@ export interface CallOverlayParticipant {
   emotion?: AvatarEmotion | null;
 }
 
+/**
+ * Per-character overlay camera (260806): how the character is framed WITHIN
+ * its tile. `zoom` multiplies the contain-fit scale (1 = whole model visible);
+ * `x`/`y` pan the model as fractions of the tile edge (0 = centered). Written
+ * by MAIN into UserConfig.avatar_overlay.cameras (edit-mode wheel/drag in the
+ * overlay window streams it up); enriched into the forwarded state.
+ */
+export interface AvatarCamera {
+  zoom: number;
+  x: number;
+  y: number;
+}
+
 /** State of the always-on-top avatar overlay window (main window → main →
- * overlay). `enabled` folds together the avatar mode AND the mode's activity
- * condition: the overlay shows iff enabled and there is at least one
- * participant. */
+ * overlay + caption windows). `enabled` folds together the avatar mode AND
+ * the mode's activity condition: the overlay shows iff enabled and there is
+ * at least one participant. `cameras` and `captionsOn` are enriched by MAIN
+ * from config before forwarding — the main-window pusher never sends them. */
 export interface CallOverlayState {
   enabled: boolean;
   participants: CallOverlayParticipant[];
+  /** A voice call is live/connecting or a backseat share is running — the
+   * overlay shows its mute + captions buttons only then. */
+  onCall?: boolean;
+  /** Mic mute (useUiStore.callMuted), mirrored so the overlay button lights. */
+  muted?: boolean;
+  /** The companion line currently/last audibly spoken (caption content). */
+  lastSpoken?: string | null;
+  /** Which companion said `lastSpoken`. */
+  lastSpokenId?: string | null;
+  /** MAIN-enriched: per-character tile cameras from config. */
+  cameras?: Record<string, AvatarCamera>;
+  /** MAIN-enriched: the caption overlay window is enabled. */
+  captionsOn?: boolean;
 }
 
 /**
@@ -481,6 +515,17 @@ export interface SpokenLineContext {
   prev?: string;
   /** Another line of this same reply is known to follow this one. */
   more?: boolean;
+  /**
+   * Which turn this line belongs to (260806). When a line with a NEW tag
+   * reaches the audio queue while lines with an OLD tag from the same speaker
+   * are still queued, the old ones are dropped: the clip already playing
+   * finishes (that is the "let the current sentence end" boundary — parts are
+   * sentence-sized), then playback jumps to the new turn. Backseat sets it,
+   * because its turns outpace TTS playback and the spoken commentary used to
+   * drift a full turn behind the screen. Never sent to TTS (renderer strips
+   * it before the synthesis call); untagged lines are never dropped.
+   */
+  turn?: string;
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
@@ -1369,6 +1414,19 @@ export interface RendererApi {
   avatarRemove(characterId: string): Promise<void>;
   /** The model bundle files, for building in-memory File objects. */
   avatarModelFiles(characterId: string): Promise<AvatarModelFile[]>;
+  /** Flip a persistent accessory expression toggle (260806). Returns the
+   * updated manifest (also broadcast on onAvatarManifest), or null when the
+   * character has no imported model. */
+  avatarSetAccessory(
+    characterId: string,
+    name: string,
+    on: boolean,
+  ): Promise<AvatarManifest | null>;
+  /** Subscribe to avatar manifest changes (any window). Live Live2D views use
+   * it to re-apply accessory toggles without reloading the model. */
+  onAvatarManifest(
+    cb: (update: { characterId: string; manifest: AvatarManifest | null }) => void,
+  ): Unsubscribe;
   /** Mouth-level sample for the audible companion (main window → overlay). */
   avatarOverlayLevel(characterId: string, level: number): Promise<void>;
   /** Subscribe (overlay window only) to relayed mouth-level samples. */
@@ -1377,26 +1435,74 @@ export interface RendererApi {
    * window clickable / restore click-through. */
   avatarOverlayInteractive(interactive: boolean): Promise<void>;
   /**
-   * Overlay window only: resize. Streams the desired tile size while dragging
-   * a corner (anchor = the corner that stays fixed) or wheel-zooming
-   * (anchor 'center' grows/shrinks around the window center); `commit`
-   * persists the final geometry to config.
+   * Overlay window only: WINDOW resize. Streams the desired tile size while
+   * dragging a corner handle (anchor = the corner that stays fixed; 'center'
+   * kept for programmatic use); `commit` persists the final geometry. The
+   * wheel does NOT come here anymore — it zooms the character within the tile
+   * (avatarOverlayCamera, 260806).
    */
   avatarOverlayResize(args: {
     size: number;
     anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center';
     commit?: boolean;
   }): Promise<void>;
-  /**
-   * Overlay window only: edit-mode drag-anywhere move. 'start' snapshots the
-   * window origin; 'move' streams screen-space deltas from that origin;
-   * 'end' persists the final position.
-   */
+  /** Overlay window only: hold-to-drag WINDOW move stream (screen-space
+   * deltas from the pointer-down; mirrors avatarCaptionMove). Available in
+   * view mode too since 260806 — the drag button is ordinary chrome, not an
+   * app-region (an app-region swallows pointer events, which broke the
+   * per-region interactivity tracking). */
   avatarOverlayMove(args: {
     phase: 'start' | 'move' | 'end';
     dx?: number;
     dy?: number;
   }): Promise<void>;
+  /** Overlay window only: subscribe to the polled cursor position, normalized
+   * to [-1, 1] around the overlay window's center (x right, y UP — the
+   * focusController's frame). Main polls only while a Live2D tile shows; the
+   * gaze cursor-follow mode treats a stale feed as "wander instead". */
+  onAvatarOverlayCursor(cb: (pt: { x: number; y: number }) => void): Unsubscribe;
+  /**
+   * Overlay window only (260806): stream a character's tile camera (zoom +
+   * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
+   * persists it to config (avatar_overlay.cameras, main-owned).
+   */
+  avatarOverlayCamera(args: {
+    id: string;
+    zoom: number;
+    x: number;
+    y: number;
+    commit?: boolean;
+  }): Promise<void>;
+  /** Overlay window only: edit mode entered/left (forwarded to the caption
+   * window so its edit chrome follows the avatar's pencil). */
+  avatarOverlayEditing(editing: boolean): Promise<void>;
+  /** Overlay window only: the mute button — main relays to the main window,
+   * which flips useUiStore.callMuted (the mic's single source of truth). */
+  avatarOverlayMuteToggle(): Promise<void>;
+  /** Main window: subscribe to overlay mute presses relayed by main. */
+  onAvatarMuteRequest(cb: () => void): Unsubscribe;
+  /** Overlay window only: toggle the caption overlay window → new enabled. */
+  avatarOverlayCaptionsToggle(): Promise<boolean>;
+  /** Caption window only: corner-resize stream/commit (anchor = the corner
+   * that stays fixed, mirroring avatarOverlayResize). */
+  avatarCaptionResize(args: {
+    width: number;
+    height: number;
+    anchor: 'tl' | 'tr' | 'bl' | 'br';
+    commit?: boolean;
+  }): Promise<void>;
+  /** Caption window only: edit-mode drag-anywhere move stream. */
+  avatarCaptionMove(args: {
+    phase: 'start' | 'move' | 'end';
+    dx?: number;
+    dy?: number;
+  }): Promise<void>;
+  /** Caption window only: bump the fixed caption font size → the new px. */
+  avatarCaptionFont(delta: 1 | -1): Promise<number>;
+  /** Caption window only: subscribe to the avatar overlay's edit-mode flag. */
+  onAvatarCaptionEditState(cb: (editing: boolean) => void): Unsubscribe;
+  /** Caption window only: initial {editing, fontSize} pull on mount. */
+  avatarCaptionGet(): Promise<{ editing: boolean; fontSize: number }>;
   /**
    * Signal that the chat surface was opened for a character. Main decides whether
    * a first-meeting greeting fires (any companion kind, empty transcript, never
@@ -2542,6 +2648,12 @@ export const IpcChannel = {
     remove: 'avatar:remove',
     /** Invoke: the model bundle files for in-memory loading → AvatarModelFile[]. */
     modelFiles: 'avatar:model-files',
+    /** Invoke: flip an accessory expression toggle ({characterId, name, on})
+     * → the updated AvatarManifest (260806). */
+    setAccessory: 'avatar:set-accessory',
+    /** Push (main → every window): a character's avatar manifest changed
+     * ({characterId, manifest}) — live Live2D views re-apply accessories. */
+    manifestState: 'avatar:manifest-state',
     /** Invoke (main window → main): mouth-level sample for the speaking
      * companion ({id, level 0..1}), relayed to the overlay window. */
     overlayLevel: 'avatar:overlay-level',
@@ -2553,8 +2665,36 @@ export const IpcChannel = {
     /** Invoke (overlay window → main): corner-resize stream/commit
      * ({size, anchor, commit?}). */
     overlayResize: 'avatar:overlay-resize',
-    /** Invoke (overlay window): edit-mode drag-anywhere move stream. */
+    /** Invoke (overlay window → main): hold-to-drag window move stream
+     * ({phase, dx?, dy?}). */
     overlayMove: 'avatar:overlay-move',
+    /** Push (main → overlay window): polled cursor position normalized to
+     * [-1, 1] around the window center, for gaze cursor-follow. */
+    overlayCursorState: 'avatar:overlay-cursor-state',
+    /** Invoke (overlay window → main): per-character camera (character zoom +
+     * pan WITHIN the tile) stream/commit ({id, zoom, x, y, commit?}). */
+    overlayCamera: 'avatar:overlay-camera',
+    /** Invoke (overlay window → main): edit mode entered/left — forwarded to
+     * the caption window so its edit chrome tracks the avatar's pencil. */
+    overlayEditing: 'avatar:overlay-editing',
+    /** Invoke (overlay window → main): the overlay mute button was pressed. */
+    overlayMute: 'avatar:overlay-mute',
+    /** Push (main → main window): relay of the overlay mute press; the main
+     * window flips useUiStore.callMuted (the mic's single source of truth). */
+    muteRequest: 'avatar:mute-request',
+    /** Invoke (overlay window → main): toggle the caption overlay → enabled. */
+    overlayCaptions: 'avatar:overlay-captions',
+    /** Invoke (caption window → main): corner-resize stream/commit
+     * ({width, height, anchor, commit?}). */
+    captionResize: 'avatar:caption-resize',
+    /** Invoke (caption window → main): drag-anywhere move stream. */
+    captionMove: 'avatar:caption-move',
+    /** Invoke (caption window → main): bump the caption font size → new px. */
+    captionFont: 'avatar:caption-font',
+    /** Push (main → caption window): the avatar overlay's edit-mode flag. */
+    captionEditState: 'avatar:caption-edit-state',
+    /** Invoke (caption window → main): initial {editing, fontSize} pull. */
+    captionGet: 'avatar:caption-get',
   },
   user: {
     getProfile: 'user:get-profile',

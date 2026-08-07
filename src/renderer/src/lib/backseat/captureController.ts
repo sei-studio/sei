@@ -27,14 +27,18 @@ import {
   CAPTURE_H,
   CAPTURE_W,
   JOLT_GAIN_DB,
+  MIN_SPEAK_GAP_MS,
   nextIdleDelayMs,
   START_LOOK_MS,
   SHARE_LABEL_INTERVAL_MS,
   STT_SAMPLE_RATE,
+  SWITCH_DWELL_MS,
   type BackseatTickKind,
 } from '../../../../shared/backseatIpc';
+import { pushEnv, type EnvSample } from '../voice/echoGate';
 import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
 import { createSttStream, type SttStream } from './sttStream';
+import { createSwitchDwell } from './switchDwell';
 
 /**
  * How long a grid captured at the player's first word stays usable. Someone can
@@ -96,6 +100,20 @@ export interface CaptureHandle {
    * arriving right behind a jolt reply is two lines about one moment.
    */
   noteSpoke: () => void;
+  /**
+   * Echo gate (260807): the screen audio as an echo REFERENCE for the mic.
+   * The loudness contour comes from the same normalized PCM feed that drives
+   * the gain jolt; the transcript is whatever the ring has chewed so far
+   * around [t0, t1]. Both local, nothing leaves the machine. See
+   * voice/echoGate.ts for why the mic needs this: nothing cancels another
+   * app's audio out of the microphone, so on speakers the reel speaks AS the
+   * player unless its words/contour are recognized here.
+   */
+  echoProbe: (t0: number, t1: number) => { envelope: EnvSample[]; transcript: string };
+  /** Pull the in-progress Whisper tail into the ring (bounded by the same
+   *  flush wait a tick uses) so an ambiguous echoProbe can be re-asked with
+   *  the words that were still being transcribed. */
+  echoFlush: () => Promise<void>;
 }
 
 let active: CaptureHandle | null = null;
@@ -377,6 +395,58 @@ export async function startCapture(
     /* English is the right default */
   }
 
+  // ── The switch dwell (260806) ───────────────────────────────────────────
+  // Content switches (a colour discontinuity, a changed share label) no longer
+  // raise a tick at the moment of the change: reacting AT the swipe meant the
+  // grid was five cells of the old reel and one sliver of the new, and the
+  // companion spent a whole live session reacting to the clip the player had
+  // just left. The dwell fires only once the new content has held for
+  // SWITCH_DWELL_MS, restarting on every further change, so the grid at fire
+  // time is entirely the new thing and a fast scroll stays silent until the
+  // player settles. Reasoning: SWITCH_DWELL_MS in shared/backseatIpc.ts.
+  const switchDwell = createSwitchDwell({
+    dwellMs: SWITCH_DWELL_MS,
+    onFire: (sinceChangeMs) => {
+      void fireSwitch(sinceChangeMs);
+    },
+  });
+  /** A further change signal: any deferred fire is stale, the dwell restarts. */
+  const noteSwitchSignal = (): void => {
+    window.clearTimeout(switchDeferTimer);
+    switchDwell.change();
+  };
+  /** When the companion last spoke, mirrored from noteSpoke. The dwell often
+   *  expires just inside main's MIN_SPEAK_GAP_MS (a swipe tends to follow a
+   *  line about the previous reel by a second or two), and main DROPS a gapped
+   *  tick rather than queueing it — so the settled switch would go unremarked
+   *  until the next idle look. Deferring the fire past the gap keeps the
+   *  reaction; a change during the deferral cancels it like any other. */
+  let lastSpokeLocalAt = 0;
+  let switchDeferTimer = 0;
+  async function fireSwitch(sinceChangeMs: number): Promise<void> {
+    if (paused || stopped) return;
+    const gapLeft = MIN_SPEAK_GAP_MS - (Date.now() - lastSpokeLocalAt);
+    if (gapLeft > 0) {
+      window.clearTimeout(switchDeferTimer);
+      switchDeferTimer = window.setTimeout(() => {
+        void fireSwitch(sinceChangeMs + gapLeft);
+      }, gapLeft + 250);
+      return;
+    }
+    const grid = await composite();
+    if (!grid) {
+      console.warn('[backseat] switch tick dropped: no grid from worker');
+      return;
+    }
+    if (paused || stopped) return;
+    const transcript = await tickTranscript();
+    await sendTick('jolt', grid, {
+      joltReason: 'switch',
+      sinceSwitchS: Math.round(sinceChangeMs / 100) / 10,
+      transcript,
+    });
+  }
+
   // ── What is being shared ────────────────────────────────────────────────
   // One short line naming the surface, re-read on a slow timer because titles
   // move under a fixed source id (a browser tab switch changes the screen
@@ -389,6 +459,10 @@ export async function startCapture(
   // one window enumeration every five seconds instead of a recognition pass on
   // every other frame.
   let shareLabel: string | null = sourceName || null;
+  // The seed is the pick-time source name, which rarely matches the polled
+  // title byte for byte, so the first poll result is a BASELINE, never a
+  // switch signal — otherwise every session opened with a phantom switch.
+  let labelBaselined = false;
   const pollShareLabel = (): void => {
     void sei
       .backseatShareLabel(sourceId)
@@ -396,7 +470,12 @@ export async function startCapture(
         if (label && label !== shareLabel) {
           shareLabel = label;
           console.log(`[backseat] sharing: ${label}`);
+          // A changed title is changed content (a tab switch, a new video, a
+          // different window frontmost): feed the switch dwell alongside the
+          // colour arm. The dwell coalesces the two when both notice one event.
+          if (labelBaselined) noteSwitchSignal();
         }
+        labelBaselined = true;
       })
       .catch(() => {
         /* a missed poll keeps the last good label */
@@ -422,11 +501,22 @@ export async function startCapture(
   // drives the gain signal in ~32 ms windows, so every frame the worker sees
   // has a loudness reading about as fresh as the old analyser gave it.
   const stt: SttStream = createSttStream({ language });
+  // Echo-gate reference contour (260807): the same ~32ms gain windows, kept
+  // with wall-clock stamps so the mic's utterance window can be correlated
+  // against what the speakers were playing. The chunk's audio ends at arrival;
+  // its windows are stamped back across it.
+  const echoEnv: EnvSample[] = [];
+  const ECHO_ENV_KEEP_MS = 20_000;
   const pipeline = startAudioPipeline(audioSource, stream, (pcm) => {
     stt.push(pcm);
+    const endT = Date.now();
+    const chunkMs = (pcm.length / STT_SAMPLE_RATE) * 1000;
     for (let i = 0; i < pcm.length; i += GAIN_WINDOW_SAMPLES) {
       const win = pcm.subarray(i, Math.min(pcm.length, i + GAIN_WINDOW_SAMPLES));
-      worker.postMessage({ type: 'gain', db: rmsDb(win) });
+      const db = rmsDb(win);
+      worker.postMessage({ type: 'gain', db });
+      const t = endT - chunkMs + ((i + win.length) / pcm.length) * chunkMs;
+      pushEnv(echoEnv, t, db, ECHO_ENV_KEEP_MS);
     }
   });
   /** The transcript a tick carries: bounded flush, then the window's text.
@@ -540,7 +630,8 @@ export async function startCapture(
     grid: Grid,
     extra: {
       text?: string;
-      joltReason?: 'gain' | 'color';
+      joltReason?: 'gain' | 'color' | 'switch';
+      sinceSwitchS?: number;
       transcript?: string;
     } = {},
   ): Promise<void> => {
@@ -615,6 +706,13 @@ export async function startCapture(
           `colorDelta ${msg.colorDelta ?? 'n/a'}`,
       );
       if (paused || stopped) return;
+      // A colour discontinuity is a content switch, and reacting AT the switch
+      // is reacting to the thing that just left the screen (the one-reel-behind
+      // failure). It arms the dwell instead; only GAIN stays immediate.
+      if (msg.reason === 'color') {
+        noteSwitchSignal();
+        return;
+      }
       void (async () => {
         const grid = await composite();
         if (!grid) {
@@ -743,6 +841,8 @@ export async function startCapture(
     stop: () => {
       if (stopped) return;
       stopped = true;
+      switchDwell.cancel();
+      window.clearTimeout(switchDeferTimer);
       window.clearTimeout(idleTimer);
       window.clearTimeout(startTimer);
       window.clearInterval(labelTimer);
@@ -769,8 +869,13 @@ export async function startCapture(
     setPaused: (p: boolean) => {
       paused = p;
       // A grid latched before the pause describes a moment the player has since
-      // stepped away from; dropping it means unpausing starts clean.
-      if (p) held = null;
+      // stepped away from; dropping it means unpausing starts clean. Same for a
+      // pending switch: whatever changed is old news by the time they unpause.
+      if (p) {
+        held = null;
+        switchDwell.cancel();
+        window.clearTimeout(switchDeferTimer);
+      }
     },
     armUserGrid: () => {
       if (paused || stopped || arming) return;
@@ -803,7 +908,21 @@ export async function startCapture(
       await sendTick('user', grid, { text, transcript });
     },
     noteSpoke: () => {
+      lastSpokeLocalAt = Date.now();
       if (!stopped) scheduleIdle();
+    },
+    echoProbe: (t0, t1) => ({
+      envelope: echoEnv.filter((s) => s.t >= t0 - 1_000 && s.t <= t1 + 800),
+      // Wider than the utterance: a Whisper segment's bounds cover its whole
+      // 3s chunk, and the sentence the speakers were mid-way through matters.
+      transcript: stt.textAround(t0 - 1_500, t1 + 1_500),
+    }),
+    echoFlush: async () => {
+      try {
+        await stt.tickTranscript();
+      } catch {
+        /* bounded; a failed flush just leaves the ring as it was */
+      }
     },
   };
 

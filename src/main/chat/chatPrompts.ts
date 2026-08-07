@@ -487,7 +487,8 @@ export const REMEMBER_TOOL = {
   description:
     'Save one line to your long-term memory. It loads at the start of every future session, in chat and in the game. ' +
     'Call it the moment the player tells you something real about themselves, a preference, or a lasting rule, or when something shifts how you read them. ' +
-    'Write one short subjective line in your own voice. Call it alongside your normal reply; the player does not see it.',
+    'Write one short subjective line in your own voice, in this tool\'s input ONLY. Call it alongside your normal reply; the player does not see it. ' +
+    'Your text output is still what you SAY to the player: never write the memory, a note, or a plan there.',
   input_schema: {
     type: 'object' as const,
     properties: {

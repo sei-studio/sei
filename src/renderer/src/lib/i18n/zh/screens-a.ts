@@ -130,6 +130,8 @@ export const ZH_SCREENS_A: Record<string, string> = {
   'Loading model...': '加载模型中...',
   'This model could not be rendered.': '这个模型无法渲染。',
   '{name}, {count} expressions': '{name}，{count} 个表情',
+  'Outfit and item toggles this model ships. Emotion expressions play on their own while talking.':
+    '模型自带的服饰和道具开关。情绪表情会在说话时自动播放。',
   'Replace': '更换',
   'No description provided.': '暂无简介。',
   'Persona': '人设',

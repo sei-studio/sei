@@ -74,6 +74,8 @@ export const ZH_CHATUI: Record<string, string> = {
   'No windows open to share. Open something and come back.':
     '没有可共享的窗口。先打开一个再回来。',
   'No screens available to share.': '没有可共享的屏幕。',
+  'Show avatar in screen recordings': '在录屏中显示形象',
+  'Keep this off unless you want to record the avatar.': '除非你要录制形象，否则请保持关闭。',
   'Starting...': '正在开始...',
   'Share': '共享',
   'Your companion': '你的伙伴',

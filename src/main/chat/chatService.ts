@@ -20,6 +20,7 @@ import { raiseUsageLimitPopup } from './usageLimit';
 import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
+import { isNoteLeak } from './noteLeak';
 import { isCallActive } from '../voice/callState';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
@@ -491,16 +492,26 @@ async function persistReplies(
   characterId: string,
   replyText: string,
   punctuation: 'casual' | 'deliberate' = 'casual',
-  opts?: { voice?: boolean },
+  opts?: { voice?: boolean; rememberCalled?: boolean },
 ): Promise<ChatMessage[]> {
   const now = Date.now();
   // Silence-filler drop is voice-only (see SILENCE_FILLER_RE): typed chat never
   // prompts the "(silence)" convention, so a filler-shaped line there is a real
   // reply and persisting it beats silently losing the turn.
   // A voice reply keeps its terminal punctuation (see splitReply `spoken`).
+  // The note-leak gate (260807, noteLeak.ts) is voice-scoped the same way:
+  // spoken lines are the ones a leaked scratchpad note ruins, and
+  // `rememberCalled` (a remember tool_use rode this turn) arms its second tier.
   const parts = splitReply(replyText, punctuation, opts?.voice === true);
   const replies: ChatMessage[] = (opts?.voice
-    ? parts.map(stripPeerImpersonation).filter((text) => text && !isSilenceFiller(text))
+    ? parts
+        .map(stripPeerImpersonation)
+        .filter((text) => text && !isSilenceFiller(text))
+        .filter((text) => {
+          if (!isNoteLeak(text, opts?.rememberCalled === true)) return true;
+          console.warn(`[sei] voice note leak dropped ("${text.slice(0, 60)}")`);
+          return false;
+        })
     : parts)
     .map((text, i) => ({
     id: randomUUID(),
@@ -647,7 +658,10 @@ export async function sendChatMessage(
       // is genuinely the last one going out.
       const parts = splitReply(raw, prep.punctuation, isVoice)
         .map((b) => (isVoice ? stripPeerImpersonation(b) : b))
-        .filter((b) => b && !(isVoice && isSilenceFiller(b)));
+        // Note-leak first tier only ("character note:" / "note to self"): a
+        // streamed sentence can go out before the turn's tool_use blocks have
+        // arrived, so the remember-aware second tier cannot apply here.
+        .filter((b) => b && !(isVoice && (isSilenceFiller(b) || isNoteLeak(b, false))));
       for (let i = 0; i < parts.length; i++) {
         const b = parts[i];
         const msg: ChatMessage = {
@@ -1119,9 +1133,10 @@ export async function sendVoiceGreetingTurn(
     );
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
+    const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return [];
-    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
+    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
   } catch (err) {
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.
@@ -1251,9 +1266,10 @@ export async function sendCompanionVoiceTurn(
     if (ctx.onLaunch && res.content.some((b) => b.type === 'tool_use' && b.name === 'launch')) {
       try { ctx.onLaunch(); } catch { /* best-effort — the reply still lands */ }
     }
+    const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return [];
-    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
+    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
   } catch (err) {
     if (!isAbortError(err)) {
       // Usage limit (260730): raise the popup; useVoiceStore hangs up on it.
@@ -1346,9 +1362,10 @@ export async function sendVoiceIdleTurn(
       try { opts.onLaunch(); } catch { /* best-effort — the reply still lands */ }
     }
     const endCall = res.content.some((b) => b.type === 'tool_use' && b.name === 'end_call');
+    const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return { messages: [], ...(endCall ? { endCall: true } : {}) };
-    const spoken = await persistReplies(characterId, replyText, prep.punctuation, { voice: true });
+    const spoken = await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
     return { messages: spoken, ...(endCall ? { endCall: true } : {}) };
   } catch (err) {
     if (!isAbortError(err)) {

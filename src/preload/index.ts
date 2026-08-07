@@ -29,6 +29,7 @@ import {
   type CreditsHardStopEvent,
   type ChatMessagePush,
   type CallOverlayState,
+  type AvatarManifest,
   type BotActionPush,
   type GenProgressEvent,
 } from '../shared/ipc';
@@ -252,6 +253,16 @@ const api: RendererApi = {
   avatarGet: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.get, characterId),
   avatarRemove: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.remove, characterId),
   avatarModelFiles: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.modelFiles, characterId),
+  avatarSetAccessory: (characterId, name, on) =>
+    ipcRenderer.invoke(IpcChannel.avatar.setAccessory, { characterId, name, on }),
+  onAvatarManifest(cb) {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      update: { characterId: string; manifest: AvatarManifest | null },
+    ) => cb(update);
+    ipcRenderer.on(IpcChannel.avatar.manifestState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.manifestState, handler);
+  },
   avatarOverlayLevel: (characterId, level) =>
     ipcRenderer.invoke(IpcChannel.avatar.overlayLevel, { id: characterId, level }),
   onAvatarOverlayLevel(cb: (sample: { id: string; level: number }) => void) {
@@ -264,6 +275,29 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.avatar.overlayInteractive, interactive),
   avatarOverlayResize: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayResize, args),
   avatarOverlayMove: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayMove, args),
+  onAvatarOverlayCursor(cb: (pt: { x: number; y: number }) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, pt: { x: number; y: number }) => cb(pt);
+    ipcRenderer.on(IpcChannel.avatar.overlayCursorState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.overlayCursorState, handler);
+  },
+  avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
+  avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),
+  avatarOverlayMuteToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayMute),
+  onAvatarMuteRequest(cb: () => void) {
+    const handler = () => cb();
+    ipcRenderer.on(IpcChannel.avatar.muteRequest, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.muteRequest, handler);
+  },
+  avatarOverlayCaptionsToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayCaptions),
+  avatarCaptionResize: (args) => ipcRenderer.invoke(IpcChannel.avatar.captionResize, args),
+  avatarCaptionMove: (args) => ipcRenderer.invoke(IpcChannel.avatar.captionMove, args),
+  avatarCaptionFont: (delta) => ipcRenderer.invoke(IpcChannel.avatar.captionFont, delta),
+  onAvatarCaptionEditState(cb: (editing: boolean) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, editing: boolean) => cb(editing);
+    ipcRenderer.on(IpcChannel.avatar.captionEditState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.captionEditState, handler);
+  },
+  avatarCaptionGet: () => ipcRenderer.invoke(IpcChannel.avatar.captionGet),
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),

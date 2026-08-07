@@ -59,12 +59,20 @@ export interface AudioQueue {
    * `opts.blob` reserves the slot but plays the finished clip from ONE Blob
    * instead of through MediaSource (260729) — for a clip fetched whole, which
    * must still hold its place in the reply. See the reordering note on
-   * `enqueue`. */
+   * `enqueue`.
+   *
+   * `opts.turn` (260806) tags the clip with the turn its line belongs to.
+   * Enqueuing a clip whose tag DIFFERS from a queued clip's (same speaker)
+   * drops the queued one: the reply it belonged to has been superseded by a
+   * newer turn, and playing it out would put the voice a whole turn behind
+   * whatever the two of you are looking at (the backseat drift). The clip at
+   * the playhead is never touched — the current sentence finishes, then
+   * playback jumps to the new turn. Untagged clips are never dropped. */
   enqueueStream(
     characterId: string,
     text?: string,
     rate?: number,
-    opts?: { blob?: boolean },
+    opts?: { blob?: boolean; turn?: string },
   ): TtsStreamHandle;
   /** True while a clip is playing (or queued clips remain). */
   speaking(): boolean;
@@ -96,6 +104,9 @@ type StreamItem = {
   text?: string;
   /** Pitch shift applied at playback (pace unchanged; 1 = as recorded). */
   rate: number;
+  /** Turn tag: a same-speaker clip with a DIFFERENT tag supersedes this one
+   *  while it is still queued (see enqueueStream). Absent = never dropped. */
+  turn?: string;
   /** Play from one Blob once complete, never through MediaSource (see enqueueStream). */
   blob: boolean;
   chunks: ArrayBuffer[];
@@ -414,21 +425,22 @@ export function createAudioQueue(
   const FADE_STEP_MS = 16;
 
   /**
-   * Duck level and ramp (260804).
+   * Duck level and ramp (260804; 0 since 260806).
    *
-   * Not zero. At exactly 0 an undeafened resume is a hard edge back to full
-   * volume, and more importantly a duck that turns out to be wrong should read
-   * as the companion briefly dropping her voice, not as a dropout. 0.08 is
-   * about -22 dB: unmistakably "she stopped" from across a room, and quiet
-   * enough that the echo the mic picks up collapses to near the noise floor,
-   * which is what lets the VAD track the player's speech on normal thresholds
-   * while she is still technically playing.
+   * Zero, on a live report. The previous 0.08 (-22 dB) was chosen so a wrong
+   * duck read as the companion dropping her voice rather than a dropout, but
+   * what the player heard on every REAL interrupt was her carrying on
+   * "really quietly" for the whole confirmation window (~0.4-1.4 s) before
+   * the commit cut her. The interrupt has to sound like she stopped, so the
+   * duck is full silence; a duck that turns out to be a cough resumes through
+   * the same 60 ms ramp, which is a brief dropout and the accepted cost.
+   * Muting fully also collapses the mic echo completely, so the VAD tracks
+   * the player's speech at least as well as before.
    *
    * The ramp is short because the whole point is speed: this is the part of the
-   * barge-in the player actually perceives, and it now happens roughly three
-   * times sooner than the old hard cut did.
+   * barge-in the player actually perceives.
    */
-  const DUCK_VOLUME = 0.08;
+  const DUCK_VOLUME = 0;
   const DUCK_RAMP_MS = 60;
 
   let duckRamp = 0;
@@ -509,11 +521,26 @@ export function createAudioQueue(
       if (!busy) playNext();
     },
     enqueueStream(characterId, text, rate = 1, opts) {
+      // Supersession (260806): a tagged clip from a NEWER turn retires the
+      // same speaker's queued clips from an older one. Queued only — the clip
+      // at the playhead finishes its sentence, which is the whole point of
+      // cutting at the queue rather than at the audio. Their TTS fetches may
+      // still be in flight; the dropped flag makes those land as no-ops.
+      if (opts?.turn) {
+        for (let i = pending.length - 1; i >= 0; i--) {
+          const p = pending[i];
+          if (p.kind === 'stream' && p.characterId === characterId && p.turn && p.turn !== opts.turn) {
+            p.dropped = true;
+            pending.splice(i, 1);
+          }
+        }
+      }
       const item: StreamItem = {
         kind: 'stream',
         characterId,
         text,
         rate,
+        turn: opts?.turn,
         blob: opts?.blob === true,
         chunks: [],
         ended: false,

@@ -784,27 +784,85 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
 - **Window** (`src/main/callOverlay.ts`): click-through by default with
   `setIgnoreMouseEvents(true, {forward: true})` so hover still reaches the
   page (forward is Win/mac only; Linux stays display-only). Interaction is
-  split into VIEW and EDIT modes (260805): view is completely fixed — hover
-  shows the outline plus ONE pencil button (inside the frame bottom-right);
-  clicking it enters edit mode, where the pencil becomes a tick, the
-  hold-to-drag button (`-webkit-app-region: drag`, window `movable`) stacks
-  above it, corner handles + a center-anchored wheel zoom stream tile size
-  over `avatar:overlay-resize`, and dragging anywhere on the tiles moves the
-  window via the `avatar:overlay-move` screen-delta stream (main snapshots
-  the origin at 'start' so the stream stays 1:1 while the window moves under
-  the pointer). Real clicks (`avatar:overlay-interactive`) are held while
-  hovered OR for the whole edit mode. The window is **`resizable: false`**:
+  split into VIEW and EDIT modes (260805; camera rework + per-region
+  interactivity 260806): view cannot resize — hover shows the chrome buttons
+  bottom-right, raised one button height off the bottom edge (pencil with
+  the hold-to-drag move button above it, plus mute + captions while a
+  call/backseat is live) and, for STATIC tiles only, the outline (a Live2D
+  companion stays frameless until edit mode); clicking the pencil enters
+  edit mode, where it becomes a tick and the window/character controls
+  split: the corner handles are the ONLY way to resize the window
+  (`avatar:overlay-resize`), the hold-to-drag button (both modes) is the
+  ONLY way to move it, and the wheel + drag over a Live2D tile act on the
+  CHARACTER instead — a per-character camera (zoom to half body/face, pan
+  within the tile) streamed over `avatar:overlay-camera` and persisted in
+  `avatar_overlay.cameras` (Live2DView applies it on top of the contain fit,
+  in tile fractions so a framing survives resizes). **The character herself
+  is click-through like the caption window** (260806): real clicks
+  (`avatar:overlay-interactive`) are requested only while the pointer is
+  over the chrome BUTTON COLUMN (a 160 ms leave-delay keeps the flag from
+  flapping at its edge) or for the whole edit mode, so a click over the
+  tile lands on whatever is under her. That is also why the drag button is
+  ordinary chrome streaming screen deltas (`avatar:overlay-move`, mirrors
+  the caption window's move) and NOT `-webkit-app-region: drag` — an
+  app-region swallows pointer events, which would blind the column's
+  enter/leave tracking. The window is
+  **`resizable: false`**:
   a frameless resizable window keeps invisible OS resize-frame regions along
   its edges — exactly where the corner handles sit — and a click there is
   window-frame interaction (macOS ACTIVATED the app; the frame fought the
   handles' CSS cursor). All programmatic resizing is setBounds, which
   ignores `resizable`; everything derives from the single tile scalar, so
-  aspect is locked by construction. Geometry persists in
+  aspect is locked by construction. Both overlay windows also set
+  **`acceptFirstMouse: true`** (260806): without it, the FIRST click into the
+  window while Sei is not the active macOS app is an activation click — it
+  raised the main Sei window and never reached the handle. Geometry persists in
   `UserConfig.avatar_overlay`, written by MAIN only (not renderer-settable).
   `setContentProtection(true)` keeps the overlay out of every screen capture
-  (including Sei's own backseat share). `backgroundThrottling: false` so
+  (including Sei's own backseat share), unless `UserConfig.avatar_in_captures`
+  is on (260807) — the share picker's "Show avatar in screen recordings"
+  toggle, OFF by default, applied to both overlay windows live from the
+  `config:save` handler via `setAvatarCaptureVisible`. It is ONE switch because
+  the underlying flag is one: `NSWindowSharingNone` / `WDA_EXCLUDEFROMCAPTURE`
+  are per-window and drop the window from EVERY capture path, so "visible to
+  OBS, hidden from backseat" is not expressible. Turning it on therefore means
+  a companion sharing an ENTIRE SCREEN sees her own tile (a window share cannot
+  contain another window, so that path is unaffected) and her blink/lip-sync
+  can trip the colour jolt arm, whose 4x3 block split is exactly the scale of
+  the tile. The alternatives, if that ever needs solving properly: mask the
+  overlay rect out of `captureWorker.ts`'s cell AND thumb draws, or keep her
+  off the shared display entirely (second monitor) and let OBS window-capture
+  her. `backgroundThrottling: false` so
   Live2D animates under a fullscreen game. Tile size is CSS off the window
   height (`--tile`), so main's sizing and the renderer's layout cannot drift.
+- **Call buttons + captions window (260806).** While `onCall` (voice call
+  live/connecting or a backseat share; pushed by CallOverlayPusher with
+  `muted` and the `lastSpoken` line), the overlay's chrome column grows a
+  mute button (relayed `avatar:overlay-mute` → main broadcasts
+  `avatar:mute-request` → the pusher flips `useUiStore.callMuted`, the mic's
+  single source of truth, and the icon updates via the state re-push) and a
+  captions button. Captions toggle a SECOND overlay window
+  (`src/main/captionOverlay.ts`, `?captions=1` → `CaptionOverlay.tsx`): white
+  companion lines over a darkened box, riding the same `voice:overlay-state`
+  pushes (main enriches the renderer-pushed state with `cameras` +
+  `captionsOn` before forwarding). The caption window is click-through ALWAYS
+  outside edit mode (no hover chrome, plain `setIgnoreMouseEvents(true)` — the
+  cursor works on whatever is under it); the avatar overlay's pencil relays
+  edit mode over `avatar:overlay-editing`, which makes it interactive: corner
+  handles resize, drag anywhere moves, +/- buttons step the font. The font
+  size is FIXED by design — a line that does not fit is broken into chunks
+  (`lib/avatar/captionChunks.ts`, pure + tested, CJK counted double) and paged
+  at reading speed, so a bigger font just pages more often. The caption
+  FOLLOWS THE VOICE (260806): chunks advance only while the speaker is
+  audible, the linger after speech is short (1.5 s), and a confirmed barge-in
+  clears `lastSpoken` outright (useVoiceStore onBargeIn) so an interrupted
+  line's caption vanishes with the audio instead of paging on. Captions are
+  OFF by default (main-side `enabled = false` until toggled). Edit mode also
+  SUBSTITUTES for the live call in the caption window's show condition
+  (260806): with captions enabled, entering edit brings the box up with its
+  placeholder even off-call, so it can be positioned and sized before any
+  call exists. Geometry + font + enabled persist in
+  `UserConfig.avatar_captions` (MAIN-owned, like `avatar_overlay`).
 - **Per-character prefs** (`UserConfig.avatar_prefs`, sparse like
   call_backdrop): `frame` ('circle' | 'square') + `always_bright` (kills the
   talking indicator: no idle dim, no ring) + `tab` (which profile sub-tab,
@@ -847,11 +905,26 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   VTube Studio extras like `items_pinned_to_model.json` match that sniff, so
   unsorted readdir order picked the wrong "settings" nondeterministically. Idle life: SDK breath/sway/blink run free on
   a motionless model (the EyeBlink group is why import guarantees it), plus
-  our gaze-wander loop through the SDK focusController (2.6-7.5 s cadence,
-  correlated small steps + rare larger glances — full-range jumps every few
-  hundred ms read as TWITCHING, the 260805 report). The mouth is written
+  gaze. **Gaze alternates between wander and following the real cursor**
+  (260806): every 6-14 s it re-picks (45% cursor when the feed is fresh) —
+  wander keeps the 2.6-7.5 s saccade cadence with correlated small steps +
+  rare larger glances (full-range jumps every few hundred ms read as
+  TWITCHING, the 260805 report); cursor-follow rides main's cheap
+  `screen.getCursorScreenPoint()` poll (120 ms, armed only while a Live2D
+  tile shows), pushed normalized around the window center over
+  `avatar:overlay-cursor-state` — only the overlay window receives it, so
+  the profile preview just wanders. **The focusController is fed a per-frame
+  GLIDING target with `instant=true`, never a stepped one** — the SDK's
+  FocusController pursues its target at constant speed (~5.3 units/s,
+  decelerating only on arrival), so the old direct saccade retargets (mean
+  ~5 s) yanked the face ahead for about a second mid-drift: the "jitters
+  every ~5 seconds" report. The glide is CONSTANT SPEED (0.9 units/s, easing
+  only in the last 0.06 units — 260806, was a 450 ms time constant: at
+  constant TIME a big glance whips and a small one crawls; at constant speed
+  travel time scales with distance) and is the sole focusController writer,
+  which also makes the wander/cursor mode switches glide. The mouth and the gaze are written
   INSIDE a wrapped `motionManager.update` so the SDK layers blink/breath/
-  physics after it in the same frame.
+  physics after them in the same frame.
 - **Lip sync**: TTS plays in the MAIN window, so `avatarLevelTap.ts` samples
   the clip there (RMS envelope, ~25 Hz) and relays `{id, level}` via
   `avatar:overlay-level`. **An element can only ever have ONE
@@ -868,7 +941,35 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   (EXPRESSION_LINGER_FRACTION), refreshed early by the next emotive line —
   never a fixed clock, so a quip flashes and a story holds. Deliberately not
   LLM-driven in v1 (tags would touch every surface's prompt contract); the
-  upgrade replaces that one call site.
+  upgrade replaces that one call site. Two fixes make it actually visible
+  (260806): (1) an unmapped emotion borrows a mapped neighbor
+  (`resolveEmotionExpression`, `EMOTION_FALLBACKS` — happy↔excited,
+  surprised→excited, love→happy; negative emotions never substitute) because
+  real VTuber exports rarely ship a happy/surprised face and those are the two
+  classifications casual talk fires most — without the fallback the face
+  almost never changed; (2) after the decay-reset, Live2DView writes
+  `currentExpression = defaultExpression` on the ExpressionManager, because
+  the plugin's `resetExpression` deliberately keeps `currentExpression` and
+  `setExpression` refuses the current name — so the SAME emotion twice in a
+  row (i.e. most sessions: happy, decay, happy) applied once and then never
+  again. Both verified in the browser harness against the real model.
+- **Accessory toggles (260806)**: the emotion-UNMAPPED expressions are item
+  toggles (Snow Bear Girl: hat, phone, mic, controller, coat), now flippable
+  per character from the profile Avatar → Live2D tab and persisted as
+  `manifest.accessories` (`avatar:set-accessory` → `setAvatarAccessory`; main
+  broadcasts the manifest on `avatar:manifest-state` so live views re-apply
+  without reloading). They CANNOT ride the expressionManager (it holds ONE
+  expression; the next emotion would knock the hat state off), so
+  Live2DView resolves each toggled expression's exp3 params to ABSOLUTE
+  targets against the model's parameter defaults
+  (`lib/avatar/accessoryParams.ts`, pure + tested; Add/Multiply/Overwrite
+  composed in order) and writes them every frame inside the wrapped
+  `motionManager.update`, like the mouth. Two details are load-bearing:
+  Cubism params persist frame to frame, so a toggle-OFF must write the
+  dropped params back to their defaults once or the item sticks forever;
+  and the v1→v2 manifest heal carries `accessories` over while a fresh
+  import resets them (new model, new names). Sui's model ships "1 帽"
+  (Key1 hat -1, Key22 crown +1): toggled ON = the author's no-hat crown look.
 - **Pusher** (`components/CallOverlayPusher.tsx`): mode + activity stores →
   `computeAvatarIds` (pure, tested) → `voice:overlay-set`. Zod in
   `main/ipc.ts` must name every participant field the overlay renders
@@ -908,6 +1009,68 @@ The design and its measurements are committed at
   involved. `idle` is a shifted-exponential timer over [12 s, 60 s], memoryless
   on purpose so the player cannot learn its rhythm, reset whenever the
   companion speaks. `MIN_SPEAK_GAP_MS` (8 s) drops jolt and idle, never user.
+- **A content switch waits out a dwell; only GAIN jolts are immediate (260806).**
+  A colour jolt fires AT the discontinuity, and on an Instagram Reels session
+  that timing made the companion reliably ONE REEL BEHIND: the swipe raised the
+  tick, the grid at that instant was five cells of the old reel and a sliver of
+  the new, and she reacted to the clip the player had just left, every time.
+  So a colour jolt or a share-label change no longer raises a tick — it arms
+  the SWITCH DWELL (`SWITCH_DWELL_MS` 6 s = the grid span, `switchDwell.ts`,
+  pure + tested): the wake fires only once the new content has held with no
+  further change, every further change restarts the clock, and a fast scroll
+  stays silent until the player settles. The tick goes up as `jolt:'switch'`
+  with `sinceSwitchS`, and the note claims the content for NOW ("everything you
+  can see is the new thing... do not remark on the switch itself" — pinned in
+  `backseatPrompts.test.ts`). Two supporting changes: the share-label poll
+  dropped 5 s -> 2.5 s (the dwell's promise is only as accurate as the poll),
+  and a dwell that expires inside `MIN_SPEAK_GAP_MS` is DEFERRED past the gap
+  in the controller rather than sent-and-dropped by main, because a swipe tends
+  to follow a spoken line by a second or two and the settled reel would
+  otherwise go unremarked until the next idle look. The offline sim still runs
+  the immediate-colour path; the dwell lives in the controller above it.
+- **A new turn's speech supersedes the old one's queue (260806).** Backseat
+  turns land every 10-20 s while TTS playback of a multi-part reply can run
+  longer, so a new turn's lines queued behind the old turn's and the VOICE
+  drifted a full turn behind the screen even when the ticks did not. Every
+  turn's parts now push with `speech.turn` (one UUID per turn, plus the
+  prev/more prosody context the streamed chat reply already had), and the audio
+  queue drops a same-speaker QUEUED clip whose tag differs from the newly
+  enqueued one — the clip at the playhead always finishes, which is the
+  "current sentence ends" boundary since parts are sentence-sized. Untagged
+  lines (greetings, chess, chat) are never dropped; `turn` is stripped before
+  the TTS request. Backseat is the only setter today.
+- **The feed rules (260806, from the same live session).** The companion called
+  the recommendations feed "your feed" and "that guy's feed", treated
+  consecutive clips as related, and remarked on the scrolling. SCROLLING SHORT
+  VIDEOS now states what a feed IS (app-picked clips by different, unrelated
+  creators; no clip replies to the previous one) and bans feed-meta commentary
+  outright. Pinned in `backseatPrompts.test.ts`.
+- **Register loops on a static screen (260807).** The email session: six turns
+  against one unchanging inbox frame and a monosyllabic player, five of six
+  lines opened "wait / you're actually..." — the same take re-litigated as a
+  fresh discovery each turn. Replayed offline (harness + all measured arms in
+  `.backseat-sim/email-replay/`, 16 runs x 6 turns per arm): the persona's own
+  "actually"/"wait" sample lines are NOT the cause (stripping them all moved
+  nothing), and quoting the offending phrase inside a contract ban FEEDS it
+  (+16 pts) — name the shape in prose, never quote the line, which sharpens
+  260806's lesson. REPEATING YOURSELF was rewritten (same length) to ban
+  shape-level repetition: same opener as your last line, pet words your recent
+  lines already used, re-presenting known facts as discoveries, re-opening
+  answered questions. Measured across 156 lines/arm: "actually" 47%→37%,
+  loop sessions 54%→38%. That is the prompt-space ceiling — the residue is
+  Haiku's register prior under speak-every-turn + opinion-not-narration on a
+  still screen, and the reliable next step if it still grates live is
+  mechanical, stripDashes-style (drop a reappraisal opener when the previous
+  line used one).
+- **The contract carries NO example dialogue (260806, user direction).** The
+  260803 BAD/GOOD pairs fixed the shapes they named (narration 0/10 -> 10/10
+  asking) but Haiku imitated the GOOD lines' register across whole sessions —
+  the same stock quips ("is this a bit", "unhinged") every session. Modeled
+  dialogue teaches a voice while teaching a shape, and the voice belongs to
+  the persona. Bans now NAME THE SENTENCE SHAPE in prose ("you went from X to
+  Y", the report-opener quotes) — a test pins that no `BAD:`/`GOOD:` blocks
+  return. If narration measurably comes back, name the offending shape more
+  precisely; do not restore example lines.
   `start` fires ONCE per session, `START_LOOK_MS` (1.8 s) after the share opens,
   because showing someone your screen is an opening move and the session used to
   answer it with silence (nothing has jolted yet, and the idle floor is 12 s).
@@ -948,8 +1111,9 @@ The design and its measurements are committed at
   the moment silence was removed.
 - **The share label replaced OCR (260804).** Every tick carries `shareLabel`:
   the shared window's CURRENT title, or on a whole-screen share the frontmost
-  window's (`src/main/backseat/shareLabel.ts`, polled every 5 s because a tab
-  switch changes the screen under a fixed source id). It costs one window
+  window's (`src/main/backseat/shareLabel.ts`, polled every 2.5 s — was 5 s —
+  because a tab switch changes the screen under a fixed source id, and since
+  260806 a label change also feeds the switch dwell). It costs one window
   enumeration and it is the model's only cheap answer to "am I watching a game
   or a film", which was the thing it kept getting wrong.
   **What it replaced was working, and was removed anyway.** 260802-260803 ran a
@@ -1050,6 +1214,24 @@ The design and its measurements are committed at
   `stripDashes` in `backseatPrompts.ts` fixes it after the fact, replacing with
   a full stop or comma. It matters here more than in chat because these lines
   are SPOKEN, and a dash is not a sound.
+- **remember() turns can leak the scratchpad, and the gate is mechanical
+  (260807).** Chat-family surfaces have no say() split: the text output IS the
+  spoken line, and that contract breaks specifically on turns that CALL
+  remember() — filing a memory puts Haiku in working mode and the text block
+  slips into note register. Live (Marv, backseat): the tool input was correct
+  and honored, and the SPOKEN line was "character note: sei's curious..." /
+  "remember sei's into watching...". `isNoteLeak` (`src/main/chat/noteLeak.ts`,
+  pure + tested, pinned on both leaked lines verbatim) drops such parts at all
+  spoken choke points: backseat's part filter, persistReplies' voice path
+  (callers pass `rememberCalled`), and the streaming bubble emitter (first
+  tier only — a streamed sentence can precede the turn's tool_use blocks, so
+  the remember-aware tier cannot arm there). Two tiers, asymmetric: "character
+  note:"/"note to self" openers drop always; "remember <third person>..."
+  drops only when a remember tool_use rode the same turn, and never when the
+  next word addresses the player ("remember when we...", "remember, you...").
+  The REMEMBER_TOOL description also now says the memory goes in the tool
+  input ONLY — prose the model will still sometimes ignore, which is why the
+  gate exists.
 - **Attaching TOOLS suppresses speech.** Measured, n=60 per condition: 100% of
   turns produce a line with no tools, 78% with `REMEMBER_TOOL` alone, 68% with
   the pair backseat ships. A tool description that reads as a general judgement
@@ -1119,7 +1301,10 @@ The design and its measurements are committed at
   companion a turn has to check `useBackseatStore.sharingFor` first.** The share
   is the more informed loop, so it is always the one that wins.
 - **Barge-in is decided by a WORD, not by loudness (260804).** Two stages, with
-  deliberately opposite temperaments. Stage one DUCKS the companion to 8% on one
+  deliberately opposite temperaments. Stage one DUCKS the companion to SILENCE
+  (260806, was 8%: at 8% every real interrupt carried on "really quietly" for
+  the whole confirmation window; a wrong duck now resumes through the 60 ms
+  ramp as a brief dropout, the accepted cost) on one
   frame over a low bar (~130 ms, against ~400 ms before, and with no 600 ms
   grace-window blind spot at the start of every clip); it is reversible, which
   is the entire reason the bar can be that low. Stage two transcribes the
@@ -1137,6 +1322,35 @@ The design and its measurements are committed at
   A confirmed barge also calls `backseatInterrupt`: clearing the queue only
   silences what is already synthesised, and the turn behind it would otherwise
   land its line a second later.
+- **The echo gate: speakers into the mic (260807).** On speakers at max volume
+  the mic hears THREE voices, and two of them used to become "the player".
+  Measured across two live Instagram sessions: reel dialogue was transcribed
+  and dispatched as the player's own words ("Get ready with us, but Stas is
+  picking my outfit..." persisted as a user voice line — the companion's "is
+  this you on camera?" confusion was correct reasoning over counterfeit
+  input), and her own TTS leaking past AEC kept confirming word-gated
+  barge-ins against her. Chromium's AEC (the same self-referenced AEC3
+  Discord runs) covers only Electron's own output, degrades on clipped
+  max-volume echo, and has NO reference for another app's sound; the call
+  apps' answer is headphones. Sei's is `voice/echoGate.ts` (pure + tested):
+  before a transcript is dispatched as the player or commits a barge,
+  `micEchoCheck` (useVoiceStore) tests it against (1) the companion's own
+  audible lines — text only, the queue's onAudible/stop callbacks record
+  exact windows — and (2) the shared screen's audio via the capture handle's
+  `echoProbe`: the tap's loudness contour cross-correlated over the
+  speaker-path lag plus the screen transcript ring's words. The thresholds
+  are calibrated, not guessed: max-over-lags Pearson on independent
+  talk-cadence envelopes reads spurious ~0.66-0.93 under 2 s, so correlation
+  is `valid` only past 2.5 s and only CORR_STRONG (0.85) may condemn without
+  matching words (music has no transcript). Everything shorter or softer goes
+  'ambiguous' and waits ONE bounded screen-STT flush for the words to decide
+  — so double-talk (the player speaking OVER the reel) stays the player's,
+  costing ~1 s of latency on exactly those utterances and nothing on the
+  rest. The asymmetry is deliberate everywhere: text condemns, the envelope
+  alone almost never does, and a barge echo-abort only delays a real
+  interrupt to utterance end while a wrong commit destroys her line. The
+  contract's identity rule ("a person on screen is never the player", pinned)
+  is the prompt-side backstop, not the fix.
 - **Session log rides the bot log pipeline (260728).** `backseatLog.ts` mirrors
   chessLog: every diagnostic goes through `slog()` to BOTH the terminal and a
   per-session logRouter (`backseat-<characterId>-<ts>.log` + batched IPC into

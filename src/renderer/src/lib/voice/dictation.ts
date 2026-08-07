@@ -24,6 +24,7 @@
  * ~8 messages/sec).
  */
 
+import { dbOf, pushEnv, type EnvSample, type MicEchoInfo } from './echoGate';
 import { createSttArbiter } from './sttArbiter';
 
 export type DictationStatus = 'loading-model' | 'ready' | 'error';
@@ -353,6 +354,21 @@ export async function createDictation(opts: {
    * to offer the local backup-model install, not to count failures. */
   onCloudSttFailure?: () => void;
   /**
+   * Echo gate (260807): asked before a transcript is delivered as the player
+   * (purpose 'utterance') and before a word-confirmed barge-in commits
+   * (purpose 'barge'). Resolve true when the words were the SPEAKERS — the
+   * companion's own TTS leaking past AEC, or the shared screen's audio, which
+   * AEC cannot touch at all (no reference signal exists for another app's
+   * sound). Measured 260807: on speakers at max volume, Instagram reel
+   * dialogue was dispatched as the player's own words and the companion's
+   * leaked voice kept confirming barge-ins against her. May be async (the
+   * screen transcript lags real time by up to one Whisper chunk); an
+   * 'utterance' waits for the answer before dispatching, a 'barge' waits
+   * while already ducked, so the player hears silence either way. Errors and
+   * absence both mean "not echo".
+   */
+  echoCheck?: (info: MicEchoInfo) => boolean | Promise<boolean>;
+  /**
    * The mic stream is open (260730). Fires once, as soon as getUserMedia
    * resolves and BEFORE the model load below, because opening a mic with
    * echoCancellation reconfigures the page's whole audio OUTPUT path: Chromium
@@ -510,6 +526,13 @@ export async function createDictation(opts: {
   let speechMs = 0;
   const preRoll: Float32Array[] = [];
   let utterance: Float32Array[] = [];
+  /** Rolling mic loudness contour for the echo gate (260807): ~32ms samples,
+   * kept long enough that a delivery decided after a transcription round trip
+   * can still slice its own utterance's window out of it. */
+  const recentEnv: EnvSample[] = [];
+  const ENV_KEEP_MS = 20_000;
+  const envWindow = (t0: number, t1: number): EnvSample[] =>
+    recentEnv.filter((s) => s.t >= t0 - 100 && s.t <= t1 + 100);
 
   /** Edge-emit the player's live speaking state (for the caller's own avatar
    * ring). Deduped so it only fires on a genuine transition. */
@@ -529,8 +552,9 @@ export async function createDictation(opts: {
     wanted: boolean;
     done: boolean;
     text: string | null;
-    /** Set when the utterance finalized while still a provisional barge-in: the
-     *  eager transcript is then also the thing that decides it. */
+    /** Set when the utterance finalized before the transcript arrived: the
+     *  flush's echo-gated delivery (settleDelivery) — it owns the pending
+     *  barge decision AND the onUtterance dispatch. */
     decide?: (text: string) => void;
   };
   let eager: Eager | null = null;
@@ -610,6 +634,45 @@ export async function createDictation(opts: {
     emitSpeech(false);
   }
 
+  /**
+   * Echo-gated delivery (260807): the one place that decides BOTH halves of a
+   * finished transcript — whether a pending provisional barge commits, and
+   * whether the text becomes a player utterance. Before the gate these were
+   * decided at four call sites; the echo answer has to reach both or a
+   * speaker-echo line would abort its barge and still get dispatched as the
+   * player (or vice versa). `env` is sliced by the caller at flush time,
+   * because the rolling contour keeps moving while transcription runs.
+   */
+  function settleDelivery(
+    text: string,
+    t0: number,
+    t1: number,
+    env: EnvSample[],
+    wasSuspect: boolean,
+  ): void {
+    const finish = (echo: boolean): void => {
+      if (wasSuspect) {
+        if (hasSpokenWord(text) && !echo) opts.onBargeIn?.();
+        else opts.onBargeAbort?.();
+      }
+      if (!text) return;
+      if (echo) {
+        console.log(`[sei/voice] echo-gate: dropped speaker echo — "${text.slice(0, 80)}"`);
+        return;
+      }
+      opts.onUtterance(text);
+    };
+    const check = opts.echoCheck;
+    if (!check || !text) {
+      finish(false);
+      return;
+    }
+    void Promise.resolve(check({ text, t0, t1, envelope: env, purpose: 'utterance' })).then(
+      finish,
+      () => finish(false),
+    );
+  }
+
   function flushUtterance(): void {
     const frames = utterance;
     const pendingEager = eager;
@@ -618,11 +681,12 @@ export async function createDictation(opts: {
     // below decides the barge instead of a separate confirming pass.
     const wasSuspect = suspect !== null;
     suspect = null;
-    const decideBarge = (text: string): void => {
-      if (!wasSuspect) return; // never provisional, or already committed
-      if (hasSpokenWord(text)) opts.onBargeIn?.();
-      else opts.onBargeAbort?.();
-    };
+    // Utterance bounds + contour, snapshotted NOW: transcription runs after
+    // the reset below, and the next utterance must not shift this one's window.
+    const t1 = Date.now();
+    const t0 = t1 - speechMsOf(frames) - 150;
+    const env = envWindow(t0, t1);
+    const deliver = (text: string): void => settleDelivery(text, t0, t1, env, wasSuspect);
     inSpeech = false;
     silenceMs = 0;
     speechMs = 0;
@@ -642,18 +706,14 @@ export async function createDictation(opts: {
       // it fired are the silence run, which adds no words. Use it instead of
       // re-transcribing (its ~0.5–1s of Whisper work overlapped the wait).
       if (pendingEager.done) {
-        decideBarge(pendingEager.text ?? '');
-        if (pendingEager.text) opts.onUtterance(pendingEager.text);
+        deliver(pendingEager.text ?? '');
       } else {
         pendingEager.wanted = true;
-        pendingEager.decide = decideBarge;
+        pendingEager.decide = deliver;
       }
       return;
     }
-    postTranscribe(frames, (text) => {
-      decideBarge(text);
-      if (text) opts.onUtterance(text);
-    });
+    postTranscribe(frames, deliver);
   }
 
   function speechMsOf(frames: Float32Array[]): number {
@@ -689,11 +749,33 @@ export async function createDictation(opts: {
     }
     if (s.asked || speechMsOf(utterance) < BARGE_WORD_MS) return;
     s.asked = true;
+    const t1 = Date.now();
+    const t0 = t1 - speechMsOf(utterance) - 150;
+    const env = envWindow(t0, t1);
     // Copied, because the utterance keeps growing while this runs and the
     // arbiter transfers what it is given.
     postTranscribe(
       utterance.map((f) => f.slice()),
-      (text) => settle(hasSpokenWord(text)),
+      (text) => {
+        if (!hasSpokenWord(text)) {
+          settle(false);
+          return;
+        }
+        // A word came back — but WHOSE? Her own leaked line and the shared
+        // screen's audio both transcribe to real words (260807), and both
+        // used to commit here. The gate answers while she is already ducked,
+        // so waiting on it costs the player nothing audible; `settle`'s
+        // suspect guard handles the answer arriving stale.
+        const check = opts.echoCheck;
+        if (!check) {
+          settle(true);
+          return;
+        }
+        void Promise.resolve(check({ text, t0, t1, envelope: env, purpose: 'barge' })).then(
+          (echo) => settle(!echo),
+          () => settle(true),
+        );
+      },
     );
   }
 
@@ -723,6 +805,20 @@ export async function createDictation(opts: {
     for (let i = 0; i < frame.length; i += 1) sum += frame[i] * frame[i];
     const rms = Math.sqrt(sum / frame.length);
     const frameMs = (frame.length / SAMPLE_RATE) * 1000;
+
+    // Echo-gate contour: 4 sub-windows per frame ≈ the gate's 32ms grid. The
+    // frame's audio ENDS now; its sub-windows are stamped back across it.
+    if (opts.echoCheck) {
+      const now = Date.now();
+      const sub = Math.max(1, frame.length >> 2);
+      for (let i = 0; i < frame.length; i += sub) {
+        const end = Math.min(frame.length, i + sub);
+        let s2 = 0;
+        for (let j = i; j < end; j += 1) s2 += frame[j] * frame[j];
+        const t = now - frameMs + (end / frame.length) * frameMs;
+        pushEnv(recentEnv, t, dbOf(Math.sqrt(s2 / (end - i))), ENV_KEEP_MS);
+      }
+    }
 
     // Barge-in (260705): while the companion is audible (hold), keep listening
     // at an ELEVATED threshold — echo cancellation strips most of the
@@ -824,8 +920,7 @@ export async function createDictation(opts: {
           e.done = true;
           e.text = text;
           if (e.wanted) {
-            e.decide?.(text);
-            if (text) opts.onUtterance(text);
+            e.decide?.(text); // settleDelivery: barge decision + gated dispatch
             return;
           }
           // 260724 latency: the transcript landed while the end-of-utterance
@@ -844,16 +939,17 @@ export async function createDictation(opts: {
           // messages fine.
           if (eager === e && inSpeech) {
             eager = null; // consumed — resetUtterance's cancelEager is a no-op
-            // Still provisional: this transcript is the best evidence there is,
-            // so decide the barge on it rather than letting resetUtterance
-            // un-duck a genuine interruption.
-            if (suspect) {
-              suspect = null;
-              if (hasSpokenWord(text)) opts.onBargeIn?.();
-              else opts.onBargeAbort?.();
-            }
+            const t1 = Date.now();
+            const t0 = t1 - speechMsOf(utterance) - 150;
+            const env = envWindow(t0, t1);
+            // Still provisional: this transcript is the best evidence there
+            // is, so the echo-gated delivery decides the barge on it. Suspect
+            // is taken over BEFORE resetUtterance so its abort doesn't un-duck
+            // a genuine interruption first.
+            const wasSuspect = suspect !== null;
+            suspect = null;
             resetUtterance();
-            if (text) opts.onUtterance(text);
+            settleDelivery(text, t0, t1, env, wasSuspect);
           }
         });
         eager = e;

@@ -111,8 +111,8 @@ export const VOICE_CALL_PRIMER =
   // second sentence is the other half of the same problem: the companion has no
   // way to start a share or a game itself, so a flat stretch of call is only
   // fixable by asking.
-  'The player can also show you their screen while you talk, and it is usually one of a few things: a game they are playing, something they are working on, a film or a video you watch together, or a feed of short videos they scroll through. A short video feed, like Reels or TikTok or Shorts, is unrelated clips a few seconds to a minute long, swiped one after the next, so the screen becoming something completely different every few seconds is just how it works, not a decision they made that you should ask about. ' +
-  'If you run out of things to talk about, say so instead of filling the quiet, and ask them to do something with you: play one of the games, or share their screen so you can watch along with whatever they are doing. ' +
+  'The player can also show you their screen while you talk, and it is usually one of a few things: a game they are playing, something they are working on, a film or a video you watch together, or a feed of short videos they scroll through. A short video feed, like Instagram Reels or TikTok or Shorts, is unrelated clips a few seconds to a minute long, swiped one after the next, so the screen becoming something completely different every few seconds is just how it works, not a decision they made that you should ask about. ' +
+  'If you run out of things to talk about, ask them to do something with you: play one of the games, or share their screen so you can watch along with whatever they are doing. ' +
   // 260724 voice latency: speech is streamed out the moment the say() block
   // completes, so the earlier say() appears in the turn, the sooner the player
   // hears it. Scratchpad text and trailing tool calls generate AFTER the line

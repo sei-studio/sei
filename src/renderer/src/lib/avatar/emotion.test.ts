@@ -1,6 +1,6 @@
 /** classifyEmotion (260804) — bilingual lexicon over spoken lines. */
 import { describe, it, expect } from 'vitest';
-import { classifyEmotion } from './emotion';
+import { classifyEmotion, resolveEmotionExpression } from './emotion';
 
 describe('classifyEmotion', () => {
   it('returns null for empty/neutral lines', () => {
@@ -39,5 +39,46 @@ describe('classifyEmotion', () => {
 
   it('开心 reads as happy, not love (bare 心 is deliberately not a keyword)', () => {
     expect(classifyEmotion('今天真开心')).toBe('happy');
+  });
+});
+
+describe('resolveEmotionExpression', () => {
+  // The Snow Bear Girl shape: no happy, no surprised — the two most common
+  // classifications must still land on a face.
+  const snowBear = {
+    sad: '6 泪',
+    shy: '7 害羞',
+    angry: '8 生气',
+    love: '9 爱心眼',
+    excited: '10 星星眼',
+  } as const;
+
+  it('prefers the direct mapping', () => {
+    expect(resolveEmotionExpression(snowBear, 'sad')).toBe('6 泪');
+    expect(resolveEmotionExpression(snowBear, 'excited')).toBe('10 星星眼');
+  });
+
+  it('falls back for happy and surprised when unmapped', () => {
+    expect(resolveEmotionExpression(snowBear, 'happy')).toBe('10 星星眼');
+    expect(resolveEmotionExpression(snowBear, 'surprised')).toBe('10 星星眼');
+  });
+
+  it('walks the fallback chain in order', () => {
+    expect(resolveEmotionExpression({ happy: 'smile' }, 'surprised')).toBe('smile');
+    expect(resolveEmotionExpression({ excited: 'stars', happy: 'smile' }, 'surprised')).toBe(
+      'stars',
+    );
+  });
+
+  it('never fakes negative emotions', () => {
+    expect(resolveEmotionExpression({ happy: 'smile', excited: 'stars' }, 'sad')).toBeNull();
+    expect(resolveEmotionExpression({ happy: 'smile', excited: 'stars' }, 'angry')).toBeNull();
+    expect(resolveEmotionExpression({ happy: 'smile', excited: 'stars' }, 'shy')).toBeNull();
+  });
+
+  it('returns null on empty inputs', () => {
+    expect(resolveEmotionExpression(undefined, 'happy')).toBeNull();
+    expect(resolveEmotionExpression({}, 'happy')).toBeNull();
+    expect(resolveEmotionExpression(snowBear, null)).toBeNull();
   });
 });

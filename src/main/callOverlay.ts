@@ -14,22 +14,36 @@
  * it reuses the app's portrait resolution (relative assets + the sei-portrait://
  * protocol both resolve there because it shares the renderer origin).
  *
- * Interaction model (260804; view/edit split 260805): the window is
- * click-through by DEFAULT (`setIgnoreMouseEvents(true, {forward: true})` —
- * `forward` keeps mousemove flowing to the page so hover chrome works;
- * Windows/macOS only, Linux stays display-only). The overlay renderer asks
- * for real clicks (`setOverlayInteractive`) while hovered (view mode's
- * pencil button) and for the whole of edit mode. Edit mode resizes through
- * `resizeOverlay` (corner handles + center-anchored wheel zoom) and moves
- * either natively (the hold-to-drag button is `-webkit-app-region: drag`,
- * the window is `movable`) or through the `moveOverlay` delta stream
- * (drag-anywhere-on-the-tiles). Geometry persists in
- * UserConfig.avatar_overlay (written HERE, main-owned — deliberately not
- * renderer-settable).
+ * Interaction model (260804; view/edit split 260805; per-region 260806): the
+ * window is click-through by DEFAULT (`setIgnoreMouseEvents(true, {forward:
+ * true})` — `forward` keeps mousemove flowing to the page so hover chrome
+ * works; Windows/macOS only, Linux stays display-only). The overlay renderer
+ * asks for real clicks (`setOverlayInteractive`) only while the pointer is
+ * over the CHROME BUTTON COLUMN (so clicks over the character land on
+ * whatever is under her, like the caption window) and for the whole of edit
+ * mode. Edit mode resizes the WINDOW through `resizeOverlay` (corner handles
+ * only) and moves it through the hold-to-drag button's `moveAvatarOverlay`
+ * stream (ordinary chrome, NOT an app-region — an app-region swallows
+ * pointer events, which would break the per-region interactivity tracking;
+ * the button shows in view mode too); wheel + drag over a Live2D tile instead
+ * adjust the CHARACTER's camera within the tile (`setOverlayCamera` — zoom to
+ * the face, pan, 260806).
+ * Geometry + cameras persist in UserConfig.avatar_overlay (written HERE,
+ * main-owned — deliberately not renderer-settable). While a call/backseat is
+ * live the overlay grows mute + captions buttons; captions open the sibling
+ * captionOverlay.ts window, which rides the same state pushes.
  */
 import { BrowserWindow, screen, app } from 'electron';
-import { IpcChannel, type CallOverlayState } from '../shared/ipc';
+import { IpcChannel, type AvatarCamera, type CallOverlayState } from '../shared/ipc';
 import { loadConfig, updateConfig } from './configStore';
+import {
+  closeCaptionOverlay,
+  hydrateCaptionConfig,
+  initCaptionOverlay,
+  isCaptionOverlayEnabled,
+  setCaptionCaptureVisible,
+  updateCaptionOverlay,
+} from './captionOverlay';
 
 interface OverlayConfig {
   preloadPath: string;
@@ -43,11 +57,13 @@ let lastState: CallOverlayState | null = null;
 
 // Chrome layout (kept in sync with CallOverlay.module.css). Tiles are square,
 // side `tileSize`; the paddings leave room for the hover outline + drag button
-// and do NOT scale with the tile.
+// and do NOT scale with the tile. No bottom padding (260806): the avatar's
+// bottom edge sits flush on the window's bottom edge, so she stands ON
+// whatever the window is placed against instead of floating above it.
 const DEFAULT_TILE = 76;
 const GAP = 10;
 const PAD_X = 14;
-const PAD_Y = 16; // per edge; window height = tileSize + 2 * PAD_Y
+const PAD_TOP = 16; // window height = tileSize + PAD_TOP (bottom is flush)
 const MARGIN = 22; // default gap from the screen edges (no stored position)
 const MIN_TILE = 48;
 const MAX_TILE = 1024;
@@ -56,8 +72,13 @@ const MAX_TILE = 1024;
 let tileSize = DEFAULT_TILE;
 /** Stored window origin (user has dragged/resized), null = default corner. */
 let storedPos: { x: number; y: number } | null = null;
+/** Per-character tile cameras (260806): character zoom + pan WITHIN the tile,
+ * streamed up from edit-mode wheel/drag, enriched into the forwarded state. */
+let cameras: Record<string, AvatarCamera> = {};
 /** True once hydrateGeometry has read config (so we only read it once). */
 let geometryHydrated = false;
+/** UserConfig.avatar_in_captures — see setAvatarCaptureVisible. */
+let captureVisible = false;
 
 /** Participant count the window is currently sized/positioned for. Position is
  * only recomputed when this changes (or the window is (re)created), never on the
@@ -70,9 +91,15 @@ let movePersistTimer: ReturnType<typeof setTimeout> | null = null;
 /** True while resizeOverlay is applying bounds, so the 'moved' listener does
  * not mistake a programmatic move for a user drag. */
 let applyingBounds = false;
+/** Window origin at the start of a hold-to-drag move stream. */
+let moveStartPos: { x: number; y: number } | null = null;
+/** Cursor poll for gaze cursor-follow (armed only while a Live2D tile shows). */
+let cursorTimer: ReturnType<typeof setInterval> | null = null;
+const CURSOR_POLL_MS = 120;
 
 export function initCallOverlay(config: OverlayConfig): void {
   cfg = config;
+  initCaptionOverlay(config);
   // Reposition to the settled work area when the display layout changes.
   // A Minecraft fullscreen transition fires several `display-metrics-changed`
   // events with TRANSIENT work areas (menu bar / dock animating in and out);
@@ -96,10 +123,12 @@ async function hydrateGeometry(): Promise<void> {
   geometryHydrated = true;
   try {
     const config = await loadConfig();
+    captureVisible = config.avatar_in_captures === true;
     const g = config.avatar_overlay;
     if (g) {
       tileSize = Math.min(MAX_TILE, Math.max(MIN_TILE, g.size));
       if (typeof g.x === 'number' && typeof g.y === 'number') storedPos = { x: g.x, y: g.y };
+      if (g.cameras) cameras = { ...g.cameras };
     }
   } catch {
     /* defaults */
@@ -110,9 +139,14 @@ async function hydrateGeometry(): Promise<void> {
 function persistGeometry(): void {
   const pos = storedPos;
   const size = Math.round(tileSize);
+  const cams = Object.keys(cameras).length > 0 ? { cameras } : {};
   void updateConfig((current) => ({
     ...current,
-    avatar_overlay: { size, ...(pos ? { x: Math.round(pos.x), y: Math.round(pos.y) } : {}) },
+    avatar_overlay: {
+      size,
+      ...(pos ? { x: Math.round(pos.x), y: Math.round(pos.y) } : {}),
+      ...cams,
+    },
   })).catch(() => {
     /* geometry is a nicety; a failed write means default placement next run */
   });
@@ -121,7 +155,7 @@ function persistGeometry(): void {
 function windowSize(count: number): { width: number; height: number } {
   return {
     width: PAD_X * 2 + count * tileSize + Math.max(0, count - 1) * GAP,
-    height: tileSize + PAD_Y * 2,
+    height: tileSize + PAD_TOP,
   };
 }
 
@@ -180,9 +214,17 @@ function keepAppForeground(): void {
   void app.dock?.show();
 }
 
+/** The renderer-pushed state enriched with main-owned extras (per-character
+ * tile cameras + the caption toggle) before it reaches either overlay window. */
+function enrichedState(): CallOverlayState | null {
+  if (!lastState) return null;
+  return { ...lastState, cameras, captionsOn: isCaptionOverlayEnabled() };
+}
+
 function pushState(): void {
-  if (overlayWin && !overlayWin.isDestroyed() && lastState) {
-    overlayWin.webContents.send(IpcChannel.voice.overlayState, lastState);
+  const state = enrichedState();
+  if (overlayWin && !overlayWin.isDestroyed() && state) {
+    overlayWin.webContents.send(IpcChannel.voice.overlayState, state);
   }
 }
 
@@ -199,7 +241,7 @@ function ensureWindow(): BrowserWindow | null {
 
   const win = new BrowserWindow({
     width: 220,
-    height: tileSize + PAD_Y * 2,
+    height: tileSize + PAD_TOP,
     show: false,
     frame: false,
     transparent: true,
@@ -212,7 +254,8 @@ function ensureWindow(): BrowserWindow | null {
     // (resizeOverlay), which ignores `resizable`; aspect stays locked because
     // every path derives from the single tile scalar.
     resizable: false,
-    // movable for the -webkit-app-region: drag button (hold to drag).
+    // Moving goes through the hold-to-drag button's moveAvatarOverlay stream
+    // (setBounds ignores `movable`, so this is belt-and-braces only).
     movable: true,
     minimizable: false,
     maximizable: false,
@@ -221,6 +264,13 @@ function ensureWindow(): BrowserWindow | null {
     focusable: false,
     hasShadow: false,
     alwaysOnTop: true,
+    // macOS: without this, the FIRST click into the overlay while Sei is not
+    // the active app is treated as an activation click — AppKit activates Sei
+    // and raises the main window ("clicking the resize handle pops open the
+    // app", 260806) and the click never reaches the handle. acceptFirstMouse
+    // delivers that click to the page instead; focusable:false + the panel
+    // type below keep the window itself from ever taking key status.
+    acceptFirstMouse: true,
     // macOS: a non-activating NSPanel floats above other windows without ever
     // becoming the app's key/main window, so spawning it can't reorder or hide
     // the main Sei window (the "app disappears when a call starts" report).
@@ -251,10 +301,11 @@ function ensureWindow(): BrowserWindow | null {
     skipTransformProcessType: true,
   });
   applyDefaultMousePolicy(win);
-  // The avatar never appears in screen captures — including Sei's own
-  // backseat share ("self is hidden from screenshare") and the player's
+  // By default the avatar never appears in screen captures — including Sei's
+  // own backseat share ("self is hidden from screenshare") and the player's
   // OBS/Discord capture of a game. The overlay is for the PLAYER's eyes.
-  win.setContentProtection(true);
+  // Opt out via the share picker's toggle; see setAvatarCaptureVisible.
+  win.setContentProtection(!captureVisible);
   keepAppForeground();
 
   const t = cfg.rendererUrlOrPath;
@@ -264,9 +315,11 @@ function ensureWindow(): BrowserWindow | null {
     void win.loadFile(t, { search: 'overlay=1' });
   }
 
-  // Persist the position after a native drag (the app-region drag button).
-  // 'moved' also fires for programmatic setBounds, so applyingBounds guards
-  // reposition/resize paths from being mistaken for a user drag.
+  // Persist the position after any native move (safety net — the hold-to-drag
+  // button streams through moveAvatarOverlay/setBounds now, which persists at
+  // 'end' itself). 'moved' also fires for programmatic setBounds, so
+  // applyingBounds guards reposition/resize paths from being mistaken for a
+  // user drag.
   win.on('moved', () => {
     if (applyingBounds || win.isDestroyed()) return;
     if (movePersistTimer) clearTimeout(movePersistTimer);
@@ -318,11 +371,14 @@ export function updateCallOverlay(state: CallOverlayState): void {
     closeCallOverlay();
     return;
   }
-  void hydrateGeometry().then(() => {
+  void Promise.all([hydrateGeometry(), hydrateCaptionConfig()]).then(() => {
     if (!lastState || !(lastState.enabled && lastState.participants.length > 0)) return;
     const existed = !!overlayWin && !overlayWin.isDestroyed();
     const win = ensureWindow();
     if (!win) return;
+    // The caption window rides the same state (it reconciles itself: shows
+    // iff captions toggled on && (onCall || edit mode)).
+    updateCaptionOverlay(enrichedState());
     const count = lastState.participants.length;
     // Only (re)position when the window is new or the tile count changed. This
     // push fires on every speaking-state change; running setBounds each time made
@@ -336,6 +392,7 @@ export function updateCallOverlay(state: CallOverlayState): void {
     }
     // If the page is already loaded, forward now; otherwise ready-to-show does it.
     if (!win.webContents.isLoading()) pushState();
+    reconcileCursorPoll();
   });
 }
 
@@ -348,7 +405,46 @@ export function updateCallOverlay(state: CallOverlayState): void {
  * lost seed can no longer leave it blank.
  */
 export function getCallOverlayState(): CallOverlayState | null {
-  return lastState;
+  return enrichedState();
+}
+
+/**
+ * Let the overlay windows be picked up by screen capture (260807), from the
+ * share picker's toggle via the config:save handler.
+ *
+ * Content protection is a per-window OS flag and it is all-or-nothing:
+ * `NSWindowSharingNone` / `WDA_EXCLUDEFROMCAPTURE` drop the window out of
+ * EVERY capture path, so there is no way to be visible to OBS and hidden from
+ * Sei's own backseat share. Turning it off therefore also means a companion
+ * sharing an ENTIRE SCREEN can see her own tile (a window share is unaffected
+ * — a window capture cannot contain another window), which is why the toggle
+ * is off by default and says so.
+ *
+ * Applied to the LIVE window rather than only at creation: the player is
+ * likely to flip this while the overlay is already up.
+ */
+export function setAvatarCaptureVisible(visible: boolean): void {
+  captureVisible = visible;
+  if (overlayWin && !overlayWin.isDestroyed()) overlayWin.setContentProtection(!visible);
+  setCaptionCaptureVisible(visible);
+}
+
+/**
+ * Camera stream from the overlay renderer (260806): edit-mode wheel/drag over
+ * a Live2D tile adjusting how the character is framed within it. The overlay
+ * window is the writer, so nothing is pushed back; `commit` persists.
+ */
+export function setOverlayCamera(id: string, cam: AvatarCamera, commit: boolean): void {
+  const isDefault = cam.zoom === 1 && cam.x === 0 && cam.y === 0;
+  if (isDefault) delete cameras[id];
+  else cameras[id] = cam;
+  if (commit) persistGeometry();
+}
+
+/** Re-push the enriched state to the overlay window (after a caption toggle,
+ * so its captions button reflects the new value). */
+export function repushOverlayState(): void {
+  pushState();
 }
 
 /** Relay a mouth-level sample (main window → overlay window). Per-frame
@@ -359,12 +455,79 @@ export function forwardOverlayLevel(id: string, level: number): void {
   }
 }
 
-/** Pointer entered/left overlay chrome: give the window real clicks (drag
- * button, corner handles) or restore the default click-through policy. */
+/** Pointer entered/left the overlay's chrome BUTTON COLUMN (or edit mode
+ * started/ended): give the window real clicks or restore the default
+ * click-through policy. The renderer only asks for clicks over the button
+ * region, so the character herself stays click-through in view mode. */
 export function setOverlayInteractive(interactive: boolean): void {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (interactive) overlayWin.setIgnoreMouseEvents(false);
   else applyDefaultMousePolicy(overlayWin);
+}
+
+/**
+ * Hold-to-drag window move stream from the overlay renderer (mirrors
+ * moveCaptionOverlay): deltas are screen-space from the pointer-down,
+ * anchored to the origin snapshotted at 'start' so the drag stays 1:1 while
+ * the window moves under the pointer. 'end' persists the new position.
+ */
+export function moveAvatarOverlay(phase: 'start' | 'move' | 'end', dx: number, dy: number): void {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  const b = overlayWin.getBounds();
+  if (phase === 'start') {
+    moveStartPos = { x: b.x, y: b.y };
+    return;
+  }
+  if (phase === 'move') {
+    if (!moveStartPos) moveStartPos = { x: b.x, y: b.y };
+    setBoundsProgrammatic({
+      x: Math.round(moveStartPos.x + dx),
+      y: Math.round(moveStartPos.y + dy),
+      width: b.width,
+      height: b.height,
+    });
+    return;
+  }
+  moveStartPos = null;
+  storedPos = { x: b.x, y: b.y };
+  persistGeometry();
+}
+
+/**
+ * Gaze cursor-follow feed (260806): while a Live2D tile is showing, poll the
+ * global cursor (`screen.getCursorScreenPoint`, cheap) and push it to the
+ * overlay window normalized to [-1, 1] around the window's center (x right,
+ * y UP — the focusController's frame), scaled by the half-extent of the
+ * display the window sits on. The renderer alternates its gaze between this
+ * and the idle wander; a feed that stops (window gone) just means wander.
+ */
+function pushCursorSample(): void {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  try {
+    const pt = screen.getCursorScreenPoint();
+    const b = overlayWin.getBounds();
+    const disp = screen.getDisplayMatching(b).bounds;
+    const halfW = Math.max(1, disp.width / 2);
+    const halfH = Math.max(1, disp.height / 2);
+    const x = Math.max(-1, Math.min(1, (pt.x - (b.x + b.width / 2)) / halfW));
+    const y = Math.max(-1, Math.min(1, (b.y + b.height / 2 - pt.y) / halfH));
+    overlayWin.webContents.send(IpcChannel.avatar.overlayCursorState, { x, y });
+  } catch {
+    /* a mid-teardown poll tick must never throw */
+  }
+}
+
+/** Arm/disarm the cursor poll to match "window up AND a Live2D tile shown". */
+function reconcileCursorPoll(): void {
+  const wants =
+    !!overlayWin &&
+    !overlayWin.isDestroyed() &&
+    !!lastState?.participants.some((p) => p.live2d === true);
+  if (wants && !cursorTimer) cursorTimer = setInterval(pushCursorSample, CURSOR_POLL_MS);
+  if (!wants && cursorTimer) {
+    clearInterval(cursorTimer);
+    cursorTimer = null;
+  }
 }
 
 /**
@@ -406,40 +569,11 @@ export async function resizeOverlay(
   }
 }
 
-/** Window origin at the start of an edit-mode drag-anywhere move. */
-let moveStartPos: { x: number; y: number } | null = null;
-
-/**
- * Edit-mode drag-anywhere move stream. Deltas are screen-space from the
- * pointer-down; anchoring them to a snapshotted origin keeps the drag 1:1
- * even though the window moves under the pointer mid-stream.
- */
-export function moveOverlay(phase: 'start' | 'move' | 'end', dx: number, dy: number): void {
-  if (!overlayWin || overlayWin.isDestroyed()) return;
-  const b = overlayWin.getBounds();
-  if (phase === 'start') {
-    moveStartPos = { x: b.x, y: b.y };
-    return;
-  }
-  if (phase === 'move') {
-    if (!moveStartPos) moveStartPos = { x: b.x, y: b.y };
-    setBoundsProgrammatic({
-      x: Math.round(moveStartPos.x + dx),
-      y: Math.round(moveStartPos.y + dy),
-      width: b.width,
-      height: b.height,
-    });
-    return;
-  }
-  moveStartPos = null;
-  storedPos = { x: b.x, y: b.y };
-  persistGeometry();
-}
-
 /** Tear down the overlay window (mode off, no participants, renderer death, quit). */
 export function closeCallOverlay(): void {
   lastState = null;
   lastCount = 0;
+  closeCaptionOverlay();
   if (repositionTimer) {
     clearTimeout(repositionTimer);
     repositionTimer = null;
@@ -448,6 +582,11 @@ export function closeCallOverlay(): void {
     clearTimeout(movePersistTimer);
     movePersistTimer = null;
   }
+  if (cursorTimer) {
+    clearInterval(cursorTimer);
+    cursorTimer = null;
+  }
+  moveStartPos = null;
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.destroy();
   overlayWin = null;
 }

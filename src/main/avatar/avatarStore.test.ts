@@ -28,6 +28,7 @@ import {
   mapEmotions,
   sanitizeEntryPath,
   buildSafePathMap,
+  setAvatarAccessory,
   MANIFEST_VERSION,
 } from './avatarStore';
 
@@ -307,4 +308,27 @@ describe.skipIf(!existsSync(REAL_ZIP))('importAvatarZip (real Snow Bear Girl zip
         });
     }
   }, 30_000);
+});
+
+describe('setAvatarAccessory', () => {
+  it('toggles an accessory on and off, keeping the record sparse', async () => {
+    await importAvatarZip('char-acc', await syntheticZip());
+    const on = await setAvatarAccessory('char-acc', '生气', true);
+    expect(on?.accessories).toEqual({ '生气': true });
+    // Persisted: a fresh read sees it.
+    expect((await getAvatarManifest('char-acc'))?.accessories).toEqual({ '生气': true });
+    const off = await setAvatarAccessory('char-acc', '生气', false);
+    expect(off?.accessories).toBeUndefined();
+    expect((await getAvatarManifest('char-acc'))?.accessories).toBeUndefined();
+  });
+
+  it('ignores names the model does not ship', async () => {
+    await importAvatarZip('char-acc2', await syntheticZip());
+    const manifest = await setAvatarAccessory('char-acc2', 'no-such-expression', true);
+    expect(manifest?.accessories).toBeUndefined();
+  });
+
+  it('returns null when no avatar is imported', async () => {
+    expect(await setAvatarAccessory('char-none', 'x', true)).toBeNull();
+  });
 });

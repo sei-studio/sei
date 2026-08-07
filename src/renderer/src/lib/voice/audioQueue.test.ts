@@ -23,12 +23,22 @@ class FakeAudio {
   paused = true;
   preservesPitch = true;
   playbackRate = 1;
+  listeners = new Map<string, Array<() => void>>();
   constructor(url?: string) {
     this.src = url ?? '';
     FakeAudio.instances.push(this);
   }
-  addEventListener(): void {}
+  addEventListener(type: string, fn: () => void): void {
+    const arr = this.listeners.get(type) ?? [];
+    arr.push(fn);
+    this.listeners.set(type, arr);
+  }
   removeEventListener(): void {}
+  /** Fire a registered event by name (the queue registers with {once:true},
+   *  which this fake ignores — tests fire each event at most once). */
+  dispatch(type: string): void {
+    for (const fn of this.listeners.get(type) ?? []) fn();
+  }
   play(): Promise<void> {
     this.paused = false;
     return Promise.resolve();
@@ -109,6 +119,82 @@ describe('audioQueue barge-in fade', () => {
     q.stop();
     expect(el.paused).toBe(true);
     expect(q.speaking()).toBe(false);
+  });
+});
+
+/**
+ * Turn supersession (260806). Backseat turns land every 10-20 s while TTS
+ * playback of a multi-part reply can run longer, so a new turn's lines used to
+ * queue behind the old turn's and the spoken commentary drifted a turn behind
+ * the screen. A clip tagged with a NEW turn drops the same speaker's QUEUED
+ * clips from an older turn; the clip at the playhead always finishes (the
+ * "current sentence ends" boundary — parts are sentence-sized).
+ */
+describe('audioQueue turn supersession', () => {
+  /** Enqueue a blob-reserved clip whose bytes have already landed. */
+  function ready(q: ReturnType<typeof createAudioQueue>, id: string, text: string, turn?: string) {
+    const h = q.enqueueStream(id, text, 1, { blob: true, ...(turn ? { turn } : {}) });
+    h.push(new ArrayBuffer(8));
+    h.end();
+    return h;
+  }
+  /**
+   * The texts onSpeakingChange reported, consecutive repeats collapsed. The
+   * FIRST clip of each queue run reports twice by design: once when its
+   * reserved slot takes the playhead (bytes not yet landed — the waiting
+   * placeholder), once when real playback starts. Only the ORDER is under test
+   * here.
+   */
+  function spokenTexts(onSpeak: ReturnType<typeof vi.fn>): Array<string | undefined> {
+    const texts = onSpeak.mock.calls
+      .filter((c) => c[0] === true)
+      .map((c) => c[2] as string | undefined);
+    return texts.filter((t, i) => i === 0 || t !== texts[i - 1]);
+  }
+
+  it("a new turn drops the old turn's queued clips but never the playing one", () => {
+    const onSpeak = vi.fn();
+    const q = createAudioQueue(onSpeak);
+    ready(q, 'sui', 'first sentence.', 'A'); // takes the playhead
+    const playing = FakeAudio.instances.at(-1)!; // the realized element (index 0 is the placeholder)
+    expect(playing.paused).toBe(false);
+    const a2 = ready(q, 'sui', 'second sentence.', 'A'); // queued
+
+    // Turn B arrives while A is still speaking: A's queued tail is retired.
+    ready(q, 'sui', 'newer thought.', 'B');
+    expect(playing.paused).toBe(false); // the current sentence is untouched
+
+    // A2's TTS resolving later must be a no-op on a dropped item.
+    a2.push(new ArrayBuffer(8));
+    a2.end();
+
+    // The current sentence ends → playback jumps straight to turn B,
+    // 'second sentence.' is never spoken.
+    playing.dispatch('ended');
+    expect(spokenTexts(onSpeak)).toEqual(['first sentence.', 'newer thought.']);
+  });
+
+  it('untagged clips are never dropped by a tagged one', () => {
+    const onSpeak = vi.fn();
+    const q = createAudioQueue(onSpeak);
+    ready(q, 'sui', 'greeting'); // playhead, no tag
+    ready(q, 'sui', 'held line'); // queued, no tag
+    ready(q, 'sui', 'backseat line', 'B');
+    FakeAudio.instances.at(-1)!.dispatch('ended');
+    FakeAudio.instances.at(-1)!.dispatch('ended');
+    // The untagged line survived and played in order.
+    expect(spokenTexts(onSpeak)).toEqual(['greeting', 'held line', 'backseat line']);
+  });
+
+  it('scopes supersession to the speaker', () => {
+    const onSpeak = vi.fn();
+    const q = createAudioQueue(onSpeak);
+    ready(q, 'sui', 'sui old.', 'A'); // playhead
+    ready(q, 'marv', 'marv line.', 'X'); // queued, other speaker
+    ready(q, 'sui', 'sui new.', 'B'); // supersedes nothing of marv's
+    FakeAudio.instances.at(-1)!.dispatch('ended');
+    FakeAudio.instances.at(-1)!.dispatch('ended');
+    expect(spokenTexts(onSpeak)).toEqual(['sui old.', 'marv line.', 'sui new.']);
   });
 });
 

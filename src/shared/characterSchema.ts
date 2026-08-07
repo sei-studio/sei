@@ -597,6 +597,55 @@ export const UserConfigSchema = z.object({
       size: z.number().int().min(48).max(1024),
       x: z.number().int().optional(),
       y: z.number().int().optional(),
+      /**
+       * 260806 — per-character tile camera: how the character is framed WITHIN
+       * its tile (edit-mode wheel = zoom, drag on the tile = pan). `zoom`
+       * multiplies the contain-fit scale; `x`/`y` are pan offsets in tile
+       * fractions. Sparse: absent id = default framing (whole model, centered).
+       */
+      cameras: z
+        .record(
+          z.object({
+            zoom: z.number().min(0.5).max(8),
+            x: z.number().min(-1.5).max(1.5),
+            y: z.number().min(-1.5).max(1.5),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
+  /**
+   * Let the avatar + caption overlay windows appear in screen captures
+   * (260807). Both windows set `setContentProtection(true)` by default, which
+   * is a per-window OS flag (`NSWindowSharingNone` / `WDA_EXCLUDEFROMCAPTURE`)
+   * excluding them from EVERY capture path: OBS, screenshots, and Sei's own
+   * backseat share alike. There is no OS-level way to be in one and out of
+   * another, so this is a single switch.
+   *
+   * OFF by default, and it should stay off for anyone not recording: with it
+   * on, a companion sharing an ENTIRE SCREEN sees her own tile in the grid
+   * (a window share still cannot contain another window, so that path is
+   * unaffected), and her blink/lip-sync animation is a localized change in
+   * exactly the 4x3 block split the colour jolt arm watches.
+   */
+  avatar_in_captures: z.boolean().optional(),
+  /**
+   * Caption overlay window (260806), written by MAIN only (like
+   * `avatar_overlay`). The always-on-top captions box the avatar overlay's
+   * captions button toggles while on a call/backseat: white companion lines
+   * over a darkened box, click-through outside edit mode. Geometry absent =
+   * default placement (bottom-center of the work area). `font_size` is FIXED
+   * at render time — a bigger font does not grow the box, the text just
+   * breaks into more chunks.
+   */
+  avatar_captions: z
+    .object({
+      enabled: z.boolean(),
+      x: z.number().int().optional(),
+      y: z.number().int().optional(),
+      width: z.number().int().min(160).max(1600).optional(),
+      height: z.number().int().min(60).max(800).optional(),
+      font_size: z.number().int().min(12).max(48).optional(),
     })
     .optional(),
   /**

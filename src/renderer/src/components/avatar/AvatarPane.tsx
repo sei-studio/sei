@@ -113,6 +113,19 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
     }
   };
 
+  // Item-toggle expressions (260806): everything the emotion table did NOT
+  // claim (hat, phone, coat...). Toggled ones persist in the manifest and the
+  // live preview/overlay re-apply them on the broadcast.
+  const onToggleAccessory = async (name: string, on: boolean): Promise<void> => {
+    try {
+      const next = await sei.avatarSetAccessory(characterId, name, on);
+      if (next) setManifest(characterId, next);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[AvatarPane] accessory toggle failed', err);
+    }
+  };
+
   return (
     <div className={styles.pane}>
       <div className={styles.subTabs}>
@@ -184,6 +197,35 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
                   count: String(manifest.expressions.length),
                 })}
               </p>
+              {(() => {
+                const emotionNames = new Set(Object.values(manifest.emotions ?? {}));
+                const items = manifest.expressions.filter((e) => !emotionNames.has(e.name));
+                if (items.length === 0) return null;
+                return (
+                  <>
+                    {items.map((e) => (
+                      <div className={styles.row} key={e.name}>
+                        <span className={styles.label}>{e.name}</span>
+                        <Toggle
+                          aria-label={e.name}
+                          on={manifest.accessories?.[e.name] === true}
+                          onChange={() =>
+                            void onToggleAccessory(
+                              e.name,
+                              !(manifest.accessories?.[e.name] === true),
+                            )
+                          }
+                        />
+                      </div>
+                    ))}
+                    <p className={styles.subHint}>
+                      {t(
+                        'Outfit and item toggles this model ships. Emotion expressions play on their own while talking.',
+                      )}
+                    </p>
+                  </>
+                );
+              })()}
               <div className={styles.btnRow}>
                 <button
                   type="button"

@@ -224,6 +224,9 @@ export function buildSafePathMap(rels: string[]): Map<string, string> {
 async function normalizeAndWrite(
   characterId: string,
   incoming: ExtractedFile[],
+  /** Accessory toggles to carry over (the v1→v2 heal path; a fresh import
+   * starts clean — a new model's expression names owe it nothing). */
+  keepAccessories?: Record<string, boolean>,
 ): Promise<AvatarManifest> {
   const stripped = stripCommonRoot(incoming);
   const byRel = new Map(stripped.map((f) => [f.rel, f]));
@@ -343,6 +346,14 @@ async function normalizeAndWrite(
     expressions,
     emotions: mapEmotions(expressions.map((e) => e.name)),
   };
+  if (keepAccessories) {
+    // Keep only toggles whose expression still exists after renormalizing.
+    const names = new Set(expressions.map((e) => e.name));
+    const kept = Object.fromEntries(
+      Object.entries(keepAccessories).filter(([name, on]) => on && names.has(name)),
+    );
+    if (Object.keys(kept).length > 0) manifest.accessories = kept;
+  }
 
   // ── Replace the avatar dir atomically-ish (validated before we wipe) ────
   const dir = paths.avatarsDir(characterId);
@@ -423,12 +434,42 @@ export async function getAvatarManifest(characterId: string): Promise<AvatarMani
   if (parsed.version !== 1) return null;
   try {
     return await withLock(characterId, async () =>
-      normalizeAndWrite(characterId, await readStoredFiles(characterId)),
+      normalizeAndWrite(characterId, await readStoredFiles(characterId), parsed.accessories),
     );
   } catch {
     // A store too broken to renormalize is a store that cannot render either.
     return null;
   }
+}
+
+/**
+ * Flip a persistent accessory toggle (260806): `name` must be one of the
+ * manifest's expression names. Returns the updated manifest, or null when the
+ * character has no imported avatar. The record stays sparse — turning a
+ * toggle off removes its entry.
+ */
+export async function setAvatarAccessory(
+  characterId: string,
+  name: string,
+  on: boolean,
+): Promise<AvatarManifest | null> {
+  const manifest = await getAvatarManifest(characterId);
+  if (!manifest) return null;
+  if (!manifest.expressions.some((e) => e.name === name)) return manifest;
+  return withLock(characterId, async () => {
+    const accessories = { ...(manifest.accessories ?? {}) };
+    if (on) accessories[name] = true;
+    else delete accessories[name];
+    const next: AvatarManifest = { ...manifest };
+    if (Object.keys(accessories).length > 0) next.accessories = accessories;
+    else delete next.accessories;
+    await writeFile(
+      path.join(paths.avatarsDir(characterId), MANIFEST_NAME),
+      JSON.stringify(next, null, 2),
+      'utf8',
+    );
+    return next;
+  });
 }
 
 /** Delete the character's imported avatar. Idempotent. */

@@ -39,6 +39,8 @@ import { isGameSurfaceOpen } from '../../lib/callLaunch';
 import type { BackseatSource } from '../../../../shared/backseatIpc';
 import { ModalShell, ModalFooter } from '../ModalShell';
 import { Button } from '../Button';
+import { Toggle } from '../Toggle';
+import { InfoTip } from '../InfoTip';
 import { useT } from '../../lib/i18n';
 import styles from './ShareScreenModal.module.css';
 
@@ -75,6 +77,41 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
   // are the better share: one app, no notifications, no second monitor of
   // nothing.
   const [tab, setTab] = useState<'window' | 'screen'>('window');
+  // UserConfig.avatar_in_captures (260807). null until read, which keeps the
+  // switch from flicking off-then-on for someone who has it enabled.
+  const [inCaptures, setInCaptures] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const cfg = await sei.getConfig();
+        if (alive) setInCaptures(cfg.avatar_in_captures === true);
+      } catch {
+        if (alive) setInCaptures(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Optimistic, with rollback, over a read-modify-write of the freshest on-disk
+  // config — saveConfig replaces the whole object, so a cached copy would
+  // clobber whatever else changed since this modal opened (the 260725
+  // stale-wholesale-save hazard). Main applies it to the live overlay windows.
+  const toggleInCaptures = async (next: boolean): Promise<void> => {
+    const prev = inCaptures;
+    setInCaptures(next);
+    try {
+      const cfg = await sei.getConfig();
+      await sei.saveConfig({ ...cfg, avatar_in_captures: next });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[ShareScreenModal] saveConfig (avatar_in_captures) failed', err);
+      setInCaptures(prev);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -204,6 +241,26 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
         </div>
 
         {error ? <p className={styles.error}>{error}</p> : null}
+
+        {/* The overlay windows set content protection, which is a per-window OS
+            flag that hides them from EVERY capture path at once. So this is one
+            switch, and turning it on means an entire-screen share can contain
+            the avatar too. Hence the default and the tip. */}
+        <div className={styles.option}>
+          <span className={styles.optionLabel}>
+            {t('Show avatar in screen recordings')}
+            <InfoTip
+              text={t('Keep this off unless you want to record the avatar.')}
+              label="About showing the avatar in screen recordings"
+            />
+          </span>
+          <Toggle
+            on={inCaptures === true}
+            disabled={inCaptures === null}
+            onChange={(next) => void toggleInCaptures(next)}
+            aria-label={t('Show avatar in screen recordings')}
+          />
+        </div>
       </div>
 
       <ModalFooter>

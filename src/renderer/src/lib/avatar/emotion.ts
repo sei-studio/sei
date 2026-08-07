@@ -63,6 +63,39 @@ const LEXICONS: Lexicon[] = [
 ];
 
 /**
+ * Which emotions may borrow a neighbor's expression when the model maps
+ * nothing for them (260806). Real VTuber exports rarely ship a dedicated
+ * "happy" or "surprised" face, and those are the two classifications casual
+ * talk fires most, so without a fallback the feature reads as unwired: five
+ * mapped expressions and a face that never changes. Only positive/high-energy
+ * emotions substitute for each other; sad/angry/shy are never faked with
+ * something else (a wrong negative face is worse than a neutral one).
+ */
+const EMOTION_FALLBACKS: Partial<Record<AvatarEmotion, AvatarEmotion[]>> = {
+  happy: ['excited'],
+  excited: ['happy'],
+  surprised: ['excited', 'happy'],
+  love: ['happy'],
+};
+
+/**
+ * Resolve an emotion to the model's expression name via the manifest table,
+ * trying the fallback chain when the direct mapping is absent. Null = stay on
+ * (or decay to) the neutral face.
+ */
+export function resolveEmotionExpression(
+  emotions: Partial<Record<AvatarEmotion, string>> | undefined,
+  emotion: AvatarEmotion | null | undefined,
+): string | null {
+  if (!emotions || !emotion) return null;
+  for (const candidate of [emotion, ...(EMOTION_FALLBACKS[emotion] ?? [])]) {
+    const name = emotions[candidate];
+    if (name) return name;
+  }
+  return null;
+}
+
+/**
  * Classify one spoken line, or null when nothing clearly matches (the tile
  * stays on / decays to its neutral face). First lexicon with a hit wins.
  */

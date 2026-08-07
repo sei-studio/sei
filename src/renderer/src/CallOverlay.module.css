@@ -5,15 +5,17 @@
  *
  * Geometry contract with src/main/callOverlay.ts: the window is sized to
  * PAD_X(14) * 2 + count * tile + (count - 1) * GAP(10) wide and
- * tile + 2 * PAD_Y(16) tall. --tile is set inline from the window height, so
- * every resize path (our corner handles, anything else) stays consistent.
+ * tile + PAD_TOP(16) tall — no bottom padding, the tile's bottom edge is
+ * flush with the window's bottom edge (260806). --tile is set inline from
+ * the window height, so every resize path (our corner handles, anything
+ * else) stays consistent.
  */
 
 .stage {
   position: relative;
   width: 100%;
   height: 100%;
-  padding: 16px 14px;
+  padding: 16px 14px 0;
   background: transparent;
   overflow: hidden;
 }
@@ -27,9 +29,10 @@
   height: 100%;
 }
 
-/* Edit mode: anywhere on the tiles drags the window. */
-.rowEditing {
-  cursor: move;
+/* Edit mode on a Live2D tile: drag pans the CHARACTER within the tile (the
+ * window itself only moves via the hold-to-drag button). */
+.live2dEditing {
+  cursor: grab;
 }
 
 /* ── Hover outline ─────────────────────────────────────────────────────── */
@@ -147,14 +150,26 @@
 .tr { top: 0; right: 0; cursor: nesw-resize; }
 .bl { bottom: 0; left: 0; cursor: nesw-resize; }
 
-/* Bottom-right chrome buttons, INSIDE the hover outline (the frame the user
- * sees), clear of the corner RESIZE handle at the true corner. The MODE
- * button (pencil/tick) holds the anchor spot; in edit mode the hold-to-drag
- * button stacks directly above it. */
-.modeBtn,
-.dragBtn {
+/* Bottom-right chrome column, INSIDE the hover outline (the frame the user
+ * sees), clear of the corner RESIZE handle at the true corner and raised one
+ * button height off the bottom edge (260806). column-reverse stacks upward:
+ * mode button at the bottom, then the hold-to-drag button (both modes), then
+ * mute + captions (call/backseat only). The padding is a slightly generous
+ * hover zone: the column is the window's only interactive region in view
+ * mode, and entering/leaving it flips click-through (CallOverlay.tsx). */
+.btnCol {
   position: absolute;
-  right: 14px;
+  right: 8px;
+  bottom: 34px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  z-index: 4;
+}
+
+.chromeBtn,
+.dragBtn {
   width: 20px;
   height: 20px;
   padding: 0;
@@ -165,28 +180,39 @@
   background: rgba(20, 22, 28, 0.92);
   border: 1px solid rgba(127, 176, 255, 0.6);
   box-shadow: 0 0 8px rgba(127, 176, 255, 0.35);
-  z-index: 4;
 }
 
-/* Pencil (view) / tick (edit): a real button, never a drag region. */
-.modeBtn {
-  bottom: 14px;
+/* Real buttons (pencil/tick, mute, captions) — never a drag region. */
+.chromeBtn {
   color: rgba(127, 176, 255, 0.95);
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
 
-.modeBtn:hover {
+.chromeBtn:hover {
   border-color: rgba(127, 176, 255, 0.95);
   box-shadow: 0 0 10px rgba(127, 176, 255, 0.55);
 }
 
-/* Hold-to-drag button: -webkit-app-region: drag makes holding it move the
- * whole window natively (the window is `movable`). Edit mode only. */
+/* Lit while its state is ON (mic muted / captions showing). */
+.chromeBtnToggled {
+  background: rgba(127, 176, 255, 0.3);
+  color: #ffffff;
+  border-color: rgba(127, 176, 255, 0.95);
+}
+
+/* Hold-to-drag button: holding it streams a window-move to main
+ * (avatar:overlay-move). Ordinary chrome, NOT an app-region — a drag region
+ * swallows pointer events, which would blind the column's enter/leave
+ * tracking that drives click-through. Shown in BOTH modes; still the ONLY
+ * way to move the window (260806). */
 .dragBtn {
-  bottom: 40px;
   cursor: grab;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
+}
+
+.dragBtn:active {
+  cursor: grabbing;
 }
 
 .dragBtn svg {
