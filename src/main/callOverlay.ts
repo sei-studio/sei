@@ -68,8 +68,13 @@ const MARGIN = 22; // default gap from the screen edges (no stored position)
 const MIN_TILE = 48;
 const MAX_TILE = 1024;
 
-/** Tile size the window is currently laid out for (hydrated from config). */
+/** Tile HEIGHT the window is currently laid out for (hydrated from config). */
 let tileSize = DEFAULT_TILE;
+/** Tile WIDTH (260807): independent of height since free-form resize — the
+ * corner handles stream both axes, so the window can be any rectangle. Equal
+ * to tileSize (square) until the user drags a corner off-diagonal; configs
+ * from before `width` existed hydrate square. */
+let tileWidth = DEFAULT_TILE;
 /** Stored window origin (user has dragged/resized), null = default corner. */
 let storedPos: { x: number; y: number } | null = null;
 /** Per-character tile cameras (260806): character zoom + pan WITHIN the tile,
@@ -127,6 +132,7 @@ async function hydrateGeometry(): Promise<void> {
     const g = config.avatar_overlay;
     if (g) {
       tileSize = Math.min(MAX_TILE, Math.max(MIN_TILE, g.size));
+      tileWidth = Math.min(MAX_TILE, Math.max(MIN_TILE, g.width ?? g.size));
       if (typeof g.x === 'number' && typeof g.y === 'number') storedPos = { x: g.x, y: g.y };
       if (g.cameras) cameras = { ...g.cameras };
     }
@@ -139,11 +145,13 @@ async function hydrateGeometry(): Promise<void> {
 function persistGeometry(): void {
   const pos = storedPos;
   const size = Math.round(tileSize);
+  const width = Math.round(tileWidth);
   const cams = Object.keys(cameras).length > 0 ? { cameras } : {};
   void updateConfig((current) => ({
     ...current,
     avatar_overlay: {
       size,
+      ...(width !== size ? { width } : {}),
       ...(pos ? { x: Math.round(pos.x), y: Math.round(pos.y) } : {}),
       ...cams,
     },
@@ -154,7 +162,7 @@ function persistGeometry(): void {
 
 function windowSize(count: number): { width: number; height: number } {
   return {
-    width: PAD_X * 2 + count * tileSize + Math.max(0, count - 1) * GAP,
+    width: PAD_X * 2 + count * tileWidth + Math.max(0, count - 1) * GAP,
     height: tileSize + PAD_TOP,
   };
 }
@@ -251,8 +259,8 @@ function ensureWindow(): BrowserWindow | null {
     // sit — and a click there is window-frame interaction: macOS ACTIVATED the
     // app ("clicking the corner opens up the app") and the frame region fought
     // the handles' CSS resize cursor. All real resizing goes through setBounds
-    // (resizeOverlay), which ignores `resizable`; aspect stays locked because
-    // every path derives from the single tile scalar.
+    // (resizeOverlay), which ignores `resizable`; the corner handles stream
+    // both tile axes, so any rectangle is reachable (free-form since 260807).
     resizable: false,
     // Moving goes through the hold-to-drag button's moveAvatarOverlay stream
     // (setBounds ignores `movable`, so this is belt-and-braces only).
@@ -531,19 +539,24 @@ function reconcileCursorPoll(): void {
 }
 
 /**
- * Resize from the overlay renderer: apply `size` (tile edge, px) keeping the
- * `anchor` corner fixed ('center' = wheel zoom, grows around the window
- * center). `commit` persists the geometry — the stream itself only moves the
- * window.
+ * Resize from the overlay renderer: apply `size` (tile HEIGHT, px) and
+ * `width` (tile WIDTH, px — free-form since 260807; absent keeps the current
+ * width) keeping the `anchor` corner fixed ('center' kept for programmatic
+ * use, grows around the window center). `commit` persists the geometry — the
+ * stream itself only moves the window.
  */
 export async function resizeOverlay(
   size: number,
   anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center',
   commit: boolean,
+  sizeW?: number,
 ): Promise<void> {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   const prev = overlayWin.getBounds();
   tileSize = Math.min(MAX_TILE, Math.max(MIN_TILE, Math.round(size)));
+  if (typeof sizeW === 'number') {
+    tileWidth = Math.min(MAX_TILE, Math.max(MIN_TILE, Math.round(sizeW)));
+  }
   const count = Math.max(1, lastState?.participants.length ?? 1);
   const { width, height } = windowSize(count);
   // Keep the anchored corner where it is: 'br' means the bottom-right corner

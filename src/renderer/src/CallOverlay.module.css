@@ -23,7 +23,10 @@
 .row {
   display: flex;
   justify-content: center;
-  align-items: center;
+  /* Bottom-anchored: a static tile smaller than the row (free-form window
+   * wider than tall) keeps sitting on the window's bottom edge, matching the
+   * flush-bottom design. A full-height tile is unaffected. */
+  align-items: flex-end;
   gap: 10px;
   width: 100%;
   height: 100%;
@@ -57,8 +60,11 @@
 /* ── Static portrait tile ──────────────────────────────────────────────── */
 
 .circle {
-  width: var(--tile, 76px);
-  height: var(--tile, 76px);
+  /* Portrait tiles stay SQUARE under free-form resize (260807): a stretched
+   * circle portrait reads as a bug, so the side is the smaller window axis
+   * and .row centers/bottoms the tile in the slack. */
+  width: min(var(--tile, 76px), var(--tile-w, var(--tile, 76px)));
+  height: min(var(--tile, 76px), var(--tile-w, var(--tile, 76px)));
   border-radius: 50%;
   overflow: hidden;
   flex: 0 0 auto;
@@ -115,7 +121,9 @@
 /* ── Live2D tile ───────────────────────────────────────────────────────── */
 
 .live2dTile {
-  width: var(--tile, 76px);
+  /* Free-form (260807): the Live2D tile fills the rectangle; the model
+   * contain-fits inside it (Live2DView refits via ResizeObserver). */
+  width: var(--tile-w, var(--tile, 76px));
   height: var(--tile, 76px);
   flex: 0 0 auto;
   position: relative;

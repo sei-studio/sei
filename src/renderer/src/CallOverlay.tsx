@@ -44,10 +44,12 @@ import { PixelPortrait } from './components/PixelPortrait';
 import { Live2DView } from './lib/live2d/Live2DView';
 import styles from './CallOverlay.module.css';
 
-/** Top chrome padding — MUST match callOverlay.ts PAD_TOP and the .stage
- * padding in CallOverlay.module.css. There is no bottom padding: the tile's
- * bottom edge is flush with the window's bottom edge (260806). */
+/** Chrome layout — MUST match callOverlay.ts PAD_TOP/PAD_X/GAP and the .stage
+ * padding + .row gap in CallOverlay.module.css. There is no bottom padding:
+ * the tile's bottom edge is flush with the window's bottom edge (260806). */
 const PAD_TOP = 16;
+const PAD_X = 14;
+const GAP = 10;
 const MIN_TILE = 48;
 const MAX_TILE = 1024;
 
@@ -60,24 +62,38 @@ const CAM_MAX_ZOOM = 8;
 const CAM_MAX_PAN = 1.5;
 const DEFAULT_CAM: AvatarCamera = { zoom: 1, x: 0, y: 0 };
 
-/** Tile edge in px, derived from the window height (re-measured on resize). */
-function useTilePx(): number {
-  const [px, setPx] = useState(() => Math.max(MIN_TILE, window.innerHeight - PAD_TOP));
+/** Window inner size in px, re-measured on resize. Tile height derives from
+ * the height; tile width from the width + participant count (free-form resize
+ * since 260807, so the two are independent). */
+function useWindowSize(): { w: number; h: number } {
+  const [size, setSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   useEffect(() => {
-    const onResize = (): void => setPx(Math.max(MIN_TILE, window.innerHeight - PAD_TOP));
+    const onResize = (): void => setSize({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  return px;
+  return size;
+}
+
+/** Tile width for `count` tiles in a window `innerWidth` wide (mirrors main's
+ * windowSize: PAD_X either side, GAP between tiles). */
+function tileWFor(innerWidth: number, count: number): number {
+  const n = Math.max(1, count);
+  return Math.max(MIN_TILE, (innerWidth - PAD_X * 2 - (n - 1) * GAP) / n);
 }
 
 export function CallOverlay(): React.ReactElement | null {
   const [state, setState] = useState<CallOverlayState | null>(null);
+  /** Mirror of `state` for empty-deps callbacks (beginResize reads the
+   * participant count at drag start without re-binding per push). */
+  const stateRef = useRef<CallOverlayState | null>(null);
+  stateRef.current = state;
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   /** Live2D tiles that failed to load — they fall back to the static tile. */
   const [live2dFailed, setLive2dFailed] = useState<Record<string, boolean>>({});
-  const tilePx = useTilePx();
+  const { w: winW, h: winH } = useWindowSize();
+  const tilePx = Math.max(MIN_TILE, winH - PAD_TOP);
 
   // Per-character mouth-level refs, mutated by the level push at ~25 Hz and
   // read per frame by Live2DView — never React state (that would re-render
@@ -267,28 +283,33 @@ export function CallOverlay(): React.ReactElement | null {
     el.addEventListener('pointercancel', onUp);
   }, []);
 
-  // Corner resize: pointer-capture drag streaming the desired TILE size to
-  // main (which recomputes window bounds keeping the opposite corner fixed).
+  // Corner resize: pointer-capture drag streaming BOTH tile axes to main
+  // (which recomputes window bounds keeping the opposite corner fixed).
+  // Free-form since 260807: each axis follows its own pointer delta, so the
+  // window resizes into any rectangle instead of a locked square.
   const beginResize = useCallback(
     (e: React.PointerEvent<HTMLDivElement>, corner: Corner): void => {
       e.preventDefault();
       const el = e.currentTarget;
       const startX = e.screenX;
       const startY = e.screenY;
-      const startSize = Math.max(MIN_TILE, window.innerHeight - PAD_TOP);
+      const count = Math.max(1, stateRef.current?.participants.length ?? 1);
+      const startH = Math.max(MIN_TILE, window.innerHeight - PAD_TOP);
+      const startW = tileWFor(window.innerWidth, count);
       const anchor = OPPOSITE[corner];
-      let latest = startSize;
+      let latestH = startH;
+      let latestW = startW;
       let raf = 0;
       const onMove = (ev: PointerEvent): void => {
-        // Outward drag along either axis grows the tile; average the two so
-        // diagonal drags feel 1:1 rather than doubled.
+        // Outward drag along an axis grows that axis of the tile.
         const sx = (corner === 'tr' || corner === 'br' ? 1 : -1) * (ev.screenX - startX);
         const sy = (corner === 'bl' || corner === 'br' ? 1 : -1) * (ev.screenY - startY);
-        latest = Math.min(MAX_TILE, Math.max(MIN_TILE, startSize + (sx + sy) / 2));
+        latestW = Math.min(MAX_TILE, Math.max(MIN_TILE, startW + sx));
+        latestH = Math.min(MAX_TILE, Math.max(MIN_TILE, startH + sy));
         if (!raf) {
           raf = requestAnimationFrame(() => {
             raf = 0;
-            void sei.avatarOverlayResize?.({ size: latest, anchor }).catch(() => {});
+            void sei.avatarOverlayResize?.({ size: latestH, width: latestW, anchor }).catch(() => {});
           });
         }
       };
@@ -297,7 +318,9 @@ export function CallOverlay(): React.ReactElement | null {
         el.removeEventListener('pointerup', onUp);
         el.removeEventListener('pointercancel', onUp);
         if (raf) cancelAnimationFrame(raf);
-        void sei.avatarOverlayResize?.({ size: latest, anchor, commit: true }).catch(() => {});
+        void sei
+          .avatarOverlayResize?.({ size: latestH, width: latestW, anchor, commit: true })
+          .catch(() => {});
       };
       el.setPointerCapture(e.pointerId);
       el.addEventListener('pointermove', onMove);
@@ -310,13 +333,14 @@ export function CallOverlay(): React.ReactElement | null {
   if (!state || !state.enabled || state.participants.length === 0) return null;
   const hasLive2d = state.participants.some((p) => p.live2d && !live2dFailed[p.id]);
   const onCall = state.onCall === true;
+  const tileWPx = tileWFor(winW, state.participants.length);
 
   return (
     <div
       className={styles.stage}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
-      style={{ ['--tile' as string]: `${tilePx}px` }}
+      style={{ ['--tile' as string]: `${tilePx}px`, ['--tile-w' as string]: `${tileWPx}px` }}
     >
       {/* Thin glowing outline: solid for the whole edit mode. On hover only
           for static tiles — a Live2D companion stays frameless in view mode
@@ -374,7 +398,7 @@ export function CallOverlay(): React.ReactElement | null {
                 <PixelPortrait
                   seed={p.id + p.name}
                   palette={palette}
-                  size={tilePx}
+                  size={Math.round(Math.min(tilePx, tileWPx))}
                   portraitImage={p.portrait ?? undefined}
                 />
               )}

@@ -595,6 +595,8 @@ export const UserConfigSchema = z.object({
   avatar_overlay: z
     .object({
       size: z.number().int().min(48).max(1024),
+      /** Tile width (260807, free-form resize). Absent = square (`size`). */
+      width: z.number().int().min(48).max(1024).optional(),
       x: z.number().int().optional(),
       y: z.number().int().optional(),
       /**

@@ -1435,14 +1435,16 @@ export interface RendererApi {
    * window clickable / restore click-through. */
   avatarOverlayInteractive(interactive: boolean): Promise<void>;
   /**
-   * Overlay window only: WINDOW resize. Streams the desired tile size while
-   * dragging a corner handle (anchor = the corner that stays fixed; 'center'
-   * kept for programmatic use); `commit` persists the final geometry. The
-   * wheel does NOT come here anymore — it zooms the character within the tile
-   * (avatarOverlayCamera, 260806).
+   * Overlay window only: WINDOW resize. Streams the desired tile HEIGHT
+   * (`size`) and WIDTH (`width` — free-form since 260807, absent keeps the
+   * current width) while dragging a corner handle (anchor = the corner that
+   * stays fixed; 'center' kept for programmatic use); `commit` persists the
+   * final geometry. The wheel does NOT come here anymore — it zooms the
+   * character within the tile (avatarOverlayCamera, 260806).
    */
   avatarOverlayResize(args: {
     size: number;
+    width?: number;
     anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center';
     commit?: boolean;
   }): Promise<void>;

@@ -1868,18 +1868,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     setOverlayInteractive(on);
   });
 
-  // Resize stream from the overlay renderer ({size, anchor, commit?}) —
-  // corner drags anchor the opposite corner, wheel zoom anchors 'center'.
+  // Resize stream from the overlay renderer ({size, width?, anchor,
+  // commit?}) — corner drags anchor the opposite corner and stream BOTH tile
+  // axes (free-form since 260807); 'center' is kept for programmatic use.
   ipcMain.handle(IpcChannel.avatar.overlayResize, async (_event, argsRaw: unknown) => {
     const args = z
       .object({
         size: z.number().min(48).max(1024),
+        width: z.number().min(48).max(1024).optional(),
         anchor: z.enum(['tl', 'tr', 'bl', 'br', 'center']),
         commit: z.boolean().optional(),
       })
       .parse(argsRaw);
     const { resizeOverlay } = await import('./callOverlay');
-    await resizeOverlay(args.size, args.anchor, args.commit === true);
+    await resizeOverlay(args.size, args.anchor, args.commit === true, args.width);
   });
 
   // Hold-to-drag window move stream from the overlay renderer ({phase, dx,

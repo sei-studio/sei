@@ -812,8 +812,10 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   its edges — exactly where the corner handles sit — and a click there is
   window-frame interaction (macOS ACTIVATED the app; the frame fought the
   handles' CSS cursor). All programmatic resizing is setBounds, which
-  ignores `resizable`; everything derives from the single tile scalar, so
-  aspect is locked by construction. Both overlay windows also set
+  ignores `resizable`; the corner handles stream BOTH tile axes (free-form
+  since 260807: `avatar_overlay.width` beside `size`, absent = square), so
+  the window resizes into any rectangle — the Live2D tile contain-fits it,
+  static portrait tiles stay square at the smaller axis. Both overlay windows also set
   **`acceptFirstMouse: true`** (260806): without it, the FIRST click into the
   window while Sei is not the active macOS app is an activation click — it
   raised the main Sei window and never reached the handle. Geometry persists in
