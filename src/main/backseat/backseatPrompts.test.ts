@@ -152,3 +152,29 @@ describe('BACKSEAT_CONTRACT identity rule', () => {
     expect(BACKSEAT_CONTRACT).toContain('no camera points at them');
   });
 });
+
+/**
+ * Watching is not making (260808), from the caption-overlay Instagram session:
+ * reels with word-by-word text overlays read to the companion as the player
+ * editing captions in Premiere, remember() filed that as fact nearly every
+ * turn, and each next turn re-read its own guess as established truth — a
+ * loop three explicit corrections from the player could not break (the
+ * remember() throttle in backseatService is the mechanical half of the fix).
+ */
+describe('BACKSEAT_CONTRACT watching is not making', () => {
+  it('names the finished-video shapes that get misread as editing', () => {
+    expect(BACKSEAT_CONTRACT).toContain('WATCHING IS NOT MAKING');
+    expect(BACKSEAT_CONTRACT).toContain('not evidence that the player is editing one');
+  });
+
+  it('makes the player\'s account of what they are doing outrank the screen', () => {
+    expect(BACKSEAT_CONTRACT).toContain('OUTRANKS the screen');
+    expect(BACKSEAT_CONTRACT).toContain('unless they have told you so');
+  });
+
+  it('scopes memory to what the player said, not screen readings', () => {
+    expect(BACKSEAT_CONTRACT).toContain(
+      'never your own reading of what the screen made them look like they were doing',
+    );
+  });
+});

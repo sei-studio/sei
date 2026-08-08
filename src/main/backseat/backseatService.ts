@@ -114,6 +114,16 @@ interface Session {
    *  calls save_clip on two consecutive ticks about the same play does not
    *  produce two files. Cleared when the companion next stays quiet. */
   clipCooldownUntil: number;
+  /** When the last SCREEN-driven remember() was honored (260808). Live, Haiku
+   *  filed a memory on nearly every jolt turn — 30 entries in 14 minutes, all
+   *  narrating what the screen made the player look like they were doing —
+   *  and each write also churned the cached prefix (memory rides the stable
+   *  region), so cacheRead sat at 0 all session. The tool description already
+   *  asks for person-facts only and is ignored, so the gate is mechanical:
+   *  screen ticks honor at most one remember per REMEMBER_COOLDOWN_MS; a
+   *  remember on a USER tick is always honored (the player just said
+   *  something, which is exactly what memory is for). */
+  lastRememberAt: number;
   /**
    * Index into the chat history where this session's verbatim window starts.
    *
@@ -220,6 +230,7 @@ export async function startBackseat(
     lastSpokeAt: 0,
     clips: new Map(),
     clipCooldownUntil: 0,
+    lastRememberAt: 0,
     historyAnchor: -1,
     prevGrid: null,
     log,
@@ -417,22 +428,39 @@ async function readMemoryTail(characterId: string): Promise<string> {
   }
 }
 
+/** Screen-driven remember() throttle — see Session.lastRememberAt. */
+const REMEMBER_COOLDOWN_MS = 180_000;
+
 /**
  * Continuity, OUT/long-term: remember() writes to the same per-character
  * MEMORY.md that chat, voice, chess and the bot all share. Honored inline
  * because a backseat tick is a single-shot call with no tool loop, and an
  * un-honored tool call is a silently dropped write.
+ *
+ * Throttled (260808) unless `fromUserTick`: a screen tick may land at most
+ * one memory per REMEMBER_COOLDOWN_MS. A memory prompted by something the
+ * PLAYER said is always written — dropping those is how a correction gets
+ * forgotten. The live failure this gates: per-turn screen narration filed as
+ * memory ("he's editing captions frame by frame"), which the next turn then
+ * read back as established fact and re-confirmed — a feedback loop the
+ * player's corrections could not outweigh, at 30 entries in 14 minutes.
  */
 async function honorRemember(
   s: Session,
   content: Anthropic.Messages.ContentBlock[],
+  fromUserTick: boolean,
 ): Promise<void> {
   for (const b of content) {
     if (b.type !== 'tool_use' || b.name !== 'remember') continue;
     const text = String((b.input as { text?: string })?.text ?? '').trim();
     if (!text) continue;
+    if (!fromUserTick && Date.now() - s.lastRememberAt < REMEMBER_COOLDOWN_MS) {
+      slog(s, `remember() throttled ("${text.slice(0, 60)}")`);
+      continue;
+    }
     try {
       await appendMemory(path.join(paths.memoryDir(s.characterId), 'MEMORY.md'), text);
+      s.lastRememberAt = Date.now();
     } catch (err) {
       slog(s, `remember() failed: ${(err as Error).message}`, true);
     }
@@ -651,7 +679,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
       `cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
   );
 
-  await honorRemember(s, res.content);
+  await honorRemember(s, res.content, tick.kind === 'user');
 
   // stripDashes because asking did not work: the contract has forbidden em
   // dashes since 260802 and the model still writes them in most lines, and

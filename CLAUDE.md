@@ -1047,6 +1047,21 @@ The design and its measurements are committed at
   VIDEOS now states what a feed IS (app-picked clips by different, unrelated
   creators; no clip replies to the previous one) and bans feed-meta commentary
   outright. Pinned in `backseatPrompts.test.ts`.
+- **The remember() feedback loop, and watching is not making (260808).** On a
+  reels session the companion decided caption-overlay clips were the player
+  "editing captions in premiere", filed that via remember() on nearly EVERY
+  jolt turn (30 entries in 14 minutes), and each next turn read its own guess
+  back as established fact — three explicit corrections from the player could
+  not break the loop, because twenty memory lines outweigh one history line.
+  Side effect: every write churned the memory block inside the cached prefix,
+  so cacheRead sat at 0 all session. Two-part fix: `honorRemember` throttles
+  SCREEN-driven remembers to one per `REMEMBER_COOLDOWN_MS` (180s) — a
+  remember on a USER tick is always honored, since dropping those is how a
+  correction gets forgotten — and the contract gained WATCHING IS NOT MAKING
+  (finished-video shapes like word-by-word captions and repeated takes are not
+  evidence of editing; the player's own account OUTRANKS the screen
+  permanently; memory saves what they SAID, never a screen reading). Pinned in
+  `backseatPrompts.test.ts`.
 - **Register loops on a static screen (260807).** The email session: six turns
   against one unchanging inbox frame and a monosyllabic player, five of six
   lines opened "wait / you're actually..." — the same take re-litigated as a
