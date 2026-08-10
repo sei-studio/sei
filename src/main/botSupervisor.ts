@@ -44,6 +44,25 @@ const SUMMON_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 10_000;
 
 /**
+ * 260810: module-level "is this character summoned right now" probe.
+ *
+ * Consumer: the chat-side MEMORY.md compactor (src/main/chat/memoryCompaction.ts).
+ * It must never compact while the character's bot process is live, because the
+ * forked bot runs its OWN compactor over the same MEMORY.md and the file lock
+ * that serializes writers (src/bot/brain/storage/fileLock.js) is in-process
+ * only — two processes compacting the same file at once could lose an entry.
+ *
+ * index.ts holds the supervisor instance in a closure, so the probe registers
+ * here (createBotSupervisor assigns it) instead of threading a callback through
+ * every consumer's deps. Before any supervisor exists it answers false, which
+ * is correct: no supervisor, no bot process.
+ */
+let summonProbe: ((characterId: string) => boolean) | null = null;
+export function isCharacterSummoned(characterId: string): boolean {
+  return summonProbe?.(characterId) ?? false;
+}
+
+/**
  * 260801: the deadline this watchdog will enforce, shipped to the child in the
  * init payload so its own connect guard can report a SPECIFIC failure before
  * this generic one fires.
@@ -98,6 +117,14 @@ function classifyChildError(err: unknown): ErrorClass {
   if (/invalid.*api.*key|401|unauthorized|x-api-key|authentication_error/i.test(lower)) return 'INVALID_API_KEY';
   if (/429|rate.?limit|throttl/i.test(lower)) return 'RATE_LIMITED';
   if (/enotfound|enetunreach|getaddrinfo|fetch failed/i.test(lower)) return 'NETWORK_OFFLINE';
+  // Modded-host rejection BEFORE the LAN branch (260806): the kick text contains
+  // "kicked" and often "connect", so it used to be smeared into LAN_NOT_OPEN and
+  // the player was told to re-open a world that was open the whole time. Mirrors
+  // isModdedHostRejection in src/bot/adapter/minecraft/connect.js and
+  // classifyRendererError in the renderer.
+  if (/modded_host_rejected|\bfml\b|neoforge|\bforge\b|\bquilt\b/i.test(lower)) return 'MODDED_HOST_REJECTED';
+  if (lower.includes('fabric') && (lower.includes('mod') || lower.includes('require'))) return 'MODDED_HOST_REJECTED';
+  if (/\bmods?\b/i.test(lower) && /\brequires?\b|\binstall(ed)?\b/i.test(lower)) return 'MODDED_HOST_REJECTED';
   // LAN_NOT_OPEN requires actual connection-loss evidence: refused/reset
   // sockets, a kick, or the LAN watcher's own vocabulary. The old pattern had
   // a bare /lan/ that matched incidental substrings ("userland" in a node
@@ -107,6 +134,37 @@ function classifyChildError(err: unknown): ErrorClass {
   if (/eaddrnotavail|multicast/i.test(lower)) return 'LAN_UNAVAILABLE';
   if (/timeout|did not signal ready/i.test(lower)) return 'BOT_START_TIMEOUT';
   return 'BOT_CRASH';
+}
+
+/**
+ * Node's own chatter, which every bot process emits whether or not anything is
+ * wrong. Dropping it is what lets "the child said nothing" mean something.
+ *
+ * 260806: the mid-session crash path used `tails.stderr` verbatim to decide both
+ * the error class and the message. But EVERY bot stderr tail opens with the
+ * punycode DEP0040 pair, so "there was no output" was unreachable in production
+ * and a genuinely silent SIGKILL was described to the user with the same
+ * sentence as a real in-process stack trace. Worse for classification: that
+ * warning contains the word "userland", which is the exact substring the
+ * `\blan\b` word boundary in classifyChildError was added to defend against.
+ */
+const NODE_NOISE_PATTERNS: readonly RegExp[] = [
+  /^\(node:\d+\)\s*\[DEP\d+\]\s*DeprecationWarning:/i,
+  /^\(Use `.*` to show where the warning was created\)$/i,
+  /^\s*$/,
+];
+
+/**
+ * The part of a child's output that is actually evidence of something. Returns
+ * '' when the child produced nothing but Node's routine warnings, which is the
+ * signal that the process was killed from outside rather than crashing.
+ */
+export function meaningfulTail(raw: string): string {
+  return raw
+    .split(/\r?\n/)
+    .filter((line) => !NODE_NOISE_PATTERNS.some((p) => p.test(line.trim())))
+    .join('\n')
+    .trim();
 }
 
 const logger = {
@@ -1245,7 +1303,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // once-guard is untouched on the success path, so this is the first
         // and only fire for the attempt.
         if (session.stopRequested !== true && code != null && code !== 0) {
-          const tail = (tails.stderr || tails.stdout).trim();
+          // 260806: strip Node's routine warnings first. The full tails still go
+          // into the diagnostic payload untouched — this only decides what the
+          // output MEANS. See NODE_NOISE_PATTERNS for why it has to happen here.
+          const tail = meaningfulTail(tails.stderr || tails.stdout);
           // Honest classification (260720): only keep a specific class when
           // the child's output carries actual evidence for it (classifier
           // matched a real pattern). A tail with nothing classifiable — or no
@@ -1266,11 +1327,20 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             const signalNote =
               process.platform !== 'win32' && signalNames[code]
                 ? `, likely ${signalNames[code]}` : '';
-            message =
-              `Bot process exited unexpectedly (code ${code}${signalNote}) with ` +
-              (tail ? 'no recognizable error output. ' : 'no error output. ') +
-              'This usually means something outside Sei ended the process: ' +
-              'antivirus, out of memory, or a manual kill.';
+            // 260806: these two cases are NOT the same thing and used to share
+            // one sentence. A tail that the classifier does not recognize is
+            // still a crash INSIDE the bot with a stack trace attached — live,
+            // an unhandled rejection from a missing texture was reported to the
+            // user and to the dashboard as "antivirus, out of memory, or a
+            // manual kill", which sent everyone looking outside the app for a
+            // bug that was in it. Only a genuinely SILENT death supports that
+            // explanation, so only that case still makes it.
+            message = tail
+              ? `Bot process exited unexpectedly (code ${code}${signalNote}). ` +
+                `Its last output was:\n${tail.slice(-1024)}`
+              : `Bot process exited unexpectedly (code ${code}${signalNote}) with no error ` +
+                'output at all. This usually means something outside Sei ended the process: ' +
+                'antivirus, out of memory, or a manual kill.';
           } else {
             errorClass = classified;
             message = `Bot exited mid-session (code ${code}).\n${tail.slice(-1024)}`;
@@ -1536,6 +1606,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     pendingSummons.set(characterId, attempt);
     return attempt;
   }
+
+  // 260810: register the module-level summon probe (see isCharacterSummoned
+  // above). Pending summons count — a bot mid-fork is about to own the file.
+  summonProbe = (characterId: string) =>
+    sessions.has(characterId) || pendingSummons.has(characterId);
 
   return {
     summon,

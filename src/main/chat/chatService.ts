@@ -24,6 +24,7 @@ import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
+import { maybeCompactChatMemory } from './memoryCompaction';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
 import * as chatStore from './chatStore';
@@ -131,16 +132,22 @@ async function readMemoryTail(characterId: string): Promise<string> {
  * a failed append never breaks the spoken reply.
  */
 async function honorRememberCalls(characterId: string, content: Anthropic.Messages.ContentBlock[]): Promise<void> {
+  let appended = false;
   for (const b of content) {
     if (b.type !== 'tool_use' || b.name !== 'remember') continue;
     const text = String((b.input as { text?: string })?.text ?? '').trim();
     if (!text) continue;
     try {
-      await appendMemory(path.join(paths.memoryDir(characterId), 'MEMORY.md'), text);
+      const written = await appendMemory(path.join(paths.memoryDir(characterId), 'MEMORY.md'), text);
+      if (written > 0) appended = true;
     } catch (err) {
       console.warn(`[sei] voice remember() append failed: ${(err as Error).message}`);
     }
   }
+  // 260810: single-shot voice turns (greetings, reactions) do not run the
+  // fold, so without this hook their remember() writes would never trigger
+  // the chat-side compaction check. Fire-and-forget, cheap under threshold.
+  if (appended) void maybeCompactChatMemory(characterId).catch(() => {});
 }
 
 /**

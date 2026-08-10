@@ -256,6 +256,32 @@ describe('onSummonFailure — mid-session death (fake forked child)', () => {
     );
   });
 
+  // 260806. The live regression this fixes: a missing texture produced an
+  // unhandled rejection with a full stack trace on stderr, the classifier
+  // matched nothing in it, and the user (and the dashboard) were told the cause
+  // was "antivirus, out of memory, or a manual kill" — sending everyone looking
+  // outside the app for a bug that was inside it. An unclassifiable tail is
+  // still evidence; only a genuinely silent death supports that sentence.
+  it('nonzero exit with an unclassifiable stack trace shows the trace, not the antivirus guess', async () => {
+    const onSummonFailure = vi.fn();
+    const sendStatus = vi.fn<(status: unknown) => void>();
+    const { fake } = await summonToReady({ onSummonFailure, sendStatus });
+
+    fake.writeStderr(
+      '(node:123) [DEP0040] DeprecationWarning: The punycode module is deprecated.\n' +
+        '[sei-bot unhandledRejection] Error: No such file or directory\n' +
+        '    at setSource (canvas/lib/image.js:95:13)\n' +
+        '    at loadTexture (prismarine-viewer/viewer/lib/utils.js:22:5)\n',
+    );
+    fake.emitExit(1);
+
+    const info = onSummonFailure.mock.calls[0][0] as SummonFailureInfo;
+    expect(info.errorClass).toBe('BOT_CRASH');
+    expect(info.errorMessage).toContain('unhandledRejection');
+    expect(info.errorMessage).toContain('loadTexture');
+    expect(info.errorMessage).not.toContain('antivirus');
+  });
+
   it('nonzero exit WITH connection-loss evidence in the tail keeps LAN_NOT_OPEN', async () => {
     const onSummonFailure = vi.fn();
     const sendStatus = vi.fn<(status: unknown) => void>();

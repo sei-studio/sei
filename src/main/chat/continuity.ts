@@ -29,12 +29,19 @@
  * "we're playing now" off a join that never landed, and that false fact was
  * re-injected into every subsequent turn.
  */
-import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm, rename, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ChatMessage } from '../../shared/ipc';
 import { paths } from '../paths';
 import { readAll } from './chatStore';
 import { buildChatSdk, CHAT_MODEL } from './sdk';
+import { buildFoldSystem, buildFoldTranscript, extractSummaryTag, formatChatTimestamp } from './foldPrompt';
+import { maybeCompactChatMemory } from './memoryCompaction';
+
+// Re-export for the existing consumers (chatService and friends import it from
+// here). The definition moved to foldPrompt.ts (260810) so the offline fold
+// eval can build byte-identical prompts without dragging in electron.
+export { formatChatTimestamp };
 
 /** Verbatim tail preserved after a fold. */
 const RECENT_WINDOW = 50;
@@ -61,7 +68,15 @@ const MAX_UNSUMMARIZED = 150;
  * PRICING table must know this model id.
  */
 const SUMMARY_MODEL = 'claude-sonnet-5';
-const SUMMARY_MAX_TOKENS = 400;
+/**
+ * 260810: 400 → 800. Measured on the offline fold eval: claude-sonnet-5 spends
+ * ~190-200 OUTPUT tokens on hidden thinking (an implicit `thinking` block rides
+ * the response), and those count against max_tokens — at 400 the actual summary
+ * text truncated mid-sentence with stop_reason=max_tokens in 2 of 3 samples.
+ * The live corpus carries the scar: Sui's bridge.json summary ends mid-sentence
+ * ("... back to back —"). 800 leaves ~600 tokens for a 150-word summary.
+ */
+const SUMMARY_MAX_TOKENS = 800;
 const SUMMARY_TIMEOUT_MS = 20_000;
 
 interface BridgeState {
@@ -78,21 +93,13 @@ export interface LaunchContinuity {
   recent: Array<{ role: 'user' | 'companion'; text: string; ts?: number }>;
 }
 
-/**
- * Compact human timestamp for model-facing message stamps: "3 Jul 10:34"
- * (local time — main and the bot both run on the player's machine). Shared by
- * the chat prompt builder, the summary fold, and the launch continuity block.
- */
-export function formatChatTimestamp(ts: number): string {
-  const d = new Date(ts);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${d.getDate()} ${months[d.getMonth()]} ${hh}:${mm}`;
-}
-
 function bridgePath(id: string): string {
   return path.join(paths.memoryDir(id), 'bridge.json');
+}
+
+/** One-generation backup of the previous bridge, kept beside it (260810). */
+function prevBridgePath(id: string): string {
+  return path.join(paths.memoryDir(id), 'bridge.prev.json');
 }
 
 async function readBridge(id: string): Promise<BridgeState> {
@@ -104,9 +111,28 @@ async function readBridge(id: string): Promise<BridgeState> {
   }
 }
 
+/**
+ * 260810 fold safety: the bridge is the ONLY copy of everything already folded
+ * (the folded messages themselves are past the watermark and never re-read), so
+ * a torn write here is permanent summary loss. Two protections:
+ *   1. tmp + rename (same-directory, so the rename is atomic) — a crash
+ *      mid-write leaves the old bridge.json intact, never a partial file.
+ *   2. a one-generation bridge.prev.json copy before every overwrite — the
+ *      260808 incident (20 consecutive folds over phantom voice rows eroding a
+ *      good summary) had NO recovery path because each fold overwrote the only
+ *      copy. prev.json is not read by the app; it exists for manual recovery.
+ */
 async function writeBridge(id: string, s: BridgeState): Promise<void> {
-  await mkdir(path.dirname(bridgePath(id)), { recursive: true });
-  await writeFile(bridgePath(id), JSON.stringify(s, null, 2) + '\n', 'utf8');
+  const dest = bridgePath(id);
+  await mkdir(path.dirname(dest), { recursive: true });
+  try {
+    await copyFile(dest, prevBridgePath(id));
+  } catch {
+    /* first write — nothing to back up */
+  }
+  const tmp = path.join(path.dirname(dest), `.bridge.json.tmp.${process.pid}.${Date.now()}`);
+  await writeFile(tmp, JSON.stringify(s, null, 2) + '\n', 'utf8');
+  await rename(tmp, dest);
 }
 
 /** Current rolling summary text (read-only; for the chat surface). */
@@ -135,6 +161,8 @@ const clearEpoch = (id: string): number => clearEpochs.get(id) ?? 0;
 export async function clearContinuity(id: string): Promise<void> {
   clearEpochs.set(id, clearEpoch(id) + 1);
   await rm(bridgePath(id), { force: true });
+  // The one-generation backup describes the same wiped conversation.
+  await rm(prevBridgePath(id), { force: true });
 }
 
 const isCounted = (m: ChatMessage): boolean => m.role === 'user' || m.role === 'companion';
@@ -179,11 +207,30 @@ const foldInFlight = new Set<string>();
  * Run one batch fold if due — the ONLY compaction entry point. Fired in the
  * background (fire-and-forget) by chatService after a reply is persisted, so
  * it runs while the player is typing. Folds everything except the newest
- * RECENT_WINDOW, so the verbatim tail resets to exactly 50; normally that is
- * one 50-batch, but it also drains any backlog in a single call. No-op when
- * under the trigger or when a fold for this character is already running.
+ * RECENT_WINDOW (bounded per call by FOLD_MAX_MESSAGES, so a huge backlog
+ * drains incrementally across calls rather than in one unbounded fold), so
+ * the verbatim tail normally resets to exactly 50. No-op when under the
+ * trigger or when a fold for this character is already running.
  */
+/**
+ * 260810: hard cap on messages drained by ONE fold call. A huge backlog (a
+ * marathon backseat session appends thousands of rows with no chat turns; the
+ * 260808 session left summarizedCount 2000+ behind) used to fold in a single
+ * unbounded LLM call — a transcript that big both risks the context window and
+ * hands one bad batch the power to rewrite the whole summary at once. Capped,
+ * the backlog drains incrementally: foldIfDue fires after every reply and at
+ * every surface's end choke point, so successive calls each take one bounded
+ * bite until the tail is back to RECENT_WINDOW.
+ */
+const FOLD_MAX_MESSAGES = 300;
+
 export async function foldIfDue(characterId: string, personaExpanded?: string): Promise<void> {
+  // Chat-side MEMORY.md compaction (260810) piggybacks on the fold cadence:
+  // foldIfDue is already fired (fire-and-forget) by every surface that appends
+  // memory in main — chat turns, chess, Draw!, backseat — so this one hook
+  // covers them all without touching each service. Self-single-flighted and
+  // it exits on a cheap stat() when under threshold; never blocks the fold.
+  void maybeCompactChatMemory(characterId).catch(() => {});
   if (foldInFlight.has(characterId)) return;
   foldInFlight.add(characterId);
   try {
@@ -202,7 +249,7 @@ export async function foldIfDue(characterId: string, personaExpanded?: string): 
     const unsummarized = counted.slice(bridge.summarizedCount);
     if (unsummarized.length < RECENT_WINDOW + FOLD_BATCH) return;
     const evicted = unsummarized
-      .slice(0, unsummarized.length - RECENT_WINDOW)
+      .slice(0, Math.min(unsummarized.length - RECENT_WINDOW, FOLD_MAX_MESSAGES))
       .map((m) => ({ role: m.role as 'user' | 'companion', text: m.text, ts: m.ts }));
     await foldIntoSummary(characterId, bridge, evicted, epoch, personaExpanded);
   } finally {
@@ -263,28 +310,12 @@ async function foldIntoSummary(
 ): Promise<BridgeState> {
   try {
     const { client } = await buildChatSdk();
-    const transcript = newMsgs
-      .map((m) => {
-        const who = m.role === 'user' ? 'Player' : 'You';
-        const when = typeof m.ts === 'number' ? ` (${formatChatTimestamp(m.ts)})` : '';
-        return `${who}${when}: ${m.text}`;
-      })
-      .join('\n');
-    const personaBlock =
-      personaExpanded && personaExpanded.trim()
-        ? '\n\nWrite the summary in the companion\'s own voice. The companion\'s persona:\n' +
-          personaExpanded.trim()
-        : '';
-    const system =
-      'You maintain a running summary of the relationship and conversation between a game companion ("You") and their player. ' +
-      'Fold the new messages into the existing summary. Keep it under 150 words, written first-person from the companion\'s point of view. ' +
-      'Prioritise durable facts about the player, ongoing plans, running jokes, and emotional beats; drop small talk. ' +
-      'Anchor time-bound things to their date using the message stamps — "planning an LA trip (11 Jul)", not just ' +
-      '"planning an LA trip". The summary is read days or weeks later, and an undated event reads as if it just ' +
-      'happened. Keep the anchors already in the existing summary. ' +
-      'Record only what was actually said — never assert current world/game state (e.g. do not write "we\'re playing now"); ' +
-      'an announced join can fail after the fact. Output only the updated summary text.' +
-      personaBlock;
+    // Prompt text + transcript formatting live in foldPrompt.ts (pure) so the
+    // offline eval harness runs the byte-identical prompt. The 260810
+    // noise-robustness instruction (low-signal batches must not displace
+    // durable facts) is part of buildFoldSystem.
+    const transcript = buildFoldTranscript(newMsgs);
+    const system = buildFoldSystem(personaExpanded);
     const userText = `Existing summary:\n${bridge.summary || '(none yet)'}\n\nNew messages:\n${transcript}`;
     // The fold prefers Sonnet for quality, but the cloud proxy only meters an
     // allowlist of model ids — a build pointed at a proxy that hasn't listed
@@ -311,18 +342,42 @@ async function foldIntoSummary(
         throw err;
       }
     }
-    const text = res.content
-      .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : ''))
-      .join('')
-      .trim();
+    // extractSummaryTag: the summary rides inside <summary> tags so a stray
+    // preamble/explanation can never be stored as summary text (measured on
+    // the noisy corpus — see foldPrompt.ts). Missing tags degrade to the whole
+    // trimmed text, i.e. the old behavior.
+    const text = extractSummaryTag(
+      res.content
+        .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : ''))
+        .join(''),
+    );
+    // 260810: a summary cut off by the token cap is WORSE than no fold — the
+    // truncated text would be stored verbatim and poison every future prompt
+    // until the next fold overwrites it (the live corpus had exactly this).
+    // Treat it like a failed fold: keep the old summary AND the watermark so
+    // the batch is retried. Should be rare at 800 tokens; see SUMMARY_MAX_TOKENS.
+    if (res.stop_reason === 'max_tokens') {
+      console.warn(`[sei] chat summary fold for ${id} hit max_tokens — discarding truncated output, will retry`);
+      return bridge;
+    }
     // clearContinuity ran while the summarizer was in flight: the snapshot this
     // fold summarized was wiped, and writing would resurrect the deleted bridge.
     if (clearEpoch(id) !== epoch) {
       console.warn(`[sei] chat summary fold for ${id} superseded by clear — dropping`);
       return bridge;
     }
+    // 260810 fold safety: an empty/unusable fold output used to keep the OLD
+    // summary text while STILL advancing the watermark — the evicted messages
+    // were silently skipped forever, with no log. Treat it as a failed fold:
+    // keep both the summary and the watermark so the next fold retries the
+    // same batch. A persistently-empty model degrades via MAX_UNSUMMARIZED
+    // like any other persistent failure.
+    if (!text) {
+      console.warn(`[sei] chat summary fold for ${id} returned empty output — keeping watermark, will retry`);
+      return bridge;
+    }
     const next: BridgeState = {
-      summary: text || bridge.summary,
+      summary: text,
       summarizedCount: bridge.summarizedCount + newMsgs.length,
     };
     await writeBridge(id, next);
