@@ -25,9 +25,11 @@ import type {
   DeleteAccountResult,
   ExportDataResult,
   ResendVerificationResult,
+  VerifyEmailCodeResult,
   PasswordResetResult,
   UpdatePasswordResult,
 } from '../../shared/ipc';
+import { IpcChannel } from '../../shared/ipc';
 import { getClient } from './supabaseClient';
 import { LOOPBACK_CALLBACK_URL } from './loopbackCallback';
 import { markRecoveryRequested } from './recoveryFlag';
@@ -159,11 +161,16 @@ function providerLabel(provider: string): string {
  * 260729: silent forgot-password treatment. The 260605 honest message ("an
  * account with this email already exists") leaked account existence to anyone
  * typing an address into the signup form, so it is gone: we silently send a
- * password-reset link to the address and return the SAME
+ * password-reset email to the address and return the SAME
  * `{ ok: true, requiresVerification: true }` a brand-new signup gets. In-app,
  * registered and unregistered emails are indistinguishable; the legitimate
- * owner still gets in via the reset link in their inbox (the email copy says
- * to ignore it if unrequested).
+ * owner still gets in via the code in their inbox (the email copy says to
+ * ignore it if unrequested).
+ *
+ * 260804: this is why verifyEmailCode tries BOTH token types. The user is now
+ * shown a code box rather than told to check for a link, and the code sitting
+ * in their inbox on this path is a RECOVERY code, not a signup one. If the
+ * panel could tell the difference, so could an attacker.
  *
  * OAuth-only accounts (Google, no password identity): sendPasswordReset
  * refuses those by design (a reset link would graft a password identity), so
@@ -256,12 +263,12 @@ async function callSignupGuard(): Promise<{ rateLimited: boolean; retryAfterSeco
  */
 function classifySignInError(message: string, status?: number): SignInResult {
   const m = message.toLowerCase();
-  if (m.includes('email not confirmed') || m.includes('email_not_confirmed')) {
-    // D-04 path: proceed as if sign-in succeeded. Supabase has already
-    // persisted the session on its end (PKCE flow); the auth-state stream
-    // will fire SIGNED_IN with a session whose user.email_confirmed_at is
-    // null, and the verify-email Banner (plan 06) will appear in the app.
-    return { ok: true };
+  if (isEmailNotConfirmed(message)) {
+    // D-04 path: not an error — the account exists and the password matched.
+    // 260804: signInWithPassword intercepts this case BEFORE reaching the
+    // classifier so it can also mint a fresh code; this branch survives as a
+    // backstop for any other caller and returns the same shape.
+    return { ok: true, needsVerification: true };
   }
   if (status === 429 || m.includes('rate limit')) {
     return { ok: false, code: 'rate_limited', message: 'Hold on a moment, too many attempts.' };
@@ -333,6 +340,12 @@ interface AuthErrShape {
   status?: number;
 }
 
+/** True for the Supabase "you have not confirmed your address yet" refusal. */
+function isEmailNotConfirmed(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes('email not confirmed') || m.includes('email_not_confirmed');
+}
+
 /** Email/password sign-in. Plan 04. */
 export async function signInWithPassword(args: { email: string; password: string }): Promise<SignInResult> {
   const supabase = getClient();
@@ -350,7 +363,19 @@ export async function signInWithPassword(args: { email: string; password: string
         }) as unknown as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>,
     );
     const error = (result as { error: AuthErrShape | null }).error;
-    if (error) return classifySignInError(error.message, error.status);
+    if (error) {
+      // 260804 PIN migration — an unverified account signing in used to be a
+      // dead end. classifySignInError correctly refuses to call this an error
+      // (D-04), but no session is issued either, so the renderer sat on the
+      // form with nothing to wait for except a click on an emailed link. Now
+      // there is a code panel to send them to: mint a fresh code (best-effort,
+      // a 429 just means the one from signup is still good) and say so.
+      if (isEmailNotConfirmed(error.message)) {
+        void resendVerification(args.email).catch(() => undefined);
+        return { ok: true, needsVerification: true };
+      }
+      return classifySignInError(error.message, error.status);
+    }
     return { ok: true };
   } catch (err) {
     return classifySignInError((err as Error).message);
@@ -786,7 +811,7 @@ export async function exportData(): Promise<ExportDataResult> {
 }
 
 /**
- * Resend the email-verification link via supabase.auth.resend({type:'signup'}).
+ * Resend the email-verification code via supabase.auth.resend({type:'signup'}).
  *
  * Rate-limit policy (Supabase default: 60s between resends per email):
  *   - 429 / "rate limit" → {code:'rate_limited'} with the verbatim D-04 copy.
@@ -795,6 +820,13 @@ export async function exportData(): Promise<ExportDataResult> {
  *     signed-up-but-unverified user has NO session, so callers in that state
  *     (the onboarding verify panel, 260729) pass the address they just signed
  *     up with explicitly; the signed-in fallback serves the Settings Banner.
+ *
+ * 260804 ALREADY-CONFIRMED FALLBACK. The code panel now sits over two different
+ * inboxes (see verifyEmailCode), and its Resend button has to work on both or
+ * the decoy path is distinguishable by a button that errors. For a confirmed
+ * address Supabase refuses a signup resend outright, so that specific refusal
+ * quietly re-sends a RECOVERY code instead and reports the same neutral success.
+ * Nothing about which branch ran reaches the renderer.
  *
  * 15s timeout wrap mirrors signInWithPassword / signUpWithPassword.
  *
@@ -826,12 +858,160 @@ export async function resendVerification(email?: string): Promise<ResendVerifica
         return {
           ok: false,
           code: 'rate_limited',
-          message: 'Hold on, wait a minute before requesting another link.',
+          message: 'Hold on, wait a minute before requesting another code.',
         };
       }
-      return { ok: false, code: 'network', message: "Couldn't resend verification." };
+      // Already-confirmed address → this is the decoy path (or a user who
+      // verified elsewhere). Send a recovery code so the panel's Resend button
+      // behaves identically for both kinds of inbox.
+      if (m.includes('already confirmed') || m.includes('already been confirmed') ||
+          m.includes('already registered') || m.includes('email_already_confirmed')) {
+        const reset = await sendPasswordReset({ email: target });
+        // oauth_only means no password identity exists, so no code can be sent.
+        // Stay neutral rather than naming the provider here — the caller is a
+        // code panel, not the sign-in form that surfaces oauth_only honestly.
+        return reset.ok || reset.code === 'oauth_only'
+          ? { ok: true }
+          : { ok: false, code: reset.code, message: reset.message };
+      }
+      return { ok: false, code: 'network', message: "Couldn't resend the code." };
     }
     return { ok: true };
+  } catch (err) {
+    return { ok: false, code: 'network', message: (err as Error).message };
+  }
+}
+
+/**
+ * 260804 — redeem a 6-digit email code.
+ *
+ * WHY IT TRIES TWO TOKEN TYPES. The panel that collects a code cannot know
+ * which kind of email the user is holding, and it must not find out: a
+ * brand-new address gets a `signup` confirmation code, while an address that
+ * is ALREADY registered gets a `recovery` code (alreadyRegisteredResult's
+ * silent forgot-password treatment), and the two paths are deliberately
+ * indistinguishable in the UI — that indistinguishability IS the T-10-04
+ * enumeration defence. So main tries `signup`, and on a token mismatch tries
+ * `recovery`. Supabase keeps the two in separate columns on auth.users, so a
+ * wrong-type attempt compares against the wrong column, fails cleanly, and
+ * consumes nothing.
+ *
+ * Cost of the two-step: a genuinely wrong code costs two verify round trips
+ * instead of one, which halves how many wrong guesses fit inside Supabase's
+ * per-IP token-verification limit. A wrong code is the rare path and the limit
+ * is generous, so this is not worth optimising with a client-side guess about
+ * which email we last sent — that guess would be wrong exactly when the app
+ * restarts between the send and the entry.
+ *
+ * `signup` is the type GoTrue pairs with the Confirm-signup template's
+ * {{ .Token }}. If a future Supabase version routes that token under the newer
+ * generic `email` type instead, this is the one line to add to the ladder.
+ *
+ * A recovery redemption lands a recovery session. We push
+ * `auth:password-recovery` on the same channel the loopback callback uses, so
+ * App.tsx raises SetNewPasswordModal through wiring that already exists, and
+ * ALSO report `recovery: true` so the calling panel can skip its own
+ * "you're in" chrome.
+ */
+export async function verifyEmailCode(args: {
+  email: string;
+  code: string;
+}): Promise<VerifyEmailCodeResult> {
+  // Users paste codes with spaces and hyphens out of mail clients. Strip to
+  // digits so "123 456" and "123-456" both work.
+  const token = args.code.replace(/\D/g, '');
+  const email = args.email.trim();
+  if (token.length === 0) {
+    return { ok: false, code: 'invalid_code', message: 'Enter the code from your email.' };
+  }
+  const supabase = getClient();
+
+  const attempt = async (
+    type: 'signup' | 'recovery',
+  ): Promise<{ ok: true } | { err: AuthErrShape }> => {
+    const result = await withTimeout(
+      supabase.auth.verifyOtp({ email, token, type }),
+      15_000,
+      () =>
+        ({
+          data: { session: null, user: null },
+          error: { message: 'timeout', status: 0 },
+        }) as unknown as Awaited<ReturnType<typeof supabase.auth.verifyOtp>>,
+    );
+    const error = (result as { error: AuthErrShape | null }).error;
+    return error ? { err: error } : { ok: true };
+  };
+
+  /** Wrong code, wrong type, or past its lifetime — all worth a second try. */
+  const isTokenMismatch = (e: AuthErrShape): boolean => {
+    const m = e.message.toLowerCase();
+    return (
+      m.includes('invalid') ||
+      m.includes('expired') ||
+      m.includes('not found') ||
+      e.status === 401 ||
+      e.status === 403 ||
+      e.status === 404
+    );
+  };
+
+  const isRateLimited = (e: AuthErrShape): boolean => {
+    const m = e.message.toLowerCase();
+    return e.status === 429 || m.includes('rate limit') || m.includes('too many');
+  };
+
+  try {
+    const first = await attempt('signup');
+    if ('ok' in first) return { ok: true, recovery: false };
+    if (isRateLimited(first.err)) {
+      return {
+        ok: false,
+        code: 'rate_limited',
+        message: 'Too many tries. Wait a minute, then enter the code again.',
+      };
+    }
+    if (!isTokenMismatch(first.err)) {
+      return {
+        ok: false,
+        code: 'network',
+        message: "Couldn't check that code. Check your connection and try again.",
+      };
+    }
+
+    const second = await attempt('recovery');
+    if ('ok' in second) {
+      // Recovery session is live. Raise the new-password prompt through the
+      // same channel the emailed-link path used, so App.tsx needs no new
+      // subscriber. Focus the window first for the same reason the loopback
+      // handler does: the modal should animate in on a foregrounded window.
+      try {
+        const { BrowserWindow } = await import('electron');
+        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
+        if (win && !win.isDestroyed()) {
+          if (win.isMinimized()) win.restore();
+          win.focus();
+          win.webContents.send(IpcChannel.auth.passwordRecovery);
+        }
+      } catch (err) {
+        // The renderer still gets recovery:true in the result, so a failed
+        // push degrades to "the panel routes it" rather than stranding the
+        // user in a recovery session with no prompt.
+        logger.warn(`verifyEmailCode: recovery push failed: ${(err as Error).message}`);
+      }
+      return { ok: true, recovery: true };
+    }
+    if (isRateLimited(second.err)) {
+      return {
+        ok: false,
+        code: 'rate_limited',
+        message: 'Too many tries. Wait a minute, then enter the code again.',
+      };
+    }
+    return {
+      ok: false,
+      code: 'invalid_code',
+      message: "That code didn't work. Check it, or send a new one.",
+    };
   } catch (err) {
     return { ok: false, code: 'network', message: (err as Error).message };
   }
@@ -845,12 +1025,14 @@ export async function resendVerification(email?: string): Promise<ResendVerifica
  * neutral response keeps the renderer from leaking account existence on the
  * sign-in screen.
  *
- * The reset email's link points at LOOPBACK_CALLBACK_URL — the SAME fixed-port
- * server the email-verification link uses. We mark a recovery request up-front
- * so loopbackCallback, on the next successful exchangeCodeForSession, recognises
- * the landing as a recovery and pushes auth:password-recovery to the renderer
- * (→ SetNewPasswordModal). Reusing the existing redirect means no new dashboard
- * Redirect-URL allow-list entry is required.
+ * 260804: the reset email now carries a 6-digit code, redeemed in-app by
+ * verifyEmailCode, which pushes auth:password-recovery itself. The redirectTo
+ * and the recovery flag are KEPT rather than removed: the Supabase templates
+ * are dashboard state, not repo state, so a template that still renders
+ * {{ .ConfirmationURL }} (an older project, a rollback, an email already in
+ * someone's inbox when the template changed) must keep landing on the loopback
+ * server and still be recognised as a recovery. Reusing the existing redirect
+ * also means no new dashboard Redirect-URL allow-list entry is required.
  *
  * 15s timeout wrap mirrors signInWithPassword / resendVerification.
  */

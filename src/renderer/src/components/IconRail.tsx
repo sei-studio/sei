@@ -298,7 +298,7 @@ function AvatarButton({
           aria-label suffix. */}
       {activity ? (
         <span className={styles.activityBadge} aria-hidden="true">
-          {activity === 'call' ? <PhoneIcon size={8} /> : <GamepadIcon size={9} />}
+          {activity === 'call' ? <PhoneIcon size={8} /> : <GamepadIcon size={9} single />}
         </span>
       ) : null}
     </button>

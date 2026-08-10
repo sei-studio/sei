@@ -333,8 +333,28 @@ mac:
     - "!node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
     - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**"
     - "!node_modules/gl/deps/**"
-    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}/**"
+    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,17.1,18.1,19}/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
+    # 1.16.4 IS PRUNED, BUT NOT ENTIRELY (260806). It is not just another old
+    # version: viewer/lib/entities.js line 12 constructs every entity as
+    # `new Entity('1.16.4', entity.name, scene)` with the version HARDCODED, so
+    # `textures/1.16.4/{entity,items,misc}` is the ONLY entity texture tree the
+    # viewer ever reads, on every world, at every version. Excluding 1.16.4 with
+    # the rest of the old versions therefore removed the textures for EVERY
+    # entity in EVERY packaged build — and prismarine-viewer's loadTexture has no
+    # .catch, so the first entity to enter the bot's POV render became an
+    # unhandled rejection and killed the bot process (measured live 260805: three
+    # sessions, exit code 1, world still open). render/textureFallback.js now
+    # makes that survivable; keeping these three subtrees is what makes entities
+    # actually look like themselves. The cost is 837 files / 0.6MB, taking the
+    # kept tree from 9,394 to 10,231 files — worth re-checking against the DMG
+    # volume-sizing failure documented above (32k overflowed, 9.4k did not) on
+    # the first `npm run dist:mac`. Everything else under 1.16.4 is
+    # genuinely unused, so it is dropped explicitly below rather than by relying
+    # on negation ordering in this list. The 1.16.4.png BLOCK atlas above stays
+    # excluded: block rendering resolves per world version, never to 1.16.4.
+    - "!node_modules/prismarine-viewer/public/textures/1.16.4/{blocks,colormap,effect,environment,font,gui,map,mob_effect,models,painting,particle}/**"
+    - "!node_modules/prismarine-viewer/public/textures/1.16.4/*.json"
   # 260728 backseat: the bundled ScreenCaptureKit system-audio tap
   # (native/mac-audio-tap, built by scripts/build-mac-audio-tap.sh into a
   # UNIVERSAL binary — one file serves both arch builds). Chromium loopback
@@ -421,8 +441,28 @@ win:
     - "!node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
     - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**"
     - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
-    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}/**"
+    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,17.1,18.1,19}/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
+    # 1.16.4 IS PRUNED, BUT NOT ENTIRELY (260806). It is not just another old
+    # version: viewer/lib/entities.js line 12 constructs every entity as
+    # `new Entity('1.16.4', entity.name, scene)` with the version HARDCODED, so
+    # `textures/1.16.4/{entity,items,misc}` is the ONLY entity texture tree the
+    # viewer ever reads, on every world, at every version. Excluding 1.16.4 with
+    # the rest of the old versions therefore removed the textures for EVERY
+    # entity in EVERY packaged build — and prismarine-viewer's loadTexture has no
+    # .catch, so the first entity to enter the bot's POV render became an
+    # unhandled rejection and killed the bot process (measured live 260805: three
+    # sessions, exit code 1, world still open). render/textureFallback.js now
+    # makes that survivable; keeping these three subtrees is what makes entities
+    # actually look like themselves. The cost is 837 files / 0.6MB, taking the
+    # kept tree from 9,394 to 10,231 files — worth re-checking against the DMG
+    # volume-sizing failure documented above (32k overflowed, 9.4k did not) on
+    # the first `npm run dist:mac`. Everything else under 1.16.4 is
+    # genuinely unused, so it is dropped explicitly below rather than by relying
+    # on negation ordering in this list. The 1.16.4.png BLOCK atlas above stays
+    # excluded: block rendering resolves per world version, never to 1.16.4.
+    - "!node_modules/prismarine-viewer/public/textures/1.16.4/{blocks,colormap,effect,environment,font,gui,map,mob_effect,models,painting,particle}/**"
+    - "!node_modules/prismarine-viewer/public/textures/1.16.4/*.json"
   # Windows ships UNSIGNED for now (RESEARCH §Resolved Q2). SmartScreen's
   # "unknown publisher" warning is the accepted UX.
   #

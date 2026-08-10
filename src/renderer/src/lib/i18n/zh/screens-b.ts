@@ -8,11 +8,10 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Email': '邮箱',
   'Sign out': '退出登录',
   'Sending…': '发送中…',
-  'We sent a new verification link to {email}.': '我们已向 {email} 发送了新的验证链接。',
-  'Hold on, wait a minute before requesting another link.': '别急，请稍等一分钟再请求新的链接。',
-  "Couldn't resend. Try again in a moment.": '无法重新发送，请稍后再试。',
+  // 260804 — the row opens the code modal (which sends on mount) instead of
+  // resending a link, so this screen no longer owns any send-status copy.
   'Verify email': '验证邮箱',
-  'Resend verification': '重新发送验证邮件',
+  'Enter code': '输入验证码',
   'Account ID': '账户 ID',
   'Copy account ID': '复制账户 ID',
   'Copied': '已复制',

@@ -12,7 +12,7 @@ import { Vec3 } from 'vec3'
 vi.mock('./place.js', () => ({ placeBlockAction: vi.fn() }))
 
 import { placeBlockAction } from './place.js'
-import { buildAction, enumerateBuildCells, WALK_TIMEOUT_MS } from './build.js'
+import { buildAction, enumerateBuildCells, FOLLOW_HORIZ, WALK_TIMEOUT_MS } from './build.js'
 
 const REACH = 4.5
 
@@ -81,6 +81,69 @@ describe('enumerateBuildCells — hollow perimeter order (260709)', () => {
   it('solid (non-hollow) enumeration is unchanged', () => {
     const cells = enumerateBuildCells({ x: 0, y: 10, z: 0 }, { x: 2, y: 10, z: 2 }, false)
     expect(cells).toHaveLength(9)
+  })
+})
+
+describe('enumerateBuildCells — nearest-to-builder ordering (260803)', () => {
+  // The 260731 Nether log, exactly: bot at 40,94,42 asked to bridge "behind
+  // you", model wrote from z:30 to z:20. Min-corner order started at z=20, 22
+  // blocks away across a lava field, and the walk step went and got it.
+  const FROM = { x: 40, y: 94, z: 30 }
+  const TO = { x: 40, y: 94, z: 20 }
+
+  it('builds a 1-wide span OUTWARD from the builder, not from the far end', () => {
+    const cells = enumerateBuildCells(FROM, TO, false, { x: 40.5, y: 94, z: 42.5 })
+    expect(cells).toHaveLength(11)
+    expect(cells[0]).toEqual({ x: 40, y: 94, z: 30 })   // nearest to the bot
+    expect(cells.at(-1)).toEqual({ x: 40, y: 94, z: 20 }) // far side, built last
+    // Strictly receding: every step moves away, so the builder never has to
+    // cross the gap to reach its own next cell.
+    for (let i = 1; i < cells.length; i++) expect(cells[i].z).toBeLessThan(cells[i - 1].z)
+  })
+
+  it('reverses when the builder stands on the other end (sign of the axis is irrelevant)', () => {
+    const cells = enumerateBuildCells(FROM, TO, false, { x: 40.5, y: 94, z: 8.5 })
+    expect(cells[0]).toEqual({ x: 40, y: 94, z: 20 })
+    expect(cells.at(-1)).toEqual({ x: 40, y: 94, z: 30 })
+  })
+
+  it('keeps Y ascending — the layer below is finished before the one above it', () => {
+    const cells = enumerateBuildCells({ x: 0, y: 10, z: 0 }, { x: 3, y: 12, z: 3 }, false, { x: 3.5, y: 10, z: 3.5 })
+    const ys = cells.map(c => c.y)
+    expect(ys).toEqual([...ys].sort((a, b) => a - b))
+    // ...and each layer independently starts nearest the builder.
+    for (const y of [10, 11, 12]) {
+      expect(cells.find(c => c.y === y)).toEqual({ x: 3, y, z: 3 })
+    }
+  })
+
+  it('emits the same cell SET as the unordered enumeration', () => {
+    const key = (c) => `${c.x},${c.y},${c.z}`
+    const plain = enumerateBuildCells(FROM, TO, false).map(key).sort()
+    const ordered = enumerateBuildCells(FROM, TO, false, { x: 40.5, y: 94, z: 42.5 }).map(key).sort()
+    expect(ordered).toEqual(plain)
+  })
+
+  it('hollow ROTATES the ring instead of sorting it, so adjacency survives', () => {
+    // A full nearest-first sort would alternate between opposite walls at
+    // equal radius, which is the criss-cross the 260709 perimeter walk removed.
+    const cells = enumerateBuildCells({ x: 0, y: 10, z: 0 }, { x: 3, y: 10, z: 3 }, true, { x: 3.5, y: 10, z: 3.5 })
+    expect(cells).toHaveLength(12)
+    expect(cells[0]).toEqual({ x: 3, y: 10, z: 3 })  // nearest corner starts it
+    for (let i = 1; i < cells.length; i++) {
+      const d = Math.abs(cells[i].x - cells[i - 1].x) + Math.abs(cells[i].z - cells[i - 1].z)
+      expect(d).toBe(1)
+    }
+    // Still a closed ring: the last cell wraps back to the first.
+    const wrap = Math.abs(cells[0].x - cells.at(-1).x) + Math.abs(cells[0].z - cells.at(-1).z)
+    expect(wrap).toBe(1)
+  })
+
+  it('falls back to min-corner order when the builder position is unusable', () => {
+    const plain = enumerateBuildCells(FROM, TO, false)
+    for (const bad of [null, undefined, {}, { x: NaN, z: 4 }]) {
+      expect(enumerateBuildCells(FROM, TO, false, bad)).toEqual(plain)
+    }
   })
 })
 
@@ -238,5 +301,131 @@ describe('buildAction — direction:"below" pillars up under the bot', () => {
     }
     const r = await buildAction({ direction: 'below', count: 4, block: 'dirt' }, bot, { signal: ac.signal })
     expect(r).toBe('aborted after pillaring up 1 of 4')
+  })
+})
+
+describe('buildAction — the builder FOLLOWS its own work (260803)', () => {
+  // Live symptom: bridging out over a drop, the character stayed on the spot
+  // it started from while blocks appeared several cells away. A player cannot
+  // do that. The old walk step only fired once a cell fell out of TOTAL reach
+  // (eye-anchored, 4.5), which for a horizontal run is four or five cells.
+
+  // Cliff at z >= -32 (solid ground); open air beyond it. The bot starts on
+  // the lip and bridges out into the void at feet level minus one.
+  function makeCliff() {
+    const blocks = new Map()
+    for (let x = -50; x <= 0; x++) for (let z = -32; z <= 0; z++) blocks.set(`${x},67,${z}`, 'sand')
+    const bot = {
+      entity: { position: new Vec3(-38.5, 68, -31.5), eyeHeight: 1.62 },
+      inventory: { items: () => [{ name: 'oak_planks', count: 64 }] },
+      blockAt(p) {
+        const name = blocks.get(`${p.x},${p.y},${p.z}`)
+        return name ? { name, position: p } : { name: 'air', position: p }
+      },
+    }
+    return { bot, blocks }
+  }
+
+  // Walk mock standing in for the pathfinder's GoalNear(..., range 2): it can
+  // only stop on a block that actually exists, so it lands on the built part
+  // of the bridge rather than teleporting into the air ahead of it.
+  function makeBridgeWalk(bot, blocks) {
+    return vi.fn(async (b, x, y, z) => {
+      for (let back = 0; back <= 2; back++) {
+        const tz = z + back // walking out along -z, so "short of" the goal is +z
+        if (blocks.has(`${x},67,${tz}`)) {
+          b.entity.position = new Vec3(x + 0.5, 68, tz + 0.5)
+          return 'reached'
+        }
+      }
+      return 'cant_reach'
+    })
+  }
+
+  it('never places a cell it is standing more than FOLLOW_HORIZ away from', async () => {
+    const { bot, blocks } = makeCliff()
+    wirePlaceMock(bot, blocks)
+    const distances = []
+    placeBlockAction.mockImplementation((() => {
+      const inner = placeBlockAction.getMockImplementation()
+      return async (args, ...rest) => {
+        const c = {
+          x: args.against.x + args.faceVector.x,
+          y: args.against.y + args.faceVector.y,
+          z: args.against.z + args.faceVector.z,
+        }
+        const p = bot.entity.position
+        distances.push(Math.hypot(p.x - (c.x + 0.5), p.z - (c.z + 0.5)))
+        return inner(args, ...rest)
+      }
+    })())
+
+    // 12-long, 1-wide bridge at feet-1, starting under the bot's own column.
+    const r = await buildAction(
+      { from: { x: -38, y: 67, z: -31 }, to: { x: -38, y: 67, z: -42 }, block: 'oak_planks' },
+      bot, {}, { goTo: makeBridgeWalk(bot, blocks) },
+    )
+
+    // Under the old rule the walk only fired past REACH - 1 (3.5), so cells at
+    // ~3.2 horizontal were placed from a standstill. This is the pin.
+    expect(distances.length).toBeGreaterThan(0)
+    for (const d of distances) expect(d).toBeLessThanOrEqual(FOLLOW_HORIZ)
+    // 12-cell span, the 2 cells still on the cliff lip are already solid.
+    expect(r).toContain('10 placed')
+  })
+
+  it('actually travels the length of the bridge instead of building it from one spot', async () => {
+    const { bot, blocks } = makeCliff()
+    wirePlaceMock(bot, blocks)
+    const startZ = bot.entity.position.z
+
+    await buildAction(
+      { from: { x: -38, y: 67, z: -31 }, to: { x: -38, y: 67, z: -42 }, block: 'oak_planks' },
+      bot, {}, { goTo: makeBridgeWalk(bot, blocks) },
+    )
+
+    // It ends near the far tip, not on the lip it started from. (The walk
+    // stops up to 2 short of its goal, so it trails the tip by a couple of
+    // blocks, which is exactly how a player bridges.)
+    expect(startZ - bot.entity.position.z).toBeGreaterThanOrEqual(8)
+    expect(Math.abs(bot.entity.position.z - (-42))).toBeLessThan(4)
+    // And the far end really got built, out over the void.
+    expect(blocks.get('-38,67,-42')).toBe('oak_planks')
+  })
+
+  it('degrades to placing from range rather than stalling when the walk fails', async () => {
+    // The goal column is thin air until the bridge reaches it, so a walk that
+    // cannot find footing must not be able to wedge the build.
+    const { bot, blocks } = makeCliff()
+    wirePlaceMock(bot, blocks)
+    const deadWalk = vi.fn(async () => 'cant_reach')
+
+    const r = await buildAction(
+      { from: { x: -38, y: 67, z: -31 }, to: { x: -38, y: 67, z: -36 }, block: 'oak_planks' },
+      bot, {}, { goTo: deadWalk },
+    )
+
+    // Whatever is within real reach still gets placed (old behavior), and the
+    // result names the rest honestly rather than reporting a clean finish.
+    expect(deadWalk).toHaveBeenCalled()
+    expect(r).toMatch(/placed/)
+    // -32 is still cliff; -33 is the first cell out over the void.
+    expect(blocks.get('-38,67,-33')).toBe('oak_planks')
+  })
+
+  it('still places a tall column from the ground without walking (vertical reach is untouched)', async () => {
+    // The 260709 eye-anchored reach exists so a wall is buildable standing
+    // beside it. Tightening HORIZONTAL following must not cost that.
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    const walk = vi.fn(async () => 'reached')
+
+    const r = await buildAction(
+      { from: { x: -37, y: 68, z: -32 }, to: { x: -37, y: 71, z: -32 }, block: 'oak_planks' },
+      bot, {}, { goTo: walk },
+    )
+
+    expect(walk).not.toHaveBeenCalled()
+    expect(r).toContain('4 placed')
   })
 })

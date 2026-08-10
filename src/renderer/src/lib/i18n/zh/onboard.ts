@@ -139,14 +139,19 @@ export const ZH_ONBOARD: Record<string, string> = {
   Password: '密码',
   'Forgot password?': '忘记密码？',
   'Enter your email above first.': '请先在上面填写你的邮箱。',
-  'Reset link sent. Check your email.': '重置链接已发送，请查收邮件。',
-  "Couldn't send the reset link. Try again in a moment.": '重置链接发送失败，请稍后再试。',
-  'Check your email to confirm your account. This continues on its own once you do.':
-    '请查收邮件确认你的账号。确认之后，这里会自动继续。',
+  // 260804 — code panel. Both the signup and the forgot-password path land
+  // here, and the copy names neither (see screens-a.ts).
+  "Couldn't send the code. Try again in a moment.": '验证码发送失败，请稍后再试。',
+  'Enter the 6-digit code we emailed you. Check spam if it is not there.':
+    '请输入我们发送到你邮箱的 6 位验证码。如果收件箱里没有，请查看垃圾邮件。',
+  'Verification code': '验证码',
+  'Verify': '验证',
+  'Checking...': '验证中……',
   'Sending...': '发送中……',
-  'Resend email': '重新发送邮件',
+  'Send a new code': '重新发送验证码',
   'Sent. Give it a minute, and check spam too.': '已发送。稍等一会儿，也记得看看垃圾邮件。',
-  "Couldn't resend. Try again in a moment.": '重新发送失败，请稍后再试。',
+  "Couldn't send a new code. Try again in a moment.": '重新发送失败，请稍后再试。',
+  "Couldn't check that code. Try again.": '无法验证该验证码，请重试。',
   'Creating account...': '正在创建账号……',
   'Create account': '创建账号',
   'Signing in...': '正在登录……',

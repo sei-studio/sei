@@ -21,7 +21,9 @@
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { uiLanguage, useT } from '../lib/i18n';
+import { useEmailCode } from '../lib/useEmailCode';
 import { Button } from './Button';
+import { CodeInput } from './CodeInput';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { TextField } from './TextField';
@@ -52,22 +54,18 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   const [submitting, setSubmitting] = useState(false);
   /**
    * 260519 UAT fix #2: when signUp returns requiresVerification=true and no
-   * session, Supabase has email-confirm enabled — the user must click the
-   * link in their inbox before a session is issued. The previous executor
-   * blindly closed the modal on every {ok:true}, bouncing the user back to
-   * AuthChoice with no feedback. Now we surface a "Check your email" state
-   * inside the modal until the auth-state push fires (or the user dismisses
-   * manually). The verify-email Banner (plan 06) replaces this interim
-   * message with a persistent app-level prompt.
+   * session, Supabase has email-confirm enabled — no session is issued until
+   * the address is confirmed. The original executor blindly closed the modal
+   * on every {ok:true}, bouncing the user back to AuthChoice with no feedback,
+   * so the modal stays open on a sub-state instead.
+   *
+   * 260804: that sub-state is now a CODE panel, and it is the single panel for
+   * all three email-sending paths (signup, sign-in against an unconfirmed
+   * account, forgot-password). They used to be two panels with different copy,
+   * which under the code flow would leak which kind of email an address got.
+   * See useEmailCode + authHandlers.verifyEmailCode.
    */
-  const [verificationSentTo, setVerificationSentTo] = useState<string | null>(null);
-  /**
-   * Forgot-password sub-state. When the user taps "Forgot your password?" we
-   * call sei.sendPasswordReset with the typed email and, on neutral success,
-   * render a "check your email" panel (mirrors verificationSentTo). The reset
-   * is anti-enumeration: main returns ok:true even for unknown addresses.
-   */
-  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   /**
    * Plan 10-05: when true, OAuthInterstitialModal mounts as a sibling above
    * this modal. SignInModal STAYS MOUNTED so the typed `email` value is
@@ -99,6 +97,12 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   const [dobMonth, setDobMonth] = useState<string>('');
   const [dobDay, setDobDay] = useState<string>('');
 
+  // A non-recovery redemption signs the user in; the modal's job is done.
+  // Recovery redemptions deliberately do NOT close it here — App.tsx mounts
+  // SetNewPasswordModal above, and unmounting the host mid-flow is what the
+  // recovery gate exists to prevent.
+  const codeState = useEmailCode(codeSentTo, onClose);
+
   useEffect(() => {
     // ESC closes (when not mid-submit so we don't drop a pending sign-in).
     const onKey = (e: KeyboardEvent): void => {
@@ -122,7 +126,11 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
       if (mode === 'signin') {
         const res = await sei.signInPassword({ email, password });
         if (res.ok) {
-          onClose();
+          // 260804 — right password, address never confirmed. Main has already
+          // sent a fresh code; stay open on the code panel instead of closing
+          // onto a session that was never issued.
+          if (res.needsVerification) setCodeSentTo(email);
+          else onClose();
         } else {
           setError(res.message);
         }
@@ -141,14 +149,11 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
         });
         if (res.ok) {
           if (res.requiresVerification) {
-            // 260519 UAT fix #2: Supabase has email-confirm enabled — no
-            // session is issued until the user clicks the link. Stay open
-            // and tell them to check their inbox. The main process's
-            // auth-state push will fire SIGNED_IN later (once the loopback
-            // callback handler exchanges the code), at which point App.tsx's
-            // useAuthStore subscriber drives the route transition AND the
-            // modal naturally unmounts because AuthChoiceScreen is replaced.
-            setVerificationSentTo(email);
+            // 260519 UAT fix #2 / 260804: Supabase has email-confirm enabled,
+            // so no session exists until the emailed code is redeemed. Stay
+            // open on the code panel; redeeming it fires SIGNED_IN and
+            // App.tsx's useAuthStore subscriber drives the route transition.
+            setCodeSentTo(email);
           } else {
             // D-04 path with email-confirm disabled in the project: session
             // is present, the auth-state stream already pushed SIGNED_IN,
@@ -196,7 +201,9 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
     try {
       const res = await sei.sendPasswordReset({ email });
       if (res.ok) {
-        setResetSentTo(email);
+        // Same panel signup lands on. Redeeming a recovery code opens
+        // SetNewPasswordModal above this one.
+        setCodeSentTo(email);
       } else {
         // rate_limited / network — surface the copy inline; the email field
         // stays filled so the user can retry.
@@ -218,52 +225,60 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   const toggleLabel =
     mode === 'signin' ? t('New here? Create an account') : t('Already have an account? Sign in');
 
-  // 260519 UAT fix #2 — verification-pending sub-state. Renders inside the
-  // same scrim+modal frame so the user isn't bounced anywhere; only the modal
-  // body content changes. Replaced by the verify-email Banner (plan 06) once
-  // that ships.
-  if (verificationSentTo !== null) {
+  // 260804 code sub-state. Renders inside the same scrim+modal frame so the
+  // user isn't bounced anywhere; only the body changes. ONE panel serves
+  // signup, unconfirmed sign-in and password reset, and its copy names none of
+  // them (anti-enumeration — see the codeSentTo comment above).
+  if (codeSentTo !== null) {
     // Keep the <strong> around the email: translate with the {email}
     // placeholder intact, then split on it and re-insert the styled node.
     const [vBefore, vAfter] = t(
-      'We sent a verification link to {email}. Open it on this device to finish signing in.',
+      'We sent a 6-digit code to {email}. Check spam if it is not there.',
     ).split('{email}');
     return (
-      <ModalShell title={t('Check your email')} width={460} escClose={!submitting} onClose={onClose}>
+      <ModalShell
+        title={t('Enter your code')}
+        width={460}
+        escClose={!codeState.submitting}
+        onClose={onClose}
+      >
         <p className={styles.framing}>
           {vBefore}
-          <strong>{verificationSentTo}</strong>
+          <strong>{codeSentTo}</strong>
           {vAfter}
         </p>
-        <p className={styles.framing}>
-          {t('You can close this window. Once you click the link, Sei signs you in automatically.')}
-        </p>
+        <CodeInput
+          value={codeState.code}
+          onChange={codeState.setCode}
+          onComplete={(v) => void codeState.submit(v)}
+          disabled={codeState.submitting}
+          invalid={!!codeState.error}
+          autoFocus
+          aria-label={t('Verification code')}
+        />
+        {codeState.error ? (
+          <p className={styles.errorText} role="alert">
+            {codeState.error}
+          </p>
+        ) : null}
+        {codeState.note ? <p className={styles.framing}>{codeState.note}</p> : null}
         <ModalFooter>
-          <Button kind="quiet" size="md" onClick={onClose}>
-            {t('Back to Sei')}
+          <Button
+            kind="accent"
+            size="md"
+            disabled={codeState.submitting || codeState.code.length === 0}
+            onClick={() => void codeState.submit()}
+          >
+            {codeState.submitting ? t('Checking…') : t('Verify')}
           </Button>
-        </ModalFooter>
-      </ModalShell>
-    );
-  }
-
-  // Forgot-password sub-state — neutral "check your email" panel. Same frame as
-  // the verification panel; copy is deliberately account-existence-neutral.
-  if (resetSentTo !== null) {
-    const [rBefore, rAfter] = t(
-      "If an account exists for {email}, we've sent a password reset link. Open it on this device to choose a new password.",
-    ).split('{email}');
-    return (
-      <ModalShell title={t('Check your email')} width={460} escClose={!submitting} onClose={onClose}>
-        <p className={styles.framing}>
-          {rBefore}
-          <strong>{resetSentTo}</strong>
-          {rAfter}
-        </p>
-        <p className={styles.framing}>
-          {t('You can close this window. Once you click the link, Sei prompts you for a new password.')}
-        </p>
-        <ModalFooter>
+          <Button
+            kind="quiet"
+            size="md"
+            disabled={codeState.resending}
+            onClick={() => void codeState.resend()}
+          >
+            {codeState.resending ? t('Sending…') : t('Send a new code')}
+          </Button>
           <Button kind="quiet" size="md" onClick={onClose}>
             {t('Back to Sei')}
           </Button>

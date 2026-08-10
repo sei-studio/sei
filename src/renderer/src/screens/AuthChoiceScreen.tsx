@@ -30,8 +30,10 @@
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT, uiLanguage } from '../lib/i18n';
+import { useEmailCode } from '../lib/useEmailCode';
 import { SeiPixelMark } from '../components/SeiPixelMark';
 import { Button } from '../components/Button';
+import { CodeInput } from '../components/CodeInput';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
 import { TextField } from '../components/TextField';
 import { OAuthInterstitialModal } from '../components/OAuthInterstitialModal';
@@ -68,18 +70,15 @@ export function AuthChoiceScreen({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   /**
-   * Mirror of SignInModal's verificationSentTo branch — Supabase email-confirm
-   * may be enabled, in which case signUp returns requiresVerification with no
-   * session. We render an inline "Check your email" panel until the auth
-   * push fires.
+   * 260804 — ONE code panel for every path that emails something: a signup
+   * needing confirmation, a sign-in against an unconfirmed account, and
+   * "Forgot your password?". They previously had two separate "check your
+   * email" panels whose copy differed, which under the code flow would have
+   * told an attacker which kind of email the address had received. Now the
+   * address is the only thing that varies, and main decides what the code
+   * means (see verifyEmailCode).
    */
-  const [verificationSentTo, setVerificationSentTo] = useState<string | null>(null);
-  /**
-   * Forgot-password sub-state (mirrors SignInModal). Set when the user taps
-   * "Forgot your password?"; renders a neutral "check your email" panel. The
-   * reset is anti-enumeration — main returns ok:true even for unknown addresses.
-   */
-  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const [oauthInFlight, setOauthInFlight] = useState(false);
   // Plan 11-12 (D-26 / LIB-06) — at-sign-up ToS capture.
   const [tosChecked, setTosChecked] = useState(false);
@@ -88,22 +87,22 @@ export function AuthChoiceScreen({
   const [dobMonth, setDobMonth] = useState<string>('');
   const [dobDay, setDobDay] = useState<string>('');
 
+  // Code panel state. Signed-in routing is driven by App.tsx's auth-state
+  // subscriber on the session the redemption lands, so there is nothing to do
+  // on success here.
+  const codeState = useEmailCode(codeSentTo);
+
   useEffect(() => {
     // ESC routes to local mode (when not mid-submit). The screen is the
     // first interactive surface, so ESC = back-out = continue locally.
     const onKey = (e: KeyboardEvent): void => {
-      if (
-        e.key === 'Escape' &&
-        !submitting &&
-        verificationSentTo === null &&
-        resetSentTo === null
-      ) {
+      if (e.key === 'Escape' && !submitting && codeSentTo === null) {
         onChooseLocal();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onChooseLocal, submitting, verificationSentTo, resetSentTo]);
+  }, [onChooseLocal, submitting, codeSentTo]);
 
   const onSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -121,8 +120,11 @@ export function AuthChoiceScreen({
       if (mode === 'signin') {
         const res = await sei.signInPassword({ email, password });
         if (res.ok) {
-          // App.tsx's auth-state subscriber will navigate to home on the
-          // signed_in transition; nothing to do here.
+          // needsVerification: the password was right but the address was
+          // never confirmed. Main has already sent a fresh code (260804).
+          // Otherwise App.tsx's auth-state subscriber navigates to home on
+          // the signed_in transition and there is nothing to do here.
+          if (res.needsVerification) setCodeSentTo(email);
         } else {
           setError(res.message);
         }
@@ -136,7 +138,7 @@ export function AuthChoiceScreen({
         });
         if (res.ok) {
           if (res.requiresVerification) {
-            setVerificationSentTo(email);
+            setCodeSentTo(email);
           }
           // !requiresVerification path: App.tsx's auth-state subscriber
           // routes onward on the signed_in transition.
@@ -168,9 +170,12 @@ export function AuthChoiceScreen({
     try {
       const res = await sei.sendPasswordReset({ email });
       if (res.ok) {
-        setResetSentTo(email);
+        // Same panel a signup lands on. Redeeming the code puts the user in a
+        // recovery session and App.tsx raises SetNewPasswordModal.
+        setCodeSentTo(email);
       } else {
-        // rate_limited / network — surface inline; the email field stays filled.
+        // rate_limited / network / oauth_only — surface inline; the email field
+        // stays filled.
         setError(res.message);
       }
     } finally {
@@ -188,56 +193,61 @@ export function AuthChoiceScreen({
   const toggleLabel =
     mode === 'signin' ? t('New here? Create an account') : t('Already have an account? Sign in');
 
-  // Verification-pending sub-state. Replaces the form with a "Check your
-  // email" panel; user can still drop back to local via the bottom link.
-  if (verificationSentTo !== null) {
+  // 260804 code sub-state. Copy is deliberately account-existence-neutral and
+  // identical for signup, unconfirmed sign-in and password reset.
+  if (codeSentTo !== null) {
     return (
       <div className={styles.shell}>
         <div className={styles.brandRow}>
           <SeiPixelMark height={44} />
         </div>
         <div className={styles.formPanel}>
-          <h1 className={styles.title}>{t('Check your email')}</h1>
+          <h1 className={styles.title}>{t('Enter your code')}</h1>
           <p className={styles.bodyText}>
-            {t(
-              'We sent a verification link to {email}. Open it on this device to finish signing in.',
-              { email: verificationSentTo },
-            )}
+            {t('We sent a 6-digit code to {email}. Check spam if it is not there.', {
+              email: codeSentTo,
+            })}
           </p>
-          <p className={styles.bodyText}>
-            {t('Keep this window open. Once you click the link, Sei signs you in automatically.')}
-          </p>
-          <Button kind="quiet" size="md" onClick={() => setVerificationSentTo(null)}>
-            {t('Back')}
+          <CodeInput
+            value={codeState.code}
+            onChange={codeState.setCode}
+            onComplete={(v) => void codeState.submit(v)}
+            disabled={codeState.submitting}
+            invalid={!!codeState.error}
+            autoFocus
+            aria-label={t('Verification code')}
+          />
+          {codeState.error ? (
+            <p className={styles.errorText} role="alert">
+              {codeState.error}
+            </p>
+          ) : null}
+          {codeState.note ? <p className={styles.bodyText}>{codeState.note}</p> : null}
+          <Button
+            kind="accent"
+            size="md"
+            fullWidth
+            disabled={codeState.submitting || codeState.code.length === 0}
+            onClick={() => void codeState.submit()}
+          >
+            {codeState.submitting ? t('Checking…') : t('Verify')}
           </Button>
-        </div>
-        <button type="button" className={styles.localLink} onClick={onChooseLocal}>
-          {t('Continue locally →')}
-        </button>
-      </div>
-    );
-  }
-
-  // Forgot-password sub-state — neutral "check your email" panel. Copy is
-  // deliberately account-existence-neutral (anti-enumeration).
-  if (resetSentTo !== null) {
-    return (
-      <div className={styles.shell}>
-        <div className={styles.brandRow}>
-          <SeiPixelMark height={44} />
-        </div>
-        <div className={styles.formPanel}>
-          <h1 className={styles.title}>{t('Check your email')}</h1>
-          <p className={styles.bodyText}>
-            {t(
-              "If an account exists for {email}, we've sent a password reset link. Open it on this device to choose a new password.",
-              { email: resetSentTo },
-            )}
-          </p>
-          <p className={styles.bodyText}>
-            {t('Keep this window open. Once you click the link, Sei prompts you for a new password.')}
-          </p>
-          <Button kind="quiet" size="md" onClick={() => setResetSentTo(null)}>
+          <Button
+            kind="quiet"
+            size="md"
+            disabled={codeState.resending}
+            onClick={() => void codeState.resend()}
+          >
+            {codeState.resending ? t('Sending…') : t('Send a new code')}
+          </Button>
+          <Button
+            kind="quiet"
+            size="md"
+            onClick={() => {
+              codeState.reset();
+              setCodeSentTo(null);
+            }}
+          >
             {t('Back')}
           </Button>
         </div>

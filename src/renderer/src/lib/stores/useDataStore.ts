@@ -216,6 +216,16 @@ function wireIpc(): () => void {
         characterId: status.characterId,
       });
     }
+    // 260806 — a Forge/NeoForge world that requires its mods client-side kicks
+    // Sei every time. This used to arrive as LAN_NOT_OPEN and got the "open to
+    // LAN" steps for a world that was already open; it needs its own surface
+    // because the resolution is a different world, not a different setting.
+    if (status.kind === 'error' && status.error === 'MODDED_HOST_REJECTED') {
+      useUiStore.getState().openModal({
+        kind: 'modded-host',
+        characterId: status.characterId,
+      });
+    }
     // 260720 — crash popup: a LIVE session died unexpectedly (the supervisor
     // marks the terminal error with midSession; only a nonzero exit with no
     // stop requested ever carries it, so user stops, app quit, clean session
@@ -226,7 +236,8 @@ function wireIpc(): () => void {
       status.kind === 'error' &&
       status.midSession === true &&
       status.error !== 'LAN_NOT_OPEN' &&
-      status.error !== 'UNSUPPORTED_MC_VERSION'
+      status.error !== 'UNSUPPORTED_MC_VERSION' &&
+      status.error !== 'MODDED_HOST_REJECTED'
     ) {
       useUiStore.getState().openModal({
         kind: 'bot-crash',

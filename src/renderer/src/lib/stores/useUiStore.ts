@@ -114,6 +114,10 @@ export type Modal =
   // subscription like unsupported-version, so every summon entry point gets
   // the step-by-step "open to LAN" guidance instead of a one-line status.
   | { kind: 'lan-not-open'; characterId: string }
+  // 260806 — the world runs Forge/NeoForge and requires its mods client-side,
+  // so it kicks Sei's vanilla client. Split out of lan-not-open, which was
+  // telling players to re-open a world that was open the whole time.
+  | { kind: 'modded-host'; characterId: string }
   // 260720 — a LIVE bot session died unexpectedly (BotStatus error with
   // midSession, e.g. the child was killed or crashed) with no dedicated
   // surface for its error class. Opened centrally from the onStatus

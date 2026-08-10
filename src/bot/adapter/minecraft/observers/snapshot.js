@@ -2,6 +2,7 @@
 // and registers #N targeting handles via setHandles() (D-25).
 import { vitals } from './vitals.js'
 import { world } from './world.js'
+import { facingLine } from '../facing.js'
 import { inventory, heldItem } from './inventory.js'
 import { aroundFeet } from './blocks.js'
 import { surveyBlocks } from './veins.js'
@@ -119,6 +120,12 @@ export function composeSnapshot(bot, opts = {}) {
   if (worldTag) lines.push(`world: ${worldTag}`)
   // Position / biome / time
   lines.push(`pos: ${w.pos.x},${w.pos.y},${w.pos.z}`)
+  // 260803: which way the body points, with all four relative directions
+  // resolved to signed axes. Without this "behind you" / "to your left" /
+  // "that thing over there" were unanswerable and the model invented spans
+  // (the 260731 Nether bridge, which ended in a lava death). Sits directly
+  // under pos: the two together are the whole coordinate frame.
+  lines.push(`facing: ${facingLine(w.facing)}`)
   // Light levels are 0-15; sky is exposure to open sky (does not drop at
   // night), block is torches/lava. Lets the model answer "why is it dark"
   // from data instead of arguing with the player about the time of day.

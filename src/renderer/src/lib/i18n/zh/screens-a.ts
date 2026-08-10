@@ -34,17 +34,20 @@ export const ZH_SCREENS_A: Record<string, string> = {
   'Create Account': '创建账户',
   'New here? Create an account': '新用户？创建账户',
   'Already have an account? Sign in': '已有账户？登录',
-  'Check your email': '请查收邮件',
-  'We sent a verification link to {email}. Open it on this device to finish signing in.':
-    '我们已向 {email} 发送了验证链接。请在本设备上打开以完成登录。',
-  'Keep this window open. Once you click the link, Sei signs you in automatically.':
-    '请保持此窗口打开。点击链接后，Sei 会自动为你登录。',
+  // 260804 — the emailed link became a 6-digit code, so ONE panel now serves
+  // signup, unconfirmed sign-in and password reset. The old two-panel copy is
+  // gone rather than translated: keeping it would leave zh users a wording that
+  // says which kind of email an address received, which is the account-existence
+  // signal the single panel exists to hide.
+  'Enter your code': '输入验证码',
+  'We sent a 6-digit code to {email}. Check spam if it is not there.':
+    '我们已向 {email} 发送了 6 位验证码。如果收件箱里没有，请查看垃圾邮件。',
+  'Verification code': '验证码',
+  'Verify': '验证',
+  'Checking…': '验证中…',
+  'Send a new code': '重新发送验证码',
   'Back': '返回',
   'Continue locally →': '以本地模式继续 →',
-  "If an account exists for {email}, we've sent a password reset link. Open it on this device to choose a new password.":
-    '如果 {email} 对应的账户存在，我们已发送密码重置链接。请在本设备上打开并设置新密码。',
-  'Keep this window open. Once you click the link, Sei prompts you for a new password.':
-    '请保持此窗口打开。点击链接后，Sei 会提示你设置新密码。',
   'Sign in to {label}': '登录以{label}',
   'Email': '邮箱',
   'Password': '密码',

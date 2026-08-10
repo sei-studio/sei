@@ -36,6 +36,7 @@ import { Toggle } from '../components/Toggle';
 import { TextField } from '../components/TextField';
 import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
+import { VerifyEmailModal } from '../components/VerifyEmailModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
 import { ResetAllMemoriesConfirmModal } from '../components/ResetAllMemoriesConfirmModal';
@@ -203,9 +204,10 @@ export function SettingsScreen(): React.ReactElement {
   // Plan 12-14 — DMCA Designated Agent info modal. Visible to BOTH signed-in
   // and signed-out users since DMCA is a public-law surface (CONTEXT D-35a).
   const [dmcaModalOpen, setDmcaModalOpen] = useState<boolean>(false);
-  const [resendStatus, setResendStatus] = useState<
-    'idle' | 'sending' | 'sent' | 'rate-limited' | 'error'
-  >('idle');
+  // 260804 — email-code entry for the signed-in-but-unverified state. Replaced
+  // the resend-status line: sending is now the modal's job, so this screen no
+  // longer tracks it.
+  const [verifyModalOpen, setVerifyModalOpen] = useState<boolean>(false);
   const [exportStatus, setExportStatus] = useState<{ savedPath?: string; error?: string } | null>(
     null,
   );
@@ -219,21 +221,6 @@ export function SettingsScreen(): React.ReactElement {
   const [resetAllDone, setResetAllDone] = useState<boolean>(false);
   const [resetAllError, setResetAllError] = useState<string | null>(null);
 
-  const onResendVerification = async (): Promise<void> => {
-    setResendStatus('sending');
-    const res = await sei.resendVerification();
-    if (res.ok) {
-      setResendStatus('sent');
-      window.setTimeout(() => setResendStatus('idle'), 4000);
-    } else if (res.code === 'rate_limited') {
-      setResendStatus('rate-limited');
-      window.setTimeout(() => setResendStatus('idle'), 4000);
-    } else {
-      setResendStatus('error');
-      window.setTimeout(() => setResendStatus('idle'), 4000);
-    }
-  };
-
   const onExport = async (): Promise<void> => {
     setExportStatus(null);
     const res = await sei.exportData();
@@ -243,18 +230,6 @@ export function SettingsScreen(): React.ReactElement {
       setExportStatus({ error: t("Couldn't prepare your export. Try again in a moment.") });
     }
   };
-
-  const accountEmail = authState.kind === 'signed_in' ? authState.user.email : '';
-  const resendStatusText =
-    resendStatus === 'sending'
-      ? t('Sending…')
-      : resendStatus === 'sent'
-        ? t('We sent a new verification link to {email}.', { email: accountEmail })
-        : resendStatus === 'rate-limited'
-          ? t('Hold on, wait a minute before requesting another link.')
-          : resendStatus === 'error'
-            ? t("Couldn't resend. Try again in a moment.")
-            : '';
 
   useEffect(() => {
     void sei.getConfig().then((c) => {
@@ -738,19 +713,14 @@ export function SettingsScreen(): React.ReactElement {
                 {t('Sign out')}
               </Button>
             </div>
-            {resendStatus !== 'idle' ? (
-              <p className={styles.helper}>{resendStatusText}</p>
-            ) : null}
             {!authState.user.emailVerified ? (
               <div className={styles.row}>
                 <span className={styles.label}>{t('Verify email')}</span>
-                <Button
-                  kind="quiet"
-                  size="sm"
-                  onClick={() => void onResendVerification()}
-                  disabled={resendStatus === 'sending'}
-                >
-                  {t('Resend verification')}
+                {/* 260804 — opens the code modal, which sends a fresh code on
+                    mount. The old button only resent the link and left the
+                    user to go find it; there is now something to type. */}
+                <Button kind="quiet" size="sm" onClick={() => setVerifyModalOpen(true)}>
+                  {t('Enter code')}
                 </Button>
               </div>
             ) : null}
@@ -1406,6 +1376,12 @@ export function SettingsScreen(): React.ReactElement {
         </div>
       </div>
 
+      {verifyModalOpen && authState.kind === 'signed_in' ? (
+        <VerifyEmailModal
+          email={authState.user.email}
+          onClose={() => setVerifyModalOpen(false)}
+        />
+      ) : null}
       {signOutModalOpen ? (
         <SignOutConfirmModal
           botRunning={botRunning}

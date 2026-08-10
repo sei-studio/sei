@@ -174,22 +174,48 @@ describe('visualizeAction — directional / relative facing (260617)', () => {
     expect(look).not.toHaveBeenCalled()
   })
 
-  it('look({around:true}) returns four labelled frames and restores facing', async () => {
+  it('look({around:true}) returns four frames labelled with their WORLD AXIS, and restores facing', async () => {
     renderPovMock.mockResolvedValue(okJpeg())
-    const look = vi.fn(async () => {})
-    const bot = makeBot({ entity: { position: { x: 0, y: 64, z: 0 }, yaw: 0.3, pitch: 0 }, look })
+    // Write the yaw back the way real mineflayer does — the axis labels are
+    // read off the LIVE yaw after each turn, so a mock that swallows the turn
+    // would let a sign flip through untested.
+    const entity = { position: { x: 0, y: 64, z: 0 }, yaw: 0, pitch: 0 }
+    const look = vi.fn(async (yaw) => { entity.yaw = yaw })
+    const bot = makeBot({ entity, look })
 
     const res = await visualizeAction({ around: true }, bot, config)
     expect(Object.keys(res)).toEqual(['text', 'images'])
     expect(res.images).toHaveLength(4)
-    expect(res.images.map((f) => f.label)).toEqual(['forward', 'right', 'behind', 'left'])
+    // Starting at yaw 0 (north), a clockwise sweep is north, east, south, west.
+    // 260803: the axis is the whole point — "which way is the other side" has
+    // to be answerable from the labels alone.
+    expect(res.images.map((f) => f.label)).toEqual([
+      'forward (-z, north)',
+      'right (+x, east)',
+      'behind (+z, south)',
+      'left (-x, west)',
+    ])
     for (const f of res.images) {
       expect(f.mediaType).toBe('image/jpeg')
       expect(typeof f.dataBase64).toBe('string')
     }
     // Four direction turns + one restore back to the starting yaw.
     expect(look).toHaveBeenCalledTimes(5)
-    expect(look).toHaveBeenLastCalledWith(0.3, 0, true)
+    expect(look).toHaveBeenLastCalledWith(0, 0, true)
+    expect(entity.yaw).toBe(0)
+  })
+
+  it('a single directional look names the axis it ended up pointing down', async () => {
+    // The 260731 failure: look({orientation:"backward"}) turned the bot 180°
+    // and the result said nothing about it, so the model had a picture it
+    // could not place on any axis and guessed a span.
+    renderPovMock.mockResolvedValue(okJpeg())
+    const entity = { position: { x: 0, y: 64, z: 0 }, yaw: 0, pitch: 0 }
+    const bot = makeBot({ entity, look: vi.fn(async (yaw) => { entity.yaw = yaw }) })
+
+    const res = await visualizeAction({ orientation: 'backward' }, bot, config)
+    expect(res.text).toContain('+z')
+    expect(res.text).toContain('south')
   })
 
   it('look({around:true}) degrades to the string when every frame fails', async () => {

@@ -30,6 +30,7 @@
 // (image.mediaType / image.dataBase64 / images[].*).
 
 import { renderPov } from '../render/povRenderer.js'
+import { cardinalFromYaw } from '../facing.js'
 
 /** VIS-08 degrade copy (D-01 discretion wording). Returned, never thrown. */
 export const CANT_SEE_COPY = "I can't see clearly right now"
@@ -269,14 +270,25 @@ export async function visualizeAction(args, bot, config) {
       if (signal?.aborted) break
       const f = await captureFrame(bot, config)
       if (f && typeof f === 'object' && f.ok) {
-        images.push({ mediaType: f.mediaType, dataBase64: f.dataBase64, label: dir.label })
+        // 260803: every frame carries the world AXIS it looks down, read off
+        // the live yaw AFTER the turn. A sweep whose frames are only labelled
+        // "forward / right / behind / left" cannot answer "which way is the
+        // other side" — the model picks a picture and then has to guess the
+        // axis, which is exactly the guess that killed the 260731 session.
+        const card = cardinalFromYaw(bot?.entity?.yaw)
+        images.push({
+          mediaType: f.mediaType,
+          dataBase64: f.dataBase64,
+          label: `${dir.label} (${card.axis}, ${card.compass})`,
+        })
       }
     }
     await faceYaw(bot, startYaw) // leave the bot facing where it started
     if (signal?.aborted) return 'aborted'
     if (!images.length) return CANT_SEE_COPY
+    const back = cardinalFromYaw(bot?.entity?.yaw)
     return {
-      text: `looked around — ${images.length} views: ${images.map((i) => i.label).join(', ')}. ${VISION_GROUNDING}`,
+      text: `looked around, ${images.length} views: ${images.map((i) => i.label).join(', ')}. Each label is the WORLD AXIS that view looks down, so pick the view you want and build or walk along that axis. You are now facing ${back.axis} (${back.compass}) again. ${VISION_GROUNDING}`,
       images,
     }
   }
@@ -297,5 +309,14 @@ export async function visualizeAction(args, bot, config) {
   const f = await captureFrame(bot, config, { idle: args?.idle === true })
   if (typeof f === 'string') return f               // 'aborted' or CANT_SEE_COPY
   if (f.skip === true) return { skip: true }        // idle near-duplicate (D-02)
-  return { text: `rendered view attached. ${VISION_GROUNDING}`, image: { mediaType: f.mediaType, dataBase64: f.dataBase64 } }
+  // 260803: name the axis. look({orientation:"backward"}) TURNS THE BOT, and
+  // before this the result said nothing about it — the model got a picture it
+  // could not place on any axis and the body was now pointing somewhere the
+  // snapshot never mentioned either. Read off the live yaw after the turn so
+  // this is the truth on every path (turned, tilted, or idle).
+  const card = cardinalFromYaw(bot?.entity?.yaw)
+  return {
+    text: `rendered view attached, looking ${card.axis} (${card.compass}), which is the world axis running away from you into this picture. ${VISION_GROUNDING}`,
+    image: { mediaType: f.mediaType, dataBase64: f.dataBase64 },
+  }
 }

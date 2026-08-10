@@ -17,6 +17,9 @@ const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
 // 260729 silent forgot-password: signUp on a registered email quietly sends a
 // reset link instead of surfacing already_registered. Default resolves ok.
 const resetPasswordForEmailMock = vi.fn().mockResolvedValue({ data: {}, error: null });
+// 260804 PIN migration — token redemption and code resend.
+const verifyOtpMock = vi.fn();
+const resendMock = vi.fn().mockResolvedValue({ data: {}, error: null });
 
 vi.mock('./supabaseClient', () => ({
   getClient: () => ({
@@ -24,9 +27,27 @@ vi.mock('./supabaseClient', () => ({
       signInWithPassword: (...args: unknown[]) => signInWithPasswordMock(...args),
       signUp: (...args: unknown[]) => signUpMock(...args),
       resetPasswordForEmail: (...args: unknown[]) => resetPasswordForEmailMock(...args),
+      verifyOtp: (...args: unknown[]) => verifyOtpMock(...args),
+      resend: (...args: unknown[]) => resendMock(...args),
     },
     rpc: (...args: unknown[]) => rpcMock(...args),
   }),
+}));
+
+// verifyEmailCode focuses the window and pushes auth:password-recovery on a
+// recovery redemption. Stub the window so the push is observable rather than
+// swallowed by the handler's "electron unavailable" catch.
+const sendMock = vi.fn();
+vi.mock('electron', () => ({
+  BrowserWindow: {
+    getFocusedWindow: () => ({
+      isDestroyed: () => false,
+      isMinimized: () => false,
+      focus: () => undefined,
+      webContents: { send: (...args: unknown[]) => sendMock(...args) },
+    }),
+    getAllWindows: () => [],
+  },
 }));
 
 // 260603 anti-abuse — make the signup pre-checks deterministic. By default the
@@ -48,13 +69,21 @@ vi.mock('../env', () => ({
 }));
 
 // Imported AFTER the mock so the handlers resolve the stub.
-import { signInWithPassword, signUpWithPassword } from './authHandlers';
+import {
+  signInWithPassword,
+  signUpWithPassword,
+  verifyEmailCode,
+  resendVerification,
+} from './authHandlers';
 
 beforeEach(() => {
   signInWithPasswordMock.mockReset();
   signUpMock.mockReset();
   rpcMock.mockReset().mockResolvedValue({ data: null, error: null });
   resetPasswordForEmailMock.mockReset().mockResolvedValue({ data: {}, error: null });
+  verifyOtpMock.mockReset();
+  resendMock.mockReset().mockResolvedValue({ data: {}, error: null });
+  sendMock.mockReset();
   checkSignupCooldownMock.mockReset().mockResolvedValue({ allowed: true, retryAfterMs: 0 });
   recordSignupAttemptMock.mockReset().mockResolvedValue(undefined);
   // Default: signup-guard fetch returns 200 (allowed). Tests override per-case.
@@ -112,14 +141,18 @@ describe('signInWithPassword', () => {
 
   it('260519 UAT fix #3: treats "Email not confirmed" as {ok:true} (D-04 — verification does not block sign-in)', async () => {
     // Supabase returns this error when email-confirm is enabled and the user
-    // signs in before clicking the verification link. Per D-04 the user
-    // proceeds; the verify-email Banner (plan 06) handles the prompt.
+    // signs in before confirming. Per D-04 this is not a failure.
+    //
+    // 260804 adds needsVerification. Under the emailed-link flow the bare
+    // {ok:true} was a dead end: no session was issued, so the renderer waited
+    // on an auth push that only a click in the inbox could produce. With codes
+    // there is a panel to open, so the flag is the signal to open it.
     signInWithPasswordMock.mockResolvedValue({
       data: { session: null },
       error: { message: 'Email not confirmed', status: 400 },
     });
     const r = await signInWithPassword({ email: 'a@b.com', password: 'goodpassword' });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ ok: true, needsVerification: true });
   });
 });
 
@@ -304,5 +337,118 @@ describe('signUpWithPassword', () => {
     const r = await signUpWithPassword({ email: 'a@b.com', password: 'longenough', dobYear: 1990, dobMonth: 6, dobDay: 15 });
     expect(r).toEqual({ ok: true, requiresVerification: true });
     expect(signUpMock).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * 260804 PIN migration. The behaviour under test is not "a code works" so much
+ * as "the code panel cannot tell the caller which kind of email an address
+ * received" — the enumeration property alreadyRegisteredResult buys and that a
+ * naive single-type implementation would give straight back.
+ */
+describe('verifyEmailCode', () => {
+  const OK = { data: { session: {}, user: {} }, error: null };
+  const BAD_TOKEN = {
+    data: { session: null, user: null },
+    error: { message: 'Token has expired or is invalid', status: 403 },
+  };
+
+  it('redeems a signup code on the first try', async () => {
+    verifyOtpMock.mockResolvedValueOnce(OK);
+    const r = await verifyEmailCode({ email: 'a@b.com', code: '123456' });
+    expect(r).toEqual({ ok: true, recovery: false });
+    expect(verifyOtpMock).toHaveBeenCalledOnce();
+    expect(verifyOtpMock).toHaveBeenCalledWith({
+      email: 'a@b.com',
+      token: '123456',
+      type: 'signup',
+    });
+  });
+
+  it('falls back to the recovery token type, which is the already-registered path', async () => {
+    verifyOtpMock.mockResolvedValueOnce(BAD_TOKEN).mockResolvedValueOnce(OK);
+    const r = await verifyEmailCode({ email: 'a@b.com', code: '123456' });
+    expect(r).toEqual({ ok: true, recovery: true });
+    expect(verifyOtpMock).toHaveBeenCalledTimes(2);
+    expect(verifyOtpMock.mock.calls[1][0]).toMatchObject({ type: 'recovery' });
+  });
+
+  it('pushes auth:password-recovery so SetNewPasswordModal opens', async () => {
+    verifyOtpMock.mockResolvedValueOnce(BAD_TOKEN).mockResolvedValueOnce(OK);
+    await verifyEmailCode({ email: 'a@b.com', code: '123456' });
+    expect(sendMock).toHaveBeenCalledWith('auth:password-recovery');
+  });
+
+  it('reports invalid_code only after BOTH types fail', async () => {
+    verifyOtpMock.mockResolvedValue(BAD_TOKEN);
+    const r = await verifyEmailCode({ email: 'a@b.com', code: '999999' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('invalid_code');
+    expect(verifyOtpMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('strips separators a mail client may have introduced', async () => {
+    verifyOtpMock.mockResolvedValueOnce(OK);
+    await verifyEmailCode({ email: 'a@b.com', code: ' 123-456 ' });
+    expect(verifyOtpMock.mock.calls[0][0]).toMatchObject({ token: '123456' });
+  });
+
+  it('does not spend a second round trip on a rate limit', async () => {
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: 'Too many requests', status: 429 },
+    });
+    const r = await verifyEmailCode({ email: 'a@b.com', code: '123456' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('rate_limited');
+    expect(verifyOtpMock).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a transport failure distinguishable from a wrong code', async () => {
+    // A 500 is not a token mismatch, so retrying the other type proves nothing
+    // and "that code didn't work" would be a lie.
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: 'Internal server error', status: 500 },
+    });
+    const r = await verifyEmailCode({ email: 'a@b.com', code: '123456' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('network');
+    expect(verifyOtpMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('resendVerification', () => {
+  it('resends a signup code for an unconfirmed address', async () => {
+    const r = await resendVerification('a@b.com');
+    expect(r).toEqual({ ok: true });
+    expect(resendMock).toHaveBeenCalledWith({ type: 'signup', email: 'a@b.com' });
+    expect(resetPasswordForEmailMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The decoy path's inbox holds a RECOVERY code, and Supabase refuses a signup
+   * resend for a confirmed address. Without this fallback the panel's own
+   * Resend button would error for exactly the addresses that are registered,
+   * which is the enumeration signal by another route.
+   */
+  it('quietly sends a recovery code when the address is already confirmed', async () => {
+    resendMock.mockResolvedValueOnce({
+      data: {},
+      error: { message: 'Email address already confirmed', status: 422 },
+    });
+    const r = await resendVerification('a@b.com');
+    expect(r).toEqual({ ok: true });
+    expect(resetPasswordForEmailMock).toHaveBeenCalledOnce();
+  });
+
+  it('stays neutral when the account is OAuth-only and no code can be sent', async () => {
+    resendMock.mockResolvedValueOnce({
+      data: {},
+      error: { message: 'Email address already confirmed', status: 422 },
+    });
+    rpcMock.mockResolvedValue({ data: ['google'], error: null });
+    const r = await resendVerification('a@b.com');
+    expect(r).toEqual({ ok: true });
   });
 });

@@ -213,6 +213,9 @@ build and dig take TWO ABSOLUTE CORNERS {from:{x,y,z}, to:{x,y,z}}. Every shape 
 - platform / floor: keep Y constant, vary X and Z.
   e.g. build({from:{x:0,y:64,z:0}, to:{x:3,y:64,z:3}, block:"dirt"}) -> 4x4 floor at y=64
 
+- bridge / walkway (a platform you WALK ON, out across a gap): one Y, one dim constant, and that Y is your feet MINUS ONE, starting at your own x,z. Read the snapshot's \`facing:\` line to turn "over there" / "behind you" into an axis first.
+  e.g. standing at 100,94,42 facing north (so back is +z), asked to bridge behind you -> build({from:{x:100,y:93,z:42}, to:{x:100,y:93,z:62}, block:"netherrack"}) -> a 1-wide bridge you can walk out on. It grows from your feet outward, so if it is going the wrong way you see it immediately.
+
 - tunnel: dig with two dims constant.
   e.g. dig({x:0,y:64,z:0, to:{x:0,y:65,z:4}}) -> 1x2x5 tunnel along the z axis (1 wide, 2 tall, 5 long)
 
@@ -262,7 +265,7 @@ export const ACTION_DESCRIPTIONS = {
     'Craft `{item, count?}` from the snapshot\'s `craftable:` list; consumes materials, and 3x3 recipes need a crafting_table within reach.',
 
   build:
-    'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Walks and scaffolds automatically to reach far cells. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING: build sits on top of terrain — set `from.y = bot.y + 1` so the structure rises out of the ground. Building at your own y inside terrain produces an invisible all-skipped result. SCAFFOLDING: `{direction:"below", count:N, block}` instead of corners jumps and places N blocks under your own feet and carries you up N blocks — that is how you climb out of a hole, get on top of something, or see over terrain. Before placing anything, build compares your inventory against the span and refuses with both numbers if you are short.',
+    'Place blocks in a cuboid region. `{from, to, block, hollow?}`. Both corners absolute, any order. Cap 256 cells. SKIPS occupied cells. Walks and scaffolds automatically to reach far cells. `hollow:true` places only the 4 vertical wall faces. ANY "fence", "cage", "enclosure", "pen", "ring", "frame" means hollow:true — a solid NxNxN cube is almost never what they want. COORD PICKING depends on whether you will stand ON it. Something that RISES OUT OF the ground (wall, tower, house, fence) starts at `from.y = bot.y + 1`; at your own y you are inside terrain and get an invisible all-skipped result. Something you WALK ON (bridge, walkway, path across a gap) is the opposite: `from.y = bot.y - 1`, the block under your feet, starting at your own x,z so it grows out from where you already stand. A bridge at bot.y + 1 is at head height with nothing to attach to and places NOTHING. SCAFFOLDING: `{direction:"below", count:N, block}` instead of corners jumps and places N blocks under your own feet and carries you up N blocks — that is how you climb out of a hole, get on top of something, or see over terrain. Before placing anything, build compares your inventory against the span and refuses with both numbers if you are short.',
 
   openFurnace:
     'Open a furnace (also blast_furnace/smoker) to smelt: `{block:"furnace"}` for the nearest, or aim with a target/coords. Must be within reach. Then smeltInput + addFuel to load it, wait, and takeSmelted to collect.',
