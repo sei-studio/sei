@@ -54,6 +54,12 @@ const api: RendererApi = {
   knowledgeDelete: (characterId, entryId) => ipcRenderer.invoke(IpcChannel.knowledge.delete, characterId, entryId),
   knowledgeCompact: (characterId) => ipcRenderer.invoke(IpcChannel.knowledge.compact, characterId),
 
+  // 260810 — phantom-call recovery (scan / repair / dismiss).
+  recoveryScan: () => ipcRenderer.invoke(IpcChannel.recovery.scan),
+  recoveryRepair: (characterId, windows) =>
+    ipcRenderer.invoke(IpcChannel.recovery.repair, characterId, windows),
+  recoveryDismiss: (keys) => ipcRenderer.invoke(IpcChannel.recovery.dismiss, keys),
+
   // Phase 11 D-28 portrait pipeline.
   charsApplyPortrait: (args) => ipcRenderer.invoke(IpcChannel.chars.applyPortrait, args),
   charsRemovePortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.removePortrait, id),
@@ -341,6 +347,7 @@ const api: RendererApi = {
   deleteAccount: () => ipcRenderer.invoke(IpcChannel.auth.deleteAccount),
   exportData: () => ipcRenderer.invoke(IpcChannel.auth.exportData),
   resendVerification: (args) => ipcRenderer.invoke(IpcChannel.auth.resendVerification, args),
+  verifyEmailCode: (args) => ipcRenderer.invoke(IpcChannel.auth.verifyEmailCode, args),
   sendPasswordReset: (args) => ipcRenderer.invoke(IpcChannel.auth.sendPasswordReset, args),
   updatePassword: (args) => ipcRenderer.invoke(IpcChannel.auth.updatePassword, args),
   setCaptchaToken: (token: string | null) =>

@@ -850,8 +850,18 @@ export type AuthState =
   | { kind: 'local' }
   | { kind: 'signed_in'; user: AuthUser };
 
+/**
+ * `needsVerification` (260804, PIN migration): Supabase refused the sign-in with
+ * `email_not_confirmed`. Per D-04 this is NOT an error — the account exists and
+ * the password was right — so it stays on the `ok: true` side. But under the
+ * old link flow it was a silent dead end: main returned a bare `{ ok: true }`,
+ * no session was issued, and the renderer sat on the form waiting for an
+ * auth-state push that could only ever come from clicking the emailed link.
+ * With codes there is somewhere to send the user, so main re-sends a code and
+ * the renderer opens the verification panel on the typed address.
+ */
 export type SignInResult =
-  | { ok: true }
+  | { ok: true; needsVerification?: boolean }
   | { ok: false; code: 'invalid_credentials' | 'invalid_email' | 'network' | 'rate_limited'; message: string };
 
 export type SignUpResult =
@@ -897,6 +907,31 @@ export type ExportDataResult =
 export type ResendVerificationResult =
   | { ok: true }
   | { ok: false; code: 'rate_limited' | 'network'; message: string };
+
+/**
+ * Result of redeeming a 6-digit email code (260804).
+ *
+ * ONE result type covers both kinds of code, because the surface that asks for
+ * one cannot know which kind is in the user's inbox. A brand-new signup gets a
+ * `signup` code; an address that is ALREADY registered gets a `recovery` code
+ * (the silent forgot-password treatment in authHandlers.alreadyRegisteredResult),
+ * and the panel shown for the two is deliberately identical — telling them apart
+ * in the UI is exactly the account-enumeration leak T-10-04 closed. Main tries
+ * both token types and reports which one landed.
+ *
+ * `recovery: true` means the redeemed code was a recovery token, so the user now
+ * holds a recovery session and must choose a new password. Main pushes
+ * `auth:password-recovery` for this case as well, so the flag is advisory: the
+ * renderer can skip its own "signed in!" chrome, but SetNewPasswordModal is
+ * raised by App.tsx's existing subscriber either way.
+ *
+ * `invalid_code` merges wrong-code and expired-code on purpose: Supabase returns
+ * one message ("Token has expired or is invalid") for both, and splitting them
+ * would require guessing.
+ */
+export type VerifyEmailCodeResult =
+  | { ok: true; recovery: boolean }
+  | { ok: false; code: 'invalid_code' | 'rate_limited' | 'network'; message: string };
 
 /**
  * Password-reset request result. Neutral by design (T-10-04 enumeration
@@ -1888,10 +1923,17 @@ export interface RendererApi {
    */
   resendVerification(args?: { email?: string }): Promise<ResendVerificationResult>;
   /**
+   * Redeem the 6-digit code from a Sei email (260804). Accepts BOTH the signup
+   * confirmation code and the password-recovery code, because the panel that
+   * collects one cannot tell which is in the inbox without leaking whether the
+   * address is registered. See VerifyEmailCodeResult.
+   */
+  verifyEmailCode(args: { email: string; code: string }): Promise<VerifyEmailCodeResult>;
+  /**
    * Send a password-reset email. Neutral success (anti-enumeration): returns
-   * { ok:true } whether or not the address is registered. The email links to the
-   * fixed-port loopback callback (the same server email verification uses), so
-   * clicking it lands a recovery session and main pushes onPasswordRecovery.
+   * { ok:true } whether or not the address is registered. The email carries a
+   * 6-digit recovery code, redeemed in-app via verifyEmailCode — no link, so the
+   * inbox can be opened on any device.
    */
   sendPasswordReset(args: { email: string }): Promise<PasswordResetResult>;
   /**
@@ -2265,6 +2307,24 @@ export interface RendererApi {
    * "ask only the missing questions" and full retakes share one channel.
    */
   prefsSave(patch: UserPreferencesPatch): Promise<void>;
+
+  /* ── Phantom-call recovery (260810) ──────────────────────────────────── */
+  /**
+   * Scan the active profile's transcripts for phantom-call sessions (a voice
+   * call left running while other audio fed the mic). Read-only, local, and
+   * shape-only: candidates carry counts and windows, never message text.
+   * Already-dismissed windows are filtered out in main.
+   */
+  recoveryScan(): Promise<RecoveryCandidate[]>;
+  /**
+   * Quarantine the given windows for one character: full memory-dir backup +
+   * quarantine sidecars first, then atomic rewrites of chat.jsonl/MEMORY.md
+   * and a bridge.json reset (rebuilt from the cleaned transcript on the next
+   * fold). Nothing is ever deleted outright.
+   */
+  recoveryRepair(characterId: string, windows: RecoveryWindow[]): Promise<RecoveryRepairResult>;
+  /** Persist "don't ask again" for session keys (`characterId:startTs`). */
+  recoveryDismiss(keys: string[]): Promise<void>;
 }
 
 /** Payload pushed by main when the active profile scope switches. */
@@ -2368,6 +2428,40 @@ export interface NoticesSnapshot {
   readIds: string[];
   /** True while at least one notice has never triggered its one auto-open. */
   autoOpen: boolean;
+}
+
+/* ── Phantom-call recovery (260810) ─────────────────────────────────────── */
+
+/** One transcript time window selected for repair (a flagged session's span). */
+export interface RecoveryWindow {
+  /** Epoch ms of the session's first voice row. */
+  start: number;
+  /** Epoch ms of the session's last voice row. */
+  end: number;
+}
+
+/**
+ * One flagged phantom-call session from recovery:scan. SHAPE ONLY by
+ * contract: counts, cadence and the window, never message text.
+ */
+export interface RecoveryCandidate {
+  characterId: string;
+  /** Display name for the session list row; falls back in main. */
+  characterName: string;
+  startTs: number;
+  endTs: number;
+  /** How many "user" voice rows the session holds (the cadence numerator). */
+  userRows: number;
+  /** Total voice rows in the session (what a repair would quarantine). */
+  totalRows: number;
+  /** Median gap between consecutive user rows, seconds (rounded to 0.1). */
+  medianGapS: number;
+}
+
+/** What one recovery:repair call removed (all of it quarantined, none deleted). */
+export interface RecoveryRepairResult {
+  rowsQuarantined: number;
+  memoryLinesRemoved: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2795,6 +2889,10 @@ export const IpcChannel = {
     deleteAccount: 'auth:delete-account',
     exportData: 'auth:export-data',
     resendVerification: 'auth:resend-verification',
+    // 260804 — redeem a 6-digit email code (signup confirmation OR password
+    // recovery; main tries both). Replaced the emailed-link round trip so the
+    // inbox can be opened on a different device from the app.
+    verifyEmailCode: 'auth:verify-email-code',
     sendPasswordReset: 'auth:send-password-reset',
     updatePassword: 'auth:update-password',
     passwordRecovery: 'auth:password-recovery',
@@ -2908,6 +3006,13 @@ export const IpcChannel = {
   feedback: {
     submit: 'feedback:submit',
     report: 'feedback:report',
+  },
+  // 260810 — in-app phantom-call recovery (see RecoveryCandidate above and
+  // src/main/recovery/). scan is read-only; repair quarantines, never deletes.
+  recovery: {
+    scan: 'recovery:scan',
+    repair: 'recovery:repair',
+    dismiss: 'recovery:dismiss',
   },
 } as const;
 

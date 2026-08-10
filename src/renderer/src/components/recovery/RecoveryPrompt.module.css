@@ -1,0 +1,37 @@
+/* RecoveryPrompt — session list rows for the phantom-call recovery modal.
+ * Scrim/panel/title/footer come from ModalShell; body register mirrors
+ * confirmModal.module.css. Tokens only. */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 0 0;
+  border-top: 1px solid var(--line);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.row input {
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.error {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 10px 0 0;
+}

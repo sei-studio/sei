@@ -47,6 +47,7 @@ import {
   updateKnowledgeEntry,
 } from './knowledge/knowledgeStore';
 import { extractKnowledgeText, KNOWLEDGE_ENTRY_MAX_BYTES } from './knowledge/extractText';
+import { scanRecovery, repairRecovery, dismissRecovery } from './recovery/recoveryService';
 import { libraryCharacterCount } from './uniqueGeneration';
 import { paths } from './paths';
 import {
@@ -252,6 +253,18 @@ const SignInPasswordSchema = z.object({
 });
 const SendPasswordResetSchema = z.object({
   email: z.string().email(),
+});
+/**
+ * 260804 — 6-digit email code redemption. Length is a RANGE, not 6: Supabase's
+ * token length is a dashboard setting (6-10 digits) that can be raised without
+ * a client release, and the renderer strips separators before sending, so
+ * pinning 6 here would turn a config change into a validation failure. The
+ * lower bound just rejects an empty submit; main normalizes and Supabase is the
+ * authority on whether the token is real.
+ */
+const VerifyEmailCodeSchema = z.object({
+  email: z.string().email(),
+  code: z.string().min(4).max(16),
 });
 // Mirrors the signup password floor (8 chars) so a reset can't set a password
 // weaker than signup would allow. Supabase enforces its own minimum too.
@@ -1084,6 +1097,37 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.knowledge.compact, async (_event, idArg: unknown) => {
     return compactKnowledge(KnowledgeCharId.parse(idArg));
+  });
+
+  // ── 260810 Phantom-call recovery ──────────────────────────────────────────
+  // scan is read-only + shape-only; repair quarantines (backup + sidecars
+  // before any original is touched, see recovery/recoveryService.ts). The
+  // characterId becomes a path component under paths.memoryDir, so it is
+  // format-gated here (memory dirs are UUIDs post-11-03, legacy slugs before;
+  // both fit the charset, and neither can carry a separator or dot).
+  const RecoveryCharId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
+  ipcMain.handle(IpcChannel.recovery.scan, async () => scanRecovery());
+  ipcMain.handle(
+    IpcChannel.recovery.repair,
+    async (_event, idArg: unknown, windowsRaw: unknown) => {
+      const id = RecoveryCharId.parse(idArg);
+      const windows = z
+        .array(z.object({ start: z.number().finite(), end: z.number().finite() }))
+        .min(1)
+        .max(50)
+        .parse(windowsRaw);
+      // Refuse while the bot holds this character's memory dir at runtime —
+      // same guard as chars:reset-memory. (Voice/backseat sessions are ended
+      // renderer-side before the modal offers a repair.)
+      if (deps.supervisor.isActive(id)) {
+        throw new Error('Cannot clean up while the character is summoned. Stop first.');
+      }
+      return repairRecovery(id, windows);
+    },
+  );
+  ipcMain.handle(IpcChannel.recovery.dismiss, async (_event, keysRaw: unknown) => {
+    const keys = z.array(z.string().min(1).max(120)).max(500).parse(keysRaw);
+    await dismissRecovery(keys);
   });
 
   // Phase 11 D-28 — portrait pipeline. Renderer canvas-resizes + re-encodes
@@ -2713,6 +2757,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         : undefined;
     const { resendVerification } = await import('./auth/authHandlers');
     return await resendVerification(email);
+  });
+  ipcMain.handle(IpcChannel.auth.verifyEmailCode, async (_e, argsRaw: unknown) => {
+    const args = VerifyEmailCodeSchema.parse(argsRaw);
+    const { verifyEmailCode } = await import('./auth/authHandlers');
+    return await verifyEmailCode(args);
   });
   ipcMain.handle(IpcChannel.auth.sendPasswordReset, async (_e, argsRaw: unknown) => {
     const args = SendPasswordResetSchema.parse(argsRaw);

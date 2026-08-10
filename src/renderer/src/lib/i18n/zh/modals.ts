@@ -281,6 +281,17 @@ export const ZH_MODALS: Record<string, string> = {
     '世界必须运行在这台电脑或同一网络中的另一台电脑上。开放到局域网后，Sei 会自动找到它。',
   'Try again': '再试一次',
 
+  // ── ModdedHostModal ──
+  'This world needs mods': '这个世界需要模组',
+  '{name} was turned away by this world. It runs Forge or NeoForge, and it only lets in players who have the same mods installed.':
+    '{name} 被这个世界拒绝了。它运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。',
+  'Open a world with no mods, or with Fabric and only client-side mods like minimaps.':
+    '打开一个没有模组的世界，或使用 Fabric 搭配小地图这类纯客户端模组。',
+  'If you host the modded world yourself, Sei can join it once the mods are not required on the client.':
+    '如果这个模组世界是你自己开的，只要模组不再要求客户端安装，Sei 就能加入。',
+  'Sei joins as a normal Minecraft client, so it cannot load a world that requires mods. Your world stays exactly as it is, Sei just cannot get in.':
+    'Sei 以普通 Minecraft 客户端身份加入，因此无法进入需要模组的世界。你的世界完全不受影响，只是 Sei 进不去。',
+
   // ── McSetupModal ──
   'Minecraft setup': 'Minecraft 设置',
   'Minecraft setup topics': 'Minecraft 设置主题',
@@ -473,15 +484,18 @@ export const ZH_MODALS: Record<string, string> = {
   "That doesn't look like a valid email address.": '这看起来不是有效的邮箱地址。',
   'Enter your email above, then tap "Forgot your password?"':
     '请先在上方输入邮箱，再点击「忘记密码？」',
-  'Check your email': '查看你的邮箱',
-  'We sent a verification link to {email}. Open it on this device to finish signing in.':
-    '我们已向 {email} 发送验证链接。请在这台设备上打开它以完成登录。',
-  'You can close this window. Once you click the link, Sei signs you in automatically.':
-    '你可以关闭此窗口。点击链接后，Sei 会自动为你登录。',
-  "If an account exists for {email}, we've sent a password reset link. Open it on this device to choose a new password.":
-    '如果 {email} 对应的账户存在，我们已发送密码重置链接。请在这台设备上打开它以设置新密码。',
-  'You can close this window. Once you click the link, Sei prompts you for a new password.':
-    '你可以关闭此窗口。点击链接后，Sei 会提示你设置新密码。',
+  // 260804 — see the note in screens-a.ts. One code panel, no per-path copy.
+  'Enter your code': '输入验证码',
+  'Verify your email': '验证你的邮箱',
+  'We sent a 6-digit code to {email}. Check spam if it is not there.':
+    '我们已向 {email} 发送了 6 位验证码。如果收件箱里没有，请查看垃圾邮件。',
+  'Verification code': '验证码',
+  'Verify': '验证',
+  'Checking…': '验证中…',
+  'Send a new code': '重新发送验证码',
+  'Sent. Give it a minute, and check spam too.': '已发送。请稍等一分钟，也看看垃圾邮件。',
+  "Couldn't send a new code. Try again in a moment.": '无法发送新验证码，请稍后再试。',
+  "Couldn't check that code. Try again.": '无法验证该验证码，请重试。',
   'Sign in to {action}': '登录以{action}',
   'Email': '邮箱',
   'Password': '密码',
@@ -568,4 +582,21 @@ export const ZH_MODALS: Record<string, string> = {
   'Applying the update. Sei will restart in a moment…':
     '正在应用更新。Sei 稍后将重启…',
   'What’s new in {version}': '{version} 版本更新内容',
+
+  // ── RecoveryPrompt (260810 phantom-call recovery) ──
+  'Is your companion acting weird?': '你的伙伴是不是不太对劲？',
+  'We detected an unusual amount of requests from your machine. Ignore this message if you are not experiencing any issues. If your companion is behaving strangely, it is fully recoverable. Begin recovery?':
+    '我们检测到你的设备发出了异常数量的请求。如果你没有遇到任何问题，请忽略此消息。如果你的伙伴行为异常，也完全可以恢复。要开始恢复吗？',
+  'Begin recovery': '开始恢复',
+  'Ignore': '忽略',
+  'Select the sessions to clean up. Everything removed is backed up on this computer.':
+    '选择要清理的会话。移除的内容都会备份在这台电脑上。',
+  '{name}, {date}, {minutes} minutes, {count} messages':
+    '{name}，{date}，{minutes} 分钟，{count} 条消息',
+  'Clean up': '清理',
+  'Cleaning up…': '清理中…',
+  'Recovery complete. A backup of everything removed was kept.':
+    '恢复完成。所有被移除的内容都已保留备份。',
+  'Something went wrong during cleanup. A backup was made first, so nothing is lost. Try again later.':
+    '清理过程中出了点问题。已提前创建备份，数据不会丢失。请稍后重试。',
 };

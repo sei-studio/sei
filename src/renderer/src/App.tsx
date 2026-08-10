@@ -59,12 +59,14 @@ import { SummonConflictModal } from './components/SummonConflictModal';
 import { LanHostWarningModal } from './components/LanHostWarningModal';
 import { UnsupportedVersionModal } from './components/UnsupportedVersionModal';
 import { LanNotOpenModal } from './components/LanNotOpenModal';
+import { ModdedHostModal } from './components/ModdedHostModal';
 import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
 import { UpdatePopup, type UpdatePopupState } from './components/UpdatePopup';
 import { UpdatePill, type UpdatePillState } from './components/UpdatePill';
 import { NoticesInboxModal } from './components/NoticesInboxModal';
+import { RecoveryPrompt } from './components/recovery/RecoveryPrompt';
 import { useNoticesStore } from './lib/stores/useNoticesStore';
 import { Banner } from './components/Banner';
 import { ERROR_COPY } from './lib/errors';
@@ -889,7 +891,9 @@ export function App(): React.ReactElement {
           {authState.kind === 'signed_in' && !authState.user.emailVerified ? (
             <Banner
               kind="warn"
-              message={t('Verify your email to publish companions or buy credits. Check your inbox for a link from Sei.')}
+              // 260804: points at the Settings row that now takes a code,
+              // rather than at an inbox link that no longer exists.
+              message={t('Verify your email to publish companions or buy credits. Enter the code from Sei under Settings, Account.')}
             />
           ) : null}
           {/*
@@ -1042,6 +1046,10 @@ export function App(): React.ReactElement {
       ) : null}
       {/* 260720 — a summon died with LAN_NOT_OPEN; numbered open-to-LAN steps. */}
       {modal?.kind === 'lan-not-open' ? <LanNotOpenModal characterId={modal.characterId} /> : null}
+      {/* 260806 — the world runs Forge/NeoForge and requires its mods on the
+          client, so it kicks Sei. Split out of lan-not-open: the resolution is
+          a different world, not a different setting. */}
+      {modal?.kind === 'modded-host' ? <ModdedHostModal characterId={modal.characterId} /> : null}
       {modal?.kind === 'bot-crash' ? <BotCrashModal characterId={modal.characterId} /> : null}
       {/* Phase 18/19 — chat "Play together" surface: the game picker grid
           (per-game info is a hover popup inside it). */}
@@ -1092,6 +1100,10 @@ export function App(): React.ReactElement {
           this renders null until a notice arrives (opens once) or the user
           reopens it from Playtime → Inbox. */}
       <NoticesInboxModal />
+      {/* 260810 — phantom-call recovery. Self-mounting: renders null until a
+          scan (app mount / after a call or share ends) flags a phantom-call
+          session that has not been dismissed. */}
+      <RecoveryPrompt />
       {/*
         Phase 11 D-26 — BLOCKING ToS+Privacy acceptance modal. Mounts as the
         LAST modal layer so it overlays every other modal/toast at the same
