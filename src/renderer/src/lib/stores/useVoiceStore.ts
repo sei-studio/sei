@@ -62,6 +62,10 @@ import {
   type MicEchoInfo,
 } from '../voice/echoGate';
 import { sttPolicy } from '../voice/sttPolicy';
+import {
+  decideInactivity,
+  countdownSecondsLeft,
+} from '../voice/inactivityWatchdog';
 import { prefetchVoiceModel } from '../voice/modelPrefetch';
 import { registerVoiceHooks } from '../voice/voiceBridge';
 import { decideReaction, isJunkTranscript, type Participant } from '../voice/pfcSteer';
@@ -154,6 +158,14 @@ interface VoiceState {
   dismissSttFallback: () => void;
   /** 260730: hold (or release) the companion's first line for a scene intro. */
   setIntroHold: (hold: boolean) => void;
+  /** 260810 inactivity watchdog: true while the "Are you still there?" popup
+   * is up (10 minutes with zero player activity on a live call). Rendered by
+   * CallInactivityPopup, which CallMiniBar mounts on every view. */
+  inactivityPrompt: boolean;
+  /** Seconds left on the popup's end-call countdown (10 → 0). */
+  inactivitySecondsLeft: number;
+  /** "I'm here": dismiss the inactivity popup and reset the 10-minute clock. */
+  confirmPresence: () => void;
 }
 
 /** Non-reactive session internals (torn down in endCall). */
@@ -390,6 +402,21 @@ function sampleIdleTarget(): number {
   return IDLE_NUDGE_MIN_MS + Math.random() * (IDLE_NUDGE_MAX_MS - IDLE_NUDGE_MIN_MS);
 }
 
+// ── Inactivity watchdog (260810) ─────────────────────────────────────────────
+// Decision logic + constants live in ../voice/inactivityWatchdog (pure,
+// tested); this is the mutable session state. Wall-clock timestamps only —
+// the tick compares Date.now() against these, never accumulates intervals, so
+// a sleep/wake gap collapses into one late evaluation. Both are module-level
+// (never component state) so they survive renders; the chained tick is
+// session-guarded so it dies with the call.
+/** Wall-clock ms of the last real player activity (utterance dispatched,
+ * chat typed to an on-call companion, "I'm here", live screenshare). */
+let inactivityLastActivityAt = 0;
+/** Wall-clock ms the "Are you still there?" popup went up; null while down. */
+let inactivityPromptAt: number | null = null;
+/** Faster tick while the countdown is showing, so it reads smoothly. */
+const INACTIVITY_COUNTDOWN_TICK_MS = 250;
+
 /** Spoken-turn capture. A companion's spoken lines almost always arrive ASYNC
  * through onCompanionText — streamed reply sentences land while send() is still
  * in flight, an in-world routed reply streams back over the chat push, a join
@@ -511,7 +538,9 @@ function friendlyError(err: unknown): string {
   const name = (err as { name?: string })?.name ?? '';
   if (/VOICE_NO_SESSION/.test(msg)) return t('Sign in to use voice calls.');
   if (/VOICE_NO_CREDITS/.test(msg)) return t("You've used this week's credits. Upgrade or top up to keep calling.");
-  if (/VOICE_RATE_LIMITED/.test(msg)) return t("You've hit today's usage cap. It resets tomorrow.");
+  // 260810: the daily dollar cap was retired 260724, so a voice 429 is the
+  // burst rate gate — never claim a daily cap or a tomorrow reset.
+  if (/VOICE_RATE_LIMITED/.test(msg)) return t('Too many requests right now. Wait a little and try again.');
   if (/VOICE_NOT_CONFIGURED/.test(msg)) return t('Voice service is not available right now.');
   // BYOK (260726): the curated pool lives in Sei's ElevenLabs account, so the
   // user's own key cannot speak that voice until they add it to their library.
@@ -623,14 +652,17 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
 
     const surfaceTtsError = (msg: string): void => {
       if (session !== mySession) return;
+      // 260810: these captions are user-visible (they render verbatim in the
+      // call caption surfaces), so they go through t(). And a TTS 429 is the
+      // burst rate gate, not a daily cap (that cap was retired 260724).
       if (/VOICE_RATE_LIMITED/.test(msg)) {
-        set({ lastSpoken: '[voice paused, daily usage cap reached]' });
+        set({ lastSpoken: t('[voice paused, too many requests right now]') });
       } else if (/VOICE_NO_CREDITS/.test(msg)) {
-        set({ lastSpoken: '[voice paused, out of credits]' });
+        set({ lastSpoken: t('[voice paused, out of credits]') });
       } else if (/VOICE_NOT_IN_LIBRARY/.test(msg)) {
         // BYOK key + a curated-pool voice: every clip fails until they add the
         // voice to their own ElevenLabs library or pick another one (260726).
-        set({ lastSpoken: '[voice unavailable, this voice is not in your ElevenLabs library]' });
+        set({ lastSpoken: t('[voice unavailable, this voice is not in your ElevenLabs library]') });
       }
     };
     const settleTts = (): void => {
@@ -1099,6 +1131,66 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     }
   }
 
+  /** Real player activity on the call: reset the inactivity clock and retract
+   * the "Are you still there?" popup if it is up. Companion speech NEVER calls
+   * this — a companion keeping itself alive is the failure mode the watchdog
+   * exists for (the 260809 unattended-call flood). */
+  function noteCallActivity(): void {
+    inactivityLastActivityAt = Date.now();
+    if (inactivityPromptAt !== null || get().inactivityPrompt) {
+      inactivityPromptAt = null;
+      set({ inactivityPrompt: false });
+    }
+  }
+
+  /** One tick of the inactivity watchdog. Chained setTimeout guarded by the
+   * session token (same pattern as idleTick), so it dies with the call. All
+   * decisions compare wall-clock timestamps (inactivityWatchdog.ts), so a
+   * machine that slept 8 hours evaluates once on wake: prompt, then the 10s
+   * countdown — never an end without the popup having been shown. */
+  function inactivityTick(mySession: number): void {
+    if (session !== mySession) return;
+    const s = get();
+    if (s.status === 'live') {
+      const now = Date.now();
+      // An active screenshare is continuous presence: the watchdog never
+      // fires during one, and resetting the clock here means ending the share
+      // restarts the full 10-minute window.
+      const sharing = useBackseatStore.getState().sharingFor !== null;
+      if (sharing) inactivityLastActivityAt = now;
+      const decision = decideInactivity({
+        lastActivityAt: inactivityLastActivityAt,
+        promptAt: inactivityPromptAt,
+        now,
+        sharing,
+      });
+      if (decision === 'end') {
+        inactivityPromptAt = null;
+        set({ inactivityPrompt: false, inactivitySecondsLeft: 0 });
+        // The normal hang-up path, so every teardown (dictation, queue,
+        // voiceCallSetActive with connectedMs, UI state) runs as usual.
+        get().endCall();
+        return; // endCall bumped the session; this chain is dead
+      }
+      if (decision === 'prompt') {
+        if (inactivityPromptAt === null) inactivityPromptAt = now;
+        const left = countdownSecondsLeft(inactivityPromptAt, now);
+        if (!s.inactivityPrompt || s.inactivitySecondsLeft !== left) {
+          set({ inactivityPrompt: true, inactivitySecondsLeft: left });
+        }
+      } else if (s.inactivityPrompt || inactivityPromptAt !== null) {
+        // 'ok' with a prompt up (activity landed, or a share started):
+        // retract it.
+        inactivityPromptAt = null;
+        set({ inactivityPrompt: false });
+      }
+    }
+    window.setTimeout(
+      () => inactivityTick(mySession),
+      inactivityPromptAt !== null ? INACTIVITY_COUNTDOWN_TICK_MS : IDLE_TICK_MS,
+    );
+  }
+
   /** A player utterance arrived (from the mic). Barge-in already cleared the
    * audio queue; here we supersede any running chain, mirror the line to the
    * non-responders for context, and kick off the responder's turn. */
@@ -1109,6 +1201,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // "[BLANK_AUDIO]") before they become a turn: otherwise they inject lines
     // the player never said and, via supersede, delay the real reply.
     if (isJunkTranscript(text)) return;
+    // A confirmed, dispatched utterance is real presence (junk and echo-gated
+    // transcripts never reach this line, so phantom audio cannot keep an
+    // unattended call alive).
+    noteCallActivity();
     replyClockAt = performance.now(); // start the reply-latency clock (see speakCompanionLine)
     const mySeq = ++directorSeq; // cancels any in-flight companion chain
     clearTurnCapture(); // a fresh utterance supersedes any pending turn capture
@@ -1215,6 +1311,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // hear the words, and the reply should chain reactions like any responder
       // turn. Solo calls need none of that (the addressee is the whole room).
       const s = get();
+      // Typing to an on-call companion is presence for the inactivity
+      // watchdog, solo or group alike; the director bookkeeping below stays
+      // group-only.
+      if (s.status === 'live' && s.participants.includes(characterId)) noteCallActivity();
       if (s.status !== 'live' || s.participants.length < 2 || !s.participants.includes(characterId)) return;
       const mySeq = ++directorSeq; // the player takes the floor: cancel running banter
       clearTurnCapture();
@@ -1304,6 +1404,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     liveAt: null,
     sttFallbackPrompt: false,
     introHold: false,
+    inactivityPrompt: false,
+    inactivitySecondsLeft: 0,
 
     startCall: async (characterId) => {
       const prev = get();
@@ -1337,6 +1439,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       directorSendSeq.clear();
       directorSendFailed.clear();
       reconnectingCount = 0;
+      inactivityLastActivityAt = Date.now();
+      inactivityPromptAt = null;
       set({
         participants: [characterId],
         callCharacterId: characterId,
@@ -1352,6 +1456,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         connectingDetail: null,
         liveAt: null,
         sttFallbackPrompt: false,
+        inactivityPrompt: false,
+        inactivitySecondsLeft: 0,
       });
 
       silenceDressing();
@@ -1637,6 +1743,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       idleQuietStreak = 0;
       window.setTimeout(() => idleTick(mySession), IDLE_TICK_MS);
 
+      // Inactivity watchdog: armed only while the call is live; the session
+      // guard tears the chain down at hang-up. The clock starts at connect.
+      inactivityLastActivityAt = now;
+      inactivityPromptAt = null;
+      window.setTimeout(() => inactivityTick(mySession), IDLE_TICK_MS);
+
       // A one-second beat after "connected" before the companion speaks — a real
       // pickup pause, and a head start for the greeting's TTS first byte.
       await wait(CONNECT_SPEAK_DELAY_MS);
@@ -1747,6 +1859,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       directorSendFailed.clear();
       reconnectingCount = 0;
       window.clearTimeout(introHoldTimer);
+      inactivityPromptAt = null;
+      inactivityLastActivityAt = 0;
       set({
         participants: [],
         callCharacterId: null,
@@ -1763,6 +1877,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         liveAt: null,
         sttFallbackPrompt: false,
         introHold: false,
+        inactivityPrompt: false,
+        inactivitySecondsLeft: 0,
       });
       useUiStore.getState().endCall();
     },
@@ -1784,6 +1900,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     },
 
     dismissSttFallback: () => set({ sttFallbackPrompt: false }),
+
+    // "I'm here" on the inactivity popup: real presence, so the popup drops
+    // and the 10-minute clock restarts.
+    confirmPresence: () => noteCallActivity(),
 
     setIntroHold: (hold) => {
       window.clearTimeout(introHoldTimer);
