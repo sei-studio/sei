@@ -23,6 +23,15 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   document.documentElement.style.background = 'transparent';
   document.body.style.background = 'transparent';
   root.render(<CallOverlay />);
+} else if (new URLSearchParams(window.location.search).has('captions')) {
+  // The caption overlay window (260806) — same pattern as ?overlay=1: its own
+  // transparent BrowserWindow, mounting only the caption box. Lazy so the
+  // main window and the avatar overlay never pay for it.
+  document.documentElement.style.background = 'transparent';
+  document.body.style.background = 'transparent';
+  void import('./CaptionOverlay').then(({ CaptionOverlay }) => {
+    root.render(<CaptionOverlay />);
+  });
 } else {
   root.render(
     <React.StrictMode>

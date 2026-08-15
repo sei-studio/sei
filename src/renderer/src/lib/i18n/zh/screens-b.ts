@@ -8,11 +8,10 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Email': '邮箱',
   'Sign out': '退出登录',
   'Sending…': '发送中…',
-  'We sent a new verification link to {email}.': '我们已向 {email} 发送了新的验证链接。',
-  'Hold on, wait a minute before requesting another link.': '别急，请稍等一分钟再请求新的链接。',
-  "Couldn't resend. Try again in a moment.": '无法重新发送，请稍后再试。',
+  // 260804 — the row opens the code modal (which sends on mount) instead of
+  // resending a link, so this screen no longer owns any send-status copy.
   'Verify email': '验证邮箱',
-  'Resend verification': '重新发送验证邮件',
+  'Enter code': '输入验证码',
   'Account ID': '账户 ID',
   'Copy account ID': '复制账户 ID',
   'Copied': '已复制',
@@ -104,10 +103,12 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'About call captions': '关于通话字幕',
   'Shows live captions during voice calls: what the companion said and what Sei heard you say.':
     '在语音通话中显示实时字幕：伙伴说了什么，以及 Sei 听到你说了什么。',
-  'Call overlay': '通话悬浮层',
-  'About the call overlay': '关于通话悬浮层',
-  "During a voice call, floats your companions' avatars on top of every app in the bottom-right corner, lit while they speak. Good for streaming.":
-    '语音通话时，把伙伴的头像悬浮显示在屏幕右下角、所有应用之上，说话时会亮起。很适合直播。',
+  // Avatar overlay (260804, grew out of the 260706 call overlay setting)
+  'About the avatar': '关于虚拟形象',
+  'Floats your companion on top of every app: their picture, or a Live2D model from their profile. "When active" shows it during calls, games, screensharing and Minecraft; "Always" keeps it up while Sei is open. Hover it to move or resize.':
+    '把伙伴悬浮显示在所有应用之上：可以是他们的头像，也可以是角色页里设置的 Live2D 模型。「活动时」在通话、游戏、屏幕分享和 Minecraft 期间显示；「一直显示」则只要 Sei 开着就一直显示。鼠标悬停可以移动和调整大小。',
+  'When active': '活动时',
+  'Always': '一直显示',
   'Conversation starters': '主动开启话题',
   'About conversation starters': '关于主动开启话题',
   'When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak.':

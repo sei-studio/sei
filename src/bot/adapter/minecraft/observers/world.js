@@ -1,5 +1,6 @@
 // src/observers/world.js — pure function of bot state
 import { getHealedPos } from './posHealer.js'
+import { facingFrame } from '../facing.js'
 import mcDataLib from 'minecraft-data'
 import { Vec3 } from 'vec3'
 
@@ -98,7 +99,7 @@ function describeSurroundings(bot, p) {
 
 /**
  * @param {import('mineflayer').Bot} bot
- * @returns {{ pos:{x:number,y:number,z:number}, biome:string, surroundings:string, light:{sky:number|null,block:number|null}, time:{isDay:boolean,timeOfDay:number} }}
+ * @returns {{ pos:{x:number,y:number,z:number}, facing:ReturnType<typeof facingFrame>, biome:string, surroundings:string, light:{sky:number|null,block:number|null}, time:{isDay:boolean,timeOfDay:number} }}
  */
 export function world(bot) {
   const p = getHealedPos(bot) ?? bot.entity?.position ?? { x: 0, y: 0, z: 0 }
@@ -109,6 +110,11 @@ export function world(bot) {
   }
   return {
     pos,
+    // 260803: which way the body points, resolved to world axes. Note this
+    // reads the RAW entity yaw, not the healed position — yaw has no healer
+    // and needs none (a stale yaw is a wrong answer for one tick; a stale
+    // position was corrupting coordinates).
+    facing: facingFrame(bot.entity?.yaw),
     biome: resolveBiomeName(bot, p),
     surroundings: describeSurroundings(bot, p),
     light: lightAtHead(bot, pos),

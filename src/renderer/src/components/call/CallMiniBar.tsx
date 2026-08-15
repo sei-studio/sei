@@ -1,5 +1,10 @@
 /**
- * CallMiniBar — the app-level call watchdog (260722 rework; renders NOTHING).
+ * CallMiniBar — the app-level call watchdog (260722 rework). Renders nothing
+ * except the call-level popups that must survive every view (260810: the
+ * inactivity "Are you still there?" popup — hosted here precisely because
+ * this component is mounted in the App shell on every screen, so the popup
+ * overlays the call view, game surfaces, backdrop scenes, and any other
+ * screen the player wandered to while the call runs in the background).
  * The old docked CallDock strip is gone: while a game surface is open the
  * in-game call UI lives inside GameSurface's bottom chrome row instead.
  *
@@ -24,7 +29,8 @@
  * clicking the character (or the chat top bar's phone) returns to the call.
  */
 
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { CallInactivityPopup } from './CallInactivityPopup';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
@@ -33,7 +39,7 @@ import { useMcDashboardStore } from '../../lib/stores/useMcDashboardStore';
 import { useDrawStore, isDrawActive } from '../../lib/stores/useDrawStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
 
-export function CallMiniBar(): null {
+export function CallMiniBar(): React.ReactElement {
   const view = useUiStore((s) => s.view);
   const navigate = useUiStore((s) => s.navigate);
   const participants = useVoiceStore((s) => s.participants);
@@ -94,5 +100,5 @@ export function CallMiniBar(): null {
     void consumePendingShare(pendingShare.characterId);
   }, [pendingShare, status, participants, clearPendingShare, consumePendingShare]);
 
-  return null;
+  return <CallInactivityPopup />;
 }

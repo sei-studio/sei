@@ -21,6 +21,8 @@ export const ZH_MISC: Record<string, string> = {
     '有一个内置模块加载失败。请通过 .dmg / .exe 重新安装 Sei。',
   "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Summon again.":
     '暂不支持这个世界的 Minecraft 版本。请用受支持的 Java 版打开你的世界，然后再次点击召唤。',
+  'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.':
+    '这个世界运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。Sei 以普通 Minecraft 客户端身份加入，因此会被拒之门外。请打开一个没有服务端模组的世界，或改用 Fabric 搭配小地图这类纯客户端模组。',
   "Couldn't download CustomSkinLoader. Check your connection and try the setup again.":
     '无法下载 CustomSkinLoader。请检查网络连接后重新运行设置。',
   "Couldn't install Fabric Loader. Make sure Minecraft is closed, then try the setup again.":
@@ -83,7 +85,13 @@ export const ZH_MISC: Record<string, string> = {
   'Sign in to use voice calls.': '请登录后使用语音通话。',
   "You've used this week's credits. Upgrade or top up to keep calling.":
     '本周额度已用完。升级或充值后才能继续通话。',
-  "You've hit today's usage cap. It resets tomorrow.": '已达到今日使用上限。明天会自动重置。',
+  // 260810: voice 429 copy no longer claims a daily cap (retired 260724);
+  // it reuses the 'Too many requests right now...' key above. The paused
+  // captions below used to bypass i18n entirely.
+  '[voice paused, too many requests right now]': '[语音已暂停，当前请求过多]',
+  '[voice paused, out of credits]': '[语音已暂停，额度已用完]',
+  '[voice unavailable, this voice is not in your ElevenLabs library]':
+    '[语音不可用，这个声音不在你的 ElevenLabs 声音库中]',
   'Voice service is not available right now.': '语音服务暂时不可用。',
   'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.':
     '这个声音不在你的 ElevenLabs 声音库中。请先在那里添加它，或选择其他声音。',
@@ -92,12 +100,24 @@ export const ZH_MISC: Record<string, string> = {
     '麦克风访问被 Windows 阻止。请在系统设置中打开「隐私和安全性 > 麦克风」，开启麦克风访问以及「允许桌面应用访问你的麦克风」，然后重试。',
   'Microphone access was blocked. Allow it and try again.': '麦克风访问被拒绝。请允许后重试。',
   'Voice call failed to start. Try again in a moment.': '语音通话启动失败。请稍后再试。',
+
+  // ── Call inactivity watchdog (CallInactivityPopup, 260810) ─────────────
+  'Are you still there?': '你还在吗？',
+  'This call will end in {seconds} seconds.': '通话将在 {seconds} 秒后结束。',
+  "I'm here": '我还在',
+
+  // ── HardStopModal rate-limited fallback (260810) ───────────────────────
+  // Lives here rather than modals.ts because that file is mid-edit by the
+  // localization sweep; misc.ts spreads last, so a duplicate key here wins.
+  "Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again in a moment.":
+    'Sei 的服务器当前正在限流，你的伙伴只能先歇一会儿。这不会消耗你的任何额度。稍等片刻即可再试。',
+
   'Detection failed': '检测失败',
   'Install failed': '安装失败',
 
   // ── App.tsx banners ────────────────────────────────────────────────────
-  'Verify your email to publish companions or buy credits. Check your inbox for a link from Sei.':
-    '验证邮箱后才能发布伙伴或购买额度。请在收件箱中查找来自 Sei 的链接。',
+  'Verify your email to publish companions or buy credits. Enter the code from Sei under Settings, Account.':
+    '验证邮箱后才能发布伙伴或购买额度。请在“设置 - 账户”中输入 Sei 发来的验证码。',
   'Your system has no keyring, so Sei is storing your sign-in less securely. Install gnome-keyring or kwallet for full protection.':
     '你的系统没有密钥环，Sei 只能以较低的安全性保存你的登录信息。安装 gnome-keyring 或 kwallet 可获得完整保护。',
 

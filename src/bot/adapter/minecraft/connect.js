@@ -24,6 +24,7 @@ import { startGaze } from './behaviors/gaze.js'
 import { startSurvival } from './behaviors/survival.js'
 import { applyWorldPause } from './behaviors/pause.js'
 import { installFaceOnDig } from './behaviors/face.js'
+import { forgeHandshakeEnabled, installForgeHandshake, sampleWorldNames } from './forgeHandshake.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -47,6 +48,48 @@ function extractReasonText(reason) {
 }
 
 /**
+ * Did the world reject us for being a vanilla client on a modded server?
+ *
+ * mineflayer speaks vanilla protocol and answers "not understood" to every
+ * login plugin request (node-minecraft-protocol src/client/pluginChannels.js
+ * onLoginPluginRequest), exactly like a Notchian client. A Forge/NeoForge server
+ * whose mods require a matching client sees that and kicks us. This is a
+ * PERMANENT property of the world: retrying cannot fix it, so the caller must
+ * fail fast rather than burn the reconnect budget (260806 — a NeoForge 1.20.1
+ * world cost one user five summon attempts, each retried 3x, all reported as
+ * "we can't see an open LAN world" while the world was open the whole time).
+ *
+ * Wordings this has to cover, all seen in the wild:
+ *   Forge     "Incompatible FML modded server" / "Please install Forge to connect"
+ *   NeoForge  "This server has mods that require NeoForge to be installed on the client."
+ *   Fabric    "This server requires the following mods..." (registry sync)
+ *
+ * The `mods` + `require|install` pair is what catches the NeoForge wording, which
+ * names none of the loaders as a bare word. It is deliberately a PAIR: "mods"
+ * alone appears in plenty of benign kick text ("Server is running with 3 mods
+ * loaded"), and a bare /mod/ would match "model".
+ *
+ * This is a strict SUPERSET of the 260709 check it replaced — that one was
+ * `fml || (fabric && (mod || require))`, and the fabric clause is kept below
+ * verbatim so a "requires Fabric" kick that never says "mods" still lands.
+ *
+ * @param {unknown} reason  raw or already-extracted disconnect reason
+ * @returns {boolean}
+ */
+export function isModdedHostRejection(reason) {
+  if (!reason) return false
+  const r = extractReasonText(reason).toLowerCase()
+  // Loader named outright. `quilt` joins forge/neoforge because shared/ipc.ts
+  // already classifies it alongside them as a modded host.
+  if (/\bfml\b|neoforge|\bforge\b|\bquilt\b/.test(r)) return true
+  // 260709's fabric clause, unchanged.
+  if (r.includes('fabric') && (r.includes('mod') || r.includes('require'))) return true
+  // Loader unnamed: "...has mods that require ... to be installed on the client".
+  if (/\bmods?\b/.test(r) && /\brequires?\b|\binstall(ed)?\b/.test(r)) return true
+  return false
+}
+
+/**
  * Plain-English translation of mineflayer disconnect reasons. Exposed for
  * the boot composer's status surface.
  */
@@ -54,12 +97,10 @@ export function humanizeReason(reason) {
   if (!reason) return 'Unknown reason'
   const text = extractReasonText(reason)
   const r = text.toLowerCase()
-  // Modded-server rejections FIRST (260709): Forge kicks vanilla clients with
-  // "Incompatible FML modded server" / FML handshake text; Fabric's registry
-  // sync kicks with "requires ... Fabric" wording. Both can contain 'connect'
+  // Modded-server rejections FIRST (260709): the wordings can contain 'connect'
   // ("Please install Forge to connect"), so this must precede that check.
-  if (r.includes('fml') || (r.includes('fabric') && (r.includes('mod') || r.includes('require')))) {
-    return 'This world has server-side mods that Sei cannot join. Worlds with only client-side mods, like minimaps, work fine'
+  if (isModdedHostRejection(text)) {
+    return 'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a vanilla client, so the world turns it away'
   }
   // Chat-signing rejection (260710): the server refused one of OUR chat
   // packets (seen live as multiplayer.disconnect.chat_validation_failed on
@@ -274,6 +315,20 @@ export function createBotInstance({
 
   const bot = createBot(botOpts)
 
+  // Forge/NeoForge handshake SPIKE (260806). Off unless SEI_FORGE_HANDSHAKE=1.
+  // Must be installed here, immediately after createBot and before the socket
+  // reaches the login state: it sets `client.tagHost`, which nmp reads inside
+  // its own 'connect' handler. Never allowed to break a normal summon, hence
+  // the catch — this is unproven code behind a flag, and a throw here would
+  // take out a join that would otherwise have worked.
+  if (forgeHandshakeEnabled()) {
+    try {
+      installForgeHandshake(bot, { logger })
+    } catch (err) {
+      logger.warn?.(`[sei/forge] handshake spike failed to install: ${err && err.message}`)
+    }
+  }
+
   let _spawned = false
   // 260508-nkk: wall-clock guard. Cleared on first 'spawn' or on 'end' /
   // 'error' / 'kicked' (those routes already surface a humanized reason
@@ -350,6 +405,16 @@ export function createBotInstance({
       // 260725: a reconnect while the player has the game paused must come
       // back frozen, not quietly resume trailing/evading on the fresh bot.
       safeStart('applyWorldPause', () => applyWorldPause(bot))
+      // Forge spike measurement (260806): once the world has streamed in, report
+      // how much of it mineflayer could not name. See sampleWorldNames — this is
+      // the whole point of the spike, and it is read-only.
+      if (forgeHandshakeEnabled()) {
+        setTimeout(() => {
+          try { sampleWorldNames(bot, logger) } catch (err) {
+            logger.warn?.(`[sei/forge] world sample failed: ${err && err.message}`)
+          }
+        }, 5000).unref?.()
+      }
       try { onSpawn?.() } catch (err) { logger.warn?.(`[sei/connect] onSpawn hook threw: ${err && err.message}`) }
     } else {
       // respawn after death — restart follow + re-arm the reflex/survival/gaze
@@ -393,6 +458,13 @@ export function createBotInstance({
     try { onError?.(err) } catch {}
   })
 
+  // 260806: mineflayer emits 'kicked' with the server's reason and then 'end'
+  // with a bare 'socketClosed'. onEnd is where every terminal decision is made,
+  // so without holding onto the kick text the ONLY thing that says why we were
+  // ejected is gone by the time anyone can act on it — which is how a NeoForge
+  // rejection came out the other side as "we can't see an open LAN world".
+  let _lastKickReason = null
+
   bot.on('kicked', (reason) => {
     // Log RAW reason text BEFORE humanization. The 'connect' substring match
     // in humanizeReason has previously masked protocol-handshake kicks (e.g.
@@ -400,6 +472,7 @@ export function createBotInstance({
     // "Could not reach server" — burning multiple debug iterations chasing
     // a TCP issue that wasn't there. Always emit the raw text so future-us
     // can tell a real ECONNREFUSED apart from a server-sent kick packet.
+    _lastKickReason = reason
     logger.warn?.(`[sei] Kicked (raw): ${extractReasonText(reason)}`)
     logger.warn?.(`[sei] Kicked: ${humanizeReason(reason)}`)
     if (!_spawned) _clearConnectTimer()
@@ -409,10 +482,20 @@ export function createBotInstance({
     stopFollow()
     stopPosHealer()
     if (!_spawned) _clearConnectTimer()
-    const humanized = humanizeReason(reason)
-    logger.info?.(`[sei] Disconnected (raw): ${extractReasonText(reason)}`)
+    const raw = extractReasonText(reason)
+    // A kick is always followed by 'end' carrying only the transport's view
+    // ('socketClosed'), which says nothing about WHY. Prefer the kick reason we
+    // just saw; keep the end reason when the socket died on its own (no kick).
+    const effective = _lastKickReason != null && /^socketclosed$/i.test(raw.trim())
+      ? _lastKickReason
+      : reason
+    const humanized = humanizeReason(effective)
+    logger.info?.(`[sei] Disconnected (raw): ${raw}`)
     logger.info?.(`[sei] Disconnected: ${humanized}`)
-    try { onEnd?.(humanized) } catch {}
+    // The second argument is the structured half: onEnd's caller decides whether
+    // to retry, and a modded-host rejection must NOT be retried (see
+    // isModdedHostRejection).
+    try { onEnd?.(humanized, { modded: isModdedHostRejection(effective) }) } catch {}
   })
 
   // Expose the chat starter so the brain (which knows the orchestrator) can

@@ -96,10 +96,26 @@ describe('AuthChoiceScreen (B2 embedded sign-in)', () => {
     expect(source.includes('tosChecked')).toBe(true);
   });
 
-  it('Test 8: preserves the verification-pending Check-your-email branch', () => {
+  it('Test 8: preserves the verification-pending branch, now as a code panel', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes('verificationSentTo')).toBe(true);
-    expect(source.includes('Check your email')).toBe(true);
+    expect(source.includes('codeSentTo')).toBe(true);
+    expect(source.includes('Enter your code')).toBe(true);
+  });
+
+  /**
+   * 260804 — ONE panel for signup, unconfirmed sign-in and forgot-password.
+   * Two panels with different copy would tell an attacker which kind of email
+   * an address received, which is exactly the account-existence signal
+   * alreadyRegisteredResult exists to hide (see authHandlers.verifyEmailCode).
+   * Pinned as source text because the leak is a copy decision, not a behaviour
+   * one, and it would come back as an innocent-looking wording tweak.
+   */
+  it('Test 8b: has no separate password-reset panel to distinguish from signup', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes('resetSentTo')).toBe(false);
+    expect(source.includes('password reset link')).toBe(false);
+    // The single panel names neither path.
+    expect(source.includes('verification link')).toBe(false);
   });
 
   it('Test 9: CSS module ships no .scrim class — the form is embedded, not modal', () => {

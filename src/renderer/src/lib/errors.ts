@@ -41,6 +41,12 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // minecraft-protocol.supportedVersions in the bot's error text (surfaced by
   // UnsupportedVersionModal), and a stale hardcode would lie to users.
   UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Summon again.",
+  // 260806: split out of LAN_NOT_OPEN. A Forge/NeoForge world that requires its
+  // mods on the client kicks Sei every time, and the old copy sent the player to
+  // re-open a world that was open and answering pings. Says what is actually
+  // wrong and what actually works, and does NOT say "press Summon again":
+  // retrying is the one thing guaranteed not to help here.
+  MODDED_HOST_REJECTED: 'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.',
   // Skin pipeline + setup-wizard errors. Do NOT rephrase — the UI checker
   // matches these strings byte-for-byte against the spec.
   MOD_DOWNLOAD_FAILED: "Couldn't download CustomSkinLoader. Check your connection and try the setup again.",
@@ -103,6 +109,15 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   }
   if (/unsupported_mc_version|unsupported.*version|version.*not.*support|incompatible.*version/i.test(lower)) {
     return { class: 'UNSUPPORTED_MC_VERSION', copy: t(ERROR_COPY.UNSUPPORTED_MC_VERSION) };
+  }
+  // Before the LAN branch (260806): the modded-host kick text contains "kicked"
+  // and often "connect" ("Please install Forge to connect"), so it would
+  // otherwise be swallowed as LAN_NOT_OPEN — which is exactly the bug this class
+  // exists to fix. Mirrors isModdedHostRejection in the bot's connect.js.
+  if (/modded_host_rejected|\bfml\b|neoforge|\bforge\b|\bquilt\b/i.test(lower) ||
+      (lower.includes('fabric') && (lower.includes('mod') || lower.includes('require'))) ||
+      (/\bmods?\b/i.test(lower) && /\brequires?\b|\binstall(ed)?\b/i.test(lower))) {
+    return { class: 'MODDED_HOST_REJECTED', copy: t(ERROR_COPY.MODDED_HOST_REJECTED) };
   }
   // Word-bounded \blan\b (mirrors main's classifyChildError, 260720): a bare
   // /lan/ matched incidental substrings like "userland" in a node deprecation

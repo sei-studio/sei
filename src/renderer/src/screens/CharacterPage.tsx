@@ -36,6 +36,7 @@ import { EditCharacterModal, type EditSection } from '../components/EditCharacte
 import { SignInModal } from '../components/SignInModal';
 import { IdTag } from '../components/IdTag';
 import { SkinEditor } from '../components/SkinEditor';
+import { AvatarPane } from '../components/avatar/AvatarPane';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
 import { KnowledgeModal } from '../components/KnowledgeModal';
@@ -62,7 +63,7 @@ export interface CharacterPageProps {
   id: string;
 }
 
-type CharacterTab = 'description' | 'game';
+type CharacterTab = 'description' | 'game' | 'avatar';
 
 /**
  * Wireframe shown while a not-yet-cached character downloads (or on the first
@@ -599,9 +600,22 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           >
             {t('Game')}
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'avatar'}
+            className={tab === 'avatar' ? styles.tabActive : styles.tab}
+            onClick={() => setTab('avatar')}
+          >
+            {t('Avatar')}
+          </button>
         </div>
 
-        {tab === 'description' ? (
+        {tab === 'avatar' ? (
+          <div className={styles.pane}>
+            <AvatarPane characterId={character.id} />
+          </div>
+        ) : tab === 'description' ? (
           <div className={styles.pane}>
             {viewOnly ? (
               // Non-editable chars (system-generated uniques, World invites,

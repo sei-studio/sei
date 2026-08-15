@@ -55,6 +55,10 @@ export interface SttStream {
   /** Bounded flush, then the transcript window a tick should carry.
    *  Resolves '' when there is no audio, no speech, or no model yet. */
   tickTranscript(): Promise<string>;
+  /** Echo gate (260807): every segment overlapping [t0, t1], joined. Reads
+   *  what has been chewed so far — no flush, no cap; the gate compares words,
+   *  it does not ship them to a model. */
+  textAround(t0: number, t1: number): string;
   stop(): void;
 }
 
@@ -219,6 +223,14 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
         maybeDispatch(true);
       });
       return windowText(segments, Date.now(), TICK_TRANSCRIPT_MS, TICK_TRANSCRIPT_MAX_CHARS);
+    },
+
+    textAround(t0: number, t1: number): string {
+      return segments
+        .filter((s) => s.t1 >= t0 && s.t0 <= t1)
+        .map((s) => s.text.trim())
+        .filter(Boolean)
+        .join(' ');
     },
 
     stop(): void {

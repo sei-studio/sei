@@ -147,7 +147,7 @@ export async function start(config, hooks = {}) {
           }, 3000)
         }
       },
-      onEnd: (humanizedReason) => {
+      onEnd: (humanizedReason, info) => {
         if (_stopped) return
         // Tear down adapter listeners before discarding the bot reference.
         // Otherwise the OLD bot's listeners only become
@@ -161,6 +161,26 @@ export async function start(config, hooks = {}) {
         _dash = null
         _bot = null
         clearTimeout(_reconnectTimer)
+
+        // MODDED HOST — terminal on the FIRST kick, before either branch below
+        // (260806). A Forge/NeoForge world that requires its mods client-side
+        // rejects a vanilla client every single time, so the reconnect budget
+        // buys nothing: it just spends 15 seconds re-earning the same kick three
+        // times. Worse, both branches below end in LAN_NOT_OPEN, so the user was
+        // told to re-open a world that was open and reachable the whole time
+        // (measured live: five summons, four of them re-opening the world).
+        // Placed above the _readyFired split because the answer is the same
+        // whether we were kicked during the join handshake or after spawning.
+        if (info?.modded) {
+          _stopped = true
+          logger.error(`[sei] Modded world rejected Sei (${humanizedReason}) — not retrying.`)
+          try {
+            onConnectError(new Error(`MODDED_HOST_REJECTED: ${humanizedReason}.`))
+          } catch (cbErr) {
+            logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
+          }
+          return
+        }
 
         // POST-SPAWN drop: the bot was in the world and the socket closed.
         // Historically this was ALWAYS terminal ("the player closed the
@@ -862,14 +882,17 @@ async function bootstrapWithInit(initData) {
           type: 'error',
           // A dropped live session and an exhausted initial-connect retry both
           // arrive tagged "LAN_NOT_OPEN:"; an unsupported world version is
-          // "UNSUPPORTED_MC_VERSION:"; a silent spawn stall (connect.js's
-          // wall-clock guard) is a BOT_START_TIMEOUT. Route to the class whose
-          // ERROR_COPY gives the user the right next step.
+          // "UNSUPPORTED_MC_VERSION:"; a Forge/NeoForge world that turns a
+          // vanilla client away is "MODDED_HOST_REJECTED:"; a silent spawn stall
+          // (connect.js's wall-clock guard) is a BOT_START_TIMEOUT. Route to the
+          // class whose ERROR_COPY gives the user the right next step.
           error: message.startsWith('UNSUPPORTED_MC_VERSION')
             ? 'UNSUPPORTED_MC_VERSION'
-            : message.startsWith('LAN_NOT_OPEN')
-              ? 'LAN_NOT_OPEN'
-              : 'BOT_START_TIMEOUT',
+            : message.startsWith('MODDED_HOST_REJECTED')
+              ? 'MODDED_HOST_REJECTED'
+              : message.startsWith('LAN_NOT_OPEN')
+                ? 'LAN_NOT_OPEN'
+                : 'BOT_START_TIMEOUT',
           message,
         })
         // The bot can't recover on its own (initial connect exhausted, a live

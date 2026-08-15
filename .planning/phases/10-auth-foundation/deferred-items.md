@@ -527,3 +527,43 @@ the discovering plan (per executor scope-boundary rule).
   app works, but verification links won't resolve until the dashboard is
   updated.
 - **Owner:** Anyone with project-owner access to the Supabase dashboard.
+
+---
+
+## 260804 — email verification moved from a link to a 6-digit code
+
+### N+2. MANUAL (BLOCKING): switch the Supabase email templates to `{{ .Token }}`
+
+- **Provenance:** the PIN migration. The client now redeems codes via
+  `supabase.auth.verifyOtp` (`authHandlers.verifyEmailCode`); every panel that
+  used to say "check your inbox for a link" now asks for six digits. **No email
+  template lives in this repo** (there is no `supabase/` directory), so the
+  code side is inert until the dashboard is changed. Until then users are asked
+  for a code that no email contains.
+- **Action required:** Supabase dashboard → Authentication → Email Templates:
+  - **Confirm signup** — replace the `{{ .ConfirmationURL }}` anchor with
+    `{{ .Token }}`.
+  - **Reset password** — same. This one is NOT optional: an address that is
+    already registered is answered with a silent password-reset email
+    (`alreadyRegisteredResult`), and it lands on the identical code panel. If
+    only the signup template carries a code, that panel is unsatisfiable for
+    exactly the addresses that have accounts, which is the account-existence
+    leak the shared panel exists to close.
+  - **Magic Link / Change Email** are not used by this client today; convert
+    them too if either is ever wired up.
+  - Authentication → settings: check the **email OTP expiry** (default 1 hour)
+    and, if the token length is raised above 6, note that `CodeInput` takes a
+    `length` prop and `VerifyEmailCodeSchema` already accepts 4..16.
+- **Do NOT delete the redirect config.** `loopbackCallback.ts` and its
+  Site-URL / Additional-Redirect-URL entries (items 2 and N+1 above) stay: a
+  template that still renders `{{ .ConfirmationURL }}`, a rollback, or an email
+  already sitting in someone's inbox when the template changed must keep
+  working. `sendPasswordReset` still passes `redirectTo` and still marks the
+  recovery flag for that reason.
+- **Verification:** sign up with a fresh address and confirm the email carries
+  digits, not a link; enter them **on a second device's inbox** (the point of
+  the change) and confirm the app signs in. Then sign up AGAIN with that same
+  address and confirm the panel is byte-identical and that the code from the
+  reset email it triggers opens SetNewPasswordModal.
+- **Severity:** Blocking. Ship the dashboard change and the client together.
+- **Owner:** anyone with project-owner access to the Supabase dashboard.

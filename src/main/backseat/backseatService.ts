@@ -36,7 +36,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage } from '../../shared/ipc';
+import type { ChatMessage, SpokenLineContext } from '../../shared/ipc';
 import {
   MIN_SPEAK_GAP_MS,
   PREV_GRID_MAX_AGE_MS,
@@ -51,6 +51,7 @@ import { getCharacter } from '../characterStore';
 import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildSystemBlocks, markMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
+import { isNoteLeak, stripThoughtTags } from '../chat/noteLeak';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
@@ -81,7 +82,14 @@ const CLIP_TIMEOUT_MS = 12_000;
 const BACKSEAT_PROACTIVENESS = 1;
 
 export interface BackseatDeps {
-  pushChatMessage: (characterId: string, message: ChatMessage) => void;
+  /** `speech` (260806): set on a voice-mode reply's per-part pushes — prosody
+   *  context (prev/more) plus the turn tag the audio queue uses to drop a
+   *  superseded turn's unplayed lines (see SpokenLineContext.turn). */
+  pushChatMessage: (
+    characterId: string,
+    message: ChatMessage,
+    speech?: SpokenLineContext,
+  ) => void;
   pushState: (state: BackseatState) => void;
   pushLine: (characterId: string, line: BackseatLine) => void;
   requestClip: (characterId: string, requestId: string) => void;
@@ -106,6 +114,16 @@ interface Session {
    *  calls save_clip on two consecutive ticks about the same play does not
    *  produce two files. Cleared when the companion next stays quiet. */
   clipCooldownUntil: number;
+  /** When the last SCREEN-driven remember() was honored (260808). Live, Haiku
+   *  filed a memory on nearly every jolt turn — 30 entries in 14 minutes, all
+   *  narrating what the screen made the player look like they were doing —
+   *  and each write also churned the cached prefix (memory rides the stable
+   *  region), so cacheRead sat at 0 all session. The tool description already
+   *  asks for person-facts only and is ignored, so the gate is mechanical:
+   *  screen ticks honor at most one remember per REMEMBER_COOLDOWN_MS; a
+   *  remember on a USER tick is always honored (the player just said
+   *  something, which is exactly what memory is for). */
+  lastRememberAt: number;
   /**
    * Index into the chat history where this session's verbatim window starts.
    *
@@ -212,6 +230,7 @@ export async function startBackseat(
     lastSpokeAt: 0,
     clips: new Map(),
     clipCooldownUntil: 0,
+    lastRememberAt: 0,
     historyAnchor: -1,
     prevGrid: null,
     log,
@@ -409,22 +428,39 @@ async function readMemoryTail(characterId: string): Promise<string> {
   }
 }
 
+/** Screen-driven remember() throttle — see Session.lastRememberAt. */
+const REMEMBER_COOLDOWN_MS = 180_000;
+
 /**
  * Continuity, OUT/long-term: remember() writes to the same per-character
  * MEMORY.md that chat, voice, chess and the bot all share. Honored inline
  * because a backseat tick is a single-shot call with no tool loop, and an
  * un-honored tool call is a silently dropped write.
+ *
+ * Throttled (260808) unless `fromUserTick`: a screen tick may land at most
+ * one memory per REMEMBER_COOLDOWN_MS. A memory prompted by something the
+ * PLAYER said is always written — dropping those is how a correction gets
+ * forgotten. The live failure this gates: per-turn screen narration filed as
+ * memory ("he's editing captions frame by frame"), which the next turn then
+ * read back as established fact and re-confirmed — a feedback loop the
+ * player's corrections could not outweigh, at 30 entries in 14 minutes.
  */
 async function honorRemember(
   s: Session,
   content: Anthropic.Messages.ContentBlock[],
+  fromUserTick: boolean,
 ): Promise<void> {
   for (const b of content) {
     if (b.type !== 'tool_use' || b.name !== 'remember') continue;
     const text = String((b.input as { text?: string })?.text ?? '').trim();
     if (!text) continue;
+    if (!fromUserTick && Date.now() - s.lastRememberAt < REMEMBER_COOLDOWN_MS) {
+      slog(s, `remember() throttled ("${text.slice(0, 60)}")`);
+      continue;
+    }
     try {
       await appendMemory(path.join(paths.memoryDir(s.characterId), 'MEMORY.md'), text);
+      s.lastRememberAt = Date.now();
     } catch (err) {
       slog(s, `remember() failed: ${(err as Error).message}`, true);
     }
@@ -591,6 +627,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   const note = tickNote({
     kind: tick.kind,
     joltReason: tick.joltReason,
+    sinceSwitchS: tick.sinceSwitchS,
     secondsSinceLastLine: s.lastSpokeAt ? (Date.now() - s.lastSpokeAt) / 1000 : null,
     sourceName: s.state.sourceName,
     transcript: tick.transcript,
@@ -642,7 +679,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
       `cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
   );
 
-  await honorRemember(s, res.content);
+  await honorRemember(s, res.content, tick.kind === 'user');
 
   // stripDashes because asking did not work: the contract has forbidden em
   // dashes since 260802 and the model still writes them in most lines, and
@@ -693,13 +730,36 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   // turn to compare against. Set only on a turn that produced a line, so the
   // prompt's "what you were looking at when you last spoke" stays true.
   if (tick.gridSmall) s.prevGrid = { data: tick.gridSmall, at: tick.capturedAt };
-  const parts = splitReply(replyText, character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual')
-    .filter((t) => t && !isSilenceFiller(t));
+  // The note-leak gate (260807, see noteLeak.ts): on a remember() turn the
+  // text block can slip into scratchpad register ("character note: ...",
+  // "remember sei's ...") and everything here is spoken verbatim. The tool
+  // call itself was honored above; only the leaked note is dropped.
+  const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
+  const parts: string[] = [];
+  for (const raw of splitReply(replyText, character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual')) {
+    // stripThoughtTags before the empty check: a part that was ONLY the model's
+    // pseudo-XML ("</final_thought>", spoken and captioned live 260807) strips
+    // to nothing and drops here.
+    const t = stripThoughtTags(raw);
+    if (!t || isSilenceFiller(t)) continue;
+    if (isNoteLeak(t, rememberCalled)) {
+      slog(s, `turn ${tick.kind}: note leak dropped ("${t.slice(0, 60)}")`);
+      continue;
+    }
+    parts.push(t);
+  }
   if (!parts.length) return;
   slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
 
   const d = requireDeps();
   const now = Date.now();
+  // One tag per turn (260806). Backseat turns land every 10-20 s while TTS
+  // playback of a multi-part reply can run longer, so a new turn's lines used
+  // to queue behind the old turn's and the spoken commentary drifted further
+  // behind the screen every turn. The tag lets the renderer's audio queue drop
+  // the OLD turn's unplayed parts the moment a NEW turn's first line arrives —
+  // the clip already playing finishes its sentence, then playback jumps to now.
+  const turnTag = randomUUID();
   for (let i = 0; i < parts.length; i++) {
     const msg: ChatMessage = {
       id: randomUUID(),
@@ -713,7 +773,20 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
       ...(clip && i === parts.length - 1 ? { clip } : {}),
     };
     await chatStore.appendMessage(s.characterId, msg);
-    d.pushChatMessage(s.characterId, msg);
+    d.pushChatMessage(
+      s.characterId,
+      msg,
+      // Voice mode also gets the prosody context the streamed chat reply's
+      // per-sentence pushes carry; these parts were synthesized context-free
+      // before, so every clip's intonation reset mid-thought.
+      voiceCall
+        ? {
+            ...(i > 0 ? { prev: parts[i - 1] } : {}),
+            ...(i < parts.length - 1 ? { more: true } : {}),
+            turn: turnTag,
+          }
+        : undefined,
+    );
     // The overlay's mini chat is fed separately: it shows lines in BOTH modes
     // (voice included, where the transcript deliberately hides them) because
     // the overlay is the only thing on screen while a game is fullscreen.

@@ -10,9 +10,31 @@ import { goTo } from './pathfind.js'
 import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 4000 // per-cell, inherited via placeBlockAction
-export const ITERATION_ORDER = 'Y-asc → X-asc → Z-asc (hollow layers: perimeter walk)' // D-07 documented constant
+export const ITERATION_ORDER = 'Y-asc, then nearest-to-builder first within each layer (hollow layers: perimeter walk rotated to start nearest)' // D-07 documented constant
 export const WALK_TIMEOUT_MS = 6000 // walk-closer step per out-of-reach cell (best-effort)
 const REACH = 4.5
+
+/**
+ * 260803. How far the builder may stand HORIZONTALLY from the cell it is about
+ * to place. Deliberately much tighter than REACH, and deliberately only the
+ * horizontal component, because the two axes are not alike for a player:
+ *
+ *   VERTICAL reach is normal. You stand on the ground beside a 5-high wall and
+ *   place the whole column without moving; the 260709 eye-anchored `withinReach`
+ *   exists precisely so the builder does that instead of scaffolding.
+ *
+ *   HORIZONTAL reach at range is NOT. Standing still and laying a run of blocks
+ *   away from your feet is not something a player can do, and it looks like the
+ *   bot cheating. Live symptom: a bridge grew several blocks out over a drop
+ *   while the character never left the spot it started from.
+ *
+ * At 2.5 the builder places about two cells, steps, places two more, which is
+ * what bridging actually looks like: it FOLLOWS the tip of its own build. It
+ * also keeps the body near the work, so a bridge that is heading the wrong way
+ * is obvious to the player standing there rather than something they discover
+ * five blocks later.
+ */
+export const FOLLOW_HORIZ = 2.5
 const JUMP_PLACE_WINDOW_MS = 800 // airborne budget to land the scaffold place
 const LANDING_MAX_MS = 800       // max wait to settle on the new block
 const SCAFFOLD_ATTEMPTS = 4      // re-jumps per layer before giving up
@@ -43,12 +65,67 @@ const FACE_PRIORITY = [
 
 // LLM-facing tool description moved to ../prompts.js → ACTION_DESCRIPTIONS.build.
 
-export function enumerateBuildCells(from, to, hollow) {
+/** Squared horizontal distance from `origin` to a cell's CENTER. Horizontal
+ * only: ordering happens within one Y layer, where the vertical term is a
+ * constant and cannot change the order, and horizontal is what the walk step
+ * below actually has to close. */
+function horizD2(c, origin) {
+  const dx = (c.x + 0.5) - origin.x
+  const dz = (c.z + 0.5) - origin.z
+  return dx * dx + dz * dz
+}
+
+/**
+ * 260803. Reorder ONE layer so the builder starts at the cell nearest itself.
+ *
+ * Y stays ascending (lowest first) — a build wants its own support under it
+ * before the course above. What changed is X/Z: the old order was a min-corner
+ * scan, so `build({from:{z:30}, to:{z:20}})` from z=42 began at z=20, the FAR
+ * side, and the out-of-reach walk below marched the bot 22 blocks across the
+ * terrain to get there. Live (260731) that walked Sui off a basalt ledge into
+ * lava with the player still standing where the bridge was supposed to start.
+ * Nearest-first makes a 1-wide span build OUTWARD FROM YOUR OWN FEET, which is
+ * both what a bridge is and what makes a misaimed span fail cheaply and in
+ * plain sight instead of expensively and 22 blocks away.
+ */
+function orderLayer(layer, hollow, origin) {
+  if (!origin || !Number.isFinite(origin.x) || !Number.isFinite(origin.z) || layer.length < 2) return layer
+  if (hollow) {
+    // The perimeter walk is a CLOSED cycle (its last cell is adjacent to its
+    // first), so ROTATING it to begin at the nearest cell keeps every
+    // consecutive pair adjacent and only moves the seam. A full nearest-first
+    // sort would not: on a ring it alternates between opposite walls at equal
+    // radius, which is exactly the criss-cross the 260709 perimeter walk was
+    // written to remove.
+    let best = 0, bestD = Infinity
+    for (let i = 0; i < layer.length; i++) {
+      const d = horizD2(layer[i], origin)
+      if (d < bestD) { bestD = d; best = i }
+    }
+    return best === 0 ? layer : layer.slice(best).concat(layer.slice(0, best))
+  }
+  // Solid layer: straight nearest-first. Array#sort is stable, so cells at
+  // equal distance keep their scan order.
+  return layer.slice().sort((a, b) => horizD2(a, origin) - horizD2(b, origin))
+}
+
+/**
+ * @param {{x:number,y:number,z:number}} from
+ * @param {{x:number,y:number,z:number}} to
+ * @param {boolean} hollow
+ * @param {{x:number,y:number,z:number}|null} [origin] Builder position, read
+ *   ONCE at call time. Ordering is fixed up front on purpose: re-sorting as the
+ *   bot moves would make the sequence depend on wherever the walk step happened
+ *   to land, which is nondeterministic and untestable. Omit for the raw
+ *   min-corner order.
+ */
+export function enumerateBuildCells(from, to, hollow, origin = null) {
   const minX = Math.min(from.x, to.x), maxX = Math.max(from.x, to.x)
   const minY = Math.min(from.y, to.y), maxY = Math.max(from.y, to.y)
   const minZ = Math.min(from.z, to.z), maxZ = Math.max(from.z, to.z)
   const cells = []
   for (let y = minY; y <= maxY; y++) {
+    const layer = []
     if (hollow) {
       // Perimeter-walk order (260709): emit each layer's wall cells as one
       // trip around the rectangle instead of X→Z scan order. The scan order
@@ -60,7 +137,7 @@ export function enumerateBuildCells(from, to, hollow) {
         const k = `${x},${z}`
         if (seen.has(k)) return
         seen.add(k)
-        cells.push({ x, y, z })
+        layer.push({ x, y, z })
       }
       for (let z = minZ; z <= maxZ; z++) push(minX, z)
       for (let x = minX + 1; x <= maxX; x++) push(x, maxZ)
@@ -69,10 +146,11 @@ export function enumerateBuildCells(from, to, hollow) {
     } else {
       for (let x = minX; x <= maxX; x++) {
         for (let z = minZ; z <= maxZ; z++) {
-          cells.push({ x, y, z })
+          layer.push({ x, y, z })
         }
       }
     }
+    for (const c of orderLayer(layer, hollow, origin)) cells.push(c)
   }
   return cells
 }
@@ -98,6 +176,13 @@ export function pickReferenceFace(bot, c) {
     }
   }
   return null
+}
+
+/** Horizontal (X/Z only) distance from the bot to a cell's center. */
+export function horizToCell(bot, c) {
+  const p = bot.entity?.position
+  if (!p) return 0
+  return Math.hypot(p.x - (c.x + 0.5), p.z - (c.z + 0.5))
 }
 
 export function withinReach(bot, c) {
@@ -245,7 +330,7 @@ export async function buildAction(args, bot, config, deps = {}) {
     return `pillared up ${rose} block${rose === 1 ? '' : 's'} (standing at y=${endY})`
   }
 
-  const cells = enumerateBuildCells(args.from, args.to, args.hollow === true)
+  const cells = enumerateBuildCells(args.from, args.to, args.hollow === true, bot.entity?.position ?? null)
   const total = cells.length
   // Material check (260617): how many cells actually need a block placed (the
   // rest are already solid). If the bot runs out mid-build the end-return says
@@ -277,23 +362,33 @@ export async function buildAction(args, bot, config, deps = {}) {
       continue
     }
 
+    // 260709: WALK before scaffolding. scaffoldUp only pillars straight up at
+    // the bot's current column — it never closes horizontal distance, so a
+    // far-wall cell used to fall through to a placeBlock that burned its 4s
+    // timeout and counted as a silent skip. The live symptom: a 4-wall hollow
+    // build finished as the two walls near the bot's corner (49 placed, 71
+    // skipped) while the far walls were never touched.
+    //
+    // 260803: this step now fires on FOLLOW_HORIZ rather than on total reach,
+    // so the builder keeps up with its own work instead of only moving once a
+    // cell has fallen out of reach entirely. FOLLOW_HORIZ (2.5) is below the
+    // old trigger (REACH - 1 = 3.5), so this strictly subsumes it — every cell
+    // that used to trigger a walk still does.
+    //
+    // Best-effort by design, and the ordering below is what makes that safe: a
+    // failed walk falls through to the SAME reach test as before, so the worst
+    // case is today's behavior (place from range) rather than a stall. That
+    // matters for bridging, where the goal column is thin air until the bridge
+    // reaches it — `range: 2` is load-bearing there, since it lets the goal be
+    // satisfied from the built part a couple of blocks short of the tip.
+    if (horizToCell(bot, c) > FOLLOW_HORIZ) {
+      await walk(bot, c.x, Math.floor(bot.entity?.position?.y ?? c.y), c.z, 2, WALK_TIMEOUT_MS, signal)
+      if (signal?.aborted) return `aborted after ${placed} placed of ${total} cells`
+    }
+
     if (!withinReach(bot, c)) {
-      // 260709: WALK before scaffolding. scaffoldUp only pillars straight up
-      // at the bot's current column — it never closes horizontal distance, so
-      // a far-wall cell used to fall through to a placeBlock that burned its
-      // 4s timeout and counted as a silent skip. The live symptom: a 4-wall
-      // hollow build finished as the two walls near the bot's corner (49
-      // placed, 71 skipped) while the far walls were never touched. Walk to
-      // the cell's column first (best-effort, at the bot's own height so the
-      // goal stays on walkable ground), then scaffold only if it is still
-      // above reach.
-      const p = bot.entity?.position
-      const horiz = p ? Math.hypot(p.x - (c.x + 0.5), p.z - (c.z + 0.5)) : 0
-      if (horiz > REACH - 1) {
-        await walk(bot, c.x, Math.floor(p?.y ?? c.y), c.z, 2, WALK_TIMEOUT_MS, signal)
-        if (signal?.aborted) return `aborted after ${placed} placed of ${total} cells`
-      }
-      if (!withinReach(bot, c) && c.y > (bot.entity?.position?.y ?? c.y)) {
+      // Scaffold only if the cell is still ABOVE us after the walk.
+      if (c.y > (bot.entity?.position?.y ?? c.y)) {
         const r = await scaffoldUp(bot, args.block, c.y, config)
         if (r === 'aborted') return `aborted after ${placed} placed of ${total} cells`
         if (r !== 'ok') return `build halted: ${r} (placed ${placed}/${total})`

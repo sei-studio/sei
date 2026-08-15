@@ -520,7 +520,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
             {captionsOn && (lastSpoken || lastHeard) ? (
               <div className={styles.captions} aria-live="polite">
                 {lastSpoken ? <p className={styles.captionCompanion}>{lastSpoken}</p> : null}
-                {lastHeard ? <p className={styles.captionUser}>You: {lastHeard}</p> : null}
+                {lastHeard ? <p className={styles.captionUser}>{t('You: {text}', { text: lastHeard })}</p> : null}
               </div>
             ) : null}
 

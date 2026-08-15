@@ -389,26 +389,118 @@ export interface VoiceTtsChunkPush {
   error?: string;
 }
 
-/** One circle on the always-on-top call overlay (260706): a companion, or the
- * player themselves (id 'player', 260707 — same treatment as the AIs). */
+/**
+ * The closed emotion vocabulary the avatar system speaks (260804). Import maps
+ * a model's expression files onto these by filename keywords; at speech time
+ * the spoken line is classified into one (or null) and the overlay applies the
+ * mapped expression. Closed on purpose — a model with different expressions
+ * still maps INTO this set, so the classifier never has to know the model.
+ */
+export type AvatarEmotion = 'happy' | 'sad' | 'shy' | 'angry' | 'love' | 'excited' | 'surprised';
+
+/** One expression an imported Live2D model offers (its exp3 display name). */
+export interface AvatarExpressionInfo {
+  /** Expression name as registered in the normalized model3.json. */
+  name: string;
+  /** Relative path of the .exp3.json inside the avatar dir. */
+  file: string;
+}
+
+/** Manifest of a character's imported Live2D avatar model (260804), stored at
+ * `<profileRoot>/avatars/<characterId>/manifest.json` alongside the extracted
+ * model tree. LOCAL-ONLY: never cloud-synced (the bytes cannot follow), so a
+ * character without one simply falls back to the static portrait tile. */
+export interface AvatarManifest {
+  /** Store format version (2 = ASCII-safe stored paths; v1 stores are lazily
+   * re-normalized by main on read). */
+  version: number;
+  /** Display name (derived from the model3.json filename). */
+  name: string;
+  /** Relative path of the (normalized) .model3.json entry file. */
+  entry: string;
+  importedAt: string;
+  /** Total extracted bytes. */
+  bytes: number;
+  expressions: AvatarExpressionInfo[];
+  /** emotion → expression name, auto-mapped at import by filename keywords.
+   * Sparse: an unmapped emotion leaves the model on its neutral face. */
+  emotions: Partial<Record<AvatarEmotion, string>>;
+  /**
+   * Persistent accessory toggles (260806): expression name → on. The
+   * emotion-UNMAPPED expressions are item toggles (hat, phone, coat...);
+   * a true entry keeps that expression's parameter deltas applied every
+   * frame, layered under the emotion expressions. Sparse; absent = off.
+   */
+  accessories?: Record<string, boolean>;
+}
+
+/** One file of a Live2D model bundle, shipped renderer-ward over IPC so the
+ * renderer can build in-memory File objects (no file:// fetches, no custom
+ * protocol, arbitrary original filenames never become URLs). */
+export interface AvatarModelFile {
+  /** Posix-style path relative to the avatar dir (matches model3.json refs). */
+  path: string;
+  bytes: Uint8Array;
+}
+
+/** One tile on the always-on-top avatar overlay (260706 as the call overlay;
+ * 260804 companions only — the player's own tile is gone, the avatar is the
+ * AI's presence, not a mirror). */
 export interface CallOverlayParticipant {
   id: string;
   name: string;
-  /** The character's `portrait_image` ref (or the player's `profile_picture`),
-   * resolved overlay-side via portraitSrc. */
+  /** The character's `portrait_image` ref, resolved overlay-side via
+   * portraitSrc. Fallback when there is no Live2D model (or it fails). */
   portrait: string | null;
-  /** Lit with the speaking ring right now. Per-participant (not a single
-   * speaking id) so the player's ring lights independently of a companion's
-   * TTS, exactly like the tiles on the call screen. */
+  /** Lit with the speaking ring right now (and driving the Live2D mouth). */
   speaking: boolean;
+  /** Tile shape from UserConfig.avatar_prefs (260804). Default 'circle'. */
+  frame?: 'circle' | 'square';
+  /** True disables the talking indicator: no idle dim, no speaking ring. */
+  alwaysBright?: boolean;
+  /** This character has an imported Live2D model; the overlay renders the
+   * live tile (falling back to the portrait until the model is up). */
+  live2d?: boolean;
+  /** Emotion classified from the line currently being spoken (260804), null
+   * when neutral/unknown. The Live2D tile maps it through the manifest's
+   * emotion table; the static tile ignores it. */
+  emotion?: AvatarEmotion | null;
 }
 
-/** State of the always-on-top call overlay window (main window → main → overlay).
- * `enabled` folds together the settings toggle AND an active call: the overlay
- * shows iff enabled and there is at least one participant. */
+/**
+ * Per-character overlay camera (260806): how the character is framed WITHIN
+ * its tile. `zoom` multiplies the contain-fit scale (1 = whole model visible);
+ * `x`/`y` pan the model as fractions of the tile edge (0 = centered). Written
+ * by MAIN into UserConfig.avatar_overlay.cameras (edit-mode wheel/drag in the
+ * overlay window streams it up); enriched into the forwarded state.
+ */
+export interface AvatarCamera {
+  zoom: number;
+  x: number;
+  y: number;
+}
+
+/** State of the always-on-top avatar overlay window (main window → main →
+ * overlay + caption windows). `enabled` folds together the avatar mode AND
+ * the mode's activity condition: the overlay shows iff enabled and there is
+ * at least one participant. `cameras` and `captionsOn` are enriched by MAIN
+ * from config before forwarding — the main-window pusher never sends them. */
 export interface CallOverlayState {
   enabled: boolean;
   participants: CallOverlayParticipant[];
+  /** A voice call is live/connecting or a backseat share is running — the
+   * overlay shows its mute + captions buttons only then. */
+  onCall?: boolean;
+  /** Mic mute (useUiStore.callMuted), mirrored so the overlay button lights. */
+  muted?: boolean;
+  /** The companion line currently/last audibly spoken (caption content). */
+  lastSpoken?: string | null;
+  /** Which companion said `lastSpoken`. */
+  lastSpokenId?: string | null;
+  /** MAIN-enriched: per-character tile cameras from config. */
+  cameras?: Record<string, AvatarCamera>;
+  /** MAIN-enriched: the caption overlay window is enabled. */
+  captionsOn?: boolean;
 }
 
 /**
@@ -423,6 +515,17 @@ export interface SpokenLineContext {
   prev?: string;
   /** Another line of this same reply is known to follow this one. */
   more?: boolean;
+  /**
+   * Which turn this line belongs to (260806). When a line with a NEW tag
+   * reaches the audio queue while lines with an OLD tag from the same speaker
+   * are still queued, the old ones are dropped: the clip already playing
+   * finishes (that is the "let the current sentence end" boundary — parts are
+   * sentence-sized), then playback jumps to the new turn. Backseat sets it,
+   * because its turns outpace TTS playback and the spoken commentary used to
+   * drift a full turn behind the screen. Never sent to TTS (renderer strips
+   * it before the synthesis call); untagged lines are never dropped.
+   */
+  turn?: string;
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
@@ -747,8 +850,18 @@ export type AuthState =
   | { kind: 'local' }
   | { kind: 'signed_in'; user: AuthUser };
 
+/**
+ * `needsVerification` (260804, PIN migration): Supabase refused the sign-in with
+ * `email_not_confirmed`. Per D-04 this is NOT an error — the account exists and
+ * the password was right — so it stays on the `ok: true` side. But under the
+ * old link flow it was a silent dead end: main returned a bare `{ ok: true }`,
+ * no session was issued, and the renderer sat on the form waiting for an
+ * auth-state push that could only ever come from clicking the emailed link.
+ * With codes there is somewhere to send the user, so main re-sends a code and
+ * the renderer opens the verification panel on the typed address.
+ */
 export type SignInResult =
-  | { ok: true }
+  | { ok: true; needsVerification?: boolean }
   | { ok: false; code: 'invalid_credentials' | 'invalid_email' | 'network' | 'rate_limited'; message: string };
 
 export type SignUpResult =
@@ -794,6 +907,31 @@ export type ExportDataResult =
 export type ResendVerificationResult =
   | { ok: true }
   | { ok: false; code: 'rate_limited' | 'network'; message: string };
+
+/**
+ * Result of redeeming a 6-digit email code (260804).
+ *
+ * ONE result type covers both kinds of code, because the surface that asks for
+ * one cannot know which kind is in the user's inbox. A brand-new signup gets a
+ * `signup` code; an address that is ALREADY registered gets a `recovery` code
+ * (the silent forgot-password treatment in authHandlers.alreadyRegisteredResult),
+ * and the panel shown for the two is deliberately identical — telling them apart
+ * in the UI is exactly the account-enumeration leak T-10-04 closed. Main tries
+ * both token types and reports which one landed.
+ *
+ * `recovery: true` means the redeemed code was a recovery token, so the user now
+ * holds a recovery session and must choose a new password. Main pushes
+ * `auth:password-recovery` for this case as well, so the flag is advisory: the
+ * renderer can skip its own "signed in!" chrome, but SetNewPasswordModal is
+ * raised by App.tsx's existing subscriber either way.
+ *
+ * `invalid_code` merges wrong-code and expired-code on purpose: Supabase returns
+ * one message ("Token has expired or is invalid") for both, and splitting them
+ * would require guessing.
+ */
+export type VerifyEmailCodeResult =
+  | { ok: true; recovery: boolean }
+  | { ok: false; code: 'invalid_code' | 'rate_limited' | 'network'; message: string };
 
 /**
  * Password-reset request result. Neutral by design (T-10-04 enumeration
@@ -1300,6 +1438,109 @@ export interface RendererApi {
    */
   voiceOverlayGetState(): Promise<CallOverlayState | null>;
   /**
+   * Import a Live2D model zip for a character (260804). Main extracts,
+   * validates, normalizes (expression registration + EyeBlink group) and
+   * stores it under the profile's avatars dir; returns the manifest.
+   */
+  avatarImport(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarManifest>;
+  /** The character's imported avatar manifest, or null. */
+  avatarGet(characterId: string): Promise<AvatarManifest | null>;
+  /** Delete the character's imported Live2D model. */
+  avatarRemove(characterId: string): Promise<void>;
+  /** The model bundle files, for building in-memory File objects. */
+  avatarModelFiles(characterId: string): Promise<AvatarModelFile[]>;
+  /** Flip a persistent accessory expression toggle (260806). Returns the
+   * updated manifest (also broadcast on onAvatarManifest), or null when the
+   * character has no imported model. */
+  avatarSetAccessory(
+    characterId: string,
+    name: string,
+    on: boolean,
+  ): Promise<AvatarManifest | null>;
+  /** Subscribe to avatar manifest changes (any window). Live Live2D views use
+   * it to re-apply accessory toggles without reloading the model. */
+  onAvatarManifest(
+    cb: (update: { characterId: string; manifest: AvatarManifest | null }) => void,
+  ): Unsubscribe;
+  /** Mouth-level sample for the audible companion (main window → overlay). */
+  avatarOverlayLevel(characterId: string, level: number): Promise<void>;
+  /** Subscribe (overlay window only) to relayed mouth-level samples. */
+  onAvatarOverlayLevel(cb: (sample: { id: string; level: number }) => void): Unsubscribe;
+  /** Overlay window only: pointer entered/left overlay chrome — make the
+   * window clickable / restore click-through. */
+  avatarOverlayInteractive(interactive: boolean): Promise<void>;
+  /**
+   * Overlay window only: WINDOW resize. Streams the desired tile HEIGHT
+   * (`size`) and WIDTH (`width` — free-form since 260807, absent keeps the
+   * current width) while dragging a corner handle (anchor = the corner that
+   * stays fixed; 'center' kept for programmatic use); `commit` persists the
+   * final geometry. The wheel does NOT come here anymore — it zooms the
+   * character within the tile (avatarOverlayCamera, 260806).
+   */
+  avatarOverlayResize(args: {
+    size: number;
+    width?: number;
+    anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center';
+    commit?: boolean;
+  }): Promise<void>;
+  /** Overlay window only: hold-to-drag WINDOW move stream (screen-space
+   * deltas from the pointer-down; mirrors avatarCaptionMove). Available in
+   * view mode too since 260806 — the drag button is ordinary chrome, not an
+   * app-region (an app-region swallows pointer events, which broke the
+   * per-region interactivity tracking). */
+  avatarOverlayMove(args: {
+    phase: 'start' | 'move' | 'end';
+    dx?: number;
+    dy?: number;
+  }): Promise<void>;
+  /** Overlay window only: subscribe to the polled cursor position, normalized
+   * to [-1, 1] around the overlay window's center (x right, y UP — the
+   * focusController's frame). Main polls only while a Live2D tile shows; the
+   * gaze cursor-follow mode treats a stale feed as "wander instead". */
+  onAvatarOverlayCursor(cb: (pt: { x: number; y: number }) => void): Unsubscribe;
+  /**
+   * Overlay window only (260806): stream a character's tile camera (zoom +
+   * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
+   * persists it to config (avatar_overlay.cameras, main-owned).
+   */
+  avatarOverlayCamera(args: {
+    id: string;
+    zoom: number;
+    x: number;
+    y: number;
+    commit?: boolean;
+  }): Promise<void>;
+  /** Overlay window only: edit mode entered/left (forwarded to the caption
+   * window so its edit chrome follows the avatar's pencil). */
+  avatarOverlayEditing(editing: boolean): Promise<void>;
+  /** Overlay window only: the mute button — main relays to the main window,
+   * which flips useUiStore.callMuted (the mic's single source of truth). */
+  avatarOverlayMuteToggle(): Promise<void>;
+  /** Main window: subscribe to overlay mute presses relayed by main. */
+  onAvatarMuteRequest(cb: () => void): Unsubscribe;
+  /** Overlay window only: toggle the caption overlay window → new enabled. */
+  avatarOverlayCaptionsToggle(): Promise<boolean>;
+  /** Caption window only: corner-resize stream/commit (anchor = the corner
+   * that stays fixed, mirroring avatarOverlayResize). */
+  avatarCaptionResize(args: {
+    width: number;
+    height: number;
+    anchor: 'tl' | 'tr' | 'bl' | 'br';
+    commit?: boolean;
+  }): Promise<void>;
+  /** Caption window only: edit-mode drag-anywhere move stream. */
+  avatarCaptionMove(args: {
+    phase: 'start' | 'move' | 'end';
+    dx?: number;
+    dy?: number;
+  }): Promise<void>;
+  /** Caption window only: bump the fixed caption font size → the new px. */
+  avatarCaptionFont(delta: 1 | -1): Promise<number>;
+  /** Caption window only: subscribe to the avatar overlay's edit-mode flag. */
+  onAvatarCaptionEditState(cb: (editing: boolean) => void): Unsubscribe;
+  /** Caption window only: initial {editing, fontSize} pull on mount. */
+  avatarCaptionGet(): Promise<{ editing: boolean; fontSize: number }>;
+  /**
    * Signal that the chat surface was opened for a character. Main decides whether
    * a first-meeting greeting fires (any companion kind, empty transcript, never
    * chatted) and returns any greeting replies to append; returns [] otherwise.
@@ -1682,10 +1923,17 @@ export interface RendererApi {
    */
   resendVerification(args?: { email?: string }): Promise<ResendVerificationResult>;
   /**
+   * Redeem the 6-digit code from a Sei email (260804). Accepts BOTH the signup
+   * confirmation code and the password-recovery code, because the panel that
+   * collects one cannot tell which is in the inbox without leaking whether the
+   * address is registered. See VerifyEmailCodeResult.
+   */
+  verifyEmailCode(args: { email: string; code: string }): Promise<VerifyEmailCodeResult>;
+  /**
    * Send a password-reset email. Neutral success (anti-enumeration): returns
-   * { ok:true } whether or not the address is registered. The email links to the
-   * fixed-port loopback callback (the same server email verification uses), so
-   * clicking it lands a recovery session and main pushes onPasswordRecovery.
+   * { ok:true } whether or not the address is registered. The email carries a
+   * 6-digit recovery code, redeemed in-app via verifyEmailCode — no link, so the
+   * inbox can be opened on any device.
    */
   sendPasswordReset(args: { email: string }): Promise<PasswordResetResult>;
   /**
@@ -2059,6 +2307,24 @@ export interface RendererApi {
    * "ask only the missing questions" and full retakes share one channel.
    */
   prefsSave(patch: UserPreferencesPatch): Promise<void>;
+
+  /* ── Phantom-call recovery (260810) ──────────────────────────────────── */
+  /**
+   * Scan the active profile's transcripts for phantom-call sessions (a voice
+   * call left running while other audio fed the mic). Read-only, local, and
+   * shape-only: candidates carry counts and windows, never message text.
+   * Already-dismissed windows are filtered out in main.
+   */
+  recoveryScan(): Promise<RecoveryCandidate[]>;
+  /**
+   * Quarantine the given windows for one character: full memory-dir backup +
+   * quarantine sidecars first, then atomic rewrites of chat.jsonl/MEMORY.md
+   * and a bridge.json reset (rebuilt from the cleaned transcript on the next
+   * fold). Nothing is ever deleted outright.
+   */
+  recoveryRepair(characterId: string, windows: RecoveryWindow[]): Promise<RecoveryRepairResult>;
+  /** Persist "don't ask again" for session keys (`characterId:startTs`). */
+  recoveryDismiss(keys: string[]): Promise<void>;
 }
 
 /** Payload pushed by main when the active profile scope switches. */
@@ -2162,6 +2428,40 @@ export interface NoticesSnapshot {
   readIds: string[];
   /** True while at least one notice has never triggered its one auto-open. */
   autoOpen: boolean;
+}
+
+/* ── Phantom-call recovery (260810) ─────────────────────────────────────── */
+
+/** One transcript time window selected for repair (a flagged session's span). */
+export interface RecoveryWindow {
+  /** Epoch ms of the session's first voice row. */
+  start: number;
+  /** Epoch ms of the session's last voice row. */
+  end: number;
+}
+
+/**
+ * One flagged phantom-call session from recovery:scan. SHAPE ONLY by
+ * contract: counts, cadence and the window, never message text.
+ */
+export interface RecoveryCandidate {
+  characterId: string;
+  /** Display name for the session list row; falls back in main. */
+  characterName: string;
+  startTs: number;
+  endTs: number;
+  /** How many "user" voice rows the session holds (the cadence numerator). */
+  userRows: number;
+  /** Total voice rows in the session (what a repair would quarantine). */
+  totalRows: number;
+  /** Median gap between consecutive user rows, seconds (rounded to 0.1). */
+  medianGapS: number;
+}
+
+/** What one recovery:repair call removed (all of it quarantined, none deleted). */
+export interface RecoveryRepairResult {
+  rowsQuarantined: number;
+  memoryLinesRemoved: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2435,6 +2735,63 @@ export const IpcChannel = {
     /** Invoke: is a BYOK ElevenLabs key stored? → {present} (260725). */
     elevenKeyStatus: 'voice:eleven-key-status',
   },
+  avatar: {
+    /** Invoke: import a Live2D model zip for a character → AvatarManifest. */
+    import: 'avatar:import',
+    /** Invoke: the character's avatar manifest → AvatarManifest | null. */
+    get: 'avatar:get',
+    /** Invoke: delete the character's imported Live2D model. */
+    remove: 'avatar:remove',
+    /** Invoke: the model bundle files for in-memory loading → AvatarModelFile[]. */
+    modelFiles: 'avatar:model-files',
+    /** Invoke: flip an accessory expression toggle ({characterId, name, on})
+     * → the updated AvatarManifest (260806). */
+    setAccessory: 'avatar:set-accessory',
+    /** Push (main → every window): a character's avatar manifest changed
+     * ({characterId, manifest}) — live Live2D views re-apply accessories. */
+    manifestState: 'avatar:manifest-state',
+    /** Invoke (main window → main): mouth-level sample for the speaking
+     * companion ({id, level 0..1}), relayed to the overlay window. */
+    overlayLevel: 'avatar:overlay-level',
+    /** Push (main → overlay window): the relayed {id, level} samples. */
+    overlayLevelState: 'avatar:overlay-level-state',
+    /** Invoke (overlay window → main): pointer is over overlay chrome — stop
+     * ignoring mouse events (and back). */
+    overlayInteractive: 'avatar:overlay-interactive',
+    /** Invoke (overlay window → main): corner-resize stream/commit
+     * ({size, anchor, commit?}). */
+    overlayResize: 'avatar:overlay-resize',
+    /** Invoke (overlay window → main): hold-to-drag window move stream
+     * ({phase, dx?, dy?}). */
+    overlayMove: 'avatar:overlay-move',
+    /** Push (main → overlay window): polled cursor position normalized to
+     * [-1, 1] around the window center, for gaze cursor-follow. */
+    overlayCursorState: 'avatar:overlay-cursor-state',
+    /** Invoke (overlay window → main): per-character camera (character zoom +
+     * pan WITHIN the tile) stream/commit ({id, zoom, x, y, commit?}). */
+    overlayCamera: 'avatar:overlay-camera',
+    /** Invoke (overlay window → main): edit mode entered/left — forwarded to
+     * the caption window so its edit chrome tracks the avatar's pencil. */
+    overlayEditing: 'avatar:overlay-editing',
+    /** Invoke (overlay window → main): the overlay mute button was pressed. */
+    overlayMute: 'avatar:overlay-mute',
+    /** Push (main → main window): relay of the overlay mute press; the main
+     * window flips useUiStore.callMuted (the mic's single source of truth). */
+    muteRequest: 'avatar:mute-request',
+    /** Invoke (overlay window → main): toggle the caption overlay → enabled. */
+    overlayCaptions: 'avatar:overlay-captions',
+    /** Invoke (caption window → main): corner-resize stream/commit
+     * ({width, height, anchor, commit?}). */
+    captionResize: 'avatar:caption-resize',
+    /** Invoke (caption window → main): drag-anywhere move stream. */
+    captionMove: 'avatar:caption-move',
+    /** Invoke (caption window → main): bump the caption font size → new px. */
+    captionFont: 'avatar:caption-font',
+    /** Push (main → caption window): the avatar overlay's edit-mode flag. */
+    captionEditState: 'avatar:caption-edit-state',
+    /** Invoke (caption window → main): initial {editing, fontSize} pull. */
+    captionGet: 'avatar:caption-get',
+  },
   user: {
     getProfile: 'user:get-profile',
     applyProfilePicture: 'user:apply-profile-picture',
@@ -2532,6 +2889,10 @@ export const IpcChannel = {
     deleteAccount: 'auth:delete-account',
     exportData: 'auth:export-data',
     resendVerification: 'auth:resend-verification',
+    // 260804 — redeem a 6-digit email code (signup confirmation OR password
+    // recovery; main tries both). Replaced the emailed-link round trip so the
+    // inbox can be opened on a different device from the app.
+    verifyEmailCode: 'auth:verify-email-code',
     sendPasswordReset: 'auth:send-password-reset',
     updatePassword: 'auth:update-password',
     passwordRecovery: 'auth:password-recovery',
@@ -2645,6 +3006,13 @@ export const IpcChannel = {
   feedback: {
     submit: 'feedback:submit',
     report: 'feedback:report',
+  },
+  // 260810 — in-app phantom-call recovery (see RecoveryCandidate above and
+  // src/main/recovery/). scan is read-only; repair quarantines, never deletes.
+  recovery: {
+    scan: 'recovery:scan',
+    repair: 'recovery:repair',
+    dismiss: 'recovery:dismiss',
   },
 } as const;
 

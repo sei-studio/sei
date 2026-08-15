@@ -47,6 +47,7 @@ import {
   updateKnowledgeEntry,
 } from './knowledge/knowledgeStore';
 import { extractKnowledgeText, KNOWLEDGE_ENTRY_MAX_BYTES } from './knowledge/extractText';
+import { scanRecovery, repairRecovery, dismissRecovery } from './recovery/recoveryService';
 import { libraryCharacterCount } from './uniqueGeneration';
 import { paths } from './paths';
 import {
@@ -252,6 +253,18 @@ const SignInPasswordSchema = z.object({
 });
 const SendPasswordResetSchema = z.object({
   email: z.string().email(),
+});
+/**
+ * 260804 — 6-digit email code redemption. Length is a RANGE, not 6: Supabase's
+ * token length is a dashboard setting (6-10 digits) that can be raised without
+ * a client release, and the renderer strips separators before sending, so
+ * pinning 6 here would turn a config change into a validation failure. The
+ * lower bound just rejects an empty submit; main normalizes and Supabase is the
+ * authority on whether the token is real.
+ */
+const VerifyEmailCodeSchema = z.object({
+  email: z.string().email(),
+  code: z.string().min(4).max(16),
 });
 // Mirrors the signup password floor (8 chars) so a reset can't set a password
 // weaker than signup would allow. Supabase enforces its own minimum too.
@@ -1003,6 +1016,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch (err) {
       console.warn(`[sei] removeFromLibrary knowledge dir ${id}: ${(err as Error).message}`);
     }
+    try {
+      await rm(paths.avatarsDir(id), { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[sei] removeFromLibrary avatar dir ${id}: ${(err as Error).message}`);
+    }
     // Drop from the character index so chars.list doesn't re-surface it.
     try {
       const { readFile, writeFile, mkdir } = await import('node:fs/promises');
@@ -1079,6 +1097,37 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.knowledge.compact, async (_event, idArg: unknown) => {
     return compactKnowledge(KnowledgeCharId.parse(idArg));
+  });
+
+  // ── 260810 Phantom-call recovery ──────────────────────────────────────────
+  // scan is read-only + shape-only; repair quarantines (backup + sidecars
+  // before any original is touched, see recovery/recoveryService.ts). The
+  // characterId becomes a path component under paths.memoryDir, so it is
+  // format-gated here (memory dirs are UUIDs post-11-03, legacy slugs before;
+  // both fit the charset, and neither can carry a separator or dot).
+  const RecoveryCharId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
+  ipcMain.handle(IpcChannel.recovery.scan, async () => scanRecovery());
+  ipcMain.handle(
+    IpcChannel.recovery.repair,
+    async (_event, idArg: unknown, windowsRaw: unknown) => {
+      const id = RecoveryCharId.parse(idArg);
+      const windows = z
+        .array(z.object({ start: z.number().finite(), end: z.number().finite() }))
+        .min(1)
+        .max(50)
+        .parse(windowsRaw);
+      // Refuse while the bot holds this character's memory dir at runtime —
+      // same guard as chars:reset-memory. (Voice/backseat sessions are ended
+      // renderer-side before the modal offers a repair.)
+      if (deps.supervisor.isActive(id)) {
+        throw new Error('Cannot clean up while the character is summoned. Stop first.');
+      }
+      return repairRecovery(id, windows);
+    },
+  );
+  ipcMain.handle(IpcChannel.recovery.dismiss, async (_event, keysRaw: unknown) => {
+    const keys = z.array(z.string().min(1).max(120)).max(500).parse(keysRaw);
+    await dismissRecovery(keys);
   });
 
   // Phase 11 D-28 — portrait pipeline. Renderer canvas-resizes + re-encodes
@@ -1437,7 +1486,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         capturedAt: z.number(),
         frameAges: z.array(z.number()).max(16).default([]),
         text: z.string().max(4000).optional(),
-        joltReason: z.enum(['gain', 'color']).optional(),
+        joltReason: z.enum(['gain', 'color', 'switch']).optional(),
+        sinceSwitchS: z.number().min(0).max(3600).optional(),
         transcript: z.string().max(4000).optional(),
         shareLabel: z.string().max(200).optional(),
       })
@@ -1748,9 +1798,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // Always-on-top call overlay (260706): the main window pushes the overlay's
-  // desired state; main reconciles the overlay window (spawn/position/close) and
-  // forwards the state to it. Trusted, small payload from our own renderer.
+  // Always-on-top avatar overlay (260706 as the call overlay; 260804 avatar
+  // rework): the main window pushes the overlay's desired state; main
+  // reconciles the overlay window (spawn/position/close) and forwards the
+  // state to it. Trusted, small payload from our own renderer. REMEMBER: zod
+  // strips undeclared keys, so every field the overlay renders must be named
+  // here (the backseat gridSmall lesson).
   ipcMain.handle(IpcChannel.voice.overlaySet, async (_event, stateRaw: unknown): Promise<void> => {
     const state = z
       .object({
@@ -1762,9 +1815,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
               name: z.string(),
               portrait: z.string().nullable(),
               speaking: z.boolean(),
+              frame: z.enum(['circle', 'square']).optional(),
+              alwaysBright: z.boolean().optional(),
+              live2d: z.boolean().optional(),
+              emotion: z
+                .enum(['happy', 'sad', 'shy', 'angry', 'love', 'excited', 'surprised'])
+                .nullable()
+                .optional(),
             }),
           )
           .max(12),
+        // 260806: call surface flags + the caption line. onCall gates the
+        // overlay's mute/captions buttons; lastSpoken feeds the caption box.
+        onCall: z.boolean().optional(),
+        muted: z.boolean().optional(),
+        lastSpoken: z.string().max(4000).nullable().optional(),
+        lastSpokenId: z.string().max(64).nullable().optional(),
       })
       .parse(stateRaw);
     const { updateCallOverlay } = await import('./callOverlay');
@@ -1776,6 +1842,188 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.voice.overlayGet, async () => {
     const { getCallOverlayState } = await import('./callOverlay');
     return getCallOverlayState();
+  });
+
+  // ── Live2D avatar store + overlay window controls (260804) ─────────────
+
+  ipcMain.handle(IpcChannel.avatar.import, async (_event, idArg: unknown, zipArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    if (!(zipArg instanceof ArrayBuffer) && !ArrayBuffer.isView(zipArg)) {
+      throw new Error('avatar import expects zip bytes');
+    }
+    const bytes = zipArg instanceof ArrayBuffer ? Buffer.from(zipArg) : Buffer.from(zipArg.buffer, zipArg.byteOffset, zipArg.byteLength);
+    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
+    if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
+    return importAvatarZip(id, bytes);
+  });
+
+  ipcMain.handle(IpcChannel.avatar.get, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getAvatarManifest } = await import('./avatar/avatarStore');
+    return getAvatarManifest(id);
+  });
+
+  ipcMain.handle(IpcChannel.avatar.remove, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { removeAvatar } = await import('./avatar/avatarStore');
+    await removeAvatar(id);
+  });
+
+  ipcMain.handle(IpcChannel.avatar.modelFiles, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { readAvatarModelFiles } = await import('./avatar/avatarStore');
+    return readAvatarModelFiles(id);
+  });
+
+  // Persistent accessory toggle (260806): update the stored manifest, then
+  // broadcast it to EVERY window — the profile preview and an already-open
+  // overlay tile both re-apply the toggles live without reloading the model.
+  ipcMain.handle(IpcChannel.avatar.setAccessory, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, name: z.string().min(1).max(256), on: z.boolean() })
+      .parse(argsRaw);
+    const { setAvatarAccessory } = await import('./avatar/avatarStore');
+    const manifest = await setAvatarAccessory(args.characterId, args.name, args.on);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IpcChannel.avatar.manifestState, {
+          characterId: args.characterId,
+          manifest,
+        });
+      }
+    }
+    return manifest;
+  });
+
+  // Mouth-level relay (main window → overlay window). ~25 Hz while a Live2D
+  // participant is audible; deliberately NOT persisted or validated beyond
+  // shape (it is a per-frame animation sample from our own renderer).
+  ipcMain.handle(IpcChannel.avatar.overlayLevel, async (_event, argsRaw: unknown) => {
+    const args = z.object({ id: z.string().max(64), level: z.number().min(0).max(1) }).parse(argsRaw);
+    const { forwardOverlayLevel } = await import('./callOverlay');
+    forwardOverlayLevel(args.id, args.level);
+  });
+
+  // Overlay window chrome hover: flip the window between click-through and
+  // interactive (drag button + corner resize handles need real clicks).
+  ipcMain.handle(IpcChannel.avatar.overlayInteractive, async (_event, onRaw: unknown) => {
+    const on = z.boolean().parse(onRaw);
+    const { setOverlayInteractive } = await import('./callOverlay');
+    setOverlayInteractive(on);
+  });
+
+  // Resize stream from the overlay renderer ({size, width?, anchor,
+  // commit?}) — corner drags anchor the opposite corner and stream BOTH tile
+  // axes (free-form since 260807); 'center' is kept for programmatic use.
+  ipcMain.handle(IpcChannel.avatar.overlayResize, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        size: z.number().min(48).max(1024),
+        width: z.number().min(48).max(1024).optional(),
+        anchor: z.enum(['tl', 'tr', 'bl', 'br', 'center']),
+        commit: z.boolean().optional(),
+      })
+      .parse(argsRaw);
+    const { resizeOverlay } = await import('./callOverlay');
+    await resizeOverlay(args.size, args.anchor, args.commit === true, args.width);
+  });
+
+  // Hold-to-drag window move stream from the overlay renderer ({phase, dx,
+  // dy}), mirroring captionMove — the drag button is ordinary chrome now, not
+  // an app-region (available in view mode too).
+  ipcMain.handle(IpcChannel.avatar.overlayMove, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        phase: z.enum(['start', 'move', 'end']),
+        dx: z.number().finite().optional(),
+        dy: z.number().finite().optional(),
+      })
+      .parse(argsRaw);
+    const { moveAvatarOverlay } = await import('./callOverlay');
+    moveAvatarOverlay(args.phase, args.dx ?? 0, args.dy ?? 0);
+  });
+
+  // Per-character tile camera stream (260806): edit-mode wheel/drag over a
+  // Live2D tile — zoom + pan the character WITHIN the tile.
+  ipcMain.handle(IpcChannel.avatar.overlayCamera, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        id: z.string().max(64),
+        zoom: z.number().min(0.5).max(8),
+        x: z.number().min(-1.5).max(1.5),
+        y: z.number().min(-1.5).max(1.5),
+        commit: z.boolean().optional(),
+      })
+      .parse(argsRaw);
+    const { setOverlayCamera } = await import('./callOverlay');
+    setOverlayCamera(args.id, { zoom: args.zoom, x: args.x, y: args.y }, args.commit === true);
+  });
+
+  // The avatar overlay's pencil toggled edit mode — the caption window's edit
+  // chrome (and interactivity) follows it.
+  ipcMain.handle(IpcChannel.avatar.overlayEditing, async (_event, onRaw: unknown) => {
+    const on = z.boolean().parse(onRaw);
+    const { setCaptionEditing } = await import('./captionOverlay');
+    setCaptionEditing(on);
+  });
+
+  // Overlay mute button → relay to the main window, which owns the mic state
+  // (useUiStore.callMuted; the overlay's icon updates via the state re-push).
+  ipcMain.handle(IpcChannel.avatar.overlayMute, async () => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send(IpcChannel.avatar.muteRequest);
+    }
+  });
+
+  // Overlay captions button → toggle the caption window, then re-push the
+  // enriched state so the button lights correctly.
+  ipcMain.handle(IpcChannel.avatar.overlayCaptions, async (): Promise<boolean> => {
+    const { toggleCaptionOverlay } = await import('./captionOverlay');
+    const enabled = await toggleCaptionOverlay();
+    const { repushOverlayState } = await import('./callOverlay');
+    repushOverlayState();
+    return enabled;
+  });
+
+  // Caption window: corner-resize stream/commit (mirrors overlayResize).
+  ipcMain.handle(IpcChannel.avatar.captionResize, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        width: z.number().min(160).max(1600),
+        height: z.number().min(60).max(800),
+        anchor: z.enum(['tl', 'tr', 'bl', 'br']),
+        commit: z.boolean().optional(),
+      })
+      .parse(argsRaw);
+    const { resizeCaptionOverlay } = await import('./captionOverlay');
+    resizeCaptionOverlay(args.width, args.height, args.anchor, args.commit === true);
+  });
+
+  // Caption window: edit-mode drag-anywhere move stream.
+  ipcMain.handle(IpcChannel.avatar.captionMove, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        phase: z.enum(['start', 'move', 'end']),
+        dx: z.number().finite().optional(),
+        dy: z.number().finite().optional(),
+      })
+      .parse(argsRaw);
+    const { moveCaptionOverlay } = await import('./captionOverlay');
+    moveCaptionOverlay(args.phase, args.dx ?? 0, args.dy ?? 0);
+  });
+
+  // Caption window: fixed-font-size bump → the new px.
+  ipcMain.handle(IpcChannel.avatar.captionFont, async (_event, deltaRaw: unknown) => {
+    const delta = z.union([z.literal(1), z.literal(-1)]).parse(deltaRaw);
+    const { bumpCaptionFont } = await import('./captionOverlay');
+    return bumpCaptionFont(delta);
+  });
+
+  // Caption window: initial {editing, fontSize} pull on mount.
+  ipcMain.handle(IpcChannel.avatar.captionGet, async () => {
+    const { hydrateCaptionConfig, getCaptionInfo } = await import('./captionOverlay');
+    await hydrateCaptionConfig();
+    return getCaptionInfo();
   });
 
   // Voice picker (creation flow, 260705): the curated pool + per-voice preview.
@@ -2235,6 +2483,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const { setUiLanguage } = await import('./analytics');
       setUiLanguage(cfg.ui_language);
     }
+    // Content protection is a main-owned window flag, so a saved change has to
+    // be pushed onto the live overlay windows or it only takes effect the next
+    // time they are created. Both windows follow the one setting.
+    if ('avatar_in_captures' in (cfgArg as Record<string, unknown>)) {
+      const { setAvatarCaptureVisible } = await import('./callOverlay');
+      setAvatarCaptureVisible(cfg.avatar_in_captures === true);
+    }
     // Item 7: mirror the user's preferred name into the public profiles table
     // so Browse shows "by <name>" on their published characters. Fire-and-forget
     // (don't add a network round-trip to every config save, e.g. theme toggles)
@@ -2502,6 +2757,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         : undefined;
     const { resendVerification } = await import('./auth/authHandlers');
     return await resendVerification(email);
+  });
+  ipcMain.handle(IpcChannel.auth.verifyEmailCode, async (_e, argsRaw: unknown) => {
+    const args = VerifyEmailCodeSchema.parse(argsRaw);
+    const { verifyEmailCode } = await import('./auth/authHandlers');
+    return await verifyEmailCode(args);
   });
   ipcMain.handle(IpcChannel.auth.sendPasswordReset, async (_e, argsRaw: unknown) => {
     const args = SendPasswordResetSchema.parse(argsRaw);

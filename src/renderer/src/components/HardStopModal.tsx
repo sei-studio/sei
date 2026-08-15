@@ -52,13 +52,23 @@ import { formatRenewal } from '../lib/formatRenewal';
 import styles from './HardStopModal.module.css';
 
 /**
+ * Below this window the retry time is presented as "in a moment" instead of a
+ * clock time (260810). A short window is usually a guess: a 429 with no
+ * Retry-After gets a 60s fallback in usageLimit.ts while Cloudflare's actual
+ * flood-guard window is 10 seconds, and a wall-clock stamp ("9:31 PM") lends
+ * that number a precision it does not have.
+ */
+const RETRY_TIME_MIN_MS = 5 * 60_000;
+
+/**
  * When a rate-limit window ends: "9:30 PM" for later today, "Tuesday at
- * 9:30 AM" otherwise. Empty string when there is no usable window (null, or
- * already elapsed) so the copy drops the clause instead of inventing a time.
- * Exported for the unit test.
+ * 9:30 AM" otherwise. Empty string when there is no usable window (null,
+ * already elapsed, or too short to be worth a clock time — see
+ * RETRY_TIME_MIN_MS) so the copy uses the "in a moment" clause instead of
+ * inventing a time. Exported for the unit test.
  */
 export function formatRetryWhen(untilMs: number | null, nowMs: number): string {
-  if (!untilMs || untilMs <= nowMs) return '';
+  if (!untilMs || untilMs - nowMs < RETRY_TIME_MIN_MS) return '';
   const until = new Date(untilMs);
   const time = until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   if (until.toDateString() === new Date(nowMs).toDateString()) return time;
@@ -146,7 +156,7 @@ export function HardStopModal(): React.ReactElement | null {
                 { when: retryWhen },
               )
             : t(
-                "Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again in a little while.",
+                "Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again in a moment.",
               )}
         </p>
         <ModalFooter>

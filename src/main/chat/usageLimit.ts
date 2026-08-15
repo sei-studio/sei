@@ -27,8 +27,24 @@ export function classifyUsageLimit(err: unknown): UsageLimitReason | null {
   return null;
 }
 
-/** Best-effort Retry-After seconds off an SDK error; undefined when absent. */
-function retryAfterSeconds(err: unknown): number | undefined {
+/**
+ * Best-effort retry window in seconds off an SDK error; undefined when absent.
+ *
+ * Priority (260810): the JSON body's `retry_after_seconds` first, then the
+ * Retry-After header. The proxy puts the HONEST window in the body of every
+ * client-facing 429 and deliberately caps the header at 10s (retry SDKs sleep
+ * the full header value un-abortably), so the body is the truthful one when
+ * both exist. The Anthropic SDK surfaces the parsed body on `err.error` (same
+ * shape the bot orchestrator reads for daily_dollar).
+ *
+ * Exported for the unit test.
+ */
+export function retryAfterSeconds(err: unknown): number | undefined {
+  const body = (err as { error?: unknown } | null)?.error;
+  if (body && typeof body === 'object') {
+    const sec = Number((body as { retry_after_seconds?: unknown }).retry_after_seconds);
+    if (Number.isFinite(sec) && sec > 0) return sec;
+  }
   const headers = (err as { headers?: unknown } | null)?.headers;
   let raw: unknown;
   if (headers && typeof (headers as Headers).get === 'function') {
@@ -51,8 +67,14 @@ export async function raiseUsageLimitPopup(err: unknown): Promise<UsageLimitReas
     if ((await getAiBackendKind()) !== 'cloud-proxy') return null;
     const { emitCreditsHardStop } = await import('../ipc');
     emitCreditsHardStop(
+      // 260810: the no-Retry-After fallback is 60s, not 3600. A 429 with no
+      // header is almost always Cloudflare's flood guard, whose window is 10
+      // SECONDS — the old 1-hour guess had HardStopModal presenting a precise
+      // wall-clock time a full hour out for a limit that clears in moments.
+      // The modal also treats short windows as "try again in a moment" rather
+      // than formatting a clock time out of a guess.
       reason === 'rate_limited'
-        ? { reason: 'rate_limited', retry_after_seconds: retryAfterSeconds(err) ?? 3600 }
+        ? { reason: 'rate_limited', retry_after_seconds: retryAfterSeconds(err) ?? 60 }
         : { reason: 'depleted' },
     );
     return reason;

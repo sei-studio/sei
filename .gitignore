@@ -56,3 +56,6 @@ resources/audio-tap/
 # Offline backseat sim output (frame banks, grids, voice-overs).
 .backseat-sim/
 .backseat-lab/
+
+# Live2D Cubism Core — proprietary, fetched by scripts/fetch-live2d-core.mjs
+src/renderer/public/live2d/

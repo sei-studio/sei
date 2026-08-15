@@ -34,17 +34,20 @@ export const ZH_SCREENS_A: Record<string, string> = {
   'Create Account': '创建账户',
   'New here? Create an account': '新用户？创建账户',
   'Already have an account? Sign in': '已有账户？登录',
-  'Check your email': '请查收邮件',
-  'We sent a verification link to {email}. Open it on this device to finish signing in.':
-    '我们已向 {email} 发送了验证链接。请在本设备上打开以完成登录。',
-  'Keep this window open. Once you click the link, Sei signs you in automatically.':
-    '请保持此窗口打开。点击链接后，Sei 会自动为你登录。',
+  // 260804 — the emailed link became a 6-digit code, so ONE panel now serves
+  // signup, unconfirmed sign-in and password reset. The old two-panel copy is
+  // gone rather than translated: keeping it would leave zh users a wording that
+  // says which kind of email an address received, which is the account-existence
+  // signal the single panel exists to hide.
+  'Enter your code': '输入验证码',
+  'We sent a 6-digit code to {email}. Check spam if it is not there.':
+    '我们已向 {email} 发送了 6 位验证码。如果收件箱里没有，请查看垃圾邮件。',
+  'Verification code': '验证码',
+  'Verify': '验证',
+  'Checking…': '验证中…',
+  'Send a new code': '重新发送验证码',
   'Back': '返回',
   'Continue locally →': '以本地模式继续 →',
-  "If an account exists for {email}, we've sent a password reset link. Open it on this device to choose a new password.":
-    '如果 {email} 对应的账户存在，我们已发送密码重置链接。请在本设备上打开并设置新密码。',
-  'Keep this window open. Once you click the link, Sei prompts you for a new password.':
-    '请保持此窗口打开。点击链接后，Sei 会提示你设置新密码。',
   'Sign in to {label}': '登录以{label}',
   'Email': '邮箱',
   'Password': '密码',
@@ -105,6 +108,34 @@ export const ZH_SCREENS_A: Record<string, string> = {
   'Report': '举报',
   'Description': '简介',
   'Game': '游戏',
+  // Avatar tab (260804). 'Avatar' itself lives in common.ts (shared with Settings).
+  'Avatar type': '形象类型',
+  'Static': '静态',
+  'Live2D (beta)': 'Live2D（测试版）',
+  'How this companion looks on the floating avatar. Turn the avatar on in Settings.':
+    '这位伙伴在悬浮形象上的样子。请在设置中开启虚拟形象。',
+  'Frame': '边框',
+  'Circle': '圆形',
+  'Square': '方形',
+  'Always bright': '始终明亮',
+  'Always bright keeps the picture lit and turns off the talking indicator.':
+    '始终明亮会让画面保持亮起，并关闭说话指示。',
+  'Give this companion a Live2D body on the floating avatar. Import a Live2D model as a .zip: it should contain a .model3.json, a .moc3, textures, and optionally expressions.':
+    '为这位伙伴的悬浮形象加上 Live2D 身体。导入 .zip 格式的 Live2D 模型：需要包含 .model3.json、.moc3、贴图，以及可选的表情文件。',
+  'Upload Live2D model (.zip)': '上传 Live2D 模型（.zip）',
+  'The model stays on this computer. It is never uploaded.':
+    '模型只保存在这台电脑上，不会被上传。',
+  'That file is not a .zip archive.': '这个文件不是 .zip 压缩包。',
+  'That archive is too large.': '这个压缩包太大了。',
+  'Could not read that model. It needs a .model3.json, a .moc3 and its textures.':
+    '无法读取这个模型。它需要 .model3.json、.moc3 和对应的贴图。',
+  'Importing...': '导入中...',
+  'Loading model...': '加载模型中...',
+  'This model could not be rendered.': '这个模型无法渲染。',
+  '{name}, {count} expressions': '{name}，{count} 个表情',
+  'Outfit and item toggles this model ships. Emotion expressions play on their own while talking.':
+    '模型自带的服饰和道具开关。情绪表情会在说话时自动播放。',
+  'Replace': '更换',
   'No description provided.': '暂无简介。',
   'Persona': '人设',
   'Switch to description': '切换到简介',

@@ -33,6 +33,7 @@ import { statSync } from 'node:fs'
 import { writeFile, rename } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { skyColorForTime } from './skyColor.js'
+import { installTextureFallback } from './textureFallback.js'
 
 const require = createRequire(import.meta.url)
 
@@ -51,6 +52,15 @@ if (!globalThis.THREE) globalThis.THREE = pvRequire('three')
 if (!globalThis.Worker) globalThis.Worker = require('worker_threads').Worker
 
 const THREE = globalThis.THREE
+
+// A missing texture used to be FATAL (260806): prismarine-viewer's loadTexture has
+// no .catch, so an absent PNG became an unhandled rejection and src/bot/index.js
+// turned that into BOT_CRASH + process.exit(1). See textureFallback.js for the full
+// mechanism. This MUST run before the `prismarine-viewer/viewer` require below —
+// worldrenderer.js and entity/Entity.js both destructure `loadTexture` at their own
+// module load, so a patch applied afterwards would be holding a reference nobody uses.
+installTextureFallback(pvRequire, { warn: (m) => console.log(m) })
+
 // node-canvas-webgl exposes createCanvas from its /lib subpath (the package's own headless
 // example imports 'node-canvas-webgl/lib').
 const { createCanvas } = require('node-canvas-webgl/lib')

@@ -29,6 +29,7 @@ import {
   type CreditsHardStopEvent,
   type ChatMessagePush,
   type CallOverlayState,
+  type AvatarManifest,
   type BotActionPush,
   type GenProgressEvent,
 } from '../shared/ipc';
@@ -52,6 +53,12 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.knowledge.update, characterId, entryId, patch),
   knowledgeDelete: (characterId, entryId) => ipcRenderer.invoke(IpcChannel.knowledge.delete, characterId, entryId),
   knowledgeCompact: (characterId) => ipcRenderer.invoke(IpcChannel.knowledge.compact, characterId),
+
+  // 260810 — phantom-call recovery (scan / repair / dismiss).
+  recoveryScan: () => ipcRenderer.invoke(IpcChannel.recovery.scan),
+  recoveryRepair: (characterId, windows) =>
+    ipcRenderer.invoke(IpcChannel.recovery.repair, characterId, windows),
+  recoveryDismiss: (keys) => ipcRenderer.invoke(IpcChannel.recovery.dismiss, keys),
 
   // Phase 11 D-28 portrait pipeline.
   charsApplyPortrait: (args) => ipcRenderer.invoke(IpcChannel.chars.applyPortrait, args),
@@ -246,6 +253,57 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.voice.overlayState, handler);
   },
   voiceOverlayGetState: () => ipcRenderer.invoke(IpcChannel.voice.overlayGet),
+  // Live2D avatar store + overlay window controls (260804)
+  avatarImport: (characterId, zipBytes) =>
+    ipcRenderer.invoke(IpcChannel.avatar.import, characterId, zipBytes),
+  avatarGet: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.get, characterId),
+  avatarRemove: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.remove, characterId),
+  avatarModelFiles: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.modelFiles, characterId),
+  avatarSetAccessory: (characterId, name, on) =>
+    ipcRenderer.invoke(IpcChannel.avatar.setAccessory, { characterId, name, on }),
+  onAvatarManifest(cb) {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      update: { characterId: string; manifest: AvatarManifest | null },
+    ) => cb(update);
+    ipcRenderer.on(IpcChannel.avatar.manifestState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.manifestState, handler);
+  },
+  avatarOverlayLevel: (characterId, level) =>
+    ipcRenderer.invoke(IpcChannel.avatar.overlayLevel, { id: characterId, level }),
+  onAvatarOverlayLevel(cb: (sample: { id: string; level: number }) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, sample: { id: string; level: number }) =>
+      cb(sample);
+    ipcRenderer.on(IpcChannel.avatar.overlayLevelState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.overlayLevelState, handler);
+  },
+  avatarOverlayInteractive: (interactive) =>
+    ipcRenderer.invoke(IpcChannel.avatar.overlayInteractive, interactive),
+  avatarOverlayResize: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayResize, args),
+  avatarOverlayMove: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayMove, args),
+  onAvatarOverlayCursor(cb: (pt: { x: number; y: number }) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, pt: { x: number; y: number }) => cb(pt);
+    ipcRenderer.on(IpcChannel.avatar.overlayCursorState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.overlayCursorState, handler);
+  },
+  avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
+  avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),
+  avatarOverlayMuteToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayMute),
+  onAvatarMuteRequest(cb: () => void) {
+    const handler = () => cb();
+    ipcRenderer.on(IpcChannel.avatar.muteRequest, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.muteRequest, handler);
+  },
+  avatarOverlayCaptionsToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayCaptions),
+  avatarCaptionResize: (args) => ipcRenderer.invoke(IpcChannel.avatar.captionResize, args),
+  avatarCaptionMove: (args) => ipcRenderer.invoke(IpcChannel.avatar.captionMove, args),
+  avatarCaptionFont: (delta) => ipcRenderer.invoke(IpcChannel.avatar.captionFont, delta),
+  onAvatarCaptionEditState(cb: (editing: boolean) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, editing: boolean) => cb(editing);
+    ipcRenderer.on(IpcChannel.avatar.captionEditState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.captionEditState, handler);
+  },
+  avatarCaptionGet: () => ipcRenderer.invoke(IpcChannel.avatar.captionGet),
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),
@@ -289,6 +347,7 @@ const api: RendererApi = {
   deleteAccount: () => ipcRenderer.invoke(IpcChannel.auth.deleteAccount),
   exportData: () => ipcRenderer.invoke(IpcChannel.auth.exportData),
   resendVerification: (args) => ipcRenderer.invoke(IpcChannel.auth.resendVerification, args),
+  verifyEmailCode: (args) => ipcRenderer.invoke(IpcChannel.auth.verifyEmailCode, args),
   sendPasswordReset: (args) => ipcRenderer.invoke(IpcChannel.auth.sendPasswordReset, args),
   updatePassword: (args) => ipcRenderer.invoke(IpcChannel.auth.updatePassword, args),
   setCaptchaToken: (token: string | null) =>

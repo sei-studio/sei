@@ -150,6 +150,13 @@ export const paths = {
   // <entryUuid>.md content files (filenames are always our own UUIDs — an
   // uploaded file's name never becomes a path component).
   knowledgeDir: (characterId: string) => path.join(profileRootDir(), 'knowledge', characterId),
+  // 260804 avatar: an imported Live2D model (extracted zip + manifest.json)
+  // for the character's always-on-top avatar overlay tile. Outside memoryDir
+  // for the same reason as knowledgeDir (reset-memory must never wipe it).
+  // The model's own file tree keeps its original names (a model3.json
+  // references textures/expressions by relative path), so entry names are
+  // sanitized at IMPORT time (avatarStore) rather than validated here.
+  avatarsDir: (characterId: string) => path.join(profileRootDir(), 'avatars', characterId),
   // Per-persona skin PNG storage. Files live under
   // <profileRoot>/skins/<personaId>.png. The persona id has already been
   // validated by main/ipc.ts's IdSchema (kebab-case slug regex, no '.', '/',

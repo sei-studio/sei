@@ -13,6 +13,8 @@ export const ZH_COMMON: Record<string, string> = {
   'Settings': '设置',
   'Retry': '重试',
   'Loading...': '加载中...',
+  // Avatar overlay (260804): the Settings level control AND the profile tab.
+  'Avatar': '虚拟形象',
 
   // Settings: Language section
   'Language': '语言',

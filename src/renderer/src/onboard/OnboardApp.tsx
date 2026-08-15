@@ -32,6 +32,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { t, useT } from '../lib/i18n';
+import { useEmailCode } from '../lib/useEmailCode';
+import { CodeInput } from '../components/CodeInput';
 import { OnboardScene, type SuiPose } from './OnboardScene';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import type { AuthState, UniqueGender } from '@shared/ipc';
@@ -959,11 +961,17 @@ function AuthPanel(props: {
   const [tosChecked, setTosChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [awaitingVerify, setAwaitingVerify] = useState(false);
+  /**
+   * 260804 — address the emailed code went to, and the flag that swaps this
+   * panel for the code entry. ONE panel covers signup, a sign-in against an
+   * unconfirmed address, and forgot-password: the copy names none of them, so
+   * it cannot reveal whether the address was already registered. Redemption
+   * lands the session (or, for a recovery code, opens SetNewPasswordModal via
+   * main's push) and OnboardApp proceeds from the auth push exactly as before.
+   */
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const codeState = useEmailCode(codeSentTo);
   const [oauth, setOauth] = useState(false);
-  const [resetNote, setResetNote] = useState<string | null>(null);
-  const [verifyNote, setVerifyNote] = useState<string | null>(null);
-  const [resendBusy, setResendBusy] = useState(false);
 
   const years = useMemo(() => {
     const y = now.getFullYear();
@@ -991,11 +999,14 @@ function AuthPanel(props: {
           dobDay,
         });
         if (!res.ok) setError(res.message);
-        else if (res.requiresVerification) setAwaitingVerify(true);
+        else if (res.requiresVerification) setCodeSentTo(email.trim());
         // A session lands via the auth push; OnboardApp proceeds from there.
       } else {
         const res = await sei.signInPassword({ email: email.trim(), password });
         if (!res.ok) setError(res.message);
+        // Right password, address never confirmed. Main has already sent a
+        // fresh code (260804); show the panel rather than sitting on the form.
+        else if (res.needsVerification) setCodeSentTo(email.trim());
       }
     } catch (err) {
       setError((err as Error).message || t('Something went wrong.'));
@@ -1042,52 +1053,66 @@ function AuthPanel(props: {
     );
   }
 
-  const resendEmail = async (): Promise<void> => {
-    if (resendBusy) return;
-    setResendBusy(true);
-    setVerifyNote(null);
-    try {
-      // Pass the address explicitly: an unverified signup has no session, so
-      // the handler's signed-in fallback cannot resolve it (260729).
-      const res = await sei.resendVerification({ email: email.trim() });
-      setVerifyNote(res.ok ? t('Sent. Give it a minute, and check spam too.') : res.message);
-    } catch {
-      setVerifyNote(t("Couldn't resend. Try again in a moment."));
-    } finally {
-      setResendBusy(false);
-    }
-  };
-
   const forgotPassword = async (): Promise<void> => {
     if (!email.trim()) {
       setError(t('Enter your email above first.'));
       return;
     }
     setError(null);
-    setResetNote(null);
     try {
       const res = await sei.sendPasswordReset({ email: email.trim() });
-      setResetNote(res.ok ? t('Reset link sent. Check your email.') : res.message);
+      // Neutral success routes to the SAME code panel a signup lands on.
+      if (res.ok) setCodeSentTo(email.trim());
+      else setError(res.message);
     } catch {
-      setResetNote(t("Couldn't send the reset link. Try again in a moment."));
+      setError(t("Couldn't send the code. Try again in a moment."));
     }
   };
 
-  if (awaitingVerify) {
+  if (codeSentTo !== null) {
     return (
       <div className={styles.panel}>
         <p className={styles.panelText}>
-          {tt('Check your email to confirm your account. This continues on its own once you do.')}
+          {tt('Enter the 6-digit code we emailed you. Check spam if it is not there.')}
         </p>
+        <CodeInput
+          value={codeState.code}
+          onChange={codeState.setCode}
+          onComplete={(v) => void codeState.submit(v)}
+          disabled={codeState.submitting}
+          invalid={!!codeState.error}
+          autoFocus
+          rowClassName={styles.codeRow}
+          cellClassName={styles.codeCell}
+          aria-label={tt('Verification code')}
+        />
+        {codeState.error ? (
+          <p className={styles.panelError} role="alert">
+            {codeState.error}
+          </p>
+        ) : null}
         <button
           className={`${styles.pill} ${styles.pillWide}`}
-          disabled={resendBusy}
-          onClick={() => void resendEmail()}
+          disabled={codeState.submitting || codeState.code.length === 0}
+          onClick={() => void codeState.submit()}
         >
-          {resendBusy ? tt('Sending...') : tt('Resend email')}
+          {codeState.submitting ? tt('Checking...') : tt('Verify')}
         </button>
-        {verifyNote ? <p className={styles.panelNote}>{verifyNote}</p> : null}
-        <button className={styles.quietLink} onClick={() => setAwaitingVerify(false)}>
+        <button
+          className={styles.quietLink}
+          disabled={codeState.resending}
+          onClick={() => void codeState.resend()}
+        >
+          {codeState.resending ? tt('Sending...') : tt('Send a new code')}
+        </button>
+        {codeState.note ? <p className={styles.panelNote}>{codeState.note}</p> : null}
+        <button
+          className={styles.quietLink}
+          onClick={() => {
+            codeState.reset();
+            setCodeSentTo(null);
+          }}
+        >
           {tt('Back')}
         </button>
       </div>
@@ -1128,7 +1153,6 @@ function AuthPanel(props: {
           {tt('Forgot password?')}
         </button>
       ) : null}
-      {resetNote ? <p className={styles.panelNote}>{resetNote}</p> : null}
       {signup ? (
         <>
           <div className={styles.dobRow} aria-label={tt('Birthday')}>

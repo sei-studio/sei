@@ -645,6 +645,37 @@
   text-shadow: 0 1px 6px rgba(35, 40, 58, 0.35);
 }
 
+/* 260804 — email-code cells. CodeInput's own styling is built from the app's
+   dark tokens, which are invisible on this frosted light panel, so the scene
+   restyles the cells through CodeInput's className seam. Shape and behaviour
+   stay in the component; only the paint is local. Matches .field. */
+.codeRow {
+  gap: 8px;
+}
+
+/* Doubled class deliberately: these rules live in a DIFFERENT stylesheet from
+   the ones they override, so equal specificity would be settled by bundler
+   injection order. Two classes beat CodeInput's single-class base outright.
+   `border: none` also neutralizes its `.invalid .cell` accent, which would
+   otherwise paint a red underline the frosted panel has no vocabulary for; the
+   error text carries that state here. */
+.codeCell.codeCell {
+  width: 42px;
+  height: 50px;
+  flex: 0 1 42px;
+  border: none;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.38);
+  color: #23283a;
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.codeCell.codeCell:focus {
+  background-color: rgba(255, 255, 255, 0.55);
+}
+
 .panelLink {
   color: #ffffff;
   text-decoration: underline;

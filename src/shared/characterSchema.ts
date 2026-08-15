@@ -545,13 +545,111 @@ export const UserConfigSchema = z.object({
    */
   call_captions: z.boolean().optional().default(false),
   /**
-   * "Call overlay" (Appearance & feel, 260706). When on, a live voice call
-   * shows an always-on-top row of companion avatars pinned to the bottom-right
-   * corner (Discord-style), each lit while that companion speaks and dimmed
-   * while idle, so a streamer can see who is talking without the Sei window
-   * focused. Off by default — it floats over every other app, so it is opt-in.
+   * DEPRECATED (260804) — the old boolean "Call overlay" toggle, superseded by
+   * `avatar_mode`. Kept so existing config.json files still parse and so
+   * `effectiveAvatarMode` can map an old `true` onto `'activity'`. Never
+   * written anymore (Settings writes `avatar_mode`); do not add new readers.
    */
   call_overlay_enabled: z.boolean().optional().default(false),
+  /**
+   * "Avatar" (Appearance & feel, 260804; grew out of the 260706 call overlay).
+   * When the always-on-top avatar overlay (companion tiles, optionally Live2D)
+   * is shown:
+   *   'off'      — never.
+   *   'activity' — while any companion has a live surface: a voice call, a
+   *                chess/Draw!/backseat session, or a Minecraft summon.
+   *   'always'   — whenever the app is open (falls back to the open chat's
+   *                companion when nothing is active).
+   * OPTIONAL with no default on purpose: an absent field means "never chosen",
+   * and `effectiveAvatarMode` derives the value from the deprecated boolean so
+   * users who had the old toggle on keep their overlay without a migration.
+   */
+  avatar_mode: z.enum(['off', 'activity', 'always']).optional(),
+  /**
+   * Per-character avatar display preferences (260804), sparse like
+   * `call_backdrop`: an absent character id means "defaults". These are USER
+   * preferences about how a companion's overlay tile renders on THIS profile,
+   * which is why they live here and not in `character.metadata` (metadata is
+   * cloud-synced verbatim and not editable on foreign characters).
+   *   frame         — tile shape ('circle' | 'square').
+   *   always_bright — true disables the talking indicator entirely: no idle
+   *                   dim, no speaking ring; the tile stays lit.
+   */
+  avatar_prefs: z
+    .record(
+      z.object({
+        frame: z.enum(['circle', 'square']).optional(),
+        always_bright: z.boolean().optional(),
+        /** Which profile sub-tab (Static / Live2D) was last chosen. */
+        tab: z.enum(['static', 'live2d']).optional(),
+      }),
+    )
+    .optional(),
+  /**
+   * Avatar overlay geometry (260804), written by MAIN only (drag/resize
+   * persistence; deliberately not in RENDERER_SETTABLE_KEYS). `size` is the
+   * per-tile square edge in px; `x`/`y` are the window origin, absent until
+   * the user first drags it (absent = pinned to the bottom-right work-area
+   * corner, the pre-260804 behavior).
+   */
+  avatar_overlay: z
+    .object({
+      size: z.number().int().min(48).max(1024),
+      /** Tile width (260807, free-form resize). Absent = square (`size`). */
+      width: z.number().int().min(48).max(1024).optional(),
+      x: z.number().int().optional(),
+      y: z.number().int().optional(),
+      /**
+       * 260806 — per-character tile camera: how the character is framed WITHIN
+       * its tile (edit-mode wheel = zoom, drag on the tile = pan). `zoom`
+       * multiplies the contain-fit scale; `x`/`y` are pan offsets in tile
+       * fractions. Sparse: absent id = default framing (whole model, centered).
+       */
+      cameras: z
+        .record(
+          z.object({
+            zoom: z.number().min(0.5).max(8),
+            x: z.number().min(-1.5).max(1.5),
+            y: z.number().min(-1.5).max(1.5),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
+  /**
+   * Let the avatar + caption overlay windows appear in screen captures
+   * (260807). Both windows set `setContentProtection(true)` by default, which
+   * is a per-window OS flag (`NSWindowSharingNone` / `WDA_EXCLUDEFROMCAPTURE`)
+   * excluding them from EVERY capture path: OBS, screenshots, and Sei's own
+   * backseat share alike. There is no OS-level way to be in one and out of
+   * another, so this is a single switch.
+   *
+   * OFF by default, and it should stay off for anyone not recording: with it
+   * on, a companion sharing an ENTIRE SCREEN sees her own tile in the grid
+   * (a window share still cannot contain another window, so that path is
+   * unaffected), and her blink/lip-sync animation is a localized change in
+   * exactly the 4x3 block split the colour jolt arm watches.
+   */
+  avatar_in_captures: z.boolean().optional(),
+  /**
+   * Caption overlay window (260806), written by MAIN only (like
+   * `avatar_overlay`). The always-on-top captions box the avatar overlay's
+   * captions button toggles while on a call/backseat: white companion lines
+   * over a darkened box, click-through outside edit mode. Geometry absent =
+   * default placement (bottom-center of the work area). `font_size` is FIXED
+   * at render time — a bigger font does not grow the box, the text just
+   * breaks into more chunks.
+   */
+  avatar_captions: z
+    .object({
+      enabled: z.boolean(),
+      x: z.number().int().optional(),
+      y: z.number().int().optional(),
+      width: z.number().int().min(160).max(1600).optional(),
+      height: z.number().int().min(60).max(800).optional(),
+      font_size: z.number().int().min(12).max(48).optional(),
+    })
+    .optional(),
   /**
    * "Conversation starters" (260707). When on (the default), a live voice call
    * that has gone quiet for a while (5-60s, resampled each stretch) nudges a
@@ -783,3 +881,24 @@ export const UserConfigSchema = z.object({
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
+
+/** The avatar overlay's visibility levels (UserConfig.avatar_mode). */
+export type AvatarMode = 'off' | 'activity' | 'always';
+
+/** One character's entry in UserConfig.avatar_prefs. */
+export type AvatarPrefs = NonNullable<UserConfig['avatar_prefs']>[string];
+
+/**
+ * The avatar mode a config actually means, folding in the deprecated boolean:
+ * an explicit `avatar_mode` wins; otherwise the old "Call overlay" toggle maps
+ * onto its historical behavior (`true` ≈ shown during calls, the closest level
+ * being 'activity') so nobody's overlay disappears on update. Both hydration
+ * paths and Settings read the mode through this ONE function — never read
+ * `avatar_mode` or `call_overlay_enabled` directly.
+ */
+export function effectiveAvatarMode(cfg: {
+  avatar_mode?: AvatarMode;
+  call_overlay_enabled?: boolean;
+}): AvatarMode {
+  return cfg.avatar_mode ?? (cfg.call_overlay_enabled === true ? 'activity' : 'off');
+}

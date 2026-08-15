@@ -529,6 +529,8 @@ export async function deleteCharacter(id: string): Promise<void> {
   // Remove knowledge dir (260725; lives outside memoryDir so Reset memory
   // spares it, but a full character delete takes it too)
   await rm(paths.knowledgeDir(id), { recursive: true, force: true });
+  // Remove avatar dir (260804; same reasoning as knowledge)
+  await rm(paths.avatarsDir(id), { recursive: true, force: true });
 
   // Remove from index
   const idx = await loadIndex();

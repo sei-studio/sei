@@ -465,28 +465,96 @@ export const CloudIcon: React.FC<IconProps> = ({ size = 26 }) => (
   </svg>
 );
 
+/** The single-controller geometry both copies of GamepadIcon are drawn from. */
+const GAMEPAD_BODY =
+  'M17.5 6H6.5a4.5 4.5 0 0 0-4.46 3.9l-.8 5.6A2.4 2.4 0 0 0 3.6 18.2c.9 0 1.7-.5 2.1-1.3L6.5 15h11l.8 1.9c.4.8 1.2 1.3 2.1 1.3a2.4 2.4 0 0 0 2.36-2.7l-.8-5.6A4.5 4.5 0 0 0 17.5 6z';
+
 /**
- * GamepadIcon — chat header "Games" affordance (Phase 18/19). A simple stroked
- * controller body with a d-pad + two action buttons. Inherits currentColor.
+ * GamepadIcon — chat header "Games" affordance. TWO controllers, the second
+ * peeking out from behind the first, so the glyph reads as "play together"
+ * rather than "play". Both copies are the same geometry at 0.68 scale, offset
+ * along a diagonal.
+ *
+ * The glyph is STROKED, so the front controller's interior is transparent and
+ * the back one would otherwise show straight through it. A mask crops the back
+ * copy against the front's silhouette, filled and stroked wide enough to leave
+ * a clear gap between the two outlines. Two details follow from that:
+ *
+ * - The back copy drops its d-pad. Its buttons clear the front, but the d-pad
+ *   straddles the crop edge and survives as floating fragments.
+ * - `strokeWidth` and the button radii are pre-divided by the scale, so the
+ *   rendered weight still matches every other icon in this file.
+ *
+ * `single` falls back to ONE full-size controller, for the 9px IconRail
+ * activity badge: two of anything at that size is a smudge, and there the glyph
+ * only has to say "a game is running".
  */
-export const GamepadIcon: React.FC<IconProps> = ({ size = 18 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.7}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M6 12h4M8 10v4" />
-    <circle cx={15.5} cy={11} r={0.6} fill="currentColor" />
-    <circle cx={17.5} cy={13} r={0.6} fill="currentColor" />
-    <path d="M17.5 6H6.5a4.5 4.5 0 0 0-4.46 3.9l-.8 5.6A2.4 2.4 0 0 0 3.6 18.2c.9 0 1.7-.5 2.1-1.3L6.5 15h11l.8 1.9c.4.8 1.2 1.3 2.1 1.3a2.4 2.4 0 0 0 2.36-2.7l-.8-5.6A4.5 4.5 0 0 0 17.5 6z" />
-  </svg>
-);
+export const GamepadIcon: React.FC<IconProps & { single?: boolean }> = ({
+  size = 18,
+  single = false,
+}) => {
+  const maskId = `gamepad-crop-${React.useId().replace(/:/g, '')}`;
+  const front = 'translate(0.64 6.27) scale(0.68)';
+  const back = 'translate(7.04 1.27) scale(0.68)';
+  const r = single ? 0.6 : 0.88;
+  const buttons = (
+    <>
+      <circle cx={15.5} cy={11} r={r} fill="currentColor" />
+      <circle cx={17.5} cy={13} r={r} fill="currentColor" />
+    </>
+  );
+  const dpad = <path d="M6 12h4M8 10v4" />;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={single ? 1.7 : 2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {single ? (
+        <g>
+          {dpad}
+          {buttons}
+          <path d={GAMEPAD_BODY} />
+        </g>
+      ) : (
+        <>
+          <mask id={maskId} maskUnits="userSpaceOnUse" x={0} y={0} width={24} height={24}>
+            <rect x={0} y={0} width={24} height={24} fill="white" stroke="none" />
+            <path
+              d={GAMEPAD_BODY}
+              transform={front}
+              fill="black"
+              stroke="black"
+              strokeWidth={5}
+              strokeLinejoin="round"
+            />
+          </mask>
+          {/* The mask is in the SVG's own user space, so it hangs off an OUTER
+              group with no transform: an element's `transform` also applies to
+              the mask it references, which would drag the cutout along with the
+              back copy. */}
+          <g mask={`url(#${maskId})`}>
+            <g transform={back}>
+              {buttons}
+              <path d={GAMEPAD_BODY} />
+            </g>
+          </g>
+          <g transform={front}>
+            {dpad}
+            {buttons}
+            <path d={GAMEPAD_BODY} />
+          </g>
+        </>
+      )}
+    </svg>
+  );
+};
 
 /**
  * UserIcon — chat header "Profile" affordance (opens CharacterPage). Stroked
