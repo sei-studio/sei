@@ -1576,7 +1576,31 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' && callCfg?.tts_engine === 'local';
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
-      const policy = sttPolicy(callCfg, callCfg?.ai_backend_kind ?? 'cloud-proxy');
+      // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is
+      // on disk (best-effort — a failed status read just means Whisper, which
+      // is the model-missing rule anyway) and the app UI language.
+      let sensevoiceReady = false;
+      try {
+        const status = await sei.speechPackStatus?.();
+        sensevoiceReady = status?.packs?.['stt-sensevoice']?.state === 'ready';
+      } catch {
+        /* absent bridge / failed read → whisper behavior */
+      }
+      if (session !== mySession) return;
+      const policy = sttPolicy(callCfg, callCfg?.ai_backend_kind ?? 'cloud-proxy', {
+        uiLanguage: callCfg?.ui_language,
+        sensevoiceReady,
+      });
+      // The SenseVoice local leg: utterance PCM → main-side sherpa. Text comes
+      // back already normalized (main applies the same normalizeSttText as the
+      // cloud path).
+      const senseVoiceTranscribe = async (audio: Float32Array): Promise<string> => {
+        const res = await sei.speechSttTranscribe?.({
+          pcm: audio.buffer.slice(0, audio.byteLength) as ArrayBuffer,
+          sampleRate: 16000,
+        });
+        return res?.text ?? '';
+      };
 
       // Cloud STT (260724): race ElevenLabs Scribe against the local Whisper
       // worker for every utterance (dictation/sttArbiter own the policy; local
@@ -1627,6 +1651,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // runs 'eager' (today's race). BYOK with stt_engine 'whisper' drops
           // cloudTranscribe entirely.
           localModel: policy.localModel,
+          // 260816: SenseVoice serves the local leg via main when the policy
+          // picked it (BYOK stt_engine 'sensevoice', or the zh-UI cloud
+          // fallback); the arbiter race itself is unchanged.
+          localEngine: policy.localEngine,
+          mainTranscribe: policy.localEngine === 'sensevoice' ? senseVoiceTranscribe : undefined,
           cloudTranscribe: policy.useCloud ? cloudTranscribe : undefined,
           onCloudSttFailure:
             policy.localModel === 'none'
