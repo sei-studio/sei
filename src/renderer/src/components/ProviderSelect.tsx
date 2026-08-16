@@ -3,9 +3,13 @@
  *
  * Phase 14 landed all 13 backends; listing them as 13 tiles took a lot of
  * vertical space, so the picker is now a single dropdown (trigger + listbox).
- * Provider kinds match the factory `SUPPORTED_PROVIDERS` constant in
- * `src/bot/brain/llm/index.js` and the `provider` enum in
- * `src/shared/characterSchema.ts` (UserConfigSchema).
+ *
+ * 260816 (china-compat): the offered list is driven by SHOWN_PROVIDERS +
+ * PROVIDER_LABELS in `src/shared/llmCatalog.ts` (8 providers), the single
+ * source of truth for what the UI offers. A GRANDFATHERED provider (mistral,
+ * together, groq, fireworks, cerebras, perplexity) still parses and runs; if
+ * it is the CURRENT value it appears as the selected option (appended at the
+ * end), but it is never offered otherwise.
  *
  * Styling follows .planning/UI-DESIGN-SYSTEM.md: the trigger mirrors the
  * `ghost` Button / input (faint fill, --border-strong, mono uppercase tracked
@@ -18,46 +22,19 @@
  * click-outside dismissal.
  */
 
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { SHOWN_PROVIDERS, PROVIDER_LABELS, type ProviderKind } from '@shared/llmCatalog';
 import { useT } from '../lib/i18n';
 import { ArrowIcon } from './icons';
 import styles from './ProviderSelect.module.css';
 
-export type Provider =
-  | 'anthropic'
-  | 'openai'
-  | 'gemini'
-  | 'ollama'
-  | 'grok'
-  | 'openrouter'
-  | 'deepseek'
-  | 'mistral'
-  | 'together'
-  | 'groq'
-  | 'fireworks'
-  | 'cerebras'
-  | 'perplexity';
+/** Re-exported alias kept for the existing importers (Settings, modals). */
+export type Provider = ProviderKind;
 
 interface ProviderOption {
   id: Provider;
   label: string;
 }
-
-const PROVIDERS: ProviderOption[] = [
-  { id: 'anthropic',  label: 'Anthropic' },
-  { id: 'openai',     label: 'OpenAI' },
-  { id: 'gemini',     label: 'Gemini' },
-  { id: 'ollama',     label: 'Ollama' },
-  { id: 'grok',       label: 'Grok' },
-  { id: 'openrouter', label: 'OpenRouter' },
-  { id: 'deepseek',   label: 'DeepSeek' },
-  { id: 'mistral',    label: 'Mistral' },
-  { id: 'together',   label: 'Together' },
-  { id: 'groq',       label: 'Groq' },
-  { id: 'fireworks',  label: 'Fireworks' },
-  { id: 'cerebras',   label: 'Cerebras' },
-  { id: 'perplexity', label: 'Perplexity' },
-];
 
 export interface ProviderSelectProps {
   value: Provider;
@@ -69,6 +46,16 @@ export interface ProviderSelectProps {
 export function ProviderSelect({ value, onChange, compact = false }: ProviderSelectProps): React.ReactElement {
   const t = useT();
   const [open, setOpen] = useState(false);
+  // The offered list: the 8 shown providers, plus the current value when it
+  // is a grandfathered one (so an existing config still displays and can be
+  // re-selected, without offering the legacy provider to anyone else).
+  const PROVIDERS = useMemo<ProviderOption[]>(() => {
+    const shown: ProviderOption[] = SHOWN_PROVIDERS.map((id) => ({ id, label: PROVIDER_LABELS[id] }));
+    if (!SHOWN_PROVIDERS.includes(value)) {
+      shown.push({ id: value, label: PROVIDER_LABELS[value] ?? value });
+    }
+    return shown;
+  }, [value]);
   const selectedIndex = Math.max(0, PROVIDERS.findIndex((p) => p.id === value));
   const [activeIndex, setActiveIndex] = useState(selectedIndex);
   const rootRef = useRef<HTMLDivElement>(null);

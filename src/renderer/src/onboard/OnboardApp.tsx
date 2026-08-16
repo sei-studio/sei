@@ -36,6 +36,7 @@ import { useEmailCode } from '../lib/useEmailCode';
 import { CodeInput } from '../components/CodeInput';
 import { OnboardScene, type SuiPose } from './OnboardScene';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
+import { SHOWN_PROVIDERS, PROVIDER_LABELS } from '@shared/llmCatalog';
 import type { AuthState, UniqueGender } from '@shared/ipc';
 import type { UserConfig } from '@shared/characterSchema';
 import {
@@ -1348,21 +1349,13 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
 
 /* ── Local (BYOK) setup panel ────────────────────────────────────────────── */
 
-const PROVIDERS: Array<{ value: string; label: string }> = [
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'ollama', label: 'Ollama' },
-  { value: 'grok', label: 'Grok' },
-  { value: 'openrouter', label: 'OpenRouter' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'mistral', label: 'Mistral' },
-  { value: 'together', label: 'Together' },
-  { value: 'groq', label: 'Groq' },
-  { value: 'fireworks', label: 'Fireworks' },
-  { value: 'cerebras', label: 'Cerebras' },
-  { value: 'perplexity', label: 'Perplexity' },
-];
+// 260816 (china-compat): the offered set comes from the shared catalog (8
+// providers; SHOWN_PROVIDERS in src/shared/llmCatalog.ts). This panel keeps
+// its plain-select mechanics — a later workstream restyles onboarding.
+const PROVIDERS: Array<{ value: string; label: string }> = SHOWN_PROVIDERS.map((id) => ({
+  value: id,
+  label: PROVIDER_LABELS[id],
+}));
 
 function LocalSetupPanel(props: { onDone: (provider: string, key: string) => void }): React.ReactElement {
   const tt = useT();

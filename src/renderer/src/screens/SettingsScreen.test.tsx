@@ -32,6 +32,7 @@ const ONBOARDING_TSX = resolve(__dirname, 'OnboardingScreen.tsx');
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
 const SCHEMA_TS = resolve(REPO_ROOT, 'src', 'shared', 'characterSchema.ts');
 const PROVIDER_SELECT_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'ProviderSelect.tsx');
+const LLM_CATALOG_TS = resolve(REPO_ROOT, 'src', 'shared', 'llmCatalog.ts');
 const USE_UI_STORE_TS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'stores', 'useUiStore.ts');
 const APP_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'App.tsx');
 
@@ -143,40 +144,49 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
     expect(src.includes('compact')).toBe(true);
   });
 
-  it('A1.5: ProviderSelect ships all 13 providers and NO Coming soon chip', () => {
+  it('A1.5: ProviderSelect offers the catalog SHOWN list; grandfathered only when current (260816)', () => {
     const src = readFileSync(PROVIDER_SELECT_TSX, 'utf-8');
-    const wanted = [
-      'anthropic',
-      'openai',
-      'gemini',
-      'ollama',
-      'grok',
-      'openrouter',
-      'deepseek',
-      'mistral',
-      'together',
-      'groq',
-      'fireworks',
-      'cerebras',
-      'perplexity',
-    ];
-    for (const id of wanted) expect(src.includes(`'${id}'`)).toBe(true);
+    // The offered options come from the shared catalog, not a hardcoded list.
+    expect(src.includes("from '@shared/llmCatalog'")).toBe(true);
+    expect(src.includes('SHOWN_PROVIDERS')).toBe(true);
+    expect(src.includes('PROVIDER_LABELS')).toBe(true);
+    // A grandfathered current value is appended as the selected option.
+    expect(src.includes('SHOWN_PROVIDERS.includes(value)')).toBe(true);
+    // No hardcoded per-provider option entries survive.
+    for (const id of ['mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity']) {
+      expect(src.includes(`'${id}'`)).toBe(false);
+    }
     expect(src.includes('styles.chip')).toBe(false);
     expect(src.includes('>Coming soon<')).toBe(false);
   });
 
-  it('A1.6: UserConfigSchema provider enum extends to all 13 backends + has provider_config', () => {
+  it('A1.5b: the shared catalog shows 8 providers and grandfathers the dropped 6', () => {
+    const catalog = readFileSync(LLM_CATALOG_TS, 'utf-8');
+    const shownBlock = catalog.slice(catalog.indexOf('SHOWN_PROVIDERS'), catalog.indexOf('GRANDFATHERED_PROVIDERS'));
+    for (const id of ['anthropic', 'openai', 'deepseek', 'qwen', 'gemini', 'grok', 'openrouter', 'ollama']) {
+      expect(shownBlock.includes(`'${id}'`)).toBe(true);
+    }
+    for (const id of ['mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity']) {
+      expect(shownBlock.includes(`'${id}'`)).toBe(false);
+    }
+    const grandfathered = catalog.slice(catalog.indexOf('GRANDFATHERED_PROVIDERS'), catalog.indexOf('PROVIDER_LABELS'));
+    for (const id of ['mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity']) {
+      expect(grandfathered.includes(`'${id}'`)).toBe(true);
+    }
+  });
+
+  it('A1.6: UserConfigSchema provider enum keeps all 14 backends (incl. qwen) + has provider_config', () => {
     const src = readFileSync(SCHEMA_TS, 'utf-8');
-    for (const id of ['anthropic', 'openai', 'gemini', 'ollama', 'grok', 'openrouter', 'deepseek', 'mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity']) {
+    // Grandfathered values MUST stay in the enum — existing configs round-trip.
+    for (const id of ['anthropic', 'openai', 'gemini', 'ollama', 'grok', 'openrouter', 'deepseek', 'qwen', 'mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity']) {
       expect(src.includes(`'${id}'`)).toBe(true);
     }
     expect(src.includes('provider_config')).toBe(true);
   });
 
-  it('A1.8: ProviderSelect exports the 13-member Provider union type', () => {
+  it('A1.8: ProviderSelect re-exports the catalog ProviderKind as Provider', () => {
     const src = readFileSync(PROVIDER_SELECT_TSX, 'utf-8');
-    expect(src.includes("export type Provider =")).toBe(true);
-    expect(src.match(/export type Provider =[\s\S]*?\|\s*'perplexity'/)).toBeTruthy();
+    expect(src.includes('export type Provider = ProviderKind')).toBe(true);
   });
 
   it('A1.9: OnboardingScreen routes the dynamic provider label into step-3 title', () => {

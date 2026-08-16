@@ -16,6 +16,7 @@
 //     re-discover LAN during summon — main hands the cached port over)
 
 import { ConfigSchema } from './config.js'
+import { applyLlmInit } from './llmInit.js'
 import { createBotInstance, resolveServerVersion } from './adapter/minecraft/connect.js'
 
 // The Electron path hands the bot `version: 'auto'`. start() resolves that to an
@@ -592,6 +593,12 @@ async function bootstrapWithInit(initData) {
     // user's Supabase access_token; jwt rotation arrives via parentPort
     // {type:'jwt'} messages below.
     cloudMode,           // {baseURL, authToken} | undefined
+    // 260816 (china-compat W2): the LLM provider selection, bridged by the
+    // supervisor from UserConfig.provider + provider_config for LOCAL (BYOK)
+    // sessions. {provider, model?, base_url?, api_key} | undefined. Mapped
+    // onto config.llm by applyLlmInit below; absent (older main, or
+    // cloud-proxy mode) → the Anthropic default path, unchanged.
+    llm: llmInit,        // {provider, model?, base_url?, api_key?} | undefined
     // The user-facing Looking (vision) mode, bridged by the supervisor from
     // UserConfig.vision_mode. Maps into config.vision below; the remaining
     // vision knobs (cadence, image_quality, resolution_px, cap) come from the
@@ -771,11 +778,13 @@ async function bootstrapWithInit(initData) {
     vision: {
       ...(visionMode != null ? { mode: visionMode } : {}),
     },
-    // llm: omitted — Zod default fills the entire {} sub-tree.
+    // llm: applied by applyLlmInit below (260816). When main ships no llm
+    // section (older main / cloud-proxy) the Zod default fills the entire {}
+    // sub-tree and the bot runs Anthropic, exactly as before.
   }
   let config
   try {
-    config = ConfigSchema.parse(rawConfig)
+    config = ConfigSchema.parse(applyLlmInit(rawConfig, llmInit, apiKey))
   } catch (err) {
     emitLifecycle({
       type: 'error',

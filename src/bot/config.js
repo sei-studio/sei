@@ -123,6 +123,19 @@ const AdapterSchema = z.object({
   minecraft: MinecraftAdapterSchema,
 })
 
+// The full set of provider kinds the bot factory can run (see
+// src/bot/brain/llm/index.js SUPPORTED_PROVIDERS — same members). Exported so
+// the init-payload mapper (llmInit.js) can validate a provider shipped by main
+// without importing the whole schema. Deliberately duplicated from
+// src/shared/llmCatalog.ts — this process cannot import shared TS; llmCatalog
+// stays the documented source of truth for what the UI OFFERS (its
+// SHOWN_PROVIDERS is a subset of this list; the rest are grandfathered).
+export const LLM_PROVIDER_KINDS = [
+  'anthropic', 'openai', 'gemini', 'grok', 'openrouter', 'ollama',
+  'deepseek', 'qwen', 'mistral', 'together', 'groq', 'fireworks',
+  'cerebras', 'perplexity',
+]
+
 export const ConfigSchema = z.object({
   // chat_mode: 'chat' (default) — only `say()` lines reach Minecraft chat.
   // 'full' — assistant `text` (private scratch) ALSO reaches chat with a
@@ -227,11 +240,13 @@ export const ConfigSchema = z.object({
     // Phase 14: which provider services the bot loop. Defaults to 'anthropic'
     // so configs predating this phase still boot unchanged. The Anthropic
     // path also covers the Sei cloud proxy (`anthropic.cloudMode`).
-    provider: z.enum([
-      'anthropic', 'openai', 'gemini', 'grok', 'openrouter', 'ollama',
-      'deepseek', 'mistral', 'together', 'groq', 'fireworks',
-      'cerebras', 'perplexity',
-    ]).default('anthropic'),
+    //
+    // 260816 (china-compat): + 'qwen'. Grandfathering is a UI concern —
+    // mistral/together/groq/fireworks/cerebras/perplexity are no longer
+    // OFFERED by the picker (src/shared/llmCatalog.ts SHOWN_PROVIDERS) but
+    // stay in this enum and in the factory so a config already set to one
+    // keeps working. Do not remove them here.
+    provider: z.enum(LLM_PROVIDER_KINDS).default('anthropic'),
     // Per-provider config. Only the active provider's block is required to
     // be populated; the others can stay default-empty.
     providers: z.object({
@@ -239,7 +254,12 @@ export const ConfigSchema = z.object({
       gemini:     z.object({ api_key: z.string().default(''), model: z.string().default('gemini-2.0-flash'),                                  base_url: z.string().url().optional() }).default({}),
       grok:       z.object({ api_key: z.string().default(''), model: z.string().default('grok-2-latest'),                                     base_url: z.string().url().optional() }).default({}),
       openrouter: z.object({ api_key: z.string().default(''), model: z.string().default('anthropic/claude-haiku-4-5'),                        base_url: z.string().url().optional() }).default({}),
-      deepseek:   z.object({ api_key: z.string().default(''), model: z.string().default('deepseek-chat'),                                     base_url: z.string().url().optional() }).default({}),
+      // 260816: 'deepseek-chat' alias discontinued 2026-07-24 → deepseek-v4-flash.
+      deepseek:   z.object({ api_key: z.string().default(''), model: z.string().default('deepseek-v4-flash'),                                 base_url: z.string().url().optional() }).default({}),
+      // 260816: Alibaba DashScope compatible mode. Default base URL lives in
+      // the factory (src/bot/brain/llm/index.js BASE_URLS → the CN endpoint);
+      // international accounts override base_url via provider_config.
+      qwen:       z.object({ api_key: z.string().default(''), model: z.string().default('qwen-plus'),                                         base_url: z.string().url().optional() }).default({}),
       mistral:    z.object({ api_key: z.string().default(''), model: z.string().default('mistral-small-latest'),                              base_url: z.string().url().optional() }).default({}),
       together:   z.object({ api_key: z.string().default(''), model: z.string().default('meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'),       base_url: z.string().url().optional() }).default({}),
       groq:       z.object({ api_key: z.string().default(''), model: z.string().default('llama-3.3-70b-versatile'),                           base_url: z.string().url().optional() }).default({}),

@@ -1,6 +1,8 @@
 // OpenAI-compatible adapter — covers OpenAI, Grok (x.ai), OpenRouter,
-// DeepSeek, Mistral, Together, Groq, Fireworks. All speak `/v1/chat/completions`
-// with bearer-auth headers. Per-provider baseURL is selected by the factory.
+// DeepSeek, Qwen (DashScope compatible mode), plus the grandfathered set
+// (Mistral, Together, Groq, Fireworks, Cerebras, Perplexity). All speak
+// `/v1/chat/completions` with bearer-auth headers. Per-provider baseURL is
+// selected by the factory.
 //
 // Notes:
 //   - Streaming is OFF. The bot loop consumes a non-streaming response.
@@ -23,6 +25,10 @@ const CAPABILITIES_BY_KIND = {
   grok:       { vision: true,  cached: false, local: false },
   openrouter: { vision: true,  cached: true,  local: false },
   deepseek:   { vision: false, cached: false, local: false },
+  // qwen text models (qwen-plus/max/turbo, qwen3-*) are text-only; the -vl
+  // models see but are not the default. Per-model vision lives in
+  // src/shared/llmCatalog.ts modelVision() for the app surfaces.
+  qwen:       { vision: false, cached: false, local: false },
   mistral:    { vision: true,  cached: false, local: false },
   together:   { vision: true,  cached: false, local: false },
   groq:       { vision: false, cached: false, local: false },
@@ -35,7 +41,10 @@ const DEFAULT_MODELS = {
   openai:     'gpt-4o-mini',
   grok:       'grok-2-latest',
   openrouter: 'anthropic/claude-haiku-4-5',
-  deepseek:   'deepseek-chat',
+  // 260816: the legacy 'deepseek-chat' alias was DISCONTINUED 2026-07-24;
+  // current lineup is deepseek-v4-flash / deepseek-v4-pro.
+  deepseek:   'deepseek-v4-flash',
+  qwen:       'qwen-plus',
   mistral:    'mistral-small-latest',
   together:   'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
   groq:       'llama-3.3-70b-versatile',
@@ -43,6 +52,22 @@ const DEFAULT_MODELS = {
   cerebras:   'llama-3.3-70b',
   perplexity: 'sonar',
 }
+
+// ── DeepSeek specifics (260816, china-compat; mirrors src/shared/llmCatalog.ts
+// DEEPSEEK_EXTRA_BODY / FIRST_TOKEN_TIMEOUT_FLOOR_MS — keep in sync) ────────
+//
+// V4 ships thinking-mode ON by default, and in thinking mode the API requires
+// `reasoning_content` passed back on every tool round-trip — a generic
+// OpenAI-compat client strips it and 400s. Disabling thinking sidesteps the
+// round-trip entirely.
+const DEEPSEEK_EXTRA_BODY = { thinking: { type: 'disabled' } }
+// Under load DeepSeek QUEUES requests on an open connection instead of 429ing
+// (worst at Chinese peak hours), so the request timeout gets a 60s floor over
+// whatever the caller asked for. A stalled request must never be fast-retried
+// — it just re-enters the queue. This provider has no retry loop (one fetch
+// per call; the orchestrator treats a timeout as a failed turn), which is the
+// required behavior — do not add one for deepseek.
+const DEEPSEEK_TIMEOUT_FLOOR_MS = 60_000
 
 export function createOpenAICompatProvider(config, { kind, defaultBaseURL, fetchImpl = globalThis.fetch } = {}) {
   const pcfg = config.llm?.providers?.[kind] ?? {}
@@ -60,9 +85,15 @@ export function createOpenAICompatProvider(config, { kind, defaultBaseURL, fetch
       model,
       max_tokens: maxTokens,
       messages: anthropicToOpenAIMessages(messages, systemText),
+      // DeepSeek V4: disable thinking mode (reasoning_content round-trip is
+      // not implementable over plain OpenAI-compat; see constant above).
+      ...(kind === 'deepseek' ? DEEPSEEK_EXTRA_BODY : {}),
     }
     const t = anthropicToolsToOpenAITools(tools)
     if (t) body.tools = t
+    // NOTE: tool_choice is deliberately never sent. The default ('auto') is
+    // what every call site wants, and DeepSeek in particular misbehaves with
+    // 'required' — keep it that way.
 
     const controller = new AbortController()
     const onParentAbort = () => controller.abort()
@@ -70,7 +101,13 @@ export function createOpenAICompatProvider(config, { kind, defaultBaseURL, fetch
       if (signal.aborted) controller.abort()
       else signal.addEventListener('abort', onParentAbort, { once: true })
     }
-    const timer = setTimeout(() => controller.abort(), timeoutMs ?? defaultTimeoutMs)
+    // DeepSeek queues instead of 429ing at peak: floor the deadline at 60s no
+    // matter what the caller (or anthropic.timeout_ms) asked for.
+    const requestedTimeoutMs = timeoutMs ?? defaultTimeoutMs
+    const effectiveTimeoutMs = kind === 'deepseek'
+      ? Math.max(requestedTimeoutMs, DEEPSEEK_TIMEOUT_FLOOR_MS)
+      : requestedTimeoutMs
+    const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs)
     let resp
     try {
       resp = await fetchImpl(`${baseURL}/chat/completions`, {

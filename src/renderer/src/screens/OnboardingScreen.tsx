@@ -44,6 +44,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { QuestionShell } from '../components/QuestionShell';
 import { TextField } from '../components/TextField';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
+import { PROVIDER_LABELS } from '@shared/llmCatalog';
 import type { UserConfig } from '@shared/characterSchema';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -309,24 +310,10 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   }
 
   // ── Step 2 — API key ────────────────────────────────────────────────────
-  // ui-A1: dynamic provider label — title shifts with the selected tile so
-  // a user who picked Mistral on step 1 reads "Paste your Mistral API key."
-  // not the legacy "Local" fallback.
-  const PROVIDER_LABELS: Record<Provider, string> = {
-    anthropic: 'Anthropic',
-    openai: 'OpenAI',
-    gemini: 'Gemini',
-    ollama: 'Ollama',
-    grok: 'Grok',
-    openrouter: 'OpenRouter',
-    deepseek: 'DeepSeek',
-    mistral: 'Mistral',
-    together: 'Together',
-    groq: 'Groq',
-    fireworks: 'Fireworks',
-    cerebras: 'Cerebras',
-    perplexity: 'Perplexity',
-  };
+  // ui-A1: dynamic provider label — title shifts with the selected provider so
+  // a user who picked DeepSeek on step 1 reads "Paste your DeepSeek API key."
+  // not the legacy "Local" fallback. 260816: labels come from the shared
+  // catalog (src/shared/llmCatalog.ts) instead of a duplicated map.
   const providerLabel = PROVIDER_LABELS[provider] ?? 'API';
   return (
     <QuestionShell

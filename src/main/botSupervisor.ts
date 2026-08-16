@@ -802,6 +802,30 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // directive. Fork-time like vision_mode — a Settings change applies at the
     // next summon (the chat surface re-reads it per turn).
     const chatLanguage = clampChatLanguage(userCfg.chat_language);
+    // 260816 (china-compat W2): bridge the Settings LLM provider picker into
+    // the bot. UserConfig.provider + provider_config were written by Settings
+    // and read by NOTHING until now — the init payload carried no llm config,
+    // so every bot session ran Anthropic regardless of the picker. Local
+    // (BYOK) only: cloud-proxy stays on the anthropic+cloudMode path (llmInit
+    // stays undefined). model/base_url ship only when the user configured an
+    // override; the bot's own ConfigSchema defaults (src/bot/config.js,
+    // mirroring src/shared/llmCatalog.ts) fill the rest. api_key duplicates
+    // the top-level `apiKey` field, which is KEPT for back-compat and for the
+    // Anthropic path.
+    let llmInit: { provider: string; model?: string; base_url?: string; api_key: string } | undefined;
+    if (aiBackendKind === 'local') {
+      const provider = userCfg.provider ?? 'anthropic';
+      const pcRaw = (userCfg.provider_config as Record<string, unknown> | undefined)?.[provider];
+      const pc = (pcRaw && typeof pcRaw === 'object' ? pcRaw : {}) as { model?: unknown; base_url?: unknown };
+      const model = typeof pc.model === 'string' && pc.model.trim() ? pc.model.trim() : undefined;
+      const baseUrl = typeof pc.base_url === 'string' && pc.base_url.trim() ? pc.base_url.trim() : undefined;
+      llmInit = {
+        provider,
+        api_key: apiKey,
+        ...(model ? { model } : {}),
+        ...(baseUrl ? { base_url: baseUrl } : {}),
+      };
+    }
     if (!preferred_name) {
       const status: BotStatus = {
         kind: 'error',
@@ -1176,6 +1200,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // through Sei's Fly.io proxy (D-40 sub-delivery a). undefined here
               // means BYOK — bot uses the legacy `apiKey` path.
               cloudMode,
+              // 260816 (china-compat W2): the LLM provider selection for local
+              // (BYOK) sessions — {provider, model?, base_url?, api_key}.
+              // undefined in cloud-proxy mode. The bot maps it onto
+              // config.llm via applyLlmInit (src/bot/llmInit.js).
+              llm: llmInit,
               // Phase 18/19: { summary, recent } from the in-app chat, seeded into
               // the bot's prompt so it knows what you were just talking about. null
               // when there is no prior chat. See chat/continuity.ts.
