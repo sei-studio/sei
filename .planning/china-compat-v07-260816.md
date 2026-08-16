@@ -1,0 +1,164 @@
+# China compatibility + BYOK-everywhere (v0.7 stream) — 260816
+
+Goal: a mainland-China user can browse/adopt cloud characters, bring their own
+LLM key, use local STT/TTS, and text/call/play (chess, Draw!, backseat,
+Minecraft) fully in local mode. Supported-region cloud users see zero behavior
+change (one sanctioned exception: zh-UI cloud users get SenseVoice as the local
+STT fallback instead of Whisper).
+
+Research grounding (agents, 260816): MiniMax/Alibaba lead hosted zh TTS (not in
+scope this stream); DeepSeek current lineup is `deepseek-v4-flash` /
+`deepseek-v4-pro` (legacy `deepseek-chat` alias DISCONTINUED 2026-07-24); V4
+thinking mode requires `reasoning_content` round-trip in tool loops (we send
+`thinking: {type:'disabled'}` instead); Hugging Face is hard-blocked in CN,
+GitHub release assets unreliable, jsDelivr dead; api.sei.gg (Cloudflare) is
+reachable-degraded from CN and `GET https://api.sei.gg/cdn-cgi/trace` returns
+`loc=CC` (verified; sei.gg apex is Vercel-direct and has no trace endpoint).
+
+## Decisions (user-confirmed 260816)
+
+- Provider list: **anthropic, openai, deepseek, qwen (new), gemini, grok,
+  ollama, openrouter**. Dropped providers (mistral, together, groq, fireworks,
+  cerebras, perplexity) are GRANDFATHERED: existing configs keep working,
+  hidden from the picker unless currently selected.
+- Local TTS optimizes for reliability/lightweight over naturalness ("local
+  Azure-voice register is fine"). en+zh, male+female each. Engine per research
+  (Piper-class; see W3).
+- Persona expansion/soulcast for local users runs on the user's BYOK provider.
+  Portrait generation stays on the proxy free endpoint where a JWT exists;
+  signed-out local creation falls back to the procedural portrait (proxy-side
+  anonymous access is a separate sei-proxy follow-up, not this stream).
+- FULL onboarding restored for local users: questionnaire answers persisted,
+  companion generated (BYOK soulcast via vendored soulcaster prompts),
+  full tutorial with the created character.
+- Mirrors: models + updater feed on R2 behind `dl.sei.gg` (zone already on
+  Cloudflare; free egress).
+- Region gate: **client-side, at signup/login only.** Detection =
+  `api.sei.gg/cdn-cgi/trace` `loc=`, FAIL OPEN. Blocklist = CN, HK, MO +
+  Anthropic-unsupported ∪ Polar-unsupported (embedded constant). Popup: "Our
+  servers do not currently support your region. Please continue with local
+  mode." (+zh). Existing signed-in sessions untouched. Signed-out cloud
+  character Browse keeps working (verified: browse path is anonymous through
+  the /supabase proxy).
+- System-locale detect: any `zh-*` in `app.getPreferredSystemLanguages()` →
+  `ui_language: 'zh'`, ONLY when the user has never explicitly chosen
+  (absent field). All other locales stay English.
+
+## Latent bug this stream fixes
+
+The Settings provider picker writes `UserConfig.provider`/`provider_config`
+and NOTHING reads them: botSupervisor's init payload omits llm config
+entirely, so the bot always runs Anthropic (`src/bot/index.js` fills the llm
+sub-tree from Zod defaults). The 13-provider factory was reachable only from
+the deleted CLI. W2 wires it for real.
+
+## Architecture: one provider layer, two consumers
+
+New `src/main/llm/` (TypeScript port/extension of `src/bot/brain/llm/`),
+implementing the bot's `call()` contract plus what main needs:
+
+```
+buildProvider(cfg) -> {
+  call({systemBlocks, tools, messages, signal, timeoutMs, maxTokens,
+        stopSequences, toolChoice, images-ok, onTextDelta?, onContentBlock?})
+    -> {toolUses, text, content, usage, stopReason}   // content: ALWAYS a
+       // synthesized anthropic-shaped assistant block array, so tool loops
+       // can push it back verbatim (non-Anthropic adapters must fabricate it)
+  capabilities: {vision, cached, local, streaming}
+  model, kind
+}
+```
+
+- `cloud-proxy` backend keeps the EXACT current Anthropic-SDK path — zero
+  change for cloud users, including cache_control breakpoints.
+- `local` + anthropic: current path (streaming, caching) unchanged.
+- `local` + openai-compat (openai/deepseek/qwen/grok/openrouter/ollama +
+  grandfathered): SSE streaming with text deltas surfaced and tool_calls
+  buffered to completion; `stop` mapping; `tool_choice` function mapping;
+  cache_control stripped (blocks joined; ordering preserved for implicit
+  prefix caching); normalized stopReason ('max_tokens' etc.) and usage.
+- gemini: non-streaming v1 (voice sentences arrive at hop end — accepted
+  degradation), schema sanitize + idToName reconstruction as in the bot.
+- DeepSeek: default `deepseek-v4-flash`, `thinking:{type:'disabled'}`
+  extra body, first-token timeout allowance (provider-level timeoutMs floor
+  60s — DeepSeek queues instead of 429ing at CN peak; never fast-retry).
+- Qwen (new, also added to bot factory): DashScope compatible-mode,
+  default base `https://dashscope.aliyuncs.com/compatible-mode/v1` (CN),
+  intl override via base_url. Default model `qwen3-max` (verify at impl).
+
+Call-site port order (from the 260816 call-site map; see agent report):
+trivial (continuity fold, memoryCompaction adapter, knowledgeStore compact,
+chatService one-shots) → medium (chess runner, voice one-shots, chessProfile
+forced-tool with JSON fallback) → hard (chat streaming turn, Draw! drawing
+thread [stroke streaming Anthropic-only, per-hop reveal elsewhere], backseat).
+personaExpansion: provider-generic streaming via the same layer; local
+BYOK fetches /free/prompts when signed-in, else uses vendored soulcaster
+prompt fallback.
+
+Vision is a PER-MODEL property surfaced as `llmVisionCapable` (config-derived,
+not bot-session-derived): static catalog in `src/shared/llmCatalog.ts` +
+per-provider heuristics; cloud mode → always true. Renderer gates: games
+picker Draw! tile (tileLocked + reason popup), ChatTopBar backseat button,
+CallControls share pill; main-side hard block in drawService/backseatService
+image calls (renderer gates are bypassable).
+
+## Config/IPC contracts (written first, by hand — agents consume)
+
+- `UserConfig.provider_config[provider] = {model?, base_url?}` (shape now
+  enforced; already allow-listed in configStore).
+- `UserConfig.stt_engine: 'scribe' | 'whisper' | 'sensevoice'` (extends
+  existing field).
+- `UserConfig.tts_engine: 'elevenlabs' | 'local'` (new; absent = elevenlabs).
+- `UserConfig.tts_local_voices: Record<'en-f'|'en-m'|'zh-f'|'zh-m', boolean>`
+  — which packs are downloaded (renderer cache is authoritative; this mirrors
+  for UI).
+- IPC: `llm:list-models` (per-provider /models fetch + curated merge),
+  `llm:test` (1-token probe, returns ok/typed error), `region:status`
+  (cached trace lookup), plus tts/stt selection channels as needed.
+- Character voice: every character KEEPS `metadata.voiceId` (ElevenLabs).
+  Local-TTS mapping: voiceId → gender via voiceAssign VOICES/LEGACY metadata
+  → local voice by (gender, chat language); `voicePitch` applies through the
+  existing pitchBus; EL picker hidden for local non-EL users (pitch/speed
+  only).
+
+## Workstreams
+
+- W1 provider layer + call-site ports (blocked on contracts) — the big one.
+- W2 bot wiring: supervisor init payload carries llm config; provider list
+  reduction + grandfather; qwen; deepseek fixes (also in bot factory).
+- W3 local TTS: engine per research; 4 voice packs; download-on-select;
+  voice mapping + character voice UI rules.
+- W4 STT: SenseVoice runtime + picker; zh cloud fallback.
+- W5 Settings UI: model picker + Test; TTS/STT sections; download popups
+  ((free) label, "Download? (XX MB)" — reuse VoiceCallScreen installOverlay
+  pattern, lifted into a shared component).
+- W6 onboarding: ProviderSelect (8) replaces the hardcoded LocalSetupPanel
+  list; model select + test; STT/TTS steps; restore prefsSave +
+  local generateUnique; locale detect on launch.
+- W7 region gate (authHandlers + AuthPanel/SignInModal surfaces; OnboardApp
+  uses its native panel vocabulary, not ModalShell).
+- W8 mirrors: R2 + dl.sei.gg; upload models; client fallback (origin →
+  mirror; mirror-first when region=CN); electron-updater mirror feed +
+  release CI upload.
+- W9 vision gating (after W1's capability plumbing).
+- W10 integration: trace all user types through all surfaces; tests; zh
+  dictionary sweep; cloud no-regression check.
+
+## User-type trace matrix (W10 exit criteria)
+
+| User | chat | voice call | chess | Draw! | backseat | Minecraft | create |
+|---|---|---|---|---|---|---|---|
+| Cloud, supported region | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged |
+| Local Anthropic BYOK | ✓ | ✓ (EL BYOK or local TTS) | ✓ | ✓ | ✓ | ✓ | BYOK expand + portrait* |
+| Local DeepSeek BYOK | ✓ | ✓ | ✓ | gated off (no vision) | gated off | ✓ | BYOK expand |
+| Local qwen/openai/etc | ✓ | ✓ | ✓ | per-model vision | per-model | ✓ | BYOK |
+| CN user (local) | ✓ | ✓ local TTS/STT, mirrored models | ✓ (mirrored Maia) | per-model | per-model | ✓ | BYOK |
+| CN user trying cloud | blocked at signup/login with popup; Browse still works | | | | | | |
+
+*portrait: proxy free endpoint when signed-in; procedural otherwise.
+
+## Non-goals this stream
+
+MiniMax/hosted zh TTS (separate decision), proxy-side changes (anonymous free
+endpoints, geo enforcement), Paddle/MoR payment migration, PostHog relay,
+WeChat auth, hosted zh ASR.

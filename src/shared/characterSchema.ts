@@ -363,9 +363,17 @@ export const UserConfigSchema = z.object({
   // ui-A1: Phase 14 widened the LLM provider matrix to 13 backends — the
   // factory in src/bot/brain/llm/index.js (`SUPPORTED_PROVIDERS`) is the
   // canonical list. Anthropic remains the default for backward-compat with
-  // existing config.json files. The 10 OpenAI-compatible providers share a
+  // existing config.json files. The OpenAI-compatible providers share a
   // single adapter w/ provider-specific baseURL; gemini + ollama have their
   // own adapters.
+  //
+  // 260816 (china-compat): the PICKER list shrank to 8 — anthropic, openai,
+  // deepseek, qwen, gemini, grok, ollama, openrouter (SHOWN_PROVIDERS in
+  // src/shared/llmCatalog.ts). The enum deliberately keeps every legacy
+  // value: a config already set to a dropped provider (mistral, together,
+  // groq, fireworks, cerebras, perplexity) must keep parsing and working —
+  // the picker just stops OFFERING it unless it is the current selection.
+  // 'qwen' is new (DashScope OpenAI-compatible mode).
   provider: z
     .enum([
       'anthropic',
@@ -375,6 +383,7 @@ export const UserConfigSchema = z.object({
       'grok',
       'openrouter',
       'deepseek',
+      'qwen',
       'mistral',
       'together',
       'groq',
@@ -869,8 +878,31 @@ export const UserConfigSchema = z.object({
    * worker only. Optional and NOT defaulted (absent ≡ 'scribe' semantics,
    * decided renderer-side) so the many manual UserConfig literals don't all
    * need to spell it out — same convention as chat_language.
+   *
+   * 260816 (china-compat): + 'sensevoice' — the local SenseVoice-small
+   * engine (zh-strong, CPU realtime; roughly half Whisper's Chinese error
+   * rate). Local like 'whisper', just a different model in the same worker
+   * seam. Cloud users never persist it, but the renderer's fallback policy
+   * PREFERS SenseVoice over Whisper for the local fallback model whenever
+   * ui_language is 'zh' (the one sanctioned cloud-behavior change in the
+   * china-compat stream; see sttPolicy.ts).
    */
-  stt_engine: z.enum(['scribe', 'whisper']).optional(),
+  stt_engine: z.enum(['scribe', 'whisper', 'sensevoice']).optional(),
+  /**
+   * 260816 (china-compat): which TTS engine local-mode voice calls use.
+   * 'elevenlabs' = the existing route (user's own ElevenLabs key when set,
+   * else the proxy for cloud accounts); 'local' = the on-device lightweight
+   * TTS voices (en+zh, male+female packs downloaded on selection — see
+   * src/renderer/src/lib/voice/localTts*). Optional and NOT defaulted
+   * (absent ≡ 'elevenlabs' semantics, decided renderer-side, so every
+   * existing config and every cloud user is untouched). Characters always
+   * KEEP their designated metadata.voiceId (an ElevenLabs pool id); the
+   * local engine maps that voice's gender + the conversation language to a
+   * local voice pack at synthesis time, and metadata.voicePitch still
+   * applies through the pitch shifter. Cloud accounts ignore this field
+   * entirely.
+   */
+  tts_engine: z.enum(['elevenlabs', 'local']).optional(),
   /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so

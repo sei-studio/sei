@@ -151,6 +151,7 @@ const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'vision_mode',
   'stt_engine',
   'stt_local_fallback',
+  'tts_engine',
   'ui_language',
 ];
 
