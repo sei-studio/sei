@@ -225,3 +225,27 @@ the extension is connected.
 - mac x64 artifact ships WITHOUT local speech unless CI force-installs
   sherpa-onnx-darwin-x64 (npm cpu-gating on arm64 runners) — release CI
   change owed, noted in electron-builder.yml.
+
+## W6 landing notes (260817)
+
+Shipped: OnboardApp's local path is a four-step wizard (provider+key → model
+list + Test → STT → TTS) and then runs the FULL onboarding arc (prefsSave +
+generateUnique + full tutorial). generateUnique now runs in local mode:
+sheet via the vendored soulcaster castSoul over src/main/llm, persona via
+expandPersona's BYOK path; the model persists in
+`provider_config[provider].model` (read by both src/main/llm and the bot
+supervisor's init payload). Deliberate degradations, all in-code-commented:
+- Portrait/skin (and the public_id fetch-back) are JWT-authed proxy routes,
+  so a SIGNED-OUT local cast saves portraitless (procedural portrait) with
+  owner null, and emits NO portrait/skin stage ticks — which means the
+  in-app SuiMeetScene bar creeps to ~70% before the ok result lands (the
+  completion transition covers it; cosmetic only).
+- The local sheet uses the VENDORED soulcaster prompts (a local user may be
+  signed out; /free/soulcast is unreachable) — prompt improvements reach
+  local users on a client ship.
+- The wizard's key step saves the API key before config exists (the model
+  list needs it); an abandoned wizard leaves a stray key and no config,
+  which is harmless and matches ApiKeySetupModal's ordering.
+- Local-TTS onboarding downloads the packs for the CURRENT UI language
+  (zh → both gendered zh packs, en → the one en pack); other packs come
+  later via Settings / the VOICE_PACK_MISSING re-offer.
