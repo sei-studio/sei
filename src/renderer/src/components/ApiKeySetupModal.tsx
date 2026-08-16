@@ -27,23 +27,10 @@ import { ProviderSelect, type Provider } from './ProviderSelect';
 import { TextField } from './TextField';
 import styles from './ApiKeySetupModal.module.css';
 
-// Mirrors OnboardingScreen's step-3 label map so the key prompt names the
-// selected provider ("Paste your Anthropic API key").
-const PROVIDER_LABELS: Record<Provider, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  ollama: 'Ollama',
-  grok: 'Grok',
-  openrouter: 'OpenRouter',
-  deepseek: 'DeepSeek',
-  mistral: 'Mistral',
-  together: 'Together',
-  groq: 'Groq',
-  fireworks: 'Fireworks',
-  cerebras: 'Cerebras',
-  perplexity: 'Perplexity',
-};
+// 260816 (china-compat): labels come from the shared catalog so the key
+// prompt names the selected provider ("Paste your Anthropic API key") and
+// stays in sync with the picker's offered list.
+import { PROVIDER_LABELS } from '@shared/llmCatalog';
 
 export interface ApiKeySetupModalProps {
   /** Close without switching — returns to the hard-stop modal. */
