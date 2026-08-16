@@ -390,6 +390,18 @@ export interface VoiceTtsChunkPush {
 }
 
 /**
+ * One speech pack's state in speech:pack-status / speech:pack-state pushes
+ * (260816 local speech — sherpa-onnx model packs, src/main/speech/).
+ */
+export interface SpeechPackStatePush {
+  state: 'absent' | 'downloading' | 'ready';
+  /** Download progress in whole percents, present only while downloading. */
+  pct?: number;
+  /** Archive size in bytes (the download cost to show in prompts). */
+  bytes: number;
+}
+
+/**
  * The closed emotion vocabulary the avatar system speaks (260804). Import maps
  * a model's expression files onto these by filename keywords; at speech time
  * the spoken line is classified into one (or null) and the overlay applies the
@@ -1723,6 +1735,32 @@ export interface RendererApi {
     { text: string } | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
   >;
   /**
+   * Local speech packs (260816, china-compat W3+W4) — sherpa-onnx models for
+   * local TTS (en+zh voice packs) and SenseVoice STT, downloaded on demand
+   * into <userData>/speech-models/. Contract doc: src/main/speech/index.ts.
+   * States: 'absent' | 'downloading' (pct present) | 'ready'; `bytes` is the
+   * archive download size for the "Download? (XX MB)" prompt.
+   */
+  speechPackStatus(): Promise<{ packs: Record<string, SpeechPackStatePush> }>;
+  /** Download one pack (single-flight; mirror-first). Resolves when READY;
+   * rejects with SPEECH_DOWNLOAD_FAILED on failure. Progress arrives on
+   * onSpeechPackState pushes. */
+  speechPackDownload(args: { packId: string }): Promise<void>;
+  /** Remove one downloaded pack from disk. */
+  speechPackRemove(args: { packId: string }): Promise<void>;
+  /** Push: full pack-state snapshot, fired on every state/progress change. */
+  onSpeechPackState(cb: (push: { packs: Record<string, SpeechPackStatePush> }) => void): Unsubscribe;
+  /**
+   * Local SenseVoice STT (260816): transcribe one dictation utterance in main.
+   * `pcm` is raw Float32 mono audio at `sampleRate` (the dictation pipeline
+   * produces 16kHz). Rejects with VOICE_PACK_MISSING:stt-sensevoice when the
+   * model is not downloaded — the caller falls back to Whisper behavior.
+   */
+  speechSttTranscribe(args: {
+    pcm: ArrayBuffer;
+    sampleRate: number;
+  }): Promise<{ text: string; language?: string }>;
+  /**
    * Fire-and-forget connection prewarm for the voice upstreams (260724).
    * Called the moment the player's mic speech OPENS so the TCP+TLS handshake
    * to the proxy/ElevenLabs origin overlaps the utterance itself, and the
@@ -2734,6 +2772,19 @@ export const IpcChannel = {
     elevenKeySet: 'voice:eleven-key-set',
     /** Invoke: is a BYOK ElevenLabs key stored? → {present} (260725). */
     elevenKeyStatus: 'voice:eleven-key-status',
+  },
+  /** Local speech packs + SenseVoice STT (260816, src/main/speech/). */
+  speech: {
+    /** Invoke: current pack states → { packs: Record<packId, SpeechPackStatePush> }. */
+    packStatus: 'speech:pack-status',
+    /** Invoke: download one pack ({packId}); resolves when ready. */
+    packDownload: 'speech:pack-download',
+    /** Invoke: remove one downloaded pack ({packId}). */
+    packRemove: 'speech:pack-remove',
+    /** Push (main → renderer): full pack-state snapshot on every change. */
+    packState: 'speech:pack-state',
+    /** Invoke: SenseVoice transcription ({pcm, sampleRate} → {text, language?}). */
+    sttTranscribe: 'speech:stt-transcribe',
   },
   avatar: {
     /** Invoke: import a Live2D model zip for a character → AvatarManifest. */

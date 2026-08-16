@@ -870,7 +870,7 @@ export const UserConfigSchema = z.object({
    * decided renderer-side) so the many manual UserConfig literals don't all
    * need to spell it out — same convention as chat_language.
    */
-  stt_engine: z.enum(['scribe', 'whisper']).optional(),
+  stt_engine: z.enum(['scribe', 'whisper', 'sensevoice']).optional(),
   /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so
@@ -878,6 +878,14 @@ export const UserConfigSchema = z.object({
    * and NOT defaulted (absent ≡ false) — same convention as analytics_opt_out.
    */
   stt_local_fallback: z.boolean().optional(),
+  /**
+   * 260816 local speech (china-compat W3+W4): which TTS engine speaks a
+   * companion's lines. 'local' routes synthesis through the sherpa-onnx
+   * voice packs in main (speech/) instead of ElevenLabs. Read ONLY when
+   * ai_backend_kind === 'local' — cloud accounts ignore it entirely.
+   * Optional and NOT defaulted (absent ≡ 'elevenlabs').
+   */
+  tts_engine: z.enum(['elevenlabs', 'local']).optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

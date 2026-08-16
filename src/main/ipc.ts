@@ -1664,6 +1664,60 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     prewarmTts();
   });
 
+  // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────
+  // sherpa-onnx model packs (local TTS voices + SenseVoice STT), downloaded
+  // on demand into <userData>/speech-models/. Contract: src/main/speech/index.ts.
+  // Everything the renderer reads is named in the schemas here — zod strips
+  // undeclared keys silently (the backseat gridSmall lesson).
+  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh-f', 'tts-zh-m', 'stt-sensevoice']);
+  let speechPushWired = false;
+  const wireSpeechPush = async (): Promise<void> => {
+    if (speechPushWired) return;
+    speechPushWired = true;
+    const { onPackStates } = await import('./speech');
+    onPackStates((packs) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.speech.packState, { packs });
+      }
+    });
+  };
+  ipcMain.handle(IpcChannel.speech.packStatus, async () => {
+    await wireSpeechPush();
+    const { packStatus } = await import('./speech');
+    return { packs: await packStatus() };
+  });
+  ipcMain.handle(IpcChannel.speech.packDownload, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ packId: SpeechPackIdSchema }).parse(argsRaw);
+    await wireSpeechPush();
+    const { downloadPack } = await import('./speech');
+    await downloadPack(args.packId);
+  });
+  ipcMain.handle(IpcChannel.speech.packRemove, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ packId: SpeechPackIdSchema }).parse(argsRaw);
+    await wireSpeechPush();
+    const { removePack } = await import('./speech');
+    await removePack(args.packId);
+  });
+  // SenseVoice dictation transcription (renderer VAD-cut utterance → text).
+  // Same PCM bound as voice:stt; language rides back for the auto-switch the
+  // renderer's caller feeds (main-side noteDetectedLanguage stays Scribe-only:
+  // SenseVoice's tag is per-model, not a calibrated probability).
+  ipcMain.handle(
+    IpcChannel.speech.sttTranscribe,
+    async (_event, argsRaw: unknown): Promise<{ text: string; language?: string }> => {
+      const args = z
+        .object({
+          pcm: z.instanceof(ArrayBuffer).refine((b) => b.byteLength > 0 && b.byteLength <= 2_000_000),
+          sampleRate: z.number().int().min(8_000).max(48_000),
+        })
+        .parse(argsRaw);
+      const { transcribeLocal } = await import('./speech');
+      const { normalizeSttText } = await import('./voice/stt');
+      const res = await transcribeLocal(new Float32Array(args.pcm), args.sampleRate);
+      return { text: normalizeSttText(res.text), ...(res.language ? { language: res.language } : {}) };
+    },
+  );
+
   ipcMain.handle(IpcChannel.voice.callState, async (_event, argsRaw: unknown): Promise<void> => {
     const args = z
       .object({
