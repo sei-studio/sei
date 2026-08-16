@@ -35,7 +35,7 @@
 import path from 'node:path';
 import { stat } from 'node:fs/promises';
 import { paths } from '../paths';
-import { buildChatSdk } from './sdk';
+import { buildLlmProvider } from '../llm';
 import { createMemoryCompactor } from '../../bot/brain/memory/compactor.js';
 
 /**
@@ -81,13 +81,16 @@ const chatAnthropicAdapter = {
     maxTokens: number;
     model: string;
   }): Promise<{ text: string }> {
-    const { client } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     const system = opts.systemBlocks.map((b) => b.text).join('\n\n');
     const run = (model: string) =>
-      client.messages.create(
-        { model, max_tokens: opts.maxTokens, system, messages: opts.messages },
-        { timeout: opts.timeoutMs },
-      );
+      llm.call({
+        model,
+        maxTokens: opts.maxTokens,
+        system,
+        messages: opts.messages,
+        timeoutMs: opts.timeoutMs,
+      });
     let res: Awaited<ReturnType<typeof run>>;
     try {
       res = await run(opts.model);

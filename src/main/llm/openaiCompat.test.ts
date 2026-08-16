@@ -115,7 +115,8 @@ describe('createOpenAICompatProvider', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     const res = await p.call({ maxTokens: 100, messages: [{ role: 'user', content: 'go' }] });
-    expect(fetchImpl.mock.calls[0][0]).toBe('https://api.test/v1/chat/completions');
+    const calls = fetchImpl.mock.calls as unknown as Array<[string, { body: string; headers: Record<string, string> }]>;
+    expect(calls[0][0]).toBe('https://api.test/v1/chat/completions');
     expect(res.toolUses).toEqual([{ id: 'c9', name: 'play', input: { move: 'e4' } }]);
     expect(res.content).toEqual([
       { type: 'text', text: 'done' },
@@ -181,7 +182,8 @@ describe('createOpenAICompatProvider', () => {
         deltas.push(t);
       },
     });
-    const sent = JSON.parse((fetchImpl.mock.calls[0] as unknown[])[1] ? String((fetchImpl.mock.calls[0][1] as { body: string }).body) : '{}') as Record<string, unknown>;
+    const streamCalls = fetchImpl.mock.calls as unknown as Array<[string, { body: string }]>;
+    const sent = JSON.parse(streamCalls[0][1].body) as Record<string, unknown>;
     expect(sent.stream).toBe(true);
     expect(sent.thinking).toEqual({ type: 'disabled' });
     expect(deltas).toEqual(['one. ', 'two.']);
@@ -200,7 +202,7 @@ describe('createOpenAICompatProvider', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     await p.call({ maxTokens: 10, messages: [{ role: 'user', content: 'hi' }] });
-    const headers = (fetchImpl.mock.calls[0][1] as { headers: Record<string, string> }).headers;
-    expect(headers.authorization).toBeUndefined();
+    const hdrCalls = fetchImpl.mock.calls as unknown as Array<[string, { headers: Record<string, string> }]>;
+    expect(hdrCalls[0][1].headers.authorization).toBeUndefined();
   });
 });

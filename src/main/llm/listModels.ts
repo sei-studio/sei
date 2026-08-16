@@ -19,7 +19,6 @@ import {
 import { hasApiKey, loadApiKey } from '../apiKeyStore';
 import { loadConfig } from '../configStore';
 import { buildLocalProviderFor, resolveLocalModel } from './index';
-import { createAnthropicTestProvider } from './anthropicTest';
 
 const LIST_TIMEOUT_MS = 10_000;
 

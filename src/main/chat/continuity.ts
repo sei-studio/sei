@@ -34,7 +34,11 @@ import path from 'node:path';
 import type { ChatMessage } from '../../shared/ipc';
 import { paths } from '../paths';
 import { readAll } from './chatStore';
-import { buildChatSdk, CHAT_MODEL } from './sdk';
+import { CHAT_MODEL } from './sdk';
+// The multi-provider layer (china-compat W1). Anthropic (cloud + BYOK) rides
+// the exact old SDK path inside it; other local providers ignore the SUMMARY
+// model override and fold with their single configured model.
+import { buildLlmProvider } from '../llm';
 import { buildFoldSystem, buildFoldTranscript, extractSummaryTag, formatChatTimestamp } from './foldPrompt';
 import { maybeCompactChatMemory } from './memoryCompaction';
 
@@ -309,7 +313,7 @@ async function foldIntoSummary(
   personaExpanded?: string,
 ): Promise<BridgeState> {
   try {
-    const { client } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     // Prompt text + transcript formatting live in foldPrompt.ts (pure) so the
     // offline eval harness runs the byte-identical prompt. The 260810
     // noise-robustness instruction (low-signal batches must not displace
@@ -325,10 +329,13 @@ async function foldIntoSummary(
     // retry, only for a model-rejection 400 — real errors (timeouts, auth) still
     // surface to the catch below.
     const runFold = (model: string) =>
-      client.messages.create(
-        { model, max_tokens: SUMMARY_MAX_TOKENS, system, messages: [{ role: 'user', content: userText }] },
-        { timeout: SUMMARY_TIMEOUT_MS },
-      );
+      llm.call({
+        model,
+        maxTokens: SUMMARY_MAX_TOKENS,
+        system,
+        messages: [{ role: 'user', content: userText }],
+        timeoutMs: SUMMARY_TIMEOUT_MS,
+      });
     let res: Awaited<ReturnType<typeof runFold>>;
     try {
       res = await runFold(SUMMARY_MODEL);
@@ -356,7 +363,7 @@ async function foldIntoSummary(
     // until the next fold overwrites it (the live corpus had exactly this).
     // Treat it like a failed fold: keep the old summary AND the watermark so
     // the batch is retried. Should be rare at 800 tokens; see SUMMARY_MAX_TOKENS.
-    if (res.stop_reason === 'max_tokens') {
+    if (res.stopReason === 'max_tokens') {
       console.warn(`[sei] chat summary fold for ${id} hit max_tokens — discarding truncated output, will retry`);
       return bridge;
     }
