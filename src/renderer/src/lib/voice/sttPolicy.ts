@@ -23,7 +23,10 @@
 export type SttLocalModel = 'eager' | 'none';
 
 export interface SttPolicyConfig {
-  stt_engine?: 'scribe' | 'whisper';
+  // 'sensevoice' (260816, china-compat) is local like 'whisper'; the full
+  // engine routing lands with the speech workstream — here it only needs to
+  // count as "not cloud".
+  stt_engine?: 'scribe' | 'whisper' | 'sensevoice';
   stt_local_fallback?: boolean;
 }
 
@@ -44,5 +47,6 @@ export function sttPolicy(
       : { localModel: 'none', useCloud: true };
   }
   // BYOK: absent stt_engine means 'scribe' (cloud on top of the local race).
-  return { localModel: 'eager', useCloud: (cfg?.stt_engine ?? 'scribe') !== 'whisper' };
+  const engine = cfg?.stt_engine ?? 'scribe';
+  return { localModel: 'eager', useCloud: engine !== 'whisper' && engine !== 'sensevoice' };
 }
