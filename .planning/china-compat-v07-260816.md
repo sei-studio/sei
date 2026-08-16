@@ -126,9 +126,32 @@ image calls (renderer gates are bypassable).
 - W1 provider layer + call-site ports (blocked on contracts) — the big one.
 - W2 bot wiring: supervisor init payload carries llm config; provider list
   reduction + grandfather; qwen; deepseek fixes (also in bot factory).
-- W3 local TTS: engine per research; 4 voice packs; download-on-select;
-  voice mapping + character voice UI rules.
-- W4 STT: SenseVoice runtime + picker; zh cloud fallback.
+- W3+W4 local speech (MERGED — one runtime): sherpa-onnx-node (Apache-2.0,
+  prebuilt N-API platform packages, no electron-rebuild) hosts BOTH local TTS
+  and SenseVoice STT in main (utilityProcess if it conflicts with
+  onnxruntime-node in-process — spike first; chess already loads
+  onnxruntime-node in main). transformers.js CANNOT run SenseVoice (no
+  export exists); Whisper stays on the existing renderer worker unchanged.
+  TTS voice slots (researched 260816, licenses verified):
+    en-f + en-m  vits-piper-en_US-libritts_r-medium (CC BY 4.0, ~78 MB,
+                 904 speakers; curate one f + one m id; joe-medium CC0 as
+                 en-m alternate)
+    zh-f         vits-icefall-zh-aishell3 (Apache-2.0, 30 MB; curate a
+                 female speaker id)
+    zh-m         vits-piper-zh_CN-chaowen-medium (CC0, int8 13 MB + 2 MB
+                 g2pW lexicon; pitch analysis says male ~151 Hz — CONFIRM BY
+                 EAR before ship; aishell3 male id as same-runtime fallback)
+    zh STT       SenseVoice-small int8 (~155 MB; FunASR model license —
+                 maintainers state commercial OK; legal read owed)
+  Piper's own engine is GPL now (archived rhasspy/piper → OHF piper1-gpl)
+  — we never ship the piper ENGINE, only the voice onnx files run under
+  sherpa-onnx. espeak-ng data inside the piper-voice path is GPL-3 like our
+  existing Stockfish WASM; noted for license review. Models download from
+  dl.sei.gg mirror FIRST (k2-fsa GitHub releases are CN-unreliable), main-
+  side to <userData>/speech-models/ with progress IPC. Local TTS output
+  rides the existing clip pipeline; voicePitch/speed apply via pitchBus
+  playbackRate. Kokoro-multi-lang-v1_1 int8 (140 MB, Apache) is a future
+  opt-in quality tier, not v1 (not realtime on weak CPUs).
 - W5 Settings UI: model picker + Test; TTS/STT sections; download popups
   ((free) label, "Download? (XX MB)" — reuse VoiceCallScreen installOverlay
   pattern, lifted into a shared component).
