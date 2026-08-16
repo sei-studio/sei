@@ -1,0 +1,78 @@
+# china-compat W8 (260816): mirror published release assets to R2 (dl.sei.gg)
+# so the auto-updater has a feed reachable from mainland China (GitHub's
+# release-asset CDN is unreliable there; jsDelivr is blocked outright).
+#
+# Triggers on RELEASE PUBLISHED, not on tag push, deliberately: release.yml
+# creates a DRAFT for human review, and an aborted draft must never leave the
+# mirror serving a version GitHub never shipped. workflow_dispatch exists for
+# backfilling an already-published release by tag.
+#
+# Layout in the bucket (flat, one dir per channel state — electron-updater's
+# generic provider expects the feed yml and its artifacts side by side):
+#   updates/<asset files + *.yml + *.blockmap>
+#
+# No-op until the three R2_* secrets exist (create an R2 API token scoped to
+# the bucket; account id is in the dashboard URL). The step fails loudly if
+# only some are set, silently skips if none are.
+name: Mirror release to R2
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to mirror (e.g. v0.7.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: echo "tag=${EVENT_TAG:-$INPUT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p assets
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" --dir assets
+          ls -la assets/
+
+      - name: Upload to R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          if [ -z "$R2_ACCOUNT_ID" ] && [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "R2 secrets not configured; skipping mirror upload."
+            exit 0
+          fi
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::Partial R2 configuration. Set all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY."
+            exit 1
+          fi
+          # The feed ymls must land LAST: a client that reads a new yml before
+          # its artifacts exist would 404 the download; artifacts-first makes
+          # the swap atomic from the updater's point of view.
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          shopt -s nullglob
+          for f in assets/*; do
+            case "$f" in *.yml) continue;; esac
+            aws s3 cp "$f" "s3://sei-dl/updates/$(basename "$f")" --endpoint-url "$endpoint"
+          done
+          for f in assets/*.yml; do
+            aws s3 cp "$f" "s3://sei-dl/updates/$(basename "$f")" --endpoint-url "$endpoint"
+          done
+          echo "Mirrored ${{ steps.tag.outputs.tag }} to r2://sei-dl/updates/"
