@@ -34,6 +34,7 @@ import { useT } from '../lib/i18n';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { Button } from './Button';
 import { ModalShell } from './ModalShell';
 import { PercentBar } from './PercentBar';
@@ -111,6 +112,24 @@ export function EditCharacterModal({
   // persistVoiceSettings). These hold the last-persisted values.
   const [savedVoiceId, setSavedVoiceId] = useState<string | null>(voiceId);
   const [savedVoiceParams, setSavedVoiceParams] = useState<VoiceParams>(voiceParams);
+
+  // W5 (260817, china-compat): local-TTS gate for the Voice section. When the
+  // user is BYOK with tts_engine 'local', the ElevenLabs voice picker and
+  // previews are hidden and only the pitch slider shows. The character's
+  // stored ElevenLabs voiceId stays untouched underneath (voiceId state is
+  // simply never changed while the picker is hidden), so cloud characters and
+  // a later engine switch keep their designated voice.
+  const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
+  const [localTtsPref, setLocalTtsPref] = useState<boolean>(false);
+  useEffect(() => {
+    void sei
+      .getConfig()
+      .then((c) => setLocalTtsPref(c.tts_engine === 'local'))
+      .catch(() => {
+        /* non-fatal — default keeps the full picker */
+      });
+  }, []);
+  const localTtsMode = aiBackendKind === 'local' && localTtsPref;
 
   // ── Games: chess profile (260710). Auto-derived from the persona on the
   //    first game unless the user customizes it here (source 'user'). ─────
@@ -528,13 +547,18 @@ export function EditCharacterModal({
                 <div className={styles.subSection}>
                   <label className={styles.label}>{t('Voice')}</label>
                   <p className={styles.paneHint}>
-                    {t('How they sound on voice calls. Changes save when you press Done.')}
+                    {localTtsMode
+                      ? t(
+                          'Local voices are on: Sei picks a local voice that matches this companion. Tune the pitch here. Their ElevenLabs voice is kept for when you switch back.',
+                        )
+                      : t('How they sound on voice calls. Changes save when you press Done.')}
                   </p>
                   <VoicePicker
                     value={voiceId}
                     onChange={setVoiceId}
                     params={voiceParams}
                     onParamsChange={setVoiceParams}
+                    localTtsMode={localTtsMode}
                   />
                 </div>
               ) : null}

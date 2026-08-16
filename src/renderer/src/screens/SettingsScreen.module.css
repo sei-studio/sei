@@ -236,3 +236,56 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── W5 (260817, china-compat): inline model picker list ─────────────────
+   Opens under the Model row; a bounded scroll of full-width option rows in
+   the mono register the row's value uses. Non-vision models carry a small
+   red-tinted mark on the right. */
+.modelList {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  margin-top: var(--space-xs);
+}
+
+.modelRow {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.modelRow:last-child {
+  border-bottom: none;
+}
+
+.modelRow:hover {
+  background: var(--accent-soft);
+}
+
+.modelRowOn {
+  background: var(--accent-soft);
+}
+
+.modelRowOn .monoValue {
+  color: var(--accent-text);
+}
+
+.modelMark {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--red);
+  white-space: nowrap;
+}
