@@ -185,3 +185,29 @@ image calls (renderer gates are bypassable).
 MiniMax/hosted zh TTS (separate decision), proxy-side changes (anonymous free
 endpoints, geo enforcement), Paddle/MoR payment migration, PostHog relay,
 WeChat auth, hosted zh ASR.
+
+## W8 infra checklist (blocked on Cloudflare access — Chrome ext offline 260817)
+
+Client + CI are DONE and merged; the following account-side steps remain.
+Owner: Ouen (token/secret steps must be done by a human; Claude does not
+handle credentials). Claude can drive the dashboard steps via Chrome when
+the extension is connected.
+
+1. Cloudflare dash → R2 → create bucket `sei-dl` (location: auto/APAC).
+2. Bucket → Settings → Custom Domains → attach `dl.sei.gg` (zone sei.gg is
+   already on this account; this auto-creates the DNS record + cert).
+3. Create R2 API token (Object Read & Write, scoped to `sei-dl`), then:
+   gh secret set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+   on sei-studio/sei (mirror-release.yml consumes them).
+4. One-time asset uploads (rclone/aws-cli with that token, or dashboard):
+   - /chess/maia3-5m.onnx            (from cce-1 model-v1 release asset)
+   - /hf/onnx-community/whisper-tiny.en/resolve/main/**  (transformers.js
+     layout — mirror the exact files the pipeline fetches: config.json,
+     tokenizer*, onnx/{encoder_model_q*,decoder_model_merged_q*}.onnx etc.)
+   - /hf/onnx-community/whisper-base/resolve/main/**
+   - /speech/<packs>  — FINAL LIST PENDING W3+W4 (sherpa-onnx packs:
+     libritts_r en, aishell3 zh-f, chaowen zh-m, sensevoice-small int8)
+   - /updates/ — no manual upload; mirror-release.yml populates on the next
+     published release once secrets exist.
+5. Verify from a CN vantage (GreatFire Analyzer or a CN node) that
+   https://dl.sei.gg/chess/maia3-5m.onnx serves.
