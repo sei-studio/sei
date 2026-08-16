@@ -16,6 +16,11 @@ export const ZH_COMMON: Record<string, string> = {
   // Avatar overlay (260804): the Settings level control AND the profile tab.
   'Avatar': '虚拟形象',
 
+  // W7 region gate (260816): shown by BOTH the onboarding AuthPanel and the
+  // SignInModal (shared string, so it lives here per the zh.ts rule).
+  'Our servers do not currently support your region. Please continue with local mode.':
+    '我们的服务器暂不支持您所在的地区。请继续使用本地模式。',
+
   // Settings: Language section
   'Language': '语言',
   'App language': '应用语言',
