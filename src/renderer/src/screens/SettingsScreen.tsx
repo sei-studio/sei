@@ -45,14 +45,31 @@ import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { BackgroundImagePicker } from '../components/BackgroundImagePicker';
+import { DownloadConfirmModal, formatMb } from '../components/DownloadConfirmModal';
 import { InfoTip } from '../components/InfoTip';
 import { CopyIcon } from '../components/icons';
 import { useLangStore, useT, type UiLanguage } from '../lib/i18n';
+import { DEFAULT_MODELS } from '@shared/llmCatalog';
 import type { AvatarMode, UserConfig } from '@shared/characterSchema';
-import type { WizardState } from '@shared/ipc';
+import type { LlmListModelsResult, SpeechPackStatePush, WizardState } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
 
 const API_KEY_BULLET_LEN = 24;
+
+/**
+ * W5 (china-compat, 260817): the local TTS voice packs offered in the Voice
+ * group, in display order. Three PACKS carry the four voices — the English
+ * pack contains both the female and the male speaker, so it is one download.
+ * Ids match src/main/speech/packs.ts (the renderer never imports main); the
+ * exact byte sizes arrive per pack on the speech:pack-status push.
+ */
+const TTS_PACK_ROWS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'tts-en', label: 'English voices, female and male' },
+  { id: 'tts-zh-f', label: 'Chinese voice, female' },
+  { id: 'tts-zh-m', label: 'Chinese voice, male' },
+];
+
+const SENSEVOICE_PACK_ID = 'stt-sensevoice';
 
 /**
  * Theme swatches (260724): each theme renders as a circle split diagonally
@@ -192,6 +209,31 @@ export function SettingsScreen(): React.ReactElement {
   const [elevenKeyDraft, setElevenKeyDraft] = useState<string>('');
   const [elevenKeyError, setElevenKeyError] = useState<string | null>(null);
 
+  // ── W5 (china-compat, 260817): model picker + Test probe (local mode). ──
+  // The picker lists the selected provider's models live (llm:list-models,
+  // per-model vision verdicts + typed error tokens) and persists the choice
+  // to provider_config[provider].model — the exact field the main provider
+  // layer reads (resolveLocalModel) and the supervisor ships to the bot.
+  const [modelPickerOpen, setModelPickerOpen] = useState<boolean>(false);
+  const [modelList, setModelList] = useState<LlmListModelsResult | null>(null);
+  const [modelListLoading, setModelListLoading] = useState<boolean>(false);
+  // Test probe: idle → testing → last result. Cleared on provider/model moves.
+  const [testState, setTestState] = useState<
+    'idle' | 'testing' | { ok: true; latencyMs: number } | { ok: false; error: string }
+  >('idle');
+
+  // ── W5: local speech packs (TTS voices + SenseVoice STT). Seeded from
+  // speech:pack-status, kept live by the speech:pack-state push. ──
+  const [packStates, setPackStates] = useState<Record<string, SpeechPackStatePush>>({});
+  /** Pack awaiting the shared "Download? (XX MB)" confirm. `thenSensevoice`
+   * marks the STT flow: persist stt_engine once the download lands. */
+  const [pendingPack, setPendingPack] = useState<{
+    id: string;
+    name: string;
+    thenSensevoice?: boolean;
+  } | null>(null);
+  const [packError, setPackError] = useState<string | null>(null);
+
   // Phase 10 (D-11) — Account panel state. Modals + transient action statuses.
   const [signOutModalOpen, setSignOutModalOpen] = useState<boolean>(false);
   // WR-10: capture the account email at modal-open time so the modal can
@@ -261,6 +303,18 @@ export function SettingsScreen(): React.ReactElement {
         /* non-fatal — section just shows the empty/NONE state */
       });
   }, [setDevConsoleVisible]);
+
+  // W5: seed the speech-pack snapshot and follow the push while mounted, so
+  // download progress renders live in the Voice group.
+  useEffect(() => {
+    void sei
+      .speechPackStatus()
+      .then(({ packs }) => setPackStates(packs))
+      .catch(() => {
+        /* non-fatal — pack rows just show no state until the first push */
+      });
+    return sei.onSpeechPackState(({ packs }) => setPackStates(packs));
+  }, []);
 
   // Updates section: load the current version once, and subscribe to updater
   // events while this screen is mounted so the inline status line reflects an
@@ -363,11 +417,12 @@ export function SettingsScreen(): React.ReactElement {
 
   // 260725 BYOK voice recognition: Scribe (cloud, needs the ElevenLabs key)
   // vs local Whisper. Absent means 'scribe'; applies from the next call.
-  // 260816: the union carries 'sensevoice' too (local SenseVoice, W3+W4); the
-  // W5 Settings pass owns its picker row — until then a stored 'sensevoice'
-  // simply selects neither radio here.
+  // 260817 (W5): + SenseVoice — local like Whisper, main-side sherpa-onnx.
+  // Picking it while its pack is missing detours through the download confirm
+  // (persistSttEngine only runs once the pack is READY); scribe/whisper keep
+  // the exact pre-W5 write path.
   const sttEngine: 'scribe' | 'whisper' | 'sensevoice' = cfg?.stt_engine ?? 'scribe';
-  const onSelectSttEngine = async (next: 'scribe' | 'whisper' | 'sensevoice'): Promise<void> => {
+  const persistSttEngine = async (next: 'scribe' | 'whisper' | 'sensevoice'): Promise<void> => {
     if (!cfg || next === sttEngine) return;
     const updated: UserConfig = { ...cfg, stt_engine: next };
     setCfg(updated);
@@ -378,6 +433,125 @@ export function SettingsScreen(): React.ReactElement {
       console.error('[SettingsScreen] saveConfig (stt_engine) failed', err);
       setCfg(cfg);
       setSaveError(t('Failed to save. Try again.'));
+    }
+  };
+  const onSelectSttEngine = async (next: 'scribe' | 'whisper' | 'sensevoice'): Promise<void> => {
+    if (next === 'sensevoice' && packStates[SENSEVOICE_PACK_ID]?.state !== 'ready') {
+      setPendingPack({ id: SENSEVOICE_PACK_ID, name: t('SenseVoice'), thenSensevoice: true });
+      return;
+    }
+    await persistSttEngine(next);
+  };
+
+  // ── W5: TTS engine (Voice group, local mode). 'local' routes companion
+  // speech through the sherpa-onnx voice packs in main; the per-character
+  // ElevenLabs voiceId is KEPT untouched underneath (it still names gender
+  // for the local mapping, and a later switch back needs it). ──
+  const ttsEngine: 'elevenlabs' | 'local' = cfg?.tts_engine ?? 'elevenlabs';
+  const onSelectTtsEngine = async (next: 'elevenlabs' | 'local'): Promise<void> => {
+    if (!cfg || next === ttsEngine) return;
+    const updated: UserConfig = { ...cfg, tts_engine: next };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (tts_engine) failed', err);
+      setCfg(cfg);
+      setSaveError(t('Failed to save. Try again.'));
+    }
+  };
+
+  // ── W5: pack download/remove. Download resolves when the pack is READY;
+  // progress arrives on the speech:pack-state push the effect above follows.
+  const startPackDownload = async (packId: string, thenSensevoice: boolean): Promise<void> => {
+    setPendingPack(null);
+    setPackError(null);
+    try {
+      await sei.speechPackDownload({ packId });
+      if (thenSensevoice) await persistSttEngine('sensevoice');
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] speechPackDownload failed', err);
+      setPackError(t('Download failed. Check your connection and try again.'));
+    }
+  };
+  const onRemovePack = async (packId: string): Promise<void> => {
+    setPackError(null);
+    try {
+      await sei.speechPackRemove({ packId });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] speechPackRemove failed', err);
+      setPackError(t('Failed to remove. Try again.'));
+    }
+  };
+
+  // ── W5: model picker + Test probe handlers. ──
+  /** The model stored for a provider, or undefined when riding the default. */
+  const storedModelFor = (provider: Provider): string | undefined => {
+    const entry = (cfg?.provider_config as Record<string, unknown> | undefined)?.[provider];
+    const model =
+      entry && typeof entry === 'object' ? (entry as { model?: unknown }).model : undefined;
+    return typeof model === 'string' && model.trim() ? model.trim() : undefined;
+  };
+  /** Human string for a typed llm error token — every token gets a sentence. */
+  const llmErrorText = (token: string): string => {
+    if (token === 'no_api_key') return t('Add your API key first.');
+    if (token === 'unauthorized')
+      return t('The provider rejected your key. Check that it is correct and active.');
+    if (token === 'timeout') return t('Timed out. Check your connection and try again.');
+    if (token === 'network') return t('Could not reach the provider. Check your connection.');
+    if (token.startsWith('http_'))
+      return t('The provider returned an error (HTTP {status}).', { status: token.slice(5) });
+    return t('Something went wrong. Try again.');
+  };
+  const onOpenModelPicker = async (): Promise<void> => {
+    if (modelPickerOpen) {
+      setModelPickerOpen(false);
+      return;
+    }
+    setModelPickerOpen(true);
+    setModelListLoading(true);
+    setModelList(null);
+    try {
+      const res = await sei.llmListModels(currentProvider);
+      setModelList(res);
+    } catch {
+      setModelList({ models: [], error: 'unknown' });
+    } finally {
+      setModelListLoading(false);
+    }
+  };
+  const onPickModel = async (modelId: string): Promise<void> => {
+    if (!cfg) return;
+    const pc = { ...((cfg.provider_config as Record<string, unknown> | undefined) ?? {}) };
+    const prev = pc[currentProvider];
+    pc[currentProvider] = {
+      ...(prev && typeof prev === 'object' ? (prev as Record<string, unknown>) : {}),
+      model: modelId,
+    };
+    const updated: UserConfig = { ...cfg, provider_config: pc };
+    setCfg(updated);
+    setModelPickerOpen(false);
+    setTestState('idle');
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (provider model) failed', err);
+      setCfg(cfg);
+      setSaveError(t('Failed to save. Try again.'));
+    }
+  };
+  const onRunTest = async (): Promise<void> => {
+    if (testState === 'testing') return;
+    setTestState('testing');
+    try {
+      const res = await sei.llmTest(currentProvider, storedModelFor(currentProvider) ?? '');
+      setTestState(res);
+    } catch {
+      setTestState({ ok: false, error: 'unknown' });
     }
   };
 
@@ -462,6 +636,11 @@ export function SettingsScreen(): React.ReactElement {
       setEditingKey(true);
       setKeyDraft('');
       setKeyError(null);
+      // W5: a different vendor lists different models — drop the open picker
+      // and any stale probe result (the stored per-provider model persists).
+      setModelPickerOpen(false);
+      setModelList(null);
+      setTestState('idle');
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (provider) failed', err);
@@ -895,77 +1074,287 @@ export function SettingsScreen(): React.ReactElement {
               </div>
               {keyError ? <div className={styles.errorRow}>{keyError}</div> : null}
 
-              {/* ElevenLabs key (260725): powers voice on BYOK — TTS always,
-                  and Scribe recognition when selected below. Write-only, same
-                  UX as the API key row. */}
-              <div className={styles.row}>
-                <span className={styles.label}>
-                  {t('ElevenLabs key')}
-                  <InfoTip
-                    label={t('About the ElevenLabs key')}
-                    text={t(
-                      "sorry :( i'm working to support other voice models. for now, tts only supports elevenlabs.",
-                    )}
-                  />
-                </span>
-                {editingElevenKey ? (
-                  <span className={styles.editor}>
-                    <TextField
-                      value={elevenKeyDraft}
-                      onChange={setElevenKeyDraft}
-                      type="password"
-                      placeholder={t('Your ElevenLabs key')}
-                      autoFocus
-                      onEnter={() => void onSaveElevenKey()}
-                      aria-label={t('ElevenLabs key')}
-                    />
-                    <Button kind="primary" size="sm" onClick={() => void onSaveElevenKey()}>
-                      {t('Save')}
-                    </Button>
-                    <Button kind="quiet" size="sm" onClick={onCancelElevenKey}>
-                      {t('Cancel')}
-                    </Button>
-                  </span>
-                ) : (
-                  <>
+              {/* W5 (260817): model picker. Shown once the provider can list
+                  models (a saved key, or Ollama which needs none). Persists to
+                  provider_config[provider].model — what resolveLocalModel and
+                  the bot init payload read. */}
+              {hasKey || currentProvider === 'ollama' ? (
+                <>
+                  <div className={styles.row}>
+                    <span className={styles.label}>{t('Model')}</span>
                     <span className={styles.monoValue}>
-                      {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
+                      {storedModelFor(currentProvider) ??
+                        `${DEFAULT_MODELS[currentProvider]} · ${t('default')}`}
                     </span>
-                    <Button kind="ghost" size="sm" onClick={() => setEditingElevenKey(true)}>
-                      {hasElevenKey ? t('Update') : t('Set')}
+                    <Button kind="ghost" size="sm" onClick={() => void onOpenModelPicker()}>
+                      {t('Choose model')}
                     </Button>
-                    {hasElevenKey ? (
-                      <Button kind="quiet" size="sm" onClick={() => void onRemoveElevenKey()}>
-                        {t('Remove')}
-                      </Button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-              {elevenKeyError ? <div className={styles.errorRow}>{elevenKeyError}</div> : null}
+                  </div>
+                  {modelPickerOpen ? (
+                    <>
+                      {modelListLoading ? (
+                        <p className={styles.helper} role="status">
+                          {t('Loading models…')}
+                        </p>
+                      ) : modelList?.error ? (
+                        <p className={`${styles.helper} ${styles.helperError}`} role="alert">
+                          {llmErrorText(modelList.error)}
+                        </p>
+                      ) : (
+                        <>
+                          <div
+                            className={styles.modelList}
+                            role="listbox"
+                            aria-label={t('Model')}
+                          >
+                            {(modelList?.models ?? []).map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                role="option"
+                                aria-selected={m.id === storedModelFor(currentProvider)}
+                                className={[
+                                  styles.modelRow,
+                                  m.id === storedModelFor(currentProvider)
+                                    ? styles.modelRowOn
+                                    : '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' ')}
+                                onClick={() => void onPickModel(m.id)}
+                              >
+                                <span className={styles.monoValue}>{m.id}</span>
+                                {m.vision === 'no' ? (
+                                  <span className={styles.modelMark}>{t('no vision')}</span>
+                                ) : null}
+                              </button>
+                            ))}
+                            {(modelList?.models ?? []).length === 0 ? (
+                              <p className={styles.helper}>{t('No models listed.')}</p>
+                            ) : null}
+                          </div>
+                          <p className={styles.helper}>
+                            {t(
+                              'Models marked "no vision" cannot see images. Screen sharing and Draw! need a model that can see images.',
+                            )}
+                          </p>
+                        </>
+                      )}
+                    </>
+                  ) : null}
 
-              {/* Voice recognition (260725): what transcribes your mic on
-                  calls. Applies from the next call. */}
-              <div className={styles.row}>
-                <span className={styles.label}>{t('Voice recognition')}</span>
-                <Seg
-                  aria-label={t('Voice recognition')}
-                  value={sttEngine}
-                  options={[
-                    { value: 'scribe', label: t('ElevenLabs Scribe') },
-                    { value: 'whisper', label: t('Local Whisper') },
-                  ]}
-                  onChange={(v) => void onSelectSttEngine(v)}
-                />
-              </div>
-              <p className={styles.helper}>
-                {sttEngine === 'whisper'
-                  ? t('Free and offline. Downloads a small model on first call.')
-                  : t('Better accuracy. Uses your ElevenLabs key.')}
-              </p>
+                  {/* W5: Test probe — a 1-token completion through the same
+                      layer every surface runs. DeepSeek can queue for up to a
+                      minute at peak, hence the spinner copy. */}
+                  <div className={styles.row}>
+                    <span className={styles.label}>{t('Connection')}</span>
+                    {testState === 'testing' ? (
+                      <span className={styles.monoValue} role="status">
+                        {t('Testing…')}
+                      </span>
+                    ) : testState !== 'idle' && testState.ok ? (
+                      <span className={styles.monoValue} role="status">
+                        {t('Working. Replied in {s}s.', {
+                          s: (testState.latencyMs / 1000).toFixed(1),
+                        })}
+                      </span>
+                    ) : (
+                      <span className={styles.monoValue}>{'–'}</span>
+                    )}
+                    <Button
+                      kind="ghost"
+                      size="sm"
+                      disabled={testState === 'testing'}
+                      onClick={() => void onRunTest()}
+                    >
+                      {t('Test')}
+                    </Button>
+                  </div>
+                  {testState === 'testing' ? (
+                    <p className={styles.helper} role="status">
+                      {t('Testing your key and model. This can take up to a minute.')}
+                    </p>
+                  ) : null}
+                  {testState !== 'idle' && testState !== 'testing' && !testState.ok ? (
+                    <p className={`${styles.helper} ${styles.helperError}`} role="alert">
+                      {llmErrorText(testState.error)}
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
             </>
           ) : null}
         </div>
+
+        {/* ── Voice (W5, 260817) — local (BYOK) mode only: TTS engine +
+            voice recognition. Cloud accounts keep their managed voice path
+            and never see this group. ─────────────────────────────────── */}
+        {aiBackendKind === 'local' ? (
+          <div className={styles.group}>
+            <h3 className={styles.groupTitle}>{t('Voice') /* >Voice< */}</h3>
+
+            {/* TTS engine: ElevenLabs (BYOK key) or the free local voices.
+                Persists tts_engine; companions KEEP their ElevenLabs voiceId
+                either way — local mode maps it to a local voice by gender and
+                chat language. */}
+            <div className={styles.row}>
+              <span className={styles.label}>
+                {t('Voices')}
+                <InfoTip
+                  label={t('About voice engines')}
+                  text={t(
+                    'What speaks your companions\' lines on calls. ElevenLabs uses your own key. Local voices are free, run on this device, and work offline.',
+                  )}
+                />
+              </span>
+              <Seg
+                aria-label={t('Voices')}
+                value={ttsEngine}
+                options={[
+                  { value: 'elevenlabs', label: t('ElevenLabs') },
+                  { value: 'local', label: t('Local (free)') },
+                ]}
+                onChange={(v) => void onSelectTtsEngine(v)}
+              />
+            </div>
+
+            {ttsEngine === 'elevenlabs' ? (
+              <>
+                {/* ElevenLabs key (260725, relocated here by W5): powers TTS
+                    and Scribe recognition. Write-only, same UX as the API key
+                    row. */}
+                <div className={styles.row}>
+                  <span className={styles.label}>
+                    {t('ElevenLabs key')}
+                    <InfoTip
+                      label={t('About the ElevenLabs key')}
+                      text={t(
+                        'ElevenLabs voices need your own ElevenLabs API key. No key? Switch to the free local voices.',
+                      )}
+                    />
+                  </span>
+                  {editingElevenKey ? (
+                    <span className={styles.editor}>
+                      <TextField
+                        value={elevenKeyDraft}
+                        onChange={setElevenKeyDraft}
+                        type="password"
+                        placeholder={t('Your ElevenLabs key')}
+                        autoFocus
+                        onEnter={() => void onSaveElevenKey()}
+                        aria-label={t('ElevenLabs key')}
+                      />
+                      <Button kind="primary" size="sm" onClick={() => void onSaveElevenKey()}>
+                        {t('Save')}
+                      </Button>
+                      <Button kind="quiet" size="sm" onClick={onCancelElevenKey}>
+                        {t('Cancel')}
+                      </Button>
+                    </span>
+                  ) : (
+                    <>
+                      <span className={styles.monoValue}>
+                        {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
+                      </span>
+                      <Button kind="ghost" size="sm" onClick={() => setEditingElevenKey(true)}>
+                        {hasElevenKey ? t('Update') : t('Set')}
+                      </Button>
+                      {hasElevenKey ? (
+                        <Button kind="quiet" size="sm" onClick={() => void onRemoveElevenKey()}>
+                          {t('Remove')}
+                        </Button>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+                {elevenKeyError ? <div className={styles.errorRow}>{elevenKeyError}</div> : null}
+              </>
+            ) : (
+              <>
+                {/* Local voice packs: three downloads carry the four voices
+                    (the English pack holds both speakers). State rides the
+                    speech:pack-state push; sizes are the registry's exact
+                    bytes. */}
+                {TTS_PACK_ROWS.map((row) => {
+                  const st = packStates[row.id];
+                  return (
+                    <div className={styles.row} key={row.id}>
+                      <span className={styles.label}>{`${t(row.label)} ${t('(free)')}`}</span>
+                      {st?.state === 'downloading' ? (
+                        <span className={styles.monoValue} role="status">
+                          {t('Downloading… {pct}%', { pct: st.pct ?? 0 })}
+                        </span>
+                      ) : st?.state === 'ready' ? (
+                        <>
+                          <span className={styles.monoValue}>{t('Ready')}</span>
+                          <Button
+                            kind="quiet"
+                            size="sm"
+                            onClick={() => void onRemovePack(row.id)}
+                          >
+                            {t('Remove')}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          disabled={!st}
+                          onClick={() => setPendingPack({ id: row.id, name: t(row.label) })}
+                        >
+                          {t('Download…')}
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+                <p className={styles.helper}>
+                  {t(
+                    'Free voices that run on this device. Each companion speaks with the one matching their voice and chat language.',
+                  )}
+                </p>
+              </>
+            )}
+
+            {/* Voice recognition (260725, relocated here by W5): what
+                transcribes your mic on calls. Applies from the next call.
+                W5 adds SenseVoice (free local model, strongest on Chinese);
+                picking it downloads the model first. */}
+            <div className={styles.row}>
+              <span className={styles.label}>{t('Voice recognition')}</span>
+              <Seg
+                aria-label={t('Voice recognition')}
+                value={sttEngine}
+                options={[
+                  { value: 'scribe', label: t('ElevenLabs Scribe') },
+                  { value: 'whisper', label: t('Local Whisper') },
+                  { value: 'sensevoice', label: t('SenseVoice (free)') },
+                ]}
+                onChange={(v) => void onSelectSttEngine(v)}
+              />
+            </div>
+            {packStates[SENSEVOICE_PACK_ID]?.state === 'downloading' ? (
+              <p className={styles.helper} role="status">
+                {t('Downloading SenseVoice… {pct}%', {
+                  pct: packStates[SENSEVOICE_PACK_ID]?.pct ?? 0,
+                })}
+              </p>
+            ) : (
+              <p className={styles.helper}>
+                {sttEngine === 'whisper'
+                  ? t('Free and offline. Downloads a small model on first call.')
+                  : sttEngine === 'sensevoice'
+                    ? t('Free and offline. Runs on this device. Strongest on Chinese and English.')
+                    : t('Better accuracy. Uses your ElevenLabs key.')}
+              </p>
+            )}
+            {packError ? (
+              <p className={`${styles.helper} ${styles.helperError}`} role="alert">
+                {packError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* ── Minecraft ───────────────────────────────────────── */}
         <div className={styles.group}>
@@ -1428,6 +1817,19 @@ export function SettingsScreen(): React.ReactElement {
       {dmcaModalOpen ? <DmcaContactModal onClose={() => setDmcaModalOpen(false)} /> : null}
       {factoryResetOpen ? (
         <FactoryResetConfirmModal onCancel={() => setFactoryResetOpen(false)} />
+      ) : null}
+      {/* W5: shared "Download? (XX MB)" confirm for voice packs + SenseVoice.
+          Size comes from the pack registry via the status push, never a
+          hardcoded number. */}
+      {pendingPack && packStates[pendingPack.id] ? (
+        <DownloadConfirmModal
+          name={pendingPack.name}
+          bytes={packStates[pendingPack.id].bytes}
+          onCancel={() => setPendingPack(null)}
+          onConfirm={() =>
+            void startPackDownload(pendingPack.id, pendingPack.thenSensevoice === true)
+          }
+        />
       ) : null}
     </div>
   );
