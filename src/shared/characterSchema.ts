@@ -363,9 +363,17 @@ export const UserConfigSchema = z.object({
   // ui-A1: Phase 14 widened the LLM provider matrix to 13 backends — the
   // factory in src/bot/brain/llm/index.js (`SUPPORTED_PROVIDERS`) is the
   // canonical list. Anthropic remains the default for backward-compat with
-  // existing config.json files. The 10 OpenAI-compatible providers share a
+  // existing config.json files. The OpenAI-compatible providers share a
   // single adapter w/ provider-specific baseURL; gemini + ollama have their
   // own adapters.
+  //
+  // 260816 (china-compat): the PICKER list shrank to 8 — anthropic, openai,
+  // deepseek, qwen, gemini, grok, ollama, openrouter (SHOWN_PROVIDERS in
+  // src/shared/llmCatalog.ts). The enum deliberately keeps every legacy
+  // value: a config already set to a dropped provider (mistral, together,
+  // groq, fireworks, cerebras, perplexity) must keep parsing and working —
+  // the picker just stops OFFERING it unless it is the current selection.
+  // 'qwen' is new (DashScope OpenAI-compatible mode).
   provider: z
     .enum([
       'anthropic',
@@ -375,6 +383,7 @@ export const UserConfigSchema = z.object({
       'grok',
       'openrouter',
       'deepseek',
+      'qwen',
       'mistral',
       'together',
       'groq',
