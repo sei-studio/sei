@@ -473,6 +473,14 @@ async function bootstrap(): Promise<void> {
   try { await runDefaultsToWorldMigration(); }
   catch (err) { logger.warn(`defaults→world migration failed: ${(err as Error).message}`); }
 
+  // 1b-4. First-launch UI language detection (260816, china-compat): a
+  // Chinese system locale switches the UI to zh, once, only while the user
+  // has never chosen a language. See localeDetect.ts for the exact rule.
+  {
+    const { applyLocaleDetection } = await import('./localeDetect');
+    await applyLocaleDetection();
+  }
+
   // 1b-3. Cloud-default self-heal. The signed-in→cloud default is written on the
   // sign-in TRANSITION only; a session-restore launch re-points the scope at
   // boot, so that transition never re-fires and a profile stuck on the schema
