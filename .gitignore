@@ -59,3 +59,4 @@ resources/audio-tap/
 
 # Live2D Cubism Core — proprietary, fetched by scripts/fetch-live2d-core.mjs
 src/renderer/public/live2d/
+mirror-out/
