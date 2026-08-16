@@ -68,15 +68,19 @@ export const SPEECH_PACKS: Record<SpeechPackId, SpeechPackDef> = {
     originUrl: `${TTS_RELEASE}/vits-piper-zh_CN-chaowen-medium-int8.tar.bz2`,
     archiveBytes: 14_011_298,
     dirName: 'vits-piper-zh_CN-chaowen-medium-int8',
-    requiredFiles: ['zh_CN-chaowen-medium.int8.onnx', 'tokens.txt'],
+    // Verified against the published archive (260816): the int8 model keeps
+    // the plain .onnx name, and the voice is LEXICON-based (g2pW lexicon +
+    // number/date/phone rule FSTs) — no espeak-ng-data dir.
+    requiredFiles: ['zh_CN-chaowen-medium.onnx', 'tokens.txt', 'lexicon.txt'],
   },
-  /** SenseVoice-small int8 STT (zh/en/ja/ko/yue). */
+  /** SenseVoice-small int8 STT (zh/en/ja/ko/yue). The DATED asset name is the
+   * real one on the k2-fsa asr-models release (an undated guess 404s). */
   'stt-sensevoice': {
     id: 'stt-sensevoice',
-    asset: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2',
-    originUrl: `${ASR_RELEASE}/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2`,
-    archiveBytes: 163_002_883,
-    dirName: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17',
+    asset: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2',
+    originUrl: `${ASR_RELEASE}/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2`,
+    archiveBytes: 165_783_878,
+    dirName: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09',
     requiredFiles: ['model.int8.onnx', 'tokens.txt'],
   },
 };

@@ -92,22 +92,25 @@ function ttsConfigFor(packId: SpeechPackId): unknown {
     };
   }
   if (packId === 'tts-zh-m') {
-    // piper chaowen int8: espeak-ng data dir; a g2pW dict dir when present.
-    const dataDir = path.join(dir, 'espeak-ng-data');
-    const dictDir = path.join(dir, 'dict');
+    // piper chaowen int8: LEXICON-based zh voice (g2pW lexicon + rule FSTs),
+    // same shape as aishell3 — verified against the published archive.
+    const fsts = ['phone.fst', 'date.fst', 'number.fst']
+      .map((f) => path.join(dir, f))
+      .filter((p) => existsSync(p))
+      .join(',');
     return {
       model: {
         vits: {
           model: path.join(dir, SPEECH_PACKS['tts-zh-m'].requiredFiles[0]),
+          lexicon: path.join(dir, 'lexicon.txt'),
           tokens: path.join(dir, 'tokens.txt'),
-          ...(existsSync(dataDir) ? { dataDir } : {}),
-          ...(existsSync(dictDir) ? { dictDir } : {}),
         },
         numThreads: 2,
         debug: false,
         provider: 'cpu',
       },
       maxNumSentences: 1,
+      ...(fsts ? { ruleFsts: fsts } : {}),
     };
   }
   // tts-en: piper libritts_r medium.
