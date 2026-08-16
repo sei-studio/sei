@@ -14,15 +14,20 @@
  *   zh-f          vits-icefall-zh-aishell3
  *   zh-m          vits-piper-zh_CN-chaowen-medium int8
  *
- * Speaker id curation (260816, this machine, measured): median F0 estimated
- * by autocorrelation over synthesized samples of the same line.
- *   en-f  sid 90   (~186 Hz, clean female register in the sweep)
- *   en-m  sid 921  (~112 Hz, clean male register in the sweep)
- *   zh-f  sid 66   (~223 Hz; also the sherpa-onnx docs' demo speaker)
- *   zh-m  chaowen sid 0 (~150 Hz — pitch says male; HUMAN EAR-CHECK OWED
- *         before ship). Fallback: AISHELL3_MALE_REGISTER_SID below is the
- *         lowest-pitch aishell3 speaker, usable from the zh-f pack if chaowen
- *         fails the ear-check.
+ * Speaker id curation (260816, measured on this machine): median F0 estimated
+ * by autocorrelation over voiced 40ms windows of the same synthesized line
+ * per speaker (scratchpad pitch-sweep; 16-speaker sweep for en, 17 for zh).
+ *   en-f  sid 0    (~185 Hz, female register; also the speaker the Piper
+ *                  authors demo libritts_r with — sid 100 at ~227 Hz is the
+ *                  brighter alternate if 0 reads too low by ear)
+ *   en-m  sid 50   (~105 Hz, clean male register; alternates 3/90/200 all
+ *                  ~109-113 Hz). NOTE valid sid range is 0..903 — the model
+ *                  clamps out-of-range sids to 0 with only a stderr warning.
+ *   zh-f  sid 66   (~250 Hz; also the sherpa-onnx docs' demo speaker)
+ *   zh-m  chaowen sid 0 (~162 Hz measured — male register by pitch; HUMAN
+ *         EAR-CHECK OWED before ship). Fallback: AISHELL3_MALE_REGISTER_SID
+ *         below is the lowest-pitch aishell3 speaker, usable from the zh-f
+ *         pack if chaowen fails the ear-check.
  * To change a speaker: edit LOCAL_VOICE_SPEC below (sid), nothing else — the
  * pack stays the same, no re-download.
  *
@@ -49,15 +54,16 @@ export interface LocalVoiceSpec {
 }
 
 export const LOCAL_VOICE_SPEC: Record<LocalVoiceId, LocalVoiceSpec> = {
-  'en-f': { packId: 'tts-en', sid: 90, rate: 1.0 },
-  'en-m': { packId: 'tts-en', sid: 921, rate: 1.0 },
+  'en-f': { packId: 'tts-en', sid: 0, rate: 1.0 },
+  'en-m': { packId: 'tts-en', sid: 50, rate: 1.0 },
   'zh-f': { packId: 'tts-zh-f', sid: 66, rate: 1.0 },
   'zh-m': { packId: 'tts-zh-m', sid: 0, rate: 1.0 },
 };
 
 /** Same-runtime fallback if chaowen fails the human ear-check: the deepest
- * aishell3 register measured in the 260816 sweep (sid 40, ~168 Hz median F0).
- * To use it: point LOCAL_VOICE_SPEC['zh-m'] at
+ * aishell3 register measured in the 260816 sweep (sid 40, ~136 Hz median F0;
+ * sids 10 and 110 tie at ~136-138 Hz). To use it: point
+ * LOCAL_VOICE_SPEC['zh-m'] at
  * { packId: 'tts-zh-f', sid: AISHELL3_MALE_REGISTER_SID, rate: 1.0 }. */
 export const AISHELL3_MALE_REGISTER_SID = 40;
 

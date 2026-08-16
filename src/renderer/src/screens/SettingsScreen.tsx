@@ -363,8 +363,11 @@ export function SettingsScreen(): React.ReactElement {
 
   // 260725 BYOK voice recognition: Scribe (cloud, needs the ElevenLabs key)
   // vs local Whisper. Absent means 'scribe'; applies from the next call.
-  const sttEngine: 'scribe' | 'whisper' = cfg?.stt_engine ?? 'scribe';
-  const onSelectSttEngine = async (next: 'scribe' | 'whisper'): Promise<void> => {
+  // 260816: the union carries 'sensevoice' too (local SenseVoice, W3+W4); the
+  // W5 Settings pass owns its picker row — until then a stored 'sensevoice'
+  // simply selects neither radio here.
+  const sttEngine: 'scribe' | 'whisper' | 'sensevoice' = cfg?.stt_engine ?? 'scribe';
+  const onSelectSttEngine = async (next: 'scribe' | 'whisper' | 'sensevoice'): Promise<void> => {
     if (!cfg || next === sttEngine) return;
     const updated: UserConfig = { ...cfg, stt_engine: next };
     setCfg(updated);
