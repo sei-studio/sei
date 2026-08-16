@@ -20,6 +20,7 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon } from '../lib/summonFlow';
 import { openGame, requestGameLaunch, type LaunchGameId } from '../lib/gameLaunch';
 import { GAMES, type GameDef } from '../lib/games';
+import { visionBlocked, visionGateReason } from '../lib/visionGate';
 import { MCBlock, GamepadIcon, InfoIcon, PlusIcon } from './icons';
 import { FeedbackModal } from './FeedbackModal';
 import { useT } from '../lib/i18n';
@@ -48,6 +49,15 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
   const t = useT();
   const companionName = character?.name ?? t('your companion');
+
+  // china-compat W9: Draw! is an image surface, so a text-only local model
+  // locks its tile (dimmed, not hidden) with the reason on hover. Only a
+  // confident 'no' locks; 'unknown' stays playable (main's drawStart gate is
+  // the authoritative backstop).
+  const llmVision = useUiStore((s) => s.llmVision);
+  const llmModel = useUiStore((s) => s.llmModel);
+  const drawVisionLocked = visionBlocked(llmVision);
+  const isVisionLocked = (g: GameDef): boolean => g.id === 'draw' && drawVisionLocked;
 
   // ── Hover-only info popup ─────────────────────────────────────────────
   const [popup, setPopup] = useState<InfoPopup | null>(null);
@@ -110,6 +120,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
 
   const onPlay = (g: GameDef): void => {
     if (!g.available) return;
+    if (isVisionLocked(g)) return;
     if (g.id === 'suggest') {
       hideInfo();
       setSuggestOpen(true);
@@ -148,51 +159,62 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
           </h2>
         </div>
         <div className={styles.grid}>
-          {GAMES.map((g) => (
-            <div
-              key={g.id}
-              className={`${styles.tile} ${g.available ? '' : styles.tileLocked} ${
-                g.image ? styles.tileImage : ''
-              }`}
-              style={g.image ? { backgroundImage: `url(${g.image})` } : undefined}
-              onMouseLeave={hideInfo}
-            >
-              <button
-                type="button"
-                className={styles.tileMain}
-                disabled={!g.available}
-                aria-disabled={!g.available}
-                onClick={() => onPlay(g)}
+          {GAMES.map((g) => {
+            const visionLocked = isVisionLocked(g);
+            return (
+              <div
+                key={g.id}
+                className={`${styles.tile} ${g.available && !visionLocked ? '' : styles.tileLocked} ${
+                  g.image ? styles.tileImage : ''
+                }`}
+                style={g.image ? { backgroundImage: `url(${g.image})` } : undefined}
+                // A locked tile explains itself on hover anywhere (there is no
+                // live (i) affordance to find), through the same info popup.
+                onMouseEnter={
+                  visionLocked
+                    ? (e) => scheduleInfo(g, e.currentTarget.firstElementChild as HTMLElement)
+                    : undefined
+                }
+                onMouseLeave={hideInfo}
               >
-                {g.image ? null : (
-                  <span className={styles.tileIcon}>
-                    {g.id === 'minecraft' ? (
-                      <MCBlock size={40} />
-                    ) : g.id === 'suggest' ? (
-                      <PlusIcon size={30} />
-                    ) : (
-                      <GamepadIcon size={30} />
-                    )}
-                  </span>
-                )}
-                <span className={styles.tileName}>{t(g.name)}</span>
-              </button>
-              {g.soon ? <span className={styles.soonTag}>{t('SOON')}</span> : null}
-              {g.available ? (
-                <span
-                  className={styles.infoHint}
-                  tabIndex={0}
-                  aria-label={t('About {name}', { name: t(g.name) })}
-                  onMouseEnter={(e) => scheduleInfo(g, e.currentTarget)}
-                  onMouseLeave={hideInfo}
-                  onFocus={(e) => scheduleInfo(g, e.currentTarget)}
-                  onBlur={hideInfo}
+                <button
+                  type="button"
+                  className={styles.tileMain}
+                  disabled={!g.available || visionLocked}
+                  aria-disabled={!g.available || visionLocked}
+                  aria-label={visionLocked ? visionGateReason(t, 'draw', llmModel) : undefined}
+                  onClick={() => onPlay(g)}
                 >
-                  <InfoIcon size={16} />
-                </span>
-              ) : null}
-            </div>
-          ))}
+                  {g.image ? null : (
+                    <span className={styles.tileIcon}>
+                      {g.id === 'minecraft' ? (
+                        <MCBlock size={40} />
+                      ) : g.id === 'suggest' ? (
+                        <PlusIcon size={30} />
+                      ) : (
+                        <GamepadIcon size={30} />
+                      )}
+                    </span>
+                  )}
+                  <span className={styles.tileName}>{t(g.name)}</span>
+                </button>
+                {g.soon ? <span className={styles.soonTag}>{t('SOON')}</span> : null}
+                {g.available && !visionLocked ? (
+                  <span
+                    className={styles.infoHint}
+                    tabIndex={0}
+                    aria-label={t('About {name}', { name: t(g.name) })}
+                    onMouseEnter={(e) => scheduleInfo(g, e.currentTarget)}
+                    onMouseLeave={hideInfo}
+                    onFocus={(e) => scheduleInfo(g, e.currentTarget)}
+                    onBlur={hideInfo}
+                  >
+                    <InfoIcon size={16} />
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </div>
       {popup ? (
@@ -209,7 +231,11 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
           ) : null}
           <div className={styles.infoPopBody}>
             <span className={styles.infoPopTitle}>{t(popup.game.name)}</span>
-            <p className={styles.infoPopText}>{popup.game.description(companionName)}</p>
+            <p className={styles.infoPopText}>
+              {isVisionLocked(popup.game)
+                ? visionGateReason(t, 'draw', llmModel)
+                : popup.game.description(companionName)}
+            </p>
           </div>
         </div>
       ) : null}

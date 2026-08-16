@@ -160,3 +160,34 @@ describe('useBackseatStore pending share', () => {
     expect(useBackseatStore.getState().pendingShare).toBeNull();
   });
 });
+
+describe('useBackseatStore vision-gate error mapping (china-compat W9)', () => {
+  it("maps main's LLM_NO_VISION refusal to the shared gate copy", async () => {
+    backseatStartMock.mockRejectedValue(
+      new Error(
+        'LLM_NO_VISION: the selected model cannot see images, so screen sharing is unavailable. Pick a vision-capable model in Settings.',
+      ),
+    );
+    const { useBackseatStore } = await loadStore();
+    const { useUiStore } = await import('./useUiStore');
+    useUiStore.setState({ llmVision: 'no', llmModel: 'deepseek-v4-flash' });
+
+    await expect(useBackseatStore.getState().share('char-a', source('win-1'))).resolves.toBe(false);
+
+    expect(useBackseatStore.getState().error).toBe(
+      'Screen sharing needs a model that can see images. Your current model (deepseek-v4-flash) does not support vision.',
+    );
+    // Capture must never have started against a refused session.
+    expect(startCaptureMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the generic copy for other start failures', async () => {
+    backseatStartMock.mockRejectedValue(new Error('something else broke'));
+    const { useBackseatStore } = await loadStore();
+
+    await expect(useBackseatStore.getState().share('char-a', source('win-1'))).resolves.toBe(false);
+    expect(useBackseatStore.getState().error).toBe(
+      'Could not start sharing. Try picking a different window.',
+    );
+  });
+});

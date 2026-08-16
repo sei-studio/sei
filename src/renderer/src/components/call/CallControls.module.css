@@ -40,6 +40,17 @@
   background: color-mix(in srgb, var(--text) 16%, transparent);
 }
 
+/* Disabled with a reason (W9 vision gate): dimmed, no hover lift, but the
+ * cursor still reaches it so the title tooltip can explain why. */
+.pillBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pillBtn:disabled:hover {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+
 /* ── Over character art (260730) ───────────────────────────────────────────
  * The backdrop call view paints these on top of an arbitrary picture, and the
  * theme-tinted fills above assume they are on the app's own surface: a

@@ -218,6 +218,12 @@ interface UiState {
    */
   llmVision: 'yes' | 'no' | 'unknown';
   /**
+   * The active LOCAL model's id, riding the same llm:capability push, for the
+   * W9 gate copy ("Your current model ({model}) does not support vision.").
+   * null for cloud-proxy / Anthropic BYOK, where no gate ever locks.
+   */
+  llmModel: string | null;
+  /**
    * Session-only flag: flips true the first time the user leaves the Home
    * screen — either by navigating to another view (character/settings/etc.)
    * or by switching CharactersScreen to the World tab. The Home header
@@ -328,6 +334,7 @@ interface UiState {
   setVisionCapable: (v: boolean) => void;
   /** china-compat W1: set from the llm:capability push/seed. */
   setLlmVision: (v: 'yes' | 'no' | 'unknown') => void;
+  setLlmModel: (v: string | null) => void;
   /** Phase 18/19: record the chat a CharacterPage was opened from (or null). */
   setChatReturnId: (id: string | null) => void;
   /** #6: set the active call's mute state (shared by both call surfaces). */
@@ -379,6 +386,7 @@ export const useUiStore = create<UiState>((set) => ({
   // 'unknown' until the seed/push lands; consumers treat unknown as usable
   // (a wrong lock hides a feature silently, a wrong allow fails visibly).
   llmVision: 'unknown',
+  llmModel: null,
   homeGreetingDismissed: false,
   chatReturnId: null,
   callMuted: false,
@@ -419,6 +427,7 @@ export const useUiStore = create<UiState>((set) => ({
   setChatPanelHidden: (v) => set({ chatPanelHidden: v }),
   setVisionCapable: (v) => set({ visionCapable: v }),
   setLlmVision: (v) => set({ llmVision: v }),
+  setLlmModel: (v) => set({ llmModel: v }),
   setChatReturnId: (id) => set({ chatReturnId: id }),
   setCallMuted: (muted) => set({ callMuted: muted }),
   setCallDeafened: (deafened) => set({ callDeafened: deafened }),

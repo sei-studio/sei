@@ -210,6 +210,15 @@ export interface DrawSnapshotRequest {
 export const DRAW_ERR_MC_ACTIVE = 'DRAW_MC_SESSION_ACTIVE';
 
 /**
+ * china-compat W9: the active local LLM cannot see images, so a game whose
+ * every turn is a canvas snapshot cannot run. The renderer gates the picker
+ * tile on useUiStore.llmVision; this token is the main-side backstop's
+ * message prefix (error `code` does not survive the IPC boundary, so the
+ * renderer matches the message).
+ */
+export const DRAW_ERR_NO_VISION = 'DRAW_LLM_NO_VISION';
+
+/**
  * window.sei surface (implemented in src/preload/index.ts):
  *
  *   drawStart(characterId: string, rounds: number): Promise<DrawGameState>

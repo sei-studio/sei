@@ -135,3 +135,22 @@ export async function activeLlmVision(): Promise<VisionVerdict> {
     return 'unknown';
   }
 }
+
+/**
+ * The ACTIVE local model's id, for the W9 gate copy ("Your current model
+ * ({model}) does not support vision."). null for cloud-proxy and Anthropic
+ * BYOK: both are always vision-capable, so no gate copy ever names them.
+ * Never throws (mirrors activeLlmVision).
+ */
+export async function activeLlmModelLabel(): Promise<string | null> {
+  try {
+    const backend = await getAiBackendKind();
+    if (backend === 'cloud-proxy') return null;
+    const cfg = await loadConfig();
+    const kind = (cfg.provider ?? 'anthropic') as ProviderKind;
+    if (kind === 'anthropic') return null;
+    return resolveLocalModel(cfg, kind);
+  } catch {
+    return null;
+  }
+}

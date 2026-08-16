@@ -65,6 +65,7 @@ import {
   CANVAS_H,
   CANVAS_W,
   DRAW_ERR_MC_ACTIVE,
+  DRAW_ERR_NO_VISION,
   MAX_ROUNDS,
   MIN_ROUNDS,
   TURN_MS,
@@ -82,7 +83,7 @@ import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
 import { CHAT_TIMEOUT_MS } from '../chat/sdk';
-import { buildLlmProvider, type LlmProvider } from '../llm';
+import { activeLlmVision, buildLlmProvider, type LlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { playSummaryText } from '../chat/playSummary';
@@ -605,6 +606,19 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
   if (requireDeps().isSummoned(characterId)) {
     const err = new Error('Minecraft session active') as Error & { code?: string };
     err.code = DRAW_ERR_MC_ACTIVE;
+    throw err;
+  }
+  // Vision hard gate (china-compat W9): every Draw! turn shows the model a
+  // canvas snapshot, so a text-only model (deepseek, qwen-plus, ...) cannot
+  // play at all. The renderer gates the picker tile too; this is the
+  // authoritative backstop, same philosophy as backseat's LLM_NO_VISION and
+  // the summon username collision. 'unknown' is allowed through on purpose: a
+  // wrong refusal silently hides the game, a wrong allow fails visibly.
+  if ((await activeLlmVision()) === 'no') {
+    const err = new Error(
+      `${DRAW_ERR_NO_VISION}: the selected model cannot see images, so Draw! is unavailable. Pick a vision-capable model in Settings.`,
+    ) as Error & { code?: string };
+    err.code = DRAW_ERR_NO_VISION;
     throw err;
   }
   // A fresh game every start, so a replay never inherits the previous scores.

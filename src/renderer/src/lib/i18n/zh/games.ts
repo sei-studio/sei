@@ -3,6 +3,11 @@ export const ZH_GAMES: Record<string, string> = {
   // ── Mini tile (bottom-right return tile) ──────────────────────────────────
   'Back to game': '返回游戏',
   'Draw!': '你画我猜！',
+  // ── Vision gate (china-compat W9) ─────────────────────────────────────────
+  'Draw! needs a model that can see images. Your current model ({model}) does not support vision.':
+    '你画我猜需要能看懂图像的模型。你当前的模型（{model}）不支持视觉能力。',
+  'Draw! needs a model that can see images. Your current model does not support vision.':
+    '你画我猜需要能看懂图像的模型。你当前的模型不支持视觉能力。',
   // ── Chess: launch screen ──────────────────────────────────────────────────
   'Chess': '国际象棋',
   'Chess with {name}': '与{name}下棋',

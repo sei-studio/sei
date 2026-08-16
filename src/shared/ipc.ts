@@ -155,6 +155,12 @@ export interface VisionCapability {
  */
 export interface LlmCapability {
   vision: 'yes' | 'no' | 'unknown';
+  /**
+   * The active LOCAL model's display id, for the W9 gate copy ("Your current
+   * model ({model}) does not support vision."). null for cloud-proxy and for
+   * Anthropic BYOK (both always vision-capable, so no gate ever needs it).
+   */
+  model: string | null;
 }
 
 /** llm:list-models — live model listing with the user's own key. `error` is a
