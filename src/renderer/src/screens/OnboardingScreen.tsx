@@ -37,7 +37,7 @@
  * Source: UI-SPEC §Onboarding.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { classifyRendererError } from '../lib/errors';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -76,6 +76,11 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 260817 (china-compat W10): re-onboarding must not wipe the per-provider
+  // model/base_url overrides Settings or the W6 wizard wrote — this screen has
+  // no model step of its own, so submitting provider_config: {} was silent
+  // data loss. Carried by ref: render never reads it.
+  const providerConfigRef = useRef<UserConfig['provider_config']>({});
 
   useEffect(() => {
     if (!isReonboard) return;
@@ -87,6 +92,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         setMc(cfg.mc_username ?? '');
         setPref(cfg.preferred_name ?? '');
         setProvider((cfg.provider ?? 'anthropic') as Provider);
+        providerConfigRef.current = cfg.provider_config ?? {};
         // apiKey deliberately NOT pre-filled — UI-SPEC re-onboarding rule.
       })
       .catch(() => {
@@ -136,7 +142,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // 260724: no custom app background on a fresh onboard (set in Settings).
         background_image: null,
         provider,
-        provider_config: {},
+        provider_config: providerConfigRef.current ?? {},
         theme_mode: themeMode,
         linuxBasicTextWarnDismissed: false,
         // Item 4: AI backend kind. Signed-in users default to Sei's hosted
@@ -198,7 +204,9 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       // D-03 / T-10-04-02 mitigation: signed-in users never reach the API-key
       // step, so saveApiKey MUST be gated behind !signedIn. Otherwise a future
       // bug could land a stale apiKey state into the secret store.
-      if (!signedIn) {
+      if (!signedIn && apiKey.trim()) {
+        // Empty is only reachable for ollama (see validate) — keyless, so
+        // there is nothing to store, and '' would CLEAR a stored key.
         await sei.saveApiKey(apiKey.trim());
       }
       // 260724: nothing to claim on sign-up. Every account starts on the free
@@ -256,7 +264,9 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
     // while it is in flight.
     if (step === 0) return pref.trim() !== '' && !(signedIn && submitting);
     if (step === 1) return true;
-    if (step === 2) return apiKey.trim() !== '' && !submitting;
+    // 260817 W10: ollama is keyless — the key field may stay empty for it
+    // (matches Settings and the W6 wizard).
+    if (step === 2) return (apiKey.trim() !== '' || provider === 'ollama') && !submitting;
     return false;
   };
 

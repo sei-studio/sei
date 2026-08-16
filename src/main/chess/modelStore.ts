@@ -31,6 +31,13 @@ const MODEL_URL_MIRROR = `https://dl.sei.gg/chess/${MODEL_FILENAME}`;
 const MODEL_URL_ORIGIN =
   'https://github.com/sei-studio/cce-1/releases/download/model-v1/maia3-5m.onnx';
 
+/** Pure ordering (exported for tests): origin-first unless the region is blocked. */
+export function modelUrlOrder(blocked: boolean): string[] {
+  return blocked
+    ? [MODEL_URL_MIRROR, MODEL_URL_ORIGIN]
+    : [MODEL_URL_ORIGIN, MODEL_URL_MIRROR];
+}
+
 /** Origin-first by default; mirror-first only for blocked-region users. */
 async function modelUrls(): Promise<string[]> {
   let mirrorFirst = false;
@@ -40,9 +47,7 @@ async function modelUrls(): Promise<string[]> {
   } catch {
     /* region unknown → historical origin-first order */
   }
-  return mirrorFirst
-    ? [MODEL_URL_MIRROR, MODEL_URL_ORIGIN]
-    : [MODEL_URL_ORIGIN, MODEL_URL_MIRROR];
+  return modelUrlOrder(mirrorFirst);
 }
 
 const DEV_MODEL = path.join(homedir(), '.sei-dev', 'cce', MODEL_FILENAME);

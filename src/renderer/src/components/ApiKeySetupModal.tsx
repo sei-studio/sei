@@ -65,7 +65,9 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
 
   const save = async (): Promise<void> => {
     const key = apiKey.trim();
-    if (!key) {
+    // 260817 W10: ollama is keyless — an empty key is valid for it (matches
+    // Settings and the onboarding wizards).
+    if (!key && provider !== 'ollama') {
       setError(t('API key cannot be empty.'));
       return;
     }
@@ -82,7 +84,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
         provider,
         provider_config: cfg.provider_config ?? {},
       });
-      await sei.saveApiKey(key);
+      if (key) await sei.saveApiKey(key);
       await sei.proxyConfigure('local');
       onComplete();
     } catch {
