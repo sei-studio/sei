@@ -676,6 +676,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // Local TTS (260816): the needed voice pack is not downloaded. Never
         // auto-downloaded mid-call; Settings owns the download prompt.
         set({ lastSpoken: t('[voice unavailable, download the local voice pack in Settings]') });
+      } else if (/SPEECH_RUNTIME_FAILED/.test(msg)) {
+        // Local TTS (260817, W10): the sherpa-onnx runtime failed to load
+        // (e.g. a mac x64 build shipped without the platform package).
+        // Without this branch the companion is silently mute on every line.
+        set({ lastSpoken: t('[voice unavailable, local speech cannot run on this install]') });
       }
     };
     const settleTts = (): void => {

@@ -95,6 +95,10 @@ export const ZH_MISC: Record<string, string> = {
   // 260816 local speech: the sherpa voice pack for this call is not downloaded.
   '[voice unavailable, download the local voice pack in Settings]':
     '[语音不可用，请在设置中下载本地语音包]',
+  // 260817 W10: sherpa-onnx itself failed to load (e.g. a build without the
+  // platform package). Without this caption the companion is silently mute.
+  '[voice unavailable, local speech cannot run on this install]':
+    '[语音不可用，本地语音无法在此安装上运行]',
   'Voice service is not available right now.': '语音服务暂时不可用。',
   'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.':
     '这个声音不在你的 ElevenLabs 声音库中。请先在那里添加它，或选择其他声音。',
