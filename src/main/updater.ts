@@ -121,8 +121,48 @@ type AutoUpdater = {
   downloadUpdate: () => Promise<unknown>;
   quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void;
   on: (event: string, listener: (...args: unknown[]) => void) => void;
+  setFeedURL: (options: { provider: string; url: string; channel?: string }) => void;
 };
 let autoUpdater: AutoUpdater | null = null;
+
+/**
+ * 260816 (china-compat): mirror fallback feed. GitHub's release-asset CDN is
+ * unreliable from mainland China, so a failed check retries ONCE against the
+ * generic feed on dl.sei.gg, which .github/workflows/mirror-release.yml
+ * populates from every PUBLISHED release (all *.yml channels + artifacts,
+ * flat). One-way for the session: once the mirror feed answers, there is no
+ * reason to flap back, and a user whose GitHub route works never sees it.
+ * The generic provider derives the feed filename from `channel`
+ * (latest-mac.yml / beta-mac.yml), so the channel toggle re-arms it below.
+ */
+const MIRROR_FEED_URL = 'https://dl.sei.gg/updates';
+let mirrorFeedActive = false;
+
+function applyMirrorFeed(au: AutoUpdater): void {
+  au.setFeedURL({
+    provider: 'generic',
+    url: MIRROR_FEED_URL,
+    channel: allowPrerelease ? 'beta' : 'latest',
+  });
+}
+
+/**
+ * Retry a failed checkForUpdates against the mirror feed. Returns false when
+ * the mirror is already active (no second fallback exists) so callers just
+ * log the original failure.
+ */
+function retryOnMirror(au: AutoUpdater, why: string): boolean {
+  if (mirrorFeedActive) return false;
+  mirrorFeedActive = true;
+  logger.warn(`updater: check failed (${why}); retrying on mirror feed ${MIRROR_FEED_URL}`);
+  try {
+    applyMirrorFeed(au);
+  } catch (err) {
+    logger.warn(`updater: mirror feed setup failed (${(err as Error).message})`);
+    return false;
+  }
+  return true;
+}
 
 /**
  * The current update channel, mirrored onto `autoUpdater.allowPrerelease`.
@@ -610,6 +650,12 @@ function maybeBackgroundCheck(reason: string): void {
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(`updater: background checkForUpdates failed (${message})`);
+      if (retryOnMirror(au, message)) {
+        return au.checkForUpdates().catch((err2: unknown) => {
+          logger.warn(`updater: mirror checkForUpdates failed (${(err2 as Error)?.message ?? err2})`);
+        });
+      }
+      return undefined;
     })
     .finally(() => {
       backgroundCheck = false;
@@ -658,6 +704,11 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
       au.checkForUpdates().catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         logger.warn(`updater: startup checkForUpdates failed (${message})`);
+        if (retryOnMirror(au, message)) {
+          au.checkForUpdates().catch((err2: unknown) => {
+            logger.warn(`updater: mirror checkForUpdates failed (${(err2 as Error)?.message ?? err2})`);
+          });
+        }
       });
     })();
   }
@@ -711,6 +762,14 @@ export async function checkForUpdatesManual(): Promise<void> {
     if (isMissingReleaseArtifacts(err)) {
       logger.warn(`updater: manual check found no installable release (${message})`);
       send(IpcChannel.app.updateNotAvailable);
+    } else if (retryOnMirror(au, message)) {
+      try {
+        await au.checkForUpdates();
+      } catch (err2) {
+        const message2 = (err2 as Error).message;
+        logger.warn(`updater: mirror checkForUpdates failed (${message2})`);
+        send(IpcChannel.app.updateError, message2);
+      }
     } else {
       logger.warn(`updater: manual checkForUpdates failed (${message})`);
       send(IpcChannel.app.updateError, message);
@@ -743,6 +802,17 @@ export function setUpdateChannel(advanced: boolean): void {
     return;
   }
   au.allowPrerelease = advanced;
+  // The generic mirror feed encodes the channel in its feed FILENAME
+  // (latest-mac.yml vs beta-mac.yml), so when the mirror is active the toggle
+  // must re-arm the feed URL too — allowPrerelease alone only affects the
+  // GitHub provider's release filtering.
+  if (mirrorFeedActive) {
+    try {
+      applyMirrorFeed(au);
+    } catch (err) {
+      logger.warn(`updater: mirror feed re-arm failed (${(err as Error).message})`);
+    }
+  }
   logger.info(`updater: channel = ${advanced ? 'beta (pre-releases included)' : 'stable only'}`);
   // Enabling may reveal a waiting beta. Route through the manual path so the
   // Settings status line gets its checking/available/not-available feedback,

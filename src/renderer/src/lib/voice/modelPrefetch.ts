@@ -18,6 +18,8 @@
  * dial share one worker; progress callbacks multiplex.
  */
 
+import { whisperMirrorFirst } from './mirrorPref';
+
 const READY_FLAG = 'sei-voice-model-ready';
 const MODEL_MARKER = 'whisper-tiny.en';
 const PREFETCH_TIMEOUT_MS = 180_000;
@@ -118,7 +120,7 @@ export function prefetchVoiceModel(onProgress?: (pct: number) => void): Promise<
         finish(new Error(msg.message ?? 'voice module download failed'));
       }
     };
-    worker.postMessage({ type: 'init' });
+    worker.postMessage({ type: 'init', mirrorFirst: whisperMirrorFirst() });
   });
   return inflight;
 }

@@ -20,7 +20,13 @@ const MODEL_FILENAME = 'maia3-5m.onnx';
 /** Exact size of the published model; a mismatched download is discarded. */
 const MODEL_BYTES = 21_130_791;
 
+// Mirror first (260816, china-compat): GitHub's release-asset CDN is
+// unreliable from mainland China, and the loop below already falls through
+// to the next URL on any failure, so a missing/unreachable mirror costs one
+// fast failed attempt and nothing else. Assets land in the bucket via
+// scripts/mirror-assets.mjs.
 const MODEL_URLS = [
+  `https://dl.sei.gg/chess/${MODEL_FILENAME}`,
   'https://github.com/sei-studio/cce-1/releases/download/model-v1/maia3-5m.onnx',
 ];
 

@@ -32,6 +32,7 @@ import {
   TRANSCRIPT_KEEP_MS,
 } from '../../../../shared/backseatIpc';
 import { rmsDb } from './pcm';
+import { whisperMirrorFirst } from '../voice/mirrorPref';
 import {
   pushSegment,
   wantDispatch,
@@ -94,7 +95,7 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
         waiters.delete(msg.id);
       }
     };
-    worker.postMessage({ type: 'init', language: opts.language ?? 'en' });
+    worker.postMessage({ type: 'init', language: opts.language ?? 'en', mirrorFirst: whisperMirrorFirst() });
   } catch {
     dead = true;
     worker = null;

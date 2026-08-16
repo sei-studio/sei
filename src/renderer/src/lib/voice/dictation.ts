@@ -26,6 +26,7 @@
 
 import { dbOf, pushEnv, type EnvSample, type MicEchoInfo } from './echoGate';
 import { createSttArbiter } from './sttArbiter';
+import { whisperMirrorFirst } from './mirrorPref';
 
 export type DictationStatus = 'loading-model' | 'ready' | 'error';
 
@@ -421,7 +422,7 @@ export async function createDictation(opts: {
         }
       };
     });
-    w.postMessage({ type: 'init', language: opts.language ?? 'en' });
+    w.postMessage({ type: 'init', language: opts.language ?? 'en', mirrorFirst: whisperMirrorFirst() });
   }
 
   let stream: MediaStream;
