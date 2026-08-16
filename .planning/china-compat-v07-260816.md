@@ -211,3 +211,17 @@ the extension is connected.
      published release once secrets exist.
 5. Verify from a CN vantage (GreatFire Analyzer or a CN node) that
    https://dl.sei.gg/chess/maia3-5m.onnx serves.
+
+### W8 amendments from the W3+W4 landing (260817)
+- Speech pack uploads must match `src/main/speech/packs.ts` EXACTLY — note
+  the zh-m pack is chaowen **int8** (~14 MB), not the fp32 archive staged in
+  mirror-out/; re-stage or the mirror leg 404s (origin fallback covers it
+  meanwhile).
+- SenseVoice asset pinned to `int8-2025-09-09`; an A/B against
+  `int8-2024-07-17` is OWED (2025-09-09 showed garbled EN + constant yue tag
+  on its own test wavs). If 2024 wins, packs.ts + mirror both change.
+- Ear-checks owed before ship: chaowen sid 0 (male by F0 ~162 Hz, unheard),
+  aishell3 8 kHz register acceptability.
+- mac x64 artifact ships WITHOUT local speech unless CI force-installs
+  sherpa-onnx-darwin-x64 (npm cpu-gating on arm64 runners) — release CI
+  change owed, noted in electron-builder.yml.
