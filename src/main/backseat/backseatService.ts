@@ -48,7 +48,8 @@ import {
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
-import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { activeLlmVision, buildLlmProvider } from '../llm';
 import { buildSystemBlocks, markMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
 import { isNoteLeak, stripThoughtTags } from '../chat/noteLeak';
@@ -211,6 +212,17 @@ export async function startBackseat(
 ): Promise<BackseatState> {
   const existing = sessions.get(characterId);
   if (existing && existing.state.phase !== 'ended') await endBackseat(characterId);
+
+  // Vision hard gate (china-compat W1): every backseat turn is an image call,
+  // so a text-only model (deepseek, qwen-plus, ...) cannot run this surface
+  // at all. The renderer gates the entry points too (W9); this is the
+  // authoritative backstop. 'unknown' is allowed through on purpose: a wrong
+  // refusal silently hides the feature, a wrong allow fails visibly.
+  if ((await activeLlmVision()) === 'no') {
+    throw new Error(
+      'LLM_NO_VISION: the selected model cannot see images, so screen sharing is unavailable. Pick a vision-capable model in Settings.',
+    );
+  }
 
   const character = await getCharacter(characterId);
   const log = await createBackseatLog(characterId, deps?.pushLog ?? (() => {}));
@@ -647,22 +659,20 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   ];
   messages.push({ role: 'user', content: content as never });
 
-  const { client, model } = await buildChatSdk();
-  const res = await client.messages.create(
-    {
-      model,
-      // Two short lines. A cap this low is itself a register control: it is
-      // hard to write a paragraph in 160 tokens. 260804: a tick the player
-      // SPOKE gets room for a real answer, because this is now the only turn
-      // they get — the director routes their utterance here rather than running
-      // a second, screenless one alongside it.
-      max_tokens: tick.kind === 'user' ? 400 : 160,
-      system,
-      tools: [SAVE_CLIP_TOOL, REMEMBER_TOOL],
-      messages: messages as never,
-    },
-    { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-  );
+  const llm = await buildLlmProvider();
+  const res = await llm.call({
+    // Two short lines. A cap this low is itself a register control: it is
+    // hard to write a paragraph in 160 tokens. 260804: a tick the player
+    // SPOKE gets room for a real answer, because this is now the only turn
+    // they get — the director routes their utterance here rather than running
+    // a second, screenless one alongside it.
+    maxTokens: tick.kind === 'user' ? 400 : 160,
+    system,
+    tools: [SAVE_CLIP_TOOL, REMEMBER_TOOL],
+    messages,
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal: ctrl.signal,
+  });
   if (ctrl.signal.aborted || s.inflight !== ctrl) return;
 
   // The cache layout above is only worth anything if it hits, and the only way
