@@ -973,6 +973,25 @@ function AuthPanel(props: {
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const codeState = useEmailCode(codeSentTo);
   const [oauth, setOauth] = useState(false);
+  /**
+   * W7 region gate (260816). Pre-checked on mount over region:status so the
+   * blocking panel appears before a failed submit; the submit paths below
+   * also honor a main-side `region_blocked` refusal as the authoritative
+   * backstop. Fails open: a failed pre-check leaves the form usable.
+   */
+  const [regionBlocked, setRegionBlocked] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    sei.regionStatus().then(
+      (s) => {
+        if (!cancelled && s.blocked) setRegionBlocked(true);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const years = useMemo(() => {
     const y = now.getFullYear();
@@ -999,12 +1018,19 @@ function AuthPanel(props: {
           dobMonth,
           dobDay,
         });
-        if (!res.ok) setError(res.message);
-        else if (res.requiresVerification) setCodeSentTo(email.trim());
+        if (!res.ok) {
+          // W7: main refused on region; swap to the blocking panel (its copy
+          // is translated locally) instead of the inline error line.
+          if (res.code === 'region_blocked') setRegionBlocked(true);
+          else setError(res.message);
+        } else if (res.requiresVerification) setCodeSentTo(email.trim());
         // A session lands via the auth push; OnboardApp proceeds from there.
       } else {
         const res = await sei.signInPassword({ email: email.trim(), password });
-        if (!res.ok) setError(res.message);
+        if (!res.ok) {
+          if (res.code === 'region_blocked') setRegionBlocked(true);
+          else setError(res.message);
+        }
         // Right password, address never confirmed. Main has already sent a
         // fresh code (260804); show the panel rather than sitting on the form.
         else if (res.needsVerification) setCodeSentTo(email.trim());
@@ -1049,6 +1075,23 @@ function AuthPanel(props: {
         </p>
         <button className={styles.pill} onClick={props.onAgreeTos}>
           {tt('I agree')}
+        </button>
+      </div>
+    );
+  }
+
+  // W7 region gate (260816) — cloud accounts are unavailable here; steer to
+  // the local-setup path. Placed AFTER the needsTos branch on purpose: that
+  // branch serves an already-signed-in user, and existing sessions are never
+  // gated.
+  if (regionBlocked) {
+    return (
+      <div className={styles.panel}>
+        <p className={styles.panelText}>
+          {tt('Our servers do not currently support your region. Please continue with local mode.')}
+        </p>
+        <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
+          {tt('Continue locally with my own API key')}
         </button>
       </div>
     );
@@ -1120,7 +1163,7 @@ function AuthPanel(props: {
     );
   }
 
-  if (oauth) return <GoogleWaitPanel onDone={() => setOauth(false)} />;
+  if (oauth) return <GoogleWaitPanel onDone={() => setOauth(false)} onLocal={props.onLocal} />;
 
   return (
     <div className={styles.panel}>
@@ -1280,9 +1323,15 @@ function AuthPanel(props: {
  * Google sign-in flow while the player finishes it in the system browser.
  * On success (or an explicit cancel) it just dismisses itself — the session
  * lands via the auth push and OnboardApp proceeds from there. */
-function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
+function GoogleWaitPanel(props: {
+  onDone: () => void;
+  /** W7 region gate: route to the local-setup path when main refuses on region. */
+  onLocal?: () => void;
+}): React.ReactElement {
   const tt = useT();
   const [error, setError] = useState<string | null>(null);
+  // W7 region gate (260816) — main refused before opening the browser.
+  const [regionBlocked, setRegionBlocked] = useState(false);
   const startedRef = useRef(false);
   const inFlightRef = useRef(false);
 
@@ -1294,6 +1343,7 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
       (res) => {
         inFlightRef.current = false;
         if (res.ok || res.reason === 'user_cancelled') props.onDone();
+        else if (res.reason === 'region_blocked') setRegionBlocked(true);
         else setError(res.message || t("Sign-in didn't finish. Try again."));
       },
       () => {
@@ -1319,6 +1369,26 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
     }
     props.onDone();
   };
+
+  // W7 region gate — no "Try again": the verdict is cached, retrying cannot
+  // change it. Offer the local path in the scene's own vocabulary.
+  if (regionBlocked) {
+    return (
+      <div className={styles.panel}>
+        <p className={styles.panelText}>
+          {tt('Our servers do not currently support your region. Please continue with local mode.')}
+        </p>
+        {props.onLocal ? (
+          <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
+            {tt('Continue locally with my own API key')}
+          </button>
+        ) : null}
+        <button className={styles.quietLink} onClick={props.onDone}>
+          {tt('Back')}
+        </button>
+      </div>
+    );
+  }
 
   if (error !== null) {
     return (

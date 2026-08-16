@@ -343,6 +343,7 @@ const api: RendererApi = {
   signUpPassword: (args) => ipcRenderer.invoke(IpcChannel.auth.signupPassword, args),
   signInGoogle: () => ipcRenderer.invoke(IpcChannel.auth.signinGoogle),
   cancelGoogle: () => ipcRenderer.invoke(IpcChannel.auth.cancelGoogle),
+  regionStatus: () => ipcRenderer.invoke(IpcChannel.region.status),
   signOut: () => ipcRenderer.invoke(IpcChannel.auth.signout),
   deleteAccount: () => ipcRenderer.invoke(IpcChannel.auth.deleteAccount),
   exportData: () => ipcRenderer.invoke(IpcChannel.auth.exportData),

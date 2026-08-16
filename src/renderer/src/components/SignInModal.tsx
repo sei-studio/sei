@@ -103,6 +103,26 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   // recovery gate exists to prevent.
   const codeState = useEmailCode(codeSentTo, onClose);
 
+  /**
+   * W7 region gate (260816). Pre-checked on mount over region:status so the
+   * blocking body appears immediately; the submit paths below also honor a
+   * main-side `region_blocked` refusal (the authoritative gate). Fails open:
+   * a failed pre-check leaves the form usable.
+   */
+  const [regionBlocked, setRegionBlocked] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    sei.regionStatus().then(
+      (s) => {
+        if (!cancelled && s.blocked) setRegionBlocked(true);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     // ESC closes (when not mid-submit so we don't drop a pending sign-in).
     const onKey = (e: KeyboardEvent): void => {
@@ -131,6 +151,10 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           // onto a session that was never issued.
           if (res.needsVerification) setCodeSentTo(email);
           else onClose();
+        } else if (res.code === 'region_blocked') {
+          // W7: swap the whole body for the blocking message (translated
+          // locally) rather than showing it as an inline field error.
+          setRegionBlocked(true);
         } else {
           setError(res.message);
         }
@@ -161,6 +185,9 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
             // prompt. Close the modal.
             onClose();
           }
+        } else if (res.code === 'region_blocked') {
+          // W7 backstop — same treatment as the sign-in branch.
+          setRegionBlocked(true);
         } else if (res.code === 'already_registered') {
           // 260605 no-silent-failure: the email is already in use. Flip to
           // sign-in mode (email stays filled) and show the honest message —
@@ -224,6 +251,25 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
       : t('Create Account');
   const toggleLabel =
     mode === 'signin' ? t('New here? Create an account') : t('Already have an account? Sign in');
+
+  // W7 region gate (260816) — cloud accounts are unavailable from this
+  // region, so the whole form is replaced by the blocking message and one
+  // acknowledging button. The gate never touches an existing session; this
+  // modal only ever fronts signup/sign-in, so blocking it whole is correct.
+  if (regionBlocked) {
+    return (
+      <ModalShell title={titleText} width={460} onClose={onClose}>
+        <p className={styles.framing}>
+          {t('Our servers do not currently support your region. Please continue with local mode.')}
+        </p>
+        <ModalFooter>
+          <Button kind="accent" size="md" onClick={onClose}>
+            {t('Got it')}
+          </Button>
+        </ModalFooter>
+      </ModalShell>
+    );
+  }
 
   // 260804 code sub-state. Renders inside the same scrim+modal frame so the
   // user isn't bounced anywhere; only the body changes. ONE panel serves

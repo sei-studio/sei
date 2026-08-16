@@ -2773,6 +2773,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { updatePassword } = await import('./auth/authHandlers');
     return await updatePassword(args);
   });
+  // === Region gate (W7, 260816) ===
+  // region:status {} -> { loc, blocked }: the renderer's pre-check so the
+  // blocking popup on AuthPanel / SignInModal can appear before a failed
+  // submit. Advisory only — the authoritative gate is the check inside
+  // signInWithPassword / signUpWithPassword / signInWithGoogle. The reply is
+  // parsed through RegionStatusZ so every field the renderer reads is
+  // declared (the gridSmall lesson, applied outbound).
+  ipcMain.handle(IpcChannel.region.status, async () => {
+    const RegionStatusZ = z.object({
+      loc: z.string().length(2).nullable(),
+      blocked: z.boolean(),
+    });
+    const { getRegionStatus } = await import('./regionDetect');
+    return RegionStatusZ.parse(await getRegionStatus());
+  });
+
   // 260603 anti-abuse — store a renderer-solved Turnstile/hCaptcha token for the
   // next signup. Inert until bot-protection is enabled (see auth/captcha.ts).
   ipcMain.handle(IpcChannel.auth.setCaptchaToken, async (_e, tokenRaw: unknown) => {

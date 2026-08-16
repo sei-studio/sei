@@ -39,6 +39,9 @@ export const ZH_MODALS: Record<string, string> = {
   'Resets {when}': '将于 {when} 重置',
   'Got it': '知道了',
 
+  // ── OAuthInterstitialModal: W7 region gate heading (260816) ──
+  'Region not supported': '暂不支持您所在的地区',
+
   // ── CrossLaunchConfirmModal ──
   'Switch games': '切换游戏',
   '{from} is still running. End it and start {to}?':

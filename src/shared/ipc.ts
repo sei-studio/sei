@@ -25,6 +25,7 @@ import type {
   UserPreferencesPatch,
 } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
+import type { RegionStatus } from './regionGate';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
@@ -862,7 +863,10 @@ export type AuthState =
  */
 export type SignInResult =
   | { ok: true; needsVerification?: boolean }
-  | { ok: false; code: 'invalid_credentials' | 'invalid_email' | 'network' | 'rate_limited'; message: string };
+  // 260816 W7 region gate — `region_blocked` is returned BEFORE any Supabase
+  // call when the detected IP region is unsupported by Anthropic or Polar
+  // (see src/shared/regionGate.ts). Detection fails open: unknown = allowed.
+  | { ok: false; code: 'invalid_credentials' | 'invalid_email' | 'network' | 'rate_limited' | 'region_blocked'; message: string };
 
 export type SignUpResult =
   | { ok: true; requiresVerification: boolean }
@@ -884,6 +888,9 @@ export type SignUpResult =
   // signups never hits it.
   | { ok: false; code: 'weak_password' | 'invalid_email' | 'network' | 'under_13'; message: string }
   | { ok: false; code: 'cooldown'; message: string; retryAfterMs: number }
+  // 260816 W7 region gate — returned BEFORE any Supabase call (before even the
+  // COPPA/cooldown pre-checks) when the detected IP region is unsupported.
+  | { ok: false; code: 'region_blocked'; message: string }
   // 260729: NO LONGER PRODUCED. The 260605 honest already-registered surface
   // leaked account existence to anyone typing an address into signup, so an
   // already-registered email now silently sends a password-reset link and
@@ -894,7 +901,9 @@ export type SignUpResult =
 
 export type OAuthResult =
   | { ok: true }
-  | { ok: false; reason: 'user_cancelled' | 'timeout' | 'browser_closed' | 'google_rejected' | 'exchange_failed' | 'port_collision' | 'network'; message: string };
+  // 260816 W7 region gate — `region_blocked` is returned BEFORE the browser
+  // opens when the detected IP region is unsupported (fail open on unknown).
+  | { ok: false; reason: 'user_cancelled' | 'timeout' | 'browser_closed' | 'google_rejected' | 'exchange_failed' | 'port_collision' | 'network' | 'region_blocked'; message: string };
 
 export type DeleteAccountResult =
   | { ok: true }
@@ -1912,6 +1921,14 @@ export interface RendererApi {
   }): Promise<SignUpResult>;
   signInGoogle(): Promise<OAuthResult>;
   cancelGoogle(): Promise<void>;
+  /**
+   * 260816 W7 region gate — cached region verdict for the renderer's
+   * pre-check, so the AuthPanel / SignInModal blocking popup can appear
+   * immediately instead of after a failed submit. Purely advisory: the
+   * MAIN-side check inside the auth handlers remains the authoritative gate.
+   * Fails open — a detection failure reports { loc: null, blocked: false }.
+   */
+  regionStatus(): Promise<RegionStatus>;
   signOut(): Promise<void>;
   deleteAccount(): Promise<DeleteAccountResult>;
   exportData(): Promise<ExportDataResult>;
@@ -2899,6 +2916,11 @@ export const IpcChannel = {
     // 260603 anti-abuse — renderer hands a solved Turnstile/hCaptcha token to
     // main before signup (inert until bot-protection is enabled). See captcha.ts.
     setCaptchaToken: 'auth:set-captcha-token',
+  },
+  // 260816 W7 region gate — renderer pre-check of the cached region verdict.
+  // {} -> { loc: string|null, blocked: boolean } (see shared/regionGate.ts).
+  region: {
+    status: 'region:status',
   },
   // Phase 11 — cloud-sync queue surface. status is request/response; retry is
   // request/response (force-retry a failed op); statusUpdate is a one-way

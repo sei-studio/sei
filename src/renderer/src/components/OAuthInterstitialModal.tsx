@@ -79,6 +79,13 @@ const ERROR_COPY: Record<ErrorReason, { heading: string; body: string }> = {
     heading: 'Cancelled',
     body: 'Sign-in cancelled.',
   },
+  region_blocked: {
+    // W7 region gate (260816): main refused before the browser opened. Rarely
+    // seen — SignInModal's region:status pre-check normally replaces the form
+    // before Google is reachable; this is the backstop copy.
+    heading: 'Region not supported',
+    body: 'Our servers do not currently support your region. Please continue with local mode.',
+  },
 };
 
 export function OAuthInterstitialModal({
