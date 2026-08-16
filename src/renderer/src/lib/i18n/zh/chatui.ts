@@ -61,6 +61,11 @@ export const ZH_CHATUI: Record<string, string> = {
 
   // Screen share (Backseat)
   'Backseat (beta)': 'Backseat（测试版）',
+  // Vision gate (china-compat W9)
+  'Screen sharing needs a model that can see images. Your current model ({model}) does not support vision.':
+    '屏幕共享需要能看懂图像的模型。你当前的模型（{model}）不支持视觉能力。',
+  'Screen sharing needs a model that can see images. Your current model does not support vision.':
+    '屏幕共享需要能看懂图像的模型。你当前的模型不支持视觉能力。',
   'NEW': '新功能',
   'Stream anything with Backseat (beta)': '用 Backseat（测试版）分享任何画面',
   'Try streaming your game, watching a movie, or doomscrolling together!':

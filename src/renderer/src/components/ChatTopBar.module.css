@@ -122,6 +122,17 @@
   color: var(--accent);
 }
 
+/* Disabled with a reason (W9 vision gate): dimmed, no hover accent, but the
+ * cursor still reaches it so the title tooltip can explain why. */
+.iconBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.iconBtn:disabled:hover {
+  color: var(--text-2);
+}
+
 /* The surface this button opens is currently showing (phone on the call view). */
 .iconBtnActive {
   color: var(--accent);
