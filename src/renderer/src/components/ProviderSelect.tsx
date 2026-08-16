@@ -50,12 +50,14 @@ export function ProviderSelect({ value, onChange, compact = false }: ProviderSel
   // is a grandfathered one (so an existing config still displays and can be
   // re-selected, without offering the legacy provider to anyone else).
   const PROVIDERS = useMemo<ProviderOption[]>(() => {
-    const shown: ProviderOption[] = SHOWN_PROVIDERS.map((id) => ({ id, label: PROVIDER_LABELS[id] }));
+    // Labels ride t() (260817 W10): most are proper nouns that fall through
+    // to English, but 'Ollama (local)' carries a translatable word.
+    const shown: ProviderOption[] = SHOWN_PROVIDERS.map((id) => ({ id, label: t(PROVIDER_LABELS[id]) }));
     if (!SHOWN_PROVIDERS.includes(value)) {
-      shown.push({ id: value, label: PROVIDER_LABELS[value] ?? value });
+      shown.push({ id: value, label: t(PROVIDER_LABELS[value] ?? value) });
     }
     return shown;
-  }, [value]);
+  }, [value, t]);
   const selectedIndex = Math.max(0, PROVIDERS.findIndex((p) => p.id === value));
   const [activeIndex, setActiveIndex] = useState(selectedIndex);
   const rootRef = useRef<HTMLDivElement>(null);

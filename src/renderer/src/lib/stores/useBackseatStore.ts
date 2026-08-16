@@ -160,13 +160,13 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         set({
           starting: false,
           error: msg.includes('BACKSEAT_MC_SESSION_ACTIVE')
-            ? 'They are in your Minecraft world right now. End that first.'
+            ? t('They are in your Minecraft world right now. End that first.')
             : // Main's authoritative vision backstop (china-compat W9). The
               // entry points are gated in the renderer too, but a pending
               // share armed before a model switch can still land here.
               msg.includes('LLM_NO_VISION')
               ? visionGateReason(t, 'backseat', useUiStore.getState().llmModel)
-              : 'Could not start sharing. Try picking a different window.',
+              : t('Could not start sharing. Try picking a different window.'),
         });
         return false;
       }
@@ -178,7 +178,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         void sei.backseatEnd(characterId).catch(() => {});
         set({
           starting: false,
-          error: (err as Error).message || 'Could not read that window.',
+          error: (err as Error).message || t('Could not read that window.'),
         });
         return false;
       }

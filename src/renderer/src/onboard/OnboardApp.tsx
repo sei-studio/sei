@@ -1575,7 +1575,7 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
         >
           {PROVIDERS.map((p) => (
             <option key={p.value} value={p.value}>
-              {p.label}
+              {tt(p.label)}
             </option>
           ))}
         </select>
@@ -1966,7 +1966,8 @@ function ElKeyPanel(props: { onSaved: () => void; onBack: () => void }): React.R
  * the single source of truth for sizes — the renderer hardcodes nothing).
  * The download runs in MAIN, so "Continue" is available the moment it
  * starts: leaving the panel does not cancel it, and a failed download just
- * leaves the pack absent for the engine's VOICE_PACK_MISSING re-offer.
+ * leaves the pack absent — the first call then surfaces the typed
+ * VOICE_PACK_MISSING caption pointing at the Settings download.
  * Already-downloaded packs (a re-run of onboarding) skip straight through.
  */
 function PackDownloadPanel(props: {

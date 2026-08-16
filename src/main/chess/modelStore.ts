@@ -20,15 +20,35 @@ const MODEL_FILENAME = 'maia3-5m.onnx';
 /** Exact size of the published model; a mismatched download is discarded. */
 const MODEL_BYTES = 21_130_791;
 
-// Mirror first (260816, china-compat): GitHub's release-asset CDN is
-// unreliable from mainland China, and the loop below already falls through
-// to the next URL on any failure, so a missing/unreachable mirror costs one
-// fast failed attempt and nothing else. Assets land in the bucket via
-// scripts/mirror-assets.mjs.
-const MODEL_URLS = [
-  `https://dl.sei.gg/chess/${MODEL_FILENAME}`,
-  'https://github.com/sei-studio/cce-1/releases/download/model-v1/maia3-5m.onnx',
-];
+// Two sources (260816, china-compat): GitHub's release-asset CDN is
+// unreliable from mainland China, so blocked-region users try the R2 mirror
+// first; everyone else keeps the historical GitHub-first order (the W10
+// cloud-no-regression rule — same regionStatus gate the whisper host loop
+// uses). The loop below falls through to the next URL on any failure, so a
+// missing/unreachable mirror costs one failed attempt and nothing else.
+// Assets land in the bucket via scripts/mirror-assets.mjs.
+const MODEL_URL_MIRROR = `https://dl.sei.gg/chess/${MODEL_FILENAME}`;
+const MODEL_URL_ORIGIN =
+  'https://github.com/sei-studio/cce-1/releases/download/model-v1/maia3-5m.onnx';
+
+/** Pure ordering (exported for tests): origin-first unless the region is blocked. */
+export function modelUrlOrder(blocked: boolean): string[] {
+  return blocked
+    ? [MODEL_URL_MIRROR, MODEL_URL_ORIGIN]
+    : [MODEL_URL_ORIGIN, MODEL_URL_MIRROR];
+}
+
+/** Origin-first by default; mirror-first only for blocked-region users. */
+async function modelUrls(): Promise<string[]> {
+  let mirrorFirst = false;
+  try {
+    const { getRegionStatus } = await import('../regionDetect');
+    mirrorFirst = (await getRegionStatus()).blocked === true;
+  } catch {
+    /* region unknown → historical origin-first order */
+  }
+  return modelUrlOrder(mirrorFirst);
+}
 
 const DEV_MODEL = path.join(homedir(), '.sei-dev', 'cce', MODEL_FILENAME);
 
@@ -78,7 +98,7 @@ export async function modelReady(): Promise<boolean> {
 async function download(target: string, onProgress?: DownloadProgress): Promise<string> {
   await mkdir(path.dirname(target), { recursive: true });
   let lastErr: Error | null = null;
-  for (const url of MODEL_URLS) {
+  for (const url of await modelUrls()) {
     const tmp = `${target}.download`;
     try {
       const res = await fetch(url);

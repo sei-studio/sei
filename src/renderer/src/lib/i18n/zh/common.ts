@@ -21,6 +21,17 @@ export const ZH_COMMON: Record<string, string> = {
   'Our servers do not currently support your region. Please continue with local mode.':
     '我们的服务器暂不支持您所在的地区。请继续使用本地模式。',
 
+  // Shared download-failure line (chess engine download + the W6 speech-pack
+  // panels). Lives here per the zh.ts rule: later spreads win on duplicates,
+  // so a shared key must not be declared per surface.
+  'The download failed. Check your connection and try again.': '下载失败。请检查网络后重试。',
+
+  // LLM provider labels (shared catalog PROVIDER_LABELS, rendered through
+  // t() by ProviderSelect and the key prompts). Proper-noun labels fall
+  // through to English; only the ones carrying a translatable word appear.
+  'Ollama (local)': 'Ollama（本地）',
+  'Qwen (Alibaba)': 'Qwen（阿里巴巴）',
+
   // Settings: Language section
   'Language': '语言',
   'App language': '应用语言',

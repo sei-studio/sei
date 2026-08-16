@@ -249,3 +249,140 @@ supervisor's init payload). Deliberate degradations, all in-code-commented:
 - Local-TTS onboarding downloads the packs for the CURRENT UI language
   (zh → both gendered zh packs, en → the one en pack); other packs come
   later via Settings / the VOICE_PACK_MISSING re-offer.
+
+## W10 landing notes (260817)
+
+Trace matrix walked; fixes landed on this branch (each with tests where the
+seam was pinnable):
+
+- Keyless ollama now summons: the supervisor's 260703 hasApiKey guard skipped
+  for provider 'ollama' in both _summon and the cloud-to-local switchBackend
+  advisory (chat already worked; Minecraft was the blocked surface). The
+  ApiKeySetupModal and legacy OnboardingScreen also stopped demanding a key
+  for ollama (Settings and the W6 wizard already allowed it).
+- The bot init payload now ships the SHARED catalog default model when the
+  user never picked one, instead of omitting it and letting the bot's older
+  Zod defaults run a different model in Minecraft than every other surface
+  (gpt-4o-mini vs gpt-5-mini, grok-2 vs grok-4). Anthropic default is
+  identical on both sides, so BYOK byte parity holds.
+- The provider-switch key wipe is real now: saveApiKey('') used to be
+  rejected by the IPC min(1) schema and swallowed by the renderer's
+  best-effort catch, leaving the old vendor's key on disk and sending it to
+  the new provider (opaque 401). '' now means CLEAR, implemented as an
+  unlink (apiKeyStore.clearApiKey) because hasApiKey() is file-existence
+  based.
+- Cloud no-regression repairs: the maia model download was unconditionally
+  mirror-first for every region (now origin-first unless regionStatus says
+  blocked, matching the whisper host loop); the updater's background and
+  startup check paths flipped onto the mirror feed on isMissingReleaseArtifacts
+  (a release-shape condition, not a network failure) which the manual path
+  had always filtered.
+- SPEECH_RUNTIME_FAILED now surfaces as a call caption (was total silence on
+  e.g. a mac x64 build without the sherpa platform package). zh entry added.
+- Legacy re-onboarding no longer wipes provider_config (it submitted {}
+  wholesale, discarding model/base_url overrides).
+- zh residue: PROVIDER_LABELS now render through t() (zh entries for
+  'Ollama (local)' and 'Qwen (Alibaba)'); the duplicate
+  'The download failed...' key moved to common.ts (the zh.ts inline spread
+  was shadowing the games value); useBackseatStore's three share-error
+  strings wrapped in t() with zh entries.
+
+## Ship checklist (compiled by W10, 260817)
+
+Infra and uploads (human or Chrome-driven; blocked on Cloudflare access):
+- [ ] R2 bucket `sei-dl` + `dl.sei.gg` custom domain + scoped API token +
+      the three gh secrets (steps 1-3 of the W8 infra checklist above).
+      Why: every mirror path in the client 404s until this exists.
+- [ ] One-time asset uploads per step 4 above: /chess/maia3-5m.onnx, both
+      whisper HF layouts, /speech/<packs>. Speech pack filenames must match
+      src/main/speech/packs.ts EXACTLY.
+      Why: the mirror leg otherwise 404s and CN users fall back to the hosts
+      that are blocked for them.
+- [ ] Re-stage the zh-m chaowen pack as **int8** (~14 MB,
+      `vits-piper-zh_CN-chaowen-medium-int8.tar.bz2`, archiveBytes
+      14_011_298); mirror-out/ currently holds the fp32 archive.
+      Why: packs.ts pins the int8 name and exact byte count; the staged fp32
+      file will never be served as anything the client accepts.
+- [ ] Verify https://dl.sei.gg/chess/maia3-5m.onnx from a CN vantage.
+      Why: the whole point of the mirror; unverified means CN chess is
+      still broken at ship.
+
+Speech quality gates (before ship):
+- [ ] SenseVoice A/B: `int8-2025-09-09` (pinned) vs `int8-2024-07-17`.
+      Why: 2025-09-09 showed garbled EN + a constant yue tag on its own test
+      wavs; if 2024 wins, packs.ts AND the mirror upload both change.
+- [ ] Ear-check chaowen sid 0 (male by F0 ~162 Hz, never heard by a human)
+      and aishell3's 8 kHz register acceptability.
+      Why: the zh voice slots ship on pitch analysis alone today;
+      AISHELL3_MALE_REGISTER_SID = 40 is the in-code fallback if chaowen
+      fails.
+- [ ] License reads: SenseVoice FunASR model license (maintainers say
+      commercial OK; legal read owed) and chaowen CC0 verification.
+      Why: shipping a pack we cannot legally redistribute is a recall.
+
+Release CI:
+- [ ] Force-install `sherpa-onnx-darwin-x64` on the mac dist leg (npm
+      cpu-gates the optional dep on arm64 runners; noted in
+      electron-builder.yml).
+      Why: without it the mac x64 artifact ships with local speech that
+      cannot load. W10 made the failure a visible caption instead of
+      silence, but the fix is the CI install.
+
+Client follow-ups (code, not this branch):
+- [ ] Backend-switch port message carries no llm section: a live bot
+      switched cloud-to-local mid-session flips to Anthropic BYOK
+      regardless of the configured provider; only a re-summon picks up
+      deepseek/qwen/etc.
+      Why: rare path (live summon + backend switch), but it silently runs
+      the wrong provider until re-summon.
+- [ ] Settings shows a pack as Ready on a machine where sherpa cannot load
+      (readiness is disk-only). A one-shot runtime probe gating the
+      'Local (free)' option would close it.
+      Why: a user can download 166 MB that can never play.
+- [ ] speech pack downloads are mirror-first for ALL regions (deliberate,
+      documented in mirrors.ts, 8s mirror connect budget). Decide whether
+      to region-gate like whisper/maia now that regionDetect exists in main.
+      Why: non-CN users pay up to 8s + R2 egress for every pack while the
+      bucket also serves them fine; consistency question, not a bug.
+- [ ] removePack does not evict live sherpa engine caches (model memory
+      leaks for the rest of the run; UI and calls stay correct because
+      tts.ts re-checks packReady per clip). Orphaned `<pack>.extracting`
+      dirs are only swept on the next attempt for that same pack (a crash
+      mid-SenseVoice-extract can strand ~1 GB).
+      Why: hygiene; neither corrupts state.
+- [ ] The whole speech archive + decompressed tar are held in RAM during
+      extract (~166 MB + expansion for SenseVoice).
+      Why: fine on typical machines, worth a streaming extract if low-end
+      CN hardware complains.
+- [ ] Per-call latency notes from the cloud parity review: buildLlmProvider
+      reads config twice per call (once itself, once inside buildChatSdk);
+      voice tts reads config once per spoken clip; the dial path awaits
+      speechPackStatus with no timeout. None change behavior; a loadConfig
+      memo would erase them.
+      Why: measurable I/O on hot paths; harmless today.
+- [ ] Region gate: the email-code (OTP) redeem and password-reset paths are
+      renderer-gated only (the blocked panel removes the links, but main's
+      authoritative gate does not cover verifyOtp). Decide whether that is
+      by design (existing account holders are deliberately ungated) and
+      comment it, or gate it.
+      Why: the one session-minting path the authoritative backstop misses.
+- [ ] Re-derive the blocklist against Anthropic's supported-countries page:
+      the embedded complement yields 13 codes and commonly-listed absences
+      (SD, SS, SO, LY, ER, CF, ML, NI, ZW) are missing. Under-inclusive
+      fails open (safe direction), but the list claims a source.
+      Why: the constant's documented derivation should be reproducible.
+
+Proxy-side (separate repo, out of this stream by decision):
+- [ ] Anonymous /free portrait+skin endpoints so a signed-out local cast is
+      not portraitless.
+      Why: the W6 wizard's documented degradation; the fix is server-side.
+- [ ] Soulcaster prompt drift: local casts use the VENDORED prompts;
+      improvements reach local users only on a client ship. Consider a
+      versioned prompt fetch when signed in.
+      Why: quality divergence grows over time.
+
+Resolved by W10 (recorded so nobody re-files them): the hasApiKey/ollama
+summon block, the bot-vs-catalog default model divergence, the maia
+mirror-first regression, the phantom saveApiKey('') wipe, silent
+SPEECH_RUNTIME_FAILED, re-onboarding provider_config wipe, PROVIDER_LABELS /
+duplicate-key / backseat-store zh gaps.

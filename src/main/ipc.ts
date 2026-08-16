@@ -218,7 +218,6 @@ const IdSchema = z.string().regex(
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
   { message: 'characterId must be a UUID' },
 );
-const PlaintextSchema = z.string().min(1);
 
 /**
  * 260703 procgen — thrown when a CREATE (chars:save of a new id) or a
@@ -2578,7 +2577,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
   ipcMain.handle(IpcChannel.config.saveApiKey, async (_event, plaintextArg: unknown): Promise<void> => {
-    const plaintext = PlaintextSchema.parse(plaintextArg);
+    // '' means CLEAR (260817, china-compat W10). SettingsScreen has always
+    // called saveApiKey('') on a provider switch, but the old min(1) schema
+    // rejected it and the renderer's best-effort catch swallowed the throw —
+    // so the previous vendor's key silently stayed on disk and was sent to
+    // the new provider. Clearing must UNLINK, not store an encrypted empty
+    // string: hasApiKey() is file-existence based.
+    const plaintext = z.string().parse(plaintextArg);
+    if (plaintext === '') {
+      const { clearApiKey } = await import('./apiKeyStore');
+      await clearApiKey();
+      return;
+    }
     await saveApiKey(plaintext);
   });
   ipcMain.handle(IpcChannel.config.hasApiKey, async (): Promise<boolean> => {

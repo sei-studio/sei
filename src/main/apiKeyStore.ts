@@ -38,6 +38,21 @@ export async function saveApiKey(plaintext: string): Promise<void> {
   }
 }
 
+/**
+ * Delete the stored key outright (260817, china-compat W10). This is what a
+ * provider switch needs: hasApiKey() is file-existence based, so an encrypted
+ * empty string would still read as "a key is saved" and bypass the
+ * LOCAL_NO_API_KEY guard, sending the OLD vendor's key to the new provider.
+ * Missing file is success (idempotent).
+ */
+export async function clearApiKey(): Promise<void> {
+  try {
+    await unlink(paths.apiKeyPath());
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+}
+
 export async function hasApiKey(): Promise<boolean> {
   try { await access(paths.apiKeyPath()); return true; }
   catch { return false; }
