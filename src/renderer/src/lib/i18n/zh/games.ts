@@ -23,7 +23,7 @@ export const ZH_GAMES: Record<string, string> = {
   'Try again': '再试一次',
   'Setting up the chess brain (one-time download).': '正在准备国际象棋引擎（仅需下载一次）。',
   'Chess engine download progress': '国际象棋引擎下载进度',
-  'The download failed. Check your connection and try again.': '下载失败。请检查网络后重试。',
+  // 'The download failed...' moved to common.ts (shared with the W6 pack panels).
   'The chess brain failed to download. Check your connection and try again.':
     '国际象棋引擎下载失败。请检查网络后重试。',
   'Chess is not available in this build yet.': '此版本暂不支持国际象棋。',

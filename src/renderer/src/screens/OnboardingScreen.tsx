@@ -324,7 +324,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   // a user who picked DeepSeek on step 1 reads "Paste your DeepSeek API key."
   // not the legacy "Local" fallback. 260816: labels come from the shared
   // catalog (src/shared/llmCatalog.ts) instead of a duplicated map.
-  const providerLabel = PROVIDER_LABELS[provider] ?? 'API';
+  const providerLabel = t(PROVIDER_LABELS[provider] ?? 'API');
   return (
     <QuestionShell
       title={t('Paste your {provider} API key.', { provider: providerLabel })}

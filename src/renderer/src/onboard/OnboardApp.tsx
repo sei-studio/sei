@@ -1575,7 +1575,7 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
         >
           {PROVIDERS.map((p) => (
             <option key={p.value} value={p.value}>
-              {p.label}
+              {tt(p.label)}
             </option>
           ))}
         </select>

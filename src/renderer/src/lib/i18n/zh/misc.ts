@@ -99,6 +99,12 @@ export const ZH_MISC: Record<string, string> = {
   // platform package). Without this caption the companion is silently mute.
   '[voice unavailable, local speech cannot run on this install]':
     '[语音不可用，本地语音无法在此安装上运行]',
+  // Backseat share errors (useBackseatStore) — these bypassed t() until 260817.
+  'They are in your Minecraft world right now. End that first.':
+    '他们现在正在你的 Minecraft 世界里。请先结束那边。',
+  'Could not start sharing. Try picking a different window.':
+    '无法开始共享。试试选择其他窗口。',
+  'Could not read that window.': '无法读取那个窗口。',
   'Voice service is not available right now.': '语音服务暂时不可用。',
   'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.':
     '这个声音不在你的 ElevenLabs 声音库中。请先在那里添加它，或选择其他声音。',

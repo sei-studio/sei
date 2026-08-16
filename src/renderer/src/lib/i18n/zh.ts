@@ -122,6 +122,6 @@ export const ZH: Record<string, string> = {
   'Already downloaded. Continue': '已经下载好了。继续',
   'Download? ({mb} MB)': '下载吗？（{mb} MB）',
   'Downloading... {pct}%': '下载中……{pct}%',
-  'The download failed. Check your connection and try again.': '下载失败了。请检查网络后再试一次。',
+  // 'The download failed...' lives in common.ts (shared with the chess panel).
   'You can keep going; it finishes in the background.': '可以继续下一步，下载会在后台完成。',
 };

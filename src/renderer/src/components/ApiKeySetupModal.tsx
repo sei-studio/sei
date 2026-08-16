@@ -93,7 +93,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
     }
   };
 
-  const providerLabel = PROVIDER_LABELS[provider] ?? 'API';
+  const providerLabel = t(PROVIDER_LABELS[provider] ?? 'API');
   const canSave = apiKey.trim() !== '' && !saving;
 
   return (
