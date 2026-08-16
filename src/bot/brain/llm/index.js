@@ -15,13 +15,22 @@ import { createOpenAICompatProvider } from './openaiCompatProvider.js'
 import { createGeminiProvider } from './geminiProvider.js'
 import { createOllamaProvider } from './ollamaProvider.js'
 
-// 10 providers share the OpenAI Chat Completions wire format with
-// provider-specific baseURL + bearer auth.
-const OPENAI_COMPAT = {
+// These providers share the OpenAI Chat Completions wire format with
+// provider-specific baseURL + bearer auth. Mirrored (deliberately duplicated —
+// this process cannot import shared TS) by OPENAI_COMPAT_BASE_URLS in
+// src/shared/llmCatalog.ts; keep the two in sync.
+//
+// 260816 (china-compat): + qwen (Alibaba DashScope "compatible mode"; the CN
+// endpoint is the default, international Model Studio accounts override
+// base_url to dashscope-intl). mistral/together/groq/fireworks/cerebras/
+// perplexity are GRANDFATHERED — no longer offered by the picker
+// (llmCatalog.ts SHOWN_PROVIDERS) but kept here so existing configs run.
+const BASE_URLS = {
   openai:     'https://api.openai.com/v1',
   grok:       'https://api.x.ai/v1',
   openrouter: 'https://openrouter.ai/api/v1',
   deepseek:   'https://api.deepseek.com/v1',
+  qwen:       'https://dashscope.aliyuncs.com/compatible-mode/v1',
   mistral:    'https://api.mistral.ai/v1',
   together:   'https://api.together.xyz/v1',
   groq:       'https://api.groq.com/openai/v1',
@@ -32,7 +41,7 @@ const OPENAI_COMPAT = {
 
 export const SUPPORTED_PROVIDERS = [
   'anthropic',
-  ...Object.keys(OPENAI_COMPAT),
+  ...Object.keys(BASE_URLS),
   'gemini',
   'ollama',
 ]
@@ -42,8 +51,8 @@ export function createLlmProvider(config, deps = {}) {
   if (kind === 'anthropic') return createAnthropicProvider(config)
   if (kind === 'gemini')    return createGeminiProvider(config, deps)
   if (kind === 'ollama')    return createOllamaProvider(config, deps)
-  if (OPENAI_COMPAT[kind]) {
-    return createOpenAICompatProvider(config, { ...deps, kind, defaultBaseURL: OPENAI_COMPAT[kind] })
+  if (BASE_URLS[kind]) {
+    return createOpenAICompatProvider(config, { ...deps, kind, defaultBaseURL: BASE_URLS[kind] })
   }
   throw new Error(`Unknown llm.provider: ${kind}. Supported: ${SUPPORTED_PROVIDERS.join(', ')}`)
 }
