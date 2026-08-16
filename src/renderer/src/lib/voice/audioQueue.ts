@@ -220,8 +220,18 @@ export function createAudioQueue(
   }
 
   function playBuffer(buf: ArrayBuffer, characterId: string, rate: number, text?: string): void {
+    // Local TTS (260816) delivers WAV bytes instead of mp3. Sniff the RIFF
+    // header: a WAV clip is typed honestly and carries its exact length in its
+    // own header, so it needs no trailing-silence pad (the pad exists for mp3
+    // decoder tail-cut, and appending mp3 frames to a WAV would be garbage).
+    const head = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+    const isWav = head.length === 4 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46;
     // Trailing silence so the decoder plays the real final frame (see SILENCE_MP3).
-    const url = URL.createObjectURL(new Blob([buf, SILENCE_MP3], { type: 'audio/mpeg' }));
+    const url = URL.createObjectURL(
+      isWav
+        ? new Blob([buf], { type: 'audio/wav' })
+        : new Blob([buf, SILENCE_MP3], { type: 'audio/mpeg' }),
+    );
     const el = new Audio(url);
     el.muted = outputMuted;
     // A clip enqueued while a provisional barge-in is open must not start at

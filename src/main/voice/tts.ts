@@ -512,6 +512,21 @@ export async function voiceTtsStream(
     args.text,
     characterLanguage(character.metadata) ?? (await ttsLanguage()),
   );
+  // Local TTS route (260816): the renderer's voice store never picks the
+  // streaming path while local TTS is selected (a WAV clip cannot ride the
+  // audio/mpeg MSE pipeline), but any caller that does anyway degrades to a
+  // whole-clip synthesis delivered as one chunk + done.
+  if (await localTtsSelected()) {
+    const localText = speechTextFor(args.text, language);
+    if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
+    const buf = await synthesizeLocalClip(localText, voiceId, language);
+    const streamId = `tts-${nextStreamSeq++}`;
+    queueMicrotask(() => {
+      sink({ streamId, chunk: buf });
+      sink({ streamId, done: true });
+    });
+    return { streamId };
+  }
   const route = await resolveElevenLabsRoute();
   // Spoken register BEFORE the cap (see voiceTts / speechTextFor).
   const text = clipForRoute(speechTextFor(args.text, language), route);

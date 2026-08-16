@@ -92,6 +92,9 @@ export const ZH_MISC: Record<string, string> = {
   '[voice paused, out of credits]': '[语音已暂停，额度已用完]',
   '[voice unavailable, this voice is not in your ElevenLabs library]':
     '[语音不可用，这个声音不在你的 ElevenLabs 声音库中]',
+  // 260816 local speech: the sherpa voice pack for this call is not downloaded.
+  '[voice unavailable, download the local voice pack in Settings]':
+    '[语音不可用，请在设置中下载本地语音包]',
   'Voice service is not available right now.': '语音服务暂时不可用。',
   'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.':
     '这个声音不在你的 ElevenLabs 声音库中。请先在那里添加它，或选择其他声音。',

@@ -275,6 +275,15 @@ let session = 0;
 const liveSince = new Map<string, number>();
 /** TTS fetches in flight — the remote-end drain waits for these. */
 let pendingTts = 0;
+/**
+ * Local TTS is active for this call (260816, china-compat W3+W4): BYOK backend
+ * with tts_engine 'local'. Set from the same config read that feeds the STT
+ * policy at call start, reset at dial. While set, speakCompanionLine never
+ * takes the streaming path — local synthesis returns whole WAV clips, which
+ * cannot ride the audio/mpeg MSE pipeline; the blob path sniffs the container
+ * (audioQueue playBuffer) and plays them fine.
+ */
+let localTtsCall = false;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
  * speakerOriginSeq), threaded through the flush into speakAndCapture. */
@@ -663,6 +672,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // BYOK key + a curated-pool voice: every clip fails until they add the
         // voice to their own ElevenLabs library or pick another one (260726).
         set({ lastSpoken: t('[voice unavailable, this voice is not in your ElevenLabs library]') });
+      } else if (/VOICE_PACK_MISSING/.test(msg)) {
+        // Local TTS (260816): the needed voice pack is not downloaded. Never
+        // auto-downloaded mid-call; Settings owns the download prompt.
+        set({ lastSpoken: t('[voice unavailable, download the local voice pack in Settings]') });
       }
     };
     const settleTts = (): void => {
@@ -671,7 +684,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     };
 
     const canStream =
-      typeof sei.voiceTtsStream === 'function' && typeof sei.onVoiceTtsChunk === 'function';
+      typeof sei.voiceTtsStream === 'function' &&
+      typeof sei.onVoiceTtsChunk === 'function' &&
+      // Local TTS (260816): whole WAV clips only — see localTtsCall.
+      !localTtsCall;
     // 260726: a TINY line does not stream. Streaming exists to cut time-to-
     // first-audio on a long clip, and its cost is that playback starts on a
     // buffer that is still filling. On a clip of a few hundred ms there is
@@ -1554,6 +1570,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const callCfg = await sei.getConfig().catch(() => null);
       if (session !== mySession) return;
       const chatLanguage = callCfg?.chat_language ?? 'en';
+      // Local TTS route (260816): the same read decides how this call's clips
+      // are synthesized. See localTtsCall.
+      localTtsCall =
+        (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' && callCfg?.tts_engine === 'local';
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
       const policy = sttPolicy(callCfg, callCfg?.ai_backend_kind ?? 'cloud-proxy');
