@@ -332,6 +332,17 @@ mac:
     - "!.env*"
     - "!node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
     - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**"
+    # 260816 local speech: sherpa-onnx ships per-PLATFORM prebuild packages
+    # (sherpa-onnx-darwin-arm64 etc., pulled as optionalDependencies of
+    # sherpa-onnx-node), so unlike onnxruntime-node's single all-platform
+    # package, npm only installs the matching one and these excludes are
+    # mostly belt-and-braces: they drop any foreign-platform package that a
+    # cache or a cross-arch install left behind. NOTE for the mac x64 build:
+    # npm on an arm64 runner skips sherpa-onnx-darwin-x64 (cpu-gated), so the
+    # x64 mac artifact ships without local speech unless CI force-installs it
+    # (same situation as cce-1's arm64-only darwin prebuild).
+    - "!node_modules/sherpa-onnx-linux-*/**"
+    - "!node_modules/sherpa-onnx-win-*/**"
     - "!node_modules/gl/deps/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,17.1,18.1,19}/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
@@ -441,6 +452,11 @@ win:
     - "!node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
     - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**"
     - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+    # 260816 local speech: drop foreign-platform sherpa-onnx prebuild packages
+    # (win-ia32 is never a target; see the mac block's note on this pattern).
+    - "!node_modules/sherpa-onnx-darwin-*/**"
+    - "!node_modules/sherpa-onnx-linux-*/**"
+    - "!node_modules/sherpa-onnx-win-ia32/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,17.1,18.1,19}/**"
     - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
     # 1.16.4 IS PRUNED, BUT NOT ENTIRELY (260806). It is not just another old

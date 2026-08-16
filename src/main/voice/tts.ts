@@ -272,6 +272,45 @@ async function getJwtOrNull(): Promise<string | null> {
   }
 }
 
+/**
+ * Local TTS route (260816, china-compat W3+W4): BYOK ('local' backend) users
+ * with `tts_engine: 'local'` synthesize through the sherpa-onnx voice packs in
+ * main (src/main/speech/) instead of ElevenLabs. Cloud accounts ignore the
+ * field entirely, and absent means 'elevenlabs' — both ElevenLabs paths
+ * (proxy + direct BYOK key) are byte-identical to before.
+ */
+async function localTtsSelected(): Promise<boolean> {
+  try {
+    const { getAiBackendKind } = await import('../apiKeyStore');
+    if ((await getAiBackendKind()) !== 'local') return false;
+    return (await loadConfig()).tts_engine === 'local';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Synthesize via the local sherpa engine and encode as WAV bytes. The
+ * character's persisted ElevenLabs voiceId maps to a local voice by GENDER
+ * (speech/localVoice.ts) plus the clip's language; `voicePitch` still applies
+ * renderer-side through pitchBus playbackRate, untouched. A missing voice
+ * pack throws `VOICE_PACK_MISSING:<packId>` — the renderer turns that into a
+ * download prompt; never auto-download mid-call.
+ */
+async function synthesizeLocalClip(
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+): Promise<ArrayBuffer> {
+  const speech = await import('../speech');
+  const voice = speech.resolveLocalVoice(voiceId, language);
+  const packId = speech.LOCAL_VOICE_SPEC[voice].packId;
+  if (!(await speech.packReady(packId))) throw speech.packMissingError(packId);
+  const { samples, sampleRate } = await speech.synthesizeLocal(text, voice);
+  const { encodeWav } = await import('./stt');
+  return encodeWav(samples, sampleRate);
+}
+
 async function fetchAudio(
   url: string,
   headers: Record<string, string>,
@@ -415,6 +454,14 @@ export async function voiceTts(args: {
     args.text,
     characterLanguage(character.metadata) ?? (await ttsLanguage()),
   );
+  // Local TTS route (see localTtsSelected): same register conversion, no
+  // proxy clip cap (the IPC boundary already bounds text length), WAV bytes
+  // instead of mp3 — the renderer's blob playback sniffs the container.
+  if (await localTtsSelected()) {
+    const localText = speechTextFor(args.text, language);
+    if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
+    return await synthesizeLocalClip(localText, voiceId, language);
+  }
   const route = await resolveElevenLabsRoute();
   // Spoken register BEFORE the cap: chat lines mirrored into the call carry
   // shorthand ("lmao", "rn") that TTS would read literally, and texting
@@ -465,6 +512,21 @@ export async function voiceTtsStream(
     args.text,
     characterLanguage(character.metadata) ?? (await ttsLanguage()),
   );
+  // Local TTS route (260816): the renderer's voice store never picks the
+  // streaming path while local TTS is selected (a WAV clip cannot ride the
+  // audio/mpeg MSE pipeline), but any caller that does anyway degrades to a
+  // whole-clip synthesis delivered as one chunk + done.
+  if (await localTtsSelected()) {
+    const localText = speechTextFor(args.text, language);
+    if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
+    const buf = await synthesizeLocalClip(localText, voiceId, language);
+    const streamId = `tts-${nextStreamSeq++}`;
+    queueMicrotask(() => {
+      sink({ streamId, chunk: buf });
+      sink({ streamId, done: true });
+    });
+    return { streamId };
+  }
   const route = await resolveElevenLabsRoute();
   // Spoken register BEFORE the cap (see voiceTts / speechTextFor).
   const text = clipForRoute(speechTextFor(args.text, language), route);

@@ -889,18 +889,15 @@ export const UserConfigSchema = z.object({
    */
   stt_engine: z.enum(['scribe', 'whisper', 'sensevoice']).optional(),
   /**
-   * 260816 (china-compat): which TTS engine local-mode voice calls use.
-   * 'elevenlabs' = the existing route (user's own ElevenLabs key when set,
-   * else the proxy for cloud accounts); 'local' = the on-device lightweight
-   * TTS voices (en+zh, male+female packs downloaded on selection — see
-   * src/renderer/src/lib/voice/localTts*). Optional and NOT defaulted
-   * (absent ≡ 'elevenlabs' semantics, decided renderer-side, so every
-   * existing config and every cloud user is untouched). Characters always
-   * KEEP their designated metadata.voiceId (an ElevenLabs pool id); the
-   * local engine maps that voice's gender + the conversation language to a
-   * local voice pack at synthesis time, and metadata.voicePitch still
-   * applies through the pitch shifter. Cloud accounts ignore this field
-   * entirely.
+   * 260816 local speech (china-compat W3+W4): which TTS engine speaks a
+   * companion's lines in local mode. 'local' routes synthesis through the
+   * sherpa-onnx voice packs in main (speech/) instead of ElevenLabs.
+   * Read ONLY when ai_backend_kind === 'local' — cloud accounts ignore it
+   * entirely. Optional and NOT defaulted (absent ≡ 'elevenlabs').
+   * Characters always KEEP their designated metadata.voiceId (an ElevenLabs
+   * pool id); the local engine maps that voice's gender + the conversation
+   * language to a local voice pack at synthesis time, and
+   * metadata.voicePitch still applies through the pitch shifter.
    */
   tts_engine: z.enum(['elevenlabs', 'local']).optional(),
   /**

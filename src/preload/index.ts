@@ -241,6 +241,16 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
   },
   voiceStt: (args) => ipcRenderer.invoke(IpcChannel.voice.stt, args),
+  // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
+  speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
+  speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),
+  speechPackRemove: (args) => ipcRenderer.invoke(IpcChannel.speech.packRemove, args),
+  onSpeechPackState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.speech.packState, handler);
+    return () => ipcRenderer.off(IpcChannel.speech.packState, handler);
+  },
+  speechSttTranscribe: (args) => ipcRenderer.invoke(IpcChannel.speech.sttTranscribe, args),
   voiceSttPrewarm: () => ipcRenderer.invoke(IpcChannel.voice.sttPrewarm),
   voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
   voiceGreet: (characterId, peers) => ipcRenderer.invoke(IpcChannel.voice.greet, { characterId, peers: peers ?? [] }),
