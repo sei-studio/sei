@@ -9,7 +9,8 @@
  */
 import { z } from 'zod';
 import { getCharacter, patchCharacter } from '../characterStore';
-import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { buildLlmProvider } from '../llm';
 
 export const ChessProfileSchema = z.object({
   elo: z.number().int().min(400).max(2000),
@@ -65,30 +66,30 @@ export async function getOrCreateChessProfile(characterId: string): Promise<Ches
 
   let profile = FALLBACK;
   try {
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     const persona = character.persona.expanded || character.persona.source;
-    const res = await client.messages.create(
-      {
-        model,
-        max_tokens: 300,
-        system:
-          'You map a game companion character description to a chess-playing profile. ' +
-          'Read the persona and decide how strong this character would plausibly be at chess and how they would play. ' +
-          'Anchor strength in the persona: intelligence, patience, competitiveness, chaos. ' +
-          'Call set_chess_profile exactly once.',
-        tools: [PROFILE_TOOL],
-        tool_choice: { type: 'tool', name: 'set_chess_profile' },
-        messages: [
-          {
-            role: 'user',
-            content: `Character name: ${character.name}\n\nPersona:\n${persona.slice(0, 4000)}`,
-          },
-        ],
-      },
-      { timeout: CHAT_TIMEOUT_MS },
-    );
-    const toolUse = res.content.find((b) => b.type === 'tool_use');
-    if (toolUse && toolUse.type === 'tool_use') {
+    // The one forced tool_choice in main. The layer maps it per provider
+    // (OpenAI function form, Gemini mode ANY) and falls back to parsing
+    // tool-shaped JSON out of the text for providers without support.
+    const res = await llm.call({
+      maxTokens: 300,
+      system:
+        'You map a game companion character description to a chess-playing profile. ' +
+        'Read the persona and decide how strong this character would plausibly be at chess and how they would play. ' +
+        'Anchor strength in the persona: intelligence, patience, competitiveness, chaos. ' +
+        'Call set_chess_profile exactly once.',
+      tools: [PROFILE_TOOL],
+      toolChoice: { type: 'tool', name: 'set_chess_profile' },
+      messages: [
+        {
+          role: 'user',
+          content: `Character name: ${character.name}\n\nPersona:\n${persona.slice(0, 4000)}`,
+        },
+      ],
+      timeoutMs: CHAT_TIMEOUT_MS,
+    });
+    const toolUse = res.toolUses[0];
+    if (toolUse) {
       const input = toolUse.input as { elo?: number; styleNote?: string };
       const parsed = ChessProfileSchema.safeParse({
         elo: Math.round(Number(input.elo)),
