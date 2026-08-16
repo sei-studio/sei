@@ -35,6 +35,10 @@ const PROVIDER_SELECT_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'compon
 const LLM_CATALOG_TS = resolve(REPO_ROOT, 'src', 'shared', 'llmCatalog.ts');
 const USE_UI_STORE_TS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'stores', 'useUiStore.ts');
 const APP_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'App.tsx');
+const EDIT_MODAL_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'EditCharacterModal.tsx');
+const VOICE_PICKER_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'VoicePicker.tsx');
+const DOWNLOAD_MODAL_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'DownloadConfirmModal.tsx');
+const ZH_TS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'i18n', 'zh.ts');
 
 beforeEach(() => {
   (globalThis as unknown as { window: unknown }).window = {
@@ -264,5 +268,146 @@ describe('SettingsScreen (D-FIX reset-all-memories unconditional)', () => {
     expect(src.includes('Reset all memories…')).toBe(true);
     expect(src.includes('ResetAllMemoriesConfirmModal')).toBe(true);
     expect(src.includes('Click again to confirm reset')).toBe(false);
+  });
+});
+
+describe('SettingsScreen (W5 china-compat: model picker + Test probe)', () => {
+  it('W5.1: model list + probe ride the typed llm IPC', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes('sei.llmListModels(currentProvider)')).toBe(true);
+    expect(src.includes('sei.llmTest(currentProvider')).toBe(true);
+  });
+
+  it('W5.2: the picked model persists to provider_config[provider].model — the field resolveLocalModel reads', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes('model: modelId')).toBe(true);
+    expect(src.includes('provider_config: pc')).toBe(true);
+    // The current-model readout falls back to the catalog default.
+    expect(src.includes('DEFAULT_MODELS[currentProvider]')).toBe(true);
+  });
+
+  it('W5.3: every typed error token maps to a human string', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    for (const token of ["'no_api_key'", "'unauthorized'", "'timeout'", "'network'", "startsWith('http_')"]) {
+      expect(src.includes(token)).toBe(true);
+    }
+    // The unknown-token fallback sentence exists.
+    expect(src.includes('Something went wrong. Try again.')).toBe(true);
+  });
+
+  it('W5.4: the probe spinner warns it can take up to a minute (DeepSeek queues)', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes('This can take up to a minute.')).toBe(true);
+  });
+
+  it('W5.5: non-vision models are marked and the hint names the image surfaces', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes("m.vision === 'no'")).toBe(true);
+    expect(src.includes('Screen sharing and Draw! need a model that can see images.')).toBe(true);
+  });
+});
+
+describe('SettingsScreen (W5 china-compat: Voice group, TTS packs + SenseVoice)', () => {
+  it('V.1: a Voice group exists after AI, gated to local (BYOK) mode', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    const aiIdx = src.indexOf('>AI<');
+    const voiceIdx = src.indexOf('>Voice<');
+    expect(voiceIdx).toBeGreaterThan(aiIdx);
+    // The group's opening conditional is the local-mode gate.
+    const preamble = src.slice(Math.max(0, voiceIdx - 400), voiceIdx);
+    expect(preamble.includes("aiBackendKind === 'local'")).toBe(true);
+  });
+
+  it('V.2: the TTS engine Seg persists tts_engine between elevenlabs and local', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes('tts_engine: next')).toBe(true);
+    expect(src.includes("value: 'elevenlabs'")).toBe(true);
+    expect(src.includes("{ value: 'local'")).toBe(true);
+  });
+
+  it('V.3: the three TTS pack rows carry the registry pack ids, free labels, and a remove affordance', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    for (const id of ["'tts-en'", "'tts-zh-f'", "'tts-zh-m'"]) {
+      expect(src.includes(id)).toBe(true);
+    }
+    expect(src.includes("t('(free)')")).toBe(true);
+    expect(src.includes('onRemovePack')).toBe(true);
+    expect(src.includes('<DownloadConfirmModal')).toBe(true);
+  });
+
+  it('V.4: pack state rides the speech IPC and sizes come from the push, never hardcoded', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes('.speechPackStatus()')).toBe(true);
+    expect(src.includes('sei.onSpeechPackState')).toBe(true);
+    expect(src.includes('bytes={packStates[pendingPack.id].bytes}')).toBe(true);
+    // No literal MB sizes in the settings source — the registry owns them.
+    for (const literal of ['78 MB', '30 MB', '13 MB', '155 MB', '158 MB']) {
+      expect(src.includes(literal)).toBe(false);
+    }
+  });
+
+  it('V.5: the STT Seg gains SenseVoice beside the unchanged scribe/whisper rows, download-gated', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    // Existing options byte-identical.
+    expect(src.includes("{ value: 'scribe', label: t('ElevenLabs Scribe') }")).toBe(true);
+    expect(src.includes("{ value: 'whisper', label: t('Local Whisper') }")).toBe(true);
+    expect(src.includes("{ value: 'sensevoice', label: t('SenseVoice (free)') }")).toBe(true);
+    // Picking SenseVoice with the pack absent detours through the confirm and
+    // only persists once the download resolved.
+    expect(src.includes("packStates[SENSEVOICE_PACK_ID]?.state !== 'ready'")).toBe(true);
+    expect(src.includes("if (thenSensevoice) await persistSttEngine('sensevoice')")).toBe(true);
+  });
+});
+
+describe('DownloadConfirmModal (W5 shared "Download? (XX MB)" confirm)', () => {
+  it('DL.1: renders through ModalShell with the size computed from exact bytes', () => {
+    const src = readFileSync(DOWNLOAD_MODAL_TSX, 'utf-8');
+    expect(src.includes('ModalShell')).toBe(true);
+    expect(src.includes('ModalFooter')).toBe(true);
+    expect(src.includes('export function formatMb')).toBe(true);
+    expect(src.includes('bytes / (1024 * 1024)')).toBe(true);
+    expect(src.includes("t('Download ({mb} MB)', { mb })")).toBe(true);
+  });
+});
+
+describe('EditCharacterModal + VoicePicker (W5 local-TTS voice gating)', () => {
+  it('G.1: EditCharacterModal derives localTtsMode from backend kind + tts_engine and passes it down', () => {
+    const src = readFileSync(EDIT_MODAL_TSX, 'utf-8');
+    expect(src.includes("aiBackendKind === 'local' && localTtsPref")).toBe(true);
+    expect(src.includes("c.tts_engine === 'local'")).toBe(true);
+    expect(src.includes('localTtsMode={localTtsMode}')).toBe(true);
+  });
+
+  it('G.2: VoicePicker hides the ElevenLabs list/previews + Calmness in localTtsMode, keeps Pitch tunable', () => {
+    const src = readFileSync(VOICE_PICKER_TSX, 'utf-8');
+    expect(src.includes('localTtsMode?: boolean')).toBe(true);
+    // The list/sample half and the Calmness slider are both behind the gate.
+    expect((src.match(/localTtsMode \? null/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    // Pitch stays live without an ElevenLabs selection.
+    expect(src.includes('localTtsMode || (value !== null && value !== NO_VOICE_ID)')).toBe(true);
+  });
+
+  it('G.3: the stored ElevenLabs voiceId is preserved untouched underneath', () => {
+    const src = readFileSync(EDIT_MODAL_TSX, 'utf-8');
+    // The deferred save still writes voiceId from state — which localTtsMode
+    // never mutates, since the picker that changes it is hidden.
+    expect(src.includes('metadata.voiceId = voiceId')).toBe(true);
+  });
+
+  it('G.4: every W5 user string has a zh entry in the dedicated block', () => {
+    const zh = readFileSync(ZH_TS, 'utf-8');
+    const block = zh.slice(zh.indexOf('// W5 settings (china-compat)'));
+    expect(block.length).toBeGreaterThan(0);
+    for (const key of [
+      "'Choose model'",
+      "'Testing your key and model. This can take up to a minute.'",
+      "'SenseVoice (free)'",
+      "'Download ({mb} MB)'",
+      "'Local (free)'",
+    ]) {
+      expect(block.includes(key)).toBe(true);
+    }
+    // No em dash anywhere in the W5 copy, either language.
+    expect(block.includes('—')).toBe(false);
   });
 });
