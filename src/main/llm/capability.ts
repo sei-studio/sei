@@ -7,10 +7,10 @@
  */
 import { BrowserWindow } from 'electron';
 import { IpcChannel, type LlmCapability } from '../../shared/ipc';
-import { activeLlmVision } from './index';
+import { activeLlmModelLabel, activeLlmVision } from './index';
 
 export async function currentLlmCapability(): Promise<LlmCapability> {
-  return { vision: await activeLlmVision() };
+  return { vision: await activeLlmVision(), model: await activeLlmModelLabel() };
 }
 
 /** Best-effort broadcast to every window. Never throws, never load-bearing. */
