@@ -650,7 +650,11 @@ function maybeBackgroundCheck(reason: string): void {
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(`updater: background checkForUpdates failed (${message})`);
-      if (retryOnMirror(au, message)) {
+      // Missing artifacts is a release-shape condition, not a network failure
+      // — the mirror carries the same release, so flipping onto it would
+      // strand a supported-region user there for nothing (260817, W10; the
+      // manual check path has always filtered this).
+      if (!isMissingReleaseArtifacts(err) && retryOnMirror(au, message)) {
         return au.checkForUpdates().catch((err2: unknown) => {
           logger.warn(`updater: mirror checkForUpdates failed (${(err2 as Error)?.message ?? err2})`);
         });
@@ -704,7 +708,8 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
       au.checkForUpdates().catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         logger.warn(`updater: startup checkForUpdates failed (${message})`);
-        if (retryOnMirror(au, message)) {
+        // Same release-shape filter as the background path (260817, W10).
+        if (!isMissingReleaseArtifacts(err) && retryOnMirror(au, message)) {
           au.checkForUpdates().catch((err2: unknown) => {
             logger.warn(`updater: mirror checkForUpdates failed (${(err2 as Error)?.message ?? err2})`);
           });
