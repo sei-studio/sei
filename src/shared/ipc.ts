@@ -143,6 +143,31 @@ export interface VisionCapability {
 }
 
 /**
+ * china-compat W1 — vision capability of the ACTIVE chat backend, derived
+ * from CONFIG (backend kind + provider + model through the shared
+ * llmCatalog), not from a live bot session. Pushed main→renderer over
+ * `llm:capability` on config changes and backend switches, seeded by the
+ * `llm:capability-get` pull. Renderer holds it as useUiStore.llmVision
+ * ('yes' | 'no' | 'unknown'); gating of the image surfaces (Draw! tile,
+ * backseat entry points) is W9 — this is only the signal. Distinct from
+ * VisionCapability above, which is the BOT-session-scoped push.
+ */
+export interface LlmCapability {
+  vision: 'yes' | 'no' | 'unknown';
+}
+
+/** llm:list-models — live model listing with the user's own key. `error` is a
+ * typed token ('no_api_key' | 'unauthorized' | 'timeout' | 'network' |
+ * 'http_<status>' | 'unknown'), never a raw message. */
+export interface LlmListModelsResult {
+  models: Array<{ id: string; vision: 'yes' | 'no' | 'unknown' }>;
+  error?: string;
+}
+
+/** llm:test — a 1-token probe through the main-process provider layer. */
+export type LlmTestResult = { ok: true; latencyMs: number } | { ok: false; error: string };
+
+/**
  * LAN world-detection status from the loopback watcher.
  *
  * This describes ONLY whether an open-to-LAN Minecraft world is detected on the
@@ -2142,6 +2167,18 @@ export interface RendererApi {
    * so the 15-05 Settings auto-render toggle can gate its disabled state.
    */
   onVisionCapability(cb: (cap: VisionCapability) => void): Unsubscribe;
+  /**
+   * china-compat W1 — list the selected provider's models with the user's own
+   * key (typed error token on failure, never a throw) and probe a
+   * provider+model with a 1-token completion through the main LLM layer.
+   */
+  llmListModels(provider: string): Promise<LlmListModelsResult>;
+  llmTest(provider: string, model: string): Promise<LlmTestResult>;
+  /** Pull the current config-derived LLM vision capability (seed; the
+   * llm:capability push keeps it current afterwards). */
+  getLlmCapability(): Promise<LlmCapability>;
+  /** Subscribe to `llm:capability` pushes (config/backends changes). */
+  onLlmCapability(cb: (cap: LlmCapability) => void): Unsubscribe;
   onLog(cb: (batch: LogBatch) => void): Unsubscribe;
   onLan(cb: (state: LanState) => void): Unsubscribe;
   /** Pull the current LAN state (snapshot). Used to seed a freshly-loaded
@@ -2489,6 +2526,18 @@ export const IpcChannel = {
    */
   vision: {
     capability: 'vision:capability',
+  },
+  /**
+   * china-compat W1 — the main-process multi-provider LLM layer's renderer
+   * surface: live model listing + 1-token test for the Settings picker, and
+   * the config-derived vision capability of the active chat backend
+   * (push on change + pull to seed, the lan.state/lan.get pattern).
+   */
+  llm: {
+    listModels: 'llm:list-models',
+    test: 'llm:test',
+    capability: 'llm:capability',
+    capabilityGet: 'llm:capability-get',
   },
   lan: {
     state: 'lan:state',

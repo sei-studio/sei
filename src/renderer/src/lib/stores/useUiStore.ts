@@ -209,6 +209,15 @@ interface UiState {
    */
   visionCapable: boolean;
   /**
+   * china-compat W1 — vision verdict of the ACTIVE chat backend, derived from
+   * config (provider + model through llmCatalog; cloud-proxy is always
+   * 'yes'). Fed by the `llm:capability` push + the capability-get seed in
+   * useDataStore.subscribeIpc. Deliberately separate from the bot-session
+   * `visionCapable` above; the W9 gates (Draw! tile, backseat entries) read
+   * THIS one and lock only on a confident 'no'.
+   */
+  llmVision: 'yes' | 'no' | 'unknown';
+  /**
    * Session-only flag: flips true the first time the user leaves the Home
    * screen — either by navigating to another view (character/settings/etc.)
    * or by switching CharactersScreen to the World tab. The Home header
@@ -317,6 +326,8 @@ interface UiState {
   setChatPanelHidden: (v: boolean) => void;
   /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
   setVisionCapable: (v: boolean) => void;
+  /** china-compat W1: set from the llm:capability push/seed. */
+  setLlmVision: (v: 'yes' | 'no' | 'unknown') => void;
   /** Phase 18/19: record the chat a CharacterPage was opened from (or null). */
   setChatReturnId: (id: string | null) => void;
   /** #6: set the active call's mute state (shared by both call surfaces). */
@@ -365,6 +376,9 @@ export const useUiStore = create<UiState>((set) => ({
   // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
   // capabilities.vision === true over the vision:capability push.
   visionCapable: false,
+  // 'unknown' until the seed/push lands; consumers treat unknown as usable
+  // (a wrong lock hides a feature silently, a wrong allow fails visibly).
+  llmVision: 'unknown',
   homeGreetingDismissed: false,
   chatReturnId: null,
   callMuted: false,
@@ -404,6 +418,7 @@ export const useUiStore = create<UiState>((set) => ({
   setAnalyticsOptOut: (v) => set({ analyticsOptOut: v }),
   setChatPanelHidden: (v) => set({ chatPanelHidden: v }),
   setVisionCapable: (v) => set({ visionCapable: v }),
+  setLlmVision: (v) => set({ llmVision: v }),
   setChatReturnId: (id) => set({ chatReturnId: id }),
   setCallMuted: (muted) => set({ callMuted: muted }),
   setCallDeafened: (deafened) => set({ callDeafened: deafened }),

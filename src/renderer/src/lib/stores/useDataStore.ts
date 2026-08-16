@@ -275,6 +275,18 @@ function wireIpc(): () => void {
   const offVisionCapability = sei.onVisionCapability((cap) => {
     useUiStore.getState().setVisionCapable(cap.visionCapable === true);
   });
+  // china-compat W1: config-derived vision verdict of the active chat
+  // backend. Seeded by pull (the push only fires on change) and kept current
+  // by the llm:capability push. Optional-call like onBotAction: an older
+  // preload without the method just skips the feature.
+  const offLlmCapability =
+    sei.onLlmCapability?.((cap) => useUiStore.getState().setLlmVision(cap.vision)) ?? (() => {});
+  sei
+    .getLlmCapability?.()
+    .then((cap) => useUiStore.getState().setLlmVision(cap.vision))
+    .catch(() => {
+      /* stays 'unknown'; the next push corrects it */
+    });
   // Current-action pushes (Party redesign §2). Optional-call: a not-yet-
   // reloaded preload without onBotAction just skips the feature.
   const offAction =
@@ -284,6 +296,7 @@ function wireIpc(): () => void {
     offStatus();
     offLog();
     offVisionCapability();
+    offLlmCapability();
     offAction();
   };
 }
