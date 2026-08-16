@@ -15,7 +15,10 @@ import type { ChatMessage, ChatSendResult, LanState, SpokenLineContext } from '.
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
-import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
+import { CHAT_TIMEOUT_MS } from './sdk';
+// The multi-provider LLM layer (china-compat W1). Anthropic (cloud-proxy and
+// local BYOK) rides the exact old SDK path inside it, streaming included.
+import { buildLlmProvider } from '../llm';
 import { raiseUsageLimitPopup } from './usageLimit';
 import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
@@ -627,7 +630,7 @@ export async function sendChatMessage(
     // Prompt caching (260706): mark the last message AFTER every foldUserNote —
     // the transcript is then cached prefix-incrementally across the call's turns.
     markLastMessageCached(messages);
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
 
     // Voice calls (260706): STREAM the reply so TTS can start on sentence 1 while
     // the model is still writing the rest, instead of waiting for the whole reply
@@ -715,34 +718,25 @@ export async function sendChatMessage(
       // ceiling it self-conditions on the last (longest) turn and creeps up a
       // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
       // from the system prompt without truncating mid-sentence.
-      const params = {
-        model,
-        max_tokens: 200,
-        system,
-        tools,
-        stop_sequences: TRANSCRIPT_STOP_SEQUENCES,
-        messages: messages as never,
-      };
-      // #9 — abortable: a follow-up send aborts this signal.
-      const opts = { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal };
       const t0 = Date.now();
-      let res: Anthropic.Messages.Message;
-      if (isStreaming) {
-        const stream = client.messages.stream(params, opts);
-        for await (const ev of stream) {
-          if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
-            streamBuf += ev.delta.text;
+      // Streaming rides the layer's onTextDelta sink (Anthropic: the SDK
+      // stream, byte-identical to the old messages.stream path; non-Anthropic:
+      // SSE deltas, or one whole-text call for non-streaming providers).
+      //
+      // `more` is only ever asserted from text we ALREADY hold: another
+      // extracted sentence, or a partial left in the buffer. Mid-stream we
+      // cannot know whether the model is about to write a further
+      // sentence, and guessing the wrong way is the expensive direction —
+      // a false `more` sends next_text on what turns out to be the last
+      // line and takes its terminal fall away, which is the very bug this
+      // change exists to fix. Unknown therefore means false: the clip
+      // lands as a complete sentence, and if another does follow, IT gets
+      // `prev` so its own opening still continues cleanly.
+      const onTextDelta = isStreaming
+        ? async (delta: string): Promise<void> => {
+            streamBuf += delta;
             const { sentences, rest } = takeSentences(streamBuf);
             streamBuf = rest;
-            // `more` is only ever asserted from text we ALREADY hold: another
-            // extracted sentence, or a partial left in the buffer. Mid-stream we
-            // cannot know whether the model is about to write a further
-            // sentence, and guessing the wrong way is the expensive direction —
-            // a false `more` sends next_text on what turns out to be the last
-            // line and takes its terminal fall away, which is the very bug this
-            // change exists to fix. Unknown therefore means false: the clip
-            // lands as a complete sentence, and if another does follow, IT gets
-            // `prev` so its own opening still continues cleanly.
             for (let i = 0; i < sentences.length; i++) {
               // A lead-in too short to stand alone rides with the next sentence
               // (see MERGE_SHORT_SENTENCE_CHARS). Held unconditionally, not just
@@ -758,8 +752,19 @@ export async function sendChatMessage(
               await emitStreamedBubble(s, i < sentences.length - 1 || streamBuf.trim().length > 0);
             }
           }
-        }
-        res = await stream.finalMessage();
+        : undefined;
+      // #9 — abortable: a follow-up send aborts this signal.
+      const res = await llm.call({
+        maxTokens: 200,
+        system,
+        tools,
+        stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+        messages,
+        timeoutMs: CHAT_TIMEOUT_MS,
+        signal: ctrl.signal,
+        ...(onTextDelta ? { onTextDelta } : {}),
+      });
+      if (isStreaming) {
         // This hop's trailing partial (a final sentence with no boundary punct,
         // or the whole reply when the model ends without terminal punctuation),
         // carrying any held lead-in — which is also how a reply that is NOTHING
@@ -770,8 +775,6 @@ export async function sendChatMessage(
         if (tail) await emitStreamedBubble(tail, false);
         shortLeadIn = '';
         streamBuf = '';
-      } else {
-        res = await client.messages.create(params, opts);
       }
       // Instrumentation (260706): per-hop timing + token usage, so cache hits
       // (cacheRead > 0) and overload retries (a slow hop) are visible in the dev
@@ -975,11 +978,14 @@ export async function sendLaunchFailedTurn(
   // second user-side aside (drained so they never persist).
   foldUserNote(messages, renderThoughtNote(drainThoughts(characterId)));
 
-  const { client, model } = await buildChatSdk();
-  const res = await client.messages.create(
-    { model, max_tokens: 200, system, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-    { timeout: CHAT_TIMEOUT_MS },
-  );
+  const llm = await buildLlmProvider();
+  const res = await llm.call({
+    maxTokens: 200,
+    system,
+    stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+    messages,
+    timeoutMs: CHAT_TIMEOUT_MS,
+  });
   const replyText = textOf(res.content);
   if (!replyText) return [];
   return persistReplies(characterId, replyText, prep.punctuation);
@@ -1051,11 +1057,15 @@ export async function sendFirstMeetingTurn(
     const ctrl = new AbortController();
     inflight.set(characterId, ctrl);
     try {
-      const { client, model } = await buildChatSdk();
-      const res = await client.messages.create(
-        { model, max_tokens: 200, system, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-        { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-      );
+      const llm = await buildLlmProvider();
+      const res = await llm.call({
+        maxTokens: 200,
+        system,
+        stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+        messages,
+        timeoutMs: CHAT_TIMEOUT_MS,
+        signal: ctrl.signal,
+      });
       if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
       const replyText = textOf(res.content);
       if (!replyText) return [];
@@ -1126,7 +1136,7 @@ export async function sendVoiceGreetingTurn(
       messages.push({ role: 'user', content: note });
     }
 
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     // Cache PREWARM (260706): this greeting fires while the call is still
     // dialing. Offer the SAME tools a live user turn does — tools sit at the
     // front of the prompt-cache prefix, so a greeting with no tools warms a
@@ -1135,10 +1145,15 @@ export async function sendVoiceGreetingTurn(
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
     const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
-    const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-    );
+    const res = await llm.call({
+      maxTokens: 200,
+      system,
+      tools,
+      stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+      messages,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: ctrl.signal,
+    });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
@@ -1261,12 +1276,17 @@ export async function sendCompanionVoiceTurn(
     // Share the same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
 
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
-    const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-    );
+    const res = await llm.call({
+      maxTokens: 200,
+      system,
+      tools,
+      stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+      messages,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: ctrl.signal,
+    });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     // 260708: honor launch() the same single-shot way remember() is honored —
@@ -1352,12 +1372,17 @@ export async function sendVoiceIdleTurn(
     foldUserNote(messages, note);
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
-    const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-    );
+    const res = await llm.call({
+      maxTokens: 200,
+      system,
+      tools,
+      stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+      messages,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: ctrl.signal,
+    });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
     await honorRememberCalls(characterId, res.content);
     // No tool loop runs here, so honor end_call by flagging it for the caller:

@@ -334,11 +334,31 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   // server-fetched override when present, else the bundled EXPANSION_SYSTEM.
   const systemPrompt = cloudMode ? EXPANSION_SYSTEM : (systemPromptOverride ?? EXPANSION_SYSTEM);
 
+  // china-compat W1: a local BYOK user on a non-Anthropic provider expands
+  // through the multi-provider layer (streaming where the provider streams,
+  // else one coarse progress jump when the text lands). The cloud path and
+  // the Anthropic BYOK path below stay byte-identical, and the test seam
+  // (_clientFactory) always takes the Anthropic path.
+  let layerProvider: import('./llm').LlmProvider | null = null;
+  if (!cloudMode && !_clientFactory) {
+    const llmMod = await import('./llm');
+    const localKind = await llmMod.localProviderKind();
+    if (localKind !== 'anthropic') {
+      try {
+        layerProvider = await llmMod.buildLocalProviderFor(localKind);
+      } catch (err) {
+        // e.g. LOCAL_NO_API_KEY for a key-needing provider — same failure
+        // class as the missing-apiKey throw below, with the specific message.
+        throw new Error(`persona expansion failed: ${(err as Error)?.message ?? String(err)}`);
+      }
+    }
+  }
+
   if (cloudMode) {
     if (!cloudMode.baseURL || !cloudMode.authToken) {
       throw new Error('persona expansion failed: cloud-proxy mode requires baseURL and authToken');
     }
-  } else if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+  } else if (!layerProvider && (!apiKey || typeof apiKey !== 'string' || !apiKey.trim())) {
     throw new Error('persona expansion failed: missing apiKey');
   }
   if (!source || typeof source !== 'string' || !source.trim()) {
@@ -363,10 +383,13 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
     // Production path: construct the SDK client INSIDE this module so the
     // bot's createAnthropicClient (which is utilityProcess-only) is not
     // imported here. The main and bot sides each construct their own SDK
-    // instance; that's fine — the SDK is a thin HTTP wrapper.
-    : (new Anthropic(sdkOpts as unknown as ConstructorParameters<typeof Anthropic>[0]) as unknown as {
-        messages: { create: (req: unknown, opts?: unknown) => Promise<unknown> };
-      });
+    // instance; that's fine — the SDK is a thin HTTP wrapper. Skipped on the
+    // layer path (no Anthropic key to construct with).
+    : layerProvider
+      ? null
+      : (new Anthropic(sdkOpts as unknown as ConstructorParameters<typeof Anthropic>[0]) as unknown as {
+          messages: { create: (req: unknown, opts?: unknown) => Promise<unknown> };
+        });
 
   const userMessage = buildExpansionUserMessage(name, source, priorExpanded, input.language);
 
@@ -400,7 +423,27 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   let streamedText: string | null = null;
   let nonStreamResult: unknown = null;
   try {
-    const result = await client.messages.create(
+    if (layerProvider) {
+      // Non-Anthropic local BYOK: the layer streams where the provider does
+      // (openai-compat SSE) and delivers the whole text once for the
+      // non-streaming adapters (gemini/ollama), which lands as one coarse
+      // progress jump. Same accumulate-and-validate flow either way.
+      let acc = '';
+      const r = await layerProvider.call({
+        maxTokens: EXPANSION_MAX_TOKENS,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+        timeoutMs: EXPANSION_TIMEOUT_MS,
+        signal,
+        onTextDelta: (t) => {
+          acc += t;
+          emitProgress(acc);
+        },
+      });
+      // Validation below runs on streamedText exactly as on the SDK path.
+      streamedText = acc || r.text;
+    } else {
+    const result = await client!.messages.create(
       {
         model: EXPANSION_MODEL,
         max_tokens: EXPANSION_MAX_TOKENS,
@@ -441,6 +484,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
       // ({ content: [...] }) rather than a Stream. Read it as a one-shot
       // response so existing fakes keep working without async-iterator plumbing.
       nonStreamResult = result;
+    }
     }
   } catch (err) {
     const status = (err as { status?: number })?.status;

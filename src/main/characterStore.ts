@@ -349,15 +349,23 @@ export async function expandAndSaveCharacter(
     // latest prompt without a client reship.
     expansionInput.cloudMode = { baseURL: `${PROXY_BASE_URL}/free/expand`, authToken: jwt };
   } else {
-    // 260703 hard guard: local (BYOK) expansion uses ONLY the on-disk key —
-    // never the Supabase JWT. A missing key fails with an actionable message
-    // (the IPC handler surfaces it verbatim) instead of a raw ENOENT.
-    try {
-      expansionInput.apiKey = await loadApiKey();
-    } catch {
-      throw new Error(
-        'persona expansion failed: local mode is on but no API key is saved. Add one in Settings, or switch to managed billing',
-      );
+    // china-compat W1: a non-Anthropic local provider expands through the LLM
+    // layer inside expandPersona, which loads its own key (and ollama needs
+    // none), so the Anthropic-key guard below applies only to the anthropic
+    // provider. localProviderKind never throws (config failures = anthropic).
+    const { localProviderKind } = await import('./llm');
+    const localKind = await localProviderKind();
+    if (localKind === 'anthropic') {
+      // 260703 hard guard: local (BYOK) expansion uses ONLY the on-disk key —
+      // never the Supabase JWT. A missing key fails with an actionable message
+      // (the IPC handler surfaces it verbatim) instead of a raw ENOENT.
+      try {
+        expansionInput.apiKey = await loadApiKey();
+      } catch {
+        throw new Error(
+          'persona expansion failed: local mode is on but no API key is saved. Add one in Settings, or switch to managed billing',
+        );
+      }
     }
     // BYOK calls Anthropic directly (bypassing the proxy), so it can't get the
     // server-injected prompt. Fetch the current server-owned system prompt so

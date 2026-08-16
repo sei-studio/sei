@@ -35,6 +35,7 @@ import {
   type SpokenLineContext,
 } from '../shared/ipc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
+import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
 import { loadConfig, saveConfig } from './configStore';
 import { DEFAULT_CHARACTER_UUIDS } from './defaultCharacters';
 import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
@@ -326,6 +327,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   if (!kindPushWired) {
     kindPushWired = true;
     onAiBackendKindChanged((kind) => emitAiBackendKindChanged(kind));
+    // A backend flip changes the active LLM's vision verdict (cloud-proxy is
+    // always 'yes'); keep the llm:capability mirror current alongside.
+    onAiBackendKindChanged(() => {
+      void (async () => {
+        const { pushLlmCapability } = await import('./llm/capability');
+        await pushLlmCapability();
+      })();
+    });
   }
   /**
    * Ensure the cloud row + portrait Storage object exist for `characterId`
@@ -2483,6 +2492,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const { setUiLanguage } = await import('./analytics');
       setUiLanguage(cfg.ui_language);
     }
+    // Provider/model changes move the active LLM's vision verdict; mirror it
+    // to the renderer (ai_backend_kind never rides a renderer save, so the
+    // backend-flip listener above covers that axis).
+    if ('provider' in (cfgArg as Record<string, unknown>) || 'provider_config' in (cfgArg as Record<string, unknown>)) {
+      void (async () => {
+        const { pushLlmCapability } = await import('./llm/capability');
+        await pushLlmCapability();
+      })();
+    }
     // Content protection is a main-owned window flag, so a saved change has to
     // be pushed onto the live overlay windows or it only takes effect the next
     // time they are created. Both windows follow the one setting.
@@ -2511,6 +2529,29 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
   ipcMain.handle(IpcChannel.config.hasApiKey, async (): Promise<boolean> => {
     return await hasApiKey();
+  });
+
+  // === china-compat W1: multi-provider LLM layer surface ===
+  // Provider values are the FULL catalog (grandfathered included) so a legacy
+  // config's picker row can still list/test its own provider.
+  const LlmProviderArgSchema = z.object({
+    provider: z.enum(
+      [...SHOWN_PROVIDERS, ...GRANDFATHERED_PROVIDERS] as [ProviderKind, ...ProviderKind[]],
+    ),
+  });
+  ipcMain.handle(IpcChannel.llm.listModels, async (_event, argsRaw: unknown) => {
+    const { provider } = LlmProviderArgSchema.parse(argsRaw);
+    const { listProviderModels } = await import('./llm/listModels');
+    return await listProviderModels(provider);
+  });
+  ipcMain.handle(IpcChannel.llm.test, async (_event, argsRaw: unknown) => {
+    const args = LlmProviderArgSchema.extend({ model: z.string().max(200).default('') }).parse(argsRaw);
+    const { testProvider } = await import('./llm/listModels');
+    return await testProvider(args.provider, args.model);
+  });
+  ipcMain.handle(IpcChannel.llm.capabilityGet, async () => {
+    const { currentLlmCapability } = await import('./llm/capability');
+    return await currentLlmCapability();
   });
 
   // === Product analytics (260707) ===

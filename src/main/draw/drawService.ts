@@ -81,7 +81,8 @@ import {
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
-import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { buildLlmProvider, type LlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { playSummaryText } from '../chat/playSummary';
@@ -1266,7 +1267,7 @@ async function runGuessCall(
   key: string,
   opts: { said: string[]; unchanged: boolean },
 ): Promise<string[]> {
-  const { system, sdk, punctuation } = await prepareCall(s);
+  const { system, llm, punctuation } = await prepareCall(s);
   if (s.turnKey !== key) return [];
 
   const turnChat = chatSinceTurnStart(s);
@@ -1288,27 +1289,24 @@ async function runGuessCall(
   s.guess.ctrl = ctrl;
   const timeout = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
   try {
-    const res = await sdk.client.messages.create(
-      {
-        model: sdk.model,
-        max_tokens: 200,
-        system,
-        tools: GUESS_TOOLS,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: 'image/png', data: imageBase64 },
-              },
-              { type: 'text', text: block },
-            ],
-          },
-        ],
-      },
-      { signal: ctrl.signal },
-    );
+    const res = await llm.call({
+      maxTokens: 200,
+      system,
+      tools: GUESS_TOOLS,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/png', data: imageBase64 },
+            },
+            { type: 'text', text: block },
+          ],
+        },
+      ],
+      signal: ctrl.signal,
+    });
     // A guessing turn is single-shot, so a remember() here is honored inline
     // rather than answered with a tool_result.
     await honorRememberCalls(s, res.content);
@@ -1346,7 +1344,7 @@ async function runTurnEndReaction(
   ctx: { drawer: DrawRole; guessed: boolean; winningLine: string | null; gameOver: boolean },
 ): Promise<void> {
   try {
-    const { system, sdk, punctuation } = await prepareCall(s);
+    const { system, llm, punctuation } = await prepareCall(s);
     if (s.turnKey !== key || s.phase !== 'turn-end') return;
 
     const turnChat = chatSinceTurnStart(s);
@@ -1371,16 +1369,13 @@ async function runTurnEndReaction(
     s.endCtrl = ctrl;
     const timeout = setTimeout(() => ctrl.abort(), TURN_END_TIMEOUT_MS);
     try {
-      const res = await sdk.client.messages.create(
-        {
-          model: sdk.model,
-          max_tokens: 200,
-          system,
-          tools: GUESS_TOOLS,
-          messages: [{ role: 'user', content: block }],
-        },
-        { signal: ctrl.signal },
-      );
+      const res = await llm.call({
+        maxTokens: 200,
+        system,
+        tools: GUESS_TOOLS,
+        messages: [{ role: 'user', content: block }],
+        signal: ctrl.signal,
+      });
       if (s.turnKey !== key || s.phase !== 'turn-end') return;
       await honorRememberCalls(s, res.content);
 
@@ -1556,7 +1551,7 @@ function markThreadCached(thread: Anthropic.MessageParam[]): void {
  * the stream, so playback starts while the model is still deciding the rest.
  */
 async function runDrawCall(s: Session, key: string): Promise<boolean> {
-  const { system, sdk, punctuation } = await prepareCall(s);
+  const { system, llm, punctuation } = await prepareCall(s);
   if (s.turnKey !== key) return false;
 
   // Forced restart (260729): the player has thrown enough wrong lines at this
@@ -1824,32 +1819,20 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
   };
 
   try {
-    const stream = sdk.client.messages.stream(
-      {
-        model: sdk.model,
-        max_tokens: 4000,
-        system,
-        tools: DRAW_TOOLS,
-        messages: s.draw.thread,
-      },
-      { signal: ctrl.signal },
-    );
     // Blocks are released as they complete, so the first stroke can be on the
-    // player's canvas long before the model finishes the picture.
-    //
-    // Dedupe is by COUNT, not by object identity: the blocks handed to the
-    // event and the blocks on the final accumulated message are not
-    // guaranteed to be the same references, and an identity Set would then
-    // emit every stroke twice. Events arrive in content order, so the count of
-    // events already handled is exactly the prefix of final.content to skip.
-    let emitted = 0;
-    stream.on('contentBlock', (b) => {
-      emitted += 1;
-      emitBlock(b as Anthropic.ContentBlock);
+    // player's canvas long before the model finishes the picture. The layer
+    // owns the stream: on Anthropic each contentBlock event fires as it
+    // completes (with the count-based dedupe against the final message this
+    // site used to do itself); on non-Anthropic providers every synthesized
+    // block arrives when the response lands, so strokes reveal per hop.
+    const final = await llm.call({
+      maxTokens: 4000,
+      system,
+      tools: DRAW_TOOLS,
+      messages: s.draw.thread as never,
+      signal: ctrl.signal,
+      onContentBlock: emitBlock,
     });
-    const final = await stream.finalMessage();
-    // Anything the event did not deliver (an SDK path that does not emit it).
-    for (let i = emitted; i < final.content.length; i++) emitBlock(final.content[i]);
     // Flush the held chat lines now that every pen block of the hop has been
     // pushed: their playback barriers queue behind the whole hop's strokes.
     if (s.turnKey === key && s.phase === 'drawing' && (heldLines.length > 0 || heldSlipped)) {
@@ -1930,7 +1913,7 @@ async function readMemoryTail(id: string): Promise<string> {
  */
 async function prepareCall(s: Session): Promise<{
   system: Anthropic.TextBlockParam[];
-  sdk: Awaited<ReturnType<typeof buildChatSdk>>;
+  llm: LlmProvider;
   punctuation: 'casual' | 'deliberate';
 }> {
   const character = await getCharacter(s.characterId);
@@ -1971,8 +1954,8 @@ async function prepareCall(s: Session): Promise<{
     }),
   } as Parameters<typeof buildSystemBlocks>[0]) as unknown as Anthropic.TextBlockParam[];
 
-  const sdk = await buildChatSdk();
-  return { system, sdk, punctuation };
+  const llm = await buildLlmProvider();
+  return { system, llm, punctuation };
 }
 
 /** Test seam: drive a tick by hand, without the interval. */

@@ -51,7 +51,8 @@ import { CHESS_ERR_MC_ACTIVE } from '../../shared/chessIpc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
-import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { buildLlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { playSummaryText } from '../chat/playSummary';
@@ -1522,7 +1523,7 @@ async function runChessLlmTurn(
   };
 
   try {
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     let played = false;
 
     for (let hop = 0; hop < CHESS_MAX_HOPS && !stale(); hop++) {
@@ -1532,20 +1533,18 @@ async function runChessLlmTurn(
       // invented "(it is your turn)" direction — and speak() faithfully
       // persisted and TTS'd all of it. Cutting generation at the other side's
       // line-start markers means the leak text is never produced at all.
-      const res = await client.messages.create(
-        {
-          model,
-          // Short by construction, not just by instruction: with a generous
-          // ceiling the model self-conditions on its own longest prior turn and
-          // creeps up a line each round (same failure the chat path caps at 200).
-          max_tokens: 160,
-          system,
-          tools,
-          stop_sequences: TRANSCRIPT_STOP_SEQUENCES,
-          messages: messages as never,
-        },
-        { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-      );
+      const res = await llm.call({
+        // Short by construction, not just by instruction: with a generous
+        // ceiling the model self-conditions on its own longest prior turn and
+        // creeps up a line each round (same failure the chat path caps at 200).
+        maxTokens: 160,
+        system,
+        tools,
+        stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+        messages,
+        timeoutMs: CHAT_TIMEOUT_MS,
+        signal: ctrl.signal,
+      });
       const u = res.usage;
       console.log(
         `[sei/chess] turn char=${s.characterId.slice(0, 8)} kind=${opts.kind} hop=${hop} ` +
