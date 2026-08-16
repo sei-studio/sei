@@ -30,6 +30,7 @@ import type {
   VisionCapability,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
+import { DEFAULT_MODELS } from '../shared/llmCatalog';
 import { clampChatLanguage } from '../shared/chatLanguage';
 import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
@@ -719,6 +720,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // The kind read defaults to 'local' for existing users (apiKeyStore.ts).
     const aiBackendKind = await getAiBackendKind();
     reporter.backend = aiBackendKind; // diagnostics: stamp even on pre-fork failures
+    // Loaded before the backend branch (was after it) because the local
+    // branch's key guard needs userCfg.provider: ollama is keyless by design
+    // (260817, china-compat W10). Same-function load, just earlier.
+    const userCfg = await loadUserConfig();
     let apiKey: string = '';
     let cloudMode: { baseURL: string; authToken: string } | undefined;
     if (aiBackendKind === 'cloud-proxy') {
@@ -758,34 +763,43 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // that quietly rode the signed-in user's Supabase token through the
       // paid proxy). INVALID_API_KEY is the closest ERROR_COPY class; the
       // explicit message tells the user exactly which state they're in.
-      if (!(await hasApiKey())) {
-        const message =
-          'Local mode is on but no API key is saved. Add your API key in Settings, or switch to managed billing.';
-        opts.sendStatus({ kind: 'error', error: 'INVALID_API_KEY', message, characterId });
-        throw new Error(`LOCAL_NO_API_KEY: ${message}`);
-      }
-      // GUI-05: loadApiKey can throw KEYCHAIN_UNAVAILABLE / decrypt errors when
-      // the user is locked out of their keychain. classify before forwarding so
-      // the renderer's CharacterPage shows ERROR_COPY[KEYCHAIN_LOCKED] copy
-      // (not the raw safeStorage stack frame).
-      try {
-        apiKey = await loadApiKey();
-      } catch (err) {
-        const ec = classifyChildError(err);
-        const message = (err && typeof err === 'object' && 'message' in err)
-          ? String((err as { message: unknown }).message)
-          : String(err);
-        opts.sendStatus({ kind: 'error', error: ec, message, characterId });
-        throw err;
+      //
+      // 260817 (china-compat W10): ollama is the one KEYLESS local provider
+      // (plain local HTTP; the wizard saves no key for it, and both the main
+      // llm layer and the bot's ollama adapter take none). Skip the guard for
+      // it — the no-cloud-fallback property still holds, because llmInit
+      // below routes the fork to the ollama provider, never the proxy.
+      const localProvider = userCfg.provider ?? 'anthropic';
+      if (localProvider !== 'ollama') {
+        if (!(await hasApiKey())) {
+          const message =
+            'Local mode is on but no API key is saved. Add your API key in Settings, or switch to managed billing.';
+          opts.sendStatus({ kind: 'error', error: 'INVALID_API_KEY', message, characterId });
+          throw new Error(`LOCAL_NO_API_KEY: ${message}`);
+        }
+        // GUI-05: loadApiKey can throw KEYCHAIN_UNAVAILABLE / decrypt errors when
+        // the user is locked out of their keychain. classify before forwarding so
+        // the renderer's CharacterPage shows ERROR_COPY[KEYCHAIN_LOCKED] copy
+        // (not the raw safeStorage stack frame).
+        try {
+          apiKey = await loadApiKey();
+        } catch (err) {
+          const ec = classifyChildError(err);
+          const message = (err && typeof err === 'object' && 'message' in err)
+            ? String((err as { message: unknown }).message)
+            : String(err);
+          opts.sendStatus({ kind: 'error', error: ec, message, characterId });
+          throw err;
+        }
       }
     }
 
-    // Load UserConfig so the bot's player_username / player_display_name are
-    // populated from onboarding. mc_username is no longer collected in the GUI
-    // (260605) — it stays in the DB but may be empty, so the bot derives
-    // player recognition from preferred_name when it's absent. Onboarding is
-    // now gated on preferred_name ("Name"); refuse to fork without it.
-    const userCfg = await loadUserConfig();
+    // UserConfig (loaded above) populates the bot's player_username /
+    // player_display_name from onboarding. mc_username is no longer collected
+    // in the GUI (260605) — it stays in the DB but may be empty, so the bot
+    // derives player recognition from preferred_name when it's absent.
+    // Onboarding is now gated on preferred_name ("Name"); refuse to fork
+    // without it.
     const mc_username = (userCfg.mc_username ?? '').trim();
     const preferred_name = (userCfg.preferred_name ?? '').trim();
     // Bridge the user-facing Looking (vision) mode from UserConfig into the
@@ -807,17 +821,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // and read by NOTHING until now — the init payload carried no llm config,
     // so every bot session ran Anthropic regardless of the picker. Local
     // (BYOK) only: cloud-proxy stays on the anthropic+cloudMode path (llmInit
-    // stays undefined). model/base_url ship only when the user configured an
-    // override; the bot's own ConfigSchema defaults (src/bot/config.js,
-    // mirroring src/shared/llmCatalog.ts) fill the rest. api_key duplicates
-    // the top-level `apiKey` field, which is KEPT for back-compat and for the
-    // Anthropic path.
+    // stays undefined). base_url ships only when the user configured an
+    // override. The model falls back to the SHARED catalog default
+    // (DEFAULT_MODELS) rather than being omitted (260817, W10): the bot's own
+    // Zod defaults predate the catalog and diverge (gpt-4o-mini vs gpt-5-mini,
+    // grok-2 vs grok-4), so omitting the model ran a DIFFERENT model in
+    // Minecraft than every other surface. For anthropic the catalog default
+    // equals the bot schema default, so shipping it is a no-op (BYOK byte
+    // parity holds). api_key duplicates the top-level `apiKey` field, which
+    // is KEPT for back-compat and for the Anthropic path.
     let llmInit: { provider: string; model?: string; base_url?: string; api_key: string } | undefined;
     if (aiBackendKind === 'local') {
       const provider = userCfg.provider ?? 'anthropic';
       const pcRaw = (userCfg.provider_config as Record<string, unknown> | undefined)?.[provider];
       const pc = (pcRaw && typeof pcRaw === 'object' ? pcRaw : {}) as { model?: unknown; base_url?: unknown };
-      const model = typeof pc.model === 'string' && pc.model.trim() ? pc.model.trim() : undefined;
+      const model =
+        typeof pc.model === 'string' && pc.model.trim()
+          ? pc.model.trim()
+          : DEFAULT_MODELS[provider as keyof typeof DEFAULT_MODELS];
       const baseUrl = typeof pc.base_url === 'string' && pc.base_url.trim() ? pc.base_url.trim() : undefined;
       llmInit = {
         provider,
@@ -1540,18 +1561,28 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // WR-05 surprise). Bots 401 on their next call until a key is set + re-summon.
       let apiKey = '';
       let keyError: unknown = null;
+      // 260817 (china-compat W10): ollama is keyless — mirror _summon's guard
+      // skip so a keyless ollama config never gets a spurious INVALID_API_KEY
+      // advisory on a cloud→local switch. Config read is best-effort: on a
+      // read failure fall back to the historical always-check behavior.
+      let keylessProvider = false;
       try {
-        // 260703: a MISSING key gets the same clear INVALID_API_KEY surface as
-        // a cold summon (see _summon) instead of an ENOENT that classifies as
-        // an opaque BOT_CRASH. The SDK still flips to BYOK below either way.
-        if (!(await hasApiKey())) {
-          throw new Error(
-            'LOCAL_NO_API_KEY: Local mode is on but no API key is saved. Add your API key in Settings, or switch to managed billing.',
-          );
+        keylessProvider = ((await loadUserConfig()).provider ?? 'anthropic') === 'ollama';
+      } catch { /* fall through to the key check */ }
+      if (!keylessProvider) {
+        try {
+          // 260703: a MISSING key gets the same clear INVALID_API_KEY surface as
+          // a cold summon (see _summon) instead of an ENOENT that classifies as
+          // an opaque BOT_CRASH. The SDK still flips to BYOK below either way.
+          if (!(await hasApiKey())) {
+            throw new Error(
+              'LOCAL_NO_API_KEY: Local mode is on but no API key is saved. Add your API key in Settings, or switch to managed billing.',
+            );
+          }
+          apiKey = await loadApiKey();
+        } catch (err) {
+          keyError = err;
         }
-        apiKey = await loadApiKey();
-      } catch (err) {
-        keyError = err;
       }
       for (const session of sessions.values()) {
         // 260703 hard guard: flip the tracked kind FIRST so no concurrent
