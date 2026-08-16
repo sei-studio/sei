@@ -58,6 +58,15 @@ export interface VoicePickerProps {
   params: VoiceParams;
   /** Receives NORMALIZED params (default-valued keys already dropped). */
   onParamsChange: (params: VoiceParams) => void;
+  /**
+   * W5 (260817, china-compat): the user runs local TTS (BYOK backend with
+   * tts_engine 'local'). The ElevenLabs voice list, previews and the Calmness
+   * slider (an ElevenLabs synthesis param) are HIDDEN — only Pitch renders,
+   * since it applies locally through the pitch bus. The character's stored
+   * ElevenLabs voiceId is left untouched underneath: `value` is never changed
+   * from this mode, so cloud characters and a later engine switch keep it.
+   */
+  localTtsMode?: boolean;
 }
 
 export function VoicePicker({
@@ -65,6 +74,7 @@ export function VoicePicker({
   onChange,
   params,
   onParamsChange,
+  localTtsMode = false,
 }: VoicePickerProps): React.ReactElement {
   const t = useT();
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
@@ -90,6 +100,9 @@ export function VoicePicker({
     // Re-arm on every (re)mount — StrictMode dev runs mount → cleanup → mount
     // on the SAME instance, and the ref keeps its false from the first cleanup.
     aliveRef.current = true;
+    // Local-TTS mode renders only the pitch slider — no voice list to load,
+    // no samples to probe, no shifter to warm for previews.
+    if (localTtsMode) return;
     // Build the pitch shifter while the player is still reading the voice list,
     // so the first sample they play is already shifted (see toggleSample).
     warmPitchBus();
@@ -156,8 +169,10 @@ export function VoicePicker({
    * this any more (260731): it is a playback effect, so a pitch-only tune can
    * still preview from the bundled asset. */
   const tuned = calmness !== CALMNESS_DEFAULT;
-  /** The playground needs a concrete voice — Auto / No voice can't preview. */
-  const tunable = value !== null && value !== NO_VOICE_ID;
+  /** The playground needs a concrete voice — Auto / No voice can't preview.
+   * Local-TTS mode is always tunable: pitch applies to whatever local voice
+   * the runtime maps, independent of the (hidden) ElevenLabs selection. */
+  const tunable = localTtsMode || (value !== null && value !== NO_VOICE_ID);
 
   /**
    * Start playback of `url` shifted to `rate` (1 = as recorded), through the
@@ -316,6 +331,8 @@ export function VoicePicker({
 
   return (
     <div className={styles.root} role="radiogroup" aria-label={t('Voice')}>
+      {localTtsMode ? null : (
+      <>
       {/* Auto — the recommended default. */}
       <button
         type="button"
@@ -400,12 +417,14 @@ export function VoicePicker({
           </section>
         ) : null}
       </div>
+      </>
+      )}
 
       {/* ── Playground: pitch + calmness sliders (260725) ── */}
       <section className={styles.tuner} aria-label={t('Tune the voice')}>
         <h3 className={styles.groupTitle}>{t('Tune the voice')}</h3>
         {!tunable ? <div className={styles.hint}>{t('Pick a voice to tune it.')}</div> : null}
-        {tunable && tuned && samplesOff ? (
+        {!localTtsMode && tunable && tuned && samplesOff ? (
           <div className={styles.hint}>{t('Sign in to hear tuned samples.')}</div>
         ) : null}
 
@@ -440,6 +459,9 @@ export function VoicePicker({
           </div>
         </div>
 
+        {/* Calmness is ElevenLabs `stability` — a synthesis param the local
+            engine has no equivalent for, so local-TTS mode hides it. */}
+        {localTtsMode ? null : (
         <div className={styles.tunerRow}>
           <div className={styles.tunerHead}>
             <label className={styles.tunerLabel} htmlFor={`${sliderIdBase}-calmness`}>
@@ -470,6 +492,7 @@ export function VoicePicker({
             {t('Higher is steadier and more even. Lower is more dramatic.')}
           </div>
         </div>
+        )}
       </section>
 
       {error ? <div className={styles.error}>{error}</div> : null}
