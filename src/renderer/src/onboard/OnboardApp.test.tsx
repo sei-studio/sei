@@ -109,3 +109,33 @@ describe('OnboardApp W6: local wizard steps', () => {
     expect(src).toContain("key.trim() !== '' || provider === 'ollama'");
   });
 });
+
+describe('OnboardApp: key-step probe (260817)', () => {
+  it('Continue on the key step probes the key before advancing', () => {
+    // submitKey saves the key, then asks the probe; only an 'ok' verdict
+    // advances to the model step.
+    expect(src).toContain('const verdict = await probeKey()');
+    expect(src).toContain("if (verdict === 'ok')");
+    expect(src).toContain('setProbe(verdict)');
+  });
+  it('the probe rides the transport helper (openrouter tests, others list)', () => {
+    expect(src).toContain('keyProbeTransport(provider)');
+    expect(src).toContain('keyProbeVerdict(provider,');
+  });
+  it('a definite failure interrupts with Back and Continue anyway', () => {
+    expect(src).toContain('keyProbeLine(provider, probe)');
+    expect(src).toContain('keyProbeConsequence(probe)');
+    expect(src).toContain('Continue anyway');
+  });
+  it('Continue anyway on a REJECTED key skips generation; a re-submitted key un-skips it', () => {
+    expect(src).toContain("if (probe === 'rejected') skipGenRef.current = true;");
+    expect(src).toContain('skipGenRef.current = false;');
+    expect(src).toContain('...(skipGenRef.current ? { skipGeneration: true } : {})');
+  });
+  it('runLocalSetup honors skipGeneration (reduced tutorial, no wasted timeout)', () => {
+    expect(src).toContain('if (!a.skipCreation && !choices.skipGeneration)');
+  });
+  it('the probe shows a busy note while checking', () => {
+    expect(src).toContain('Checking your key...');
+  });
+});

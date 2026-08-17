@@ -52,11 +52,16 @@ import type { UserConfig } from '@shared/characterSchema';
 import {
   SENSEVOICE_PACK_ID,
   allPacksReady,
+  keyProbeConsequence,
+  keyProbeLine,
+  keyProbeTransport,
+  keyProbeVerdict,
   llmTestErrorCopy,
   mbLabel,
   packsPct,
   packsTotalBytes,
   ttsPackIdsFor,
+  type KeyProbeVerdict,
   type LocalSetupChoices,
   type SttEngineChoice,
   type TtsEngineChoice,
@@ -431,7 +436,11 @@ export function OnboardApp({
         .charsAddToLibrary(DEFAULT_CHARACTER_UUIDS.sui)
         .catch(() => {});
       let characterId: string | null = null;
-      if (!a.skipCreation) {
+      // skipGeneration: the key-step probe said the key is REJECTED and the
+      // user chose Continue anyway — don't spend the generation timeout on a
+      // call that cannot authenticate. Null characterId = reduced tutorial,
+      // the same landing as a silent generation failure.
+      if (!a.skipCreation && !choices.skipGeneration) {
         try {
           const res = await sei.generateUnique({
             requestId: crypto.randomUUID(),
@@ -1548,20 +1557,74 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
   // Ollama runs locally and authenticates nothing — the key is optional there
   // and skipped from the save; every other provider requires one.
   const keyOk = key.trim() !== '' || provider === 'ollama';
+
+  // Key-step probe (260817): Continue verifies the key BEFORE the wizard
+  // moves on, so a rejected key is caught while the fix is one paste away
+  // instead of surfacing as a silently reduced tutorial. Only a definite
+  // verdict interrupts; ambiguous errors pass through to the model step's
+  // Test. An IPC failure reads as "could not check" = unreachable.
+  const [probe, setProbe] = useState<Exclude<KeyProbeVerdict, 'ok'> | null>(null);
+  // Armed by "Continue anyway" on a REJECTED key; cleared whenever the key is
+  // re-submitted so a fixed key gets its companion back.
+  const skipGenRef = useRef(false);
+  const probeKey = async (): Promise<KeyProbeVerdict> => {
+    try {
+      if (keyProbeTransport(provider) === 'test') {
+        const r = await sei.llmTest(provider, DEFAULT_MODELS[provider] ?? '');
+        return keyProbeVerdict(provider, r.ok ? null : r.error);
+      }
+      const r = await sei.llmListModels(provider);
+      return keyProbeVerdict(provider, r.error ?? null);
+    } catch {
+      return 'unreachable';
+    }
+  };
+
   const submitKey = async (): Promise<void> => {
     if (busy || !keyOk) return;
     setBusy(true);
     setError(null);
     try {
       if (key.trim()) await sei.saveApiKey(key.trim());
-      setModel(DEFAULT_MODELS[provider] ?? '');
-      setStep('model');
+      skipGenRef.current = false;
+      const verdict = await probeKey();
+      if (verdict === 'ok') {
+        setModel(DEFAULT_MODELS[provider] ?? '');
+        setStep('model');
+      } else {
+        setProbe(verdict);
+      }
     } catch (err) {
       setError((err as Error).message || t('Something went wrong.'));
     } finally {
       setBusy(false);
     }
   };
+
+  if (step === 'key' && probe) {
+    return (
+      <div className={styles.panel}>
+        <p className={styles.panelText}>{tt(keyProbeLine(provider, probe))}</p>
+        <p className={styles.panelNote}>{tt(keyProbeConsequence(probe))}</p>
+        <div className={styles.choices}>
+          <button className={styles.pill} onClick={() => setProbe(null)}>
+            {tt('Back')}
+          </button>
+          <button
+            className={styles.pill}
+            onClick={() => {
+              if (probe === 'rejected') skipGenRef.current = true;
+              setProbe(null);
+              setModel(DEFAULT_MODELS[provider] ?? '');
+              setStep('model');
+            }}
+          >
+            {tt('Continue anyway')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (step === 'key') {
     return (
@@ -1593,6 +1656,7 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
         {provider === 'ollama' ? (
           <p className={styles.panelNote}>{tt('Ollama runs on your computer and needs no API key.')}</p>
         ) : null}
+        {busy ? <p className={styles.panelNote}>{tt('Checking your key...')}</p> : null}
         {error ? (
           <p className={styles.panelError} role="alert">
             {error}
@@ -1645,6 +1709,7 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
           model: model.trim(),
           ...(sttRef.current ? { stt: sttRef.current } : {}),
           ...(tts ? { tts } : {}),
+          ...(skipGenRef.current ? { skipGeneration: true } : {}),
         })
       }
       onBack={() => setStep('stt')}

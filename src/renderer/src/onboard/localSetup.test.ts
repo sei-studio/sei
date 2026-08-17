@@ -7,6 +7,10 @@ import type { SpeechPackStatePush } from '../../../shared/ipc';
 import {
   SENSEVOICE_PACK_ID,
   allPacksReady,
+  keyProbeConsequence,
+  keyProbeLine,
+  keyProbeTransport,
+  keyProbeVerdict,
   llmTestErrorCopy,
   mbLabel,
   packsPct,
@@ -92,6 +96,64 @@ describe('llmTestErrorCopy', () => {
     for (const token of ['no_api_key', 'unauthorized', 'timeout', 'network', 'unknown']) {
       expect(ZH[llmTestErrorCopy(token)], `zh for ${token}`).toBeTruthy();
     }
+  });
+});
+
+describe('key-step probe (260817)', () => {
+  it('openrouter probes with a real llm:test because its model list is public', () => {
+    expect(keyProbeTransport('openrouter')).toBe('test');
+    for (const p of ['anthropic', 'openai', 'deepseek', 'qwen', 'gemini', 'grok', 'ollama']) {
+      expect(keyProbeTransport(p), p).toBe('list');
+    }
+  });
+  it('success is ok', () => {
+    expect(keyProbeVerdict('anthropic', null)).toBe('ok');
+    expect(keyProbeVerdict('ollama', null)).toBe('ok');
+  });
+  it('401/403 and a missing key read as rejected', () => {
+    expect(keyProbeVerdict('anthropic', 'unauthorized')).toBe('rejected');
+    expect(keyProbeVerdict('deepseek', 'unauthorized')).toBe('rejected');
+    expect(keyProbeVerdict('openai', 'no_api_key')).toBe('rejected');
+  });
+  it("gemini's HTTP 400 means API_KEY_INVALID and reads as rejected; nobody else's does", () => {
+    expect(keyProbeVerdict('gemini', 'http_400')).toBe('rejected');
+    expect(keyProbeVerdict('openai', 'http_400')).toBe('ok');
+  });
+  it('network and timeout read as unreachable', () => {
+    expect(keyProbeVerdict('anthropic', 'network')).toBe('unreachable');
+    expect(keyProbeVerdict('qwen', 'timeout')).toBe('unreachable');
+  });
+  it('ambiguous tokens pass through — not a key problem, the model step Test diagnoses', () => {
+    expect(keyProbeVerdict('anthropic', 'http_404')).toBe('ok');
+    expect(keyProbeVerdict('openrouter', 'http_402')).toBe('ok'); // valid key, no credits
+    expect(keyProbeVerdict('deepseek', 'unknown')).toBe('ok');
+  });
+  it('ollama has no key to reject: every failure is unreachable', () => {
+    expect(keyProbeVerdict('ollama', 'network')).toBe('unreachable');
+    expect(keyProbeVerdict('ollama', 'unauthorized')).toBe('unreachable');
+    expect(keyProbeVerdict('ollama', 'http_500')).toBe('unreachable');
+  });
+  it('popup copy: rejected names the key, unreachable names the network, ollama its server', () => {
+    expect(keyProbeLine('anthropic', 'rejected')).toMatch(/rejected/);
+    expect(keyProbeLine('anthropic', 'unreachable')).toMatch(/reach the provider/);
+    expect(keyProbeLine('ollama', 'unreachable')).toMatch(/Ollama is running/);
+  });
+  it('consequence: a rejected key WILL lose the companion, an unreachable one MAY', () => {
+    expect(keyProbeConsequence('rejected')).toMatch(/will not/);
+    expect(keyProbeConsequence('unreachable')).toMatch(/may not/);
+  });
+  it('every probe copy line has a zh entry', () => {
+    const keys = [
+      keyProbeLine('anthropic', 'rejected'),
+      keyProbeLine('anthropic', 'unreachable'),
+      keyProbeLine('ollama', 'unreachable'),
+      keyProbeConsequence('rejected'),
+      keyProbeConsequence('unreachable'),
+      'Checking your key...',
+      'Continue anyway',
+      'Back',
+    ];
+    for (const k of keys) expect(ZH[k], `zh for "${k}"`).toBeTruthy();
   });
 });
 

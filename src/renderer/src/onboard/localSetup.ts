@@ -24,6 +24,13 @@ export interface LocalSetupChoices {
   model: string;
   stt?: SttEngineChoice;
   tts?: TtsEngineChoice;
+  /** Set when the user pressed "Continue anyway" on a REJECTED key at the
+   * key-step probe: runLocalSetup skips generateUnique outright (reduced
+   * tutorial) instead of burning the generation timeout on a call that
+   * cannot authenticate. An unreachable-provider continue does NOT set it,
+   * because the network may be back by setup time and generation failure
+   * already degrades silently. */
+  skipGeneration?: boolean;
 }
 
 /** The SenseVoice STT pack (zh-strong local recognition). */
@@ -91,6 +98,56 @@ export function allPacksReady(
 ): boolean {
   if (!packs) return false;
   return packIds.every((id) => packs[id]?.state === 'ready');
+}
+
+/**
+ * Which IPC the key-step probe rides when Continue is pressed (260817).
+ * OpenRouter's GET /models is PUBLIC — a bad key still lists — so it is the
+ * one provider probed with a real 1-token llm:test instead. Everyone else
+ * uses llm:list-models: fast, free, and auth-gated on every other provider
+ * (Anthropic/OpenAI-compat 401, Gemini 400). For Ollama the listing doubles
+ * as a reachability check, since there is no key to reject.
+ */
+export function keyProbeTransport(provider: string): 'list' | 'test' {
+  return provider === 'openrouter' ? 'test' : 'list';
+}
+
+export type KeyProbeVerdict = 'ok' | 'rejected' | 'unreachable';
+
+/**
+ * Probe outcome → verdict. `token` is the typed error vocabulary from
+ * listModels.ts `typedError` (null = the call succeeded). Only DEFINITE
+ * verdicts block the wizard: ambiguous tokens (http_NNN, unknown) mean the
+ * key authenticated far enough that the failure is not about the key — a
+ * missing default model, a provider hiccup — and the model step's Test is
+ * the right place to diagnose those. Ollama has no key, so every failure
+ * there reads as "can't reach it".
+ */
+export function keyProbeVerdict(provider: string, token: string | null): KeyProbeVerdict {
+  if (!token) return 'ok';
+  if (provider === 'ollama') return 'unreachable';
+  if (token === 'unauthorized' || token === 'no_api_key') return 'rejected';
+  // Gemini answers an invalid key with HTTP 400 (API_KEY_INVALID), not 401.
+  if (provider === 'gemini' && token === 'http_400') return 'rejected';
+  if (token === 'timeout' || token === 'network') return 'unreachable';
+  return 'ok';
+}
+
+/** First line of the key-probe popup. */
+export function keyProbeLine(provider: string, verdict: 'rejected' | 'unreachable'): string {
+  if (verdict === 'rejected') return 'The provider rejected this API key.';
+  return provider === 'ollama'
+    ? "Couldn't reach Ollama on your computer. Make sure Ollama is running."
+    : "Couldn't reach the provider. Check your connection.";
+}
+
+/** Second line of the key-probe popup: the consequence. A rejected key makes
+ * generation IMPOSSIBLE (will); an unreachable provider might recover by
+ * setup time (may) — generation is still attempted there. */
+export function keyProbeConsequence(verdict: 'rejected' | 'unreachable'): string {
+  return verdict === 'rejected'
+    ? 'We will not be able to match you with a unique companion.'
+    : 'We may not be able to match you with a unique companion.';
 }
 
 /**

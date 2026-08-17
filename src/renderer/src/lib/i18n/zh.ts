@@ -120,6 +120,16 @@ export const ZH: Record<string, string> = {
     '粘贴你的 ElevenLabs API 密钥。它用于 Scribe 语音识别和 ElevenLabs 语音。',
   'ElevenLabs API key': 'ElevenLabs API 密钥',
   'Already downloaded. Continue': '已经下载好了。继续',
+  // Key-step probe (260817): Continue verifies the key before the wizard
+  // moves on; a definite failure interrupts with Back / Continue anyway.
+  'Checking your key...': '正在检查你的密钥……',
+  "Couldn't reach Ollama on your computer. Make sure Ollama is running.":
+    '无法连接到你电脑上的 Ollama。请确认 Ollama 正在运行。',
+  'We will not be able to match you with a unique companion.':
+    '我们将无法为你匹配一位独一无二的伙伴。',
+  'We may not be able to match you with a unique companion.':
+    '我们可能无法为你匹配一位独一无二的伙伴。',
+  // 'Continue anyway' lives in modals.ts (shared).
   'Download? ({mb} MB)': '下载吗？（{mb} MB）',
   'Downloading... {pct}%': '下载中……{pct}%',
   // 'The download failed...' lives in common.ts (shared with the chess panel).
