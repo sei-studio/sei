@@ -291,9 +291,18 @@ seam was pinnable):
 
 Infra and uploads (human or Chrome-driven; blocked on Cloudflare access):
 - [x] R2 bucket `sei-dl` (APAC) + `dl.sei.gg` custom domain — DONE 260817
-      via dashboard + wrangler OAuth. STILL OWED: scoped API token + the
-      three gh secrets (user-only step; exact commands given in chat).
+      via dashboard + wrangler OAuth.
       Why: every mirror path in the client 404s until this exists.
+- [x] Scoped API token (`sei-mirror-ci`, Object Read & Write on sei-dl only)
+      + the three gh secrets (R2_ACCOUNT_ID / R2_ACCESS_KEY_ID /
+      R2_SECRET_ACCESS_KEY) — DONE 260817.
+- [x] mirror-release.yml cherry-picked to main (0f5a0ee; GitHub only honors
+      workflows on the default branch) and PROVEN end to end 260817: manual
+      dispatch backfilled v0.5.5, all 12 release assets uploaded, updater
+      feed serving 200 from https://dl.sei.gg/updates/ (latest-mac.yml,
+      latest.yml, zips, exe; sizes match the GitHub assets).
+      Why: future releases mirror automatically on publish; CN users get
+      the updater feed without GitHub.
 - [x] One-time asset uploads — DONE 260817: all 29 files (chess, both
       whisper HF layouts, 4 speech packs), zero errors, maia sha256
       round-trip verified over dl.sei.gg.
