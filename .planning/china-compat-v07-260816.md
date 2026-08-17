@@ -290,17 +290,17 @@ seam was pinnable):
 ## Ship checklist (compiled by W10, 260817)
 
 Infra and uploads (human or Chrome-driven; blocked on Cloudflare access):
-- [ ] R2 bucket `sei-dl` + `dl.sei.gg` custom domain + scoped API token +
-      the three gh secrets (steps 1-3 of the W8 infra checklist above).
+- [x] R2 bucket `sei-dl` (APAC) + `dl.sei.gg` custom domain — DONE 260817
+      via dashboard + wrangler OAuth. STILL OWED: scoped API token + the
+      three gh secrets (user-only step; exact commands given in chat).
       Why: every mirror path in the client 404s until this exists.
-- [ ] One-time asset uploads per step 4 above: /chess/maia3-5m.onnx, both
-      whisper HF layouts, /speech/<packs>. Speech pack filenames must match
-      src/main/speech/packs.ts EXACTLY.
+- [x] One-time asset uploads — DONE 260817: all 29 files (chess, both
+      whisper HF layouts, 4 speech packs), zero errors, maia sha256
+      round-trip verified over dl.sei.gg.
       Why: the mirror leg otherwise 404s and CN users fall back to the hosts
       that are blocked for them.
-- [ ] Re-stage the zh-m chaowen pack as **int8** (~14 MB,
-      `vits-piper-zh_CN-chaowen-medium-int8.tar.bz2`, archiveBytes
-      14_011_298); mirror-out/ currently holds the fp32 archive.
+- [x] chaowen int8 re-stage — DONE 260817: exact 14,011,298-byte archive
+      staged and uploaded; fp32 removed.
       Why: packs.ts pins the int8 name and exact byte count; the staged fp32
       file will never be served as anything the client accepts.
 - [ ] Verify https://dl.sei.gg/chess/maia3-5m.onnx from a CN vantage.
