@@ -120,6 +120,8 @@ jobs:
           grep -q "Notarized Developer ID" /tmp/spctl.txt || { echo "::error::app is not notarized"; exit 1; }
           xcrun stapler validate "$app"
           xcrun stapler validate "$dmg"
+          spctl -a -t open --context context:primary-signature -vv "$dmg" 2>&1 | tee /tmp/spctl-dmg.txt
+          grep -q "accepted" /tmp/spctl-dmg.txt || { echo "::error::dmg is not accepted by Gatekeeper"; exit 1; }
           lipo -archs "$app/Contents/MacOS/"* | tee /tmp/archs.txt
           grep -q arm64 /tmp/archs.txt && grep -q x86_64 /tmp/archs.txt || { echo "::error::not a universal binary"; exit 1; }
           echo "✓ macOS: signed, notarized, stapled, universal"
