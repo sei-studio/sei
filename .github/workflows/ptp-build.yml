@@ -1,0 +1,163 @@
+# ptp-build — builds, signs and notarizes the PRIVATE repo oue2x2/past-the-present
+# ("00011101") with this repo's signing credentials.
+#
+# This workflow lives ONLY on the orphan branch `ptp-build`. It has nothing to do
+# with Sei itself: no Sei code is checked out, nothing is published, and this
+# branch must never be merged into main/dev. Dispatch it manually:
+#
+#   gh workflow run ptp-build.yml --ref ptp-build -R sei-studio/sei
+#
+# Because this repo is public, the workflow artifacts would be downloadable by
+# anyone with a GitHub account, so every output file is AES-256 encrypted with a
+# passphrase derived from the PTP_DEPLOY_KEY secret (the same key that checks
+# out the private repo). Decrypt locally with the matching private key:
+#
+#   PW=$(tr -d '\r\n ' < ~/ptp_deploy_key | openssl dgst -sha256 -r | cut -c1-64)
+#   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:"$PW" -in X.enc -out X
+name: ptp-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'past-the-present git ref to build'
+        default: 'main'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            build_cmd: dist:mac
+            artifact_name: mac
+          - os: windows-latest
+            build_cmd: dist:win
+            artifact_name: win
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout past-the-present (private, via read-only deploy key)
+        uses: actions/checkout@v6
+        with:
+          repository: oue2x2/past-the-present
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PTP_DEPLOY_KEY }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (${{ matrix.os }})
+        env:
+          # Same scoping rules as release.yml: the Apple cert/notary creds must
+          # only reach the mac leg, or electron-builder signs the Windows
+          # installer with the Apple cert.
+          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.os == 'macos-latest' && 'true' || 'false' }}
+          # Windows: Azure Trusted Signing (Entra service principal from env,
+          # account/profile/endpoint as config overrides — all-or-nothing).
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_ENDPOINT: ${{ vars.AZURE_ENDPOINT }}
+          AZURE_CODE_SIGNING_ACCOUNT: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+          WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_CLIENT_SECRET" ] \
+               && [ -n "$AZURE_ENDPOINT" ] && [ -n "$AZURE_CODE_SIGNING_ACCOUNT" ] \
+               && [ -n "$AZURE_CERT_PROFILE" ] && [ -n "$WIN_PUBLISHER_NAME" ]; then
+              echo "Windows: signing via Azure Trusted Signing as '$WIN_PUBLISHER_NAME'"
+              extra+=( "-c.win.azureSignOptions.publisherName=$WIN_PUBLISHER_NAME" )
+              extra+=( "-c.win.azureSignOptions.endpoint=$AZURE_ENDPOINT" )
+              extra+=( "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_CODE_SIGNING_ACCOUNT" )
+              extra+=( "-c.win.azureSignOptions.certificateProfileName=$AZURE_CERT_PROFILE" )
+            else
+              echo "::error::Azure Trusted Signing is not fully configured — refusing to build an unsigned Windows installer here."
+              exit 1
+            fi
+          else
+            for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+              if [ -z "${!v}" ]; then echo "::error::$v is empty — cannot sign/notarize the mac build."; exit 1; fi
+            done
+          fi
+          npm run ${{ matrix.build_cmd }} -- --publish never "${extra[@]}"
+          ls -la release/
+
+      - name: Verify macOS signature + notarization
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -e
+          app=$(ls -d release/mac*/*.app | head -1)
+          dmg=$(ls release/*.dmg | head -1)
+          echo "app: $app"; echo "dmg: $dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl -a -t exec -vv "$app" 2>&1 | tee /tmp/spctl.txt
+          grep -q "Notarized Developer ID" /tmp/spctl.txt || { echo "::error::app is not notarized"; exit 1; }
+          xcrun stapler validate "$app"
+          xcrun stapler validate "$dmg"
+          lipo -archs "$app/Contents/MacOS/"* | tee /tmp/archs.txt
+          grep -q arm64 /tmp/archs.txt && grep -q x86_64 /tmp/archs.txt || { echo "::error::not a universal binary"; exit 1; }
+          echo "✓ macOS: signed, notarized, stapled, universal"
+
+      - name: Verify Windows signature
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
+        run: |
+          $exe = Get-ChildItem release -Filter '*.exe' | Select-Object -First 1
+          if (-not $exe) { Write-Output '::error::no installer in release/'; exit 1 }
+          $sig = Get-AuthenticodeSignature -LiteralPath $exe.FullName
+          Write-Output "installer: $($exe.Name)  status=$($sig.Status)  subject=$($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { Write-Output "::error::installer signature status is '$($sig.Status)', not Valid"; exit 1 }
+          if ($sig.SignerCertificate.Subject -notlike "*$env:WIN_PUBLISHER_NAME*") { Write-Output "::error::unexpected signer"; exit 1 }
+          $inner = Get-ChildItem release/win-unpacked -Filter '*.exe' | Select-Object -First 1
+          $isig = Get-AuthenticodeSignature -LiteralPath $inner.FullName
+          Write-Output "app exe: $($inner.Name)  status=$($isig.Status)"
+          if ($isig.Status -ne 'Valid') { Write-Output "::error::app exe signature status is '$($isig.Status)'"; exit 1 }
+          Write-Output "✓ Windows: installer and app exe signed and Valid"
+
+      - name: Encrypt outputs (public repo — artifacts must not be readable)
+        shell: bash
+        env:
+          PTP_DEPLOY_KEY: ${{ secrets.PTP_DEPLOY_KEY }}
+        run: |
+          set -e
+          PW=$(printf '%s' "$PTP_DEPLOY_KEY" | tr -d '\r\n ' | openssl dgst -sha256 -r | cut -c1-64)
+          mkdir -p out
+          shopt -s nullglob
+          for f in release/*.dmg release/*.zip release/*.exe; do
+            b=$(basename "$f")
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass pass:"$PW" -in "$f" -out "out/$b.enc"
+            shasum -a 256 "$f" | sed "s#release/##" >> out/SHA256SUMS.txt
+          done
+          ls -la out/; cat out/SHA256SUMS.txt
+
+      - name: Upload encrypted artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ptp-${{ matrix.artifact_name }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 3
