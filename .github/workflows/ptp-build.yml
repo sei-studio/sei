@@ -17,6 +17,10 @@
 name: ptp-build
 
 on:
+  # A workflow_dispatch-only workflow on a non-default branch is never indexed
+  # by GitHub, so a push to THIS branch also triggers it (and registers it).
+  push:
+    branches: [ptp-build]
   workflow_dispatch:
     inputs:
       ref:
@@ -47,7 +51,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: oue2x2/past-the-present
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || 'main' }}
           ssh-key: ${{ secrets.PTP_DEPLOY_KEY }}
 
       - name: Setup Node
