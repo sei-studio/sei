@@ -154,7 +154,8 @@ jobs:
           for f in release/*.dmg release/*.zip release/*.exe; do
             b=$(basename "$f")
             openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass pass:"$PW" -in "$f" -out "out/$b.enc"
-            shasum -a 256 "$f" | sed "s#release/##" >> out/SHA256SUMS.txt
+            # (no shasum on the Windows runner; this prints "<hash> *<file>", which `shasum -c` accepts)
+            openssl dgst -sha256 -r "$f" | sed "s# \*release/# *#" >> out/SHA256SUMS.txt
           done
           ls -la out/; cat out/SHA256SUMS.txt
 
