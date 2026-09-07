@@ -37,18 +37,24 @@ const CAPABILITIES_BY_KIND = {
   perplexity: { vision: false, cached: false, local: false },
 }
 
-const DEFAULT_MODELS = {
-  openai:     'gpt-4o-mini',
-  grok:       'grok-2-latest',
-  openrouter: 'anthropic/claude-haiku-4-5',
+// 260828: last-resort fallback when config.llm.providers[kind].model is
+// absent (a parsed config always carries the Zod default, so this only fires
+// for hand-built configs). MIRRORS src/shared/llmCatalog.ts DEFAULT_MODELS —
+// the source of truth this process cannot import — and the ConfigSchema
+// defaults in src/bot/config.js. Exported so llmCatalogSync.test.js pins all
+// three tables together (no more gpt-4o-mini/grok-2 drift).
+export const COMPAT_DEFAULT_MODELS = {
+  openai:     'gpt-5-mini',
+  grok:       'grok-4',
+  openrouter: 'anthropic/claude-haiku-4.5',
   // 260816: the legacy 'deepseek-chat' alias was DISCONTINUED 2026-07-24;
   // current lineup is deepseek-v4-flash / deepseek-v4-pro.
   deepseek:   'deepseek-v4-flash',
   qwen:       'qwen-plus',
-  mistral:    'mistral-small-latest',
-  together:   'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+  mistral:    'mistral-large-latest',
+  together:   'meta-llama/Llama-3.3-70B-Instruct-Turbo',
   groq:       'llama-3.3-70b-versatile',
-  fireworks:  'accounts/fireworks/models/llama-v3p3-70b-instruct',
+  fireworks:  'accounts/fireworks/models/llama-v3p1-70b-instruct',
   cerebras:   'llama-3.3-70b',
   perplexity: 'sonar',
 }
@@ -73,7 +79,7 @@ export function createOpenAICompatProvider(config, { kind, defaultBaseURL, fetch
   const pcfg = config.llm?.providers?.[kind] ?? {}
   const apiKey = pcfg.api_key ?? ''
   const baseURL = pcfg.base_url ?? defaultBaseURL
-  const model = pcfg.model ?? DEFAULT_MODELS[kind] ?? 'gpt-4o-mini'
+  const model = pcfg.model ?? COMPAT_DEFAULT_MODELS[kind] ?? 'gpt-5-mini'
   const defaultTimeoutMs = config.anthropic?.timeout_ms ?? 20_000
 
   if (!baseURL) throw new Error(`openai-compat provider '${kind}': baseURL missing`)

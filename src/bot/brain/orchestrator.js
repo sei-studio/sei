@@ -9,6 +9,7 @@
 // `grep -r "from '../adapter" src/brain/`.
 
 import { createLlmProvider } from './llm/index.js'
+import { applyLlmSwitch } from '../llmInit.js'
 import { VISION_MESSAGES_PATH } from './anthropicClient.js'
 import { createTokenBucket } from './rateLimiter.js'
 import { createDebouncer, createThrottle } from './debounce.js'
@@ -744,7 +745,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // this null. Phase 14: production path goes through `createLlmProvider`,
   // which selects an adapter from `config.llm.provider` (defaults to the
   // existing Anthropic path so configs that pre-date this phase are unchanged).
-  const anthropic = _anthropicOverride ?? createLlmProvider(config)
+  //
+  // `let` (not `const`) since 260828: setBackend rebuilds the provider
+  // through the factory when a mid-session backend switch changes the
+  // provider KIND (cloud→local onto a non-Anthropic provider, or a
+  // non-Anthropic local session going cloud). Every consumer reads
+  // `anthropic` through this closure per call, so the rebind is picked up by
+  // the next LLM call; an in-flight call keeps the instance it captured.
+  let anthropic = _anthropicOverride ?? createLlmProvider(config)
   // MEMORY.md store — long-term memory the LLM writes via remember() /
   // forget() and reads back in the seed turn each loop.
   const memoryLog = createMemoryLog({ path: config.memory.memory_md_path })
@@ -759,7 +767,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // Compactor: async Haiku-driven rewrite when MEMORY.md exceeds the
   // configured trigger size. Fired fire-and-forget after each successful
   // remember(); single-flight inside the compactor itself.
-  const memoryCompactor = createMemoryCompactor({ anthropic, memoryLog, config, logger })
+  // 260828: handed a forwarding facade, not the provider instance — the
+  // compactor destructures its deps once at construction, and a backend
+  // switch can REBIND `anthropic` (see setBackend). The facade keeps its
+  // calls routed through whatever provider is live at call time.
+  const memoryCompactor = createMemoryCompactor({
+    anthropic: { call: (req) => anthropic.call(req) },
+    memoryLog, config, logger,
+  })
   // World registry: assigns this session's world a stable number, segments
   // MEMORY.md by world, and feeds the current-world line into the snapshot so
   // the bot doesn't conflate progress/relationships across different worlds.
@@ -4612,10 +4627,60 @@ function maybeWarnByteCap(loop, warned) {
     setAuthToken: (token) => { try { anthropic.setAuthToken(token) } catch {} },
     /**
      * WR-05 follow-up: live-swap the AI backend (cloud-proxy ↔ BYOK) on the
-     * running provider. Optional-chained because only the Anthropic provider
-     * implements setBackend; non-Anthropic providers no-op.
+     * running provider without a re-summon.
+     *
+     * 260828 rework: this used to delegate straight to the provider's own
+     * setBackend, which only the Anthropic provider implements — so a
+     * cloud→local switch DROPPED the configured non-Anthropic provider (the
+     * bot silently kept running Anthropic with stale defaults), and a local
+     * non-Anthropic session switching to cloud no-op'd entirely (kept
+     * routing BYOK). Now:
+     *   1. applyLlmSwitch folds the descriptor into the live config
+     *      (clears/sets cloudMode + api_key, reroutes config.llm) and
+     *      reports the provider kind now selected;
+     *   2. if the kind is unchanged-Anthropic and the model didn't move, the
+     *      existing client is flipped in place (anthropic.setBackend —
+     *      cheapest path, preserves the prompt-cache identity);
+     *   3. otherwise the provider is REBUILT through the factory and the
+     *      cached system blocks re-rendered (buildCachedSystem is
+     *      provider-specific).
+     * The dominant safety property (a visible switch to BYOK must stop
+     * routing through the paid cloud immediately) is preserved on a rebuild
+     * failure too: cloudMode is already cleared from config before the
+     * factory runs, and the fallback rebuild pins the plain Anthropic BYOK
+     * path (which never throws at construction) rather than keeping the old
+     * cloud-wired instance.
      */
-    setBackend: (backend) => { try { anthropic.setBackend?.(backend) } catch {} },
+    setBackend: (backend) => {
+      try {
+        const prevKind = config.llm?.provider ?? 'anthropic'
+        const prevModel = config.anthropic.model
+        const nextKind = applyLlmSwitch(config, backend)
+        if (nextKind === 'anthropic' && prevKind === 'anthropic' && config.anthropic.model === prevModel) {
+          // Same Anthropic client, new routing: in-place SDK rebuild.
+          anthropic.setBackend?.(backend)
+          return
+        }
+        try {
+          anthropic = createLlmProvider(config)
+        } catch (err) {
+          // e.g. the target provider requires an api_key the switch didn't
+          // carry (openaiCompat throws at construction). Never keep the old
+          // instance: it may still be wired to the cloud proxy. Pin the
+          // Anthropic BYOK path instead — calls fail visibly (401) until the
+          // user fixes their key and re-summons, matching the supervisor's
+          // documented advisory behavior.
+          logger.warn?.(`[sei/orch] setBackend: provider '${nextKind}' rebuild failed (${err?.message ?? err}) — falling back to anthropic`)
+          if (config.llm) config.llm.provider = 'anthropic'
+          anthropic = createLlmProvider(config)
+        }
+        try { rebuildPersonalitySystem() } catch (err) {
+          logger.warn?.(`[sei/orch] setBackend system rebuild failed: ${err?.message ?? err}`)
+        }
+      } catch (err) {
+        logger.warn?.(`[sei/orch] setBackend failed: ${err?.message ?? err}`)
+      }
+    },
     _internal: {
       personalityBucket,
       callPersonality,

@@ -5,7 +5,7 @@
 // ConfigSchema llm sub-tree.
 
 import { describe, it, expect } from 'vitest'
-import { applyLlmInit } from './llmInit.js'
+import { applyLlmInit, applyLlmSwitch } from './llmInit.js'
 import { ConfigSchema } from './config.js'
 
 // Minimal ConfigSchema-valid raw config (BYOK shape, mirrors bootstrapWithInit).
@@ -101,5 +101,95 @@ describe('applyLlmInit', () => {
     const cfg = ConfigSchema.parse(out)
     expect(cfg.llm.provider).toBe('mistral')
     expect(cfg.llm.providers.mistral.api_key).toBe('mk')
+  })
+})
+
+// ─── applyLlmSwitch (260828: mid-session backend-switch fold-in) ───────────
+
+// A PARSED cloud-proxy session config (what a live cloud bot holds).
+const cloudCfg = () =>
+  ConfigSchema.parse(rawFor({
+    anthropic: { api_key: '', cloudMode: { baseURL: 'https://api.sei.gg', authToken: 'jwt' } },
+  }))
+
+// A PARSED local session config on a given provider.
+const localCfg = (llm) =>
+  ConfigSchema.parse(applyLlmInit(rawFor(), llm, llm?.api_key ?? 'sk-byok'))
+
+describe('applyLlmSwitch', () => {
+  it('cloud→local reroutes to the configured provider (the BYOK-switch fix)', () => {
+    const cfg = cloudCfg()
+    const kind = applyLlmSwitch(cfg, {
+      api_key: 'sk-local',
+      llm: { provider: 'openai', model: 'gpt-5-mini', api_key: 'sk-local' },
+    })
+    expect(kind).toBe('openai')
+    expect(cfg.anthropic.cloudMode).toBeUndefined()
+    expect(cfg.anthropic.api_key).toBe('sk-local')
+    expect(cfg.llm.provider).toBe('openai')
+    expect(cfg.llm.providers.openai).toMatchObject({ api_key: 'sk-local', model: 'gpt-5-mini' })
+    // Live knobs on config.llm survive (merged, never replaced wholesale).
+    expect(cfg.llm.rate_limit_per_min).toBe(30)
+    expect(cfg.llm.providers.deepseek).toBeDefined()
+  })
+
+  it('cloud→local with no llm section (older main) falls to the anthropic BYOK path', () => {
+    const cfg = cloudCfg()
+    const kind = applyLlmSwitch(cfg, { api_key: 'sk-local' })
+    expect(kind).toBe('anthropic')
+    expect(cfg.anthropic.cloudMode).toBeUndefined()
+    expect(cfg.anthropic.api_key).toBe('sk-local')
+    expect(cfg.llm.provider).toBe('anthropic')
+  })
+
+  it('local(non-anthropic)→cloud forces the anthropic+cloudMode path', () => {
+    const cfg = localCfg({ provider: 'openai', model: 'gpt-5-mini', api_key: 'ok' })
+    expect(cfg.llm.provider).toBe('openai')
+    const kind = applyLlmSwitch(cfg, {
+      cloudMode: { baseURL: 'https://api.sei.gg', authToken: 'jwt2' },
+    })
+    expect(kind).toBe('anthropic')
+    expect(cfg.llm.provider).toBe('anthropic')
+    expect(cfg.anthropic.cloudMode).toEqual({ baseURL: 'https://api.sei.gg', authToken: 'jwt2' })
+    expect(cfg.anthropic.api_key).toBe('')
+    // The openai block is untouched — a later switch back to local reuses it.
+    expect(cfg.llm.providers.openai.model).toBe('gpt-5-mini')
+  })
+
+  it('anthropic target applies the model onto config.anthropic, never config.llm.providers', () => {
+    const cfg = cloudCfg()
+    const kind = applyLlmSwitch(cfg, {
+      api_key: 'sk-a',
+      llm: { provider: 'anthropic', model: 'claude-sonnet-4-5', api_key: 'sk-a' },
+    })
+    expect(kind).toBe('anthropic')
+    expect(cfg.anthropic.model).toBe('claude-sonnet-4-5')
+    expect(cfg.llm.provider).toBe('anthropic')
+  })
+
+  it('unknown provider falls to anthropic instead of throwing (no parse safety net at runtime)', () => {
+    const cfg = cloudCfg()
+    expect(applyLlmSwitch(cfg, { api_key: 'k', llm: { provider: 'palantir', api_key: 'k' } })).toBe('anthropic')
+    expect(cfg.llm.provider).toBe('anthropic')
+  })
+
+  it('junk base_url is dropped (provider default base applies)', () => {
+    const cfg = cloudCfg()
+    applyLlmSwitch(cfg, { api_key: 'k', llm: { provider: 'openai', base_url: 'not a url', api_key: 'k' } })
+    expect(cfg.llm.providers.openai.base_url).toBeUndefined()
+  })
+
+  it('ollama gets no api_key field and works with an empty key', () => {
+    const cfg = cloudCfg()
+    const kind = applyLlmSwitch(cfg, { api_key: '', llm: { provider: 'ollama', model: 'llama3.1' } })
+    expect(kind).toBe('ollama')
+    expect(cfg.llm.providers.ollama.api_key).toBeUndefined()
+    expect(cfg.llm.providers.ollama.model).toBe('llama3.1')
+  })
+
+  it('llm.api_key falls back to the top-level api_key', () => {
+    const cfg = cloudCfg()
+    applyLlmSwitch(cfg, { api_key: 'sk-top', llm: { provider: 'grok' } })
+    expect(cfg.llm.providers.grok.api_key).toBe('sk-top')
   })
 })

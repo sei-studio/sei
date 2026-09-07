@@ -30,8 +30,8 @@ import type {
   VisionCapability,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
-import { DEFAULT_MODELS } from '../shared/llmCatalog';
 import { clampChatLanguage } from '../shared/chatLanguage';
+import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
 import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
 import { buildLaunchContinuity } from './chat/continuity';
@@ -821,31 +821,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // and read by NOTHING until now — the init payload carried no llm config,
     // so every bot session ran Anthropic regardless of the picker. Local
     // (BYOK) only: cloud-proxy stays on the anthropic+cloudMode path (llmInit
-    // stays undefined). base_url ships only when the user configured an
-    // override. The model falls back to the SHARED catalog default
-    // (DEFAULT_MODELS) rather than being omitted (260817, W10): the bot's own
-    // Zod defaults predate the catalog and diverge (gpt-4o-mini vs gpt-5-mini,
-    // grok-2 vs grok-4), so omitting the model ran a DIFFERENT model in
-    // Minecraft than every other surface. For anthropic the catalog default
-    // equals the bot schema default, so shipping it is a no-op (BYOK byte
-    // parity holds). api_key duplicates the top-level `apiKey` field, which
-    // is KEPT for back-compat and for the Anthropic path.
-    let llmInit: { provider: string; model?: string; base_url?: string; api_key: string } | undefined;
+    // stays undefined). The builder is SHARED with _switchBackend's local
+    // branch (260828) so a mid-session cloud→local switch carries the same
+    // provider/model/base_url the next summon would — see
+    // src/main/llmInitSection.ts for the field semantics.
+    let llmInit: LlmInitSection | undefined;
     if (aiBackendKind === 'local') {
-      const provider = userCfg.provider ?? 'anthropic';
-      const pcRaw = (userCfg.provider_config as Record<string, unknown> | undefined)?.[provider];
-      const pc = (pcRaw && typeof pcRaw === 'object' ? pcRaw : {}) as { model?: unknown; base_url?: unknown };
-      const model =
-        typeof pc.model === 'string' && pc.model.trim()
-          ? pc.model.trim()
-          : DEFAULT_MODELS[provider as keyof typeof DEFAULT_MODELS];
-      const baseUrl = typeof pc.base_url === 'string' && pc.base_url.trim() ? pc.base_url.trim() : undefined;
-      llmInit = {
-        provider,
-        api_key: apiKey,
-        ...(model ? { model } : {}),
-        ...(baseUrl ? { base_url: baseUrl } : {}),
-      };
+      llmInit = buildLlmInitSection(userCfg, apiKey);
     }
     if (!preferred_name) {
       const status: BotStatus = {
@@ -1561,14 +1543,18 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // WR-05 surprise). Bots 401 on their next call until a key is set + re-summon.
       let apiKey = '';
       let keyError: unknown = null;
+      // 260828: read the whole UserConfig once — it feeds both the keyless
+      // check and the llm section shipped with the switch message below.
+      // Best-effort: on a read failure fall back to the historical
+      // always-check behavior and the anthropic default provider.
+      let userCfg: Awaited<ReturnType<typeof loadUserConfig>> | null = null;
+      try {
+        userCfg = await loadUserConfig();
+      } catch { /* fall through to the key check */ }
       // 260817 (china-compat W10): ollama is keyless — mirror _summon's guard
       // skip so a keyless ollama config never gets a spurious INVALID_API_KEY
-      // advisory on a cloud→local switch. Config read is best-effort: on a
-      // read failure fall back to the historical always-check behavior.
-      let keylessProvider = false;
-      try {
-        keylessProvider = ((await loadUserConfig()).provider ?? 'anthropic') === 'ollama';
-      } catch { /* fall through to the key check */ }
+      // advisory on a cloud→local switch.
+      const keylessProvider = (userCfg?.provider ?? 'anthropic') === 'ollama';
       if (!keylessProvider) {
         try {
           // 260703: a MISSING key gets the same clear INVALID_API_KEY surface as
@@ -1584,6 +1570,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           keyError = err;
         }
       }
+      // 260828 (BYOK-switch fix): the switch message used to carry ONLY the
+      // apiKey, so a live bot switched cloud→local silently kept running
+      // Anthropic with stale defaults regardless of the configured provider.
+      // Ship the SAME llm section a fresh summon would build (shared helper),
+      // so the bot's applyLlmSwitch can reroute its provider/model/config.
+      const llm = buildLlmInitSection(userCfg ?? {}, apiKey);
       for (const session of sessions.values()) {
         // 260703 hard guard: flip the tracked kind FIRST so no concurrent
         // updateJwt tick can post a token to a session that is now BYOK.
@@ -1613,7 +1605,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         try { session.teardownJwtRotation?.(); } catch { /* best-effort */ }
         session.teardownJwtRotation = undefined;
         try {
-          session.port1.postMessage({ type: 'backend-switch', apiKey });
+          session.port1.postMessage({ type: 'backend-switch', apiKey, llm });
         } catch {
           /* port closed during teardown — ignore */
         }
