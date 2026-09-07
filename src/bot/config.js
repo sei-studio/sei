@@ -249,21 +249,31 @@ export const ConfigSchema = z.object({
     provider: z.enum(LLM_PROVIDER_KINDS).default('anthropic'),
     // Per-provider config. Only the active provider's block is required to
     // be populated; the others can stay default-empty.
+    //
+    // 260828: the default model strings below MIRROR src/shared/llmCatalog.ts
+    // DEFAULT_MODELS — the single source of truth (this process cannot import
+    // shared TS, so the values are duplicated by hand). They had drifted
+    // (gpt-4o-mini vs gpt-5-mini, grok-2-latest vs grok-4, gemini-2.0 vs 2.5,
+    // and openrouter's 'anthropic/claude-haiku-4-5' — the dash form is not a
+    // real OpenRouter slug). src/bot/llmCatalogSync.test.js asserts the two
+    // tables agree so they cannot drift again; change models in the catalog
+    // FIRST, then here. (qwen deliberately stays 'qwen-plus' in both — an old
+    // plan said qwen3-max, superseded.)
     providers: z.object({
-      openai:     z.object({ api_key: z.string().default(''), model: z.string().default('gpt-4o-mini'),                                       base_url: z.string().url().optional() }).default({}),
-      gemini:     z.object({ api_key: z.string().default(''), model: z.string().default('gemini-2.0-flash'),                                  base_url: z.string().url().optional() }).default({}),
-      grok:       z.object({ api_key: z.string().default(''), model: z.string().default('grok-2-latest'),                                     base_url: z.string().url().optional() }).default({}),
-      openrouter: z.object({ api_key: z.string().default(''), model: z.string().default('anthropic/claude-haiku-4-5'),                        base_url: z.string().url().optional() }).default({}),
+      openai:     z.object({ api_key: z.string().default(''), model: z.string().default('gpt-5-mini'),                                        base_url: z.string().url().optional() }).default({}),
+      gemini:     z.object({ api_key: z.string().default(''), model: z.string().default('gemini-2.5-flash'),                                  base_url: z.string().url().optional() }).default({}),
+      grok:       z.object({ api_key: z.string().default(''), model: z.string().default('grok-4'),                                            base_url: z.string().url().optional() }).default({}),
+      openrouter: z.object({ api_key: z.string().default(''), model: z.string().default('anthropic/claude-haiku-4.5'),                        base_url: z.string().url().optional() }).default({}),
       // 260816: 'deepseek-chat' alias discontinued 2026-07-24 → deepseek-v4-flash.
       deepseek:   z.object({ api_key: z.string().default(''), model: z.string().default('deepseek-v4-flash'),                                 base_url: z.string().url().optional() }).default({}),
       // 260816: Alibaba DashScope compatible mode. Default base URL lives in
       // the factory (src/bot/brain/llm/index.js BASE_URLS → the CN endpoint);
       // international accounts override base_url via provider_config.
       qwen:       z.object({ api_key: z.string().default(''), model: z.string().default('qwen-plus'),                                         base_url: z.string().url().optional() }).default({}),
-      mistral:    z.object({ api_key: z.string().default(''), model: z.string().default('mistral-small-latest'),                              base_url: z.string().url().optional() }).default({}),
-      together:   z.object({ api_key: z.string().default(''), model: z.string().default('meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'),       base_url: z.string().url().optional() }).default({}),
+      mistral:    z.object({ api_key: z.string().default(''), model: z.string().default('mistral-large-latest'),                              base_url: z.string().url().optional() }).default({}),
+      together:   z.object({ api_key: z.string().default(''), model: z.string().default('meta-llama/Llama-3.3-70B-Instruct-Turbo'),           base_url: z.string().url().optional() }).default({}),
       groq:       z.object({ api_key: z.string().default(''), model: z.string().default('llama-3.3-70b-versatile'),                           base_url: z.string().url().optional() }).default({}),
-      fireworks:  z.object({ api_key: z.string().default(''), model: z.string().default('accounts/fireworks/models/llama-v3p3-70b-instruct'), base_url: z.string().url().optional() }).default({}),
+      fireworks:  z.object({ api_key: z.string().default(''), model: z.string().default('accounts/fireworks/models/llama-v3p1-70b-instruct'), base_url: z.string().url().optional() }).default({}),
       cerebras:   z.object({ api_key: z.string().default(''), model: z.string().default('llama-3.3-70b'),                                     base_url: z.string().url().optional() }).default({}),
       perplexity: z.object({ api_key: z.string().default(''), model: z.string().default('sonar'),                                              base_url: z.string().url().optional() }).default({}),
       ollama:     z.object({ model: z.string().default('llama3.1'),                                                                            base_url: z.string().default('http://localhost:11434') }).default({}),

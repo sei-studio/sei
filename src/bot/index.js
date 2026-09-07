@@ -506,8 +506,10 @@ export async function start(config, hooks = {}) {
      * running brain without a re-summon. Called by the parentPort
      * {type:'backend-switch'} handler when the supervisor flips
      * ai_backend_kind mid-session. No-op when cloudMode/BYOK is irrelevant or
-     * the brain has not yet started.
-     * @param {{cloudMode?:{baseURL:string,authToken:string}, api_key?:string}} backend
+     * the brain has not yet started. 260828: the local shape also carries the
+     * `llm` provider section (see applyLlmSwitch in llmInit.js) so a
+     * cloud→local switch lands on the CONFIGURED provider, not Anthropic.
+     * @param {{cloudMode?:{baseURL:string,authToken:string}, api_key?:string, llm?:{provider:string,model?:string,base_url?:string,api_key?:string}}} backend
      */
     setBackend(backend) {
       try { _brain?.setBackend?.(backend) } catch {}
@@ -1119,14 +1121,27 @@ if (process.parentPort) {
           } else if (data && data.type === 'backend-switch') {
             // WR-05 follow-up: the user flipped cloud ↔ local in Settings
             // while the bot is running. The supervisor ships the new routing
-            // descriptor (cloudMode for proxy, apiKey for BYOK) and the live
-            // SDK is rebuilt in place — no stop+re-summon. Previously this
-            // required a manual restart (the "Restart your bot" banner).
+            // descriptor (cloudMode for proxy; apiKey + llm section for BYOK)
+            // and the live provider is rebuilt in place — no stop+re-summon.
+            // Previously this required a manual restart (the "Restart your
+            // bot" banner).
+            //
+            // 260828: the local descriptor now carries the SAME `llm` section
+            // the summon init payload does ({provider, model?, base_url?,
+            // api_key} from src/main/llmInitSection.ts). Without it, a
+            // cloud→local switch left the brain on Anthropic with stale
+            // defaults regardless of the configured provider. The brain folds
+            // it in via applyLlmSwitch (src/bot/llmInit.js) and rebuilds its
+            // provider instance when the kind changes. Absent llm (older
+            // main) falls back to the historical anthropic BYOK path.
             try {
               _running?.setBackend?.(
                 data.cloudMode
                   ? { cloudMode: { baseURL: data.cloudMode.baseURL, authToken: data.cloudMode.authToken } }
-                  : { api_key: typeof data.apiKey === 'string' ? data.apiKey : '' },
+                  : {
+                      api_key: typeof data.apiKey === 'string' ? data.apiKey : '',
+                      ...(data.llm && typeof data.llm === 'object' ? { llm: data.llm } : {}),
+                    },
               )
               // Phase 15 (D-10/VIS-03): a cloud↔local switch can change the
               // active provider's vision capability — re-emit so the renderer's

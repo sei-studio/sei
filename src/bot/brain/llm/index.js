@@ -25,7 +25,9 @@ import { createOllamaProvider } from './ollamaProvider.js'
 // base_url to dashscope-intl). mistral/together/groq/fireworks/cerebras/
 // perplexity are GRANDFATHERED — no longer offered by the picker
 // (llmCatalog.ts SHOWN_PROVIDERS) but kept here so existing configs run.
-const BASE_URLS = {
+// Exported (260828) so llmCatalogSync.test.js can assert this mirror against
+// llmCatalog.ts OPENAI_COMPAT_BASE_URLS.
+export const BASE_URLS = {
   openai:     'https://api.openai.com/v1',
   grok:       'https://api.x.ai/v1',
   openrouter: 'https://openrouter.ai/api/v1',

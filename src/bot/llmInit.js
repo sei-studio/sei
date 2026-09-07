@@ -68,3 +68,76 @@ export function applyLlmInit(rawConfig, llm, apiKey) {
   out.llm = { provider, providers: { [provider]: pcfg } }
   return out
 }
+
+/**
+ * 260828 (BYOK-switch fix): apply a mid-session `{type:'backend-switch'}`
+ * descriptor onto the PARSED, live config — the runtime sibling of
+ * applyLlmInit above, which only runs pre-parse at init time.
+ *
+ * MUTATES `config` in place (the orchestrator, adapter and providers all hold
+ * the same reference; a copy would leave them reading stale routing) and
+ * returns the provider kind now selected, so the caller (orchestrator
+ * setBackend) can decide whether the live provider instance must be rebuilt
+ * through the factory or can be flipped in place.
+ *
+ * Rules:
+ * - `backend.cloudMode` (local→cloud): cloud ALWAYS rides the
+ *   anthropic+cloudMode path — config.llm.provider is forced back to
+ *   'anthropic' (a local session may have been running any provider).
+ * - local (`backend.api_key` + optional `backend.llm`): cloudMode is cleared,
+ *   the key applied, and the llm section folded in with the same
+ *   junk-tolerance as applyLlmInit (unknown provider / junk base_url fall to
+ *   the anthropic default / provider default base rather than throwing —
+ *   there is no ConfigSchema.parse safety net at runtime).
+ * - Unlike applyLlmInit, providers are MERGED (never replaced wholesale):
+ *   the parsed config.llm carries live knobs (rate_limit_per_min, max_hops,
+ *   every other provider's defaults) that must survive the switch.
+ *
+ * @param {object} config  the PARSED live config (mutated)
+ * @param {{cloudMode?:{baseURL:string,authToken:string}, api_key?:string,
+ *          llm?:{provider?:string,model?:string,base_url?:string,api_key?:string}}} backend
+ * @returns {string} the provider kind now in effect ('anthropic' | 'openai' | ...)
+ */
+export function applyLlmSwitch(config, backend) {
+  if (backend && backend.cloudMode) {
+    config.anthropic.cloudMode = {
+      baseURL: backend.cloudMode.baseURL,
+      authToken: backend.cloudMode.authToken,
+    }
+    config.anthropic.api_key = ''
+    if (config.llm) config.llm.provider = 'anthropic'
+    return 'anthropic'
+  }
+
+  // local / BYOK
+  delete config.anthropic.cloudMode
+  const topKey = nonEmpty(backend && backend.api_key) ?? ''
+  config.anthropic.api_key = topKey
+
+  const llm = backend && typeof backend.llm === 'object' ? backend.llm : null
+  const provider =
+    llm && typeof llm.provider === 'string' && LLM_PROVIDER_KINDS.includes(llm.provider)
+      ? llm.provider
+      : 'anthropic'
+  const model = llm ? nonEmpty(llm.model) : null
+  const baseUrl = llm ? validUrl(llm.base_url) : null
+  const key = (llm ? nonEmpty(llm.api_key) : null) ?? topKey
+
+  if (provider === 'anthropic') {
+    if (config.llm) config.llm.provider = 'anthropic'
+    if (model) config.anthropic.model = model
+    return 'anthropic'
+  }
+
+  if (!config.llm) config.llm = { provider, providers: {} }
+  if (!config.llm.providers) config.llm.providers = {}
+  config.llm.provider = provider
+  const prev = config.llm.providers[provider] ?? {}
+  config.llm.providers[provider] = {
+    ...prev,
+    ...(provider === 'ollama' ? {} : { api_key: key }), // ollama has no key field
+    ...(model ? { model } : {}),
+    ...(baseUrl ? { base_url: baseUrl } : {}),
+  }
+  return provider
+}
