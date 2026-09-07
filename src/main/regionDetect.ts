@@ -32,12 +32,22 @@ let inFlight: Promise<string | null> | null = null;
 /**
  * One uncached trace fetch. Never rejects — every failure mode is null.
  * `fetchImpl` is injectable for tests only.
+ *
+ * The default is Electron's `net.fetch` (Chromium network stack), NOT the
+ * global Node/undici `fetch`: undici ignores HTTP(S)_PROXY and the OS system
+ * proxy, so on a proxied machine whose direct egress geolocates differently
+ * (seen live: proxy exit JP, direct HK) the probe saw a country the user's
+ * browser never touches and produced a false "region blocked". It is resolved
+ * LAZILY via dynamic import because this module's tests run under vitest
+ * without Electron — a top-level `import { net } from 'electron'` would break
+ * them.
  */
-export async function detectRegionLoc(fetchImpl: typeof fetch = fetch): Promise<string | null> {
+export async function detectRegionLoc(fetchImpl?: typeof fetch): Promise<string | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TRACE_TIMEOUT_MS);
   try {
-    const res = await fetchImpl(TRACE_URL, { signal: controller.signal });
+    const doFetch = fetchImpl ?? ((await import('electron')).net.fetch as typeof fetch);
+    const res = await doFetch(TRACE_URL, { signal: controller.signal });
     if (!res.ok) return null;
     return parseTraceLoc(await res.text());
   } catch {
@@ -52,7 +62,7 @@ export async function detectRegionLoc(fetchImpl: typeof fetch = fetch): Promise<
  * Cached region verdict. Single-flight: concurrent callers (an auth submit
  * racing the renderer pre-check) share one fetch.
  */
-export async function getRegionStatus(fetchImpl: typeof fetch = fetch): Promise<RegionStatus> {
+export async function getRegionStatus(fetchImpl?: typeof fetch): Promise<RegionStatus> {
   if (cache !== null) {
     const ttl = cache.loc === null ? FAILURE_TTL_MS : SUCCESS_TTL_MS;
     if (Date.now() - cache.at < ttl) {

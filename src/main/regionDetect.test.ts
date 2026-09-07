@@ -5,12 +5,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { detectRegionLoc, getRegionStatus, resetRegionCacheForTest } from './regionDetect';
 
+// The default (no injected impl) path lazily imports electron and uses
+// net.fetch — Chromium's stack, which honors the OS proxy that undici
+// ignores. Electron is not present under vitest, so mock the module the
+// dynamic import resolves.
+const { electronNetFetch } = vi.hoisted(() => ({ electronNetFetch: vi.fn() }));
+vi.mock('electron', () => ({ net: { fetch: electronNetFetch } }));
+
 function traceResponse(loc: string): Response {
   return new Response(`h=api.sei.gg\nip=203.0.113.7\nloc=${loc}\ntls=TLSv1.3\n`, { status: 200 });
 }
 
 beforeEach(() => {
   resetRegionCacheForTest();
+  electronNetFetch.mockReset();
 });
 
 afterEach(() => {
@@ -56,6 +64,21 @@ describe('detectRegionLoc', () => {
     const p = detectRegionLoc(fetchMock as unknown as typeof fetch);
     await vi.advanceTimersByTimeAsync(5_001);
     expect(await p).toBeNull();
+  });
+
+  it("defaults to electron's net.fetch when no impl is injected", async () => {
+    electronNetFetch.mockResolvedValue(traceResponse('JP'));
+    expect(await detectRegionLoc()).toBe('JP');
+    expect(electronNetFetch).toHaveBeenCalledWith(
+      'https://api.sei.gg/cdn-cgi/trace',
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+  });
+
+  it('never touches electron when an impl is injected', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(traceResponse('US'));
+    expect(await detectRegionLoc(fetchMock as unknown as typeof fetch)).toBe('US');
+    expect(electronNetFetch).not.toHaveBeenCalled();
   });
 });
 
