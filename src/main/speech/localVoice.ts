@@ -28,6 +28,10 @@
  *         EAR-CHECK OWED before ship). Fallback: AISHELL3_MALE_REGISTER_SID
  *         below is the lowest-pitch aishell3 speaker, usable from the zh-f
  *         pack if chaowen fails the ear-check.
+ *         LICENSE NOTE (260828): chaowen has a non-commercial weights lineage
+ *         (BZNSYP -> xiao_ya -> chaowen; see packs.ts). Pending decision:
+ *         replace with the aishell3 male-register fallback below or obtain a
+ *         DataBaker commercial license — do not ship as-is.
  * To change a speaker: edit LOCAL_VOICE_SPEC below (sid), nothing else — the
  * pack stays the same, no re-download.
  *

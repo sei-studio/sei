@@ -1707,6 +1707,43 @@ export function SettingsScreen(): React.ReactElement {
             </button>{' '}
             {t('(CC licensed).')}
           </p>
+          <p className={styles.helper}>
+            {t('Speech recognition: SenseVoice-Small by FunAudioLLM (Alibaba),')}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal(
+                  'https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE',
+                )
+              }
+            >
+              {t('FunASR Model License')}
+            </button>
+            {t('. English voice: trained on LibriTTS-R,')}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal('https://creativecommons.org/licenses/by/4.0/')
+              }
+            >
+              CC BY 4.0
+            </button>
+            {t(
+              ', via Piper; converted to ONNX. Chinese voice: trained on AISHELL-3 by Beijing Shell Shell Technology,',
+            )}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal('https://www.apache.org/licenses/LICENSE-2.0')
+              }
+            >
+              {t('Apache License 2.0')}
+            </button>
+            {t(', via icefall.')}
+          </p>
         </div>
 
         {/* ── Danger ──────────────────────────────────────────── */}

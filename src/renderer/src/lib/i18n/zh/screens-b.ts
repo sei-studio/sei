@@ -131,6 +131,14 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Photo credits: Minecraft artwork by Mojang Studios. Movie night photo by':
     '图片来源：Minecraft 美术作品来自 Mojang Studios。电影之夜照片来自',
   '(CC licensed).': '（CC 许可）。',
+  'Speech recognition: SenseVoice-Small by FunAudioLLM (Alibaba),':
+    '语音识别：SenseVoice-Small，来自 FunAudioLLM（阿里巴巴），',
+  'FunASR Model License': 'FunASR 模型许可证',
+  '. English voice: trained on LibriTTS-R,': '。英文语音：基于 LibriTTS-R 训练，',
+  ', via Piper; converted to ONNX. Chinese voice: trained on AISHELL-3 by Beijing Shell Shell Technology,':
+    '，经由 Piper；已转换为 ONNX。中文语音：基于北京希尔贝壳科技的 AISHELL-3 训练，',
+  'Apache License 2.0': 'Apache 2.0 许可证',
+  ', via icefall.': '，经由 icefall。',
   'Danger': '危险操作',
   'Reset all companion memories': '重置所有伙伴的记忆',
   'All memories reset': '已重置所有记忆',
