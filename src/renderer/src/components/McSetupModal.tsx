@@ -22,6 +22,12 @@
  */
 
 import React, { useEffect, useState } from 'react';
+// Dependency-free CJS data module — the same table the bot's networking stack
+// (minecraft-protocol) enforces, so the stated ceiling can never drift from
+// what Sei actually joins. Deep import on purpose (mirrors
+// UnsupportedVersionModal): the package root pulls the full protocol stack,
+// which must never enter the renderer.
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { useT } from '../lib/i18n';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -31,6 +37,9 @@ import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { StatusPill, type StatusPillTone } from './StatusPill';
 import styles from './McSetupModal.module.css';
+
+/** Highest Minecraft Java version Sei's networking stack can join. */
+const LATEST_SUPPORTED: string = supportedVersions[supportedVersions.length - 1];
 
 const STEPS: readonly string[] = [
   'Launch Minecraft and open your singleplayer world.',
@@ -152,6 +161,11 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
               </li>
             ))}
           </ol>
+          <p className={styles.hint}>
+            {t('Your world needs a supported Minecraft Java version. Sei supports versions up to {latest}.', {
+              latest: LATEST_SUPPORTED,
+            })}
+          </p>
           {searching ? (
             <div className={styles.searching}>
               <span className={styles.searchDots} aria-hidden="true">

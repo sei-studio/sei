@@ -42,8 +42,8 @@ export const ZH_MISC: Record<string, string> = {
   'Too many requests right now. Wait a little and try again.': '当前请求过多。请稍等片刻再试。',
   'Your name is missing. Re-run onboarding from Settings to set your name, then summon again.':
     '缺少你的名字。请在设置中重新运行引导流程填写名字，然后再次召唤。',
-  'Detected MC {version}. Sei needs MC 1.14 or newer. Pick a newer profile or switch to 1.21.x before continuing.':
-    '检测到 MC {version}。Sei 需要 MC 1.14 或更新版本。请选择更新的配置，或切换到 1.21.x 后再继续。',
+  'Detected MC {version}. Sei needs MC 1.14 or newer. Pick a newer profile or switch to a supported version such as {latest} before continuing.':
+    '检测到 MC {version}。Sei 需要 MC 1.14 或更新版本。请选择更新的配置，或切换到 {latest} 等受支持的版本后再继续。',
   "Couldn't read mod metadata, so this mod will be skipped. If it's actually compatible, copy it into <install>/sei/mods/ manually.":
     '无法读取模组元数据，此模组将被跳过。如果它其实兼容，请手动将其复制到 <install>/sei/mods/ 中。',
   'Something went wrong. {detail}Try again.': '出了点问题。{detail}请重试。',

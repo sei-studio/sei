@@ -72,13 +72,14 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
  * tooltips on the done-step exclusion list. The user can proceed past
  * any of these; there is no "Continue blocked" semantic.
  *
- * Caller does the {version} interpolation inline:
- *   WARN_COPY.MC_VERSION_PRE_1_14.replace('{version}', install.mc_version!)
+ * Caller does the {version} / {latest} interpolation inline via t(); {latest}
+ * comes from minecraft-protocol's supportedVersions table so the named
+ * version can never go stale (the old copy hardcoded "1.21.x").
  */
 export const WARN_COPY = {
   MC_VERSION_PRE_1_14:
     'Detected MC {version}. Sei needs MC 1.14 or newer. ' +
-    'Pick a newer profile or switch to 1.21.x before continuing.',
+    'Pick a newer profile or switch to a supported version such as {latest} before continuing.',
   MOD_SCAN_PARSE_FAIL:
     "Couldn't read mod metadata, so this mod will be skipped. " +
     "If it's actually compatible, copy it into <install>/sei/mods/ manually.",
