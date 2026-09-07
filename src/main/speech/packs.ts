@@ -9,9 +9,28 @@
  * the published assets (read off the GitHub release API 260816); a mismatched
  * download is discarded rather than extracted.
  *
- * Licenses (verified 260816): libritts_r CC BY 4.0, aishell3 Apache-2.0,
- * chaowen CC0, SenseVoice FunASR model license (commercial OK per
- * maintainers; legal read owed). We ship NONE of these — download on demand.
+ * Licenses (legal review 260828 — supersedes the 260816 notes):
+ *   - libritts_r: CLEAR, CC BY 4.0 (LibriTTS-R dataset,
+ *     https://www.openslr.org/141/). Attribution must name the dataset, link
+ *     the license, and note modification (Piper training + ONNX conversion).
+ *     Credited in Settings > About.
+ *   - aishell3: CLEAR, plain Apache License 2.0 (https://www.openslr.org/93/).
+ *     An earlier note here said "for academic use" — that is NOT a term of the
+ *     actual license; only the usual Apache-2.0 notice/license retention
+ *     applies. Credited in Settings > About.
+ *   - SenseVoice: CLEAR under the FunASR Model Open Source License v1.1
+ *     (https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE).
+ *     Commercial use OK; requires attributing source/author and retaining the
+ *     model names. Credited in Settings > About. This closes the old
+ *     "legal read owed" TODO.
+ *   - chaowen: PROBLEM — NON-COMMERCIAL LINEAGE. The weights pass through the
+ *     DataBaker BZNSYP corpus ("Non-commercial use",
+ *     https://www.data-baker.com/data/index/TNtts/) via the xiao_ya base
+ *     voice; the "CC0" note applies only to the fine-tuning dataset. Pending
+ *     decision: replace with aishell3 male speaker or obtain DataBaker
+ *     commercial license — do not ship as-is. Deliberately NOT credited in
+ *     Settings > About while that decision is open.
+ * We ship NONE of these — download on demand.
  */
 
 export type SpeechPackId = 'tts-en' | 'tts-zh-f' | 'tts-zh-m' | 'stt-sensevoice';
@@ -59,9 +78,13 @@ export const SPEECH_PACKS: Record<SpeechPackId, SpeechPackDef> = {
     dirName: 'vits-icefall-zh-aishell3',
     requiredFiles: ['model.onnx', 'lexicon.txt', 'tokens.txt'],
   },
-  /** zh male: vits-piper chaowen int8 (CC0). Pitch analysis says male
-   * (~151 Hz); a human ear-check is owed before ship — the same-runtime
-   * fallback is an aishell3 male-register speaker id (see localVoice.ts). */
+  /** zh male: vits-piper chaowen int8. NON-COMMERCIAL LINEAGE (BZNSYP ->
+   * xiao_ya -> chaowen; the "CC0" applies only to the fine-tuning dataset) —
+   * pending decision: replace with aishell3 male speaker or obtain DataBaker
+   * commercial license — do not ship as-is. See the license block above.
+   * Pitch analysis says male (~151 Hz); a human ear-check is owed before
+   * ship — the same-runtime fallback is an aishell3 male-register speaker id
+   * (see localVoice.ts). */
   'tts-zh-m': {
     id: 'tts-zh-m',
     asset: 'vits-piper-zh_CN-chaowen-medium-int8.tar.bz2',
