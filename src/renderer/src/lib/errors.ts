@@ -52,6 +52,10 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   WIZARD_PERMISSION_DENIED: "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.",
   CLOUD_CREDITS_DEPLETED: "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.",
   DAILY_LIMIT_REACHED: "Too many requests right now. Wait a little and try again.",
+  // 260828: pre-gate refusal — onboarding never captured a name. Previously
+  // surfaced as BOT_CRASH ("Sei stopped unexpectedly. Press Summon to restart."),
+  // which told users to retry the one thing that cannot work until they fix it.
+  PREFERRED_NAME_MISSING: "Your name is missing. Re-run onboarding from Settings to set your name, then summon again.",
 };
 
 /**

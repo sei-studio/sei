@@ -56,6 +56,7 @@ import {
   onAiBackendKindChanged,
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
+import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
 
@@ -653,6 +654,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // Bot supervision
   ipcMain.handle(IpcChannel.bot.summon, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
+    // 260828: this handler is the USER-ACTION summon path (the renderer's
+    // Summon button and every popup retry go through it). A manual attempt is
+    // never blocked — it clears any pre-gate auto-retry block so the automatic
+    // paths (launch() tool, voice launch honors) get a fresh chance too.
+    clearSummonBlock(id);
     await deps.supervisor.summon(id);
   });
   ipcMain.handle(IpcChannel.bot.stop, async (_event, idArg: unknown) => {
@@ -1216,6 +1222,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       {
         getLanState: deps.getLanState,
         summon: (id) => deps.supervisor.summon(id),
+        // 260828 retry-loop guard: launch() refuses (and tells the model not
+        // to retry) while a summon pre-gate refusal is still standing.
+        blockedAutoLaunch: (id) => blockedAutoSummon(id),
         // Task 4 — when the character is already in-game (spawned), route this
         // message into that live session instead of the standalone chat brain.
         isInGame: (id) => deps.isSessionOnline(id),
@@ -1667,10 +1676,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // 260708: hand the turn live LAN truth + a launch honor (see the
     // voice.companionTurn handler below for the full story).
     const idleWorldOpen = deps.getLanState().kind === 'open';
+    // 260828 retry-loop guard: after a pre-gate refusal, this automatic launch
+    // honor stays off until the user acts (or the block ages out) — otherwise
+    // each nudge re-runs the doomed summon and re-fails (see summonGuard.ts).
+    const idleLaunchable = idleWorldOpen && blockedAutoSummon(args.characterId) === null;
     return await sendVoiceIdleTurn(args.characterId, args.quietSeconds, args.peers, {
       awaitingAnswer: args.awaitingAnswer,
       openWorldDetected: idleWorldOpen,
-      onLaunch: idleWorldOpen
+      onLaunch: idleLaunchable
         ? () => {
             void deps.supervisor.summon(args.characterId).catch((e) => {
               deps.notifyLaunchFailed(args.characterId, (e as Error)?.message ?? 'unknown error');
@@ -1717,13 +1730,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // a single-shot turn with no tool loop). Pass live LAN truth and honor
     // launch() the way chat:send does, gated on the world actually being open.
     const reactWorldOpen = deps.getLanState().kind === 'open';
+    // 260828 retry-loop guard — same as the idle-nudge honor above.
+    const reactLaunchable = reactWorldOpen && blockedAutoSummon(args.characterId) === null;
     return await sendCompanionVoiceTurn(args.characterId, {
       speakerName: args.speakerName,
       text: args.text,
       peers: args.peers,
       depth: args.depth,
       openWorldDetected: reactWorldOpen,
-      onLaunch: reactWorldOpen
+      onLaunch: reactLaunchable
         ? () => {
             void deps.supervisor.summon(args.characterId).catch((e) => {
               deps.notifyLaunchFailed(args.characterId, (e as Error)?.message ?? 'unknown error');

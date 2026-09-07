@@ -22,6 +22,7 @@ import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
+import { notePreGateFailure, clearSummonBlock } from './summonGuard';
 import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
@@ -324,6 +325,9 @@ function broadcastStatus(status: BotStatus): void {
   // Play-session bookkeeping: stamp first-online, and on the terminal
   // idle/error post a "played for X" row (only if the bot was actually live).
   if (status.kind === 'online') {
+    // 260828: a successful summon proves the pre-gate condition is gone —
+    // release the auto-retry block (see summonGuard.ts).
+    clearSummonBlock(id);
     if (!playStartedAt.has(id)) {
       playStartedAt.set(id, Date.now());
       // Analytics (260707): first-online is the "bot reached the world" signal.
@@ -754,20 +758,33 @@ async function bootstrap(): Promise<void> {
     // Note summon_phase == 'mid_session' rows are post-summon crashes; filter
     // them out of summon-failure-rate insights.
     onSummonFailure: (info) => {
+      // 260828 retry-loop guard: a pre-gate refusal is deterministic — arm the
+      // auto-retry block so the launch() tool and the voice launch honors stop
+      // re-attempting it (manual Summon clicks clear it; see summonGuard.ts).
+      // Synchronous and before the async capture so the block is armed even if
+      // analytics is disabled or the dynamic imports fail.
+      if (info.phase === 'pre_gate') notePreGateFailure(info.characterId, info.errorClass);
       void (async () => {
         try {
           const { buildSummonDiagnostic } = await import('./diagnostics');
-          const { captureDiagnostic, isSignedInAnalytics } = await import('./analytics');
+          const { captureDiagnosticThrottled, isSignedInAnalytics } = await import('./analytics');
           const diag = buildSummonDiagnostic(info, {
             lan: latestLanState,
             signedIn: isSignedInAnalytics(),
             packaged: app.isPackaged,
           });
-          captureDiagnostic('summon_failed', {
-            character_id: info.characterId,
-            reason: info.errorClass,
-            ...diag,
-          });
+          // 260828: identical consecutive failures (same character + class +
+          // phase) collapse to one event per window, carrying repeat_count, so
+          // a retry loop cannot flood the dashboard (56 events/13min incident).
+          captureDiagnosticThrottled(
+            'summon_failed',
+            `${info.characterId}:${info.errorClass}:${info.phase}`,
+            {
+              character_id: info.characterId,
+              reason: info.errorClass,
+              ...diag,
+            },
+          );
         } catch (err) {
           logger.warn(`summon diagnostic capture failed: ${(err as Error).message}`);
         }
