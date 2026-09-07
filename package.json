@@ -32,6 +32,7 @@
     "cce-1": "file:./vendor/cce-1",
     "chess.js": "^1.4.0",
     "electron-updater": "^6.8.3",
+    "gl": "file:./vendor/gl-8.1.6-cxx20.tgz",
     "img2skin": "file:./vendor/skin-gen",
     "jszip": "^3.10.1",
     "mineflayer": "^4.23.0",
@@ -58,7 +59,7 @@
   "overrides": {
     "node-canvas-webgl": {
       "canvas": "^3.2.0",
-      "gl": "^8.1.6"
+      "gl": "$gl"
     }
   },
   "devDependencies": {

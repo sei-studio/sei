@@ -11,6 +11,12 @@
 // Patches (see rebuild-vision-native.mjs header for the deep "why"):
 //   1. gl/binding.gyp: c++17 -> c++20 (Electron 42 V8 headers use C++20 concepts) + bump
 //      MACOSX_DEPLOYMENT_TARGET 10.8 -> 10.15.
+//      NOTE (260828): on Node 25+ (ABI 141) gl has NO prebuild, so its own install script
+//      (`prebuild-install || node-gyp rebuild`) compiles it DURING `npm ci`'s dependency
+//      phase — before this script can run. The gyp patch therefore also ships baked into
+//      the vendored tarball `vendor/gl-8.1.6-cxx20.tgz` (wired via package.json
+//      `overrides`), same three changes, webgl target only (a global CXXFLAGS override
+//      breaks the ANGLE build). patchGlGyp stays as a defensive no-op backstop.
 //   2. nan External::New / External::Value: append V8's kExternalPointerTypeTagDefault, which
 //      Electron 42's V8 made a REQUIRED arg and nan (<=2.27.0) has not adopted.
 //   3. nan TypedArrayContents: swap buffer->GetBackingStore()->Data() for buffer->Data().
