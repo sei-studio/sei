@@ -1919,6 +1919,25 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return importAvatarZip(id, bytes);
   });
 
+  // Cloud avatar download (260819): main resolves the URL from the character
+  // row's metadata.avatar itself — the renderer only names the character, so
+  // this handler can never be pointed at an arbitrary URL. The fetched zip
+  // rides the exact same import/normalization pipeline as a local upload.
+  ipcMain.handle(IpcChannel.avatar.download, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getCharacter } = await import('./characterStore');
+    const { cloudAvatarOf } = await import('../shared/characterSchema');
+    const character = await getCharacter(id);
+    const ref = character ? cloudAvatarOf(character) : null;
+    if (!ref) throw new Error('character has no cloud avatar');
+    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
+    const res = await fetch(ref.url);
+    if (!res.ok) throw new Error(`avatar download failed: ${res.status}`);
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
+    return importAvatarZip(id, bytes);
+  });
+
   ipcMain.handle(IpcChannel.avatar.get, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
     const { getAvatarManifest } = await import('./avatar/avatarStore');

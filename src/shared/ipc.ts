@@ -458,6 +458,11 @@ export interface AvatarManifest {
   /** Store format version (2 = ASCII-safe stored paths; v1 stores are lazily
    * re-normalized by main on read). */
   version: number;
+  /** Which model format this store holds (260817). Absent = 'live2d' (every
+   * store predating the field is a Cubism model). 'rig' = a simple layered
+   * rig: a rig.json + aligned PNG layers, rendered by RigView instead of the
+   * Cubism pipeline. */
+  kind?: 'live2d' | 'rig';
   /** Display name (derived from the model3.json filename). */
   name: string;
   /** Relative path of the (normalized) .model3.json entry file. */
@@ -485,6 +490,40 @@ export interface AvatarModelFile {
   /** Posix-style path relative to the avatar dir (matches model3.json refs). */
   path: string;
   bytes: Uint8Array;
+}
+
+/**
+ * One layer of a simple rig avatar (260817). All pixel values are in the
+ * rig's own canvas coordinates; layers are full-canvas images aligned by
+ * construction, except `states` patches which draw at `box`.
+ */
+export interface AvatarRigLayer {
+  id: string;
+  /** Draw order, ascending. */
+  z: number;
+  /** Always-drawn image path, relative to rig.json's directory. */
+  src?: string;
+  /** Two-state patch (blink/talk): image paths relative to rig.json. */
+  states?: { open: string; closed: string };
+  /** [x0, y0, x1, y1] patch placement for a `states` layer. */
+  box?: [number, number, number, number];
+  /** 'head' layers translate with the head sway target directly. */
+  group?: string;
+  /** Fraction of head motion applied to a non-head layer (default 0). */
+  sway?: number;
+  /** Damped spring follower toward the head target (hair): stiffness k,
+   * damping c — the layer lags, overshoots, and re-converges at rest. */
+  physics?: { k: number; c: number };
+}
+
+/** rig.json — the entry file of a 'rig'-kind avatar zip (260817). */
+export interface AvatarRigSpec {
+  version?: number;
+  /** Display name for the manifest; falls back to the entry directory. */
+  name?: string;
+  /** [width, height] of the rig canvas every full layer matches. */
+  canvas: [number, number];
+  layers: AvatarRigLayer[];
 }
 
 /** One tile on the always-on-top avatar overlay (260706 as the call overlay;
@@ -1495,6 +1534,14 @@ export interface RendererApi {
    * stores it under the profile's avatars dir; returns the manifest.
    */
   avatarImport(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarManifest>;
+  /**
+   * Download the character's CLOUD-hosted avatar zip (metadata.avatar, see
+   * cloudAvatarOf in characterSchema) and import it into the local store —
+   * same pipeline as avatarImport, but main resolves the URL itself from the
+   * character row (the renderer never picks what main fetches). Throws when
+   * the character has no cloud avatar or the download/import fails.
+   */
+  avatarDownload(characterId: string): Promise<AvatarManifest>;
   /** The character's imported avatar manifest, or null. */
   avatarGet(characterId: string): Promise<AvatarManifest | null>;
   /** Delete the character's imported Live2D model. */
@@ -2861,6 +2908,9 @@ export const IpcChannel = {
   avatar: {
     /** Invoke: import a Live2D model zip for a character → AvatarManifest. */
     import: 'avatar:import',
+    /** Invoke: fetch + import the character's cloud-hosted avatar zip
+     * (metadata.avatar) → AvatarManifest. */
+    download: 'avatar:download',
     /** Invoke: the character's avatar manifest → AvatarManifest | null. */
     get: 'avatar:get',
     /** Invoke: delete the character's imported Live2D model. */

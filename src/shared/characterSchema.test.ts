@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CharacterSchema, UserConfigSchema } from './characterSchema';
+import { CharacterSchema, UserConfigSchema, cloudAvatarOf } from './characterSchema';
 
 /**
  * Plan 11-03 Task 1 — Schema contract tests for the UUID identity model,
@@ -143,5 +143,32 @@ describe('UserConfigSchema — vision_mode', () => {
     ).toBe(false);
     // And it round-trips when explicitly opted in.
     expect(UserConfigSchema.parse({ advanced_updates: true }).advanced_updates).toBe(true);
+  });
+});
+
+describe('cloudAvatarOf', () => {
+  // metadata is z.record(z.unknown()) — this reader is the single validation
+  // point for the cloud-hosted avatar descriptor, so every malformed shape
+  // must come back null (no cloud avatar) rather than throwing or leaking.
+  it('reads a well-formed metadata.avatar descriptor', () => {
+    const ref = cloudAvatarOf({
+      metadata: { avatar: { url: 'https://cdn.sei.gg/avatars/a.zip', size_bytes: 23_000_000 } },
+    });
+    expect(ref).toEqual({ url: 'https://cdn.sei.gg/avatars/a.zip', sizeBytes: 23_000_000 });
+  });
+
+  it('returns null for absent or malformed shapes', () => {
+    expect(cloudAvatarOf({ metadata: {} })).toBeNull();
+    expect(cloudAvatarOf({ metadata: { avatar: 'a.zip' } })).toBeNull();
+    expect(cloudAvatarOf({ metadata: { avatar: { url: 'https://x/a.zip' } } })).toBeNull();
+    expect(cloudAvatarOf({ metadata: { avatar: { url: 'https://x/a.zip', size_bytes: 0 } } })).toBeNull();
+    expect(cloudAvatarOf({ metadata: { avatar: { size_bytes: 100 } } })).toBeNull();
+    // Only https survives — the descriptor names what main will fetch.
+    expect(
+      cloudAvatarOf({ metadata: { avatar: { url: 'http://x/a.zip', size_bytes: 100 } } }),
+    ).toBeNull();
+    expect(
+      cloudAvatarOf({ metadata: { avatar: { url: 'file:///etc/passwd', size_bytes: 100 } } }),
+    ).toBeNull();
   });
 });

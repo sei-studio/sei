@@ -1,0 +1,19 @@
+{
+  "name": "sei-promo",
+  "private": true,
+  "description": "Remotion promo animation of Sei's UI (demo tooling, not shipped)",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render SeiPromo out/sei-promo.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.246",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.246"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "typescript": "5.6.3"
+  }
+}

@@ -106,6 +106,17 @@
   cursor: default;
 }
 
+/* Cloud-download variant of the dashed box (260819): same formatting, but the
+   box itself is inert — only the Download button inside it is clickable. */
+.downloadBox {
+  cursor: default;
+}
+
+.downloadBox:hover {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
 .uploadTitle {
   font-size: 13px;
   color: var(--text);

@@ -35,7 +35,13 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import JSZip from 'jszip';
 import { paths } from '../paths';
-import type { AvatarEmotion, AvatarManifest, AvatarModelFile } from '../../shared/ipc';
+import type {
+  AvatarEmotion,
+  AvatarManifest,
+  AvatarModelFile,
+  AvatarRigLayer,
+  AvatarRigSpec,
+} from '../../shared/ipc';
 
 /** Upload cap for the zip itself (a full VTuber model with 4k textures is
  * ~20 MB; 128 MB leaves generous headroom without inviting abuse). */
@@ -217,6 +223,160 @@ export function buildSafePathMap(rels: string[]): Map<string, string> {
 }
 
 /**
+ * Parse + validate a rig.json (260817): the entry file of a simple layered
+ * rig avatar (aligned PNG layers + blink/talk patches, the chibi-rig pipeline
+ * output). Throws with a readable message on any shape problem. Exported for
+ * tests.
+ */
+export function parseRigSpec(raw: unknown): AvatarRigSpec {
+  if (typeof raw !== 'object' || raw === null) throw new Error('rig.json is not an object');
+  const spec = raw as Record<string, unknown>;
+  const canvas = spec.canvas;
+  if (
+    !Array.isArray(canvas) ||
+    canvas.length !== 2 ||
+    !canvas.every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0)
+  ) {
+    throw new Error('rig.json canvas must be [width, height]');
+  }
+  if (!Array.isArray(spec.layers) || spec.layers.length === 0) {
+    throw new Error('rig.json has no layers');
+  }
+  const seen = new Set<string>();
+  const layers: AvatarRigLayer[] = spec.layers.map((l, i) => {
+    if (typeof l !== 'object' || l === null) throw new Error(`layer ${i} is not an object`);
+    const layer = l as Record<string, unknown>;
+    const id = layer.id;
+    if (typeof id !== 'string' || id.length === 0) throw new Error(`layer ${i} has no id`);
+    if (seen.has(id)) throw new Error(`duplicate layer id: ${id}`);
+    seen.add(id);
+    if (typeof layer.z !== 'number' || !Number.isFinite(layer.z)) {
+      throw new Error(`layer ${id} has no z order`);
+    }
+    const out: AvatarRigLayer = { id, z: layer.z };
+    if (typeof layer.src === 'string' && layer.src.length > 0) out.src = layer.src;
+    const states = layer.states as Record<string, unknown> | undefined;
+    if (states && typeof states === 'object') {
+      if (typeof states.open !== 'string' || typeof states.closed !== 'string') {
+        throw new Error(`layer ${id} states need open + closed image paths`);
+      }
+      out.states = { open: states.open, closed: states.closed };
+      const box = layer.box;
+      if (
+        !Array.isArray(box) ||
+        box.length !== 4 ||
+        !box.every((n) => typeof n === 'number' && Number.isFinite(n))
+      ) {
+        throw new Error(`layer ${id} has states but no [x0,y0,x1,y1] box`);
+      }
+      out.box = box as [number, number, number, number];
+    }
+    if (!out.src && !out.states) throw new Error(`layer ${id} has neither src nor states`);
+    if (typeof layer.group === 'string') out.group = layer.group;
+    if (typeof layer.sway === 'number' && Number.isFinite(layer.sway)) out.sway = layer.sway;
+    const physics = layer.physics as Record<string, unknown> | undefined;
+    if (physics && typeof physics === 'object') {
+      if (
+        typeof physics.k !== 'number' ||
+        typeof physics.c !== 'number' ||
+        !(physics.k > 0) ||
+        !(physics.c >= 0)
+      ) {
+        throw new Error(`layer ${id} physics needs k > 0 and c >= 0`);
+      }
+      out.physics = { k: physics.k, c: physics.c };
+    }
+    return out;
+  });
+  const out: AvatarRigSpec = { canvas: [canvas[0], canvas[1]], layers };
+  if (typeof spec.version === 'number') out.version = spec.version;
+  if (typeof spec.name === 'string' && spec.name.length > 0) out.name = spec.name;
+  return out;
+}
+
+/** Every image path a rig spec references, in declaration order. */
+function rigImageRefs(spec: AvatarRigSpec): string[] {
+  const refs: string[] = [];
+  for (const l of spec.layers) {
+    if (l.src) refs.push(l.src);
+    if (l.states) refs.push(l.states.open, l.states.closed);
+  }
+  return refs;
+}
+
+/** Replace the avatar dir with the given file set + manifest. Shared tail of
+ * both normalize paths; the manifest goes last — its presence is what "an
+ * avatar exists" means. */
+async function replaceStore(
+  characterId: string,
+  byRel: Map<string, ExtractedFile>,
+  safe: (rel: string) => string,
+  manifest: AvatarManifest,
+): Promise<AvatarManifest> {
+  const dir = paths.avatarsDir(characterId);
+  await rm(dir, { recursive: true, force: true });
+  for (const [rel, f] of byRel) {
+    const target = path.join(dir, ...safe(rel).split('/'));
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, f.bytes);
+  }
+  await writeFile(path.join(dir, MANIFEST_NAME), JSON.stringify(manifest, null, 2), 'utf8');
+  return manifest;
+}
+
+/**
+ * Normalize + write a simple rig store (260817). Same contract as the Cubism
+ * path: validates every referenced image exists, renames stored paths
+ * ASCII-safe and rewrites the spec's refs to match.
+ */
+async function normalizeRigAndWrite(
+  characterId: string,
+  entryFile: ExtractedFile,
+  byRel: Map<string, ExtractedFile>,
+): Promise<AvatarManifest> {
+  const spec = parseRigSpec(JSON.parse(entryFile.bytes.toString('utf8')));
+  const entryDir = entryFile.rel.includes('/')
+    ? entryFile.rel.slice(0, entryFile.rel.lastIndexOf('/'))
+    : '';
+  for (const ref of rigImageRefs(spec)) {
+    if (!byRel.has(resolveRef(entryDir, ref))) {
+      throw new Error(`rig.json references missing image: ${ref}`);
+    }
+  }
+
+  const safeMap = buildSafePathMap([...byRel.keys()]);
+  const safe = (rel: string): string => safeMap.get(rel) ?? rel;
+  const safeEntry = safe(entryFile.rel);
+  const safeEntryDir = safeEntry.includes('/')
+    ? safeEntry.slice(0, safeEntry.lastIndexOf('/'))
+    : '';
+  const reRef = (ref: string): string => {
+    const mapped = safeMap.get(resolveRef(entryDir, ref));
+    if (!mapped) return ref;
+    return safeEntryDir && mapped.startsWith(`${safeEntryDir}/`)
+      ? mapped.slice(safeEntryDir.length + 1)
+      : mapped;
+  };
+  for (const l of spec.layers) {
+    if (l.src) l.src = reRef(l.src);
+    if (l.states) l.states = { open: reRef(l.states.open), closed: reRef(l.states.closed) };
+  }
+  entryFile.bytes = Buffer.from(JSON.stringify(spec, null, '\t'), 'utf8');
+
+  const manifest: AvatarManifest = {
+    version: MANIFEST_VERSION,
+    kind: 'rig',
+    name: spec.name ?? (entryDir ? entryDir.slice(entryDir.lastIndexOf('/') + 1) : 'Rig'),
+    entry: safeEntry,
+    importedAt: new Date().toISOString(),
+    bytes: [...byRel.values()].reduce((n, f) => n + f.bytes.byteLength, 0),
+    expressions: [],
+    emotions: {},
+  };
+  return replaceStore(characterId, byRel, safe, manifest);
+}
+
+/**
  * Validate + normalize an extracted (or previously stored) file set and write
  * it as `characterId`'s avatar. Does NOT take the per-character lock — every
  * caller wraps it (a nested chain-lock acquisition would deadlock).
@@ -248,7 +408,13 @@ async function normalizeAndWrite(
     }
   }
   if (!entryFile || !settings?.FileReferences) {
-    throw new Error('no .model3.json with a Moc reference found in the zip');
+    // Not a Cubism zip — a simple rig zip instead (260817)? The shallowest
+    // rig.json wins, mirroring the model3.json candidate walk.
+    const rigEntry = stripped
+      .filter((f) => (f.rel.split('/').pop() ?? '') === 'rig.json')
+      .sort((a, b) => a.rel.split('/').length - b.rel.split('/').length)[0];
+    if (rigEntry) return normalizeRigAndWrite(characterId, rigEntry, byRel);
+    throw new Error('no .model3.json with a Moc reference (and no rig.json) found in the zip');
   }
   const entryDir = entryFile.rel.includes('/')
     ? entryFile.rel.slice(0, entryFile.rel.lastIndexOf('/'))
@@ -356,16 +522,7 @@ async function normalizeAndWrite(
   }
 
   // ── Replace the avatar dir atomically-ish (validated before we wipe) ────
-  const dir = paths.avatarsDir(characterId);
-  await rm(dir, { recursive: true, force: true });
-  for (const [rel, f] of byRel) {
-    const target = path.join(dir, ...safe(rel).split('/'));
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, f.bytes);
-  }
-  // Manifest last: its presence is what "an avatar exists" means.
-  await writeFile(path.join(dir, MANIFEST_NAME), JSON.stringify(manifest, null, 2), 'utf8');
-  return manifest;
+  return replaceStore(characterId, byRel, safe, manifest);
 }
 
 /**

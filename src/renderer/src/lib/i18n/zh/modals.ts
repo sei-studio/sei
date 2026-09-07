@@ -383,6 +383,7 @@ export const ZH_MODALS: Record<string, string> = {
   'Violence or self harm': '暴力或自残',
   'Copyright infringement': '版权侵权',
   'Impersonation': '冒充他人',
+  'Inappropriate Live2D avatar': '不当的 Live2D 形象',
   'Spam or misleading': '垃圾信息或误导内容',
   'Other': '其他',
   'Daily report limit reached. Try again tomorrow.': '已达每日举报上限，请明天再试。',

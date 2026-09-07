@@ -820,6 +820,14 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   window while Sei is not the active macOS app is an activation click — it
   raised the main Sei window and never reached the handle. Geometry persists in
   `UserConfig.avatar_overlay`, written by MAIN only (not renderer-settable).
+  **Every SETTLED bounds change is clamped fully inside the matched display's
+  work area** (`clampToWorkArea`, 260819: creation, display change, the resize
+  stream, move END; the caption window's move end matches) — geometry
+  persisted on a big monitor otherwise landed the window off-screen or bigger
+  than a small screen, and off-screen chrome on a click-through window is
+  unrecoverable by mouse. The move STREAM itself stays unclamped so a drag
+  can cross displays 1:1 under the pointer; persisted tile sizes keep their
+  requested values, so the full size comes back on a bigger monitor.
   `setContentProtection(true)` keeps the overlay out of every screen capture
   (including Sei's own backseat share), unless `UserConfig.avatar_in_captures`
   is on (260807) — the share picker's "Show avatar in screen recordings"
@@ -875,7 +883,18 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
 - **Live2D store** (`src/main/avatar/avatarStore.ts`): a model ZIP imports
   into `<profileRoot>/avatars/<id>/` (manifest.json + extracted tree),
   LOCAL-ONLY — nothing rides metadata, a character adopted elsewhere just
-  falls back to the portrait tile. Import NORMALIZES the stored model3.json
+  falls back to the portrait tile. **Cloud seam (260819, upload side not
+  built yet):** `cloudAvatarOf` in characterSchema reads an optional
+  `metadata.avatar = {url, size_bytes}` descriptor (https only; malformed =
+  null). When present and nothing is imported locally, the profile's Live2D
+  tab swaps the upload box for a user-uploaded-content disclaimer (many free
+  Live2D models forbid commercial use, so the copy must say Sei is not
+  affiliated + point at Report; 'live2d' is a report reason, mirrored in the
+  proxy's `REPORT_REASONS`) and a "Download (xx MB)" button — `avatar:
+  download` resolves the URL from the character row IN MAIN (the renderer
+  only names the character) and runs the fetched zip through the same import
+  pipeline. The upload state carries a give-credit-in-your-description line
+  for third-party avatars. Import NORMALIZES the stored model3.json
   because real VTuber exports ship expressions the settings never reference
   and sometimes no EyeBlink group (both measured on the first test model):
   it registers every `*.exp3.json`, ensures the EyeBlink group, maps
@@ -894,6 +913,24 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   v1 store's on-disk tree so early imports heal in place.
   Delete/remove-from-library/profile-import handle the dir like
   `knowledge/`.
+- **Simple rig avatars (260817).** The same import flow accepts a second zip
+  kind: `rig.json` + aligned full-canvas PNG layers (the chibi-rig pipeline's
+  output, `~/slop/sei-studio/chibi-rig`), for characters without a real
+  Cubism model. Detection is by content — no model3.json with a Moc but a
+  rig.json present — and the manifest carries `kind: 'rig'` (absent =
+  'live2d'); `parseRigSpec` in avatarStore validates the spec and the same
+  ASCII-safe rename rewrites its refs. Rendering: hosts use
+  `lib/avatar/AvatarView.tsx` (picks by manifest kind), never Live2DView
+  directly; `lib/rig/RigView.tsx` is a 2d-canvas runtime implementing blink
+  (160 ms triangle), the same speaking/levelRef mouth drive as Live2D (two
+  open/closed patches with vertical squash), Live2DView's gaze
+  (wander/cursor alternation + constant-speed glide) mapped to a head-group
+  pixel translation, and damped spring followers for hair layers
+  (`physics: {k, c}` per layer — hair chases the head, overshoots,
+  re-converges at rest). Everything downstream (participant `live2d` flag,
+  lip-sync level arming, cursor polling, overlay camera) works unchanged
+  because the flag just means "has an imported avatar". Rigs have no
+  expressions, so emotion/accessory plumbing no-ops on them.
 - **Rendering** (`src/renderer/src/lib/live2d/`): pixi.js 7 +
   `pixi-live2d-display-lipsyncpatch` (cubism4), ALL dynamically imported.
   The proprietary Cubism 5 Core is fetched at build time by

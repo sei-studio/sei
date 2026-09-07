@@ -278,6 +278,33 @@ export function effectiveMcUsername(c: Pick<Character, 'username' | 'name'>): st
 }
 
 /**
+ * Cloud-hosted avatar model descriptor (260819). Rides
+ * `character.metadata.avatar` as `{ url, size_bytes }`, stamped by the cloud
+ * side when the owner uploads a Live2D/rig zip (planned to work like the
+ * Minecraft skin flow: the zip lives in cloud storage, downloading it locally
+ * is optional). Metadata is `z.record(z.unknown())`, so this reader is the
+ * single validation point; absence or a malformed shape both mean "no cloud
+ * avatar" and the profile's Avatar tab falls back to local upload.
+ */
+export interface CloudAvatarRef {
+  /** https URL of the avatar zip in cloud storage. */
+  url: string;
+  /** Zip size in bytes (shown on the Download button). */
+  sizeBytes: number;
+}
+
+export function cloudAvatarOf(c: Pick<Character, 'metadata'>): CloudAvatarRef | null {
+  const raw = (c.metadata as Record<string, unknown> | undefined)?.avatar;
+  if (typeof raw !== 'object' || raw === null) return null;
+  const ref = raw as Record<string, unknown>;
+  if (typeof ref.url !== 'string' || !/^https:\/\//.test(ref.url)) return null;
+  if (typeof ref.size_bytes !== 'number' || !Number.isFinite(ref.size_bytes) || ref.size_bytes <= 0) {
+    return null;
+  }
+  return { url: ref.url, sizeBytes: ref.size_bytes };
+}
+
+/**
  * The SINGLE membership rule for "does this character occupy a Home companion
  * slot". Shared by the renderer's Home/IconRail filter (isHomeCharacter in
  * src/renderer/src/lib/homeLibrary.ts) AND the main-process slot counter

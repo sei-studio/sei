@@ -254,6 +254,17 @@
   min-height: 0;
 }
 
+/* Avatar tab: the pane scrolls INTERNALLY. The .content flex column shrinks
+   .pane (min-height: 0) to fit above the bottom-pinned deploy row, and the
+   Live2D settings are taller than that space — without their own scroll they
+   painted straight under the Chat/Play buttons. The padding is the breathing
+   room between the last control and the deploy row. */
+.paneScroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: var(--space-lg);
+}
+
 /* Persona / description card (mockup .persona). */
 .personaBlock {
   display: flex;

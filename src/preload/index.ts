@@ -267,6 +267,7 @@ const api: RendererApi = {
   // Live2D avatar store + overlay window controls (260804)
   avatarImport: (characterId, zipBytes) =>
     ipcRenderer.invoke(IpcChannel.avatar.import, characterId, zipBytes),
+  avatarDownload: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.download, characterId),
   avatarGet: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.get, characterId),
   avatarRemove: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.remove, characterId),
   avatarModelFiles: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.modelFiles, characterId),

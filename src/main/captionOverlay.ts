@@ -333,7 +333,14 @@ export function moveCaptionOverlay(phase: 'start' | 'move' | 'end', dx: number, 
     return;
   }
   moveStartPos = null;
-  storedBox = { x: b.x, y: b.y, width: b.width, height: b.height };
+  // Settle fully on-screen (260819, same as the avatar overlay): the stream is
+  // unclamped so a drag can cross displays, but a resting place past a screen
+  // edge would strand the edit chrome where the pointer cannot reach it.
+  const area = screen.getDisplayMatching(b).workArea;
+  const x = Math.min(Math.max(b.x, area.x), area.x + Math.max(0, area.width - b.width));
+  const y = Math.min(Math.max(b.y, area.y), area.y + Math.max(0, area.height - b.height));
+  if (x !== b.x || y !== b.y) win.setBounds({ x, y, width: b.width, height: b.height });
+  storedBox = { x, y, width: b.width, height: b.height };
   persist();
 }
 

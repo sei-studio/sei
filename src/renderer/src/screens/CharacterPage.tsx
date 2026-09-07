@@ -48,6 +48,7 @@ import { BackIcon, GearIcon, RotateIcon, FullscreenIcon } from '../components/ic
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
 import type { Character } from '@shared/characterSchema';
+import { cloudAvatarOf } from '@shared/characterSchema';
 import styles from './CharacterPage.module.css';
 
 function fmtMs(ms: number): string {
@@ -612,8 +613,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         </div>
 
         {tab === 'avatar' ? (
-          <div className={styles.pane}>
-            <AvatarPane characterId={character.id} />
+          <div className={`${styles.pane} ${styles.paneScroll}`}>
+            <AvatarPane characterId={character.id} cloudAvatar={cloudAvatarOf(character)} />
           </div>
         ) : tab === 'description' ? (
           <div className={styles.pane}>

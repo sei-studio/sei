@@ -24,6 +24,7 @@ const REASONS: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'violence_self_harm', label: 'Violence or self harm' },
   { key: 'copyright', label: 'Copyright infringement' },
   { key: 'impersonation', label: 'Impersonation' },
+  { key: 'live2d', label: 'Inappropriate Live2D avatar' },
   { key: 'spam', label: 'Spam or misleading' },
   { key: 'other', label: 'Other' },
 ];
