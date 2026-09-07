@@ -12,11 +12,20 @@
  */
 
 import React from 'react';
+// Dependency-free CJS data module — the same table the bot's networking stack
+// (minecraft-protocol) enforces, so the version named in the pre-1.14 warning
+// can never drift from what Sei actually joins. Deep import on purpose
+// (mirrors UnsupportedVersionModal): the package root pulls the full protocol
+// stack, which must never enter the renderer.
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import type { McInstall } from '@shared/ipc';
 import { StatusPill, type StatusPillTone } from './StatusPill';
 import { WARN_COPY } from '../lib/errors';
 import { t, useT } from '../lib/i18n';
 import styles from './McInstallRow.module.css';
+
+/** Highest Minecraft Java version Sei's networking stack can join. */
+const LATEST_SUPPORTED: string = supportedVersions[supportedVersions.length - 1];
 
 export interface McInstallRowProps {
   install: McInstall;
@@ -175,7 +184,10 @@ export function McInstallRow({ install, selected, onToggle }: McInstallRowProps)
             proceed. */}
         {install.kind === 'vanilla' && isPre114(install.mc_version) ? (
           <div className={styles.warning}>
-            {t(WARN_COPY.MC_VERSION_PRE_1_14, { version: install.mc_version! })}
+            {t(WARN_COPY.MC_VERSION_PRE_1_14, {
+              version: install.mc_version!,
+              latest: LATEST_SUPPORTED,
+            })}
           </div>
         ) : null}
       </div>

@@ -12,6 +12,12 @@
  */
 
 import React from 'react';
+// Dependency-free CJS data module — the same table the bot's networking stack
+// (minecraft-protocol) enforces, so the stated ceiling can never drift from
+// what Sei actually joins. Deep import on purpose (mirrors
+// UnsupportedVersionModal): the package root pulls the full protocol stack,
+// which must never enter the renderer.
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
@@ -19,6 +25,9 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon } from '../lib/summonFlow';
 import styles from './LanNotOpenModal.module.css';
+
+/** Highest Minecraft Java version Sei's networking stack can join. */
+const LATEST_SUPPORTED: string = supportedVersions[supportedVersions.length - 1];
 
 const STEPS: readonly string[] = [
   'Open your world in Minecraft Java.',
@@ -70,6 +79,11 @@ export function LanNotOpenModal({ characterId }: LanNotOpenModalProps): React.Re
         {t(
           'The world must be running on this computer or another computer on the same network. Once it is open to LAN, Sei finds it automatically.',
         )}
+      </p>
+      <p className={styles.hint}>
+        {t('Your world also needs a supported Minecraft Java version. Sei supports versions up to {latest}.', {
+          latest: LATEST_SUPPORTED,
+        })}
       </p>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeModal}>

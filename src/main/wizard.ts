@@ -152,10 +152,13 @@ const sessions = new Map<string, AbortController>();
 
 /**
  * Fallback MC version when `launcher_profiles.json` is unreadable or absent.
- * Picked to be a known-good Fabric-compatible version that's been released
- * long enough that meta.fabricmc.net has stable loader+installer entries.
- * Surfaces as a UI warning ("we couldn't read your MC version; defaulting to
- * 1.21.4") but doesn't block setup.
+ * Used silently (no UI warning today); installs detected with a readable
+ * version never touch it. Deliberately pinned to a known-good combination:
+ * Fabric Loader + a pre-15 CustomSkinLoader build are VERIFIED working on
+ * 1.21.4, while newer MC versions (26.x) are merely LISTED by CSL 14.28's
+ * Modrinth metadata — and the CSL 15.x incident (crash 255 on 1.21.x builds
+ * that also "listed" support) is why a listing is not treated as proof.
+ * Bump only after actually launching Fabric + CSL on the new version.
  */
 const DEFAULT_MC_VERSION = '1.21.4';
 

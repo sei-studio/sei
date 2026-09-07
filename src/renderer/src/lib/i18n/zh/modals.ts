@@ -282,6 +282,8 @@ export const ZH_MODALS: Record<string, string> = {
   'Return to Sei and try the summon again.': '回到 Sei，再次尝试召唤。',
   'The world must be running on this computer or another computer on the same network. Once it is open to LAN, Sei finds it automatically.':
     '世界必须运行在这台电脑或同一网络中的另一台电脑上。开放到局域网后，Sei 会自动找到它。',
+  'Your world also needs a supported Minecraft Java version. Sei supports versions up to {latest}.':
+    '你的世界还需要运行受支持的 Minecraft Java 版本。Sei 支持最高到 {latest} 的版本。',
   'Try again': '再试一次',
 
   // ── ModdedHostModal ──
@@ -306,6 +308,8 @@ export const ZH_MODALS: Record<string, string> = {
   'Launch Minecraft and open your singleplayer world.': '启动 Minecraft，打开你的单人世界。',
   'Press ESC, then choose Open to LAN.': '按 ESC，选择「对局域网开放」。',
   'Return to Sei and press Launch.': '回到 Sei，按下启动。',
+  'Your world needs a supported Minecraft Java version. Sei supports versions up to {latest}.':
+    '你的世界需要运行受支持的 Minecraft Java 版本。Sei 支持最高到 {latest} 的版本。',
   'Searching for an open LAN world…': '正在搜索已开放的局域网世界…',
   'Companions have their own Minecraft skins, so they look right when they join your world. Seeing those skins in your game takes a quick one-time setup for your Minecraft install. You can also run it later from Settings under Custom skins.':
     '伙伴拥有自己的 Minecraft 皮肤，加入你的世界时才能显示正确的样子。要在游戏中看到这些皮肤，需要对你的 Minecraft 安装进行一次快速的一次性设置。你也可以稍后在设置的自定义皮肤中运行。',

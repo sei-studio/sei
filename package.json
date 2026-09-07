@@ -34,7 +34,7 @@
     "electron-updater": "^6.8.3",
     "img2skin": "file:./vendor/skin-gen",
     "jszip": "^3.10.1",
-    "mineflayer": "^4.23.0",
+    "mineflayer": "^4.38.0",
     "mineflayer-auto-eat": "^5.0.0",
     "mineflayer-pathfinder": "^2.4.5",
     "node-canvas-webgl": "^0.3.0",
