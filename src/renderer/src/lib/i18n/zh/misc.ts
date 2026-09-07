@@ -40,6 +40,8 @@ export const ZH_MISC: Record<string, string> = {
   "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.":
     '本周的额度已用完。你可以在方案页面升级或充值，或在设置中切换为自己的 API 密钥。',
   'Too many requests right now. Wait a little and try again.': '当前请求过多。请稍等片刻再试。',
+  'Your name is missing. Re-run onboarding from Settings to set your name, then summon again.':
+    '缺少你的名字。请在设置中重新运行引导流程填写名字，然后再次召唤。',
   'Detected MC {version}. Sei needs MC 1.14 or newer. Pick a newer profile or switch to 1.21.x before continuing.':
     '检测到 MC {version}。Sei 需要 MC 1.14 或更新版本。请选择更新的配置，或切换到 1.21.x 后再继续。',
   "Couldn't read mod metadata, so this mod will be skipped. If it's actually compatible, copy it into <install>/sei/mods/ manually.":

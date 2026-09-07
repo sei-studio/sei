@@ -1744,6 +1744,15 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         queue = null;
         silenceDressing();
         void sei.voiceCallSetActive({ characterId, active: false }).catch(() => {});
+        // Analytics (260828): the call pipeline failed to come up (mic denied,
+        // capture init, dictation boot). A superseded/ended session returned
+        // above, so this is a genuine failure, not a hang-up. Shape only: a
+        // fixed class token, never the error text the user sees.
+        sei.track('surface_error', {
+          surface: 'voice',
+          error_class: 'call_setup_failed',
+          character_id: characterId,
+        });
         set({
           participants: [],
           callCharacterId: null,

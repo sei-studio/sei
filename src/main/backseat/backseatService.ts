@@ -557,6 +557,14 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
     const e = err as { name?: string; message?: string };
     if (e?.name !== 'AbortError' && !/abort/i.test(e?.message ?? '')) {
       slog(s, `turn failed: ${e?.message}`, true);
+      // Analytics (260828): genuine backseat turn failure (aborts excluded
+      // above). Shape only, never the message.
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          captureSurfaceError('backseat', `turn_${surfaceErrorClass(err)}`, s.characterId);
+        } catch { /* analytics is never load-bearing */ }
+      })();
     }
   } finally {
     if (s.inflight === ctrl) {

@@ -32,7 +32,12 @@ export type ErrorClass =
   | 'SKIN_SERVER_PORT_TAKEN'
   | 'WIZARD_PERMISSION_DENIED'
   | 'CLOUD_CREDITS_DEPLETED'
-  | 'DAILY_LIMIT_REACHED';
+  | 'DAILY_LIMIT_REACHED'
+  // 260828: summon pre-gate refusal when onboarding never captured a name.
+  // Previously mislabeled as BOT_CRASH in the BotStatus while the throw already
+  // used this token — production analytics showed users retry-looping on the
+  // misleading "Sei stopped unexpectedly" copy.
+  | 'PREFERRED_NAME_MISSING';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -57,4 +62,5 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'WIZARD_PERMISSION_DENIED',
   'CLOUD_CREDITS_DEPLETED',
   'DAILY_LIMIT_REACHED',
+  'PREFERRED_NAME_MISSING',
 ]);

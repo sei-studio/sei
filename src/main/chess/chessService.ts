@@ -652,6 +652,15 @@ async function dispatchYourMove(s: Session): Promise<void> {
       if ((err as Error).message === CHAT_ABORTED) return;
       console.error(`[sei/chess] AI turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
       s.log.line(`move turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
+      // Analytics (260828): the move turn's LLM call failed (aborts returned
+      // above). Even when the engine fallback below keeps the game alive, the
+      // failure itself was invisible before this. Shape only, never content.
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          captureSurfaceError('chess', `move_turn_${surfaceErrorClass(err)}`, s.characterId);
+        } catch { /* analytics is never load-bearing */ }
+      })();
       // Usage limit (260730): raise the popup, skip the retry (it would 402
       // again), and fall through to fallbackPlay — the ENGINE picks the move
       // for free, so the game stays alive and playable; after a top up the
@@ -685,6 +694,13 @@ async function dispatchChat(s: Session, nudge: boolean): Promise<void> {
     if ((err as Error).message !== CHAT_ABORTED) {
       void raiseUsageLimitPopup(err);
       console.warn(`[sei/chess] chat reply failed: ${describeErr(err)}`);
+      // Analytics (260828): genuine reply failure (aborts excluded above).
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          captureSurfaceError('chess', `chat_turn_${surfaceErrorClass(err)}`, s.characterId);
+        } catch { /* analytics is never load-bearing */ }
+      })();
     }
   }
   // streamed: true — every reply line was already persisted AND pushed live
@@ -715,6 +731,13 @@ async function dispatchIdle(s: Session): Promise<void> {
     if ((err as Error).message !== CHAT_ABORTED) {
       void raiseUsageLimitPopup(err);
       console.warn(`[sei/chess] idle turn failed: ${describeErr(err)}`);
+      // Analytics (260828): genuine idle-turn failure (aborts excluded above).
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          captureSurfaceError('chess', `idle_turn_${surfaceErrorClass(err)}`, s.characterId);
+        } catch { /* analytics is never load-bearing */ }
+      })();
     }
     return;
   }

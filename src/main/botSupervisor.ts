@@ -830,9 +830,14 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       llmInit = buildLlmInitSection(userCfg, apiKey);
     }
     if (!preferred_name) {
+      // 260828: this used to send error: 'BOT_CRASH' while throwing the
+      // PREFERRED_NAME_MISSING token — the renderer then showed "Sei stopped
+      // unexpectedly. Press Summon to restart.", inviting the retry loop
+      // production analytics caught (56 identical pre-gate failures in 13
+      // minutes). Send the real class so ERROR_COPY narrates the actual fix.
       const status: BotStatus = {
         kind: 'error',
-        error: 'BOT_CRASH',
+        error: 'PREFERRED_NAME_MISSING',
         message: 'Your name is missing. Re-run onboarding from Settings.',
         characterId,
       };

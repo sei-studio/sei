@@ -1269,6 +1269,15 @@ async function dispatchGuess(s: Session): Promise<void> {
     // A failed call must not swallow what the player said.
     s.guess.pendingPlayerChat.unshift(...said);
     if (await raiseUsageLimitPopup(err)) pauseForUsageLimit(s);
+    // Analytics (260828): genuine guess-turn failure. Abort-shaped errors
+    // (turn end, teardown) are user-initiated ends and never emit.
+    void (async () => {
+      try {
+        const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+        const cls = surfaceErrorClass(err);
+        if (cls !== 'aborted') captureSurfaceError('draw', `guess_turn_${cls}`, s.characterId);
+      } catch { /* analytics is never load-bearing */ }
+    })();
   } finally {
     s.guess.inFlight = false;
     s.guess.lastCompletedAt = Date.now();
@@ -1413,6 +1422,14 @@ async function runTurnEndReaction(
   } catch (err) {
     log(s, `turn-end reaction failed: ${String(err)}`);
     void raiseUsageLimitPopup(err);
+    // Analytics (260828): genuine turn-end reaction failure; aborts never emit.
+    void (async () => {
+      try {
+        const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+        const cls = surfaceErrorClass(err);
+        if (cls !== 'aborted') captureSurfaceError('draw', `turn_end_${cls}`, s.characterId);
+      } catch { /* analytics is never load-bearing */ }
+    })();
   }
 }
 
@@ -1512,6 +1529,14 @@ async function runDrawTurn(s: Session): Promise<void> {
   } catch (err) {
     log(s, `draw turn failed: ${String(err)}`);
     if (await raiseUsageLimitPopup(err)) pauseForUsageLimit(s);
+    // Analytics (260828): genuine drawing-turn failure; aborts never emit.
+    void (async () => {
+      try {
+        const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+        const cls = surfaceErrorClass(err);
+        if (cls !== 'aborted') captureSurfaceError('draw', `draw_turn_${cls}`, s.characterId);
+      } catch { /* analytics is never load-bearing */ }
+    })();
   } finally {
     s.draw.running = false;
     // A line that landed while the last hop was closing out still deserves an

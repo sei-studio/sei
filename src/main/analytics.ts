@@ -244,6 +244,116 @@ export function captureDiagnostic(event: string, props?: Record<string, unknown>
 }
 
 /**
+ * Dedupe window for captureDiagnosticThrottled (260828): identical consecutive
+ * diagnostics (same event + caller-supplied key) collapse to at most one
+ * shipped event per window.
+ */
+export const DIAG_THROTTLE_WINDOW_MS = 5 * 60_000;
+/** Bound on the throttle map so a long session can never grow it unbounded. */
+const DIAG_THROTTLE_MAX_KEYS = 200;
+
+const diagThrottle = new Map<string, { at: number; suppressed: number }>();
+
+/**
+ * captureDiagnostic with per-key throttling (260828). Motivated by a
+ * production retry loop that shipped 56 identical `summon_failed` events
+ * (same character + error_class) in 13 minutes. Within `windowMs` of the last
+ * SHIPPED event for `key`, repeats are counted but not sent; the next shipped
+ * event carries `repeat_count` = itself plus everything suppressed since the
+ * previous ship, so the dashboard keeps the true occurrence count. A distinct
+ * key (different character / class / phase) is never delayed by another key's
+ * window. Same no-op gating as captureDiagnostic; never throws.
+ */
+export function captureDiagnosticThrottled(
+  event: string,
+  key: string,
+  props?: Record<string, unknown>,
+  windowMs: number = DIAG_THROTTLE_WINDOW_MS,
+): void {
+  const fullKey = `${event}|${key}`;
+  const now = Date.now();
+  const entry = diagThrottle.get(fullKey);
+  if (entry && now - entry.at < windowMs) {
+    entry.suppressed += 1;
+    return;
+  }
+  // Prune: drop expired entries first; if still at the cap, drop the oldest.
+  if (!diagThrottle.has(fullKey) && diagThrottle.size >= DIAG_THROTTLE_MAX_KEYS) {
+    for (const [k, v] of diagThrottle) {
+      if (now - v.at >= windowMs) diagThrottle.delete(k);
+    }
+    if (diagThrottle.size >= DIAG_THROTTLE_MAX_KEYS) {
+      const oldest = diagThrottle.keys().next();
+      if (!oldest.done) diagThrottle.delete(oldest.value);
+    }
+  }
+  const repeatCount = (entry?.suppressed ?? 0) + 1;
+  diagThrottle.set(fullKey, { at: now, suppressed: 0 });
+  captureDiagnostic(event, { ...props, repeat_count: repeatCount });
+}
+
+/** Test seam: drop all throttle state. */
+export function resetDiagThrottleForTest(): void {
+  diagThrottle.clear();
+}
+
+// ── Surface errors (260828) ─────────────────────────────────────────────────
+
+/**
+ * The non-Minecraft AI surfaces. Until 260828 only the summon path emitted a
+ * failure event — chat, voice calls, chess, Draw!, and backseat failures were
+ * invisible in analytics.
+ */
+export type ErrorSurface = 'chat' | 'voice' | 'chess' | 'draw' | 'backseat';
+
+/** error_class must be a short stable snake token — never a raw message. */
+const ERROR_CLASS_RE = /^[a-z0-9_]{1,64}$/;
+
+/**
+ * Capture a `surface_error` event: which surface failed and a SHORT STABLE
+ * error class token. Shape-never-content: a value that does not look like a
+ * snake token (someone passed a raw error message) ships as 'invalid_class'
+ * rather than the string. Same no-op gating as capture(); never throws.
+ * Emit only on genuine failures — never on user-initiated ends or aborts.
+ */
+export function captureSurfaceError(
+  surface: ErrorSurface,
+  errorClass: string,
+  characterId?: string,
+): void {
+  const cls = ERROR_CLASS_RE.test(errorClass) ? errorClass : 'invalid_class';
+  capture('surface_error', {
+    surface,
+    error_class: cls,
+    ...(characterId ? { character_id: characterId } : {}),
+  });
+}
+
+/**
+ * Classify an arbitrary caught error into a stable shape token for
+ * surface_error's error_class. Message-sniffing only — the MESSAGE never
+ * leaves the machine through this path. Mirrors the keyword families of
+ * botSupervisor.classifyChildError, reduced to the shapes the LLM surfaces
+ * actually produce.
+ */
+export function surfaceErrorClass(err: unknown): string {
+  const msg =
+    err && typeof err === 'object' && 'message' in err
+      ? String((err as { message: unknown }).message)
+      : String(err);
+  const name =
+    err && typeof err === 'object' && 'name' in err ? String((err as { name: unknown }).name) : '';
+  const lower = msg.toLowerCase();
+  if (name === 'AbortError' || /abort/i.test(lower)) return 'aborted';
+  if (/402|payment|credit|billing/i.test(lower)) return 'payment_required';
+  if (/429|rate.?limit|throttl|overloaded/i.test(lower)) return 'rate_limited';
+  if (/401|unauthorized|invalid.*api.*key|x-api-key|authentication_error/i.test(lower)) return 'auth';
+  if (/timeout|timed.?out/i.test(lower)) return 'timeout';
+  if (/enotfound|enetunreach|getaddrinfo|econnreset|econnrefused|fetch failed|network|offline|socket/i.test(lower)) return 'network';
+  return 'unknown';
+}
+
+/**
  * True while events are attributed to a signed-in account (260720): the
  * failed-summon diagnostic stamps this as `signed_in` so cloud-auth failure
  * modes (expired JWT and friends) separate from anonymous/BYOK ones.

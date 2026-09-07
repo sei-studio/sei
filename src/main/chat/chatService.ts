@@ -69,6 +69,15 @@ export interface ChatDeps {
    * (260729) — the streamed path's equivalent of the reveal loop's prev/more.
    */
   emitReply?: (characterId: string, message: ChatMessage, speech?: SpokenLineContext) => void;
+  /**
+   * 260828 retry-loop guard: returns the error class of the character's last
+   * summon pre-gate refusal while automatic re-attempts are blocked, else null.
+   * When set, launch() refuses to summon and tells the model not to retry —
+   * production caught an LLM re-calling launch() into the same deterministic
+   * refusal every ~14s. Wired to summonGuard.blockedAutoSummon in ipc.ts;
+   * absent → no blocking (tests, legacy callers).
+   */
+  blockedAutoLaunch?: (characterId: string) => string | null;
 }
 
 // 260725: doubled 6000 -> 12000 alongside the bot-side compaction trigger
@@ -803,7 +812,7 @@ export async function sendChatMessage(
         if (toolUse.name === 'launch') {
           launchCalled = true;
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
-          const result = resolveLaunch(game, deps);
+          const result = resolveLaunch(game, args.characterId, deps);
           launch = result.launch;
           // Defer the real join — don't fire summon mid-loop (task 2).
           if (result.summon) startSummon = true;
@@ -933,6 +942,16 @@ export async function sendChatMessage(
       (e as Error & { code?: string }).code = CHAT_ABORTED;
       throw e;
     }
+    // Analytics (260828): a GENUINE chat turn failure (aborts returned above).
+    // Shape only — the classified token, never the message. Lazy import +
+    // fire-and-forget per the analytics convention; capture() no-ops when
+    // analytics is off.
+    void (async () => {
+      try {
+        const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+        captureSurfaceError('chat', surfaceErrorClass(err), args.characterId);
+      } catch { /* analytics is never load-bearing */ }
+    })();
     throw err;
   } finally {
     // Only clear the map if we're still the current turn (a superseding send
@@ -1419,11 +1438,27 @@ export async function sendVoiceIdleTurn(
  */
 function resolveLaunch(
   game: string,
+  characterId: string,
   deps: ChatDeps,
 ): { note: string; launch: NonNullable<ChatSendResult['launch']>; summon: boolean } {
   if (game !== 'minecraft') {
     return {
       note: `The game "${game}" is not available yet — only Minecraft can be launched right now. Tell the player it is coming soon.`,
+      launch: { game, status: 'lan-not-open' },
+      summon: false,
+    };
+  }
+  // 260828 retry-loop guard: the last summon was refused before it even forked
+  // (missing name, missing API key, depleted credits) and nothing the model can
+  // do changes that. Refuse here and say so plainly, or the model re-calls
+  // launch() into the same refusal every turn (56 failures/13min in prod).
+  const blockedBy = deps.blockedAutoLaunch?.(characterId) ?? null;
+  if (blockedBy !== null) {
+    return {
+      note:
+        `You cannot join right now: the app refused your last attempt (${blockedReason(blockedBy)}). ` +
+        'Trying again will fail the same way until the player fixes that in the app, so do not call launch again in this conversation. ' +
+        'Tell the player in your own words what needs fixing.',
       launch: { game, status: 'lan-not-open' },
       summon: false,
     };
@@ -1450,6 +1485,28 @@ function resolveLaunch(
     launch: { game, status: 'lan-not-open' },
     summon: false,
   };
+}
+
+/**
+ * Model-facing one-liner for a blocked launch (260828). Plain wording, no
+ * app jargon: the model relays this to the player in its own voice. Only the
+ * pre-gate classes that actually block get a specific line; anything else
+ * falls back to a generic refusal.
+ */
+function blockedReason(errorClass: string): string {
+  switch (errorClass) {
+    case 'PREFERRED_NAME_MISSING':
+      return 'the player never set their name in onboarding; they need to re-run onboarding from Settings';
+    case 'LOCAL_NO_API_KEY':
+    case 'INVALID_API_KEY':
+      return 'no working API key is saved; the player needs to add one in Settings';
+    case 'CLOUD_CREDITS_DEPLETED':
+      return "this week's playtime credits are used up";
+    case 'DAILY_LIMIT_REACHED':
+      return 'the daily play limit was reached';
+    default:
+      return 'a setup problem the player has to fix in the app first';
+  }
 }
 
 export { readRecent } from './chatStore';

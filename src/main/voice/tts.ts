@@ -629,6 +629,17 @@ export async function voiceTtsStream(
       sink({ streamId, done: true });
     } catch (err) {
       sink({ streamId, error: `VOICE_TTS_FAILED: ${(err as Error).message}` });
+      // Analytics (260828): a mid-stream TTS failure mutes a spoken line —
+      // previously invisible. The stall watchdog aborts read() on a hung
+      // socket, so an abort HERE is that stall (a genuine failure), not a
+      // user hang-up: emit it as its own class instead of dropping it.
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          const cls = surfaceErrorClass(err);
+          captureSurfaceError('voice', cls === 'aborted' ? 'tts_stream_stall' : `tts_stream_${cls}`);
+        } catch { /* analytics is never load-bearing */ }
+      })();
     } finally {
       clearTimeout(stallTimer);
     }
