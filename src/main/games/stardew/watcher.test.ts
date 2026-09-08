@@ -15,7 +15,7 @@ function helloServer(getBody: () => unknown | null): Promise<{ server: Server; p
     res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) });
     res.end(json);
   });
-  return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, port: (server.address() as { port: number }).port })));
+  return new Promise((r) => server.listen(0, () => r({ server, port: (server.address() as { port: number }).port })));
 }
 
 const openHello = (day = 3) => ({ mod: 'SeiCompanion', version: '0.1.0', protocol: 1, save: { loaded: true, farmName: 'Sunny', uniqueId: '42', day, season: 'spring', year: 1 } });

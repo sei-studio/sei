@@ -56,7 +56,7 @@ describe('stardew runtime helpers', () => {
     expect(botUsernameFor({ name: 'Sui!' })).toBe('Sui')
     expect(botUsernameFor({ username: 'Marv_2', name: 'x' })).toBe('Marv_2')
     expect(botUsernameFor({})).toBe('Sei')
-    expect(adapterConfigFrom({ joinTarget: { port: 1, token: 't' }, botUsername: 'Sui' })).toEqual({ host: '127.0.0.1', port: 1, token: 't', username: 'Sui' })
+    expect(adapterConfigFrom({ joinTarget: { port: 1, token: 't' }, botUsername: 'Sui' })).toEqual({ host: 'localhost', port: 1, token: 't', username: 'Sui' })
     expect(checkJoinTarget(null)?.error).toBe('GAME_WORLD_NOT_OPEN')
     expect(checkJoinTarget({ port: 1 })?.error).toBe('GAME_WORLD_NOT_OPEN')
     expect(checkJoinTarget({ port: 1, token: 't' })).toBeNull()

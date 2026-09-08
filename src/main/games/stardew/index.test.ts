@@ -35,7 +35,8 @@ describe('stardew game module', () => {
       res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) });
       res.end(json);
     });
-    const port: number = await new Promise((r) => server.listen(0, '127.0.0.1', () => r((server.address() as { port: number }).port)));
+    // No host: every loopback family, so the watcher's `localhost` probe reaches it on any stack.
+    const port: number = await new Promise((r) => server.listen(0, () => r((server.address() as { port: number }).port)));
     await writeFile(path.join(game, 'Mods', 'SeiCompanion', 'config.json'), JSON.stringify({ Port: port, Token: 'tok-1234567890abcdef' }));
     await mkdir(path.join(root, 'home'));
     await writeFile(path.join(root, 'home', 'stardewvalley.targets'), `<Project><PropertyGroup><GamePath>${game}</GamePath></PropertyGroup></Project>`);

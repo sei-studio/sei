@@ -148,7 +148,7 @@ describe('detection + install against a fake game folder', () => {
       res.writeHead(404);
       res.end();
     });
-    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()));
+    await new Promise<void>((r) => server!.listen(0, () => r()));
     serverUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   });
 

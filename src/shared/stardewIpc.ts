@@ -13,6 +13,12 @@ import { z } from 'zod';
 
 /** The port the mod's config.json defaults to (the installer keeps it). */
 export const STARDEW_DEFAULT_PORT = 27431;
+/**
+ * The host every client dials. `localhost`, not 127.0.0.1: on Windows the
+ * mod's HttpListener can bind `localhost` without a URL ACL and nothing
+ * else, and http.sys matches the Host header, so the IP form would 400.
+ */
+export const STARDEW_LOOPBACK_HOST = 'localhost';
 /** SMAPI release the installer fetches. Pinned; bump with a live re-test. */
 export const SMAPI_VERSION = '4.5.2';
 export const SMAPI_INSTALLER_ASSET = `SMAPI-${SMAPI_VERSION}-installer.zip`;

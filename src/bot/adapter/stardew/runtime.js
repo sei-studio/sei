@@ -33,7 +33,10 @@ export function botUsernameFor(character) {
  */
 export function adapterConfigFrom({ joinTarget, botUsername }) {
   return {
-    host: '127.0.0.1',
+    // localhost, not 127.0.0.1: the mod's HttpListener binds `localhost`
+    // (the one prefix Windows allows without a URL ACL) and http.sys matches
+    // the Host header, so the IP form would be refused there.
+    host: 'localhost',
     port: joinTarget?.port ?? undefined,
     token: joinTarget?.token ?? '',
     username: botUsername,

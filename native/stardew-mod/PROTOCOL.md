@@ -2,7 +2,9 @@
 
 The mod (`SeiCompanion`, C#, in the Stardew Valley process) is the SERVER.
 The Sei bot (`src/bot/adapter/stardew/`, Node) is the CLIENT. Everything is
-loopback: `http://127.0.0.1:<port>/`. The port and the token live in the mod's
+loopback: `http://localhost:<port>/` (localhost, not the IP: it is the one
+prefix Windows lets the mod bind without a URL ACL, and http.sys matches the
+Host header). The port and the token live in the mod's
 `config.json`, which the Sei app's installer writes and its watcher reads.
 `src/shared/stardewIpc.ts` mirrors every shape below in TypeScript + zod.
 

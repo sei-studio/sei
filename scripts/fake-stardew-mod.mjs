@@ -315,7 +315,9 @@ export function createFakeMod(opts = {}) {
   let actualPort = () => port
   const ready = new Promise((resolve, reject) => {
     server.once('error', reject)
-    server.listen(port, '127.0.0.1', () => {
+    // No host: bind every family so a client dialing `localhost` (::1 on a
+    // dual-stack box, 127.0.0.1 elsewhere) reaches it, like the real mod.
+    server.listen(port, () => {
       const p = server.address().port
       actualPort = () => p
       resolve(p)

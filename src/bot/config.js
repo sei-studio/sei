@@ -122,7 +122,7 @@ const MinecraftAdapterSchema = z.object({
 // (native/stardew-mod/PROTOCOL.md). Built by adapter/stardew/runtime.js
 // adapterConfigFrom from main's StardewJoinTarget {port, token, label}.
 const StardewAdapterSchema = z.object({
-  host: z.string().default('127.0.0.1'),
+  host: z.string().default('localhost'),
   port: z.number().int().min(1).max(65535).optional(),
   // The per-install secret the mod's config.json carries; the WebSocket
   // upgrade is refused without it.

@@ -23,7 +23,7 @@ export function nextId() {
 /**
  * @param {{ port: number, token: string, host?: string, logger?: object, WebSocketImpl?: any }} opts
  */
-export function createStardewClient({ port, token, host = '127.0.0.1', logger = console, WebSocketImpl = null }) {
+export function createStardewClient({ port, token, host = 'localhost', logger = console, WebSocketImpl = null }) {
   const WS = WebSocketImpl ?? globalThis.WebSocket
   if (typeof WS !== 'function') throw new Error('WebSocket is not available in this Node runtime')
   const url = `ws://${host}:${port}/ws?token=${encodeURIComponent(token ?? '')}`
@@ -191,7 +191,7 @@ export function createStardewClient({ port, token, host = '127.0.0.1', logger = 
  * "is the world still open" check after a drop). Resolves the hello JSON or
  * throws.
  */
-export async function fetchHello({ port, host = '127.0.0.1', timeoutMs = 1500, fetchImpl = null }) {
+export async function fetchHello({ port, host = 'localhost', timeoutMs = 1500, fetchImpl = null }) {
   const f = fetchImpl ?? globalThis.fetch
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)

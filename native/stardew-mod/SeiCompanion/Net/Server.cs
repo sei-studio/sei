@@ -18,7 +18,7 @@ namespace SeiCompanion.Net
     ///                     watcher polls it every 3 s)
     ///   GET /ws?token=…   WebSocket upgrade; NDJSON frames; see ../PROTOCOL.md
     ///
-    /// Bound to 127.0.0.1 only. A wrong or missing token is a 401 BEFORE the
+    /// Bound to loopback (localhost) only. A wrong or missing token is a 401 BEFORE the
     /// upgrade, so an unauthenticated peer never reaches a handler.
     /// </summary>
     public sealed class Server
@@ -44,8 +44,14 @@ namespace SeiCompanion.Net
             this._config = config;
             this._monitor = monitor;
             this._mod = mod;
-            this._listener.Prefixes.Add($"http://127.0.0.1:{config.Port}/");
+            // `localhost` is the one prefix Windows' http.sys lets a non-admin
+            // process bind without a URL ACL (netsh http add urlacl), so it is
+            // the prefix every Sei client uses. The literal loopback address
+            // is added where the managed HttpListener does not care (macOS,
+            // Linux) for tools that poke it by IP.
             this._listener.Prefixes.Add($"http://localhost:{config.Port}/");
+            if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+                this._listener.Prefixes.Add($"http://127.0.0.1:{config.Port}/");
         }
 
         public void Start()
@@ -65,13 +71,24 @@ namespace SeiCompanion.Net
             try
             {
                 this._listener.Start();
-                this._monitor.Log($"Sei companion server listening on http://127.0.0.1:{this._config.Port}/", LogLevel.Info);
             }
-            catch (Exception ex)
+            catch (Exception first)
             {
-                this._monitor.Log($"Could not bind port {this._config.Port}: {ex.Message}. Change Port in config.json.", LogLevel.Error);
-                return;
+                // A prefix the OS refuses (the IP form on a locked-down box):
+                // fall back to localhost alone before giving up.
+                try
+                {
+                    this._listener.Prefixes.Clear();
+                    this._listener.Prefixes.Add($"http://localhost:{this._config.Port}/");
+                    this._listener.Start();
+                }
+                catch (Exception ex)
+                {
+                    this._monitor.Log($"Could not bind port {this._config.Port}: {first.Message}; {ex.Message}. Change Port in config.json.", LogLevel.Error);
+                    return;
+                }
             }
+            this._monitor.Log($"Sei companion server listening on http://localhost:{this._config.Port}/", LogLevel.Info);
 
             while (this._running)
             {

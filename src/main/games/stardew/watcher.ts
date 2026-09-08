@@ -16,7 +16,7 @@
  * machine can still miss a beat).
  */
 import type { WorldState } from '../../../shared/gameIpc';
-import { STARDEW_PROTOCOL_VERSION, StardewHelloSchema, type StardewHello, type StardewWorldState } from '../../../shared/stardewIpc';
+import { STARDEW_LOOPBACK_HOST, STARDEW_PROTOCOL_VERSION, StardewHelloSchema, type StardewHello, type StardewWorldState } from '../../../shared/stardewIpc';
 import type { GameWatcher } from '../index';
 
 export interface StardewWatcherDeps {
@@ -67,7 +67,7 @@ export async function probeHello(port: number, fetchImpl: typeof fetch, timeoutM
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await fetchImpl(`http://127.0.0.1:${port}/hello`, { signal: ctrl.signal });
+    const r = await fetchImpl(`http://${STARDEW_LOOPBACK_HOST}:${port}/hello`, { signal: ctrl.signal });
     if (!r.ok) return null;
     return await r.json();
   } catch {

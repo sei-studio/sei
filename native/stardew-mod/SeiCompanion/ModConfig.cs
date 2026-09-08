@@ -11,7 +11,7 @@ namespace SeiCompanion
     /// </summary>
     public class ModConfig
     {
-        /// <summary>Loopback port for the HTTP hello + WebSocket server.</summary>
+        /// <summary>Loopback port for the HTTP hello + WebSocket server (bound on localhost).</summary>
         public int Port { get; set; } = 27431;
 
         /// <summary>Shared secret for the WebSocket. Empty = generate on load.</summary>
