@@ -1461,9 +1461,12 @@ The companion can be launched into the player's own Stardew Valley farm or
 hosted Don't Starve Together world the way it is launched into a Minecraft
 LAN world. Design and research: `.planning/game-adapters-260908.md` (+
 `.planning/research/game-adapters-*-260908.md`, `dst-survivors-260908.md`).
-**Both tiles are still `available: false` in `src/shared/games.ts`**: the
-live checklist (plan section 5, M3, per game) has not run because neither
-game was live-tested; flip the flag per game only after it passes.
+Both tiles are `available: true` in `src/shared/games.ts` (flipped 260908 so
+the user can run the live checklist from the app itself); the live checklist
+(plan section 5, M3, per game) is still owed, and neither game self-launches
+(`selfLaunch` off: each needs a player-run install pass first). Settings
+hosts every game under ONE "Games" group (`GamesSettingsGroup`: left column
+picks the game, right column shows that game's registered section).
 
 - **Neither game has a mineflayer.** DST has no headless client and Steam
   allows one instance per account; a Stardew split-screen farmhand is

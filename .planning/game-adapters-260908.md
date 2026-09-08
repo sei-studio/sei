@@ -2,8 +2,10 @@
 
 Status: IMPLEMENTED 260908 through M2 on `feat/game-adapters` (worktree
 `../sei-games`): M0a seams, M0b game packs, M1 Stardew, M2 DST merged; every
-test green; both tiles still `available: false`. M3 (live checklist, per
-game) is ON HOLD by the user's decision 6. Decisions in section 8 override
+test green. Both tiles flipped to `available: true` on 260908 at the
+user's request so M3 (the live checklist, per game) can be run from the app;
+M3 itself is still owed. Settings hosts every game under one "Games" group
+(left column game list, right column that game's section). Decisions in section 8 override
 sections 1 and 7 where they differ. The CLAUDE.md section "Game adapters"
 is the maintained summary.
 

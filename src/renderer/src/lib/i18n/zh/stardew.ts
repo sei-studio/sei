@@ -1,5 +1,7 @@
 /** Stardew Valley surfaces (game adapters M1, 260908). See ../zh.ts for the dictionary rules. */
 export const ZH_STARDEW: Record<string, string> = {
+  // ── Settings "Games" list (260908) ─────────────────────────────────────
+  'Stardew Valley': '星露谷物语',
   // ── Launch panel ──────────────────────────────────────────────────────────
   'Checking your Stardew Valley install...': '正在检查你的星露谷物语安装…',
   'Stardew Valley was not found': '没有找到星露谷物语',

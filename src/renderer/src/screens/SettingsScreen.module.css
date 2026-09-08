@@ -289,3 +289,82 @@
   color: var(--red);
   white-space: nowrap;
 }
+
+/* Games group (260908): the left column picks a game, the right shows its
+   rows. The list is a vertical version of the profile tabs (accent edge on
+   the active entry instead of an underline); the pane reuses .row, so the
+   hairline rhythm is the same as every other group. Stacks under 560px. */
+.gamesLayout {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  gap: 0 var(--space-lg);
+  align-items: start;
+}
+
+.gamesNav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--border);
+  padding: var(--space-xs) var(--space-md) var(--space-xs) 0;
+  position: sticky;
+  top: 0;
+}
+
+.gamesNavItem,
+.gamesNavItemOn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.gamesNavItem:hover {
+  color: var(--text-2);
+}
+
+.gamesNavItemOn {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gamesNavItem:focus-visible,
+.gamesNavItemOn:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.gamesPane {
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  .gamesLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gamesNav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 var(--space-xs);
+    position: static;
+  }
+  .gamesNavItem,
+  .gamesNavItemOn {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+  .gamesNavItemOn {
+    border-bottom-color: var(--accent);
+  }
+}

@@ -52,7 +52,7 @@ import { DEFAULT_MODELS } from '@shared/llmCatalog';
 import type { AvatarMode, UserConfig } from '@shared/characterSchema';
 import type { LlmListModelsResult, SpeechPackStatePush } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
-import { GAME_SETTINGS_SECTIONS } from '../lib/gameSettingsSections';
+import { GamesSettingsGroup } from '../components/settings/GamesSettingsGroup';
 
 const API_KEY_BULLET_LEN = 24;
 
@@ -1351,14 +1351,14 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         ) : null}
 
-        {/* ── Per-game groups (game adapters M0, 260908): one group per
-            registered section; Minecraft's content is unchanged. ── */}
-        {GAME_SETTINGS_SECTIONS.map((section) => (
-          <div className={styles.group} key={section.game}>
-            <h3 className={styles.groupTitle}>{t(section.title) /* >Minecraft< */}</h3>
-            <section.Section config={cfg} writeConfig={writeVisionConfig} />
-          </div>
-        ))}
+        {/* ── Games (game adapters, 260908): ONE group for every registered
+            game. The left column picks the game, the right column shows its
+            rows (GamesSettingsGroup); Minecraft's rows are unchanged. Shown
+            in both cloud and local mode: none of it depends on the backend. ── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>{t('Games') /* >Games< */}</h3>
+          <GamesSettingsGroup config={cfg} writeConfig={writeVisionConfig} />
+        </div>
 
         {/* ── Language (260730) — app UI language, its own section ── */}
         <div className={styles.group}>
