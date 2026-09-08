@@ -69,6 +69,11 @@ export async function start(config, hooks = {}) {
     onTerminalError = null,
     onAuthExpired = null,
     onDashboard = null,
+    // Game-adapters M2 (260908): a runtime that must tell MAIN something
+    // outside the lifecycle vocabulary posts it here (the DST runtime reports
+    // its loopback listener as {type:'dst-listen', port, token} so main's
+    // watcher can hand the mod the address). Raw port message; null in tests.
+    postPortMessage = null,
     runtime: runtimeModule = null,
   } = hooks
   const kind = config?.adapter?.kind ?? 'minecraft'
@@ -141,6 +146,7 @@ export async function start(config, hooks = {}) {
       }
     },
     onDashboard: typeof onDashboard === 'function' ? onDashboard : null,
+    postPortMessage: typeof postPortMessage === 'function' ? postPortMessage : null,
     emitVisionCapability,
   })
 
@@ -649,6 +655,15 @@ async function bootstrapWithInit(initData) {
       // rolling log with a ~1.5KB base64 minimap every 2s.
       onDashboard: (snapshot) => {
         try { initPort?.postMessage({ type: 'dashboard', snapshot }) } catch {}
+      },
+      // Game-adapters M2: raw port messages a runtime needs main to see
+      // (the DST runtime's {type:'dst-listen', port, token}). Not a
+      // lifecycle event; the supervisor routes it before lifecycleToStatus.
+      postPortMessage: (payload) => {
+        try { initPort?.postMessage(payload) } catch {}
+        // Type only: the DST message carries a per-summon token that must
+        // not land in the rolling log file.
+        console.log(`[lifecycle] ${JSON.stringify({ type: payload?.type ?? 'port-message' })}`)
       },
       // A TERMINAL connect/disconnect failure, classified by the game runtime
       // (contract v2 classifyConnectError) to the class whose ERROR_COPY gives
