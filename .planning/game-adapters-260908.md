@@ -1,7 +1,7 @@
 # Game adapters: Stardew Valley + Don't Starve Together (260908)
 
-Status: PLAN, awaiting approval. Branch `feat/game-adapters` (worktree
-`../sei-games`). Nothing below is implemented yet.
+Status: APPROVED 260908 (decisions in section 8 override sections 1 and 7
+where they differ). Branch `feat/game-adapters` (worktree `../sei-games`).
 
 Goal: a companion can be launched into the player's Stardew Valley farm or
 Don't Starve Together world the way it is launched into a Minecraft LAN world
@@ -49,10 +49,14 @@ when needed.
    the precedent, and amarisaster's Stardew companion moved combat to 60 Hz
    for the same reason). The LLM issues closed, Zod-typed verbs; composite
    verbs (`gather(kind, count)`) loop mod-side so one call does a job.
-5. **Mods are bundled with the app**, not downloaded: the Stardew mod is a
-   ~200 KB DLL built in CI, the DST mod is ~2k lines of Lua. Both ship under
-   `resources/` via `extraResources` like `audio-tap`. SMAPI itself (LGPL) is
-   downloaded from its GitHub release at install time, never vendored.
+5. **Game adapters are downloaded on first use, not bundled** (approved
+   260908, replaces the bundling recommendation). Every game, Minecraft
+   included, has a GAME PACK: a versioned zip built in CI from the same
+   commit as the app, published as a release asset and mirrored to
+   `dl.sei.gg`, fetched into `<userData>/game-packs/<game>/` the first time
+   the player launches that game. Section 2.6 has the design. SMAPI itself
+   (LGPL) is downloaded from its GitHub release at install time, never
+   vendored.
 6. **v1 scope is the host's own single-player or hosted world**, the same
    shape as Minecraft v1 (LAN host). Stardew farmhands and DST joiners are
    handled defensively (see per-game sections) but not targeted.
@@ -61,9 +65,12 @@ when needed.
    shadow Farmer itself with `FarmerRenderer` (real farmer look, tool swing
    animations for free, appearance from the character) is budgeted but not on
    the critical path.
-8. **The DST body is a vanilla survivor prefab** (`wilson` by default) with a
-   custom Brain, server-only mod (`all_clients_require_mod = false`), so
-   friends install nothing. Proven by FAtiMA-DST (MIT, 2018) and
+8. **The DST body is a vanilla survivor prefab** chosen by the CHARACTER
+   herself on first launch (approved 260908: a one-off LLM call over the
+   persona plus a roster brief, persisted per character; the chosen
+   survivor's perks brief rides the world primer), with a custom Brain,
+   server-only mod (`all_clients_require_mod = false`), so friends install
+   nothing. Proven by FAtiMA-DST (MIT, 2018) and
    DST-AICompanion (MIT, 2024).
 9. **Licensing:** reuse only MIT/Apache/CC0 code (listed per game). Klei's Lua
    and the Stardew decompile are reference only; nothing from them is copied.
@@ -366,7 +373,66 @@ Error classes: `STARDEW_NOT_INSTALLED`, `SMAPI_INSTALL_FAILED`,
 Error classes: `DST_NOT_INSTALLED`, `DST_MOD_INSTALL_FAILED`,
 `DST_WORLD_NOT_OPEN`, `DST_SPAWN_FAILED`, `DST_PORT_IN_USE`.
 
-### 2.5 What is reused, with licenses
+### 2.5 Game packs (approved 260908)
+
+Why: the Minecraft adapter's dependencies (`minecraft-data` 429 MB,
+`prismarine-viewer` 392 MB, `gl` 218 MB, mineflayer and friends) are the
+bulk of the installed app and are dead weight for a player who never opens
+Minecraft. The user's decision 1 makes every game's adapter a download on
+first use, Minecraft included.
+
+What a pack is:
+
+- `packs/<game>/` in the repo is an npm WORKSPACE package (`packs/minecraft/
+  package.json` lists mineflayer, mineflayer-pathfinder, mineflayer-auto-eat,
+  minecraft-data, prismarine-viewer, vec3, gl, node-canvas-webgl, three and
+  whatever else only `src/bot/adapter/minecraft/**` imports). The root
+  `package.json` does NOT depend on it. Root `npm ci` still installs and
+  hoists the workspace's deps, so `npm run dev` and vitest resolve them as
+  today. electron-builder 26's npm collector walks `npm list --omit dev`
+  from the root, so packages reachable only through the workspace are not
+  packed. `three` stays a root dependency (the chess scene bundles it);
+  `minecraft-protocol/src/version.js` is a build-time renderer import and
+  needs no runtime copy.
+- `scripts/build-game-pack.mjs <game> [--platform --arch]` produces
+  `sei-pack-<game>-<appVersion>-<platform>-<arch>.zip` (or `-any` for packs
+  with no native code) containing `node_modules/` (production install of the
+  workspace, native modules rebuilt against Electron's ABI for the target
+  arch, the same texture prunes electron-builder.yml applies today) plus
+  `assets/` (Stardew: the built SMAPI mod; DST: the Lua mod), and a
+  `pack.json` `{game, version, platform, arch, treeHash, files}`. `treeHash`
+  is a hash over sorted relative paths and file contents, so two builds of
+  the same lockfile compare equal even though their zips do not.
+- CI: the release workflow's mac and win legs build the packs beside the
+  app (mac: arm64 and x64), a `game-packs-<version>.json` manifest lists
+  every pack with its sha256, size and treeHash; all of it is uploaded with
+  the other release assets, so `mirror-release.yml` mirrors it unchanged.
+- Client: `src/shared/gamePacks.ts` (descriptor per game: id, platform
+  specific or not, which adapter needs it); `src/main/games/packs.ts`
+  (`getPackState(game)`, `ensurePack(game, {onProgress, signal})`: fetch the
+  manifest mirror first (`https://dl.sei.gg/updates/...`) then the GitHub
+  release URL, download to a temp file, verify sha256, extract with jszip
+  into `<userData>/game-packs/<game>/<version>/`, write `installed.json`,
+  delete older versions; a matching `treeHash` on an installed pack is
+  re-linked without a download). Progress rides a `game:pack-progress`
+  push; the launch panel shows a download card before the first launch of
+  a game and the supervisor awaits `ensurePack` before forking. Failure is
+  `GAME_PACK_DOWNLOAD_FAILED` with the URL tried and the size, like
+  `MOD_DOWNLOAD_FAILED`.
+- Bot: the init payload carries `packRoot`. `src/bot/packLoader.js`
+  registers a `module.register()` resolve hook BEFORE the composer
+  dynamic-imports the game runtime; the hook rewrites bare specifiers to
+  resolve from `<packRoot>/` so `import mineflayer from 'mineflayer'` inside
+  the in-app adapter code finds the pack's node_modules, and CJS requires
+  inside the pack resolve within the pack as normal. In dev (unpackaged)
+  `packRoot` is the repo root and the hook is a no-op. No import in
+  `src/bot/adapter/**` changes.
+
+Unbundling Minecraft is the risky half of this decision and gets its own
+verification step in M3: a packaged build on a clean machine must summon
+into a LAN world after downloading the pack, with vision mode on.
+
+### 2.6 What is reused, with licenses
 
 - Stardew: Farmtronics (MIT) `BotFarmer`, `BotObject` tool/harvest/placement
   code; amarisaster/StardewValley-MCP (Apache-2.0, keep NOTICE) NPC+shadow
@@ -543,3 +609,34 @@ Spikes, time-boxed to half a day each, not on the critical path:
    install detection); Linux deferred.
 6. Live testing: approve buying both games on the test machine, or name a
    machine that has them, before M3.
+
+---
+
+## 8. Approved decisions (260908)
+
+The user's answers to section 7, verbatim in intent:
+
+1. Game adapters download on first use, and Minecraft moves to the same
+   mechanism. Design in section 2.5.
+2. Stardew body art: default art for now (a vanilla-style sheet the mod
+   ships; no per-character sprites in v1).
+3. DST survivor: the character chooses on first launch. A one-off LLM call
+   (`src/main/games/dontstarve/survivorPick.ts`, the `chessProfile.ts`
+   pattern) gets the persona plus a roster brief of every eligible survivor
+   (perks, downsides, stats, sourced from the DST wiki and verified) and
+   returns a prefab id, persisted sparse per character in
+   `UserConfig.dst_survivor[characterId]` (never `character.metadata`). The
+   chosen survivor's brief is appended to the adapter's world primer so the
+   brain plays to its perks. Eligible roster: every vanilla survivor whose
+   mechanics a body without a client can carry (Wilson, Willow, Wolfgang,
+   Wendy, WX-78, Wickerbottom, Woodie, Maxwell, Wigfrid, Webber, Winona,
+   Wortox, Wormwood, Warly, Wurt, Walter, Wanda); Wes and Wonkey are
+   excluded (deliberate handicap; unlock-only monkey). DLC survivors spawn
+   server-side regardless of ownership; if a live test shows otherwise the
+   list shrinks to the base twelve.
+4. Host-only v1 for both games, like Minecraft's LAN host.
+5. Windows and macOS.
+6. Hold before live testing (M3 waits for the user).
+7. Every open-source library or mod code reused is credited in the README
+   Acknowledgements list, in the mineflayer entry's format, with its
+   license.
