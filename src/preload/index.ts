@@ -241,6 +241,14 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
   },
   voiceStt: (args) => ipcRenderer.invoke(IpcChannel.voice.stt, args),
+  // Game packs (260908, src/main/games/packs.ts)
+  gamePackState: (game) => ipcRenderer.invoke(IpcChannel.game.packState, { game }),
+  gamePackEnsure: (game) => ipcRenderer.invoke(IpcChannel.game.packEnsure, { game }),
+  onGamePackProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.game.packProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.game.packProgress, handler);
+  },
   // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
   speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
   speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),

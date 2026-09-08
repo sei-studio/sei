@@ -857,6 +857,31 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       throw new Error('LAN_NOT_OPEN');
     }
 
+    // 260908 game packs: the adapter's runtime (mineflayer, minecraft-data,
+    // prismarine-viewer, gl, ...) is a download on first use, not part of the
+    // installer. Await it BEFORE startedAtMs is taken: a first-run download can
+    // run minutes, and summonDeadlineAt (shipped to the child below) is derived
+    // from that clock, so measuring from before the download would hand the
+    // bot a deadline already in the past. Dev resolves to the repo root
+    // instantly; a cached pack costs one installed.json read. Progress rides
+    // the game:pack-progress push, which is what the launch card shows.
+    opts.sendStatus({ kind: 'connecting', characterId });
+    const game = 'minecraft' as const;
+    let packRoot: string;
+    try {
+      const { ensurePack } = await import('./games/packs');
+      packRoot = await ensurePack(game);
+    } catch (err) {
+      const detail = errText(err).replace(/^GAME_PACK_DOWNLOAD_FAILED:\s*/, '');
+      opts.sendStatus({
+        kind: 'error',
+        error: 'GAME_PACK_DOWNLOAD_FAILED',
+        message: `Could not download the ${game} support files: ${detail}`,
+        characterId,
+      });
+      throw new Error(`GAME_PACK_DOWNLOAD_FAILED: ${detail}`);
+    }
+
     const startedAtMs = Date.now();
     opts.sendStatus({ kind: 'connecting', characterId });
 
@@ -1172,6 +1197,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // join reports WHY instead of being overwritten by the generic
               // 30s timeout. See summonDeadlineFrom above.
               summonDeadlineAt: summonDeadlineFrom(startedAtMs),
+              // 260908 game packs: where the adapter's node_modules live.
+              // src/bot/packLoader.js registers a resolve hook for it before
+              // the game runtime is imported; equal to the bot's own app root
+              // in dev (hook is a no-op there).
+              packRoot,
               // Profile-scoped root — the bot resolves memory under this dir, so it
               // must be the active account's profile (paths.profileRoot()), never
               // the device-global userData root.

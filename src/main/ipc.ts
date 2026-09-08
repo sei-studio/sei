@@ -1681,6 +1681,44 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     prewarmTts();
   });
 
+  // ── Game packs (260908) ───────────────────────────────────────────────────
+  // A game adapter's runtime node_modules, downloaded on first use into
+  // <userData>/game-packs/<game>/. Contract: src/shared/gamePacks.ts; store:
+  // src/main/games/packs.ts. The push carries the whole state object, and the
+  // renderer reads every field of it, so keep the zod schema below in step
+  // with GamePackState (zod strips undeclared keys silently).
+  const GameIdSchema = z.enum(['minecraft']);
+  let gamePackPushWired = false;
+  const wireGamePackPush = async (): Promise<void> => {
+    if (gamePackPushWired) return;
+    gamePackPushWired = true;
+    const { onGamePackState } = await import('./games/packs');
+    onGamePackState((game, state) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.game.packProgress, { game, state });
+      }
+    });
+  };
+  ipcMain.handle(IpcChannel.game.packState, async (_event, argsRaw: unknown) => {
+    const args = z.object({ game: GameIdSchema }).parse(argsRaw);
+    await wireGamePackPush();
+    const { getPackState } = await import('./games/packs');
+    return getPackState(args.game);
+  });
+  ipcMain.handle(IpcChannel.game.packEnsure, async (_event, argsRaw: unknown) => {
+    const args = z.object({ game: GameIdSchema }).parse(argsRaw);
+    await wireGamePackPush();
+    const { ensurePack, getPackState } = await import('./games/packs');
+    try {
+      const root = await ensurePack(args.game);
+      return { kind: 'ready', root };
+    } catch {
+      // The store already published the error state; hand it back so the
+      // card renders the retry without a second round trip.
+      return getPackState(args.game);
+    }
+  });
+
   // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────
   // sherpa-onnx model packs (local TTS voices + SenseVoice STT), downloaded
   // on demand into <userData>/speech-models/. Contract: src/main/speech/index.ts.

@@ -56,6 +56,8 @@ export type {
   BackseatTick,
 } from './backseatIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
+import type { GameId, GamePackProgressPush, GamePackState } from './gamePacks';
+export type { GameId, GamePackProgressPush, GamePackState } from './gamePacks';
 export type {
   McDashboardSnapshot,
   McDashboardSnapshotPush,
@@ -1754,6 +1756,23 @@ export interface RendererApi {
   mcDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
   /** Telemetry pushes (~every 2s while watching, plus on action change). */
   onMcDashboardSnapshot(cb: (s: McDashboardSnapshotPush) => void): Unsubscribe;
+
+  // --- Game packs (260908) --- see src/shared/gamePacks.ts for the contract
+  // and src/main/games/packs.ts for the store. A game adapter's runtime
+  // (Minecraft: mineflayer, minecraft-data, prismarine-viewer, gl, ...) is a
+  // download on first use, not part of the installer.
+  /** Current state of one game's pack (never touches the network). */
+  gamePackState(game: GameId): Promise<GamePackState>;
+  /**
+   * Start (or join) the download + install of one game's pack. Resolves with
+   * the state once the job settles (`ready`, or `error` carrying
+   * GAME_PACK_DOWNLOAD_FAILED); never rejects on a download failure so the
+   * card can render the retry from the returned state. Progress arrives on
+   * onGamePackProgress while it runs.
+   */
+  gamePackEnsure(game: GameId): Promise<GamePackState>;
+  /** Push: every state change of any game's pack (downloading ticks, ready, error). */
+  onGamePackProgress(cb: (push: GamePackProgressPush) => void): Unsubscribe;
   /**
    * 260725 play/pause: freeze/resume the in-game brain. Paused: no game LLM
    * calls, in-flight actions abort-frozen; on a live voice call only voice
@@ -2851,6 +2870,15 @@ export const IpcChannel = {
     setPaused: 'mcdash:set-paused',
     /** Invoke: 260725 runtime game mode ({characterId, mode} → boolean). */
     setMode: 'mcdash:set-mode',
+  },
+  /** Game packs (260908, src/main/games/packs.ts). */
+  game: {
+    /** Invoke: {game} → GamePackState (disk + live state only, no network). */
+    packState: 'game:pack-state',
+    /** Invoke: {game} → GamePackState once the download/install job settles. */
+    packEnsure: 'game:pack-ensure',
+    /** Push (main → renderer): GamePackProgressPush on every state change. */
+    packProgress: 'game:pack-progress',
   },
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
