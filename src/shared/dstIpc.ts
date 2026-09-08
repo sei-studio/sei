@@ -201,7 +201,19 @@ export type DstInstallState =
       needsRestart: boolean;
     }
   | { kind: 'installing'; step: string }
-  | { kind: 'error'; error: 'GAME_INSTALL_FAILED'; message: string };
+  | {
+      kind: 'error';
+      error: 'GAME_INSTALL_FAILED';
+      message: string;
+      /**
+       * macOS refused the write (260909): the game's mods folder lives INSIDE
+       * dontstarve_steam.app, and since macOS 13 changing another app's
+       * bundle needs the App Management permission (EPERM otherwise, from
+       * every process without it). The step shows the System Settings path
+       * and a button that opens the pane.
+       */
+      permission?: boolean;
+    };
 
 export interface DstSurvivorPick {
   prefab: string;
@@ -229,4 +241,6 @@ export const DstChannel = {
   survivorSet: 'dst:survivor-set',
   /** Push: DstInstallState while an install runs. */
   installProgress: 'dst:install-progress',
+  /** Invoke: () → void; macOS only, opens Privacy & Security > App Management. */
+  openAppManagement: 'dst:open-app-management',
 } as const;

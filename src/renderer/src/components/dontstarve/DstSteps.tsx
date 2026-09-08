@@ -63,6 +63,7 @@ export function DstSteps(): React.ReactElement {
   const refreshInstall = useDstStore((s) => s.refreshInstall);
   const runInstall = useDstStore((s) => s.runInstall);
   const launchGame = useDstStore((s) => s.launchGame);
+  const openAppManagement = useDstStore((s) => s.openAppManagement);
   const world = useDataStore((s) => s.worlds.dontstarve);
   const dstWorld = world && world.game === 'dontstarve' ? world : null;
   const worldOpen = dstWorld?.kind === 'open';
@@ -79,7 +80,10 @@ export function DstSteps(): React.ReactElement {
   // A live heartbeat proves every earlier step whatever detection last said.
   const gameRunning = worldOpen || (found?.gameRunning ?? false);
   const needsRestart = !worldOpen && (found?.needsRestart ?? false);
-  const gameReady = gameRunning && !needsRestart;
+  // "Ready" for step 4 means the helper is in AND the game has loaded it: a
+  // game that is running without the helper is not one a world can be hosted
+  // in yet, so the waiting indicator must not spin under an unfinished step 2.
+  const gameReady = helperReady && gameRunning && !needsRestart;
 
   const gameTone: Tone = install == null ? 'now' : install.kind === 'not_found' ? 'now' : 'done';
   const helperTone: Tone = install == null || install.kind === 'not_found' ? 'later' : helperReady ? 'done' : 'now';
@@ -109,6 +113,16 @@ export function DstSteps(): React.ReactElement {
       <Step index={2} tone={helperTone}>
         {install?.kind === 'installing' ? (
           <span aria-live="polite">{install.step === 'enabling' ? t('Enabling the helper in the game') : t('Copying the helper into the game folder')}</span>
+        ) : install?.kind === 'error' && install.permission ? (
+          <>
+            <span role="alert">
+              {t("macOS needs your permission first: the game keeps its mods inside its app, and changing another app needs App Management. Open System Settings, go to Privacy & Security, then App Management, turn on Sei, and try again.")}
+            </span>
+            <div className={styles.actions}>
+              <Button kind="primary" size="sm" onClick={() => void openAppManagement()}>{t('Open System Settings')}</Button>
+              <Button kind="quiet" size="sm" disabled={installBusy} onClick={() => void runInstall()}>{t('Try again')}</Button>
+            </div>
+          </>
         ) : install?.kind === 'error' ? (
           <>
             <span role="alert">{t("Couldn't add Sei's helper.")}</span>

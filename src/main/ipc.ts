@@ -1809,6 +1809,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const mod = await dstModule();
     await mod.install?.launch();
   });
+  // macOS App Management (260909): the mods folder is inside the game's app
+  // bundle, so the copy needs this permission. A fixed pane URL, not a
+  // renderer-supplied one, which is why it bypasses the https-only
+  // external-URL validator.
+  ipcMain.handle(IpcChannel.dst.openAppManagement, async (): Promise<void> => {
+    if (process.platform !== 'darwin') return;
+    const { shell } = await import('electron');
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles');
+  });
   ipcMain.handle(IpcChannel.dst.survivorGet, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
     const { getOrPickSurvivor } = await import('./games/dontstarve/survivorPick');

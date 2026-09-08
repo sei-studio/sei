@@ -13,6 +13,7 @@ interface DstApi {
   dstInstallState(): Promise<DstInstallState>;
   dstInstall(): Promise<DstInstallState>;
   dstLaunch(): Promise<void>;
+  dstOpenAppManagement(): Promise<void>;
   dstSurvivorGet(characterId: string): Promise<DstSurvivorPick>;
   dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
   onDstInstallProgress(cb: (s: DstInstallState) => void): () => void;
@@ -33,6 +34,8 @@ interface DstStoreState {
   refreshInstall: () => Promise<DstInstallState | null>;
   runInstall: () => Promise<DstInstallState | null>;
   launchGame: () => Promise<void>;
+  /** macOS: open the App Management privacy pane (the install's EPERM fix). */
+  openAppManagement: () => Promise<void>;
   loadSurvivor: (characterId: string) => Promise<DstSurvivorPick | null>;
   setSurvivor: (characterId: string, prefab: string | null) => Promise<void>;
 }
@@ -91,6 +94,14 @@ export const useDstStore = create<DstStoreState>((set, get) => {
         /* Steam is not installed or refused the URL; the panel copy covers it */
       } finally {
         setTimeout(() => set({ launching: false }), 1500);
+      }
+    },
+
+    openAppManagement: async () => {
+      try {
+        await api().dstOpenAppManagement?.();
+      } catch {
+        /* nothing to show; the step already names the pane */
       }
     },
 

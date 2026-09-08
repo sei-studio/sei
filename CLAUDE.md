@@ -1597,6 +1597,22 @@ start, so `install.ts` reports `needsRestart` when the running game predates
 the helper files, from `ps`/CIM start times; a live heartbeat clears it), and
 a world must be hosted.
 
+**macOS needs App Management for the DST helper (260909, measured).** The
+game's mods folder is `dontstarve_steam.app/Contents/mods/`, inside the app
+bundle, and since macOS 13 writing into another app's bundle is gated by the
+App Management privacy permission: `mkdir .../mods/sei` returns EPERM from the
+Sei process, from a shell, from anything without the grant (the folder itself
+is owner-writable; Finder duplicate also stalls behind an Automation prompt).
+The binary hard-codes `../mods/` relative to its executable (checked with
+`strings`), so there is no other folder to write to. `installError` in
+`install.ts` classifies a darwin EPERM as `permission: true` and `DstSteps`
+turns it into the System Settings path plus an "Open System Settings" button
+(`dst:open-app-management`, a fixed `x-apple.systempreferences:` URL that
+bypasses the https-only external-URL validator on purpose). Whether a SIGNED
+Sei build gets the automatic "would like to update other applications" prompt
+is unverified: the dev Electron got no prompt, only the refusal. Windows has no
+equivalent (the mods folder sits beside the exe).
+
 **Don't Starve Together (M2)** `native/dst-mod/sei/` (Lua, MIT, server-only,
 `all_clients_require_mod = false`, luacheck clean; `PROTOCOL.md`, mirrored in
 `src/shared/dstIpc.ts`). Body = a vanilla survivor prefab spawned on the

@@ -284,6 +284,7 @@ const api: RendererApi = {
   dstInstallState: () => ipcRenderer.invoke(IpcChannel.dst.installState),
   dstInstall: () => ipcRenderer.invoke(IpcChannel.dst.install),
   dstLaunch: () => ipcRenderer.invoke(IpcChannel.dst.launch),
+  dstOpenAppManagement: () => ipcRenderer.invoke(IpcChannel.dst.openAppManagement),
   dstSurvivorGet: (characterId) => ipcRenderer.invoke(IpcChannel.dst.survivorGet, characterId),
   dstSurvivorSet: (characterId, prefab) => ipcRenderer.invoke(IpcChannel.dst.survivorSet, { characterId, prefab }),
   onDstInstallProgress(cb) {

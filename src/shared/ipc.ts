@@ -1400,6 +1400,8 @@ export interface RendererApi {
   dstInstall(): Promise<DstInstallState>;
   /** Open steam://rungameid/322330 (after re-applying the enable). */
   dstLaunch(): Promise<void>;
+  /** macOS only: open System Settings > Privacy & Security > App Management (260909). */
+  dstOpenAppManagement(): Promise<void>;
   /** The character's survivor, derived by the character on first use. */
   dstSurvivorGet(characterId: string): Promise<DstSurvivorPick>;
   /** Override (prefab) or forget (null) the survivor pick. */

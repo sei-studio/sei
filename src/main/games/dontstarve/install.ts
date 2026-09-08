@@ -341,9 +341,24 @@ export async function installMod(
     opts.onProgress?.('enabling');
     await enableMod(found.modsDir, deps);
   } catch (err) {
-    return { kind: 'error', error: 'GAME_INSTALL_FAILED', message: (err as Error).message };
+    return installError(err, deps.platform);
   }
   return detectInstall(deps);
+}
+
+/**
+ * Classify a copy/write failure. On macOS an EPERM inside the game bundle is
+ * the App Management gate, not a broken disk: measured 260909 on macOS 26,
+ * `mkdir dontstarve_steam.app/Contents/mods/sei` fails with EPERM from an
+ * unprivileged process (the folder is owner-writable; the refusal is TCC).
+ */
+export function installError(err: unknown, platform: NodeJS.Platform): DstInstallState {
+  const e = err as NodeJS.ErrnoException;
+  const message = String(e?.message ?? err);
+  const permission = platform === 'darwin' && (e?.code === 'EPERM' || /operation not permitted/i.test(message));
+  return permission
+    ? { kind: 'error', error: 'GAME_INSTALL_FAILED', message, permission: true }
+    : { kind: 'error', error: 'GAME_INSTALL_FAILED', message };
 }
 
 /** Re-apply modsettings.lua (idempotent; cheap; called on launch + summon). */

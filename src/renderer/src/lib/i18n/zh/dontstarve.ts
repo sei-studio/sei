@@ -29,6 +29,9 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   "Host a world: in the game choose Play, then Host, pick a world (new or saved, caves on or off) and start it. Sei's helper is on automatically.":
     '主持一个世界：在游戏中选择“开始游戏”，再选“主持”，挑一个世界（新建或已有存档，开不开洞穴都可以）并启动。Sei 助手会自动开启。',
   'Waiting for your world...': '等待你的世界…',
+  "macOS needs your permission first: the game keeps its mods inside its app, and changing another app needs App Management. Open System Settings, go to Privacy & Security, then App Management, turn on Sei, and try again.":
+    'macOS 需要你先授权：游戏把模组放在它自己的应用包里，而修改其他应用需要“应用程序管理”权限。请打开“系统设置”，进入“隐私与安全性”，再进入“应用程序管理”，打开 Sei，然后再试一次。',
+  'Open System Settings': '打开系统设置',
 
   // ── launch panel (components/dontstarve/DstLaunchPanel.tsx) ──
   "Looking for Don't Starve Together on this computer...": '正在这台电脑上查找《饥荒联机版》…',
