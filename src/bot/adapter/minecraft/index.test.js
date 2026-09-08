@@ -108,10 +108,12 @@ describe('look registration through the production construction shape', () => {
   })
 
   it('the production summon site passes visionEnabled: true (source assertion)', async () => {
-    // src/bot/index.js transitively pulls mineflayer + native deps, so assert
-    // at the source level (same pattern as 15-01's povRenderer export check).
+    // The construction site is the Minecraft runtime (game-adapters M0 moved
+    // it out of src/bot/index.js). runtime.js transitively pulls mineflayer +
+    // native deps, so assert at the source level (same pattern as 15-01's
+    // povRenderer export check).
     const { readFile } = await import('node:fs/promises')
-    const src = await readFile(new URL('../../index.js', import.meta.url), 'utf8')
+    const src = await readFile(new URL('./runtime.js', import.meta.url), 'utf8')
     expect(src).toMatch(/createMinecraftAdapter\(\{\s*bot:\s*_bot,\s*config,\s*visionEnabled:\s*true\s*\}\)/)
   })
 })

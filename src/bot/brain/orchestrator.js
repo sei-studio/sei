@@ -16,10 +16,10 @@ import { createDebouncer, createThrottle } from './debounce.js'
 import { createChainTracker } from './chains.js'
 import { createLoop } from './loop.js'
 import {
-  BASELINE_INSTRUCTIONS,
+  UNIVERSAL_BASELINE,
   VOICE_CALL_PRIMER,
   PERSONALITY_TOOL_DESCRIPTIONS,
-  NUDGES,
+  adaptNudges,
   SPEAK_REMINDER,
   GREETING_HINT,
   renderPersona,
@@ -42,6 +42,7 @@ import { isSilenceFiller } from './silenceFiller.js'
 import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
+import { resolveAdapterCaps } from './adapterDefaults.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
@@ -58,9 +59,8 @@ import { createWorldRegistry } from './memory/worlds.js'
 // and the texting-style sentence split below). Output shape is the model's job,
 // shaped by the prompt rules and the per-character persona, not by a code net.
 
-// Minecraft's chat packet caps a message at 256 characters (a vanilla server
-// kicks on more) and the count is UTF-16 code units, so the clip is too.
-const MC_CHAT_MAX_CHARS = 256
+// The in-world chat clip (Minecraft's 256-char packet cap) is now an adapter
+// member: contract v2 `chatMaxChars`, read as caps.chatMaxChars below.
 // Bound for the OTHER two delivery surfaces (app chat + voice call). The
 // 260725 change moved the old postProcessSay cap to the in-world send because
 // 256 chopped long spoken lines off mid-sentence audibly; it left these paths
@@ -323,7 +323,11 @@ export function shouldSuppressIdleSay({ triggerEvent, lastSelf, lastPlayer, now 
 // → continueLoop=false → the loop ends (say is "silence" for loop purposes:
 // it speaks, but it never keeps the bot busy on its own — see the
 // `continueLoop = movementCalls.length > 0` gate in runIterations).
-const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit_game', 'end_call'])
+// Game-adapters M0 (260908): the follow/unfollow pair is no longer named here.
+// Contract v2 `backgroundActions` (Minecraft default { follow: 'unfollow' })
+// contributes the game's background-state actions; PERSONALITY_NAMES is built
+// per orchestrator as BRAIN_PERSONALITY_NAMES + those keys.
+const BRAIN_PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit_game', 'end_call'])
 // Party redesign §2/§5: tool names that must NOT surface as a world-action verb
 // (the `onAction` presence hook). These are brain/personality tools with no
 // in-world motion — say (chat), remember/forget/end_loop (memory + loop
@@ -688,6 +692,15 @@ export async function composeSeedBlocks({
  */
 export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null, _anthropicOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
+  // Game-adapters M0 (260908): contract v2 members with Minecraft defaults.
+  // Every game-flavored string or name the brain used to hardcode is read
+  // through `caps` from here on (see brain/adapterDefaults.js).
+  const caps = resolveAdapterCaps(adapter, config)
+  const NUDGES = adaptNudges({ sessionEndClause: caps.sessionEndClause(), stuckNudges: caps.stuckNudges() })
+  const PERSONALITY_NAMES = new Set([...BRAIN_PERSONALITY_NAMES, ...Object.keys(caps.backgroundActions)])
+  // This bot's own in-game name, for roster filtering: the adapter config's
+  // username (set before login) beats adapter.botUsername (live, post-login).
+  const ownUsername = () => config?.adapter?.[config?.adapter?.kind ?? 'minecraft']?.username ?? adapter?.botUsername ?? null
   // 260618: roster of OTHER AI companion usernames in this world (multi-bot
   // sessions). Pushed from main via {type:'roster'} → brain.setCompanions →
   // setCompanions() below. Drives the snapshot pin/label, the companions seed
@@ -696,7 +709,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   let companions = []
   const setCompanions = (names) => {
     companions = Array.isArray(names)
-      ? names.filter(n => typeof n === 'string' && n.trim() && n !== config?.adapter?.minecraft?.username)
+      ? names.filter(n => typeof n === 'string' && n.trim() && n !== ownUsername())
       : []
   }
   // 260618: reactive JWT recovery. A cloud-proxy JWT can expire mid-session even
@@ -872,7 +885,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // path (260725 — the postProcessSay global cap moved here). clipChars,
       // not slice: a raw slice can cut an emoji in half and ship a lone
       // surrogate to chat.
-      const msg = clipChars(msgRaw, MC_CHAT_MAX_CHARS)
+      const msg = clipChars(msgRaw, caps.chatMaxChars)
       const send = () => {
         logChatOut(msg)
         try { adapter.chat(msg) } catch {}
@@ -893,7 +906,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (config.chat_mode !== 'full') return
     const scratch = String(rawText ?? '').replace(/\s+/g, ' ').trim()
     if (!scratch) return
-    try { adapter.chat(clipChars(`[think] ${scratch}`, MC_CHAT_MAX_CHARS)) } catch {}
+    try { adapter.chat(clipChars(`[think] ${scratch}`, caps.chatMaxChars)) } catch {}
   }
 
   // 260617: emit a single say() tool call's line to chat. Shared by the
@@ -1269,7 +1282,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // NOT for pausing an action (that's end_loop). Say a goodbye first.
       name: 'quit_game',
       description:
-        'Leave the Minecraft game and disconnect from the world, ending this play session. ' +
+        `Leave the ${caps.gameName} game and disconnect from the world, ending this play session. ` +
         'Use only when the player wants you to stop playing or log off, not to pause a task (use end_loop for that). ' +
         'You are playing in the player\'s LAN world, so you cannot stay on if they leave: if the player says they want to leave or stop playing, that means you will need to quit too and continue next time. ' +
         'Put your goodbye in the `farewell` field. It is spoken to chat for you as you leave, so do NOT also call say(). ' +
@@ -1342,7 +1355,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // 'off' by exploreAction's own mode check.)
     const visionOk = !!anthropic.capabilities?.vision && _visionMode() !== 'off'
     const movementTools = buildAnthropicTools(subRegistry, descMap)
-      .filter(t => visionOk || t.name !== 'look')
+      .filter(t => visionOk || !caps.visionActions.has(t.name))
     const seen = new Set(personalityTools.map(t => t.name))
     const merged = [...personalityTools]
     for (const t of movementTools) {
@@ -1362,7 +1375,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // session. This is the big static block that used to re-bill every loop.
     cachedSystemBlocks = anthropic.buildCachedSystem(
       [
-        BASELINE_INSTRUCTIONS,
+        // Contract v2: the game-surface half is adapter-declared
+        // (surfaceBaseline(), Minecraft default MINECRAFT_BASELINE). The
+        // composition is what BASELINE_INSTRUCTIONS used to be, byte for byte.
+        `${UNIVERSAL_BASELINE}\n\n${caps.surfaceBaseline()}`,
         renderPersona(config.persona),
         adapter.capabilityParagraph(),
         adapter.worldPrimer(),
@@ -1598,19 +1614,27 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // segments MEMORY.md by world, and caches the current world for the snapshot.
   async function noteSpawn() {
     if (!worldRegistry) return
-    let info = null
-    try { info = adapter.getWorldInfo?.() } catch { /* adapter may not implement it */ }
-    const sp = info?.spawnPoint
-    if (!sp) return // spawn point not known yet — skip; next session will catch it
-    const dim = info.dimension || 'overworld'
-    const fingerprint = `${dim}@${sp.x},${sp.y},${sp.z}`
-    const motd = (config.lan_motd && String(config.lan_motd).trim()) || ''
-    const label = motd || `spawn ${sp.x},${sp.z}`
+    // Contract v2: the adapter names the world (getWorldIdentity); the
+    // Minecraft default assembles dimension@spawn + config.world_label exactly
+    // as this function used to. null = not known yet — skip; next session
+    // will catch it.
+    let identity = null
+    try { identity = caps.getWorldIdentity() } catch { /* adapter may not implement it */ }
+    if (!identity || !identity.fingerprint) return
+    const fingerprint = String(identity.fingerprint)
+    const label = (identity.label && String(identity.label).trim()) || fingerprint
     try {
       await worldRegistry.resolveOnSpawn({ fingerprint, label })
     } catch (err) {
       logger.warn?.(`[sei/orch] world resolve failed: ${err.message}`)
     }
+  }
+
+  // 260725 pause contract: the tiny notice that replaces ALL game context
+  // while paused. Names the game through contract v2 gameName (lowercase, as
+  // the original 'your minecraft was paused' line was).
+  function pausedNotice() {
+    return `your ${caps.gameName.toLowerCase()} was paused by the player. only they can unpause it.`
   }
 
   // ─── Snapshot helper ────────────────────────────────────────────────
@@ -1620,7 +1644,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // (fresh seed, tool-result continuation, action tick) flows through, so
     // gating here guarantees it for every path at once. Deliberately tiny:
     // paused voice turns are uncached.
-    if (gamePaused) return 'your minecraft was paused by the player. only they can unpause it.'
+    if (gamePaused) return pausedNotice()
     try {
       const w = worldRegistry?.current?.() ?? null
       return snapshotComposer.next({
@@ -1730,7 +1754,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // extractPriorTask's "name arg" string; we key off the leading tool name.
   function stopToolForAction(actionLabel) {
     const name = actionLabel ? actionLabel.split(' ')[0] : null
-    return name === 'follow' ? 'unfollow' : 'end_loop'
+    // Contract v2 backgroundActions: { follow: 'unfollow' } for Minecraft.
+    return (name && caps.backgroundActions[name]) || 'end_loop'
   }
 
   // 260608-tik: unified mid-action interrupt text (Change 2). Every path that
@@ -1815,9 +1840,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // build + cuboid dig). Same onProgress channel as cuboid — no parallel
   // pattern, no invented config field (CONTEXT.md "Signal threading scope").
   function _buildExecOpts(name, args, execOpts, handle) {
-    const isProgressFlavored = name === 'build'
-      || name === 'gather'
-      || (name === 'dig' && args && args.to)
+    // Contract v2 progressActions (Minecraft default: build, gather, cuboid dig).
+    const isProgressFlavored = caps.isProgressAction(name, args)
     return isProgressFlavored
       ? { ...execOpts, onProgress: (p) => inflight.updateProgress(handle, p) }
       : execOpts
@@ -1847,7 +1871,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // call). Refuse without executing; the model gets a plain result string.
     if (gamePaused) {
       return {
-        promise: Promise.resolve('minecraft is paused by the player. you cannot act in the world until they unpause it.'),
+        promise: Promise.resolve(`${caps.gameName.toLowerCase()} is paused by the player. you cannot act in the world until they unpause it.`),
         abortController: new AbortController(),
         handle: null,
         startedAt: Date.now(),
@@ -2211,13 +2235,11 @@ function maybeWarnByteCap(loop, warned) {
     // it back to 'sei:chat_received'; a natural action_complete sets it to
     // 'sei:action_complete'). Used by runIterations to decide R1-R4 gating.
     loop._currentIterationTrigger = event
-    // Track goTo cant_reach destinations seen this loop.
-    // Key: `${x}|${y}|${z}|${range}`. Value: count. On count >= 2 we inject a
-    // one-shot nudge referencing the SYSTEM_INSTRUCTIONS Pathfinder rule
-    // rather than letting the LLM keep retrying. Per-loop scope so a fresh
-    // dispatch starts clean.
-    loop._cantReachMap = new Map()
-    loop._cantReachNudgedKeys = new Set()
+    // Contract v2: per-loop scratch for the adapter's postProcessToolBatch
+    // (the Minecraft adapter keeps its goTo cant_reach dedup counters here,
+    // which used to be loop._cantReachMap / _cantReachNudgedKeys). Per-loop
+    // scope so a fresh dispatch starts clean.
+    loop._adapterBatchState = {}
     // Silent-iteration cadence counter for the progress-narration soft nudge.
     loop.iterationsSinceLastSay = 0
     loop._progressNudgeFired = false
@@ -2330,7 +2352,7 @@ function maybeWarnByteCap(loop, warned) {
       eventText = `player just unpaused your game.${inflightLine}\n\n${eventText}`
     }
     if (data?.reason === 'just_connected_first_spawn' && !voiceCallActive) {
-      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in Minecraft (say("yo how'd the interview go?") beats say("back in business")). This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`
+      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in ${caps.gameName} (say("yo how'd the interview go?") beats say("back in business")). This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`
     }
     // 260618: refresh the progression view before composing the seed — latch
     // dimension milestones, detect whether the committed goal's milestone just
@@ -2353,7 +2375,7 @@ function maybeWarnByteCap(loop, warned) {
         ...(voiceCallActive
           ? [{ type: 'text', name: 'voice_call', text: `[voice call] ${VOICE_CALL_PRIMER}` }]
           : []),
-        { type: 'text', name: 'paused', text: 'your minecraft was paused by the player. only they can unpause it.' },
+        { type: 'text', name: 'paused', text: pausedNotice() },
         ...(playerMessageText
           ? [{ type: 'text', name: 'player_message', text: playerMessageText }]
           : [{ type: 'text', name: 'event', text: eventText }]),
@@ -3891,47 +3913,30 @@ function maybeWarnByteCap(loop, warned) {
       // same combined response — no separate movement layer.
       const movementCalls = toolUses.filter(u => !PERSONALITY_NAMES.has(u.name))
 
-      // Cap parallel dig calls at
-      // 1 per turn. The first dig executes; subsequent digs synthesize an
-      // abort result. Decided cap=1 over chopping-2-block-tree regression
-      // (RESEARCH A2): the 5-identical-dig and 7-way-dig storms outweigh the
-      // legit case; the LLM can re-issue dig next turn.
-      let _digSeen = false
-      const _digCapped = new Set()
-      for (const u of toolUses) {
-        if (u.name !== 'dig') continue
-        if (_digSeen) _digCapped.add(u.id)
-        else _digSeen = true
+      // Contract v2 prefilterToolBatch: the adapter names the tool_uses in
+      // this batch that must NOT execute and the result they get instead
+      // (Minecraft: the one-dig-per-turn cap and the same-turn follow +
+      // attackEntity collapse, see adapter/minecraft/toolBatch.js). Default:
+      // nothing. Errors degrade to "prefill nothing".
+      const _prefilled = new Map()
+      try {
+        for (const p of caps.prefilterToolBatch(toolUses) ?? []) {
+          if (p && p.id) _prefilled.set(p.id, p)
+        }
+      } catch (err) {
+        logger.warn?.(`[sei/orch] prefilterToolBatch threw: ${err?.message ?? err}`)
       }
-
-      // Same-turn follow + attackEntity collapse.
-      // combat.js startAttacking already auto-pursues moving mobs, so an
-      // explicit follow paired with attackEntity in the SAME tool batch is
-      // redundant — and historically produced "target gone" because follow
-      // resolves the entity reference before attack lands the first swing.
-      const _attackTargets = new Set(
-        toolUses
-          .filter(u => u.name === 'attackEntity')
-          .map(u => u.input?.target ?? u.input?.entity)
-          .filter(Boolean)
-      )
-      const _followNoop = new Set(
-        toolUses
-          .filter(u => u.name === 'follow' && _attackTargets.has(u.input?.entity ?? u.input?.target))
-          .map(u => u.id)
-      )
 
       // Collect tool_results in the SAME order as toolUses so pairing holds.
       const results = new Array(toolUses.length)
 
-      // 260514-gam: pre-fill the dig-cap and follow-noop placeholder results
+      // 260514-gam: pre-fill the adapter's prefiltered placeholder results
       // for the ENTIRE batch BEFORE the for-loop runs. Required so the
       // batched-queue serialization path (handleActionComplete drain) sees
       // these slots as already-filled — without this, a non-inline tool early
       // in the batch would dispatch and suspend, then the queue would still
-      // contain capped digs / follow-noops that handleActionComplete cannot
-      // resolve (the digCapped / followNoop sets live in this for-loop's
-      // closure only).
+      // contain prefiltered tools that handleActionComplete cannot resolve
+      // (the _prefilled map lives in this for-loop's closure only).
       for (let k = 0; k < toolUses.length; k++) {
         const uk = toolUses[k]
         if (sayResults.has(uk.id)) {
@@ -3939,19 +3944,13 @@ function maybeWarnByteCap(loop, warned) {
           // result so the dispatch loop skips it and the batched-queue drain
           // never enqueues it — speech is resolved before any action runs.
           results[k] = sayResults.get(uk.id)
-        } else if (_digCapped.has(uk.id)) {
+        } else if (_prefilled.has(uk.id)) {
+          const p = _prefilled.get(uk.id)
           results[k] = {
             type: 'tool_result',
             tool_use_id: uk.id,
-            content: 'aborted: only one dig per turn allowed; re-issue next turn or use {block:"<name>"} for repeat digs',
-            is_error: false,
-          }
-        } else if (_followNoop.has(uk.id)) {
-          results[k] = {
-            type: 'tool_result',
-            tool_use_id: uk.id,
-            content: 'already pursuing: combat reflex auto-pursues moving mobs; attackEntity alone is enough',
-            is_error: false,
+            content: String(p.content ?? ''),
+            is_error: p.is_error === true,
           }
         }
       }
@@ -4085,31 +4084,17 @@ function maybeWarnByteCap(loop, warned) {
       // tools fired (no movement) the LLM is done — terminal.
       const continueLoop = movementCalls.length > 0
 
-      // Per-loop cant_reach dedup. If the same goTo
-      // destination returned cant_reach twice in this loop and we have NOT
-      // already nudged for that key, append a one-shot reminder to the next
-      // user turn so the LLM follows the SYSTEM_INSTRUCTIONS Pathfinder rule
-      // (ask for help via say()) instead of silently retrying.
+      // Contract v2 postProcessToolBatch: the adapter reads the settled
+      // batch and may hand back a one-shot nudge for the next user turn
+      // (Minecraft: the per-loop goTo cant_reach dedup → cantReachNudge, see
+      // adapter/minecraft/toolBatch.js). Default: none.
       let cantReachNudge = null
-      for (let i = 0; i < toolUses.length; i++) {
-        const u = toolUses[i]
-        if (u.name !== 'goTo') continue
-        const r = results[i]
-        const content = typeof r?.content === 'string' ? r.content : ''
-        if (!content.startsWith('cant_reach')) continue
-        const x = u.input?.x, y = u.input?.y, z = u.input?.z, range = u.input?.range ?? 1
-        if (![x, y, z].every(n => Number.isFinite(n))) continue
-        const key = `${x}|${y}|${z}|${range}`
-        const prev = loop._cantReachMap.get(key) ?? 0
-        const next = prev + 1
-        loop._cantReachMap.set(key, next)
-        if (next >= 2 && !loop._cantReachNudgedKeys.has(key)) {
-          loop._cantReachNudgedKeys.add(key)
-          cantReachNudge = (typeof adapter.cantReachNudge === 'function')
-            ? adapter.cantReachNudge({ x, y, z, range })
-            : null
-          break
-        }
+      try {
+        const post = caps.postProcessToolBatch(toolUses, results, loop._adapterBatchState ?? (loop._adapterBatchState = {}))
+        const nudge = post?.nudge
+        cantReachNudge = (typeof nudge === 'string' && nudge.trim()) ? nudge : null
+      } catch (err) {
+        logger.warn?.(`[sei/orch] postProcessToolBatch threw: ${err?.message ?? err}`)
       }
 
       // Silent-iteration cadence. If the

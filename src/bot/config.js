@@ -118,9 +118,26 @@ const MinecraftAdapterSchema = z.object({
   player_stagger_ms: z.number().int().min(0).default(350),
 })
 
+// Game adapters (M0, 260908). `kind` selects which runtime the composer
+// (src/bot/index.js) dynamic-imports from src/bot/adapter/<kind>/runtime.js;
+// only that game's sub-tree is required. `stardew` and `dontstarve` are
+// passthrough PLACEHOLDERS: the game agents replace them with real schemas
+// (host/port/token/etc.) when their adapters land. Keep the member list in
+// sync with GAME_KINDS below and GameId in src/shared/gameIpc.ts.
+export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve']
+
 const AdapterSchema = z.object({
-  kind: z.literal('minecraft').default('minecraft'),
-  minecraft: MinecraftAdapterSchema,
+  kind: z.enum(GAME_KINDS).default('minecraft'),
+  minecraft: MinecraftAdapterSchema.optional(),
+  stardew: z.object({}).passthrough().optional(),
+  dontstarve: z.object({}).passthrough().optional(),
+}).superRefine((a, ctx) => {
+  // A Minecraft session still REQUIRES its block (unchanged contract: the
+  // old schema made `minecraft` mandatory, so a Minecraft config without it
+  // must keep failing to parse instead of silently booting a bodiless bot).
+  if (a.kind === 'minecraft' && !a.minecraft) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['minecraft'], message: 'adapter.minecraft is required when adapter.kind is "minecraft"' })
+  }
 })
 
 // The full set of provider kinds the bot factory can run (see
@@ -136,7 +153,7 @@ export const LLM_PROVIDER_KINDS = [
   'cerebras', 'perplexity',
 ]
 
-export const ConfigSchema = z.object({
+const ConfigObjectSchema = z.object({
   // chat_mode: 'chat' (default) — only `say()` lines reach Minecraft chat.
   // 'full' — assistant `text` (private scratch) ALSO reaches chat with a
   // `[think] ` prefix so the player can watch the bot's reasoning in real
@@ -159,10 +176,12 @@ export const ConfigSchema = z.object({
   // (this process cannot import that TS module).
   chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).default('en'),
   player_username: z.string(),
-  // LAN world MOTD (level name) from discovery, used as a human label for the
-  // world registry / MEMORY.md section headers. Optional — falls back to spawn
-  // coords when absent (e.g. the broadcast carried no MOTD).
-  lan_motd: z.string().nullable().default(null),
+  // Human label for the world this session joins (Minecraft: the LAN MOTD /
+  // level name; Stardew: the farm name; DST: the cluster name), used by the
+  // world registry / MEMORY.md section headers. Optional — the adapter's
+  // getWorldIdentity() falls back to its own label when absent. 260908: was
+  // `lan_motd`; the legacy key is hoisted into this one at parse time below.
+  world_label: z.string().nullable().default(null),
   // Friendly name the LLM addresses the player by. Substituted in chat events
   // and convo memory in place of the raw MC username so the bot never speaks
   // the player's gamertag. Falls back to player_username when empty.
@@ -349,6 +368,21 @@ export const ConfigSchema = z.object({
 })
 
 /**
+ * Legacy key hoist (260908): `lan_motd` was renamed `world_label` when the
+ * bot went multi-game. Accepted as an alias for one release so a config.json
+ * or an older main's init mapping still parses; an explicit `world_label`
+ * wins. Applied in a preprocess so ConfigSchema.parse stays the single entry.
+ */
+function hoistLegacyWorldLabel(raw) {
+  if (!raw || typeof raw !== 'object') return raw
+  if (raw.world_label !== undefined || raw.lan_motd === undefined) return raw
+  const { lan_motd, ...rest } = raw
+  return { ...rest, world_label: lan_motd }
+}
+
+export const ConfigSchema = z.preprocess(hoistLegacyWorldLabel, ConfigObjectSchema)
+
+/**
  * Hoist legacy top-level minecraft fields into adapter.minecraft.* if the
  * caller hasn't already supplied an `adapter` object. This is NOT a
  * backwards-compat shim — it is a one-shot migration applied at parse time
@@ -387,7 +421,7 @@ export function loadConfig(path = './config.json', overrides = {}) {
     raw.adapter.minecraft = { ...raw.adapter.minecraft, port: overrides.port }
   }
   if (overrides.motd != null && String(overrides.motd).trim()) {
-    raw.lan_motd = String(overrides.motd).trim()
+    raw.world_label = String(overrides.motd).trim()
   }
   return ConfigSchema.parse(raw)
 }

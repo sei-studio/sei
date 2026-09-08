@@ -5,9 +5,15 @@
 // construction and drives every game-shaped capability through it — no direct
 // mineflayer references in brain code.
 //
-// See src/brain/types.js for the contract; ADAPTER_INTERFACE_VERSION === 1.
+// See src/brain/types.js for the contract; ADAPTER_INTERFACE_VERSION === 2
+// (game-adapters M0, 260908: the v2 members declared at the bottom carry the
+// exact values the brain used to hardcode, so the prompt is byte-identical).
 
 import { ADAPTER_INTERFACE_VERSION } from '../../brain/types.js'
+import { MINECRAFT_BASELINE, SESSION_END_CLAUSE, ACTION_STUCK_NUDGE_VISION, ACTION_STUCK_NUDGE_NOVISION } from '../../brain/promptLibrary.js'
+import { prefilterToolBatch, postProcessToolBatch } from './toolBatch.js'
+import { classifyConnectError } from './errors.js'
+import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { createDefaultRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { getProgression as readProgression } from './observers/progression.js'
@@ -111,6 +117,21 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
      * never throws (degrades to an empty frontier).
      */
     getProgression: (flags = {}) => readProgression(bot, flags),
+    /**
+     * Contract v2 world identity (memory/worlds.js). The world spawn point is
+     * deterministic from the seed and stable across sessions, so it
+     * fingerprints the world; dimension disambiguates. The label is main's
+     * world_label (the LAN MOTD) when it shipped one, else the spawn x,z.
+     * null until spawn lands. Same assembly the brain's noteSpawn did pre-v2.
+     */
+    getWorldIdentity: () => {
+      const sp = bot.spawnPoint
+      if (!sp || !Number.isFinite(sp.x)) return null
+      const x = Math.floor(sp.x), y = Math.floor(sp.y), z = Math.floor(sp.z)
+      const dim = bot.game?.dimension || 'overworld'
+      const label = (config?.world_label && String(config.world_label).trim()) || `spawn ${x},${z}`
+      return { fingerprint: `${dim}@${x},${y},${z}`, label }
+    },
     worldPrimer,
     capabilityParagraph: () => capabilityParagraph(config?.vision?.mode),
     actionRules: () => actionRules(config?.vision?.mode),
@@ -192,6 +213,31 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
     // ─── Identity ─────────────────────────────────────────────────────
     get botUsername() { return bot.username },
     getKnownPlayers: () => bot.players ?? {},
+
+    // ─── Contract v2 members (src/bot/brain/types.js) ──────────────────
+    // Each value is exactly what the brain hardcoded before M0; declaring
+    // them here (rather than relying on brain/adapterDefaults.js) is what
+    // lets a second game's adapter differ without the brain knowing.
+    gameName: 'Minecraft',
+    // Minecraft's chat packet caps a message at 256 characters (a vanilla
+    // server kicks on more); the count is UTF-16 code units.
+    chatMaxChars: 256,
+    // follow only mutates the follow target; the trailing happens on a 1s
+    // background tick (behaviors/follow.js), so a follow-only turn ends the
+    // loop and the tool that stops it is unfollow.
+    backgroundActions: { follow: 'unfollow' },
+    // build, gather, and a cuboid dig (with a `to` corner) report progress.
+    progressActions: (name, args) => name === 'build' || name === 'gather' || (name === 'dig' && !!args?.to),
+    visionActions: ['look'],
+    prefilterToolBatch,
+    postProcessToolBatch: (toolUses, results, loopState) =>
+      postProcessToolBatch(toolUses, results, loopState, cantReachNudge),
+    surfaceBaseline: () => MINECRAFT_BASELINE,
+    sessionEndClause: () => SESSION_END_CLAUSE,
+    stuckNudges: () => ({ vision: ACTION_STUCK_NUDGE_VISION, noVision: ACTION_STUCK_NUDGE_NOVISION }),
+    createTelemetry: ({ emit, logger }) =>
+      createDashboardTelemetry({ bot, emit: (snapshot) => emit({ game: 'minecraft', ...snapshot }), logger }),
+    classifyConnectError,
   }
 }
 
