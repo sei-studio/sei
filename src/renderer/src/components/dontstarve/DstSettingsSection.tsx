@@ -61,8 +61,8 @@ export function DstSettingsSection({ config }: GameSettingsSectionProps): React.
   return (
     <>
       <div className={settings.row}>
-        <span className={settings.label}>{t('Helper mod')}</span>
-        <span className={settings.value}>{status}</span>
+        <span className={styles.rowLabel}>{t('Helper mod')}</span>
+        <span className={styles.rowValue}>{status}</span>
         {install?.kind === 'found' && (!install.modInstalled || !install.enabled) ? (
           <Button kind="primary" size="sm" disabled={installBusy} onClick={() => void runInstall()}>
             {install.modInstalled ? t('Enable') : t('Add')}
@@ -73,12 +73,12 @@ export function DstSettingsSection({ config }: GameSettingsSectionProps): React.
       </div>
       {install?.kind === 'found' ? (
         <div className={settings.row}>
-          <span className={settings.label}>{t('Game folder')}</span>
-          <span className={settings.monoValue}>{install.installPath}</span>
+          <span className={styles.rowLabel}>{t('Game folder')}</span>
+          <span className={styles.pathValue}>{install.installPath}</span>
         </div>
       ) : null}
       <div className={settings.row}>
-        <span className={settings.label}>{t('Discovery port')}</span>
+        <span className={styles.rowLabel}>{t('Discovery port')}</span>
         <input
           className={styles.portInput}
           type="number"
@@ -92,7 +92,7 @@ export function DstSettingsSection({ config }: GameSettingsSectionProps): React.
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
           }}
         />
-        <span className={settings.helper}>
+        <span className={styles.portHelper}>
           {world?.kind === 'unavailable'
             ? t('This port is in use. Pick another one and set the same port in the helper mod\'s options in the game.')
             : t('Only change this if another program uses port {port}; set the same port in the helper mod\'s options in the game.', { port: DST_DEFAULT_PORT })}

@@ -228,9 +228,54 @@
   text-align: center;
 }
 
-/* ── settings ── */
+/* ── settings section rows ──
+   SettingsScreen's .row is label | value | control with .label at flex: 1
+   and min-width: 0. A long game-folder path and the port helper sentence
+   cannot shrink (min-width: auto on flex items), so the label collapsed to
+   nothing and the path painted over it. These rows size the label to its
+   content and let the value wrap instead. */
+.rowLabel {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.rowValue {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: right;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pathValue {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.portHelper {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .portInput {
-  width: 7ch;
+  flex: 0 0 auto;
+  width: 8ch;
   padding: var(--space-xs) var(--space-sm);
   font: inherit;
   font-family: var(--mono);
