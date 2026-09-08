@@ -88,6 +88,9 @@ To get more involved with the product side, reach out at [ouen@sei.gg](mailto:ou
 ## Acknowledgements
 
 - [mineflayer](https://github.com/PrismarineJS/mineflayer): the Minecraft bot framework Sei's game adapter is built on
+- [FAtiMA-DST](https://github.com/hineios/FAtiMA-DST) (MIT): the Don't Starve Together mod skeleton Sei's helper is adapted from, a survivor prefab driven by an external agent over HTTP with a DoAction / keep-working behaviour tree and a perception encoder
+- [DST-AICompanion](https://github.com/votus777/DST-AICompanion) (MIT): the Follow / RunAway wiring for a companion body in Don't Starve Together
+- [Chat Announcements](https://github.com/gyroplast/mod-dont-starve-chat-announcements) (CC0-1.0): the QueryServer POST and response handling pattern Sei's helper uses to talk to localhost
 - [Project AIRI](https://github.com/moeru-ai/airi): open-sourced digital "embodied" AI companion
 - [Character.AI](https://character.ai): demonstrated personalized AI characters
 - [Neuro-sama](https://vedal.ai/): showed that AI can make people happy
