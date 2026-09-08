@@ -69,7 +69,9 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   GAME_INSTALL_FAILED: "Couldn't finish setting up the companion mod for this game. Make sure the game is closed, then try the setup again.",
   GAME_NOT_ANSWERING: "The game is open but isn't answering. Make sure the Sei mod is enabled in the game, then press Play again.",
   GAME_VERSION_UNSUPPORTED: "This game version isn't supported yet. Update the game to a supported version and press Play again.",
-  GAME_PACK_DOWNLOAD_FAILED: "Couldn't download the files this game needs. Check your connection and press Play again.",
+  // 260908 game packs. The size mirrors GAME_PACKS.minecraft.sizeHintBytes
+  // (src/shared/gamePacks.ts); gamePacks.test.ts pins the two together.
+  GAME_PACK_DOWNLOAD_FAILED: "Couldn't download the support files this game needs (about 50 MB for Minecraft). Check your connection and press Play again. A retry usually works.",
 };
 
 /**

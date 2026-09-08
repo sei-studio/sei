@@ -47,6 +47,10 @@ export type ErrorClass =
   | 'GAME_INSTALL_FAILED'
   | 'GAME_NOT_ANSWERING'
   | 'GAME_VERSION_UNSUPPORTED'
+  // 260908 game packs: the adapter's runtime (a downloadable zip of its
+  // node_modules, src/main/games/packs.ts) could not be fetched, verified or
+  // extracted. Pre-fork like the wizard's MOD_DOWNLOAD_FAILED; a retry is the
+  // fix that usually works.
   | 'GAME_PACK_DOWNLOAD_FAILED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([

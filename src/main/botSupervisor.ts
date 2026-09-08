@@ -227,7 +227,6 @@ export interface BotSupervisorOptions {
    * Game adapters: the downloaded game pack root for this game, shipped to the
    * bot as `packRoot` (src/bot/packLoader.js). Optional; null until the
    * game-pack branch wires it. */
-  getPackRoot?: (game: GameId) => string | null;
   /** Returns the cached LAN port if connected, null otherwise. Wired by main.
    *  LEGACY: read only when no Minecraft GameModule is registered. */
   getLanPort: () => number | null;
@@ -942,6 +941,30 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       : null;
     const lanPort = mcTarget?.port ?? null;
 
+    // 260908 game packs: the adapter's runtime (mineflayer, minecraft-data,
+    // prismarine-viewer, gl, ...) is a download on first use, not part of the
+    // installer. Await it BEFORE startedAtMs is taken: a first-run download can
+    // run minutes, and summonDeadlineAt (shipped to the child below) is derived
+    // from that clock, so measuring from before the download would hand the
+    // bot a deadline already in the past. Dev resolves to the repo root
+    // instantly; a cached pack costs one installed.json read. Progress rides
+    // the game:pack-progress push, which is what the launch card shows.
+    opts.sendStatus({ kind: 'connecting', characterId, game });
+    let packRoot: string;
+    try {
+      const { ensurePack } = await import('./games/packs');
+      packRoot = await ensurePack(game);
+    } catch (err) {
+      const detail = errText(err).replace(/^GAME_PACK_DOWNLOAD_FAILED:\s*/, '');
+      opts.sendStatus({
+        kind: 'error',
+        error: 'GAME_PACK_DOWNLOAD_FAILED',
+        message: `Could not download the ${game} support files: ${detail}`,
+        characterId,
+      });
+      throw new Error(`GAME_PACK_DOWNLOAD_FAILED: ${detail}`);
+    }
+
     const startedAtMs = Date.now();
     sendStatus({ kind: 'connecting', characterId });
 
@@ -1258,8 +1281,6 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // Human label for the memory registry / section headers
               // (Minecraft: the LAN MOTD). null lets the adapter pick its own.
               worldLabel: mcTarget?.motd ?? (joinTarget as { label?: unknown }).label ?? null,
-              // The downloaded game pack root (null until the pack branch wires it).
-              packRoot: opts.getPackRoot?.(game) ?? null,
               // LEGACY (one release): the pre-M0 Minecraft keys, for an older
               // bot build that predates `game`/`joinTarget`.
               lanPort,
@@ -1269,6 +1290,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // join reports WHY instead of being overwritten by the generic
               // 30s timeout. See summonDeadlineFrom above.
               summonDeadlineAt: summonDeadlineFrom(startedAtMs),
+              // 260908 game packs: where the adapter's node_modules live.
+              // src/bot/packLoader.js registers a resolve hook for it before
+              // the game runtime is imported; equal to the bot's own app root
+              // in dev (hook is a no-op there).
+              packRoot,
               // Profile-scoped root — the bot resolves memory under this dir, so it
               // must be the active account's profile (paths.profileRoot()), never
               // the device-global userData root.

@@ -26,6 +26,7 @@ import { attemptSummon } from '../../lib/summonFlow';
 import { requestGameLaunch } from '../../lib/gameLaunch';
 import { ERROR_COPY } from '../../lib/errors';
 import { Button } from '../Button';
+import { GamePackCard } from '../games/GamePackCard';
 import { useT } from '../../lib/i18n';
 import styles from './McLaunchPanel.module.css';
 
@@ -55,6 +56,9 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
           dismisses this panel. */}
       <div className={styles.content}>
         <h2 className={styles.title}>Minecraft</h2>
+        {/* 260908 game packs: the Minecraft runtime is a download on first
+            use; the card renders nothing once the pack is ready. */}
+        <GamePackCard game="minecraft" />
         <Button
           kind="accent"
           size="lg"

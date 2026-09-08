@@ -8,6 +8,7 @@ import React from 'react';
 import type { GameId } from '@shared/gameIpc';
 import { useT } from '../../lib/i18n';
 import { Button } from '../Button';
+import { GamePackCard } from './GamePackCard';
 import { attemptSummon } from '../../lib/summonFlow';
 import { botGameName } from '../../lib/gameLaunch';
 import { useDataStore } from '../../lib/stores/useDataStore';
@@ -32,6 +33,7 @@ export function GenericGameLaunchPanel({ game, characterId }: GenericGamePanelPr
           ? t('Your world is open. Press Play to bring your companion in.')
           : t('Open your world in {game} first, then press Play.', { game: name })}
       </p>
+      <GamePackCard game={game} />
       <Button kind="primary" size="md" onClick={() => void attemptSummon(characterId, game)}>
         {t('Play')}
       </Button>

@@ -46,6 +46,9 @@ vi.mock('./configStore', () => ({
   saveConfig: vi.fn(async () => {}),
   addPlaytimeMs: vi.fn(async () => {}),
 }));
+vi.mock('./games/packs', () => ({
+  ensurePack: vi.fn(async (game: string) => `/packs/${game}`),
+}));
 vi.mock('./logRouter', () => ({
   createLogRouter: vi.fn(async () => ({ append: vi.fn(), close: vi.fn(async () => {}) })),
 }));
@@ -119,7 +122,6 @@ function makeSupervisor(sendStatus = vi.fn()) {
       getSkinServerBaseUrl: () => 'http://127.0.0.1:5000',
       cloudOverLimit: vi.fn(async () => false),
       emitHardStop: vi.fn(),
-      getPackRoot: (game) => `/packs/${game}`,
     }),
   };
 }

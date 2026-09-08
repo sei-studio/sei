@@ -1,5 +1,13 @@
 /** Game surfaces (chess + Draw!). See ../zh.ts for the dictionary rules. */
 export const ZH_GAMES: Record<string, string> = {
+  // ── Game packs (260908, components/games/GamePackCard) ───────────────────
+  'Download {name} support (about {mb} MB)': '下载 {name} 支持文件（约 {mb} MB）',
+  'Playing {name} together needs a one-time download. It is stored on this device and only downloads again after an update that needs a newer version.':
+    '一起玩 {name} 需要一次性下载支持文件。文件会保存在这台设备上，只有更新后需要新版本时才会再次下载。',
+  'Downloading {name} support…': '正在下载 {name} 支持文件…',
+  '{name} support download, {pct} percent': '{name} 支持文件下载进度 {pct}%',
+  '{received} of {total} MB': '{received} / {total} MB',
+  "Couldn't download {name} support": '无法下载 {name} 支持文件',
   // ── Mini tile (bottom-right return tile) ──────────────────────────────────
   'Back to game': '返回游戏',
   'Draw!': '你画我猜！',
