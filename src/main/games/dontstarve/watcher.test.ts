@@ -29,14 +29,14 @@ describe('createDstWatcher (no socket)', () => {
     expect(w.getState()).toEqual({ game: 'dontstarve', kind: 'closed' });
     // Feed heartbeats directly through the test seam (start() would bind).
     const resp = w.handleHello({ session: 'S', world: 'Sunny', day: 4, season: 'winter', phase: 'dusk', players: [{ userid: 'KU_1', name: 'Steve' }] });
-    expect(resp).toEqual({ ok: true });
+    expect(resp).toEqual({ ok: true, app: 'sei' });
     expect(w.getState()).toMatchObject({ kind: 'open', worldName: 'Sunny', day: 4, phase: 'dusk', players: [{ userid: 'KU_1', name: 'Steve' }], lastSeenAt: 1000 });
     expect(w.latestHeartbeat()?.session).toBe('S');
     t = 7500;
     expect(w.getState().kind).toBe('closed');
     expect(w.latestHeartbeat()).toBeNull();
     // Junk heartbeats are ignored but still get an ok (the mod keeps going).
-    expect(w.handleHello('nope')).toEqual({ ok: true });
+    expect(w.handleHello('nope')).toEqual({ ok: true, app: 'sei' });
     expect(w.getState().kind).toBe('closed');
     void onUpdate;
   });
@@ -80,16 +80,27 @@ describe('createDstWatcher (socket)', () => {
     // Node refuses an oversized request line itself (431) before our 413 cap.
     expect([413, 431]).toContain((await fetch(`http://127.0.0.1:${port}/hello?q=${'x'.repeat(20_000)}`)).status);
 
-    const second = createDstWatcher({ port, log: quiet, pollMs: 50 });
+    // 260909: the candidates are walked in order, so a taken first port
+    // lands on the next free one (and the /hello answer names the app).
+    const other = await freePort();
+    const second = createDstWatcher({ ports: [port, other], log: quiet, pollMs: 50 });
     stops.push(() => second.stop());
     const onUpdate2 = vi.fn();
     second.start({ onUpdate: onUpdate2 });
     await new Promise((r) => setTimeout(r, 100));
-    expect(second.getState()).toMatchObject({ kind: 'unavailable', reason: `port ${port} is in use` });
-    // Rebinding to a free port recovers.
-    const other = await freePort();
-    await second.setPort(other);
     expect(second.port).toBe(other);
     expect(second.getState().kind).toBe('closed');
+    expect(await (await fetch(`http://127.0.0.1:${other}/hello?q=%7B%7D`)).json()).toEqual({ ok: true, app: 'sei' });
+    // Every candidate taken = unavailable, with each reason; a rebind once one frees recovers.
+    const third = createDstWatcher({ ports: [port, other], log: quiet, pollMs: 50 });
+    stops.push(() => third.stop());
+    third.start({ onUpdate: vi.fn() });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(third.getState()).toMatchObject({ kind: 'unavailable', reason: `port ${port} is in use; port ${other} is in use` });
+    second.stop();
+    await new Promise((r) => setTimeout(r, 50));
+    await third.rebind();
+    expect(third.port).toBe(other);
+    expect(third.getState().kind).toBe('closed');
   });
 });

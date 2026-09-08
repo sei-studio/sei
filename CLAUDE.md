@@ -1584,6 +1584,19 @@ with any C# change. Unverified live: `PathFindController` on an NPC with no
 `Data/Characters` entry, the SMAPI installer driven from Node on macOS,
 fishing (the minigame is skipped), tool swings (a hop + sound, no animation).
 
+**Discovery has no setting (260909).** Main binds the first free port of
+`DST_DISCOVERY_PORTS` (27424..27428, `src/shared/dstIpc.ts`) and the mod
+probes the same list every beat until one answers `app: "sei"`, then sticks
+to it (three misses = probe again). The M2 build had one fixed port with a
+Settings row and a mod option that had to agree, which is a setup step a
+player cannot be asked for; `UserConfig.dst_port` survives as a dead field so
+old configs parse. The other two player steps the game itself forces are
+written into `DstSteps` (shown after the tile AND in the setup modal): the
+helper must be in the game BEFORE it starts (mods are indexed once, at game
+start, so `install.ts` reports `needsRestart` when the running game predates
+the helper files, from `ps`/CIM start times; a live heartbeat clears it), and
+a world must be hosted.
+
 **Don't Starve Together (M2)** `native/dst-mod/sei/` (Lua, MIT, server-only,
 `all_clients_require_mod = false`, luacheck clean; `PROTOCOL.md`, mirrored in
 `src/shared/dstIpc.ts`). Body = a vanilla survivor prefab spawned on the
@@ -1593,8 +1606,7 @@ told, eat under 25% hunger), then the command slot. **Transport direction is
 inverted**: a mod can only reach out through `TheSim:QueryServer` to
 127.0.0.1 (Klei blocked third-party URLs in Jan 2025, hotfix 653007 carved
 localhost back out; no headers, bodies under ~20 KB), so main's watcher hosts
-the fixed discovery port (27424, `UserConfig.dst_port`) and answers the mod's
-2 s heartbeat with a summon offer `{token, botPort, ...}` after the bot's
+a discovery port and answers the mod's 2 s heartbeat with a summon offer `{token, botPort, ...}` after the bot's
 runtime reports its ephemeral `node:http` port over a `dst-listen` port
 message; the mod then POSTs `/obs` at 3 Hz (delta-compressed, <= 8 KB) and
 polls `GET /cmd` with a 400 ms bounded hold (measure it against the

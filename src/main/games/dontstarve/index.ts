@@ -17,7 +17,6 @@
 import type { Character, UserConfig } from '../../../shared/characterSchema';
 import type { WorldState } from '../../../shared/gameIpc';
 import {
-  DST_DEFAULT_PORT,
   type DstInstallState,
   type DstJoinTarget,
   type DstListenMessage,
@@ -49,8 +48,6 @@ export interface DstModuleDeps {
 export interface DstGameModule extends GameModule {
   /** The bot runtime is listening: hand the mod a summon on the next heartbeat. */
   setSummonOffer(characterId: string, listen: Pick<DstListenMessage, 'port' | 'token'> | null): Promise<void>;
-  /** Rebind the discovery listener (settings change). */
-  setPort(port: number): Promise<void>;
   getInstallState(): Promise<DstInstallState>;
   runInstall(onProgress?: (state: DstInstallState) => void): Promise<DstInstallState>;
   readonly watcherDst: DstWatcher;
@@ -103,6 +100,11 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
         log(`re-enable failed: ${(err as Error).message}`);
       }
     }
+    // A heartbeat is the helper talking, so whatever the file times say the
+    // running game HAS loaded it (a re-enable just above cannot fire one).
+    if (lastInstall.kind === 'found' && lastInstall.needsRestart && watcher.getState().kind === 'open') {
+      lastInstall = { ...lastInstall, needsRestart: false };
+    }
     if (tagged().kind !== before) onUpdate?.(tagged());
     return lastInstall;
   }
@@ -136,10 +138,6 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
       start({ onUpdate: cb }) {
         onUpdate = cb;
         watcher.start({ onUpdate: () => cb(tagged()) });
-        void deps
-          .loadConfig()
-          .then((cfg) => watcher.setPort(cfg.dst_port ?? DST_DEFAULT_PORT))
-          .catch(() => undefined);
         void refreshInstall().catch(() => undefined);
       },
       async checkNow() {
@@ -204,10 +202,6 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
       };
       watcher.setSummonOffer(characterId, offer);
       log(`summon offer queued for ${offer.name} (${prefab}) -> bot port ${listen.port}`);
-    },
-    async setPort(port) {
-      await watcher.setPort(port);
-      onUpdate?.(tagged());
     },
     getInstallState: () => refreshInstall(),
     async runInstall(onProgress) {

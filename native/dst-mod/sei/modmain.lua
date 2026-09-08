@@ -1,11 +1,18 @@
 -- modmain.lua: the Sei companion helper (server-only).
 --
--- Inert unless the Sei desktop app answers on the discovery port: every 2 s
+-- Inert unless the Sei desktop app answers on a discovery port: every 2 s
 -- the master sim sends GET http://127.0.0.1:<port>/hello?q=<json> carrying
 -- the world's session id, name, day, season, phase and players. The reply is
--- `{}` (idle) or `{summon:{token, botPort, name, prefab, nearUserid,
--- announce}}`, and on a summon the body is spawned beside that player and
--- wired to the bot runtime on botPort (see PROTOCOL.md).
+-- `{ok, app="sei"}` (idle) or the same plus `summon={token, botPort, name,
+-- prefab, nearUserid, announce}`, and on a summon the body is spawned beside
+-- that player and wired to the bot runtime on botPort (see PROTOCOL.md).
+--
+-- There is no port setting (260909). Sei binds the first free port in PORTS
+-- and this side probes ALL of them every beat until one answers with
+-- app == "sei", then sticks to it; three misses in a row send it back to
+-- probing. A stranger on one of the ports never gets adopted because the
+-- app field is required. Cost while Sei is closed: five refused loopback
+-- connections every 2 s.
 --
 -- Chat capture wraps GLOBAL.Networking_Say (the 9-arg signature; the engine
 -- calls it on the server for every chat line). The assignment has to happen
@@ -24,11 +31,16 @@ local pcall = GLOBAL.pcall
 local tostring = GLOBAL.tostring
 local type = GLOBAL.type
 
-local PORT = GetModConfigData("port") or 27424
+-- MIRROR: DST_DISCOVERY_PORTS in src/shared/dstIpc.ts.
+local PORTS = { 27424, 27425, 27426, 27427, 27428 }
 local ANNOUNCE = GetModConfigData("announce")
 if ANNOUNCE == nil then ANNOUNCE = true end
 local HEARTBEAT_S = 2
-local MOD_VERSION = "0.1.0"
+local MOD_VERSION = "0.2.0"
+-- A request that has not called back for this long is written off, so one
+-- hung QueryServer cannot silence a port forever.
+local INFLIGHT_STALE_S = 10
+local MISSES_BEFORE_PROBE = 3
 
 local function log(msg)
     print("[sei] " .. tostring(msg))
@@ -56,7 +68,9 @@ end
 
 -- ── heartbeat ───────────────────────────────────────────────────────────────
 
-local heartbeatInflight = false
+local activePort = nil      -- the port that last answered as Sei
+local misses = 0            -- consecutive failures on activePort
+local inflight = {}         -- port -> GetTime() the request left
 
 local function helloBody()
     local TheWorld = GLOBAL.TheWorld
@@ -102,21 +116,53 @@ local function onSummon(offer)
     end
 end
 
-local function heartbeat()
-    if heartbeatInflight then return end
+local function onHelloResult(port, result, ok, code)
     local Util = require("sei/util")
-    local body = Util.JsonEncode(helloBody())
-    if body == nil then return end
-    heartbeatInflight = true
-    local url = "http://127.0.0.1:" .. tostring(PORT) .. "/hello?q=" .. Util.UrlEncode(body)
-    TheSim:QueryServer(url, function(result, ok, code)
-        heartbeatInflight = false
-        if not ok or code ~= 200 then return end
-        local resp = Util.JsonDecode(result)
-        if resp ~= nil and resp.summon ~= nil then
-            pcall(onSummon, resp.summon)
+    inflight[port] = nil
+    local resp = (ok and code == 200) and Util.JsonDecode(result) or nil
+    if resp == nil or resp.app ~= "sei" then
+        if activePort == port then
+            misses = misses + 1
+            if misses >= MISSES_BEFORE_PROBE then
+                log("lost Sei on port " .. tostring(port) .. ", probing again")
+                activePort = nil
+                misses = 0
+            end
         end
+        return
+    end
+    if activePort ~= port then
+        log("found Sei on port " .. tostring(port))
+        activePort = port
+    end
+    misses = 0
+    if resp.summon ~= nil then
+        pcall(onSummon, resp.summon)
+    end
+end
+
+local function sendHello(port, encoded)
+    local now = GLOBAL.GetTime()
+    if inflight[port] ~= nil and now - inflight[port] < INFLIGHT_STALE_S then return end
+    inflight[port] = now
+    local Util = require("sei/util")
+    local url = "http://127.0.0.1:" .. tostring(port) .. "/hello?q=" .. Util.UrlEncode(encoded)
+    TheSim:QueryServer(url, function(result, ok, code)
+        onHelloResult(port, result, ok, code)
     end, "GET")
+end
+
+local function heartbeat()
+    local Util = require("sei/util")
+    local encoded = Util.JsonEncode(helloBody())
+    if encoded == nil then return end
+    if activePort ~= nil then
+        sendHello(activePort, encoded)
+    else
+        for _, p in ipairs(PORTS) do
+            sendHello(p, encoded)
+        end
+    end
 end
 
 AddSimPostInit(function()
@@ -125,7 +171,7 @@ AddSimPostInit(function()
         log("not the master sim, helper idle")
         return
     end
-    log("helper active, discovery port " .. tostring(PORT))
+    log("helper active, probing discovery ports " .. tostring(PORTS[1]) .. "-" .. tostring(PORTS[#PORTS]))
     TheWorld:DoPeriodicTask(HEARTBEAT_S, function()
         pcall(heartbeat)
     end, 1)

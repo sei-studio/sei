@@ -1,20 +1,18 @@
 /**
  * DstLaunchPanel — the Don't Starve Together launch surface (game adapters
- * M2, 260908), hosted in the chat game aside like McLaunchPanel. Three
- * states, top to bottom (plan section 4.2):
+ * M2, 260908), hosted in the chat game aside like McLaunchPanel. What the
+ * player sees after picking the tile, top to bottom:
  *
- *   Set up          the game was found but Sei's helper is not in it yet:
- *                   the "Add Sei's helper" card with progress; or the game
- *                   was not found at all (the paths we looked in + Check again)
- *   Waiting         helper installed, no hosted world answering: "Launch Don't
- *                   Starve Together" (Steam) and the host-a-world hint; the
- *                   pending summon auto-resumes when the heartbeat lands
- *   Launch          world open: the Launch button, the companion's in-game
- *                   name, and the survivor row ("Marv wants to play as
- *                   Wigfrid" with a change control over the eligible roster)
- *
- * The game pack card (the Lua mod download) sits above all three; it renders
- * nothing once the pack is ready.
+ *   Pack            the game pack card (the Lua mod download); renders
+ *                   nothing once the pack is ready
+ *   Steps           DstSteps (260909): the numbered list of what still has
+ *                   to happen (game found, helper added, game open, world
+ *                   hosted), each with its one button; a pending summon
+ *                   auto-resumes when the heartbeat lands
+ *   Launch          world open: the Launch button + the companion's in-game
+ *                   name
+ *   Survivor        "Marv wants to play as Wigfrid" with a change control
+ *                   over the eligible roster
  */
 import React, { useEffect } from 'react';
 import { DST_SURVIVORS, dstSurvivor } from '@shared/dstSurvivors';
@@ -26,9 +24,8 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { Button } from '../Button';
 import { GamePackCard } from '../games/GamePackCard';
 import { useDstStore } from './useDstStore';
+import { DstSteps, DST_GAME_NAME as GAME_NAME } from './DstSteps';
 import styles from './dst.module.css';
-
-const GAME_NAME = "Don't Starve Together";
 
 export interface DstLaunchPanelProps {
   characterId: string;
@@ -46,20 +43,14 @@ export function DstLaunchPanel({ characterId }: DstLaunchPanelProps): React.Reac
   const summon = useDataStore((s) => s.summons[characterId]);
   const world = useDataStore((s) => s.worlds.dontstarve);
   const install = useDstStore((s) => s.install);
-  const installBusy = useDstStore((s) => s.installBusy);
-  const launching = useDstStore((s) => s.launching);
-  const refreshInstall = useDstStore((s) => s.refreshInstall);
-  const runInstall = useDstStore((s) => s.runInstall);
-  const launchGame = useDstStore((s) => s.launchGame);
   const pick = useDstStore((s) => s.survivors[characterId]);
   const pickBusy = useDstStore((s) => s.survivorBusy[characterId] ?? false);
   const loadSurvivor = useDstStore((s) => s.loadSurvivor);
   const setSurvivor = useDstStore((s) => s.setSurvivor);
 
   useEffect(() => {
-    void refreshInstall();
     void loadSurvivor(characterId);
-  }, [characterId, refreshInstall, loadSurvivor]);
+  }, [characterId, loadSurvivor]);
 
   const name = character?.name ?? t('Your companion');
   const connecting = summon?.kind === 'connecting';
@@ -77,61 +68,10 @@ export function DstLaunchPanel({ characterId }: DstLaunchPanelProps): React.Reac
       <h2 className={styles.title}>{GAME_NAME}</h2>
       <GamePackCard game="dontstarve" />
 
-      {/* ── Set up ── */}
-      {install == null ? (
-        <p className={styles.hint}>{t('Looking for Don\'t Starve Together on this computer...')}</p>
-      ) : install.kind === 'not_found' ? (
-        <section className={styles.card}>
-          <h3 className={styles.cardTitle}>{t("We couldn't find Don't Starve Together")}</h3>
-          <p className={styles.cardBody}>{t('Install it through Steam, then check again. We looked in:')}</p>
-          {install.searched.slice(0, 4).map((p) => (
-            <span key={p} className={styles.mono}>{p}</span>
-          ))}
-          <div className={styles.actions}>
-            <Button kind="primary" size="md" onClick={() => void refreshInstall()}>{t('Check again')}</Button>
-          </div>
-        </section>
-      ) : install.kind === 'installing' ? (
-        <section className={styles.card} aria-live="polite">
-          <h3 className={styles.cardTitle}>{t("Adding Sei's helper...")}</h3>
-          <p className={styles.cardBody}>{install.step === 'enabling' ? t('Enabling the helper in the game') : t('Copying the helper into the game folder')}</p>
-        </section>
-      ) : install.kind === 'error' ? (
-        <section className={styles.card} role="alert">
-          <h3 className={styles.cardTitle}>{t("Couldn't add Sei's helper")}</h3>
-          <p className={styles.cardBody}>{t(ERROR_COPY.GAME_INSTALL_FAILED)}</p>
-          <span className={styles.mono}>{install.message}</span>
-          <div className={styles.actions}>
-            <Button kind="primary" size="md" disabled={installBusy} onClick={() => void runInstall()}>{t('Try again')}</Button>
-          </div>
-        </section>
-      ) : !install.modInstalled ? (
-        <section className={styles.card}>
-          <h3 className={styles.cardTitle}>{t("Add Sei's helper to Don't Starve Together")}</h3>
-          <p className={styles.cardBody}>
-            {t('A small server-side mod lets your companion join the worlds you host. Friends who join need nothing. It stays quiet until Sei asks it to spawn someone.')}
-          </p>
-          <span className={styles.mono}>{install.installPath}</span>
-          <div className={styles.actions}>
-            <Button kind="primary" size="md" disabled={installBusy} onClick={() => void runInstall()}>{t("Add Sei's helper")}</Button>
-          </div>
-        </section>
-      ) : null}
-
-      {/* ── Waiting for your world ── */}
-      {helperReady && !worldOpen ? (
-        <section className={styles.card}>
-          <h3 className={styles.cardTitle}>{t('Waiting for your world')}</h3>
-          <p className={styles.cardBody}>
-            {t('Open the game and host a world. Sei\'s helper is enabled automatically; your companion can join as soon as the world is running.')}
-          </p>
-          <div className={styles.actions}>
-            <Button kind="primary" size="md" disabled={launching} onClick={() => void launchGame()}>
-              {launching ? t('Opening Steam...') : t("Launch Don't Starve Together")}
-            </Button>
-          </div>
-        </section>
-      ) : null}
+      {/* ── Steps (everything the player still has to do) ── */}
+      <section className={styles.card} aria-label={t('Setup')}>
+        <DstSteps />
+      </section>
 
       {/* ── Launch ── */}
       {helperReady && worldOpen ? (

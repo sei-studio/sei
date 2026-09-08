@@ -369,8 +369,9 @@ Error classes: `STARDEW_NOT_INSTALLED`, `SMAPI_INSTALL_FAILED`,
   `DisableLocalModWarning()` (preserving other lines), re-applied on every
   Sei launch because game updates and Steam "verify" rewrite that file.
   No download, no installer.
-- `watcher.ts`: a long-lived `node:http` listener on the fixed discovery
-  port (default 27424, configurable) serving `/hello`; a heartbeat within
+- `watcher.ts`: a long-lived `node:http` listener on the first free port
+  of a fixed list (27424..27428; 260909, was one configurable port and a
+  matching mod option) serving `/hello`; a heartbeat within
   the last 6 s = `WorldState {game:'dontstarve', open{worldName, day,
   season, caves}}`, else `closed`; not installed = `not_installed`.
 - `launch.ts`: `steam://rungameid/322330` (Steam handles the rest; the mod
@@ -532,7 +533,7 @@ appears next to you and starts talking in chat.
    `remember()` available (it is the brain's), `bot_session_ended` with
    `game`, `character_summoned` with `game`.
 8. **Settings**: per-game groups (Stardew: install status, achievements
-   note; DST: install status, discovery port). Vision mode stays
+   note; DST: install status, game folder; the discovery port row went 260909). Vision mode stays
    Minecraft-only.
 
 ---

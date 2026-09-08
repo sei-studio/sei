@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import path from 'node:path';
 import {
+  needsRestart,
   parseLibraryFolders,
   findDstInstall,
   rewriteModSettings,
@@ -43,6 +44,8 @@ function fakeFs(files: Record<string, string>, dirs: string[] = [], platform: No
   const copies: [string, string][] = [];
   const all = () => ({ ...files, ...writes });
   return {
+    mtime: async (p) => (p in all() ? 1000 : null),
+    gameProcess: async () => ({ running: false, startedAt: null }),
     platform,
     home: platform === 'win32' ? 'C:\\Users\\me' : '/Users/me',
     env: { 'ProgramFiles(x86)': 'C:\\Program Files (x86)', ProgramFiles: 'C:\\Program Files' },
@@ -152,5 +155,39 @@ describe('install + detect', () => {
     expect(await detectInstall(fakeFs({}, [], 'darwin'))).toMatchObject({ kind: 'not_found' });
     const deps = fakeFs({ [vdfPath]: vdfMac }, [install], 'darwin');
     expect(await installMod({ packRoot: '/nothing' }, deps)).toMatchObject({ kind: 'error', error: 'GAME_INSTALL_FAILED' });
+  });
+});
+
+describe('needsRestart (260909)', () => {
+  it('is true only for a running game that started before the helper landed', () => {
+    expect(needsRestart({ running: true, startedAt: 500 }, 1000, 900)).toBe(true);
+    expect(needsRestart({ running: true, startedAt: 500 }, 400, 1000)).toBe(true);
+    expect(needsRestart({ running: true, startedAt: 1500 }, 1000, 900)).toBe(false);
+    expect(needsRestart({ running: false, startedAt: 500 }, 1000, 900)).toBe(false);
+    // Unknown start time makes no claim; missing files make none either.
+    expect(needsRestart({ running: true, startedAt: null }, 1000, 900)).toBe(false);
+    expect(needsRestart({ running: true, startedAt: 500 }, null, null)).toBe(false);
+  });
+
+  it('detectInstall reports gameRunning + needsRestart from the process listing', async () => {
+    const root = '/Users/me/Library/Application Support/Steam';
+    const install = path.join(root, 'steamapps', 'common', "Don't Starve Together");
+    const modsDir = path.join(install, 'dontstarve_steam.app', 'Contents', 'mods');
+    const vdf = `"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"${root}"\n\t\t"apps"\n\t\t{\n\t\t\t"322330"\t\t"1"\n\t\t}\n\t}\n}\n`;
+    const deps = fakeFs(
+      {
+        [path.join(root, 'steamapps', 'libraryfolders.vdf')]: vdf,
+        [path.join(modsDir, 'sei', 'modinfo.lua')]: 'version = "0.2.0"',
+        [path.join(modsDir, 'modsettings.lua')]: '-- x\nForceEnableMod("sei")\nDisableLocalModWarning()\n',
+      },
+      [install],
+      'darwin',
+    );
+    deps.gameProcess = async () => ({ running: true, startedAt: 500 });
+    expect(await detectInstall(deps)).toMatchObject({ kind: 'found', modInstalled: true, enabled: true, gameRunning: true, needsRestart: true });
+    deps.gameProcess = async () => ({ running: true, startedAt: 5000 });
+    expect(await detectInstall(deps)).toMatchObject({ gameRunning: true, needsRestart: false });
+    deps.gameProcess = async () => { throw new Error('ps missing'); };
+    expect(await detectInstall(deps)).toMatchObject({ gameRunning: false, needsRestart: false });
   });
 });

@@ -1821,13 +1821,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { setSurvivor } = await import('./games/dontstarve/survivorPick');
     return setSurvivor(args.characterId, args.prefab);
   });
-  ipcMain.handle(IpcChannel.dst.setPort, async (_event, portArg: unknown): Promise<void> => {
-    const port = z.number().int().min(1024).max(65535).parse(portArg);
-    const { updateConfig } = await import('./configStore');
-    await updateConfig((c) => ({ ...c, dst_port: port }));
-    const mod = await dstModule();
-    await mod.setPort(port);
-  });
 
   // ── Stardew Valley install / launch (game-adapters M1, 260908) ───────────
   // src/main/games/stardew: detection is a fresh pass each call (cheap: a

@@ -15,7 +15,6 @@ interface DstApi {
   dstLaunch(): Promise<void>;
   dstSurvivorGet(characterId: string): Promise<DstSurvivorPick>;
   dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
-  dstSetPort(port: number): Promise<void>;
   onDstInstallProgress(cb: (s: DstInstallState) => void): () => void;
 }
 
@@ -36,7 +35,6 @@ interface DstStoreState {
   launchGame: () => Promise<void>;
   loadSurvivor: (characterId: string) => Promise<DstSurvivorPick | null>;
   setSurvivor: (characterId: string, prefab: string | null) => Promise<void>;
-  setPort: (port: number) => Promise<void>;
 }
 
 let offProgress: (() => void) | null = null;
@@ -126,15 +124,6 @@ export const useDstStore = create<DstStoreState>((set, get) => {
       }
     },
 
-    setPort: async (port) => {
-      const fn = api().dstSetPort;
-      if (!fn) return;
-      try {
-        await fn(port);
-      } catch {
-        /* the settings row shows the world state, which reflects the bind */
-      }
-    },
   };
 });
 

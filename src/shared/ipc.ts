@@ -1404,8 +1404,6 @@ export interface RendererApi {
   dstSurvivorGet(characterId: string): Promise<DstSurvivorPick>;
   /** Override (prefab) or forget (null) the survivor pick. */
   dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
-  /** Persist UserConfig.dst_port and rebind the discovery listener. */
-  dstSetPort(port: number): Promise<void>;
   /** Push: install progress while dstInstall runs. */
   onDstInstallProgress(cb: (state: DstInstallState) => void): Unsubscribe;
 

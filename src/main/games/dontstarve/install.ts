@@ -25,6 +25,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import type { DstInstallState } from '../../../shared/dstIpc';
 import { DST_STEAM_APP_ID } from '../../../shared/dstIpc';
+import { findGameProcess, type GameProcessState } from './process';
 
 export const DST_INSTALL_DIR_NAME = "Don't Starve Together";
 export const MOD_ID = 'sei';
@@ -40,6 +41,10 @@ export interface InstallDeps {
   listDir(p: string): Promise<string[]>;
   /** Windows only: HKCU\Software\Valve\Steam\SteamPath, or null. */
   registrySteamPath(): Promise<string | null>;
+  /** Modification time (epoch ms) of a file, or null when missing (260909). */
+  mtime(p: string): Promise<number | null>;
+  /** Whether the game is running and since when (260909). */
+  gameProcess(): Promise<GameProcessState>;
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -98,6 +103,14 @@ export function defaultDeps(): InstallDeps {
       }
     },
     registrySteamPath,
+    mtime: async (p) => {
+      try {
+        return (await stat(p)).mtimeMs;
+      } catch {
+        return null;
+      }
+    },
+    gameProcess: () => findGameProcess(),
   };
 }
 
@@ -271,20 +284,43 @@ export function modVersionFrom(modinfo: string | null): string | null {
 
 /* ── the three operations the GameModule exposes ────────────────────────── */
 
+/**
+ * Did the running game start before the helper landed? Mods are indexed once
+ * at game start, so a game older than the newer of the two files Sei writes
+ * (the mod folder's modinfo.lua, modsettings.lua) has not loaded it. Unknown
+ * start time = no claim (false): the launch panel would otherwise nag a
+ * player whose game is fine, and a live heartbeat settles it anyway.
+ */
+export function needsRestart(proc: GameProcessState, modInfoMtime: number | null, settingsMtime: number | null): boolean {
+  if (!proc.running || proc.startedAt == null) return false;
+  const landed = Math.max(modInfoMtime ?? 0, settingsMtime ?? 0);
+  return landed > 0 && proc.startedAt < landed;
+}
+
 export async function detectInstall(deps: InstallDeps = defaultDeps()): Promise<DstInstallState> {
   const { found, searched } = await findDstInstall(deps);
   if (!found) return { kind: 'not_found', searched };
   const modDir = path.join(found.modsDir, MOD_ID);
-  const modinfo = await deps.readText(path.join(modDir, 'modinfo.lua'));
-  const settings = await deps.readText(path.join(found.modsDir, 'modsettings.lua'));
+  const modInfoPath = path.join(modDir, 'modinfo.lua');
+  const settingsPath = path.join(found.modsDir, 'modsettings.lua');
+  const modinfo = await deps.readText(modInfoPath);
+  const settings = await deps.readText(settingsPath);
   const enabled = settings != null && rewriteModSettings(settings) === settings;
+  const modInstalled = modinfo != null;
+  const proc = await deps.gameProcess().catch((): GameProcessState => ({ running: false, startedAt: null }));
+  const restart =
+    modInstalled && enabled
+      ? needsRestart(proc, await deps.mtime(modInfoPath), await deps.mtime(settingsPath))
+      : false;
   return {
     kind: 'found',
     installPath: found.installPath,
     modsDir: found.modsDir,
-    modInstalled: modinfo != null,
+    modInstalled,
     modVersion: modVersionFrom(modinfo),
     enabled,
+    gameRunning: proc.running,
+    needsRestart: restart,
   };
 }
 

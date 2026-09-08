@@ -3,10 +3,12 @@
  *
  * Discovery is INBOUND: the mod inside the player's game can only make HTTP
  * requests to localhost, so main keeps a long-lived `node:http` listener on
- * the fixed discovery port (DST_DEFAULT_PORT, UserConfig.dst_port) and the
- * mod GETs /hello?q=<json> every 2 s (PROTOCOL.md). A heartbeat inside
- * DST_HEARTBEAT_STALE_MS = the world is open; nothing for longer = closed.
- * `not_installed` is decided by the module (install detection), not here.
+ * the first FREE port of DST_DISCOVERY_PORTS (260909: was one fixed,
+ * user-settable port) and the mod probes the same list, GETting
+ * /hello?q=<json> every 2 s on whichever answered as Sei (PROTOCOL.md). A
+ * heartbeat inside DST_HEARTBEAT_STALE_MS = the world is open; nothing for
+ * longer = closed. `not_installed` is decided by the module (install
+ * detection), not here.
  *
  * The /hello response is where a SUMMON is handed to the mod: once the bot
  * runtime reports its loopback listener ({type:'dst-listen'} through the
@@ -15,13 +17,14 @@
  * supervisor's summon deadline, and one offer per heartbeat keeps a
  * two-companion summon orderly (the second rides the following beat).
  *
- * Bind failure (EADDRINUSE) is reported as state `unavailable` with a reason
- * so the settings section can say "change the port"; nothing throws.
+ * Only when EVERY candidate refuses to bind is the state `unavailable`, with
+ * a reason the launch panel shows; nothing throws.
  */
 import http from 'node:http';
 import type { WorldState } from '../../../shared/gameIpc';
 import {
-  DST_DEFAULT_PORT,
+  DST_DISCOVERY_PORTS,
+  DST_HELLO_APP,
   DST_HEARTBEAT_STALE_MS,
   DstHeartbeatSchema,
   type DstHeartbeat,
@@ -31,6 +34,9 @@ import {
 } from '../../../shared/dstIpc';
 
 export interface DstWatcherOptions {
+  /** Candidate ports, tried in order; the first free one is bound. `port: 0` (tests) = any free port. */
+  ports?: readonly number[];
+  /** Single-candidate shorthand for `ports`. */
   port?: number;
   staleMs?: number;
   now?: () => number;
@@ -47,8 +53,9 @@ export interface DstWatcher {
   /** The latest heartbeat (for the join target), or null when closed. */
   latestHeartbeat(): DstHeartbeat | null;
   setSummonOffer(characterId: string, offer: DstSummonOffer | null): void;
-  /** Rebind on a new port (settings change). Idempotent for the same port. */
-  setPort(port: number): Promise<void>;
+  /** Close and bind again (walks the candidates from the top). */
+  rebind(): Promise<void>;
+  /** The bound port; the first candidate while nothing is bound. */
   readonly port: number;
   /** Test seam: handle one /hello body directly (no socket). */
   handleHello(raw: unknown): DstHelloResponse;
@@ -61,7 +68,8 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
   const staleMs = opts.staleMs ?? DST_HEARTBEAT_STALE_MS;
   const log = opts.log ?? ((m: string) => console.log(`[sei/dst] ${m}`));
   const pollMs = opts.pollMs ?? 1000;
-  let port = opts.port ?? DST_DEFAULT_PORT;
+  const candidates: readonly number[] = opts.ports ?? (opts.port != null ? [opts.port] : DST_DISCOVERY_PORTS);
+  let port = candidates[0];
 
   let server: http.Server | null = null;
   let onUpdate: ((s: WorldState) => void) | null = null;
@@ -124,10 +132,10 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
       emitIfChanged();
     }
     const offer = takeOffer();
-    if (!offer) return { ok: true };
+    if (!offer) return { ok: true, app: DST_HELLO_APP };
     const { expiresAt: _drop, ...wire } = offer;
     log(`handing summon of ${wire.prefab} "${wire.name}" to the world (bot port ${wire.botPort})`);
-    return { ok: true, summon: wire };
+    return { ok: true, app: DST_HELLO_APP, summon: wire };
   }
 
   function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -158,24 +166,38 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
     send(200, handleHello(body));
   }
 
-  function listen(): Promise<void> {
+  /** Try to bind ONE port; resolves to the error code (null = bound). */
+  function tryListen(p: number): Promise<string | null> {
     return new Promise((resolve) => {
       const s = http.createServer(requestHandler);
       s.on('error', (err: NodeJS.ErrnoException) => {
-        bindError = err.code === 'EADDRINUSE' ? `port ${port} is in use` : err.message;
-        log(`discovery listener failed on ${port}: ${bindError}`);
-        server = null;
-        emitIfChanged();
-        resolve();
+        resolve(err.code === 'EADDRINUSE' ? `port ${p} is in use` : err.message);
       });
-      s.listen(port, '127.0.0.1', () => {
-        bindError = null;
+      s.listen(p, '127.0.0.1', () => {
         server = s;
-        log(`discovery listening on 127.0.0.1:${port}`);
-        emitIfChanged();
-        resolve();
+        port = (s.address() as { port: number }).port;
+        resolve(null);
       });
     });
+  }
+
+  /** Walk the candidates; the first free one wins. */
+  async function listen(): Promise<void> {
+    const reasons: string[] = [];
+    for (const p of candidates) {
+      const reason = await tryListen(p);
+      if (reason == null) {
+        bindError = null;
+        log(`discovery listening on 127.0.0.1:${port}${reasons.length ? ` (${reasons.join('; ')})` : ''}`);
+        emitIfChanged();
+        return;
+      }
+      reasons.push(reason);
+    }
+    bindError = reasons.join('; ') || 'no candidate port';
+    server = null;
+    log(`discovery listener failed: ${bindError}`);
+    emitIfChanged();
   }
 
   function closeServer(): Promise<void> {
@@ -214,11 +236,10 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
       if (offer) offers.set(characterId, offer);
       else offers.delete(characterId);
     },
-    async setPort(next) {
-      if (next === port && server) return;
-      port = next;
+    async rebind() {
       await closeServer();
       bindError = null;
+      port = candidates[0];
       if (onUpdate) await listen();
     },
     handleHello,

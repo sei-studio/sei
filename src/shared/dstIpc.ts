@@ -16,8 +16,20 @@
  */
 import { z } from 'zod';
 
-/** The fixed discovery port the mod heartbeats to (UserConfig.dst_port overrides). */
-export const DST_DEFAULT_PORT = 27424;
+/**
+ * Discovery ports (260909): main binds the FIRST FREE one of these and the
+ * mod probes all of them until one answers as Sei, so neither side carries a
+ * setting. Before this the port was a fixed 27424 with a Settings row and a
+ * mod option that had to agree, which is exactly the kind of setup a player
+ * cannot be asked to do. Five is enough headroom for a stray program on the
+ * default; the mod's probe cost is five refused connections every 2 s while
+ * Sei is not running, and one request once it is.
+ */
+export const DST_DISCOVERY_PORTS: readonly number[] = [27424, 27425, 27426, 27427, 27428];
+/** The first candidate (kept for copy and older callers). */
+export const DST_DEFAULT_PORT = DST_DISCOVERY_PORTS[0];
+/** The /hello response names the app so the mod never adopts a stranger on the port. */
+export const DST_HELLO_APP = 'sei';
 /** Heartbeat cadence the mod uses (seconds); the watcher's stale window is 3x. */
 export const DST_HEARTBEAT_S = 2;
 export const DST_HEARTBEAT_STALE_MS = 6_000;
@@ -74,9 +86,10 @@ export const DstSummonOfferSchema = z.object({
 });
 export type DstSummonOffer = z.infer<typeof DstSummonOfferSchema>;
 
-/** The /hello response body. `{}` when idle. */
+/** The /hello response body. Idle = `{ok, app}`; `app` is DST_HELLO_APP. */
 export interface DstHelloResponse {
   ok: true;
+  app: typeof DST_HELLO_APP;
   summon?: Omit<DstSummonOffer, 'expiresAt'>;
 }
 
@@ -132,7 +145,7 @@ export type DstWorldState =
     }
   | { game: 'dontstarve'; kind: 'closed' }
   | { game: 'dontstarve'; kind: 'not_installed' }
-  /** The discovery port could not be bound (DST_PORT_IN_USE). */
+  /** None of DST_DISCOVERY_PORTS could be bound (DST_PORT_IN_USE). */
   | { game: 'dontstarve'; kind: 'unavailable'; reason?: string };
 
 /* ── Dashboard snapshot (bot → main → renderer, gamedash:snapshot) ──────── */
@@ -169,7 +182,24 @@ export interface DstDashboardSnapshot {
 
 export type DstInstallState =
   | { kind: 'not_found'; searched: string[] }
-  | { kind: 'found'; installPath: string; modsDir: string; modInstalled: boolean; modVersion: string | null; enabled: boolean }
+  | {
+      kind: 'found';
+      installPath: string;
+      modsDir: string;
+      modInstalled: boolean;
+      modVersion: string | null;
+      enabled: boolean;
+      /** The game process is running right now (260909). */
+      gameRunning: boolean;
+      /**
+       * The game was started BEFORE the helper was copied in or enabled, so
+       * it has not loaded it: mods are indexed once at game start
+       * (modindex.lua), and a running game will never see the folder that
+       * appeared under it. The launch panel turns this into the "quit the
+       * game and open it again" step. A live heartbeat clears it.
+       */
+      needsRestart: boolean;
+    }
   | { kind: 'installing'; step: string }
   | { kind: 'error'; error: 'GAME_INSTALL_FAILED'; message: string };
 
@@ -199,6 +229,4 @@ export const DstChannel = {
   survivorSet: 'dst:survivor-set',
   /** Push: DstInstallState while an install runs. */
   installProgress: 'dst:install-progress',
-  /** Invoke: (port) → void; persists UserConfig.dst_port and rebinds the listener. */
-  setPort: 'dst:set-port',
 } as const;

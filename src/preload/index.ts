@@ -286,7 +286,6 @@ const api: RendererApi = {
   dstLaunch: () => ipcRenderer.invoke(IpcChannel.dst.launch),
   dstSurvivorGet: (characterId) => ipcRenderer.invoke(IpcChannel.dst.survivorGet, characterId),
   dstSurvivorSet: (characterId, prefab) => ipcRenderer.invoke(IpcChannel.dst.survivorSet, { characterId, prefab }),
-  dstSetPort: (port) => ipcRenderer.invoke(IpcChannel.dst.setPort, port),
   onDstInstallProgress(cb) {
     const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
     ipcRenderer.on(IpcChannel.dst.installProgress, handler);

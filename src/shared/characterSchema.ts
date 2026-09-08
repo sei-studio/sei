@@ -935,11 +935,11 @@ export const UserConfigSchema = z.object({
    */
   stt_local_fallback: z.boolean().optional(),
   /**
-   * Don't Starve Together (game-adapters M2, 260908). `dst_port` is the fixed
-   * loopback port main's discovery listener binds for the game's heartbeat
-   * (src/main/games/dontstarve/watcher.ts); absent = DST_DEFAULT_PORT (27424).
-   * Written by main through dst:set-port (not a renderer wholesale save) so a
-   * change can rebind the listener in the same step.
+   * DEPRECATED (260909), never read. Don't Starve Together discovery used to
+   * bind this one fixed port; it now binds the first free port of
+   * DST_DISCOVERY_PORTS and the helper mod probes the same list, so there is
+   * nothing to configure. Kept so a config written by the M2 build still
+   * parses.
    */
   dst_port: z.number().int().min(1024).max(65535).optional(),
   /**

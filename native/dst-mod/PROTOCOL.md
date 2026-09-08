@@ -14,9 +14,12 @@ bodies should stay under ~20 KB (the engine allocates generously per
 request). So every channel is the mod making an outbound HTTP request, and
 the two Sei processes are HTTP servers:
 
-- **main** keeps a long-lived listener on the fixed DISCOVERY port
-  (default `27424`, `UserConfig.dst_port`, the mod's `port` option) and only
-  ever answers `/hello`.
+- **main** keeps a long-lived listener on the first FREE port of the
+  DISCOVERY list `27424..27428` (`DST_DISCOVERY_PORTS`; 260909, was one
+  fixed, user-settable port) and only ever answers `/hello`. The mod probes
+  the whole list every beat until one answers with `app: "sei"`, then sticks
+  to it; three misses in a row send it back to probing. Nothing is
+  configured on either side.
 - **the bot runtime** (one per summoned character) listens on an ephemeral
   loopback port with a per-summon token and serves `/obs`, `/cmd`, `/event`,
   `/error`. It learns of the mod through main: the runtime posts
@@ -49,12 +52,14 @@ caves are enabled). `q`:
 inside 6 s = the world is `open` (`WorldState.dontstarve`); nothing for
 longer = `closed`.
 
-Response, idle: `{"ok": true}`.
+Response, idle: `{"ok": true, "app": "sei"}`. The `app` field is what lets
+the mod tell Sei from a stranger listening on one of the discovery ports; a
+response without it is treated as a miss.
 
 Response carrying a summon (delivered to exactly one heartbeat, then dropped):
 
 ```json
-{ "ok": true, "summon": {
+{ "ok": true, "app": "sei", "summon": {
   "token": "<per-summon token>", "botPort": 51234,
   "name": "Sui", "prefab": "wigfrid", "nearUserid": "KU_xxx", "announce": true } }
 ```
