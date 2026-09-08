@@ -271,6 +271,18 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.game.packProgress, handler);
     return () => ipcRenderer.off(IpcChannel.game.packProgress, handler);
   },
+  // Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts)
+  dstInstallState: () => ipcRenderer.invoke(IpcChannel.dst.installState),
+  dstInstall: () => ipcRenderer.invoke(IpcChannel.dst.install),
+  dstLaunch: () => ipcRenderer.invoke(IpcChannel.dst.launch),
+  dstSurvivorGet: (characterId) => ipcRenderer.invoke(IpcChannel.dst.survivorGet, characterId),
+  dstSurvivorSet: (characterId, prefab) => ipcRenderer.invoke(IpcChannel.dst.survivorSet, { characterId, prefab }),
+  dstSetPort: (port) => ipcRenderer.invoke(IpcChannel.dst.setPort, port),
+  onDstInstallProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
+    ipcRenderer.on(IpcChannel.dst.installProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.dst.installProgress, handler);
+  },
   // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
   speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
   speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),

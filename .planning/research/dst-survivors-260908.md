@@ -2,9 +2,15 @@
 
 Purpose: the roster brief handed to the one-off "pick your survivor" LLM call
 (plan section 8, decision 3) and, for the chosen survivor, appended to the DST
-adapter's world primer. Stats are base values from the wiki character pages;
-the DST agent MUST re-verify the ones marked (verify) against the current
-wiki before shipping, since several pages describe pre-refresh behaviour.
+adapter's world primer. Stats are base values from the wiki character pages.
+Re-verified 260908 (M2) against dontstarve.wiki.gg: Wolfgang's hunger is 300
+and Mightiness is a separate 0-100 meter since the 2021 refresh (raised by
+lifting and work, decaying over time and faster when hungry; Wimpy below 25,
+Mighty at 75+); WX-78 is 100/100/100 before circuits (the wiki infobox; the
+refresh kept the base stats and moved growth into circuits); Wickerbottom's
+health is 125. The shipped copy of this table is `src/shared/dstSurvivors.ts`
+(mirrored as data in `native/dst-mod/sei/scripts/sei/survivors.lua` and
+`src/bot/adapter/dontstarve/survivors.js`; a vitest pins the three together).
 
 Eligible for the companion body (v1): wilson, willow, wolfgang, wendy, wx78,
 wickerbottom, waxwell, wigfrid, webber, winona, wortox, wormwood, warly, wurt,
@@ -18,9 +24,9 @@ regardless of ownership; if a live test proves otherwise, drop them.
 |---|---|---|---|---|---|---|
 | wilson | Wilson | 150 | 150 | 200 | Grows a beard (winter insulation, beard hair for meat effigies). The only survivor with no drawbacks. | None. Safest generalist. |
 | willow | Willow | 150 | 150 | 120 | Immune to fire damage; starts with a lighter and Bernie the bear; gains sanity near fire (up to +10/min). | Sanity drains and restores at 1.1x; suffers more from cold. Keep a fire lit at night. |
-| wolfgang | Wolfgang | 150-300 (verify) | 300 | 200 | Mightiness scales damage up to 2x and lets him lift heavy things; large hunger pool. | Afraid of the dark and of monsters (extra sanity drain near them, 1.1x); mightiness decays without exercise (verify: post-2022 refresh uses a mightiness meter fed by work and the dumbbell, not hunger). |
+| wolfgang | Wolfgang | 150 to 300 | 300 | 200 | Mightiness meter (0 to 100): at 75 or more he is Mighty, deals 2x damage, works faster and carries heavy things without slowing; large hunger pool. | Mightiness decays over time (faster when hungry) and is raised by lifting dumbbells, rowing, and mining, chopping or digging work; below 25 he is Wimpy (0.75x damage and work). Afraid of the dark and of monsters (1.1x sanity drain). |
 | wendy | Wendy | 150 | 150 | 200 | Abigail, her ghost sister, fights beside her (summon with the flower, heal with ectoherbology); sanity drains slower in the dark (0.75x). | Hits for 0.75x damage; relies on Abigail for fights. |
-| wx78 | WX-78 | 100 (verify) | 100 (verify) | 100 (verify) | Eats spoiled food without penalty; upgrades with circuits (gains stats and abilities); healed by lightning strikes. | Takes damage from wetness and rain; attracts lightning. Stay dry, carry an umbrella. |
+| wx78 | WX-78 | 100 | 100 | 100 | Eats spoiled food without penalty; installs circuits (scanned from creatures) that raise stats and add abilities; healed by lightning strikes. | Takes damage from wetness and rain; attracts lightning. Low base stats until circuits are installed. Stay dry, carry an umbrella. |
 | wickerbottom | Wickerbottom | 125 | 150 | 250 | Crafts books with strong effects (grow plants, call lightning, sleep enemies); starts at a higher science tier. | Cannot sleep (no tents or bedrolls); loses sanity from stale or spoiled food. |
 | waxwell | Maxwell | 75 | 150 | 200 | Sanity regenerates constantly (+6.67/min); splits his mind into shadow puppets that work and fight; starts with a dark sword, night armor and nightmare fuel. | Very frail at 75 health. Avoid direct fights; let puppets and armor do the work. |
 | wigfrid | Wigfrid | 200 | 120 | 120 | Deals 1.25x damage, takes 0.75x; regains health and sanity on hits; starts with a battle helm and spear; battle songs. | Only eats meat. Hunt and cook meat only; small hunger and sanity pools. |

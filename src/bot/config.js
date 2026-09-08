@@ -126,12 +126,44 @@ const MinecraftAdapterSchema = z.object({
 // sync with GAME_KINDS below and GameId in src/shared/gameIpc.ts.
 export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve']
 
+// Don't Starve Together (game-adapters M2, 260908). Built by
+// src/bot/adapter/dontstarve/runtime.js adapterConfigFrom from main's
+// DstJoinTarget (src/shared/dstIpc.ts): the world identity (session id +
+// label), who to spawn beside, the survivor prefab + its primer paragraph,
+// and the announce toggle. The runtime's own loopback listener is ephemeral
+// (port 0) and reported back to main, so no port lives here.
+export const DontStarveAdapterSchema = z.object({
+  username: z.string().min(1).max(32),
+  session: z.string().default(''),
+  label: z.string().default(''),
+  day: z.number().int().nonnegative().default(1),
+  season: z.string().default(''),
+  phase: z.string().default(''),
+  caves: z.boolean().default(false),
+  nearUserid: z.string().default(''),
+  nearName: z.string().default(''),
+  prefab: z.string().min(1).max(32).default('wilson'),
+  survivorBrief: z.string().default(''),
+  announce: z.boolean().default(true),
+  /** Wait for the mod's `spawned` after the runtime starts listening. */
+  spawn_timeout_ms: z.number().int().min(1000).default(25_000),
+  /** No mod traffic for this long after spawn = the world is gone. */
+  heartbeat_loss_ms: z.number().int().min(1000).default(10_000),
+  /** Bounded long-poll hold for GET /cmd (measured against QueryServer on day one). */
+  cmd_hold_ms: z.number().int().min(0).max(5000).default(400),
+  /** After a death, how long the brain gets to react before the session ends. */
+  death_grace_ms: z.number().int().min(0).default(8_000),
+})
+
 const AdapterSchema = z.object({
   kind: z.enum(GAME_KINDS).default('minecraft'),
   minecraft: MinecraftAdapterSchema.optional(),
   stardew: z.object({}).passthrough().optional(),
-  dontstarve: z.object({}).passthrough().optional(),
+  dontstarve: DontStarveAdapterSchema.optional(),
 }).superRefine((a, ctx) => {
+  if (a.kind === 'dontstarve' && !a.dontstarve) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dontstarve'], message: 'adapter.dontstarve is required when adapter.kind is "dontstarve"' })
+  }
   // A Minecraft session still REQUIRES its block (unchanged contract: the
   // old schema made `minecraft` mandatory, so a Minecraft config without it
   // must keep failing to parse instead of silently booting a bodiless bot).

@@ -19,6 +19,7 @@ import { ZH_MODALS } from './zh/modals';
 import { ZH_CHATUI } from './zh/chatui';
 import { ZH_GAMES } from './zh/games';
 import { ZH_MISC } from './zh/misc';
+import { ZH_DONTSTARVE } from './zh/dontstarve';
 
 export const ZH: Record<string, string> = {
   ...ZH_COMMON,
@@ -29,6 +30,7 @@ export const ZH: Record<string, string> = {
   ...ZH_CHATUI,
   ...ZH_GAMES,
   ...ZH_MISC,
+  ...ZH_DONTSTARVE,
 
   // W5 settings (china-compat)
   // Model picker + Test probe (SettingsScreen)

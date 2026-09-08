@@ -1748,7 +1748,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // src/main/games/packs.ts. The push carries the whole state object, and the
   // renderer reads every field of it, so keep the zod schema below in step
   // with GamePackState (zod strips undeclared keys silently).
-  const GameIdSchema = z.enum(['minecraft']);
+  // M2 (260908): the DST pack (the Lua mod under assets/) rides the same
+  // store; the renderer's pack card asks for every GAME_ID at boot.
+  const GameIdSchema = z.enum(['minecraft', 'dontstarve']);
   let gamePackPushWired = false;
   const wireGamePackPush = async (): Promise<void> => {
     if (gamePackPushWired) return;
@@ -1778,6 +1780,53 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // card renders the retry without a second round trip.
       return getPackState(args.game);
     }
+  });
+
+  // ── Don't Starve Together (game-adapters M2, 260908) ─────────────────────
+  // Install detection + the mod copy, the Steam launch, the per-character
+  // survivor pick, and the discovery port. Everything goes through the
+  // registered DST GameModule (src/main/games/dontstarve); the renderer
+  // never names a path. Contract: src/shared/dstIpc.ts.
+  const dstModule = async () => {
+    const { getGameModule } = await import('./games');
+    const mod = getGameModule('dontstarve') as import('./games/dontstarve').DstGameModule | null;
+    if (!mod) throw new Error("Don't Starve Together support is not available in this build.");
+    return mod;
+  };
+  ipcMain.handle(IpcChannel.dst.installState, async () => {
+    const mod = await dstModule();
+    return mod.getInstallState();
+  });
+  ipcMain.handle(IpcChannel.dst.install, async () => {
+    const mod = await dstModule();
+    return mod.runInstall((state) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.dst.installProgress, state);
+      }
+    });
+  });
+  ipcMain.handle(IpcChannel.dst.launch, async (): Promise<void> => {
+    const mod = await dstModule();
+    await mod.install?.launch();
+  });
+  ipcMain.handle(IpcChannel.dst.survivorGet, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getOrPickSurvivor } = await import('./games/dontstarve/survivorPick');
+    return getOrPickSurvivor(id);
+  });
+  ipcMain.handle(IpcChannel.dst.survivorSet, async (_event, argsRaw: unknown) => {
+    const { DstSurvivorSetSchema } = await import('../shared/dstIpc');
+    const args = DstSurvivorSetSchema.parse(argsRaw);
+    IdSchema.parse(args.characterId);
+    const { setSurvivor } = await import('./games/dontstarve/survivorPick');
+    return setSurvivor(args.characterId, args.prefab);
+  });
+  ipcMain.handle(IpcChannel.dst.setPort, async (_event, portArg: unknown): Promise<void> => {
+    const port = z.number().int().min(1024).max(65535).parse(portArg);
+    const { updateConfig } = await import('./configStore');
+    await updateConfig((c) => ({ ...c, dst_port: port }));
+    const mod = await dstModule();
+    await mod.setPort(port);
   });
 
   // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────

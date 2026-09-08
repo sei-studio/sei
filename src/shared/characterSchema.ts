@@ -934,6 +934,31 @@ export const UserConfigSchema = z.object({
    * and NOT defaulted (absent ≡ false) — same convention as analytics_opt_out.
    */
   stt_local_fallback: z.boolean().optional(),
+  /**
+   * Don't Starve Together (game-adapters M2, 260908). `dst_port` is the fixed
+   * loopback port main's discovery listener binds for the game's heartbeat
+   * (src/main/games/dontstarve/watcher.ts); absent = DST_DEFAULT_PORT (27424).
+   * Written by main through dst:set-port (not a renderer wholesale save) so a
+   * change can rebind the listener in the same step.
+   */
+  dst_port: z.number().int().min(1024).max(65535).optional(),
+  /**
+   * Which survivor each character plays as in Don't Starve Together, SPARSE
+   * like call_backdrop: an absent character id means "not chosen yet" and
+   * the character picks on first launch (src/main/games/dontstarve/
+   * survivorPick.ts). `source: 'user'` marks a launch-panel override. Kept
+   * here and NOT in character.metadata (metadata cloud-syncs verbatim and is
+   * not editable on foreign characters). No `.default({})` on purpose.
+   */
+  dst_survivor: z
+    .record(
+      z.object({
+        prefab: z.string().min(1).max(32),
+        source: z.enum(['auto', 'user']).default('auto'),
+        reason: z.string().max(400).optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

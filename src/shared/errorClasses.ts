@@ -51,7 +51,14 @@ export type ErrorClass =
   // node_modules, src/main/games/packs.ts) could not be fetched, verified or
   // extracted. Pre-fork like the wizard's MOD_DOWNLOAD_FAILED; a retry is the
   // fix that usually works.
-  | 'GAME_PACK_DOWNLOAD_FAILED';
+  | 'GAME_PACK_DOWNLOAD_FAILED'
+  // Don't Starve Together (game-adapters M2, 260908): only where the copy
+  // must differ from the GAME_* classes. The mod answered but no survivor
+  // appeared; Sei could not bind its loopback listener or the discovery
+  // port; the survivor died (an ownerless body has no client to revive it).
+  | 'DST_SPAWN_FAILED'
+  | 'DST_PORT_IN_USE'
+  | 'DST_BODY_DIED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -83,4 +90,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'GAME_NOT_ANSWERING',
   'GAME_VERSION_UNSUPPORTED',
   'GAME_PACK_DOWNLOAD_FAILED',
+  'DST_SPAWN_FAILED',
+  'DST_PORT_IN_USE',
+  'DST_BODY_DIED',
 ]);
