@@ -72,6 +72,10 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // 260908 game packs. The size mirrors GAME_PACKS.minecraft.sizeHintBytes
   // (src/shared/gamePacks.ts); gamePacks.test.ts pins the two together.
   GAME_PACK_DOWNLOAD_FAILED: "Couldn't download the support files this game needs (about 50 MB for Minecraft). Check your connection and press Play again. A retry usually works.",
+  // Don't Starve Together (game-adapters M2, 260908).
+  DST_SPAWN_FAILED: "Sei's helper answered, but no survivor appeared in your world. Make sure you are the host, then press Play again.",
+  DST_PORT_IN_USE: "Sei couldn't open its local port for Don't Starve Together. Change the discovery port in Settings, or close whatever is using it, and try again.",
+  DST_BODY_DIED: "Your companion's survivor died in the Constant. Press Play to summon them again.",
 };
 
 /**

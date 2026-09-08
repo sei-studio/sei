@@ -20,6 +20,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon, launchSummon } from '../lib/summonFlow';
 import { botGameName } from '../lib/gameLaunch';
+import { getGameSetupBody } from '../lib/gameSetupBodies';
 import styles from './LanNotOpenModal.module.css';
 
 export interface GameSetupModalProps {
@@ -66,10 +67,21 @@ export function GameSetupModal({ game }: GameSetupModalProps): React.ReactElemen
 
   return (
     <ModalShell title={t('Open your {game} world', { game: name })} width={480} scrimClose onClose={onClose} aria-label={t('Open your {game} world', { game: name })}>
-      <p className={styles.body}>
-        {t('Sei could not find an open {game} world. Open your world in the game with the Sei mod enabled; your companion joins as soon as it appears.', { game: name })}
-      </p>
-      <p className={styles.hint}>{t('Sei keeps looking while this window is open.')}</p>
+      {(() => {
+        // A game that registered its own body (lib/gameSetupBodies) renders
+        // its install / launch steps here; the generic copy is the fallback.
+        const Body = getGameSetupBody(game);
+        return Body ? (
+          <Body />
+        ) : (
+          <>
+            <p className={styles.body}>
+              {t('Sei could not find an open {game} world. Open your world in the game with the Sei mod enabled; your companion joins as soon as it appears.', { game: name })}
+            </p>
+            <p className={styles.hint}>{t('Sei keeps looking while this window is open.')}</p>
+          </>
+        );
+      })()}
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={onClose}>
           {t('Close')}
