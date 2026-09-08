@@ -1,0 +1,8 @@
+{
+  "name": "@sei/pack-dontstarve",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Game pack workspace for the Don't Starve Together adapter. No npm dependencies: the pack carries the Lua helper mod (see assets.mjs); the adapter itself uses only node:http.",
+  "type": "module",
+  "dependencies": {}
+}

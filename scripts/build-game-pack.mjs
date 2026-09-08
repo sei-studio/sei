@@ -90,8 +90,12 @@ function parseArgs(argv) {
   if (rest.length !== 1) throw new Error('usage: build-game-pack.mjs <game> [--platform p] [--arch a] [--out dir] [--dry-run]');
   out.game = rest[0];
   if (!/^[a-z0-9]+$/.test(out.game)) throw new Error(`bad game id ${out.game}`);
-  if (!['darwin', 'win32', 'linux'].includes(out.platform)) throw new Error(`bad --platform ${out.platform}`);
-  if (!['arm64', 'x64'].includes(out.arch)) throw new Error(`bad --arch ${out.arch}`);
+  // `--platform any --arch any` names a pack with NO native code (the DST
+  // Lua mod pack), served to every platform (gamePacks.ts pickPackEntry).
+  // The build refuses it when the closure turns out to carry natives.
+  if (!['darwin', 'win32', 'linux', 'any'].includes(out.platform)) throw new Error(`bad --platform ${out.platform}`);
+  if (!['arm64', 'x64', 'any'].includes(out.arch)) throw new Error(`bad --arch ${out.arch}`);
+  if ((out.platform === 'any') !== (out.arch === 'any')) throw new Error('--platform any requires --arch any (and vice versa)');
   return out;
 }
 
@@ -138,6 +142,36 @@ async function loadPrune(game, platform) {
     minimatch.makeRe(g, { dot: true }); // throws on a malformed pattern
   }
   return { globs, mustKeep: Array.isArray(mod.MUST_KEEP) ? mod.MUST_KEEP : [] };
+}
+
+/**
+ * Game-side ASSETS a pack carries beside node_modules (game-adapters M2,
+ * 260908): `packs/<game>/assets.mjs` exports ASSET_DIRS = [{from, to}], both
+ * repo-relative posix paths. The DST pack ships the Lua mod this way
+ * (native/dst-mod/sei -> assets/dst-mod/sei); in dev the pack root IS the
+ * repo root and the installer falls back to the `from` path, so the two must
+ * agree (src/main/games/dontstarve/install.ts MOD_SOURCE_RELATIVE).
+ */
+async function loadAssets(game) {
+  const p = path.join(ROOT, 'packs', game, 'assets.mjs');
+  if (!existsSync(p)) return [];
+  const mod = await import(pathToFileURL(p).href);
+  const dirs = Array.isArray(mod.ASSET_DIRS) ? mod.ASSET_DIRS : [];
+  for (const d of dirs) {
+    if (!d || typeof d.from !== 'string' || typeof d.to !== 'string' || !d.to.startsWith('assets/')) {
+      throw new Error(`assets.mjs: bad entry ${JSON.stringify(d)} (to must start with assets/)`);
+    }
+    if (!existsSync(path.join(ROOT, ...d.from.split('/')))) throw new Error(`assets.mjs: ${d.from} does not exist`);
+  }
+  return dirs;
+}
+
+function copyAssets(dirs, staging) {
+  for (const d of dirs) {
+    const dest = path.join(staging, ...d.to.split('/'));
+    mkdirSync(path.dirname(dest), { recursive: true });
+    cpSync(path.join(ROOT, ...d.from.split('/')), dest, { recursive: true, dereference: true });
+  }
 }
 
 // ── Closure ─────────────────────────────────────────────────────────────────
@@ -359,7 +393,7 @@ async function rebuildNatives(staging, ws, arch) {
 }
 
 /** Every .forge-meta under staging must say the target arch + ABI. */
-function verifyNativeMeta(staging, arch, abi) {
+function verifyNativeMeta(staging, arch, abi, listOnly = false) {
   const want = `${arch}--${abi}`;
   const found = [];
   const walk = (dir) => {
@@ -370,6 +404,7 @@ function verifyNativeMeta(staging, arch, abi) {
     }
   };
   walk(path.join(staging, 'node_modules'));
+  if (listOnly) return found.map((p) => path.relative(staging, p).split(path.sep).join('/'));
   const bad = found.filter((p) => readFileSync(p, 'utf8').trim() !== want);
   if (bad.length) {
     throw new Error(`native modules not built for ${want}: ${bad.map((p) => path.relative(staging, p)).join(', ')}`);
@@ -406,6 +441,7 @@ function zipStaging(staging, zipPath) {
   const args = ['--format', 'zip', '-cf', zipPath];
   if (process.platform === 'darwin') args.push('--no-xattrs', '--no-mac-metadata');
   args.push('-C', staging, 'pack.json', 'node_modules');
+  if (existsSync(path.join(staging, 'assets'))) args.push('assets');
   const res = spawnSync('tar', args, { stdio: 'inherit' });
   if (res.status !== 0) throw new Error(`tar exited ${res.status}`);
 }
@@ -417,6 +453,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const ws = loadWorkspace(opts.game);
   const prune = await loadPrune(opts.game, opts.platform);
+  const assets = await loadAssets(opts.game);
   log(`${opts.game}: app ${ws.version}, electron ${ws.electronVersion} (abi ${ws.abi}), target ${opts.platform}-${opts.arch}`);
 
   const { nodes, skipped } = resolveClosure(opts.game, ws.pkg.name);
@@ -428,7 +465,7 @@ async function main() {
     for (const [g, n] of hits) log(`prune ${n === 0 ? '(no match here)' : `${n} hit(s)`}: ${g}`);
     const missing = prune.mustKeep.filter((m) => !existsSync(path.join(ROOT, ...m.split('/'))));
     if (missing.length) throw new Error(`MUST_KEEP paths absent from the hoisted tree: ${missing.join(', ')}`);
-    log(`dry run OK: ${nodes.length} packages, ${prune.globs.length} prune globs, ${prune.mustKeep.length} must-keep paths (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+    log(`dry run OK: ${nodes.length} packages, ${prune.globs.length} prune globs, ${prune.mustKeep.length} must-keep paths, ${assets.length} asset dir(s) (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
     return;
   }
 
@@ -438,10 +475,23 @@ async function main() {
   writeFileSync(path.join(staging, 'package.json'), JSON.stringify({ ...ws.pkg, version: ws.version }, null, 2));
   log(`copying closure to ${staging}`);
   copyClosure(nodes, staging);
+  // A pack with no npm dependencies (DST: the Lua mod only) still ships a
+  // node_modules/ dir because the client's extractor expects one.
+  mkdirSync(path.join(staging, 'node_modules'), { recursive: true });
+  if (nodes.length === 0) writeFileSync(path.join(staging, 'node_modules', '.sei-pack-keep'), '');
+  if (assets.length) {
+    copyAssets(assets, staging);
+    log(`assets: ${assets.map((a) => `${a.from} -> ${a.to}`).join(', ')}`);
+  }
 
-  if (opts.skipRebuild) log('skipping native rebuild (--skip-rebuild)');
+  const anyPlatform = opts.platform === 'any';
+  if (anyPlatform) {
+    // A platform-neutral pack must not carry natives; nothing to rebuild.
+    const found = verifyNativeMeta(staging, 'any', ws.abi, true);
+    if (found.length) throw new Error(`--platform any but the closure carries native modules: ${found.join(', ')}`);
+  } else if (opts.skipRebuild) log('skipping native rebuild (--skip-rebuild)');
   else await rebuildNatives(staging, ws, opts.arch);
-  const natives = verifyNativeMeta(staging, opts.arch, ws.abi);
+  const natives = anyPlatform ? [] : verifyNativeMeta(staging, opts.arch, ws.abi);
   log(`natives verified for ${opts.arch}--${ws.abi}: ${natives.join(', ') || '(none)'}`);
 
   const pr = pruneTree(staging, prune.globs);
