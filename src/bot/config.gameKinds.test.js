@@ -22,10 +22,11 @@ describe('ConfigSchema adapter.kind (game-adapters M0)', () => {
     expect(() => ConfigSchema.parse({ ...base, adapter: { kind: 'minecraft' } })).toThrow(/adapter\.minecraft is required/)
   })
 
-  it('parses a stardew / dontstarve session with a passthrough placeholder block and no minecraft block', () => {
-    const sd = ConfigSchema.parse({ ...base, adapter: { kind: 'stardew', stardew: { port: 8123, token: 'abc' } } })
+  it('parses a stardew / dontstarve session with no minecraft block (stardew has a real schema since M1, dontstarve a passthrough placeholder)', () => {
+    const sd = ConfigSchema.parse({ ...base, adapter: { kind: 'stardew', stardew: { port: 8123, token: 'abc', username: 'Sui' } } })
     expect(sd.adapter.kind).toBe('stardew')
-    expect(sd.adapter.stardew).toEqual({ port: 8123, token: 'abc' })
+    expect(sd.adapter.stardew).toMatchObject({ host: '127.0.0.1', port: 8123, token: 'abc', username: 'Sui', reconnect_delay_ms: 3000 })
+    expect(() => ConfigSchema.parse({ ...base, adapter: { kind: 'stardew' } })).toThrow(/adapter\.stardew is required/)
     expect(sd.adapter.minecraft).toBeUndefined()
     const dst = ConfigSchema.parse({ ...base, adapter: { kind: 'dontstarve', dontstarve: {} } })
     expect(dst.adapter.kind).toBe('dontstarve')
