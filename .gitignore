@@ -61,8 +61,10 @@ resources/audio-tap/
 src/renderer/public/live2d/
 mirror-out/
 
-# Stardew Valley SMAPI mod build output (scripts/build-stardew-mod.sh); the
-# game pack and the dev app read it from assets/stardew-mod/.
-assets/stardew-mod/
+# Stardew Valley SMAPI mod build output (scripts/build-stardew-mod.sh) is
+# TRACKED on purpose (assets/stardew-mod/): the mod can only compile against
+# the game's own assemblies, which CI does not have, so the release workflow
+# packs the checked-in build. Re-run `npm run build:stardew-mod` on a machine
+# with the game and commit the result whenever native/stardew-mod changes.
 native/stardew-mod/**/bin/
 native/stardew-mod/**/obj/

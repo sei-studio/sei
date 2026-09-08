@@ -85,3 +85,13 @@ The app's own installer does the same copy and writes the config itself.
 ## License
 
 MIT (see `LICENSE`). Adapted code and design credits: `THIRD_PARTY_NOTICES.md`.
+
+## The checked-in build
+
+`assets/stardew-mod/SeiCompanion/` (DLL, manifest, Assets) is committed even
+though it is build output, because CI cannot compile the mod (no game
+assemblies on the runners) and the release workflow packs it into
+`sei-pack-stardew-<version>-any-any.zip`. After any change under
+`native/stardew-mod/`, rebuild on a machine with the game
+(`npm run build:stardew-mod`) and commit the refreshed files with the source
+change. A source change without a refreshed build ships the old mod.
