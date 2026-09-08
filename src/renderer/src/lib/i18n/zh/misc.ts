@@ -27,6 +27,8 @@ export const ZH_MISC: Record<string, string> = {
     '无法下载 CustomSkinLoader。请检查网络连接后重新运行设置。',
   "Couldn't install Fabric Loader. Make sure Minecraft is closed, then try the setup again.":
     '无法安装 Fabric Loader。请确认 Minecraft 已关闭，然后重新运行设置。',
+  "Couldn't download the Minecraft support files (about 50 MB). Check your connection and press Summon again. A retry usually works.":
+    '无法下载 Minecraft 支持文件（约 50 MB）。请检查网络连接后再次点击召唤。通常重试一次即可。',
   "We couldn't find any Minecraft installs. Install Minecraft, then re-run setup from Settings.":
     '没有找到任何 Minecraft 安装。请先安装 Minecraft，再从设置中重新运行设置向导。',
   "Couldn't look up that username on Mojang. Check the spelling and your connection.":

@@ -37,7 +37,12 @@ export type ErrorClass =
   // Previously mislabeled as BOT_CRASH in the BotStatus while the throw already
   // used this token — production analytics showed users retry-looping on the
   // misleading "Sei stopped unexpectedly" copy.
-  | 'PREFERRED_NAME_MISSING';
+  | 'PREFERRED_NAME_MISSING'
+  // 260908 game packs: the adapter's runtime (a downloadable zip of its
+  // node_modules, src/main/games/packs.ts) could not be fetched, verified or
+  // extracted. Pre-fork like the wizard's MOD_DOWNLOAD_FAILED; a retry is the
+  // fix that usually works.
+  | 'GAME_PACK_DOWNLOAD_FAILED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -63,4 +68,5 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'CLOUD_CREDITS_DEPLETED',
   'DAILY_LIMIT_REACHED',
   'PREFERRED_NAME_MISSING',
+  'GAME_PACK_DOWNLOAD_FAILED',
 ]);

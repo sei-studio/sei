@@ -1,0 +1,209 @@
+/**
+ * Game packs (260908, game-adapters M0b) — the cross-process contract for a
+ * game adapter's downloadable runtime.
+ *
+ * A game pack is a zip of `node_modules/` (a production install of the
+ * `packs/<game>` npm workspace with native modules rebuilt against Electron's
+ * ABI) plus a `pack.json`, built by scripts/build-game-pack.mjs and published
+ * beside the app's release assets. Nothing in it is bundled in the installer:
+ * the Minecraft adapter's dependencies alone were 753MB of the packaged app on
+ * mac arm64 and dead weight for a player who never opens Minecraft.
+ *
+ * Naming is the whole contract between the builder, CI, the mirror and the
+ * client, so it lives here once:
+ *
+ *   sei-pack-<game>-<version>-<platform>-<arch>.zip   one pack
+ *   sei-pack-<game>-<version>-any-any.zip             a pack with no native code
+ *   game-packs-<version>.json                         the manifest for one release
+ *
+ * where <version> is the APP version (the pack is built from the same lockfile
+ * as the app that will load it). Every release asset is mirrored flat under
+ * https://dl.sei.gg/updates/ by .github/workflows/mirror-release.yml, so the
+ * mirror URL is just the base plus the asset name. The GitHub release URL is
+ * the origin and the fallback.
+ *
+ * Pure: no Node, no Electron. src/main/games/packs.ts does the I/O.
+ */
+import { z } from 'zod';
+
+export type GameId = 'minecraft';
+
+export const GAME_IDS: readonly GameId[] = ['minecraft'];
+
+export function isGameId(id: string): id is GameId {
+  return (GAME_IDS as readonly string[]).includes(id);
+}
+
+export interface GamePackDescriptor {
+  id: GameId;
+  /** User-facing game name (the download card says "Download {name} support"). */
+  name: string;
+  /**
+   * True when the pack carries native modules and is built per platform+arch
+   * (Minecraft: gl + canvas). A pack with no native code is built once as
+   * `any-any` and served to every platform.
+   */
+  platformSpecific: boolean;
+  /**
+   * Approximate zip size for the "about NN MB" copy shown BEFORE the manifest
+   * has been fetched. The manifest's `bytes` replaces it once known. Keep it
+   * close to the real thing (measured on the darwin arm64 pack).
+   */
+  sizeHintBytes: number;
+}
+
+export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
+  minecraft: {
+    id: 'minecraft',
+    name: 'Minecraft',
+    platformSpecific: true,
+    // Measured 260908: the darwin arm64 zip is 47.6MB (17,949 files, 354MB
+    // unpacked); the win32 pack carries gl's DLL payload on top. The copy
+    // rounds to whole MB, and ERROR_COPY names the same figure.
+    sizeHintBytes: 50 * 1024 * 1024,
+  },
+};
+
+// ── Asset naming ────────────────────────────────────────────────────────────
+
+export type PackPlatform = 'darwin' | 'win32' | 'linux' | 'any';
+export type PackArch = 'arm64' | 'x64' | 'any';
+
+/** The zip file name for one pack. `any`/`any` for a pack with no native code. */
+export function packAssetName(
+  game: GameId,
+  version: string,
+  platform: PackPlatform,
+  arch: PackArch,
+): string {
+  return `sei-pack-${game}-${version}-${platform}-${arch}.zip`;
+}
+
+/** The per-release manifest listing every pack with its sha256 / size / treeHash. */
+export function manifestAssetName(version: string): string {
+  return `game-packs-${version}.json`;
+}
+
+/** Parse a pack asset name back into its parts (null when it is not one). */
+export function parsePackAssetName(
+  file: string,
+): { game: string; version: string; platform: string; arch: string } | null {
+  const m = /^sei-pack-([a-z0-9]+)-(.+)-([a-z0-9]+)-([a-z0-9]+)\.zip$/.exec(file);
+  if (!m) return null;
+  return { game: m[1], version: m[2], platform: m[3], arch: m[4] };
+}
+
+// ── Download sources ────────────────────────────────────────────────────────
+
+/**
+ * Flat mirror of every published release asset (R2 behind Cloudflare, reachable
+ * from mainland China). Same bucket + prefix the updater feed and
+ * mirror-release.yml use; src/main/speech/mirrors.ts holds the speech-model
+ * prefix of the same host.
+ */
+export const GAME_PACK_MIRROR_BASE = 'https://dl.sei.gg/updates';
+
+/** Origin: the GitHub release the app version was cut from. */
+export function gamePackOriginBase(version: string): string {
+  return `https://github.com/sei-studio/sei/releases/download/v${version}`;
+}
+
+/**
+ * Connect budget for the mirror attempt. The mirror is an optimization; a
+ * mirror that is missing an asset (or is unreachable) must cost seconds, not a
+ * stall, before the origin is tried.
+ */
+export const GAME_PACK_MIRROR_CONNECT_TIMEOUT_MS = 8_000;
+
+export interface GamePackSource {
+  url: string;
+  /** Abort the attempt if headers have not landed inside this window. */
+  connectTimeoutMs?: number;
+}
+
+/** Mirror first (bounded connect), then origin. */
+export function gamePackSources(version: string, asset: string): GamePackSource[] {
+  return [
+    {
+      url: `${GAME_PACK_MIRROR_BASE}/${asset}`,
+      connectTimeoutMs: GAME_PACK_MIRROR_CONNECT_TIMEOUT_MS,
+    },
+    { url: `${gamePackOriginBase(version)}/${asset}` },
+  ];
+}
+
+export function manifestSources(version: string): GamePackSource[] {
+  return gamePackSources(version, manifestAssetName(version));
+}
+
+// ── Manifest ────────────────────────────────────────────────────────────────
+
+export const GamePackManifestEntrySchema = z.object({
+  game: z.string().min(1),
+  platform: z.string().min(1),
+  arch: z.string().min(1),
+  file: z.string().min(1),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  bytes: z.number().int().positive(),
+  treeHash: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+export const GamePackManifestSchema = z.object({
+  version: z.string().min(1),
+  packs: z.array(GamePackManifestEntrySchema),
+});
+
+export type GamePackManifestEntry = z.infer<typeof GamePackManifestEntrySchema>;
+export type GamePackManifest = z.infer<typeof GamePackManifestSchema>;
+
+/** Validate a fetched manifest; throws a ZodError on a malformed one. */
+export function parseGamePackManifest(json: unknown): GamePackManifest {
+  return GamePackManifestSchema.parse(json);
+}
+
+/**
+ * The manifest entry for one game on one platform+arch: an exact match wins,
+ * else the platform-independent `any`/`any` build, else null.
+ */
+export function pickPackEntry(
+  manifest: GamePackManifest,
+  game: GameId,
+  platform: string,
+  arch: string,
+): GamePackManifestEntry | null {
+  const mine = manifest.packs.filter((p) => p.game === game);
+  return (
+    mine.find((p) => p.platform === platform && p.arch === arch) ??
+    mine.find((p) => p.platform === 'any' && p.arch === 'any') ??
+    null
+  );
+}
+
+// ── State pushed to the renderer ────────────────────────────────────────────
+
+/**
+ * One game pack's state, returned by game:pack-state and pushed on
+ * game:pack-progress. `ready` carries the pack root the bot will be pointed
+ * at; `error` carries the ErrorClass the renderer looks up in ERROR_COPY.
+ */
+export type GamePackState =
+  | { kind: 'ready'; root: string }
+  | { kind: 'missing' }
+  | { kind: 'downloading'; received: number; total: number }
+  | { kind: 'error'; error: 'GAME_PACK_DOWNLOAD_FAILED'; message: string };
+
+export interface GamePackProgressPush {
+  game: GameId;
+  state: GamePackState;
+}
+
+/** Whole mebibytes for user copy, floored at 1 so a tiny pack never says 0. */
+export function packSizeMb(bytes: number): number {
+  return Math.max(1, Math.round(bytes / (1024 * 1024)));
+}
+
+/** 0..100 for a progress bar; 0 while the total is unknown. */
+export function packProgressPct(received: number, total: number): number {
+  if (!(total > 0)) return 0;
+  return Math.max(0, Math.min(100, Math.floor((received / total) * 100)));
+}

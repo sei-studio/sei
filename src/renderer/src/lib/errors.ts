@@ -62,6 +62,9 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // surfaced as BOT_CRASH ("Sei stopped unexpectedly. Press Summon to restart."),
   // which told users to retry the one thing that cannot work until they fix it.
   PREFERRED_NAME_MISSING: "Your name is missing. Re-run onboarding from Settings to set your name, then summon again.",
+  // 260908 game packs. The size mirrors GAME_PACKS.minecraft.sizeHintBytes
+  // (src/shared/gamePacks.ts); gamePacks.test.ts pins the two together.
+  GAME_PACK_DOWNLOAD_FAILED: "Couldn't download the Minecraft support files (about 50 MB). Check your connection and press Summon again. A retry usually works.",
 };
 
 /**
