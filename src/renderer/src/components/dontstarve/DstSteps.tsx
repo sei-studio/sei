@@ -150,6 +150,10 @@ export function DstSteps(): React.ReactElement {
       <Step index={3} tone={runTone}>
         {gameReady ? (
           <span>{t("Don't Starve Together is running.")}</span>
+        ) : gameRunning && !helperReady ? (
+          // Running without the helper: nothing to press here yet, and once
+          // the helper lands this becomes the restart step.
+          <span>{t("Don't Starve Together is running. It will need a restart once the helper is added.")}</span>
         ) : needsRestart ? (
           <>
             <span>{t('Quit Don\'t Starve Together and open it again. The helper loads when the game starts.')}</span>

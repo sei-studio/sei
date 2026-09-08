@@ -19,6 +19,7 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   "Add Sei's helper. It is a small server-side mod that lets your companion join the worlds you host. Friends who join need nothing.":
     '添加 Sei 助手。它是一个小小的服务端模组，让你的伙伴能加入你主持的世界。加入的朋友无需安装任何东西。',
   "Don't Starve Together is running.": '《饥荒联机版》正在运行。',
+  "Don't Starve Together is running. It will need a restart once the helper is added.": '《饥荒联机版》正在运行。添加助手后需要重启游戏。',
   "Quit Don't Starve Together and open it again. The helper loads when the game starts.": '请退出《饥荒联机版》并重新打开。助手会在游戏启动时加载。',
   'Waiting for the game to close...': '等待游戏关闭…',
   "Open Don't Starve Together.": '打开《饥荒联机版》。',
