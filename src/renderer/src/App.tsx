@@ -65,6 +65,8 @@ import { GameErrorModal } from './components/GameErrorModal';
 // Don't Starve Together (game-adapters M2, 260908): registers the DST launch
 // + dashboard panels, setup-modal body, summon flow and settings section.
 import './components/dontstarve/register';
+// Stardew Valley (game adapters M1): registers its panels, summon flow, error routes, settings group and setup modal.
+import './components/stardew/registerStardew';
 import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';

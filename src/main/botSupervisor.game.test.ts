@@ -97,7 +97,7 @@ function armFakeChild(): { postMessage: ReturnType<typeof vi.fn>; emitSpawn: () 
 
 function stardewModule(open: boolean): GameModule {
   const state: WorldState = open
-    ? { game: 'stardew', kind: 'open', label: 'Sunny Farm', lastSeenAt: 1 }
+    ? { game: 'stardew', kind: 'open', farmName: 'Sunny', uniqueId: '42', day: 3, season: 'spring', year: 1, port: 27431, lastSeenAt: 1, label: 'Sunny Farm, spring 3' }
     : { game: 'stardew', kind: 'closed' };
   return {
     id: 'stardew',

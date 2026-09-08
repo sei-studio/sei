@@ -39,6 +39,17 @@
 // hoisted tree and checks MUST_KEEP, without copying, rebuilding or zipping.
 // It is what ci.yml runs on every push.
 //
+// ASSET PACKS (game-adapters M1, 260908). A pack for a mod-driven game
+// (Stardew Valley) carries no node_modules at all: its runtime is the game
+// mod, built separately and copied under `assets/` in the zip. Such a pack is
+// platform-neutral (`any-any`) and skips the closure / rebuild / prune legs.
+// The layout is the one the dev app and the installer read at the same
+// relative path: <packRoot>/assets/stardew-mod/SeiCompanion/ (see
+// src/shared/stardewIpc.ts STARDEW_MOD_PACK_PATH). By default the mod is
+// built first (scripts/build-stardew-mod.sh, which needs the game installed);
+// pass --skip-build to zip an already built assets/ tree, or --assets-from
+// <dir> to take the mod from another checkout's build.
+//
 // Never run from inside Electron; this is a plain node script.
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -82,6 +93,8 @@ function parseArgs(argv) {
     else if (a === '--out') out.out = path.resolve(take());
     else if (a === '--staging') out.staging = path.resolve(take());
     else if (a === '--dry-run') out.dryRun = true;
+    else if (a === '--skip-build') out.skipBuild = true;
+    else if (a === '--assets-from') out.assetsFrom = path.resolve(take());
     else if (a === '--skip-rebuild') out.skipRebuild = true;
     else if (a === '--keep-staging') out.keepStaging = true;
     else if (a.startsWith('--')) throw new Error(`unknown flag ${a}`);
@@ -97,6 +110,78 @@ function parseArgs(argv) {
   if (!['arm64', 'x64', 'any'].includes(out.arch)) throw new Error(`bad --arch ${out.arch}`);
   if ((out.platform === 'any') !== (out.arch === 'any')) throw new Error('--platform any requires --arch any (and vice versa)');
   return out;
+}
+
+// ── Asset packs ─────────────────────────────────────────────────────────────
+
+/** Games whose pack is a built mod under assets/, not an npm workspace. */
+const ASSET_PACKS = {
+  stardew: {
+    // Relative to the repo root; the same path lands inside the zip.
+    assetsDir: path.join('assets', 'stardew-mod'),
+    // What must exist after the build for the pack to be usable.
+    mustExist: [path.join('assets', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.dll'), path.join('assets', 'stardew-mod', 'SeiCompanion', 'manifest.json')],
+    build: { cmd: 'bash', args: [path.join('scripts', 'build-stardew-mod.sh')] },
+  },
+};
+
+async function buildAssetPack(opts) {
+  const t0 = Date.now();
+  const spec = ASSET_PACKS[opts.game];
+  const rootPkg = readJson(path.join(ROOT, 'package.json'));
+  const version = rootPkg.version;
+  const sourceDir = opts.assetsFrom ?? path.join(ROOT, spec.assetsDir);
+  log(`${opts.game}: asset pack, app ${version}, target any-any`);
+
+  if (opts.dryRun) {
+    // No game on CI: the dry run only checks that the build inputs exist.
+    const modProj = path.join(ROOT, 'native', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.csproj');
+    if (!existsSync(modProj)) throw new Error(`missing ${modProj}`);
+    log(`dry run OK: mod sources present; the pack is built with the game installed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+    return;
+  }
+
+  if (!opts.skipBuild && !opts.assetsFrom) {
+    log(`building the mod: ${spec.build.cmd} ${spec.build.args.join(' ')}`);
+    const res = spawnSync(spec.build.cmd, spec.build.args, { cwd: ROOT, stdio: 'inherit', shell: isWin });
+    if (res.status !== 0) throw new Error(`mod build exited ${res.status}`);
+  }
+  for (const rel of spec.mustExist) {
+    const p = opts.assetsFrom ? path.join(opts.assetsFrom, path.relative(spec.assetsDir, rel)) : path.join(ROOT, rel);
+    if (!existsSync(p)) throw new Error(`asset pack input missing: ${p} (build the mod first, see native/stardew-mod/README.md)`);
+  }
+
+  const staging = opts.staging ?? path.join(ROOT, 'release', 'pack-staging', `${opts.game}-any-any`);
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(path.join(staging, 'assets'), { recursive: true });
+  const destDir = path.join(staging, spec.assetsDir);
+  mkdirSync(path.dirname(destDir), { recursive: true });
+  cpSync(sourceDir, destDir, { recursive: true, dereference: true });
+
+  const { treeHash, files, bytes } = treeHashOf(staging);
+  const packJson = {
+    game: opts.game,
+    version,
+    platform: 'any',
+    arch: 'any',
+    treeHash,
+    files,
+    bytes,
+    builtAt: new Date().toISOString(),
+  };
+  writeFileSync(path.join(staging, 'pack.json'), JSON.stringify(packJson, null, 2));
+  log(`tree: ${files} files, ${(bytes / 1048576).toFixed(1)}MB, treeHash ${treeHash.slice(0, 16)}...`);
+
+  const zipName = `sei-pack-${opts.game}-${version}-any-any.zip`;
+  const zipPath = path.join(opts.out, zipName);
+  log(`zipping -> ${zipPath}`);
+  zipStaging(staging, zipPath, ['pack.json', 'assets']);
+  const zipBytes = statSync(zipPath).size;
+  const sha256 = sha256File(zipPath);
+  const meta = { game: opts.game, platform: 'any', arch: 'any', file: zipName, sha256, bytes: zipBytes, treeHash };
+  writeFileSync(`${zipPath}.meta.json`, JSON.stringify({ version, ...meta }, null, 2));
+  if (!opts.keepStaging) rmSync(staging, { recursive: true, force: true });
+  log(`done: ${zipName} ${(zipBytes / 1048576).toFixed(1)}MB sha256 ${sha256.slice(0, 16)}... in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
 // ── Workspace + versions ────────────────────────────────────────────────────
@@ -431,7 +516,7 @@ function treeHashOf(staging) {
   return { treeHash: h.digest('hex'), files: files.length, bytes };
 }
 
-function zipStaging(staging, zipPath) {
+function zipStaging(staging, zipPath, entries = ['pack.json', 'node_modules']) {
   rmSync(zipPath, { force: true });
   mkdirSync(path.dirname(zipPath), { recursive: true });
   const ver = spawnSync('tar', ['--version'], { encoding: 'utf8' });
@@ -440,8 +525,7 @@ function zipStaging(staging, zipPath) {
   }
   const args = ['--format', 'zip', '-cf', zipPath];
   if (process.platform === 'darwin') args.push('--no-xattrs', '--no-mac-metadata');
-  args.push('-C', staging, 'pack.json', 'node_modules');
-  if (existsSync(path.join(staging, 'assets'))) args.push('assets');
+  args.push('-C', staging, ...entries);
   const res = spawnSync('tar', args, { stdio: 'inherit' });
   if (res.status !== 0) throw new Error(`tar exited ${res.status}`);
 }
@@ -451,6 +535,10 @@ function zipStaging(staging, zipPath) {
 async function main() {
   const t0 = Date.now();
   const opts = parseArgs(process.argv.slice(2));
+  if (ASSET_PACKS[opts.game]) {
+    await buildAssetPack(opts);
+    return;
+  }
   const ws = loadWorkspace(opts.game);
   const prune = await loadPrune(opts.game, opts.platform);
   const assets = await loadAssets(opts.game);

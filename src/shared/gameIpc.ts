@@ -16,6 +16,7 @@
 import type { LanState } from './ipc';
 import type { McDashboardSnapshot } from './mcDashboardIpc';
 import type { DstJoinTarget, DstWorldState, DstDashboardSnapshot } from './dstIpc';
+import type { StardewJoinTarget, StardewWorldState, StardewDashboardSnapshot } from './stardewIpc';
 
 /** The bot-backed games. Mirrors GAME_KINDS in src/bot/config.js (the bot is
  *  plain ESM JS and cannot import this file) — keep both lists in sync. */
@@ -45,7 +46,7 @@ export type GenericJoinTarget = Record<string, unknown>;
 
 export type JoinTarget =
   | { game: 'minecraft'; target: MinecraftJoinTarget }
-  | { game: 'stardew'; target: GenericJoinTarget }
+  | { game: 'stardew'; target: StardewJoinTarget }
   | { game: 'dontstarve'; target: DstJoinTarget };
 
 /* ── World state (main → renderer, world:state) ─────────────────────────── */
@@ -63,7 +64,9 @@ export type GenericWorldState =
 /** Discriminated on `game`. Minecraft's member IS the existing LanState. */
 export type WorldState =
   | ({ game: 'minecraft' } & LanState)
-  | ({ game: 'stardew' } & GenericWorldState)
+  // Stardew (M1): `open` carries the farm + save day; `not_installed` and
+  // `game_running_no_save` are the two extra states the launch panel shows.
+  | ({ game: 'stardew' } & StardewWorldState)
   // M2 (260908): DST refines its member (worldName/day/season/phase/caves/
   // players on `open`, plus `not_installed`); `open` still carries `label`
   // for the generic consumers. See src/shared/dstIpc.ts.
@@ -92,6 +95,7 @@ export interface GenericGameDashboardSnapshot {
 export type GameDashboardSnapshot =
   | (McDashboardSnapshot & { game: 'minecraft' })
   | DstDashboardSnapshot
+  | StardewDashboardSnapshot
   | GenericGameDashboardSnapshot;
 
 /* ── Channels ───────────────────────────────────────────────────────────── */

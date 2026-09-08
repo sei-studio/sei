@@ -27,7 +27,24 @@ export interface GameSetupModalProps {
   game: GameId;
 }
 
-export function GameSetupModal({ game }: GameSetupModalProps): React.ReactElement {
+/**
+ * Per-game bodies (game adapters M1): a game registers its own setup modal
+ * component here and this generic one steps aside for it. Same contract
+ * (pending summon, auto-resume, Close drops the attempt).
+ */
+const GAME_SETUP_MODALS: Partial<Record<GameId, React.ComponentType<GameSetupModalProps>>> = {};
+
+export function registerGameSetupModal(game: GameId, Component: React.ComponentType<GameSetupModalProps>): void {
+  GAME_SETUP_MODALS[game] = Component;
+}
+
+export function GameSetupModal(props: GameSetupModalProps): React.ReactElement {
+  const Override = GAME_SETUP_MODALS[props.game];
+  if (Override) return <Override {...props} />;
+  return <GenericGameSetupModal {...props} />;
+}
+
+function GenericGameSetupModal({ game }: GameSetupModalProps): React.ReactElement {
   const t = useT();
   const name = botGameName(game);
   const closeModal = useUiStore((s) => s.closeModal);

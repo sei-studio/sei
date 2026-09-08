@@ -57,6 +57,7 @@ export type {
 } from './backseatIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
+import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
 import { GameIpcChannel } from './gameIpc';
 export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import type { GamePackProgressPush, GamePackState } from './gamePacks';
@@ -1815,6 +1816,20 @@ export interface RendererApi {
   gamePackEnsure(game: GameId): Promise<GamePackState>;
   /** Push: every state change of any game's pack (downloading ticks, ready, error). */
   onGamePackProgress(cb: (push: GamePackProgressPush) => void): Unsubscribe;
+
+  // --- Stardew Valley (game-adapters M1, 260908) --- src/shared/stardewIpc.ts
+  /** Fresh detection: game folder, SMAPI, the Sei companion mod, its config. */
+  stardewInstallState(): Promise<StardewInstallState>;
+  /**
+   * Install SMAPI (downloaded from its GitHub release at install time) and
+   * place the companion mod; progress arrives on onStardewInstallProgress.
+   * Rejects with an Error whose message starts with the ErrorClass
+   * (GAME_NOT_INSTALLED / SMAPI_INSTALL_FAILED / GAME_INSTALL_FAILED).
+   */
+  stardewInstall(): Promise<StardewInstallState>;
+  /** Start the game through SMAPI (no-op with a message when it is already running). */
+  stardewLaunch(): Promise<StardewLaunchResult>;
+  onStardewInstallProgress(cb: (ev: StardewInstallProgressEvent) => void): Unsubscribe;
   /**
    * 260725 play/pause: freeze/resume the in-game brain. Paused: no game LLM
    * calls, in-flight actions abort-frozen; on a live voice call only voice
@@ -2917,6 +2932,8 @@ export const IpcChannel = {
     /** Invoke: 260725 runtime game mode ({characterId, mode} → boolean). */
     setMode: 'mcdash:set-mode',
   },
+  /** Stardew Valley install / launch (game-adapters M1, src/main/games/stardew). */
+  stardew: StardewIpcChannel,
   /** Game packs (260908, src/main/games/packs.ts). */
   game: {
     /** Invoke: {game} → GamePackState (disk + live state only, no network). */

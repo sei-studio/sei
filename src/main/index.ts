@@ -27,6 +27,7 @@ import { createBotSupervisor } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
 import { createMinecraftGameModule } from './games/minecraft';
 import { createDontStarveGameModule } from './games/dontstarve';
+import { createStardewGameModule } from './games/stardew';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
@@ -102,6 +103,10 @@ registerGameModule(minecraftModule);
 // until the live checklist passes, so registering here lights no tile.
 const dontstarveModule = createDontStarveGameModule();
 registerGameModule(dontstarveModule);
+// Stardew Valley (game-adapters M1, 260908): hello watcher + install/launch.
+// Registering does not light the picker tile (GAME_CATALOG.available flips
+// after the live checklist).
+registerGameModule(createStardewGameModule({ logger }));
 let watchersRunning = false;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to

@@ -58,7 +58,13 @@ export type ErrorClass =
   // port; the survivor died (an ownerless body has no client to revive it).
   | 'DST_SPAWN_FAILED'
   | 'DST_PORT_IN_USE'
-  | 'DST_BODY_DIED';
+  | 'DST_BODY_DIED'
+  // Stardew Valley (M1, 260908): the two failures whose copy must differ from
+  // the generic GAME_* classes. A farmhand without the mod cannot be shown a
+  // custom-sprite NPC, so the mod refuses to spawn; SMAPI's own installer
+  // failing is a different fix from the mod copy failing.
+  | 'STARDEW_FARMHAND_NO_MOD'
+  | 'SMAPI_INSTALL_FAILED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -93,4 +99,6 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'DST_SPAWN_FAILED',
   'DST_PORT_IN_USE',
   'DST_BODY_DIED',
+  'STARDEW_FARMHAND_NO_MOD',
+  'SMAPI_INSTALL_FAILED',
 ]);

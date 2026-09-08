@@ -118,12 +118,25 @@ const MinecraftAdapterSchema = z.object({
   player_stagger_ms: z.number().int().min(0).default(350),
 })
 
+// Stardew Valley (M1, 260908): the loopback link to the SMAPI mod
+// (native/stardew-mod/PROTOCOL.md). Built by adapter/stardew/runtime.js
+// adapterConfigFrom from main's StardewJoinTarget {port, token, label}.
+const StardewAdapterSchema = z.object({
+  host: z.string().default('localhost'),
+  port: z.number().int().min(1).max(65535).optional(),
+  // The per-install secret the mod's config.json carries; the WebSocket
+  // upgrade is refused without it.
+  token: z.string().default(''),
+  // The companion's in-game display name (persona name, sanitised).
+  username: z.string().min(1),
+  reconnect_delay_ms: z.number().int().min(0).default(3000),
+})
+
 // Game adapters (M0, 260908). `kind` selects which runtime the composer
 // (src/bot/index.js) dynamic-imports from src/bot/adapter/<kind>/runtime.js;
-// only that game's sub-tree is required. `stardew` and `dontstarve` are
-// passthrough PLACEHOLDERS: the game agents replace them with real schemas
-// (host/port/token/etc.) when their adapters land. Keep the member list in
-// sync with GAME_KINDS below and GameId in src/shared/gameIpc.ts.
+// only that game's sub-tree is required. `dontstarve` is a passthrough
+// PLACEHOLDER until its adapter lands. Keep the member list in sync with
+// GAME_KINDS below and GameId in src/shared/gameIpc.ts.
 export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve']
 
 // Don't Starve Together (game-adapters M2, 260908). Built by
@@ -158,7 +171,7 @@ export const DontStarveAdapterSchema = z.object({
 const AdapterSchema = z.object({
   kind: z.enum(GAME_KINDS).default('minecraft'),
   minecraft: MinecraftAdapterSchema.optional(),
-  stardew: z.object({}).passthrough().optional(),
+  stardew: StardewAdapterSchema.optional(),
   dontstarve: DontStarveAdapterSchema.optional(),
 }).superRefine((a, ctx) => {
   if (a.kind === 'dontstarve' && !a.dontstarve) {
@@ -169,6 +182,9 @@ const AdapterSchema = z.object({
   // must keep failing to parse instead of silently booting a bodiless bot).
   if (a.kind === 'minecraft' && !a.minecraft) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['minecraft'], message: 'adapter.minecraft is required when adapter.kind is "minecraft"' })
+  }
+  if (a.kind === 'stardew' && !a.stardew) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stardew'], message: 'adapter.stardew is required when adapter.kind is "stardew"' })
   }
 })
 

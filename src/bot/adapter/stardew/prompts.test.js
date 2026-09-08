@@ -1,0 +1,45 @@
+import { describe, it, expect } from 'vitest'
+import { eventAddendum, ACTION_DESCRIPTIONS, STARDEW_BASELINE, WORLD_PRIMER, CAPABILITY_PARAGRAPH, ACTION_RULES, SESSION_END_CLAUSE } from './prompts.js'
+import { VERB_NAMES } from './registry.js'
+
+describe('stardew prompts', () => {
+  it('carries the say() scratchpad contract and names every verb family', () => {
+    expect(STARDEW_BASELINE).toMatch(/Others cannot see your text output by default/)
+    expect(STARDEW_BASELINE).toMatch(/say\(\)/)
+    expect(STARDEW_BASELINE).toMatch(/Stardew Valley/)
+    for (const v of ['goTo', 'water', 'plant', 'harvest', 'chop', 'mine', 'gather', 'attack', 'fish', 'sleep']) {
+      expect(STARDEW_BASELINE).toContain(v)
+    }
+  })
+
+  it('primer says the farm is the player\'s and the companion asks before planting over their plans', () => {
+    expect(WORLD_PRIMER).toMatch(/it is THEIRS/)
+    expect(WORLD_PRIMER).toMatch(/Ask before planting/)
+    expect(WORLD_PRIMER).toMatch(/2:00 AM/)
+    expect(CAPABILITY_PARAGRAPH).toMatch(/OWN gold/)
+    expect(CAPABILITY_PARAGRAPH).toMatch(/cannot see the game as an image/)
+    expect(ACTION_RULES).toMatch(/#N handle/)
+    expect(SESSION_END_CLAUSE).toMatch(/quit_game/)
+  })
+
+  it('has a description for every registry verb and no verb without one', () => {
+    expect(Object.keys(ACTION_DESCRIPTIONS).sort()).toEqual([...VERB_NAMES].sort())
+  })
+
+  it('frames every event the wires raise, and nothing else', () => {
+    expect(eventAddendum('sei:idle', { quietMs: 45_000 })).toMatch(/IDLE TICK\. The farm has been quiet for about 45s/)
+    expect(eventAddendum('sei:idle', { quietMs: 180_000 })).toMatch(/about 3 min/)
+    expect(eventAddendum('sei:idle', {})).toMatch(/water what is dry/)
+    expect(eventAddendum('sei:loop_end', {})).toMatch(/LOOP END/)
+    const hit = eventAddendum('sei:attacked', { attackerKind: 'mob', attackerLabel: 'Green Slime', health: 80, maxHealth: 100, retaliated: true })
+    expect(hit).toMatch(/Green Slime hit you \(80\/100 health\)/)
+    expect(hit).toMatch(/already swung back/)
+    const retreat = eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'critical_retreat', attackerLabel: 'Bat', health: 20, maxHealth: 100 })
+    expect(retreat).toMatch(/health is LOW \(20\/100\)/)
+    expect(eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'ate', detail: 'ate Leek' })).toMatch(/ate Leek/)
+    expect(eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'bedtime' })).toMatch(/2 AM/)
+    expect(eventAddendum('sei:death', { cause: 'Bat', where: 'UndergroundMine12' })).toMatch(/KNOCKED OUT by Bat in UndergroundMine12/)
+    expect(eventAddendum('sei:death', { lastAttack: { label: 'Green Slime' } })).toMatch(/by Green Slime/)
+    expect(eventAddendum('sei:something_else', {})).toBe('')
+  })
+})
