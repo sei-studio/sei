@@ -119,17 +119,31 @@ export function createDefaultRegistry({ link }) {
     return link.send({ kind: 'goto', x: args.x, z: args.z, range: args.range }, execOpts(cfg))
   })
 
+  // The perception sweep is 24 units, and "come here" is asked most often
+  // once the body has wandered out of it (measured on the first live DST
+  // session: 75 units away, "no player nearby to come to"). So when no player
+  // is in view, come/follow address the world by USERID instead of guid: the
+  // pinned player's when there is one, else "" for the nearest player. The
+  // mod resolves either against AllPlayers, whatever the distance.
+  const playerByUserid = () => ({ userid: link.playerUserid?.() ?? '', name: link.playerName?.() ?? null })
+
   registry.register('come', z.object({ player: z.string().optional() }), async (args, _bot, cfg) => {
     const p = resolvePlayer(args.player)
-    if (!p) return 'no player nearby to come to'
-    return link.send({ kind: 'goto', guid: p.guid, range: 3 }, execOpts(cfg))
+    if (p) return link.send({ kind: 'goto', guid: p.guid, range: 3 }, execOpts(cfg))
+    const far = playerByUserid()
+    return link.send({ kind: 'goto', userid: far.userid, range: 3 }, execOpts(cfg))
   })
 
   registry.register('follow', z.object({ player: z.string().optional(), distance: z.number().min(2).max(10).default(4) }), async (args, _bot, cfg) => {
     const p = resolvePlayer(args.player)
-    if (!p) return 'no player nearby to follow'
-    const r = await link.send({ kind: 'follow', guid: p.guid, dist: args.distance }, execOpts(cfg))
-    link.body.followLabel = p.name ?? p.prefab
+    if (p) {
+      const r = await link.send({ kind: 'follow', guid: p.guid, dist: args.distance }, execOpts(cfg))
+      link.body.followLabel = p.name ?? p.prefab
+      return r
+    }
+    const far = playerByUserid()
+    const r = await link.send({ kind: 'follow', userid: far.userid, dist: args.distance }, execOpts(cfg))
+    link.body.followLabel = far.name ?? 'the player'
     return r
   })
 

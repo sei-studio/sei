@@ -1613,6 +1613,38 @@ Sei build gets the automatic "would like to update other applications" prompt
 is unverified: the dev Electron got no prompt, only the refusal. Windows has no
 equivalent (the mods folder sits beside the exe).
 
+**First live DST session (260909), and what it broke.** The end-to-end run
+(tile, helper, restart, Host Game, Launch, greeting, come, follow) works, and
+five things were wrong on the way that are worth knowing before the next
+adapter. (1) `composeSeedBlocks` sent an EMPTY `seed_cuboid_grammar` text
+block for any adapter without a cuboid grammar (DST, Stardew); Anthropic
+answers an empty text block with 400 and the cloud proxy surfaced it as a
+502, so the body spawned and every brain call failed. The block is now
+omitted and the cache breakpoint moves to `seed_player`. Suspect this shape
+first when a new surface's calls all fail while the same prompt works for
+Minecraft. (2) Goals were per character, not per game: the first DST turn
+read "reach stone pickaxe tier" out of `HEARTBEAT.md` and was told to pursue
+it. Non-Minecraft games now use `HEARTBEAT.<game>.md` (`src/bot/index.js`);
+Minecraft keeps the bare name so existing goals survive. (3) `come`/`follow`
+resolved the player only inside the 24-unit perception sweep, and "come here"
+is asked exactly when the body has wandered out of it (measured: 75 units,
+"no player nearby"). Both now fall back to the pinned player's USERID
+(`goto`/`follow` with `userid` in the mod, resolved against `AllPlayers`;
+`""` means nearest). (4) The mod's heartbeat rode `DoPeriodicTask`, which
+is sim time and stops on every server autopause (the survivor lobby, the
+pause menu), so Sei flapped the world open/closed; it is `DoStaticPeriodicTask`
+now. (5) `DisableLocalModWarning()` does NOT suppress the "Mods Installed"
+force-enable notice, which shows on EVERY launch until the player ticks
+"Don't show this again"; the step copy says to press "I understand". Also
+measured: the real menu path is Host Game (not Play, then Host), a saved
+world resumes through the survivor lobby, and DST DROPS all input while it
+is not the frontmost app (background computer-use clicks worked for the
+menus only because the game had focus; keystrokes never reached it), so a
+computer-use test has to `open` the app bundle first and can only talk to
+the companion through the Sei chat, which the brain frames as "NOT in the
+game with you" by design (the Minecraft framing; a player who IS the host
+gets the same wording).
+
 **Don't Starve Together (M2)** `native/dst-mod/sei/` (Lua, MIT, server-only,
 `all_clients_require_mod = false`, luacheck clean; `PROTOCOL.md`, mirrored in
 `src/shared/dstIpc.ts`). Body = a vanilla survivor prefab spawned on the

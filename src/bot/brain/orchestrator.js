@@ -491,13 +491,23 @@ export async function composeSeedBlocks({
   const cuboidGrammarText = (typeof adapter?.cuboidGrammar === 'function')
     ? adapter.cuboidGrammar()
     : ''
-  const blocks = [
-    { type: 'text', name: 'seed_player', text: seedPlayerText },
-    // Cache breakpoint: seed_player + seed_cuboid_grammar are stable across
-    // loops in a session. Everything after re-bills per loop (memory is
-    // appended every loop so caching it would never hit).
-    { type: 'text', name: 'seed_cuboid_grammar', text: cuboidGrammarText, cache_control: { type: 'ephemeral' } },
-  ]
+  // Cache breakpoint: seed_player + seed_cuboid_grammar are stable across
+  // loops in a session. Everything after re-bills per loop (memory is
+  // appended every loop so caching it would never hit).
+  //
+  // 260909: an adapter without a cuboid grammar (Don't Starve Together,
+  // Stardew) used to get an EMPTY grammar block here, and Anthropic rejects
+  // an empty text block with a 400 ("text content blocks must be
+  // non-empty"), which the cloud proxy surfaced as a 502. Measured live on
+  // the first DST summon: the body spawned and every brain call failed. So
+  // the block is only sent when there is text, and the breakpoint moves up
+  // to seed_player when it is omitted.
+  const blocks = cuboidGrammarText
+    ? [
+        { type: 'text', name: 'seed_player', text: seedPlayerText },
+        { type: 'text', name: 'seed_cuboid_grammar', text: cuboidGrammarText, cache_control: { type: 'ephemeral' } },
+      ]
+    : [{ type: 'text', name: 'seed_player', text: seedPlayerText, cache_control: { type: 'ephemeral' } }]
   // Voice-call mode: the player has a live call open, so every say() line is
   // spoken aloud instead of typed into chat. The primer sits at the very START
   // of the turn (per the mode's contract — it must beat UNIVERSAL_BASELINE's

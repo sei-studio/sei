@@ -563,6 +563,19 @@ before the live checklist.
   family, chat both ways, voice-call line routing, pause/mode, stop,
   despawn hygiene (save reload shows no leftover), crash of the game mid-
   session, second summon in the same world, then flip `available`.
+  **DST progress (260909, live on this Mac via computer use):** install
+  from a clean state (helper copied from a shell after the App Management
+  grant; the dev Electron never got the grant), restart detection, Host
+  Game, Launch, greeting in game chat, `come` on command (arrived 1.1 away),
+  follow (trails at 4-10 units while the host walks), stop on world
+  shutdown (GAME_WORLD_NOT_OPEN), re-summon into the resumed world: PASS.
+  Fixed on the way: empty seed_cuboid_grammar block (400 upstream, 502 via
+  proxy), Minecraft goals leaking into DST, come/follow beyond the 24-unit
+  sweep (userid fallback), heartbeat on sim time flapping the world during
+  autopause. Still owed: one of each verb family beyond gather/pick/goTo,
+  in-game chat typed by the player (needs a focused game; keystrokes never
+  reach DST from background computer use), voice-call routing, pause/mode,
+  game crash mid-session, second summon, despawn hygiene on save reload.
 
 Test discipline (offline, no Electron launch): vitest for every adapter file
 against recorded observation fixtures; a fake mod (`scripts/fake-stardew-mod.mjs`,

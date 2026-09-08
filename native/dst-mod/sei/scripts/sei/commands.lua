@@ -385,9 +385,20 @@ local function dispatch(inst, cmd)
             result(cmd.id, true, "dropped " .. item.prefab)
         end
     elseif kind == "goto" then
-        local target = cmd.guid ~= nil and Util.Ent(cmd.guid) or nil
+        -- A player may be walked to by userid as well as by guid (260909):
+        -- the runtime only knows guids inside the 24-unit perception sweep,
+        -- and "come here" is asked most often once the body has wandered
+        -- OUT of it. userid "" means the nearest player, like follow.
+        local target = nil
+        if cmd.guid ~= nil then
+            target = Util.Ent(cmd.guid)
+        elseif cmd.userid ~= nil then
+            target = Util.FindPlayer(cmd.userid, inst)
+        end
         if cmd.guid ~= nil and target == nil then
             result(cmd.id, false, "that target is gone")
+        elseif cmd.userid ~= nil and target == nil then
+            result(cmd.id, false, "nobody to walk to")
         else
             slot(inst, cmd)
             cmd.timeoutS = cmd.timeoutS or 30

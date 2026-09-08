@@ -145,6 +145,7 @@ export function createDstLink({ dst, logger = console, holdMs = null, resultTime
     session: dst?.session ?? '',
     body: { fight: true, followLabel: dst?.nearName || null },
     playerName: () => dst?.nearName || null,
+    playerUserid: () => dst?.nearUserid || '',
     send, say, setPaused, listen, close, flushWaiter, queueLength: () => queue.length,
   }
 

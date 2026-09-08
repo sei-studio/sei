@@ -11,12 +11,45 @@ function fakeLink() {
   const sent = []
   const link = {
     events: new EventEmitter(), state, handles: createHandleRegistry(), botName: 'Sui', prefab: 'wilson',
-    body: { fight: true, followLabel: null }, playerName: () => 'Steve',
+    body: { fight: true, followLabel: null }, playerName: () => 'Steve', playerUserid: () => 'KU_steve',
     send: vi.fn(async (cmd) => { sent.push(cmd); return `ok:${cmd.kind}` }),
     say: vi.fn(), setPaused: vi.fn(),
   }
   return { link, sent, state }
 }
+
+describe('DST registry: come/follow when the player is out of the perception sweep (260909)', () => {
+  function farLink() {
+    const { link, sent, state } = fakeLink()
+    // Drop every player from the observed set, as if the body wandered off.
+    for (const [guid, e] of [...state.ents]) if (e.flags.includes('player')) state.ents.delete(guid)
+    return { link, sent }
+  }
+
+  it('come walks to the pinned player by userid instead of failing', async () => {
+    const { link, sent } = farLink()
+    const reg = createDefaultRegistry({ link })
+    expect(await reg.execute('come', {}, null, {})).toBe('ok:goto')
+    expect(sent.at(-1)).toMatchObject({ kind: 'goto', userid: 'KU_steve', range: 3 })
+    expect(sent.at(-1).guid).toBeUndefined()
+  })
+
+  it('follow addresses the pinned player by userid and labels the follow', async () => {
+    const { link, sent } = farLink()
+    const reg = createDefaultRegistry({ link })
+    expect(await reg.execute('follow', { distance: 3 }, null, {})).toBe('ok:follow')
+    expect(sent.at(-1)).toMatchObject({ kind: 'follow', userid: 'KU_steve', dist: 3 })
+    expect(link.body.followLabel).toBe('Steve')
+  })
+
+  it('falls back to the nearest player (userid "") when nobody is pinned', async () => {
+    const { link, sent } = farLink()
+    link.playerUserid = () => ''
+    const reg = createDefaultRegistry({ link })
+    expect(await reg.execute('come', {}, null, {})).toBe('ok:goto')
+    expect(sent.at(-1)).toMatchObject({ kind: 'goto', userid: '', range: 3 })
+  })
+})
 
 describe('DST registry', () => {
   it('registers the verb set the prompt describes', () => {

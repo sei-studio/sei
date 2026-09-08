@@ -157,11 +157,13 @@ export function DstSteps(): React.ReactElement {
         ) : needsRestart ? (
           <>
             <span>{t('Quit Don\'t Starve Together and open it again. The helper loads when the game starts.')}</span>
+            <span>{t('The game shows a "Mods Installed" notice at start. Press "I understand."')}</span>
             <Searching label={t('Waiting for the game to close...')} />
           </>
         ) : (
           <>
             <span>{t("Open Don't Starve Together.")}</span>
+            <span>{t('The game shows a "Mods Installed" notice at start. Press "I understand."')}</span>
             <div className={styles.actions}>
               <Button kind="primary" size="sm" disabled={launching || !helperReady} onClick={() => void launchGame()}>
                 {launching ? t('Opening Steam...') : t("Launch Don't Starve Together")}
@@ -185,7 +187,7 @@ export function DstSteps(): React.ReactElement {
           </span>
         ) : (
           <>
-            <span>{t('Host a world: in the game choose Play, then Host, pick a world (new or saved, caves on or off) and start it. Sei\'s helper is on automatically.')}</span>
+            <span>{t('Host a world: in the game choose Host Game, pick a world (new or saved, caves on or off), then choose your survivor and press Go. Sei\'s helper is on automatically.')}</span>
             {gameReady ? <Searching label={t('Waiting for your world...')} /> : null}
           </>
         )}

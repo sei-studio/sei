@@ -544,7 +544,11 @@ async function bootstrapWithInit(initData) {
     memory: {
       player_md_path: `${memDir}/PLAYER.md`,
       memory_md_path: `${memDir}/MEMORY.md`,
-      heartbeat_md_path: `${memDir}/HEARTBEAT.md`,
+      // Goals are per GAME (260909): the first DST summon read the character's
+      // Minecraft goals ("reach stone pickaxe tier") out of HEARTBEAT.md and
+      // was told to pursue them in the Constant. Minecraft keeps the bare name
+      // so existing installs keep their goals; other games get a suffixed file.
+      heartbeat_md_path: game === 'minecraft' ? `${memDir}/HEARTBEAT.md` : `${memDir}/HEARTBEAT.${game}.md`,
       worlds_json_path: `${memDir}/worlds.json`,
     },
     // Bridge the vision tier + cadence into config.vision. Every other vision

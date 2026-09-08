@@ -172,7 +172,12 @@ AddSimPostInit(function()
         return
     end
     log("helper active, probing discovery ports " .. tostring(PORTS[1]) .. "-" .. tostring(PORTS[#PORTS]))
-    TheWorld:DoPeriodicTask(HEARTBEAT_S, function()
+    -- STATIC time (260909): a sim-time task stops whenever the server is
+    -- autopaused (the host sitting in the survivor lobby, the pause menu),
+    -- and every such pause outlived the watcher's stale window, so Sei showed
+    -- the world open/closed/open/closed while nothing had changed. The wall
+    -- clock keeps ticking through a pause; the heartbeat rides it.
+    TheWorld:DoStaticPeriodicTask(HEARTBEAT_S, function()
         pcall(heartbeat)
     end, 1)
     -- A world shutting down takes the body with it; drop it cleanly so the
