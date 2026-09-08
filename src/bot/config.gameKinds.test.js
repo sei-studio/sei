@@ -22,13 +22,18 @@ describe('ConfigSchema adapter.kind (game-adapters M0)', () => {
     expect(() => ConfigSchema.parse({ ...base, adapter: { kind: 'minecraft' } })).toThrow(/adapter\.minecraft is required/)
   })
 
-  it('parses a stardew / dontstarve session with a passthrough placeholder block and no minecraft block', () => {
+  it('parses a stardew session with a passthrough placeholder block and a dontstarve session with its real block, no minecraft block', () => {
     const sd = ConfigSchema.parse({ ...base, adapter: { kind: 'stardew', stardew: { port: 8123, token: 'abc' } } })
     expect(sd.adapter.kind).toBe('stardew')
     expect(sd.adapter.stardew).toEqual({ port: 8123, token: 'abc' })
     expect(sd.adapter.minecraft).toBeUndefined()
-    const dst = ConfigSchema.parse({ ...base, adapter: { kind: 'dontstarve', dontstarve: {} } })
+    // M2 (260908): dontstarve has a real schema (DontStarveAdapterSchema);
+    // username is the one required field, everything else defaults.
+    const dst = ConfigSchema.parse({ ...base, adapter: { kind: 'dontstarve', dontstarve: { username: 'Sui' } } })
     expect(dst.adapter.kind).toBe('dontstarve')
+    expect(dst.adapter.dontstarve.prefab).toBe('wilson')
+    expect(dst.adapter.dontstarve.cmd_hold_ms).toBe(400)
+    expect(() => ConfigSchema.parse({ ...base, adapter: { kind: 'dontstarve' } })).toThrow(/adapter\.dontstarve is required/)
   })
 
   it('rejects an unknown kind', () => {

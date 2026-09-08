@@ -15,6 +15,7 @@
  */
 import type { LanState } from './ipc';
 import type { McDashboardSnapshot } from './mcDashboardIpc';
+import type { DstJoinTarget, DstWorldState, DstDashboardSnapshot } from './dstIpc';
 
 /** The bot-backed games. Mirrors GAME_KINDS in src/bot/config.js (the bot is
  *  plain ESM JS and cannot import this file) — keep both lists in sync. */
@@ -45,7 +46,7 @@ export type GenericJoinTarget = Record<string, unknown>;
 export type JoinTarget =
   | { game: 'minecraft'; target: MinecraftJoinTarget }
   | { game: 'stardew'; target: GenericJoinTarget }
-  | { game: 'dontstarve'; target: GenericJoinTarget };
+  | { game: 'dontstarve'; target: DstJoinTarget };
 
 /* ── World state (main → renderer, world:state) ─────────────────────────── */
 
@@ -63,7 +64,10 @@ export type GenericWorldState =
 export type WorldState =
   | ({ game: 'minecraft' } & LanState)
   | ({ game: 'stardew' } & GenericWorldState)
-  | ({ game: 'dontstarve' } & GenericWorldState);
+  // M2 (260908): DST refines its member (worldName/day/season/phase/caves/
+  // players on `open`, plus `not_installed`); `open` still carries `label`
+  // for the generic consumers. See src/shared/dstIpc.ts.
+  | DstWorldState;
 
 /** All games' current world states, keyed by game (the world:get snapshot). */
 export type WorldStates = Partial<Record<GameId, WorldState>>;
@@ -87,6 +91,7 @@ export interface GenericGameDashboardSnapshot {
 
 export type GameDashboardSnapshot =
   | (McDashboardSnapshot & { game: 'minecraft' })
+  | DstDashboardSnapshot
   | GenericGameDashboardSnapshot;
 
 /* ── Channels ───────────────────────────────────────────────────────────── */
