@@ -406,7 +406,8 @@ async function bootstrapWithInit(initData) {
   const mc_username = joinTarget?.mc_username ?? initData.mc_username
 
   // The game pack resolve hook must be in place BEFORE the runtime module is
-  // resolved (src/bot/packLoader.js — a no-op until the game-pack branch lands).
+  // resolved (src/bot/packLoader.js registers it; a no-op in dev, where the
+  // pack root is the repo itself).
   await preparePackLoader(packRoot)
   let runtimeModule
   try {

@@ -348,6 +348,21 @@ export async function start({ config, adapter, logger = console, onTerminalError
         }
       }, config.memory?.spawn_settle_delay_ms ?? 500)
     },
+    // Game-adapters M0 follow-up (260908): an adapter can ask for an idle
+    // tick with a reason it names (DST: a day-phase change; Stardew: a new
+    // day, night approaching). It rides the same P3 path as the spawn
+    // greeting, so it can never starve a P0 attack or P1 chat, and it is
+    // ignored until the first spawn has fired so a wire that emits before the
+    // body exists cannot burn an LLM call on '(snapshot unavailable)'.
+    onIdleNudge: (evt) => {
+      if (!greetingFired) return
+      const reason = typeof evt?.reason === 'string' && evt.reason ? evt.reason : 'adapter_nudge'
+      try {
+        queue.enqueue(Priority.P3_IDLE, 'sei:idle', { ...(evt ?? {}), reason })
+      } catch (err) {
+        logger.warn?.(`[sei/brain] adapter idle nudge enqueue failed: ${err.message}`)
+      }
+    },
   })
 
   orchestrator.start().catch(err => logger.warn?.(`[sei/brain] orchestrator.start failed: ${err.message}`))

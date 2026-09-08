@@ -77,6 +77,10 @@
  *   The body is in the world. Fires the world-identity resolve
  *   (getWorldIdentity), the settle-delayed first idle tick (greeting), and
  *   the session-state presence check. Must fire again after a reconnect.
+ * @property {(evt: { reason: string, [k: string]: any }) => void}                   onIdleNudge
+ *   Optional. Ask for a P3 idle tick with a named reason (a day-phase
+ *   change, a new day, night approaching). Ignored until the first onSpawn;
+ *   never preempts anything. The data rides into eventAddendum('sei:idle').
  */
 
 /**
