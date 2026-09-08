@@ -33,10 +33,32 @@ import {
   type AvatarManifest,
   type BotActionPush,
   type GenProgressEvent,
+  type WorldState,
+  type GameDashboardSnapshot,
 } from '../shared/ipc';
 
 const api: RendererApi = {
-  summon: (id) => ipcRenderer.invoke(IpcChannel.bot.summon, id),
+  // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
+  summon: (id, game) => ipcRenderer.invoke(IpcChannel.bot.summon, { characterId: id, game: game ?? 'minecraft' }),
+  onWorldState(cb: (state: WorldState) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, state: WorldState): void => cb(state);
+    ipcRenderer.on(IpcChannel.world.state, handler);
+    return () => ipcRenderer.off(IpcChannel.world.state, handler);
+  },
+  getWorldStates: () => ipcRenderer.invoke(IpcChannel.world.get),
+  worldCheckNow: (game) => ipcRenderer.invoke(IpcChannel.world.checkNow, game),
+  gameDashboardGet: (characterId) => ipcRenderer.invoke(IpcChannel.gamedash.get, characterId),
+  gameDashboardSetWatching: (characterId, watching) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setWatching, { characterId, watching }),
+  onGameDashboardSnapshot(cb: (s: GameDashboardSnapshot) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, s: GameDashboardSnapshot): void => cb(s);
+    ipcRenderer.on(IpcChannel.gamedash.snapshot, handler);
+    return () => ipcRenderer.off(IpcChannel.gamedash.snapshot, handler);
+  },
+  gameSetPaused: (characterId, paused) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setPaused, { characterId, paused }),
+  gameSetMode: (characterId, mode) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setMode, { characterId, mode }),
   stop: (id) => ipcRenderer.invoke(IpcChannel.bot.stop, id),
 
   listCharacters: () => ipcRenderer.invoke(IpcChannel.chars.list),

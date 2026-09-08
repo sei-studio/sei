@@ -56,6 +56,9 @@ export type {
   BackseatTick,
 } from './backseatIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
+import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
+import { GameIpcChannel } from './gameIpc';
+export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 export type {
   McDashboardSnapshot,
   McDashboardSnapshotPush,
@@ -89,7 +92,16 @@ export type Unsubscribe = () => void;
  * omitted the id because there was only ever one session; that ambiguity is no
  * longer safe.) The renderer keys `useDataStore.summons` by this id.
  */
-export type BotStatus =
+export type BotStatus = BotStatusBase & {
+  /**
+   * Game adapters (M0, 260908): which game this session is (or was) in.
+   * Stamped by the supervisor on every status it emits; absent only on
+   * statuses from a main older than this field (treat as 'minecraft').
+   */
+  game?: GameId;
+};
+
+type BotStatusBase =
   | { kind: 'idle'; characterId: string }
   | { kind: 'connecting'; characterId: string }
   // `startedAtMs` is the epoch ms when this session's clock started (main and
@@ -1361,8 +1373,20 @@ export interface RendererApi {
   // Bot supervision (request/response with timeouts — main enforces).
   // `stop(id)` stops one summoned character; `stop()` (no id) stops every
   // active session (used by sign-out / account-swap teardown).
-  summon(characterId: string): Promise<void>;
+  summon(characterId: string, game?: GameId): Promise<void>;
   stop(characterId?: string): Promise<void>;
+
+  // Game adapters (M0, 260908) — the game-neutral world + dashboard surface.
+  // See src/shared/gameIpc.ts. Minecraft keeps onLan/getLanState/lanCheckNow
+  // and the mcDashboard* members; these carry the per-game unions.
+  onWorldState(cb: (state: WorldState) => void): Unsubscribe;
+  getWorldStates(): Promise<WorldStates>;
+  worldCheckNow(game: GameId): Promise<WorldState>;
+  gameDashboardGet(characterId: string): Promise<GameDashboardSnapshot | null>;
+  gameDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
+  onGameDashboardSnapshot(cb: (s: GameDashboardSnapshot) => void): Unsubscribe;
+  gameSetPaused(characterId: string, paused: boolean): Promise<boolean>;
+  gameSetMode(characterId: string, mode: McGameMode): Promise<boolean>;
 
   // Character CRUD
   listCharacters(): Promise<Character[]>;
@@ -2614,7 +2638,11 @@ export interface RecoveryRepairResult {
 /* -------------------------------------------------------------------------- */
 
 export const IpcChannel = {
+  // Game adapters (M0, 260908): world:* + gamedash:* (src/shared/gameIpc.ts).
+  world: GameIpcChannel.world,
+  gamedash: GameIpcChannel.gamedash,
   bot: {
+    /** Invoke: {characterId, game?} (a bare characterId string is still accepted). */
     summon: 'bot:summon',
     stop: 'bot:stop',
     status: 'bot:status',

@@ -37,7 +37,17 @@ export type ErrorClass =
   // Previously mislabeled as BOT_CRASH in the BotStatus while the throw already
   // used this token — production analytics showed users retry-looping on the
   // misleading "Sei stopped unexpectedly" copy.
-  | 'PREFERRED_NAME_MISSING';
+  | 'PREFERRED_NAME_MISSING'
+  // Game adapters (M0, 260908): game-neutral classes for the second and third
+  // games. Minecraft keeps its own classes above (LAN_NOT_OPEN etc.); a game
+  // module maps its own failures onto these, and the renderer routes them by
+  // (game, errorClass) to a generic modal carrying ERROR_COPY.
+  | 'GAME_WORLD_NOT_OPEN'
+  | 'GAME_NOT_INSTALLED'
+  | 'GAME_INSTALL_FAILED'
+  | 'GAME_NOT_ANSWERING'
+  | 'GAME_VERSION_UNSUPPORTED'
+  | 'GAME_PACK_DOWNLOAD_FAILED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -63,4 +73,10 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'CLOUD_CREDITS_DEPLETED',
   'DAILY_LIMIT_REACHED',
   'PREFERRED_NAME_MISSING',
+  'GAME_WORLD_NOT_OPEN',
+  'GAME_NOT_INSTALLED',
+  'GAME_INSTALL_FAILED',
+  'GAME_NOT_ANSWERING',
+  'GAME_VERSION_UNSUPPORTED',
+  'GAME_PACK_DOWNLOAD_FAILED',
 ]);

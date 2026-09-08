@@ -62,6 +62,14 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // surfaced as BOT_CRASH ("Sei stopped unexpectedly. Press Summon to restart."),
   // which told users to retry the one thing that cannot work until they fix it.
   PREFERRED_NAME_MISSING: "Your name is missing. Re-run onboarding from Settings to set your name, then summon again.",
+  // Game adapters (M0, 260908): game-neutral copy. The per-game setup modal
+  // adds the game's own steps; this is what the generic error modal shows.
+  GAME_WORLD_NOT_OPEN: "We can't see a game world to join. Open your world in the game, then press Play again.",
+  GAME_NOT_INSTALLED: "We couldn't find this game on your computer. Install it, then press Play again.",
+  GAME_INSTALL_FAILED: "Couldn't finish setting up the companion mod for this game. Make sure the game is closed, then try the setup again.",
+  GAME_NOT_ANSWERING: "The game is open but isn't answering. Make sure the Sei mod is enabled in the game, then press Play again.",
+  GAME_VERSION_UNSUPPORTED: "This game version isn't supported yet. Update the game to a supported version and press Play again.",
+  GAME_PACK_DOWNLOAD_FAILED: "Couldn't download the files this game needs. Check your connection and press Play again.",
 };
 
 /**

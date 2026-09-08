@@ -306,7 +306,8 @@ describe('onSummonFailure — mid-session death (fake forked child)', () => {
 
     expect(onSummonFailure).not.toHaveBeenCalled();
     expect(sendStatus).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
-    expect(sendStatus).toHaveBeenCalledWith({ kind: 'idle', characterId: A });
+    // Game adapters (M0): every status is stamped with the session's game.
+    expect(sendStatus).toHaveBeenCalledWith({ kind: 'idle', characterId: A, game: 'minecraft' });
   });
 
   it('a user-requested stop never fires the mid-session diagnostic, even on a kill-shaped code', async () => {

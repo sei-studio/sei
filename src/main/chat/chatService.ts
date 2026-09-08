@@ -12,6 +12,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
+import type { GameId, WorldStates } from '../../shared/gameIpc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
@@ -20,7 +21,7 @@ import { CHAT_TIMEOUT_MS } from './sdk';
 // local BYOK) rides the exact old SDK path inside it, streaming included.
 import { buildLlmProvider } from '../llm';
 import { raiseUsageLimitPopup } from './usageLimit';
-import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
+import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SELF_LAUNCH_GAMES } from './chatPrompts';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
@@ -41,7 +42,14 @@ import {
 
 export interface ChatDeps {
   getLanState: () => LanState;
-  summon: (characterId: string) => Promise<void>;
+  /**
+   * Game adapters (M0, 260908): every registered game's world state, for the
+   * launch tool's non-Minecraft games and their status lines. Optional; absent
+   * means only Minecraft is launchable (getLanState).
+   */
+  getWorldStates?: () => WorldStates;
+  /** Fork the bot into `game` (default 'minecraft'). */
+  summon: (characterId: string, game?: GameId) => Promise<void>;
   /** Task 4 — true when the character's bot is fully spawned in-world right now. */
   isInGame?: (characterId: string) => boolean;
   /**
@@ -417,6 +425,8 @@ async function prepareChatTurn(
     voicePeers?: string[];
     /** Cap the transcript to the last N rows (voice calls, see VOICE_RECENT_CAP). */
     recentCap?: number;
+    /** Game adapters (M0): status lines for the other self-launchable games. */
+    otherWorlds?: { game: string; name: string; open: boolean }[];
   },
 ) {
   const character = await getCharacter(characterId);
@@ -443,6 +453,7 @@ async function prepareChatTurn(
     summary,
     knowledge,
     openWorldDetected: opts.openWorldDetected,
+    otherWorlds: opts.otherWorlds,
     inGame: opts.inGame,
     voiceCall: opts.voiceCall === true,
     voicePeers: opts.voicePeers,
@@ -620,6 +631,7 @@ export async function sendChatMessage(
     //     re-read so the routed-then-vanished fallback and any races tell the truth.
     const prep = await prepareChatTurn(args.characterId, {
       openWorldDetected: deps.getLanState().kind === 'open',
+      otherWorlds: otherWorldStatus(deps),
       inGame: deps.isInGame?.(args.characterId) ?? false,
       // 260705: while a voice call is open the reply is read aloud by TTS, so
       // the system prompt leads with the voice-call primer (spoken register).
@@ -716,6 +728,9 @@ export async function sendChatMessage(
     // back in") must keep looping for its "hopping back in" line, so the
     // double-goodbye break must NOT fire when a launch rode along.
     let launchCalled = false;
+    // Game adapters (M0): which game the deferred summon joins ('minecraft'
+    // unless the model named another self-launchable game).
+    let launchGame: GameId = 'minecraft';
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
     const tools =
@@ -815,7 +830,10 @@ export async function sendChatMessage(
           const result = resolveLaunch(game, args.characterId, deps);
           launch = result.launch;
           // Defer the real join — don't fire summon mid-loop (task 2).
-          if (result.summon) startSummon = true;
+          if (result.summon) {
+            startSummon = true;
+            launchGame = result.game;
+          }
           note = result.note;
         } else if (toolUse.name === 'quit_game') {
           // Task 5 — leave the game from chat. End the live session (no-op when
@@ -912,7 +930,7 @@ export async function sendChatMessage(
     // session popup appears. Still non-blocking: a full join can take many
     // seconds, so we never await it on the chat turn.
     if (startSummon) {
-      void deps.summon(args.characterId).catch((e) => {
+      void deps.summon(args.characterId, launchGame).catch((e) => {
         deps.onLaunchFailed?.(args.characterId, (e as Error)?.message ?? 'unknown error');
       });
     }
@@ -1440,12 +1458,46 @@ function resolveLaunch(
   game: string,
   characterId: string,
   deps: ChatDeps,
-): { note: string; launch: NonNullable<ChatSendResult['launch']>; summon: boolean } {
-  if (game !== 'minecraft') {
+): { note: string; launch: NonNullable<ChatSendResult['launch']>; summon: boolean; game: GameId } {
+  // Game adapters (M0): validated against the catalog rows the companion may
+  // start itself (selfLaunch && available). Minecraft keeps its exact path
+  // below; another available game gates on its own WorldState.
+  const row = SELF_LAUNCH_GAMES.find((g) => g.id === game);
+  if (!row) {
+    const names = SELF_LAUNCH_GAMES.map((g) => g.name);
+    const only = names.length <= 1 ? `only ${names[0] ?? 'Minecraft'} can be launched right now` : `only ${names.join(', ')} can be launched right now`;
     return {
-      note: `The game "${game}" is not available yet — only Minecraft can be launched right now. Tell the player it is coming soon.`,
+      note: `The game "${game}" is not available yet — ${only}. Tell the player it is coming soon.`,
       launch: { game, status: 'lan-not-open' },
       summon: false,
+      game: 'minecraft',
+    };
+  }
+  if (game !== 'minecraft') {
+    const gameId = game as GameId;
+    const blocked = deps.blockedAutoLaunch?.(characterId) ?? null;
+    if (blocked !== null) {
+      return {
+        note:
+          `You cannot join right now: the app refused your last attempt (${blockedReason(blocked)}). ` +
+          'Trying again will fail the same way until the player fixes that in the app, so do not call launch again in this conversation. ' +
+          'Tell the player in your own words what needs fixing.',
+        launch: { game, status: 'lan-not-open' },
+        summon: false,
+        game: gameId,
+      };
+    }
+    const world = deps.getWorldStates?.()?.[gameId];
+    if (world?.kind === 'open') {
+      return { note: THOUGHT_JOINING_GAME, launch: { game, status: 'summoning' }, summon: true, game: gameId };
+    }
+    return {
+      note:
+        `The player's ${row.name} world is not open, so you cannot join yet. ` +
+        'Ask them in your own voice to open their world in the game with the Sei mod enabled, then you can hop in.',
+      launch: { game, status: 'lan-not-open' },
+      summon: false,
+      game: gameId,
     };
   }
   // 260828 retry-loop guard: the last summon was refused before it even forked
@@ -1461,6 +1513,7 @@ function resolveLaunch(
         'Tell the player in your own words what needs fixing.',
       launch: { game, status: 'lan-not-open' },
       summon: false,
+      game: 'minecraft',
     };
   }
   const lan = deps.getLanState();
@@ -1475,6 +1528,7 @@ function resolveLaunch(
       note: THOUGHT_JOINING_GAME,
       launch: { game, status: 'summoning' },
       summon: true,
+      game: 'minecraft',
     };
   }
   return {
@@ -1484,7 +1538,20 @@ function resolveLaunch(
       'Explain this to them in your own voice and ask them to do it, then you can hop in.',
     launch: { game, status: 'lan-not-open' },
     summon: false,
+    game: 'minecraft',
   };
+}
+
+/**
+ * Game adapters (M0): the world-status entries for the OTHER self-launchable
+ * games (buildSystemBlocks otherWorlds). Empty while only Minecraft is
+ * available, so the prompt is unchanged today.
+ */
+function otherWorldStatus(deps: Pick<ChatDeps, 'getWorldStates'> | undefined): { game: string; name: string; open: boolean }[] {
+  const states = deps?.getWorldStates?.();
+  return SELF_LAUNCH_GAMES
+    .filter((g) => g.id !== 'minecraft')
+    .map((g) => ({ game: g.id, name: g.name, open: states?.[g.id as GameId]?.kind === 'open' }));
 }
 
 /**

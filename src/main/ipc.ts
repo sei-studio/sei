@@ -34,6 +34,7 @@ import {
   type ChatMessage,
   type SpokenLineContext,
 } from '../shared/ipc';
+import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
 import { loadConfig, saveConfig } from './configStore';
@@ -165,6 +166,13 @@ export interface IpcHandlerDeps {
    * the cached `getLanState()` on any error. Optional for older wiring.
    */
   checkLanNow?: () => Promise<LanState>;
+  /**
+   * Game adapters (M0, 260908): every registered game's world state (the
+   * world:get snapshot) and a fresh per-game detection pass (world:check-now).
+   * Optional for older wiring; absent means only Minecraft (via getLanState).
+   */
+  getWorldStates?: () => WorldStates;
+  worldCheckNow?: (game: GameId) => Promise<WorldState>;
   /**
    * Current per-character bot statuses (snapshot). The `bot:status` channel
    * only PUSHES on transitions, so a freshly-(re)subscribed renderer pulls
@@ -673,14 +681,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   };
 
   // Bot supervision
-  ipcMain.handle(IpcChannel.bot.summon, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
+  // Game adapters (M0): the payload is {characterId, game?}; a bare id string
+  // (older preload) is still accepted and means Minecraft.
+  const SummonArgSchema = z.union([
+    IdSchema,
+    z.object({ characterId: IdSchema, game: z.enum(GAME_IDS as unknown as [GameId, ...GameId[]]).optional() }),
+  ]);
+  ipcMain.handle(IpcChannel.bot.summon, async (_event, argRaw: unknown) => {
+    const arg = SummonArgSchema.parse(argRaw);
+    const id = typeof arg === 'string' ? arg : arg.characterId;
+    const game: GameId = typeof arg === 'string' ? 'minecraft' : (arg.game ?? 'minecraft');
     // 260828: this handler is the USER-ACTION summon path (the renderer's
     // Summon button and every popup retry go through it). A manual attempt is
     // never blocked — it clears any pre-gate auto-retry block so the automatic
     // paths (launch() tool, voice launch honors) get a fresh chance too.
     clearSummonBlock(id);
-    await deps.supervisor.summon(id);
+    await deps.supervisor.summon(id, game);
   });
   ipcMain.handle(IpcChannel.bot.stop, async (_event, idArg: unknown) => {
     // Multi-summon: `stop(id)` drains one session; `stop()` (no id) drains all.
@@ -708,6 +724,25 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch {
       return deps.getLanState();
     }
+  });
+
+  // Game adapters (M0): the per-game world union. world:get seeds a freshly
+  // loaded renderer (world:state only pushes on change); world:check-now is
+  // the generic summon flow's live-truth gate. With no world wiring (older
+  // main) Minecraft's state is derived from getLanState.
+  ipcMain.handle(IpcChannel.world.get, async (): Promise<WorldStates> => {
+    return deps.getWorldStates?.() ?? { minecraft: { game: 'minecraft', ...deps.getLanState() } };
+  });
+  ipcMain.handle(IpcChannel.world.checkNow, async (_event, gameArg: unknown): Promise<WorldState> => {
+    const game: GameId = isGameId(gameArg) ? gameArg : 'minecraft';
+    try {
+      if (deps.worldCheckNow) return await deps.worldCheckNow(game);
+      if (game === 'minecraft') return { game, ...((await deps.checkLanNow?.()) ?? deps.getLanState()) };
+    } catch {
+      /* fall through to the cached snapshot */
+    }
+    const cached = deps.getWorldStates?.()[game];
+    return cached ?? (game === 'minecraft' ? { game, ...deps.getLanState() } : { game, kind: 'unavailable' });
   });
 
   // Character CRUD
@@ -1273,7 +1308,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: inCall, voicePeers: args.voicePeers },
       {
         getLanState: deps.getLanState,
-        summon: (id) => deps.supervisor.summon(id),
+        getWorldStates: deps.getWorldStates,
+        summon: (id, game) => deps.supervisor.summon(id, game),
         // 260828 retry-loop guard: launch() refuses (and tells the model not
         // to retry) while a summon pre-gate refusal is still standing.
         blockedAutoLaunch: (id) => blockedAutoSummon(id),
@@ -1600,6 +1636,31 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return deps.supervisor.setGamePaused(args.characterId, args.paused);
   });
   ipcMain.handle(IpcChannel.mcdash.setMode, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, mode: z.enum(['reactive', 'proactive']) })
+      .parse(argsRaw);
+    return deps.supervisor.setGameMode(args.characterId, args.mode);
+  });
+
+  // ── Generic game dashboard (game adapters M0, 260908) ─────────────────────
+  // The gamedash:* set the two new games use. Same supervisor port messages
+  // as mcdash:* (dashboard-watch / game-pause / game-mode are game-agnostic);
+  // only the snapshot store differs (src/main/games/gameDashboardService).
+  ipcMain.handle(IpcChannel.gamedash.get, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    if (!deps.supervisor.isActive(id)) return null;
+    const { getGameDashboardSnapshot } = await import('./games/gameDashboardService');
+    return getGameDashboardSnapshot(id);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setWatching, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, watching: z.boolean() }).parse(argsRaw);
+    deps.supervisor.setDashboardWatch(args.characterId, args.watching);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setPaused, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);
+    return deps.supervisor.setGamePaused(args.characterId, args.paused);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setMode, async (_event, argsRaw: unknown) => {
     const args = z
       .object({ characterId: IdSchema, mode: z.enum(['reactive', 'proactive']) })
       .parse(argsRaw);

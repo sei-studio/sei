@@ -23,8 +23,10 @@ import { closeSplashWindow, createMainWindow, createSplashWindow } from './windo
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
 import { notePreGateFailure, clearSummonBlock } from './summonGuard';
-import { watchLan } from './lanWatcher';
 import { createBotSupervisor } from './botSupervisor';
+import { registerGameModule, getGameModule, listGameModules } from './games';
+import { createMinecraftGameModule } from './games/minecraft';
+import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
@@ -36,11 +38,12 @@ import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { cleanupRelocationLeftover } from './relocate';
+import { initMcDashboardService } from './mcDashboard/mcDashboardService';
 import {
-  initMcDashboardService,
-  publishMcDashboardSnapshot,
-  clearMcDashboard,
-} from './mcDashboard/mcDashboardService';
+  initGameDashboardService,
+  publishGameDashboardSnapshot,
+  clearGameDashboard,
+} from './games/gameDashboardService';
 import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
@@ -87,7 +90,12 @@ let mainWindow: BrowserWindow | null = null;
 // first paints (or by the failsafe timer).
 let splashWindow: BrowserWindow | null = null;
 let latestLanState: LanState = { kind: 'closed' };
-let lanWatcherHandle: ReturnType<typeof watchLan> | null = null;
+// Game adapters (M0, 260908): the Minecraft GameModule wraps the LAN watcher;
+// latestLanState is kept in sync from its world:state pushes for the callers
+// (diagnostics, the chat surface) that still read the Minecraft-shaped state.
+const minecraftModule = createMinecraftGameModule();
+registerGameModule(minecraftModule);
+let watchersRunning = false;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
 // CustomSkinLoader on the host's MC client. Bound on boot (port 0 → OS-chosen
@@ -147,6 +155,9 @@ function wireMainWindowEvents(win: BrowserWindow): void {
   win.webContents.on('did-finish-load', () => {
     if (!win.isDestroyed()) {
       win.webContents.send(IpcChannel.lan.state, latestLanState);
+      for (const mod of listGameModules()) {
+        win.webContents.send(IpcChannel.world.state, mod.getWorldState());
+      }
     }
   });
   win.webContents.on('did-navigate', sweepVoiceCalls);
@@ -165,6 +176,39 @@ function broadcastLan(state: LanState): void {
   latestLanState = state;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.lan.state, state);
+  }
+}
+
+/**
+ * Game adapters (M0): every game module's watcher pushes here. Minecraft's
+ * state also feeds the legacy lan:state channel (one release as an alias);
+ * every game rides world:state.
+ */
+function broadcastWorld(state: WorldState): void {
+  if (state.game === 'minecraft') {
+    const { game: _g, ...lan } = state;
+    broadcastLan(lan as LanState);
+  } else {
+    console.log(`[sei/world] ${state.game} world ${state.kind}`);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.world.state, state);
+  }
+}
+
+function worldStates(): WorldStates {
+  const out: WorldStates = {};
+  for (const mod of listGameModules()) out[mod.id] = mod.getWorldState();
+  return out;
+}
+
+async function worldCheckNow(game: GameId): Promise<WorldState> {
+  const mod = getGameModule(game);
+  if (!mod) return { game, kind: 'unavailable' } as WorldState;
+  try {
+    return await mod.watcher.checkNow();
+  } catch {
+    return mod.getWorldState();
   }
 }
 
@@ -205,32 +249,46 @@ async function appendChatMessage(characterId: string, message: ChatMessage): Pro
   pushChatMessage(characterId, message);
 }
 
-// Play-session tracking: when a bot goes online we stamp the moment; when it
-// leaves (idle/error) we post a Discord-style "You and X played Minecraft for Y"
-// system row into that character's chat transcript. First-online wins so a
-// mid-session backend-switch re-emit doesn't reset the clock.
-const playStartedAt = new Map<string, number>();
+// Play-session tracking: when a bot goes online we stamp the moment (and the
+// game); when it leaves (idle/error) we post a Discord-style "You and X played
+// <game> for Y" system row into that character's chat transcript. First-online
+// wins so a mid-session backend-switch re-emit doesn't reset the clock.
+const playStartedAt = new Map<string, { at: number; game: GameId }>();
 
-/** Post the "You and <name> played Minecraft for <duration>" system row. */
-async function emitPlaySession(characterId: string, durationMs: number): Promise<void> {
+/** Post the "You and <name> played <game> for <duration>" system row, then
+ *  fire the rolling-summary fold like every other game surface does. */
+async function emitPlaySession(characterId: string, durationMs: number, game: GameId): Promise<void> {
   let name = 'your companion';
   let rowLanguage: 'zh' | undefined;
+  let personaExpanded: string | undefined;
   try {
     const { getCharacter } = await import('./characterStore');
     const c = await getCharacter(characterId);
     if (c?.name) name = c.name;
+    personaExpanded = c?.persona?.expanded;
     const { characterLanguage } = await import('../shared/chatLanguage');
     if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
   } catch {
     /* fall back to the generic name */
   }
+  // The game's proper name comes from its module (Minecraft: 'Minecraft').
+  const gameName = getGameModule(game)?.displayName ?? (game === 'minecraft' ? 'Minecraft' : game);
   await appendChatMessage(characterId, {
     id: randomUUID(),
     role: 'system',
-    text: playSummaryText(name, 'Minecraft', durationMs, rowLanguage),
+    text: playSummaryText(name, gameName, durationMs, rowLanguage),
     ts: Date.now(),
-    event: { kind: 'play', game: 'minecraft', durationMs },
+    event: { kind: 'play', game, durationMs },
   });
+  // Continuity OUT (CLAUDE.md contract): chess/draw/backseat fold after their
+  // play row; the bot session was the one surface that never did, so its rows
+  // only reached the rolling summary on the chat surface's next fold.
+  try {
+    const { foldIfDue } = await import('./chat/continuity');
+    void foldIfDue(characterId, personaExpanded).catch(() => {});
+  } catch {
+    /* best-effort */
+  }
 }
 
 /** Voice calls (260705): post the "You and <name> called for <duration>" row.
@@ -315,9 +373,9 @@ function broadcastStatus(status: BotStatus): void {
   // upserts (renderer keeps showing the error over the still-live session).
   if (status.kind === 'idle') currentStatuses.delete(id);
   else currentStatuses.set(id, status);
-  // Minecraft dashboard (260721): the session is gone — drop the cached
-  // telemetry so a later summon never hydrates a stale snapshot.
-  if (status.kind === 'idle') clearMcDashboard(id);
+  // Dashboard (260721): the session is gone — drop the cached telemetry so a
+  // later summon never hydrates a stale snapshot (every game's cache).
+  if (status.kind === 'idle') clearGameDashboard(id);
   if (transientError) return;
   // Track online-ness for chat routing (only route to a spawned bot).
   if (status.kind === 'online') onlineIds.add(id);
@@ -329,17 +387,20 @@ function broadcastStatus(status: BotStatus): void {
     // release the auto-retry block (see summonGuard.ts).
     clearSummonBlock(id);
     if (!playStartedAt.has(id)) {
-      playStartedAt.set(id, Date.now());
+      const game: GameId = status.game ?? 'minecraft';
+      playStartedAt.set(id, { at: Date.now(), game });
       // Analytics (260707): first-online is the "bot reached the world" signal.
-      capture('character_summoned', { character_id: id });
+      capture('character_summoned', { character_id: id, game });
     }
   } else if (status.kind === 'error' || status.kind === 'idle') {
-    const startedAt = playStartedAt.get(id);
-    if (startedAt !== undefined) {
+    const started = playStartedAt.get(id);
+    if (started !== undefined) {
       playStartedAt.delete(id);
-      const durationMs = Date.now() - startedAt;
-      void emitPlaySession(id, durationMs);
-      capture('bot_session_ended', { character_id: id, duration_ms: durationMs });
+      const durationMs = Date.now() - started.at;
+      void emitPlaySession(id, durationMs, started.game);
+      // One event name across games (the analytics dashboard sums playtime
+      // by event name); `game` is the split.
+      capture('bot_session_ended', { character_id: id, duration_ms: durationMs, game: started.game });
     }
     // 260720: the thin summon_failed capture that used to live here (terminal
     // error with no live session → character_id + reason) moved to the
@@ -697,11 +758,10 @@ async function bootstrap(): Promise<void> {
   // target so it can load the overlay-mode bundle.
   initCallOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
 
-  // 3. LAN watcher (D-21 — single instance for the whole app session)
-  lanWatcherHandle = watchLan({
-    onUpdate: broadcastLan,
-    staleMs: 3000,
-  });
+  // 3. World watchers (D-21 — single instance per game for the whole app
+  // session). Minecraft's is the LAN watcher behind its GameModule.
+  for (const mod of listGameModules()) mod.watcher.start({ onUpdate: broadcastWorld });
+  watchersRunning = true;
 
   // 4. Bot supervisor
   supervisor = createBotSupervisor({
@@ -731,9 +791,10 @@ async function bootstrap(): Promise<void> {
     },
     // Party redesign §2/§5 — the live bot's current world action (verb line).
     onBotAction: broadcastAction,
-    // Minecraft dashboard (260721) — telemetry snapshots from the live bot.
-    // The service validates (Zod), caches the latest, and pushes mcdash:snapshot.
-    onDashboard: publishMcDashboardSnapshot,
+    // Dashboard (260721) — telemetry snapshots from the live bot, dispatched
+    // on snapshot.game (Minecraft → mcDashboardService → mcdash:snapshot;
+    // other games → gamedash:snapshot). Validated before the renderer sees it.
+    onDashboard: publishGameDashboardSnapshot,
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift
@@ -891,6 +952,14 @@ async function bootstrap(): Promise<void> {
       }
     },
   });
+  // Game adapters (M0): the generic dashboard push for the non-Minecraft games.
+  initGameDashboardService({
+    pushSnapshot: (s) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IpcChannel.gamedash.snapshot, s);
+      }
+    },
+  });
 
   // 5. IPC handlers
   registerIpcHandlers({
@@ -916,7 +985,7 @@ async function bootstrap(): Promise<void> {
     // the 2s poll window, and the stale 'closed' had Marv insisting an open
     // world was "not broadcasting".
     refreshLanState: async () => {
-      try { await lanWatcherHandle?.checkNow(); } catch { /* best-effort */ }
+      try { await minecraftModule.watcher.checkNow(); } catch { /* best-effort */ }
     },
     // 260703: like refreshLanState but RETURNS the fresh state — backs the
     // `lan:check-now` channel the summon click awaits. checkNow's emit path
@@ -925,11 +994,16 @@ async function bootstrap(): Promise<void> {
     // cached snapshot on error.
     checkLanNow: async () => {
       try {
-        return (await lanWatcherHandle?.checkNow()) ?? latestLanState;
+        const fresh = await minecraftModule.watcher.checkNow();
+        const { game: _g, ...lan } = fresh;
+        return lan as LanState;
       } catch {
         return latestLanState;
       }
     },
+    // Game adapters (M0): the per-game world snapshot + fresh check.
+    getWorldStates: worldStates,
+    worldCheckNow,
     // Snapshot pull for the renderer's summons map (see broadcastStatus).
     getBotStatuses: () => [...currentStatuses.values()],
     // Task 4 — only route chat into a bot that's fully spawned in-world.
@@ -1139,7 +1213,7 @@ if (!gotLock) {
   });
 
   app.on('before-quit', async (e) => {
-    if (!supervisor && !lanWatcherHandle && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
+    if (!supervisor && !watchersRunning && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
     e.preventDefault();
     // Close any open text-chat session BEFORE the flush below — quitting
     // mid-conversation is the normal way a chat ends, and an event captured
@@ -1152,14 +1226,14 @@ if (!gotLock) {
     try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
     // Draw!: clear turn timers and abort any in-flight guess/draw call.
     try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
-    try { if (lanWatcherHandle) lanWatcherHandle.stop(); } catch { /* best-effort */ }
+    try { for (const mod of listGameModules()) mod.watcher.stop(); } catch { /* best-effort */ }
     // Close the skin server's TCP listener so the port is
     // freed promptly. server.close drains in-flight requests before resolving.
     try { if (skinServer) await skinServer.stop(); } catch { /* best-effort */ }
     // Same for the auth loopback callback server — release port 54321.
     try { if (loopbackAuthServer) await loopbackAuthServer.stop(); } catch { /* best-effort */ }
     supervisor = null;
-    lanWatcherHandle = null;
+    watchersRunning = false;
     skinServer = null;
     loopbackAuthServer = null;
     app.exit(0);
