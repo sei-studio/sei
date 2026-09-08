@@ -60,6 +60,8 @@ import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './g
 import { GameIpcChannel } from './gameIpc';
 export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import type { GamePackProgressPush, GamePackState } from './gamePacks';
+import type { DstInstallState, DstSurvivorPick } from './dstIpc';
+import { DstChannel } from './dstIpc';
 export type { GamePackProgressPush, GamePackState } from './gamePacks';
 export type {
   McDashboardSnapshot,
@@ -1389,6 +1391,22 @@ export interface RendererApi {
   onGameDashboardSnapshot(cb: (s: GameDashboardSnapshot) => void): Unsubscribe;
   gameSetPaused(characterId: string, paused: boolean): Promise<boolean>;
   gameSetMode(characterId: string, mode: McGameMode): Promise<boolean>;
+
+  // Don't Starve Together (game-adapters M2, 260908) — see src/shared/dstIpc.ts.
+  /** Detect the game + helper mod (re-applies modsettings.lua when found). */
+  dstInstallState(): Promise<DstInstallState>;
+  /** Copy the helper mod from the game pack into the game and force-enable it. */
+  dstInstall(): Promise<DstInstallState>;
+  /** Open steam://rungameid/322330 (after re-applying the enable). */
+  dstLaunch(): Promise<void>;
+  /** The character's survivor, derived by the character on first use. */
+  dstSurvivorGet(characterId: string): Promise<DstSurvivorPick>;
+  /** Override (prefab) or forget (null) the survivor pick. */
+  dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
+  /** Persist UserConfig.dst_port and rebind the discovery listener. */
+  dstSetPort(port: number): Promise<void>;
+  /** Push: install progress while dstInstall runs. */
+  onDstInstallProgress(cb: (state: DstInstallState) => void): Unsubscribe;
 
   // Character CRUD
   listCharacters(): Promise<Character[]>;
@@ -2908,6 +2926,8 @@ export const IpcChannel = {
     /** Push (main → renderer): GamePackProgressPush on every state change. */
     packProgress: 'game:pack-progress',
   },
+  /** Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts). */
+  dst: DstChannel,
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',

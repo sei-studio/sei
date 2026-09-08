@@ -1135,6 +1135,23 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         opts.onDashboard?.(characterId, (data as { snapshot?: unknown }).snapshot);
         return;
       }
+      // Don't Starve Together (game-adapters M2, 260908): the bot's loopback
+      // listener is up; hand {port, token} to the DST module so its watcher
+      // can offer the summon to the mod on the next heartbeat. Not a
+      // BotStatus event — return before lifecycleToStatus.
+      if ((data as { type?: string }).type === 'dst-listen') {
+        void (async () => {
+          try {
+            const { DstListenMessageSchema } = await import('../shared/dstIpc');
+            const msg = DstListenMessageSchema.parse(data);
+            const mod = getGameModule('dontstarve') as { setSummonOffer?: (id: string, l: { port: number; token: string }) => Promise<void> } | null;
+            await mod?.setSummonOffer?.(characterId, { port: msg.port, token: msg.token });
+          } catch (err) {
+            logger.warn(`dst-listen handoff failed for ${characterId}: ${(err as Error).message}`);
+          }
+        })();
+        return;
+      }
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);

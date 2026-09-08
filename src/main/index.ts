@@ -26,6 +26,7 @@ import { notePreGateFailure, clearSummonBlock } from './summonGuard';
 import { createBotSupervisor } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
 import { createMinecraftGameModule } from './games/minecraft';
+import { createDontStarveGameModule } from './games/dontstarve';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
@@ -95,6 +96,12 @@ let latestLanState: LanState = { kind: 'closed' };
 // (diagnostics, the chat surface) that still read the Minecraft-shaped state.
 const minecraftModule = createMinecraftGameModule();
 registerGameModule(minecraftModule);
+// Don't Starve Together (game-adapters M2, 260908): the discovery listener
+// + install + summon handoff module. Its watcher binds the fixed loopback
+// port when the watchers start below; `GAME_CATALOG.available` stays false
+// until the live checklist passes, so registering here lights no tile.
+const dontstarveModule = createDontStarveGameModule();
+registerGameModule(dontstarveModule);
 let watchersRunning = false;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
