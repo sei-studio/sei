@@ -25,7 +25,6 @@ import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useChatStore } from '../lib/stores/useChatStore';
-import { useWizardStore } from '../lib/stores/useWizardStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -51,8 +50,9 @@ import { CopyIcon } from '../components/icons';
 import { useLangStore, useT, type UiLanguage } from '../lib/i18n';
 import { DEFAULT_MODELS } from '@shared/llmCatalog';
 import type { AvatarMode, UserConfig } from '@shared/characterSchema';
-import type { LlmListModelsResult, SpeechPackStatePush, WizardState } from '@shared/ipc';
+import type { LlmListModelsResult, SpeechPackStatePush } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
+import { GAME_SETTINGS_SECTIONS } from '../lib/gameSettingsSections';
 
 const API_KEY_BULLET_LEN = 24;
 
@@ -787,10 +787,6 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  const onSelectVisionMode = (mode: 'off' | 'on-demand' | 'continuous'): void => {
-    if (mode === (cfg?.vision_mode ?? 'on-demand')) return;
-    void writeVisionConfig({ vision_mode: mode });
-  };
 
   // ui-A9: "Reset all character memories" — open the confirm popup. The actual
   // wipe runs in runResetAllMemories once the user confirms.
@@ -831,7 +827,6 @@ export function SettingsScreen(): React.ReactElement {
 
   const isCloud = aiBackendKind === 'cloud-proxy';
   const backendSegValue: 'cloud' | 'mykey' = isCloud ? 'cloud' : 'mykey';
-  const visionMode = cfg?.vision_mode ?? 'on-demand';
 
   // Version value: "v{x}" alone, or "v{x} · <status>" after a check.
   const versionSuffix =
@@ -1356,36 +1351,14 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         ) : null}
 
-        {/* ── Minecraft ───────────────────────────────────────── */}
-        <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('Minecraft') /* >Minecraft< */}</h3>
-          <SkinSetupRow />
-          {/* Looking (vision): Off / On-demand / Continuous. Every move writes
-              straight through. Continuous uses more of the weekly allowance;
-              that shows up on the plan screen's usage bar, never as a number
-              here. The mode explanation lives behind the (i) tip. */}
-          <div className={styles.row}>
-            <span className={styles.label}>
-              {t('Visual gameplay')}
-              <InfoTip
-                label={t('About visual gameplay')}
-                text={t(
-                  "Companions usually play from lightweight snapshots of the world, but can pull a full render of what's around them when they need to see it, for example when building or navigating.",
-                )}
-              />
-            </span>
-            <Seg
-              aria-label={t('Visual gameplay mode')}
-              value={visionMode}
-              options={[
-                { value: 'off', label: t('Off') },
-                { value: 'on-demand', label: t('On-demand') },
-                { value: 'continuous', label: t('Continuous') },
-              ]}
-              onChange={onSelectVisionMode}
-            />
+        {/* ── Per-game groups (game adapters M0, 260908): one group per
+            registered section; Minecraft's content is unchanged. ── */}
+        {GAME_SETTINGS_SECTIONS.map((section) => (
+          <div className={styles.group} key={section.game}>
+            <h3 className={styles.groupTitle}>{t(section.title) /* >Minecraft< */}</h3>
+            <section.Section config={cfg} writeConfig={writeVisionConfig} />
           </div>
-        </div>
+        ))}
 
         {/* ── Language (260730) — app UI language, its own section ── */}
         <div className={styles.group}>
@@ -1872,49 +1845,3 @@ export function SettingsScreen(): React.ReactElement {
   );
 }
 
-/**
- * SkinSetupRow — Minecraft skin setup wizard status row.
- *
- * "Run setup" / "Re-run setup" opens SetupWizardModal in re-entry mode. The
- * pill state (enabled-install count) refreshes whenever the wizard closes.
- */
-function SkinSetupRow(): React.ReactElement {
-  const t = useT();
-  const openWizard = useWizardStore((s) => s.openWizard);
-  // Re-read the persisted wizard state whenever the wizard CLOSES so a
-  // completed "Re-run setup" flips the label without reopening Settings.
-  const wizardOpen = useWizardStore((s) => s.open);
-  const [state, setState] = useState<WizardState | null>(null);
-
-  useEffect(() => {
-    // Skip while the wizard is open — the fetch would race its in-flight
-    // install. The effect re-runs when wizardOpen flips back to false.
-    if (wizardOpen) return;
-    let cancelled = false;
-    void sei.getWizardState().then((s) => {
-      if (!cancelled) setState(s);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [wizardOpen]);
-
-  const enabledCount = state?.enabledInstallIds.length ?? 0;
-
-  return (
-    <div className={styles.row}>
-      <span className={styles.label}>
-        {t('Custom skins')}
-        <InfoTip
-          label={t('About custom skins')}
-          text={t(
-            'Give your companion a Minecraft skin so it looks right in your world. This runs a quick one-time setup for your Minecraft install.',
-          )}
-        />
-      </span>
-      <Button kind="ghost" size="sm" onClick={() => openWizard(true)}>
-        {enabledCount > 0 ? t('Re-run setup') : t('Run setup')}
-      </Button>
-    </div>
-  );
-}

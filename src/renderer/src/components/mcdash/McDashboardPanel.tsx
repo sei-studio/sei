@@ -159,7 +159,7 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
    */
   const disconnect = (): void => {
     useDataStore.getState().setStatus({ kind: 'idle', characterId });
-    useMcDashboardStore.getState().setLaunch(characterId, true);
+    useMcDashboardStore.getState().setLaunch(characterId, 'minecraft');
     void sei.stop(characterId).catch(() => {
       // The session is already gone / the port dropped; the UI is correct.
     });

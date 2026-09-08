@@ -12,6 +12,8 @@
 import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
 import type { LanHost, LanHostWarning } from '@shared/ipc';
+import type { GameId } from '@shared/gameIpc';
+import type { ErrorClass } from '@shared/errorClasses';
 import type { AvatarMode, AvatarPrefs } from '@shared/characterSchema';
 
 export type View =
@@ -123,6 +125,16 @@ export type Modal =
   // surface for its error class. Opened centrally from the onStatus
   // subscription; before this, a mid-session death showed nothing at all.
   | { kind: 'bot-crash'; characterId: string }
+  // Game adapters (M0, 260908) — the generic per-game setup window for a
+  // bot-backed game other than Minecraft (whose window is mc-setup). Opened by
+  // the generic summon flow when the game's world is not open; auto-resumes
+  // the pending summon when world:state flips open. The game agents fill the
+  // body (GameSetupModal is a placeholder in M0).
+  | { kind: 'game-setup'; game: GameId }
+  // Game adapters (M0) — a bot-backed game session failed with one of the
+  // game-neutral error classes (GAME_*). Generic popup carrying ERROR_COPY;
+  // Minecraft's classes keep their dedicated modals above.
+  | { kind: 'game-error'; game: GameId; characterId: string; error: ErrorClass; message: string }
   // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games.
   // Per-game info is a hover-only popup inside the picker (no about modal).
   | { kind: 'games-picker'; characterId: string }
@@ -132,7 +144,7 @@ export type Modal =
   | {
       kind: 'cross-launch';
       characterId: string;
-      fromId: 'chess' | 'minecraft' | 'draw' | 'backseat';
+      fromId: 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve';
       fromName: string;
       toName: string;
     }
@@ -165,6 +177,12 @@ interface UiState {
    * too. Set alongside pendingSummonId; consumed + cleared by the resume.
    */
   pendingSummonReturnToChat: boolean;
+  /**
+   * Game adapters (M0): which game the pending summon (pendingSummonId) is
+   * for. 'minecraft' resumes through McSetupModal; any other game resumes
+   * through GameSetupModal when its world:state flips open.
+   */
+  pendingSummonGame: GameId;
   /** B3/B4 — IconRail compass + CharactersScreen tab persistence. */
   homeTab: HomeTab;
   /**
@@ -322,6 +340,7 @@ interface UiState {
   closeModal: () => void;
   setThemeMode: (mode: ThemeMode) => void;
   setPendingSummon: (id: string | null) => void;
+  setPendingSummonGame: (game: GameId) => void;
   /** Task 6: record whether the pending summon should return to chat on resume. */
   setPendingSummonReturnToChat: (v: boolean) => void;
   setHomeTab: (tab: HomeTab) => void;
@@ -371,6 +390,7 @@ export const useUiStore = create<UiState>((set) => ({
   themeMode: 'system',
   pendingSummonId: null,
   pendingSummonReturnToChat: false,
+  pendingSummonGame: 'minecraft',
   homeTab: 'home',
   devConsoleVisible: false,
   // Appearance & feel: default ON, matching UserConfig.realistic_typing's
@@ -412,6 +432,7 @@ export const useUiStore = create<UiState>((set) => ({
   closeModal: () => set({ modal: null }),
   setThemeMode: (mode) => set({ themeMode: mode }),
   setPendingSummon: (id) => set({ pendingSummonId: id }),
+  setPendingSummonGame: (game) => set({ pendingSummonGame: game }),
   setPendingSummonReturnToChat: (v) => set({ pendingSummonReturnToChat: v }),
   // Switching to the World tab also counts as leaving Home.
   setHomeTab: (tab) =>

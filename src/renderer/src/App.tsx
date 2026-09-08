@@ -60,6 +60,8 @@ import { LanHostWarningModal } from './components/LanHostWarningModal';
 import { UnsupportedVersionModal } from './components/UnsupportedVersionModal';
 import { LanNotOpenModal } from './components/LanNotOpenModal';
 import { ModdedHostModal } from './components/ModdedHostModal';
+import { GameSetupModal } from './components/GameSetupModal';
+import { GameErrorModal } from './components/GameErrorModal';
 import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
@@ -1051,6 +1053,12 @@ export function App(): React.ReactElement {
           a different world, not a different setting. */}
       {modal?.kind === 'modded-host' ? <ModdedHostModal characterId={modal.characterId} /> : null}
       {modal?.kind === 'bot-crash' ? <BotCrashModal characterId={modal.characterId} /> : null}
+      {/* Game adapters (M0, 260908) — the generic per-game setup window and
+          the generic GAME_* error popup for the non-Minecraft bot games. */}
+      {modal?.kind === 'game-setup' ? <GameSetupModal game={modal.game} /> : null}
+      {modal?.kind === 'game-error' ? (
+        <GameErrorModal game={modal.game} characterId={modal.characterId} error={modal.error} message={modal.message} />
+      ) : null}
       {/* Phase 18/19 — chat "Play together" surface: the game picker grid
           (per-game info is a hover popup inside it). */}
       {modal?.kind === 'games-picker' ? (

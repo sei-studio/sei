@@ -34,9 +34,27 @@ import { useWizardStore } from './stores/useWizardStore';
 import { attemptSummon } from './summonFlow';
 import { sei } from './ipcClient';
 import { t } from './i18n';
+import { GAME_CATALOG } from '@shared/games';
+import type { GameId } from '@shared/gameIpc';
 
-/** The launchable games (the picker's coming-soon tiles are never active). */
-export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat';
+/** The launchable games (the picker's coming-soon tiles are never active).
+ *  Game adapters (M0, 260908): + the two bot-backed games. */
+export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve';
+
+/** The bot-backed ("summon") games: one utilityProcess bot per character. */
+export const BOT_GAME_IDS: readonly GameId[] = ['minecraft', 'stardew', 'dontstarve'];
+
+export function isBotGame(id: string | null | undefined): id is GameId {
+  return typeof id === 'string' && (BOT_GAME_IDS as readonly string[]).includes(id);
+}
+
+/** Proper name of a bot-backed game for confirm copy and labels. */
+export function botGameName(game: GameId): string {
+  // Minecraft keeps its own i18n key; the others take the catalog name (a
+  // proper noun, not translated).
+  if (game === 'minecraft') return t('Minecraft');
+  return GAME_CATALOG.find((g) => g.id === game)?.name ?? game;
+}
 
 export interface ActiveGameInfo {
   id: LaunchGameId;
@@ -65,9 +83,12 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
   if (useBackseatStore.getState().active[characterId]) {
     return { id: 'backseat', name: t('Screen share') };
   }
-  const summon = useDataStore.getState().summons[characterId]?.kind;
-  if (summon === 'online' || summon === 'connecting') {
-    return { id: 'minecraft', name: t('Minecraft') };
+  const summon = useDataStore.getState().summons[characterId];
+  if (summon?.kind === 'online' || summon?.kind === 'connecting') {
+    // Game adapters (M0): a live/connecting bot session in WHICHEVER game
+    // (BotStatus.game; absent = an older main = Minecraft).
+    const game: GameId = summon.game ?? 'minecraft';
+    return { id: game, name: botGameName(game) };
   }
   return null;
 }
@@ -89,7 +110,8 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
     await useBackseatStore.getState().end(characterId);
     return;
   }
-  // Minecraft: same instant-disconnect path the chat panel uses.
+  // Any bot-backed game (Minecraft, Stardew, Don't Starve): same
+  // instant-disconnect path the chat panel uses.
   useDataStore.getState().setStatus({ kind: 'idle', characterId });
   useMcDashboardStore.getState().setLaunch(characterId, false);
   try {
@@ -157,20 +179,20 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
     const g = chess.games[characterId];
     if (!g || g.status === 'ended') void chess.end(characterId);
   }
-  if (gameId !== 'minecraft') dash.setLaunch(characterId, false);
+  if (!isBotGame(gameId)) dash.setLaunch(characterId, false);
 
   if (gameId === 'chess') {
     chess.openPanel(characterId);
-  } else {
+  } else if (isBotGame(gameId)) {
     if (useDataStore.getState().summons[characterId]?.kind !== 'online') {
-      // Minecraft with a live bot needs no flag: the dashboard is always open
-      // while the bot is online (no hide/minimize). Offline, open the launch
-      // panel.
-      dash.setLaunch(characterId, true);
+      // A bot-backed game with a live bot needs no flag: the dashboard is
+      // always open while the bot is online (no hide/minimize). Offline,
+      // open THIS game's launch panel (GAME_SURFACES[gameId].LaunchPanel).
+      dash.setLaunch(characterId, gameId);
     }
     // First Minecraft open for a never-set-up account → skin-setup wizard
-    // over the launch panel (async, best-effort).
-    void maybeOfferSkinSetup();
+    // over the launch panel (async, best-effort). Minecraft only.
+    if (gameId === 'minecraft') void maybeOfferSkinSetup();
   }
 }
 
