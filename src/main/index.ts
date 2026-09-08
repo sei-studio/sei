@@ -26,6 +26,7 @@ import { notePreGateFailure, clearSummonBlock } from './summonGuard';
 import { createBotSupervisor } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
 import { createMinecraftGameModule } from './games/minecraft';
+import { createStardewGameModule } from './games/stardew';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
@@ -95,6 +96,10 @@ let latestLanState: LanState = { kind: 'closed' };
 // (diagnostics, the chat surface) that still read the Minecraft-shaped state.
 const minecraftModule = createMinecraftGameModule();
 registerGameModule(minecraftModule);
+// Stardew Valley (game-adapters M1, 260908): hello watcher + install/launch.
+// Registering does not light the picker tile (GAME_CATALOG.available flips
+// after the live checklist).
+registerGameModule(createStardewGameModule({ logger }));
 let watchersRunning = false;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to

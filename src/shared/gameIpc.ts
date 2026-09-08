@@ -15,6 +15,7 @@
  */
 import type { LanState } from './ipc';
 import type { McDashboardSnapshot } from './mcDashboardIpc';
+import type { StardewJoinTarget, StardewWorldState, StardewDashboardSnapshot } from './stardewIpc';
 
 /** The bot-backed games. Mirrors GAME_KINDS in src/bot/config.js (the bot is
  *  plain ESM JS and cannot import this file) — keep both lists in sync. */
@@ -44,7 +45,7 @@ export type GenericJoinTarget = Record<string, unknown>;
 
 export type JoinTarget =
   | { game: 'minecraft'; target: MinecraftJoinTarget }
-  | { game: 'stardew'; target: GenericJoinTarget }
+  | { game: 'stardew'; target: StardewJoinTarget }
   | { game: 'dontstarve'; target: GenericJoinTarget };
 
 /* ── World state (main → renderer, world:state) ─────────────────────────── */
@@ -62,7 +63,9 @@ export type GenericWorldState =
 /** Discriminated on `game`. Minecraft's member IS the existing LanState. */
 export type WorldState =
   | ({ game: 'minecraft' } & LanState)
-  | ({ game: 'stardew' } & GenericWorldState)
+  // Stardew (M1): `open` carries the farm + save day; `not_installed` and
+  // `game_running_no_save` are the two extra states the launch panel shows.
+  | ({ game: 'stardew' } & StardewWorldState)
   | ({ game: 'dontstarve' } & GenericWorldState);
 
 /** All games' current world states, keyed by game (the world:get snapshot). */
@@ -87,6 +90,7 @@ export interface GenericGameDashboardSnapshot {
 
 export type GameDashboardSnapshot =
   | (McDashboardSnapshot & { game: 'minecraft' })
+  | StardewDashboardSnapshot
   | GenericGameDashboardSnapshot;
 
 /* ── Channels ───────────────────────────────────────────────────────────── */

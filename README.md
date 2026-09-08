@@ -88,6 +88,13 @@ To get more involved with the product side, reach out at [ouen@sei.gg](mailto:ou
 ## Acknowledgements
 
 - [mineflayer](https://github.com/PrismarineJS/mineflayer): the Minecraft bot framework Sei's game adapter is built on
+- [Farmtronics](https://github.com/JoeStrout/Farmtronics) (MIT): the invisible shadow-Farmer pattern Sei's Stardew Valley companion body is built on
+- [amarisaster/StardewValley-MCP](https://github.com/amarisaster/StardewValley-MCP) (Apache-2.0): the NPC + shadow-farmer pairing and tool-use design the Stardew companion follows
+- [StardewWebApi](https://github.com/zunderscore/StardewWebApi) (MIT): the HttpListener + WebSocket server shape inside a SMAPI mod
+- [StarDojo](https://github.com/StarDojo2025/stardojo) (MIT): game-thread marshalling and the observation exporters the Stardew snapshot is modeled on
+- [JunimoServer](https://github.com/stardew-valley-dedicated-server/server) (MIT): the chat-box postfix the Stardew companion listens through
+- [luy-0/StardewValley-MCP](https://github.com/luy-0/StardewValley-MCP) (Apache-2.0): the mod-as-listener transport and per-install token design, used as a reference
+- [SMAPI](https://smapi.io) (LGPL-3.0): the Stardew Valley mod loader, downloaded from its official release at install time, never vendored; its game-folder detection logic is ported in TypeScript
 - [Project AIRI](https://github.com/moeru-ai/airi): open-sourced digital "embodied" AI companion
 - [Character.AI](https://character.ai): demonstrated personalized AI characters
 - [Neuro-sama](https://vedal.ai/): showed that AI can make people happy

@@ -62,6 +62,8 @@ import { LanNotOpenModal } from './components/LanNotOpenModal';
 import { ModdedHostModal } from './components/ModdedHostModal';
 import { GameSetupModal } from './components/GameSetupModal';
 import { GameErrorModal } from './components/GameErrorModal';
+// Stardew Valley (game adapters M1): registers its panels, summon flow, error routes, settings group and setup modal.
+import './components/stardew/registerStardew';
 import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';

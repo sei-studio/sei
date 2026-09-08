@@ -51,7 +51,13 @@ export type ErrorClass =
   // node_modules, src/main/games/packs.ts) could not be fetched, verified or
   // extracted. Pre-fork like the wizard's MOD_DOWNLOAD_FAILED; a retry is the
   // fix that usually works.
-  | 'GAME_PACK_DOWNLOAD_FAILED';
+  | 'GAME_PACK_DOWNLOAD_FAILED'
+  // Stardew Valley (M1, 260908): the two failures whose copy must differ from
+  // the generic GAME_* classes. A farmhand without the mod cannot be shown a
+  // custom-sprite NPC, so the mod refuses to spawn; SMAPI's own installer
+  // failing is a different fix from the mod copy failing.
+  | 'STARDEW_FARMHAND_NO_MOD'
+  | 'SMAPI_INSTALL_FAILED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -83,4 +89,6 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'GAME_NOT_ANSWERING',
   'GAME_VERSION_UNSUPPORTED',
   'GAME_PACK_DOWNLOAD_FAILED',
+  'STARDEW_FARMHAND_NO_MOD',
+  'SMAPI_INSTALL_FAILED',
 ]);

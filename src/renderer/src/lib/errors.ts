@@ -72,6 +72,9 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // 260908 game packs. The size mirrors GAME_PACKS.minecraft.sizeHintBytes
   // (src/shared/gamePacks.ts); gamePacks.test.ts pins the two together.
   GAME_PACK_DOWNLOAD_FAILED: "Couldn't download the support files this game needs (about 50 MB for Minecraft). Check your connection and press Play again. A retry usually works.",
+  // Stardew Valley (game-adapters M1, 260908).
+  STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",
+  SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
 };
 
 /**

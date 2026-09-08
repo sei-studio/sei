@@ -263,6 +263,15 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
   },
   voiceStt: (args) => ipcRenderer.invoke(IpcChannel.voice.stt, args),
+  // Stardew Valley (game-adapters M1, src/main/games/stardew)
+  stardewInstallState: () => ipcRenderer.invoke(IpcChannel.stardew.installState),
+  stardewInstall: () => ipcRenderer.invoke(IpcChannel.stardew.install),
+  stardewLaunch: () => ipcRenderer.invoke(IpcChannel.stardew.launch),
+  onStardewInstallProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]) => cb(ev);
+    ipcRenderer.on(IpcChannel.stardew.installProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.stardew.installProgress, handler);
+  },
   // Game packs (260908, src/main/games/packs.ts)
   gamePackState: (game) => ipcRenderer.invoke(IpcChannel.game.packState, { game }),
   gamePackEnsure: (game) => ipcRenderer.invoke(IpcChannel.game.packEnsure, { game }),

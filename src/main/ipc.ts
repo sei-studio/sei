@@ -1748,7 +1748,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // src/main/games/packs.ts. The push carries the whole state object, and the
   // renderer reads every field of it, so keep the zod schema below in step
   // with GamePackState (zod strips undeclared keys silently).
-  const GameIdSchema = z.enum(['minecraft']);
+  const GameIdSchema = z.enum(['minecraft', 'stardew']);
   let gamePackPushWired = false;
   const wireGamePackPush = async (): Promise<void> => {
     if (gamePackPushWired) return;
@@ -1778,6 +1778,38 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // card renders the retry without a second round trip.
       return getPackState(args.game);
     }
+  });
+
+  // ── Stardew Valley install / launch (game-adapters M1, 260908) ───────────
+  // src/main/games/stardew: detection is a fresh pass each call (cheap: a
+  // few stats); the install is single-flight and streams its stages on the
+  // stardew:install-progress push; a failure rejects with the ErrorClass
+  // prefix the renderer maps through ERROR_COPY.
+  let stardewInstallInFlight: Promise<unknown> | null = null;
+  ipcMain.handle(IpcChannel.stardew.installState, async () => {
+    const { detectStardew } = await import('./games/stardew/install');
+    return detectStardew();
+  });
+  ipcMain.handle(IpcChannel.stardew.install, async () => {
+    if (stardewInstallInFlight) return stardewInstallInFlight;
+    const { installStardew } = await import('./games/stardew/install');
+    stardewInstallInFlight = installStardew({
+      onProgress: (ev) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send(IpcChannel.stardew.installProgress, ev);
+        }
+      },
+    }).finally(() => {
+      stardewInstallInFlight = null;
+      // The watcher reads the port from the freshly written config on its
+      // next pass; nudge it so the launch panel flips without the 3 s wait.
+      void deps.worldCheckNow?.('stardew').catch(() => {});
+    });
+    return stardewInstallInFlight;
+  });
+  ipcMain.handle(IpcChannel.stardew.launch, async () => {
+    const { launchStardew } = await import('./games/stardew/launch');
+    return launchStardew();
   });
 
   // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────

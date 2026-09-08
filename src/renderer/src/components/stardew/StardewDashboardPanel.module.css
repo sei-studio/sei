@@ -1,0 +1,54 @@
+/* StardewDashboardPanel: the vitals + inventory windows inside the shared
+ * vanilla-gray dashboard chrome (McDashboardPanel.module.css owns the
+ * windows, slots and buttons; this file only adds the rows that Minecraft's
+ * panel does not have). Tokens for everything outside the gray windows. */
+
+.vitals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+.vitalRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--sans);
+  font-size: 12.5px;
+}
+
+.vitalLabel {
+  width: 64px;
+  flex: none;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+  opacity: 0.85;
+}
+
+.vitalBar {
+  flex: 1;
+  min-width: 0;
+}
+
+.vitalValue {
+  width: 72px;
+  flex: none;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-md);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.gold {
+  font-family: var(--mono);
+}

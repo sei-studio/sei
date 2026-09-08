@@ -28,9 +28,12 @@ Layout:
 The mod compiles against the game's own assemblies (`Stardew Valley.dll`,
 `StardewModdingAPI.dll`, `MonoGame.Framework.dll`, `xTile.dll`), which ship
 with the game and are not redistributable, so it can only be built on a
-machine that has Stardew Valley AND SMAPI installed. The Sei repo's CI builds
-it on the release runners; a developer machine without the game gets a clear
-failure from the build script instead of a wall of missing references.
+machine that has Stardew Valley AND SMAPI installed. The Sei repo's CI cannot
+build it (the runners have no game), so the Stardew game pack is built by
+hand on a developer machine with the game (`npm run build:packs:stardew`)
+and uploaded with the release assets; a machine without the game gets a
+clear failure from the build script instead of a wall of missing references.
+`npm run check:packs` (CI) only checks that the mod sources are present.
 
 1. Install the .NET SDK (6 or newer; the 10.x SDK builds net6.0 fine).
 2. Install Stardew Valley (Steam or GOG) and SMAPI (https://smapi.io) into it.
