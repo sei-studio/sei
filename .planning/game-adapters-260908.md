@@ -1,7 +1,11 @@
 # Game adapters: Stardew Valley + Don't Starve Together (260908)
 
-Status: APPROVED 260908 (decisions in section 8 override sections 1 and 7
-where they differ). Branch `feat/game-adapters` (worktree `../sei-games`).
+Status: IMPLEMENTED 260908 through M2 on `feat/game-adapters` (worktree
+`../sei-games`): M0a seams, M0b game packs, M1 Stardew, M2 DST merged; every
+test green; both tiles still `available: false`. M3 (live checklist, per
+game) is ON HOLD by the user's decision 6. Decisions in section 8 override
+sections 1 and 7 where they differ. The CLAUDE.md section "Game adapters"
+is the maintained summary.
 
 Goal: a companion can be launched into the player's Stardew Valley farm or
 Don't Starve Together world the way it is launched into a Minecraft LAN world

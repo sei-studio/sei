@@ -1455,6 +1455,165 @@ that has never been through a signed mac `dist` — verify it with `codesign` on
 the first one. (4) `salienceGate.ts` and its `SEI_GATE_*` env knobs are parked
 unreferenced rather than deleted; either revive them or remove them.
 
+## Game adapters: Stardew Valley + Don't Starve Together (260908)
+
+The companion can be launched into the player's own Stardew Valley farm or
+hosted Don't Starve Together world the way it is launched into a Minecraft
+LAN world. Design and research: `.planning/game-adapters-260908.md` (+
+`.planning/research/game-adapters-*-260908.md`, `dst-survivors-260908.md`).
+**Both tiles are still `available: false` in `src/shared/games.ts`**: the
+live checklist (plan section 5, M3, per game) has not run because neither
+game was live-tested; flip the flag per game only after it passes.
+
+- **Neither game has a mineflayer.** DST has no headless client and Steam
+  allows one instance per account; a Stardew split-screen farmhand is
+  gamepad-only. So in both games the companion is a BODY spawned by a
+  Sei-owned mod inside the host's own game, visible to everyone in the world,
+  and driven by the existing Node brain over localhost. The brain is not
+  forked: `src/bot/brain/*` is one implementation and each game supplies an
+  adapter (contract v2 in `src/bot/brain/types.js`).
+- **Discovery in main, protocol in the bot**, like Minecraft (`lanWatcher`
+  vs `adapter/minecraft/connect.js`). `src/main/games/<game>/watcher.ts`
+  answers "is a world open"; `src/bot/adapter/<game>/runtime.js` speaks the
+  game protocol. No game protocol code in main.
+- **Reflexes live in the mod, decisions in the brain.** Retaliation,
+  fleeing below a health floor, eating, darkness, end-of-day sleep run in the
+  game process at frame rate (the Minecraft `behaviors/*` loops are the
+  precedent) and report through the same `sei:attacked` / `sei:survival`
+  event vocabulary. The LLM issues closed Zod-typed verbs; composite verbs
+  (`gather(kind, count)`) loop mod-side so one call does a job.
+
+**M0, the shared seams (all three games plug into these):**
+
+- Bot: the composer `src/bot/index.js` is game-agnostic and dynamic-imports
+  `src/bot/adapter/<kind>/runtime.js` (`botUsernameFor`, `adapterConfigFrom`,
+  `checkJoinTarget`, `createRuntime(config, hooks) -> RuntimeHandle`), so
+  mineflayer never loads for a non-Minecraft session. `adapter.kind` is
+  `z.enum(GAME_KINDS)` with a real sub-schema per game in `src/bot/config.js`.
+  Adapter contract v2 (`ADAPTER_INTERFACE_VERSION = 2`): every Minecraft name
+  that had leaked into the brain is now an optional adapter member with a
+  Minecraft default in `src/bot/brain/adapterDefaults.js` (`gameName`,
+  `chatMaxChars`, `backgroundActions`, `progressActions`, `visionActions`,
+  `prefilterToolBatch`/`postProcessToolBatch`, `surfaceBaseline`,
+  `sessionEndClause`, `stuckNudges`, `eventAddendum` as the ONLY source of
+  idle/attacked/survival/death prose, `getWorldIdentity`, `createTelemetry`,
+  `classifyConnectError`), plus the optional `onIdleNudge` handler (a P3 idle
+  tick with a named reason, ignored before the first spawn).
+  `src/bot/brain/systemBlocks.minecraft.test.js` pins the Minecraft cached
+  system prefix and tool list BYTE-FOR-BYTE against a fixture generated on the
+  pre-refactor tree; touch the brain and that test tells you whether the model
+  sees anything different.
+- Main: `src/main/games/index.ts` `GameModule` registry (`effectiveUsername`,
+  `collides`, `watcher`, `getJoinTarget`, `joinTargetMissingError`,
+  `install`), registered from `src/main/index.ts`. `botSupervisor.summon(id,
+  game)`; every `BotStatus` carries `game`; the play row, `bot_session_ended
+  {game}` and `foldIfDue` (which Minecraft had been missing) key on the
+  module. `src/shared/gameIpc.ts`: `GameId`, the `WorldState` and
+  `GameDashboardSnapshot` unions, `world:*` and `gamedash:*` channels
+  (`lan:*` / `mcdash:*` stay as Minecraft aliases). The chat-surface `launch`
+  tool takes a `game` validated against catalog rows with `selfLaunch &&
+  available`.
+- Renderer: `registerGameSurface`, `registerSummonFlow`, `BOT_ERROR_ROUTES`
+  by `(game, errorClass)`, `registerGameSettingsSection`,
+  `registerGameSetupModal`; each game's `register*.ts` is imported once from
+  `App.tsx`. `useMcDashboardStore.launch[id]` is the game whose launch panel
+  is open. The controls window + status strip are shared
+  (`mcdash/McDashControls.tsx`, `games/GameControlsWindow.tsx`), not copied.
+
+**Game packs (260908, the user's decision 1).** Adapter runtimes are
+DOWNLOADED on first use, Minecraft included: its deps (`minecraft-data`
+429 MB, `prismarine-viewer` 392 MB, `gl` 218 MB on disk) live in the npm
+workspace `packs/minecraft` which the root package does NOT depend on, so
+electron-builder's npm collector (`npm list --omit dev` from the root) leaves
+them out of the installer: measured 1.1 GB -> 706 MB app, 48 MB zip. Root
+`npm ci` still hoists them, so dev and vitest are unchanged.
+`scripts/build-game-pack.mjs <game> --platform --arch` builds
+`sei-pack-<game>-<version>-<platform>-<arch>.zip` (Minecraft per platform
+with natives rebuilt against Electron's ABI and the same texture prunes as
+`electron-builder.yml`; Stardew and DST as `any-any` asset packs carrying
+the game-side mod under `assets/`); `pack.json` carries a `treeHash` over
+sorted paths + contents so a re-download is skipped when the content did not
+change. The release workflow builds every pack beside the app and the release
+job writes ONE `game-packs-<version>.json` manifest (sha256 per zip);
+`mirror-release.yml` mirrors it all to `dl.sei.gg/updates/`. Client:
+`src/shared/gamePacks.ts` (descriptors, asset names, mirror-first URLs),
+`src/main/games/packs.ts` (`getPackState`, `ensurePack`: manifest, download
+with progress, sha256 verify, jszip extract with traversal rejection,
+`installed.json`, older versions pruned, single-flight; dev short-circuits
+to the repo root, `SEI_GAME_PACKS_DIR` exercises the real path in dev),
+`game:pack-*` IPC, `useGamePackStore` + `GamePackCard` in every launch
+panel. The supervisor awaits `ensurePack(game)` BEFORE `startedAtMs` so a
+multi-minute download never eats the 30 s summon deadline, and ships
+`packRoot` in the init payload; `src/bot/packLoader.js` registers a
+`module.register()` resolve hook (normal resolution first, pack second) plus
+NODE_PATH for the CJS `createRequire` path BEFORE the composer imports the
+runtime. **The composer's runtime import must stay dynamic**: a static
+import is hoisted past the hook. Two traps: the root `overrides` entry for
+`gl` must be the literal tarball spec (an override cannot reference a
+workspace dep), and a fresh worktree needs `npm install --ignore-scripts` to
+link `node_modules/@sei/*` before the pack builder's `npm list` sees the
+workspaces.
+
+**Stardew Valley (M1)** `native/stardew-mod/SeiCompanion/` (C#, net6.0,
+SMAPI >= 4.5, MIT; `PROTOCOL.md` beside it, mirrored in
+`src/shared/stardewIpc.ts`). Body = a vanilla `NPC` (the visible sprite,
+default placeholder art generated by `scripts/gen-stardew-placeholder-art.mjs`)
+paired with an invisible `BotFarmer : Farmer` shadow (Farmtronics pattern)
+that performs tool use, combat and placement through the game's own APIs;
+the shadow is NEVER added to `Game1.otherFarmers`. Decompile facts that
+shaped it, cited in code: `MeleeWeapon.DoDamage` returns early for a
+non-local farmer (combat goes through `location.damageMonster`),
+`Farmer.Money` throws for anyone but `Game1.player` (own wallet in
+`modData`), `Crop.harvest` hands items to `Game1.player` (re-implemented),
+`WarpPathfindingCache` ignores the Farm (own BFS over warps + doors),
+monsters target only `location.farmers` (contact damage is simulated by the
+reflex loop). Transport: `HttpListener` on `http://localhost:<port>/`,
+`GET /hello` unauthenticated for the watcher, `/ws?token=` NDJSON for the
+bot (every client dials `localhost`, not `127.0.0.1`, for Windows
+`HttpListener`). 20 verbs in `src/bot/adapter/stardew/registry.js`. Install
+(`src/main/games/stardew/install.ts`) ports SMAPI's GameScanner logic,
+downloads the SMAPI installer (mirror first), runs it `--install --no-prompt`,
+copies the mod from `<packRoot>/assets/stardew-mod/SeiCompanion`. **The mod
+compiles only against the game's assemblies** (verified clean against
+1.6.15 + SMAPI 4.5.2 on this machine), so `assets/stardew-mod/` is a TRACKED
+build output the release packs with `--skip-build`; rebuild and commit it
+with any C# change. Unverified live: `PathFindController` on an NPC with no
+`Data/Characters` entry, the SMAPI installer driven from Node on macOS,
+fishing (the minigame is skipped), tool swings (a hop + sound, no animation).
+
+**Don't Starve Together (M2)** `native/dst-mod/sei/` (Lua, MIT, server-only,
+`all_clients_require_mod = false`, luacheck clean; `PROTOCOL.md`, mirrored in
+`src/shared/dstIpc.ts`). Body = a vanilla survivor prefab spawned on the
+master sim with `scripts/brains/seibrain.lua` (FAtiMA-DST skeleton): safety
+layer first (run away under 35% health, find light at dusk, fight back when
+told, eat under 25% hunger), then the command slot. **Transport direction is
+inverted**: a mod can only reach out through `TheSim:QueryServer` to
+127.0.0.1 (Klei blocked third-party URLs in Jan 2025, hotfix 653007 carved
+localhost back out; no headers, bodies under ~20 KB), so main's watcher hosts
+the fixed discovery port (27424, `UserConfig.dst_port`) and answers the mod's
+2 s heartbeat with a summon offer `{token, botPort, ...}` after the bot's
+runtime reports its ephemeral `node:http` port over a `dst-listen` port
+message; the mod then POSTs `/obs` at 3 Hz (delta-compressed, <= 8 KB) and
+polls `GET /cmd` with a 400 ms bounded hold (measure it against the
+undocumented QueryServer timeout on day one). 21 verbs. **The character picks
+her survivor** (user decision 3): `src/main/games/dontstarve/survivorPick.ts`
+is a one-off LLM call over the persona + the roster brief in
+`src/shared/dstSurvivors.ts` (15 eligible; Wes, Wonkey, Woodie, Wanda
+excluded, reasons in the brief), persisted sparse in
+`UserConfig.dst_survivor[characterId]`, user-overridable in the launch panel;
+the chosen survivor's perks ride the world primer, and each survivor's
+special needs (meat-only, vegetarian, souls, wetness, fire, frailty) are DATA
+read by both the BT and the primer, never branches. Install = mod copy into
+`<install>/mods/sei/` + `modsettings.lua` (`ForceEnableMod("sei")`,
+`DisableLocalModWarning()`), re-applied on every launch because game updates
+rewrite that file; launch = `steam://rungameid/322330`. Four spikes wait for
+the live checklist: a joiner with `all_clients_require_mod = false`,
+ownerless `inst:Remove()`, a caves-enabled host, the QueryServer hold.
+
+**Credits:** every reused project is in the README Acknowledgements with its
+license (user decision 7); copied code carries a header credit and
+`native/<mod>/THIRD_PARTY_NOTICES.md`.
+
 ## Instrumenting a game or timed surface (REQUIRED)
 
 **Every new game, minigame, or timed surface MUST emit analytics before it

@@ -154,7 +154,7 @@ jobs:
             # The Stardew pack wraps the CHECKED-IN mod build (assets/stardew-mod,
             # see .gitignore): the SMAPI mod compiles only against the game's
             # assemblies, which no runner has.
-            node scripts/build-game-pack.mjs stardew --platform any --arch any --out release/packs
+            node scripts/build-game-pack.mjs stardew --platform any --arch any --skip-build --out release/packs
           else
             node scripts/build-game-pack.mjs minecraft --platform win32 --arch x64 --out release/packs
           fi
