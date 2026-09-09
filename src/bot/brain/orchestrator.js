@@ -1004,7 +1004,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // Voice-call mode extends this to EVERY say() line, whatever triggered the
     // turn: while a call is live, speech goes to the player's ear (TTS via the
     // chat surface) and in-game chat stays silent — that's the mode's contract.
-    if ((voiceCallActive || loop._triggerData?.seiChat) && typeof onSeiChatReply === 'function') {
+    if ((voiceCallActive || loop._triggerData?.seiChat || loop._seiChatFolded === true) && typeof onSeiChatReply === 'function') {
       // 260705: same texting-style split as in-world chat, so the app surface
       // obeys the character's punctuation register too (previously the whole
       // line shipped as one bubble with its periods intact). Sent in order,
@@ -2141,7 +2141,7 @@ function maybeWarnByteCap(loop, warned) {
         // race where a call started between enqueue and here, or there is no
         // in_flight to monitor (transient between-action window).
         if (currentLoop.inFlight && !currentLoop._llmCallInFlight && !currentLoop.isTerminal) {
-          await handleActionTick(currentLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat })
+          await handleActionTick(currentLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat, seiChat: data?.seiChat === true })
           return
         }
         // 260611: ACCUMULATE, don't overwrite — mirrors handlePreempt's
@@ -2158,6 +2158,9 @@ function maybeWarnByteCap(loop, warned) {
             // if any accumulated part came from the player, the player's
             // mandatory-reply framing wins.
             teammate: (prevText ? pendingInterrupt?.teammate === true : true) && isTeammateVoiceChat,
+            // 260910: any part typed in the Sei app keeps the reply on the app
+            // surface too (see the mirror gate in emitSay).
+            seiChat: pendingInterrupt?.seiChat === true || data?.seiChat === true,
           }
         }
         if (currentLoop.inFlight) {
@@ -2186,7 +2189,7 @@ function maybeWarnByteCap(loop, warned) {
         // loop. The priority queue runs P0 before P1, so the attack opens a
         // fresh loop first; the chat then arrives as a normal P1 dispatch.
         let preservedInterrupt = pendingInterrupt
-          ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player' }
+          ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player', seiChat: pendingInterrupt.seiChat === true }
           : null
         // 260708: a chat-TRIGGERED loop that has not completed a single
         // iteration is itself an undelivered player message — the attack
@@ -3140,6 +3143,7 @@ function maybeWarnByteCap(loop, warned) {
     if (pendingInterrupt && data.aborted) {
       // 260608-tik: unified mid-action interrupt framing (Change 2).
       extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true)
+      if (pendingInterrupt.seiChat === true) loop._seiChatFolded = true
       pendingInterrupt = null
       logger.info?.(`[sei/orch] action_complete + PLAYER INTERRUPT folded into loop=${loop.id}`)
       // 260514-ngj: the next iteration is driven by a PLAYER INTERRUPT —
@@ -3453,6 +3457,11 @@ function maybeWarnByteCap(loop, warned) {
     // switch (R2), or stop (end_loop/unfollow, R3).
     const playerMessage = (typeof data?.playerMessage === 'string') ? data.playerMessage : null
     const who = data?.who ?? null
+    // 260910: a line typed in the Sei app that lands mid-action is answered by
+    // say() inside THIS loop, whose own trigger was an idle tick, so the reply
+    // used to stay in the game's chat and the app showed nothing (Stardew,
+    // measured live). Remember the origin so the loop's lines mirror up.
+    if (playerMessage != null && data?.seiChat === true) loop._seiChatFolded = true
     // 260708: a teammate's call line rides the same machinery (observe wake);
     // its framing allows silence and the redrive below must not relabel it as
     // the player speaking.

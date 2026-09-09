@@ -80,6 +80,26 @@ namespace SeiCompanion.Actions
                 last = npc.Position;
                 if (stuck > StuckTicks)
                 {
+                    // Name what stopped the step (the tile the controller wanted
+                    // next and both collision verdicts) so a stall in a live
+                    // run can be read off the SMAPI log.
+                    try
+                    {
+                        Point nextTile = npc.controller?.pathToEndPoint != null && npc.controller.pathToEndPoint.Count > 0 ? npc.controller.pathToEndPoint.Peek() : new Point(-1, -1);
+                        string what = "";
+                        if (nextTile.X >= 0)
+                        {
+                            var v = new Vector2(nextTile.X, nextTile.Y);
+                            var rect = new Rectangle(nextTile.X * 64 + 8, nextTile.Y * 64 + 8, 48, 48);
+                            bool npcCol = loc.isCollidingPosition(rect, Game1.viewport, false, 0, false, npc, true, false, false);
+                            bool farmerCol = loc.isCollidingPosition(rect, Game1.viewport, true, 0, false, body.Shadow, true, false, false);
+                            loc.objects.TryGetValue(v, out StardewValley.Object obj);
+                            loc.terrainFeatures.TryGetValue(v, out StardewValley.TerrainFeatures.TerrainFeature tf);
+                            what = $" next {Targets.Fmt(nextTile)} npcCol={npcCol} farmerCol={farmerCol} object={obj?.Name ?? "-"} feature={tf?.GetType().Name ?? "-"}";
+                        }
+                        body.Monitor.Log($"{body.Name}: stuck at {Targets.Fmt(npc.TilePoint)} heading to {Targets.Fmt(target)}{what}", StardewModdingAPI.LogLevel.Debug);
+                    }
+                    catch { }
                     npc.controller = null;
                     o.Fail($"stuck on the way to {Targets.Fmt(target)} at {Targets.Fmt(npc.TilePoint)}");
                     yield break;

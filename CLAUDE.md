@@ -1754,9 +1754,10 @@ copies the mod from `<packRoot>/assets/stardew-mod/SeiCompanion`. **The mod
 compiles only against the game's assemblies** (verified clean against
 1.6.15 + SMAPI 4.5.2 on this machine), so `assets/stardew-mod/` is a TRACKED
 build output the release packs with `--skip-build`; rebuild and commit it
-with any C# change. Unverified live: `PathFindController` on an NPC with no
-`Data/Characters` entry, the SMAPI installer driven from Node on macOS,
-fishing (the minigame is skipped), tool swings (a hop + sound, no animation).
+with any C# change. Verified live 260910 (see the Stardew live-test
+paragraph below): the SMAPI installer driven from Node on macOS, the NPC
+walking (with the barrier hop), fishing, tool swings, cross-map travel and
+the shop. Still unverified: combat in the mines (spring 5+), a farmhand.
 
 **Discovery has no setting (260909).** Main binds the first free port of
 `DST_DISCOVERY_PORTS` (27424..27428, `src/shared/dstIpc.ts`) and the mod
@@ -1908,6 +1909,75 @@ array while the bridge answers `{ installs }`, so every scan came back as
 "no Minecraft found" on a machine with a vanilla install and a Sei profile.
 The tests had stubbed the bridge with an array, which is why they passed;
 the harness stub and `McSteps.test.tsx` now use the real shape.
+
+**Stardew live test on this Mac (260910), and what it changed.** Run from
+the app with computer use on the dev Electron only (the game window was
+never granted, so a `DevCommands` gate in the mod's config.json unlocks
+developer frames: `newFarm` starts a game through the character menu with
+the intro skipped, `loadFarm` reloads a save from the title, `devSleep`
+ends the day through the bed path, `devTime` sets the clock, `devState` /
+`devDebris` / `devTiles` report state; the app never sets the flag). The
+game's `startup_preferences` was switched to windowed for the session (its
+borderless-fullscreen default put the Sei window on an unreachable Space).
+Findings, all fixed on `feat/game-adapters`:
+- SMAPI "installed" was `StardewModdingAPI.dll` alone; this Mac had the dll
+  (unpacked to compile the mod) with the vanilla launcher and no deps.json,
+  so the installer was skipped and the game started without SMAPI forever.
+  `smapiInstalledIn` requires the dll + `StardewModdingAPI.deps.json` + the
+  launch hook (`StardewModdingAPI.exe`; on macOS/Linux the `StardewValley`
+  script replaced by SMAPI's unix-launcher.sh, which runs
+  `./StardewModdingAPI`). `spawnGame` sets `SMAPI_NO_TERMINAL` so the
+  launcher does not open a Terminal window. A `require('../../paths')` in
+  the installer's temp-dir resolver broke inside the electron-vite bundle
+  ("Cannot find module"); it is a dynamic import now. The zip is 42 MB.
+- Every map exit carries the `NPCBarrier` tile property and both the NPC
+  pathfinder and the NPC's step collision honor it: the companion could not
+  leave the farm. `TryPath` searches as a farmer (the shadow) and drives
+  the NPC controller with that path; `BarrierHop` in Tick steps a stalled
+  body across (or off) an NPC-only tile. `IsWalkable` uses the same farmer
+  collision (the occupancy mask counted tilled soil as an obstacle).
+  `Router.Exits` adds buildings with an inside, or nothing routed home.
+- `Farmer.addItemToInventoryBool` refused every drop for the shadow (25
+  pieces of debris, nothing in the bag) and `Debris.collect` threw on the
+  cosmetic chunks: `TakeItem` manages the bag itself and `CollectDebris`
+  lifts the item out of OBJECT/RESOURCE/ARCHAEOLOGY debris.
+- A felled tree only finishes falling in the map's current-location update,
+  which runs for the host's map alone; with the host indoors the chop loop
+  swung to its cap (80 energy a tree, no wood). `ChopAt` ticks a falling
+  tree itself. This is the general shape of "the companion works on a map
+  the host is not on"; anything else that needs the location update
+  (debris landing, machines are fine, they run on the clock) owes the same.
+- Following undid every commanded door warp (the follow tick routed the
+  body back to the host inside); a commanded map change now clears the
+  follow target and says so. The observation is refreshed after every verb
+  so the turn after a warp reads the new map's coordinates. The owner line
+  names the host farmer, not the account's pinned name. Big stumps and
+  boulders are marked as needing an upgraded tool in the snapshot.
+- The heartbeat's "reachable next" list was EMPTY for Stardew, so the
+  companion asked the player what the move was three ways in a minute and
+  never acted. `observers/progression.json` is the first fortnight of a new
+  farm (patch, the chest seeds, 50 wood, forage, town, seeds at Pierre's, a
+  fish, the mines on spring 5, copper), each label an invitation with a part
+  for the player; predicates read the mod's new `farm` (whole-Farm counts)
+  and `host` blocks plus one-way latches from verb results. Latches live in
+  the adapter instance, so they reset on re-summon (owed: persist them
+  beside HEARTBEAT.stardew.md). The Stardew prompt gained a new-player rule
+  (one concrete step and your half of it, mechanics when relevant, controls
+  on request, stakes around the day's one big thing), a following rule, the
+  shipping bin, the player's crafting recipes and the first-spring calendar.
+- An app-typed line that lands mid-action was framed "NOT in the game with
+  you" (the Minecraft assumption) and its say() answer stayed in the game:
+  the framing is game-aware now and a loop that absorbed an app line
+  mirrors its lines to the app (`loop._seiChatFolded`).
+- The search branch is merged: every game bot also asks its own wiki
+  (contract v2 `wikiHosts`: stardewvalleywiki.com, dontstarve.wiki.gg).
+Verified live with the model: greeting, a committed project from the
+frontier, leaving the house, 45 pieces of debris cleared with drops, the
+dashboard strip; and by hand with a test body on the socket (the fastest
+loop, no model): debris, wood, forage lookup, farm to Pierre's and back with
+a purchase, till, plant, water, fish, chest take/put, sleep, a day end. Not
+yet verified: in-game typed chat and voice (no game window), pause/mode on
+Stardew, combat, a second companion, a farmhand.
 
 **Dashboards in the games' own registers (260909).** Both bot-backed
 dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,
