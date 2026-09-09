@@ -188,6 +188,20 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
     console.warn(`[sei] profileScope: backend-kind broadcast failed: ${(err as Error).message}`);
   }
 
+  // 3.95 Same reasoning for the llm:capability mirror: the scope switch moves
+  //      the ACTIVE config (and with it the vision verdict) without any
+  //      config write firing apiKeyStore's change listeners, so the renderer
+  //      would keep the previous profile's verdict. Measured 260908: a local
+  //      profile on a text-only BYOK provider (deepseek) seeded 'no' at boot,
+  //      and signing in to a cloud account left backseat greyed out even
+  //      though cloud is always vision-capable.
+  try {
+    const { pushLlmCapability } = await import('../llm/capability');
+    await pushLlmCapability();
+  } catch (err) {
+    console.warn(`[sei] profileScope: llm-capability push failed: ${(err as Error).message}`);
+  }
+
   // 4. Tell the renderer to re-bootstrap onto the new profile.
   const win = getMainWindowRef();
   if (win && !win.isDestroyed()) {
