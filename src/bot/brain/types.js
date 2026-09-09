@@ -211,6 +211,10 @@
  * @property {string[]}                                                    [visionActions]
  *   Tools withheld from the model unless the provider is a VLM and Looking is
  *   not 'off'. Default `['look']`.
+ * @property {string[]}                                                    [wikiHosts]
+ *   Game wikis (hosts listed in src/bot/web/webTools.js GAME_WIKIS) that
+ *   every search() asks directly, whether or not the query names the game.
+ *   Default `['minecraft.wiki']`.
  * @property {(toolUses: any[]) => PrefilledToolResult[]}                  [prefilterToolBatch]
  *   Runs BEFORE any tool in a batch dispatches; returned entries are
  *   pre-filled as results and those tools never execute. Minecraft: the

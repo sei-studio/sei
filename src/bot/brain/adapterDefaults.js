@@ -32,6 +32,9 @@ export const ADAPTER_DEFAULTS = Object.freeze({
     || name === 'gather'
     || (name === 'dig' && !!(args && args.to)),
   visionActions: Object.freeze(['look']),
+  // 260910: the game wikis every search() also asks directly, whether or not
+  // the query names the game (src/bot/web/webTools.js GAME_WIKIS hosts).
+  wikiHosts: Object.freeze(['minecraft.wiki']),
   prefilterToolBatch: () => [],
   postProcessToolBatch: () => ({ nudge: null }),
   surfaceBaseline: () => MINECRAFT_BASELINE,

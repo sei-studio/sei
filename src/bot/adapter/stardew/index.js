@@ -166,6 +166,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
 
     // ── Contract v2 members ───────────────────────────────────────────
     gameName: 'Stardew Valley',
+    wikiHosts: ['stardewvalleywiki.com'],
     // The in-game chat box wraps long lines but the bubble above the head
     // does not; keep say() lines short.
     chatMaxChars: 200,

@@ -21,6 +21,7 @@ import {
   classifyGameFolder,
   candidateGamePaths,
   detectStardew,
+  smapiLauncherWired,
   placeMod,
   readModConfig,
   installStardew,
@@ -131,10 +132,11 @@ describe('detection + install against a fake game folder', () => {
     await writeFile(path.join(root, 'home', 'stardewvalley.targets'), `<Project><PropertyGroup><GamePath>${game}</GamePath></PropertyGroup></Project>`);
 
     // A fake installer zip: "SMAPI 4.5.2 installer/internal/<os>/SMAPI.Installer" is a script
-    // that writes StardewModdingAPI.dll into --game-path.
+    // that leaves what the real one leaves in --game-path: the dll, the
+    // deps.json copy, and the `StardewValley` launcher rewired to run SMAPI.
     const zip = new JSZip();
     const osDir = process.platform === 'darwin' ? 'macOS' : 'linux';
-    const script = '#!/bin/sh\nfor a in "$@"; do if [ "$prev" = "--game-path" ]; then gp="$a"; fi; prev="$a"; done\necho "installing to $gp"\nprintf x > "$gp/StardewModdingAPI.dll"\nmkdir -p "$gp/Mods"\n';
+    const script = '#!/bin/sh\nfor a in "$@"; do if [ "$prev" = "--game-path" ]; then gp="$a"; fi; prev="$a"; done\necho "installing to $gp"\nprintf x > "$gp/StardewModdingAPI.dll"\nprintf x > "$gp/StardewModdingAPI.deps.json"\nprintf "#!/bin/bash\\n./StardewModdingAPI\\n" > "$gp/StardewValley"\nmkdir -p "$gp/Mods"\n';
     zip.file(`SMAPI 4.5.2 installer/internal/${osDir}/SMAPI.Installer`, script, { unixPermissions: 0o755 });
     zip.file('SMAPI 4.5.2 installer/internal/windows/SMAPI.Installer.exe', 'not a real exe');
     zip.file('SMAPI 4.5.2 installer/README.txt', 'fixture');
@@ -169,6 +171,25 @@ describe('detection + install against a fake game folder', () => {
     const state = await detectStardew(envFor());
     expect(state).toMatchObject({ gamePath: path.normalize(game), smapiInstalled: false, modInstalled: false, modConfig: null, ready: false });
     expect(state.candidates.length).toBeGreaterThan(1);
+  });
+
+  it('SMAPI files without the rewired launcher do not count as installed (the half-install measured 260910)', async () => {
+    // The dll alone: a build machine that unpacked SMAPI to compile a mod.
+    await writeFile(path.join(game, 'StardewModdingAPI.dll'), 'x');
+    await writeFile(path.join(game, 'StardewValley'), '#!/bin/bash\n./"Stardew Valley" $@\n');
+    expect((await detectStardew(envFor({ platform: 'darwin' }))).smapiInstalled).toBe(false);
+    // dll + deps, vanilla launcher: Steam and spawnGame would still start the vanilla game.
+    await writeFile(path.join(game, 'StardewModdingAPI.deps.json'), 'x');
+    expect(await smapiLauncherWired(game, 'darwin')).toBe(false);
+    expect((await detectStardew(envFor({ platform: 'darwin' }))).smapiInstalled).toBe(false);
+    // The installer's launcher (unix-launcher.sh runs ./StardewModdingAPI): installed.
+    await writeFile(path.join(game, 'StardewValley'), '#!/usr/bin/env bash\n./StardewModdingAPI "$@"\n');
+    expect(await smapiLauncherWired(game, 'darwin')).toBe(true);
+    expect((await detectStardew(envFor({ platform: 'darwin' }))).smapiInstalled).toBe(true);
+    // Windows: the exe is the hook.
+    expect(await smapiLauncherWired(game, 'win32')).toBe(false);
+    await writeFile(path.join(game, 'StardewModdingAPI.exe'), 'x');
+    expect(await smapiLauncherWired(game, 'win32')).toBe(true);
   });
 
   it('places the mod, writes a config with a fresh token, and keeps the token on a re-run', async () => {

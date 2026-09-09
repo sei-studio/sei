@@ -307,6 +307,38 @@ async function readModVersion(gamePath: string): Promise<string | null> {
   }
 }
 
+/**
+ * Is SMAPI actually INSTALLED, not just present as files? The installer
+ * leaves three things: StardewModdingAPI.dll, StardewModdingAPI.deps.json
+ * (a renamed copy of the game's deps file; SMAPI cannot start without it),
+ * and the launch hook: `StardewModdingAPI.exe` on Windows, and on macOS /
+ * Linux the game's `StardewValley` launcher script REPLACED by SMAPI's
+ * unix-launcher.sh (which runs `./StardewModdingAPI`; the vanilla script is
+ * kept as StardewValley-original). A game folder that holds the dll without
+ * the rewired launcher (a manual half-install, or a build machine that
+ * unpacked SMAPI to compile a mod against it; measured 260910 on this Mac)
+ * starts the VANILLA game through Steam and through spawnGame, and the mod
+ * never loads. Treating that as "installed" skipped the installer and left
+ * the launch panel waiting for a farm forever.
+ */
+export async function smapiLauncherWired(gamePath: string, platform: StardewInstallEnv['platform']): Promise<boolean> {
+  if (platform === 'win32') return exists(path.join(gamePath, 'StardewModdingAPI.exe'));
+  try {
+    const launcher = await fs.readFile(path.join(gamePath, 'StardewValley'), 'utf8');
+    return launcher.includes('StardewModdingAPI');
+  } catch {
+    return false;
+  }
+}
+
+export async function smapiInstalledIn(gamePath: string, platform: StardewInstallEnv['platform']): Promise<boolean> {
+  return (
+    (await exists(path.join(gamePath, 'StardewModdingAPI.dll'))) &&
+    (await exists(path.join(gamePath, 'StardewModdingAPI.deps.json'))) &&
+    (await smapiLauncherWired(gamePath, platform))
+  );
+}
+
 async function readSmapiVersion(gamePath: string): Promise<string | null> {
   // SMAPI writes its version into StardewModdingAPI.deps.json ("StardewModdingAPI/4.5.2").
   try {
@@ -341,7 +373,7 @@ export async function detectStardew(env: StardewInstallEnv = defaultEnv()): Prom
     ready: false,
   };
   if (!gamePath) return base;
-  base.smapiInstalled = await exists(path.join(gamePath, 'StardewModdingAPI.dll'));
+  base.smapiInstalled = await smapiInstalledIn(gamePath, env.platform);
   base.smapiVersion = base.smapiInstalled ? await readSmapiVersion(gamePath) : null;
   base.modInstalled = (await exists(path.join(modDir(gamePath), 'SeiCompanion.dll'))) && (await exists(path.join(modDir(gamePath), 'manifest.json')));
   base.modVersion = base.modInstalled ? await readModVersion(gamePath) : null;
@@ -547,9 +579,9 @@ export async function installStardew({ onProgress = () => {}, signal = null, env
     try {
       const installer = await extractSmapiInstaller(zipBytes!, workDir, env.platform);
       const { stdout, stderr } = await env.runInstaller(installer, ['--install', '--no-prompt', '--game-path', gamePath], path.dirname(installer));
-      if (!(await exists(path.join(gamePath, 'StardewModdingAPI.dll')))) {
+      if (!(await smapiInstalledIn(gamePath, env.platform))) {
         const tail = (stdout + '\n' + stderr).trim().split('\n').slice(-6).join(' | ');
-        fail('SMAPI_INSTALL_FAILED', `the SMAPI ${SMAPI_VERSION} installer finished but StardewModdingAPI.dll is not in ${gamePath}: ${tail || 'no output'}`);
+        fail('SMAPI_INSTALL_FAILED', `the SMAPI ${SMAPI_VERSION} installer finished but SMAPI is not wired into ${gamePath}: ${tail || 'no output'}`);
       }
     } catch (err) {
       const msg = String((err as Error)?.message ?? err);
@@ -604,7 +636,13 @@ export function launcherPath(gamePath: string, platform: StardewInstallEnv['plat
 export async function spawnGame(gamePath: string, platform: StardewInstallEnv['platform']): Promise<{ via: 'smapi-exe' | 'launcher' }> {
   const { exe, via } = launcherPath(gamePath, platform);
   if (!(await exists(exe))) throw new Error(`GAME_NOT_INSTALLED: ${exe} is missing; run the Stardew setup again`);
-  const child = spawn(exe, [], { cwd: gamePath, detached: true, stdio: 'ignore', windowsHide: false });
+  // SMAPI's unix launcher reopens itself in a Terminal window (or iTerm2)
+  // to show its console when stdout is not a TTY. Started from Sei that is a
+  // stray window for a player who never asked for a console; SMAPI honors
+  // SMAPI_NO_TERMINAL and runs the game in place instead (its log file is
+  // written either way). A Steam launch keeps SMAPI's own behavior.
+  const env = platform === 'win32' ? process.env : { ...process.env, SMAPI_NO_TERMINAL: 'true' };
+  const child = spawn(exe, [], { cwd: gamePath, detached: true, stdio: 'ignore', windowsHide: false, env });
   child.on('error', () => {});
   child.unref();
   return { via };

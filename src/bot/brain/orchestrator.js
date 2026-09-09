@@ -795,9 +795,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // there): Cloudflare-fronted wikis + DuckDuckGo answer, Node fetch is
     // challenged. Falls back to Node fetch outside Electron (tests).
     fetchProvider: electronFetchProvider,
-    // This is a Minecraft companion: every search also asks the Minecraft
-    // Wiki directly, whether or not the query says "minecraft".
-    alwaysWikiHosts: ['minecraft.wiki'],
+    // Every search also asks the game's own wiki directly, whether or not
+    // the query names the game (contract v2 `wikiHosts`; Minecraft Wiki by
+    // default, the Stardew / Don't Starve wikis for those adapters).
+    alwaysWikiHosts: caps.wikiHosts,
     limits: {
       maxResults: webCfg.max_results,
       pageChars: webCfg.page_chars,

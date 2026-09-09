@@ -281,6 +281,9 @@ describe('game wikis (260909)', () => {
   it('maps queries to wikis and article URLs to titles', () => {
     expect(wikisForQuery('minecraft how to tame a fox').map((w) => w.host)).toEqual(['minecraft.wiki'])
     expect(wikisForQuery('valorant vandal vs phantom').map((w) => w.host)).toEqual(['valorant.fandom.com'])
+    expect(wikisForQuery('stardew parsnip sell price').map((w) => w.host)).toEqual(['stardewvalleywiki.com'])
+    expect(wikisForQuery("don't starve campfire recipe").map((w) => w.host)).toEqual(['dontstarve.wiki.gg'])
+    expect(wikisForQuery('dst winter clothes').map((w) => w.host)).toEqual(['dontstarve.wiki.gg'])
     expect(wikisForQuery('ucla current chancellor')).toEqual([])
     expect(wikiTitleFromUrl('https://minecraft.wiki/w/Java_Edition_1.21.11', { articlePath: '/w/' })).toBe('Java Edition 1.21.11')
     expect(wikiTitleFromUrl('https://valorant.fandom.com/wiki/Patch_Notes/11.10', { articlePath: '/wiki/' })).toBe('Patch Notes/11.10')

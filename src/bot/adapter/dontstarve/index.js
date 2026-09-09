@@ -93,6 +93,7 @@ export function createDontStarveAdapter({ link, config }) {
 
     // ─── Contract v2 ──────────────────────────────────────────────────
     gameName: "Don't Starve Together",
+    wikiHosts: ['dontstarve.wiki.gg'],
     chatMaxChars: DST_CHAT_MAX_CHARS,
     backgroundActions: { follow: 'unfollow' },
     progressActions: ['gather', 'build'],
