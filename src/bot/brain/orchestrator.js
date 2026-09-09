@@ -42,7 +42,7 @@ import { isSilenceFiller } from './silenceFiller.js'
 import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
-import { createWebSession, electronFetchProvider, webToolsFor, isWebTool, isServerWebBlock } from '../web/webTools.js'
+import { createWebSession, electronFetchProvider, webToolsFor, isWebTool } from '../web/webTools.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
@@ -4263,15 +4263,15 @@ function maybeWarnByteCap(loop, warned) {
     // fall back to a synthesized array for callers / mocks without `content`.
     if (Array.isArray(resp.content) && resp.content.length > 0) {
       // 260909: server web_search blocks (server_tool_use + the encrypted
-      // web_search_tool_result) are context ballast once the turn is over:
-      // the answer is already in the text. Drop them from history unless the
-      // turn PAUSED mid-search, in which case they must go back verbatim.
-      const keepServer = resp.stopReason === 'pause_turn'
-      const out = resp.content.filter(b => keepServer || !isServerWebBlock(b.type)).map(b => {
+      // web_search_tool_result) stay in the loop history VERBATIM. The docs
+      // say a continuation whose encrypted_content is missing or modified is
+      // a 400, and this machine cannot reach Anthropic to test the "drop the
+      // whole pair" variant. The cost is bounded: a loop's history lives for
+      // one trigger, and chat rebuilds its transcript from text rows.
+      return resp.content.map(b => {
         if (b.type === 'tool_use') return { type: 'tool_use', id: b.id, name: b.name, input: b.input }
         return b
       })
-      if (out.length > 0) return out
     }
     const out = []
     if (resp.text) out.push({ type: 'text', text: resp.text })

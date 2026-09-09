@@ -156,7 +156,7 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(second).toContain('results for \\"netherite armor\\"')
   })
 
-  it('an Anthropic provider gets the native server web_search (+ visit), resumes pause_turn, and drops the server blocks from history afterwards', async () => {
+  it('an Anthropic provider gets the native server web_search (+ visit), resumes pause_turn, and keeps the server blocks verbatim in history', async () => {
     _setTickIntervalForTests(10_000_000)
     const serverBlocks = [
       { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'netherite' } },
@@ -192,12 +192,12 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(JSON.stringify(lastMsg.content)).toContain('web_search_tool_result')
     // Our client search never ran; visit did.
     expect(web.runs.map((r) => r.name)).toEqual(['visit'])
-    // Once the searched turn ENDED (end_turn + visit), its server blocks are
-    // dropped from the history the third call sees; the visit tool_use stays.
+    // The searched turn goes back verbatim (encrypted_content included, as
+    // the docs require) alongside the visit tool_use.
     const third = provider.calls[2].messages
     const visitTurn = third.find((m) => m.role === 'assistant' && JSON.stringify(m.content).includes('"visit"'))
     expect(visitTurn).toBeTruthy()
-    expect(JSON.stringify(visitTurn.content)).not.toContain('web_search_tool_result')
+    expect(JSON.stringify(visitTurn.content)).toContain('web_search_tool_result')
   })
 
   it('withholds the tools and answers with an error when web access is disabled', async () => {

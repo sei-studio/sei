@@ -385,10 +385,11 @@ removed 260722.)
   top of tokens (the proxy's ledger does not meter that yet). Two mechanics:
   `stop_reason: 'pause_turn'` (a long search) is resumed by pushing the
   assistant content back verbatim and calling again (bot `runIterations`,
-  chat hop loop); and once the turn ENDS the `server_tool_use` +
-  `web_search_tool_result` blocks are dropped from history
-  (`buildAssistantContent`, `isServerWebBlock`) because the encrypted result
-  payloads are pure ballast after the answer is written. The bot's cached
+  chat hop loop); and the `server_tool_use` + `web_search_tool_result`
+  blocks stay in the loop history verbatim: the docs say a continuation
+  whose `encrypted_content` is missing or modified is a 400, and dropping
+  the whole pair is untested from this machine (region gate). The cost is
+  bounded to one loop; chat rebuilds its transcript from text rows. The bot's cached
   tool prose skips schema-less server tools. On the blocking typed-chat path
   the text written BEFORE the search ("lemme check") is pushed immediately and
   only the post-search text is the reply (`splitTextAroundServerSearch`).
