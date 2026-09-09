@@ -1,6 +1,6 @@
 {
   "name": "sei",
-  "version": "0.5.5",
+  "version": "0.6.1-beta",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
