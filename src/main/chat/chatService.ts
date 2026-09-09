@@ -20,7 +20,18 @@ import { CHAT_TIMEOUT_MS } from './sdk';
 // local BYOK) rides the exact old SDK path inside it, streaming included.
 import { buildLlmProvider } from '../llm';
 import { raiseUsageLimitPopup } from './usageLimit';
-import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
+import {
+  buildSystemBlocks,
+  markLastMessageCached,
+  LAUNCH_TOOL,
+  QUIT_TOOL,
+  END_CALL_TOOL,
+  REMEMBER_TOOL,
+  SEARCH_TOOL,
+  VISIT_TOOL,
+} from './chatPrompts';
+import { isWebTool } from '../../bot/web/webTools.js';
+import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
@@ -84,7 +95,11 @@ export interface ChatDeps {
 // (compaction_trigger_bytes 4096 -> 8192 in src/bot/config.js) so the chat
 // window keeps seeing the whole pre-compaction file.
 const MEMORY_BUDGET_BYTES = 12000;
-const MAX_HOPS = 3;
+// 260909: raised 3 -> 6 for search() / visit(). A lookup is one hop per call
+// (search, then a visit, then the reply is already three), and the web
+// session's own per-turn budget (maxCallsPerTurn) bounds the spin below
+// this. Non-web turns still exit on the first hop with no tool_use.
+const MAX_HOPS = 6;
 /**
  * Voice calls (260706): cap the transcript sent to the model to the last N rows.
  * Memory (MEMORY.md) + the rolling summary still carry older context, so the
@@ -719,7 +734,19 @@ export async function sendChatMessage(
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
     const tools =
-      args.voiceCall === true ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL] : [LAUNCH_TOOL, QUIT_TOOL];
+      args.voiceCall === true
+        ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SEARCH_TOOL, VISIT_TOOL]
+        : [LAUNCH_TOOL, QUIT_TOOL, SEARCH_TOOL, VISIT_TOOL];
+    // 260909: per-character web session (lettered results survive across
+    // turns). Resolved lazily so a turn that never searches pays nothing.
+    let webSession: ReturnType<typeof getChatWebSession> | null = null;
+    const webSessionFor = async () => {
+      if (!webSession) {
+        webSession = getChatWebSession(args.characterId, resolveWebSearchSettings(await loadConfig()));
+        webSession.beginTurn();
+      }
+      return webSession;
+    };
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
       // Hard cap kept low so a reply can't ratchet into paragraphs. Each turn
@@ -859,6 +886,28 @@ export async function sendChatMessage(
             }
           } else {
             note = 'Nothing was saved; the text was empty.';
+          }
+        } else if (isWebTool(toolUse.name)) {
+          // 260909: search() / visit(). The result IS the note; the loop
+          // re-calls the model with it and keeps going until it stops calling
+          // tools (bounded by MAX_HOPS and the session's per-turn budget).
+          // A failed lookup is reported as an error result so the model can
+          // tell the player honestly instead of inventing an answer.
+          try {
+            const ws = await webSessionFor();
+            const r = await ws.runTool(toolUse.name, (toolUse.input ?? {}) as Record<string, unknown>, { signal: ctrl.signal });
+            note = r.content;
+            if (r.is_error) toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note, is_error: true });
+            else toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note });
+            console.log(
+              `[sei/chat] ${toolUse.name} char=${args.characterId.slice(0, 8)} ${r.is_error ? 'error' : `${note.length} chars`}` +
+                (ws.lastProvider ? ` via ${ws.lastProvider}` : ''),
+            );
+            continue;
+          } catch (err) {
+            if (ctrl.signal.aborted) throw err;
+            console.warn(`[sei/chat] ${toolUse.name} failed: ${(err as Error).message}`);
+            note = `${toolUse.name} failed. Tell the player you could not look it up right now.`;
           }
         } else {
           // Unreachable with the closed tool set, but an unanswered tool_use
@@ -1163,7 +1212,7 @@ export async function sendVoiceGreetingTurn(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SEARCH_TOOL, VISIT_TOOL];
     const res = await llm.call({
       maxTokens: 200,
       system,
@@ -1296,7 +1345,7 @@ export async function sendCompanionVoiceTurn(
     markLastMessageCached(messages);
 
     const llm = await buildLlmProvider();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SEARCH_TOOL, VISIT_TOOL];
     const res = await llm.call({
       maxTokens: 200,
       system,
@@ -1392,7 +1441,7 @@ export async function sendVoiceIdleTurn(
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
     const llm = await buildLlmProvider();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SEARCH_TOOL, VISIT_TOOL];
     const res = await llm.call({
       maxTokens: 200,
       system,

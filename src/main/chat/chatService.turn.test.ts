@@ -38,6 +38,21 @@ vi.mock('../characterStore', () => ({
 vi.mock('../configStore', () => ({
   loadConfig: vi.fn(async () => ({ preferred_name: 'Player' })),
 }));
+// 260909: search()/visit() ride a per-character web session; stub it so the
+// hop loop is exercised with no network.
+const { webRuns } = vi.hoisted(() => ({ webRuns: [] as Array<{ name: string; input: unknown }> }));
+vi.mock('../llm/webSearchSettings', () => ({
+  resolveWebSearchSettings: () => ({ provider: 'auto', api_key: '' }),
+  getChatWebSession: () => ({
+    lastProvider: 'fake',
+    beginTurn() {},
+    async runTool(name: string, input: { query?: string; ref?: string }) {
+      webRuns.push({ name, input });
+      if (name === 'search') return { content: `results for "${input.query}":\na. Netherite Armor (minecraft.wiki) - strongest armor`, is_error: false };
+      return { content: `[${input.ref}] minecraft.wiki - Netherite Armor\nMade at a smithing table.`, is_error: false };
+    },
+  }),
+}));
 
 import type { ChatDeps } from './chatService';
 import { sendChatMessage, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
@@ -176,6 +191,43 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     const blocks = secondReq.messages[secondReq.messages.length - 1].content as Array<{ type: string; tool_use_id: string }>;
     expect(blocks.map((b) => b.tool_use_id)).toEqual(['tu_rem']);
     expect(result.replies.length).toBeGreaterThan(0);
+  });
+});
+
+describe('search() / visit() hop loop (260909)', () => {
+  it('answers search then visit with tool_results and keeps hopping until the model stops', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'lemme check.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'netherite armor' } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: 'tool_use', id: 'tu_v', name: 'visit', input: { ref: 'a' } }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'smithing table, diamond gear plus an ingot.' }] });
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'how do i make netherite armor' }, deps());
+
+    expect(createSpy).toHaveBeenCalledTimes(3);
+    expect(webRuns.map((r) => r.name)).toEqual(['search', 'visit']);
+    // Both tools are offered on a plain text turn.
+    const firstReq = createSpy.mock.calls[0][0] as { tools: Array<{ name: string }> };
+    expect(firstReq.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['search', 'visit']));
+    // The messages array is shared across hops (pushed in place), so inspect
+    // the final transcript: every tool_use was answered, in order, with the
+    // web result as the tool_result content.
+    const lastReq = createSpy.mock.calls[2][0] as { messages: Array<{ role: string; content: unknown }> };
+    const results = lastReq.messages
+      .flatMap((m) => (Array.isArray(m.content) ? (m.content as Array<{ type: string; tool_use_id?: string; content?: string }>) : []))
+      .filter((b) => b.type === 'tool_result');
+    expect(results.map((b) => b.tool_use_id)).toEqual(['tu_s', 'tu_v']);
+    expect(results[0].content).toContain('results for "netherite armor"');
+    expect(results[1].content).toContain('smithing table');
+    // The final reply is what reaches the player.
+    expect(result.replies.map((r) => r.text).join(' ')).toMatch(/smithing table/);
   });
 });
 

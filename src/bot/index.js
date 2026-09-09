@@ -633,6 +633,10 @@ async function bootstrapWithInit(initData) {
     // and the cold FIRST CONTACT greeting is skipped on the first tick (no race
     // with the post-spawn {type:'voice-call'} message). See orchestrator.js.
     voiceCallActive: initVoiceCallActive,   // boolean | undefined
+    // 260909: web search settings bridged from UserConfig.web_search_* by
+    // the supervisor: { provider, api_key } | undefined. Maps into config.web
+    // below; absent (older main) -> keyless 'auto' chain.
+    webSearch,            // { provider?: string, api_key?: string } | undefined
   } = initData
 
   // Build a config shape that satisfies ConfigSchema.parse (see
@@ -779,6 +783,10 @@ async function bootstrapWithInit(initData) {
     // fields fall to the schema defaults via the conditional spread.
     vision: {
       ...(visionMode != null ? { mode: visionMode } : {}),
+    },
+    web: {
+      ...(webSearch?.provider ? { provider: webSearch.provider } : {}),
+      ...(typeof webSearch?.api_key === 'string' ? { api_key: webSearch.api_key } : {}),
     },
     // llm: applied by applyLlmInit below (260816). When main ships no llm
     // section (older main / cloud-proxy) the Zod default fills the entire {}

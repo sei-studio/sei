@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import type {
   Character,
+  PortraitVersion,
   PrefQuestion,
   Skin,
   SkinSource,
@@ -890,6 +891,41 @@ export type GenerateUniqueResult =
       message: string;
     };
 
+/* ── Portrait versions + regeneration (260909) ──────────────────────────── */
+
+/**
+ * Snapshot of a character's stored card-image versions. `versions` are the
+ * sidecar files `<uuid>-v<n>.png` recorded in metadata.portrait_versions (an
+ * unversioned canonical portrait is surfaced as a single virtual 'original'
+ * entry whose file is the canonical '<uuid>.png'); `active` is the file whose
+ * bytes currently sit on the canonical portrait (the only bytes that are
+ * mirrored to the cloud). `regenCount` / `regenLimit` drive the remaining
+ * regenerations copy (MAX_PORTRAIT_REGENS).
+ */
+export interface PortraitVersionsState {
+  versions: PortraitVersion[];
+  active: string | null;
+  regenCount: number;
+  regenLimit: number;
+}
+
+/**
+ * Result of chars:portrait-regenerate. Never throws for expected failures:
+ *  - not_signed_in     image generation rides the proxy (JWT-authed) in every
+ *                      backend mode, so a signed-out user cannot regenerate
+ *  - limit             MAX_PORTRAIT_REGENS reached for this character
+ *  - not_found         no such character
+ *  - busy              a regeneration for this character is already running
+ *  - network / generation_failed   the KusArt round trip failed
+ */
+export type PortraitRegenResult =
+  | { ok: true; state: PortraitVersionsState }
+  | {
+      ok: false;
+      code: 'not_signed_in' | 'limit' | 'not_found' | 'busy' | 'generation_failed' | 'network';
+      message: string;
+    };
+
 /**
  * Pipeline stages, in rough order. 'portrait' and 'persona' run in parallel;
  * 'skin' follows 'portrait' (img2skin). Renderer shows these as ritual copy
@@ -1424,6 +1460,19 @@ export interface RendererApi {
   charsApplyPortrait(args: { characterId: string; bytesBase64: string; format: 'png' | 'jpeg' | 'webp' }): Promise<string>;
   /** Clear portrait_image and delete the on-disk file (ENOENT-tolerant). */
   charsRemovePortrait(characterId: string): Promise<void>;
+
+  // 260909 — card-image versions + regeneration (owned characters only).
+  /** List the stored portrait versions + which one is active. */
+  charsPortraitVersions(characterId: string): Promise<PortraitVersionsState>;
+  /**
+   * Generate a new portrait from the character's sheet / persona, store it as
+   * the next sidecar version and make it active (copied onto the canonical
+   * portrait, which triggers the cloud mirror). ~10-60s. Single-flight per
+   * character in main; never throws for expected failures.
+   */
+  charsPortraitRegenerate(characterId: string): Promise<PortraitRegenResult>;
+  /** Make a stored version the active portrait (copies its bytes onto the canonical file). */
+  charsPortraitSelect(args: { characterId: string; file: string }): Promise<PortraitVersionsState>;
 
   // Phase 11 D-16 — toggle public/private visibility of a character. Refuses
   // when the character is a bundled default. Triggers the standard cloud-mirror
@@ -2691,6 +2740,11 @@ export const IpcChannel = {
     // atomic-writes to <userData>/portraits/<uuid>.png.
     applyPortrait: 'chars:apply-portrait',
     removePortrait: 'chars:remove-portrait',
+    // 260909 — card-image versions: sidecars <uuid>-v<n>.png next to the
+    // canonical <uuid>.png; select copies a sidecar onto the canonical file.
+    portraitVersions: 'chars:portrait-versions',
+    portraitRegenerate: 'chars:portrait-regenerate',
+    portraitSelect: 'chars:portrait-select',
     // Phase 11 D-16 — toggle a character's `shared` flag (public listing
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.

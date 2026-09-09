@@ -199,6 +199,11 @@ export function SettingsScreen(): React.ReactElement {
   const [preferredDraft, setPreferredDraft] = useState<string>('');
   const [editingKey, setEditingKey] = useState<boolean>(false);
   const [keyDraft, setKeyDraft] = useState<string>('');
+  // 260909 Search: optional web search provider key. Same masked-editor
+  // pattern as the AI key row; lives in config.json (web_search_*), never in
+  // the keychain, because these keys are low-value and provider-scoped.
+  const [editingSearchKey, setEditingSearchKey] = useState<boolean>(false);
+  const [searchKeyDraft, setSearchKeyDraft] = useState<string>('');
   const [keyError, setKeyError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   // 260725 BYOK voice: ElevenLabs API key (TTS + Scribe recognition). Same
@@ -373,6 +378,38 @@ export function SettingsScreen(): React.ReactElement {
     setKeyDraft('');
     setEditingKey(false);
     setKeyError(null);
+  };
+
+  // 260909 Search group. 'auto' is the free keyless chain; the three keyed
+  // providers need a key from the user's own account. Switching provider
+  // keeps any stored key (a user toggling back to Auto to compare and then
+  // returning should not have to paste it again).
+  type SearchProvider = 'auto' | 'brave' | 'tavily' | 'serper';
+  const searchProvider: SearchProvider = ((): SearchProvider => {
+    const v = cfg?.web_search_provider;
+    return v === 'brave' || v === 'tavily' || v === 'serper' ? v : 'auto';
+  })();
+  const hasSearchKey = Boolean(cfg?.web_search_api_key);
+  const onChangeSearchProvider = async (next: SearchProvider): Promise<void> => {
+    if (!cfg || next === searchProvider) return;
+    await persistConfig({ ...cfg, web_search_provider: next });
+  };
+  const onSaveSearchKey = async (): Promise<void> => {
+    const key = searchKeyDraft.trim();
+    if (!cfg || !key) return;
+    await persistConfig({ ...cfg, web_search_api_key: key });
+    setEditingSearchKey(false);
+    setSearchKeyDraft('');
+  };
+  const onClearSearchKey = async (): Promise<void> => {
+    if (!cfg) return;
+    await persistConfig({ ...cfg, web_search_api_key: '' });
+    setEditingSearchKey(false);
+    setSearchKeyDraft('');
+  };
+  const onCancelSearchKey = (): void => {
+    setEditingSearchKey(false);
+    setSearchKeyDraft('');
   };
 
   // 260725 BYOK voice: ElevenLabs key save/remove. Mirrors onSaveKey; the key
@@ -1645,6 +1682,88 @@ export function SettingsScreen(): React.ReactElement {
               onChange={() => void onToggleConvoStarters()}
             />
           </div>
+        </div>
+
+        {/* ── Search (260909) ─────────────────────────────────
+            Optional. Companions can look things up on the web through the
+            search / visit tools on every surface. The default is a free
+            keyless chain that needs no setup, so a normal user never opens
+            this group; it exists for the user whose network gets challenged
+            by the scrapers and who wants to plug in their own key. */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>{t('Search')}</h3>
+          <p className={styles.helper}>
+            {t(
+              'Companions can look things up on the web while you chat or play. This works out of the box for free. Add your own search API key only if lookups keep failing.',
+            )}
+          </p>
+          <div className={styles.row}>
+            <span className={styles.label}>
+              {t('Search provider')}
+              <InfoTip
+                label={t('About search providers')}
+                text={t(
+                  'Auto uses free public search with no account. Brave, Tavily and Serper need an API key from their website; each has a free tier.',
+                )}
+              />
+            </span>
+            <Seg<SearchProvider>
+              aria-label={t('Search provider')}
+              value={searchProvider}
+              onChange={(v) => void onChangeSearchProvider(v)}
+              options={[
+                { value: 'auto', label: t('Auto (free)') },
+                { value: 'brave', label: 'Brave' },
+                { value: 'tavily', label: 'Tavily' },
+                { value: 'serper', label: 'Serper' },
+              ]}
+            />
+          </div>
+          {searchProvider !== 'auto' ? (
+            <div className={styles.row}>
+              <span className={styles.label}>{t('Search API key')}</span>
+              {editingSearchKey ? (
+                <span className={styles.editor}>
+                  <TextField
+                    value={searchKeyDraft}
+                    onChange={setSearchKeyDraft}
+                    type="password"
+                    placeholder={t('Paste your key')}
+                    autoFocus
+                    onEnter={() => void onSaveSearchKey()}
+                    aria-label={t('Search API key')}
+                  />
+                  <Button kind="primary" size="sm" onClick={() => void onSaveSearchKey()}>
+                    {t('Save')}
+                  </Button>
+                  <Button kind="quiet" size="sm" onClick={onCancelSearchKey}>
+                    {t('Cancel')}
+                  </Button>
+                </span>
+              ) : (
+                <>
+                  <span
+                    className={hasSearchKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}
+                  >
+                    {hasSearchKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
+                  </span>
+                  <Button kind="ghost" size="sm" onClick={() => setEditingSearchKey(true)}>
+                    {hasSearchKey ? t('Update') : t('Set')}
+                  </Button>
+                  {hasSearchKey ? (
+                    <Button kind="quiet" size="sm" onClick={() => void onClearSearchKey()}>
+                      {t('Clear')}
+                    </Button>
+                  ) : null}
+                </>
+              )}
+            </div>
+          ) : null}
+          {searchProvider !== 'auto' && !hasSearchKey ? (
+            <p className={styles.helper}>
+              {t('Without a key, search falls back to the free providers.')}
+            </p>
+          ) : null}
         </div>
 
         {/* ── About ───────────────────────────────────────────── */}

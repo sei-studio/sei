@@ -23,6 +23,8 @@ import {
   type ExpansionProgressEvent,
   type GenProgressEvent,
   type GenerateUniqueResult,
+  type PortraitRegenResult,
+  type PortraitVersionsState,
   type PrefsGetResult,
   type BrowseEntry,
   type CreditsStatus,
@@ -1020,6 +1022,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         }
       }
     }
+    // D-28 canonical portrait + stored version sidecars (260909).
+    await (await import('./portraitFiles')).deletePortraitFiles(id);
     try {
       await rm(paths.memoryDir(id), { recursive: true, force: true });
     } catch (err) {
@@ -1168,6 +1172,48 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = z.string().uuid().parse(idArg);
     const { removePortrait } = await import('./portraitStore');
     await removePortrait(id);
+  });
+
+  // 260909 — card-image versions + regeneration. characterId is UUID-gated
+  // (path-traversal defense, same as applyPortrait); the version `file` is
+  // additionally pinned to `<that uuid>-v<n>.png` before it touches a path.
+  ipcMain.handle(IpcChannel.chars.portraitVersions, async (_event, idArg: unknown): Promise<PortraitVersionsState> => {
+    const id = z.string().uuid().parse(idArg);
+    const { getPortraitVersions } = await import('./portraitStore');
+    return await getPortraitVersions(id);
+  });
+  ipcMain.handle(IpcChannel.chars.portraitSelect, async (_event, argsRaw: unknown): Promise<PortraitVersionsState> => {
+    const args = z.object({
+      characterId: z.string().uuid(),
+      file: z.string().min(1).max(80),
+    }).parse(argsRaw);
+    const allowed = new RegExp(`^${args.characterId}(?:-v\\d+)?\\.png$`, 'i');
+    if (!allowed.test(args.file)) throw new Error('Unknown portrait version.');
+    const { selectPortraitVersion } = await import('./portraitStore');
+    return await selectPortraitVersion(args);
+  });
+  // SINGLE-FLIGHT per character: a double click (or StrictMode double effect)
+  // must not burn two of the three lifetime regenerations. A second call while
+  // one is running joins the in-flight promise.
+  const portraitRegenInflight = new Map<string, Promise<PortraitRegenResult>>();
+  ipcMain.handle(IpcChannel.chars.portraitRegenerate, (_event, idArg: unknown): Promise<PortraitRegenResult> => {
+    const id = z.string().uuid().parse(idArg);
+    const running = portraitRegenInflight.get(id);
+    if (running) return running;
+    const promise = (async (): Promise<PortraitRegenResult> => {
+      try {
+        const { regeneratePortrait } = await import('./uniqueGeneration');
+        return await regeneratePortrait({ characterId: id });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[sei] chars:portrait-regenerate unexpected throw: ${message}`);
+        return { ok: false, code: 'generation_failed', message };
+      } finally {
+        portraitRegenInflight.delete(id);
+      }
+    })();
+    portraitRegenInflight.set(id, promise);
+    return promise;
   });
 
   // ── In-app chat (Phase 18/19) ─────────────────────────────────────────────

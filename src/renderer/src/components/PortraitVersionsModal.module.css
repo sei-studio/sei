@@ -1,0 +1,133 @@
+/* PortraitVersionsModal.module.css — card-image versions + regenerate popup.
+   Sharp corners (D-28), token colors only. */
+
+.lede {
+  margin: 0 0 var(--space-md);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+/* Large preview of the active image. 4:7 native KusArt aspect would be very
+   tall in a 520px popup; cap the height and let the image letterbox inside. */
+.preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.previewImg {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.previewEmpty {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Translucent veil while a regeneration runs so the stale image reads as
+   "about to change" rather than final. */
+.previewVeil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  animation: veilPulse calc(1.4s / var(--flux)) var(--ease) infinite alternate;
+}
+
+@keyframes veilPulse {
+  from { opacity: 0.55; }
+  to { opacity: 0.9; }
+}
+
+.versions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.thumb {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 72px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  cursor: pointer;
+  color: var(--text-2);
+  transition: border-color calc(120ms / var(--flux)) var(--ease);
+}
+
+.thumb:hover:not(:disabled),
+.thumb:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.thumb:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.thumbActive {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  color: var(--text);
+}
+
+.thumbImg {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  background: var(--bg4);
+}
+
+.thumbLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.regenRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md-plus);
+}
+
+.hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.error {
+  margin: var(--space-sm) 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--red);
+}
