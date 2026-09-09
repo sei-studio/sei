@@ -45,7 +45,7 @@ export const SEARCH_TOOL_DESCRIPTION =
   'Search the web. Returns a few lettered results (a, b, c...) with a title and a short snippet each. ' +
   'Use it when the player asks about something you are not sure of, or when a fact, a recipe, a date, a price or a name matters and guessing would be worse than checking. ' +
   'Call visit(ref) with a result letter to read the page itself. Search results are private to you; tell the player what you learned in your own words. ' +
-  'You may tell the player you are checking in the SAME turn (say() in the game, your reply text in chat); it lands before the results come back. Optional, not required.'
+  'It is usually good to tell the player you are looking it up in the SAME turn (say() in the game, your reply text in chat) so they are not left in silence; that line lands before the results come back.'
 
 export const VISIT_TOOL_DESCRIPTION =
   'Read a web page as plain text, one page of text at a time. Pass the letter of a search result (for example "b"), or a full URL. ' +
