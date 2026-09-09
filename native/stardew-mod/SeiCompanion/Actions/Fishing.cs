@@ -17,21 +17,28 @@ namespace SeiCompanion.Actions
     {
         public static Point? NearestWater(SeiBody body, int radius)
         {
+            List<Point> all = WaterTiles(body, radius);
+            return all.Count > 0 ? all[0] : (Point?)null;
+        }
+
+        /// <summary>Water tiles with a walkable neighbour, nearest first (a fresh farm's pond is often hemmed in by debris on one side).</summary>
+        public static List<Point> WaterTiles(SeiBody body, int radius)
+        {
             GameLocation loc = body.Npc.currentLocation;
             Vector2 me = body.Npc.Tile;
-            Point? best = null;
-            float bestDist = float.MaxValue;
+            var list = new List<(float d, Point p)>();
             for (int dx = -radius; dx <= radius; dx++)
                 for (int dy = -radius; dy <= radius; dy++)
                 {
                     int x = (int)me.X + dx, y = (int)me.Y + dy;
                     if (!loc.isTileOnMap(x, y) || !loc.isWaterTile(x, y)) continue;
-                    // A water tile with a walkable neighbour: somewhere to stand.
                     if (body.FreeTileNear(loc, new Vector2(x, y), 1) == null) continue;
-                    float d = Math.Abs(dx) + Math.Abs(dy);
-                    if (d < bestDist) { bestDist = d; best = new Point(x, y); }
+                    list.Add((Math.Abs(dx) + Math.Abs(dy), new Point(x, y)));
                 }
-            return best;
+            list.Sort((a, b) => a.d.CompareTo(b.d));
+            var outp = new List<Point>();
+            foreach (var e in list) outp.Add(e.p);
+            return outp;
         }
 
         public static IEnumerable<object> Fish(ActionContext ctx)
@@ -42,11 +49,25 @@ namespace SeiCompanion.Actions
             if (rod == null) { yield return Result.Fail("no fishing rod in the inventory"); yield break; }
             if (body.Shadow.Stamina <= 0f) { yield return Result.Fail("out of energy; eat or sleep before fishing"); yield break; }
             Target t = Targets.Resolve(ctx, out _);
-            Point? water = t != null && t.HasTile && loc.isWaterTile(t.Tile.X, t.Tile.Y) ? t.Tile : NearestWater(body, 14);
-            if (water == null) { yield return Result.Fail("no water within reach; goTo a river, the pond, or the beach first"); yield break; }
-            var walk = new Outcome();
-            yield return Movement.WalkTo(ctx, water.Value, true, walk);
-            if (!walk.Ok) { yield return Result.Fail(walk.Detail); yield break; }
+            var candidates = new List<Point>();
+            if (t != null && t.HasTile && loc.isWaterTile(t.Tile.X, t.Tile.Y)) candidates.Add(t.Tile);
+            else candidates.AddRange(WaterTiles(body, 14));
+            if (candidates.Count == 0) { yield return Result.Fail("no water within reach; goTo a river, the pond, or the beach first"); yield break; }
+            // Try up to eight shore spots, nearest first: the nearest edge of
+            // the pond can be walled off by debris while the far edge is open.
+            Point? water = null;
+            string lastWalk = null;
+            int tries = 0;
+            foreach (Point cand in candidates)
+            {
+                if (tries++ >= 8) break;
+                var walk = new Outcome();
+                yield return Movement.WalkTo(ctx, cand, true, walk);
+                if (ctx.Cancelled) yield break;
+                if (walk.Ok) { water = cand; break; }
+                lastWalk = walk.Detail;
+            }
+            if (water == null) { yield return Result.Fail($"could not reach the water's edge ({lastWalk}); clear the debris in the way or try another spot"); yield break; }
 
             int slot = body.SlotOf(rod);
             if (slot >= 0) body.Shadow.CurrentToolIndex = slot;

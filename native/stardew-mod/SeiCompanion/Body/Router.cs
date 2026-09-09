@@ -77,6 +77,42 @@ namespace SeiCompanion.Body
                     };
                 }
             }
+            // Buildings with an inside (the farmhouse, coops, barns, sheds):
+            // their human door is not in `warps` nor in `doors`. Stand on the
+            // tile below the door and land where the inside's exit warp
+            // points back at us. Without this, nothing routed HOME from the
+            // farm (measured 260910: "no known route from Farm to FarmHouse").
+            if (loc.buildings != null)
+            {
+                foreach (StardewValley.Buildings.Building b in loc.buildings)
+                {
+                    GameLocation inside = null;
+                    try { inside = b?.GetIndoors(); } catch { }
+                    if (inside == null || b.humanDoor.Value.X < 0) continue;
+                    string target = inside.NameOrUniqueName;
+                    if (string.IsNullOrEmpty(target) || !seen.Add(target)) continue;
+                    Point landing = new Point(-1, -1);
+                    if (inside.warps != null)
+                    {
+                        foreach (Warp back in inside.warps)
+                        {
+                            if (back != null && (string.Equals(back.TargetName, loc.Name, StringComparison.OrdinalIgnoreCase) || string.Equals(back.TargetName, loc.NameOrUniqueName, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                landing = new Point(back.X, Math.Max(0, back.Y - 1));
+                                break;
+                            }
+                        }
+                    }
+                    if (landing.X < 0) continue;
+                    yield return new Hop
+                    {
+                        From = loc,
+                        StandTile = new Point(b.tileX.Value + b.humanDoor.Value.X, b.tileY.Value + b.humanDoor.Value.Y + 1),
+                        TargetName = target,
+                        TargetTile = landing,
+                    };
+                }
+            }
             // Building doors (farm buildings, shop fronts) are not in `warps`;
             // the door tile carries the target name and the target's own exit
             // warp back to us tells us where to stand inside.

@@ -490,7 +490,13 @@ namespace SeiCompanion.Body
                 if (!loc.isTileOnMap(tile)) return false;
                 if (loc.isWaterTile((int)tile.X, (int)tile.Y)) return false;
                 if (!loc.isTilePassable(tile)) return false;
-                return !loc.IsTileOccupiedBy(tile, StardewValley.CollisionMask.Buildings | StardewValley.CollisionMask.Furniture | StardewValley.CollisionMask.Objects | StardewValley.CollisionMask.TerrainFeatures | StardewValley.CollisionMask.LocationSpecific, StardewValley.CollisionMask.None);
+                // The same farmer collision the path search uses, so a tile the
+                // route can cross is a tile a verb may stand on. The occupancy
+                // mask used before counted tilled soil and crops as obstacles
+                // (a player walks over both), which walled the body out of
+                // its own field after two tills (measured 260910).
+                var rect = new Rectangle((int)tile.X * 64 + 8, (int)tile.Y * 64 + 8, 48, 48);
+                return !loc.isCollidingPosition(rect, Game1.viewport, true, 0, false, this.Shadow, true, false, false);
             }
             catch { return false; }
         }
