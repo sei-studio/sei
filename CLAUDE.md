@@ -424,9 +424,8 @@ built for the loop itself.
   `enabled:false` withholds both tools. `_webSessionOverride` on
   `createOrchestrator` is the test seam (`orchestrator.webSearch.test.js`).
 - **A line beside the lookup is nudged, not required.** The tool
-  description says it is "usually good" to tell the player you are looking
-  it up in the same turn, so a lookup is not a silent pause; soft wording on
-  purpose (a hard rule would cost a line on every trivial check). In the game a `say()` in the same turn as `search()`
+  description ends with one short line, "Before searching, let the player
+  know", so a lookup is not a silent pause. In the game a `say()` in the same turn as `search()`
   is emitted up front by `emitSayCalls` like a say beside a dig, and the loop
   still continues. In typed chat the blocking path kept only the LAST hop's
   text, so "lemme check" was dropped; now a hop with text AND a web tool call
