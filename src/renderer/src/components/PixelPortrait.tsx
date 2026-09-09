@@ -210,7 +210,17 @@ export function PixelPortrait({
   // .root background carry the light/dark difference instead.
   const grid = useMemo(() => generatePixelGrid(seed, pickPalette(seed, 'dark')), [seed]);
 
-  // Paint canvas whenever grid changes.
+  // Resolve the bare '<uuid>.png' reference (or pass a cloud URL through) into a
+  // loadable src. Without this the override <img> 404s and silently falls back.
+  const resolvedSrc = portraitSrc(portraitImage);
+  const useImage = !!resolvedSrc && !imgFailed;
+
+  // Paint canvas whenever grid changes, AND whenever the canvas (re)enters the
+  // DOM. `useImage` is a dep because the <canvas> is conditionally rendered:
+  // when a portrait <img> fails after mount (stale ref, dead URL) the canvas
+  // mounts fresh and unpainted — without this dep the effect never re-ran for
+  // it and the "procedural fallback" was a blank transparent square (the
+  // blank Home cards report, 260907).
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -228,18 +238,13 @@ export function PixelPortrait({
         ctx.fillRect(x, y, 1, 1);
       }
     }
-  }, [grid]);
+  }, [grid, useImage]);
 
   const containerStyle: React.CSSProperties = {
     width: size,
     height: size,
     ...style,
   };
-
-  // Resolve the bare '<uuid>.png' reference (or pass a cloud URL through) into a
-  // loadable src. Without this the override <img> 404s and silently falls back.
-  const resolvedSrc = portraitSrc(portraitImage);
-  const useImage = !!resolvedSrc && !imgFailed;
 
   // Settle immediately when there's no image to wait for (no override, or an
   // unresolvable ref) so a wireframe-holding caller is never stranded. The

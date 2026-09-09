@@ -37,14 +37,14 @@ export interface LocalSetupChoices {
 export const SENSEVOICE_PACK_ID = 'stt-sensevoice';
 
 /**
- * Which local TTS packs a UI language needs. zh needs BOTH gendered packs
- * (the companion this onboarding is about to generate has no gender yet, and
- * later adoptions can be either); en is one pack carrying both genders via
- * speaker ids. Other languages fall back to the English voice at synthesis
- * time (localVoice.ts), so 'en' is the right download for them too.
+ * Which local TTS pack a UI language needs. Each language is ONE pack
+ * carrying both genders via speaker ids (260908: zh collapsed to a single
+ * aishell3 pack, parallel to en). Other languages fall back to the English
+ * voice at synthesis time (localVoice.ts), so 'en' is the right download for
+ * them too.
  */
 export function ttsPackIdsFor(lang: 'en' | 'zh'): string[] {
-  return lang === 'zh' ? ['tts-zh-f', 'tts-zh-m'] : ['tts-en'];
+  return lang === 'zh' ? ['tts-zh'] : ['tts-en'];
 }
 
 /** Whole-megabyte label for an exact byte count (floored at 1). */

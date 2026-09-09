@@ -97,7 +97,11 @@ describe('ChatTopBar disables the Backseat button', () => {
   it('Test 4: gated on visionBlocked with the reason as the title', () => {
     expect(source.includes('visionBlocked(useUiStore((s) => s.llmVision))')).toBe(true);
     expect(source.includes("visionGateReason(t, 'backseat', llmModel)")).toBe(true);
-    expect(source.includes('disabled={backseatBlocked}')).toBe(true);
+    // 260907: a live Minecraft summon disables it too (mutual exclusion), so
+    // the disabled flag folds both gates and the title carries whichever
+    // reason applies.
+    expect(source.includes('disabled={backseatDisabled}')).toBe(true);
+    expect(source.includes('backseatBlocked || mcSummonActive')).toBe(true);
     expect(source.includes('title={backseatReason ?? undefined}')).toBe(true);
   });
 });
@@ -107,9 +111,9 @@ describe('CallControls disables the share pill', () => {
 
   it('Test 5: gated on visionBlocked; stopping a live share is never blocked', () => {
     expect(source.includes('visionBlocked(useUiStore((s) => s.llmVision))')).toBe(true);
-    expect(source.includes('startingShare || shareVisionBlocked')).toBe(true);
+    expect(source.includes('startingShare || shareVisionBlocked || shareMcActive')).toBe(true);
     // The reason only arms while NOT sharing, so the stop path stays live.
-    expect(source.includes('shareVisionBlocked && !sharing')).toBe(true);
+    expect(source.includes('const shareReason = sharing\n    ? null')).toBe(true);
   });
 });
 

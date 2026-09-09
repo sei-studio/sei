@@ -412,6 +412,23 @@ const ConfigObjectSchema = z.object({
     image_quality: z.number().min(0.1).max(1).default(0.4),          // "image quality" (D-03)
     resolution_px: z.number().int().min(64).max(512).default(256),   // D-03 ~256; VIS-06 ≤512 HARD CEILING
   }).default({}),
+  // 260909: web access for the brain (search + visit tools, src/bot/web).
+  // `enabled:false` withholds both tools from the tool list entirely.
+  // `provider`/`api_key` are bridged from UserConfig.web_search_* by the
+  // supervisor (init.webSearch); the defaults are keyless ('auto' = the
+  // DuckDuckGo -> Bing -> Wikipedia chain). Every field defaults so an
+  // absent block parses.
+  web: z.object({
+    enabled: z.boolean().default(true),
+    provider: z.enum(['auto', 'brave', 'tavily', 'serper', 'ddg', 'bing', 'wikipedia']).default('auto'),
+    api_key: z.string().default(''),
+    max_results: z.number().int().min(1).max(10).default(5),
+    page_chars: z.number().int().min(500).max(20000).default(2400),
+    // Per-LOOP budget (search + visit combined). The tool loop re-calls the
+    // model after every result, so this is the only thing bounding a curious
+    // model's spin besides iteration_cap.
+    max_calls_per_loop: z.number().int().min(0).default(6),
+  }).default({}),
   adapter: AdapterSchema,
 })
 

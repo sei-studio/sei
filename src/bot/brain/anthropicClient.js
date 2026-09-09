@@ -467,8 +467,11 @@ export function createAnthropicClient(config) {
    * @param {{name:string,description:string,input_schema:object}[]} tools
    */
   function buildCachedSystem(staticBlocks, tools) {
-    const toolBlock = tools.length
-      ? `Available actions:\n` + tools.map(t => `- ${t.name}: ${t.description}`).join('\n')
+    // Server tools (web_search) carry no description; the model knows them
+    // from the tool list itself, so the prose copy skips them.
+    const described = tools.filter(t => t.description)
+    const toolBlock = described.length
+      ? `Available actions:\n` + described.map(t => `- ${t.name}: ${t.description}`).join('\n')
       : 'No actions available.'
     return [
       ...staticBlocks.map(text => ({ type: 'text', text })),

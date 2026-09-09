@@ -62,9 +62,21 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
   // a confident 'no' locks; 'unknown' stays usable (backseatService's
   // LLM_NO_VISION gate is the authoritative backstop). The reason rides the
   // native `title` because the data-tip tooltip is one nowrap line.
+  //
+  // A live Minecraft summon disables it too (260907): backseat is mutually
+  // exclusive with a summon (main refuses with BACKSEAT_MC_SESSION_ACTIVE),
+  // so grey the button up front with the reason instead of letting the picker
+  // flow fail at the end.
   const backseatBlocked = visionBlocked(useUiStore((s) => s.llmVision));
   const llmModel = useUiStore((s) => s.llmModel);
-  const backseatReason = backseatBlocked ? visionGateReason(t, 'backseat', llmModel) : null;
+  const summonKind = useDataStore((s) => s.summons[characterId]?.kind);
+  const mcSummonActive = summonKind === 'online' || summonKind === 'connecting';
+  const backseatDisabled = backseatBlocked || mcSummonActive;
+  const backseatReason = backseatBlocked
+    ? visionGateReason(t, 'backseat', llmModel)
+    : mcSummonActive
+      ? t('End the Minecraft session to use Backseat')
+      : null;
 
   // The one-time Backseat tip. `done` is read once at mount (localStorage) and
   // flipped in memory by "Got it", so the card leaves without a second read.
@@ -169,13 +181,13 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
             type="button"
             className={styles.iconBtn}
             onClick={() => {
-              if (!backseatBlocked) openModal({ kind: 'share-screen', characterId });
+              if (!backseatDisabled) openModal({ kind: 'share-screen', characterId });
             }}
-            disabled={backseatBlocked}
-            aria-disabled={backseatBlocked}
+            disabled={backseatDisabled}
+            aria-disabled={backseatDisabled}
             aria-label={t('Backseat (beta)')}
             title={backseatReason ?? undefined}
-            data-tip={backseatBlocked ? undefined : t('Backseat (beta)')}
+            data-tip={backseatReason ?? t('Backseat (beta)')}
             data-tip-edge="right"
             data-tutorial="backseat-btn"
           >

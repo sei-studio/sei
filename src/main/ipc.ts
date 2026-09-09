@@ -23,6 +23,8 @@ import {
   type ExpansionProgressEvent,
   type GenProgressEvent,
   type GenerateUniqueResult,
+  type PortraitRegenResult,
+  type PortraitVersionsState,
   type PrefsGetResult,
   type BrowseEntry,
   type CreditsStatus,
@@ -1055,6 +1057,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         }
       }
     }
+    // D-28 canonical portrait + stored version sidecars (260909).
+    await (await import('./portraitFiles')).deletePortraitFiles(id);
     try {
       await rm(paths.memoryDir(id), { recursive: true, force: true });
     } catch (err) {
@@ -1203,6 +1207,48 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = z.string().uuid().parse(idArg);
     const { removePortrait } = await import('./portraitStore');
     await removePortrait(id);
+  });
+
+  // 260909 — card-image versions + regeneration. characterId is UUID-gated
+  // (path-traversal defense, same as applyPortrait); the version `file` is
+  // additionally pinned to `<that uuid>-v<n>.png` before it touches a path.
+  ipcMain.handle(IpcChannel.chars.portraitVersions, async (_event, idArg: unknown): Promise<PortraitVersionsState> => {
+    const id = z.string().uuid().parse(idArg);
+    const { getPortraitVersions } = await import('./portraitStore');
+    return await getPortraitVersions(id);
+  });
+  ipcMain.handle(IpcChannel.chars.portraitSelect, async (_event, argsRaw: unknown): Promise<PortraitVersionsState> => {
+    const args = z.object({
+      characterId: z.string().uuid(),
+      file: z.string().min(1).max(80),
+    }).parse(argsRaw);
+    const allowed = new RegExp(`^${args.characterId}(?:-v\\d+)?\\.png$`, 'i');
+    if (!allowed.test(args.file)) throw new Error('Unknown portrait version.');
+    const { selectPortraitVersion } = await import('./portraitStore');
+    return await selectPortraitVersion(args);
+  });
+  // SINGLE-FLIGHT per character: a double click (or StrictMode double effect)
+  // must not burn two of the three lifetime regenerations. A second call while
+  // one is running joins the in-flight promise.
+  const portraitRegenInflight = new Map<string, Promise<PortraitRegenResult>>();
+  ipcMain.handle(IpcChannel.chars.portraitRegenerate, (_event, idArg: unknown): Promise<PortraitRegenResult> => {
+    const id = z.string().uuid().parse(idArg);
+    const running = portraitRegenInflight.get(id);
+    if (running) return running;
+    const promise = (async (): Promise<PortraitRegenResult> => {
+      try {
+        const { regeneratePortrait } = await import('./uniqueGeneration');
+        return await regeneratePortrait({ characterId: id });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[sei] chars:portrait-regenerate unexpected throw: ${message}`);
+        return { ok: false, code: 'generation_failed', message };
+      } finally {
+        portraitRegenInflight.delete(id);
+      }
+    })();
+    portraitRegenInflight.set(id, promise);
+    return promise;
   });
 
   // ── In-app chat (Phase 18/19) ─────────────────────────────────────────────
@@ -1672,6 +1718,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // renderer or the repo) + the call open/hang-up toggle. The toggle records
   // main-side state (idle-chat prompts read it) and forwards the mode into a
   // live game session so say() reroutes to the call.
+  // Substitute-pack notices (260908): local TTS spoke a line with a voice
+  // pack that does not match the conversation language (the matching one is
+  // not downloaded). Forwarded to every window so the call UI can show a
+  // system notice naming the better-fitting download. Wired lazily like the
+  // speech pack push below.
+  let ttsNoticeWired = false;
+  const wireTtsNotice = async (): Promise<void> => {
+    if (ttsNoticeWired) return;
+    ttsNoticeWired = true;
+    const { onTtsNotice } = await import('./voice/tts');
+    onTtsNotice((notice) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.voice.ttsNotice, notice);
+      }
+    });
+  };
   ipcMain.handle(IpcChannel.voice.tts, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
     const args = z
       .object({
@@ -1681,6 +1743,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         prev: z.string().max(4000).optional(),
       })
       .parse(argsRaw);
+    await wireTtsNotice();
     const { voiceTts } = await import('./voice/tts');
     return await voiceTts(args);
   });
@@ -1697,6 +1760,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         prev: z.string().max(4000).optional(),
       })
       .parse(argsRaw);
+    await wireTtsNotice();
     const { voiceTtsStream } = await import('./voice/tts');
     const sender = event.sender;
     return await voiceTtsStream(args, (ev) => {
@@ -1868,7 +1932,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // on demand into <userData>/speech-models/. Contract: src/main/speech/index.ts.
   // Everything the renderer reads is named in the schemas here — zod strips
   // undeclared keys silently (the backseat gridSmall lesson).
-  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh-f', 'tts-zh-m', 'stt-sensevoice']);
+  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh', 'stt-sensevoice']);
   let speechPushWired = false;
   const wireSpeechPush = async (): Promise<void> => {
     if (speechPushWired) return;
@@ -1912,7 +1976,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         .parse(argsRaw);
       const { transcribeLocal } = await import('./speech');
       const { normalizeSttText } = await import('./voice/stt');
-      const res = await transcribeLocal(new Float32Array(args.pcm), args.sampleRate);
+      // Constrain SenseVoice's decode language to the conversation language
+      // (260907): full auto-detect on this build drifts English speech into
+      // Chinese. Best-effort — a failed config read falls back to auto-detect
+      // rather than blocking the transcription.
+      let chatLanguage: string | undefined;
+      try {
+        const { loadConfig } = await import('./configStore');
+        const { clampChatLanguage } = await import('../shared/chatLanguage');
+        chatLanguage = clampChatLanguage((await loadConfig()).chat_language);
+      } catch {
+        /* auto-detect */
+      }
+      const res = await transcribeLocal(new Float32Array(args.pcm), args.sampleRate, chatLanguage);
       return { text: normalizeSttText(res.text), ...(res.language ? { language: res.language } : {}) };
     },
   );

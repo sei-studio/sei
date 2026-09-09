@@ -141,6 +141,14 @@
   color: var(--muted);
 }
 
+/* Warning notice (260907): local backend + no ElevenLabs key means the pool
+   voices and Auto cannot synthesize. Text only, warn token, no layout. */
+.warnNote {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--warn);
+}
+
 /* ── Gender tabs (Feminine / Masculine / Neutral) ─────────────────────── */
 .tabs {
   display: flex;

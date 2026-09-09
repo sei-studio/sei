@@ -25,6 +25,7 @@ import { CharacterSchema, CharacterIndexSchema, MAX_CREATIONS_PER_DAY, type Char
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
 import { paths } from './paths';
+import { deletePortraitFiles } from './portraitFiles';
 import { expandPersona, fetchServerExpansionSystem, type ExpansionProgress } from './personaExpansion';
 import { characterLanguage } from '../shared/chatLanguage';
 import { loadApiKey, getAiBackendKind } from './apiKeyStore';
@@ -527,11 +528,13 @@ export async function deleteCharacter(id: string): Promise<void> {
   catch (err) {
     if (!err || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
-  // Remove optional portrait
+  // Remove optional portrait (legacy characters/<id>.png slot)
   try { await unlink(paths.characterPortraitPath(id)); }
   catch (err) {
     if (!err || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
+  // Remove the D-28 canonical portrait + every stored version sidecar (260909)
+  await deletePortraitFiles(id);
   // Remove memory dir recursively (idempotent)
   await rm(paths.memoryDir(id), { recursive: true, force: true });
   // Remove knowledge dir (260725; lives outside memoryDir so Reset memory

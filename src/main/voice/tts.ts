@@ -30,6 +30,7 @@ import { resolveVoiceId, isPoolVoiceId } from './voiceAssign';
 import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previewCache';
 import { NO_VOICE_ID } from '../../shared/voiceIds';
 import { resolveElevenLabsRoute, type ElevenLabsRoute } from './elevenLabsKeyStore';
+import type { SpeechPackId } from '../speech/packs';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 const ELEVENLABS_TTS_MODEL = 'eleven_flash_v2_5';
@@ -290,25 +291,104 @@ async function localTtsSelected(): Promise<boolean> {
 }
 
 /**
+ * A local synthesis spoke with a SUBSTITUTE voice pack because the pack
+ * matching the line's language (the conversation language, or the line's own
+ * script when it is predominantly Chinese — see detectSpokenLanguage) is not
+ * installed (260908). Pushed to the renderer (main/ipc.ts forwards over
+ * voice:tts-notice) so the call UI can show a system notice naming the
+ * better-fitting download; the line itself still plays. Fields are pack ids
+ * from speech/packs.ts.
+ */
+export interface TtsNotice {
+  characterId: string;
+  /** Pack that would fit the conversation language but is not installed. */
+  missingPackId: string;
+  /** Pack the line was actually spoken with. */
+  spokenPackId: string;
+}
+
+const ttsNoticeListeners = new Set<(notice: TtsNotice) => void>();
+export function onTtsNotice(cb: (notice: TtsNotice) => void): () => void {
+  ttsNoticeListeners.add(cb);
+  return () => ttsNoticeListeners.delete(cb);
+}
+function emitTtsNotice(notice: TtsNotice): void {
+  for (const l of ttsNoticeListeners) l(notice);
+}
+
+/**
  * Synthesize via the local sherpa engine and encode as WAV bytes. The
  * character's persisted ElevenLabs voiceId maps to a local voice by GENDER
  * (speech/localVoice.ts) plus the clip's language; `voicePitch` still applies
- * renderer-side through pitchBus playbackRate, untouched. A missing voice
- * pack throws `VOICE_PACK_MISSING:<packId>` — the renderer turns that into a
- * download prompt; never auto-download mid-call.
+ * renderer-side through pitchBus playbackRate, untouched.
+ *
+ * 260908: the pack pick is INSTALLED-AWARE (speech pickLocalVoice). The old
+ * resolution demanded exactly the (gender, language) slot's pack, so a zh
+ * conversation with only the English pack installed threw VOICE_PACK_MISSING
+ * on every line and the whole call went silent while a working voice sat on
+ * disk. Now any installed pack can speak (language match preferred), and a
+ * cross-language substitute additionally emits a TtsNotice naming the pack
+ * that would fit better. Only when NO voice pack is installed does
+ * `VOICE_PACK_MISSING:<packId>` still throw, carrying the language-matching
+ * pack id — the renderer turns that into a download hint; never
+ * auto-download mid-call.
+ *
+ * The language keyed on is the LINE's effective language, not just the
+ * conversation's (speech detectSpokenLanguage): a predominantly Chinese line
+ * in an 'en' conversation prefers an installed zh pack, and when the zh pack
+ * is missing the notice names it — the line is what cannot be spoken well,
+ * whatever the session language says.
  */
 async function synthesizeLocalClip(
   text: string,
   voiceId: string,
   language: ChatLanguage,
+  characterId: string,
 ): Promise<ArrayBuffer> {
   const speech = await import('../speech');
-  const voice = speech.resolveLocalVoice(voiceId, language);
-  const packId = speech.LOCAL_VOICE_SPEC[voice].packId;
-  if (!(await speech.packReady(packId))) throw speech.packMissingError(packId);
-  const { samples, sampleRate } = await speech.synthesizeLocal(text, voice);
+  const ready: SpeechPackId[] = [];
+  for (const id of speech.SPEECH_PACK_IDS) {
+    if (id.startsWith('tts-') && (await speech.packReady(id))) ready.push(id);
+  }
+  const effLanguage = speech.detectSpokenLanguage(text, language);
+  const gender = speech.voiceGenderFor(voiceId);
+  const pick = speech.pickLocalVoice(gender, effLanguage, ready);
+  if (!pick) {
+    throw speech.packMissingError(
+      speech.LOCAL_VOICE_SPEC[speech.localVoiceFor(gender, effLanguage)].packId,
+    );
+  }
+  if (pick.missingPreferredPack) {
+    emitTtsNotice({
+      characterId,
+      missingPackId: pick.missingPreferredPack,
+      spokenPackId: speech.LOCAL_VOICE_SPEC[pick.voice].packId,
+    });
+  }
+  const { samples, sampleRate } = await speech.synthesizeLocal(text, pick.voice);
   const { encodeWav } = await import('./stt');
   return encodeWav(samples, sampleRate);
+}
+
+/**
+ * Last-resort local synthesis when the CONFIGURED voice route cannot produce
+ * audio at all (260908): a BYOK user with no ElevenLabs key stored used to get
+ * a hard VOICE_NOT_CONFIGURED on every line even with a local voice pack
+ * installed and ready. Returns null (caller throws its original sentinel)
+ * when no pack is installed or local synthesis fails.
+ */
+async function tryLocalFallbackClip(
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  characterId: string,
+): Promise<ArrayBuffer | null> {
+  try {
+    return await synthesizeLocalClip(text, voiceId, language, characterId);
+  } catch (err) {
+    console.warn(`[sei/voice] local TTS fallback unavailable: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 async function fetchAudio(
@@ -460,9 +540,20 @@ export async function voiceTts(args: {
   if (await localTtsSelected()) {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
-    return await synthesizeLocalClip(localText, voiceId, language);
+    return await synthesizeLocalClip(localText, voiceId, language, args.characterId);
   }
   const route = await resolveElevenLabsRoute();
+  // BYOK on the ElevenLabs engine with no key stored (260908): before failing
+  // with the setup hint, try any installed local voice pack — an accented or
+  // substitute local voice beats a silent call, and the hint still shows when
+  // nothing local can speak either.
+  if (route.kind === 'unconfigured') {
+    const localText = speechTextFor(args.text, language);
+    if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
+    const fallback = await tryLocalFallbackClip(localText, voiceId, language, args.characterId);
+    if (fallback) return fallback;
+    throw new Error(NOT_CONFIGURED_BYOK);
+  }
   // Spoken register BEFORE the cap: chat lines mirrored into the call carry
   // shorthand ("lmao", "rn") that TTS would read literally, and texting
   // punctuation that reads as an unfinished thought — see speechTextFor.
@@ -519,7 +610,7 @@ export async function voiceTtsStream(
   if (await localTtsSelected()) {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
-    const buf = await synthesizeLocalClip(localText, voiceId, language);
+    const buf = await synthesizeLocalClip(localText, voiceId, language, args.characterId);
     const streamId = `tts-${nextStreamSeq++}`;
     queueMicrotask(() => {
       sink({ streamId, chunk: buf });
@@ -531,8 +622,19 @@ export async function voiceTtsStream(
   // Spoken register BEFORE the cap (see voiceTts / speechTextFor).
   const text = clipForRoute(speechTextFor(args.text, language), route);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
-  // BYOK with no key: same pre-flight sentinel as synthesize (see there).
-  if (route.kind === 'unconfigured') throw new Error(NOT_CONFIGURED_BYOK);
+  // BYOK with no key: try any installed local voice pack before the setup
+  // sentinel (see voiceTts, 260908), degraded to one whole-clip chunk + done
+  // exactly like the localTtsSelected branch.
+  if (route.kind === 'unconfigured') {
+    const fallback = await tryLocalFallbackClip(text, voiceId, language, args.characterId);
+    if (!fallback) throw new Error(NOT_CONFIGURED_BYOK);
+    const streamId = `tts-${nextStreamSeq++}`;
+    queueMicrotask(() => {
+      sink({ streamId, chunk: fallback });
+      sink({ streamId, done: true });
+    });
+    return { streamId };
+  }
   // Delivery calmness (see voiceStabilityFor). Pitch is not a synthesis
   // parameter — the renderer shifts it locally (see voiceSettingsFor).
   const stability = voiceStabilityFor(character);

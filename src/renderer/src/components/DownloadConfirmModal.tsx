@@ -42,7 +42,7 @@ export function DownloadConfirmModal({
     <ModalShell title={t('Download {name}?', { name })} onClose={onCancel} scrimClose>
       <p className={styles.body}>
         {t(
-          'This is a free, one-time {mb} MB download. It is stored on this device and works offline.',
+          'This is a one-time {mb} MB download. It is stored on this device and works offline.',
           { mb },
         )}
       </p>

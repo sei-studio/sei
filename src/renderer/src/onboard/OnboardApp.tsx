@@ -1184,7 +1184,7 @@ function AuthPanel(props: {
           {tt('Our servers do not currently support your region. Please continue with local mode.')}
         </p>
         <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
-          {tt('Continue locally with my own API key')}
+          {tt('Use my own API key')}
         </button>
       </div>
     );
@@ -1406,7 +1406,7 @@ function AuthPanel(props: {
         </button>
       ) : null}
       <button className={styles.quietLink} onClick={props.onLocal}>
-        {tt('Continue locally with my own API key')}
+        {tt('Use my own API key')}
       </button>
     </div>
   );
@@ -1473,7 +1473,7 @@ function GoogleWaitPanel(props: {
         </p>
         {props.onLocal ? (
           <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
-            {tt('Continue locally with my own API key')}
+            {tt('Use my own API key')}
           </button>
         ) : null}
         <button className={styles.quietLink} onClick={props.onDone}>
@@ -1877,7 +1877,7 @@ function SttStep(props: {
     return (
       <PackDownloadPanel
         packIds={[SENSEVOICE_PACK_ID]}
-        title={tt('SenseVoice runs on your computer, free.')}
+        title={tt('SenseVoice runs on your computer.')}
         onDone={() => props.onPick('sensevoice')}
         onBack={() => setSub('pick')}
       />
@@ -1894,13 +1894,13 @@ function SttStep(props: {
           {tt('ElevenLabs Scribe (your ElevenLabs key)')}
         </button>
         <button className={styles.pill} onClick={() => props.onPick('whisper')}>
-          {tt('Whisper (free)')}
+          {tt('Whisper')}
         </button>
         <button className={styles.pill} onClick={() => setSub('download')}>
-          {tt('SenseVoice (free, best for Chinese)')}
+          {tt('SenseVoice (best for Chinese)')}
         </button>
       </div>
-      <p className={styles.panelNote}>{tt('The free options run on your computer. Whisper downloads itself on first use.')}</p>
+      <p className={styles.panelNote}>{tt('These options run on your computer. Whisper downloads itself on first use.')}</p>
       <button className={styles.quietLink} onClick={() => props.onPick(undefined)}>
         {tt('Decide later')}
       </button>
@@ -1912,9 +1912,9 @@ function SttStep(props: {
 }
 
 /**
- * TTS choice — how companions speak. Picking local voices downloads the
- * pack(s) for the current UI language (zh needs both gendered packs; en is
- * one pack). Characters keep their ElevenLabs voiceId either way; local
+ * TTS choice — how companions speak. Picking local voices downloads the pack
+ * for the current UI language (one pack per language, both genders via
+ * speaker ids). Characters keep their ElevenLabs voiceId either way; local
  * synthesis maps it to a gendered local voice at call time.
  */
 function TtsStep(props: {
@@ -1940,7 +1940,7 @@ function TtsStep(props: {
     return (
       <PackDownloadPanel
         packIds={ttsPackIdsFor(uiLanguage())}
-        title={tt('Local voices run on your computer, free.')}
+        title={tt('Local voices run on your computer.')}
         onDone={() => props.onPick('local')}
         onBack={() => setSub('pick')}
       />
@@ -1957,7 +1957,7 @@ function TtsStep(props: {
           {tt('ElevenLabs voices (your ElevenLabs key)')}
         </button>
         <button className={styles.pill} onClick={() => setSub('download')}>
-          {tt('Local voices (free)')}
+          {tt('Local voices')}
         </button>
       </div>
       <button className={styles.quietLink} onClick={() => props.onPick(undefined)}>

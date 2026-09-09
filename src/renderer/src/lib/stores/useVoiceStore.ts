@@ -119,6 +119,14 @@ interface VoiceState {
   lastSpoken: string;
   /** Which companion said `lastSpoken` (caption attribution). */
   lastSpokenId: string | null;
+  /**
+   * 260908: system notice about the call's VOICE itself (voice unavailable,
+   * paused, spoken with a substitute local pack). Rendered as a notice-styled
+   * line, NEVER as companion speech — these used to ride `lastSpoken` and
+   * showed up in the caption as if the companion had said the bracket text.
+   * Empty = none; cleared on call start/end, replaced by newer notices.
+   */
+  callNotice: string;
   /** User-facing error copy when status === 'error'. */
   error: string | null;
   /** While connecting: model-download percentage ('43') or null. */
@@ -321,6 +329,7 @@ const ttsOrphans = new Map<string, Array<{ chunk?: ArrayBuffer; done?: boolean; 
 /** Module-level listener handles, torn down on HMR dispose (see module foot). */
 let unsubUiMirror: (() => void) | null = null;
 let offTtsChunk: (() => void) | null = null;
+let offTtsNotice: (() => void) | null = null;
 let offCallEnded: (() => void) | null = null;
 let offCreditsHardStop: (() => void) | null = null;
 
@@ -569,6 +578,34 @@ function friendlyError(err: unknown): string {
   return t('Voice call failed to start. Try again in a moment.');
 }
 
+/** Which conversation-language family a local speech pack speaks (pack ids
+ * from src/main/speech/packs.ts). */
+function isZhPack(packId: string | undefined): boolean {
+  return packId === 'tts-zh';
+}
+
+/** Notice copy when NO installed local pack can speak (260908): the
+ * VOICE_PACK_MISSING sentinel carries the pack id matching the conversation
+ * language, so the notice names the exact download instead of a generic
+ * "the local voice pack". */
+function missingPackNotice(packId: string | undefined): string {
+  if (isZhPack(packId)) {
+    return t('[voice unavailable, download the Chinese voice pack in Settings]');
+  }
+  if (packId === 'tts-en') {
+    return t('[voice unavailable, download the English voice pack in Settings]');
+  }
+  return t('[voice unavailable, download the local voice pack in Settings]');
+}
+
+/** Notice copy when a line WAS spoken, but with a substitute pack because the
+ * language-matching one is not installed (260908, voice:tts-notice push). */
+function substitutePackNotice(push: { missingPackId: string; spokenPackId: string }): string {
+  return isZhPack(push.missingPackId)
+    ? t('[spoken with the English voice, download the Chinese voice pack in Settings for a better fit]')
+    : t('[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]');
+}
+
 export const useVoiceStore = create<VoiceState>((set, get) => {
   // Forward the shared mute/deafen toggles into the live pipeline.
   unsubUiMirror = useUiStore.subscribe((s, prev) => {
@@ -661,26 +698,33 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
 
     const surfaceTtsError = (msg: string): void => {
       if (session !== mySession) return;
-      // 260810: these captions are user-visible (they render verbatim in the
-      // call caption surfaces), so they go through t(). And a TTS 429 is the
-      // burst rate gate, not a daily cap (that cap was retired 260724).
+      // 260810: these lines are user-visible (they render in the call caption
+      // area), so they go through t(). And a TTS 429 is the burst rate gate,
+      // not a daily cap (that cap was retired 260724).
+      // 260908: they land in `callNotice`, NOT `lastSpoken` — a notice about
+      // the voice pipeline must render as a system line, never styled (or
+      // spoken by the overlay surfaces) as something the companion said.
       if (/VOICE_RATE_LIMITED/.test(msg)) {
-        set({ lastSpoken: t('[voice paused, too many requests right now]') });
+        set({ callNotice: t('[voice paused, too many requests right now]') });
       } else if (/VOICE_NO_CREDITS/.test(msg)) {
-        set({ lastSpoken: t('[voice paused, out of credits]') });
+        set({ callNotice: t('[voice paused, out of credits]') });
       } else if (/VOICE_NOT_IN_LIBRARY/.test(msg)) {
         // BYOK key + a curated-pool voice: every clip fails until they add the
         // voice to their own ElevenLabs library or pick another one (260726).
-        set({ lastSpoken: t('[voice unavailable, this voice is not in your ElevenLabs library]') });
+        set({ callNotice: t('[voice unavailable, this voice is not in your ElevenLabs library]') });
       } else if (/VOICE_PACK_MISSING/.test(msg)) {
-        // Local TTS (260816): the needed voice pack is not downloaded. Never
+        // Local TTS (260816): NO installed voice pack can speak this line
+        // (main already falls back to any installed pack, 260908). The
+        // sentinel carries the pack id that would fit the conversation
+        // language, so the notice can name the exact download. Never
         // auto-downloaded mid-call; Settings owns the download prompt.
-        set({ lastSpoken: t('[voice unavailable, download the local voice pack in Settings]') });
+        const packId = /VOICE_PACK_MISSING:([\w-]+)/.exec(msg)?.[1];
+        set({ callNotice: missingPackNotice(packId) });
       } else if (/SPEECH_RUNTIME_FAILED/.test(msg)) {
         // Local TTS (260817, W10): the sherpa-onnx runtime failed to load
         // (e.g. a mac x64 build shipped without the platform package).
         // Without this branch the companion is silently mute on every line.
-        set({ lastSpoken: t('[voice unavailable, local speech cannot run on this install]') });
+        set({ callNotice: t('[voice unavailable, local speech cannot run on this install]') });
       }
     };
     const settleTts = (): void => {
@@ -1386,6 +1430,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     /* preload without streaming — buffered path covers it */
   }
 
+  // Substitute-pack notice (260908): the line played, but with a local voice
+  // pack that does not match the conversation language. A system notice, not
+  // companion speech — see callNotice.
+  try {
+    offTtsNotice =
+      sei.onVoiceTtsNotice?.((push) => {
+        if (!get().participants.length) return; // no call surface to show it on
+        set({ callNotice: substitutePackNotice(push) });
+      }) ?? null;
+  } catch {
+    /* preload without onVoiceTtsNotice — the line still plays, just unannotated */
+  }
+
   try {
     offCallEnded =
       sei.onVoiceCallEnded?.(({ characterId }) => requestRemoteEnd(characterId)) ?? null;
@@ -1420,6 +1477,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     lastHeard: '',
     lastSpoken: '',
     lastSpokenId: null,
+    callNotice: '',
     error: null,
     connectingDetail: null,
     liveAt: null,
@@ -1473,6 +1531,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastHeard: '',
         lastSpoken: '',
         lastSpokenId: null,
+        callNotice: '',
         error: null,
         connectingDetail: null,
         liveAt: null,
@@ -1577,8 +1636,21 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const chatLanguage = callCfg?.chat_language ?? 'en';
       // Local TTS route (260816): the same read decides how this call's clips
       // are synthesized. See localTtsCall.
+      // 260908: BYOK on the ElevenLabs engine with NO key stored also counts —
+      // main falls back to any installed local voice pack there, and those
+      // clips are WAV, which cannot ride the streaming audio/mpeg pipeline.
+      // (A dev shell's SEI_TTS_DEV_KEY still routes ElevenLabs in main; the
+      // cost of counting it here is only whole-clip playback, dev-only.)
+      let elevenKeyPresent = false;
+      try {
+        elevenKeyPresent = (await sei.voiceElevenKeyStatus?.())?.present === true;
+      } catch {
+        /* status read failed → assume absent, which only costs streaming */
+      }
+      if (session !== mySession) return;
       localTtsCall =
-        (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' && callCfg?.tts_engine === 'local';
+        (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
+        (callCfg?.tts_engine === 'local' || !elevenKeyPresent);
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
       // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is
@@ -1935,6 +2007,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastHeard: '',
         lastSpoken: '',
         lastSpokenId: null,
+        callNotice: '',
         error: null,
         connectingDetail: null,
         liveAt: null,
@@ -2009,6 +2082,7 @@ if (import.meta.hot) {
     }
     unsubUiMirror?.();
     offTtsChunk?.();
+    offTtsNotice?.();
     offCallEnded?.();
     offCreditsHardStop?.();
   });

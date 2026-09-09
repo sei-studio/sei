@@ -38,11 +38,11 @@ describe('speechSources (mirror-first)', () => {
 
 describe('reducePackState', () => {
   it('a snapshot fills every pack with its archive size', () => {
-    const s = reducePackState(null, { kind: 'snapshot', ready: ['tts-zh-m'] });
+    const s = reducePackState(null, { kind: 'snapshot', ready: ['tts-zh'] });
     for (const id of SPEECH_PACK_IDS) {
       expect(s[id].bytes).toBe(SPEECH_PACKS[id].archiveBytes);
     }
-    expect(s['tts-zh-m'].state).toBe('ready');
+    expect(s['tts-zh'].state).toBe('ready');
     expect(s['tts-en'].state).toBe('absent');
   });
 
@@ -60,9 +60,9 @@ describe('reducePackState', () => {
   });
 
   it('failed and removed both land absent', () => {
-    let s = reducePackState(null, { kind: 'download-start', packId: 'tts-zh-f' });
-    s = reducePackState(s, { kind: 'failed', packId: 'tts-zh-f' });
-    expect(s['tts-zh-f'].state).toBe('absent');
+    let s = reducePackState(null, { kind: 'download-start', packId: 'tts-zh' });
+    s = reducePackState(s, { kind: 'failed', packId: 'tts-zh' });
+    expect(s['tts-zh'].state).toBe('absent');
     s = reducePackState(s, { kind: 'snapshot', ready: ['stt-sensevoice'] });
     s = reducePackState(s, { kind: 'removed', packId: 'stt-sensevoice' });
     expect(s['stt-sensevoice'].state).toBe('absent');
@@ -76,10 +76,10 @@ describe('reducePackState', () => {
   });
 
   it('stale progress after done/failed is ignored', () => {
-    let s = reducePackState(null, { kind: 'download-start', packId: 'tts-zh-m' });
-    s = reducePackState(s, { kind: 'done', packId: 'tts-zh-m' });
-    s = reducePackState(s, { kind: 'progress', packId: 'tts-zh-m', pct: 90 });
-    expect(s['tts-zh-m']).toEqual({ state: 'ready', bytes: SPEECH_PACKS['tts-zh-m'].archiveBytes });
+    let s = reducePackState(null, { kind: 'download-start', packId: 'tts-zh' });
+    s = reducePackState(s, { kind: 'done', packId: 'tts-zh' });
+    s = reducePackState(s, { kind: 'progress', packId: 'tts-zh', pct: 90 });
+    expect(s['tts-zh']).toEqual({ state: 'ready', bytes: SPEECH_PACKS['tts-zh'].archiveBytes });
   });
 
   it('progress clamps to 100', () => {

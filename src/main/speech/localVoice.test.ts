@@ -4,6 +4,7 @@ import {
   AISHELL3_MALE_REGISTER_SID,
   LOCAL_VOICE_SPEC,
   localVoiceFor,
+  pickLocalVoice,
   resolveLocalVoice,
   voiceGenderFor,
 } from './localVoice';
@@ -80,16 +81,76 @@ describe('LOCAL_VOICE_SPEC integrity', () => {
     }
   });
 
-  it('both en slots share the one en pack; zh slots differ by pack', () => {
+  it('each language is one pack serving both genders via speaker ids (260908)', () => {
     expect(LOCAL_VOICE_SPEC['en-f'].packId).toBe('tts-en');
     expect(LOCAL_VOICE_SPEC['en-m'].packId).toBe('tts-en');
     expect(LOCAL_VOICE_SPEC['en-f'].sid).not.toBe(LOCAL_VOICE_SPEC['en-m'].sid);
-    expect(LOCAL_VOICE_SPEC['zh-f'].packId).toBe('tts-zh-f');
-    expect(LOCAL_VOICE_SPEC['zh-m'].packId).toBe('tts-zh-m');
+    expect(LOCAL_VOICE_SPEC['zh-f'].packId).toBe('tts-zh');
+    expect(LOCAL_VOICE_SPEC['zh-m'].packId).toBe('tts-zh');
+    expect(LOCAL_VOICE_SPEC['zh-f'].sid).not.toBe(LOCAL_VOICE_SPEC['zh-m'].sid);
   });
 
-  it('the aishell3 male-register fallback sid is a plain speaker id', () => {
+  it('zh-m speaks the measured aishell3 male-register speaker (chaowen removed 260908)', () => {
     expect(Number.isInteger(AISHELL3_MALE_REGISTER_SID)).toBe(true);
     expect(AISHELL3_MALE_REGISTER_SID).toBeGreaterThanOrEqual(0);
+    expect(LOCAL_VOICE_SPEC['zh-m'].sid).toBe(AISHELL3_MALE_REGISTER_SID);
+  });
+});
+
+describe('pickLocalVoice (installed-pack-aware resolution, 260908)', () => {
+  it('exact slot wins when its pack is installed', () => {
+    expect(pickLocalVoice('female', 'zh', ['tts-zh', 'tts-en'])).toEqual({
+      voice: 'zh-f',
+      missingPreferredPack: null,
+    });
+    expect(pickLocalVoice('male', 'en', ['tts-en'])).toEqual({
+      voice: 'en-m',
+      missingPreferredPack: null,
+    });
+  });
+
+  it('nothing installed picks nothing', () => {
+    expect(pickLocalVoice('female', 'zh', [])).toBeNull();
+    expect(pickLocalVoice('male', 'en', ['stt-sensevoice'])).toBeNull();
+  });
+
+  it('the incident shape: zh conversation, only the en pack installed, speaks en and names the zh pack', () => {
+    expect(pickLocalVoice('female', 'zh', ['tts-en'])).toEqual({
+      voice: 'en-f',
+      missingPreferredPack: 'tts-zh',
+    });
+    expect(pickLocalVoice('male', 'zh', ['tts-en'])).toEqual({
+      voice: 'en-m',
+      missingPreferredPack: 'tts-zh',
+    });
+  });
+
+  it('zh male speaks from the one zh pack (the measured male-register sid rides the slot), no notice', () => {
+    expect(pickLocalVoice('male', 'zh', ['tts-zh', 'tts-en'])).toEqual({
+      voice: 'zh-m',
+      missingPreferredPack: null,
+    });
+  });
+
+  it('en conversation with only the zh pack speaks zh and names the en pack', () => {
+    expect(pickLocalVoice('female', 'en', ['tts-zh'])).toEqual({
+      voice: 'zh-f',
+      missingPreferredPack: 'tts-en',
+    });
+    expect(pickLocalVoice('male', 'en', ['tts-zh'])).toEqual({
+      voice: 'zh-m',
+      missingPreferredPack: 'tts-en',
+    });
+  });
+
+  it('non-zh languages resolve like en (the en pack is their slot)', () => {
+    expect(pickLocalVoice('female', 'ja', ['tts-en'])).toEqual({
+      voice: 'en-f',
+      missingPreferredPack: null,
+    });
+    expect(pickLocalVoice('female', 'ja', ['tts-zh'])).toEqual({
+      voice: 'zh-f',
+      missingPreferredPack: 'tts-en',
+    });
   });
 });

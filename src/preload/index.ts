@@ -86,6 +86,10 @@ const api: RendererApi = {
   // Phase 11 D-28 portrait pipeline.
   charsApplyPortrait: (args) => ipcRenderer.invoke(IpcChannel.chars.applyPortrait, args),
   charsRemovePortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.removePortrait, id),
+  // 260909 — card-image versions + regeneration.
+  charsPortraitVersions: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitVersions, id),
+  charsPortraitRegenerate: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitRegenerate, id),
+  charsPortraitSelect: (args) => ipcRenderer.invoke(IpcChannel.chars.portraitSelect, args),
 
   // Phase 11 D-16 — public/private toggle.
   charsSetShared: (args) => ipcRenderer.invoke(IpcChannel.chars.setShared, args),
@@ -261,6 +265,11 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
     ipcRenderer.on(IpcChannel.voice.ttsChunk, handler);
     return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
+  },
+  onVoiceTtsNotice(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.voice.ttsNotice, handler);
+    return () => ipcRenderer.off(IpcChannel.voice.ttsNotice, handler);
   },
   voiceStt: (args) => ipcRenderer.invoke(IpcChannel.voice.stt, args),
   // Stardew Valley (game-adapters M1, src/main/games/stardew)

@@ -2,12 +2,13 @@
  * Speech pack registry (260816, china-compat W3+W4) — the closed set of local
  * speech models Sei can download, as pure data.
  *
- * Four packs: three TTS voice packs (en covers both genders via speaker ids;
- * zh needs two models) and the SenseVoice STT model. Archives are the k2-fsa
- * sherpa-onnx GitHub release assets (.tar.bz2), mirrored on dl.sei.gg
- * (mirror-first download — see mirrors.ts). Sizes are the exact byte counts of
- * the published assets (read off the GitHub release API 260816); a mismatched
- * download is discarded rather than extracted.
+ * Three packs: two TTS voice packs (each covers both genders via speaker ids —
+ * en through libritts_r's 904 speakers, zh through aishell3's 174) and the
+ * SenseVoice STT model. Archives are the k2-fsa sherpa-onnx GitHub release
+ * assets (.tar.bz2), mirrored on dl.sei.gg (mirror-first download — see
+ * mirrors.ts). Sizes are the exact byte counts of the published assets (read
+ * off the GitHub release API 260816); a mismatched download is discarded
+ * rather than extracted.
  *
  * Licenses (legal review 260828 — supersedes the 260816 notes):
  *   - libritts_r: CLEAR, CC BY 4.0 (LibriTTS-R dataset,
@@ -23,22 +24,22 @@
  *     Commercial use OK; requires attributing source/author and retaining the
  *     model names. Credited in Settings > About. This closes the old
  *     "legal read owed" TODO.
- *   - chaowen: PROBLEM — NON-COMMERCIAL LINEAGE. The weights pass through the
- *     DataBaker BZNSYP corpus ("Non-commercial use",
- *     https://www.data-baker.com/data/index/TNtts/) via the xiao_ya base
- *     voice; the "CC0" note applies only to the fine-tuning dataset. Pending
- *     decision: replace with aishell3 male speaker or obtain DataBaker
- *     commercial license — do not ship as-is. Deliberately NOT credited in
- *     Settings > About while that decision is open.
+ *
+ * There USED to be a fourth pack, 'tts-zh-m' (vits-piper-zh_CN-chaowen int8,
+ * the dedicated zh male voice). REMOVED 260908 over its non-commercial weights
+ * lineage (DataBaker BZNSYP "Non-commercial use" -> xiao_ya -> chaowen; the
+ * "CC0" note applied only to the fine-tuning dataset) — never shipped in a
+ * release. zh male now speaks from the aishell3 pack's male-register speaker
+ * (localVoice.ts AISHELL3_MALE_REGISTER_SID); packStore heals any dev-machine
+ * leftover 'tts-zh-m' dir by deleting it.
  * We ship NONE of these — download on demand.
  */
 
-export type SpeechPackId = 'tts-en' | 'tts-zh-f' | 'tts-zh-m' | 'stt-sensevoice';
+export type SpeechPackId = 'tts-en' | 'tts-zh' | 'stt-sensevoice';
 
 export const SPEECH_PACK_IDS: readonly SpeechPackId[] = [
   'tts-en',
-  'tts-zh-f',
-  'tts-zh-m',
+  'tts-zh',
   'stt-sensevoice',
 ];
 
@@ -69,32 +70,15 @@ export const SPEECH_PACKS: Record<SpeechPackId, SpeechPackDef> = {
     dirName: 'vits-piper-en_US-libritts_r-medium',
     requiredFiles: ['en_US-libritts_r-medium.onnx', 'tokens.txt', 'espeak-ng-data/phontab'],
   },
-  /** zh female: vits-icefall aishell3, 174 speakers (Apache-2.0). */
-  'tts-zh-f': {
-    id: 'tts-zh-f',
+  /** zh female + male: vits-icefall aishell3, 174 speakers (Apache-2.0).
+   * Both genders via speaker ids, like the en pack (localVoice.ts). */
+  'tts-zh': {
+    id: 'tts-zh',
     asset: 'vits-icefall-zh-aishell3.tar.bz2',
     originUrl: `${TTS_RELEASE}/vits-icefall-zh-aishell3.tar.bz2`,
     archiveBytes: 31_559_701,
     dirName: 'vits-icefall-zh-aishell3',
     requiredFiles: ['model.onnx', 'lexicon.txt', 'tokens.txt'],
-  },
-  /** zh male: vits-piper chaowen int8. NON-COMMERCIAL LINEAGE (BZNSYP ->
-   * xiao_ya -> chaowen; the "CC0" applies only to the fine-tuning dataset) —
-   * pending decision: replace with aishell3 male speaker or obtain DataBaker
-   * commercial license — do not ship as-is. See the license block above.
-   * Pitch analysis says male (~151 Hz); a human ear-check is owed before
-   * ship — the same-runtime fallback is an aishell3 male-register speaker id
-   * (see localVoice.ts). */
-  'tts-zh-m': {
-    id: 'tts-zh-m',
-    asset: 'vits-piper-zh_CN-chaowen-medium-int8.tar.bz2',
-    originUrl: `${TTS_RELEASE}/vits-piper-zh_CN-chaowen-medium-int8.tar.bz2`,
-    archiveBytes: 14_011_298,
-    dirName: 'vits-piper-zh_CN-chaowen-medium-int8',
-    // Verified against the published archive (260816): the int8 model keeps
-    // the plain .onnx name, and the voice is LEXICON-based (g2pW lexicon +
-    // number/date/phone rule FSTs) — no espeak-ng-data dir.
-    requiredFiles: ['zh_CN-chaowen-medium.onnx', 'tokens.txt', 'lexicon.txt'],
   },
   /** SenseVoice-small int8 STT (zh/en/ja/ko/yue). The DATED asset name is the
    * real one on the k2-fsa asr-models release (an undated guess 404s). */

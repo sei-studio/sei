@@ -97,6 +97,73 @@ export const MAX_COMPANION_SLOTS = 4;
  */
 export const MAX_CREATIONS_PER_DAY = 4;
 
+/**
+ * Portrait regeneration cap (260909). A character the user owns can have its
+ * card image regenerated at most this many times over its LIFETIME (the count
+ * lives in `metadata.portrait_regen_count` and rides the cloud row, so it
+ * follows the character across devices). Every generated version is kept on
+ * disk as a sidecar so the user can switch back at any time.
+ */
+export const MAX_PORTRAIT_REGENS = 3;
+
+/**
+ * Soft cap on the number of portrait versions kept per character. Regens are
+ * bounded by MAX_PORTRAIT_REGENS (+1 for the original snapshot); manual
+ * uploads are not, so the oldest inactive upload is evicted past this many.
+ */
+export const MAX_PORTRAIT_VERSIONS = 8;
+
+/** Where a stored portrait version came from. */
+export type PortraitVersionSource = 'original' | 'regen' | 'upload';
+
+/** One entry of `metadata.portrait_versions` (sidecar `<uuid>-v<n>.png`). */
+export interface PortraitVersion {
+  /** Sidecar filename inside the portraits dir, e.g. '<uuid>-v2.png'. */
+  file: string;
+  /** ISO timestamp the version was stored. */
+  created_at: string;
+  source: PortraitVersionSource;
+}
+
+/** Sidecar filename for portrait version `n` of character `id`. */
+export function portraitVersionFile(characterId: string, n: number): string {
+  return `${characterId}-v${n}.png`;
+}
+
+/** Parse the version index out of a sidecar filename, or null. */
+export function portraitVersionIndex(characterId: string, file: string): number | null {
+  const m = new RegExp(`^${characterId}-v(\\d+)\\.png$`, 'i').exec(file);
+  return m ? Number(m[1]) : null;
+}
+
+/** Recorded portrait versions (defensively parsed from metadata). */
+export function portraitVersionsOf(c: Pick<Character, 'metadata'>): PortraitVersion[] {
+  const raw = (c.metadata as Record<string, unknown> | undefined)?.portrait_versions;
+  if (!Array.isArray(raw)) return [];
+  const out: PortraitVersion[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'object' || v === null) continue;
+    const r = v as Record<string, unknown>;
+    if (typeof r.file !== 'string' || typeof r.created_at !== 'string') continue;
+    const source: PortraitVersionSource =
+      r.source === 'original' || r.source === 'regen' || r.source === 'upload' ? r.source : 'upload';
+    out.push({ file: r.file, created_at: r.created_at, source });
+  }
+  return out;
+}
+
+/** Filename of the version currently copied onto the canonical portrait, or null. */
+export function portraitActiveOf(c: Pick<Character, 'metadata'>): string | null {
+  const raw = (c.metadata as Record<string, unknown> | undefined)?.portrait_active;
+  return typeof raw === 'string' && raw.length > 0 ? raw : null;
+}
+
+/** Lifetime regeneration count (0 when never regenerated). */
+export function portraitRegenCountOf(c: Pick<Character, 'metadata'>): number {
+  const raw = (c.metadata as Record<string, unknown> | undefined)?.portrait_regen_count;
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
 /** Server-assigned public tag: 4 chars, A-Z / 0-9 (cloud `characters.public_id`). */
 export const PUBLIC_ID_REGEX = /^[A-Z0-9]{4}$/;
 
@@ -844,6 +911,18 @@ export const UserConfigSchema = z.object({
     )
     .optional()
     .default('on-demand'),
+  /**
+   * 260909: web search for the AI (search / visit tools on every surface).
+   * 'auto' is the keyless DuckDuckGo -> Bing -> Wikipedia chain and needs no
+   * account. A keyed provider (brave / tavily / serper) is used only when
+   * web_search_api_key is set. Resolved by src/main/llm/webSearchSettings.ts,
+   * which also honors the SEI_SEARCH_PROVIDER / SEI_SEARCH_API_KEY env
+   * overrides for development. No UI yet: set them in config.json. Both
+   * stay `.optional()` with NO default so the many renderer call sites that
+   * build a whole UserConfig literal keep typechecking; absence = 'auto'.
+   */
+  web_search_provider: z.enum(['auto', 'brave', 'tavily', 'serper', 'ddg', 'bing', 'wikipedia']).optional(),
+  web_search_api_key: z.string().optional(),
   /**
    * Cumulative bot playtime for THIS profile, in ms, summed across every
    * character's session. Accumulated at session-end in botSupervisor (alongside

@@ -285,6 +285,17 @@
   color: var(--muted);
 }
 
+/* Voice-pipeline notice (260908): a system status line (pack missing,
+   substitute voice, paused). Styled like the app's other quiet status text,
+   deliberately apart from .captionCompanion so it never reads as speech. */
+.captionNotice {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--muted);
+  max-width: 520px;
+}
+
 /* ── Cloud-STT fallback prompt (260725) ─────────────────────────────────────
    Non-blocking hint when cloud voice recognition fails on a model-less call:
    offer the local Whisper backup without interrupting the call. */

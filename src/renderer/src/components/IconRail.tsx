@@ -241,6 +241,13 @@ function AvatarButton({
     () => pickPalette(characterId + characterName, theme),
     [characterId, characterName, theme],
   );
+  // A broken portrait ref (stale path, dead URL) must fall back to the
+  // procedural sprite, never a blank circle (the blank IconRail avatars
+  // report, 260907). Reset when the ref changes so a re-upload recovers.
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => {
+    setImgFailed(false);
+  }, [portraitImage]);
   const cls = [
     styles.avatarButton,
     active ? styles.avatarActive : '',
@@ -274,13 +281,14 @@ function AvatarButton({
         is the bulletproof crop.
       */}
       <span className={styles.avatarClip} aria-hidden="true">
-        {portraitImage ? (
+        {portraitImage && !imgFailed ? (
           <img
             src={portraitSrc(portraitImage)!}
             alt=""
             width={40}
             height={40}
             className={styles.avatarImg}
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <PixelPortrait

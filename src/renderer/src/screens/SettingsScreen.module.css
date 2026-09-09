@@ -41,13 +41,13 @@
   border-bottom: 1px solid var(--border);
 }
 
-/* Profile portrait + name field — same hairline rhythm, taller for the avatar. */
+/* Profile portrait + name field — taller for the avatar; no hairline, the
+   group is a single row so a rule under it reads as clutter (260907). */
 .profileRow {
   display: flex;
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md) 0;
-  border-bottom: 1px solid var(--border);
 }
 
 .profileName {
@@ -123,6 +123,20 @@
 }
 
 .helperError {
+  color: var(--red);
+}
+
+/* Status-word colors for settings status texts (Ready / Downloading / Not set /
+   test + update results). Text color only; layout stays whatever hosts it. */
+.statusOk {
+  color: var(--green);
+}
+
+.statusWarn {
+  color: var(--warn);
+}
+
+.statusErr {
   color: var(--red);
 }
 

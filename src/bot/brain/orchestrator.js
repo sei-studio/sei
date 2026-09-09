@@ -43,6 +43,7 @@ import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
 import { resolveAdapterCaps } from './adapterDefaults.js'
+import { createWebSession, electronFetchProvider, webToolsFor, isWebTool } from '../web/webTools.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
@@ -327,6 +328,10 @@ export function shouldSuppressIdleSay({ triggerEvent, lastSelf, lastPlayer, now 
 // Contract v2 `backgroundActions` (Minecraft default { follow: 'unfollow' })
 // contributes the game's background-state actions; PERSONALITY_NAMES is built
 // per orchestrator as BRAIN_PERSONALITY_NAMES + those keys.
+// 260909: search / visit are deliberately NOT in this set. They are inline
+// (their tool_result fills synchronously, see INLINE_METADATA) but they count
+// as movementCalls, so `continueLoop` stays true and runIterations calls the
+// model again with the result in hand. That one property IS the search loop.
 const BRAIN_PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit_game', 'end_call'])
 // Party redesign §2/§5: tool names that must NOT surface as a world-action verb
 // (the `onAction` presence hook). These are brain/personality tools with no
@@ -336,7 +341,7 @@ const BRAIN_PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clear
 // (follow, goto, gather, dig, build, …) is a real world action and DOES emit.
 // Kept separate from PERSONALITY_NAMES so follow/unfollow still surface a verb
 // even though they're personality-tagged.
-const ACTION_VERB_SKIP = new Set(['say', 'remember', 'forget', 'end_loop', 'setGoal', 'clearGoal', 'quit_game', 'end_call'])
+const ACTION_VERB_SKIP = new Set(['say', 'remember', 'forget', 'end_loop', 'setGoal', 'clearGoal', 'quit_game', 'end_call', 'search', 'visit'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
@@ -700,7 +705,7 @@ export async function composeSeedBlocks({
  *   priority queue. Required when the brain runs in production; defaults
  *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null, _anthropicOverride = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null, _anthropicOverride = null, _webSessionOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
   // Game-adapters M0 (260908): contract v2 members with Minecraft defaults.
   // Every game-flavored string or name the brain used to hardcode is read
@@ -779,6 +784,26 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // MEMORY.md store — long-term memory the LLM writes via remember() /
   // forget() and reads back in the seed turn each loop.
   const memoryLog = createMemoryLog({ path: config.memory.memory_md_path })
+  // 260909: one web session per brain. Holds the lettered result table (so a
+  // visit("b") from a later loop still resolves) and the per-loop budget.
+  const webCfg = config.web ?? {}
+  const webSession = _webSessionOverride ?? (webCfg.enabled === false ? null : createWebSession({
+    provider: webCfg.provider,
+    apiKey: webCfg.api_key,
+    logger,
+    // Chromium fetch from inside the utilityProcess (net.fetch is available
+    // there): Cloudflare-fronted wikis + DuckDuckGo answer, Node fetch is
+    // challenged. Falls back to Node fetch outside Electron (tests).
+    fetchProvider: electronFetchProvider,
+    // This is a Minecraft companion: every search also asks the Minecraft
+    // Wiki directly, whether or not the query says "minecraft".
+    alwaysWikiHosts: ['minecraft.wiki'],
+    limits: {
+      maxResults: webCfg.max_results,
+      pageChars: webCfg.page_chars,
+      maxCallsPerTurn: webCfg.max_calls_per_loop,
+    },
+  }))
   // HEARTBEAT.md store — active goals / standing orders the LLM writes via
   // setGoal() / clearGoal() and reads back (with the proactiveness directive)
   // in the heartbeat seed block each loop. Gated on the configured path so
@@ -1368,6 +1393,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       .filter(t => visionOk || !caps.visionActions.has(t.name))
     const seen = new Set(personalityTools.map(t => t.name))
     const merged = [...personalityTools]
+    // Anthropic sessions get the native server-side web_search (+ our visit);
+    // every other provider gets our search + visit. See webToolsFor.
+    if (webSession) for (const t of webToolsFor({ serverWebSearch: !!anthropic.capabilities?.serverWebSearch })) { merged.push(t); seen.add(t.name) }
     for (const t of movementTools) {
       if (!seen.has(t.name)) { merged.push(t); seen.add(t.name) }
     }
@@ -1829,7 +1857,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // the action, and a say()-only batch suspends on nothing. Its result is
   // actually pre-filled up front by emitSayCalls (so speech lands before any
   // action dispatches); the executeInlineMetadata `say` branch is a fallback.
-  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit_game', 'end_call'])
+  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit_game', 'end_call', 'search', 'visit'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -2690,6 +2718,26 @@ function maybeWarnByteCap(loop, warned) {
    * this helper — single source of truth.
    */
   async function executeInlineMetadata(loop, use) {
+    if (isWebTool(use.name)) {
+      // 260909: search / visit. Inline (result fills now) but NOT a
+      // PERSONALITY_NAME, so the loop continues and the model reads the result
+      // on its next call. The fetch honors the loop's abort signal: a player
+      // line preempting mid-search cancels it like any other in-flight work.
+      if (!webSession) {
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: `${use.name}: web access is off`, is_error: true }, terminate: false }
+      }
+      try {
+        const r = await webSession.runTool(use.name, use.input ?? {}, { signal: loop.abortController?.signal })
+        lastActionResult = r.is_error ? `${use.name} failed` : `${use.name} ok`
+        logger.info?.(`[sei/orch] ${use.name}(${JSON.stringify(use.input ?? {}).slice(0, 120)}) -> ${r.is_error ? 'error' : `${r.content.length} chars`}${webSession.lastProvider ? ` via ${webSession.lastProvider}` : ''}`)
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: r.content, is_error: !!r.is_error }, terminate: false }
+      } catch (err) {
+        if (loop.abortController?.signal?.aborted) throw err
+        lastActionResult = `${use.name} error`
+        logger.warn?.(`[sei/orch] ${use.name} failed: ${err?.message ?? err}`)
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: `${use.name}: ${err?.message ?? 'failed'}`, is_error: true }, terminate: false }
+      }
+    }
     if (use.name === 'end_loop') {
       // 260514-ngj: end_loop replaces stop. Same inline-metadata shape —
       // fill the result slot synchronously and flag terminate=true so the
@@ -3582,6 +3630,9 @@ function maybeWarnByteCap(loop, warned) {
    */
   async function runIterations(loop, byteWarn) {
     const cap = config.memory.iteration_cap
+    // 260909: the web budget is per LOOP, not per iteration: a fresh
+    // runIterations means a fresh trigger (chat / tick / resume).
+    if (webSession && !loop._webBudgetArmed) { webSession.beginTurn(); loop._webBudgetArmed = true }
 
     while (true) {
       // Cap check before the next call. cap <= 0 means unlimited (disabled) —
@@ -3688,6 +3739,14 @@ function maybeWarnByteCap(loop, warned) {
       // 260708: the trigger has now been seen and answered by at least one
       // model response — an attack teardown no longer needs to preserve it.
       loop._respondedOnce = true
+      // 260909: a server-side web search that ran long stops with
+      // `pause_turn`; the assistant content (kept intact above, server blocks
+      // included) goes back as-is and the model is called again to finish.
+      // Bounded by iteration_cap like everything else.
+      if (resp.stopReason === 'pause_turn') {
+        logger.info?.(`[sei/orch] pause_turn (server web search in flight) — resuming (loop=${loop.id})`)
+        continue
+      }
 
       // Track responses-received so the first-turn-say predicate doesn't have
       // to deal with the seed-vs-non-seed iterationCount divergence (seed
@@ -4198,6 +4257,12 @@ function maybeWarnByteCap(loop, warned) {
     // through the raw response content so signatures/positions stay intact;
     // fall back to a synthesized array for callers / mocks without `content`.
     if (Array.isArray(resp.content) && resp.content.length > 0) {
+      // 260909: server web_search blocks (server_tool_use + the encrypted
+      // web_search_tool_result) stay in the loop history VERBATIM. The docs
+      // say a continuation whose encrypted_content is missing or modified is
+      // a 400, and this machine cannot reach Anthropic to test the "drop the
+      // whole pair" variant. The cost is bounded: a loop's history lives for
+      // one trigger, and chat rebuilds its transcript from text rows.
       return resp.content.map(b => {
         if (b.type === 'tool_use') return { type: 'tool_use', id: b.id, name: b.name, input: b.input }
         return b

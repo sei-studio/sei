@@ -27,7 +27,7 @@ describe.skipIf(!liveDir)('local speech engine (live)', () => {
     const { synthesizeLocal, transcribeLocal, packStatus } = await import('./index');
 
     const status = await packStatus();
-    expect(status['tts-zh-f'].state).toBe('ready');
+    expect(status['tts-zh'].state).toBe('ready');
 
     const zh = await synthesizeLocal('你好，这就是我的本地声音。今天想一起玩点什么吗？', 'zh-f');
     expect(zh.samples.length).toBeGreaterThan(zh.sampleRate); // > 1s of audio
@@ -47,8 +47,8 @@ describe.skipIf(!liveDir)('local speech engine (live)', () => {
     const { _setUserDataOverride } = await import('../paths');
     _setUserDataOverride(liveDir as string);
     const { rm } = await import('node:fs/promises');
-    await rm(`${liveDir}/speech-models/tts-zh-m/pack.json`, { force: true });
+    await rm(`${liveDir}/speech-models/tts-zh/pack.json`, { force: true });
     const { synthesizeLocal } = await import('./index');
-    await expect(synthesizeLocal('测试', 'zh-m')).rejects.toThrow('VOICE_PACK_MISSING:tts-zh-m');
+    await expect(synthesizeLocal('测试', 'zh-m')).rejects.toThrow('VOICE_PACK_MISSING:tts-zh');
   }, 30_000);
 });

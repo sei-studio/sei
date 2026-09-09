@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import type {
   Character,
+  PortraitVersion,
   PrefQuestion,
   Skin,
   SkinSource,
@@ -436,6 +437,20 @@ export interface VoiceTtsChunkPush {
   chunk?: ArrayBuffer;
   done?: boolean;
   error?: string;
+}
+
+/** One voice:tts-notice push (260908): local TTS spoke a line with a
+ * SUBSTITUTE voice pack because the pack matching the line's language (the
+ * conversation language, or the line's own script when it is predominantly
+ * Chinese) is not installed. The line still plays; the call UI shows a system
+ * notice naming the better-fitting download. Pack ids from
+ * src/main/speech/packs.ts ('tts-en' | 'tts-zh'). */
+export interface VoiceTtsNoticePush {
+  characterId: string;
+  /** Pack that would fit the conversation language but is not installed. */
+  missingPackId: string;
+  /** Pack the line was actually spoken with. */
+  spokenPackId: string;
 }
 
 /**
@@ -897,6 +912,41 @@ export type GenerateUniqueResult =
   | {
       ok: false;
       code: 'not_signed_in' | 'slot_limit' | 'daily_limit' | 'generation_failed' | 'network';
+      message: string;
+    };
+
+/* ── Portrait versions + regeneration (260909) ──────────────────────────── */
+
+/**
+ * Snapshot of a character's stored card-image versions. `versions` are the
+ * sidecar files `<uuid>-v<n>.png` recorded in metadata.portrait_versions (an
+ * unversioned canonical portrait is surfaced as a single virtual 'original'
+ * entry whose file is the canonical '<uuid>.png'); `active` is the file whose
+ * bytes currently sit on the canonical portrait (the only bytes that are
+ * mirrored to the cloud). `regenCount` / `regenLimit` drive the remaining
+ * regenerations copy (MAX_PORTRAIT_REGENS).
+ */
+export interface PortraitVersionsState {
+  versions: PortraitVersion[];
+  active: string | null;
+  regenCount: number;
+  regenLimit: number;
+}
+
+/**
+ * Result of chars:portrait-regenerate. Never throws for expected failures:
+ *  - not_signed_in     image generation rides the proxy (JWT-authed) in every
+ *                      backend mode, so a signed-out user cannot regenerate
+ *  - limit             MAX_PORTRAIT_REGENS reached for this character
+ *  - not_found         no such character
+ *  - busy              a regeneration for this character is already running
+ *  - network / generation_failed   the KusArt round trip failed
+ */
+export type PortraitRegenResult =
+  | { ok: true; state: PortraitVersionsState }
+  | {
+      ok: false;
+      code: 'not_signed_in' | 'limit' | 'not_found' | 'busy' | 'generation_failed' | 'network';
       message: string;
     };
 
@@ -1463,6 +1513,19 @@ export interface RendererApi {
   /** Clear portrait_image and delete the on-disk file (ENOENT-tolerant). */
   charsRemovePortrait(characterId: string): Promise<void>;
 
+  // 260909 — card-image versions + regeneration (owned characters only).
+  /** List the stored portrait versions + which one is active. */
+  charsPortraitVersions(characterId: string): Promise<PortraitVersionsState>;
+  /**
+   * Generate a new portrait from the character's sheet / persona, store it as
+   * the next sidecar version and make it active (copied onto the canonical
+   * portrait, which triggers the cloud mirror). ~10-60s. Single-flight per
+   * character in main; never throws for expected failures.
+   */
+  charsPortraitRegenerate(characterId: string): Promise<PortraitRegenResult>;
+  /** Make a stored version the active portrait (copies its bytes onto the canonical file). */
+  charsPortraitSelect(args: { characterId: string; file: string }): Promise<PortraitVersionsState>;
+
   // Phase 11 D-16 — toggle public/private visibility of a character. Refuses
   // when the character is a bundled default. Triggers the standard cloud-mirror
   // upsert via saveCharacter under the hood.
@@ -1877,6 +1940,8 @@ export interface RendererApi {
   voiceTtsStream(args: { characterId: string; text: string; more?: boolean; prev?: string }): Promise<{ streamId: string }>;
   /** Chunks/completions for voiceTtsStream (one subscription, ids multiplex). */
   onVoiceTtsChunk(cb: (push: VoiceTtsChunkPush) => void): Unsubscribe;
+  /** Local TTS spoke with a substitute voice pack (260908) — see VoiceTtsNoticePush. */
+  onVoiceTtsNotice(cb: (push: VoiceTtsNoticePush) => void): Unsubscribe;
   /**
    * Cloud speech-to-text (260724): transcribe one call utterance via
    * ElevenLabs Scribe (a resolved ElevenLabs key direct — dev env key or the
@@ -2762,6 +2827,11 @@ export const IpcChannel = {
     // atomic-writes to <userData>/portraits/<uuid>.png.
     applyPortrait: 'chars:apply-portrait',
     removePortrait: 'chars:remove-portrait',
+    // 260909 — card-image versions: sidecars <uuid>-v<n>.png next to the
+    // canonical <uuid>.png; select copies a sidecar onto the canonical file.
+    portraitVersions: 'chars:portrait-versions',
+    portraitRegenerate: 'chars:portrait-regenerate',
+    portraitSelect: 'chars:portrait-select',
     // Phase 11 D-16 — toggle a character's `shared` flag (public listing
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
@@ -2959,6 +3029,8 @@ export const IpcChannel = {
     ttsStream: 'voice:tts-stream',
     /** Push (main → renderer): VoiceTtsChunkPush — ordered audio chunks for a ttsStream. */
     ttsChunk: 'voice:tts-chunk',
+    /** Push (main → renderer): VoiceTtsNoticePush — local TTS substitute-pack notice (260908). */
+    ttsNotice: 'voice:tts-notice',
     /** Invoke: cloud STT for one call utterance ({pcm, language?} → {text} | {unavailable}). */
     stt: 'voice:stt',
     /** Invoke: prewarm the voice upstream connection (fired at mic speech open). */

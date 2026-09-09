@@ -61,6 +61,10 @@ export const ZH_CHATUI: Record<string, string> = {
 
   // Screen share (Backseat)
   'Backseat (beta)': 'Backseat（测试版）',
+  // Disabled-state tooltips (260907)
+  'End the Minecraft session to use Backseat': '结束 Minecraft 会话后才能使用 Backseat',
+  'End the Minecraft session to share your screen': '结束 Minecraft 会话后才能共享屏幕',
+  'Start a voice call to share your screen': '先开始语音通话才能共享屏幕',
   // Vision gate (china-compat W9)
   'Screen sharing needs a model that can see images. Your current model ({model}) does not support vision.':
     '屏幕共享需要能看懂图像的模型。你当前的模型（{model}）不支持视觉能力。',

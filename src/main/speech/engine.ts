@@ -22,8 +22,8 @@
  * relative require fails; if it ever does, the error we throw carries the
  * addon's own message.
  *
- * Engines are cached per pack (the models are small: 78 MB en, 30 MB zh-f,
- * 13 MB zh-m int8, 155 MB SenseVoice int8) and created lazily on first use.
+ * Engines are cached per pack (the models are small: 78 MB en, 30 MB zh,
+ * 155 MB SenseVoice int8) and created lazily on first use.
  * A missing pack surfaces as the typed error `VOICE_PACK_MISSING:<packId>`
  * that the renderer maps to a download prompt — NEVER auto-downloaded
  * mid-call.
@@ -34,6 +34,7 @@ import { existsSync } from 'node:fs';
 import { LOCAL_VOICE_SPEC, type LocalVoiceId } from './localVoice';
 import { SPEECH_PACKS, type SpeechPackId } from './packs';
 import { packModelDir, packReady } from './packStore';
+import { sentenceCaseSttText } from './sentenceCase';
 
 /** Renderer-facing sentinel: the voice pack is not downloaded. The suffix is
  * the pack id so the prompt can name the download. */
@@ -61,15 +62,15 @@ function loadSherpa(): SherpaModule {
 
 // ── TTS ─────────────────────────────────────────────────────────────────────
 
-type TtsEngine = { generateAsync(req: { text: string; sid: number; speed: number }): Promise<{ samples: Float32Array; sampleRate: number }> ; numSpeakers: number };
+type TtsEngine = { generateAsync(req: { text: string; sid: number; speed: number; enableExternalBuffer?: boolean }): Promise<{ samples: Float32Array; sampleRate: number }> ; numSpeakers: number };
 
 const ttsEngines = new Map<SpeechPackId, Promise<TtsEngine>>();
 
-/** Build the per-pack OfflineTts config. Each of the three packs has a
- * different shape (icefall lexicon+fsts vs piper espeak-data vs piper int8). */
+/** Build the per-pack OfflineTts config. The two voice packs have different
+ * shapes (icefall lexicon+fsts vs piper espeak-data). */
 function ttsConfigFor(packId: SpeechPackId): unknown {
   const dir = packModelDir(packId);
-  if (packId === 'tts-zh-f') {
+  if (packId === 'tts-zh') {
     // vits-icefall aishell3: lexicon-based, with the number/date/phone rule
     // FSTs the archive ships (they normalize digits into readable Mandarin).
     const fsts = ['phone.fst', 'date.fst', 'number.fst']
@@ -80,28 +81,6 @@ function ttsConfigFor(packId: SpeechPackId): unknown {
       model: {
         vits: {
           model: path.join(dir, 'model.onnx'),
-          lexicon: path.join(dir, 'lexicon.txt'),
-          tokens: path.join(dir, 'tokens.txt'),
-        },
-        numThreads: 2,
-        debug: false,
-        provider: 'cpu',
-      },
-      maxNumSentences: 1,
-      ...(fsts ? { ruleFsts: fsts } : {}),
-    };
-  }
-  if (packId === 'tts-zh-m') {
-    // piper chaowen int8: LEXICON-based zh voice (g2pW lexicon + rule FSTs),
-    // same shape as aishell3 — verified against the published archive.
-    const fsts = ['phone.fst', 'date.fst', 'number.fst']
-      .map((f) => path.join(dir, f))
-      .filter((p) => existsSync(p))
-      .join(',');
-    return {
-      model: {
-        vits: {
-          model: path.join(dir, SPEECH_PACKS['tts-zh-m'].requiredFiles[0]),
           lexicon: path.join(dir, 'lexicon.txt'),
           tokens: path.join(dir, 'tokens.txt'),
         },
@@ -161,7 +140,17 @@ export async function synthesizeLocal(
   const spec = LOCAL_VOICE_SPEC[voice];
   const engine = await ttsEngineFor(spec.packId);
   const started = Date.now();
-  const audio = await engine.generateAsync({ text, sid: spec.sid, speed: spec.rate });
+  // enableExternalBuffer: false is REQUIRED under Electron: its V8 memory
+  // cage forbids Node-API external buffers, and sherpa returns samples as one
+  // by default. Sync generate throws "External buffers are not allowed";
+  // generateAsync surfaces it as the native "TTS settlement failed". Plain
+  // Node allows them, which is why every test passed while the app failed.
+  const audio = await engine.generateAsync({
+    text,
+    sid: spec.sid,
+    speed: spec.rate,
+    enableExternalBuffer: false,
+  });
   const dur = audio.samples.length / audio.sampleRate;
   console.log(
     `[sei/speech] tts ${voice} ${dur.toFixed(2)}s in ${Date.now() - started}ms ` +
@@ -182,11 +171,32 @@ type SttEngine = {
   decodeAsync(stream: SttStream): Promise<{ text?: string; lang?: string }>;
 };
 
-let sttEngine: Promise<SttEngine> | null = null;
+/**
+ * SenseVoice language hints the model actually supports (plus 'auto' for
+ * everything else). The hint is a recognizer-construction field in sherpa's
+ * OfflineSenseVoiceModelConfig, so engines are cached PER HINT below.
+ */
+const SENSEVOICE_LANGS = new Set(['zh', 'en', 'ja', 'ko', 'yue']);
 
-async function sttEngineGet(): Promise<SttEngine> {
-  if (!sttEngine) {
-    sttEngine = (async () => {
+/**
+ * Map the app's conversation language (UserConfig.chat_language, see
+ * src/shared/chatLanguage.ts) onto a SenseVoice language hint. Constraining
+ * the decode language is the fix for full auto-detect drifting into Chinese
+ * on English speech (and vice versa) — this build's known failure mode.
+ * Languages SenseVoice does not model (fr/es) fall back to 'auto'.
+ */
+export function senseVoiceLanguage(chatLanguage: string | undefined): string {
+  return chatLanguage && SENSEVOICE_LANGS.has(chatLanguage) ? chatLanguage : 'auto';
+}
+
+/** One recognizer per language hint (the hint is fixed at create time). The
+ * model weights are OS-cached, so a language switch costs one re-create. */
+const sttEngines = new Map<string, Promise<SttEngine>>();
+
+async function sttEngineGet(language: string): Promise<SttEngine> {
+  let engine = sttEngines.get(language);
+  if (!engine) {
+    engine = (async () => {
       if (!(await packReady('stt-sensevoice'))) throw packMissingError('stt-sensevoice');
       const s = loadSherpa();
       const dir = packModelDir('stt-sensevoice');
@@ -195,6 +205,9 @@ async function sttEngineGet(): Promise<SttEngine> {
         modelConfig: {
           senseVoice: {
             model: path.join(dir, 'model.int8.onnx'),
+            // Decode-language hint ('auto' = detect per utterance). Pinned to
+            // the conversation language by the caller — see senseVoiceLanguage.
+            language,
             // Inverse text normalization ON: spoken numbers come back as
             // digits, matching what Scribe/Whisper produce for the chat log.
             useInverseTextNormalization: 1,
@@ -206,11 +219,12 @@ async function sttEngineGet(): Promise<SttEngine> {
         },
       })) as SttEngine;
     })();
-    sttEngine.catch(() => {
-      sttEngine = null;
+    engine.catch(() => {
+      sttEngines.delete(language);
     });
+    sttEngines.set(language, engine);
   }
-  return sttEngine;
+  return engine;
 }
 
 /** SenseVoice language tags come back as `<|zh|>`-style markers. */
@@ -223,14 +237,22 @@ function normalizeLang(lang: string | undefined): string | undefined {
 /**
  * Transcribe one utterance of Float32 mono PCM (any sample rate; SenseVoice
  * consumes 16k and sherpa resamples internally off the declared rate).
- * Returns raw model text — the caller applies the same normalizeSttText the
- * cloud path uses.
+ * Returns model text with ONE SenseVoice-specific repair applied — ALL-CAPS
+ * English is rewritten to sentence case (sentenceCase.ts) — so every consumer
+ * gets readable casing; the caller still applies the same normalizeSttText
+ * the cloud path uses.
+ *
+ * @param chatLanguage the app's conversation language (UserConfig.
+ *   chat_language); mapped onto a SenseVoice decode-language hint via
+ *   senseVoiceLanguage. Absent → 'auto' (per-utterance detection).
  */
 export async function transcribeLocal(
   pcm: Float32Array,
   sampleRate: number,
+  chatLanguage?: string,
 ): Promise<{ text: string; language?: string }> {
-  const engine = await sttEngineGet();
+  const hint = senseVoiceLanguage(chatLanguage);
+  const engine = await sttEngineGet(hint);
   const started = Date.now();
   const stream = engine.createStream();
   stream.acceptWaveform({ samples: pcm, sampleRate });
@@ -238,7 +260,7 @@ export async function transcribeLocal(
   const dur = pcm.length / sampleRate;
   console.log(
     `[sei/speech] sensevoice ${Math.round(Date.now() - started)}ms over ${dur.toFixed(1)}s ` +
-      `lang=${result.lang ?? '?'} "${(result.text ?? '').slice(0, 80)}"`,
+      `hint=${hint} lang=${result.lang ?? '?'} "${(result.text ?? '').slice(0, 80)}"`,
   );
-  return { text: result.text ?? '', language: normalizeLang(result.lang) };
+  return { text: sentenceCaseSttText(result.text ?? ''), language: normalizeLang(result.lang) };
 }

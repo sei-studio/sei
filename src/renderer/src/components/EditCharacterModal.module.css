@@ -254,6 +254,14 @@
   gap: 8px;
 }
 
+/* Card image row (260909): the upload picker + the Regenerate popup trigger. */
+.portraitRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
 .appearanceNote {
   font-family: var(--sans);
   font-size: 12px;

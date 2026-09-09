@@ -38,10 +38,26 @@ vi.mock('../characterStore', () => ({
 vi.mock('../configStore', () => ({
   loadConfig: vi.fn(async () => ({ preferred_name: 'Player' })),
 }));
+// 260909: search()/visit() ride a per-character web session; stub it so the
+// hop loop is exercised with no network.
+const { webRuns } = vi.hoisted(() => ({ webRuns: [] as Array<{ name: string; input: unknown }> }));
+vi.mock('../llm/webSearchSettings', () => ({
+  resolveWebSearchSettings: () => ({ provider: 'auto', api_key: '' }),
+  getChatWebSession: () => ({
+    lastProvider: 'fake',
+    beginTurn() {},
+    async runTool(name: string, input: { query?: string; ref?: string }) {
+      webRuns.push({ name, input });
+      if (name === 'search') return { content: `results for "${input.query}":\na. Netherite Armor (minecraft.wiki) - strongest armor`, is_error: false };
+      return { content: `[${input.ref}] minecraft.wiki - Netherite Armor\nMade at a smithing table.`, is_error: false };
+    },
+  }),
+}));
 
 import type { ChatDeps } from './chatService';
 import { sendChatMessage, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
+import { readAll as chatStoreRead } from './chatStore';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
 let dir: string;
@@ -176,6 +192,126 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     const blocks = secondReq.messages[secondReq.messages.length - 1].content as Array<{ type: string; tool_use_id: string }>;
     expect(blocks.map((b) => b.tool_use_id)).toEqual(['tu_rem']);
     expect(result.replies.length).toBeGreaterThan(0);
+  });
+});
+
+describe('search() / visit() hop loop (260909)', () => {
+  it('answers search then visit with tool_results and keeps hopping until the model stops', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'lemme check.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'netherite armor' } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: 'tool_use', id: 'tu_v', name: 'visit', input: { ref: 'a' } }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'smithing table, diamond gear plus an ingot.' }] });
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'how do i make netherite armor' }, deps());
+
+    expect(createSpy).toHaveBeenCalledTimes(3);
+    expect(webRuns.map((r) => r.name)).toEqual(['search', 'visit']);
+    // The Anthropic path offers the native server search plus our visit.
+    const firstReq = createSpy.mock.calls[0][0] as { tools: Array<{ name: string; type?: string }> };
+    expect(firstReq.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['web_search', 'visit']));
+    expect(firstReq.tools.find((t) => t.name === 'web_search')?.type).toBe('web_search_20250305');
+    expect(firstReq.tools.map((t) => t.name)).not.toContain('search');
+    // The messages array is shared across hops (pushed in place), so inspect
+    // the final transcript: every tool_use was answered, in order, with the
+    // web result as the tool_result content.
+    const lastReq = createSpy.mock.calls[2][0] as { messages: Array<{ role: string; content: unknown }> };
+    const results = lastReq.messages
+      .flatMap((m) => (Array.isArray(m.content) ? (m.content as Array<{ type: string; tool_use_id?: string; content?: string }>) : []))
+      .filter((b) => b.type === 'tool_result');
+    expect(results.map((b) => b.tool_use_id)).toEqual(['tu_s', 'tu_v']);
+    expect(results[0].content).toContain('results for "netherite armor"');
+    expect(results[1].content).toContain('smithing table');
+    // The final reply is what reaches the player.
+    expect(result.replies.map((r) => r.text).join(' ')).toMatch(/smithing table/);
+  });
+});
+
+describe('a line beside search() lands before the lookup (260909)', () => {
+  it('pushes the same-hop text immediately and returns only the post-result reply', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'lemme check.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'netherite armor' } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'smithing table, diamond gear plus an ingot.' }] });
+
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: 'how do i make netherite armor' }, d);
+
+    expect(pushed).toEqual(['lemme check']);
+    expect(result.replies.map((r) => r.text)).toEqual(['smithing table, diamond gear plus an ingot']);
+    // Both lines are in the transcript, in order.
+    const rows = await chatStoreRead(CHAR);
+    expect(rows.filter((r) => r.role === 'companion').map((r) => r.text)).toEqual([
+      'lemme check',
+      'smithing table, diamond gear plus an ingot',
+    ]);
+  });
+
+  it('a text-only final hop is not doubled by the empty-reply fallback', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'one sec, looking.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'x' } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [] });
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: 'look up x' }, d);
+    expect(pushed).toEqual(['one sec, looking']);
+    expect(result.replies).toEqual([]);
+  });
+});
+
+describe('native server-side web_search on the Anthropic path (260909)', () => {
+  const serverBlocks = [
+    { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'ucla chancellor' } },
+    { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{ type: 'web_search_result', title: 'UCLA', url: 'https://ucla.edu', encrypted_content: 'x'.repeat(200) }] },
+  ];
+
+  it('pushes the pre-search line first and keeps only the post-search text as the reply', async () => {
+    createSpy.mockResolvedValueOnce({
+      stop_reason: 'end_turn',
+      content: [
+        { type: 'text', text: 'lemme check.' },
+        ...serverBlocks,
+        { type: 'text', text: "it's julio frenk." },
+      ],
+    });
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: "who is ucla's chancellor" }, d);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(pushed).toEqual(['lemme check']);
+    expect(result.replies.map((r) => r.text)).toEqual(["it's julio frenk"]);
+  });
+
+  it('resumes a pause_turn by sending the assistant content back verbatim', async () => {
+    createSpy
+      .mockResolvedValueOnce({ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'one sec.' }, ...serverBlocks] })
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'found it.' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'look it up' }, deps());
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    const req2 = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const last = req2.messages[req2.messages.length - 1];
+    expect(last.role).toBe('assistant');
+    expect(JSON.stringify(last.content)).toContain('web_search_tool_result');
+    expect(result.replies.map((r) => r.text)).toEqual(['found it']);
   });
 });
 

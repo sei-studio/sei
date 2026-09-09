@@ -20,7 +20,7 @@ describe('createLlmProvider', () => {
   it('defaults to anthropic when llm.provider missing', () => {
     const p = createLlmProvider({ anthropic: baseConfig.anthropic })
     expect(p.kind).toBe('anthropic')
-    expect(p.capabilities).toEqual({ vision: true, cached: true, local: false })
+    expect(p.capabilities).toEqual({ vision: true, cached: true, local: false, serverWebSearch: true })
     expect(typeof p.call).toBe('function')
     expect(typeof p.buildCachedSystem).toBe('function')
     expect(typeof p.setAuthToken).toBe('function')

@@ -81,6 +81,22 @@ export const ZH_MODALS: Record<string, string> = {
   'Open USCO directory listing': '打开 USCO 目录条目',
   'Open Terms §7': '打开条款第 7 节',
 
+  // ── PortraitVersionsModal (260909 card-image versions + regenerate) ──
+  "{name}'s card image": '{name} 的卡片图片',
+  'Every version is kept on this device. Only the one you pick is shown to others.':
+    '每个版本都会保存在此设备上。只有你选中的版本会展示给其他人。',
+  'Current card image': '当前卡片图片',
+  'No card image yet': '还没有卡片图片',
+  'Stored versions': '已保存的版本',
+  'Original': '原图',
+  'v{n}': 'v{n}',
+  'Applying…': '应用中…',
+  'Sign in to regenerate.': '请登录后重新生成。',
+  'Drawing a new image. This can take up to a minute.': '正在绘制新图片，最多可能需要一分钟。',
+  'No regenerations left': '没有剩余的重新生成次数',
+  '1 regeneration left': '剩余 1 次重新生成',
+  '{n} regenerations left': '剩余 {n} 次重新生成',
+
   // ── EditCharacterModal ──
   'Edit companion': '编辑伙伴',
   'Basic': '基本',
