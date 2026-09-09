@@ -99,6 +99,13 @@ describe('htmlToText', () => {
     expect(t).not.toContain('copyright')
   })
 
+  it('strips wiki chrome: edit links, citation markers, stray table pipes', () => {
+    const t = htmlToText('<p>Born<span>[ edit ]</span> in 1975.<sup>[ 3 ]</sup></p><table><tr><td>Spouse</td><td>Kelly</td></tr><tr><td></td></tr></table>')
+    expect(t).not.toContain('[ edit ]')
+    expect(t).not.toContain('[ 3 ]')
+    expect(t).not.toMatch(/^\|$/m)
+  })
+
   it('survives > inside quoted attributes', () => {
     expect(htmlToText(`<p data-x='{"a":">"}'>hi <b>there</b></p>`)).toBe('hi there')
   })
@@ -138,6 +145,9 @@ describe('labels + urls', () => {
     expect(looksRelevant([{ title: 'LATENT Definition & Meaning', snippet: 'present and capable of emerging' }], 'Latent Space podcast hosts')).toBe(false)
     expect(looksRelevant([{ title: 'Latent Space: The AI Engineer Podcast', snippet: 'swyx and Alessio' }], 'Latent Space podcast hosts')).toBe(true)
     expect(looksRelevant([{ title: 'anything', snippet: '' }], 'swyx')).toBe(true) // one-word query: no gate
+    // Stop words do not count: a name query is judged on the name.
+    expect(looksRelevant([{ title: 'Shawn Hatosy', snippet: 'American actor' }, { title: 'Wang Cong', snippet: 'boxer' }], 'who is Shawn Wang')).toBe(false)
+    expect(looksRelevant([{ title: 'Shawn Wang (swyx)', snippet: 'writer' }], 'who is Shawn Wang')).toBe(true)
   })
 
   it('search skips a scraped provider whose results do not match the query', async () => {

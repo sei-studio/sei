@@ -150,6 +150,14 @@ export function htmlToText(html) {
   s = decodeEntities(s)
   s = s.replace(/[ \t ]+/g, ' ')
   s = s.replace(/ *\n */g, '\n')
+  // Reference chrome that survives tag stripping and reads as noise to the
+  // model: MediaWiki "[ edit ]" links, "[ 12 ]" citation markers, and the
+  // bare "|" cell separators an infobox leaves behind.
+  s = s.replace(/\[ ?(edit|citation needed) ?\]/gi, '')
+  s = s.replace(/\[ ?\d{1,3} ?\]/g, '')
+  s = s.replace(/\u200b/g, '')
+  s = s.replace(/^\|\s*$/gm, '')
+  s = s.replace(/ *\| *\n/g, '\n')
   s = s.replace(/\n{3,}/g, '\n\n')
   return s.trim()
 }
@@ -412,10 +420,12 @@ export function parseBingHtml(html) {
  * asked about the Latent Space podcast). API providers do not do this, so the
  * gate applies to ddg/bing only: with two or more significant query words, at
  * least one result must carry two of them, else the scrape is treated as a
- * miss and the chain moves on.
+ * miss and the chain moves on. Stop words are ignored so "who is Shawn Wang"
+ * is judged on shawn + wang.
  */
+const STOP_WORDS = new Set(['who', 'what', 'when', 'where', 'why', 'how', 'the', 'and', 'for', 'are', 'was', 'were', 'does', 'did', 'this', 'that', 'with', 'from', 'about', 'into', 'you', 'your', 'can', 'will', 'has', 'have', 'had', 'not', 'but', 'his', 'her', 'its', 'their', 'them', 'they', 'she', 'him', 'best', 'top', 'get', 'make', 'much', 'many', 'any', 'all', 'more', 'most', 'some', 'there', 'than', 'then', 'out', 'over'])
 export function looksRelevant(results, query) {
-  const words = [...new Set(String(query).toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [])]
+  const words = [...new Set(String(query).toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [])].filter((w) => !STOP_WORDS.has(w))
   if (words.length < 2) return results.length > 0
   return results.some((r) => {
     const hay = `${r.title ?? ''} ${r.snippet ?? ''} ${r.url ?? ''}`.toLowerCase()
@@ -425,7 +435,10 @@ export function looksRelevant(results, query) {
   })
 }
 
-const SCRAPED_PROVIDERS = new Set(['ddg', 'bing'])
+// Keyless providers: the scrapers can answer a different query, and Wikipedia's
+// full-text search matches each word separately ("who is Shawn Wang" returned
+// Shawn Hatosy and Wang Cong). API providers rank properly and skip the gate.
+const KEYLESS_PROVIDERS = new Set(['ddg', 'bing', 'wikipedia'])
 
 export function providerChain(provider, apiKey) {
   const p = WEB_PROVIDERS.includes(provider) ? provider : 'auto'
@@ -489,7 +502,7 @@ export function createWebSession({ fetchImpl, provider = 'auto', apiKey = '', lo
       if (signal?.aborted) throw signal.reason ?? new Error('aborted')
       try {
         const raw = await providers[name](q, { ...ctx, signal })
-        if (SCRAPED_PROVIDERS.has(name) && !looksRelevant(raw, q)) throw new Error(`${name} answered a different query`)
+        if (KEYLESS_PROVIDERS.has(name) && !looksRelevant(raw, q)) throw new Error(`${name} answered a different query`)
         const seen = new Set()
         const results = []
         for (const r of raw) {
