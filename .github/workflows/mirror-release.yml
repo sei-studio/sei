@@ -7,9 +7,27 @@
 # mirror serving a version GitHub never shipped. workflow_dispatch exists for
 # backfilling an already-published release by tag.
 #
-# Layout in the bucket (flat, one dir per channel state — electron-updater's
-# generic provider expects the feed yml and its artifacts side by side):
-#   updates/<asset files + *.yml + *.blockmap>
+# Layout in the bucket (260909 — channel-separated; the old flat layout let a
+# beta publish overwrite BOTH the stable feed ymls and the same-named
+# artifacts, so stable mirror clients were offered the beta or failed the
+# sha512 check, and beta clients' beta-mac.yml 404ed since it was never
+# written at all):
+#   updates/latest*.yml            stable feed (urls point into stable/)
+#   updates/beta*.yml              beta feed  (urls point into beta/)
+#   updates/stable/<artifacts>     stable artifacts + blockmaps
+#   updates/beta/<artifacts>       beta artifacts + blockmaps
+# electron-updater's generic provider resolves a feed yml's relative `url:`
+# against the feed base (https://dl.sei.gg/updates/), so "stable/Sei-mac-
+# arm64.zip" fetches updates/stable/Sei-mac-arm64.zip — no client change
+# needed: shipped stable clients request latest-mac.yml, shipped beta clients
+# request beta-mac.yml (updater.ts sets the channel), and each now gets its
+# own consistent feed + files.
+#
+# A STABLE publish also writes the beta*.yml names (pointing at the stable):
+# a stable newer than every beta graduates mirror beta clients onto it, the
+# same as the GitHub feed. Publish order defines the winner, so like the
+# GitHub channel, cut or re-publish a beta after any stable release (see the
+# beta-feed-ordering rule) or mirror beta clients idle on the stale entry.
 #
 # No-op until the three R2_* secrets exist (create an R2 API token scoped to
 # the bucket; account id is in the dashboard URL). The step fails loudly if
@@ -32,12 +50,22 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve tag
+      - name: Resolve tag + channel
         id: tag
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
-        run: echo "tag=${EVENT_TAG:-$INPUT_TAG}" >> "$GITHUB_OUTPUT"
+        run: |
+          tag="${EVENT_TAG:-$INPUT_TAG}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # Channel from the release's own prerelease flag (covers the
+          # workflow_dispatch backfill too, where the event carries none).
+          pre=$(gh release view "$tag" --repo "${{ github.repository }}" \
+            --json isPrerelease --jq .isPrerelease)
+          if [ "$pre" = "true" ]; then channel=beta; else channel=stable; fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "Mirroring $tag as channel=$channel"
 
       - name: Download release assets
         env:
@@ -54,6 +82,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
+          CHANNEL: ${{ steps.tag.outputs.channel }}
         run: |
           if [ -z "$R2_ACCOUNT_ID" ] && [ -z "$AWS_ACCESS_KEY_ID" ]; then
             echo "R2 secrets not configured; skipping mirror upload."
@@ -63,16 +92,32 @@ jobs:
             echo "::error::Partial R2 configuration. Set all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY."
             exit 1
           fi
-          # The feed ymls must land LAST: a client that reads a new yml before
-          # its artifacts exist would 404 the download; artifacts-first makes
-          # the swap atomic from the updater's point of view.
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           shopt -s nullglob
+          # Artifacts into the channel dir FIRST, feed ymls flat LAST: a
+          # client that reads a new yml before its artifacts exist would 404
+          # the download; artifacts-first makes the swap atomic from the
+          # updater's point of view.
           for f in assets/*; do
             case "$f" in *.yml) continue;; esac
-            aws s3 cp "$f" "s3://sei-dl/updates/$(basename "$f")" --endpoint-url "$endpoint"
+            aws s3 cp "$f" "s3://sei-dl/updates/$CHANNEL/$(basename "$f")" --endpoint-url "$endpoint"
+          done
+          # Point every artifact ref in the ymls at the channel dir. Rewrites
+          # only the `- url:` entries and the legacy top-level `path:`; sha512
+          # and size lines are untouched.
+          for f in assets/*.yml; do
+            sed -E -i "s|^([[:space:]]*- url: )|\\1$CHANNEL/|; s|^(path: )|\\1$CHANNEL/|" "$f"
           done
           for f in assets/*.yml; do
-            aws s3 cp "$f" "s3://sei-dl/updates/$(basename "$f")" --endpoint-url "$endpoint"
+            base="$(basename "$f")"
+            if [ "$CHANNEL" = "beta" ]; then
+              # electron-builder always names the ymls latest*; the beta
+              # channel's clients request beta*.yml, so rename on upload.
+              aws s3 cp "$f" "s3://sei-dl/updates/${base/latest/beta}" --endpoint-url "$endpoint"
+            else
+              aws s3 cp "$f" "s3://sei-dl/updates/$base" --endpoint-url "$endpoint"
+              # A stable also refreshes the beta feed names (see header note).
+              aws s3 cp "$f" "s3://sei-dl/updates/${base/latest/beta}" --endpoint-url "$endpoint"
+            fi
           done
-          echo "Mirrored ${{ steps.tag.outputs.tag }} to r2://sei-dl/updates/"
+          echo "Mirrored ${{ steps.tag.outputs.tag }} ($CHANNEL) to r2://sei-dl/updates/"
