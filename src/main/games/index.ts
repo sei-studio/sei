@@ -55,6 +55,14 @@ export interface GameModule {
   effectiveUsername(character: Character): string;
   /** Do two in-game names collide in this game (Minecraft: case-insensitive)? */
   collides(a: string, b: string): boolean;
+  /**
+   * How many companions may be in this game's world at once. Absent =
+   * unlimited (Minecraft: one bot per character). Don't Starve Together's
+   * helper runs ONE body (260909), so a second character's summon is refused
+   * with `oneBodyError` while another session in this game is live or pending.
+   */
+  maxBodies?: number;
+  oneBodyError?: { error: ErrorClass; message: string };
   watcher: GameWatcher;
   /** The watcher's latest state (cached; the world:get snapshot). */
   getWorldState(): WorldState;

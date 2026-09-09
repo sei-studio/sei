@@ -95,11 +95,20 @@ end
 function Companion.Despawn(reason)
     local inst = Companion.inst
     Companion.inst = nil
-    Commands.Stop()
-    Perception.Stop()
-    Events.Detach()
+    -- Every teardown step is guarded (260909): Despawn also runs from inside
+    -- a QueryServer callback (the dead-runtime watchdog), where a throw is
+    -- swallowed by the caller's pcall. One failing step used to leave a
+    -- brainless body standing with Companion.inst already nil.
+    local function step(label, fn)
+        local ok, err = pcall(fn)
+        if not ok then print("[sei] despawn: " .. label .. " failed: " .. tostring(err)) end
+    end
+    step("Commands.Stop", function() Commands.Stop() end)
+    step("Perception.Stop", function() Perception.Stop() end)
+    step("Events.Detach", function() Events.Detach() end)
     if inst == nil or not inst:IsValid() then
         Net.Reset()
+        print("[sei] despawned (" .. tostring(reason or "") .. "): no live body")
         return
     end
     pcall(function() inst:StopBrain() end)
@@ -111,8 +120,9 @@ function Companion.Despawn(reason)
     end
     -- Tell the runtime before the transport goes; the POST is async and the
     -- callback may never fire, which is fine.
-    Events.Post("despawned", { reason = tostring(reason or "") })
+    step("Events.Post", function() Events.Post("despawned", { reason = tostring(reason or "") }) end)
     local ok, err = pcall(function() inst:Remove() end)
+    if ok then print("[sei] despawned (" .. tostring(reason or "") .. "): body removed") end
     if not ok then
         print("[sei] Remove() failed, parking the body: " .. tostring(err))
         pcall(function()
@@ -122,10 +132,27 @@ function Companion.Despawn(reason)
         end)
     end
     -- Give the despawned POST a moment on the wire before the link is dropped.
+    -- Only drop the link this body was using: a re-summon configures the next
+    -- runtime's link right after this returns, and resetting blindly a second
+    -- later cut that one off (260909).
+    local tok = Net.token
     if TheWorld ~= nil then
-        TheWorld:DoTaskInTime(1, function() Net.Reset() end)
+        TheWorld:DoTaskInTime(1, function()
+            if Net.token == tok then Net.Reset() end
+        end)
     else
         Net.Reset()
+    end
+end
+
+-- The runtime died under the body (Sei quit, the bot crashed, the port went
+-- away): after enough consecutive transport failures the body is removed,
+-- so a brain-dead survivor never stands in the world (260909, measured on the
+-- first two-companion attempt).
+Net.onDead = function()
+    if Companion.IsLive() then
+        print("[sei] runtime stopped answering, despawning the body")
+        Companion.Despawn("runtime gone")
     end
 end
 

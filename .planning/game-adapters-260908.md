@@ -572,7 +572,14 @@ before the live checklist.
   Fixed on the way: empty seed_cuboid_grammar block (400 upstream, 502 via
   proxy), Minecraft goals leaking into DST, come/follow beyond the 24-unit
   sweep (userid fallback), heartbeat on sim time flapping the world during
-  autopause. Still owed: one of each verb family beyond gather/pick/goTo,
+  autopause. Second round (260909, later): pause/resume/mode, chop+pickup+build
+  (ingredient check)+gather+come from one instruction, game crash (kill -9)
+  -> clean stop + Try again into the resumed save, SIGKILL of the bot ->
+  Connection lost modal + the helper's own despawn (4 s), one-companion
+  gate for a second character: PASS. Body died overnight with the host AFK
+  (dark + sanity + hunger): death path PASS, survival layer OWED. Orphan
+  body after the watchdog despawn under investigation (despawn steps now
+  logged). Still owed: one of each verb family beyond gather/pick/goTo,
   in-game chat typed by the player (needs a focused game; keystrokes never
   reach DST from background computer use), voice-call routing, pause/mode,
   game crash mid-session, second summon, despawn hygiene on save reload.

@@ -105,6 +105,14 @@ local function onSummon(offer)
         return
     end
     -- One body at a time; a second offer while one is live re-summons.
+    -- Despawn BEFORE configuring the new link (260909): Despawn posts the
+    -- "despawned" event and then drops the link, and with the order the
+    -- other way round both landed on the NEW runtime, which reported "the
+    -- world removed the companion" and quit while the old one starved of
+    -- heartbeats and quit too, leaving a brainless body in the world.
+    if Companion.IsLive() then
+        Companion.Despawn("re-summon")
+    end
     Net.Configure(offer.botPort, offer.token)
     if offer.announce == nil then offer.announce = ANNOUNCE end
     local inst, reason = Companion.Summon(offer)

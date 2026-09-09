@@ -41,6 +41,15 @@ export function DstLaunchPanel({ characterId }: DstLaunchPanelProps): React.Reac
   const t = useT();
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
   const summon = useDataStore((s) => s.summons[characterId]);
+  // 260909: the helper seats ONE companion per world. Name who is already
+  // there instead of offering a Launch that the supervisor would refuse.
+  const occupantId = useDataStore((s) => {
+    for (const st of Object.values(s.summons)) {
+      if (st.characterId !== characterId && st.game === 'dontstarve' && (st.kind === 'connecting' || st.kind === 'online')) return st.characterId;
+    }
+    return null;
+  });
+  const occupantName = useDataStore((s) => (occupantId ? s.characters.find((c) => c.id === occupantId)?.name ?? null : null));
   const world = useDataStore((s) => s.worlds.dontstarve);
   const install = useDstStore((s) => s.install);
   const pick = useDstStore((s) => s.survivors[characterId]);
@@ -81,11 +90,19 @@ export function DstLaunchPanel({ characterId }: DstLaunchPanelProps): React.Reac
           <p className={styles.cardBody}>
             {dstWorld?.kind === 'open' ? t('Day {day}, {season}, {phase}', { day: dstWorld.day, season: dstWorld.season || '?', phase: dstWorld.phase || '?' }) : ''}
           </p>
-          <div className={styles.actions}>
-            <Button kind="accent" size="lg" disabled={connecting} onClick={onLaunch}>
-              {connecting ? t('Connecting...') : t('Launch')}
-            </Button>
-          </div>
+          {occupantId && !connecting ? (
+            <p className={styles.cardBody} role="status">
+              {t('{other} is already in this world. Don\'t Starve Together fits one companion at a time, so disconnect {other} first.', {
+                other: occupantName ?? t('Another companion'),
+              })}
+            </p>
+          ) : (
+            <div className={styles.actions}>
+              <Button kind="accent" size="lg" disabled={connecting} onClick={onLaunch}>
+                {connecting ? t('Connecting...') : t('Launch')}
+              </Button>
+            </div>
+          )}
           {failReason ? (
             <p className={styles.failLine} role="alert">{t(failReason)}</p>
           ) : null}

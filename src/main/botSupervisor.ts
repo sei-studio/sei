@@ -769,6 +769,19 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // module owns the naming rule and the collision test (Minecraft: compared
     // case-insensitively to match MC's username handling).
     const username = module.effectiveUsername(character);
+    // 260909: some games seat ONE companion per world (Don't Starve Together's
+    // helper runs a single body; a second offer replaced the first and, via a
+    // link-reset race, left a brainless survivor standing). Refuse a second
+    // character while any session in that game is live or pending. The
+    // launch panel pre-checks and names the occupant; this is the backstop.
+    if (module.maxBodies === 1) {
+      const occupied =
+        [...sessions.entries()].some(([id, s]) => id !== characterId && s.game === game) ||
+        [...pendingUsernames.entries()].some(([id, p]) => id !== characterId && p.game === game);
+      if (occupied) {
+        throw new Error(module.oneBodyError?.message ?? `DST_ONE_COMPANION: ${module.displayName} fits one companion at a time.`);
+      }
+    }
     for (const s of sessions.values()) {
       if (s.game === game && module.collides(s.username, username)) {
         throw new Error(`SUMMON_USERNAME_CONFLICT: ${username}`);

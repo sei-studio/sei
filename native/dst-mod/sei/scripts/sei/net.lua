@@ -18,11 +18,18 @@ Net.base = nil      -- "http://127.0.0.1:<botPort>"
 Net.token = nil
 Net.inflight = 0
 Net.failures = 0    -- consecutive transport failures (the runtime dying)
+-- After this many consecutive failures the runtime is presumed gone and
+-- Net.onDead fires once (companion.lua despawns the body). Observations post
+-- several times a second, so this is a few seconds of a dead port.
+Net.DEAD_AFTER = 8
+Net.dead = false
+Net.onDead = nil
 
 function Net.Configure(botPort, token)
     Net.base = "http://127.0.0.1:" .. tostring(botPort)
     Net.token = tostring(token or "")
     Net.failures = 0
+    Net.dead = false
 end
 
 function Net.Reset()
@@ -30,6 +37,7 @@ function Net.Reset()
     Net.token = nil
     Net.inflight = 0
     Net.failures = 0
+    Net.dead = false
 end
 
 function Net.IsConfigured()
@@ -54,6 +62,10 @@ local function finish(cb, result, ok, code)
     else
         Net.failures = Net.failures + 1
         if cb ~= nil then pcall(cb, nil, false, code) end
+        if Net.failures >= Net.DEAD_AFTER and not Net.dead and Net.onDead ~= nil then
+            Net.dead = true
+            pcall(Net.onDead)
+        end
     end
 end
 

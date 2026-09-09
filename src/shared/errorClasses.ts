@@ -59,6 +59,11 @@ export type ErrorClass =
   | 'DST_SPAWN_FAILED'
   | 'DST_PORT_IN_USE'
   | 'DST_BODY_DIED'
+  // 260909: the helper runs ONE body per world. A second character's summon
+  // used to replace the first (and, through a link-reset race, strand a
+  // brainless survivor), so the supervisor refuses it and the launch panel
+  // says who is already there.
+  | 'DST_ONE_COMPANION'
   // Stardew Valley (M1, 260908): the two failures whose copy must differ from
   // the generic GAME_* classes. A farmhand without the mod cannot be shown a
   // custom-sprite NPC, so the mod refuses to spawn; SMAPI's own installer
@@ -99,6 +104,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'DST_SPAWN_FAILED',
   'DST_PORT_IN_USE',
   'DST_BODY_DIED',
+  'DST_ONE_COMPANION',
   'STARDEW_FARMHAND_NO_MOD',
   'SMAPI_INSTALL_FAILED',
 ]);

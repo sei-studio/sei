@@ -397,7 +397,7 @@ export async function createRuntime(config, hooks) {
     logger.info('[sei] DST body despawned by the world.')
     void dropBrain().then(() => {
       try { onDisconnected({ reason: 'despawned', willRetry: false }) } catch {}
-      fail("GAME_WORLD_NOT_OPEN: The Don't Starve Together world removed the companion (the world was closed). Host the world again and press Play.")
+      fail("GAME_WORLD_NOT_OPEN: The Don't Starve Together world removed your companion. Press Play to summon them again.")
     })
   })
   link.events.on('death', () => {

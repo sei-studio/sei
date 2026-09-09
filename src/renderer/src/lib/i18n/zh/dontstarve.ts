@@ -85,6 +85,11 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   // ── lib/errors.ts (ERROR_COPY) ──
   "Sei's helper answered, but no survivor appeared in your world. Make sure you are the host, then press Play again.":
     'Sei 助手有回应，但你的世界里没有出现生存者。请确认你是主机，然后再次点击开始。',
+  "Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.":
+    '《饥荒联机版》一次只能容纳一位伙伴。请先断开已在你世界里的伙伴，再按“开始”。',
+  "{other} is already in this world. Don't Starve Together fits one companion at a time, so disconnect {other} first.":
+    '{other} 已经在这个世界里了。《饥荒联机版》一次只能容纳一位伙伴，请先断开 {other}。',
+  'Another companion': '另一位伙伴',
   "Your companion's survivor died in the Constant. Press Play to summon them again.":
     '你伙伴的生存者在永恒大陆死去了。点击开始再次召唤。',
 };

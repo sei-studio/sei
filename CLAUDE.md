@@ -1645,6 +1645,36 @@ the companion through the Sei chat, which the brain frames as "NOT in the
 game with you" by design (the Minecraft framing; a player who IS the host
 gets the same wording).
 
+**Second live DST round (260909, later): pause, crash, second companion.**
+Verified: Pause holds the body still (a creature walked past a frozen
+Wickerbottom for 20 s), Resume and the Reactive/Proactive switch take,
+chop / pickup / goTo / come / gather / build (with a correct
+missing-ingredient result) all ran from one chat instruction, killing the
+game process stopped the bot inside 10 s with GAME_WORLD_NOT_OPEN and the
+"Try again" re-summoned into the resumed save, and a bot killed with SIGKILL
+raised the app's Connection lost modal. Left overnight, host AFK, the body
+DIED: dusk in the dark (Charlie), sanity to zero, then starvation; the
+death path itself worked (death event, memory write, DST_BODY_DIED, clean
+stop, play row written). ONE COMPANION PER WORLD is now enforced: the helper
+runs a single body and a second character's offer replaced the first
+through a link-reset race (Despawn posts "despawned" then drops the link;
+with `Net.Configure` called BEFORE `Companion.Summon` both landed on the new
+runtime, which quit, while the old one starved of heartbeats and quit too,
+leaving a brainless survivor). `GameModule.maxBodies = 1` +
+`DST_ONE_COMPANION` in the supervisor, and `DstLaunchPanel` names the
+occupant instead of offering Launch. The mod also gained a DEAD-RUNTIME
+WATCHDOG (`Net.DEAD_AFTER` consecutive transport failures -> `Net.onDead` ->
+Despawn "runtime gone", measured 4 s after a SIGKILL) and every Despawn step
+is pcall-guarded and logged, because the first watchdog despawn logged and
+still left a body standing (cause under investigation with the new logging).
+Computer-use notes for the next round: DST needs to be the frontmost app
+(`open` the bundle; Chrome steals focus back whenever the user browses), the
+first click on a DST widget only HOVERS it and the second fires (send single
+clicks twice, not a double-click), background screenshots of an unfocused
+DST are STALE frames, keystrokes never reach the game, offline mode cannot
+resume an online-created world (create a new one), and `client_log.txt` is
+rewritten per launch.
+
 **Don't Starve Together (M2)** `native/dst-mod/sei/` (Lua, MIT, server-only,
 `all_clients_require_mod = false`, luacheck clean; `PROTOCOL.md`, mirrored in
 `src/shared/dstIpc.ts`). Body = a vanilla survivor prefab spawned on the

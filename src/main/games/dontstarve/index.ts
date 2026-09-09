@@ -134,6 +134,11 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
     // Two survivors with the same nameplate would be indistinguishable in
     // chat announcements; keep the Minecraft rule.
     collides: (a, b) => a.toLowerCase() === b.toLowerCase(),
+    maxBodies: 1,
+    oneBodyError: {
+      error: 'DST_ONE_COMPANION',
+      message: "DST_ONE_COMPANION: Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.",
+    },
     watcher: {
       start({ onUpdate: cb }) {
         onUpdate = cb;

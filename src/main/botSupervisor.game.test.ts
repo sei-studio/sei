@@ -209,6 +209,22 @@ describe('summon(id, "stardew") through a registered GameModule', () => {
     await expect(sup.summon(A, 'dontstarve')).rejects.toThrow(/GAME_NOT_INSTALLED/);
   });
 
+  it('refuses a SECOND character in a one-body game while the first is live (260909)', async () => {
+    const mod = { ...stardewModule(true), maxBodies: 1, oneBodyError: { error: 'DST_ONE_COMPANION' as const, message: 'DST_ONE_COMPANION: one at a time' } };
+    registerGameModule(mod);
+    const { sup } = makeSupervisor();
+    const fakeA = armFakeChild();
+    const pA = sup.summon(A, 'stardew');
+    await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
+    fakeA.emitPortMessage({ type: 'summon-ready' });
+    await pA;
+    // Different name, same one-body game → refused before fork with the module's error.
+    await expect(sup.summon(B, 'stardew')).rejects.toThrow(/DST_ONE_COMPANION/);
+    expect(forkSpy).toHaveBeenCalledTimes(1);
+    // The same character re-summoning is not a second body.
+    expect(sup.getActiveIds()).toEqual([A]);
+  });
+
   it('collides only within the same game', async () => {
     // Both characters share the effective name under the stardew rule when
     // their names match; under Minecraft their usernames differ.
