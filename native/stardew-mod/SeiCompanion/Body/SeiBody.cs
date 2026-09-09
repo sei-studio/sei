@@ -236,6 +236,7 @@ namespace SeiCompanion.Body
             this.Reflex.Tick(tick);
             if (!this.Runner.Busy && !this.Background.Busy)
                 this.FollowTick();
+            this.BarrierHop();
             if (tick % 12 == 0)
                 this.CollectDebris(3);
             if (tick % 120 == 0)
@@ -351,6 +352,56 @@ namespace SeiCompanion.Body
             }
         }
 
+        private int _hopStuckTicks;
+
+        /// <summary>
+        /// The NPC's own step collision honors the NPCBarrier tile property
+        /// (every map exit has it, so villagers never wander out), which a
+        /// farmer walks through. TryPath already routes as a farmer; here the
+        /// body, stalled with a live controller whose next tile is an NPC-only
+        /// wall, steps onto that tile directly. Measured 260910: stuck at
+        /// (77,17) two tiles from the bus stop with the route found.
+        /// </summary>
+        private void BarrierHop()
+        {
+            PathFindController ctl = this.Npc.controller;
+            if (ctl?.pathToEndPoint == null || ctl.pathToEndPoint.Count == 0)
+            {
+                this._hopStuckTicks = 0;
+                return;
+            }
+            if (Vector2.Distance(this.Npc.Position, this._lastPos) >= 0.5f)
+            {
+                this._hopStuckTicks = 0;
+                return;
+            }
+            if (++this._hopStuckTicks < 10)
+                return;
+            this._hopStuckTicks = 0;
+            Point next = ctl.pathToEndPoint.Peek();
+            GameLocation loc = this.Npc.currentLocation;
+            if (next == this.Npc.TilePoint)
+                return;
+            bool barrier;
+            try
+            {
+                // Standing ON a barrier tile blocks every step too (the step
+                // check's box still overlaps the tile it leaves), so the tile
+                // under the body counts as well as the next one.
+                Point here = this.Npc.TilePoint;
+                var rect = new Rectangle(next.X * 64 + 8, next.Y * 64 + 8, 48, 48);
+                barrier = loc.doesTileHaveProperty(next.X, next.Y, "NPCBarrier", "Back") != null
+                    || loc.doesTileHaveProperty(here.X, here.Y, "NPCBarrier", "Back") != null
+                    || (loc.isCollidingPosition(rect, Game1.viewport, false, 0, false, this.Npc, true, false, false)
+                        && !loc.isCollidingPosition(rect, Game1.viewport, true, 0, false, this.Shadow, true, false, false));
+            }
+            catch { barrier = false; }
+            if (!barrier)
+                return;
+            this.Npc.Position = new Vector2(next.X * 64, next.Y * 64);
+            this.SyncShadow();
+        }
+
         /*********
         ** Movement primitives (used by the verbs)
         *********/
@@ -360,7 +411,31 @@ namespace SeiCompanion.Body
             try
             {
                 GameLocation loc = this.Npc.currentLocation;
-                var controller = new PathFindController(this.Npc, loc, target, 2, onArrive);
+                // Path as a FARMER, walk as the NPC. Every map exit carries the
+                // NPCBarrier tile property (villagers must never wander out),
+                // and the NPC pathfinder honors it, so an NPC-routed body could
+                // never leave the farm: measured 260910, "no path to (78,15)"
+                // from three tiles away, farmer collision false, NPC collision
+                // true, NPCBarrier on Back. The search runs with the invisible
+                // shadow (a Farmer) for collisions and the result drives the
+                // NPC's controller; the NPC constructor path is the fallback.
+                this.SyncShadow();
+                Stack<Point> path = null;
+                try { path = PathFindController.findPath(this.Npc.TilePoint, target, PathFindController.isAtEndPoint, loc, this.Shadow, 10000); }
+                catch (Exception ex) { this.Monitor.Log($"{this.Name}: farmer path search threw: {ex.Message}", LogLevel.Trace); }
+                PathFindController controller;
+                if (path != null && path.Count > 0)
+                {
+                    controller = new PathFindController(path, this.Npc, loc)
+                    {
+                        finalFacingDirection = 2,
+                        endBehaviorFunction = onArrive,
+                    };
+                }
+                else
+                {
+                    controller = new PathFindController(this.Npc, loc, target, 2, onArrive);
+                }
                 if (controller.pathToEndPoint == null || controller.pathToEndPoint.Count == 0)
                 {
                     this.Npc.controller = null;
@@ -654,11 +729,46 @@ namespace SeiCompanion.Body
         }
 
         /// <summary>Add to the shadow's inventory, or drop it at the body's feet when full. Returns true when kept.</summary>
+        /// <summary>
+        /// Put an item in the shadow's bag: stack onto a matching stack, else
+        /// the first empty slot. The game's Farmer.addItemToInventoryBool
+        /// refused every drop for the shadow (measured 260910: "picked up 0
+        /// items" after 25 pieces of debris, both bodies), so the bag is
+        /// managed here. A full bag drops the item where the body stands.
+        /// </summary>
         public bool TakeItem(Item item)
         {
             if (item == null) return false;
-            if (this.Shadow.addItemToInventoryBool(item))
-                return true;
+            try
+            {
+                var items = this.Shadow.Items;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    Item slot = items[i];
+                    if (slot == null || !slot.canStackWith(item)) continue;
+                    int room = slot.maximumStackSize() - slot.Stack;
+                    if (room <= 0) continue;
+                    int moved = Math.Min(room, item.Stack);
+                    slot.Stack += moved;
+                    item.Stack -= moved;
+                    if (item.Stack <= 0) return true;
+                }
+                for (int i = 0; i < items.Count && i < this.Shadow.MaxItems; i++)
+                {
+                    if (items[i] != null) continue;
+                    items[i] = item;
+                    return true;
+                }
+                if (items.Count < this.Shadow.MaxItems)
+                {
+                    items.Add(item);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Monitor.Log($"{this.Name}: take item failed: {ex.Message}", LogLevel.Debug);
+            }
             try { Game1.createItemDebris(item, this.Npc.Position + new Vector2(32f, 32f), -1, this.Npc.currentLocation); } catch { }
             return false;
         }
@@ -671,25 +781,47 @@ namespace SeiCompanion.Body
                 return;
             Vector2 center = this.Npc.Position + new Vector2(32f, 32f);
             float max = radius * 64f;
+            // Only item debris: OBJECT (a dropped Item, or an item id per chunk),
+            // RESOURCE (wood, stone, fiber by id) and ARCHAEOLOGY. CHUNKS are the
+            // cosmetic splinters a broken weed or stone throws (Debris.collect
+            // throws on them), the rest is text. The item is lifted out of the
+            // debris here rather than through Debris.collect, which refused the
+            // shadow farmer (see TakeItem). Chunks are collected even before
+            // they land: a map the host is not on never animates them.
             for (int i = loc.debris.Count - 1; i >= 0; i--)
             {
                 Debris d = loc.debris[i];
                 if (d == null) continue;
                 Debris.DebrisType kind = d.debrisType.Value;
-                if (kind == Debris.DebrisType.SPRITECHUNKS || kind == Debris.DebrisType.LETTERS || kind == Debris.DebrisType.NUMBERS)
-                    continue;
-                if (d.item == null && d.chunkType.Value < 0 && kind != Debris.DebrisType.RESOURCE && kind != Debris.DebrisType.OBJECT)
+                if (kind != Debris.DebrisType.OBJECT && kind != Debris.DebrisType.RESOURCE && kind != Debris.DebrisType.ARCHAEOLOGY)
                     continue;
                 for (int c = d.Chunks.Count - 1; c >= 0; c--)
                 {
                     Chunk chunk = d.Chunks[c];
                     if (Vector2.Distance(chunk.position.Value, center) > max)
                         continue;
-                    bool taken;
-                    try { taken = d.collect(this.Shadow, chunk); }
-                    catch { taken = false; }
-                    if (!taken)
+                    Item item = null;
+                    try
+                    {
+                        if (d.item != null)
+                            item = d.item;
+                        else if (!string.IsNullOrEmpty(d.itemId?.Value))
+                            item = ItemRegistry.Create(d.itemId.Value, 1, d.itemQuality);
+                    }
+                    catch (Exception ex)
+                    {
+                        this.Monitor.Log($"{this.Name}: could not read debris ({kind}, {d.itemId?.Value}): {ex.Message}", LogLevel.Debug);
+                    }
+                    if (item == null)
                         break;
+                    if (!this.TakeItem(item))
+                        break;
+                    if (d.item != null)
+                    {
+                        d.item = null;
+                        d.Chunks.Clear();
+                        break;
+                    }
                     d.Chunks.RemoveAt(c);
                 }
                 if (d.Chunks.Count == 0)

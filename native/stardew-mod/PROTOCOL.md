@@ -84,6 +84,9 @@ expects an answer, `id` (any string; the answer echoes it).
 | `cmd` | `name`, `args` | runs a verb; the `result` arrives on COMPLETION (seconds to a minute for a `gather`); `progress` frames may precede it |
 | `cancel` | `target` (the `cmd`'s `id`, or omitted for whatever runs) | aborts the running verb; its `result` reads `aborted` |
 | `loadFarm` | `slot?` (save folder name; default the newest) | DEVELOPER frame (same gate): load a save from the title screen. |
+| `devTime` | `time` (600..2600) | DEVELOPER frame (same gate): set the game clock. |
+| `devSleep` | | DEVELOPER frame (same gate): the host goes to bed (the game saves and the next day starts). |
+| `devDebris` | | DEVELOPER frame (same gate): `result.debris` lists the item debris lying in the body's location. |
 | `devState` | | DEVELOPER frame (same gate): `result.state` names the menu, game mode, event and world state, for a driver with no screen. |
 | `newFarm` | `farmer?`, `farm?`, `favoriteThing?` | DEVELOPER frame, refused unless config.json has `DevCommands: true` (the app never sets it): from the title screen, starts a new game through the game's own character menu and skips the arrival cutscene. For a test driver with no hands on the game window. |
 

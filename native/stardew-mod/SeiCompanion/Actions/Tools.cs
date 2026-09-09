@@ -242,6 +242,21 @@ namespace SeiCompanion.Actions
                 if (!stillThere) break;
                 ResourceClump clump = ClumpAt(loc, tile);
                 if (clump != null && !IsStumpOrLog(clump)) { o.Fail($"{Targets.Fmt(tile)} is a boulder, use mine"); yield break; }
+                // A tree that has been cut through is FALLING; the fall (and the
+                // wood it drops) only advances in the map's current-location
+                // update, which runs for the host's map alone. With the host
+                // indoors the tree hung mid-fall and the loop swung to the cap
+                // (80 energy, no wood; measured 260910). Tick it here instead.
+                if (loc.terrainFeatures.TryGetValue(new Vector2(tile.X, tile.Y), out TerrainFeature tf) && tf is Tree falling && falling.falling.Value)
+                {
+                    for (int t = 0; t < 240 && falling.falling.Value && loc.terrainFeatures.ContainsKey(new Vector2(tile.X, tile.Y)); t++)
+                    {
+                        try { falling.tickUpdate(Game1.currentGameTime); } catch { break; }
+                        yield return null;
+                    }
+                    body.CollectDebris(6);
+                    continue;
+                }
                 var use = new Outcome();
                 UseToolAt<Axe>(body, tile, use);
                 if (!use.Ok) { o.Fail(use.Detail); yield break; }

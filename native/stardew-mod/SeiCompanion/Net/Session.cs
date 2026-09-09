@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using StardewModdingAPI;
+using StardewValley;
 using SeiCompanion.Body;
 using SeiCompanion.Dev;
 
@@ -228,6 +229,35 @@ namespace SeiCompanion.Net
                     string slot = root.TryGetProperty("slot", out JsonElement sl) ? sl.GetString() : null;
                     string err = DevCommands.LoadFarm(this._mod, slot);
                     this.SendResult(id, err == null, err ?? "loading; the save is up in a moment");
+                    return;
+                }
+                case "devTiles":
+                {
+                    if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
+                    int x0 = root.TryGetProperty("x0", out JsonElement a0) ? a0.GetInt32() : 0, y0 = root.TryGetProperty("y0", out JsonElement b0) ? b0.GetInt32() : 0;
+                    int x1 = root.TryGetProperty("x1", out JsonElement a1) ? a1.GetInt32() : x0, y1 = root.TryGetProperty("y1", out JsonElement b1) ? b1.GetInt32() : y0;
+                    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) { this.SendResult(id, false, "at most 400 tiles"); return; }
+                    this.SendResult(id, true, "ok", new Dictionary<string, object> { ["tiles"] = DevCommands.Tiles(body, x0, y0, x1, y1) });
+                    return;
+                }
+                case "devTime":
+                {
+                    if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
+                    int time = root.TryGetProperty("time", out JsonElement tm) && tm.TryGetInt32(out int tv) ? tv : -1;
+                    if (time < 600 || time > 2600) { this.SendResult(id, false, "time must be 600..2600 (game clock, e.g. 1330)"); return; }
+                    Game1.timeOfDay = time;
+                    this.SendResult(id, true, $"clock set to {Observe.Snapshot.TimeText(time)}");
+                    return;
+                }
+                case "devDebris":
+                    if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
+                    this.SendResult(id, true, "ok", new Dictionary<string, object> { ["debris"] = DevCommands.Debris(body) });
+                    return;
+                case "devSleep":
+                {
+                    if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
+                    string err = DevCommands.Sleep(this._mod);
+                    this.SendResult(id, err == null, err ?? "sleeping; the next day starts in a moment");
                     return;
                 }
                 case "devState":

@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
@@ -190,6 +191,93 @@ namespace SeiCompanion.Dev
         public static void Reset()
         {
             SkipIntroPending = false;
+        }
+
+        /// <summary>Game thread: the debris lying in the body's location (what the tools dropped and whether it is collectable).</summary>
+        public static System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>> Debris(SeiCompanion.Body.SeiBody body)
+        {
+            var list = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>();
+            GameLocation loc = body?.Npc?.currentLocation ?? Game1.currentLocation;
+            if (loc?.debris == null) return list;
+            Vector2 me = body?.Npc?.Position ?? Vector2.Zero;
+            foreach (StardewValley.Debris d in loc.debris)
+            {
+                if (d == null) continue;
+                var row = new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["type"] = d.debrisType.Value.ToString(),
+                    ["chunkType"] = d.chunkType.Value,
+                    ["item"] = d.item?.DisplayName,
+                    ["itemId"] = d.itemId?.Value,
+                    ["chunks"] = d.Chunks.Count,
+                    ["player"] = d.player?.Value?.Name,
+                };
+                if (d.Chunks.Count > 0)
+                    row["dist"] = (int)(Vector2.Distance(d.Chunks[0].position.Value, me) / 64f);
+                list.Add(row);
+                if (list.Count >= 30) break;
+            }
+            return list;
+        }
+
+        /// <summary>Game thread: what a rectangle of tiles is made of, for pathing questions.</summary>
+        public static System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>> Tiles(SeiCompanion.Body.SeiBody body, int x0, int y0, int x1, int y1)
+        {
+            var list = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>();
+            GameLocation loc = body?.Npc?.currentLocation ?? Game1.currentLocation;
+            if (loc == null) return list;
+            for (int y = y0; y <= y1; y++)
+            for (int x = x0; x <= x1; x++)
+            {
+                var v = new Vector2(x, y);
+                var row = new System.Collections.Generic.Dictionary<string, object> { ["x"] = x, ["y"] = y };
+                try
+                {
+                    row["onMap"] = loc.isTileOnMap(v);
+                    row["passable"] = loc.isTilePassable(v);
+                    row["water"] = loc.isWaterTile(x, y);
+                    row["occupied"] = loc.IsTileOccupiedBy(v, StardewValley.CollisionMask.All, StardewValley.CollisionMask.None);
+                    if (loc.objects.TryGetValue(v, out StardewValley.Object o) && o != null) row["object"] = o.Name;
+                    if (loc.terrainFeatures.TryGetValue(v, out StardewValley.TerrainFeatures.TerrainFeature tf) && tf != null) row["feature"] = tf.GetType().Name;
+                    foreach (string layer in new[] { "Back", "Buildings", "Front" })
+                    {
+                        string barrier = loc.doesTileHaveProperty(x, y, "NPCBarrier", layer);
+                        if (barrier != null) row["npcBarrier"] = layer;
+                        string pass = loc.doesTileHaveProperty(x, y, "Passable", layer);
+                        if (pass != null) row["passableProp"] = layer;
+                    }
+                    int bIdx = -1;
+                    try { bIdx = loc.getTileIndexAt(x, y, "Buildings"); } catch { }
+                    if (bIdx >= 0) row["buildingsTile"] = bIdx;
+                    if (body?.Npc != null)
+                    {
+                        var rect = new Rectangle(x * 64 + 8, y * 64 + 8, 48, 48);
+                        row["npcColliding"] = loc.isCollidingPosition(rect, Game1.viewport, false, 0, false, body.Npc, true, false, false);
+                        row["farmerColliding"] = loc.isCollidingPosition(rect, Game1.viewport, true, 0, false, body.Shadow, true, false, false);
+                    }
+                }
+                catch (Exception ex) { row["error"] = ex.Message; }
+                list.Add(row);
+            }
+            return list;
+        }
+
+        /// <summary>Game thread: end the day the way the bed does (the host sleeps; the game saves and starts the next day).</summary>
+        public static string Sleep(ModEntry mod)
+        {
+            if (!Context.IsWorldReady) return "no save is loaded";
+            try
+            {
+                var m = mod.Helper.Reflection.GetMethod(Game1.currentLocation, "startSleep", required: false);
+                if (m != null) { m.Invoke(); return null; }
+                Game1.player.isInBed.Value = true;
+                Game1.NewDay(0f);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return $"sleep failed: {ex.Message}";
+            }
         }
     }
 }

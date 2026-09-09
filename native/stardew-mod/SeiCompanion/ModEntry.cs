@@ -97,9 +97,13 @@ namespace SeiCompanion
             // exist as a game asset. No Data/Characters entry on purpose: a
             // registered character is auto-spawned by the game and needs a
             // duplicate sweep (amarisaster); an ad hoc NPC does not.
-            if (e.NameWithoutLocale.IsEquivalentTo(SpriteAsset))
+            // The NPC is named Sei_<companion>, and the game reloads its sheet
+            // and portrait BY NAME on some paths (TryLoadPortraits after a
+            // warp), warning on every miss; answer those names too.
+            string name = e.NameWithoutLocale.BaseName ?? "";
+            if (e.NameWithoutLocale.IsEquivalentTo(SpriteAsset) || name.StartsWith("Characters/Sei_", StringComparison.OrdinalIgnoreCase))
                 e.LoadFromModFile<Texture2D>("Assets/companion.png", AssetLoadPriority.Exclusive);
-            else if (e.NameWithoutLocale.IsEquivalentTo(PortraitAsset))
+            else if (e.NameWithoutLocale.IsEquivalentTo(PortraitAsset) || name.StartsWith("Portraits/Sei_", StringComparison.OrdinalIgnoreCase))
                 e.LoadFromModFile<Texture2D>("Assets/portrait.png", AssetLoadPriority.Exclusive);
         }
 
